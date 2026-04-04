@@ -12,15 +12,6 @@ from .trading_positions import _resolve_open_position
 from .trading_time import ExpirationValue
 from ..utils.mt5 import _mt5_epoch_to_utc
 
-def _zero_price_requested(value: Optional[Union[int, float]]) -> bool:
-    if value is None or isinstance(value, bool):
-        return False
-    try:
-        numeric = float(value)
-    except Exception:
-        return False
-    return math.isfinite(numeric) and math.isclose(numeric, 0.0, abs_tol=1e-9)
-
 
 def _resolve_position_side(position: Any, mt5: Any) -> Optional[str]:
     position_type_buy = trading_validation._safe_int_attr(
@@ -147,22 +138,26 @@ def _modify_position(
             point = float(symbol_info.point or 0.0) if hasattr(symbol_info, "point") else 0.0
             digits = trading_validation._safe_int_attr(symbol_info, "digits", 5)
 
-            explicit_remove_sl = _zero_price_requested(stop_loss)
-            explicit_remove_tp = _zero_price_requested(take_profit)
-            requested_sl = (
-                None
-                if stop_loss is None or explicit_remove_sl
-                else trading_validation._normalize_price_for_symbol(stop_loss, point=point, digits=digits)
+            requested_sl, explicit_remove_sl, sl_error = (
+                trading_validation._normalize_requested_protection_price(
+                    stop_loss,
+                    field_name="stop_loss",
+                    point=point,
+                    digits=digits,
+                )
             )
-            requested_tp = (
-                None
-                if take_profit is None or explicit_remove_tp
-                else trading_validation._normalize_price_for_symbol(take_profit, point=point, digits=digits)
+            if sl_error is not None:
+                return {"error": sl_error}
+            requested_tp, explicit_remove_tp, tp_error = (
+                trading_validation._normalize_requested_protection_price(
+                    take_profit,
+                    field_name="take_profit",
+                    point=point,
+                    digits=digits,
+                )
             )
-            if stop_loss is not None and not explicit_remove_sl and requested_sl is None:
-                return {"error": "stop_loss must be a non-zero finite price after symbol normalization."}
-            if take_profit is not None and not explicit_remove_tp and requested_tp is None:
-                return {"error": "take_profit must be a non-zero finite price after symbol normalization."}
+            if tp_error is not None:
+                return {"error": tp_error}
 
             # Normalize SL/TP values
             existing_sl = trading_validation._normalize_price_for_symbol(
@@ -380,8 +375,6 @@ def _modify_pending_order(
             point = float(getattr(symbol_info, "point", 0.0) or 0.0)
             digits = trading_validation._safe_int_attr(symbol_info, "digits", 5)
 
-            explicit_remove_sl = _zero_price_requested(stop_loss)
-            explicit_remove_tp = _zero_price_requested(take_profit)
             normalized_price = trading_validation._normalize_price_for_symbol(
                 price if price is not None else getattr(order, "price_open", None),
                 point=point,
@@ -389,21 +382,26 @@ def _modify_pending_order(
             )
             if normalized_price is None:
                 return {"error": "price must be a non-zero finite number after symbol normalization."}
-
-            requested_sl = (
-                None
-                if stop_loss is None or explicit_remove_sl
-                else trading_validation._normalize_price_for_symbol(stop_loss, point=point, digits=digits)
+            requested_sl, explicit_remove_sl, sl_error = (
+                trading_validation._normalize_requested_protection_price(
+                    stop_loss,
+                    field_name="stop_loss",
+                    point=point,
+                    digits=digits,
+                )
             )
-            requested_tp = (
-                None
-                if take_profit is None or explicit_remove_tp
-                else trading_validation._normalize_price_for_symbol(take_profit, point=point, digits=digits)
+            if sl_error is not None:
+                return {"error": sl_error}
+            requested_tp, explicit_remove_tp, tp_error = (
+                trading_validation._normalize_requested_protection_price(
+                    take_profit,
+                    field_name="take_profit",
+                    point=point,
+                    digits=digits,
+                )
             )
-            if stop_loss is not None and not explicit_remove_sl and requested_sl is None:
-                return {"error": "stop_loss must be a non-zero finite price after symbol normalization."}
-            if take_profit is not None and not explicit_remove_tp and requested_tp is None:
-                return {"error": "take_profit must be a non-zero finite price after symbol normalization."}
+            if tp_error is not None:
+                return {"error": tp_error}
 
             existing_sl = trading_validation._normalize_price_for_symbol(
                 getattr(order, "sl", None),

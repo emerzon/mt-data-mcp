@@ -114,6 +114,32 @@ def test_place_market_order_success(mock_mt5):
     assert sltp_req["position"] == 456  # Matching the 'order' ticket from the mock result
 
 
+def test_place_market_order_treats_tiny_zero_stop_loss_as_omitted(mock_mt5):
+    res = _place_market_order(
+        symbol="EURUSD",
+        volume=0.1,
+        order_type="BUY",
+        stop_loss=1e-12,
+    )
+
+    assert "error" not in res
+    assert res["sl_tp_result"]["status"] == "not_requested"
+    assert mock_mt5.order_send.call_count == 1
+
+
+def test_place_market_order_treats_tiny_zero_take_profit_as_omitted(mock_mt5):
+    res = _place_market_order(
+        symbol="EURUSD",
+        volume=0.1,
+        order_type="BUY",
+        take_profit=1e-12,
+    )
+
+    assert "error" not in res
+    assert res["sl_tp_result"]["status"] == "not_requested"
+    assert mock_mt5.order_send.call_count == 1
+
+
 def test_place_market_order_invalid_type(mock_mt5):
     res = _place_market_order(
         symbol="EURUSD",
@@ -244,6 +270,36 @@ def test_place_pending_order_success(mock_mt5):
     assert math.isclose(req["price"], 1.04000)
     assert math.isclose(req["sl"], 1.03000)
     assert math.isclose(req["tp"], 1.06000)
+
+
+def test_place_pending_order_treats_tiny_zero_stop_loss_as_omitted(mock_mt5):
+    res = _place_pending_order(
+        symbol="EURUSD",
+        volume=0.1,
+        order_type="BUY_LIMIT",
+        price=1.04000,
+        stop_loss=1e-12,
+    )
+
+    assert "error" not in res
+    req = mock_mt5.order_send.call_args[0][0]
+    assert math.isclose(req["sl"], 0.0)
+    assert math.isclose(req["tp"], 0.0)
+
+
+def test_place_pending_order_treats_tiny_zero_take_profit_as_omitted(mock_mt5):
+    res = _place_pending_order(
+        symbol="EURUSD",
+        volume=0.1,
+        order_type="BUY_LIMIT",
+        price=1.04000,
+        take_profit=1e-12,
+    )
+
+    assert "error" not in res
+    req = mock_mt5.order_send.call_args[0][0]
+    assert math.isclose(req["sl"], 0.0)
+    assert math.isclose(req["tp"], 0.0)
 
 
 def test_place_pending_order_bad_side(mock_mt5):
