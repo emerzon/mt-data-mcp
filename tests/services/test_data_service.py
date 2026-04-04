@@ -237,6 +237,51 @@ class TestDataService(unittest.TestCase):
         self.assertEqual(result.get("spread_change_pct_note"), "first spread was zero")
         self.assertIsNone(result.get("stats", {}).get("spread", {}).get("change_pct"))
 
+    def test_format_candle_times_vectorizes_utc_formatting(self):
+        import pandas as pd
+        from mtdata.services import data_service as data_service_mod
+
+        df = pd.DataFrame({
+            '__epoch': [1704067200.0, 1704067260.0, 1704067320.0],
+            'time': [None, None, None],
+        })
+
+        with patch('mtdata.services.data_service.datetime') as mock_datetime:
+            mock_datetime.fromtimestamp.side_effect = AssertionError("should not format rows one by one")
+            data_service_mod._format_candle_times(
+                df,
+                ['time'],
+                time_as_epoch=False,
+                use_client_tz=False,
+                client_tz=None,
+            )
+
+        self.assertEqual(df.__dict__['_tz_used_name'], 'UTC')
+        self.assertTrue(all(isinstance(value, str) for value in df['time']))
+
+    def test_format_candle_times_vectorizes_client_tz_formatting(self):
+        import pandas as pd
+        from mtdata.services import data_service as data_service_mod
+
+        df = pd.DataFrame({
+            '__epoch': [1704067200.0, 1704067260.0, 1704067320.0],
+            'time': [None, None, None],
+        })
+        client_tz = timezone(timedelta(hours=-6))
+
+        with patch('mtdata.services.data_service.datetime') as mock_datetime:
+            mock_datetime.fromtimestamp.side_effect = AssertionError("should not format rows one by one")
+            data_service_mod._format_candle_times(
+                df,
+                ['time'],
+                time_as_epoch=False,
+                use_client_tz=True,
+                client_tz=client_tz,
+            )
+
+        self.assertEqual(df.__dict__['_tz_used_name'], str(client_tz))
+        self.assertTrue(all(isinstance(value, str) for value in df['time']))
+ 
 if __name__ == '__main__':
     try:
         unittest.main(exit=False)

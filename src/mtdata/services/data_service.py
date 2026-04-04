@@ -701,9 +701,10 @@ def _format_candle_times(
     if 'time' not in headers or len(df) <= 0:
         return
 
-    epochs_list = df['__epoch'].tolist()
+    epochs = pd.to_numeric(df['__epoch'], errors='coerce').astype(float)
+    epochs_list = epochs.tolist()
     if time_as_epoch:
-        df['time'] = [float(value) for value in epochs_list]
+        df['time'] = epochs
         df.__dict__['_tz_used_name'] = 'UTC'
         return
 
@@ -713,17 +714,11 @@ def _format_candle_times(
     tz_used_name = 'UTC'
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
+        time_values = pd.to_datetime(epochs, unit='s', utc=True)
         if use_client_tz:
             tz_used_name = getattr(client_tz, 'zone', None) or str(client_tz)
-            df['time'] = [
-                datetime.fromtimestamp(value, tz=dt_timezone.utc).astimezone(client_tz).strftime(fmt)
-                for value in epochs_list
-            ]
-        else:
-            df['time'] = [
-                datetime.fromtimestamp(value, tz=dt_timezone.utc).strftime(fmt)
-                for value in epochs_list
-            ]
+            time_values = time_values.dt.tz_convert(client_tz)
+        df['time'] = time_values.dt.strftime(fmt)
     df.__dict__['_tz_used_name'] = tz_used_name
 
 
