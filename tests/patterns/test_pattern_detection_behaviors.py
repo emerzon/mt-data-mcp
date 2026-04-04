@@ -817,6 +817,16 @@ def test_apply_config_to_obj_coerces_bool_strings():
     assert cfg.use_dtw_check is True
 
 
+def test_apply_config_to_obj_rejects_invalid_bool_strings():
+    cfg = ClassicDetectorConfig()
+    original = cfg.use_robust_fit
+
+    invalid = _apply_config_to_obj(cfg, {"use_robust_fit": "maybe"})
+
+    assert cfg.use_robust_fit is original
+    assert invalid == ["use_robust_fit"]
+
+
 def test_apply_config_to_obj_rejects_invalid_type_coercion():
     cfg = ClassicDetectorConfig()
     original = cfg.min_distance
