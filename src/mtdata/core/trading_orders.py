@@ -10,7 +10,6 @@ from .trading_gateway import MT5TradingGateway, create_trading_gateway, trading_
 from .trading_positions import _resolve_open_position
 from .trading_time import ExpirationValue
 from .trading_validation import MarketOrderTypeInput, OrderTypeInput
-from ..utils.mt5 import ensure_mt5_connection_or_raise
 
 def _compact_sl_tp_levels(
     *,
@@ -77,19 +76,6 @@ def _send_order_with_comment_fallback(
     return trading_comments._send_order_with_comment_fallback(mt5, request)
 
 
-def _candidate_fill_modes(mt5: Any) -> List[int]:
-    fill_modes: List[int] = []
-    for fill_attr, default in (
-        ("ORDER_FILLING_IOC", 1),
-        ("ORDER_FILLING_FOK", 0),
-        ("ORDER_FILLING_RETURN", 2),
-    ):
-        fill_mode = trading_validation._safe_int_attr(mt5, fill_attr, default)
-        if fill_mode not in fill_modes:
-            fill_modes.append(fill_mode)
-    return fill_modes or [1, 0, 2]
-
-
 def _send_order_with_fill_mode_retry(
     mt5: Any,
     request: Dict[str, Any],
@@ -100,7 +86,7 @@ def _send_order_with_fill_mode_retry(
     last_error = None
     last_request = dict(request)
     done_code = trading_validation._safe_int_attr(mt5, "TRADE_RETCODE_DONE", 10009)
-    for fill_mode in _candidate_fill_modes(mt5):
+    for fill_mode in trading_validation._candidate_fill_modes(mt5):
         attempt_request = dict(request)
         attempt_request["type_filling"] = int(fill_mode)
         result, comment_fallback, last_error = _send_order_with_comment_fallback(mt5, attempt_request)

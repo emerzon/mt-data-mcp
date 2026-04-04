@@ -7,7 +7,6 @@ from typing import Any, Dict, Literal, Optional, Tuple, Union
 
 from .trading_gateway import MT5TradingGateway, create_trading_gateway, trading_connection_error
 from ..utils.utils import _coerce_finite_float, _coerce_scalar
-from ..utils.mt5 import ensure_mt5_connection_or_raise
 
 
 MarketOrderTypeLiteral = Literal["BUY", "SELL"]
@@ -185,6 +184,20 @@ def _safe_int_attr(obj: Any, name: str, default: int) -> int:
     if not math.isfinite(numeric) or not numeric.is_integer():
         return default
     return int(numeric)
+
+
+def _candidate_fill_modes(mt5: Any) -> list[int]:
+    """Return deduplicated fill-mode candidates with stable MT5-compatible fallbacks."""
+    fill_modes: list[int] = []
+    for fill_attr, default in (
+        ("ORDER_FILLING_IOC", 1),
+        ("ORDER_FILLING_FOK", 0),
+        ("ORDER_FILLING_RETURN", 2),
+    ):
+        fill_mode = _safe_int_attr(mt5, fill_attr, default)
+        if fill_mode not in fill_modes:
+            fill_modes.append(fill_mode)
+    return fill_modes or [1, 0, 2]
 
 
 def _safe_last_error(mt5: Any) -> Any:
