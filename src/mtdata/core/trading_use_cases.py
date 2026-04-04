@@ -49,6 +49,7 @@ def _resolve_trade_risk_direction(
     direction: Any,
     entry: float,
     stop_loss: float,
+    take_profit: float | None = None,
 ) -> tuple[str | None, str | None, str]:
     direction_text = str(direction).strip() if direction is not None else ""
     if direction_text:
@@ -58,9 +59,15 @@ def _resolve_trade_risk_direction(
         return "long", None, "inferred_from_stop_loss"
     if stop_loss > entry:
         return "short", None, "inferred_from_stop_loss"
+    if take_profit is not None:
+        if take_profit > entry:
+            return "long", None, "inferred_from_take_profit"
+        if take_profit < entry:
+            return "short", None, "inferred_from_take_profit"
     return (
         None,
-        "Unable to infer trade direction when proposed_sl equals proposed_entry. "
+        "Unable to infer trade direction when proposed_sl equals proposed_entry "
+        "and proposed_tp is missing or also equals proposed_entry. "
         "Provide direction='long' or direction='short'.",
         "inferred_from_stop_loss",
     )
@@ -74,12 +81,12 @@ def _validate_trade_risk_levels(
     take_profit: float | None,
 ) -> str | None:
     if direction == "long":
-        if stop_loss >= entry:
+        if stop_loss > entry:
             return "For long trades, proposed_sl must be below proposed_entry."
         if take_profit is not None and take_profit <= entry:
             return "For long trades, proposed_tp must be above proposed_entry."
         return None
-    if stop_loss <= entry:
+    if stop_loss < entry:
         return "For short trades, proposed_sl must be above proposed_entry."
     if take_profit is not None and take_profit >= entry:
         return "For short trades, proposed_tp must be below proposed_entry."
@@ -1264,6 +1271,9 @@ def run_trade_risk_analyze(
                     direction=request.direction,
                     entry=float(request.proposed_entry),
                     stop_loss=float(request.proposed_sl),
+                    take_profit=float(request.proposed_tp)
+                    if request.proposed_tp is not None
+                    else None,
                 )
                 if direction_error or direction_norm is None:
                     result["position_sizing_error"] = (
@@ -1318,6 +1328,10 @@ def run_trade_risk_analyze(
                     if direction_source == "inferred_from_stop_loss":
                         sizing_notes.append(
                             "Direction was inferred from stop-loss placement."
+                        )
+                    elif direction_source == "inferred_from_take_profit":
+                        sizing_notes.append(
+                            "Direction was inferred from take-profit placement because stop-loss matched entry."
                         )
 
                     step_txt = f"{volume_step:.10f}".rstrip("0")
