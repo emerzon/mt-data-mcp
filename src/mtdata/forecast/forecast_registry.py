@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Tuple
 from functools import lru_cache
 import importlib as _importlib
 import importlib.util as _importlib_util
+import sys
 
 from .registry import ForecastRegistry
 
@@ -17,6 +18,32 @@ DEFAULT_METHOD_SUPPORTS: Dict[str, bool] = {
     "volatility": False,
     "ci": False,
 }
+
+_FORECAST_METHOD_MODULES = (
+    "classical",
+    "ets_arima",
+    "statsforecast",
+    "mlforecast",
+    "pretrained",
+    "neural",
+    "sktime",
+    "gluonts_extra",
+    "analog",
+    "ensemble",
+    "monte_carlo",
+)
+_PYTHON_314_PLUS = sys.version_info >= (3, 14)
+_GLUONTS_EXTRA_METHODS = {
+    "gt_deepar",
+    "gt_sfeedforward",
+    "gt_prophet",
+    "gt_tft",
+    "gt_wavenet",
+    "gt_deepnpts",
+    "gt_mqf2",
+    "gt_npts",
+}
+_GLUONTS_PYTHON_RUNTIME_REQUIREMENT = "Python < 3.14 (GluonTS methods are unsupported in this project)"
 
 # Import availability checkers
 try:
@@ -177,6 +204,9 @@ def _check_requirements(method: str, requires: List[str]) -> Tuple[bool, List[st
         available = False; reqs.append("lag-llama, gluonts, torch")
     if method == "sktime" and not _SKTIME_AVAILABLE:
         available = False; reqs.append("sktime")
+    if method in _GLUONTS_EXTRA_METHODS and _PYTHON_314_PLUS:
+        available = False
+        reqs.append(_GLUONTS_PYTHON_RUNTIME_REQUIREMENT)
 
     module_name_overrides = {
         "scikit-learn": "sklearn",
@@ -188,6 +218,8 @@ def _check_requirements(method: str, requires: List[str]) -> Tuple[bool, List[st
     for req in list(reqs):
         name = str(req).strip()
         if not name:
+            continue
+        if name.lower().startswith("python "):
             continue
         for sep in (">=", "==", "<=", "~=", ">", "<"):
             if sep in name:
@@ -205,20 +237,12 @@ def _check_requirements(method: str, requires: List[str]) -> Tuple[bool, List[st
 
 def _ensure_registry_loaded() -> None:
     """Ensure ForecastRegistry is populated by importing method modules."""
-    try:
-        from .methods import classical  # noqa: F401
-        from .methods import ets_arima  # noqa: F401
-        from .methods import statsforecast  # noqa: F401
-        from .methods import mlforecast  # noqa: F401
-        from .methods import pretrained  # noqa: F401
-        from .methods import neural  # noqa: F401
-        from .methods import sktime  # noqa: F401
-        from .methods import gluonts_extra  # noqa: F401
-        from .methods import analog  # noqa: F401
-        from .methods import ensemble  # noqa: F401
-        from .methods import monte_carlo  # noqa: F401
-    except Exception:
-        pass
+    base_package = f"{__package__}.methods"
+    for module_name in _FORECAST_METHOD_MODULES:
+        try:
+            _importlib.import_module(f"{base_package}.{module_name}")
+        except Exception:
+            continue
 
 
 def _ensemble_metadata() -> Dict[str, Any]:

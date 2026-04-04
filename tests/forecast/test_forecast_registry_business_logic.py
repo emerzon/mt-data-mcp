@@ -53,6 +53,37 @@ def test_check_requirements_marks_chronos_unavailable_on_runtime_mismatch(monkey
     assert "chronos-forecasting>=2.0.0" in reqs
 
 
+def test_check_requirements_marks_gluonts_extra_methods_unsupported_on_python_314(monkeypatch):
+    monkeypatch.setattr(fr, "_PYTHON_314_PLUS", True)
+    monkeypatch.setattr(fr._importlib_util, "find_spec", lambda _name: object())
+
+    available, reqs = fr._check_requirements("gt_deepar", ["gluonts", "torch"])
+
+    assert available is False
+    assert fr._GLUONTS_PYTHON_RUNTIME_REQUIREMENT in reqs
+
+
+def test_ensure_registry_loaded_continues_after_one_module_import_failure(monkeypatch):
+    imported = []
+
+    def fake_import(name):
+        imported.append(name)
+        if name.endswith(".gluonts_extra"):
+            raise ImportError("unsupported runtime")
+        return object()
+
+    monkeypatch.setattr(fr, "_FORECAST_METHOD_MODULES", ("classical", "gluonts_extra", "analog"))
+    monkeypatch.setattr(fr._importlib, "import_module", fake_import)
+
+    fr._ensure_registry_loaded()
+
+    assert imported == [
+        "mtdata.forecast.methods.classical",
+        "mtdata.forecast.methods.gluonts_extra",
+        "mtdata.forecast.methods.analog",
+    ]
+
+
 def test_get_forecast_methods_data_assembles_categories_and_skips_broken(monkeypatch):
     class GoodMethod:
         """Good method summary."""
