@@ -69,7 +69,7 @@ def _resolve_trade_risk_direction(
         "Unable to infer trade direction when proposed_sl equals proposed_entry "
         "and proposed_tp is missing or also equals proposed_entry. "
         "Provide direction='long' or direction='short'.",
-        "inferred_from_stop_loss",
+        "unable_to_infer",
     )
 
 
