@@ -13,6 +13,7 @@ import pytest
 # Imports under test
 # ---------------------------------------------------------------------------
 from mtdata.forecast.common import (
+    build_ci_diagnostics,
     edge_pad_to_length,
     log_returns_from_prices,
     _normalize_weights,
@@ -41,6 +42,22 @@ from mtdata.forecast.forecast_preprocessing import (
 )
 
 RS = np.random.RandomState(42)
+
+
+# ===================================================================
+# 0. build_ci_diagnostics
+# ===================================================================
+class TestBuildCiDiagnostics:
+    def test_preserves_explicit_empty_interval_columns(self):
+        result = build_ci_diagnostics(
+            provider="statsforecast",
+            requested=True,
+            available=False,
+            status="missing",
+            interval_columns=[],
+        )
+
+        assert result["diagnostics"]["ci"]["interval_columns"] == []
 
 
 # ===================================================================

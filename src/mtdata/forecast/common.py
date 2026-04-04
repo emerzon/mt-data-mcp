@@ -64,7 +64,7 @@ def build_ci_diagnostics(
         ci_diag["error"] = str(error)
     if error_type:
         ci_diag["error_type"] = str(error_type)
-    if interval_columns:
+    if interval_columns is not None:
         ci_diag["interval_columns"] = [str(col) for col in interval_columns]
     return {"diagnostics": {"ci": ci_diag}}
 
