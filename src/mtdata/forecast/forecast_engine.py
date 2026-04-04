@@ -24,6 +24,7 @@ from ..utils.utils import (
     parse_kv_or_json as _parse_kv_or_json,
 )
 from . import forecast_preprocessing as _forecast_preprocessing
+from .common import _normalize_weights as _normalize_weights_impl
 from .common import (
     default_seasonality,
     fetch_history as _fetch_history,
@@ -76,6 +77,7 @@ _ENSEMBLE_BASE_METHODS = (
 )
 
 logger = logging.getLogger(__name__)
+_normalize_weights = _normalize_weights_impl
 
 
 def _build_ensemble_dispatch_error(method_name: str, exc: BaseException) -> Dict[str, Any]:
@@ -145,29 +147,6 @@ def _append_ensemble_failure(
     failures.append(payload)
 
 
-def _normalize_weights(weights: Any, size: int) -> Optional[np.ndarray]:
-    if weights is None:
-        return None
-    vals: List[float] = []
-    if isinstance(weights, (list, tuple)):
-        vals = [float(v) for v in list(weights)[:size]]
-    elif isinstance(weights, str):
-        parts = [p.strip() for p in weights.split(',') if p.strip()]
-        vals = [float(p) for p in parts[:size]]
-    else:
-        return None
-    if len(vals) != size:
-        return None
-    arr = np.asarray(vals, dtype=float)
-    if not np.all(np.isfinite(arr)):
-        return None
-    arr = np.clip(arr, a_min=0.0, a_max=None)
-    total = float(np.sum(arr))
-    if total <= 0:
-        return None
-    return arr / total
-
-
 def _ensemble_dispatch_method_impl(
     method_name: str,
     series: pd.Series,
@@ -185,8 +164,6 @@ def _ensemble_dispatch_method_impl(
         return res.forecast, None
     except Exception as ex:
         return None, _build_ensemble_dispatch_error(m, ex)
-
-
 def _ensemble_dispatch_method(
     method_name: str,
     series: pd.Series,

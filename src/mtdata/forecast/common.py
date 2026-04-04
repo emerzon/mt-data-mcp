@@ -31,6 +31,44 @@ def edge_pad_to_length(values: np.ndarray, length: int) -> np.ndarray:
     return np.pad(vals, (0, target - vals.size), mode='edge').astype(float, copy=False)
 
 
+def build_ci_diagnostics(
+    *,
+    provider: str,
+    requested: bool,
+    available: bool,
+    status: str,
+    alpha: Optional[float] = None,
+    coverage: Optional[float] = None,
+    level: Optional[int] = None,
+    warning: Optional[str] = None,
+    error: Optional[str] = None,
+    error_type: Optional[str] = None,
+    interval_columns: Optional[List[Any]] = None,
+) -> Dict[str, Any]:
+    """Build standardized CI diagnostics metadata for forecast method results."""
+    ci_diag: Dict[str, Any] = {
+        "provider": str(provider),
+        "requested": bool(requested),
+        "available": bool(available),
+        "status": str(status),
+    }
+    if alpha is not None:
+        ci_diag["alpha"] = float(alpha)
+    if coverage is not None:
+        ci_diag["coverage"] = float(coverage)
+    if level is not None:
+        ci_diag["level"] = int(level)
+    if warning:
+        ci_diag["warning"] = str(warning)
+    if error:
+        ci_diag["error"] = str(error)
+    if error_type:
+        ci_diag["error_type"] = str(error_type)
+    if interval_columns is not None:
+        ci_diag["interval_columns"] = [str(col) for col in interval_columns]
+    return {"diagnostics": {"ci": ci_diag}}
+
+
 def log_returns_from_prices(prices: np.ndarray, eps: float = 1e-12) -> np.ndarray:
     """Compute consecutive log-returns from a price array."""
     arr = np.asarray(prices, dtype=float).ravel()
@@ -39,6 +77,29 @@ def log_returns_from_prices(prices: np.ndarray, eps: float = 1e-12) -> np.ndarra
     with np.errstate(divide='ignore', invalid='ignore'):
         rets = np.diff(np.log(np.clip(arr, float(eps), None)))
     return np.asarray(rets, dtype=float)
+
+
+def _normalize_weights(weights: Any, size: int) -> Optional[np.ndarray]:
+    if weights is None:
+        return None
+    vals: List[float] = []
+    if isinstance(weights, (list, tuple)):
+        vals = [float(v) for v in list(weights)[:size]]
+    elif isinstance(weights, str):
+        parts = [p.strip() for p in weights.split(",") if p.strip()]
+        vals = [float(p) for p in parts[:size]]
+    else:
+        return None
+    if len(vals) != size:
+        return None
+    arr = np.asarray(vals, dtype=float)
+    if not np.all(np.isfinite(arr)):
+        return None
+    arr = np.clip(arr, a_min=0.0, a_max=None)
+    total = float(np.sum(arr))
+    if total <= 0:
+        return None
+    return arr / total
 
 
 def _extract_forecast_values(Yf: Any, fh: int, method_name: str = "forecast") -> "np.ndarray":

@@ -328,6 +328,15 @@ class TestBarrierStats(unittest.TestCase):
         self.assertLess(result['power'], 0.5)
         self.assertIn('min_n_for_80_power', result)
         self.assertGreater(result['min_n_for_80_power'], 100)
+
+    def test_statistical_power_analysis_invalid_base_prob_returns_error(self):
+        result = statistical_power_analysis(
+            base_prob=1.0,
+            effect_size=0.05,
+            n_sims=100,
+        )
+
+        self.assertEqual(result, {"error": "base_prob must be in (0, 1)"})
     
     def test_ensemble_ci_from_multiple_methods(self):
         """Test ensemble confidence interval combination."""

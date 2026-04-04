@@ -491,6 +491,58 @@ def test_merge_market_ticks_dedupes_rows_with_missing_volume_fields() -> None:
     assert len(merged) == 1
 
 
+def test_merge_market_ticks_keeps_older_existing_keys_in_seen_set(monkeypatch) -> None:
+    monkeypatch.setattr(wait_events_mod, "_MARKET_BUFFER_EXTRA_TICKS", 1)
+
+    existing = wait_events_mod._normalize_tick_rows(
+        [
+            {
+                "time": 100.0,
+                "time_msc": 100000,
+                "bid": 1.1,
+                "ask": 1.2,
+                "last": 1.15,
+            },
+            {
+                "time": 101.0,
+                "time_msc": 101000,
+                "bid": 1.11,
+                "ask": 1.21,
+                "last": 1.16,
+            },
+            {
+                "time": 102.0,
+                "time_msc": 102000,
+                "bid": 1.12,
+                "ask": 1.22,
+                "last": 1.17,
+            },
+        ]
+    )
+    incoming = wait_events_mod._normalize_tick_rows(
+        [
+            {
+                "time": 100.0,
+                "time_msc": 100000,
+                "bid": 1.1,
+                "ask": 1.2,
+                "last": 1.15,
+            },
+            {
+                "time": 103.0,
+                "time_msc": 103000,
+                "bid": 1.13,
+                "ask": 1.23,
+                "last": 1.18,
+            },
+        ]
+    )
+
+    merged = wait_events_mod._merge_market_ticks(existing, incoming)
+
+    assert [tick["time_msc"] for tick in merged] == [100000, 101000, 102000, 103000]
+
+
 def test_run_wait_event_uses_timeframe_as_boundary_when_watchers_are_inferred(monkeypatch) -> None:
     monkeypatch.setattr(
         "mtdata.core.wait_events._next_candle_wait_payload",
