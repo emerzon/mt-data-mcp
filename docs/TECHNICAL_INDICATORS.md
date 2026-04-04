@@ -66,8 +66,8 @@ Show direction and dynamic support/resistance levels.
 
 | Indicator | Description | Example |
 |-----------|-------------|---------|
-| `ema` | Exponential Moving Average | `ema(20)` |
-| `sma` | Simple Moving Average | `sma(50)` |
+| `ema` | Exponential Moving Average (default: 10) | `ema(20)` |
+| `sma` | Simple Moving Average (default: 10) | `sma(50)` |
 | `dema` | Double EMA | `dema(20)` |
 | `tema` | Triple EMA | `tema(20)` |
 | `wma` | Weighted Moving Average | `wma(20)` |
@@ -93,7 +93,7 @@ Measure speed and strength of price changes.
 
 | Indicator | Description | Example |
 |-----------|-------------|---------|
-| `rsi` | Relative Strength Index | `rsi(14)` |
+| `rsi` | Relative Strength Index (default: 14) | `rsi(14)` |
 | `macd` | Moving Average Convergence Divergence | `macd(12,26,9)` |
 | `stoch` | Stochastic Oscillator | `stoch(14,3,3)` |
 | `cci` | Commodity Channel Index | `cci(20)` |
@@ -118,8 +118,8 @@ Measure price movement magnitude.
 
 | Indicator | Description | Example |
 |-----------|-------------|---------|
-| `atr` | Average True Range | `atr(14)` |
-| `natr` | Normalized ATR | `natr(14)` |
+| `atr` | Average True Range (default: 14) | `atr(14)` |
+| `natr` | Normalized ATR (default: 14) | `natr(14)` |
 | `bbands` | Bollinger Bands width | `bbands(20,2)` |
 | `kc` | Keltner Channels | `kc(20,2)` |
 | `donchian` | Donchian Channels | `donchian(20)` |
@@ -142,6 +142,15 @@ Analyze trading activity and participation.
 | `vwap` | Volume Weighted Avg Price | `vwap` |
 
 **Note:** Volume indicators are most useful for instruments with reliable volume data (equities, futures). Forex volume is typically indicative only.
+
+### Additional Categories
+
+The indicator engine (via pandas_ta) supports additional categories beyond the four above:
+- **candles** — candlestick pattern indicators (e.g. `cdl_doji`, `cdl_hammer`)
+- **performance** — return and cumulative performance metrics
+- **statistics** — statistical measures (e.g. `zscore`, `variance`, `kurtosis`)
+
+Use `mtdata-cli indicators_list --category <name>` to explore them.
 
 ---
 

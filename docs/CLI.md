@@ -149,8 +149,10 @@ mtdata-cli data_fetch_candles EURUSD --start "2025-12-01" --end "2025-12-31"
 | `symbols_top_markets` | Rank the top MT5 markets by spread, recent volume, or recent price change |
 | `data_fetch_candles` | Fetch OHLCV candles with optional indicators |
 | `data_fetch_ticks` | Fetch tick data |
-| `market_depth_fetch` | Get order book (DOM) |
+| `market_depth_fetch` | Get order book (DOM) — requires `MTDATA_ENABLE_MARKET_DEPTH_FETCH=1` |
 | `market_ticker` | Get current bid/ask/spread snapshot |
+| `market_status` | Get market trading hours and session status |
+| `wait_event` | Stream real-time market events |
 
 ### Forecasting
 | Command | Description |
@@ -179,6 +181,7 @@ mtdata-cli data_fetch_candles EURUSD --start "2025-12-01" --end "2025-12-31"
 | `indicators_describe` | Get indicator details |
 | `patterns_detect` | Detect candlestick/chart patterns |
 | `pivot_compute_points` | Calculate pivot levels |
+| `support_resistance_levels` | Compute support and resistance levels |
 | `causal_discover_signals` | Granger-style causal discovery between symbols |
 
 ### Trading
@@ -192,6 +195,13 @@ mtdata-cli data_fetch_candles EURUSD --start "2025-12-01" --end "2025-12-31"
 | `trade_get_pending` | Get pending orders |
 | `trade_history` | Get trading history |
 | `trade_risk_analyze` | Analyze position risk |
+
+### News
+| Command | Description |
+|---------|-------------|
+| `news` | Unified news feed from multiple sources |
+| `mt5_news` | News from MT5 terminal |
+| `mt5_news_categories` | List MT5 news categories |
 
 ### Reports
 | Command | Description |

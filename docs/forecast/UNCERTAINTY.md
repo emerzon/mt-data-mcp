@@ -65,7 +65,7 @@ Conformal prediction calibrates intervals from rolling backtest residuals, makin
 
 ```bash
 mtdata-cli forecast_conformal_intervals EURUSD --timeframe H1 \
-  --method theta --horizon 12 --steps 25 --spacing 10 --alpha 0.1 --json
+  --method theta --horizon 12 --steps 25 --spacing 10 --ci-alpha 0.1 --json
 ```
 
 **Parameters:**
@@ -75,7 +75,7 @@ mtdata-cli forecast_conformal_intervals EURUSD --timeframe H1 \
 | `--horizon` | Forecast horizon | 12 |
 | `--steps` | Number of backtest points | 25 |
 | `--spacing` | Bars between backtest points | 10 |
-| `--alpha` | Miscoverage rate (0.1 = 90% interval) | 0.1 |
+| `--ci-alpha` | Miscoverage rate (0.1 = 90% interval) | 0.1 |
 
 ### Output
 
@@ -156,7 +156,7 @@ Use conformal intervals instead of model CIs:
 
 ```bash
 # Get conformal intervals
-mtdata-cli forecast_conformal_intervals EURUSD --horizon 12 --alpha 0.1
+mtdata-cli forecast_conformal_intervals EURUSD --horizon 12 --ci-alpha 0.1
 
 # Use lower_price as stop-loss floor
 # Size position so max loss (if lower_price is hit) is within risk budget

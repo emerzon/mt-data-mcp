@@ -54,7 +54,7 @@ mtdata-cli forecast_backtest_run EURUSD --timeframe H1 --horizon 12 \
 
 ```bash
 mtdata-cli forecast_backtest_run EURUSD --timeframe H1 --horizon 12 \
-  --methods theta --params "seasonality=24" --steps 30
+  --methods theta --params "alpha=0.3" --steps 30
 ```
 
 ### Volatility Backtest
@@ -94,7 +94,7 @@ mtdata-cli forecast_backtest_run <SYMBOL> [OPTIONS]
 ```bash
 mtdata-cli forecast_backtest_run EURUSD --horizon 12 \
   --methods "theta arima" \
-  --params-per-method '{"theta": {"seasonality": 24}, "arima": {"p": 2, "d": 1, "q": 2}}'
+  --params-per-method '{"theta": {"alpha": 0.3}, "arima": {"p": 2, "d": 1, "q": 2}}'
 ```
 
 ### Quantity
@@ -296,10 +296,10 @@ mtdata-cli forecast_tune_genetic EURUSD --timeframe H1 --method theta \
 | `--method` | (required) | Method to optimize |
 | `--metric` | `avg_rmse` | Metric to optimize |
 | `--mode` | `min` | `min` to minimize, `max` to maximize |
-| `--population` | 20 | Population size per generation |
+| `--population` | 12 | Population size per generation |
 | `--generations` | 10 | Number of generations |
-| `--crossover-rate` | 0.7 | Probability of crossover |
-| `--mutation-rate` | 0.2 | Probability of mutation |
+| `--crossover-rate` | 0.6 | Probability of crossover |
+| `--mutation-rate` | 0.3 | Probability of mutation |
 | `--seed` | None | Random seed for reproducibility |
 
 ### Available Metrics
@@ -341,7 +341,7 @@ Each method has sensible defaults. Examples:
 
 | Method | Parameters Searched |
 |--------|-------------------|
-| `theta` | seasonality (8-72) |
+| `theta` | alpha (0.05-0.5) |
 | `arima` | p (0-3), d (0-2), q (0-3) |
 | `fourier_ols` | m (8-96), K (1-6), trend (true/false) |
 | `sf_autoarima` | seasonality, stepwise, d, D |
@@ -369,15 +369,15 @@ mtdata-cli forecast_backtest_run EURUSD --timeframe M5 --horizon 6 \
 ### Example 2: Optimize Theta for Swing Trading
 
 ```bash
-# Step 1: Find optimal seasonality
+# Step 1: Find optimal alpha
 mtdata-cli forecast_tune_genetic EURUSD --timeframe H4 --method theta \
   --horizon 48 --steps 30 --spacing 24 \
   --metric sharpe_ratio --mode max \
-  --population 30 --generations 15
+  --population 20 --generations 15
 
 # Step 2: Backtest with optimal params
 mtdata-cli forecast_backtest_run EURUSD --timeframe H4 --horizon 48 \
-  --methods theta --params "seasonality=36" \
+  --methods theta --params "alpha=0.25" \
   --steps 50 --slippage-bps 2
 ```
 

@@ -88,7 +88,7 @@ Calibrate per‑step residual quantiles via rolling backtest; then get point + c
 
 ```bash
 mtdata-cli forecast_conformal_intervals EURUSD --timeframe H1 --method fourier_ols \
-  --horizon 12 --steps 25 --spacing 10 --alpha 0.1 --json
+  --horizon 12 --steps 25 --spacing 10 --ci-alpha 0.1 --json
 ```
 
 - Use `lower_price`/`upper_price` (conformal), not model CIs, for entry gating and sizing.

@@ -100,6 +100,7 @@ New here? Follow this learning path:
 - **[End-to-End Example](docs/EXAMPLE.md)** — Complete research loop with all tools
 
 ### Reference
+- **[Environment Variables](docs/ENV_VARS.md)** — Complete `.env` reference (MT5, MCP, Web API, GPU, etc.)
 - **[Web API](docs/WEB_API.md)** — REST endpoints for the Web UI and integrations
 - **[Troubleshooting](docs/TROUBLESHOOTING.md)** — Common issues and fixes
 
@@ -111,18 +112,22 @@ Create a `.env` file in the project root:
 MT5_LOGIN=12345678
 MT5_PASSWORD=your_password
 MT5_SERVER=your_broker_server
-MT5_TIME_OFFSET_MINUTES=0  # Adjust if broker server time differs from UTC
+MT5_SERVER_TZ=Europe/Athens   # Or use MT5_TIME_OFFSET_MINUTES=120
 ```
+
+mtdata reads 40+ environment variables covering MT5 connection, timezone, MCP/Web API server settings, news embeddings, Finviz tuning, GPU acceleration, and more. See **[Environment Variables Reference](docs/ENV_VARS.md)** for the full list and a starter `.env` template.
 
 ## Architecture
 
 ```
 mtdata/
 ├── src/mtdata/
-│   ├── core/           # Tool registry, schemas, server logic, all 52 MCP tools
+│   ├── bootstrap/      # Runtime startup, settings, tool loading
+│   ├── core/           # Tool registry, schemas, server logic, all 57 MCP tools
 │   ├── forecast/       # Forecasting methods, engines, and method registry
 │   ├── patterns/       # Pattern detection algorithms
 │   ├── services/       # MT5 data access, Finviz, options data
+│   ├── shared/         # Shared constants, schemas, validators
 │   └── utils/          # Shared utilities (indicators, denoising, etc.)
 ├── webui/              # React + Vite frontend
 ├── docs/               # Documentation

@@ -48,8 +48,8 @@ mtdata-cli forecast_list_methods
 
 | Category | Models | When to Use |
 |----------|--------|-------------|
-| **Classical** | `theta`, `naive`, `ses`, `holt`, `arima` | Fast baselines, short horizons |
-| **Seasonal** | `seasonal_naive`, `ets`, `holt_winters_add`, `fourier_ols` | Data with recurring patterns |
+| **Classical** | `theta`, `naive`, `drift`, `ses`, `holt`, `arima` | Fast baselines, short horizons |
+| **Seasonal** | `seasonal_naive`, `ets`, `holt_winters_add`, `holt_winters_mul`, `sarima`, `fourier_ols` | Data with recurring patterns |
 | **Statistical** | `sf_autoarima`, `sf_autoets`, `sf_autotheta` | Auto-tuning, medium horizons |
 | **ML-Based** | `mlf_lightgbm`, `mlf_rf` | Non-linear patterns, feature engineering |
 | **Neural** | `nhits`, `tft`, `patchtst`, `nbeatsx` | Deep learning, long horizons (requires neuralforecast) |

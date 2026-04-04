@@ -19,6 +19,7 @@ Safety note: `trade_*` commands can place/modify/close real orders on the accoun
 | Document | Description |
 |----------|-------------|
 | [SETUP.md](SETUP.md) | Installation, MT5 connection, environment variables |
+| [ENV_VARS.md](ENV_VARS.md) | Complete `.env` reference (MT5, MCP, Web API, GPU, etc.) |
 | [CLI.md](CLI.md) | Command conventions, output formats, help system |
 | [GLOSSARY.md](GLOSSARY.md) | **Start here** — Explanations of all technical terms |
 

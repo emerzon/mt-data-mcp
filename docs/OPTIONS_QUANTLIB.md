@@ -91,7 +91,7 @@ mtdata-cli forecast_quantlib_barrier_price \
 | `down_in` | Option activates when price falls through barrier |
 | `down_out` | Option deactivates when price falls through barrier |
 
-**Returns:** Option price and Greeks (delta, gamma, theta, vega, rho).
+**Returns:** Option price and Greeks (delta, gamma, vega).
 
 ---
 

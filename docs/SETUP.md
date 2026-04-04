@@ -4,6 +4,7 @@ Installation and configuration guide for mtdata.
 
 **Related:**
 - [README.md](../README.md) — Project overview
+- [ENV_VARS.md](ENV_VARS.md) — Complete environment variables reference
 - [CLI.md](CLI.md) — Command usage
 - [TROUBLESHOOTING.md](TROUBLESHOOTING.md) — Common issues
 
@@ -49,6 +50,10 @@ The base package is intentionally lean. Install extras as needed:
   `pip install -e .[web]`
 - Experimental pattern engines:
   `pip install -e .[patterns-ext]`
+- News embeddings (semantic reranking):
+  `pip install -e .[news-embeddings]`
+- CNBC news source:
+  `pip install -e .[news-ycnbc]`
 - Everything:
   `pip install -e .[all]`
 
@@ -116,6 +121,8 @@ If you don't see symbols (or you get a connection error):
 ---
 
 ## Environment Variables
+
+> **Full reference:** [ENV_VARS.md](ENV_VARS.md) documents all 40+ environment variables (MCP server, Web API, news embeddings, Finviz, GPU, market depth, CLI debug, and more) with a starter `.env` template.
 
 Create a `.env` file in the project root for configuration:
 
@@ -271,10 +278,12 @@ mtdata/
 ├── pyproject.toml      # Package configuration
 ├── .env                # Local configuration (create this)
 ├── src/mtdata/
-│   ├── core/           # Tool registry, server, CLI logic, all 52 MCP tools
+│   ├── bootstrap/      # Runtime startup, settings, tool loading
+│   ├── core/           # Tool registry, server, CLI logic, all 57 MCP tools
 │   ├── forecast/       # Forecasting methods
 │   ├── patterns/       # Pattern detection
 │   ├── services/       # MT5 data access, Finviz, options data
+│   ├── shared/         # Shared constants, schemas, validators
 │   └── utils/          # Shared utilities
 ├── webui/              # React frontend
 ├── docs/               # Documentation

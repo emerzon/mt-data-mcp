@@ -53,7 +53,7 @@ The language is kept simple so anyone with a basic interest in trading can follo
 
 | Tool | Call | Why we used it |
 |------|------|----------------|
-| **`forecast_generate`** | `symbol=EURUSD`, `timeframe=H1`, `library=native`, `model=theta`, `horizon=12`, `quantity=price` | <ul><li>The **Theta** method is a fast, reliable forecasting model that works well on short‑term series.</li><li>We ask for a **price forecast** (not returns) for the next 12 hourly bars.</li></ul> |
+| **`forecast_generate`** | `symbol=EURUSD`, `timeframe=H1`, `library=native`, `method=theta`, `horizon=12`, `quantity=price` | <ul><li>The **Theta** method is a fast, reliable forecasting model that works well on short‑term series.</li><li>We ask for a **price forecast** (not returns) for the next 12 hourly bars.</li></ul> |
 | **Result** | JSON with: <br>‑ Forecasted price for each of the next 12 hours (≈ 1.17528 → 1.17543). <br>‑ 95 % confidence interval (lower ≈ 1.1717, upper ≈ 1.1789). <br>‑ Trend flag = **up**. | **Interpretation** <br>‑ The model expects a **small pull‑back** toward the pivot (1.1750) before the up‑trend resumes. <br>‑ The confidence band comfortably contains the pivot and the first resistance, confirming the “test‑and‑bounce” picture. |
 
 ---

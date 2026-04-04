@@ -101,7 +101,7 @@ Remove outliers and spikes without excessive smoothing.
 | Method | Description | Parameters |
 |--------|-------------|------------|
 | `median` | Median filter | `window` |
-| `hampel` | Hampel identifier | `window`, `threshold` |
+| `hampel` | Hampel identifier | `window`, `n_sigmas` (default 3.0) |
 
 **Example (spike removal):**
 ```bash
@@ -143,13 +143,27 @@ Automatically adjust smoothing based on data.
 
 | Method | Description | Parameters |
 |--------|-------------|------------|
-| `kalman` | Kalman filter | `transition_cov`, `observation_cov` |
-| `lms` | Least Mean Squares | `mu`, `order` |
-| `rls` | Recursive Least Squares | `delta`, `order` |
+| `kalman` | Kalman filter | `process_var`, `measurement_var` |
+| `lms` | Least Mean Squares | `mu`, `order`, `eps`, `leak` |
+| `rls` | Recursive Least Squares | `delta`, `lambda_`, `order` |
 
 **Example:**
 ```bash
---denoise kalman --denoise-params "transition_cov=0.01"
+--denoise kalman --denoise-params "process_var=0.01"
+```
+
+### Polynomial / Local Regression
+
+Fit local curves to smooth the data.
+
+| Method | Description | Parameters |
+|--------|-------------|------------|
+| `savgol` | Savitzky-Golay smoothing | `window`, `polyorder` |
+| `loess` | Local polynomial regression | `frac`, `it` |
+
+**Example:**
+```bash
+--denoise savgol --denoise-params "window=11,polyorder=3"
 ```
 
 ### Decomposition Methods
@@ -158,15 +172,28 @@ Split into components and reconstruct smoother parts.
 
 | Method | Description | Parameters |
 |--------|-------------|------------|
-| `stl` | Seasonal-Trend decomposition | `period` |
+| `stl` | Seasonal-Trend decomposition | `period`, `component` (default `trend`) |
 | `ssa` | Singular Spectrum Analysis | `window` |
-| `vmd` | Variational Mode Decomposition | `K`, `alpha` |
+| `vmd` | Variational Mode Decomposition | `k`, `alpha` |
 | `wavelet` | Wavelet denoising | `wavelet`, `level` |
+| `wavelet_packet` | Wavelet packet denoising | `wavelet`, `level` |
+| `emd` | Empirical Mode Decomposition | `drop_modes` |
+| `eemd` | Ensemble EMD | `drop_modes`, `noise_width` |
+| `ceemdan` | Complete EEMD with Adaptive Noise | `drop_modes` |
 
 **Example:**
 ```bash
 --denoise wavelet --denoise-params "wavelet=db4,level=3"
 ```
+
+### Kernel / Smoothing Filters
+
+| Method | Description | Parameters |
+|--------|-------------|------------|
+| `gaussian` | Gaussian kernel smoothing | `sigma` |
+| `bilateral` | Bilateral filter (edge-preserving) | `sigma_s`, `sigma_r` |
+| `whittaker` | Whittaker smoother | `lambda` |
+| `beta` | Robust beta smoother | `alpha`, `beta` |
 
 ---
 
@@ -219,7 +246,7 @@ mtdata-cli data_fetch_candles EURUSD --timeframe H1 --limit 500 \
 ### Remove Price Spikes
 ```bash
 mtdata-cli data_fetch_candles EURUSD --timeframe H1 --limit 500 \
-  --denoise hampel --denoise-params "window=7,threshold=3"
+  --denoise hampel --denoise-params "window=7,n_sigmas=3"
 ```
 
 ### Smooth RSI Output
@@ -232,7 +259,7 @@ mtdata-cli data_fetch_candles EURUSD --timeframe H1 --limit 500 \
 ### Kalman Filter (Adaptive)
 ```bash
 mtdata-cli data_fetch_candles EURUSD --timeframe H1 --limit 500 \
-  --denoise kalman --denoise-params "transition_cov=0.01"
+  --denoise kalman --denoise-params "process_var=0.01"
 ```
 
 ---

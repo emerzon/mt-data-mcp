@@ -26,6 +26,8 @@ mtdata-cli forecast_barrier_prob EURUSD --timeframe H1 --horizon 12 \
 
 Look for `prob_tp_first`, `prob_sl_first`, `prob_no_hit`, and `edge` in the output.
 
+**Defaults**: `--method hmm_mc`, `--horizon 12`, `--direction long`.
+
 ### 2) Search for “good” TP/SL levels
 
 ```bash
@@ -77,7 +79,7 @@ where:
 
 **How it works**:
 1. Calibrate μ and σ from historical log-returns
-2. Generate N random paths using the formula above
+2. Generate N random paths using the formula above (with antithetic variance reduction by default for more stable estimates)
 3. Count paths that hit TP first vs SL first
 
 **Strengths**:
@@ -464,6 +466,16 @@ Note: `garch` requires the `arch` package; auto falls back to `heston` if it is 
 
 Searches combinations of TP/SL to maximize an objective function.
 
+**Search Profiles**: Control the compute budget with `--search-profile`:
+
+| Profile | n_sims | n_trials | Grid density | Refine |
+|---------|--------|----------|-------------|--------|
+| `fast` | 1,200 | 24 | 4 × 4 | off |
+| `medium` (default) | 4,000 | 63 | 7 × 9 | off |
+| `long` | 10,000 | 600 | 41 × 51 | on |
+
+Use `--fast-defaults true` as a shortcut for the `fast` profile. Explicit `--n-sims`, `--tp-steps`, etc. override the profile values.
+
 **Grid Styles**:
 
 #### 1. Fixed Grid (`grid_style=fixed`)
@@ -496,7 +508,7 @@ vol_horizon = vol_per_bar * sqrt(horizon)
 vol_pct = vol_horizon * 100
 
 tp_start = max(vol_floor_pct, vol_pct * vol_min_mult)
-tp_end = vol_pct * vol_max_mult
+tp_end = max(tp_start * 1.1, vol_pct * vol_max_mult)
 sl_start = max(vol_floor_pct, vol_pct * vol_min_mult * 0.8)
 sl_end = sl_start * vol_sl_multiplier
 ```

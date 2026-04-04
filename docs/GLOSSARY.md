@@ -126,7 +126,7 @@ A distribution-free method to create prediction intervals. Instead of assuming a
 **Example:**
 ```bash
 mtdata-cli forecast_conformal_intervals EURUSD --timeframe H1 \
-  --method theta --horizon 12 --steps 25 --alpha 0.1
+  --method theta --horizon 12 --steps 25 --ci-alpha 0.1
 ```
 
 ---
@@ -254,7 +254,7 @@ When optimizing TP/SL levels, you must choose what to maximize. Each objective a
 ### Kelly Criterion
 **What it measures:** The optimal fraction of your capital to bet for maximum long-term growth.
 
-**Formula:** `Kelly = P(win) - P(loss) / (TP/SL)`
+**Formula:** `Kelly = P(win) - (P(loss) / (TP/SL))`
 
 **Example:** Kelly = 0.25 means bet 25% of capital per trade for maximum growth.
 
@@ -515,6 +515,22 @@ Two-stage optimization: coarse search, then fine search around the best result.
 Number of best candidates to return from optimization.
 
 **Example:** `--top-k 5` returns the top 5 TP/SL combinations instead of just the best.
+
+---
+
+## Forecast Parameters
+
+### Quantity
+The target variable for a forecast: `price` (raw closing prices), `return` (log returns), or `volatility` (predicted variance). Most users want `price`; use `return` for stationarity or `volatility` for risk sizing.
+
+### CI Alpha
+Miscoverage rate for confidence intervals. `--ci-alpha 0.1` produces a 90% interval; `--ci-alpha 0.05` produces 95%.
+
+### Library
+Selects which forecasting backend to use: `native` (built-in), `statsforecast`, `sktime`, `mlforecast`, or `pretrained` (foundation models like Chronos).
+
+### As-Of Date
+The `--as-of` parameter lets you generate a retrospective forecast as if running at a past point in time. Useful for comparison and auditing.
 
 ---
 
