@@ -651,17 +651,7 @@ def _close_positions(
                             })
                             continue
 
-                fill_modes: List[int] = []
-                for fill_attr in ("ORDER_FILLING_IOC", "ORDER_FILLING_FOK", "ORDER_FILLING_RETURN"):
-                    if hasattr(mt5, fill_attr):
-                        try:
-                            fill_val = int(getattr(mt5, fill_attr))
-                        except Exception:
-                            continue
-                        if fill_val not in fill_modes:
-                            fill_modes.append(fill_val)
-                if not fill_modes:
-                    fill_modes = [1, 0, 2]
+                fill_modes = trading_validation._candidate_fill_modes(mt5)
 
                 result = None
                 request = None

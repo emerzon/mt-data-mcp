@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from typing import Any, Dict, Optional, List
+import logging
 import warnings
 import numpy as np
 import pandas as pd
 
+from ..common import build_ci_diagnostics as _build_ci_diagnostics
 from ..interface import ForecastMethod, ForecastResult
 from ..registry import ForecastRegistry
 
@@ -15,6 +17,7 @@ except Exception:
     _HAS_SKTIME = False
 
 _SKTIME_IMPORT_ERROR = "sktime is not installed; install it to enable sktime-based forecast methods."
+logger = logging.getLogger(__name__)
 
 class SktimeMethod(ForecastMethod):
     """Base class for Sktime methods."""
@@ -133,12 +136,15 @@ class SktimeMethod(ForecastMethod):
                 
             # CI extraction
             ci_values = None
+            metadata: Dict[str, Any] = {}
             ci_alpha = kwargs.get('ci_alpha', params.get('ci_alpha'))
             if ci_alpha is not None:
+                ci_alpha_value: Optional[float] = None
                 try:
                     # sktime predict_interval returns DataFrame with MultiIndex columns (coverage, lower/upper)
                     # coverage is 1 - alpha? No, coverage is e.g. 0.9 for alpha 0.1
-                    coverage = 1.0 - float(ci_alpha)
+                    ci_alpha_value = float(ci_alpha)
+                    coverage = 1.0 - ci_alpha_value
                     intervals = estimator.predict_interval(fh=fh, X=X_future, coverage=coverage)
                     # intervals columns: (var_name, coverage, 'lower'/'upper')
                     # We assume univariate
@@ -152,10 +158,11 @@ class SktimeMethod(ForecastMethod):
                     # Let's try to find them dynamically
                     lo_vals = None
                     hi_vals = None
+                    interval_columns = [str(col) for col in cols]
                     
                     for col in cols:
                         # col is a tuple
-                        if len(col) >= 3:
+                        if isinstance(col, tuple) and len(col) >= 3:
                             cov = col[1]
                             direction = col[2]
                             if abs(cov - coverage) < 1e-6:
@@ -165,15 +172,54 @@ class SktimeMethod(ForecastMethod):
                                     hi_vals = intervals[col].values
                     
                     if lo_vals is not None and hi_vals is not None:
-                         ci_values = (lo_vals.astype(float), hi_vals.astype(float))
-                         
-                except Exception:
-                    pass
+                        ci_values = (lo_vals.astype(float), hi_vals.astype(float))
+                        metadata = _build_ci_diagnostics(
+                            provider=self.name,
+                            requested=True,
+                            available=True,
+                            status="available",
+                            alpha=ci_alpha_value,
+                            coverage=coverage,
+                        )
+                    else:
+                        warning_text = (
+                            f"Sktime {self.name} did not return matching interval columns for coverage "
+                            f"{coverage:g}; returning point forecast only."
+                        )
+                        logger.warning("%s Columns=%s", warning_text, interval_columns)
+                        metadata = _build_ci_diagnostics(
+                            provider=self.name,
+                            requested=True,
+                            available=False,
+                            status="unavailable",
+                            alpha=ci_alpha_value,
+                            coverage=coverage,
+                            warning=warning_text,
+                            interval_columns=interval_columns,
+                        )
+
+                except Exception as ex:
+                    warning_text = (
+                        f"Sktime {self.name} confidence interval extraction failed: {ex}. "
+                        "Returning point forecast only."
+                    )
+                    logger.warning("%s", warning_text)
+                    metadata = _build_ci_diagnostics(
+                        provider=self.name,
+                        requested=True,
+                        available=False,
+                        status="error",
+                        alpha=ci_alpha_value,
+                        warning=warning_text,
+                        error=str(ex),
+                        error_type=type(ex).__name__,
+                    )
 
             return ForecastResult(
                 forecast=f_vals,
                 ci_values=ci_values,
-                params_used={"seasonality": seasonality, **params}
+                params_used={"seasonality": seasonality, **params},
+                metadata=metadata or None,
             )
             
         except Exception as ex:

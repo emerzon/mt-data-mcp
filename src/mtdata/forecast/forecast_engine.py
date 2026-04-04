@@ -11,7 +11,11 @@ from ..bootstrap.settings import mt5_config
 from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..shared.schema import ForecastMethodLiteral, TimeframeLiteral, DenoiseSpec
 from ..shared.validators import invalid_timeframe_error, unsupported_timeframe_seconds_error
-from ..utils.denoise import _apply_denoise, normalize_denoise_spec as _normalize_denoise_spec
+from ..utils.denoise import (
+    _apply_denoise,
+    _consume_denoise_warnings,
+    normalize_denoise_spec as _normalize_denoise_spec,
+)
 from ..utils.mt5 import get_cached_mt5_time_alignment, get_symbol_info_cached
 from ..utils.utils import (
     _format_time_minimal,
@@ -20,6 +24,7 @@ from ..utils.utils import (
     parse_kv_or_json as _parse_kv_or_json,
 )
 from . import forecast_preprocessing as _forecast_preprocessing
+from .common import _normalize_weights as _normalize_weights_impl
 from .common import (
     default_seasonality,
     fetch_history as _fetch_history,
@@ -72,6 +77,7 @@ _ENSEMBLE_BASE_METHODS = (
 )
 
 logger = logging.getLogger(__name__)
+_normalize_weights = _normalize_weights_impl
 
 
 def _build_ensemble_dispatch_error(method_name: str, exc: BaseException) -> Dict[str, Any]:
@@ -141,29 +147,6 @@ def _append_ensemble_failure(
     failures.append(payload)
 
 
-def _normalize_weights(weights: Any, size: int) -> Optional[np.ndarray]:
-    if weights is None:
-        return None
-    vals: List[float] = []
-    if isinstance(weights, (list, tuple)):
-        vals = [float(v) for v in list(weights)[:size]]
-    elif isinstance(weights, str):
-        parts = [p.strip() for p in weights.split(',') if p.strip()]
-        vals = [float(p) for p in parts[:size]]
-    else:
-        return None
-    if len(vals) != size:
-        return None
-    arr = np.asarray(vals, dtype=float)
-    if not np.all(np.isfinite(arr)):
-        return None
-    arr = np.clip(arr, a_min=0.0, a_max=None)
-    total = float(np.sum(arr))
-    if total <= 0:
-        return None
-    return arr / total
-
-
 def _ensemble_dispatch_method_impl(
     method_name: str,
     series: pd.Series,
@@ -181,8 +164,6 @@ def _ensemble_dispatch_method_impl(
         return res.forecast, None
     except Exception as ex:
         return None, _build_ensemble_dispatch_error(m, ex)
-
-
 def _ensemble_dispatch_method(
     method_name: str,
     series: pd.Series,
@@ -807,6 +788,7 @@ def forecast_engine(
             return {"error": str(ex)}
         except Exception as ex:
             return {"error": str(ex)}
+        denoise_warnings = _consume_denoise_warnings(df)
 
         # Track last close for potential price reconstruction
         try:
@@ -958,6 +940,15 @@ def forecast_engine(
                     warnings.append(warning_text)
                 if warnings:
                     result["warnings"] = warnings
+        if denoise_warnings:
+            warnings = result.get("warnings")
+            if not isinstance(warnings, list):
+                warnings = []
+            for warning_text in denoise_warnings:
+                if warning_text not in warnings:
+                    warnings.append(warning_text)
+            if warnings:
+                result["warnings"] = warnings
         if method_l == 'ensemble' and metadata:
             result['ensemble'] = metadata
         return result

@@ -313,6 +313,11 @@ def _ewma_param_explanations(lambda_source: str) -> Dict[str, str]:
     return out
 
 
+def _annualize_horizon_sigma(horizon_sigma_return: float, bars_per_year: float) -> float:
+    """Express the horizon-scaled sigma on the annualized return scale."""
+    return float(horizon_sigma_return * math.sqrt(bars_per_year))
+
+
 def forecast_volatility(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
@@ -512,7 +517,7 @@ def forecast_volatility(
                 "sigma_bar_return": sigma_bar_return,
                 "sigma_annual_return": float(sigma_bar_return * math.sqrt(bpy)),
                 "horizon_sigma_return": horizon_sigma_return,
-                "horizon_sigma_annual": float(horizon_sigma_return * math.sqrt(bpy / max(1, int(horizon)))),
+                "horizon_sigma_annual": _annualize_horizon_sigma(horizon_sigma_return, bpy),
                 "params_used": {
                     "methods": base_methods,
                     "aggregator": aggregator,
@@ -708,8 +713,117 @@ def forecast_volatility(
             bpy = annualization_bars_per_year
             return {"success": True, "symbol": symbol, "timeframe": timeframe, "method": method_l, "proxy": proxy_l,
                     "horizon": int(horizon), "sigma_bar_return": sbar, "sigma_annual_return": float(sbar*math.sqrt(bpy)),
-                    "horizon_sigma_return": hsig, "horizon_sigma_annual": float(hsig*math.sqrt(bpy/max(1,int(horizon)))),
+                    "horizon_sigma_return": hsig, "horizon_sigma_annual": _annualize_horizon_sigma(hsig, bpy),
                     "params_used": p}
+
+        if method_l == 'har_rv':
+            dn_spec_used = None
+            denoise_columns_provided = isinstance(denoise, dict) and 'columns' in denoise
+            if denoise is not None:
+                try:
+                    dn_spec_used = _normalize_denoise_spec(denoise, default_when='pre_ti')
+                except Exception:
+                    dn_spec_used = None
+                if dn_spec_used and not denoise_columns_provided:
+                    dn_spec_used['columns'] = ['open', 'high', 'low', 'close']
+
+            try:
+                rv_tf = str(p.get('rv_timeframe', 'M5')).upper()
+                rv_mt5_tf = TIMEFRAME_MAP.get(rv_tf)
+                if rv_mt5_tf is None:
+                    return {"error": f"Invalid rv_timeframe: {rv_tf}"}
+                days = int(p.get('days', 120))
+                w = int(p.get('window_w', 5))
+                m = int(p.get('window_m', 22))
+                rv_tf_secs = TIMEFRAME_SECONDS.get(rv_tf, 300)
+                bars_needed = int(days * max(1, (86400 // max(1, rv_tf_secs))) + 50)
+                _info_before = mt5.symbol_info(symbol)
+                _was_visible = bool(_info_before.visible) if _info_before is not None else None
+                err = _ensure_symbol_ready(symbol)
+                if err:
+                    return {"error": err}
+                try:
+                    if as_of:
+                        to_dt = _parse_start_datetime(as_of)
+                        if not to_dt:
+                            return {"error": "Invalid as_of time."}
+                        rates_rv = _mt5_copy_rates_from(symbol, rv_mt5_tf, to_dt, bars_needed)
+                    else:
+                        _tick = mt5.symbol_info_tick(symbol)
+                        if _tick is not None and getattr(_tick, 'time', None):
+                            t_utc = _mt5_epoch_to_utc(float(_tick.time))
+                            server_now_dt = datetime.fromtimestamp(t_utc, tz=timezone.utc)
+                        else:
+                            server_now_dt = datetime.now(timezone.utc)
+                        rates_rv = _mt5_copy_rates_from(symbol, rv_mt5_tf, server_now_dt, bars_needed)
+                finally:
+                    if _was_visible is False:
+                        try:
+                            mt5.symbol_select(symbol, False)
+                        except Exception:
+                            pass
+                if rates_rv is None or len(rates_rv) < 50:
+                    return {"error": f"Failed to get intraday rates for RV: {mt5.last_error()}"}
+                dfrv = pd.DataFrame(rates_rv)
+                if as_of is None and len(dfrv) >= 2:
+                    dfrv = dfrv.iloc[:-1]
+                if dn_spec_used:
+                    try:
+                        _apply_denoise(dfrv, dn_spec_used, default_when='pre_ti')
+                    except Exception:
+                        pass
+                c = dfrv['close'].astype(float).to_numpy()
+                if c.size < 10:
+                    return {"error": "Insufficient intraday bars for RV"}
+                rr = _log_returns_from_prices(c)
+                rr = rr[np.isfinite(rr)]
+                dt = pd.to_datetime(dfrv['time'].iloc[1:].astype(float), unit='s', utc=True)
+                days_idx = pd.DatetimeIndex(dt).floor('D')
+                df_r = pd.DataFrame({'day': days_idx, 'r2': rr * rr})
+                daily_rv = df_r.groupby('day')['r2'].sum().astype(float)
+                if len(daily_rv) < max(30, m + 5):
+                    return {"error": "Not enough daily RV observations for HAR-RV"}
+                RV = daily_rv.to_numpy(dtype=float)
+                Dlag = RV[:-1]
+
+                def rmean(arr, k):
+                    s = pd.Series(arr)
+                    return s.rolling(window=k, min_periods=k).mean().to_numpy()
+
+                Wlag_full = rmean(RV, w)
+                Mlag_full = rmean(RV, m)
+                y = RV[1:]
+                Wlag = Wlag_full[:-1]
+                Mlag = Mlag_full[:-1]
+                Xd = Dlag
+                mask = np.isfinite(Xd) & np.isfinite(Wlag) & np.isfinite(Mlag) & np.isfinite(y)
+                X = np.vstack([np.ones_like(Xd[mask]), Xd[mask], Wlag[mask], Mlag[mask]]).T
+                yv = y[mask]
+                if X.shape[0] < 20:
+                    return {"error": "Insufficient samples after alignment for HAR-RV"}
+                beta, *_ = np.linalg.lstsq(X, yv, rcond=None)
+                D_last = RV[-1]
+                W_last = float(pd.Series(RV).tail(w).mean())
+                M_last = float(pd.Series(RV).tail(m).mean())
+                rv_next = float(beta[0] + beta[1]*D_last + beta[2]*W_last + beta[3]*M_last)
+                rv_next = max(0.0, rv_next)
+                tf_secs = TIMEFRAME_SECONDS.get(timeframe)
+                if not tf_secs:
+                    return {"error": unsupported_timeframe_seconds_error(timeframe)}
+                bars_per_day = float(86400.0 / float(tf_secs))
+                sbar = float(math.sqrt(rv_next / bars_per_day))
+                h_days = float(int(horizon)) / bars_per_day
+                hsig = float(math.sqrt(rv_next * max(h_days, 0.0)))
+                bpy = annualization_bars_per_year
+                return {"success": True, "symbol": symbol, "timeframe": timeframe, "method": method_l, "horizon": int(horizon),
+                        "sigma_bar_return": sbar, "sigma_annual_return": float(sbar*math.sqrt(bpy)),
+                        "horizon_sigma_return": hsig, "horizon_sigma_annual": _annualize_horizon_sigma(hsig, bpy),
+                        "params_used": {"rv_timeframe": rv_tf, "window_w": w, "window_m": m,
+                                         "beta": [float(b) for b in beta.tolist()],
+                                         "days": days},
+                        "denoise_used": dn_spec_used}
+            except Exception as ex:
+                return {"error": f"HAR-RV error: {ex}"}
 
         # Direct volatility methods
         # Fetch history sized by method
@@ -799,7 +913,7 @@ def forecast_volatility(
                 params_used["halflife"] = halflife_used
             return {"success": True, "symbol": symbol, "timeframe": timeframe, "method": method_l, "horizon": int(horizon),
                     "sigma_bar_return": sbar, "sigma_annual_return": float(sbar*math.sqrt(bpy)),
-                    "horizon_sigma_return": hsig, "horizon_sigma_annual": float(hsig*math.sqrt(bpy/max(1,int(horizon)))),
+                    "horizon_sigma_return": hsig, "horizon_sigma_annual": _annualize_horizon_sigma(hsig, bpy),
                     "params_used": params_used,
                     "params_explained": _ewma_param_explanations(lambda_source),
                     "denoise_used": dn_spec_used}
@@ -835,7 +949,7 @@ def forecast_volatility(
             hsig = float(sbar * math.sqrt(max(1, int(horizon))))
             return {"success": True, "symbol": symbol, "timeframe": timeframe, "method": method_l, "horizon": int(horizon),
                     "sigma_bar_return": sbar, "sigma_annual_return": float(sbar*math.sqrt(bpy)),
-                    "horizon_sigma_return": hsig, "horizon_sigma_annual": float(hsig*math.sqrt(bpy/max(1,int(horizon)))),
+                    "horizon_sigma_return": hsig, "horizon_sigma_annual": _annualize_horizon_sigma(hsig, bpy),
                     "params_used": {"window": int(window)},
                     "denoise_used": dn_spec_used}
 
@@ -862,7 +976,7 @@ def forecast_volatility(
                 "sigma_bar_return": float(sigma_bar),
                 "sigma_annual_return": float(sigma_bar * math.sqrt(bpy)),
                 "horizon_sigma_return": float(sigma_h),
-                "horizon_sigma_annual": float(sigma_h * math.sqrt(bpy / max(1, int(horizon)))),
+                "horizon_sigma_annual": _annualize_horizon_sigma(float(sigma_h), bpy),
                 "params_used": {"window": int(window), "kernel": kernel, "bandwidth": bandwidth_val},
                 "denoise_used": dn_spec_used,
             }
@@ -902,168 +1016,13 @@ def forecast_volatility(
                     params_used['o'] = int(p.get('o', 1))
                 return {"success": True, "symbol": symbol, "timeframe": timeframe, "method": method_l, "horizon": int(horizon),
                         "sigma_bar_return": sbar, "sigma_annual_return": float(sbar*math.sqrt(bpy)),
-                        "horizon_sigma_return": hsig, "horizon_sigma_annual": float(hsig*math.sqrt(bpy/max(1,int(horizon)))),
+                        "horizon_sigma_return": hsig, "horizon_sigma_annual": _annualize_horizon_sigma(hsig, bpy),
                         "params_used": params_used,
                         "denoise_used": dn_spec_used}
             except Exception as ex:
                 return {"error": f"{method_l} error: {ex}"}
 
-        if method_l != 'har_rv':
-            return {"error": f"Unsupported direct volatility method: {method_l}"}
-
-        # HAR-RV is the only direct method that still uses the legacy second-stage
-        # fetch path before its dedicated intraday RV fetch below.
-        fit_bars = int(p.get('fit_bars', 2000))
-        need = max(fit_bars + 2, 500)
-
-        # Ensure symbol is ready; remember original visibility to restore later
-        _info_before = mt5.symbol_info(symbol)
-        _was_visible = bool(_info_before.visible) if _info_before is not None else None
-        err = _ensure_symbol_ready(symbol)
-        if err:
-            return {"error": err}
-
-        try:
-            # Use explicit as-of time if provided, else server time for alignment
-            if as_of:
-                to_dt = _parse_start_datetime(as_of)
-                if not to_dt:
-                    return {"error": "Invalid as_of_datetime. Try '2025-08-29', '2025-08-29 14:30', 'yesterday 14:00'."}
-                rates = _mt5_copy_rates_from(symbol, mt5_tf, to_dt, need)
-            else:
-                _tick = mt5.symbol_info_tick(symbol)
-                if _tick is not None and getattr(_tick, 'time', None):
-                    t_utc = _mt5_epoch_to_utc(float(_tick.time))
-                    server_now_dt = datetime.fromtimestamp(t_utc, tz=timezone.utc)
-                else:
-                    server_now_dt = datetime.now(timezone.utc)
-                rates = _mt5_copy_rates_from(symbol, mt5_tf, server_now_dt, need)
-        finally:
-            if _was_visible is False:
-                try:
-                    mt5.symbol_select(symbol, False)
-                except Exception:
-                    pass
-
-        if rates is None or len(rates) < 3:
-            return {"error": f"Failed to get sufficient rates for {symbol}: {mt5.last_error()}"}
-
-        df = pd.DataFrame(rates)
-        # Drop forming last bar only when using current 'now' as anchor; keep all for historical as_of
-        if as_of is None and len(df) >= 2:
-            df = df.iloc[:-1]
-        if len(df) < 3:
-            return {"error": "Not enough closed bars to compute volatility"}
-
-        # Optionally denoise relevant columns prior to volatility estimation
-        __stage = 'denoise'
-        if denoise:
-            try:
-                # Default columns by method if user didn't provide
-                _spec = dict(denoise)
-                if 'columns' not in _spec or not _spec.get('columns'):
-                    if method_l in ('ewma', 'garch'):
-                        _spec['columns'] = ['close']
-                    else:  # range-based estimators rely on OHLC
-                        _spec['columns'] = ['open', 'high', 'low', 'close']
-                _apply_denoise(df, _spec, default_when='pre_ti')
-            except Exception:
-                # Fail-safe: ignore denoise errors and proceed with raw data
-                pass
-
-        # HAR-RV on daily realized variance computed from intraday returns
-        try:
-            rv_tf = str(p.get('rv_timeframe', 'M5')).upper()
-            rv_mt5_tf = TIMEFRAME_MAP.get(rv_tf)
-            if rv_mt5_tf is None:
-                return {"error": f"Invalid rv_timeframe: {rv_tf}"}
-            days = int(p.get('days', 120))
-            w = int(p.get('window_w', 5))
-            m = int(p.get('window_m', 22))
-            rv_tf_secs = TIMEFRAME_SECONDS.get(rv_tf, 300)
-            bars_needed = int(days * max(1, (86400 // max(1, rv_tf_secs))) + 50)
-            _info_before = mt5.symbol_info(symbol)
-            _was_visible = bool(_info_before.visible) if _info_before is not None else None
-            err = _ensure_symbol_ready(symbol)
-            if err:
-                return {"error": err}
-            try:
-                if as_of:
-                    to_dt = _parse_start_datetime(as_of)
-                    if not to_dt:
-                        return {"error": "Invalid as_of time."}
-                    rates_rv = _mt5_copy_rates_from(symbol, rv_mt5_tf, to_dt, bars_needed)
-                else:
-                    _tick = mt5.symbol_info_tick(symbol)
-                    if _tick is not None and getattr(_tick, 'time', None):
-                        t_utc = _mt5_epoch_to_utc(float(_tick.time))
-                        server_now_dt = datetime.fromtimestamp(t_utc, tz=timezone.utc)
-                    else:
-                        server_now_dt = datetime.now(timezone.utc)
-                    rates_rv = _mt5_copy_rates_from(symbol, rv_mt5_tf, server_now_dt, bars_needed)
-            finally:
-                if _was_visible is False:
-                    try:
-                        mt5.symbol_select(symbol, False)
-                    except Exception:
-                        pass
-            if rates_rv is None or len(rates_rv) < 50:
-                return {"error": f"Failed to get intraday rates for RV: {mt5.last_error()}"}
-            dfrv = pd.DataFrame(rates_rv)
-            if as_of is None and len(dfrv) >= 2:
-                dfrv = dfrv.iloc[:-1]
-            c = dfrv['close'].astype(float).to_numpy()
-            if c.size < 10:
-                return {"error": "Insufficient intraday bars for RV"}
-            rr = _log_returns_from_prices(c)
-            rr = rr[np.isfinite(rr)]
-            dt = pd.to_datetime(dfrv['time'].iloc[1:].astype(float), unit='s', utc=True)
-            days_idx = pd.DatetimeIndex(dt).floor('D')
-            df_r = pd.DataFrame({'day': days_idx, 'r2': rr * rr})
-            daily_rv = df_r.groupby('day')['r2'].sum().astype(float)
-            if len(daily_rv) < max(30, m + 5):
-                return {"error": "Not enough daily RV observations for HAR-RV"}
-            RV = daily_rv.to_numpy(dtype=float)
-            Dlag = RV[:-1]
-
-            def rmean(arr, k):
-                s = pd.Series(arr)
-                return s.rolling(window=k, min_periods=k).mean().to_numpy()
-
-            Wlag_full = rmean(RV, w)
-            Mlag_full = rmean(RV, m)
-            y = RV[1:]
-            Wlag = Wlag_full[:-1]
-            Mlag = Mlag_full[:-1]
-            Xd = Dlag
-            mask = np.isfinite(Xd) & np.isfinite(Wlag) & np.isfinite(Mlag) & np.isfinite(y)
-            X = np.vstack([np.ones_like(Xd[mask]), Xd[mask], Wlag[mask], Mlag[mask]]).T
-            yv = y[mask]
-            if X.shape[0] < 20:
-                return {"error": "Insufficient samples after alignment for HAR-RV"}
-            beta, *_ = np.linalg.lstsq(X, yv, rcond=None)
-            D_last = RV[-1]
-            W_last = float(pd.Series(RV).tail(w).mean())
-            M_last = float(pd.Series(RV).tail(m).mean())
-            rv_next = float(beta[0] + beta[1]*D_last + beta[2]*W_last + beta[3]*M_last)
-            rv_next = max(0.0, rv_next)
-            tf_secs = TIMEFRAME_SECONDS.get(timeframe)
-            if not tf_secs:
-                return {"error": unsupported_timeframe_seconds_error(timeframe)}
-            bars_per_day = float(86400.0 / float(tf_secs))
-            sbar = float(math.sqrt(rv_next / bars_per_day))
-            h_days = float(int(horizon)) / bars_per_day
-            hsig = float(math.sqrt(rv_next * max(h_days, 0.0)))
-            bpy = annualization_bars_per_year
-            return {"success": True, "symbol": symbol, "timeframe": timeframe, "method": method_l, "horizon": int(horizon),
-                    "sigma_bar_return": sbar, "sigma_annual_return": float(sbar*math.sqrt(bpy)),
-                    "horizon_sigma_return": hsig, "horizon_sigma_annual": float(hsig*math.sqrt(bpy/max(1,int(horizon)))),
-                    "params_used": {"rv_timeframe": rv_tf, "window_w": w, "window_m": m,
-                                     "beta": [float(b) for b in beta.tolist()],
-                                     "days": days},
-                    "denoise_used": dn_spec_used}
-        except Exception as ex:
-            return {"error": f"HAR-RV error: {ex}"}
+        return {"error": f"Unsupported direct volatility method: {method_l}"}
     except Exception as e:
         return {"error": f"Error computing volatility forecast: {str(e)}"}
 

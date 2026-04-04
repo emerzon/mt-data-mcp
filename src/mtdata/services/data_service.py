@@ -17,7 +17,7 @@ from ..shared.constants import (
     TIMEFRAME_MAP, TIMEFRAME_SECONDS, FETCH_RETRY_ATTEMPTS, FETCH_RETRY_DELAY,
     SANITY_BARS_TOLERANCE, TI_NAN_WARMUP_FACTOR, TI_NAN_WARMUP_MIN_ADD,
     SIMPLIFY_DEFAULT_METHOD, SIMPLIFY_DEFAULT_MODE, SIMPLIFY_DEFAULT_POINTS_RATIO_FROM_LIMIT, TICKS_LOOKBACK_DAYS,
-    DEFAULT_ROW_LIMIT
+    DEFAULT_ROW_LIMIT, TIME_DISPLAY_FORMAT
 )
 from ..bootstrap.settings import mt5_config
 from ..core.runtime_metadata import build_runtime_timezone_meta
@@ -26,7 +26,7 @@ from ..shared.validators import invalid_timeframe_error
 # Imports from utils
 from ..utils.mt5 import (
     _mt5_copy_rates_from, _mt5_copy_rates_range,
-    _mt5_copy_ticks_range, _mt5_epoch_to_utc, _rates_to_df, _symbol_ready_guard,
+    _mt5_copy_ticks_range, _rates_to_df, _symbol_ready_guard,
     get_cached_mt5_time_alignment, get_symbol_info_cached, mt5
 )
 from ..utils.utils import (
@@ -41,7 +41,11 @@ from ..utils.indicators import (
     _find_unknown_ta_indicators_util,
     _parse_ti_specs,
 )
-from ..utils.denoise import _apply_denoise as _apply_denoise_util, normalize_denoise_spec as _normalize_denoise_spec
+from ..utils.denoise import (
+    _apply_denoise as _apply_denoise_util,
+    _consume_denoise_warnings,
+    normalize_denoise_spec as _normalize_denoise_spec,
+)
 
 # Simplify entrypoint and helpers.
 from ..utils.simplify import (
@@ -701,29 +705,21 @@ def _format_candle_times(
     if 'time' not in headers or len(df) <= 0:
         return
 
-    epochs_list = df['__epoch'].tolist()
+    epochs = pd.to_numeric(df['__epoch'], errors='coerce').astype(float)
     if time_as_epoch:
-        df['time'] = [float(value) for value in epochs_list]
+        df['time'] = epochs
         df.__dict__['_tz_used_name'] = 'UTC'
         return
 
-    fmt = _time_format_from_epochs(epochs_list)
-    fmt = _maybe_strip_year(fmt, epochs_list)
-    fmt = _style_time_format(fmt)
+    fmt = TIME_DISPLAY_FORMAT
     tz_used_name = 'UTC'
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
+        time_values = pd.to_datetime(epochs, unit='s', utc=True)
         if use_client_tz:
             tz_used_name = getattr(client_tz, 'zone', None) or str(client_tz)
-            df['time'] = [
-                datetime.fromtimestamp(value, tz=dt_timezone.utc).astimezone(client_tz).strftime(fmt)
-                for value in epochs_list
-            ]
-        else:
-            df['time'] = [
-                datetime.fromtimestamp(value, tz=dt_timezone.utc).strftime(fmt)
-                for value in epochs_list
-            ]
+            time_values = time_values.dt.tz_convert(client_tz)
+        df['time'] = time_values.dt.strftime(fmt)
     df.__dict__['_tz_used_name'] = tz_used_name
 
 
@@ -859,8 +855,11 @@ def fetch_candles(
 
         # Track denoise metadata if applied
         denoise_apps: List[Dict[str, Any]] = []
+        denoise_warnings: List[str] = []
         _apply_pre_ti_denoise(df, headers, denoise, denoise_apps)
+        denoise_warnings.extend(_consume_denoise_warnings(df))
         ti_cols = _apply_indicator_stage(df, headers, ti_spec, denoise)
+        denoise_warnings.extend(_consume_denoise_warnings(df))
 
         # Filter out warmup region to return the intended target window only
         df = _trim_df_to_target(df, start_datetime, end_datetime, candles, copy_rows=True)
@@ -903,6 +902,7 @@ def fetch_candles(
                             ti_spec=ti_spec,
                             headers=headers,
                         )
+                        denoise_warnings.extend(_consume_denoise_warnings(df))
                         # Re-trim to target window
                         df = _trim_df_to_target(df, start_datetime, end_datetime, candles, copy_rows=False)
                         rows_after_target_trim = int(len(df))
@@ -911,6 +911,7 @@ def fetch_candles(
 
         # Optional post-TI denoising (adds new columns by default)
         _apply_post_ti_denoise(df, headers, denoise, denoise_apps)
+        denoise_warnings.extend(_consume_denoise_warnings(df))
 
         # Ensure headers are unique and exist in df
         headers = [h for h in headers if h in df.columns]
@@ -1019,6 +1020,14 @@ def fetch_candles(
         # Attach denoise applications metadata if any
         if denoise_apps:
             payload['denoise'] = {'applications': denoise_apps}
+        if denoise_warnings:
+            warns = payload.get('warnings')
+            if not isinstance(warns, list):
+                warns = []
+            for warning_text in denoise_warnings:
+                if warning_text not in warns:
+                    warns.append(warning_text)
+            payload['warnings'] = warns
         if session_gaps:
             payload['session_gaps'] = session_gaps
             warns = payload.get('warnings')
@@ -1421,14 +1430,21 @@ def fetch_ticks(
                 idx_set: set = set([0, original_count - 1])
                 params_accum: Dict[str, Any] = {}
                 method_used_overall = None
-                for c in cols:
-                    series: List[float] = []
-                    for t in ticks:
-                        v = _tick_field(t, c)
+                series_by_col: Dict[str, List[float]] = {c: [] for c in cols}
+                simplify_values_by_col: Dict[str, List[float]] = {c: [] for c in cols}
+                for tick in ticks:
+                    for c in cols:
+                        v = _tick_field(tick, c)
                         try:
-                            series.append(float(v))
+                            numeric_value = float(v)
                         except Exception:
-                            series.append(float('nan'))
+                            series_by_col[c].append(float('nan'))
+                            simplify_values_by_col[c].append(0.0)
+                        else:
+                            series_by_col[c].append(numeric_value)
+                            simplify_values_by_col[c].append(numeric_value)
+                for c in cols:
+                    series = series_by_col[c]
                     sub_spec = dict(simplify)
                     sub_spec['points'] = per
                     idxs, method_used, params_meta = _select_indices_for_timeseries(_epochs, series, sub_spec)
@@ -1447,12 +1463,7 @@ def fetch_ticks(
                 mins: Dict[str, float] = {}
                 ranges: Dict[str, float] = {}
                 for c in cols:
-                    vals = []
-                    for t in ticks:
-                        try:
-                            vals.append(float(_tick_field(t, c)))
-                        except Exception:
-                            vals.append(0.0)
+                    vals = simplify_values_by_col[c]
                     if vals:
                         mn, mx = min(vals), max(vals)
                         ranges[c] = max(1e-12, mx - mn)
@@ -1464,10 +1475,7 @@ def fetch_ticks(
                 for i in range(original_count):
                     s = 0.0
                     for c in cols:
-                        try:
-                            vv = (float(_tick_field(ticks[i], c)) - mins[c]) / ranges[c]
-                        except Exception:
-                            vv = 0.0
+                        vv = (simplify_values_by_col[c][i] - mins[c]) / ranges[c]
                         s += abs(vv)
                     comp.append(s)
                 if len(union_idxs) > n_out:

@@ -186,6 +186,20 @@ def _safe_int_attr(obj: Any, name: str, default: int) -> int:
     return int(numeric)
 
 
+def _candidate_fill_modes(mt5: Any) -> list[int]:
+    """Return deduplicated fill-mode candidates with stable MT5-compatible fallbacks."""
+    fill_modes: list[int] = []
+    for fill_attr, default in (
+        ("ORDER_FILLING_IOC", 1),
+        ("ORDER_FILLING_FOK", 0),
+        ("ORDER_FILLING_RETURN", 2),
+    ):
+        fill_mode = _safe_int_attr(mt5, fill_attr, default)
+        if fill_mode not in fill_modes:
+            fill_modes.append(fill_mode)
+    return fill_modes
+
+
 def _safe_last_error(mt5: Any) -> Any:
     """Best-effort access to mt5.last_error()."""
     try:
