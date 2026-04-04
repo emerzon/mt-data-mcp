@@ -1,7 +1,6 @@
 from datetime import datetime, timezone
 import math
 from typing import Any, Callable, Dict, Optional, List, Tuple, Literal
-import importlib
 import copy
 import logging
 import numpy as np
@@ -12,8 +11,9 @@ from .constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from .execution_logging import run_logged_operation
 from .mt5_gateway import get_mt5_gateway, mt5_connection_error
 from .patterns_support import (
-    _STOCK_PATTERN_UTILS_CACHE,
+    _STOCK_PATTERN_UTILS_CACHE,  # noqa: F401
     _build_stock_pattern_frame,
+    _count_patterns_with_status,
     _compact_patterns_payload,
     _elliott_completed_preview,
     _elliott_hidden_completed_note,
@@ -23,20 +23,22 @@ from .patterns_support import (
     _format_pattern_dates,
     _index_pos_for_timestamp,
     _infer_stock_pattern_confidence,
-    _interval_overlap_ratio,
+    _interval_overlap_ratio,  # noqa: F401
     _load_stock_pattern_utils,
     _map_stock_pattern_name,
     _merge_classic_ensemble,
     _normalize_engine_name,
     _parse_engine_list,
     _parse_native_scale_factors,
+    _resolve_elliott_pattern_status,
     _resolve_engine_weights,
     _round_value,
     _summarize_engine_findings,
     _summarize_pattern_bias,
     _timestamp_to_label,
-    _to_float_safe,
+    _to_float_safe,  # noqa: F401
     _to_jsonable,
+    _visible_pattern_rows,
 )
 from ..utils.utils import _parse_bool_like, _UNPARSED_BOOL
 from ..utils.mt5 import _mt5_copy_rates_from
@@ -50,7 +52,7 @@ from .patterns_requests import PatternsDetectRequest
 from .patterns_use_cases import PatternsDetectDeps, run_patterns_detect
 from ..shared.validators import invalid_timeframe_error
 from ..utils.denoise import _apply_denoise as _apply_denoise_util, normalize_denoise_spec as _normalize_denoise_spec
-from ..utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise, mt5
+from ..utils.mt5 import ensure_mt5_connection_or_raise, mt5
 
 logger = logging.getLogger(__name__)
 
@@ -274,12 +276,8 @@ def _build_pattern_response(
 ) -> Dict[str, Any]:
     """Build the response dict for pattern detection results."""
     # Filter patterns based on include_completed
-    filtered = patterns if include_completed else [
-        d for d in patterns if str(d.get('status', '')).lower() == 'forming'
-    ]
-    completed_hidden = 0 if include_completed else int(
-        sum(1 for d in patterns if str(d.get("status", "")).lower() == "completed")
-    )
+    filtered = _visible_pattern_rows(patterns, include_completed=include_completed)
+    completed_hidden = 0 if include_completed else _count_patterns_with_status(patterns, "completed")
     elliott_preview = (
         _elliott_completed_preview(patterns, timeframe=timeframe)
         if str(mode).lower() == "elliott" and completed_hidden > 0
@@ -355,7 +353,11 @@ def _format_elliott_patterns(df: pd.DataFrame, cfg: _ElliottCfg) -> List[Dict[st
                 recent_bars = max(1, int(raw_recent_bars))
             else:
                 recent_bars = 3
-            status = 'forming' if int(p.end_index) >= int(n_bars - recent_bars) else 'completed'
+            status = _resolve_elliott_pattern_status(
+                p.end_index,
+                n_bars=n_bars,
+                recent_bars=recent_bars,
+            )
 
             out_list.append(
                 {
