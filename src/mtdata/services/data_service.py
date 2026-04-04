@@ -1421,14 +1421,21 @@ def fetch_ticks(
                 idx_set: set = set([0, original_count - 1])
                 params_accum: Dict[str, Any] = {}
                 method_used_overall = None
-                for c in cols:
-                    series: List[float] = []
-                    for t in ticks:
-                        v = _tick_field(t, c)
+                series_by_col: Dict[str, List[float]] = {c: [] for c in cols}
+                simplify_values_by_col: Dict[str, List[float]] = {c: [] for c in cols}
+                for tick in ticks:
+                    for c in cols:
+                        v = _tick_field(tick, c)
                         try:
-                            series.append(float(v))
+                            numeric_value = float(v)
                         except Exception:
-                            series.append(float('nan'))
+                            series_by_col[c].append(float('nan'))
+                            simplify_values_by_col[c].append(0.0)
+                        else:
+                            series_by_col[c].append(numeric_value)
+                            simplify_values_by_col[c].append(numeric_value)
+                for c in cols:
+                    series = series_by_col[c]
                     sub_spec = dict(simplify)
                     sub_spec['points'] = per
                     idxs, method_used, params_meta = _select_indices_for_timeseries(_epochs, series, sub_spec)
@@ -1447,12 +1454,7 @@ def fetch_ticks(
                 mins: Dict[str, float] = {}
                 ranges: Dict[str, float] = {}
                 for c in cols:
-                    vals = []
-                    for t in ticks:
-                        try:
-                            vals.append(float(_tick_field(t, c)))
-                        except Exception:
-                            vals.append(0.0)
+                    vals = simplify_values_by_col[c]
                     if vals:
                         mn, mx = min(vals), max(vals)
                         ranges[c] = max(1e-12, mx - mn)
@@ -1464,10 +1466,7 @@ def fetch_ticks(
                 for i in range(original_count):
                     s = 0.0
                     for c in cols:
-                        try:
-                            vv = (float(_tick_field(ticks[i], c)) - mins[c]) / ranges[c]
-                        except Exception:
-                            vv = 0.0
+                        vv = (simplify_values_by_col[c][i] - mins[c]) / ranges[c]
                         s += abs(vv)
                     comp.append(s)
                 if len(union_idxs) > n_out:
