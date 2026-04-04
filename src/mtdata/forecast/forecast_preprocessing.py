@@ -234,7 +234,12 @@ def _apply_features_and_target_spec(
                 try:
                     ti_cols = _apply_ti_on_copy(ti_spec)
                 except TypeError:
-                    ti_cols = _apply_ti_on_copy(ti_list, default_when="pre_ti")
+                    try:
+                        ti_cols = _apply_ti_on_copy(ti_list, default_when="pre_ti")
+                    except TypeError:
+                        ti_cols = []
+                    except Exception:
+                        ti_cols = []
                 except Exception:
                     ti_cols = []
                 if target_spec and isinstance(target_spec, dict) and target_spec.get("column") in ti_cols:
