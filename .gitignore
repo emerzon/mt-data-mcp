@@ -51,3 +51,4 @@ webui/node_modules/*
 webui/dist/*
 
 prompts/*
+code-reports/*

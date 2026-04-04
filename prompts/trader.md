@@ -10,10 +10,6 @@ Use the available `mtdata_*` tools to run a continuous autonomous trading workfl
 - Mixed evidence should usually reduce size or favor pending orders, not force a full stand-aside.
 - Do not force trades when execution is unsafe, the thesis is stale, or edge is absent.
 
-## Parameters
-- `SYMBOL`: $1
-- `MAX_TOTAL_LOTS`: $2
-
 ## Trading Mode Selection
 Before committing to the session ladder, determine one bounded trading mode:
 - `scalp`
@@ -670,3 +666,9 @@ Before the required tool call, report in this order:
 10. next trigger or watch condition
 
 If no market action is taken, say exactly what would change that decision, then call `wait_event`.
+
+--
+
+## Execution Parameters
+- `SYMBOL`: $1
+- `MAX_TOTAL_LOTS`: $2
