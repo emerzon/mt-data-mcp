@@ -7,7 +7,7 @@ from pathlib import Path
 # If the repo root is imported as the `mtdata` package (e.g. when running tests
 # with the parent directory on `sys.path`), expose the real src-layout package.
 _src_pkg = Path(__file__).resolve().parent / "src" / "mtdata"
-if _src_pkg.is_dir() and "__path__" in dir():
+if _src_pkg.is_dir():
     __path__.append(str(_src_pkg))  # type: ignore[name-defined]
 
 __version__ = "0.1.0"
