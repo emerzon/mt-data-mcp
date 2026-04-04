@@ -857,9 +857,9 @@ def _refresh_market_state(
         )
         if isinstance(ticks_or_error, dict) and "error" in ticks_or_error:
             return ticks_or_error
-        merged = _merge_market_ticks(state.get("ticks", []), ticks_or_error)
-        trimmed = _trim_market_ticks(
-            ticks=merged,
+        trimmed = _merge_market_ticks(
+            state.get("ticks", []),
+            ticks_or_error,
             specs=[item for item in watch_for if item["symbol"] == symbol],
             observed_at_utc=observed_at_utc,
         )
@@ -1967,20 +1967,27 @@ def _normalize_tick_rows(rows: Any) -> List[Dict[str, Any]]:
     return normalized
 
 
-def _merge_market_ticks(existing: List[Dict[str, Any]], new_ticks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _merge_market_ticks(
+    existing: List[Dict[str, Any]],
+    new_ticks: List[Dict[str, Any]],
+    *,
+    specs: Optional[List[Dict[str, Any]]] = None,
+    observed_at_utc: Optional[datetime] = None,
+) -> List[Dict[str, Any]]:
     if not existing:
-        return list(new_ticks)
-    out = list(existing)
-    seen = {tuple(item["key"]) for item in existing[-_MARKET_BUFFER_EXTRA_TICKS:]}
-    for tick in new_ticks:
-        key = tuple(tick["key"])
-        if key in seen:
-            continue
-        out.append(tick)
-        seen.add(key)
-        if len(seen) > _MARKET_BUFFER_EXTRA_TICKS * 4:
-            seen = {tuple(item["key"]) for item in out[-_MARKET_BUFFER_EXTRA_TICKS:]}
-    return out
+        merged: List[Dict[str, Any]] = list(new_ticks)
+    else:
+        out = list(existing)
+        seen = {tuple(item["key"]) for item in existing}
+        for tick in new_ticks:
+            key = tuple(tick["key"])
+            if key not in seen:
+                out.append(tick)
+                seen.add(key)
+        merged = out
+    if specs is not None and observed_at_utc is not None:
+        merged = _trim_market_ticks(ticks=merged, specs=specs, observed_at_utc=observed_at_utc)
+    return merged
 
 
 def _trim_market_ticks(

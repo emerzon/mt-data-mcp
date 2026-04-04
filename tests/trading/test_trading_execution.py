@@ -865,6 +865,46 @@ def test_close_positions_preserves_existing_magic(mock_mt5):
     assert req["magic"] == 67890
 
 
+def test_close_positions_retries_default_fill_mode_when_fok_constant_missing(mock_mt5):
+    mock_mt5.ORDER_FILLING_IOC = 1
+    mock_mt5.ORDER_FILLING_FOK = None
+    mock_mt5.ORDER_FILLING_RETURN = 2
+    mock_mt5.ORDER_TIME_GTC = 0
+    mock_mt5.positions_get.return_value = [
+        SimpleNamespace(ticket=123, symbol="EURUSD", volume=0.1, type=0, profit=10.0, magic=67890)
+    ]
+    mock_mt5.order_send.side_effect = [
+        MagicMock(
+            retcode=10030,
+            deal=0,
+            order=0,
+            volume=0.1,
+            price=1.05010,
+            bid=1.05000,
+            ask=1.05010,
+            comment="IOC rejected",
+        ),
+        MagicMock(
+            retcode=10009,
+            deal=123,
+            order=456,
+            volume=0.1,
+            price=1.05010,
+            bid=1.05000,
+            ask=1.05010,
+            comment="",
+        ),
+    ]
+
+    res = _close_positions(symbol="EURUSD")
+
+    assert res["closed_count"] == 1
+    first_req = mock_mt5.order_send.call_args_list[0].args[0]
+    second_req = mock_mt5.order_send.call_args_list[1].args[0]
+    assert first_req["type_filling"] == 1
+    assert second_req["type_filling"] == 0
+
+
 def test_close_positions_counts_done_partial_as_success(mock_mt5):
     mock_mt5.ORDER_FILLING_IOC = 1
     mock_mt5.ORDER_FILLING_FOK = 0
@@ -888,7 +928,6 @@ def test_close_positions_counts_done_partial_as_success(mock_mt5):
     res = _close_positions(symbol="EURUSD")
 
     assert res["closed_count"] == 1
-
 
 def test_cancel_pending_counts_done_partial_as_success(mock_mt5):
     mock_mt5.TRADE_ACTION_REMOVE = 8

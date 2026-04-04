@@ -313,6 +313,11 @@ def _ewma_param_explanations(lambda_source: str) -> Dict[str, str]:
     return out
 
 
+def _annualize_horizon_sigma(horizon_sigma_return: float, bars_per_year: float) -> float:
+    """Express the horizon-scaled sigma on the annualized return scale."""
+    return float(horizon_sigma_return * math.sqrt(bars_per_year))
+
+
 def forecast_volatility(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
@@ -512,7 +517,7 @@ def forecast_volatility(
                 "sigma_bar_return": sigma_bar_return,
                 "sigma_annual_return": float(sigma_bar_return * math.sqrt(bpy)),
                 "horizon_sigma_return": horizon_sigma_return,
-                "horizon_sigma_annual": float(horizon_sigma_return * math.sqrt(bpy / max(1, int(horizon)))),
+                "horizon_sigma_annual": _annualize_horizon_sigma(horizon_sigma_return, bpy),
                 "params_used": {
                     "methods": base_methods,
                     "aggregator": aggregator,
@@ -708,7 +713,7 @@ def forecast_volatility(
             bpy = annualization_bars_per_year
             return {"success": True, "symbol": symbol, "timeframe": timeframe, "method": method_l, "proxy": proxy_l,
                     "horizon": int(horizon), "sigma_bar_return": sbar, "sigma_annual_return": float(sbar*math.sqrt(bpy)),
-                    "horizon_sigma_return": hsig, "horizon_sigma_annual": float(hsig*math.sqrt(bpy/max(1,int(horizon)))),
+                    "horizon_sigma_return": hsig, "horizon_sigma_annual": _annualize_horizon_sigma(hsig, bpy),
                     "params_used": p}
 
         if method_l == 'har_rv':
@@ -812,7 +817,7 @@ def forecast_volatility(
                 bpy = annualization_bars_per_year
                 return {"success": True, "symbol": symbol, "timeframe": timeframe, "method": method_l, "horizon": int(horizon),
                         "sigma_bar_return": sbar, "sigma_annual_return": float(sbar*math.sqrt(bpy)),
-                        "horizon_sigma_return": hsig, "horizon_sigma_annual": float(hsig*math.sqrt(bpy/max(1,int(horizon)))),
+                        "horizon_sigma_return": hsig, "horizon_sigma_annual": _annualize_horizon_sigma(hsig, bpy),
                         "params_used": {"rv_timeframe": rv_tf, "window_w": w, "window_m": m,
                                          "beta": [float(b) for b in beta.tolist()],
                                          "days": days},
@@ -908,7 +913,7 @@ def forecast_volatility(
                 params_used["halflife"] = halflife_used
             return {"success": True, "symbol": symbol, "timeframe": timeframe, "method": method_l, "horizon": int(horizon),
                     "sigma_bar_return": sbar, "sigma_annual_return": float(sbar*math.sqrt(bpy)),
-                    "horizon_sigma_return": hsig, "horizon_sigma_annual": float(hsig*math.sqrt(bpy/max(1,int(horizon)))),
+                    "horizon_sigma_return": hsig, "horizon_sigma_annual": _annualize_horizon_sigma(hsig, bpy),
                     "params_used": params_used,
                     "params_explained": _ewma_param_explanations(lambda_source),
                     "denoise_used": dn_spec_used}
@@ -944,7 +949,7 @@ def forecast_volatility(
             hsig = float(sbar * math.sqrt(max(1, int(horizon))))
             return {"success": True, "symbol": symbol, "timeframe": timeframe, "method": method_l, "horizon": int(horizon),
                     "sigma_bar_return": sbar, "sigma_annual_return": float(sbar*math.sqrt(bpy)),
-                    "horizon_sigma_return": hsig, "horizon_sigma_annual": float(hsig*math.sqrt(bpy/max(1,int(horizon)))),
+                    "horizon_sigma_return": hsig, "horizon_sigma_annual": _annualize_horizon_sigma(hsig, bpy),
                     "params_used": {"window": int(window)},
                     "denoise_used": dn_spec_used}
 
@@ -971,7 +976,7 @@ def forecast_volatility(
                 "sigma_bar_return": float(sigma_bar),
                 "sigma_annual_return": float(sigma_bar * math.sqrt(bpy)),
                 "horizon_sigma_return": float(sigma_h),
-                "horizon_sigma_annual": float(sigma_h * math.sqrt(bpy / max(1, int(horizon)))),
+                "horizon_sigma_annual": _annualize_horizon_sigma(float(sigma_h), bpy),
                 "params_used": {"window": int(window), "kernel": kernel, "bandwidth": bandwidth_val},
                 "denoise_used": dn_spec_used,
             }
@@ -1011,7 +1016,7 @@ def forecast_volatility(
                     params_used['o'] = int(p.get('o', 1))
                 return {"success": True, "symbol": symbol, "timeframe": timeframe, "method": method_l, "horizon": int(horizon),
                         "sigma_bar_return": sbar, "sigma_annual_return": float(sbar*math.sqrt(bpy)),
-                        "horizon_sigma_return": hsig, "horizon_sigma_annual": float(hsig*math.sqrt(bpy/max(1,int(horizon)))),
+                        "horizon_sigma_return": hsig, "horizon_sigma_annual": _annualize_horizon_sigma(hsig, bpy),
                         "params_used": params_used,
                         "denoise_used": dn_spec_used}
             except Exception as ex:
