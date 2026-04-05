@@ -51,4 +51,7 @@ webui/node_modules/*
 webui/dist/*
 
 prompts/*
+!prompts/trader.md
+!prompts/trading_agent_prompt.md
+!prompts/trader_active.md
 code-reports/*
