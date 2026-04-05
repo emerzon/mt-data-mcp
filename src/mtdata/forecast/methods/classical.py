@@ -42,6 +42,7 @@ class NaiveMethod(ClassicalMethod):
 
 @ForecastRegistry.register("drift")
 class DriftMethod(ClassicalMethod):
+    MIN_POINTS = 2
     PARAMS: List[Dict[str, Any]] = []
 
     @property
@@ -59,7 +60,11 @@ class DriftMethod(ClassicalMethod):
     ) -> ForecastResult:
         vals = series.values
         n = int(vals.size)
-        slope = (float(vals[-1]) - float(vals[0])) / float(max(1, n - 1))
+        if n < self.MIN_POINTS:
+            raise ValueError(
+                f"DriftMethod requires at least {self.MIN_POINTS} data points, got {n}"
+            )
+        slope = (float(vals[-1]) - float(vals[0])) / float(n - 1)
         f_vals = float(vals[-1]) + slope * np.arange(1, int(horizon) + 1, dtype=float)
         return ForecastResult(forecast=f_vals, params_used={"slope": slope})
 

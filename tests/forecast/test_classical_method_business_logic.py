@@ -31,9 +31,11 @@ def test_naive_and_drift_forecasts_return_expected_values():
     assert np.allclose(drift.forecast, [17.5, 20.0, 22.5])
     assert drift.params_used == {"slope": 2.5}
 
-    single = cl.DriftMethod().forecast(pd.Series([5.0]), horizon=2, seasonality=0, params={})
-    assert np.allclose(single.forecast, [5.0, 5.0])
-    assert single.params_used == {"slope": 0.0}
+    with pytest.raises(ValueError, match="requires at least 2 data points"):
+        cl.DriftMethod().forecast(pd.Series([5.0]), horizon=2, seasonality=0, params={})
+
+    with pytest.raises(ValueError, match="requires at least 2 data points"):
+        cl.DriftMethod().forecast(pd.Series(dtype=float), horizon=2, seasonality=0, params={})
 
 
 def test_seasonal_naive_validation_and_repeating_pattern():
