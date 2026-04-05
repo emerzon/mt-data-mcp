@@ -756,7 +756,9 @@ def _attach_classic_volume_confirmation(
     bonus = _config_float(config, "volume_confirm_bonus", 0.08, minimum=0.0)
     penalty = _config_float(config, "volume_confirm_penalty", 0.06, minimum=0.0)
 
-    end_index = max(0, min(int(len(volume) - 1), int(_safe_float(out.get("end_index")) or 0)))
+    last_index = max(int(len(volume) - 1), 0)
+    raw_end_index = _safe_float(out.get("end_index"))
+    end_index = max(0, min(last_index, int(raw_end_index) if raw_end_index is not None else last_index))
     signal_start = max(0, int(end_index - breakout_bars + 1))
     baseline_end = int(signal_start - 1)
     baseline_start = max(0, int(baseline_end - lookback_bars + 1))
