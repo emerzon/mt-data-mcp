@@ -505,8 +505,8 @@ def bootstrap_metric_uncertainty(
     
     if metrics is None:
         metrics = [
-            'prob_win', 'prob_loss', 'prob_tp_first', 'prob_sl_first',
-            'ev', 'edge', 'kelly', 'prob_no_hit'
+            'prob_win', 'prob_loss', 'prob_tie', 'prob_tp_first', 'prob_sl_first',
+            'ev', 'ev_cond', 'edge', 'kelly', 'kelly_cond', 'prob_no_hit', 'prob_resolve'
         ]
     
     rng = np.random.RandomState(seed)
@@ -548,6 +548,7 @@ def bootstrap_metric_uncertainty(
         prob_tp_first = (n_wins + 0.5 * n_ties) / n_sims
         prob_sl_first = (n_losses + 0.5 * n_ties) / n_sims
         prob_no_hit = 1.0 - (any_tp | any_sl).sum() / n_sims
+        prob_resolve = 1.0 - prob_no_hit
         
         edge = prob_win - prob_loss
 
@@ -562,8 +563,16 @@ def bootstrap_metric_uncertainty(
         net_risk = gross_risk + max(0.0, float(cost_per_trade or 0.0))
         net_rr = net_reward / net_risk if net_risk > 0 else 0.0
         ev = prob_tp_first * net_reward - prob_sl_first * net_risk
-
         kelly = prob_tp_first - (prob_sl_first / net_rr) if net_rr > 0 else 0.0
+
+        if prob_resolve > 0:
+            prob_win_c = prob_tp_first / prob_resolve
+            prob_loss_c = prob_sl_first / prob_resolve
+            ev_cond = prob_win_c * net_reward - prob_loss_c * net_risk
+            kelly_cond = prob_win_c - (prob_loss_c / net_rr) if net_rr > 0 else 0.0
+        else:
+            ev_cond = 0.0
+            kelly_cond = 0.0
         
         for metric in metrics:
             val = locals().get(metric)
