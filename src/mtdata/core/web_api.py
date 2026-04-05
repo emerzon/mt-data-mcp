@@ -60,6 +60,12 @@ logger = logging.getLogger(__name__)
 _bearer_auth = HTTPBearer(auto_error=False)
 
 
+def _history_uses_legacy_timezone_meta(request: Optional[Request]) -> bool:
+    if request is None:
+        return True
+    return not str(request.url.path).startswith("/api/v1/")
+
+
 def _raise_auth_error(status_code: int, message: str, *, code: str, headers: Optional[Dict[str, str]] = None) -> None:
     payload = build_http_error_detail(message, code=code, operation="web_api_auth")
     logger.warning(
@@ -196,6 +202,7 @@ def get_wavelets() -> Dict[str, Any]:
 
 @api_router.get("/history")
 def get_history(
+    request: Request = None,
     symbol: str = Query(...),
     timeframe: str = Query("H1"),
     limit: int = Query(500, ge=1, le=20000),
@@ -220,6 +227,7 @@ def get_history(
         get_denoise_methods=_get_denoise_methods,
         normalize_denoise_spec=_norm_dn,
         mt5_config=mt5_config,
+        include_used_timezone=_history_uses_legacy_timezone_meta(request),
     )
 
 

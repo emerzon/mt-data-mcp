@@ -27,7 +27,7 @@ from ..shared.validators import invalid_timeframe_error
 from ..utils.mt5 import (
     _mt5_copy_rates_from, _mt5_copy_rates_range,
     _mt5_copy_ticks_range, _rates_to_df, _symbol_ready_guard,
-    get_cached_mt5_time_alignment, get_symbol_info_cached, mt5
+    _mt5_epoch_to_utc, get_cached_mt5_time_alignment, get_symbol_info_cached, mt5
 )
 from ..utils.utils import (
     _table_from_rows, _format_time_minimal, _format_time_minimal_local,
@@ -994,7 +994,7 @@ def fetch_candles(
                     "timezone": build_runtime_timezone_meta(
                         timezone_meta_input,
                         mt5_config=mt5_config,
-                        include_local=False,
+                        include_local=True,
                         include_now=False,
                     ),
                 },

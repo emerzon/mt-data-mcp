@@ -15,6 +15,7 @@ from ..utils.support_resistance import compact_support_resistance_payload
 from .error_envelope import build_http_error_detail
 from .mt5_gateway import get_default_mt5_gateway
 from .output_contract import ensure_common_meta
+from .runtime_metadata import build_runtime_timezone_meta
 from .tool_calling import resolve_sync_tool_result
 from .web_api_models import BacktestBody, ForecastPriceBody, ForecastVolBody
 
@@ -295,6 +296,7 @@ def get_history_response(
     get_denoise_methods: Callable[[], Any],
     normalize_denoise_spec: Callable[..., Any],
     mt5_config: Any,
+    include_used_timezone: bool,
 ) -> Dict[str, Any]:
     _require_mt5_connection()
     denoise_method_val = denoise_method.strip() if isinstance(denoise_method, str) else None
@@ -410,11 +412,50 @@ def get_history_response(
     result_out = dict(result)
     result_out["data"] = rows
     result_out["candles"] = len(rows)
-    return ensure_common_meta(
+    response = ensure_common_meta(
         result_out,
         tool_name="data_fetch_candles",
         mt5_config=mt5_config,
     )
+    meta_in = response.get("meta")
+    if not isinstance(meta_in, dict):
+        return response
+    runtime_in = meta_in.get("runtime")
+    if not isinstance(runtime_in, dict):
+        return response
+    timezone_in = runtime_in.get("timezone")
+    if include_used_timezone:
+        if isinstance(timezone_in, dict) and "used" in timezone_in:
+            return response
+
+        timezone_out = build_runtime_timezone_meta(
+            response,
+            mt5_config=mt5_config,
+            include_local=True,
+            include_now=False,
+        )
+        runtime_out = dict(runtime_in)
+        runtime_out["timezone"] = timezone_out
+        meta_out = dict(meta_in)
+        meta_out["runtime"] = runtime_out
+
+        response_out = dict(response)
+        response_out["meta"] = meta_out
+        return response_out
+
+    if not isinstance(timezone_in, dict) or "used" not in timezone_in:
+        return response
+
+    timezone_out = dict(timezone_in)
+    timezone_out.pop("used", None)
+    runtime_out = dict(runtime_in)
+    runtime_out["timezone"] = timezone_out
+    meta_out = dict(meta_in)
+    meta_out["runtime"] = runtime_out
+
+    response_out = dict(response)
+    response_out["meta"] = meta_out
+    return response_out
 
 
 def get_pivots_response(

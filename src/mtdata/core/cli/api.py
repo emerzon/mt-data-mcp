@@ -1239,8 +1239,10 @@ def main():
         _print_extended_help(functions, help_query)
         return 0
 
-    
+    parser_prog = os.path.basename(str(sys.argv[0] or "")) or CLI_PROGRAM
+
     parser = _safe_argument_parser(
+        prog=parser_prog,
         description="Dynamic CLI for MetaTrader5 MCP tools (formatted text output by default)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=_build_epilog(functions),

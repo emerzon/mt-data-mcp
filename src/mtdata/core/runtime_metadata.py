@@ -185,8 +185,9 @@ def build_runtime_timezone_meta(
             "tz": client_tz_value,
             "now": client_now if include_now else None,
         },
-        "used": {
-            "tz": used_tz,
-        },
     }
+    if include_local:
+        runtime_meta["used"] = {
+            "tz": used_tz,
+        }
     return _prune_empty(runtime_meta)
