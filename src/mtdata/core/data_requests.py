@@ -506,6 +506,10 @@ def _normalize_wait_event_spec_item(value: Any) -> Any:
     return normalized
 
 
+def _is_candle_close_wait_event(value: Any) -> bool:
+    return isinstance(value, dict) and str(value.get("type") or "").strip() == "candle_close"
+
+
 def _normalize_wait_event_request_payload(value: Any) -> Any:
     if not isinstance(value, dict):
         return value
@@ -520,19 +524,23 @@ def _normalize_wait_event_request_payload(value: Any) -> Any:
     watch_for_out: List[Any] = []
     end_on_out: List[Any] = []
 
+    def append_unique_boundary_event(item: Any) -> None:
+        if item not in end_on_out:
+            end_on_out.append(item)
+
     if isinstance(watch_for_input, list):
         for item in watch_for_input:
             normalized = _normalize_wait_event_spec_item(item)
-            if isinstance(normalized, dict) and str(normalized.get("type") or "").strip() == "candle_close":
-                end_on_out.append(normalized)
+            if _is_candle_close_wait_event(normalized):
+                append_unique_boundary_event(normalized)
             else:
                 watch_for_out.append(normalized)
 
     if isinstance(end_on_input, list):
         for item in end_on_input:
             normalized = _normalize_wait_event_spec_item(item)
-            if isinstance(normalized, dict) and str(normalized.get("type") or "").strip() == "candle_close":
-                end_on_out.append(normalized)
+            if _is_candle_close_wait_event(normalized):
+                append_unique_boundary_event(normalized)
             else:
                 watch_for_out.append(normalized)
 
