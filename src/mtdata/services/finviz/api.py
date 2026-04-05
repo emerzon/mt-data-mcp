@@ -61,11 +61,15 @@ def _normalize_finviz_date_string(value: Any) -> Any:
     if not text:
         return value
     text = text.replace("’", "'")
-    for fmt in ("%b %d '%y", "%b %d %Y", "%Y-%m-%d"):
+    for fmt in ("%b %d '%y", "%b %d %Y"):
         try:
             return datetime.datetime.strptime(text, fmt).date().isoformat()
         except Exception:
             continue
+    try:
+        return _parse_iso_date_input(text, field_name="date").isoformat()
+    except ValueError:
+        pass
     return value
 
 
@@ -878,12 +882,15 @@ def get_dividends_calendar_api(
 
 def _parse_iso_date_input(value: str, *, field_name: str) -> datetime.date:
     text = str(value).strip()
-    if len(text) < 10:
+    if not text:
         raise ValueError(f"Invalid {field_name} '{value}'. Expected YYYY-MM-DD or ISO datetime")
-    if len(text) > 10 and text[10] not in {"T", " ", "Z"}:
-        raise ValueError(f"Invalid {field_name} '{value}'. Expected YYYY-MM-DD or ISO datetime")
+    normalized = text[:-1] + "+00:00" if text.endswith(("Z", "z")) else text
     try:
-        return datetime.date.fromisoformat(text[:10])
+        return datetime.date.fromisoformat(normalized)
+    except ValueError:
+        pass
+    try:
+        return datetime.datetime.fromisoformat(normalized).date()
     except ValueError as e:
         raise ValueError(f"Invalid {field_name} '{value}'. Expected YYYY-MM-DD or ISO datetime") from e
 
