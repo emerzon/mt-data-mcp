@@ -1159,22 +1159,35 @@ def fetch_ticks(
         def _tick_field(tick: Any, name: str) -> Any:
             return _tick_field_value(tick, name)
 
-        # Check which optional columns have meaningful data (for row output)
-        lasts = [float(_tick_field(tick, "last") or 0.0) for tick in ticks]
-        flags = [int(_tick_field(tick, "flags") or 0) for tick in ticks]
+        # Extract shared tick columns once so summary/stats, simplification,
+        # and row rendering can all reuse the same values.
+        _epochs: List[float] = []
+        bids: List[float] = []
+        asks: List[float] = []
+        lasts: List[float] = []
+        flags: List[int] = []
+        volumes: List[float] = []
+        volumes_real: List[float] = []
         volume_field_exists = True
-        try:
-            volumes = [float(_tick_field(tick, "volume")) for tick in ticks]
-        except Exception:
-            volumes = []
-            volume_field_exists = False
-
         volume_real_field_exists = True
-        try:
-            volumes_real = [float(_tick_field(tick, "volume_real")) for tick in ticks]
-        except Exception:
-            volumes_real = []
-            volume_real_field_exists = False
+        for tick in ticks:
+            _epochs.append(float(_tick_field(tick, "time")))
+            bids.append(float(_tick_field(tick, "bid")))
+            asks.append(float(_tick_field(tick, "ask")))
+            lasts.append(float(_tick_field(tick, "last") or 0.0))
+            flags.append(int(_tick_field(tick, "flags") or 0))
+            if volume_field_exists:
+                try:
+                    volumes.append(float(_tick_field(tick, "volume")))
+                except Exception:
+                    volumes = []
+                    volume_field_exists = False
+            if volume_real_field_exists:
+                try:
+                    volumes_real.append(float(_tick_field(tick, "volume_real")))
+                except Exception:
+                    volumes_real = []
+                    volume_real_field_exists = False
 
         has_last = len(set(lasts)) > 1 or any(v != 0 for v in lasts)
         has_volume = volume_field_exists and (len(set(volumes)) > 1 or any(v != 0 for v in volumes))
@@ -1193,7 +1206,6 @@ def fetch_ticks(
         # Build data rows with matching columns and escape properly
         # Choose a consistent time format for all rows (strip year if constant)
         # Low-level tick fetch helpers already normalize MT5 times to UTC.
-        _epochs = [float(_tick_field(t, "time")) for t in ticks]
         client_tz = _resolve_client_tz()
         _use_ctz = client_tz is not None
         if not _use_ctz:
@@ -1202,15 +1214,15 @@ def fetch_ticks(
             fmt = _style_time_format(fmt)
         df_ticks = pd.DataFrame({
             "__epoch": _epochs,
-            "bid": [float(_tick_field(t, "bid")) for t in ticks],
-            "ask": [float(_tick_field(t, "ask")) for t in ticks],
+            "bid": bids,
+            "ask": asks,
         })
         if has_last:
-            df_ticks["last"] = [float(_tick_field(t, "last")) for t in ticks]
+            df_ticks["last"] = lasts
         if has_volume:
-            df_ticks["volume"] = [float(_tick_field(t, "volume")) for t in ticks]
+            df_ticks["volume"] = volumes
         if has_flags:
-            df_ticks["flags"] = [int(_tick_field(t, "flags")) for t in ticks]
+            df_ticks["flags"] = flags
         # Add display time column
         if _use_ctz:
             df_ticks["time"] = [
@@ -1466,19 +1478,13 @@ def fetch_ticks(
                 idx_set: set = set([0, original_count - 1])
                 params_accum: Dict[str, Any] = {}
                 method_used_overall = None
-                series_by_col: Dict[str, List[float]] = {c: [] for c in cols}
-                simplify_values_by_col: Dict[str, List[float]] = {c: [] for c in cols}
-                for tick in ticks:
-                    for c in cols:
-                        v = _tick_field(tick, c)
-                        try:
-                            numeric_value = float(v)
-                        except Exception:
-                            series_by_col[c].append(float('nan'))
-                            simplify_values_by_col[c].append(0.0)
-                        else:
-                            series_by_col[c].append(numeric_value)
-                            simplify_values_by_col[c].append(numeric_value)
+                extracted_columns: Dict[str, List[float]] = {
+                    "bid": bids,
+                    "ask": asks,
+                    "last": lasts,
+                    "volume": volumes,
+                }
+                series_by_col: Dict[str, List[float]] = {c: extracted_columns[c] for c in cols}
                 for c in cols:
                     series = series_by_col[c]
                     sub_spec = dict(simplify)
@@ -1499,7 +1505,7 @@ def fetch_ticks(
                 mins: Dict[str, float] = {}
                 ranges: Dict[str, float] = {}
                 for c in cols:
-                    vals = simplify_values_by_col[c]
+                    vals = series_by_col[c]
                     if vals:
                         mn, mx = min(vals), max(vals)
                         ranges[c] = max(1e-12, mx - mn)
@@ -1511,7 +1517,7 @@ def fetch_ticks(
                 for i in range(original_count):
                     s = 0.0
                     for c in cols:
-                        vv = (simplify_values_by_col[c][i] - mins[c]) / ranges[c]
+                        vv = (series_by_col[c][i] - mins[c]) / ranges[c]
                         s += abs(vv)
                     comp.append(s)
                 if len(union_idxs) > n_out:
@@ -1540,18 +1546,17 @@ def fetch_ticks(
 
         rows = []
         for i in select_indices:
-            tick = ticks[i]
             if _use_ctz:
                 time_str = _format_time_minimal_local(_epochs[i])
             else:
                 time_str = datetime.fromtimestamp(_epochs[i], tz=dt_timezone.utc).strftime(fmt)
-            values = [time_str, float(_tick_field(tick, "bid")), float(_tick_field(tick, "ask"))]
+            values = [time_str, bids[i], asks[i]]
             if has_last:
-                values.append(float(_tick_field(tick, "last")))
+                values.append(lasts[i])
             if has_volume:
-                values.append(float(_tick_field(tick, "volume")))
+                values.append(volumes[i])
             if has_flags:
-                values.append(int(_tick_field(tick, "flags")))
+                values.append(flags[i])
             rows.append(values)
 
         payload = _table_from_rows(headers, rows)
