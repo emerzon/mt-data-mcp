@@ -21,6 +21,8 @@ _INDICATOR_ALIASES: dict[str, str] = {
     "bollinger_bands": "bbands",
     "bollingerbands": "bbands",
 }
+_INDICATOR_SERIES_NAMES = ("open", "high", "low", "close", "volume")
+_VOLUME_SOURCE_COLUMNS = ("volume", "real_volume", "tick_volume")
 
 
 def _normalize_ta_indicator_name(name: str) -> str:
@@ -279,6 +281,62 @@ def _find_unknown_ta_indicators(spec: str) -> List[str]:
     return sorted(set(unknown))
 
 
+def _format_missing_indicator_columns(
+    indicator_name: str,
+    required: List[str],
+    missing: List[str],
+    available: List[str],
+) -> str:
+    def _display(col: str) -> str:
+        if col == "volume":
+            return "volume (or real_volume/tick_volume)"
+        return col
+
+    required_display = ", ".join(_display(col) for col in required)
+    missing_display = ", ".join(_display(col) for col in missing)
+    available_display = ", ".join(sorted(str(col) for col in available)) or "<none>"
+    return (
+        f"Indicator '{indicator_name}' requires columns: {required_display}. "
+        f"Missing: {missing_display}. Available columns: {available_display}."
+    )
+
+
+def _resolve_indicator_series_inputs(
+    df: pd.DataFrame,
+    indicator_name: str,
+    params: Dict[str, inspect.Parameter],
+) -> Dict[str, pd.Series]:
+    required = [name for name in _INDICATOR_SERIES_NAMES if name in params]
+    resolved: Dict[str, pd.Series] = {}
+    missing: List[str] = []
+
+    for name in required:
+        if name == "volume":
+            volume_col = next((col for col in _VOLUME_SOURCE_COLUMNS if col in df.columns), None)
+            if volume_col is None:
+                missing.append(name)
+            else:
+                resolved[name] = df[volume_col]
+            continue
+
+        if name not in df.columns:
+            missing.append(name)
+            continue
+        resolved[name] = df[name]
+
+    if missing:
+        raise ValueError(
+            _format_missing_indicator_columns(
+                indicator_name,
+                required=required,
+                missing=missing,
+                available=list(df.columns),
+            )
+        )
+
+    return resolved
+
+
 def _apply_ta_indicators(df: pd.DataFrame, ti_spec: str) -> List[str]:
     """Apply indicators specified by ti_spec to df in-place, return list of added column names."""
     added_cols: List[str] = []
@@ -304,23 +362,24 @@ def _apply_ta_indicators(df: pd.DataFrame, ti_spec: str) -> List[str]:
         try:
             sig = inspect.signature(func)
             params = sig.parameters
+            series_inputs = _resolve_indicator_series_inputs(df, lname, params)
             # Prepare positional and keyword arguments safely
             call_kwargs = dict(kwargs)
             call_args = []
             # Provide price/series inputs
-            if 'close' in params and 'close' in df.columns:
+            if 'close' in series_inputs:
                 # Use positional for 'close' to prevent numeric args binding to it
-                call_args.append(df['close'])
+                call_args.append(series_inputs['close'])
                 call_kwargs.pop('close', None)
             # Additional series as keywords if accepted
-            if 'open' in params and 'open' not in call_kwargs and 'open' in df.columns:
-                call_kwargs['open'] = df['open']
-            if 'high' in params and 'high' not in call_kwargs and 'high' in df.columns:
-                call_kwargs['high'] = df['high']
-            if 'low' in params and 'low' not in call_kwargs and 'low' in df.columns:
-                call_kwargs['low'] = df['low']
-            if 'volume' in params and 'volume' not in call_kwargs and 'volume' in df.columns:
-                call_kwargs['volume'] = df['volume']
+            if 'open' in series_inputs and 'open' not in call_kwargs:
+                call_kwargs['open'] = series_inputs['open']
+            if 'high' in series_inputs and 'high' not in call_kwargs:
+                call_kwargs['high'] = series_inputs['high']
+            if 'low' in series_inputs and 'low' not in call_kwargs:
+                call_kwargs['low'] = series_inputs['low']
+            if 'volume' in series_inputs and 'volume' not in call_kwargs:
+                call_kwargs['volume'] = series_inputs['volume']
 
             # Generic mapping: map provided numeric args to function parameters in declared order
             # Skip series parameters and any already supplied in call_kwargs
@@ -365,6 +424,8 @@ def _apply_ta_indicators(df: pd.DataFrame, ti_spec: str) -> List[str]:
                     df[c] = out[c]
             elif isinstance(out, pd.Series):
                 df[out.name or lname] = out
+        except ValueError:
+            raise
         except Exception:
             continue
         new_cols = [c for c in df.columns if c not in before]
