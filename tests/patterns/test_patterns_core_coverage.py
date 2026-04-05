@@ -714,6 +714,40 @@ class TestEnrichClassicPatterns:
         assert volume_confirmation["volume_source"] in {"volume", "tick_volume"}
         assert volume_confirmation["breakout_to_baseline_ratio"] > 1.2
 
+    def test_missing_end_index_uses_latest_bar_for_volume_confirmation(self):
+        from mtdata.core.patterns_support import _enrich_classic_patterns
+        from mtdata.patterns.classic import ClassicDetectorConfig
+
+        df = _make_ohlcv_df(12)
+        df["tick_volume"] = [100, 110, 105, 95, 100, 120, 130, 125, 140, 150, 320, 340]
+        rows = [
+            {
+                "name": "Ascending Triangle",
+                "status": "completed",
+                "confidence": 0.6,
+                "start_index": 2,
+                "details": {"breakout_direction": "up"},
+            }
+        ]
+
+        enriched = _enrich_classic_patterns(
+            rows,
+            df,
+            ClassicDetectorConfig(
+                volume_confirm_lookback_bars=4,
+                volume_confirm_breakout_bars=2,
+                volume_confirm_min_ratio=1.2,
+                volume_confirm_bonus=0.1,
+                volume_confirm_penalty=0.1,
+            ),
+        )
+
+        volume_confirmation = enriched[0]["details"]["volume_confirmation"]
+        assert enriched[0]["confidence"] == pytest.approx(0.7)
+        assert volume_confirmation["status"] == "confirmed"
+        assert volume_confirmation["breakout_avg_volume"] == pytest.approx(330.0)
+        assert volume_confirmation["breakout_to_baseline_ratio"] > 1.2
+
     def test_completed_targets_are_flagged_stale(self):
         from mtdata.core.patterns_support import _enrich_classic_patterns
 
