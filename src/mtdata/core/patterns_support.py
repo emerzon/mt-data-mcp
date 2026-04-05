@@ -1272,9 +1272,14 @@ def _load_stock_pattern_utils(config: Optional[Dict[str, Any]]) -> Tuple[Optiona
     required = ("get_max_min", "find_double_top", "find_double_bottom")
     last_err: Optional[str] = None
     for module_name in candidate_modules:
+        module = _STOCK_PATTERN_UTILS_CACHE.get(module_name)
+        if module is not None:
+            return module, None
+
         with _STOCK_PATTERN_UTILS_CACHE_LOCK:
-            if module_name in _STOCK_PATTERN_UTILS_CACHE:
-                return _STOCK_PATTERN_UTILS_CACHE[module_name], None
+            module = _STOCK_PATTERN_UTILS_CACHE.get(module_name)
+            if module is not None:
+                return module, None
             try:
                 module = importlib.import_module(module_name)
             except Exception as ex:
