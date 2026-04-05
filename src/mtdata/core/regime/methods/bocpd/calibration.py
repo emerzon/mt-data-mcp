@@ -5,6 +5,40 @@ import numpy as np
 from ...crypto import _is_probably_crypto_symbol
 from .....shared.constants import TIMEFRAME_SECONDS
 
+# Empirical BOCPD calibration defaults. Higher volatility, fatter tails, more
+# jump activity, and larger cumulative moves should make the detector react
+# faster, while stronger drift/trend should damp that sensitivity a bit to
+# avoid over-firing on sustained directional moves.
+_BOCPD_JUMP_ZSCORE_THRESHOLD = 2.5
+_BOCPD_VOL_NORM_BASE = 0.003
+_BOCPD_VOL_NORM_CAP = 3.0
+_BOCPD_KURTOSIS_NORM_BASE = 6.0
+_BOCPD_KURTOSIS_NORM_CAP = 2.0
+_BOCPD_JUMP_SHARE_NORM_BASE = 0.08
+_BOCPD_JUMP_SHARE_NORM_CAP = 2.0
+_BOCPD_TREND_STRENGTH_NORM_BASE = 0.20
+_BOCPD_TREND_STRENGTH_NORM_CAP = 2.0
+_BOCPD_MOVE_ZSCORE_NORM_BASE = 3.0
+_BOCPD_MOVE_ZSCORE_NORM_CAP = 2.5
+_BOCPD_SENSITIVITY_VOL_WEIGHT = 0.35
+_BOCPD_SENSITIVITY_KURT_WEIGHT = 0.25
+_BOCPD_SENSITIVITY_JUMP_WEIGHT = 0.25
+_BOCPD_SENSITIVITY_TREND_WEIGHT = -0.20
+_BOCPD_SENSITIVITY_MOVE_WEIGHT = 0.60
+_BOCPD_SENSITIVITY_MIN = 0.5
+_BOCPD_SENSITIVITY_MAX = 2.2
+_BOCPD_HAZARD_FLOOR_MIN = 12
+_BOCPD_HAZARD_FLOOR_RATIO = 0.25
+_BOCPD_HAZARD_CAP_MAX = 500
+_BOCPD_HAZARD_CAP_RATIO = 1.80
+_BOCPD_CP_THRESHOLD_VOL_WEIGHT = 0.08
+_BOCPD_CP_THRESHOLD_JUMP_WEIGHT = 0.06
+_BOCPD_CP_THRESHOLD_KURT_WEIGHT = 0.04
+_BOCPD_CP_THRESHOLD_TREND_WEIGHT = 0.04
+_BOCPD_CP_THRESHOLD_MOVE_WEIGHT = 0.08
+_BOCPD_CP_THRESHOLD_MIN = 0.15
+_BOCPD_CP_THRESHOLD_MAX = 0.75
+
 
 def _default_bocpd_hazard_lambda(symbol: Any, timeframe: Any) -> int:
     """Get default hazard lambda based on symbol type and timeframe."""
@@ -43,7 +77,13 @@ def _auto_calibrate_bocpd_params(
     symbol: Any,
     timeframe: Any,
 ) -> Tuple[int, float, Dict[str, Any]]:
-    """Auto-calibrate BOCPD hazard/threshold from recent return distribution."""
+    """Auto-calibrate BOCPD hazard/threshold from recent return distribution.
+
+    The private constants used below are empirical defaults that normalize
+    recent volatility, tail risk, jump frequency, drift strength, and
+    cumulative move significance onto a common scale before nudging the hazard
+    lambda and CP threshold.
+    """
     r = np.asarray(returns, dtype=float)
     r = r[np.isfinite(r)]
     base_lambda = int(_default_bocpd_hazard_lambda(symbol, timeframe))
@@ -63,46 +103,61 @@ def _auto_calibrate_bocpd_params(
     centered = r - mu
     z = centered / sigma_safe
     kurt = float(np.mean(z ** 4) - 3.0) if z.size > 0 else 0.0
-    jump_share = float(np.mean(np.abs(z) >= 2.5)) if z.size > 0 else 0.0
+    jump_share = float(np.mean(np.abs(z) >= _BOCPD_JUMP_ZSCORE_THRESHOLD)) if z.size > 0 else 0.0
     trend_strength = float(abs(mu) / sigma_safe)
     move_zscore = float(abs(np.sum(r)) / (sigma_safe * np.sqrt(max(1, int(r.size)))))
 
-    vol_norm = float(np.clip(sigma / 0.003, 0.0, 3.0))
-    kurt_norm = float(np.clip(max(0.0, kurt) / 6.0, 0.0, 2.0))
-    jump_norm = float(np.clip(jump_share / 0.08, 0.0, 2.0))
-    trend_norm = float(np.clip(trend_strength / 0.20, 0.0, 2.0))
-    move_sig_norm = float(np.clip(move_zscore / 3.0, 0.0, 2.5))
+    vol_norm = float(np.clip(sigma / _BOCPD_VOL_NORM_BASE, 0.0, _BOCPD_VOL_NORM_CAP))
+    kurt_norm = float(np.clip(max(0.0, kurt) / _BOCPD_KURTOSIS_NORM_BASE, 0.0, _BOCPD_KURTOSIS_NORM_CAP))
+    jump_norm = float(np.clip(jump_share / _BOCPD_JUMP_SHARE_NORM_BASE, 0.0, _BOCPD_JUMP_SHARE_NORM_CAP))
+    trend_norm = float(
+        np.clip(
+            trend_strength / _BOCPD_TREND_STRENGTH_NORM_BASE,
+            0.0,
+            _BOCPD_TREND_STRENGTH_NORM_CAP,
+        )
+    )
+    move_sig_norm = float(np.clip(move_zscore / _BOCPD_MOVE_ZSCORE_NORM_BASE, 0.0, _BOCPD_MOVE_ZSCORE_NORM_CAP))
 
     sensitivity = float(
         np.clip(
             1.0
-            + 0.35 * vol_norm
-            + 0.25 * kurt_norm
-            + 0.25 * jump_norm
-            - 0.20 * trend_norm
-            + 0.60 * move_sig_norm,
-            0.5,
-            2.2,
+            + _BOCPD_SENSITIVITY_VOL_WEIGHT * vol_norm
+            + _BOCPD_SENSITIVITY_KURT_WEIGHT * kurt_norm
+            + _BOCPD_SENSITIVITY_JUMP_WEIGHT * jump_norm
+            + _BOCPD_SENSITIVITY_TREND_WEIGHT * trend_norm
+            + _BOCPD_SENSITIVITY_MOVE_WEIGHT * move_sig_norm,
+            _BOCPD_SENSITIVITY_MIN,
+            _BOCPD_SENSITIVITY_MAX,
         )
     )
 
-    hazard_floor = max(12, int(round(base_lambda * 0.25)))
-    hazard_cap = min(500, max(hazard_floor + 1, int(round(base_lambda * 1.80))))
+    hazard_floor = max(_BOCPD_HAZARD_FLOOR_MIN, int(round(base_lambda * _BOCPD_HAZARD_FLOOR_RATIO)))
+    hazard_cap = min(
+        _BOCPD_HAZARD_CAP_MAX,
+        max(hazard_floor + 1, int(round(base_lambda * _BOCPD_HAZARD_CAP_RATIO))),
+    )
     hazard_lambda = int(np.clip(int(round(base_lambda / sensitivity)), hazard_floor, hazard_cap))
 
     cp_threshold = float(
         np.clip(
             base_threshold
-            - 0.08 * (vol_norm / 3.0)
-            - 0.06 * (jump_norm / 2.0)
-            - 0.04 * (kurt_norm / 2.0)
-            + 0.04 * (trend_norm / 2.0),
-            0.15,
-            0.75,
+            - _BOCPD_CP_THRESHOLD_VOL_WEIGHT * (vol_norm / _BOCPD_VOL_NORM_CAP)
+            - _BOCPD_CP_THRESHOLD_JUMP_WEIGHT * (jump_norm / _BOCPD_JUMP_SHARE_NORM_CAP)
+            - _BOCPD_CP_THRESHOLD_KURT_WEIGHT * (kurt_norm / _BOCPD_KURTOSIS_NORM_CAP)
+            + _BOCPD_CP_THRESHOLD_TREND_WEIGHT * (trend_norm / _BOCPD_TREND_STRENGTH_NORM_CAP),
+            _BOCPD_CP_THRESHOLD_MIN,
+            _BOCPD_CP_THRESHOLD_MAX,
         )
     )
     if move_sig_norm > 0.0:
-        cp_threshold = float(np.clip(cp_threshold - 0.08 * (move_sig_norm / 2.5), 0.15, 0.75))
+        cp_threshold = float(
+            np.clip(
+                cp_threshold - _BOCPD_CP_THRESHOLD_MOVE_WEIGHT * (move_sig_norm / _BOCPD_MOVE_ZSCORE_NORM_CAP),
+                _BOCPD_CP_THRESHOLD_MIN,
+                _BOCPD_CP_THRESHOLD_MAX,
+            )
+        )
 
     diagnostics = {
         "calibrated": True,
