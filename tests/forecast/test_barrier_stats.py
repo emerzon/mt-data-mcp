@@ -301,6 +301,43 @@ class TestBarrierStats(unittest.TestCase):
 
         self.assertAlmostEqual(result['ev']['mean'], 0.15, places=12)
         self.assertAlmostEqual(result['kelly']['mean'], 0.375, places=12)
+
+    def test_bootstrap_metric_uncertainty_reports_conditional_metrics_with_no_hit_paths(self):
+        """Bootstrap uncertainty should expose resolved-only EV/Kelly when paths stay open."""
+        from unittest.mock import patch
+
+        class FakeRandomState:
+            def __init__(self, seed=None):
+                self.seed = seed
+
+            def choice(self, n_sims, size, replace=True):
+                return np.array([0, 1, 2, 3])
+
+        paths = np.array([
+            [105.0, 111.0],
+            [105.0, 111.0],
+            [95.0, 89.0],
+            [100.0, 100.0],
+        ])
+
+        with patch('mtdata.forecast.barrier_stats.np.random.RandomState', FakeRandomState):
+            result = bootstrap_metric_uncertainty(
+                paths=paths,
+                tp_trigger=110.0,
+                sl_trigger=90.0,
+                direction='long',
+                entry_price=100.0,
+                n_bootstrap=2,
+                metrics=['ev', 'ev_cond', 'kelly', 'kelly_cond', 'prob_no_hit', 'prob_resolve'],
+                seed=42,
+            )
+
+        self.assertAlmostEqual(result['prob_no_hit']['mean'], 0.25, places=12)
+        self.assertAlmostEqual(result['prob_resolve']['mean'], 0.75, places=12)
+        self.assertAlmostEqual(result['ev']['mean'], 2.5, places=12)
+        self.assertAlmostEqual(result['ev_cond']['mean'], 10.0 / 3.0, places=12)
+        self.assertAlmostEqual(result['kelly']['mean'], 0.25, places=12)
+        self.assertAlmostEqual(result['kelly_cond']['mean'], 1.0 / 3.0, places=12)
     
     def test_statistical_power_analysis_high_power(self):
         """Test power analysis with high power scenario."""
