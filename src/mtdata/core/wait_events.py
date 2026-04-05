@@ -40,6 +40,9 @@ _MARKET_BUFFER_EXTRA_TICKS = 32
 _ACCOUNT_HISTORY_SEED_LOOKBACK_SECONDS = 5.0
 _ORDER_STATE_EVENT_TYPES = {"order_created", "pending_near_fill"}
 _POSITION_STATE_EVENT_TYPES = {"position_opened", "position_closed", "stop_threat"}
+_ORDER_POSITION_EVENT_TYPES = _ORDER_STATE_EVENT_TYPES | _POSITION_STATE_EVENT_TYPES
+_HISTORY_DEAL_EVENT_TYPES = {"order_filled", "position_opened", "position_closed", "tp_hit", "sl_hit"}
+_HISTORY_ORDER_EVENT_TYPES = {"order_cancelled"}
 _MARKET_EVENT_TYPES = {
     "price_change",
     "volume_spike",
@@ -83,6 +86,12 @@ def run_wait_event_loop(
     end_on_inferred = bool(compiled.get("end_on_inferred"))
     watch_for_payload = list(compiled.get("watch_for_payload", []))
     end_on_payload = list(compiled.get("end_on_payload", []))
+    needs_orders = bool(compiled.get("needs_orders"))
+    needs_positions = bool(compiled.get("needs_positions"))
+    needs_current_state = bool(compiled.get("needs_current_state"))
+    needs_history_deals = bool(compiled.get("needs_history_deals"))
+    needs_history_orders = bool(compiled.get("needs_history_orders"))
+    market_specs = list(compiled.get("market_specs", []))
     max_wait_seconds = (
         None if request.max_wait_seconds is None else float(request.max_wait_seconds)
     )
@@ -101,16 +110,25 @@ def run_wait_event_loop(
 
     history_state = _build_account_history_state(
         gateway=gateway,
-        watch_for=watch_for,
+        needs_history_deals=needs_history_deals,
+        needs_history_orders=needs_history_orders,
         started_at_utc=started_at_utc,
     )
     if isinstance(history_state, dict) and "error" in history_state:
         return history_state
 
-    baseline = _build_baseline(gateway, watch_for) if _watchers_need_current_state(watch_for) else {}
+    baseline = (
+        _build_baseline(
+            gateway,
+            needs_orders=needs_orders,
+            needs_positions=needs_positions,
+        )
+        if needs_current_state
+        else {}
+    )
     market_state = _build_market_state(
         gateway=gateway,
-        watch_for=watch_for,
+        market_specs=market_specs,
         observed_at_utc=started_at_utc,
         poll_interval_seconds=poll_interval_seconds,
     )
@@ -149,12 +167,16 @@ def run_wait_event_loop(
             return connection_error
         snapshot = _collect_snapshot(
             gateway=gateway,
-            watch_for=watch_for,
             baseline=baseline,
             history_state=history_state,
             market_state=market_state,
             started_at_utc=started_at_utc,
             observed_at_utc=observed_at_utc,
+            needs_orders=needs_orders,
+            needs_positions=needs_positions,
+            needs_history_deals=needs_history_deals,
+            needs_history_orders=needs_history_orders,
+            market_specs=market_specs,
         )
         if "error" in snapshot:
             return snapshot
@@ -258,6 +280,8 @@ def _compile_request(
             return compiled
         end_on.append(compiled)
 
+    watcher_requirements = _watcher_requirements(watch_for)
+
     return {
         "watch_for": watch_for,
         "watch_for_inferred": watch_for_inferred,
@@ -271,6 +295,7 @@ def _compile_request(
             ),
         ),
         "end_on_payload": [_public_boundary_spec_payload(spec, request=request) for spec in source_end_specs],
+        **watcher_requirements,
     }
 
 
@@ -576,38 +601,69 @@ def _run_candle_boundary_only(
     return payload
 
 
-def _build_baseline(gateway: Any, watch_for: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _watcher_requirements(watch_for: List[Dict[str, Any]]) -> Dict[str, Any]:
+    market_specs: List[Dict[str, Any]] = []
+    needs_orders = False
+    needs_positions = False
+    needs_history_deals = False
+    needs_history_orders = False
+    for item in watch_for:
+        event_type = str(item["type"])
+        if event_type in _ORDER_STATE_EVENT_TYPES:
+            needs_orders = True
+        if event_type in _POSITION_STATE_EVENT_TYPES:
+            needs_positions = True
+        if event_type in _HISTORY_DEAL_EVENT_TYPES:
+            needs_history_deals = True
+        if event_type in _HISTORY_ORDER_EVENT_TYPES:
+            needs_history_orders = True
+        if event_type in _MARKET_EVENT_TYPES:
+            market_specs.append(item)
+    return {
+        "needs_orders": needs_orders,
+        "needs_positions": needs_positions,
+        "needs_current_state": needs_orders or needs_positions,
+        "needs_history_deals": needs_history_deals,
+        "needs_history_orders": needs_history_orders,
+        "market_specs": market_specs,
+    }
+
+
+def _build_baseline(
+    gateway: Any,
+    *,
+    needs_orders: bool,
+    needs_positions: bool,
+) -> Dict[str, Any]:
     baseline: Dict[str, Any] = {}
-    if any(item["type"] in _ORDER_STATE_EVENT_TYPES for item in watch_for):
+    if needs_orders:
         baseline["orders"] = _coerce_rows(gateway.orders_get())
-    if any(item["type"] in _POSITION_STATE_EVENT_TYPES for item in watch_for):
+    if needs_positions:
         baseline["positions"] = _coerce_rows(gateway.positions_get())
     return baseline
 
 
 def _watchers_need_current_state(watch_for: List[Dict[str, Any]]) -> bool:
-    return any(item["type"] in (_ORDER_STATE_EVENT_TYPES | _POSITION_STATE_EVENT_TYPES) for item in watch_for)
+    return any(item["type"] in _ORDER_POSITION_EVENT_TYPES for item in watch_for)
 
 
 def _watchers_need_history_deals(watch_for: List[Dict[str, Any]]) -> bool:
-    return any(
-        item["type"] in {"order_filled", "position_opened", "position_closed", "tp_hit", "sl_hit"}
-        for item in watch_for
-    )
+    return any(item["type"] in _HISTORY_DEAL_EVENT_TYPES for item in watch_for)
 
 
 def _watchers_need_history_orders(watch_for: List[Dict[str, Any]]) -> bool:
-    return any(item["type"] == "order_cancelled" for item in watch_for)
+    return any(item["type"] in _HISTORY_ORDER_EVENT_TYPES for item in watch_for)
 
 
 def _build_account_history_state(
     *,
     gateway: Any,
-    watch_for: List[Dict[str, Any]],
+    needs_history_deals: bool,
+    needs_history_orders: bool,
     started_at_utc: datetime,
 ) -> Dict[str, Any]:
     state: Dict[str, Any] = {}
-    if _watchers_need_history_deals(watch_for):
+    if needs_history_deals:
         seeded = _seed_account_history_keys(
             fetch_impl=gateway.history_deals_get,
             started_at_utc=started_at_utc,
@@ -617,7 +673,7 @@ def _build_account_history_state(
         if isinstance(seeded, dict) and "error" in seeded:
             return seeded
         state["history_deals"] = {"seen_keys": seeded}
-    if _watchers_need_history_orders(watch_for):
+    if needs_history_orders:
         seeded = _seed_account_history_keys(
             fetch_impl=gateway.history_orders_get,
             started_at_utc=started_at_utc,
@@ -704,31 +760,35 @@ def _find_preexisting_match(
 def _collect_snapshot(
     *,
     gateway: Any,
-    watch_for: List[Dict[str, Any]],
     baseline: Dict[str, Any],
     history_state: Dict[str, Any],
     market_state: Dict[str, Any],
     started_at_utc: datetime,
     observed_at_utc: datetime,
+    needs_orders: bool,
+    needs_positions: bool,
+    needs_history_deals: bool,
+    needs_history_orders: bool,
+    market_specs: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
     snapshot: Dict[str, Any] = {
         "observed_at_utc": observed_at_utc,
         "baseline": baseline,
     }
 
-    if any(item["type"] in _ORDER_STATE_EVENT_TYPES for item in watch_for):
+    if needs_orders:
         try:
             snapshot["orders"] = _coerce_rows(gateway.orders_get())
         except Exception as exc:
             return {"error": f"Failed to fetch open orders: {exc}"}
 
-    if any(item["type"] in _POSITION_STATE_EVENT_TYPES for item in watch_for):
+    if needs_positions:
         try:
             snapshot["positions"] = _coerce_rows(gateway.positions_get())
         except Exception as exc:
             return {"error": f"Failed to fetch open positions: {exc}"}
 
-    if _watchers_need_history_deals(watch_for):
+    if needs_history_deals:
         rows = _collect_new_account_history_rows(
             fetch_impl=gateway.history_deals_get,
             started_at_utc=started_at_utc,
@@ -741,7 +801,7 @@ def _collect_snapshot(
             return rows
         snapshot["history_deals"] = rows
 
-    if _watchers_need_history_orders(watch_for):
+    if needs_history_orders:
         rows = _collect_new_account_history_rows(
             fetch_impl=gateway.history_orders_get,
             started_at_utc=started_at_utc,
@@ -754,12 +814,11 @@ def _collect_snapshot(
             return rows
         snapshot["history_orders"] = rows
 
-    market_specs = [item for item in watch_for if item["type"] in _MARKET_EVENT_TYPES]
     if market_specs:
         refreshed = _refresh_market_state(
             market_state=market_state,
             gateway=gateway,
-            watch_for=market_specs,
+            market_specs=market_specs,
             observed_at_utc=observed_at_utc,
         )
         if isinstance(refreshed, dict) and "error" in refreshed:
@@ -813,11 +872,10 @@ def _collect_new_account_history_rows(
 def _build_market_state(
     *,
     gateway: Any,
-    watch_for: List[Dict[str, Any]],
+    market_specs: List[Dict[str, Any]],
     observed_at_utc: datetime,
     poll_interval_seconds: float,
 ) -> Dict[str, Any]:
-    market_specs = [item for item in watch_for if item["type"] in _MARKET_EVENT_TYPES]
     if not market_specs:
         return {}
 
@@ -841,10 +899,10 @@ def _refresh_market_state(
     *,
     market_state: Dict[str, Any],
     gateway: Any,
-    watch_for: List[Dict[str, Any]],
+    market_specs: List[Dict[str, Any]],
     observed_at_utc: datetime,
 ) -> Dict[str, Any]:
-    for symbol in _market_symbols(watch_for):
+    for symbol in _market_symbols(market_specs):
         state = market_state.get(symbol)
         if state is None:
             continue
@@ -861,7 +919,7 @@ def _refresh_market_state(
         trimmed = _merge_market_ticks(
             state.get("ticks", []),
             ticks_or_error,
-            specs=[item for item in watch_for if item["symbol"] == symbol],
+            specs=[item for item in market_specs if item["symbol"] == symbol],
             observed_at_utc=observed_at_utc,
         )
         state["ticks"] = trimmed
