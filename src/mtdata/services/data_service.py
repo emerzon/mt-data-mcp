@@ -1484,8 +1484,7 @@ def fetch_ticks(
                     "last": lasts,
                     "volume": volumes,
                 }
-                series_by_col: Dict[str, List[float]] = {c: list(extracted_columns[c]) for c in cols}
-                simplify_values_by_col: Dict[str, List[float]] = {c: list(extracted_columns[c]) for c in cols}
+                series_by_col: Dict[str, List[float]] = {c: extracted_columns[c] for c in cols}
                 for c in cols:
                     series = series_by_col[c]
                     sub_spec = dict(simplify)
@@ -1506,7 +1505,7 @@ def fetch_ticks(
                 mins: Dict[str, float] = {}
                 ranges: Dict[str, float] = {}
                 for c in cols:
-                    vals = simplify_values_by_col[c]
+                    vals = series_by_col[c]
                     if vals:
                         mn, mx = min(vals), max(vals)
                         ranges[c] = max(1e-12, mx - mn)
@@ -1518,7 +1517,7 @@ def fetch_ticks(
                 for i in range(original_count):
                     s = 0.0
                     for c in cols:
-                        vv = (simplify_values_by_col[c][i] - mins[c]) / ranges[c]
+                        vv = (series_by_col[c][i] - mins[c]) / ranges[c]
                         s += abs(vv)
                     comp.append(s)
                 if len(union_idxs) > n_out:
