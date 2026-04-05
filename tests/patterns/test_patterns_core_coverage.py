@@ -639,7 +639,7 @@ class TestEstimateClassicBarsToCompletion:
 
     def test_flag(self):
         result = self._call("Bull Flag", {}, 0, 20, 100)
-        assert isinstance(result, int)
+        assert result == 6
 
     def test_unknown_pattern(self):
         result = self._call("Unknown Pattern", {}, 0, 20, 100)

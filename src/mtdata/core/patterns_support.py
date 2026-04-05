@@ -1238,7 +1238,7 @@ def _estimate_classic_bars_to_completion(
             bars = int(max(0, int(round(t_star - (n_bars - 1)))))
             return int(min(max(0, bars), 3 * length))
         if "pennant" in name_text or "flag" in name_text:
-            return int(max(1, min(2 * length, int(round(0.3 * length)))))
+            return int(max(1, int(round(0.3 * length))))
     except Exception:
         return None
     return None
