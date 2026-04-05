@@ -20,6 +20,7 @@ from .execution_logging import run_logged_operation
 from .mt5_gateway import get_mt5_gateway
 from ..services.data_service import fetch_candles, fetch_ticks
 from ..utils.mt5 import ensure_mt5_connection_or_raise
+from ..utils.utils import _coerce_finite_float
 
 # Explicitly define what should be exported for '*' imports
 __all__ = ['data_fetch_candles', 'data_fetch_ticks', 'wait_event']
@@ -71,7 +72,7 @@ def _support_resistance_watchers(*, instrument: str) -> List[Dict[str, Any]]:
     for level in levels:
         if not isinstance(level, dict):
             continue
-        level_value = _coerce_price(level.get("value"))
+        level_value = _coerce_finite_float(level.get("value"))
         if level_value is None:
             continue
         level_type = str(level.get("type") or "").strip().lower()
@@ -149,7 +150,7 @@ def _extract_pivot_levels(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
             continue
         values = [
             numeric
-            for numeric in (_coerce_price(value) for key, value in row.items() if key != "level")
+            for numeric in (_coerce_finite_float(value) for key, value in row.items() if key != "level")
             if numeric is not None
         ]
         if not values:
@@ -161,16 +162,6 @@ def _extract_pivot_levels(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
         out.append({"label": label, "value": price})
     out.sort(key=lambda item: float(item["value"]))
     return out
-
-
-def _coerce_price(value: Any) -> Optional[float]:
-    try:
-        numeric = float(value)
-    except Exception:
-        return None
-    if numeric != numeric:
-        return None
-    return float(numeric)
 
 
 def _dedupe_wait_event_watchers(watch_for: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
