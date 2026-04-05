@@ -394,6 +394,7 @@ class EnsembleMethod(ForecastMethod):
         rmse = None
         ensemble_intercept = 0.0
         coeffs = None
+        stacking_weight_semantics = None
         cv_rows = 0
         if mode in ('bma', 'stacking'):
             prepare_kwargs: Dict[str, Any] = {}
@@ -494,7 +495,13 @@ class EnsembleMethod(ForecastMethod):
             combined = np.full_like(component_forecasts[0], ensemble_intercept, dtype=float)
             for weight, forecast in zip(coeffs, component_forecasts):
                 combined = combined + float(weight) * forecast
-            weights_vec = coeffs
+            coeff_total = float(np.sum(coeffs))
+            if np.isfinite(coeff_total) and coeff_total > 0:
+                weights_vec = coeffs / coeff_total
+                stacking_weight_semantics = 'normalized_coefficients'
+            else:
+                weights_vec = coeffs
+                stacking_weight_semantics = 'raw_coefficients'
 
         ensemble_meta.update({
             'mode_used': effective_mode,
@@ -507,6 +514,8 @@ class EnsembleMethod(ForecastMethod):
             ensemble_meta['cv_rmse'] = [float(value) for value in rmse.tolist()]
         if effective_mode == 'stacking':
             ensemble_meta['intercept'] = float(ensemble_intercept)
+            ensemble_meta['coefficients'] = [float(value) for value in coeffs.tolist()]
+            ensemble_meta['weight_semantics'] = stacking_weight_semantics
         if cv_failures:
             ensemble_meta['cv_failures'] = cv_failures
         if component_failures:
