@@ -170,10 +170,6 @@ def _get_pydantic_model_fields(model_type: type[BaseModel]) -> tuple[Dict[str, A
     if isinstance(model_fields, dict):
         return model_fields, True
 
-    legacy_fields = getattr(model_type, "__fields__", None)
-    if isinstance(legacy_fields, dict):
-        return legacy_fields, False
-
     return {}, False
 
 
