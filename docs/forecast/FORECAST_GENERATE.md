@@ -157,7 +157,7 @@ Tip: `mtdata-cli forecast_list_library_models pretrained` shows requirements for
 
 **Dependencies (by model):**
 - `chronos2` / `chronos_bolt`: `chronos-forecasting`, `torch`
-- `timesfm`: `timesfm`, `torch` (TimesFM is installed from Git in `requirements.txt`)
+- `timesfm`: `timesfm`, `torch` (install with `pip install -e .[forecast-timesfm]`)
 - `lag_llama`: `lag-llama`, `gluonts[torch]`, `torch` (may not be installable on all Python versions due to upstream pins)
 
 **Parameters:**

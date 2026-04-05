@@ -103,7 +103,7 @@ mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 24 \
   --library pretrained --method timesfm
 ```
 
-*Requires: `pip install torch` plus a TimesFM install (see `requirements.txt`).*
+*Requires: `pip install -e .[forecast-timesfm]`.*
 
 **Lag-Llama** — Foundation model via GluonTS.
 ```bash

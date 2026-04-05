@@ -100,6 +100,9 @@ mtdata-cli forecast_list_methods --json
 ```
 
 Look for `available: false` and the `requires` field. Install missing packages:
+
+If you're installing mtdata extras, run the extra commands below from the repository root.
+
 ```bash
 pip install chronos-forecasting torch  # For Chronos
 pip install statsforecast              # For StatsForecast models
@@ -112,7 +115,7 @@ pip install QuantLib                   # For barrier option pricing & Heston cal
 pip install optuna                     # For Bayesian hyperparameter tuning
 pip install neuralforecast torch       # For NHiTS, TFT, PatchTST, NBEATSx
 pip install finvizfinance              # For fundamental data, screening, insider activity
-# TimesFM is installed from Git (pinned in `requirements.txt`); re-run `pip install -r requirements.txt`.
+pip install -e .[forecast-timesfm]     # From the repo root; installs the TimesFM Git-backed extra
 # Lag-Llama may require a separate Python env due to upstream pins (see `requirements.txt`).
 ```
 
@@ -262,6 +265,26 @@ MTDATA_CLI_DEBUG=1 mtdata-cli forecast_generate EURUSD --horizon 12
 ---
 
 ## Optional Dependency Issues
+
+### Git-backed Extra Fails to Install
+
+**Symptom:** `pip install -e .[forecast-timesfm]`, `pip install -e .[patterns-ext]`, or `pip install -e .[news-ycnbc]` fails during clone/build on Windows.
+
+**Solution:**
+1. Install Visual Studio Build Tools 2022 with the **Desktop development with C++** workload.
+2. Make sure Git is installed and available on `PATH`.
+3. Install the stable base stack first:
+   ```bash
+   pip install -r requirements.txt
+   ```
+4. From the repository root, retry only the extra you need:
+   ```bash
+   pip install -e .[forecast-timesfm]
+   pip install -e .[patterns-ext]
+   pip install -e .[news-ycnbc]
+   ```
+
+If a Git-backed extra still fails, leave it out and use the rest of mtdata without that integration. For pretrained forecasts, `chronos2` and `chronos_bolt` remain available from the stable install path.
 
 ### QuantLib Import Error
 

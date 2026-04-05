@@ -1,5 +1,6 @@
-# Full-feature local/dev install for Python 3.14.
+# Full-feature local/dev install for Python 3.14 using package-index releases only.
 # The base package is intentionally leaner; use this file when you want
-# forecasting libraries, foundation models, pattern adapters, and the Web API.
+# the validated research/web stack without Git-backed extras.
+# Optional Git-backed add-ons (TimesFM, precise-patterns, ycnbc) are documented in docs/SETUP.md.
 
 -e .[all]

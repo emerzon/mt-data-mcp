@@ -17,12 +17,25 @@ Installation and configuration guide for mtdata.
 - **Operating System:** Windows (required for MetaTrader 5)
 - **Python:** 3.14
 - **MetaTrader 5:** Installed and running
+- **Windows Build Tools:** Visual Studio Build Tools 2022 with the **Desktop development with C++** workload for `pip install -r requirements.txt` and any Git-backed extras
 
 ---
 
 ## Installation
 
-### 1. Install the Lean Core Package
+### 1. Create an Isolated Conda Environment (Optional but Recommended)
+
+If you use Conda/Miniconda, start with a clean Python 3.14 environment:
+
+```bash
+conda create -n mtdata python=3.14 -y
+conda activate mtdata
+python --version
+```
+
+If you prefer not to use conda, make sure the active interpreter is Python 3.14 before continuing.
+
+### 2. Install the Lean Core Package
 
 From the repository root:
 
@@ -30,32 +43,40 @@ From the repository root:
 pip install -e .
 ```
 
-### 2. Install the Full Feature Set (Optional)
+### 3. Install the Full Stable Feature Set (Optional)
 
-For the validated all-features environment used in local development and docs/examples:
+For the validated research/web environment used in local development and docs/examples:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 3. Optional Dependencies
+This path intentionally stays on package-index releases. Git-backed add-ons such as TimesFM, `precise-patterns`, and `ycnbc` stay opt-in so the default install does not depend on Git checkouts.
+
+### 4. Optional Dependencies
 
 The base package is intentionally lean. Install extras as needed:
 
+> Windows note: install Visual Studio Build Tools 2022 with the **Desktop development with C++** workload before the full install or any Git-backed extra. Several optional dependencies include native extensions, and pip may need MSVC when a compatible wheel is unavailable. Git-backed extras also require Git on `PATH`.
+
 - Classical forecasting / optimization:
   `pip install -e .[forecast-classical]`
-- Foundation-model forecasting:
+- Foundation-model forecasting (Chronos / Chronos-Bolt):
   `pip install -e .[forecast-foundation]`
+- TimesFM (Git-backed):
+  `pip install -e .[forecast-timesfm]`
 - Web API:
   `pip install -e .[web]`
-- Experimental pattern engines:
+- Experimental pattern engines (Git-backed):
   `pip install -e .[patterns-ext]`
 - News embeddings (semantic reranking):
   `pip install -e .[news-embeddings]`
-- CNBC news source:
+- CNBC news source (Git-backed):
   `pip install -e .[news-ycnbc]`
-- Everything:
+- Everything from package indexes:
   `pip install -e .[all]`
+- Everything including Git-backed extras:
+  `pip install -e .[all-git]`
 
 Feature notes:
 
@@ -64,7 +85,7 @@ Feature notes:
 - Dimred UMAP (Web UI / analysis): `umap-learn`
 - Foundation models:
   - Chronos (`chronos2`, `chronos_bolt`): `chronos-forecasting`, `torch`
-  - TimesFM (`timesfm`): `timesfm`, `torch` (installed from Git in `requirements.txt`)
+  - TimesFM (`timesfm`): `timesfm`, `torch` (install with `pip install -e .[forecast-timesfm]`; Git-backed extra)
   - Lag-Llama (`lag_llama`): not included in the default Python 3.14 environment because `gluonts`/Lag-Llama are still constrained by upstream compatibility
 - Forecasting libraries: `statsforecast`, `sktime`, `mlforecast` (plus `lightgbm` for GBMs)
 - Volatility (GARCH/ARCH): `arch`
