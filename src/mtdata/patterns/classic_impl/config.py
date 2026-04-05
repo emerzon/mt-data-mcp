@@ -5,6 +5,25 @@ from ..common import PatternResultBase
 
 @dataclass
 class ClassicDetectorConfig:
+    """Configuration for classic chart pattern detection.
+
+    Conventions:
+    - ``*_bars`` counts bars/candles.
+    - ``*_pct`` expresses a percent move relative to the relevant level, leg,
+      or price baseline for that detector.
+    - ``*_ratio`` and ``*_frac`` are unitless comparisons; ``*_frac`` values
+      are typically expected to stay between 0 and 1.
+    - ``*_weight`` fields are detector-specific scoring knobs. Some scoring
+      blocks normalize them as relative contributions, while others apply them
+      on top of a separate base score, so they do not all need to sum to 1.0.
+    - ``*_bonus`` / ``*_penalty`` fields are additive confidence adjustments
+      applied after the base pattern score is computed.
+
+    Settings are grouped roughly by detector stage: pivot extraction,
+    line-fitting, pattern-specific shape rules, optional confirmations, and
+    final confidence calibration.
+    """
+
     # General
     max_bars: int = 1500
     min_input_bars: int = 100
@@ -16,16 +35,19 @@ class ClassicDetectorConfig:
     min_prominence_pct: float = 0.5  # peak/trough prominence in percent of price
     min_distance: int = 5            # minimum distance between pivots (bars)
     pivot_use_hl: bool = True        # use high/low (when available) for pivot extraction
+    # ATR-adaptive pivot logic scales the fixed prominence/distance thresholds
+    # from recent ATR so noisier symbols can demand larger swings before a
+    # pivot is accepted.
     pivot_use_atr_adaptive_prominence: bool = True
     pivot_use_atr_adaptive_distance: bool = True
-    pivot_atr_period: int = 14
-    pivot_atr_prominence_mult: float = 1.0
-    pivot_atr_distance_mult: float = 0.2
-    pivot_max_distance_scale: float = 3.0
-    pivot_enable_fallback: bool = True
-    pivot_fallback_order: int = 2
-    pivot_fallback_min_peaks: int = 2
-    pivot_fallback_min_troughs: int = 2
+    pivot_atr_period: int = 14       # ATR lookback used by the adaptive pivot thresholds
+    pivot_atr_prominence_mult: float = 1.0  # multiplier on the ATR-derived prominence baseline
+    pivot_atr_distance_mult: float = 0.2    # multiplier when converting ATR into extra pivot spacing
+    pivot_max_distance_scale: float = 3.0   # cap adaptive spacing at this multiple of min_distance
+    pivot_enable_fallback: bool = True      # fallback to local-extrema scan if adaptive pivots are too sparse
+    pivot_fallback_order: int = 2           # neighboring bars required on each side in the fallback extrema scan
+    pivot_fallback_min_peaks: int = 2       # minimum fallback peaks required before keeping the result
+    pivot_fallback_min_troughs: int = 2     # minimum fallback troughs required before keeping the result
     # Trendline/line-fit
     max_flat_slope: float = 1e-4     # absolute slope to consider line flat (price units per bar)
     min_r2: float = 0.6              # minimum R^2 for line fit confidence
@@ -41,6 +63,9 @@ class ClassicDetectorConfig:
     min_pole_return_pct: float = 2.0 # minimum pole size (percent) before a flag/pennant
     min_pole_slope_pct_per_bar: float = 0.15  # minimum pole steepness to reject slow drifts
     breakout_lookahead: int = 8      # bars to consider breakout confirmation
+    # Cup-and-handle window/depth settings operate on the full cup span. The
+    # handle fraction is measured against cup width, and the confidence weights
+    # adjust the base score using depth and left/right symmetry quality.
     cup_handle_min_window_bars: int = 120
     cup_handle_max_window_bars: int = 300
     cup_handle_min_depth_pct: float = 2.0
@@ -51,6 +76,9 @@ class ClassicDetectorConfig:
     cup_handle_confidence_base: float = 0.55
     cup_handle_confidence_depth_weight: float = 0.25
     cup_handle_confidence_symmetry_weight: float = 0.20
+    # Diamond ratios compare the broadening and contracting halves of the
+    # formation: width ratios describe how much the middle expands, while split
+    # fractions define where the widest section is allowed to occur.
     diamond_min_window_bars: int = 120
     diamond_max_window_bars: int = 240
     diamond_min_pivots_per_side: int = 2
@@ -69,10 +97,13 @@ class ClassicDetectorConfig:
     pennant_min_convergence_ratio: float = 0.05  # minimum width contraction required to classify as pennant
     flag_max_with_trend_slope_ratio: float = 0.15  # tolerated consolidation drift in the pole direction
     rounding_window_bars: int = 220
-    rounding_window_sizes: List[int] = field(default_factory=list)
+    rounding_window_sizes: List[int] = field(default_factory=list)  # optional explicit windows; empty => detector chooses defaults
     breakout_confidence_bonus: float = 0.08
     rectangle_outlier_zscore: float = 3.5
     # Confidence blending
+    # ``touch_weight``, ``r2_weight``, and ``geometry_weight`` blend the
+    # normalized touch-count, line-fit, and shape-quality components into the
+    # detector's final pre-calibration confidence.
     touch_weight: float = 0.35
     r2_weight: float = 0.35
     geometry_weight: float = 0.30
@@ -110,7 +141,7 @@ class ClassicDetectorConfig:
     #   "head and shoulders": {"0.50": 0.45, "0.80": 0.76} }
     calibrate_confidence: bool = False
     confidence_calibration_map: Dict[str, Any] = field(default_factory=dict)
-    confidence_calibration_blend: float = 1.0
+    confidence_calibration_blend: float = 1.0  # 1.0 => fully calibrated score, 0.0 => raw detector score
 
 
 @dataclass
