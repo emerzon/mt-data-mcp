@@ -1,3 +1,5 @@
+import pytest
+
 from mtdata.forecast import forecast_registry as fr
 
 
@@ -51,6 +53,83 @@ def test_check_requirements_marks_chronos_unavailable_on_runtime_mismatch(monkey
 
     assert available is False
     assert "chronos-forecasting>=2.0.0" in reqs
+
+
+def test_check_requirements_marks_gluonts_extra_methods_unsupported_on_python_314(monkeypatch):
+    monkeypatch.setattr(fr, "_PYTHON_314_PLUS", True)
+    monkeypatch.setattr(fr._importlib_util, "find_spec", lambda _name: object())
+
+    available, reqs = fr._check_requirements("gt_deepar", ["gluonts", "torch"])
+
+    assert available is False
+    assert fr._GLUONTS_PYTHON_RUNTIME_REQUIREMENT in reqs
+
+
+def test_ensure_registry_loaded_continues_after_one_module_import_failure(monkeypatch):
+    imported = []
+
+    def fake_import(name):
+        imported.append(name)
+        if name.endswith(".gluonts_extra"):
+            raise ImportError("unsupported runtime")
+        return object()
+
+    monkeypatch.setattr(fr, "_FORECAST_METHOD_MODULES", ("classical", "gluonts_extra", "analog"))
+    monkeypatch.setattr(fr, "_OPTIONAL_FORECAST_METHOD_MODULES", frozenset({"gluonts_extra"}))
+    monkeypatch.setattr(fr, "_LOADED_FORECAST_METHOD_MODULES", set())
+    monkeypatch.setattr(fr, "_FAILED_OPTIONAL_FORECAST_MODULES", {})
+    monkeypatch.setattr(fr._importlib, "import_module", fake_import)
+
+    fr._ensure_registry_loaded()
+
+    assert imported == [
+        "mtdata.forecast.methods.classical",
+        "mtdata.forecast.methods.gluonts_extra",
+        "mtdata.forecast.methods.analog",
+    ]
+    assert fr._LOADED_FORECAST_METHOD_MODULES == {"classical", "analog"}
+    assert fr._FAILED_OPTIONAL_FORECAST_MODULES == {"gluonts_extra": "unsupported runtime"}
+
+
+def test_ensure_registry_loaded_memoizes_optional_import_failures(monkeypatch):
+    imported = []
+
+    def fake_import(name):
+        imported.append(name)
+        if name.endswith(".gluonts_extra"):
+            raise ImportError("unsupported runtime")
+        return object()
+
+    monkeypatch.setattr(fr, "_FORECAST_METHOD_MODULES", ("classical", "gluonts_extra", "analog"))
+    monkeypatch.setattr(fr, "_OPTIONAL_FORECAST_METHOD_MODULES", frozenset({"gluonts_extra"}))
+    monkeypatch.setattr(fr, "_LOADED_FORECAST_METHOD_MODULES", set())
+    monkeypatch.setattr(fr, "_FAILED_OPTIONAL_FORECAST_MODULES", {})
+    monkeypatch.setattr(fr._importlib, "import_module", fake_import)
+
+    fr._ensure_registry_loaded()
+    fr._ensure_registry_loaded()
+
+    assert imported == [
+        "mtdata.forecast.methods.classical",
+        "mtdata.forecast.methods.gluonts_extra",
+        "mtdata.forecast.methods.analog",
+    ]
+
+
+def test_ensure_registry_loaded_reraises_non_optional_import_errors(monkeypatch):
+    def fake_import(name):
+        if name.endswith(".classical"):
+            raise ImportError("core import broke")
+        return object()
+
+    monkeypatch.setattr(fr, "_FORECAST_METHOD_MODULES", ("classical",))
+    monkeypatch.setattr(fr, "_OPTIONAL_FORECAST_METHOD_MODULES", frozenset({"gluonts_extra"}))
+    monkeypatch.setattr(fr, "_LOADED_FORECAST_METHOD_MODULES", set())
+    monkeypatch.setattr(fr, "_FAILED_OPTIONAL_FORECAST_MODULES", {})
+    monkeypatch.setattr(fr._importlib, "import_module", fake_import)
+
+    with pytest.raises(ImportError, match="core import broke"):
+        fr._ensure_registry_loaded()
 
 
 def test_get_forecast_methods_data_assembles_categories_and_skips_broken(monkeypatch):
