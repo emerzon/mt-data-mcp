@@ -7,81 +7,13 @@ import numpy as np
 import pandas as pd
 
 from ..common import _normalize_weights as _normalize_weights_default
+from ..ensemble_dispatch import (
+    append_failure as _append_failure,
+    build_dispatch_error as _build_dispatch_error,
+    dispatch_callback_with_error as _dispatch_callback_with_error,
+)
 from ..interface import ForecastCallContext, ForecastMethod, ForecastResult
 from ..registry import ForecastRegistry
-
-_FAILURE_DETAIL_LIMIT = 12
-
-
-def _clear_dispatch_error(dispatch_method: Any) -> None:
-    try:
-        setattr(dispatch_method, "_last_error", None)
-    except Exception:
-        pass
-
-def _build_dispatch_error(method_name: str, exc: BaseException) -> Dict[str, Any]:
-    return {
-        "method": str(method_name),
-        "error": str(exc),
-        "error_type": type(exc).__name__,
-    }
-
-
-def _consume_dispatch_error(dispatch_method: Any, *, method_name: str) -> Optional[Dict[str, Any]]:
-    try:
-        error = getattr(dispatch_method, "_last_error", None)
-    except Exception:
-        return None
-    try:
-        setattr(dispatch_method, "_last_error", None)
-    except Exception:
-        pass
-    if not isinstance(error, dict):
-        return None
-    payload = dict(error)
-    payload.setdefault("method", str(method_name))
-    return payload
-
-
-def _dispatch_callback_with_error(
-    dispatch_method: Callable[[str, pd.Series, int, Optional[int], Optional[Dict[str, Any]]], Optional[np.ndarray]],
-    method_name: str,
-    series: pd.Series,
-    horizon: int,
-    seasonality: Optional[int],
-    params: Optional[Dict[str, Any]],
-) -> Tuple[Optional[np.ndarray], Optional[Dict[str, Any]]]:
-    method_l = str(method_name).lower().strip()
-    try:
-        forecast = dispatch_method(method_l, series, horizon, seasonality, params)
-    except Exception as ex:
-        return None, _build_dispatch_error(method_l, ex)
-    if forecast is None:
-        return None, _consume_dispatch_error(dispatch_method, method_name=method_l)
-    return forecast, None
-
-
-def _append_failure(
-    failures: Optional[List[Dict[str, Any]]],
-    *,
-    stage: str,
-    method_name: str,
-    error_detail: Optional[Dict[str, Any]] = None,
-    anchor_index: Optional[int] = None,
-) -> None:
-    if failures is None or len(failures) >= _FAILURE_DETAIL_LIMIT:
-        return
-    payload: Dict[str, Any] = {
-        "stage": str(stage),
-        "method": str(method_name),
-    }
-    if anchor_index is not None:
-        payload["anchor_index"] = int(anchor_index)
-    if isinstance(error_detail, dict):
-        for key, value in error_detail.items():
-            if value is not None:
-                payload[str(key)] = value
-    failures.append(payload)
 
 
 def _stabilized_bma_weights(rmse: np.ndarray) -> Optional[np.ndarray]:
