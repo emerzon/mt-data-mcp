@@ -149,6 +149,21 @@ def test_wait_event_request_deduplicates_identical_candle_close_events() -> None
     assert [(item.type, item.timeframe) for item in request.end_on] == [("candle_close", "M15")]
 
 
+def test_wait_event_request_deduplicates_candle_close_events_with_null_optionals() -> None:
+    request = WaitEventRequest.model_validate(
+        {
+            "symbol": "EURUSD",
+            "watch_for": [{"type": "candle_close", "timeframe": "M15", "buffer_seconds": None}],
+            "end_on": [{"type": "candle_close", "timeframe": "M15"}],
+        }
+    )
+
+    assert request.watch_for == []
+    assert [(item.type, item.timeframe, item.buffer_seconds) for item in request.end_on] == [
+        ("candle_close", "M15", None),
+    ]
+
+
 def test_wait_event_request_preserves_distinct_candle_close_boundaries() -> None:
     request = WaitEventRequest.model_validate(
         {
