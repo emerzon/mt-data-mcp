@@ -1,3 +1,5 @@
+import numbers
+
 import numpy as np
 import pandas as pd
 import warnings
@@ -6,13 +8,20 @@ import warnings
 def _normalize_window_size(window_size: int) -> int:
     if isinstance(window_size, (bool, np.bool_)):
         raise ValueError("window_size must be a positive integer")
-    try:
-        window_size_f = float(window_size)
-    except (TypeError, ValueError) as exc:
-        raise ValueError("window_size must be a positive integer") from exc
-    if not window_size_f.is_integer():
-        raise ValueError("window_size must be a positive integer")
-    window_size_i = int(window_size_f)
+    if isinstance(window_size, numbers.Integral):
+        window_size_i = int(window_size)
+    elif isinstance(window_size, float):
+        if not window_size.is_integer():
+            raise ValueError("window_size must be a positive integer")
+        window_size_i = int(window_size)
+    else:
+        try:
+            window_size_f = float(window_size)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("window_size must be a positive integer") from exc
+        if not window_size_f.is_integer():
+            raise ValueError("window_size must be a positive integer")
+        window_size_i = int(window_size_f)
     if window_size_i <= 0:
         raise ValueError("window_size must be a positive integer")
     return window_size_i
