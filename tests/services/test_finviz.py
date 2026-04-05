@@ -378,6 +378,23 @@ class TestFinvizService:
         _, kwargs = mock_fetch_items.call_args
         assert kwargs["date_from"] == "2025-01-06"
 
+    @patch("mtdata.services.finviz._fetch_finviz_economic_calendar_items")
+    def test_get_economic_calendar_accepts_iso_datetime_date_from(self, mock_fetch_items):
+        """ISO datetime date_from inputs should normalize before weekend alignment."""
+        from mtdata.services.finviz import get_economic_calendar
+
+        mock_fetch_items.return_value = []
+
+        result = get_economic_calendar(date_from="2025-01-05T08:30:00", limit=10, page=1)
+
+        assert result["success"] is True
+        assert result["dateFrom"] == "2025-01-05"
+        assert result["dateTo"] == "2025-01-12"
+
+        _, kwargs = mock_fetch_items.call_args
+        assert kwargs["date_from"] == "2025-01-06"
+        assert kwargs["date_to"] == "2025-01-12"
+
     @patch("mtdata.services.finviz._fetch_finviz_calendar_paged")
     def test_get_earnings_calendar_api_success(self, mock_fetch_paged):
         """Test earnings calendar API fetch."""

@@ -61,11 +61,15 @@ def _normalize_finviz_date_string(value: Any) -> Any:
     if not text:
         return value
     text = text.replace("’", "'")
-    for fmt in ("%b %d '%y", "%b %d %Y", "%Y-%m-%d"):
+    for fmt in ("%b %d '%y", "%b %d %Y"):
         try:
             return datetime.datetime.strptime(text, fmt).date().isoformat()
         except Exception:
             continue
+    try:
+        return _parse_iso_date_input(text, field_name="date").isoformat()
+    except ValueError:
+        pass
     return value
 
 
@@ -876,25 +880,36 @@ def get_dividends_calendar_api(
         return {"error": f"Failed to fetch dividends calendar: {str(e)}"}
 
 
+def _parse_iso_date_input(value: str, *, field_name: str) -> datetime.date:
+    text = str(value).strip()
+    if not text:
+        raise ValueError(f"Invalid {field_name} '{value}'. Expected YYYY-MM-DD or ISO datetime")
+    normalized = text[:-1] + "+00:00" if text.endswith(("Z", "z")) else text
+    try:
+        return datetime.date.fromisoformat(normalized)
+    except ValueError:
+        pass
+    try:
+        return datetime.datetime.fromisoformat(normalized).date()
+    except ValueError as e:
+        raise ValueError(f"Invalid {field_name} '{value}'. Expected YYYY-MM-DD or ISO datetime") from e
+
+
 def _resolve_date_range(*, date_from: Optional[str], date_to: Optional[str], default_days: int) -> tuple[str, str]:
     """Resolve an ISO date range for Finviz API calls."""
     if date_to and not date_from:
         raise ValueError("date_from is required when date_to is provided")
 
     if date_from:
-        try:
-            df = datetime.date.fromisoformat(date_from)
-        except ValueError as e:
-            raise ValueError(f"Invalid date_from '{date_from}'. Expected YYYY-MM-DD") from e
+        df = _parse_iso_date_input(date_from, field_name="date_from")
+        date_from = df.isoformat()
     else:
         df = datetime.date.today()
         date_from = df.isoformat()
 
     if date_to:
-        try:
-            dt = datetime.date.fromisoformat(date_to)
-        except ValueError as e:
-            raise ValueError(f"Invalid date_to '{date_to}'. Expected YYYY-MM-DD") from e
+        dt = _parse_iso_date_input(date_to, field_name="date_to")
+        date_to = dt.isoformat()
     else:
         dt = df + datetime.timedelta(days=int(default_days))
         date_to = dt.isoformat()
@@ -907,7 +922,7 @@ def _resolve_date_range(*, date_from: Optional[str], date_to: Optional[str], def
 
 def _align_to_next_monday_if_weekend(date_from: str) -> str:
     """Finviz economic calendar API appears to anchor by week; weekend anchors often return the prior week."""
-    df = datetime.date.fromisoformat(date_from)
+    df = _parse_iso_date_input(date_from, field_name="date_from")
     wd = df.weekday()  # Monday=0 ... Sunday=6
     if wd == 5:  # Saturday
         df = df + datetime.timedelta(days=2)

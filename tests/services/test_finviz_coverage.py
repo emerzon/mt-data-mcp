@@ -7,6 +7,7 @@ import pandas as pd
 import pytest
 
 from mtdata.services import finviz as svc
+from mtdata.services.finviz import dates as finviz_dates
 
 
 # ---------------------------------------------------------------------------
@@ -379,6 +380,14 @@ class TestResolveDateRange:
         with pytest.raises(ValueError, match="Invalid date_to"):
             svc._resolve_date_range(date_from="2024-06-01", date_to="bad", default_days=7)
 
+    def test_malformed_iso_suffix_raises(self):
+        with pytest.raises(ValueError, match="Invalid date_from"):
+            svc._resolve_date_range(
+                date_from="2024-06-01T12:34:56junk",
+                date_to=None,
+                default_days=7,
+            )
+
     def test_to_before_from_raises(self):
         with pytest.raises(ValueError, match="date_to must be >= date_from"):
             svc._resolve_date_range(date_from="2024-06-15", date_to="2024-06-01", default_days=7)
@@ -393,6 +402,22 @@ class TestAlignToMondayIfWeekend:
 
     def test_weekday_unchanged(self):
         assert svc._align_to_next_monday_if_weekend("2024-06-10") == "2024-06-10"
+
+    def test_iso_datetime_string(self):
+        assert svc._align_to_next_monday_if_weekend("2024-06-09T12:34:56") == "2024-06-10"
+
+    def test_bad_iso_datetime_suffix_raises(self):
+        with pytest.raises(ValueError, match="Invalid date_from"):
+            svc._align_to_next_monday_if_weekend("2024-06-09T12:34:56junk")
+
+
+class TestDatesModuleIsoParsing:
+    def test_normalize_finviz_date_string_accepts_iso_datetime(self):
+        assert finviz_dates.normalize_finviz_date_string("2024-06-09T12:34:56Z") == "2024-06-09"
+
+    def test_align_to_next_monday_if_weekend_rejects_bad_iso_suffix(self):
+        with pytest.raises(ValueError, match="Invalid date_from"):
+            finviz_dates.align_to_next_monday_if_weekend("2024-06-09T12:34:56junk")
 
 
 # ---------------------------------------------------------------------------
