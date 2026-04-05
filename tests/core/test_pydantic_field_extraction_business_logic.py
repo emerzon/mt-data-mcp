@@ -27,8 +27,8 @@ class _LegacyRequestModel:
     __fields__ = {"limit": _LegacyField()}
 
 
-def test_get_pydantic_model_fields_falls_back_to_legacy_fields() -> None:
+def test_get_pydantic_model_fields_ignores_legacy_fields() -> None:
     fields, modern = _get_pydantic_model_fields(_LegacyRequestModel)
 
     assert modern is False
-    assert set(fields) == {"limit"}
+    assert fields == {}
