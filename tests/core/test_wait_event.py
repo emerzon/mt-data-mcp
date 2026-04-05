@@ -133,6 +133,26 @@ def test_wait_event_request_normalizes_legacy_event_names() -> None:
     assert request.end_on[0].timeframe == "M15"
 
 
+def test_wait_event_request_normalizes_price_direction_aliases() -> None:
+    request = WaitEventRequest.model_validate(
+        {
+            "symbol": "EURUSD",
+            "watch_for": [
+                {"type": "price_touch_level", "level": 1.1454, "direction": "above"},
+                {"type": "price_break_level", "level": 1.1460, "direction": "below"},
+                {
+                    "type": "price_enter_zone",
+                    "lower": 1.1440,
+                    "upper": 1.1460,
+                    "direction": "above",
+                },
+            ],
+        }
+    )
+
+    assert [item.direction for item in request.watch_for] == ["up", "down", "up"]
+
+
 def test_wait_event_request_deduplicates_identical_candle_close_events() -> None:
     request = WaitEventRequest.model_validate(
         {

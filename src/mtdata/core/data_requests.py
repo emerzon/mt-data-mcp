@@ -141,6 +141,21 @@ def _validate_non_negative(value: Optional[float], name: str) -> Optional[float]
     return value_f
 
 
+_WAIT_EVENT_PRICE_DIRECTION_ALIASES = {
+    "above": "up",
+    "below": "down",
+}
+
+
+def _normalize_wait_event_price_direction(value: Any) -> Any:
+    if value is None:
+        return value
+    text = str(value).strip().lower()
+    if not text:
+        return value
+    return _WAIT_EVENT_PRICE_DIRECTION_ALIASES.get(text, text)
+
+
 def _validate_positive_float(value: float, name: str) -> float:
     value_f = float(value)
     if value_f <= 0:
@@ -422,6 +437,11 @@ class PriceTouchLevelEventSpec(BaseModel):
     direction: Literal["up", "down", "either"] = "either"
     tolerance: float = 0.0
 
+    @field_validator("direction", mode="before")
+    @classmethod
+    def _normalize_direction(cls, value: Any) -> Any:
+        return _normalize_wait_event_price_direction(value)
+
     @field_validator("tolerance")
     @classmethod
     def _validate_tolerance(cls, value: float) -> float:
@@ -437,6 +457,11 @@ class PriceBreakLevelEventSpec(BaseModel):
     direction: Literal["up", "down", "either"] = "either"
     tolerance: float = 0.0
     confirm_ticks: int = 1
+
+    @field_validator("direction", mode="before")
+    @classmethod
+    def _normalize_direction(cls, value: Any) -> Any:
+        return _normalize_wait_event_price_direction(value)
 
     @field_validator("tolerance")
     @classmethod
@@ -459,6 +484,11 @@ class PriceEnterZoneEventSpec(BaseModel):
     upper: float
     price_source: Literal["auto", "bid", "ask", "mid", "last"] = "auto"
     direction: Literal["up", "down", "either"] = "either"
+
+    @field_validator("direction", mode="before")
+    @classmethod
+    def _normalize_direction(cls, value: Any) -> Any:
+        return _normalize_wait_event_price_direction(value)
 
     @model_validator(mode="after")
     def _validate_bounds(self) -> "PriceEnterZoneEventSpec":
