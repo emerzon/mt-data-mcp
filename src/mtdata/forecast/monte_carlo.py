@@ -290,11 +290,7 @@ def simulate_hmm_mc(
 
     # Build price paths from last observed price
     last_price = float(prices[-1])
-    price_paths = np.zeros_like(ret_paths, dtype=float)
-    cur = np.full(int(n_sims), last_price, dtype=float)
-    for t in range(int(horizon)):
-        cur = cur * np.exp(ret_paths[:, t])
-        price_paths[:, t] = cur
+    price_paths = last_price * np.exp(np.cumsum(ret_paths, axis=1))
 
     return {
         'price_paths': price_paths,
@@ -341,11 +337,7 @@ def simulate_gbm_mc(
         ret_paths = mu + sigma * z
     else:
         ret_paths = rng.normal(loc=mu, scale=sigma, size=(sims_i, horizon_i))
-    price_paths = np.zeros_like(ret_paths)
-    cur = np.full(sims_i, last_price, dtype=float)
-    for t in range(horizon_i):
-        cur = cur * np.exp(ret_paths[:, t])
-        price_paths[:, t] = cur
+    price_paths = last_price * np.exp(np.cumsum(ret_paths, axis=1))
     return {
         'price_paths': price_paths,
         'return_paths': ret_paths,

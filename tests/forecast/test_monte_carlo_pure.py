@@ -207,6 +207,12 @@ class TestSimulateGbmMc:
         result = simulate_gbm_mc(self._prices(), horizon=20, n_sims=30, seed=7)
         assert np.all(result["price_paths"] > 0)
 
+    def test_price_paths_follow_cumulative_returns(self):
+        prices = self._prices()
+        result = simulate_gbm_mc(prices, horizon=6, n_sims=8, seed=3, antithetic=False)
+        expected = float(prices[-1]) * np.exp(np.cumsum(result["return_paths"], axis=1))
+        np.testing.assert_allclose(result["price_paths"], expected)
+
     def test_sigma_uses_sample_standard_deviation(self):
         prices = np.array([100.0, 101.0, 103.0, 102.0, 104.0], dtype=float)
         result = simulate_gbm_mc(prices, horizon=2, n_sims=4, seed=1)
@@ -237,6 +243,12 @@ class TestSimulateHmmMc:
         assert "trans" in result
         assert result["model_type"] == "gaussian_hmm_baum_welch"
         assert result["price_paths"].shape == (30, 10)
+
+    def test_price_paths_follow_cumulative_returns(self):
+        prices = self._prices()
+        result = simulate_hmm_mc(prices, horizon=6, n_sims=12, seed=4)
+        expected = float(prices[-1]) * np.exp(np.cumsum(result["return_paths"], axis=1))
+        np.testing.assert_allclose(result["price_paths"], expected)
 
     def test_too_few(self):
         with pytest.raises(ValueError):
