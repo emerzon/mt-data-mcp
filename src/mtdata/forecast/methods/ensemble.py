@@ -10,7 +10,6 @@ from ..common import _normalize_weights as _normalize_weights_default
 from ..ensemble_dispatch import (
     append_failure as _append_failure,
     build_dispatch_error as _build_dispatch_error,
-    clear_dispatch_error as _clear_dispatch_error,
     dispatch_callback_with_error as _dispatch_callback_with_error,
 )
 from ..interface import ForecastCallContext, ForecastMethod, ForecastResult
