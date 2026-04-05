@@ -1,4 +1,5 @@
 import importlib
+import threading
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -31,6 +32,7 @@ _STOCK_PATTERN_CODE_TO_NAME = {
     "BFLYD": "Bear Butterfly",
 }
 _STOCK_PATTERN_UTILS_CACHE: Dict[str, Any] = {}
+_STOCK_PATTERN_UTILS_CACHE_LOCK = threading.Lock()
 
 
 def _round_value(x: Any) -> Any:
@@ -1270,18 +1272,19 @@ def _load_stock_pattern_utils(config: Optional[Dict[str, Any]]) -> Tuple[Optiona
     required = ("get_max_min", "find_double_top", "find_double_bottom")
     last_err: Optional[str] = None
     for module_name in candidate_modules:
-        if module_name in _STOCK_PATTERN_UTILS_CACHE:
-            return _STOCK_PATTERN_UTILS_CACHE[module_name], None
-        try:
-            module = importlib.import_module(module_name)
-        except Exception as ex:
-            last_err = str(ex)
-            continue
-        if not all(callable(getattr(module, fn, None)) for fn in required):
-            last_err = f"module '{module_name}' missing required stock-pattern functions"
-            continue
-        _STOCK_PATTERN_UTILS_CACHE[module_name] = module
-        return module, None
+        with _STOCK_PATTERN_UTILS_CACHE_LOCK:
+            if module_name in _STOCK_PATTERN_UTILS_CACHE:
+                return _STOCK_PATTERN_UTILS_CACHE[module_name], None
+            try:
+                module = importlib.import_module(module_name)
+            except Exception as ex:
+                last_err = str(ex)
+                continue
+            if not all(callable(getattr(module, fn, None)) for fn in required):
+                last_err = f"module '{module_name}' missing required stock-pattern functions"
+                continue
+            _STOCK_PATTERN_UTILS_CACHE[module_name] = module
+            return module, None
 
     tail = f" Last import error: {last_err}" if last_err else ""
     return None, (
