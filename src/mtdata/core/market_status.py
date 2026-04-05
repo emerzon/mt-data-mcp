@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
+from functools import lru_cache
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
 import holidays
@@ -108,20 +109,15 @@ _MARKETS = {
 }
 
 
-# Holiday caches per country
-_holiday_cache: Dict[str, holidays.HolidayBase] = {}
-
-
-def _get_holidays(country: str) -> holidays.HolidayBase:
-    """Get holiday calendar for a country."""
-    if country not in _holiday_cache:
-        _holiday_cache[country] = holidays.country_holidays(country, years=range(2020, 2030))
-    return _holiday_cache[country]
+@lru_cache(maxsize=64)
+def _get_holidays(country: str, year: int) -> holidays.HolidayBase:
+    """Get the holiday calendar for a country/year pair."""
+    return holidays.country_holidays(country, years=[int(year)])
 
 
 def _is_holiday(country: str, dt: datetime) -> Tuple[bool, Optional[str]]:
     """Check if date is a holiday and return holiday name if so."""
-    h = _get_holidays(country)
+    h = _get_holidays(country, dt.year)
     date_key = dt.date()
     if date_key in h:
         return True, str(h[date_key])
@@ -305,17 +301,14 @@ def _get_upcoming_holidays(market_ids: List[str], days_ahead: int = 14) -> List[
         market = _MARKETS[market_id]
         country = market["country"]
         
-        # Get holidays for this country
         try:
-            h = _get_holidays(country)
-            
             # Check next N days
             for i in range(1, days_ahead + 1):
                 check_date = now + timedelta(days=i)
                 date_key = check_date.date()
-                
-                if date_key in h:
-                    holiday_name = str(h[date_key])
+
+                is_holiday_result, holiday_name = _is_holiday(country, check_date)
+                if is_holiday_result and holiday_name is not None:
                     key = (country, date_key.isoformat())
                     
                     if key not in seen:
