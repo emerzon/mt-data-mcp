@@ -170,16 +170,23 @@ def _cached_symbol_info(symbol: str, ttl_bucket: int):
     return mt5.symbol_info(symbol)
 
 
-def get_symbol_info_cached(symbol: str, ttl_seconds: float = _SYMBOL_INFO_TTL_SECONDS):
-    """Fetch symbol info with a short-lived cache to reduce repeated MT5 calls."""
+def _symbol_info_ttl_bucket(ttl_seconds: float) -> Optional[int]:
     try:
         ttl = float(ttl_seconds)
     except Exception:
-        return mt5.symbol_info(symbol)
+        return None
     if not math.isfinite(ttl) or ttl <= 0.0:
-        return mt5.symbol_info(symbol)
+        return None
     ttl = min(ttl, _SYMBOL_INFO_TTL_MAX_SECONDS)
-    bucket = int(time.time() / ttl)
+    ttl_ns = max(int(math.ceil(ttl * 1_000_000_000.0)), 1)
+    return time.monotonic_ns() // ttl_ns
+
+
+def get_symbol_info_cached(symbol: str, ttl_seconds: float = _SYMBOL_INFO_TTL_SECONDS):
+    """Fetch symbol info with a short-lived cache to reduce repeated MT5 calls."""
+    bucket = _symbol_info_ttl_bucket(ttl_seconds)
+    if bucket is None:
+        return mt5.symbol_info(symbol)
     return _cached_symbol_info(symbol, bucket)
 
 

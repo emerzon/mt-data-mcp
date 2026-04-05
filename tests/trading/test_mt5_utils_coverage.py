@@ -105,9 +105,18 @@ class TestGetSymbolInfoCached:
         assert second is not None
         assert _mt5_mock.symbol_info.call_count == 2
 
-    def test_fractional_ttl_uses_cache_bucket(self, monkeypatch):
+    @pytest.mark.parametrize("ttl_seconds", [float("nan"), float("inf"), float("-inf")])
+    def test_non_finite_ttl_falls_back_to_raw_no_cache(self, ttl_seconds):
         _mt5_mock.symbol_info.return_value = MagicMock(bid=1.5)
-        monkeypatch.setattr(_mt5_mod.time, "time", lambda: 10.0)
+        first = get_symbol_info_cached("EURUSD", ttl_seconds=ttl_seconds)
+        second = get_symbol_info_cached("EURUSD", ttl_seconds=ttl_seconds)
+        assert first is not None
+        assert second is not None
+        assert _mt5_mock.symbol_info.call_count == 2
+
+    def test_fractional_ttl_uses_cache_bucket(self, monkeypatch):
+        _mt5_mock.symbol_info.return_value = MagicMock(bid=1.6)
+        monkeypatch.setattr(_mt5_mod.time, "monotonic_ns", lambda: 10_000_000_000)
 
         first = get_symbol_info_cached("EURUSD", ttl_seconds=0.5)
         second = get_symbol_info_cached("EURUSD", ttl_seconds=0.5)
@@ -115,13 +124,23 @@ class TestGetSymbolInfoCached:
         assert first is second
         assert _mt5_mock.symbol_info.call_count == 1
 
+    def test_tiny_positive_ttl_uses_nanosecond_bucket_without_overflow(self, monkeypatch):
+        _mt5_mock.symbol_info.return_value = MagicMock(bid=1.7)
+        monkeypatch.setattr(_mt5_mod.time, "monotonic_ns", lambda: 100)
+
+        first = get_symbol_info_cached("EURUSD", ttl_seconds=1e-300)
+        second = get_symbol_info_cached("EURUSD", ttl_seconds=1e-300)
+
+        assert first is second
+        assert _mt5_mock.symbol_info.call_count == 1
+
     def test_large_ttl_is_capped_to_short_lived_window(self, monkeypatch):
-        current_time = {"value": 10_000.0}
-        _mt5_mock.symbol_info.return_value = MagicMock(bid=1.6)
-        monkeypatch.setattr(_mt5_mod.time, "time", lambda: current_time["value"])
+        current_time = {"value": 10_000_000_000_000}
+        _mt5_mock.symbol_info.return_value = MagicMock(bid=1.8)
+        monkeypatch.setattr(_mt5_mod.time, "monotonic_ns", lambda: current_time["value"])
 
         first = get_symbol_info_cached("EURUSD", ttl_seconds=10_000_000_000)
-        current_time["value"] += 4_000.0
+        current_time["value"] += 4_000_000_000_000
         second = get_symbol_info_cached("EURUSD", ttl_seconds=10_000_000_000)
 
         assert first is not None
