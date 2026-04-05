@@ -2,9 +2,21 @@
 from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 
+_ENTROPY_TREND_RELATIVE_CHANGE = 0.15
+_ENTROPY_TREND_IMPROVING_MULTIPLIER = 1.0 - _ENTROPY_TREND_RELATIVE_CHANGE
+_ENTROPY_TREND_DEGRADING_MULTIPLIER = 1.0 + _ENTROPY_TREND_RELATIVE_CHANGE
+
 
 def _hmm_reliability_from_gamma(gamma: np.ndarray, states: np.ndarray) -> Dict[str, Any]:
-    """Estimate HMM reliability from marginal probabilities."""
+    """Estimate HMM reliability from marginal probabilities.
+
+    ``entropy_trend`` compares the mean entropy in the second half of the
+    series against the first half. Smaller relative moves stay ``"stable"`` so
+    minor noise does not flip the trend label; a materially lower second-half
+    entropy means the HMM is becoming more certain (``"improving"``), while a
+    materially higher second-half entropy means the fit is becoming less
+    certain (``"degrading"``).
+    """
     n = int(gamma.shape[0])
     k = int(gamma.shape[1])
     if n == 0 or k == 0:
@@ -19,9 +31,9 @@ def _hmm_reliability_from_gamma(gamma: np.ndarray, states: np.ndarray) -> Dict[s
     second_half = entropies[n // 2 :] if n > 1 else entropies
     trend = "stable"
     if first_half.size and second_half.size:
-        if np.mean(second_half) < np.mean(first_half) * 0.85:
+        if np.mean(second_half) < np.mean(first_half) * _ENTROPY_TREND_IMPROVING_MULTIPLIER:
             trend = "improving"
-        elif np.mean(second_half) > np.mean(first_half) * 1.15:
+        elif np.mean(second_half) > np.mean(first_half) * _ENTROPY_TREND_DEGRADING_MULTIPLIER:
             trend = "degrading"
 
     return {"confidence": round(reliability, 4), "entropy_trend": trend}
