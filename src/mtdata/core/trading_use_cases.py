@@ -1511,8 +1511,7 @@ def run_trade_get_pending(
 
 
 def _mt5_int_const(gateway: Any, name: str, fallback: int) -> int:
-    value = getattr(gateway, name, None)
-    return value if isinstance(value, int) else fallback
+    return trading_validation._safe_int_attr(gateway, name, fallback)
 
 
 def _pick_trade_series(df: Any, pd_module: Any, *names: str):
