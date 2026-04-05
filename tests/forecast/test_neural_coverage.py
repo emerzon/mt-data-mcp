@@ -123,7 +123,10 @@ class TestForecastNeural:
 
     def test_unknown_method(self):
         Y_df = pd.DataFrame({"unique_id": ["ts"], "ds": [0], "y": [100.0]})
-        with pytest.raises(RuntimeError, match="not available"):
+        with pytest.raises(
+            RuntimeError,
+            match="Unsupported NeuralForecast model 'unknown_model'.*Supported mtdata neural models: nbeatsx, nhits, patchtst, tft",
+        ):
             forecast_neural(
                 method="unknown_model", series=np.array([100.0]),
                 fh=1, timeframe="H1", n=1, m=1, params={}, Y_df=Y_df,

@@ -34,14 +34,19 @@ def forecast_neural(
         raise RuntimeError(f"Failed to import neuralforecast models: {ex}")
 
     method_l = str(method).lower().strip()
-    model_class = {
+    model_map = {
         'nhits': _NF_NHITS,
         'nbeatsx': _NF_NBEATSX,
         'tft': _NF_TFT,
         'patchtst': _NF_PATCHTST,
-    }.get(method_l)
+    }
+    model_class = model_map.get(method_l)
     if model_class is None:
-        raise RuntimeError(f"Model '{method_l}' not available in installed neuralforecast version")
+        available_models = ", ".join(sorted(model_map))
+        raise RuntimeError(
+            f"Unsupported NeuralForecast model '{method_l}'. "
+            f"Supported mtdata neural models: {available_models}"
+        )
 
     # Hyperparameters with defaults and safety caps
     h = int(fh)
