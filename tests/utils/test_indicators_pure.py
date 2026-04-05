@@ -257,7 +257,11 @@ class TestEstimateWarmupBars:
 
     def test_macd(self):
         result = _estimate_warmup_bars("macd(12,26,9)")
-        assert result >= 50
+        assert result == 105
+
+    def test_macd_uses_default_signal_when_missing(self):
+        result = _estimate_warmup_bars("macd(fast=12,slow=26)")
+        assert result == 105
 
     def test_bbands(self):
         result = _estimate_warmup_bars("bbands(20)")
