@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo
 import sys
 import os
 
+import numpy as np
 # Ensure src is importable
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
 
@@ -26,6 +27,7 @@ import pandas as pd  # noqa: E402
 from mtdata.services.data_service import (  # noqa: E402
     _fetch_rates_with_warmup,
     _build_rates_df,
+    _shift_rate_times,
     _trim_df_to_target,
     fetch_candles,
     fetch_ticks,
@@ -102,6 +104,83 @@ _ESTIMATE_WARMUP = f'{_DS}._estimate_warmup_bars_util'
 _APPLY_TI = f'{_DS}._apply_ta_indicators_util'
 _SIMPLIFY_EXT = f'{_DS}._simplify_dataframe_rows_ext'
 _MT5_CONFIG = f'{_DS}.mt5_config'
+
+
+# ============================================================================
+# _shift_rate_times
+# ============================================================================
+
+class TestShiftRateTimes(unittest.TestCase):
+    def test_returns_shifted_list_copy_without_mutating_input(self):
+        rates = _make_rates(3)
+        original_times = [float(row['time']) for row in rates]
+
+        shifted = _shift_rate_times(rates, 3600)
+
+        self.assertIsInstance(shifted, list)
+        self.assertIsNot(shifted, rates)
+        self.assertIsNot(shifted[0], rates[0])
+        self.assertEqual([float(row['time']) for row in rates], original_times)
+        self.assertEqual(
+            [float(row['time']) for row in shifted],
+            [ts + 3600.0 for ts in original_times],
+        )
+
+    def test_returns_shifted_structured_array_copy_without_mutating_input(self):
+        rates = np.array(
+            [(1704067200.0, 1.1), (1704067260.0, 1.2)],
+            dtype=[('time', 'f8'), ('close', 'f8')],
+        )
+
+        shifted = _shift_rate_times(rates, 120)
+
+        self.assertIsNot(shifted, rates)
+        np.testing.assert_array_equal(rates['time'], np.array([1704067200.0, 1704067260.0]))
+        np.testing.assert_array_equal(
+            shifted['time'],
+            np.array([1704067320.0, 1704067380.0]),
+        )
+        np.testing.assert_array_equal(shifted['close'], rates['close'])
+
+    def test_list_without_time_keys_returns_original_input(self):
+        rates = [{'close': 1.1}, {'open': 1.2}, 'passthrough']
+
+        shifted = _shift_rate_times(rates, 60)
+
+        self.assertIs(shifted, rates)
+
+    def test_list_with_non_numeric_time_returns_shifted_copy_and_leaves_failing_row_unshifted(self):
+        rates = [
+            {'time': 1704067200.0, 'close': 1.1},
+            {'time': 'not-a-number', 'close': 1.2},
+            {'time': 1704067320.0, 'close': 1.3},
+        ]
+        original = [row.copy() for row in rates]
+
+        shifted = _shift_rate_times(rates, 60)
+
+        self.assertIsInstance(shifted, list)
+        self.assertIsNot(shifted, rates)
+        self.assertEqual(rates, original)
+        self.assertEqual(shifted[0]['time'], 1704067260.0)
+        self.assertEqual(shifted[1]['time'], 'not-a-number')
+        self.assertEqual(shifted[2]['time'], 1704067380.0)
+        self.assertEqual(shifted[0]['close'], rates[0]['close'])
+        self.assertEqual(shifted[1]['close'], rates[1]['close'])
+        self.assertEqual(shifted[2]['close'], rates[2]['close'])
+
+    def test_structured_array_with_non_numeric_time_returns_original_untouched_input(self):
+        rates = np.array(
+            [('1704067200.0', 1.1), ('not-a-number', 1.2)],
+            dtype=[('time', 'U32'), ('close', 'f8')],
+        )
+        original = rates.copy()
+
+        shifted = _shift_rate_times(rates, 60)
+
+        self.assertIs(shifted, rates)
+        np.testing.assert_array_equal(rates, original)
+        np.testing.assert_array_equal(shifted, original)
 
 
 # ============================================================================
