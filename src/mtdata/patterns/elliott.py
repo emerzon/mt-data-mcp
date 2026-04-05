@@ -14,7 +14,13 @@ from .common import PatternResultBase, interval_overlap_ratio as _interval_overl
 
 @dataclass
 class ElliottWaveConfig:
-    """Configuration for Elliott Wave detection."""
+    """Configuration for Elliott Wave detection.
+
+    The detector blends classical Elliott-rule validation with a lightweight
+    GMM-based classifier. The weight fields below control how much each signal
+    contributes to the final confidence score for impulse and correction
+    candidates.
+    """
 
     # Legacy options (kept for API compatibility)
     min_prominence_pct: float = 0.5
@@ -30,7 +36,19 @@ class ElliottWaveConfig:
     volume_confirm_min_ratio: float = 1.05
     volume_confirm_bonus: float = 0.06
     volume_confirm_penalty: float = 0.04
+
+    # Empirical impulse-wave calibration weights. These are not Fibonacci
+    # ratios themselves; they weight the relative importance of each alignment
+    # component when scoring a 5-wave impulse candidate:
+    #   [0] wave-1 baseline structure
+    #   [1] wave-3 extension quality
+    #   [2] wave-5 completion / proportionality
+    #   [3] time and symmetry contribution
     impulse_fib_weights: List[float] = field(default_factory=lambda: [0.30, 0.35, 0.20, 0.15])
+
+    # Hybrid confidence blending. Each rule/classifier pair is intended to sum
+    # to 1.0 for its wave family so users can bias detection toward stricter
+    # rules or toward the learned classifier signal.
     impulse_rule_weight: float = 0.65
     impulse_cls_weight: float = 0.35
     correction_rule_weight: float = 0.60
