@@ -484,9 +484,12 @@ def _normalize_indicator_columns_for_display(
     for column in columns:
         old_name = str(column)
         new_name = _display_indicator_column_name(old_name)
-        if new_name != old_name and old_name in df.columns and new_name not in df.columns:
-            rename_map[old_name] = new_name
-        normalized.append(rename_map.get(old_name, new_name))
+        normalized_name = old_name
+        if new_name != old_name:
+            if old_name in df.columns and new_name not in df.columns and new_name not in rename_map.values():
+                rename_map[old_name] = new_name
+                normalized_name = new_name
+        normalized.append(normalized_name)
 
     if rename_map:
         df.rename(columns=rename_map, inplace=True)
