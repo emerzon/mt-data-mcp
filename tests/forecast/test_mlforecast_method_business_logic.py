@@ -231,20 +231,25 @@ def test_generic_mlforecast_model_import_validation_and_param_filtering(monkeypa
     with pytest.raises(ValueError, match="requires 'model'"):
         method._get_model({})
 
-    with pytest.raises(ValueError, match="Could not import ML model"):
+    with pytest.raises(ValueError, match="not allowed"):
         method._get_model({"model": "missing.module.Class"})
 
-    fake_mod = ModuleType("fake_models")
+    with pytest.raises(ValueError, match="not allowed"):
+        method._get_model({"model": "fake_models.FakeModel"})
+
+    sklearn_mod = ModuleType("sklearn")
+    ensemble_mod = ModuleType("sklearn.ensemble")
 
     class FakeModel:
         def __init__(self, a, b=2):
             self.a = a
             self.b = b
 
-    fake_mod.FakeModel = FakeModel
-    monkeypatch.setitem(sys.modules, "fake_models", fake_mod)
+    ensemble_mod.RandomForestRegressor = FakeModel
+    monkeypatch.setitem(sys.modules, "sklearn", sklearn_mod)
+    monkeypatch.setitem(sys.modules, "sklearn.ensemble", ensemble_mod)
 
-    model = method._get_model({"model": "fake_models.FakeModel", "a": 5, "b": 6, "c": 7})
+    model = method._get_model({"model": "sklearn.ensemble.RandomForestRegressor", "a": 5, "b": 6, "c": 7})
     assert isinstance(model, FakeModel)
     assert model.a == 5
     assert model.b == 6

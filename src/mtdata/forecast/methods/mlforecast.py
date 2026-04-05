@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import importlib
+import inspect
 from typing import Any, Dict, Optional, Tuple, List
 import warnings
 import numpy as np
@@ -7,6 +9,27 @@ import pandas as pd
 
 from ..interface import ForecastMethod, ForecastResult
 from ..registry import ForecastRegistry
+
+_GENERIC_MLFORECAST_ALLOWED_MODELS = {
+    "catboost.CatBoostRegressor",
+    "lightgbm.LGBMRegressor",
+    "sklearn.ensemble.AdaBoostRegressor",
+    "sklearn.ensemble.ExtraTreesRegressor",
+    "sklearn.ensemble.GradientBoostingRegressor",
+    "sklearn.ensemble.HistGradientBoostingRegressor",
+    "sklearn.ensemble.RandomForestRegressor",
+    "sklearn.linear_model.ElasticNet",
+    "sklearn.linear_model.Lasso",
+    "sklearn.linear_model.LinearRegression",
+    "sklearn.linear_model.Ridge",
+    "sklearn.neighbors.KNeighborsRegressor",
+    "sklearn.neural_network.MLPRegressor",
+    "sklearn.svm.LinearSVR",
+    "sklearn.svm.SVR",
+    "sklearn.tree.DecisionTreeRegressor",
+    "sklearn.tree.ExtraTreeRegressor",
+    "xgboost.XGBRegressor",
+}
 
 class MLForecastMethod(ForecastMethod):
     """Base class for MLForecast methods."""
@@ -176,7 +199,7 @@ class GenericMLForecastMethod(MLForecastMethod):
     CAPABILITY_SELECTOR_MODE = "dotted_class"
 
     PARAMS: List[Dict[str, Any]] = [
-        {"name": "model", "type": "str", "description": "Dotted class path for ML model."},
+        {"name": "model", "type": "str", "description": "Approved dotted class path for ML model."},
         {"name": "lags", "type": "list", "description": "Lag features to use (auto if omitted)."},
         {"name": "rolling_agg", "type": "str|null", "description": "Rolling agg (reserved)."},
     ]
@@ -186,29 +209,34 @@ class GenericMLForecastMethod(MLForecastMethod):
         return "mlforecast"
         
     def _get_model(self, params: Dict[str, Any]):
-        model_path = params.get('model')
+        model_path = str(params.get('model') or "").strip()
         if not model_path:
             raise ValueError("GenericMLForecastMethod requires 'model' (dotted path) in params")
-            
-        # Import dynamically
+
+        if model_path not in _GENERIC_MLFORECAST_ALLOWED_MODELS:
+            allowed = ", ".join(sorted(_GENERIC_MLFORECAST_ALLOWED_MODELS))
+            raise ValueError(
+                f"Model '{model_path}' is not allowed for GenericMLForecastMethod. "
+                f"Allowed models: {allowed}"
+            )
+
         try:
             module_path, class_name = model_path.rsplit('.', 1)
-            import importlib
             module = importlib.import_module(module_path)
             model_cls = getattr(module, class_name)
-        except (ValueError, ImportError, AttributeError) as e:
-             raise ValueError(f"Could not import ML model '{model_path}': {e}")
-             
-        # Filter params
-        import inspect
+            if not inspect.isclass(model_cls):
+                raise TypeError(f"{model_path} did not resolve to a class")
+        except (TypeError, ValueError, ImportError, AttributeError) as e:
+            raise ValueError(f"Could not import ML model '{model_path}': {e}")
+
         try:
             sig = inspect.signature(model_cls)
             valid_params = set(sig.parameters.keys())
         except ValueError:
             valid_params = set()
-            
+
         model_params = {k: v for k, v in params.items() if k in valid_params}
-        
+
         return model_cls(**model_params)
 
 # Backward compatibility wrappers
