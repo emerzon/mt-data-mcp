@@ -1977,6 +1977,22 @@ class TestTier1StructuredErrorHandling(_BarrierModulePatchMixin, unittest.TestCa
         self.assertIn("error_type", result)
         self.assertIn("traceback_summary", result)
 
+    def test_closed_form_uses_shared_unsupported_timeframe_error(self):
+        with patch.dict(f"{_BARRIER_PROB_ROOT}.TIMEFRAME_SECONDS", {"H1": 0}, clear=False):
+            with patch(
+                f"{_BARRIER_PROB_ROOT}.unsupported_timeframe_seconds_error",
+                return_value="custom timeframe error",
+            ):
+                result = forecast_barrier_closed_form(
+                    symbol="EURUSD",
+                    timeframe="H1",
+                    horizon=10,
+                    direction="long",
+                    barrier=1.1,
+                )
+
+        self.assertEqual(result["error"], "custom timeframe error")
+
     def test_probabilities_reject_non_finite_trailing_close_without_live_reference(self):
         dates = pd.date_range(start='2023-01-01', periods=500, freq='h')
         prices = np.full(500, 1.0)

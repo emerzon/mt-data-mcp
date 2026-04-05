@@ -46,6 +46,21 @@ def test_next_candle_close_server_time_handles_weekly_boundary(utc_server_clock)
     assert result == datetime(2026, 3, 16, 0, 0, 0)
 
 
+def test_next_candle_close_server_time_uses_shared_unsupported_timeframe_error(
+    utc_server_clock,
+    monkeypatch,
+) -> None:
+    monkeypatch.setitem(trading_time.TIMEFRAME_SECONDS, "M5", 0)
+    monkeypatch.setattr(
+        trading_time,
+        "unsupported_timeframe_seconds_error",
+        lambda timeframe: f"custom unsupported {timeframe}",
+    )
+
+    with pytest.raises(ValueError, match="custom unsupported M5"):
+        _next_candle_close_server_time("M5", now_utc=datetime(2026, 3, 13, 10, 2, 10, tzinfo=timezone.utc))
+
+
 def test_sleep_until_next_candle_returns_expected_wait(utc_server_clock) -> None:
     slept = []
 

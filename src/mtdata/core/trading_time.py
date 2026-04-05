@@ -10,6 +10,7 @@ from typing import Optional, Tuple, Union
 
 from .config import mt5_config
 from ..shared.constants import TIMEFRAME_SECONDS
+from ..shared.validators import unsupported_timeframe_seconds_error
 
 
 ExpirationValue = Union[int, float, str, datetime]
@@ -139,7 +140,7 @@ def _next_candle_close_server_time(timeframe: str, *, now_utc: Optional[datetime
 
     interval_seconds = int(TIMEFRAME_SECONDS[tf])
     if interval_seconds <= 0:
-        raise ValueError(f"Unsupported timeframe seconds for {tf}")
+        raise ValueError(unsupported_timeframe_seconds_error(tf))
 
     day_start = server_now.replace(hour=0, minute=0, second=0, microsecond=0)
     elapsed_seconds = max(0.0, (server_now - day_start).total_seconds())
