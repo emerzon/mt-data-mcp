@@ -185,15 +185,10 @@ class TestDataService(unittest.TestCase):
 
         self.assertTrue(result.get('success'))
         self.assertEqual(result.get('count'), 5)
-        field_reads_per_tick = len(ticks[0]) if ticks else 0
-        selected_row_count = 5
-        # Budget for one baseline scan, one simplify/caching pass, and one
-        # output-row pass over the selected rows. Deriving this from the test
-        # fixture keeps the regression stable if optional tick fields change.
-        expected_max_field_reads = (
-            (len(ticks) * field_reads_per_tick * 2) +
-            (selected_row_count * field_reads_per_tick)
-        )
+        scanned_fields = ("time", "bid", "ask", "last", "flags", "volume", "volume_real")
+        # The shared extraction pass should read each relevant tick field once,
+        # even when simplification and row rendering are both enabled.
+        expected_max_field_reads = len(ticks) * len(scanned_fields)
         self.assertLessEqual(call_count["value"], expected_max_field_reads)
 
     @patch('mtdata.services.data_service._mt5_copy_ticks_range')
