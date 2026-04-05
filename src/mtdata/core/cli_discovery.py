@@ -398,7 +398,7 @@ def resolve_param_kwargs(
             debug(f"Type resolution failed for param '{param['name']}': {exc}")
             kwargs["type"] = str
 
-    if not param["required"] and not (param["type"] == bool and param["default"] is None):
+    if not param["required"] and not (param["type"] is bool and param["default"] is None):
         kwargs["default"] = param["default"]
 
     choice_override = _COMMAND_PARAM_CHOICE_OVERRIDES.get((str(cmd_name or ""), str(param["name"])))

@@ -167,6 +167,4 @@ __all__ = [
 ]
 
 del _copy_namespace
-del _matches_module_file
-del _rebind_function
 del _unwrap_function

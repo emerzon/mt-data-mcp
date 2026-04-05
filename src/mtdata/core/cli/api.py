@@ -7,10 +7,10 @@ Automatically discovers function parameters and creates CLI arguments
 import argparse
 from contextlib import contextmanager, redirect_stderr, redirect_stdout
 import difflib
+import inspect
 import io
 import json
 import logging
-import math
 import os
 import sys
 import types
@@ -29,7 +29,6 @@ from ..cli_formatting import (
     _attach_cli_meta,
     _build_cli_timezone_meta,
     _build_cli_timezone_meta_brief,
-    _format_result_for_cli,
     _format_result_minimal,
     _json_default,
     _normalize_cli_formatter,
@@ -55,6 +54,15 @@ from ..cli_runtime import (
     normalize_cli_list_value as _normalize_cli_list_value_impl,
     parse_kv_string as _parse_kv_string_impl,
     parse_set_overrides as _parse_set_overrides_impl,
+)
+
+# Keep formatting helpers in this module namespace for backward-compatible
+# exports via mtdata.core.cli.__init__'s namespace copy.
+_CLI_NAMESPACE_EXPORTS = (
+    CLI_FORMAT_TOON,
+    _build_cli_timezone_meta,
+    _build_cli_timezone_meta_brief,
+    _safe_tz_name,
 )
 
 # Simple debug logging controlled by env var MTDATA_CLI_DEBUG
@@ -1092,11 +1100,11 @@ def _example_value(param: Dict[str, Any], *, prefer_default: bool) -> str:
     if not prefer_default and default_text is not None:
         return default_text
     ptype = param.get('type')
-    if ptype == int:
+    if ptype is int:
         return '10'
-    if ptype == float:
+    if ptype is float:
         return '0.1'
-    if ptype == bool:
+    if ptype is bool:
         return 'true'
     if ptype in (list, tuple):
         return 'a,b'

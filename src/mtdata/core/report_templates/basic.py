@@ -957,11 +957,11 @@ def template_basic(
     if 'error' in grid_long and 'error' in grid_short:
         sec_bar = {'error': grid_long.get('error') or grid_short.get('error') or 'Barrier optimization failed'}
     else:
-        if not 'error' in grid_long:
+        if 'error' not in grid_long:
             sec_bar['long'] = summarize_barrier_grid(grid_long, top_k=int(p.get('top_k', 5)))
         else:
             sec_bar['long'] = {'error': grid_long.get('error')}
-        if not 'error' in grid_short:
+        if 'error' not in grid_short:
             sec_bar['short'] = summarize_barrier_grid(grid_short, top_k=int(p.get('top_k', 5)))
         else:
             sec_bar['short'] = {'error': grid_short.get('error')}

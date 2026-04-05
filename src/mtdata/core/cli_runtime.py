@@ -1,5 +1,5 @@
 import json
-from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, get_args, get_origin
+from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, get_args
 
 from pydantic import ValidationError
 
@@ -231,7 +231,7 @@ def create_command_function(
             param_name = param["name"]
             arg_value = getattr(args, param_name, param["default"])
 
-            if param.get("type") == bool and isinstance(arg_value, str):
+            if param.get("type") is bool and isinstance(arg_value, str):
                 if arg_value.lower() == "true":
                     arg_value = True
                 elif arg_value.lower() == "false":
@@ -244,11 +244,9 @@ def create_command_function(
                 is_typed_dict = is_typed_dict_type(base_type)
                 is_mapping = (base_type in (dict, Dict)) or (origin in (dict, Dict)) or is_typed_dict
                 is_list_like = origin in (list, tuple)
-                inner_type = get_args(base_type)[0] if origin in (list, tuple) and get_args(base_type) else None
             except Exception:
                 is_mapping = False
                 is_list_like = False
-                inner_type = None
 
             if is_mapping and arg_value == "__PRESENT__":
                 arg_value = {}

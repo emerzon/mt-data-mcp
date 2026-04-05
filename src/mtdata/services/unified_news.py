@@ -836,7 +836,6 @@ def _has_snapshot_context_evidence(ticker: str, label: str, context: InstrumentC
     snapshot_compact = _compact_token(snapshot_text)
     snapshot_tokens = set(_tokenize(snapshot_text))
     for alias in context.aliases:
-        alias_text = alias.lower()
         alias_compact = _compact_token(alias)
         if alias_compact and alias_compact == _compact_token(ticker):
             return True

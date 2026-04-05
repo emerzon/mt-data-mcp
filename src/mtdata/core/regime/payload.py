@@ -1,5 +1,5 @@
 """Payload consolidation utilities for regime detection output formatting."""
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 
 def _consolidate_payload(

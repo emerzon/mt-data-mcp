@@ -64,5 +64,4 @@ def _copy_namespace(module) -> None:
 _copy_namespace(_api)
 
 del _copy_namespace
-del _rebind_function
 del _api

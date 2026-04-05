@@ -165,12 +165,24 @@ def _coerce_float(value: Any, *, allow_none: bool, name: str) -> Any:
     raise ValueError(f"Invalid value for '{name}': expected number, got {value!r}")
 
 
-def _get_pydantic_model_fields(model_type: type[BaseModel]) -> tuple[Dict[str, Any], bool]:
+def _get_pydantic_model_fields(model_type: Any) -> tuple[Dict[str, Any], bool]:
+    if not isinstance(model_type, type):
+        return {}, False
+    try:
+        if not issubclass(model_type, BaseModel):
+            return {}, False
+    except TypeError:
+        return {}, False
+
     model_fields = getattr(model_type, "model_fields", None)
     if isinstance(model_fields, dict):
         return model_fields, True
 
-    return {}, True
+    legacy_fields = getattr(model_type, "__fields__", None)
+    if isinstance(legacy_fields, dict):
+        return legacy_fields, False
+
+    return {}, False
 
 
 def _coerce_kwargs_for_callable(func: Any, kwargs: Dict[str, Any]) -> Dict[str, Any]:
@@ -354,10 +366,13 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]
         return cleaned
 
     def _wrap(func):
+        def _fallback_minimal(value: Any, **_: Any) -> str:
+            return str(value) if value is not None else ""
+
         try:
             from ..utils.minimal_output import format_result_minimal as _fmt_min, to_methods_availability_toon as _fmt_methods
         except Exception:
-            _fmt_min = lambda x, **_: str(x) if x is not None else ""
+            _fmt_min = _fallback_minimal
             _fmt_methods = None
 
         @_wraps(func)

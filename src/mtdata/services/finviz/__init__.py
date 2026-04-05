@@ -96,5 +96,4 @@ __all__ = [
 ]
 
 del _copy_namespace
-del _rebind_function
 del _api

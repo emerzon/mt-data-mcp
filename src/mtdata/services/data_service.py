@@ -26,8 +26,8 @@ from ..shared.validators import invalid_timeframe_error
 # Imports from utils
 from ..utils.mt5 import (
     _mt5_copy_rates_from, _mt5_copy_rates_range,
-    _mt5_copy_ticks_range, _rates_to_df, _symbol_ready_guard,
-    _mt5_epoch_to_utc, get_cached_mt5_time_alignment, get_symbol_info_cached, mt5
+    _mt5_copy_ticks_range, _mt5_epoch_to_utc, _rates_to_df, _symbol_ready_guard,
+    get_cached_mt5_time_alignment, get_symbol_info_cached, mt5
 )
 from ..utils.utils import (
     _table_from_rows, _format_time_minimal, _format_time_minimal_local,
@@ -46,6 +46,9 @@ from ..utils.denoise import (
     _consume_denoise_warnings,
     normalize_denoise_spec as _normalize_denoise_spec,
 )
+
+# Keep legacy patch seams available for tests and external callers.
+_DATA_SERVICE_COMPAT_EXPORTS = (_mt5_epoch_to_utc,)
 
 # Simplify entrypoint and helpers.
 from ..utils.simplify import (

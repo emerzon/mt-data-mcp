@@ -155,3 +155,22 @@ mtdata-cli = "mtdata.core.cli:main"
 [project.urls]
 Homepage = "https://github.com/emerzon/mt-data-mcp"
 Repository = "https://github.com/emerzon/mt-data-mcp"
+
+[tool.ruff]
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["E", "F"]
+ignore = ["E402", "E501", "E701", "E702", "E741"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["E731", "F401", "F841"]
+"src/mtdata/**/__init__.py" = ["F401"]
+"src/mtdata/core/regime/api.py" = ["F401"]
+"src/mtdata/core/report_utils.py" = ["F401"]
+"src/mtdata/core/server.py" = ["F401"]
+"src/mtdata/core/trading.py" = ["F401"]
+"src/mtdata/forecast/barriers_shared.py" = ["F401"]
+"src/mtdata/forecast/forecast.py" = ["F401"]
+"src/mtdata/patterns/classic.py" = ["F401"]
+"src/mtdata/shared/constants.py" = ["F401"]

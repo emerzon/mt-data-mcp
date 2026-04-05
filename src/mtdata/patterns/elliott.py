@@ -154,7 +154,6 @@ def _zigzag_pivots_indices(close: np.ndarray, threshold_pct: float) -> Tuple[Lis
     piv_dir: List[str] = []  # "up" for a peak and "down" for a trough
 
     pivot_i = start_i
-    pivot_p = start_p
     trend: Optional[str] = None
     last_ext_i = start_i
     last_ext_p = start_p
@@ -192,27 +191,21 @@ def _zigzag_pivots_indices(close: np.ndarray, threshold_pct: float) -> Tuple[Lis
                 if pre_low_i > pre_high_i:
                     trend = "up"
                     pivot_i = pre_low_i
-                    pivot_p = pre_low_p
                 elif pre_high_i > pre_low_i:
                     trend = "down"
                     pivot_i = pre_high_i
-                    pivot_p = pre_high_p
                 elif up_change >= down_change:
                     trend = "up"
                     pivot_i = pre_low_i
-                    pivot_p = pre_low_p
                 else:
                     trend = "down"
                     pivot_i = pre_high_i
-                    pivot_p = pre_high_p
             elif can_start_up:
                 trend = "up"
                 pivot_i = pre_low_i
-                pivot_p = pre_low_p
             elif can_start_down:
                 trend = "down"
                 pivot_i = pre_high_i
-                pivot_p = pre_high_p
             else:
                 continue
             last_ext_i = i
@@ -230,7 +223,6 @@ def _zigzag_pivots_indices(close: np.ndarray, threshold_pct: float) -> Tuple[Lis
                 piv_dir.append("up")
                 trend = "down"
                 pivot_i = i
-                pivot_p = p
                 last_ext_i = i
                 last_ext_p = p
         else:
@@ -243,7 +235,6 @@ def _zigzag_pivots_indices(close: np.ndarray, threshold_pct: float) -> Tuple[Lis
                 piv_dir.append("down")
                 trend = "up"
                 pivot_i = i
-                pivot_p = p
                 last_ext_i = i
                 last_ext_p = p
 

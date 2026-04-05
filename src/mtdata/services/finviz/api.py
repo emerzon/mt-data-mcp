@@ -549,7 +549,7 @@ def get_general_news(news_type: str = "news", limit: int = 20, page: int = 1) ->
             "items": items_list,
         }
     except Exception as e:
-        logger.exception(f"Error fetching general news")
+        logger.exception("Error fetching general news")
         return {"error": f"Failed to fetch news: {str(e)}"}
 
 
@@ -592,7 +592,7 @@ def get_insider_activity(option: str = "latest", limit: int = 50, page: int = 1)
             "insider_trades": items_list,
         }
     except Exception as e:
-        logger.exception(f"Error fetching insider activity")
+        logger.exception("Error fetching insider activity")
         return {"error": f"Failed to fetch insider activity: {str(e)}"}
 
 

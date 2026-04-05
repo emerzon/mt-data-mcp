@@ -295,7 +295,7 @@ class TestFormatComplexValue:
         assert "b: 1" in result
 
 
-class TestEncodeTabular:
+class TestEncodeTabularNestedCells:
     def test_nested_cells_do_not_render_python_repr(self):
         result = _encode_tabular(
             "results",

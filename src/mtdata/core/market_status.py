@@ -11,7 +11,6 @@ import holidays
 
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
-from .config import mt5_config
 
 logger = logging.getLogger(__name__)
 

@@ -247,7 +247,7 @@ def generate_backtest_plots(
     # 4) Combined sheet
     try:
         import matplotlib.pyplot as plt2
-        from matplotlib.gridspec import GridSpec, GridSpecFromSubplotSpec
+        from matplotlib.gridspec import GridSpecFromSubplotSpec
         fig = plt2.figure(figsize=(14, 8), dpi=140)
         gs = fig.add_gridspec(2, 2, width_ratios=(1.0, 1.4), height_ratios=(1.0, 1.0), wspace=0.25, hspace=0.25)
         ax_tl = fig.add_subplot(gs[0, 0])

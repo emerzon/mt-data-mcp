@@ -1,5 +1,5 @@
 """HMM (Hidden Markov Model) regime detection."""
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict
 import numpy as np
 
 _ENTROPY_TREND_RELATIVE_CHANGE = 0.15

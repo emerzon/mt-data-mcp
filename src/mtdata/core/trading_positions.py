@@ -9,10 +9,10 @@ from typing import Any, Dict, List, Optional, Tuple
 from ._mcp_instance import mcp
 from . import trading_comments, trading_validation
 from .execution_logging import run_logged_operation
-from .trading_gateway import MT5TradingGateway, create_trading_gateway
+from .trading_gateway import create_trading_gateway
 from .trading_requests import TradeGetOpenRequest, TradeGetPendingRequest
 from .trading_use_cases import run_trade_get_open, run_trade_get_pending
-from ..utils.mt5 import _mt5_epoch_to_utc, ensure_mt5_connection_or_raise
+from ..utils.mt5 import _mt5_epoch_to_utc
 from ..utils.utils import (
     _format_time_minimal,
     _format_time_minimal_local,

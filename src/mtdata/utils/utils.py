@@ -3,8 +3,9 @@ import math
 from typing import Any, Dict, List, Optional, Tuple, Set
 from numbers import Number
 
-import pandas as pd
 import dateparser
+import numpy as np
+import pandas as pd
 
 from .constants import (
     PRECISION_ABS_TOL,
@@ -406,8 +407,6 @@ def to_float_np(
 
     Notes: When both drop_na and finite_only are False, the original length is preserved.
     """
-    import numpy as np  # local import
-
     try:
         # Normalize to pandas Series for robust conversion
         if hasattr(values, "to_numpy") and hasattr(values, "dtype"):
@@ -457,7 +456,6 @@ def align_finite(*arrays: Any) -> Tuple["np.ndarray", ...]:
 
     Returns a tuple of filtered arrays, all of equal length.
     """
-    import numpy as np
     conv = [to_float_np(a) for a in arrays]
     if not conv:
         return tuple()

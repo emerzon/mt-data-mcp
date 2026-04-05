@@ -1,9 +1,8 @@
 from importlib import import_module
-from typing import Any, Dict, Optional, List, Literal, Tuple
+from typing import Any, Dict, Optional, List, Literal
 import logging
 
 from .mt5_gateway import get_mt5_gateway, mt5_connection_error
-from .schema import TimeframeLiteral, DenoiseSpec, ForecastMethodLiteral
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
 from ..forecast.exceptions import ForecastError
@@ -638,7 +637,7 @@ def _forecast_list_library_models_impl(
 
     if lib == "statsforecast":
         try:
-            from statsforecast import models as _models  # type: ignore
+            pass  # type: ignore
         except Exception as exc:
             return {"library": lib, "error": f"statsforecast import failed: {exc}"}
 

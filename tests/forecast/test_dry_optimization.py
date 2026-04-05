@@ -40,11 +40,11 @@ def compare_function_signatures():
             ref_params = set(ref_sig.parameters.keys())
             
             if orig_params != ref_params:
-                print(f"    ⚠️  Parameter mismatch!")
+                print("    ⚠️  Parameter mismatch!")
                 print(f"      Missing in refactored: {orig_params - ref_params}")
                 print(f"      Extra in refactored: {ref_params - orig_params}")
             else:
-                print(f"    ✓ Parameters match")
+                print("    ✓ Parameters match")
         else:
             print(f"    ⚠️  Could not find {func_name} in both modules")
     

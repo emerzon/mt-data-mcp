@@ -3,7 +3,7 @@ import logging
 import math
 import os
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from .execution_logging import run_logged_operation
 from .mt5_gateway import get_mt5_gateway

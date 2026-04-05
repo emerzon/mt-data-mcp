@@ -1,4 +1,4 @@
-from typing import Callable, Literal, Optional
+from typing import Callable, Literal
 
 TransportName = Literal["stdio", "sse", "streamable-http"]
 

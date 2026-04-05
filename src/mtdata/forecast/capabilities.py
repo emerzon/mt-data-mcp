@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, List, Optional, Tuple
 import importlib
-import inspect
 
 from .forecast_registry import get_forecast_methods_data
 from .exceptions import ForecastError

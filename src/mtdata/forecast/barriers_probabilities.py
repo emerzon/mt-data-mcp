@@ -1,7 +1,5 @@
-from typing import Any, Dict, Optional, List, Literal, Tuple, Set
-import math
+from typing import Any, Dict, Optional, List, Literal
 import traceback
-import warnings
 import numpy as np
 from ..shared.schema import TimeframeLiteral, DenoiseSpec
 from ..shared.constants import TIMEFRAME_SECONDS
@@ -297,7 +295,6 @@ def forecast_barrier_hit_probabilities(
             a = np.asarray(arr, dtype=float)
             return {"mean": float(a.mean()), "median": float(np.median(a))}
 
-        tf_secs = TIMEFRAME_SECONDS.get(timeframe, 0)
         tp_stats = _stats(t_hit_tp)
         sl_stats = _stats(t_hit_sl)
         def _finite_or_none(x: float) -> Optional[float]:

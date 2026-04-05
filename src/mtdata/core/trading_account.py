@@ -10,7 +10,7 @@ from ._mcp_instance import mcp
 from . import trading_comments, trading_validation
 from .config import mt5_config
 from .execution_logging import run_logged_operation
-from .trading_gateway import MT5TradingGateway, create_trading_gateway
+from .trading_gateway import create_trading_gateway
 from .trading_requests import TradeHistoryRequest
 from .trading_use_cases import run_trade_history
 from ..utils.mt5 import MT5ConnectionError, _mt5_epoch_to_utc, ensure_mt5_connection_or_raise, mt5_adapter

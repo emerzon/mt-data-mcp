@@ -1,5 +1,5 @@
 """BOCPD (Bayesian Online Change Point Detection) calibration utilities."""
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Tuple
 import numpy as np
 
 from ...crypto import _is_probably_crypto_symbol

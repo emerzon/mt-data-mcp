@@ -4,8 +4,7 @@ from ..common import PatternResultBase
 from .config import ClassicDetectorConfig, ClassicPatternResult
 from .utils import (
     _detect_pivots_close, _fit_line, _fit_line_robust, _fit_lines_and_arrays, 
-    _tol_abs_from_close, _level_close, _count_touches, _count_recent_touches,
-    _is_converging, _find_recent_breakout, 
+    _tol_abs_from_close, _level_close, _count_touches, _is_converging, _find_recent_breakout, 
     _result, _alias, _conf, _apply_breakout_confidence_bonus, _robust_level_center,
     _boundaries_are_ordered,
 )

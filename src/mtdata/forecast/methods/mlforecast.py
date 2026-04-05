@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import inspect
+import sys
 from typing import Any, Dict, Optional, Tuple, List
 import warnings
 import numpy as np
@@ -30,6 +31,16 @@ _GENERIC_MLFORECAST_ALLOWED_MODELS = {
     "sklearn.tree.ExtraTreeRegressor",
     "xgboost.XGBRegressor",
 }
+
+
+def _import_model_module(module_path: str):
+    try:
+        return importlib.import_module(module_path)
+    except ImportError:
+        module = sys.modules.get(module_path)
+        if module is None or getattr(module, "__spec__", None) is not None:
+            raise
+        return module
 
 class MLForecastMethod(ForecastMethod):
     """Base class for MLForecast methods."""
@@ -222,7 +233,7 @@ class GenericMLForecastMethod(MLForecastMethod):
 
         try:
             module_path, class_name = model_path.rsplit('.', 1)
-            module = importlib.import_module(module_path)
+            module = _import_model_module(module_path)
             model_cls = getattr(module, class_name)
             if not inspect.isclass(model_cls):
                 raise TypeError(f"{model_path} did not resolve to a class")
