@@ -94,6 +94,22 @@ def _validate_trade_risk_levels(
     return None
 
 
+def _floor_volume_steps(raw_volume: float, volume_step: float) -> int:
+    step_ratio = raw_volume / volume_step
+    step_count = math.floor(step_ratio)
+    if step_count < 0:
+        return 0
+
+    remainder_to_next_step = float(step_count + 1) - float(step_ratio)
+    if remainder_to_next_step > 0.0:
+        # Correct only machine-scale underflow so exact step-sized volumes are kept,
+        # while materially smaller values still round down conservatively.
+        snap_tolerance = math.ulp(step_ratio) * 8.0
+        if remainder_to_next_step <= snap_tolerance:
+            return step_count + 1
+    return step_count
+
+
 def run_trade_place(
     request: TradePlaceRequest,
     *,
@@ -1317,7 +1333,7 @@ def run_trade_risk_analyze(
                         result["position_sizing_error"] = "Calculated volume is invalid"
                         return result
 
-                    volume_steps = math.floor((raw_volume / volume_step) + 1e-12)
+                    volume_steps = _floor_volume_steps(raw_volume, volume_step)
                     suggested_volume = volume_steps * volume_step
                     rounding_mode = "rounded_down_to_step"
                     sizing_notes: List[str] = []

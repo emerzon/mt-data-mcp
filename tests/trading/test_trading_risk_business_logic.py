@@ -8,7 +8,11 @@ import sys
 from mtdata.core import trading_risk as core_trading_risk
 from mtdata.core.trading import trade_risk_analyze as _trade_risk_analyze_tool
 from mtdata.core.trading_requests import TradeRiskAnalyzeRequest
-from mtdata.core.trading_use_cases import _resolve_trade_risk_direction, run_trade_risk_analyze
+from mtdata.core.trading_use_cases import (
+    _floor_volume_steps,
+    _resolve_trade_risk_direction,
+    run_trade_risk_analyze,
+)
 from mtdata.utils.mt5 import MT5ConnectionError
 
 
@@ -37,6 +41,42 @@ def _make_symbol_info(*, volume_min: float = 0.1, volume_step: float = 0.1, volu
         volume_max=volume_max,
         volume_step=volume_step,
     )
+
+
+def test_floor_volume_steps_keeps_exact_step_sized_values() -> None:
+    assert _floor_volume_steps(0.3, 0.1) == 3
+    assert _floor_volume_steps(1.2, 0.1) == 12
+
+
+def test_floor_volume_steps_does_not_round_up_material_substep_values() -> None:
+    assert _floor_volume_steps(0.2999999999999, 0.1) == 2
+    assert _floor_volume_steps(1.1999999999999, 0.1) == 11
+
+
+def test_trade_risk_analyze_does_not_round_up_substep_boundary_volume() -> None:
+    mt5 = MagicMock()
+    prev = sys.modules.get("MetaTrader5")
+    sys.modules["MetaTrader5"] = mt5
+    mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
+    mt5.positions_get.return_value = []
+    mt5.symbol_info.return_value = _make_symbol_info()
+
+    out = trade_risk_analyze(
+        symbol="EURUSD",
+        desired_risk_pct=0.3,
+        proposed_entry=100.0,
+        proposed_sl=89.99999999999667,
+    )
+
+    if prev is not None:
+        sys.modules["MetaTrader5"] = prev
+
+    sizing = out["position_sizing"]
+    assert sizing["suggested_volume"] == 0.2
+    assert sizing["volume_rounding"] == "rounded_down_to_step"
+    assert sizing["risk_over_target"] is False
+    assert sizing["suggested_volume"] < sizing["raw_volume"]
+    assert any("rounded down" in note.lower() for note in sizing["sizing_notes"])
 
 
 def test_trade_risk_analyze_rounds_down_to_step_to_avoid_overshoot() -> None:
