@@ -107,6 +107,40 @@ def test_ensemble_stacking_reports_normalized_weights_and_raw_coefficients():
     assert out.metadata["intercept"] == 0.5
 
 
+def test_ensemble_stacking_falls_back_to_raw_coefficients_for_non_positive_sum():
+    series = pd.Series(np.linspace(1.0, 20.0, 20))
+    method = em.EnsembleMethod()
+
+    def dispatch(method_name, series_in, horizon, seasonality, params):
+        if method_name == "naive":
+            return np.array([10.0, 20.0], dtype=float)
+        return np.array([1.0, 2.0], dtype=float)
+
+    def prepare_cv(*args, **kwargs):
+        return np.ones((3, 2), dtype=float), np.ones(3, dtype=float)
+
+    with patch.object(
+        em.np.linalg,
+        "lstsq",
+        return_value=(np.array([0.5, 1.0, -1.0], dtype=float), np.array([]), 2, np.array([])),
+    ):
+        out = method.forecast(
+            series,
+            horizon=2,
+            seasonality=1,
+            params={"methods": ["naive", "theta"], "mode": "stacking"},
+            ensemble_dispatch_method=dispatch,
+            prepare_ensemble_cv=prepare_cv,
+            get_available_methods=lambda: ("naive", "theta"),
+        )
+
+    assert np.allclose(out.forecast, [9.5, 18.5])
+    assert out.metadata["weights"] == [1.0, -1.0]
+    assert out.metadata["coefficients"] == [1.0, -1.0]
+    assert out.metadata["weight_semantics"] == "raw_coefficients"
+    assert out.metadata["intercept"] == 0.5
+
+
 def test_ensemble_reports_component_failures_from_dispatch_exceptions():
     series = pd.Series(np.linspace(1.0, 20.0, 20))
     method = em.EnsembleMethod()
