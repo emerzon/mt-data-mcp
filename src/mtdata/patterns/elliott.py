@@ -19,7 +19,9 @@ class ElliottWaveConfig:
     The detector blends classical Elliott-rule validation with a lightweight
     GMM-based classifier. The weight fields below control how much each signal
     contributes to the final confidence score for impulse and correction
-    candidates.
+    candidates. The blend helpers renormalize non-negative weights at runtime,
+    so these values act as relative preferences rather than requiring an exact
+    1.0 sum.
     """
 
     # Legacy options (kept for API compatibility)
@@ -40,15 +42,15 @@ class ElliottWaveConfig:
     # Empirical impulse-wave calibration weights. These are not Fibonacci
     # ratios themselves; they weight the relative importance of each alignment
     # component when scoring a 5-wave impulse candidate:
-    #   [0] wave-1 baseline structure
+    #   [0] wave-2 retracement quality
     #   [1] wave-3 extension quality
-    #   [2] wave-5 completion / proportionality
-    #   [3] time and symmetry contribution
+    #   [2] wave-4 retracement quality
+    #   [3] wave-5 completion / proportionality
     impulse_fib_weights: List[float] = field(default_factory=lambda: [0.30, 0.35, 0.20, 0.15])
 
-    # Hybrid confidence blending. Each rule/classifier pair is intended to sum
-    # to 1.0 for its wave family so users can bias detection toward stricter
-    # rules or toward the learned classifier signal.
+    # Hybrid confidence blending. Each rule/classifier pair is renormalized
+    # before use so callers can express relative preference without manually
+    # forcing the weights to sum to 1.0.
     impulse_rule_weight: float = 0.65
     impulse_cls_weight: float = 0.35
     correction_rule_weight: float = 0.60
