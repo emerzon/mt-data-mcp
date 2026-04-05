@@ -28,6 +28,9 @@ def _ssa_denoise(
     n = len(x)
     if n < 4:
         return x
+    series_variance = float(np.var(x))
+    if math.isfinite(series_variance) and series_variance <= 0.0:
+        return x.copy()
     L = max(2, int(window))
     if L >= n:
         return x

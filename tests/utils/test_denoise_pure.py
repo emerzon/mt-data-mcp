@@ -823,6 +823,16 @@ class TestSsaDenoise:
         y = _ssa_denoise(np.zeros(20, dtype=float), window=5, components=0.9)
         np.testing.assert_array_equal(y, np.zeros(20, dtype=float))
 
+    def test_constant_series_skips_svd(self, monkeypatch):
+        monkeypatch.setattr(
+            "mtdata.utils.denoise.filters.decomposition.np.linalg.svd",
+            lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("svd should be skipped")),
+        )
+
+        y = _ssa_denoise(np.full(20, 5.0, dtype=float), window=5, components=0.9)
+
+        np.testing.assert_array_equal(y, np.full(20, 5.0, dtype=float))
+
 
 class TestL1TrendFilter:
     def test_basic(self):
