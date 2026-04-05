@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from bisect import bisect_left
+from bisect import bisect_left, bisect_right
 from datetime import datetime, timedelta, timezone
 import math
 import re
@@ -2066,6 +2066,36 @@ def _market_price_points(ticks: List[Dict[str, Any]], *, source: str) -> List[tu
     return points
 
 
+def _slice_prices_from_epoch(
+    prices: List[tuple[float, float]],
+    *,
+    start_epoch: float,
+    end_epoch: Optional[float] = None,
+    epochs: Optional[List[float]] = None,
+) -> List[tuple[float, float]]:
+    epoch_values = epochs if epochs is not None else [float(point[0]) for point in prices]
+    start_idx = bisect_left(epoch_values, float(start_epoch))
+    if end_epoch is None:
+        return prices[start_idx:]
+    end_idx = bisect_right(epoch_values, float(end_epoch))
+    return prices[start_idx:end_idx]
+
+
+def _slice_ticks_from_epoch(
+    ticks: List[Dict[str, Any]],
+    *,
+    start_epoch: float,
+    end_epoch: Optional[float] = None,
+    epochs: Optional[List[float]] = None,
+) -> List[Dict[str, Any]]:
+    epoch_values = epochs if epochs is not None else [float(tick["epoch"]) for tick in ticks]
+    start_idx = bisect_left(epoch_values, float(start_epoch))
+    if end_epoch is None:
+        return ticks[start_idx:]
+    end_idx = bisect_right(epoch_values, float(end_epoch))
+    return ticks[start_idx:end_idx]
+
+
 def _current_price_change(spec: Dict[str, Any], prices: List[tuple[float, float]]) -> Optional[float]:
     if not prices:
         return None
@@ -2077,7 +2107,7 @@ def _current_price_change(spec: Dict[str, Any], prices: List[tuple[float, float]
     window_seconds = float(spec["window"]["value"]) * 60.0
     end_epoch = prices[-1][0]
     start_epoch = end_epoch - window_seconds
-    window_points = [(epoch, price) for epoch, price in prices if epoch >= start_epoch]
+    window_points = _slice_prices_from_epoch(prices, start_epoch=start_epoch)
     if len(window_points) < 2:
         return None
     return _pct_change(window_points[0][1], window_points[-1][1])
@@ -2119,13 +2149,19 @@ def _duration_price_change_baseline_samples(
     current_start = latest_epoch - window_seconds
     baseline_start = current_start - baseline_seconds
     sample_count = max(1, int(math.floor(baseline_seconds / max(window_seconds, 1.0))))
+    price_epochs = [float(point[0]) for point in prices]
     samples: List[float] = []
     for sample_idx in range(sample_count):
         window_start = baseline_start + sample_idx * window_seconds
         window_end = min(window_start + window_seconds, current_start)
         if window_end <= window_start:
             continue
-        window_points = [(epoch, price) for epoch, price in prices if window_start <= epoch <= window_end]
+        window_points = _slice_prices_from_epoch(
+            prices,
+            start_epoch=window_start,
+            end_epoch=window_end,
+            epochs=price_epochs,
+        )
         if len(window_points) < 2:
             continue
         change = _pct_change(window_points[0][1], window_points[-1][1])
@@ -2170,7 +2206,7 @@ def _current_volume_metric(
     window_seconds = float(spec["window"]["value"]) * 60.0
     end_epoch = ticks[-1]["epoch"]
     start_epoch = end_epoch - window_seconds
-    window_ticks_rows = [tick for tick in ticks if float(tick["epoch"]) >= start_epoch]
+    window_ticks_rows = _slice_ticks_from_epoch(ticks, start_epoch=start_epoch)
     if not window_ticks_rows:
         return None
     return _volume_metric_for_ticks(window_ticks_rows, source=source)
@@ -2202,15 +2238,19 @@ def _volume_baseline_samples(
     current_start = latest_epoch - window_seconds
     baseline_start = current_start - baseline_seconds
     sample_count = max(1, int(math.floor(baseline_seconds / max(window_seconds, 1.0))))
+    tick_epochs = [float(tick["epoch"]) for tick in ticks]
     samples: List[float] = []
     for sample_idx in range(sample_count):
         window_start = baseline_start + sample_idx * window_seconds
         window_end = min(window_start + window_seconds, current_start)
         if window_end <= window_start:
             continue
-        window_ticks_rows = [
-            tick for tick in ticks if window_start <= float(tick["epoch"]) <= window_end
-        ]
+        window_ticks_rows = _slice_ticks_from_epoch(
+            ticks,
+            start_epoch=window_start,
+            end_epoch=window_end,
+            epochs=tick_epochs,
+        )
         metric = _volume_metric_for_ticks(window_ticks_rows, source=source)
         if metric is None:
             continue
@@ -2323,6 +2363,7 @@ def _window_metric_baseline_samples(
     current_start = latest_epoch - window_seconds
     baseline_start = current_start - baseline_seconds
     sample_count = max(1, int(math.floor(baseline_seconds / max(window_seconds, 1.0))))
+    tick_epochs = [float(tick["epoch"]) for tick in ticks]
     samples: List[float] = []
     for sample_idx in range(sample_count):
         window_start = baseline_start + sample_idx * window_seconds
@@ -2330,11 +2371,12 @@ def _window_metric_baseline_samples(
         if window_end <= window_start:
             continue
         metric = metric_fn(
-            [
-                tick
-                for tick in ticks
-                if window_start <= float(tick["epoch"]) <= window_end
-            ]
+            _slice_ticks_from_epoch(
+                ticks,
+                start_epoch=window_start,
+                end_epoch=window_end,
+                epochs=tick_epochs,
+            )
         )
         if metric is not None:
             samples.append(metric)
@@ -2364,6 +2406,7 @@ def _window_metric_baseline_samples_for_prices(
     current_start = latest_epoch - window_seconds
     baseline_start = current_start - baseline_seconds
     sample_count = max(1, int(math.floor(baseline_seconds / max(window_seconds, 1.0))))
+    price_epochs = [float(point[0]) for point in prices]
     samples: List[float] = []
     for sample_idx in range(sample_count):
         window_start = baseline_start + sample_idx * window_seconds
@@ -2371,11 +2414,12 @@ def _window_metric_baseline_samples_for_prices(
         if window_end <= window_start:
             continue
         metric = metric_fn(
-            [
-                (epoch, price)
-                for epoch, price in prices
-                if window_start <= epoch <= window_end
-            ]
+            _slice_prices_from_epoch(
+                prices,
+                start_epoch=window_start,
+                end_epoch=window_end,
+                epochs=price_epochs,
+            )
         )
         if metric is not None:
             samples.append(metric)
@@ -2393,7 +2437,7 @@ def _window_ticks(ticks: List[Dict[str, Any]], window: Dict[str, Any]) -> List[D
     window_seconds = float(window["value"]) * 60.0
     end_epoch = float(ticks[-1]["epoch"])
     start_epoch = end_epoch - window_seconds
-    return [tick for tick in ticks if float(tick["epoch"]) >= start_epoch]
+    return _slice_ticks_from_epoch(ticks, start_epoch=start_epoch)
 
 
 def _window_prices(prices: List[tuple[float, float]], window: Dict[str, Any]) -> List[tuple[float, float]]:
@@ -2407,7 +2451,7 @@ def _window_prices(prices: List[tuple[float, float]], window: Dict[str, Any]) ->
     window_seconds = float(window["value"]) * 60.0
     end_epoch = float(prices[-1][0])
     start_epoch = end_epoch - window_seconds
-    return [(epoch, price) for epoch, price in prices if epoch >= start_epoch]
+    return _slice_prices_from_epoch(prices, start_epoch=start_epoch)
 
 
 def _spread_values_for_ticks(ticks: List[Dict[str, Any]]) -> List[float]:
