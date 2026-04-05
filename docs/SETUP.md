@@ -45,13 +45,14 @@ pip install -e .
 
 ### 3. Install the Full Stable Feature Set (Optional)
 
-For the validated research/web environment used in local development and docs/examples:
+For the validated research/web environment used in local development and most docs/examples:
 
 ```bash
 pip install -r requirements.txt
 ```
 
 This path intentionally stays on package-index releases. Git-backed add-ons such as TimesFM, `precise-patterns`, and `ycnbc` stay opt-in so the default install does not depend on Git checkouts.
+NeuralForecast-based models are also kept out of this default path; if you want `nhits`, `tft`, `patchtst`, or `nbeatsx`, install them manually with `pip install neuralforecast torch`.
 
 ### 4. Optional Dependencies
 
@@ -86,13 +87,13 @@ Feature notes:
 - Foundation models:
   - Chronos (`chronos2`, `chronos_bolt`): `chronos-forecasting`, `torch`
   - TimesFM (`timesfm`): `timesfm`, `torch` (install with `pip install -e .[forecast-timesfm]`; Git-backed extra)
-  - Lag-Llama (`lag_llama`): not included in the default Python 3.14 environment because `gluonts`/Lag-Llama are still constrained by upstream compatibility
+  - Lag-Llama (`lag_llama`): documented for completeness, but not part of the supported Python 3.14 environment because `gluonts`/Lag-Llama are still constrained by upstream compatibility
 - Forecasting libraries: `statsforecast`, `sktime`, `mlforecast` (plus `lightgbm` for GBMs)
 - Volatility (GARCH/ARCH): `arch`
 - Optional pattern/simplification accelerators omitted from the default Python 3.14 install: `hnswlib`, `tsdownsample`
 - Barrier option pricing & Heston calibration: `QuantLib`
 - Bayesian hyperparameter optimization: `optuna`
-- Neural network forecasters (NHiTS, TFT, PatchTST): `neuralforecast`, `torch`
+- Neural network forecasters (`nhits`, `tft`, `patchtst`, `nbeatsx`): manual install only via `pip install neuralforecast torch`; not included in `requirements.txt` or a package extra
 
 Tip: `mtdata-cli forecast_list_methods --json` shows `available` and `requires` per method.
 
@@ -143,7 +144,7 @@ If you don't see symbols (or you get a connection error):
 
 ## Environment Variables
 
-> **Full reference:** [ENV_VARS.md](ENV_VARS.md) documents all 40+ environment variables (MCP server, Web API, news embeddings, Finviz, GPU, market depth, CLI debug, and more) with a starter `.env` template.
+> **Full reference:** [ENV_VARS.md](ENV_VARS.md) documents the full environment-variable surface (MCP server, Web API, news embeddings, Finviz, GPU, market depth, CLI debug, and more) with a starter `.env` template.
 
 Create a `.env` file in the project root for configuration:
 
@@ -254,7 +255,11 @@ After editable install, these entry points are available:
 mtdata-webapi
 ```
 
-Starts a FastAPI server with a React UI at `http://localhost:8000`.
+Starts a FastAPI server.
+
+- Health check: `http://localhost:8000/health`
+- API base paths: `http://localhost:8000/api` and `http://localhost:8000/api/v1`
+- React UI: `http://localhost:8000/app`
 
 Web UI / API configuration:
 - `WEBAPI_HOST` (default `127.0.0.1`)

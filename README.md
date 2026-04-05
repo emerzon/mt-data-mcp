@@ -71,9 +71,10 @@ mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 --method theta
 Notes:
 - `pip install -e .` now installs the lean core package only.
 - `pip install -r requirements.txt` installs the validated Python 3.14 stack from package-index releases, including Chronos, StatsForecast, sktime, mlforecast, news embeddings, and the Web API.
+- NeuralForecast-based models (`nhits`, `tft`, `patchtst`, `nbeatsx`) are not installed by `requirements.txt` or any package extra today; install them manually with `pip install neuralforecast torch` if you want to experiment with them.
 - Conda is a supported way to isolate the install before running the pip commands above.
 - Git-backed add-ons stay explicit: `pip install -e .[forecast-timesfm]` for TimesFM, `pip install -e .[patterns-ext]` for `precise-patterns`, `pip install -e .[news-ycnbc]` for the CNBC adapter, or `pip install -e .[all-git]` for everything in one go.
-- `gluonts`/Lag-Llama, `hnswlib`, and `tsdownsample` are intentionally excluded from the default 3.14 environment because current wheel support is incomplete or incompatible.
+- GluonTS/Lag-Llama, GluonTS `gt_*` methods, `hnswlib`, and `tsdownsample` are intentionally excluded from the supported Python 3.14 environment because current wheel/runtime support is incomplete or incompatible.
 
 ## Documentation
 
@@ -121,7 +122,7 @@ MT5_SERVER=your_broker_server
 MT5_SERVER_TZ=Europe/Athens   # Or use MT5_TIME_OFFSET_MINUTES=120
 ```
 
-mtdata reads 40+ environment variables covering MT5 connection, timezone, MCP/Web API server settings, news embeddings, Finviz tuning, GPU acceleration, and more. See **[Environment Variables Reference](docs/ENV_VARS.md)** for the full list and a starter `.env` template.
+mtdata reads dozens of environment variables covering MT5 connection, timezone, MCP/Web API server settings, news embeddings, Finviz tuning, GPU acceleration, and more. See **[Environment Variables Reference](docs/ENV_VARS.md)** for the full list and a starter `.env` template.
 
 ## Architecture
 

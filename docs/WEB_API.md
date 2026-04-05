@@ -4,6 +4,11 @@ The `mtdata` Web API exposes forecasting, analysis, and data fetching capabiliti
 
 **Base URL:** `http://localhost:8000` (default)
 
+Route versioning:
+- Every API route below is available under both `/api/...` and `/api/v1/...`.
+- Prefer `/api/v1` for new integrations.
+- The examples below use `/api` for brevity.
+
 ## Authentication
 
 By default the API binds to `127.0.0.1` and permits loopback clients without a token.
@@ -20,10 +25,16 @@ Credentialed CORS requests require explicit origins. `CORS_ORIGINS=*` is rejecte
 ### Health / UI
 
 #### `GET /`
-Basic health check.
+Basic health check. Returns JSON, not the SPA.
+
+#### `GET /health`
+Same health payload as `/`.
 
 #### `GET /app`
 Serves the built Web UI (if `webui/dist/` exists).
+
+#### `GET /api/health`
+API health check. Also available at `GET /api/v1/health`.
 
 ### Market Data
 
@@ -139,7 +150,10 @@ Generate volatility forecasts.
   "timeframe": "H1",
   "horizon": 1,
   "method": "ewma",
-  "params": {"lambda": 0.94}
+  "proxy": null,
+  "params": {"lambda": 0.94},
+  "as_of": null,
+  "denoise": null
 }
 ```
 
@@ -155,11 +169,16 @@ Run a rolling-origin backtest.
   "steps": 20,
   "spacing": 10,
   "methods": ["theta", "naive"],
+  "params_per_method": null,
   "quantity": "price",
   "denoise": null,
+  "params": null,
   "features": null,
   "dimred_method": null,
-  "dimred_params": null
+  "dimred_params": null,
+  "slippage_bps": 0.0,
+  "trade_threshold": 0.0,
+  "detail": "compact"
 }
 ```
 

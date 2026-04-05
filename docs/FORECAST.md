@@ -46,15 +46,20 @@ Run this to see available methods:
 mtdata-cli forecast_list_methods
 ```
 
+Availability is environment-dependent:
+- On the supported Python 3.14 install path, GluonTS `gt_*` methods are unsupported.
+- NeuralForecast methods (`nhits`, `tft`, `patchtst`, `nbeatsx`) require a separate manual install: `pip install neuralforecast torch`.
+- `forecast_list_methods --json` is the source of truth for what your current environment can actually run.
+
 | Category | Models | When to Use |
 |----------|--------|-------------|
 | **Classical** | `theta`, `naive`, `drift`, `ses`, `holt`, `arima` | Fast baselines, short horizons |
 | **Seasonal** | `seasonal_naive`, `ets`, `holt_winters_add`, `holt_winters_mul`, `sarima`, `fourier_ols` | Data with recurring patterns |
 | **Statistical** | `sf_autoarima`, `sf_autoets`, `sf_autotheta` | Auto-tuning, medium horizons |
 | **ML-Based** | `mlf_lightgbm`, `mlf_rf` | Non-linear patterns, feature engineering |
-| **Neural** | `nhits`, `tft`, `patchtst`, `nbeatsx` | Deep learning, long horizons (requires neuralforecast) |
+| **Neural** | `nhits`, `tft`, `patchtst`, `nbeatsx` | Deep learning, long horizons; manual `neuralforecast` install required |
 | **Foundation** | `chronos2`, `chronos_bolt`, `timesfm`, `lag_llama` | Pretrained models (optional deps) |
-| **GluonTS** | `gt_deepar`, `gt_tft`, `gt_wavenet`, `gt_prophet`, `gt_sfeedforward`, `gt_deepnpts`, `gt_mqf2`, `gt_npts` | Probabilistic deep models (requires `gluonts`; use `--library native`) |
+| **GluonTS** | `gt_deepar`, `gt_tft`, `gt_wavenet`, `gt_prophet`, `gt_sfeedforward`, `gt_deepnpts`, `gt_mqf2`, `gt_npts` | Documented for completeness, but unsupported on the project's Python 3.14 runtime |
 | **Simulation** | `mc_gbm`, `hmm_mc` | Risk sizing, barrier analysis |
 | **Ensemble** | `ensemble` | Combine multiple models |
 
@@ -111,7 +116,7 @@ mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 24 \
   --library pretrained --method lag_llama --params '{"ckpt_path":"C:/path/to/lag-llama.ckpt"}'
 ```
 
-*Requires: `pip install gluonts[torch]` plus Lag-Llama; may not be installable on all Python versions due to upstream pins.*
+*Requires a manual nonstandard setup (`gluonts[torch]` plus Lag-Llama) and is not part of the supported Python 3.14 environment in this project.*
 
 ### Monte Carlo Simulation
 
@@ -154,7 +159,7 @@ mtdata supports multiple forecasting libraries. Use `--library` to select:
 | `statsforecast` | Nixtla's fast statistical models | AutoARIMA, AutoETS, Theta |
 | `sktime` | Scikit-learn style time series | Various forecasters |
 | `mlforecast` | ML models with lag features | LightGBM, RandomForest |
-| `pretrained` | Foundation models | Chronos, Chronos-Bolt, TimesFM, Lag-Llama |
+| `pretrained` | Foundation models | Chronos, Chronos-Bolt, TimesFM, Lag-Llama (manual/nonstandard setup only) |
 
 **List models in a library:**
 ```bash
