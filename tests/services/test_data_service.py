@@ -1,5 +1,6 @@
 
 
+import math
 import unittest
 from unittest.mock import patch, MagicMock
 from contextlib import contextmanager
@@ -299,6 +300,55 @@ class TestDataService(unittest.TestCase):
         self.assertTrue(result.get("success"))
         self.assertEqual(result.get("spread_change_pct_note"), "first spread was zero")
         self.assertIsNone(result.get("stats", {}).get("spread", {}).get("change_pct"))
+
+    @patch('mtdata.services.data_service._mt5_copy_ticks_range')
+    @patch('mtdata.services.data_service._symbol_ready_guard', _mock_symbol_ready_guard)
+    def test_fetch_ticks_summary_keeps_empty_series_stats_shape(self, mock_copy_ticks):
+        now = datetime.now(timezone.utc).timestamp()
+        ticks = [
+            {
+                'time': now - 2,
+                'bid': float("nan"),
+                'ask': 1.1001,
+                'last': 1.10005,
+                'volume': 1.0,
+                'time_msc': (now - 2) * 1000,
+                'flags': 0,
+                'volume_real': 0.0,
+            },
+            {
+                'time': now - 1,
+                'bid': float("nan"),
+                'ask': 1.1002,
+                'last': 1.10015,
+                'volume': 1.0,
+                'time_msc': (now - 1) * 1000,
+                'flags': 0,
+                'volume_real': 0.0,
+            },
+            {
+                'time': now,
+                'bid': float("nan"),
+                'ask': 1.1003,
+                'last': 1.10025,
+                'volume': 1.0,
+                'time_msc': now * 1000,
+                'flags': 0,
+                'volume_real': 0.0,
+            },
+        ]
+        mock_copy_ticks.return_value = ticks
+
+        result = fetch_ticks(symbol="EURUSD", limit=3, output="summary")
+
+        self.assertTrue(result.get("success"))
+        bid_stats = result.get("stats", {}).get("bid", {})
+        self.assertFalse(bid_stats.get("available"))
+        for key in ("first", "last", "low", "high", "mean", "std", "stderr", "kurtosis", "change", "change_pct"):
+            self.assertIn(key, bid_stats)
+        self.assertEqual(bid_stats.get("count"), 0)
+        self.assertTrue(math.isnan(bid_stats["first"]))
+        self.assertTrue(math.isnan(bid_stats["mean"]))
 
     def test_format_candle_times_vectorizes_utc_formatting(self):
         import pandas as pd
