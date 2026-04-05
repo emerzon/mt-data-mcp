@@ -2,6 +2,22 @@ import numpy as np
 import pandas as pd
 import warnings
 
+
+def _normalize_window_size(window_size: int) -> int:
+    if isinstance(window_size, bool):
+        raise ValueError("window_size must be a positive integer")
+    try:
+        window_size_f = float(window_size)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("window_size must be a positive integer") from exc
+    if not window_size_f.is_integer():
+        raise ValueError("window_size must be a positive integer")
+    window_size_i = int(window_size_f)
+    if window_size_i <= 0:
+        raise ValueError("window_size must be a positive integer")
+    return window_size_i
+
+
 def extract_rolling_features(
     series: np.ndarray, 
     window_size: int = 20, 
@@ -19,6 +35,7 @@ def extract_rolling_features(
         DataFrame where each row corresponds to the features of the window ending at that index.
         The index of the DataFrame aligns with the input series (rows < window_size will be NaN/imputed).
     """
+    window_size = _normalize_window_size(window_size)
     try:
         from tsfresh import extract_features
         from tsfresh.utilities.dataframe_functions import roll_time_series
@@ -29,11 +46,10 @@ def extract_rolling_features(
     # Convert to standard format expected by tsfresh
     # series needs to be a DataFrame with "id", "time", "value"
     # For rolling, we use roll_time_series which creates a new ID for each window.
-    
     n = len(series)
     if n < window_size:
         return pd.DataFrame() # Not enough data
-        
+
     df = pd.DataFrame({
         "id": np.ones(n, dtype=int),
         "time": np.arange(n),
