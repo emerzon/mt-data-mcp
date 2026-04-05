@@ -2,7 +2,6 @@
 from typing import Any, Dict, Optional
 import pandas as pd
 import numpy as np
-from skimage.restoration import denoise_tv_chambolle as _denoise_tv_chambolle
 
 try:
     from scipy.signal import butter as _butter
