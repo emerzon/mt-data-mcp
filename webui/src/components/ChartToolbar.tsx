@@ -11,7 +11,7 @@ import {
 type Props = {
   symbol: string
   timeframe: string
-  anchor?: number
+  displayAnchor?: number
   isLoading: boolean
   barsCount: number
   hasPivots: boolean
@@ -40,7 +40,7 @@ type Props = {
 export function ChartToolbar({
   symbol,
   timeframe,
-  anchor,
+  displayAnchor,
   isLoading,
   barsCount,
   hasPivots,
@@ -84,9 +84,9 @@ export function ChartToolbar({
       {symbol && (
         <div className="bg-slate-900/95 backdrop-blur-sm rounded-lg border border-slate-800 px-3 py-1.5 text-xs text-slate-400">
           {barsCount} bars
-          {anchor && (
+          {displayAnchor !== undefined && (
             <span className="ml-2 text-amber-400">
-              Anchor: {new Date(anchor * 1000).toISOString().slice(11, 19)}
+              Anchor: {new Date(displayAnchor * 1000).toISOString().slice(11, 19)}
               <button className="ml-1 text-slate-500 hover:text-slate-300" onClick={onClearAnchor}>
                 ×
               </button>

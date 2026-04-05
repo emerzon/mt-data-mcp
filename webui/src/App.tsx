@@ -16,7 +16,7 @@ export default function App() {
         <ChartToolbar
           symbol={workspace.symbol}
           timeframe={workspace.timeframe}
-          anchor={workspace.anchor}
+          displayAnchor={workspace.displayAnchor}
           isLoading={workspace.isFetching || workspace.isLoadingMore}
           onSymbolChange={workspace.handleSymbolChange}
           onTimeframeChange={workspace.handleTimeframeChange}

@@ -229,12 +229,12 @@ export function useChartWorkspace() {
         times = result.forecast_epoch.map((value) => toUtcSec(value))
       } else {
         const step = tfSeconds(timeframe)
-        const anchorOverride = result.__anchor ? Number(result.__anchor) : undefined
-        if (anchorOverride && step) {
+        const anchorOverride = result.__anchor !== undefined ? Number(result.__anchor) : undefined
+        if (anchorOverride !== undefined && step) {
           times = Array.from({ length: main.length }, (_, index) => anchorOverride + step * (index + 1))
         } else {
           const last = bars.length ? bars[bars.length - 1].time : undefined
-          if (last && step) {
+          if (last !== undefined && step) {
             times = Array.from({ length: main.length }, (_, index) => last + step * (index + 1))
           } else {
             const fallback = (result.forecast_time || result.times || []) as (number | string)[]
@@ -383,7 +383,7 @@ export function useChartWorkspace() {
     toggleLast: () => setShowLast((value) => !value),
     toggleLive: () => setIsLive((value) => !value),
     clearAnchor: () => setAnchor(undefined),
-    displayAnchor: anchor ? getDisplayTime(anchor) : undefined,
+    displayAnchor: anchor !== undefined ? getDisplayTime(anchor) : undefined,
     displayOverlays: chartOverlays.map((overlay) => ({
       ...overlay,
       points: overlay.points.map((point) => ({ ...point, time: getDisplayTime(point.time) })),
