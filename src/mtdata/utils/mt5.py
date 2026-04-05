@@ -13,6 +13,7 @@ from ..bootstrap.settings import mt5_config
 logger = logging.getLogger(__name__)
 
 _SYMBOL_INFO_TTL_SECONDS = 5
+_SYMBOL_INFO_TTL_MAX_SECONDS = 3600.0
 _MT5_CONNECTION_FAILURE_MESSAGE = "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."
 
 
@@ -169,15 +170,16 @@ def _cached_symbol_info(symbol: str, ttl_bucket: int):
     return mt5.symbol_info(symbol)
 
 
-def get_symbol_info_cached(symbol: str, ttl_seconds: int = _SYMBOL_INFO_TTL_SECONDS):
+def get_symbol_info_cached(symbol: str, ttl_seconds: float = _SYMBOL_INFO_TTL_SECONDS):
     """Fetch symbol info with a short-lived cache to reduce repeated MT5 calls."""
     try:
-        ttl = int(ttl_seconds)
-        if ttl <= 0:
-            return mt5.symbol_info(symbol)
-        bucket = int(time.time() / ttl)
+        ttl = float(ttl_seconds)
     except Exception:
-        bucket = int(time.time())
+        return mt5.symbol_info(symbol)
+    if not math.isfinite(ttl) or ttl <= 0.0:
+        return mt5.symbol_info(symbol)
+    ttl = min(ttl, _SYMBOL_INFO_TTL_MAX_SECONDS)
+    bucket = int(time.time() / ttl)
     return _cached_symbol_info(symbol, bucket)
 
 

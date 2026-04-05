@@ -78,6 +78,8 @@ def _make_tick(**kw):
 class TestGetSymbolInfoCached:
     def setup_method(self):
         clear_symbol_info_cache()
+        _mt5_mock.symbol_info.reset_mock()
+        _mt5_mock.symbol_info.side_effect = None
 
     def test_positive_ttl(self):
         _mt5_mock.symbol_info.return_value = MagicMock(bid=1.1)
@@ -95,10 +97,36 @@ class TestGetSymbolInfoCached:
         result = get_symbol_info_cached("EURUSD", ttl_seconds=-1)
         assert result is not None
 
-    def test_non_numeric_ttl_falls_back(self):
+    def test_non_numeric_ttl_falls_back_to_raw_no_cache(self):
         _mt5_mock.symbol_info.return_value = MagicMock(bid=1.4)
-        result = get_symbol_info_cached("EURUSD", ttl_seconds="bad")
-        assert result is not None
+        first = get_symbol_info_cached("EURUSD", ttl_seconds="bad")
+        second = get_symbol_info_cached("EURUSD", ttl_seconds="bad")
+        assert first is not None
+        assert second is not None
+        assert _mt5_mock.symbol_info.call_count == 2
+
+    def test_fractional_ttl_uses_cache_bucket(self, monkeypatch):
+        _mt5_mock.symbol_info.return_value = MagicMock(bid=1.5)
+        monkeypatch.setattr(_mt5_mod.time, "time", lambda: 10.0)
+
+        first = get_symbol_info_cached("EURUSD", ttl_seconds=0.5)
+        second = get_symbol_info_cached("EURUSD", ttl_seconds=0.5)
+
+        assert first is second
+        assert _mt5_mock.symbol_info.call_count == 1
+
+    def test_large_ttl_is_capped_to_short_lived_window(self, monkeypatch):
+        current_time = {"value": 10_000.0}
+        _mt5_mock.symbol_info.return_value = MagicMock(bid=1.6)
+        monkeypatch.setattr(_mt5_mod.time, "time", lambda: current_time["value"])
+
+        first = get_symbol_info_cached("EURUSD", ttl_seconds=10_000_000_000)
+        current_time["value"] += 4_000.0
+        second = get_symbol_info_cached("EURUSD", ttl_seconds=10_000_000_000)
+
+        assert first is not None
+        assert second is not None
+        assert _mt5_mock.symbol_info.call_count == 2
 
 
 class TestClearSymbolInfoCache:
