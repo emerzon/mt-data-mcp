@@ -622,6 +622,35 @@ def test_run_forecast_conformal_intervals_routes_method_params_consistently():
     assert captured["forecast"]["params"] == {"seasonality": 24}
 
 
+def test_run_forecast_conformal_intervals_uses_finite_sample_quantile():
+    result = forecast_use_cases.run_forecast_conformal_intervals(
+        ForecastConformalIntervalsRequest(
+            symbol="EURUSD",
+            method="theta",
+            horizon=1,
+            steps=3,
+            spacing=1,
+            ci_alpha=0.25,
+        ),
+        backtest_impl=lambda **kwargs: {
+            "results": {
+                "theta": {
+                    "details": [
+                        {"forecast": [10.0], "actual": [9.0]},
+                        {"forecast": [10.0], "actual": [8.0]},
+                        {"forecast": [10.0], "actual": [7.0]},
+                    ]
+                }
+            }
+        },
+        forecast_impl=lambda **kwargs: {"forecast_price": [100.0]},
+    )
+
+    assert result["conformal"]["per_step_q"] == [3.0]
+    assert result["lower_price"] == [97.0]
+    assert result["upper_price"] == [103.0]
+
+
 def test_run_forecast_conformal_intervals_raises_typed_error_for_nested_error_payload():
     with pytest.raises(ForecastError, match="backtest failed"):
         forecast_use_cases.run_forecast_conformal_intervals(

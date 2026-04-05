@@ -3,6 +3,7 @@ from __future__ import annotations
 import difflib
 import importlib
 import logging
+import math
 import os
 import pkgutil
 import time
@@ -81,6 +82,21 @@ def _discover_sktime_forecasters() -> Dict[str, Tuple[str, str]]:
 
 def _normalize_forecaster_name(name: str) -> str:
     return "".join(ch for ch in str(name).lower() if ch.isalnum())
+
+
+def _finite_sample_conformal_quantile(values: List[float], alpha: float) -> float:
+    if not values:
+        return float("nan")
+
+    import numpy as _np
+
+    arr = _np.asarray(values, dtype=float)
+    if _np.isnan(arr).any():
+        return float("nan")
+
+    n = int(arr.size)
+    rank = max(1, min(n, math.ceil((n + 1) * (1.0 - float(alpha)))))
+    return float(_np.partition(arr, rank - 1)[rank - 1])
 
 
 def _resolve_sktime_forecaster(method: str) -> Optional[Tuple[str, str]]:
@@ -368,9 +384,8 @@ def run_forecast_conformal_intervals(
 
         import numpy as _np
 
-        q = 1.0 - float(request.ci_alpha)
         qerrs = [
-            float(_np.quantile(_np.array(err, dtype=float), q)) if err else float("nan")
+            _finite_sample_conformal_quantile(err, float(request.ci_alpha))
             for err in errs
         ]
 
