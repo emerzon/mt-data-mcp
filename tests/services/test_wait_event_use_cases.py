@@ -543,6 +543,40 @@ def test_merge_market_ticks_keeps_older_existing_keys_in_seen_set(monkeypatch) -
     assert [tick["time_msc"] for tick in merged] == [100000, 101000, 102000, 103000]
 
 
+def test_trim_market_ticks_keeps_rows_at_or_after_time_cutoff(monkeypatch) -> None:
+    monkeypatch.setattr(wait_events_mod, "_MARKET_BUFFER_EXTRA_TICKS", 0)
+    monkeypatch.setattr(wait_events_mod, "_MARKET_ESTIMATED_SECONDS_PER_TICK", 2.0)
+
+    observed_at = datetime(2026, 3, 15, 12, 0, 10, tzinfo=timezone.utc)
+    base_epoch = int(observed_at.timestamp()) - 9
+    ticks = [{"epoch": float(base_epoch + idx)} for idx in range(10)]
+
+    trimmed = wait_events_mod._trim_market_ticks(
+        ticks=ticks,
+        specs=[{"required_history_seconds": 3.0, "required_tick_count": 0}],
+        observed_at_utc=observed_at,
+    )
+
+    assert [tick["epoch"] for tick in trimmed] == [float(base_epoch + idx) for idx in range(4, 10)]
+
+
+def test_trim_market_ticks_still_honors_keep_tick_floor(monkeypatch) -> None:
+    monkeypatch.setattr(wait_events_mod, "_MARKET_BUFFER_EXTRA_TICKS", 1)
+    monkeypatch.setattr(wait_events_mod, "_MARKET_ESTIMATED_SECONDS_PER_TICK", 2.0)
+
+    observed_at = datetime(2026, 3, 15, 12, 0, 10, tzinfo=timezone.utc)
+    base_epoch = int(observed_at.timestamp()) - 9
+    ticks = [{"epoch": float(base_epoch + idx)} for idx in range(10)]
+
+    trimmed = wait_events_mod._trim_market_ticks(
+        ticks=ticks,
+        specs=[{"required_history_seconds": 1.0, "required_tick_count": 4}],
+        observed_at_utc=observed_at,
+    )
+
+    assert [tick["epoch"] for tick in trimmed] == [float(base_epoch + idx) for idx in range(5, 10)]
+
+
 def test_run_wait_event_uses_timeframe_as_boundary_when_watchers_are_inferred(monkeypatch) -> None:
     monkeypatch.setattr(
         "mtdata.core.wait_events._next_candle_wait_payload",
