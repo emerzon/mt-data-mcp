@@ -176,15 +176,27 @@ def labels_triple_barrier(
                     if hit_tp > 0 or hit_sl > 0:
                         break
                 if hit_tp < 0 and hit_sl < 0:
-                    labels.append(0); hold.append(int(horizon)); tp_times.append(None); sl_times.append(None)
+                    labels.append(0)
+                    hold.append(int(horizon))
+                    tp_times.append(None)
+                    sl_times.append(None)
                 elif hit_tp > 0 and (hit_sl < 0 or hit_tp < hit_sl):
-                    labels.append(1); hold.append(hit_tp); tp_times.append(_format_time_minimal(times[i+hit_tp])); sl_times.append(None)
+                    labels.append(1)
+                    hold.append(hit_tp)
+                    tp_times.append(_format_time_minimal(times[i + hit_tp]))
+                    sl_times.append(None)
                 # For high/low mode, both barriers can be touched in the same bar.
                 # Without tick ordering, assume the loss barrier was hit first.
                 elif hit_sl > 0 and (hit_tp < 0 or hit_sl <= hit_tp):
-                    labels.append(-1); hold.append(hit_sl); tp_times.append(None); sl_times.append(_format_time_minimal(times[i+hit_sl]))
+                    labels.append(-1)
+                    hold.append(hit_sl)
+                    tp_times.append(None)
+                    sl_times.append(_format_time_minimal(times[i + hit_sl]))
                 else:
-                    labels.append(0); hold.append(min(hit_tp, hit_sl)); tp_times.append(_format_time_minimal(times[i+hit_tp])); sl_times.append(_format_time_minimal(times[i+hit_sl]))
+                    labels.append(0)
+                    hold.append(min(hit_tp, hit_sl))
+                    tp_times.append(_format_time_minimal(times[i + hit_tp]))
+                    sl_times.append(_format_time_minimal(times[i + hit_sl]))
                 t_entry.append(_format_time_minimal(times[i]))
 
             payload: Dict[str, Any] = {
