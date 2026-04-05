@@ -44,6 +44,18 @@ _GLUONTS_EXTRA_METHODS = {
     "gt_npts",
 }
 _GLUONTS_PYTHON_RUNTIME_REQUIREMENT = "Python < 3.14 (GluonTS methods are unsupported in this project)"
+_OPTIONAL_FORECAST_METHOD_MODULES = frozenset(
+    {
+        "statsforecast",
+        "mlforecast",
+        "pretrained",
+        "neural",
+        "sktime",
+        "gluonts_extra",
+    }
+)
+_LOADED_FORECAST_METHOD_MODULES: set[str] = set()
+_FAILED_OPTIONAL_FORECAST_MODULES: Dict[str, str] = {}
 
 # Import availability checkers
 try:
@@ -239,10 +251,23 @@ def _ensure_registry_loaded() -> None:
     """Ensure ForecastRegistry is populated by importing method modules."""
     base_package = f"{__package__}.methods"
     for module_name in _FORECAST_METHOD_MODULES:
+        if module_name in _LOADED_FORECAST_METHOD_MODULES:
+            continue
+        if module_name in _FAILED_OPTIONAL_FORECAST_MODULES:
+            continue
         try:
             _importlib.import_module(f"{base_package}.{module_name}")
-        except Exception:
+        except ModuleNotFoundError as exc:
+            if module_name not in _OPTIONAL_FORECAST_METHOD_MODULES:
+                raise
+            _FAILED_OPTIONAL_FORECAST_MODULES[module_name] = str(exc)
             continue
+        except ImportError as exc:
+            if module_name not in _OPTIONAL_FORECAST_METHOD_MODULES:
+                raise
+            _FAILED_OPTIONAL_FORECAST_MODULES[module_name] = str(exc)
+            continue
+        _LOADED_FORECAST_METHOD_MODULES.add(module_name)
 
 
 def _ensemble_metadata() -> Dict[str, Any]:
