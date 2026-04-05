@@ -2203,6 +2203,42 @@ def test_detect_inverse_head_shoulders_uses_reaction_peaks_for_neckline(monkeypa
     assert inverse.details["neck_points"] == 2
 
 
+def test_detect_head_shoulders_rejects_neckline_above_shoulders():
+    from src.mtdata.patterns.classic_impl import reversal
+
+    close = np.array([96.0, 100.0, 101.0, 103.0, 110.0, 101.5, 101.2, 99.0, 100.5, 97.0], dtype=float)
+    peaks = np.array([1, 4, 8], dtype=int)
+    troughs = np.array([2, 5, 6], dtype=int)
+
+    out = reversal.detect_head_shoulders(
+        close,
+        peaks,
+        troughs,
+        np.arange(close.size, dtype=float),
+        ClassicDetectorConfig(same_level_tol_pct=1.0, use_dtw_check=False, use_robust_fit=False),
+    )
+
+    assert out == []
+
+
+def test_detect_inverse_head_shoulders_rejects_neckline_below_shoulders():
+    from src.mtdata.patterns.classic_impl import reversal
+
+    close = np.array([104.0, 95.0, 94.0, 90.0, 94.5, 96.0, 108.0], dtype=float)
+    peaks = np.array([0, 2, 4, 6], dtype=int)
+    troughs = np.array([1, 3, 5], dtype=int)
+
+    out = reversal.detect_head_shoulders(
+        close,
+        peaks,
+        troughs,
+        np.arange(close.size, dtype=float),
+        ClassicDetectorConfig(same_level_tol_pct=2.0, use_dtw_check=False, use_robust_fit=False),
+    )
+
+    assert out == []
+
+
 def test_head_shoulders_two_point_neckline_does_not_get_free_r2_boost():
     from src.mtdata.patterns.classic_impl import reversal
 
