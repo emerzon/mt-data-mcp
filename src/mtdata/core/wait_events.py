@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from bisect import bisect_left
 from datetime import datetime, timedelta, timezone
 import math
 import re
@@ -2003,11 +2004,7 @@ def _trim_market_ticks(
     start_idx = 0
     if keep_seconds > 0.0:
         cutoff = observed_at_utc.timestamp() - keep_seconds - max(1.0, _MARKET_ESTIMATED_SECONDS_PER_TICK)
-        start_idx = len(ticks)
-        for idx, tick in enumerate(ticks):
-            if float(tick["epoch"]) >= cutoff:
-                start_idx = idx
-                break
+        start_idx = bisect_left(ticks, cutoff, key=lambda tick: float(tick["epoch"]))
     if keep_ticks > 0:
         start_idx = min(start_idx, max(0, len(ticks) - keep_ticks))
     return ticks[start_idx:]
