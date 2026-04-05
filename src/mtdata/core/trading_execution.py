@@ -74,31 +74,11 @@ def _unexpected_operation_error(
     return payload
 
 
-def _trade_done_codes(mt5: Any) -> set[int]:
-    return {
-        int(getattr(mt5, "TRADE_RETCODE_DONE", 10009)),
-        int(getattr(mt5, "TRADE_RETCODE_DONE_PARTIAL", 10010)),
-    }
-
-
-def _retcode_is_done(
-    mt5: Any,
-    retcode: Any,
-    done_codes: Optional[set[int]] = None,
-) -> bool:
-    try:
-        if done_codes is None:
-            done_codes = _trade_done_codes(mt5)
-        return int(retcode) in done_codes
-    except Exception:
-        return False
-
-
 def _count_done_results(mt5: Any, results: List[Dict[str, Any]]) -> int:
     success_count = 0
-    done_codes = _trade_done_codes(mt5)
+    done_codes = trading_validation._trade_done_codes(mt5)
     for item in results:
-        if _retcode_is_done(mt5, item.get("retcode"), done_codes):
+        if trading_validation._retcode_is_done(mt5, item.get("retcode"), done_codes):
             success_count += 1
     return success_count
 
@@ -749,7 +729,7 @@ def _close_positions(
                                 break
                             if recovered:
                                 retcode_val = getattr(result, "retcode", None)
-                                if _retcode_is_done(mt5, retcode_val):
+                                if trading_validation._retcode_is_done(mt5, retcode_val):
                                     break
                                 time.sleep(0.15)
                                 continue
@@ -772,11 +752,11 @@ def _close_positions(
                             "comment": getattr(result, "comment", None),
                         }
                     )
-                    if _retcode_is_done(mt5, retcode_val):
+                    if trading_validation._retcode_is_done(mt5, retcode_val):
                         break
                     time.sleep(0.15)
 
-                close_ok = _retcode_is_done(mt5, getattr(result, "retcode", None)) if result is not None else False
+                close_ok = trading_validation._retcode_is_done(mt5, getattr(result, "retcode", None)) if result is not None else False
 
                 if not close_ok:
                     last_error = trading_validation._safe_last_error(mt5)

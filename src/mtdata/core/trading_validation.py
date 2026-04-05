@@ -186,6 +186,26 @@ def _safe_int_attr(obj: Any, name: str, default: int) -> int:
     return int(numeric)
 
 
+def _trade_done_codes(mt5: Any) -> set[int]:
+    return {
+        _safe_int_attr(mt5, "TRADE_RETCODE_DONE", 10009),
+        _safe_int_attr(mt5, "TRADE_RETCODE_DONE_PARTIAL", 10010),
+    }
+
+
+def _retcode_is_done(
+    mt5: Any,
+    retcode: Any,
+    done_codes: Optional[set[int]] = None,
+) -> bool:
+    try:
+        if done_codes is None:
+            done_codes = _trade_done_codes(mt5)
+        return int(retcode) in done_codes
+    except Exception:
+        return False
+
+
 def _candidate_fill_modes(mt5: Any) -> list[int]:
     """Return deduplicated fill-mode candidates with stable MT5-compatible fallbacks."""
     fill_modes: list[int] = []

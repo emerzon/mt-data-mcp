@@ -74,20 +74,6 @@ def _send_order_with_comment_fallback(
     request: Dict[str, Any],
 ) -> tuple[Any, Optional[Dict[str, Any]], Any]:
     return trading_comments._send_order_with_comment_fallback(mt5, request)
-
-
-def _trade_done_codes(mt5: Any) -> set[int]:
-    return {
-        trading_validation._safe_int_attr(mt5, "TRADE_RETCODE_DONE", 10009),
-        trading_validation._safe_int_attr(mt5, "TRADE_RETCODE_DONE_PARTIAL", 10010),
-    }
-
-
-def _retcode_is_done(mt5: Any, retcode: Any) -> bool:
-    try:
-        return int(retcode) in _trade_done_codes(mt5)
-    except Exception:
-        return False
 def _send_order_with_fill_mode_retry(
     mt5: Any,
     request: Dict[str, Any],
@@ -122,7 +108,7 @@ def _send_order_with_fill_mode_retry(
             else attempt_request
         )
         try:
-            if result is not None and _retcode_is_done(mt5, getattr(result, "retcode", -1)):
+            if result is not None and trading_validation._retcode_is_done(mt5, getattr(result, "retcode", -1)):
                 return result, comment_fallback, last_error, attempts, last_request
         except Exception:
             pass
@@ -285,7 +271,7 @@ def _place_market_order(
                     "comment_fallback": comment_fallback,
                     "fill_mode_attempts": fill_mode_attempts,
                 }
-            if not _retcode_is_done(mt5, getattr(result, "retcode", None)):
+            if not trading_validation._retcode_is_done(mt5, getattr(result, "retcode", None)):
                 error_message = "Failed to send order"
                 invalid_comment = (
                     comment_fallback.get("invalid_comment_error")
@@ -783,7 +769,7 @@ def _place_pending_order(
                     "fill_mode_attempts": fill_mode_attempts,
                 }
 
-            if not _retcode_is_done(mt5, getattr(result, "retcode", None)):
+            if not trading_validation._retcode_is_done(mt5, getattr(result, "retcode", None)):
                 error_message = "Failed to send pending order"
                 invalid_comment = (
                     comment_fallback.get("invalid_comment_error")
