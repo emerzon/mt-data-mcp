@@ -2071,11 +2071,13 @@ def _slice_prices_from_epoch(
     *,
     start_epoch: float,
     end_epoch: Optional[float] = None,
+    epochs: Optional[List[float]] = None,
 ) -> List[tuple[float, float]]:
-    start_idx = bisect_left(prices, (float(start_epoch), float("-inf")))
+    epoch_values = epochs if epochs is not None else [float(point[0]) for point in prices]
+    start_idx = bisect_left(epoch_values, float(start_epoch))
     if end_epoch is None:
         return prices[start_idx:]
-    end_idx = bisect_right(prices, (float(end_epoch), float("inf")))
+    end_idx = bisect_right(epoch_values, float(end_epoch))
     return prices[start_idx:end_idx]
 
 
@@ -2147,6 +2149,7 @@ def _duration_price_change_baseline_samples(
     current_start = latest_epoch - window_seconds
     baseline_start = current_start - baseline_seconds
     sample_count = max(1, int(math.floor(baseline_seconds / max(window_seconds, 1.0))))
+    price_epochs = [float(point[0]) for point in prices]
     samples: List[float] = []
     for sample_idx in range(sample_count):
         window_start = baseline_start + sample_idx * window_seconds
@@ -2157,6 +2160,7 @@ def _duration_price_change_baseline_samples(
             prices,
             start_epoch=window_start,
             end_epoch=window_end,
+            epochs=price_epochs,
         )
         if len(window_points) < 2:
             continue
@@ -2402,6 +2406,7 @@ def _window_metric_baseline_samples_for_prices(
     current_start = latest_epoch - window_seconds
     baseline_start = current_start - baseline_seconds
     sample_count = max(1, int(math.floor(baseline_seconds / max(window_seconds, 1.0))))
+    price_epochs = [float(point[0]) for point in prices]
     samples: List[float] = []
     for sample_idx in range(sample_count):
         window_start = baseline_start + sample_idx * window_seconds
@@ -2413,6 +2418,7 @@ def _window_metric_baseline_samples_for_prices(
                 prices,
                 start_epoch=window_start,
                 end_epoch=window_end,
+                epochs=price_epochs,
             )
         )
         if metric is not None:

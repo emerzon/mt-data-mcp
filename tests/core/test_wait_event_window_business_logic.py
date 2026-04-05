@@ -31,6 +31,24 @@ def test_window_prices_uses_time_window_cutoff() -> None:
     assert out == [(80.0, 102.0), (100.0, 103.0)]
 
 
+def test_slice_prices_from_epoch_accepts_explicit_epochs_for_duplicate_timestamps() -> None:
+    prices = [
+        (10.0, 101.0),
+        (10.0, 99.0),
+        (40.0, 102.0),
+    ]
+    epochs = [10.0, 10.0, 40.0]
+
+    out = wait_events._slice_prices_from_epoch(
+        prices,
+        start_epoch=10.0,
+        end_epoch=10.0,
+        epochs=epochs,
+    )
+
+    assert out == prices[:2]
+
+
 def test_duration_price_change_baseline_samples_preserve_time_window_boundaries() -> None:
     spec = {
         "window": {"kind": "minutes", "value": 1.0},
