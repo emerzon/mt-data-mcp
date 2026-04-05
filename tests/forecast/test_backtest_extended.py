@@ -202,16 +202,16 @@ class TestForecastBacktest:
                 timeframe="H1",
                 horizon=12,
                 steps=2,
-                spacing=10,
+                spacing=12,
                 methods=["theta"],
             )
 
         assert result.get("success") is True
         assert captured == [
             {
-                "as_of": _format_time_minimal(float(df["time"].iloc[477])),
-                "prefetched_len": 478,
-                "prefetched_last_time": float(df["time"].iloc[477]),
+                "as_of": _format_time_minimal(float(df["time"].iloc[475])),
+                "prefetched_len": 476,
+                "prefetched_last_time": float(df["time"].iloc[475]),
             },
             {
                 "as_of": _format_time_minimal(float(df["time"].iloc[487])),
@@ -219,6 +219,22 @@ class TestForecastBacktest:
                 "prefetched_last_time": float(df["time"].iloc[487]),
             },
         ]
+
+    @patch("mtdata.forecast.backtest._fetch_history")
+    def test_rejects_overlapping_generated_backtest_windows(self, fetch):
+        result = forecast_backtest(
+            "EURUSD",
+            timeframe="H1",
+            horizon=12,
+            steps=2,
+            spacing=10,
+            methods=["theta"],
+        )
+
+        assert result == {
+            "error": "spacing must be greater than or equal to horizon when steps > 1"
+        }
+        fetch.assert_not_called()
 
     @patch("mtdata.forecast.backtest._fetch_history")
     def test_explicit_anchors(self, fetch):
