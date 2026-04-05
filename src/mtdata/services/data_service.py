@@ -1224,7 +1224,27 @@ def fetch_ticks(
                 vals = vals[pd.notna(vals)].astype(float)
                 n = int(vals.shape[0])
                 if n <= 0:
-                    return {"available": False}
+                    out = {
+                        "available": False,
+                        "first": float("nan"),
+                        "last": float("nan"),
+                        "low": float("nan"),
+                        "high": float("nan"),
+                        "mean": float("nan"),
+                        "std": float("nan"),
+                        "stderr": float("nan"),
+                        "kurtosis": float("nan"),
+                        "change": float("nan"),
+                        "change_pct": float("nan"),
+                    }
+                    if detailed_stats:
+                        out["median"] = float("nan")
+                        out["skew"] = float("nan")
+                        out["q25"] = float("nan")
+                        out["q75"] = float("nan")
+                    if detailed_stats or n != int(total_count):
+                        out["count"] = n
+                    return out
                 first = float(vals.iloc[0])
                 last = float(vals.iloc[-1])
                 low = float(vals.min())
