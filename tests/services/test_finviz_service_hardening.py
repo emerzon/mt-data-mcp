@@ -4,6 +4,8 @@ import types
 import pandas as pd
 
 from mtdata.services import finviz as svc
+from mtdata.services.finviz import client as finviz_client
+from mtdata.services.finviz import pagination as finviz_pagination
 
 
 def test_compute_screener_fetch_limit_is_bounded(monkeypatch):
@@ -36,6 +38,69 @@ def test_finviz_http_get_applies_default_timeout(monkeypatch):
 
     assert calls["url"] == "https://example.test"
     assert calls["timeout"] == 7.5
+
+
+def test_finviz_http_get_accepts_requests_timeout_tuple(monkeypatch):
+    calls = {}
+
+    class DummyResp:
+        pass
+
+    def _fake_get(url, headers=None, params=None, timeout=None):
+        calls["timeout"] = timeout
+        return DummyResp()
+
+    import requests
+
+    monkeypatch.setattr(requests, "get", _fake_get)
+    _ = finviz_client.finviz_http_get(
+        "https://example.test",
+        headers={"A": "B"},
+        params={"x": 1},
+        timeout=(1.5, 3.0),
+    )
+
+    assert calls["timeout"] == (1.5, 3.0)
+
+
+def test_finviz_http_get_invalid_timeout_override_falls_back(monkeypatch):
+    calls = {}
+
+    class DummyResp:
+        pass
+
+    def _fake_get(url, headers=None, params=None, timeout=None):
+        calls["timeout"] = timeout
+        return DummyResp()
+
+    import requests
+
+    monkeypatch.setattr(requests, "get", _fake_get)
+    monkeypatch.setattr(finviz_client, "_FINVIZ_HTTP_TIMEOUT", 7.5)
+    _ = finviz_client.finviz_http_get(
+        "https://example.test",
+        headers={"A": "B"},
+        params={"x": 1},
+        timeout="bad-timeout",
+    )
+
+    assert calls["timeout"] == 7.5
+
+
+def test_pagination_helpers_coerce_invalid_override_values(monkeypatch):
+    monkeypatch.setattr(finviz_pagination, "get_finviz_page_limit_max", lambda: 500)
+    monkeypatch.setattr(finviz_pagination, "get_finviz_screener_max_rows", lambda: 120)
+
+    assert finviz_pagination.sanitize_pagination("bad", 0, page_limit_max="bad") == (50, 1)
+    assert (
+        finviz_pagination.compute_screener_fetch_limit(
+            limit=50,
+            page=3,
+            max_rows="bad",
+            page_limit_max="bad",
+        )
+        == 120
+    )
 
 
 def test_screen_stocks_uses_bounded_screener_view(monkeypatch):
