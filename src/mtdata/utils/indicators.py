@@ -406,10 +406,11 @@ def _estimate_warmup_bars(ti_spec: Optional[str]) -> int:
         elif lname == "macd":
             fast = kwargs.get("fast", args[0] if len(args) > 0 else 12)
             slow = kwargs.get("slow", args[1] if len(args) > 1 else 26)
+            signal = kwargs.get("signal", args[2] if len(args) > 2 else 9)
             try:
-                warm = int(max(int(fast), int(slow)))
+                warm = max(int(fast), int(slow)) + int(signal)
             except Exception:
-                warm = 26
+                warm = 35
         elif lname == "stoch":
             k = kwargs.get("k", args[0] if len(args) > 0 else 14)
             d = kwargs.get("d", args[1] if len(args) > 1 else 3)
