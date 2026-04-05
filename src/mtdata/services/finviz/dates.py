@@ -74,7 +74,12 @@ def resolve_date_range(
 def align_to_next_monday_if_weekend(date_from: str) -> str:
     """Align date to next Monday if it falls on weekend."""
     try:
-        d = datetime.date.fromisoformat(date_from)
+        text = str(date_from).strip()
+        if len(text) < 10:
+            return date_from
+        if len(text) > 10 and text[10] not in {"T", " ", "Z"}:
+            return date_from
+        d = datetime.date.fromisoformat(text[:10])
         # If Saturday (5) or Sunday (6), move to next Monday
         if d.weekday() == 5:  # Saturday
             d = d + datetime.timedelta(days=2)

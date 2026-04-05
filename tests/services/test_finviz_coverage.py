@@ -394,6 +394,9 @@ class TestAlignToMondayIfWeekend:
     def test_weekday_unchanged(self):
         assert svc._align_to_next_monday_if_weekend("2024-06-10") == "2024-06-10"
 
+    def test_iso_datetime_string(self):
+        assert svc._align_to_next_monday_if_weekend("2024-06-09T12:34:56") == "2024-06-10"
+
 
 # ---------------------------------------------------------------------------
 # _filter_calendar_events_by_date (lines 811-819)
