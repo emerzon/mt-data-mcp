@@ -1006,33 +1006,36 @@ class TestLoadStockPatternUtils:
         from mtdata.core.patterns import _load_stock_pattern_utils, _STOCK_PATTERN_UTILS_CACHE
 
         _STOCK_PATTERN_UTILS_CACHE.clear()
-        mock_mod = MagicMock()
-        mock_mod.get_max_min = MagicMock()
-        mock_mod.find_double_top = MagicMock()
-        mock_mod.find_double_bottom = MagicMock()
+        try:
+            mock_mod = MagicMock()
+            mock_mod.get_max_min = MagicMock()
+            mock_mod.find_double_top = MagicMock()
+            mock_mod.find_double_bottom = MagicMock()
 
-        call_count = 0
-        call_count_lock = threading.Lock()
-        start_barrier = threading.Barrier(2)
+            call_count = 0
+            call_count_lock = threading.Lock()
+            start_barrier = threading.Barrier(2)
 
-        def slow_import(name):
-            nonlocal call_count
-            with call_count_lock:
-                call_count += 1
-            time.sleep(0.05)
-            return mock_mod
+            def slow_import(name):
+                nonlocal call_count
+                with call_count_lock:
+                    call_count += 1
+                time.sleep(0.05)
+                return mock_mod
 
-        mock_import.side_effect = slow_import
+            mock_import.side_effect = slow_import
 
-        def worker():
-            start_barrier.wait()
-            return _load_stock_pattern_utils(None)
+            def worker():
+                start_barrier.wait()
+                return _load_stock_pattern_utils(None)
 
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            results = list(executor.map(lambda _: worker(), range(2)))
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                results = list(executor.map(lambda _: worker(), range(2)))
 
-        assert call_count == 1
-        assert results == [(mock_mod, None), (mock_mod, None)]
+            assert call_count == 1
+            assert results == [(mock_mod, None), (mock_mod, None)]
+        finally:
+            _STOCK_PATTERN_UTILS_CACHE.clear()
 
 
 # ── _fetch_pattern_data ──────────────────────────────────────────────────
