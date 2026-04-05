@@ -738,21 +738,28 @@ def gbm_single_barrier_upcross_prob(
     if T_f <= 0.0:
         return 0.0
 
+    x0 = math.log(s0_f)
+    a = math.log(barrier_f)
+
     # Deterministic limiting case.
     if sigma_f <= 0.0:
         if mu_f <= 0.0:
             return 0.0
-        return 1.0 if (s0_f * math.exp(mu_f * T_f) >= barrier_f) else 0.0
+        return 1.0 if (x0 + mu_f * T_f >= a) else 0.0
+
+    sigma_var = sigma_f * sigma_f
+    m = mu_f - 0.5 * sigma_var
+    srt = sigma_f * math.sqrt(T_f)
+    if srt <= 0.0 or sigma_var <= 0.0:
+        if mu_f <= 0.0:
+            return 0.0
+        return 1.0 if (x0 + mu_f * T_f >= a) else 0.0
 
     from scipy.stats import norm
 
-    x0 = math.log(s0_f)
-    a = math.log(barrier_f)
-    m = mu_f - 0.5 * sigma_f * sigma_f
-    srt = sigma_f * math.sqrt(T_f)
     z1 = (x0 - a + m * T_f) / srt
     z2 = (x0 - a - m * T_f) / srt
-    log_term = 2.0 * m * (a - x0) / (sigma_f * sigma_f)
+    log_term = 2.0 * m * (a - x0) / sigma_var
     log_second_term = float(log_term + norm.logcdf(z2))
     if log_second_term <= -745.0:
         second_term = 0.0
