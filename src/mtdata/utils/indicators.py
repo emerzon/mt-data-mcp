@@ -246,7 +246,6 @@ def _parse_ti_specs(spec: str) -> List[Tuple[str, List[int | float], Dict[str, i
                     if num is not None:
                         args.append(num)
         # Flex: detect trailing number in name (EMA21 -> length=21)
-        import re
         normalized_name = _normalize_ta_indicator_name(name.strip())
         m = re.search(r"(.*?)[_\-]?([0-9]{1,3})$", name)
         if (
