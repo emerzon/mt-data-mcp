@@ -264,15 +264,17 @@ def _shift_rate_times(rates: Any, shift_seconds: int) -> Any:
         return shifted_rates
 
     if isinstance(rates, list):
+        if not any(isinstance(row, dict) and "time" in row for row in rates):
+            return rates
         shifted_rows = []
         for row in rates:
             if not isinstance(row, dict):
                 shifted_rows.append(row)
                 continue
-            shifted_row = dict(row)
-            if "time" not in shifted_row:
-                shifted_rows.append(shifted_row)
+            if "time" not in row:
+                shifted_rows.append(row)
                 continue
+            shifted_row = dict(row)
             try:
                 shifted_row["time"] = float(shifted_row["time"]) + shift_value
             except Exception:
