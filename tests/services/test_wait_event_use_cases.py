@@ -224,6 +224,27 @@ def test_support_resistance_watchers_use_compact_levels(monkeypatch) -> None:
     ]
 
 
+def test_support_resistance_watchers_ignore_non_finite_levels(monkeypatch) -> None:
+    monkeypatch.setattr(
+        core_data,
+        "support_resistance_levels",
+        lambda symbol, timeframe="auto", detail="compact": {
+            "success": True,
+            "levels": [
+                {"type": "support", "value": float("inf")},
+                {"type": "resistance", "value": 101.0},
+            ],
+        },
+    )
+
+    watchers = core_data._support_resistance_watchers(instrument="BTCUSD")
+
+    assert watchers == [
+        {"type": "price_touch_level", "symbol": "BTCUSD", "level": 101.0, "direction": "either"},
+        {"type": "price_break_level", "symbol": "BTCUSD", "level": 101.0, "direction": "up"},
+    ]
+
+
 def test_pivot_zone_watchers_use_adjacent_pivot_bands(monkeypatch) -> None:
     monkeypatch.setattr(
         core_data,
