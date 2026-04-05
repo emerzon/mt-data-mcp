@@ -197,6 +197,7 @@ def detect_head_shoulders(
         sh_avg = (ls_p + rs_p) / 2.0
         if sh_avg == 0.0:
             return
+        shoulder_eps = max(1e-9, abs(sh_avg) * 1e-9)
         head_prom = (
             (head_price - sh_avg) / abs(sh_avg) * 100.0
             if regular
@@ -204,6 +205,22 @@ def detect_head_shoulders(
         )
         if head_prom < max(1.0, tol_pct):
             return
+        left_neck_at_shoulder = float(slope * float(lsh) + intercept)
+        right_neck_at_shoulder = float(slope * float(rsh) + intercept)
+        if not np.isfinite(left_neck_at_shoulder) or not np.isfinite(right_neck_at_shoulder):
+            return
+        if regular:
+            if (
+                left_neck_at_shoulder >= (ls_p + shoulder_eps)
+                or right_neck_at_shoulder >= (rs_p + shoulder_eps)
+            ):
+                return
+        else:
+            if (
+                left_neck_at_shoulder <= (ls_p - shoulder_eps)
+                or right_neck_at_shoulder <= (rs_p - shoulder_eps)
+            ):
+                return
 
         status = 'forming'
         name = 'Head and Shoulders' if regular else 'Inverse Head and Shoulders'
