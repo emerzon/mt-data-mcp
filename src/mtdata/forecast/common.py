@@ -107,8 +107,6 @@ def _extract_forecast_values(Yf: Any, fh: int, method_name: str = "forecast") ->
     
     Common logic for finding prediction columns and extracting values.
     """
-    import numpy as np
-    
     # Find the prediction column
     pred_col = None
     try:
