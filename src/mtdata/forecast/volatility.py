@@ -327,10 +327,10 @@ def _fetch_mt5_rates_guarded(
 ) -> tuple[Optional[Any], Optional[str]]:
     info_before = mt5.symbol_info(symbol)
     was_visible = bool(info_before.visible) if info_before is not None else None
-    err = _ensure_symbol_ready(symbol)
-    if err:
-        return None, str(err)
     try:
+        err = _ensure_symbol_ready(symbol)
+        if err:
+            return None, str(err)
         if as_of:
             to_dt = _parse_start_datetime(as_of)
             if not to_dt:

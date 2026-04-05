@@ -255,6 +255,13 @@ class TestGeneralMethodErrors:
                                     proxy="squared_return")
             assert "error" in r and "Symbol not available" in r["error"]
 
+    def test_ensure_error_restores_hidden_symbol_visibility(self):
+        with _mock_env(ensure_err="Symbol not available", info_visible=False) as env:
+            r = forecast_volatility("EURUSD", "H1", 5, method="theta",
+                                    proxy="squared_return")
+            assert "error" in r and "Symbol not available" in r["error"]
+            env["mt5"].symbol_select.assert_called_once_with("EURUSD", False)
+
     def test_invalid_as_of(self):
         """Lines 404-406: _parse_start_datetime returns None."""
         with _mock_env(parse_dt_return=None):
