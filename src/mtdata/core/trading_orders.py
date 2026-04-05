@@ -117,6 +117,135 @@ def _send_order_with_fill_mode_retry(
     return last_result, last_comment_fallback, last_error, attempts, last_request
 
 
+def _prepare_order_gateway(
+    gateway: Optional[MT5TradingGateway] = None,
+) -> tuple[Optional[Any], Optional[dict]]:
+    mt5 = create_trading_gateway(
+        gateway=gateway,
+        include_trade_preflight=True,
+        include_retcode_name=True,
+    )
+    connection_error = trading_connection_error(mt5)
+    if connection_error is not None:
+        return None, connection_error
+    return mt5, None
+
+
+def _prepare_order_symbol_context(
+    mt5: Any,
+    *,
+    symbol: str,
+    volume: float,
+) -> tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+    preflight = mt5.build_trade_preflight()
+    if not preflight.get("execution_ready_strict", preflight.get("execution_ready", True)):
+        guidance = trading_common._build_trade_preflight_guidance(preflight)
+        return None, {
+            "error": "Trading not ready in MT5 terminal/account preflight.",
+            "preflight": preflight,
+            "hint": guidance[0] if guidance else None,
+            "next_steps": guidance,
+        }
+
+    symbol_info = mt5.symbol_info(symbol)
+    if symbol_info is None:
+        return None, {"error": f"Symbol {symbol} not found"}
+
+    if not symbol_info.visible and not mt5.symbol_select(symbol, True):
+        return None, {"error": f"Failed to select symbol {symbol}"}
+
+    volume_validated, volume_error = trading_validation._validate_volume(volume, symbol_info)
+    if volume_error:
+        return None, {"error": volume_error}
+
+    return {
+        "symbol_info": symbol_info,
+        "volume": volume_validated,
+    }, None
+
+
+def _build_order_comment_payload(
+    comment: Optional[str],
+    *,
+    default: str,
+) -> tuple[str, Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+    request_comment = trading_comments._normalize_trade_comment(comment, default=default)
+    return (
+        request_comment,
+        trading_comments._comment_sanitization_info(comment, request_comment),
+        trading_comments._comment_truncation_info(comment, request_comment),
+    )
+
+
+def _submit_order_request(
+    mt5: Any,
+    request: Dict[str, Any],
+    *,
+    base_error: str,
+    invalid_comment_error: str,
+) -> tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+    result, comment_fallback, last_error, fill_mode_attempts, used_request = _send_order_with_fill_mode_retry(mt5, request)
+    if result is None:
+        return None, {
+            "error": base_error,
+            "last_error": last_error,
+            "comment_fallback": comment_fallback,
+            "fill_mode_attempts": fill_mode_attempts,
+        }
+
+    if not _retcode_is_done(mt5, getattr(result, "retcode", None)):
+        error_message = base_error
+        invalid_comment = (
+            comment_fallback.get("invalid_comment_error")
+            if isinstance(comment_fallback, dict)
+            else None
+        )
+        if invalid_comment:
+            error_message = invalid_comment_error
+        return None, {
+            "error": error_message,
+            "retcode": result.retcode,
+            "retcode_name": mt5.retcode_name(result.retcode),
+            "comment": result.comment,
+            "request_id": result.request_id,
+            "last_error": last_error,
+            "comment_fallback": comment_fallback,
+            "fill_mode_attempts": fill_mode_attempts,
+        }
+
+    return {
+        "result": result,
+        "comment_fallback": comment_fallback,
+        "fill_mode_attempts": fill_mode_attempts,
+        "used_request": used_request,
+    }, None
+
+
+def _attach_comment_response_metadata(
+    out: Dict[str, Any],
+    warnings_out: List[str],
+    *,
+    comment_sanitization: Optional[Dict[str, Any]],
+    comment_truncation: Optional[Dict[str, Any]],
+    comment_fallback: Optional[Dict[str, Any]],
+    fallback_warning: str,
+) -> None:
+    if comment_sanitization:
+        out["comment_sanitization"] = comment_sanitization
+        warnings_out.append(
+            f"Comment sanitized for broker compatibility: '{comment_sanitization['applied']}'"
+        )
+    if comment_truncation:
+        out["comment_truncation"] = comment_truncation
+        warnings_out.append(
+            f"Comment truncated to {comment_truncation['max_length']} characters: '{comment_truncation['applied']}'"
+        )
+    if comment_fallback:
+        out["comment_fallback"] = comment_fallback
+        if comment_fallback.get("used"):
+            warnings_out.append(fallback_warning)
+
+
 def _place_market_order(
     symbol: str,
     volume: float,
@@ -128,38 +257,21 @@ def _place_market_order(
     gateway: Optional[MT5TradingGateway] = None,
 ) -> dict:
     """Internal helper to place a market order."""
-    mt5 = create_trading_gateway(
-        gateway=gateway,
-        include_trade_preflight=True,
-        include_retcode_name=True,
-    )
-
-    connection_error = trading_connection_error(mt5)
+    mt5, connection_error = _prepare_order_gateway(gateway)
     if connection_error is not None:
         return connection_error
 
     def _place_market_order():
         try:
-            preflight = mt5.build_trade_preflight()
-            if not preflight.get("execution_ready_strict", preflight.get("execution_ready", True)):
-                guidance = trading_common._build_trade_preflight_guidance(preflight)
-                return {
-                    "error": "Trading not ready in MT5 terminal/account preflight.",
-                    "preflight": preflight,
-                    "hint": guidance[0] if guidance else None,
-                    "next_steps": guidance,
-                }
-            symbol_info = mt5.symbol_info(symbol)
-            if symbol_info is None:
-                return {"error": f"Symbol {symbol} not found"}
-
-            if not symbol_info.visible:
-                if not mt5.symbol_select(symbol, True):
-                    return {"error": f"Failed to select symbol {symbol}"}
-
-            volume_validated, volume_error = trading_validation._validate_volume(volume, symbol_info)
-            if volume_error:
-                return {"error": volume_error}
+            order_context, order_context_error = _prepare_order_symbol_context(
+                mt5,
+                symbol=symbol,
+                volume=volume,
+            )
+            if order_context_error is not None:
+                return order_context_error
+            symbol_info = order_context["symbol_info"]
+            volume_validated = order_context["volume"]
 
             # Normalize and validate requested order type
             t, order_type_error = trading_validation._normalize_order_type_input(order_type)
@@ -250,9 +362,10 @@ def _place_market_order(
             )
             if live_protection_error is not None:
                 return live_protection_error
-            request_comment = trading_comments._normalize_trade_comment(comment, default="MCP order")
-            comment_sanitization = trading_comments._comment_sanitization_info(comment, request_comment)
-            comment_truncation = trading_comments._comment_truncation_info(comment, request_comment)
+            request_comment, comment_sanitization, comment_truncation = _build_order_comment_payload(
+                comment,
+                default="MCP order",
+            )
             request = {
                 "action": mt5.TRADE_ACTION_DEAL,
                 "symbol": symbol,
@@ -265,37 +378,22 @@ def _place_market_order(
                 "type_time": mt5.ORDER_TIME_GTC,
                 "type_filling": trading_validation._safe_int_attr(mt5, "ORDER_FILLING_IOC", 1),
             }
-            result, comment_fallback, last_error, fill_mode_attempts, used_request = _send_order_with_fill_mode_retry(mt5, request)
-            if result is None:
-                return {
-                    "error": "Failed to send order",
-                    "last_error": last_error,
-                    "comment_fallback": comment_fallback,
-                    "fill_mode_attempts": fill_mode_attempts,
-                }
-            if not trading_validation._retcode_is_done(mt5, getattr(result, "retcode", None)):
-                error_message = "Failed to send order"
-                invalid_comment = (
-                    comment_fallback.get("invalid_comment_error")
-                    if isinstance(comment_fallback, dict)
-                    else None
-                )
-                if invalid_comment:
-                    error_message = (
-                        "Failed to send order: broker rejected the comment field. "
-                        "Comments are sanitized to letters/numbers/spaces/_/./-; "
-                        "try a simpler comment or omit --comment."
-                    )
-                return {
-                    "error": error_message,
-                    "retcode": result.retcode,
-                    "retcode_name": mt5.retcode_name(result.retcode),
-                    "comment": result.comment,
-                    "request_id": result.request_id,
-                    "last_error": last_error,
-                    "comment_fallback": comment_fallback,
-                    "fill_mode_attempts": fill_mode_attempts,
-                }
+            send_outcome, send_error = _submit_order_request(
+                mt5,
+                request,
+                base_error="Failed to send order",
+                invalid_comment_error=(
+                    "Failed to send order: broker rejected the comment field. "
+                    "Comments are sanitized to letters/numbers/spaces/_/./-; "
+                    "try a simpler comment or omit --comment."
+                ),
+            )
+            if send_error is not None:
+                return send_error
+            result = send_outcome["result"]
+            comment_fallback = send_outcome["comment_fallback"]
+            fill_mode_attempts = send_outcome["fill_mode_attempts"]
+            used_request = send_outcome["used_request"]
 
             # If TP/SL were specified, modify the position immediately
             order_ticket = trading_validation._safe_int_ticket(getattr(result, "order", None))
@@ -568,8 +666,16 @@ def _place_market_order(
                     fallback_result=sl_tp_fallback_result,
                 ),
             }
-            if comment_sanitization:
-                out["comment_sanitization"] = comment_sanitization
+            _attach_comment_response_metadata(
+                out,
+                warnings_out,
+                comment_sanitization=comment_sanitization,
+                comment_truncation=comment_truncation,
+                comment_fallback=comment_fallback,
+                fallback_warning=(
+                    "Broker rejected the comment field; order was retried with a minimal MT5-safe comment."
+                ),
+            )
             if sl_tp_requested:
                 if sl_tp_apply_status == "applied":
                     out["protection_status"] = (
@@ -579,10 +685,6 @@ def _place_market_order(
                     )
                 elif sl_tp_apply_status == "failed":
                     out["protection_status"] = "unprotected_position"
-            if comment_truncation:
-                out["comment_truncation"] = comment_truncation
-            if comment_fallback:
-                out["comment_fallback"] = comment_fallback
             if fill_mode_attempts:
                 out["fill_mode_attempts"] = fill_mode_attempts
             if warnings_out:
@@ -608,38 +710,21 @@ def _place_pending_order(
     gateway: Optional[MT5TradingGateway] = None,
 ) -> dict:
     """Internal helper to place a pending order."""
-    mt5 = create_trading_gateway(
-        gateway=gateway,
-        include_trade_preflight=True,
-        include_retcode_name=True,
-    )
-
-    connection_error = trading_connection_error(mt5)
+    mt5, connection_error = _prepare_order_gateway(gateway)
     if connection_error is not None:
         return connection_error
 
     def _place_pending_order():
         try:
-            preflight = mt5.build_trade_preflight()
-            if not preflight.get("execution_ready_strict", preflight.get("execution_ready", True)):
-                guidance = trading_common._build_trade_preflight_guidance(preflight)
-                return {
-                    "error": "Trading not ready in MT5 terminal/account preflight.",
-                    "preflight": preflight,
-                    "hint": guidance[0] if guidance else None,
-                    "next_steps": guidance,
-                }
-            symbol_info = mt5.symbol_info(symbol)
-            if symbol_info is None:
-                return {"error": f"Symbol {symbol} not found"}
-
-            if not symbol_info.visible:
-                if not mt5.symbol_select(symbol, True):
-                    return {"error": f"Failed to select symbol {symbol}"}
-
-            volume_validated, volume_error = trading_validation._validate_volume(volume, symbol_info)
-            if volume_error:
-                return {"error": volume_error}
+            order_context, order_context_error = _prepare_order_symbol_context(
+                mt5,
+                symbol=symbol,
+                volume=volume,
+            )
+            if order_context_error is not None:
+                return order_context_error
+            symbol_info = order_context["symbol_info"]
+            volume_validated = order_context["volume"]
 
             initial_tick = mt5.symbol_info_tick(symbol)
             if initial_tick is None:
@@ -737,9 +822,10 @@ def _place_pending_order(
             if pending_level_error is not None:
                 return pending_level_error
 
-            request_comment = trading_comments._normalize_trade_comment(comment, default="MCP pending order")
-            comment_sanitization = trading_comments._comment_sanitization_info(comment, request_comment)
-            comment_truncation = trading_comments._comment_truncation_info(comment, request_comment)
+            request_comment, comment_sanitization, comment_truncation = _build_order_comment_payload(
+                comment,
+                default="MCP pending order",
+            )
             request = {
                 "action": mt5.TRADE_ACTION_PENDING,
                 "symbol": symbol,
@@ -762,38 +848,22 @@ def _place_pending_order(
                     request["type_time"] = mt5.ORDER_TIME_SPECIFIED
                     request["expiration"] = normalized_expiration
 
-            result, comment_fallback, last_error, fill_mode_attempts, used_request = _send_order_with_fill_mode_retry(mt5, request)
-            if result is None:
-                return {
-                    "error": "Failed to send pending order",
-                    "last_error": last_error,
-                    "comment_fallback": comment_fallback,
-                    "fill_mode_attempts": fill_mode_attempts,
-                }
-
-            if not trading_validation._retcode_is_done(mt5, getattr(result, "retcode", None)):
-                error_message = "Failed to send pending order"
-                invalid_comment = (
-                    comment_fallback.get("invalid_comment_error")
-                    if isinstance(comment_fallback, dict)
-                    else None
-                )
-                if invalid_comment:
-                    error_message = (
-                        "Failed to send pending order: broker rejected the comment field. "
-                        "Comments are sanitized to letters/numbers/spaces/_/./-; "
-                        "try a simpler comment or omit --comment."
-                    )
-                return {
-                    "error": error_message,
-                    "retcode": result.retcode,
-                    "retcode_name": mt5.retcode_name(result.retcode),
-                    "comment": result.comment,
-                    "request_id": result.request_id,
-                    "last_error": last_error,
-                    "comment_fallback": comment_fallback,
-                    "fill_mode_attempts": fill_mode_attempts,
-                }
+            send_outcome, send_error = _submit_order_request(
+                mt5,
+                request,
+                base_error="Failed to send pending order",
+                invalid_comment_error=(
+                    "Failed to send pending order: broker rejected the comment field. "
+                    "Comments are sanitized to letters/numbers/spaces/_/./-; "
+                    "try a simpler comment or omit --comment."
+                ),
+            )
+            if send_error is not None:
+                return send_error
+            result = send_outcome["result"]
+            comment_fallback = send_outcome["comment_fallback"]
+            fill_mode_attempts = send_outcome["fill_mode_attempts"]
+            used_request = send_outcome["used_request"]
 
             out: Dict[str, Any] = {
                 "success": True,
@@ -815,22 +885,16 @@ def _place_pending_order(
             if expiration_specified:
                 out["requested_expiration"] = normalized_expiration
             warnings_out: List[str] = []
-            if comment_sanitization:
-                out["comment_sanitization"] = comment_sanitization
-                warnings_out.append(
-                    f"Comment sanitized for broker compatibility: '{comment_sanitization['applied']}'"
-                )
-            if comment_truncation:
-                out["comment_truncation"] = comment_truncation
-                warnings_out.append(
-                    f"Comment truncated to {comment_truncation['max_length']} characters: '{comment_truncation['applied']}'"
-                )
-            if comment_fallback:
-                out["comment_fallback"] = comment_fallback
-                if comment_fallback.get("used"):
-                    warnings_out.append(
-                        "Broker rejected the comment field; pending order was retried with a minimal MT5-safe comment."
-                    )
+            _attach_comment_response_metadata(
+                out,
+                warnings_out,
+                comment_sanitization=comment_sanitization,
+                comment_truncation=comment_truncation,
+                comment_fallback=comment_fallback,
+                fallback_warning=(
+                    "Broker rejected the comment field; pending order was retried with a minimal MT5-safe comment."
+                ),
+            )
             if fill_mode_attempts:
                 out["fill_mode_attempts"] = fill_mode_attempts
             if warnings_out:
