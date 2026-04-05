@@ -2,7 +2,7 @@
 
 import math
 import time
-from typing import Optional, Union, List, Dict, Any
+from typing import Optional, Union, List, Dict, Any, TypedDict
 
 from . import trading_comments, trading_common, trading_time, trading_validation
 from .trading_execution import _modify_position
@@ -10,6 +10,18 @@ from .trading_gateway import MT5TradingGateway, create_trading_gateway, trading_
 from .trading_positions import _resolve_open_position
 from .trading_time import ExpirationValue
 from .trading_validation import MarketOrderTypeInput, OrderTypeInput
+
+
+class _OrderSymbolContext(TypedDict):
+    symbol_info: Any
+    volume: float
+
+
+class _OrderSubmitOutcome(TypedDict):
+    result: Any
+    comment_fallback: Optional[Dict[str, Any]]
+    fill_mode_attempts: List[Dict[str, Any]]
+    used_request: Dict[str, Any]
 
 def _compact_sl_tp_levels(
     *,
@@ -75,7 +87,6 @@ def _send_order_with_comment_fallback(
 ) -> tuple[Any, Optional[Dict[str, Any]], Any]:
     return trading_comments._send_order_with_comment_fallback(mt5, request)
 
-
 def _send_order_with_fill_mode_retry(
     mt5: Any,
     request: Dict[str, Any],
@@ -119,7 +130,7 @@ def _send_order_with_fill_mode_retry(
 
 def _prepare_order_gateway(
     gateway: Optional[MT5TradingGateway] = None,
-) -> tuple[Optional[Any], Optional[dict]]:
+) -> tuple[Optional[MT5TradingGateway], Optional[Dict[str, Any]]]:
     mt5 = create_trading_gateway(
         gateway=gateway,
         include_trade_preflight=True,
@@ -136,7 +147,7 @@ def _prepare_order_symbol_context(
     *,
     symbol: str,
     volume: float,
-) -> tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+) -> tuple[Optional[_OrderSymbolContext], Optional[Dict[str, Any]]]:
     preflight = mt5.build_trade_preflight()
     if not preflight.get("execution_ready_strict", preflight.get("execution_ready", True)):
         guidance = trading_common._build_trade_preflight_guidance(preflight)
@@ -183,7 +194,7 @@ def _submit_order_request(
     *,
     base_error: str,
     invalid_comment_error: str,
-) -> tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+) -> tuple[Optional[_OrderSubmitOutcome], Optional[Dict[str, Any]]]:
     result, comment_fallback, last_error, fill_mode_attempts, used_request = _send_order_with_fill_mode_retry(mt5, request)
     if result is None:
         return None, {
@@ -193,7 +204,7 @@ def _submit_order_request(
             "fill_mode_attempts": fill_mode_attempts,
         }
 
-    if not _retcode_is_done(mt5, getattr(result, "retcode", None)):
+    if not trading_validation._retcode_is_done(mt5, getattr(result, "retcode", None)):
         error_message = base_error
         invalid_comment = (
             comment_fallback.get("invalid_comment_error")
@@ -594,18 +605,6 @@ def _place_market_order(
                     sl_tp_apply_status = "failed"
 
             warnings_out: List[str] = []
-            if comment_sanitization:
-                warnings_out.append(
-                    f"Comment sanitized for broker compatibility: '{comment_sanitization['applied']}'"
-                )
-            if comment_truncation:
-                warnings_out.append(
-                    f"Comment truncated to {comment_truncation['max_length']} characters: '{comment_truncation['applied']}'"
-                )
-            if isinstance(comment_fallback, dict) and comment_fallback.get("used"):
-                warnings_out.append(
-                    "Broker rejected the comment field; order was retried with a minimal MT5-safe comment."
-                )
             if isinstance(sl_tp_comment_fallback, dict) and sl_tp_comment_fallback.get("used"):
                 warnings_out.append(
                     "Broker rejected the comment field on the TP/SL modification; protection was retried without the original comment."

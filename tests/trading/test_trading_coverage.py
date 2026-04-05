@@ -1182,7 +1182,12 @@ class TestPlaceMarketOrder:
         assert result["comment_fallback"]["used"] is True
         assert result["comment_fallback"]["strategy"] == "minimal"
         assert any("sanitized for broker compatibility" in str(w) for w in result.get("warnings", []))
-        assert any("retried with a minimal MT5-safe comment" in str(w) for w in result.get("warnings", []))
+        fallback_warnings = [
+            str(w)
+            for w in result.get("warnings", [])
+            if "retried with a minimal MT5-safe comment" in str(w)
+        ]
+        assert len(fallback_warnings) == 1
         first_request = mt5.order_send.call_args_list[0].args[0]
         second_request = mt5.order_send.call_args_list[1].args[0]
         assert first_request["comment"] == "Short ETS bearish barrier EV R"
