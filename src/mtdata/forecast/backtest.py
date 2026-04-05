@@ -162,6 +162,14 @@ def forecast_backtest(
         include_paths = detail_mode == "full"
         if timeframe not in TIMEFRAME_MAP:
             return {"error": invalid_timeframe_error(timeframe, TIMEFRAME_MAP)}
+        if (
+            not anchors
+            and int(steps) > 1
+            and int(spacing) < int(horizon)
+        ):
+            return {
+                "error": "spacing must be greater than or equal to horizon when steps > 1"
+            }
 
         # Fetch sufficient history via shared helper; ensure enough bars for anchors
         if anchors and isinstance(anchors, (list, tuple)) and len(anchors) > 0:
