@@ -53,3 +53,20 @@ def test_ti_column_names_use_ints_for_integer_like_params(
         assert col in created
 
     assert all(".0" not in c for c in created)
+
+
+def test_apply_ta_indicators_raises_for_missing_required_columns() -> None:
+    df = _sample_df()
+
+    with pytest.raises(ValueError, match=r"Indicator 'atr' requires columns: high, low, close"):
+        _apply_ta_indicators(df, "atr(14)")
+
+
+@pytest.mark.parametrize("volume_col", ["tick_volume", "real_volume"])
+def test_apply_ta_indicators_accepts_volume_alias_columns(volume_col: str) -> None:
+    df = _sample_df()
+    df[volume_col] = np.arange(1, len(df) + 1, dtype=float)
+
+    added = _apply_ta_indicators(df, "obv")
+
+    assert any(str(col).upper().startswith("OBV") for col in added)
