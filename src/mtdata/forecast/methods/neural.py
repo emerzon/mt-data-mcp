@@ -44,8 +44,8 @@ def forecast_neural(
     if model_class is None:
         available_models = ", ".join(sorted(model_map))
         raise RuntimeError(
-            f"Model '{method_l}' not available in installed neuralforecast version. "
-            f"Supported models: {available_models}"
+            f"Unsupported NeuralForecast model '{method_l}'. "
+            f"Supported mtdata neural models: {available_models}"
         )
 
     # Hyperparameters with defaults and safety caps
