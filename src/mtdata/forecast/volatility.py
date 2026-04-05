@@ -318,6 +318,40 @@ def _annualize_horizon_sigma(horizon_sigma_return: float, bars_per_year: float) 
     return float(horizon_sigma_return * math.sqrt(bars_per_year))
 
 
+def _fetch_mt5_rates_guarded(
+    symbol: str,
+    mt5_timeframe: Any,
+    count: int,
+    *,
+    as_of: Optional[str] = None,
+) -> tuple[Optional[Any], Optional[str]]:
+    info_before = mt5.symbol_info(symbol)
+    was_visible = bool(info_before.visible) if info_before is not None else None
+    try:
+        err = _ensure_symbol_ready(symbol)
+        if err:
+            return None, str(err)
+        if as_of:
+            to_dt = _parse_start_datetime(as_of)
+            if not to_dt:
+                return None, "Invalid as_of time."
+            return _mt5_copy_rates_from(symbol, mt5_timeframe, to_dt, count), None
+
+        tick = mt5.symbol_info_tick(symbol)
+        if tick is not None and getattr(tick, "time", None):
+            t_utc = _mt5_epoch_to_utc(float(tick.time))
+            server_now_dt = datetime.fromtimestamp(t_utc, tz=timezone.utc)
+        else:
+            server_now_dt = datetime.now(timezone.utc)
+        return _mt5_copy_rates_from(symbol, mt5_timeframe, server_now_dt, count), None
+    finally:
+        if was_visible is False:
+            try:
+                mt5.symbol_select(symbol, False)
+            except Exception:
+                pass
+
+
 def forecast_volatility(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
@@ -539,31 +573,14 @@ def forecast_volatility(
             # Reuse unified forecast branch for fetching by delegating to data_fetch_candles/forecast_generate where possible is heavy; implement lightweight here
             # Determine lookback bars
             need = max(300, int(horizon) + 50)
-            _info_before = mt5.symbol_info(symbol)
-            _was_visible = bool(_info_before.visible) if _info_before is not None else None
-            err = _ensure_symbol_ready(symbol)
-            if err:
-                return {"error": err}
-            try:
-                if as_of:
-                    to_dt = _parse_start_datetime(as_of)
-                    if not to_dt:
-                        return {"error": "Invalid as_of time."}
-                    rates = _mt5_copy_rates_from(symbol, mt5_tf, to_dt, need)
-                else:
-                    _tick = mt5.symbol_info_tick(symbol)
-                    if _tick is not None and getattr(_tick, 'time', None):
-                        t_utc = _mt5_epoch_to_utc(float(_tick.time))
-                        server_now_dt = datetime.fromtimestamp(t_utc, tz=timezone.utc)
-                    else:
-                        server_now_dt = datetime.now(timezone.utc)
-                    rates = _mt5_copy_rates_from(symbol, mt5_tf, server_now_dt, need)
-            finally:
-                if _was_visible is False:
-                    try:
-                        mt5.symbol_select(symbol, False)
-                    except Exception:
-                        pass
+            rates, fetch_error = _fetch_mt5_rates_guarded(
+                symbol,
+                mt5_tf,
+                need,
+                as_of=as_of,
+            )
+            if fetch_error:
+                return {"error": fetch_error}
             if rates is None or len(rates) < 5:
                 return {"error": f"Failed to get sufficient rates for {symbol}: {mt5.last_error()}"}
             df = pd.DataFrame(rates)
@@ -737,31 +754,14 @@ def forecast_volatility(
                 m = int(p.get('window_m', 22))
                 rv_tf_secs = TIMEFRAME_SECONDS.get(rv_tf, 300)
                 bars_needed = int(days * max(1, (86400 // max(1, rv_tf_secs))) + 50)
-                _info_before = mt5.symbol_info(symbol)
-                _was_visible = bool(_info_before.visible) if _info_before is not None else None
-                err = _ensure_symbol_ready(symbol)
-                if err:
-                    return {"error": err}
-                try:
-                    if as_of:
-                        to_dt = _parse_start_datetime(as_of)
-                        if not to_dt:
-                            return {"error": "Invalid as_of time."}
-                        rates_rv = _mt5_copy_rates_from(symbol, rv_mt5_tf, to_dt, bars_needed)
-                    else:
-                        _tick = mt5.symbol_info_tick(symbol)
-                        if _tick is not None and getattr(_tick, 'time', None):
-                            t_utc = _mt5_epoch_to_utc(float(_tick.time))
-                            server_now_dt = datetime.fromtimestamp(t_utc, tz=timezone.utc)
-                        else:
-                            server_now_dt = datetime.now(timezone.utc)
-                        rates_rv = _mt5_copy_rates_from(symbol, rv_mt5_tf, server_now_dt, bars_needed)
-                finally:
-                    if _was_visible is False:
-                        try:
-                            mt5.symbol_select(symbol, False)
-                        except Exception:
-                            pass
+                rates_rv, fetch_error = _fetch_mt5_rates_guarded(
+                    symbol,
+                    rv_mt5_tf,
+                    bars_needed,
+                    as_of=as_of,
+                )
+                if fetch_error:
+                    return {"error": fetch_error}
                 if rates_rv is None or len(rates_rv) < 50:
                     return {"error": f"Failed to get intraday rates for RV: {mt5.last_error()}"}
                 dfrv = pd.DataFrame(rates_rv)
@@ -837,31 +837,14 @@ def forecast_volatility(
             return max(300, int(horizon) + 50)
 
         need = _need_bars_direct()
-        _info_before = mt5.symbol_info(symbol)
-        _was_visible = bool(_info_before.visible) if _info_before is not None else None
-        err = _ensure_symbol_ready(symbol)
-        if err:
-            return {"error": err}
-        try:
-            if as_of:
-                to_dt = _parse_start_datetime(as_of)
-                if not to_dt:
-                    return {"error": "Invalid as_of time."}
-                rates = _mt5_copy_rates_from(symbol, mt5_tf, to_dt, need)
-            else:
-                _tick = mt5.symbol_info_tick(symbol)
-                if _tick is not None and getattr(_tick, 'time', None):
-                    t_utc = _mt5_epoch_to_utc(float(_tick.time))
-                    server_now_dt = datetime.fromtimestamp(t_utc, tz=timezone.utc)
-                else:
-                    server_now_dt = datetime.now(timezone.utc)
-                rates = _mt5_copy_rates_from(symbol, mt5_tf, server_now_dt, need)
-        finally:
-            if _was_visible is False:
-                try:
-                    mt5.symbol_select(symbol, False)
-                except Exception:
-                    pass
+        rates, fetch_error = _fetch_mt5_rates_guarded(
+            symbol,
+            mt5_tf,
+            need,
+            as_of=as_of,
+        )
+        if fetch_error:
+            return {"error": fetch_error}
         if rates is None or len(rates) < 3:
             return {"error": f"Failed to get sufficient rates for {symbol}: {mt5.last_error()}"}
 
