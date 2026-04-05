@@ -232,8 +232,10 @@ class GenericMLForecastMethod(MLForecastMethod):
         try:
             sig = inspect.signature(model_cls)
             valid_params = set(sig.parameters.keys())
-        except ValueError:
-            valid_params = set()
+        except (TypeError, ValueError) as e:
+            raise ValueError(
+                f"Could not inspect constructor for ML model '{model_path}': {e}"
+            )
 
         model_params = {k: v for k, v in params.items() if k in valid_params}
 
