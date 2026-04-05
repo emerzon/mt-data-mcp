@@ -237,6 +237,16 @@ def test_generic_mlforecast_model_import_validation_and_param_filtering(monkeypa
     with pytest.raises(ValueError, match="not allowed"):
         method._get_model({"model": "fake_models.FakeModel"})
 
+    original_import_module = mlm.importlib.import_module
+
+    def fake_import_module(name, package=None):
+        if name == "sklearn.ensemble":
+            raise ImportError("forced import failure")
+        return original_import_module(name, package)
+
+    monkeypatch.setattr(mlm.importlib, "import_module", fake_import_module)
+    with pytest.raises(ValueError, match="Could not import ML model"):
+        method._get_model({"model": "sklearn.ensemble.RandomForestRegressor"})
     sklearn_mod = ModuleType("sklearn")
     ensemble_mod = ModuleType("sklearn.ensemble")
 
