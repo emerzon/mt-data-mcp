@@ -381,6 +381,14 @@ class TestGbmBarrierUpcrossProb:
         p = gbm_single_barrier_upcross_prob(100.0, 200.0, 0.1, 0.0, 1.0)
         assert p == 0.0
 
+    def test_tiny_positive_sigma_and_time_underflow_to_deterministic_no_reach(self):
+        p = gbm_single_barrier_upcross_prob(100.0, 110.0, 0.05, 5e-324, 5e-324)
+        assert p == 0.0
+
+    def test_tiny_positive_sigma_squared_underflow_uses_deterministic_limit(self):
+        p = gbm_single_barrier_upcross_prob(100.0, 101.0, 0.05, 1e-200, 1.0)
+        assert p == 1.0
+
     def test_invalid_inputs(self):
         assert gbm_single_barrier_upcross_prob(0.0, 100.0, 0.05, 0.2, 1.0) == 0.0
         assert gbm_single_barrier_upcross_prob(100.0, 110.0, 0.05, 0.2, 0.0) == 0.0
