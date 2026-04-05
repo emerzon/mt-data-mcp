@@ -4,6 +4,16 @@ from typing import Any, List, Optional, Tuple
 from .client import get_finviz_page_limit_max, get_finviz_screener_max_rows
 
 
+def _coerce_positive_int(value: Any, *, default: int) -> int:
+    if isinstance(value, bool):
+        return int(default)
+    try:
+        numeric = int(value)
+    except Exception:
+        return int(default)
+    return max(1, int(numeric))
+
+
 def sanitize_pagination(
     limit: int,
     page: int,
@@ -19,7 +29,10 @@ def sanitize_pagination(
         safe_page = int(page)
     except Exception:
         safe_page = 1
-    max_page_limit = get_finviz_page_limit_max() if page_limit_max is None else int(page_limit_max)
+    max_page_limit = _coerce_positive_int(
+        get_finviz_page_limit_max() if page_limit_max is None else page_limit_max,
+        default=get_finviz_page_limit_max(),
+    )
     safe_limit = max(1, min(max_page_limit, safe_limit))
     safe_page = max(1, safe_page)
     return safe_limit, safe_page
@@ -34,8 +47,12 @@ def compute_screener_fetch_limit(
 ) -> int:
     """Rows to fetch from finvizfinance screener to satisfy current page safely."""
     safe_limit, safe_page = sanitize_pagination(limit, page, page_limit_max=page_limit_max)
+    safe_max_rows = _coerce_positive_int(
+        get_finviz_screener_max_rows() if max_rows is None else max_rows,
+        default=get_finviz_screener_max_rows(),
+    )
     needed = safe_limit * safe_page
-    return max(1, min(max_rows, needed))
+    return max(1, min(safe_max_rows, needed))
 
 
 def paginate_finviz_records(
@@ -72,7 +89,10 @@ def run_screener_view(
     page_limit_max: Optional[int] = None,
 ) -> Tuple[Any, int]:
     """Run screener_view with bounded rows and no inter-page sleep."""
-    max_rows = get_finviz_screener_max_rows() if screener_max_rows is None else int(screener_max_rows)
+    max_rows = _coerce_positive_int(
+        get_finviz_screener_max_rows() if screener_max_rows is None else screener_max_rows,
+        default=get_finviz_screener_max_rows(),
+    )
     fetch_limit = compute_screener_fetch_limit(
         limit=limit,
         page=page,

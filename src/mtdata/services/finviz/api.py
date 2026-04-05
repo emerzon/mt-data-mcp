@@ -5,17 +5,17 @@ from typing import Any, Dict, List, Optional, Literal
 import importlib
 
 from .client import (
-    _FINVIZ_HTTP_TIMEOUT as _DEFAULT_FINVIZ_HTTP_TIMEOUT,
-    _FINVIZ_PAGE_LIMIT_MAX as _DEFAULT_FINVIZ_PAGE_LIMIT_MAX,
-    _FINVIZ_SCREENER_MAX_ROWS as _DEFAULT_FINVIZ_SCREENER_MAX_ROWS,
+    get_finviz_http_timeout,
+    get_finviz_page_limit_max,
+    get_finviz_screener_max_rows,
 )
 
 logger = logging.getLogger(__name__)
 
 # Configuration constants
-_FINVIZ_HTTP_TIMEOUT = _DEFAULT_FINVIZ_HTTP_TIMEOUT
-_FINVIZ_SCREENER_MAX_ROWS = _DEFAULT_FINVIZ_SCREENER_MAX_ROWS
-_FINVIZ_PAGE_LIMIT_MAX = _DEFAULT_FINVIZ_PAGE_LIMIT_MAX
+_FINVIZ_HTTP_TIMEOUT = get_finviz_http_timeout()
+_FINVIZ_SCREENER_MAX_ROWS = get_finviz_screener_max_rows()
+_FINVIZ_PAGE_LIMIT_MAX = get_finviz_page_limit_max()
 
 
 def _sanitize_pagination(limit: int, page: int) -> tuple[int, int]:
