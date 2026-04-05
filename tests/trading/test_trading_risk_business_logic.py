@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 import logging
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -43,6 +44,19 @@ def _make_symbol_info(*, volume_min: float = 0.1, volume_step: float = 0.1, volu
     )
 
 
+@contextmanager
+def _patched_mt5_module(mt5):
+    prev = sys.modules.get("MetaTrader5")
+    sys.modules["MetaTrader5"] = mt5
+    try:
+        yield
+    finally:
+        if prev is not None:
+            sys.modules["MetaTrader5"] = prev
+        else:
+            sys.modules.pop("MetaTrader5", None)
+
+
 def test_floor_volume_steps_keeps_exact_step_sized_values() -> None:
     assert _floor_volume_steps(0.3, 0.1) == 3
     assert _floor_volume_steps(1.2, 0.1) == 12
@@ -55,21 +69,17 @@ def test_floor_volume_steps_does_not_round_up_material_substep_values() -> None:
 
 def test_trade_risk_analyze_does_not_round_up_substep_boundary_volume() -> None:
     mt5 = MagicMock()
-    prev = sys.modules.get("MetaTrader5")
-    sys.modules["MetaTrader5"] = mt5
     mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
     mt5.positions_get.return_value = []
     mt5.symbol_info.return_value = _make_symbol_info()
 
-    out = trade_risk_analyze(
-        symbol="EURUSD",
-        desired_risk_pct=0.3,
-        proposed_entry=100.0,
-        proposed_sl=89.99999999999667,
-    )
-
-    if prev is not None:
-        sys.modules["MetaTrader5"] = prev
+    with _patched_mt5_module(mt5):
+        out = trade_risk_analyze(
+            symbol="EURUSD",
+            desired_risk_pct=0.3,
+            proposed_entry=100.0,
+            proposed_sl=89.99999999999667,
+        )
 
     sizing = out["position_sizing"]
     assert sizing["suggested_volume"] == 0.2
@@ -81,21 +91,17 @@ def test_trade_risk_analyze_does_not_round_up_substep_boundary_volume() -> None:
 
 def test_trade_risk_analyze_rounds_down_to_step_to_avoid_overshoot() -> None:
     mt5 = MagicMock()
-    prev = sys.modules.get("MetaTrader5")
-    sys.modules["MetaTrader5"] = mt5
     mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
     mt5.positions_get.return_value = []
     mt5.symbol_info.return_value = _make_symbol_info()
 
-    out = trade_risk_analyze(
-        symbol="EURUSD",
-        desired_risk_pct=1.0,
-        proposed_entry=100.0,
-        proposed_sl=92.06,
-    )
-
-    if prev is not None:
-        sys.modules["MetaTrader5"] = prev
+    with _patched_mt5_module(mt5):
+        out = trade_risk_analyze(
+            symbol="EURUSD",
+            desired_risk_pct=1.0,
+            proposed_entry=100.0,
+            proposed_sl=92.06,
+        )
 
     sizing = out["position_sizing"]
     assert sizing["suggested_volume"] == 1.2
@@ -109,21 +115,17 @@ def test_trade_risk_analyze_rounds_down_to_step_to_avoid_overshoot() -> None:
 
 def test_trade_risk_analyze_warns_when_min_volume_forces_overshoot() -> None:
     mt5 = MagicMock()
-    prev = sys.modules.get("MetaTrader5")
-    sys.modules["MetaTrader5"] = mt5
     mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
     mt5.positions_get.return_value = []
     mt5.symbol_info.return_value = _make_symbol_info(volume_min=0.1, volume_step=0.1, volume_max=10.0)
 
-    out = trade_risk_analyze(
-        symbol="EURUSD",
-        desired_risk_pct=0.1,
-        proposed_entry=100.0,
-        proposed_sl=80.0,
-    )
-
-    if prev is not None:
-        sys.modules["MetaTrader5"] = prev
+    with _patched_mt5_module(mt5):
+        out = trade_risk_analyze(
+            symbol="EURUSD",
+            desired_risk_pct=0.1,
+            proposed_entry=100.0,
+            proposed_sl=80.0,
+        )
 
     sizing = out["position_sizing"]
     assert sizing["suggested_volume"] == 0.1
@@ -140,23 +142,19 @@ def test_trade_risk_analyze_warns_when_min_volume_forces_overshoot() -> None:
 
 def test_trade_risk_analyze_accepts_explicit_short_direction() -> None:
     mt5 = MagicMock()
-    prev = sys.modules.get("MetaTrader5")
-    sys.modules["MetaTrader5"] = mt5
     mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
     mt5.positions_get.return_value = []
     mt5.symbol_info.return_value = _make_symbol_info()
 
-    out = trade_risk_analyze(
-        symbol="EURUSD",
-        direction="short",
-        desired_risk_pct=1.0,
-        proposed_entry=100.0,
-        proposed_sl=108.0,
-        proposed_tp=92.0,
-    )
-
-    if prev is not None:
-        sys.modules["MetaTrader5"] = prev
+    with _patched_mt5_module(mt5):
+        out = trade_risk_analyze(
+            symbol="EURUSD",
+            direction="short",
+            desired_risk_pct=1.0,
+            proposed_entry=100.0,
+            proposed_sl=108.0,
+            proposed_tp=92.0,
+        )
 
     sizing = out["position_sizing"]
     assert sizing["direction"] == "short"
@@ -194,13 +192,11 @@ def test_resolve_trade_risk_direction_uses_take_profit_when_stop_equals_entry_sh
 
 def test_trade_risk_analyze_falls_back_to_take_profit_direction_for_break_even_stop() -> None:
     mt5 = MagicMock()
-    prev = sys.modules.get("MetaTrader5")
-    sys.modules["MetaTrader5"] = mt5
     mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
     mt5.positions_get.return_value = []
     mt5.symbol_info.return_value = _make_symbol_info()
 
-    try:
+    with _patched_mt5_module(mt5):
         out = trade_risk_analyze(
             symbol="EURUSD",
             desired_risk_pct=1.0,
@@ -208,11 +204,6 @@ def test_trade_risk_analyze_falls_back_to_take_profit_direction_for_break_even_s
             proposed_sl=100.0,
             proposed_tp=110.0,
         )
-    finally:
-        if prev is not None:
-            sys.modules["MetaTrader5"] = prev
-        else:
-            sys.modules.pop("MetaTrader5", None)
 
     assert (
         out["position_sizing_error"]
@@ -223,22 +214,18 @@ def test_trade_risk_analyze_falls_back_to_take_profit_direction_for_break_even_s
 
 def test_trade_risk_analyze_rejects_wrong_side_stop_for_short_trade() -> None:
     mt5 = MagicMock()
-    prev = sys.modules.get("MetaTrader5")
-    sys.modules["MetaTrader5"] = mt5
     mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
     mt5.positions_get.return_value = []
     mt5.symbol_info.return_value = _make_symbol_info()
 
-    out = trade_risk_analyze(
-        symbol="EURUSD",
-        direction="short",
-        desired_risk_pct=1.0,
-        proposed_entry=100.0,
-        proposed_sl=95.0,
-    )
-
-    if prev is not None:
-        sys.modules["MetaTrader5"] = prev
+    with _patched_mt5_module(mt5):
+        out = trade_risk_analyze(
+            symbol="EURUSD",
+            direction="short",
+            desired_risk_pct=1.0,
+            proposed_entry=100.0,
+            proposed_sl=95.0,
+        )
 
     assert out["position_sizing_error"] == "For short trades, proposed_sl must be above proposed_entry."
     assert "position_sizing" not in out
@@ -246,23 +233,19 @@ def test_trade_risk_analyze_rejects_wrong_side_stop_for_short_trade() -> None:
 
 def test_trade_risk_analyze_rejects_wrong_side_take_profit_for_long_trade() -> None:
     mt5 = MagicMock()
-    prev = sys.modules.get("MetaTrader5")
-    sys.modules["MetaTrader5"] = mt5
     mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
     mt5.positions_get.return_value = []
     mt5.symbol_info.return_value = _make_symbol_info()
 
-    out = trade_risk_analyze(
-        symbol="EURUSD",
-        direction="long",
-        desired_risk_pct=1.0,
-        proposed_entry=100.0,
-        proposed_sl=92.0,
-        proposed_tp=95.0,
-    )
-
-    if prev is not None:
-        sys.modules["MetaTrader5"] = prev
+    with _patched_mt5_module(mt5):
+        out = trade_risk_analyze(
+            symbol="EURUSD",
+            direction="long",
+            desired_risk_pct=1.0,
+            proposed_entry=100.0,
+            proposed_sl=92.0,
+            proposed_tp=95.0,
+        )
 
     assert out["position_sizing_error"] == "For long trades, proposed_tp must be above proposed_entry."
     assert "position_sizing" not in out
@@ -351,8 +334,6 @@ def test_run_trade_risk_analyze_uses_gateway_position_type_constants() -> None:
 
 def test_trade_risk_analyze_reports_calculation_failures() -> None:
     mt5 = MagicMock()
-    prev = sys.modules.get("MetaTrader5")
-    sys.modules["MetaTrader5"] = mt5
     mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
     mt5.positions_get.return_value = [
         SimpleNamespace(
@@ -372,10 +353,8 @@ def test_trade_risk_analyze_reports_calculation_failures() -> None:
         trade_tick_size=1.0,
     )
 
-    out = trade_risk_analyze(__cli_raw=True)
-
-    if prev is not None:
-        sys.modules["MetaTrader5"] = prev
+    with _patched_mt5_module(mt5):
+        out = trade_risk_analyze(__cli_raw=True)
 
     assert out["portfolio_risk"]["overall_risk_status"] == "incomplete"
     assert out["portfolio_risk"]["positions_with_risk_calculation_failures"] == 1
@@ -385,8 +364,6 @@ def test_trade_risk_analyze_reports_calculation_failures() -> None:
 
 def test_trade_risk_analyze_flags_invalid_tick_configuration_with_existing_stop_loss() -> None:
     mt5 = MagicMock()
-    prev = sys.modules.get("MetaTrader5")
-    sys.modules["MetaTrader5"] = mt5
     mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
     mt5.positions_get.return_value = [
         SimpleNamespace(
@@ -407,11 +384,11 @@ def test_trade_risk_analyze_flags_invalid_tick_configuration_with_existing_stop_
     )
 
     raw = _unwrap(_trade_risk_analyze_tool)
-    with patch("mtdata.core.trading_risk.ensure_mt5_connection_or_raise", return_value=None):
+    with _patched_mt5_module(mt5), patch(
+        "mtdata.core.trading_risk.ensure_mt5_connection_or_raise",
+        return_value=None,
+    ):
         out = raw(request=TradeRiskAnalyzeRequest())
-
-    if prev is not None:
-        sys.modules["MetaTrader5"] = prev
 
     assert out["portfolio_risk"]["overall_risk_status"] == "incomplete"
     assert out["portfolio_risk"]["positions_without_sl"] == 0
