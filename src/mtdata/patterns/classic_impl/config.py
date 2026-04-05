@@ -13,8 +13,9 @@ class ClassicDetectorConfig:
       or price baseline for that detector.
     - ``*_ratio`` and ``*_frac`` are unitless comparisons; ``*_frac`` values
       are typically expected to stay between 0 and 1.
-    - ``*_weight`` fields blend normalized component scores and are intended to
-      sum to 1.0 within the scoring block they belong to.
+    - ``*_weight`` fields are detector-specific scoring knobs. Some scoring
+      blocks normalize them as relative contributions, while others apply them
+      on top of a separate base score, so they do not all need to sum to 1.0.
     - ``*_bonus`` / ``*_penalty`` fields are additive confidence adjustments
       applied after the base pattern score is computed.
 
