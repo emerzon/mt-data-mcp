@@ -5,6 +5,7 @@ import warnings
 import numpy as np
 from ..shared.schema import TimeframeLiteral, DenoiseSpec
 from ..shared.constants import TIMEFRAME_SECONDS
+from ..shared.validators import unsupported_timeframe_seconds_error
 from .common import fetch_history as _fetch_history, log_returns_from_prices as _log_returns_from_prices
 from ..utils.utils import parse_kv_or_json as _parse_kv_or_json
 from ..utils.barriers import (
@@ -402,7 +403,7 @@ def forecast_barrier_closed_form(
             return {"error": "Provide a positive barrier price"}
         tf_secs = TIMEFRAME_SECONDS.get(timeframe, 0)
         if not tf_secs:
-            return {"error": f"Unsupported timeframe seconds for {timeframe}"}
+            return {"error": unsupported_timeframe_seconds_error(timeframe)}
         T = float(tf_secs * int(horizon)) / (365.0 * 24.0 * 3600.0)
         if mu is None or sigma is None:
             with np.errstate(divide='ignore', invalid='ignore'):
