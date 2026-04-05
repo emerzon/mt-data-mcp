@@ -29,11 +29,18 @@ def get_finviz_page_limit_max() -> int:
     return _FINVIZ_PAGE_LIMIT_MAX
 
 
-def finviz_http_get(url: str, *, headers: Dict[str, str], params: Dict[str, Any]) -> Any:
+def finviz_http_get(
+    url: str,
+    *,
+    headers: Dict[str, str],
+    params: Dict[str, Any],
+    timeout: Optional[float] = None,
+) -> Any:
     """HTTP GET helper with centralized timeout and pooled connections."""
+    timeout_value = _FINVIZ_HTTP_TIMEOUT if timeout is None else float(timeout)
     # Testability: when requests.get is monkeypatched, honor that hook.
     if requests.get is not requests.api.get:
-        return requests.get(url, headers=headers, params=params, timeout=_FINVIZ_HTTP_TIMEOUT)
+        return requests.get(url, headers=headers, params=params, timeout=timeout_value)
 
     global _FINVIZ_HTTP_SESSION
     if _FINVIZ_HTTP_SESSION is None:
@@ -42,7 +49,7 @@ def finviz_http_get(url: str, *, headers: Dict[str, str], params: Dict[str, Any]
                 session = requests.Session()
                 session.headers.update({"User-Agent": "Mozilla/5.0"})
                 _FINVIZ_HTTP_SESSION = session
-    return _FINVIZ_HTTP_SESSION.get(url, headers=headers, params=params, timeout=_FINVIZ_HTTP_TIMEOUT)
+    return _FINVIZ_HTTP_SESSION.get(url, headers=headers, params=params, timeout=timeout_value)
 
 
 def reset_finviz_http_session() -> None:

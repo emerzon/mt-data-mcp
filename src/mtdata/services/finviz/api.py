@@ -2,41 +2,39 @@
 import logging
 import datetime
 from typing import Any, Dict, List, Optional, Literal
-import os
-import threading
 import importlib
-import requests
+
+from .client import (
+    _FINVIZ_HTTP_TIMEOUT as _DEFAULT_FINVIZ_HTTP_TIMEOUT,
+    _FINVIZ_PAGE_LIMIT_MAX as _DEFAULT_FINVIZ_PAGE_LIMIT_MAX,
+    _FINVIZ_SCREENER_MAX_ROWS as _DEFAULT_FINVIZ_SCREENER_MAX_ROWS,
+)
 
 logger = logging.getLogger(__name__)
 
 # Configuration constants
-_FINVIZ_HTTP_TIMEOUT = float(os.getenv("FINVIZ_HTTP_TIMEOUT", "15"))
-_FINVIZ_SCREENER_MAX_ROWS = int(os.getenv("FINVIZ_SCREENER_MAX_ROWS", "5000"))
-_FINVIZ_PAGE_LIMIT_MAX = int(os.getenv("FINVIZ_PAGE_LIMIT_MAX", "500"))
-_FINVIZ_HTTP_SESSION: Optional[requests.Session] = None
-_FINVIZ_HTTP_SESSION_LOCK = threading.Lock()
+_FINVIZ_HTTP_TIMEOUT = _DEFAULT_FINVIZ_HTTP_TIMEOUT
+_FINVIZ_SCREENER_MAX_ROWS = _DEFAULT_FINVIZ_SCREENER_MAX_ROWS
+_FINVIZ_PAGE_LIMIT_MAX = _DEFAULT_FINVIZ_PAGE_LIMIT_MAX
 
 
 def _sanitize_pagination(limit: int, page: int) -> tuple[int, int]:
     """Clamp pagination inputs to sane bounds."""
-    try:
-        safe_limit = int(limit)
-    except Exception:
-        safe_limit = 50
-    try:
-        safe_page = int(page)
-    except Exception:
-        safe_page = 1
-    safe_limit = max(1, min(_FINVIZ_PAGE_LIMIT_MAX, safe_limit))
-    safe_page = max(1, safe_page)
-    return safe_limit, safe_page
+    from .pagination import sanitize_pagination
+
+    return sanitize_pagination(limit, page, page_limit_max=_FINVIZ_PAGE_LIMIT_MAX)
 
 
 def _compute_screener_fetch_limit(limit: int, page: int, max_rows: int) -> int:
     """Rows to fetch from finvizfinance screener to satisfy current page safely."""
-    safe_limit, safe_page = _sanitize_pagination(limit, page)
-    needed = safe_limit * safe_page
-    return max(1, min(max_rows, needed))
+    from .pagination import compute_screener_fetch_limit
+
+    return compute_screener_fetch_limit(
+        limit,
+        page,
+        max_rows,
+        page_limit_max=_FINVIZ_PAGE_LIMIT_MAX,
+    )
 
 
 def _paginate_finviz_records(
@@ -45,20 +43,14 @@ def _paginate_finviz_records(
     limit: int,
     page: int,
 ) -> tuple[List[Any], int, int, int, int]:
-    safe_limit, safe_page = _sanitize_pagination(limit, page)
-    total = len(items) if items is not None else 0
-    start_idx = (safe_page - 1) * safe_limit
-    end_idx = start_idx + safe_limit
+    from .pagination import paginate_finviz_records
 
-    if hasattr(items, "iloc"):
-        rows = items.iloc[start_idx:end_idx].to_dict(orient="records")
-    elif isinstance(items, list):
-        rows = items[start_idx:end_idx]
-    else:
-        rows = []
-
-    pages = 0 if total <= 0 else (total + safe_limit - 1) // safe_limit
-    return rows, total, safe_limit, safe_page, pages
+    return paginate_finviz_records(
+        items,
+        limit=limit,
+        page=page,
+        page_limit_max=_FINVIZ_PAGE_LIMIT_MAX,
+    )
 
 
 def _normalize_finviz_date_string(value: Any) -> Any:
@@ -114,24 +106,28 @@ def _run_screener_view(
     page: int = 1,
 ) -> Any:
     """Run screener_view with bounded rows and no inter-page sleep."""
-    fetch_limit = _compute_screener_fetch_limit(limit=limit, page=page, max_rows=_FINVIZ_SCREENER_MAX_ROWS)
-    return screener.screener_view(order=order, limit=fetch_limit, verbose=0, sleep_sec=0), fetch_limit
+    from .pagination import run_screener_view
+
+    return run_screener_view(
+        screener,
+        order=order,
+        limit=limit,
+        page=page,
+        screener_max_rows=_FINVIZ_SCREENER_MAX_ROWS,
+        page_limit_max=_FINVIZ_PAGE_LIMIT_MAX,
+    )
 
 
 def _finviz_http_get(url: str, *, headers: Dict[str, str], params: Dict[str, Any]) -> Any:
     """HTTP GET helper with centralized timeout and pooled connections."""
-    # Testability: when requests.get is monkeypatched, honor that hook.
-    if requests.get is not requests.api.get:
-        return requests.get(url, headers=headers, params=params, timeout=_FINVIZ_HTTP_TIMEOUT)
+    from .client import finviz_http_get
 
-    global _FINVIZ_HTTP_SESSION
-    if _FINVIZ_HTTP_SESSION is None:
-        with _FINVIZ_HTTP_SESSION_LOCK:
-            if _FINVIZ_HTTP_SESSION is None:
-                session = requests.Session()
-                session.headers.update({"User-Agent": "Mozilla/5.0"})
-                _FINVIZ_HTTP_SESSION = session
-    return _FINVIZ_HTTP_SESSION.get(url, headers=headers, params=params, timeout=_FINVIZ_HTTP_TIMEOUT)
+    return finviz_http_get(
+        url,
+        headers=headers,
+        params=params,
+        timeout=_FINVIZ_HTTP_TIMEOUT,
+    )
 
 
 def _apply_finvizfinance_timeout_patch() -> None:

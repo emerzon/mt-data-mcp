@@ -1,10 +1,15 @@
 """Pagination utilities for Finviz service."""
-from typing import Any, Dict, List, Tuple
+from typing import Any, List, Optional, Tuple
 
 from .client import get_finviz_page_limit_max, get_finviz_screener_max_rows
 
 
-def sanitize_pagination(limit: int, page: int) -> Tuple[int, int]:
+def sanitize_pagination(
+    limit: int,
+    page: int,
+    *,
+    page_limit_max: Optional[int] = None,
+) -> Tuple[int, int]:
     """Clamp pagination inputs to sane bounds."""
     try:
         safe_limit = int(limit)
@@ -14,14 +19,21 @@ def sanitize_pagination(limit: int, page: int) -> Tuple[int, int]:
         safe_page = int(page)
     except Exception:
         safe_page = 1
-    safe_limit = max(1, min(get_finviz_page_limit_max(), safe_limit))
+    max_page_limit = get_finviz_page_limit_max() if page_limit_max is None else int(page_limit_max)
+    safe_limit = max(1, min(max_page_limit, safe_limit))
     safe_page = max(1, safe_page)
     return safe_limit, safe_page
 
 
-def compute_screener_fetch_limit(limit: int, page: int, max_rows: int) -> int:
+def compute_screener_fetch_limit(
+    limit: int,
+    page: int,
+    max_rows: int,
+    *,
+    page_limit_max: Optional[int] = None,
+) -> int:
     """Rows to fetch from finvizfinance screener to satisfy current page safely."""
-    safe_limit, safe_page = sanitize_pagination(limit, page)
+    safe_limit, safe_page = sanitize_pagination(limit, page, page_limit_max=page_limit_max)
     needed = safe_limit * safe_page
     return max(1, min(max_rows, needed))
 
@@ -31,9 +43,10 @@ def paginate_finviz_records(
     *,
     limit: int,
     page: int,
+    page_limit_max: Optional[int] = None,
 ) -> Tuple[List[Any], int, int, int, int]:
     """Paginate a list or DataFrame of Finviz records."""
-    safe_limit, safe_page = sanitize_pagination(limit, page)
+    safe_limit, safe_page = sanitize_pagination(limit, page, page_limit_max=page_limit_max)
     total = len(items) if items is not None else 0
     start_idx = (safe_page - 1) * safe_limit
     end_idx = start_idx + safe_limit
@@ -55,10 +68,16 @@ def run_screener_view(
     order: str = "Ticker",
     limit: int = 50,
     page: int = 1,
+    screener_max_rows: Optional[int] = None,
+    page_limit_max: Optional[int] = None,
 ) -> Tuple[Any, int]:
     """Run screener_view with bounded rows and no inter-page sleep."""
+    max_rows = get_finviz_screener_max_rows() if screener_max_rows is None else int(screener_max_rows)
     fetch_limit = compute_screener_fetch_limit(
-        limit=limit, page=page, max_rows=get_finviz_screener_max_rows()
+        limit=limit,
+        page=page,
+        max_rows=max_rows,
+        page_limit_max=page_limit_max,
     )
     return screener.screener_view(order=order, limit=fetch_limit, verbose=0, sleep_sec=0), fetch_limit
 
