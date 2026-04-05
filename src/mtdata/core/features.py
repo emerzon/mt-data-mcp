@@ -4,7 +4,7 @@ import warnings
 
 
 def _normalize_window_size(window_size: int) -> int:
-    if isinstance(window_size, bool):
+    if isinstance(window_size, (bool, np.bool_)):
         raise ValueError("window_size must be a positive integer")
     try:
         window_size_f = float(window_size)
