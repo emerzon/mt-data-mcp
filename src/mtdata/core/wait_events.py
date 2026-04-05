@@ -643,18 +643,6 @@ def _build_baseline(
     return baseline
 
 
-def _watchers_need_current_state(watch_for: List[Dict[str, Any]]) -> bool:
-    return any(item["type"] in _ORDER_POSITION_EVENT_TYPES for item in watch_for)
-
-
-def _watchers_need_history_deals(watch_for: List[Dict[str, Any]]) -> bool:
-    return any(item["type"] in _HISTORY_DEAL_EVENT_TYPES for item in watch_for)
-
-
-def _watchers_need_history_orders(watch_for: List[Dict[str, Any]]) -> bool:
-    return any(item["type"] in _HISTORY_ORDER_EVENT_TYPES for item in watch_for)
-
-
 def _build_account_history_state(
     *,
     gateway: Any,

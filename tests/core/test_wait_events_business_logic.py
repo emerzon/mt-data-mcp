@@ -6,7 +6,7 @@ from mtdata.core.data_requests import WaitEventRequest
 from mtdata.core import wait_events
 
 
-def test_compile_request_precomputes_waiter_requirements() -> None:
+def test_compile_request_precomputes_watcher_requirements() -> None:
     request = WaitEventRequest.model_validate(
         {
             "symbol": "EURUSD",
