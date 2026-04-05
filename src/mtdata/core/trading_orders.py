@@ -74,6 +74,8 @@ def _send_order_with_comment_fallback(
     request: Dict[str, Any],
 ) -> tuple[Any, Optional[Dict[str, Any]], Any]:
     return trading_comments._send_order_with_comment_fallback(mt5, request)
+
+
 def _send_order_with_fill_mode_retry(
     mt5: Any,
     request: Dict[str, Any],
