@@ -565,10 +565,9 @@ def bootstrap_metric_uncertainty(
         ev = prob_tp_first * net_reward - prob_sl_first * net_risk
         kelly = prob_tp_first - (prob_sl_first / net_rr) if net_rr > 0 else 0.0
 
-        active = prob_tp_first + prob_sl_first
-        if active > 0:
-            prob_win_c = prob_tp_first / active
-            prob_loss_c = prob_sl_first / active
+        if prob_resolve > 0:
+            prob_win_c = prob_tp_first / prob_resolve
+            prob_loss_c = prob_sl_first / prob_resolve
             ev_cond = prob_win_c * net_reward - prob_loss_c * net_risk
             kelly_cond = prob_win_c - (prob_loss_c / net_rr) if net_rr > 0 else 0.0
         else:
