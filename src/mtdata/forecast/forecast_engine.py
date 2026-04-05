@@ -30,6 +30,11 @@ from .common import (
     fetch_history as _fetch_history,
     next_times_from_last,
 )
+from .ensemble_dispatch import (
+    append_failure as _append_ensemble_failure,
+    build_dispatch_error as _build_ensemble_dispatch_error,
+    dispatch_callback_with_error as _dispatch_ensemble_callback_with_error,
+)
 from .forecast_validation import format_invalid_method_error
 from .interface import ForecastCallContext
 from .registry import ForecastRegistry
@@ -78,73 +83,6 @@ _ENSEMBLE_BASE_METHODS = (
 
 logger = logging.getLogger(__name__)
 _normalize_weights = _normalize_weights_impl
-
-
-def _build_ensemble_dispatch_error(method_name: str, exc: BaseException) -> Dict[str, Any]:
-    return {
-        "method": str(method_name),
-        "error": str(exc),
-        "error_type": type(exc).__name__,
-    }
-
-
-def _consume_dispatch_callback_error(
-    dispatch_method: Any,
-    *,
-    method_name: str,
-) -> Optional[Dict[str, Any]]:
-    try:
-        error = getattr(dispatch_method, "_last_error", None)
-    except Exception:
-        return None
-    try:
-        setattr(dispatch_method, "_last_error", None)
-    except Exception:
-        pass
-    if not isinstance(error, dict):
-        return None
-    payload = dict(error)
-    payload.setdefault("method", str(method_name))
-    return payload
-
-
-def _dispatch_ensemble_callback_with_error(
-    dispatch_method: Callable[[str, pd.Series, int, Optional[int], Optional[Dict[str, Any]]], Optional[np.ndarray]],
-    method_name: str,
-    series: pd.Series,
-    horizon: int,
-    seasonality: Optional[int],
-    params: Optional[Dict[str, Any]],
-) -> Tuple[Optional[np.ndarray], Optional[Dict[str, Any]]]:
-    method_l = str(method_name).lower().strip()
-    try:
-        forecast = dispatch_method(method_l, series, horizon, seasonality, params)
-    except Exception as ex:
-        return None, _build_ensemble_dispatch_error(method_l, ex)
-    if forecast is None:
-        return None, _consume_dispatch_callback_error(dispatch_method, method_name=method_l)
-    return forecast, None
-
-
-def _append_ensemble_failure(
-    failures: Optional[List[Dict[str, Any]]],
-    *,
-    method_name: str,
-    anchor_index: int,
-    error_detail: Optional[Dict[str, Any]],
-) -> None:
-    if failures is None or len(failures) >= 12:
-        return
-    payload: Dict[str, Any] = {
-        "stage": "cv",
-        "method": str(method_name),
-        "anchor_index": int(anchor_index),
-    }
-    if isinstance(error_detail, dict):
-        for key, value in error_detail.items():
-            if value is not None:
-                payload[str(key)] = value
-    failures.append(payload)
 
 
 def _ensemble_dispatch_method_impl(
@@ -253,6 +191,7 @@ def _prepare_ensemble_cv(
             if fc is None:
                 _append_ensemble_failure(
                     failure_sink,
+                    stage="cv",
                     method_name=m,
                     anchor_index=idx,
                     error_detail=error_detail
@@ -265,6 +204,7 @@ def _prepare_ensemble_cv(
             except Exception as ex:
                 _append_ensemble_failure(
                     failure_sink,
+                    stage="cv",
                     method_name=m,
                     anchor_index=idx,
                     error_detail={"error": str(ex), "error_type": type(ex).__name__},
@@ -274,6 +214,7 @@ def _prepare_ensemble_cv(
             if fc_arr.size < horizon_i or not np.all(np.isfinite(fc_arr[:horizon_i])):
                 _append_ensemble_failure(
                     failure_sink,
+                    stage="cv",
                     method_name=m,
                     anchor_index=idx,
                     error_detail={"error": "Forecast output was too short or non-finite", "error_type": "invalid_forecast"},
