@@ -9,6 +9,8 @@ from mtdata.core.trading_time import _server_time_naive_to_mt5_timestamp
 from mtdata.core.trading_validation import (
     _normalize_order_type_input,
     _normalize_price_for_symbol,
+    _retcode_is_done,
+    _trade_done_codes,
     _validate_live_protection_levels,
     _validate_deviation,
     _validate_volume,
@@ -52,6 +54,19 @@ def test_validate_deviation_rejects_negative_and_non_numeric():
     value, error = _validate_deviation("abc")
     assert value is None
     assert error == "deviation must be numeric"
+
+
+def test_trade_done_helpers_use_safe_int_attr_and_cached_codes():
+    mt5 = SimpleNamespace(
+        TRADE_RETCODE_DONE=True,
+        TRADE_RETCODE_DONE_PARTIAL="10010",
+    )
+
+    done_codes = _trade_done_codes(mt5)
+
+    assert done_codes == {10009, 10010}
+    assert _retcode_is_done(mt5, "10010", done_codes) is True
+    assert _retcode_is_done(mt5, 1, done_codes) is False
 
 
 def test_normalize_price_for_symbol_accepts_negative_non_zero_values():
