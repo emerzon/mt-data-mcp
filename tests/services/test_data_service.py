@@ -23,7 +23,11 @@ def _mock_symbol_ready_guard(*args: Any, **kwargs: Any) -> Iterator[Tuple[None, 
 
 
 class TestDataService(unittest.TestCase):
-    
+
+    def test_tick_field_value_returns_none_for_none_tick(self):
+        from mtdata.services import data_service as data_service_mod
+
+        self.assertIsNone(data_service_mod._tick_field_value(None, "bid"))
     @patch('mtdata.services.data_service._mt5_copy_rates_from')
     @patch('mtdata.services.data_service._mt5_epoch_to_utc', side_effect=AssertionError("unexpected extra UTC conversion"))
     @patch('mtdata.services.data_service._symbol_ready_guard', _mock_symbol_ready_guard)

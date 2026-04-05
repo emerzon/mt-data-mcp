@@ -299,6 +299,8 @@ def _build_rates_df(rates: Any, use_client_tz: bool) -> pd.DataFrame:
 
 
 def _tick_field_value(tick: Any, name: str) -> Any:
+    if tick is None:
+        return None
     try:
         return tick[name]
     except Exception:
