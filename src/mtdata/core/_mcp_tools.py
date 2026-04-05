@@ -170,7 +170,7 @@ def _get_pydantic_model_fields(model_type: type[BaseModel]) -> tuple[Dict[str, A
     if isinstance(model_fields, dict):
         return model_fields, True
 
-    return {}, False
+    return {}, True
 
 
 def _coerce_kwargs_for_callable(func: Any, kwargs: Dict[str, Any]) -> Dict[str, Any]:
