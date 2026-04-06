@@ -141,6 +141,8 @@ def test_wait_event_tool_exposes_minimal_public_contract(monkeypatch) -> None:
             "symbol": request.symbol,
             "timeframe": request.timeframe,
             "status": "boundary_reached",
+            "matched": False,
+            "event": None,
             "boundary_event": {
                 "type": "candle_close",
                 "timeframe": request.timeframe,
@@ -199,11 +201,12 @@ def test_wait_event_tool_exposes_minimal_public_contract(monkeypatch) -> None:
     assert result["success"] is True
     assert result["symbol"] == "BTCUSD"
     assert result["timeframe"] == "M1"
-    assert result["event"] == "candle_close"
     assert result["boundary_event"] == {
         "type": "candle_close",
         "timeframe": "M1",
     }
+    assert "matched" not in result
+    assert "event" not in result
     assert "criteria" not in result
     assert "started_at_utc" not in result
     assert "observed_at_utc" not in result
@@ -228,6 +231,8 @@ def test_wait_event_tool_exposes_minimal_public_contract(monkeypatch) -> None:
     assert explicit["criteria"]["watch_for_inferred"] is False
     assert explicit["criteria"]["end_on_inferred"] is False
     assert explicit["boundary_event"]["buffer_seconds"] == 1.0
+    assert explicit["matched"] is False
+    assert explicit["event"] is None
     assert explicit["started_at_utc"] == "2026-04-06T02:00:29.017205+00:00"
 
 
@@ -287,6 +292,8 @@ def test_wait_event_tool_compacts_matched_event_by_default(monkeypatch) -> None:
             "distance": 0.02,
         },
     }
+    assert "matched" not in result
+    assert "event" not in result
     assert "criteria" not in result
     assert "started_at_utc" not in result
     assert "polls" not in result

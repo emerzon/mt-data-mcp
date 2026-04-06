@@ -209,6 +209,8 @@ def _compact_wait_event_public_result(
         return out
 
     for key in (
+        "matched",
+        "event",
         "criteria",
         "started_at_utc",
         "observed_at_utc",
@@ -241,11 +243,6 @@ def _compact_wait_event_public_result(
         if isinstance(observed, dict) and observed:
             compact_matched["observed"] = dict(observed)
         out["matched_event"] = compact_matched or None
-
-    if out.get("event") is None and isinstance(out.get("boundary_event"), dict):
-        boundary_type = out["boundary_event"].get("type")
-        if boundary_type is not None:
-            out["event"] = boundary_type
 
     return out
 
