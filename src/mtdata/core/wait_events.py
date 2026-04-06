@@ -101,6 +101,7 @@ def run_wait_event_loop(
         return _run_candle_boundary_only(
             request=request,
             boundary=boundaries[0],
+            gateway=gateway,
             sleep_impl=sleep_impl,
             now_utc=started_at_utc,
         )
@@ -206,6 +207,12 @@ def run_wait_event_loop(
                 end_on_payload=end_on_payload,
                 watch_for_inferred=watch_for_inferred,
                 end_on_inferred=end_on_inferred,
+                quote_payload=_wait_result_quote_payload(
+                    request=request,
+                    watch_for_payload=watch_for_payload,
+                    market_state=market_state,
+                    gateway=gateway,
+                ),
             )
 
         boundary_event = (
@@ -226,6 +233,12 @@ def run_wait_event_loop(
                 end_on_payload=end_on_payload,
                 watch_for_inferred=watch_for_inferred,
                 end_on_inferred=end_on_inferred,
+                quote_payload=_wait_result_quote_payload(
+                    request=request,
+                    watch_for_payload=watch_for_payload,
+                    market_state=snapshot.get("market_data"),
+                    gateway=gateway,
+                ),
             )
 
         elapsed_seconds = max(0.0, float(monotonic_impl()) - started_at_monotonic)
@@ -242,6 +255,12 @@ def run_wait_event_loop(
                 end_on_payload=end_on_payload,
                 watch_for_inferred=watch_for_inferred,
                 end_on_inferred=end_on_inferred,
+                quote_payload=_wait_result_quote_payload(
+                    request=request,
+                    watch_for_payload=watch_for_payload,
+                    market_state=snapshot.get("market_data"),
+                    gateway=gateway,
+                ),
             )
 
         sleep_seconds = _next_poll_sleep_seconds(
@@ -569,10 +588,17 @@ def _run_candle_boundary_only(
     *,
     request: WaitEventRequest,
     boundary: Dict[str, Any],
+    gateway: Any,
     sleep_impl: Callable[[float], None],
     now_utc: datetime,
 ) -> Dict[str, Any]:
     preview = dict(boundary["preview"])
+    quote_payload = _wait_result_quote_payload(
+        request=request,
+        watch_for_payload=[],
+        market_state=None,
+        gateway=gateway,
+    )
     max_wait_seconds = request.max_wait_seconds
     if max_wait_seconds is not None and float(preview["sleep_seconds"]) > float(max_wait_seconds):
         preview["success"] = True
@@ -591,6 +617,8 @@ def _run_candle_boundary_only(
             "timeframe": boundary["timeframe"],
             "buffer_seconds": boundary["buffer_seconds"],
         }
+        if quote_payload:
+            preview.update(quote_payload)
         return preview
 
     payload = _sleep_until_next_candle(
@@ -609,6 +637,19 @@ def _run_candle_boundary_only(
         None if request.max_wait_seconds is None else float(request.max_wait_seconds)
     )
     payload["success"] = True
+    started_at_value = _normalize_optional_utc_datetime(payload.get("started_at_utc"))
+    if started_at_value is not None:
+        payload["observed_at_utc"] = (
+            started_at_value + timedelta(seconds=float(payload.get("slept_seconds") or 0.0))
+        ).isoformat()
+    quote_after_wait = _wait_result_quote_payload(
+        request=request,
+        watch_for_payload=[],
+        market_state=None,
+        gateway=gateway,
+    )
+    if quote_after_wait:
+        payload.update(quote_after_wait)
     return payload
 
 
@@ -1703,9 +1744,10 @@ def _build_wait_result(
     end_on_payload: List[Dict[str, Any]],
     watch_for_inferred: bool,
     end_on_inferred: bool,
+    quote_payload: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     elapsed_seconds = max(0.0, (observed_at_utc - started_at_utc).total_seconds())
-    return {
+    result = {
         "success": True,
         "status": status,
         "matched": status in {"matched", "already_satisfied"},
@@ -1728,6 +1770,89 @@ def _build_wait_result(
             "accept_preexisting": bool(request.accept_preexisting),
         },
     }
+    if quote_payload:
+        result.update(quote_payload)
+    return result
+
+
+def _resolved_wait_result_symbol(
+    request: WaitEventRequest,
+    *,
+    watch_for_payload: List[Dict[str, Any]],
+) -> Optional[str]:
+    request_symbol = str(request.symbol or "").upper().strip()
+    if request_symbol:
+        return request_symbol
+
+    candidates = {
+        str(item.get("symbol") or "").upper().strip()
+        for item in watch_for_payload
+        if isinstance(item, dict)
+    }
+    candidates.discard("")
+    if len(candidates) == 1:
+        return next(iter(candidates))
+    return None
+
+
+def _wait_result_quote_payload(
+    *,
+    request: WaitEventRequest,
+    watch_for_payload: List[Dict[str, Any]],
+    market_state: Optional[Dict[str, Any]],
+    gateway: Any,
+) -> Dict[str, Any]:
+    symbol = _resolved_wait_result_symbol(
+        request,
+        watch_for_payload=watch_for_payload,
+    )
+    if not symbol:
+        return {}
+
+    tick_row = _latest_quote_row_from_market_state(
+        market_state,
+        symbol=symbol,
+    )
+    if tick_row is None:
+        tick_row = _latest_quote_row_from_gateway(gateway, symbol=symbol)
+    return _quote_payload_from_row(tick_row)
+
+
+def _latest_quote_row_from_market_state(
+    market_state: Optional[Dict[str, Any]],
+    *,
+    symbol: str,
+) -> Any:
+    if not isinstance(market_state, dict):
+        return None
+    symbol_state = market_state.get(str(symbol).upper()) or {}
+    ticks = list((symbol_state or {}).get("ticks", []))
+    for tick in reversed(ticks):
+        if _quote_payload_from_row(tick):
+            return tick
+    return None
+
+
+def _latest_quote_row_from_gateway(gateway: Any, *, symbol: str) -> Any:
+    if gateway is None or not hasattr(gateway, "symbol_info_tick"):
+        return None
+    try:
+        return gateway.symbol_info_tick(symbol)
+    except Exception:
+        return None
+
+
+def _quote_payload_from_row(row: Any) -> Dict[str, Any]:
+    if row is None:
+        return {}
+    bid = _finite_number(_row_value(row, "bid"))
+    ask = _finite_number(_row_value(row, "ask"))
+    payload: Dict[str, Any] = {}
+    if bid is not None:
+        payload["bid"] = float(bid)
+    if ask is not None:
+        payload["ask"] = float(ask)
+    return payload
 
 def _matches_account_filters(row: Any, spec: Dict[str, Any], *, gateway: Any) -> bool:
     symbol = spec.get("symbol")

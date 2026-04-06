@@ -213,7 +213,6 @@ def _compact_wait_event_public_result(
         "event",
         "criteria",
         "started_at_utc",
-        "observed_at_utc",
         "elapsed_seconds",
         "polls",
         "poll_interval_seconds",
