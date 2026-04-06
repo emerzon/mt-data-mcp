@@ -1,33 +1,43 @@
 # PROJECT KNOWLEDGE BASE
 
-**Generated:** 2026-03-07
-**Commit:** ca6b231
+**Generated:** 2026-04-05
+**Commit:** 87c3444
 **Branch:** main
 
 ## OVERVIEW
 
-MetaTrader 5 research/automation toolkit exposing 52+ MCP tools for forecasting, regime detection, pattern recognition, signal processing, and trading. Python 3.14 backend (MCP server + CLI + FastAPI web API) with React/Vite frontend. ~88k Python LOC, ~3.4k TypeScript LOC.
+MetaTrader 5 research/automation toolkit exposing 57 MCP tools (+1 conditional) for forecasting, regime detection, pattern recognition, signal processing, and trading. Python 3.14 backend (MCP server + CLI + FastAPI web API) with React/Vite frontend. ~70k Python LOC, ~3.4k TypeScript LOC.
 
 ## STRUCTURE
 
 ```
 mtdata/
 ├── src/mtdata/
-│   ├── bootstrap/    # Runtime init, settings, tool registration (4 files)
-│   ├── core/         # 52 MCP tools, CLI, server, web API, all API-facing logic (56 files)
-│   ├── forecast/     # Forecasting engines, backtests, methods registry (34 files)
-│   │   └── methods/  # Individual model implementations (12 files)
-│   ├── patterns/     # Chart/candlestick/Elliott wave detection (12 files)
+│   ├── bootstrap/      # Runtime init, settings, tool registration (4 files)
+│   ├── core/           # 57 MCP tools, CLI, server, web API, all API-facing logic (65 top-level files)
+│   │   ├── cli/        # Dynamic CLI with argparse subparsers (5 files)
+│   │   │   ├── formatting/  # CLI output formatting
+│   │   │   ├── parsing/     # CLI argument parsing
+│   │   │   └── runtime/     # CLI runtime helpers
+│   │   ├── regime/     # Regime detection package (13 files)
+│   │   │   └── methods/     # HMM, BOCPD, MS-AR implementations
+│   │   ├── reports/    # Report generation logic (1 file)
+│   │   └── report_templates/  # Report template files (9 files)
+│   ├── forecast/       # Forecasting engines, backtests, methods registry (25 files)
+│   │   └── methods/    # Individual model implementations (13 files)
+│   ├── patterns/       # Chart/candlestick/Elliott wave detection (12 files)
 │   │   └── classic_impl/  # Classic pattern algorithm implementations
-│   ├── services/     # MT5 gateway, Finviz, options data access (4 files)
-│   ├── shared/       # Cross-module schemas and constants (3 files)
-│   └── utils/        # Indicators, denoising, dimension reduction, formatting (15 files)
-├── tests/            # 122 test files, hybrid pytest/unittest.TestCase
-├── webui/            # React + Vite + Tailwind frontend
-│   └── src/          # App.tsx, 4 components, hooks, API client, chart lib
-├── docs/             # User-facing documentation (18 files)
-├── scripts/          # MT5 time offset detection, backtest plotting
-└── prompts/          # Prompt templates
+│   ├── services/       # MT5 gateway, Finviz, options data access (13 files)
+│   │   └── finviz/     # Finviz package with endpoints/ subdirectory
+│   ├── shared/         # Cross-module schemas and constants (5 files)
+│   └── utils/          # Indicators, denoising, dimension reduction, formatting (27 files)
+│       └── denoise/    # Denoising package with filters/ subdirectory
+├── tests/              # 158 test files, hybrid pytest/unittest.TestCase
+├── webui/              # React + Vite + Tailwind frontend
+│   └── src/            # App.tsx, 4 components, hooks, API client, chart lib (16 .ts/.tsx files)
+├── docs/               # User-facing documentation (26 files including forecast/ subdirectory)
+├── scripts/            # MT5 time offset detection, backtest plotting
+└── prompts/            # Prompt templates
 ```
 
 ## WHERE TO LOOK
@@ -36,18 +46,18 @@ mtdata/
 |------|----------|-------|
 | Add/modify MCP tool | `src/mtdata/core/` | Each domain has its own file (data.py, forecast.py, trading.py, etc.) |
 | Add forecast method | `src/mtdata/forecast/methods/` + `forecast_registry.py` | Register in registry, implement interface |
-| Fix MT5 data access | `src/mtdata/services/data_service.py` | 1209 lines, main data gateway |
-| Fix Finviz integration | `src/mtdata/services/finviz/` | Package implementation for web scraping |
+| Fix MT5 data access | `src/mtdata/services/data_service.py` | Main data gateway |
+| Fix Finviz integration | `src/mtdata/services/finviz/` | Package with endpoints/ subdirectory |
 | Modify pattern detection | `src/mtdata/patterns/` | `classic.py` delegates to `classic_impl/` |
 | Change indicators | `src/mtdata/utils/indicators.py` | 100+ technical indicators |
-| Edit denoising filters | `src/mtdata/utils/denoise/` | Package implementation for denoising filters |
-| Modify web UI | `webui/src/` | App.tsx (547 lines) is main, 4 components |
+| Edit denoising filters | `src/mtdata/utils/denoise/` | Package with filters/ subdirectory |
+| Modify web UI | `webui/src/` | App.tsx is main, 4 components, features/, hooks/, lib/ |
 | Server/transport config | `src/mtdata/core/server.py` | SSE, stdio, streamable-HTTP modes |
-| CLI changes | `src/mtdata/core/cli/` | Package surface for dynamic tool discovery |
-| Trading logic | `src/mtdata/core/trading_*.py` | Split across ~12 files by concern |
-| Report generation | `src/mtdata/core/report_*.py` + `report_templates/` | Templates in subdirectory |
-| Regime detection | `src/mtdata/core/regime/` | Package implementation for HMM + rule-based detection |
-| Shared schemas | `src/mtdata/shared/schema.py` | 791 lines, Pydantic models |
+| CLI changes | `src/mtdata/core/cli/` | Package with formatting/, parsing/, runtime/ subdirectories |
+| Trading logic | `src/mtdata/core/trading_*.py` | Split across multiple files by concern |
+| Report generation | `src/mtdata/core/report*.py` + `report_templates/` + `reports/` | Templates and logic in subdirectories |
+| Regime detection | `src/mtdata/core/regime/` | Package with methods/ (HMM, BOCPD, MS-AR) |
+| Shared schemas | `src/mtdata/shared/schema.py` | Pydantic models |
 | Runtime/env setup | `src/mtdata/bootstrap/` | Settings, tool bootstrap, runtime init |
 
 ## ENTRY POINTS
@@ -67,7 +77,7 @@ Request flow: `entry point → load_environment() → bootstrap_tools() → mcp.
 - **Imports**: Import individual modules from `core/` directly — `__init__.py` is intentionally empty to prevent circular deps.
 - **Domain logic**: Lives in `src/mtdata/*` modules, never in entry scripts.
 - **TypeScript**: Strict mode. Components in `webui/src/components/` with `PascalCase` filenames. Hooks prefixed `use`.
-- **No linter/formatter configs**: No ESLint, Prettier, Ruff, or mypy config files. Conventions are implicit.
+- **Ruff**: Configured in `pyproject.toml` (`target-version = "py314"`, select E/F rules). No ESLint, Prettier, or mypy config files.
 - **Commit style**: `<area>: <imperative summary>` (e.g., `core: dedupe trading query logging`).
 
 ## ANTI-PATTERNS (THIS PROJECT)
@@ -116,6 +126,6 @@ cd webui && npm run build                 # Production frontend bundle
 
 - **Windows required**: MT5 only runs on Windows. macOS/Linux users connect remotely via MCP/Web API.
 - **Python 3.14 only**: Pinned in `pyproject.toml`. Some deps have version ceilings (numpy <2.4, pandas <3, scikit-learn <1.8).
-- **Large files**: 67 files exceed 500 lines. Core has the most complexity (8 files >500 lines). Forecast methods and utils also heavy.
+- **Large files**: Core has the most complexity. Forecast methods and utils also heavy.
 - **No CI/CD**: No GitHub Actions, Makefile, Docker, or pre-commit hooks. All builds/tests are manual.
 - **CORS**: Web API has `allow_credentials=True` with permissive CORS in dev (see `web_api_runtime.py`).

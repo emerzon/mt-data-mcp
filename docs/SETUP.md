@@ -306,11 +306,14 @@ mtdata/
 ├── src/mtdata/
 │   ├── bootstrap/      # Runtime startup, settings, tool loading
 │   ├── core/           # Tool registry, server, CLI logic, all 57 MCP tools
+│   │   ├── cli/        # Dynamic CLI (argparse, formatting, parsing, runtime)
+│   │   ├── regime/     # Regime detection (HMM, BOCPD, MS-AR)
+│   │   └── report_templates/  # Report generation templates
 │   ├── forecast/       # Forecasting methods
 │   ├── patterns/       # Pattern detection
 │   ├── services/       # MT5 data access, Finviz, options data
 │   ├── shared/         # Shared constants, schemas, validators
-│   └── utils/          # Shared utilities
+│   └── utils/          # Shared utilities (indicators, denoising, etc.)
 ├── webui/              # React frontend
 ├── docs/               # Documentation
 └── tests/              # Test suite

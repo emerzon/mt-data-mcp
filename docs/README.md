@@ -28,6 +28,7 @@ Safety note: `trade_*` commands can place/modify/close real orders on the accoun
 | Document | Description |
 |----------|-------------|
 | [FORECAST.md](FORECAST.md) | Price forecasting methods and usage |
+| [forecast/FORECAST_GENERATE.md](forecast/FORECAST_GENERATE.md) | Detailed `forecast_generate` reference (parameters, quantity modes, pipeline) |
 | [forecast/BACKTESTING.md](forecast/BACKTESTING.md) | Rolling backtests and parameter optimization |
 | [forecast/VOLATILITY.md](forecast/VOLATILITY.md) | Volatility estimation and forecasting |
 | [forecast/REGIMES.md](forecast/REGIMES.md) | Market regime and change-point detection |
