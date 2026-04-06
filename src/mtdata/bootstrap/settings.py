@@ -60,6 +60,7 @@ def _suppress_noisy_third_party_logs() -> None:
     for logger_name, level in (
         ("numba.cuda.cudadrv.driver", logging.WARNING),
         ("torch.distributed", logging.ERROR),
+        ("torch.distributed.elastic.multiprocessing.redirects", logging.ERROR),
         ("torch._dynamo", logging.ERROR),
         ("lightning", logging.ERROR),
         ("pytorch_lightning", logging.ERROR),

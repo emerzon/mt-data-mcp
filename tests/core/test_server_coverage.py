@@ -729,6 +729,39 @@ class TestRecordingToolDecorator:
         finally:
             srv._ORIG_TOOL_DECORATOR = original
 
+    def test_wrapped_function_hides_meta_by_default_and_keeps_it_when_verbose(self):
+        import mtdata.core.server as srv
+        from mtdata.core._mcp_tools import _TOOL_REGISTRY
+
+        original = srv._ORIG_TOOL_DECORATOR
+        try:
+            srv._ORIG_TOOL_DECORATOR = lambda *a, **k: (lambda fn: fn)
+            dec = srv._recording_tool_decorator()
+
+            def sample_tool():
+                return {
+                    "value": 1,
+                    "meta": {"domain": {"symbol": "EURUSD"}},
+                    "diagnostics": {"source": "mt5"},
+                }
+
+            dec(sample_tool)
+            wrapped = _TOOL_REGISTRY["sample_tool"]
+            sig = inspect.signature(wrapped)
+
+            assert "verbose" in sig.parameters
+
+            compact = wrapped(__cli_raw=True)
+            verbose = wrapped(__cli_raw=True, verbose=True)
+
+            assert compact == {"value": 1}
+            assert verbose["value"] == 1
+            assert verbose["meta"]["tool"] == "sample_tool"
+            assert verbose["meta"]["domain"]["symbol"] == "EURUSD"
+            assert verbose["diagnostics"]["source"] == "mt5"
+        finally:
+            srv._ORIG_TOOL_DECORATOR = original
+
     def test_async_wrapped_timeout_returns_structured_error_payload(self):
         import asyncio
         import mtdata.core.server as srv
@@ -786,6 +819,7 @@ class TestRecordingToolDecorator:
             assert "symbol" in sig.parameters
             assert "timeframe" in sig.parameters
             assert "poll_interval_seconds" in sig.parameters
+            assert "verbose" in sig.parameters
 
             flat_result = wrapped(
                 __cli_raw=True,

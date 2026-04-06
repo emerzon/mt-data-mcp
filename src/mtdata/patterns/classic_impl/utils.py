@@ -5,7 +5,6 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 from scipy.signal import find_peaks
-from tslearn.metrics import dtw as _ts_dtw
 
 from ...utils.utils import to_float_np
 from ..common import PatternResultBase
@@ -22,6 +21,13 @@ def _level_close(a: float, b: float, tol_pct: float) -> bool:
 def _get_ransac_regressor_cls():
     from sklearn.linear_model import RANSACRegressor  # type: ignore
     return RANSACRegressor
+
+
+@lru_cache(maxsize=1)
+def _get_ts_dtw():
+    from tslearn.metrics import dtw as _ts_dtw  # type: ignore
+
+    return _ts_dtw
 
 
 def _fit_line(x: np.ndarray, y: np.ndarray) -> Tuple[float, float, float]:
@@ -119,8 +125,9 @@ def _paa(a: np.ndarray, m: int) -> np.ndarray:
 
 def _dtw_distance(a: np.ndarray, b: np.ndarray) -> float:
     try:
-        return float(_ts_dtw(a.astype(float), b.astype(float)))
-    except (TypeError, ValueError, RuntimeError):
+        ts_dtw = _get_ts_dtw()
+        return float(ts_dtw(a.astype(float), b.astype(float)))
+    except (ImportError, TypeError, ValueError, RuntimeError):
         return float('inf')
 
 

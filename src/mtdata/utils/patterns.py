@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Dict, List, Optional, Tuple, Any
 
 import numpy as np
@@ -8,8 +9,6 @@ import pandas as pd
 from scipy.signal import correlate
 from scipy.spatial import cKDTree
 import stumpy as _stumpy
-from tslearn.metrics import dtw as _ts_dtw
-from tslearn.metrics import soft_dtw as _ts_soft_dtw
 
 try:
     import hnswlib as _HNSW  # type: ignore
@@ -28,6 +27,20 @@ from .denoise import (
     normalize_denoise_spec as _normalize_denoise_spec,
 )
 from .utils import align_finite
+
+
+@lru_cache(maxsize=1)
+def _get_ts_dtw():
+    from tslearn.metrics import dtw as _ts_dtw  # type: ignore
+
+    return _ts_dtw
+
+
+@lru_cache(maxsize=1)
+def _get_ts_soft_dtw():
+    from tslearn.metrics import soft_dtw as _ts_soft_dtw  # type: ignore
+
+    return _ts_soft_dtw
 
 
 def _minmax_scale_row(x: np.ndarray) -> np.ndarray:
@@ -354,16 +367,18 @@ class PatternIndex:
                     band = max(1, int(round(float(dtw_band_frac) * n)))
                 if sm == 'dtw':
                     try:
+                        ts_dtw = _get_ts_dtw()
                         if band:
-                            score = float(_ts_dtw(a, w, global_constraint="sakoe_chiba", sakoe_chiba_radius=int(band)))
+                            score = float(ts_dtw(a, w, global_constraint="sakoe_chiba", sakoe_chiba_radius=int(band)))
                         else:
-                            score = float(_ts_dtw(a, w))
+                            score = float(ts_dtw(a, w))
                     except Exception:
                         score = float("inf")
                 else:  # softdtw
                     try:
+                        ts_soft_dtw = _get_ts_soft_dtw()
                         gamma = float(soft_dtw_gamma) if (soft_dtw_gamma is not None and soft_dtw_gamma > 0) else 1.0
-                        score = float(_ts_soft_dtw(a.reshape(1, -1), w.reshape(1, -1), gamma=gamma))
+                        score = float(ts_soft_dtw(a.reshape(1, -1), w.reshape(1, -1), gamma=gamma))
                     except Exception:
                         score = float("inf")
             else:

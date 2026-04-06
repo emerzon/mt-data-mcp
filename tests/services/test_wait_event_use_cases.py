@@ -141,6 +141,19 @@ def test_wait_event_tool_exposes_minimal_public_contract(monkeypatch) -> None:
             "symbol": request.symbol,
             "timeframe": request.timeframe,
             "status": "boundary_reached",
+            "boundary_event": {
+                "type": "candle_close",
+                "timeframe": request.timeframe,
+                "buffer_seconds": 1.0,
+                "next_candle_close_utc": "2026-04-06T02:01:00+00:00",
+                "next_candle_close_server": "2026-04-06T05:01:00",
+                "server_timezone": "Europe/Nicosia",
+            },
+            "started_at_utc": "2026-04-06T02:00:29.017205+00:00",
+            "observed_at_utc": "2026-04-06T02:01:01+00:00",
+            "elapsed_seconds": 32.0,
+            "polls": 65,
+            "poll_interval_seconds": request.poll_interval_seconds,
             "criteria": {
                 "watch_for": list(request.watch_for or []),
                 "watch_for_inferred": False,
@@ -177,6 +190,7 @@ def test_wait_event_tool_exposes_minimal_public_contract(monkeypatch) -> None:
         "watch_tick_count_spike",
         "watch_for",
         "end_on",
+        "verbose",
     )
 
     raw = getattr(core_data.wait_event, "__wrapped__", core_data.wait_event)
@@ -185,17 +199,21 @@ def test_wait_event_tool_exposes_minimal_public_contract(monkeypatch) -> None:
     assert result["success"] is True
     assert result["symbol"] == "BTCUSD"
     assert result["timeframe"] == "M1"
-    assert result["criteria"] == {
-        "watch_for_count": 3,
-        "watch_for_inferred": True,
-        "end_on_count": 0,
-        "end_on_inferred": True,
-        "accept_preexisting": False,
+    assert result["event"] == "candle_close"
+    assert result["boundary_event"] == {
+        "type": "candle_close",
+        "timeframe": "M1",
     }
+    assert "criteria" not in result
+    assert "started_at_utc" not in result
+    assert "observed_at_utc" not in result
+    assert "elapsed_seconds" not in result
+    assert "polls" not in result
+    assert "poll_interval_seconds" not in result
     assert "max_wait_seconds" not in result
 
     without_tick_count = raw("BTCUSD", "M1", False)
-    assert without_tick_count["criteria"]["watch_for_count"] == 2
+    assert "criteria" not in without_tick_count
 
     explicit = raw(
         "BTCUSD",
@@ -203,11 +221,75 @@ def test_wait_event_tool_exposes_minimal_public_contract(monkeypatch) -> None:
         True,
         [{"type": "price_touch_level", "symbol": "BTCUSD", "level": 100.0}],
         [{"type": "candle_close", "timeframe": "M5"}],
+        True,
     )
     assert [item.type for item in explicit["criteria"]["watch_for"]] == ["price_touch_level"]
     assert [item.type for item in explicit["criteria"]["end_on"]] == ["candle_close"]
     assert explicit["criteria"]["watch_for_inferred"] is False
     assert explicit["criteria"]["end_on_inferred"] is False
+    assert explicit["boundary_event"]["buffer_seconds"] == 1.0
+    assert explicit["started_at_utc"] == "2026-04-06T02:00:29.017205+00:00"
+
+
+def test_wait_event_tool_compacts_matched_event_by_default(monkeypatch) -> None:
+    def _mock_run_wait_event(request, gateway):
+        return {
+            "success": True,
+            "status": "matched",
+            "matched": True,
+            "event": "price_touch_level",
+            "matched_event": {
+                "type": "price_touch_level",
+                "criteria": {
+                    "symbol": request.symbol,
+                    "level": 100.0,
+                    "tolerance": 0.1,
+                    "direction": "up",
+                },
+                "observed": {
+                    "symbol": request.symbol,
+                    "current_price": 100.02,
+                    "distance": 0.02,
+                },
+            },
+            "criteria": {
+                "watch_for": list(request.watch_for or []),
+                "watch_for_inferred": False,
+                "end_on": list(request.end_on or []),
+                "end_on_inferred": False,
+                "accept_preexisting": bool(request.accept_preexisting),
+            },
+            "started_at_utc": "2026-04-06T02:00:29.017205+00:00",
+            "observed_at_utc": "2026-04-06T02:00:30+00:00",
+            "elapsed_seconds": 1.0,
+            "polls": 2,
+            "poll_interval_seconds": request.poll_interval_seconds,
+        }
+
+    monkeypatch.setattr(core_data, "run_wait_event", _mock_run_wait_event)
+    monkeypatch.setattr(core_data, "get_mt5_gateway", lambda ensure_connection_impl=None: object())
+
+    raw = getattr(core_data.wait_event, "__wrapped__", core_data.wait_event)
+    result = raw(
+        "BTCUSD",
+        "M1",
+        True,
+        [{"type": "price_touch_level", "symbol": "BTCUSD", "level": 100.0}],
+        None,
+        False,
+    )
+
+    assert result["matched_event"] == {
+        "type": "price_touch_level",
+        "observed": {
+            "symbol": "BTCUSD",
+            "current_price": 100.02,
+            "distance": 0.02,
+        },
+    }
+    assert "criteria" not in result
+    assert "started_at_utc" not in result
+    assert "polls" not in result
 
 
 def test_support_resistance_watchers_use_compact_levels(monkeypatch) -> None:

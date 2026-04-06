@@ -931,20 +931,18 @@ class TestBuildCliTimezoneMeta:
 # ========================================================================
 
 class TestAttachCliMeta:
-    def test_non_verbose_adds_common_meta(self):
-        r = {"key": "val"}
+    def test_non_verbose_strips_common_meta_and_diagnostics(self):
+        r = {
+            "key": "val",
+            "meta": {"domain": {"symbol": "EURUSD"}},
+            "diagnostics": {"source": "mt5"},
+        }
         out = _attach_cli_meta(r, cmd_name="test", verbose=False)
         assert out is not r
         assert "cli_meta" not in out
-        assert out["meta"]["tool"] == "test"
-        tz_meta = out["meta"]["runtime"]["timezone"]
-        assert "server" in tz_meta
-        assert "client" in tz_meta
-        assert "utc" in tz_meta
-        assert "local" not in tz_meta
-        assert tz_meta["utc"]["tz"] == "UTC"
-        assert "tz" in tz_meta["server"] or "source" in tz_meta["server"]
-        assert "tz" in tz_meta["client"] or "client" in tz_meta
+        assert out["key"] == "val"
+        assert "meta" not in out
+        assert "diagnostics" not in out
 
     def test_non_dict_returns_unchanged(self):
         assert _attach_cli_meta("string", cmd_name="test", verbose=True) == "string"
@@ -2479,8 +2477,7 @@ class TestCreateCommandFunction:
         out = capsys.readouterr().out
         parsed = json.loads(out)
         assert parsed["price"] == 1.23
-        assert parsed["meta"]["tool"] == "test_cmd"
-        assert "runtime" in parsed["meta"]
+        assert "meta" not in parsed
 
     def test_bool_param_coercion(self, capsys):
         mock_fn = MagicMock(return_value="ok")

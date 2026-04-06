@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Union, cast, get_args, get_origin
 from pydantic import BaseModel
 
 from .error_envelope import build_error_payload, log_transport_exception, normalize_error_payload
+from .output_contract import apply_output_verbosity
 from ..utils.utils import _coerce_scalar, _parse_bool_like, _UNPARSED_BOOL
 
 try:
@@ -329,6 +330,57 @@ def _normalize_exposed_annotation(annotation: Any) -> Any:
     return annotation
 
 
+def _callable_accepts_kwarg(func: Any, name: str) -> bool:
+    try:
+        sig = _get_runtime_signature(func)
+    except Exception:
+        return False
+
+    if name in sig.parameters:
+        return True
+    return any(param.kind == inspect.Parameter.VAR_KEYWORD for param in sig.parameters.values())
+
+
+def _extract_verbose_flag(kwargs: Dict[str, Any]) -> bool:
+    value = kwargs.get("verbose", inspect._empty)
+    if value is not inspect._empty:
+        parsed = _parse_bool_like(value, allow_none=False)
+        if parsed is not _UNPARSED_BOOL:
+            return bool(parsed)
+        return bool(value)
+
+    for candidate in kwargs.values():
+        if not isinstance(candidate, BaseModel):
+            continue
+        try:
+            verbose_value = getattr(candidate, "verbose")
+        except Exception:
+            continue
+        return bool(verbose_value)
+    return False
+
+
+def _augment_signature_with_global_verbose(
+    params: List[inspect.Parameter],
+    annotations: Dict[str, Any],
+) -> tuple[List[inspect.Parameter], Dict[str, Any]]:
+    if any(param.name == "verbose" for param in params):
+        return params, annotations
+
+    out_params = list(params)
+    out_params.append(
+        inspect.Parameter(
+            "verbose",
+            kind=inspect.Parameter.KEYWORD_ONLY,
+            default=False,
+            annotation=bool,
+        )
+    )
+    out_annotations = dict(annotations)
+    out_annotations["verbose"] = bool
+    return out_params, out_annotations
+
+
 def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]
     if _ORIG_TOOL_DECORATOR is None:
         def _noop(func):
@@ -378,9 +430,13 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]
         @_wraps(func)
         def _wrapped(*a, **kw):
             raw_output = kw.pop("__cli_raw", False)
+            requested_verbose = False
 
             try:
                 _coerce_kwargs_for_callable(func, kw)
+                requested_verbose = _extract_verbose_flag(kw)
+                if "verbose" in kw and not _callable_accepts_kwarg(func, "verbose"):
+                    kw.pop("verbose", None)
                 try:
                     if "denoise" in kw:
                         from ..utils.denoise import normalize_denoise_spec as _norm_dn  # type: ignore
@@ -422,6 +478,11 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]
                     default_code="tool_error",
                     operation=getattr(func, "__name__", "tool"),
                 )
+                out = apply_output_verbosity(
+                    out,
+                    tool_name=getattr(func, "__name__", "tool"),
+                    verbose=requested_verbose,
+                )
 
             if raw_output:
                 return out
@@ -437,7 +498,7 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]
                 simplify_numbers = not str(fname).startswith("trade_")
                 return _fmt_min(
                     out,
-                    verbose=False,
+                    verbose=requested_verbose,
                     simplify_numbers=simplify_numbers,
                     tool_name=fname,
                 )
@@ -452,6 +513,8 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]
                 sig = _get_runtime_signature(func)
                 for name, param in sig.parameters.items():
                     params.append(param.replace(annotation=cleaned.get(name)))
+            params, cleaned = _augment_signature_with_global_verbose(params, cleaned)
+            _wrapped.__annotations__ = cleaned
             return_ann = cleaned.get("return", inspect._empty)
             setattr(_wrapped, "__signature__", inspect.Signature(parameters=params, return_annotation=return_ann))
         except Exception:

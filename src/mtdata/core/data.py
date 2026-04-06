@@ -192,31 +192,61 @@ def _compact_wait_event_public_result(
     *,
     explicit_watch_for: bool,
     explicit_end_on: bool,
+    verbose: bool = False,
 ) -> Dict[str, Any]:
     out = dict(result)
     out.pop("max_wait_seconds", None)
 
     criteria_in = out.get("criteria")
-    if not isinstance(criteria_in, dict):
+    criteria = dict(criteria_in) if isinstance(criteria_in, dict) else None
+    if criteria is not None:
+        criteria["watch_for_inferred"] = not explicit_watch_for
+        criteria["end_on_inferred"] = not explicit_end_on
+
+    if verbose:
+        if criteria is not None:
+            out["criteria"] = criteria
         return out
 
-    criteria = dict(criteria_in)
-    criteria["watch_for_inferred"] = not explicit_watch_for
-    criteria["end_on_inferred"] = not explicit_end_on
+    for key in (
+        "criteria",
+        "started_at_utc",
+        "observed_at_utc",
+        "elapsed_seconds",
+        "polls",
+        "poll_interval_seconds",
+        "sleep_seconds",
+        "slept",
+        "slept_seconds",
+        "remaining_seconds",
+    ):
+        out.pop(key, None)
 
-    if explicit_watch_for or explicit_end_on:
-        out["criteria"] = criteria
-        return out
+    boundary_event = out.get("boundary_event")
+    if isinstance(boundary_event, dict):
+        compact_boundary = {
+            key: boundary_event.get(key)
+            for key in ("type", "timeframe")
+            if boundary_event.get(key) is not None
+        }
+        out["boundary_event"] = compact_boundary or None
 
-    watch_for_count = len(criteria.get("watch_for") or []) if isinstance(criteria.get("watch_for"), list) else 0
-    end_on_count = len(criteria.get("end_on") or []) if isinstance(criteria.get("end_on"), list) else 0
-    out["criteria"] = {
-        "watch_for_count": watch_for_count,
-        "watch_for_inferred": bool(criteria["watch_for_inferred"]),
-        "end_on_count": end_on_count,
-        "end_on_inferred": bool(criteria["end_on_inferred"]),
-        "accept_preexisting": bool(criteria.get("accept_preexisting")),
-    }
+    matched_event = out.get("matched_event")
+    if isinstance(matched_event, dict):
+        compact_matched: Dict[str, Any] = {}
+        event_type = matched_event.get("type")
+        if event_type is not None:
+            compact_matched["type"] = event_type
+        observed = matched_event.get("observed")
+        if isinstance(observed, dict) and observed:
+            compact_matched["observed"] = dict(observed)
+        out["matched_event"] = compact_matched or None
+
+    if out.get("event") is None and isinstance(out.get("boundary_event"), dict):
+        boundary_type = out["boundary_event"].get("type")
+        if boundary_type is not None:
+            out["event"] = boundary_type
+
     return out
 
 
@@ -349,6 +379,7 @@ def wait_event(
     watch_tick_count_spike: bool = True,
     watch_for: Optional[List[Dict[str, Any]]] = None,
     end_on: Optional[List[Dict[str, Any]]] = None,
+    verbose: bool = False,
 ) -> Dict[str, Any]:
     """Wait for watch events on an instrument until the next timeframe boundary.
 
@@ -367,6 +398,8 @@ def wait_event(
     Advanced callers can pass explicit `watch_for` and `end_on` event specs to
     use the richer wait-event engine directly. When explicit `watch_for` is
     provided, `watch_tick_count_spike` no longer alters the watcher list.
+    Set `verbose=true` to include polling/timing details and the full criteria
+    echo in the response.
     """
     request_kwargs: Dict[str, Any] = {
         "symbol": instrument,
@@ -400,6 +433,7 @@ def wait_event(
                 result,
                 explicit_watch_for=explicit_watch_for,
                 explicit_end_on=explicit_end_on,
+                verbose=verbose,
             )
         return result
 
@@ -409,6 +443,7 @@ def wait_event(
         instrument=instrument,
         timeframe=timeframe,
         watch_tick_count_spike=watch_tick_count_spike,
+        verbose=verbose,
         explicit_watch_for=watch_for is not None,
         end_on_count=len(end_on or []),
         func=_run,

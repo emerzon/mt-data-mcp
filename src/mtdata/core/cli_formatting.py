@@ -4,7 +4,7 @@ import types
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from .output_contract import ensure_common_meta
+from .output_contract import apply_output_verbosity
 from .runtime_metadata import build_runtime_timezone_meta, _safe_tz_name as _runtime_safe_tz_name
 from ..utils.minimal_output import (
     format_result_minimal as _shared_minimal,
@@ -413,4 +413,4 @@ def _prepare_cli_payload(result: Any, *, fmt: str, verbose: bool, cmd_name: str)
 
 
 def _attach_cli_meta(result: Any, *, cmd_name: str, verbose: bool) -> Any:
-    return ensure_common_meta(result, tool_name=cmd_name)
+    return apply_output_verbosity(result, tool_name=cmd_name, verbose=verbose)

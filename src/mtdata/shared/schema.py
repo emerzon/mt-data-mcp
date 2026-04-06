@@ -21,6 +21,7 @@ PARAM_HINTS = {
     "direction": "Trade direction (long/short).",
     "symbol": "Trading symbol (e.g. EURUSD).",
     "timeframe": "MT5 timeframe (e.g. H1/M30/D1).",
+    "verbose": "Include verbose metadata and diagnostics in the response. Defaults to false for lean output.",
     "limit": "Max rows/bars to return.",
     "start": "Start time (dateparser).",
     "end": "End time (dateparser).",
@@ -370,8 +371,10 @@ except Exception:
 
 # ---- Fast Forecast methods (enums) ----
 #
-# Derive the list from the ForecastRegistry to avoid drift. Fall back to a
-# conservative static list if registry import fails.
+# Use a conservative static list here. Importing the forecast registry during
+# shared schema module import pulls in optional forecast method stacks and their
+# heavy dependencies (for example torch), which makes unrelated tools noisy and
+# slow at startup.
 _FALLBACK_FORECAST_METHODS: Tuple[str, ...] = (
     "naive",
     "seasonal_naive",
@@ -400,13 +403,7 @@ _FALLBACK_FORECAST_METHODS: Tuple[str, ...] = (
     "analog",
 )
 
-try:
-    from mtdata.forecast.forecast_registry import get_forecast_methods_data as _get_forecast_methods_data
-    _method_data = _get_forecast_methods_data()
-    _derived = [m.get("method") for m in _method_data.get("methods", []) if m.get("method")]
-    _FORECAST_METHODS: Tuple[str, ...] = tuple(_derived) if _derived else _FALLBACK_FORECAST_METHODS
-except Exception:
-    _FORECAST_METHODS = _FALLBACK_FORECAST_METHODS
+_FORECAST_METHODS: Tuple[str, ...] = _FALLBACK_FORECAST_METHODS
 
 ForecastLibraryLiteral = Literal[
     "native",
