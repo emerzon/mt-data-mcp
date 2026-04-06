@@ -162,6 +162,12 @@ def run_wait_event_loop(
     while True:
         polls += 1
         observed_at_utc = _normalize_utc_datetime(now_utc_impl())
+        crossed_boundary = _first_crossed_boundary(boundaries, observed_at_utc=observed_at_utc)
+        evaluation_at_utc = (
+            _boundary_cutoff_utc(crossed_boundary)
+            if crossed_boundary is not None
+            else observed_at_utc
+        )
         connection_error = _wait_event_connection_error(gateway)
         if connection_error is not None:
             return connection_error
@@ -171,7 +177,7 @@ def run_wait_event_loop(
             history_state=history_state,
             market_state=market_state,
             started_at_utc=started_at_utc,
-            observed_at_utc=observed_at_utc,
+            observed_at_utc=evaluation_at_utc,
             needs_orders=needs_orders,
             needs_positions=needs_positions,
             needs_history_deals=needs_history_deals,
@@ -185,13 +191,14 @@ def run_wait_event_loop(
             watch_for=watch_for,
             snapshot=snapshot,
             gateway=gateway,
+            live_state_cutoff_utc=evaluation_at_utc if crossed_boundary is not None else None,
         )
         if matched_event is not None:
             return _build_wait_result(
                 request=request,
                 status="matched",
                 started_at_utc=started_at_utc,
-                observed_at_utc=observed_at_utc,
+                observed_at_utc=evaluation_at_utc,
                 polls=polls,
                 matched_event=matched_event,
                 boundary_event=None,
@@ -201,13 +208,17 @@ def run_wait_event_loop(
                 end_on_inferred=end_on_inferred,
             )
 
-        boundary_event = _evaluate_boundaries(boundaries, observed_at_utc=observed_at_utc)
+        boundary_event = (
+            _boundary_event_payload(crossed_boundary)
+            if crossed_boundary is not None
+            else None
+        )
         if boundary_event is not None:
             return _build_wait_result(
                 request=request,
                 status="boundary_reached",
                 started_at_utc=started_at_utc,
-                observed_at_utc=observed_at_utc,
+                observed_at_utc=evaluation_at_utc,
                 polls=polls,
                 matched_event=None,
                 boundary_event=boundary_event,
@@ -615,7 +626,7 @@ def _watcher_requirements(watch_for: List[Dict[str, Any]]) -> Dict[str, Any]:
             needs_positions = True
         if event_type in _HISTORY_DEAL_EVENT_TYPES:
             needs_history_deals = True
-        if event_type in _HISTORY_ORDER_EVENT_TYPES:
+        if event_type in _HISTORY_ORDER_EVENT_TYPES or event_type == "order_created":
             needs_history_orders = True
         if event_type in _MARKET_EVENT_TYPES:
             market_specs.append(item)
@@ -848,6 +859,15 @@ def _collect_new_account_history_rows(
             continue
         row_time_millis = _row_event_time_millis(row)
         if row_time_millis is not None and row_time_millis < started_at_millis:
+            coarse_same_second = (
+                not _row_has_millisecond_timestamp(row)
+                and row_time_millis >= (started_at_millis // 1000) * 1000
+            )
+            if coarse_same_second:
+                fresh_rows.append(row)
+                if row_key is not None:
+                    seen_keys.add(row_key)
+                continue
             if row_key is not None:
                 seen_keys.add(row_key)
             continue
@@ -920,10 +940,14 @@ def _evaluate_watch_events(
     watch_for: List[Dict[str, Any]],
     snapshot: Dict[str, Any],
     gateway: Any,
+    live_state_cutoff_utc: Optional[datetime] = None,
 ) -> Optional[Dict[str, Any]]:
     for spec in watch_for:
         event_type = spec["type"]
         if event_type == "order_created":
+            for row in snapshot.get("history_orders", []):
+                if _matches_account_filters(row, spec, gateway=gateway):
+                    return _format_account_match(event_type, row, gateway=gateway)
             current_orders = snapshot.get("orders", [])
             baseline_orders = snapshot.get("baseline", {}).get("orders", [])
             baseline_tickets = {
@@ -934,6 +958,8 @@ def _evaluate_watch_events(
             for row in current_orders:
                 ticket = _row_int(row, "ticket")
                 if ticket in baseline_tickets:
+                    continue
+                if not _row_within_live_state_cutoff(row, cutoff_utc=live_state_cutoff_utc):
                     continue
                 if _matches_account_filters(row, spec, gateway=gateway):
                     return _format_account_match(event_type, row, gateway=gateway)
@@ -955,6 +981,8 @@ def _evaluate_watch_events(
                     continue
                 if _matches_account_filters(row, spec, gateway=gateway):
                     return _format_account_match(event_type, row, gateway=gateway)
+            if live_state_cutoff_utc is not None:
+                continue
             current_positions = snapshot.get("positions", [])
             baseline_positions = snapshot.get("baseline", {}).get("positions", [])
             baseline_tickets = {
@@ -974,6 +1002,8 @@ def _evaluate_watch_events(
                     continue
                 if _matches_account_filters(row, spec, gateway=gateway):
                     return _format_account_match(event_type, row, gateway=gateway)
+            if live_state_cutoff_utc is not None:
+                continue
             current_positions = snapshot.get("positions", [])
             baseline_positions = snapshot.get("baseline", {}).get("positions", [])
             current_tickets = {
@@ -1009,13 +1039,19 @@ def _evaluate_watch_events(
                     return _format_account_match(event_type, row, gateway=gateway)
         elif event_type in _MARKET_EVENT_TYPES:
             market_data = snapshot.get("market_data", {}).get(spec["symbol"])
-            match = _evaluate_market_event(spec, market_data, snapshot=snapshot, gateway=gateway)
+            match = _evaluate_market_event(
+                spec,
+                market_data,
+                snapshot=snapshot,
+                gateway=gateway,
+                live_state_cutoff_utc=live_state_cutoff_utc,
+            )
             if match is not None:
                 return match
     return None
 
 
-def _evaluate_boundaries(
+def _first_crossed_boundary(
     boundaries: List[Dict[str, Any]],
     *,
     observed_at_utc: datetime,
@@ -1023,15 +1059,34 @@ def _evaluate_boundaries(
     current_epoch = observed_at_utc.timestamp()
     for boundary in boundaries:
         if current_epoch + 1e-9 >= float(boundary["boundary_at_epoch"]):
-            return {
-                "type": "candle_close",
-                "timeframe": boundary["timeframe"],
-                "buffer_seconds": boundary["buffer_seconds"],
-                "next_candle_close_utc": boundary["preview"]["next_candle_close_utc"],
-                "next_candle_close_server": boundary["preview"]["next_candle_close_server"],
-                "server_timezone": boundary["preview"]["server_timezone"],
-            }
+            return boundary
     return None
+
+
+def _boundary_event_payload(boundary: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "type": "candle_close",
+        "timeframe": boundary["timeframe"],
+        "buffer_seconds": boundary["buffer_seconds"],
+        "next_candle_close_utc": boundary["preview"]["next_candle_close_utc"],
+        "next_candle_close_server": boundary["preview"]["next_candle_close_server"],
+        "server_timezone": boundary["preview"]["server_timezone"],
+    }
+
+
+def _boundary_cutoff_utc(boundary: Dict[str, Any]) -> datetime:
+    return datetime.fromtimestamp(float(boundary["boundary_at_epoch"]), tz=timezone.utc)
+
+
+def _evaluate_boundaries(
+    boundaries: List[Dict[str, Any]],
+    *,
+    observed_at_utc: datetime,
+) -> Optional[Dict[str, Any]]:
+    boundary = _first_crossed_boundary(boundaries, observed_at_utc=observed_at_utc)
+    if boundary is None:
+        return None
+    return _boundary_event_payload(boundary)
 
 
 def _next_poll_sleep_seconds(
@@ -1062,6 +1117,7 @@ def _evaluate_market_event(
     *,
     snapshot: Dict[str, Any],
     gateway: Any,
+    live_state_cutoff_utc: Optional[datetime] = None,
 ) -> Optional[Dict[str, Any]]:
     event_type = str(spec.get("type") or "")
     if event_type == "price_change":
@@ -1081,6 +1137,8 @@ def _evaluate_market_event(
     if event_type == "price_enter_zone":
         return _evaluate_price_enter_zone(spec, market_data)
     if event_type == "pending_near_fill":
+        if live_state_cutoff_utc is not None:
+            return None
         return _evaluate_pending_near_fill(
             spec,
             snapshot.get("orders", []),
@@ -1088,6 +1146,8 @@ def _evaluate_market_event(
             gateway=gateway,
         )
     if event_type == "stop_threat":
+        if live_state_cutoff_utc is not None:
+            return None
         return _evaluate_stop_threat(
             spec,
             snapshot.get("positions", []),
@@ -2773,6 +2833,22 @@ def _account_history_row_key(row: Any, *, row_kind: str) -> Optional[tuple[Any, 
     if not any(value is not None for value in key[1:]):
         return None
     return key
+
+
+def _row_has_millisecond_timestamp(row: Any) -> bool:
+    return any(
+        _row_int(row, key) is not None
+        for key in ("time_msc", "time_done_msc", "time_setup_msc", "time_update_msc")
+    )
+
+
+def _row_within_live_state_cutoff(row: Any, *, cutoff_utc: Optional[datetime]) -> bool:
+    if cutoff_utc is None:
+        return True
+    row_time_millis = _row_event_time_millis(row)
+    if row_time_millis is None:
+        return False
+    return row_time_millis <= _datetime_epoch_millis(cutoff_utc)
 
 
 def _row_time_iso(row: Any) -> Optional[str]:

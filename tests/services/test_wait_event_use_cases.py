@@ -27,6 +27,15 @@ class FakeClock:
         self.current = self.current + timedelta(seconds=float(seconds))
 
 
+class OversleepClock(FakeClock):
+    def __init__(self, start: datetime, *, extra_sleep_seconds: float) -> None:
+        super().__init__(start)
+        self.extra_sleep_seconds = float(extra_sleep_seconds)
+
+    def sleep(self, seconds: float) -> None:
+        super().sleep(float(seconds) + self.extra_sleep_seconds)
+
+
 class SequenceGateway:
     COPY_TICKS_ALL = 0
     POSITION_TYPE_BUY = 0
@@ -321,6 +330,43 @@ def test_run_wait_event_matches_new_order() -> None:
     assert result["matched_event"]["observed"]["ticket"] == 123
 
 
+def test_run_wait_event_matches_short_lived_order_from_history() -> None:
+    started = datetime(2026, 3, 15, 12, 0, 0, tzinfo=timezone.utc)
+    gateway = SequenceGateway(
+        orders_seq=[[], [], []],
+        history_orders_seq=[
+            [],
+            [],
+            [
+                {
+                    "ticket": 7001,
+                    "symbol": "EURUSD",
+                    "type": "buy_limit",
+                    "state": 4,
+                    "time_setup": int(started.timestamp()) + 1,
+                }
+            ],
+        ],
+    )
+    clock = FakeClock(started)
+
+    result = run_wait_event(
+        WaitEventRequest(
+            watch_for=[{"type": "order_created", "symbol": "EURUSD"}],
+            poll_interval_seconds=1.0,
+            max_wait_seconds=5.0,
+        ),
+        gateway=gateway,
+        sleep_impl=clock.sleep,
+        monotonic_impl=clock.monotonic,
+        now_utc_impl=clock.now_utc,
+    )
+
+    assert result["status"] == "matched"
+    assert result["matched_event"]["type"] == "order_created"
+    assert result["matched_event"]["observed"]["ticket"] == 7001
+
+
 def test_run_wait_event_uses_all_default_watchers_when_omitted() -> None:
     gateway = SequenceGateway(
         orders_seq=[
@@ -383,6 +429,31 @@ def test_run_wait_event_infers_candle_boundary_from_request_timeframe(monkeypatc
     assert result["event"] == "candle_close"
     assert result["boundary_event"]["type"] == "candle_close"
     assert result["boundary_event"]["timeframe"] == "M1"
+
+
+def test_collect_new_account_history_rows_keeps_same_second_coarse_rows() -> None:
+    started = datetime(2026, 3, 15, 12, 0, 0, 500000, tzinfo=timezone.utc)
+
+    rows = wait_events_mod._collect_new_account_history_rows(
+        fetch_impl=lambda dt_from, dt_to: [
+            {
+                "ticket": 7001,
+                "symbol": "EURUSD",
+                "state": 4,
+                "type": "buy_limit",
+                "time_setup": int(started.timestamp()),
+            }
+        ],
+        started_at_utc=started,
+        observed_at_utc=started + timedelta(seconds=1),
+        state={},
+        row_kind="order",
+        label="order history",
+    )
+
+    assert isinstance(rows, list)
+    assert len(rows) == 1
+    assert rows[0]["ticket"] == 7001
 
 
 def test_seed_account_history_keys_converts_window_to_server_naive(monkeypatch) -> None:
@@ -640,6 +711,69 @@ def test_run_wait_event_uses_timeframe_as_boundary_when_watchers_are_inferred(mo
     assert result["criteria"]["end_on_inferred"] is True
 
 
+def test_run_wait_event_still_matches_pre_boundary_market_event_after_oversleep(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "mtdata.core.wait_events._next_candle_wait_payload",
+        lambda timeframe, buffer_seconds, now_utc: {
+            "timeframe": timeframe,
+            "buffer_seconds": buffer_seconds,
+            "sleep_seconds": 1.0,
+            "started_at_utc": now_utc.isoformat(),
+            "next_candle_close_utc": (now_utc + timedelta(seconds=1)).isoformat(),
+            "next_candle_close_server": "2026-03-15T12:00:01",
+            "server_timezone": "UTC",
+        },
+    )
+    started = datetime(2026, 3, 15, 12, 0, 0, tzinfo=timezone.utc)
+    base_epoch = started.timestamp()
+    gateway = SequenceGateway(
+        ticks_by_symbol={
+            "EURUSD": [
+                {
+                    "time": base_epoch - 0.2,
+                    "time_msc": int((base_epoch - 0.2) * 1000),
+                    "bid": 99.7,
+                    "ask": 99.9,
+                    "last": 99.8,
+                },
+                {
+                    "time": base_epoch + 0.8,
+                    "time_msc": int((base_epoch + 0.8) * 1000),
+                    "bid": 99.95,
+                    "ask": 100.05,
+                    "last": 100.0,
+                },
+            ]
+        }
+    )
+    clock = OversleepClock(started, extra_sleep_seconds=0.5)
+
+    result = run_wait_event(
+        WaitEventRequest(
+            watch_for=[
+                {
+                    "type": "price_touch_level",
+                    "symbol": "EURUSD",
+                    "level": 100.0,
+                    "price_source": "mid",
+                    "direction": "up",
+                    "tolerance": 0.05,
+                }
+            ],
+            end_on=[{"type": "candle_close", "timeframe": "M1", "buffer_seconds": 0.0}],
+            poll_interval_seconds=10.0,
+            max_wait_seconds=30.0,
+        ),
+        gateway=gateway,
+        sleep_impl=clock.sleep,
+        monotonic_impl=clock.monotonic,
+        now_utc_impl=clock.now_utc,
+    )
+
+    assert result["status"] == "matched"
+    assert result["matched_event"]["type"] == "price_touch_level"
+
+
 def test_run_wait_event_stops_on_candle_boundary_when_no_watch_event(monkeypatch) -> None:
     monkeypatch.setattr(
         "mtdata.core.wait_events._next_candle_wait_payload",
@@ -670,6 +804,55 @@ def test_run_wait_event_stops_on_candle_boundary_when_no_watch_event(monkeypatch
     )
 
     assert result["status"] == "boundary_reached"
+    assert result["boundary_event"]["type"] == "candle_close"
+
+
+def test_run_wait_event_respects_boundary_when_live_state_changes_after_oversleep(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "mtdata.core.wait_events._next_candle_wait_payload",
+        lambda timeframe, buffer_seconds, now_utc: {
+            "timeframe": timeframe,
+            "buffer_seconds": buffer_seconds,
+            "sleep_seconds": 1.0,
+            "started_at_utc": now_utc.isoformat(),
+            "next_candle_close_utc": (now_utc + timedelta(seconds=1)).isoformat(),
+            "next_candle_close_server": "2026-03-15T12:00:01",
+            "server_timezone": "UTC",
+        },
+    )
+    started = datetime(2026, 3, 15, 12, 0, 0, tzinfo=timezone.utc)
+    gateway = SequenceGateway(
+        orders_seq=[
+            [],
+            [],
+            [
+                {
+                    "ticket": 123,
+                    "symbol": "EURUSD",
+                    "type": "buy",
+                    "time_setup": int(started.timestamp()) + 2,
+                }
+            ],
+        ],
+        history_orders_seq=[[], [], []],
+    )
+    clock = OversleepClock(started, extra_sleep_seconds=0.5)
+
+    result = run_wait_event(
+        WaitEventRequest(
+            watch_for=[{"type": "order_created", "symbol": "EURUSD"}],
+            end_on=[{"type": "candle_close", "timeframe": "M1", "buffer_seconds": 0.0}],
+            poll_interval_seconds=10.0,
+            max_wait_seconds=30.0,
+        ),
+        gateway=gateway,
+        sleep_impl=clock.sleep,
+        monotonic_impl=clock.monotonic,
+        now_utc_impl=clock.now_utc,
+    )
+
+    assert result["status"] == "boundary_reached"
+    assert result["matched_event"] is None
     assert result["boundary_event"]["type"] == "candle_close"
 
 
