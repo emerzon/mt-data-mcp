@@ -653,3 +653,121 @@ class TestBarrierOptimizationWithStats(_BarrierOptimizationPatchMixin, unittest.
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestBarrierSanityCheckFixes(unittest.TestCase):
+    """Tests for bugs caught during the deep barrier sanity check."""
+
+    # -- ensemble_ci_from_multiple_methods should not clamp non-probability metrics --
+
+    def test_ensemble_ci_does_not_clamp_ev(self):
+        """EV can be negative; CI bounds must not be clamped to [0, 1]."""
+        results = [
+            {"best": {"ev": -0.12}},
+            {"best": {"ev": -0.08}},
+            {"best": {"ev": -0.15}},
+        ]
+        ci = ensemble_ci_from_multiple_methods(results, metric="ev", confidence=0.95)
+        self.assertLess(ci["ci_low"], 0.0, "EV CI lower bound should be allowed below 0")
+
+    def test_ensemble_ci_does_not_clamp_kelly_above_one(self):
+        """Kelly can exceed 1.0 in degenerate cases; CI must not be clamped."""
+        results = [
+            {"best": {"kelly": 1.2}},
+            {"best": {"kelly": 1.5}},
+            {"best": {"kelly": 1.3}},
+        ]
+        ci = ensemble_ci_from_multiple_methods(results, metric="kelly", confidence=0.95)
+        self.assertGreater(ci["ci_high"], 1.0, "Kelly CI upper bound should be allowed above 1")
+
+    def test_ensemble_ci_clamps_probability_metric(self):
+        """Probability metrics should still be clamped to [0, 1]."""
+        results = [
+            {"best": {"prob_win": 0.02}},
+            {"best": {"prob_win": 0.01}},
+            {"best": {"prob_win": 0.03}},
+        ]
+        ci = ensemble_ci_from_multiple_methods(results, metric="prob_win", confidence=0.95)
+        self.assertGreaterEqual(ci["ci_low"], 0.0)
+        self.assertLessEqual(ci["ci_high"], 1.0)
+
+    # -- CI input validation guards --
+
+    def test_agresti_coull_invalid_successes_clamped(self):
+        """Successes outside [0, n_trials] should be clamped, not crash."""
+        lo, hi = confidence_interval_agresti_coull(successes=-5, n_trials=100)
+        self.assertTrue(np.isfinite(lo) and np.isfinite(hi))
+        lo2, hi2 = confidence_interval_agresti_coull(successes=200, n_trials=100)
+        self.assertTrue(np.isfinite(lo2) and np.isfinite(hi2))
+
+    def test_jeffreys_invalid_successes_clamped(self):
+        lo, hi = confidence_interval_jeffreys(successes=-5, n_trials=100)
+        self.assertTrue(np.isfinite(lo) and np.isfinite(hi))
+        lo2, hi2 = confidence_interval_jeffreys(successes=200, n_trials=100)
+        self.assertTrue(np.isfinite(lo2) and np.isfinite(hi2))
+
+    def test_bootstrap_invalid_successes_clamped(self):
+        lo, hi = confidence_interval_bootstrap(successes=-5, n_trials=100, seed=1)
+        self.assertTrue(np.isfinite(lo) and np.isfinite(hi))
+        lo2, hi2 = confidence_interval_bootstrap(successes=200, n_trials=100, seed=1)
+        self.assertTrue(np.isfinite(lo2) and np.isfinite(hi2))
+
+    def test_ci_functions_reject_bad_confidence(self):
+        """Confidence outside (0, 1) should return NaN."""
+        for fn in (confidence_interval_agresti_coull, confidence_interval_jeffreys):
+            lo, hi = fn(successes=50, n_trials=100, confidence=0.0)
+            self.assertTrue(np.isnan(lo) and np.isnan(hi))
+            lo2, hi2 = fn(successes=50, n_trials=100, confidence=1.0)
+            self.assertTrue(np.isnan(lo2) and np.isnan(hi2))
+        lo, hi = confidence_interval_bootstrap(
+            successes=50, n_trials=100, confidence=0.0, seed=1,
+        )
+        self.assertTrue(np.isnan(lo) and np.isnan(hi))
+
+    # -- resolve_barrier_prices direction alias handling --
+
+    def test_resolve_barrier_prices_accepts_buy_sell_aliases(self):
+        """buy/sell/up/down should be normalized to long/short."""
+        from mtdata.utils.barriers import resolve_barrier_prices
+
+        # "buy" should behave like "long": tp above, sl below
+        tp, sl = resolve_barrier_prices(
+            price=100.0, direction="buy",
+            tp_pct=1.0, sl_pct=1.0,
+        )
+        self.assertIsNotNone(tp)
+        self.assertIsNotNone(sl)
+        self.assertGreater(tp, 100.0)
+        self.assertLess(sl, 100.0)
+
+        # "sell" should behave like "short": tp below, sl above
+        tp2, sl2 = resolve_barrier_prices(
+            price=100.0, direction="sell",
+            tp_pct=1.0, sl_pct=1.0,
+        )
+        self.assertIsNotNone(tp2)
+        self.assertIsNotNone(sl2)
+        self.assertLess(tp2, 100.0)
+        self.assertGreater(sl2, 100.0)
+
+    # -- closed-form already_hit flag --
+
+    def test_closed_form_already_hit_flag(self):
+        """Already-hit barriers should return prob=1.0 with already_hit flag."""
+        import sys
+        from unittest.mock import patch, MagicMock
+        import pandas as pd
+        from mtdata.forecast.barriers_probabilities import forecast_barrier_closed_form
+
+        dates = pd.date_range(start="2023-01-01", periods=600, freq="h")
+        prices = np.linspace(1.05, 1.10, 600) + np.random.RandomState(42).normal(0, 0.001, 600)
+        df = pd.DataFrame({"time": dates, "close": prices})
+
+        with patch("mtdata.forecast.barriers_probabilities._fetch_history", return_value=df):
+            result = forecast_barrier_closed_form(
+                symbol="EURUSD", timeframe="H1", horizon=10,
+                direction="long", barrier=0.5,
+            )
+        self.assertTrue(result.get("success"))
+        self.assertAlmostEqual(result["prob_hit"], 1.0, places=10)
+        self.assertTrue(result.get("already_hit"))

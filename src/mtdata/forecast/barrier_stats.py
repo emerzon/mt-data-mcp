@@ -118,6 +118,9 @@ def confidence_interval_agresti_coull(
     """
     if n_trials <= 0:
         return float("nan"), float("nan")
+    if not (0 < confidence < 1):
+        return float("nan"), float("nan")
+    successes = int(np.clip(successes, 0, n_trials))
     
     z = scipy_stats.norm.ppf(1 - (1 - confidence) / 2)
     z2 = z * z
@@ -153,6 +156,9 @@ def confidence_interval_jeffreys(
     """
     if n_trials <= 0:
         return float("nan"), float("nan")
+    if not (0 < confidence < 1):
+        return float("nan"), float("nan")
+    successes = int(np.clip(successes, 0, n_trials))
     
     alpha = 1 - confidence
     successes_adj = float(successes) + 0.5
@@ -187,6 +193,9 @@ def confidence_interval_bootstrap(
     """
     if n_trials <= 0 or n_bootstrap <= 0:
         return float("nan"), float("nan")
+    if not (0 < confidence < 1):
+        return float("nan"), float("nan")
+    successes = int(np.clip(successes, 0, n_trials))
     
     rng = np.random.RandomState(seed)
     p_hat = successes / n_trials
@@ -708,14 +717,23 @@ def ensemble_ci_from_multiple_methods(
     ci_low = mean_val - t_crit * se_val
     ci_high = mean_val + t_crit * se_val
     
+    # Only clamp to [0, 1] for probability-range metrics.
+    _PROB_METRICS = frozenset({
+        'prob_win', 'prob_loss', 'prob_tie', 'prob_no_hit', 'prob_resolve',
+        'prob_tp_first', 'prob_sl_first',
+    })
+    if metric in _PROB_METRICS:
+        ci_low = max(0.0, ci_low)
+        ci_high = min(1.0, ci_high)
+
     return {
         "metric": metric,
         "n_methods": len(values),
         "mean": mean_val,
         "std": std_val,
         "se": se_val,
-        "ci_low": float(max(0.0, ci_low)),
-        "ci_high": float(min(1.0, ci_high)),
+        "ci_low": float(ci_low),
+        "ci_high": float(ci_high),
         "confidence": confidence,
         "method": "ensemble_t_interval",
     }

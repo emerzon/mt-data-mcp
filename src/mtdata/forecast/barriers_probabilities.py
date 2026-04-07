@@ -427,7 +427,11 @@ def forecast_barrier_closed_form(
             prob = _gbm_upcross_prob(s0_inv, b_inv, float(inv_drift), sigma_val, float(T))
         else:
             prob = _gbm_upcross_prob(s0, float(barrier), float(gbm_drift), sigma_val, float(T))
-        return {
+        already_hit = (
+            (direction_norm == 'long' and barrier <= s0)
+            or (direction_norm == 'short' and barrier >= s0)
+        )
+        result = {
             "success": True,
             "symbol": symbol,
             "timeframe": timeframe,
@@ -440,6 +444,9 @@ def forecast_barrier_closed_form(
             "sigma_annual": sigma_val,
             "prob_hit": float(prob),
         }
+        if already_hit:
+            result["already_hit"] = True
+        return result
     except (KeyError, AttributeError, IndexError):
         raise
     except Exception as e:

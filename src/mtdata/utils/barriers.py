@@ -85,7 +85,8 @@ def resolve_barrier_prices(
     p_tp = _coerce_finite_float(tp_pips)
     p_sl = _coerce_finite_float(sl_pips)
 
-    dir_long = str(direction).lower() == "long"
+    direction_norm, _ = normalize_trade_direction(direction)
+    dir_long = direction_norm == "long" if direction_norm is not None else str(direction).lower() == "long"
 
     if tp_price is None:
         if r_tp is not None:

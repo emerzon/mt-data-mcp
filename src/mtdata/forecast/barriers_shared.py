@@ -556,6 +556,14 @@ def _brownian_bridge_hits(
     direction: Literal["up", "down"],
     uniform: np.ndarray,
 ) -> np.ndarray:
+    """Single-barrier Brownian bridge intra-step hit detection.
+
+    NOTE: When used for dual-barrier (TP+SL) scoring, TP and SL bridge hits
+    are sampled independently per interval.  This is an approximation — in a
+    true two-barrier first-passage problem the events are joint.  The impact
+    is small for well-separated barriers but may over-count same-step "ties"
+    when barriers are tight relative to per-step volatility.
+    """
     if not np.isfinite(sigma) or sigma <= 0:
         return np.zeros((log_paths.shape[0], log_paths.shape[1] - 1), dtype=bool)
     x0 = log_paths[:, :-1]
