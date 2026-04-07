@@ -107,6 +107,12 @@ def _quote_if_needed(text: str, delimiter: str = _DEFAULT_DELIMITER) -> str:
     return f'"{escaped}"'
 
 
+def _quote_always(text: Any) -> str:
+    raw = str(text if text is not None else "")
+    escaped = raw.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
 def _quote_key(key: Any, delimiter: str = _DEFAULT_DELIMITER) -> str:
     """Quote object keys when necessary."""
     if key is None:
@@ -157,6 +163,91 @@ def _headers_from_dicts(items: Iterable[Dict[str, Any]]) -> List[str]:
             if key not in headers:
                 headers.append(str(key))
     return headers
+
+
+def _render_news_bucket_toon(
+    key: str,
+    items: List[Any],
+    *,
+    indent: int = 0,
+    delimiter: str = _DEFAULT_DELIMITER,
+) -> str:
+    ind = _INDENT * indent
+    name = _quote_key(key, delimiter) or "items"
+    if not items:
+        return f"{ind}{name}[0]:"
+
+    dict_rows = [row for row in items if isinstance(row, dict)]
+    if len(dict_rows) != len(items):
+        return _encode_expanded_array(key, items, indent, delimiter)
+
+    include_kind = key not in {"upcoming_events", "recent_events"} and any(not _is_empty_value(row.get("kind")) for row in dict_rows)
+    include_summary = any(not _is_empty_value(row.get("summary")) for row in dict_rows)
+    headers = ["title", "time"]
+    if include_kind:
+        headers.append("kind")
+    if include_summary:
+        headers.append("summary")
+
+    header_line = delimiter.join(_quote_key(h, delimiter) for h in headers)
+    lines = [f"{ind}{name}[{len(items)}]{{{header_line}}}:"]
+    row_indent = ind + _INDENT
+    for row in dict_rows:
+        values: List[str] = []
+        title = row.get("title")
+        if not _is_empty_value(title):
+            values.append(_quote_always(title))
+
+        display_time = row.get("time_utc")
+        if _is_empty_value(display_time):
+            display_time = row.get("relative_time")
+        if not _is_empty_value(display_time):
+            values.append(_stringify_for_toon_value(display_time, None, delimiter))
+
+        kind = row.get("kind")
+        if include_kind and not _is_empty_value(kind):
+            values.append(_stringify_for_toon_value(kind, None, delimiter))
+
+        summary = row.get("summary")
+        if include_summary and not _is_empty_value(summary):
+            values.append(_quote_always(summary))
+
+        if values:
+            lines.append(f"{row_indent}{delimiter.join(values)}")
+    return "\n".join(lines)
+
+
+def _render_news_payload(
+    payload: Dict[str, Any],
+    *,
+    verbose: bool,
+    tool_name: str,
+    simplify_numbers: bool = True,
+) -> Optional[str]:
+    if tool_name != "news" or verbose:
+        return None
+
+    bucket_keys = {"general_news", "related_news", "impact_news", "upcoming_events", "recent_events"}
+    if not any(isinstance(payload.get(key), list) for key in bucket_keys):
+        return None
+
+    lines: List[str] = []
+    for key, value in payload.items():
+        if _is_empty_value(value):
+            continue
+        if key in bucket_keys and isinstance(value, list):
+            lines.append(_render_news_bucket_toon(key, value))
+            continue
+        chunk = _format_to_toon(
+            value,
+            key=key,
+            indent=0,
+            delimiter=_DEFAULT_DELIMITER,
+            simplify_numbers=simplify_numbers,
+        )
+        if chunk:
+            lines.append(chunk)
+    return "\n".join(lines) if lines else None
 
 
 def _dedupe_text_list(values: Iterable[Any]) -> List[str]:
@@ -1307,6 +1398,15 @@ def format_result_minimal(
     try:
         normalized = result
         resolved_tool_name = _resolve_tool_name(result, tool_name)
+        if isinstance(result, dict):
+            news_rendered = _render_news_payload(
+                result,
+                verbose=verbose,
+                tool_name=resolved_tool_name,
+                simplify_numbers=simplify_numbers,
+            )
+            if news_rendered is not None:
+                return news_rendered.strip()
         trade_table_norm = _normalize_trade_table_payload(
             result,
             verbose=verbose,

@@ -75,8 +75,9 @@ def test_embedding_service_caches_vectors(monkeypatch) -> None:
             self.query_calls = 0
             self.document_calls = 0
 
-        def encode(self, text: str, prompt_name=None, normalize_embeddings=False):
+        def encode(self, text: str, prompt_name=None, normalize_embeddings=False, show_progress_bar=True):
             assert normalize_embeddings is True
+            assert show_progress_bar is False
             if prompt_name == "query":
                 self.query_calls += 1
                 return [1.0, 0.0]

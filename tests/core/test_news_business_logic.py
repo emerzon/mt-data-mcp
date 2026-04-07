@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from inspect import signature
 
 from mtdata.core.news import news
+from mtdata.core.output_contract import apply_output_verbosity
 
 
 def _unwrap(fn):
@@ -36,3 +38,263 @@ def test_news_tool_forwards_symbol(monkeypatch) -> None:
 
     assert result["success"] is True
     assert result["symbol"] == "EURUSD"
+
+
+def test_news_output_hides_debug_fields_when_not_verbose() -> None:
+    payload = {
+        "success": True,
+        "symbol": "EURUSD",
+        "instrument": {"symbol": "EURUSD", "aliases": ["EURUSD", "EUR/USD"]},
+        "sources_used": ["finviz", "mt5"],
+        "source_details": {"finviz": {"selected_total": 1}},
+        "matching": {"embeddings": {"enabled": True}},
+        "general_count": 1,
+        "related_count": 1,
+        "impact_count": 0,
+        "general_news": [
+            {
+                "title": "Fed preview",
+                "provider": "finviz",
+                "source": "Reuters",
+                "kind": "headline",
+                "published_at": "2026-03-29T08:00:00Z",
+                "url": "https://example.com/fed-preview",
+                "summary": None,
+                "category": "market_news",
+                "priority": "MEDIUM",
+                "relevance_score": 0.4,
+                "importance_score": 5.2,
+                "metadata": {"source_rank": 0, "relative_time": "9 days ago"},
+            }
+        ],
+        "related_news": [
+            {
+                "title": "EUR/USD market snapshot",
+                "provider": "finviz",
+                "source": "Finviz Forex",
+                "kind": "market_snapshot",
+                "published_at": "2026-03-29T08:05:00Z",
+                "url": None,
+                "summary": "Price: 1.1541",
+                "category": "forex",
+                "priority": "HIGH",
+                "relevance_score": 8.3,
+                "importance_score": 4.8,
+                "metadata": {"ticker": "EUR/USD", "relative_time": "9 days ago"},
+            }
+        ],
+        "impact_news": [],
+    }
+
+    result = apply_output_verbosity(payload, verbose=False, tool_name="news")
+
+    assert "instrument" not in result
+    assert "sources_used" not in result
+    assert "source_details" not in result
+    assert "matching" not in result
+    assert "general_count" not in result
+    assert "related_count" not in result
+    assert "impact_count" not in result
+    assert result["general_news"] == [{"title": "Fed preview", "relative_time": "9 days ago"}]
+    assert "url" not in result["general_news"][0]
+    assert result["related_news"] == [
+        {"title": "EUR/USD market snapshot", "relative_time": "9 days ago", "kind": "market_snapshot", "summary": "Price: 1.1541"}
+    ]
+    assert "url" not in result["related_news"][0]
+    assert "source" not in result["general_news"][0]
+    assert "category" not in result["general_news"][0]
+    assert "published_at" not in result["general_news"][0]
+
+
+def test_news_output_keeps_debug_fields_when_verbose() -> None:
+    payload = {
+        "success": True,
+        "symbol": "EURUSD",
+        "instrument": {"symbol": "EURUSD"},
+        "matching": {"embeddings": {"enabled": True}},
+        "general_news": [
+            {
+                "title": "Fed preview",
+                "provider": "finviz",
+                "source": "Reuters",
+                "kind": "headline",
+                "published_at": "2026-03-29T08:00:00Z",
+                "category": "market_news",
+                "priority": "MEDIUM",
+                "relevance_score": 0.4,
+                "importance_score": 5.2,
+                "metadata": {"source_rank": 0},
+            }
+        ],
+        "related_news": [],
+        "impact_news": [],
+    }
+
+    result = apply_output_verbosity(payload, verbose=True, tool_name="news")
+
+    assert "instrument" in result
+    assert "matching" in result
+    assert result["general_news"][0]["provider"] == "finviz"
+    assert result["general_news"][0]["metadata"]["source_rank"] == 0
+
+
+def test_news_output_derives_relative_time_from_published_at_when_needed() -> None:
+    published_at = (datetime.now(timezone.utc) - timedelta(hours=2, minutes=10)).isoformat()
+    payload = {
+        "success": True,
+        "symbol": "EURUSD",
+        "general_news": [
+            {
+                "title": "Fed preview",
+                "provider": "finviz",
+                "source": "Reuters",
+                "kind": "headline",
+                "published_at": published_at,
+                "category": "market_news",
+                "priority": "MEDIUM",
+                "relevance_score": 0.4,
+                "importance_score": 5.2,
+                "metadata": {"source_rank": 0},
+            }
+        ],
+        "related_news": [],
+        "impact_news": [],
+    }
+
+    result = apply_output_verbosity(payload, verbose=False, tool_name="news")
+
+    item = result["general_news"][0]
+    assert item["title"] == "Fed preview"
+    assert item["relative_time"].endswith("ago")
+    assert "published_at" not in item
+
+
+def test_news_output_keeps_future_event_time_in_utc() -> None:
+    published_at = datetime.now(timezone.utc).replace(second=0, microsecond=0) + timedelta(hours=3, minutes=15)
+    payload = {
+        "success": True,
+        "symbol": "USDJPY",
+        "general_news": [],
+        "related_news": [
+            {
+                "title": "US CPI (USD)",
+                "provider": "finviz",
+                "source": "Finviz Economic Calendar",
+                "kind": "economic_event",
+                "published_at": published_at.isoformat(),
+                "summary": "Expected: 3.2% | Prior: 3.1%",
+                "category": "economic_calendar",
+                "priority": "HIGH",
+                "relevance_score": 9.1,
+                "importance_score": 6.3,
+                "metadata": {"impact": "high"},
+            }
+        ],
+        "impact_news": [],
+    }
+
+    result = apply_output_verbosity(payload, verbose=False, tool_name="news")
+
+    item = result["related_news"][0]
+    assert item["title"] == "US CPI (USD)"
+    assert item["time_utc"] == published_at.strftime("%Y-%m-%d %H:%M UTC")
+    assert "relative_time" not in item
+    assert "published_at" not in item
+
+
+def test_news_output_compaction_is_idempotent() -> None:
+    payload = {
+        "success": True,
+        "symbol": "USDJPY",
+        "general_news": [{"title": "Fed preview", "relative_time": "2 hours ago"}],
+        "related_news": [
+            {
+                "title": "US CPI (USD)",
+                "time_utc": "2026-04-07 12:30 UTC",
+                "kind": "economic_event",
+                "summary": "Expected: 3.2% | Prior: 3.1%",
+            }
+        ],
+        "impact_news": [{"title": "Oil jumps on war fears", "relative_time": "6 hours ago"}],
+    }
+
+    result = apply_output_verbosity(payload, verbose=False, tool_name="news")
+
+    assert result == payload
+
+
+def test_news_output_compacts_upcoming_events_bucket() -> None:
+    published_at = datetime.now(timezone.utc).replace(second=0, microsecond=0) + timedelta(hours=2)
+    payload = {
+        "success": True,
+        "symbol": "USDJPY",
+        "general_news": [],
+        "related_news": [],
+        "impact_news": [],
+        "upcoming_events": [
+            {
+                "title": "US CPI (USD)",
+                "provider": "finviz",
+                "source": "Finviz Economic Calendar",
+                "kind": "economic_event",
+                "published_at": published_at.isoformat(),
+                "summary": "Expected: 3.2% | Prior: 3.1%",
+                "category": "economic_calendar",
+                "priority": "HIGH",
+                "relevance_score": 9.1,
+                "importance_score": 6.3,
+                "metadata": {"event_for": "USD", "impact": "high"},
+            }
+        ],
+        "upcoming_count": 1,
+    }
+
+    result = apply_output_verbosity(payload, verbose=False, tool_name="news")
+
+    assert "upcoming_count" not in result
+    assert result["upcoming_events"] == [
+        {
+            "title": "US CPI (USD)",
+            "time_utc": published_at.strftime("%Y-%m-%d %H:%M UTC"),
+            "summary": "Expected: 3.2% | Prior: 3.1%",
+        }
+    ]
+
+
+def test_news_output_compacts_recent_events_bucket() -> None:
+    published_at = datetime.now(timezone.utc).replace(second=0, microsecond=0) - timedelta(hours=2)
+    payload = {
+        "success": True,
+        "symbol": "USDJPY",
+        "general_news": [],
+        "related_news": [],
+        "impact_news": [],
+        "upcoming_events": [],
+        "recent_events": [
+            {
+                "title": "US CPI (USD)",
+                "provider": "finviz",
+                "source": "Finviz Economic Calendar",
+                "kind": "economic_event",
+                "published_at": published_at.isoformat(),
+                "summary": "Actual: 3.2% | Expected: 3.1% | Prior: 3.0%",
+                "category": "economic_calendar",
+                "priority": "HIGH",
+                "relevance_score": 9.1,
+                "importance_score": 6.3,
+                "metadata": {"event_for": "USD", "impact": "high"},
+            }
+        ],
+        "recent_count": 1,
+    }
+
+    result = apply_output_verbosity(payload, verbose=False, tool_name="news")
+
+    assert "recent_count" not in result
+    assert result["recent_events"] == [
+        {
+            "title": "US CPI (USD)",
+            "relative_time": "2 hours ago",
+            "summary": "Actual: 3.2% | Expected: 3.1% | Prior: 3.0%",
+        }
+    ]

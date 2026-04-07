@@ -349,6 +349,65 @@ class TestFormatResultForCli:
         result = _format_result_for_cli("hello", fmt=None, verbose=False, cmd_name="test")
         assert isinstance(result, str)
 
+    def test_news_toon_format_omits_null_tail_cells_and_uses_generic_time_header(self):
+        result = _format_result_for_cli(
+            {
+                "success": True,
+                "symbol": "USDJPY",
+                "general_news": [{"title": "Fed preview", "relative_time": "2 hours ago"}],
+                "related_news": [
+                    {
+                        "title": "USD/JPY market snapshot",
+                        "relative_time": "just now",
+                        "kind": "market_snapshot",
+                        "summary": "Price: 159.80",
+                    },
+                    {
+                        "title": "US CPI (USD)",
+                        "time_utc": "2026-04-07 12:30 UTC",
+                        "kind": "economic_event",
+                        "summary": "Expected: 3.2% | Prior: 3.1%",
+                    },
+                    {
+                        "title": "BoJ's Ueda warns on FX",
+                        "relative_time": "8 days ago",
+                    },
+                ],
+                "impact_news": [{"title": "Oil jumps on war fears", "relative_time": "6 hours ago"}],
+                "upcoming_events": [
+                    {
+                        "title": "US CPI (USD)",
+                        "time_utc": "2026-04-07 12:30 UTC",
+                        "kind": "economic_event",
+                        "summary": "Expected: 3.2% | Prior: 3.1%",
+                    }
+                ],
+                "recent_events": [
+                    {
+                        "title": "US CPI (USD)",
+                        "relative_time": "2 hours ago",
+                        "kind": "economic_event",
+                        "summary": "Actual: 3.2% | Expected: 3.1% | Prior: 3.0%",
+                    }
+                ],
+            },
+            fmt="toon",
+            verbose=False,
+            cmd_name="news",
+        )
+
+        assert "general_news[1]{title,time}:" in result
+        assert '"Fed preview",2 hours ago' in result
+        assert "related_news[3]{title,time,kind,summary}:" in result
+        assert '"USD/JPY market snapshot",just now,market_snapshot,"Price: 159.80"' in result
+        assert '"US CPI (USD)","2026-04-07 12:30 UTC",economic_event,' in result
+        assert '"BoJ\'s Ueda warns on FX",8 days ago' in result
+        assert '"Oil jumps on war fears",6 hours ago' in result
+        assert "upcoming_events[1]{title,time,summary}:" in result
+        assert "recent_events[1]{title,time,summary}:" in result
+        assert '"US CPI (USD)",2 hours ago,"Actual: 3.2% | Expected: 3.1% | Prior: 3.0%"' in result
+        assert "null" not in result
+
     def test_toon_format_preserves_candle_diagnostics_in_shared_output(self):
         result = _format_result_for_cli(
             {
@@ -2281,6 +2340,24 @@ class TestCreateCommandFunction:
         assert request.symbol == "EURUSD"
         assert request.horizon == 24
         assert request.params == {"sp": 24}
+        assert call_kwargs["__cli_raw"] is True
+
+    def test_verbose_flag_is_forwarded_to_tool_wrapper(self, capsys):
+        mock_fn = MagicMock(return_value={"ok": True})
+        func_info = {
+            "func": mock_fn,
+            "params": [
+                {"name": "symbol", "type": str, "required": True, "default": None},
+            ],
+        }
+        cmd_fn = create_command_function(func_info, cmd_name="test_cmd")
+        args = argparse.Namespace(symbol="EURUSD", json=False, verbose=True)
+
+        cmd_fn(args)
+
+        call_kwargs = mock_fn.call_args[1]
+        assert call_kwargs["symbol"] == "EURUSD"
+        assert call_kwargs["verbose"] is True
         assert call_kwargs["__cli_raw"] is True
 
     def test_indicator_compact_string_reconstructed(self, capsys):

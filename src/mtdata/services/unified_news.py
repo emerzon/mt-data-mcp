@@ -27,8 +27,10 @@ from ..utils.mt5 import get_symbol_info_cached
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_BUCKET_SIZE = 10
+_DEFAULT_BUCKET_SIZE = 20
 _DEFAULT_IMPACT_BUCKET_SIZE = 3
+_DEFAULT_UPCOMING_BUCKET_SIZE = 20
+_DEFAULT_RECENT_EVENTS_SIZE = 5
 _CANDIDATE_MULTIPLIER = 5
 _MAX_SNAPSHOT_ROWS = 8
 _MIN_ECONOMIC_CANDIDATES = 24
@@ -191,6 +193,16 @@ _MACRO_EVENT_TERMS = (
     "retail sales",
     "ism",
 )
+_EVENT_FOR_HINTS = {
+    "USD": ("USD", "USA", "UNITEDSTA", "US DOLLAR", "FEDERAL", "FED"),
+    "EUR": ("EUR", "EURO", "EUROZONE", "ECB", "GERMANY", "FRANCE", "ITALY", "SPAIN"),
+    "GBP": ("GBP", "UK", "BRITAIN", "BRITISH", "ENGLAND", "STERLING", "BOE"),
+    "JPY": ("JPY", "JPN", "JAPAN", "JAPANESE", "YEN", "BOJ"),
+    "AUD": ("AUD", "AUS", "AUSTRALIA", "AUSSIE", "RBA"),
+    "CAD": ("CAD", "CANADA", "CANADIAN", "LOONIE", "BOC"),
+    "CHF": ("CHF", "SWITZERLAND", "SWISS", "FRANC", "SNB"),
+    "NZD": ("NZD", "NEWZEALAND", "NEW ZEALAND", "KIWI", "RBNZ"),
+}
 _GENERAL_IMPORTANCE_TERMS = {
     "fed": 1.8,
     "fomc": 1.8,
@@ -473,6 +485,19 @@ def _maybe_parse_datetime(value: Any) -> Optional[datetime]:
         return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
     except Exception:
         return None
+
+
+def _normalize_event_for(value: Any) -> str:
+    text = _safe_text(value).upper()
+    if not text:
+        return ""
+    compact = _compact_token(text)
+    if compact in _CURRENCY_CODES:
+        return compact
+    for currency, hints in _EVENT_FOR_HINTS.items():
+        if any(_compact_token(hint) in compact for hint in hints):
+            return currency
+    return text
 
 
 def _parse_relative_time(value: str) -> Optional[datetime]:
@@ -825,6 +850,68 @@ def _passes_related_gate(item: NewsItem, context: InstrumentContext) -> bool:
     return False
 
 
+def _passes_upcoming_event_gate(item: NewsItem, context: InstrumentContext) -> bool:
+    if item.kind != "economic_event" or item.published_at is None:
+        return False
+    if item.published_at <= datetime.now(timezone.utc):
+        return False
+
+    event_for = _safe_text(item.metadata.get("event_for")).upper()
+    if not event_for:
+        return False
+
+    if context.asset_class == "forex":
+        return event_for in {context.base_asset or "", context.quote_asset or ""}
+
+    if context.asset_class == "index":
+        return event_for == _INDEX_EXPOSURE_CURRENCIES.get(context.base_asset or "")
+
+    if context.asset_class in {"crypto", "commodity"}:
+        return event_for == (context.quote_asset or "")
+
+    if context.asset_class == "equity":
+        currency_hints = {
+            _safe_text(context.metadata_hints.get("currency_profit")).upper(),
+            _safe_text(context.metadata_hints.get("currency_margin")).upper(),
+            _safe_text(context.quote_asset).upper(),
+        }
+        currency_hints.discard("")
+        return event_for in currency_hints
+
+    return False
+
+
+def _passes_recent_event_gate(item: NewsItem, context: InstrumentContext) -> bool:
+    if item.kind != "economic_event" or item.published_at is None:
+        return False
+    if item.published_at > datetime.now(timezone.utc):
+        return False
+
+    event_for = _safe_text(item.metadata.get("event_for")).upper()
+    if not event_for:
+        return False
+
+    if context.asset_class == "forex":
+        return event_for in {context.base_asset or "", context.quote_asset or ""}
+
+    if context.asset_class == "index":
+        return event_for == _INDEX_EXPOSURE_CURRENCIES.get(context.base_asset or "")
+
+    if context.asset_class in {"crypto", "commodity"}:
+        return event_for == (context.quote_asset or "")
+
+    if context.asset_class == "equity":
+        currency_hints = {
+            _safe_text(context.metadata_hints.get("currency_profit")).upper(),
+            _safe_text(context.metadata_hints.get("currency_margin")).upper(),
+            _safe_text(context.quote_asset).upper(),
+        }
+        currency_hints.discard("")
+        return event_for in currency_hints
+
+    return False
+
+
 def _should_promote_general_item_to_related(item: NewsItem, context: InstrumentContext) -> bool:
     if _has_asset_specific_evidence(item, context):
         return True
@@ -887,6 +974,37 @@ def _score_importance(item: NewsItem) -> float:
         age_hours = max(0.0, (datetime.now(timezone.utc) - item.published_at).total_seconds() / 3600.0)
         score += max(0.0, 1.25 - min(age_hours, 48.0) / 48.0)
     return score
+
+
+def _general_news_recency_boost(published_at: Optional[datetime]) -> float:
+    if published_at is None:
+        return 0.0
+    age_hours = (datetime.now(timezone.utc) - published_at).total_seconds() / 3600.0
+    if age_hours <= 0:
+        return 2.5
+    if age_hours <= 1:
+        return 2.3
+    if age_hours <= 6:
+        return 2.0
+    if age_hours <= 12:
+        return 1.7
+    if age_hours <= 24:
+        return 1.3
+    if age_hours <= 72:
+        return 0.7
+    if age_hours <= 168:
+        return 0.2
+    if age_hours <= 336:
+        return -0.35
+    return -0.85
+
+
+def _sort_news_for_display(items: List[NewsItem]) -> List[NewsItem]:
+    return sorted(
+        items,
+        key=lambda item: item.published_at or datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True,
+    )
 
 
 def _score_relevance(item: NewsItem, context: InstrumentContext) -> tuple[float, List[str]]:
@@ -1022,12 +1140,36 @@ def _dedupe_items(items: Iterable[NewsItem]) -> List[NewsItem]:
     return list(deduped.values())
 
 
+def _build_equity_symbol_candidates(context: InstrumentContext) -> List[str]:
+    if context.asset_class != "equity":
+        return []
+
+    candidates: List[str] = []
+    symbol_root = _symbol_root(context.symbol)
+    if symbol_root:
+        candidates.append(symbol_root)
+        compact_root = _compact_token(symbol_root)
+        if compact_root and compact_root != symbol_root:
+            candidates.append(compact_root)
+
+    for alias in context.aliases:
+        alias_text = _safe_text(alias).upper()
+        if not alias_text or "/" in alias_text:
+            continue
+        candidates.append(alias_text)
+        compact_alias = _compact_token(alias_text)
+        if compact_alias and compact_alias != alias_text:
+            candidates.append(compact_alias)
+
+    return _unique_preserve_order(candidates)
+
+
 def _build_ycnbc_symbol_candidates(context: InstrumentContext) -> List[str]:
     compact_symbol = _compact_token(context.symbol)
     mapped: List[str] = []
 
     if context.asset_class == "equity":
-        mapped.append(context.symbol)
+        mapped.extend(_build_equity_symbol_candidates(context))
     elif context.asset_class == "index" and context.base_asset:
         mapped_symbol = _YCNBC_INDEX_SYMBOLS.get(context.base_asset)
         if mapped_symbol:
@@ -1044,11 +1186,6 @@ def _build_ycnbc_symbol_candidates(context: InstrumentContext) -> List[str]:
         mapped_symbol = _YCNBC_FOREX_SYMBOLS.get(compact_symbol)
         if mapped_symbol:
             mapped.append(mapped_symbol)
-
-    if context.asset_class == "equity":
-        compact = _compact_token(context.symbol)
-        if compact and compact not in mapped:
-            mapped.append(compact)
 
     return _unique_preserve_order(mapped)
 
@@ -1224,7 +1361,7 @@ class FinvizNewsSource:
     def fetch_related_candidates(self, context: InstrumentContext, limit: int) -> List[NewsItem]:
         items: List[NewsItem] = []
         if context.asset_class == "equity":
-            items.extend(self._fetch_direct_equity_news(context.symbol, limit))
+            items.extend(self._fetch_direct_equity_news(context, limit))
         if context.asset_class == "crypto":
             items.extend(self._fetch_market_snapshots(get_crypto_performance(), context, rows_key="coins", market="crypto"))
         elif context.asset_class == "forex":
@@ -1234,13 +1371,28 @@ class FinvizNewsSource:
         items.extend(self._fetch_economic_candidates(limit=max(limit, _MIN_ECONOMIC_CANDIDATES)))
         return items
 
-    def _fetch_direct_equity_news(self, symbol: str, limit: int) -> List[NewsItem]:
-        try:
-            result = get_stock_news(symbol, limit=limit, page=1)
+    def _fetch_direct_equity_news(self, context: InstrumentContext, limit: int) -> List[NewsItem]:
+        candidates = _build_equity_symbol_candidates(context)
+        if not candidates:
+            return []
+
+        for candidate in candidates:
+            try:
+                result = get_stock_news(candidate, limit=limit, page=1)
+            except Exception:
+                logger.exception("Error fetching direct Finviz equity news for %s via %s", context.symbol, candidate)
+                continue
             if not result.get("success"):
-                return []
+                continue
+
             out: List[NewsItem] = []
             for rank, item in enumerate(result.get("news", [])):
+                metadata: Dict[str, Any] = {
+                    "direct_symbol": context.symbol,
+                    "source_rank": rank,
+                }
+                if candidate != context.symbol:
+                    metadata["source_symbol"] = candidate
                 out.append(
                     NewsItem(
                         title=_safe_text(item.get("Title")),
@@ -1251,13 +1403,13 @@ class FinvizNewsSource:
                         url=_safe_text(item.get("Link")) or None,
                         category="symbol_news",
                         priority=NewsPriority.HIGH,
-                        metadata={"direct_symbol": symbol, "source_rank": rank},
+                        metadata=metadata,
                     )
                 )
-            return out
-        except Exception:
-            logger.exception("Error fetching direct Finviz equity news for %s", symbol)
-            return []
+            if out:
+                return out
+
+        return []
 
     def _fetch_market_snapshots(
         self,
@@ -1347,7 +1499,8 @@ class FinvizNewsSource:
             out: List[NewsItem] = []
             for rank, item in enumerate(result.get("items", [])):
                 release = _safe_text(item.get("Release")) or "Economic event"
-                event_for = _safe_text(item.get("For"))
+                raw_event_for = _safe_text(item.get("For"))
+                event_for = _normalize_event_for(raw_event_for)
                 impact = _safe_text(item.get("Impact")).lower()
                 summary_parts = []
                 for key in ("Actual", "Expected", "Prior", "Category", "Reference"):
@@ -1371,6 +1524,7 @@ class FinvizNewsSource:
                         priority=priority,
                         metadata={
                             "event_for": event_for,
+                            "raw_event_for": raw_event_for or None,
                             "impact": impact,
                             "source_rank": rank,
                             "search_text": " ".join(
@@ -1476,6 +1630,9 @@ class NewsAggregator:
                 "error": "No news sources available",
                 "general_news": [],
                 "related_news": [],
+                "impact_news": [],
+                "upcoming_events": [],
+                "recent_events": [],
             }
 
         general_candidates: List[NewsItem] = []
@@ -1510,9 +1667,13 @@ class NewsAggregator:
                 "general_news": [],
                 "related_news": [],
                 "impact_news": [],
+                "upcoming_events": [],
+                "recent_events": [],
                 "general_count": 0,
                 "related_count": 0,
                 "impact_count": 0,
+                "upcoming_count": 0,
+                "recent_count": 0,
             }
 
         general_pool = _dedupe_items(general_candidates)
@@ -1520,7 +1681,7 @@ class NewsAggregator:
             item.importance_score = _score_importance(item)
         general_pool.sort(
             key=lambda item: (
-                item.importance_score,
+                item.importance_score + _general_news_recency_boost(item.published_at),
                 item.published_at or datetime.min.replace(tzinfo=timezone.utc),
                 -int(item.metadata.get("source_rank", 0)),
             ),
@@ -1529,23 +1690,53 @@ class NewsAggregator:
 
         related_news: List[NewsItem] = []
         impact_news: List[NewsItem] = []
+        upcoming_events: List[NewsItem] = []
+        recent_events: List[NewsItem] = []
         if context is not None:
             promoted_general_candidates = [
                 item for item in general_pool
                 if _should_promote_general_item_to_related(item, context)
             ]
             related_pool = _dedupe_items(list(related_candidates) + promoted_general_candidates)
+            upcoming_candidates: List[NewsItem] = []
+            recent_candidates: List[NewsItem] = []
             filtered_related: List[NewsItem] = []
             for item in related_pool:
                 item.importance_score = _score_importance(item)
                 item.relevance_score, matched_terms = _score_relevance(item, context)
                 if matched_terms:
                     item.metadata["matched_terms"] = matched_terms
+                if _passes_upcoming_event_gate(item, context):
+                    upcoming_candidates.append(item)
+                if _passes_recent_event_gate(item, context):
+                    recent_candidates.append(item)
+                if item.kind == "economic_event":
+                    continue
                 if not _passes_related_gate(item, context):
                     continue
                 threshold = 0.55 if item.kind != "direct_symbol" else 0.2
                 if item.relevance_score >= threshold:
                     filtered_related.append(item)
+            upcoming_candidates.sort(
+                key=lambda item: (
+                    item.published_at or datetime.max.replace(tzinfo=timezone.utc),
+                    -float(item.priority),
+                    -item.relevance_score,
+                    -item.importance_score,
+                ),
+            )
+            upcoming_events = upcoming_candidates[:_DEFAULT_UPCOMING_BUCKET_SIZE]
+            upcoming_keys = {item.dedupe_key() for item in upcoming_candidates}
+            recent_candidates.sort(
+                key=lambda item: (
+                    "actual:" in _safe_text(item.summary).lower(),
+                    item.published_at or datetime.min.replace(tzinfo=timezone.utc),
+                    item.relevance_score,
+                    item.importance_score,
+                ),
+                reverse=True,
+            )
+            recent_events = recent_candidates[:_DEFAULT_RECENT_EVENTS_SIZE]
             filtered_related.sort(
                 key=lambda item: (
                     item.relevance_score,
@@ -1564,7 +1755,7 @@ class NewsAggregator:
                     ),
                     reverse=True,
                 )
-            related_news = filtered_related[:bucket_size]
+            related_news = [item for item in filtered_related if item.dedupe_key() not in upcoming_keys][:bucket_size]
 
             impact_pool = _dedupe_items(list(related_candidates) + list(general_pool))
             impact_candidates: List[NewsItem] = []
@@ -1591,18 +1782,29 @@ class NewsAggregator:
                 if item.dedupe_key() not in impact_keys
             ]
 
-        general_news = general_pool[:bucket_size]
+        general_news = _sort_news_for_display(general_pool[:bucket_size])
+        related_news = _sort_news_for_display(related_news)
+        impact_news = _sort_news_for_display(impact_news)
+        recent_events = _sort_news_for_display(recent_events)
         selected_general_counts = Counter(item.provider for item in general_news)
         selected_related_counts = Counter(item.provider for item in related_news)
         selected_impact_counts = Counter(item.provider for item in impact_news)
+        selected_upcoming_counts = Counter(item.provider for item in upcoming_events)
+        selected_recent_counts = Counter(item.provider for item in recent_events)
         for name, details in source_details.items():
             if not details.get("success"):
                 continue
             details["selected_general"] = selected_general_counts.get(name, 0)
             details["selected_related"] = selected_related_counts.get(name, 0)
             details["selected_impact"] = selected_impact_counts.get(name, 0)
+            details["selected_upcoming"] = selected_upcoming_counts.get(name, 0)
+            details["selected_recent"] = selected_recent_counts.get(name, 0)
             details["selected_total"] = (
-                details["selected_general"] + details["selected_related"] + details["selected_impact"]
+                details["selected_general"]
+                + details["selected_related"]
+                + details["selected_impact"]
+                + details["selected_upcoming"]
+                + details["selected_recent"]
             )
         return {
             "success": True,
@@ -1616,15 +1818,21 @@ class NewsAggregator:
                     "Ranks direct symbol mentions, asset-class terms, macro exposures, and text cosine similarity.",
                     "Related news may include market snapshots and economic calendar events when they plausibly impact the instrument.",
                     "Impact news highlights high-importance systemic headlines such as war, sanctions, tariffs, and energy shocks.",
+                    "Upcoming events surface future economic-calendar items in a dedicated section so they do not get buried by headlines.",
+                    "Recent events surface the latest economic releases separately, with actual values when the source provides them.",
                 ],
                 "embeddings": embedding_service.status() if context is not None else {"enabled": embedding_service.enabled},
             },
             "general_news": [item.to_dict() for item in general_news],
             "related_news": [item.to_dict() for item in related_news],
             "impact_news": [item.to_dict() for item in impact_news],
+            "upcoming_events": [item.to_dict() for item in upcoming_events],
+            "recent_events": [item.to_dict() for item in recent_events],
             "general_count": len(general_news),
             "related_count": len(related_news),
             "impact_count": len(impact_news),
+            "upcoming_count": len(upcoming_events),
+            "recent_count": len(recent_events),
         }
 
 

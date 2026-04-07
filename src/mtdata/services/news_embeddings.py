@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 import logging
 import math
 import os
 from collections import OrderedDict
-from typing import TYPE_CHECKING, Any, Iterable, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Iterable, Iterator, Optional, Sequence
 
 from ..bootstrap.settings import news_embeddings_config
 
@@ -14,6 +15,13 @@ if TYPE_CHECKING:
     from .unified_news import InstrumentContext, NewsItem
 
 logger = logging.getLogger(__name__)
+
+_EMBEDDING_LIBRARY_LOGGERS = (
+    "sentence_transformers",
+    "sentence_transformers.SentenceTransformer",
+    "transformers",
+    "huggingface_hub",
+)
 
 _EMBEDDING_SERVICE: Optional["NewsEmbeddingService"] = None
 
@@ -75,6 +83,20 @@ def format_document_text(item: "NewsItem") -> str:
             text_parts.append(value.strip())
     text_body = " | ".join(part for part in text_parts if part) or "none"
     return f"title: {title} | text: {text_body}"
+
+
+@contextmanager
+def _suppress_embedding_library_noise() -> Iterator[None]:
+    previous_levels: dict[str, int] = {}
+    for name in _EMBEDDING_LIBRARY_LOGGERS:
+        lib_logger = logging.getLogger(name)
+        previous_levels[name] = lib_logger.level
+        lib_logger.setLevel(logging.ERROR)
+    try:
+        yield
+    finally:
+        for name, level in previous_levels.items():
+            logging.getLogger(name).setLevel(level)
 
 
 class NewsEmbeddingService:
@@ -161,7 +183,8 @@ class NewsEmbeddingService:
             kwargs: dict[str, Any] = {}
             if news_embeddings_config.truncate_dim is not None:
                 kwargs["truncate_dim"] = int(news_embeddings_config.truncate_dim)
-            self._model = SentenceTransformer(news_embeddings_config.model_name, **kwargs)
+            with _suppress_embedding_library_noise():
+                self._model = SentenceTransformer(news_embeddings_config.model_name, **kwargs)
             return self._model
         except Exception as exc:
             self._load_error = str(exc)
@@ -203,10 +226,20 @@ class NewsEmbeddingService:
         if model is None:
             return None
         try:
-            if mode == "query":
-                vector = model.encode(text, prompt_name="query", normalize_embeddings=True)
-            else:
-                vector = model.encode(text, normalize_embeddings=True)
+            with _suppress_embedding_library_noise():
+                if mode == "query":
+                    vector = model.encode(
+                        text,
+                        prompt_name="query",
+                        normalize_embeddings=True,
+                        show_progress_bar=False,
+                    )
+                else:
+                    vector = model.encode(
+                        text,
+                        normalize_embeddings=True,
+                        show_progress_bar=False,
+                    )
         except Exception as exc:
             self._load_error = f"encoding failed: {exc}"
             logger.warning("Failed to encode %s embedding: %s", mode, exc)

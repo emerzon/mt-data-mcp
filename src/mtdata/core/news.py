@@ -27,6 +27,10 @@ def news(symbol: Optional[str] = None) -> Dict[str, Any]:
       whose text and metadata suggest likely impact on the instrument.
     - `impact_news`: high-importance systemic headlines, such as war or energy
       shocks, that may matter even when they are not direct lexical matches.
+    - `upcoming_events`: future economic-calendar items relevant to the
+      instrument, surfaced separately so scheduled releases are easy to spot.
+    - `recent_events`: the latest relevant economic releases, surfaced
+      separately so actual values are easy to scan.
 
     Matching uses symbol aliases, asset-class terms, MT5 symbol metadata, and a
     lightweight cosine-similarity score over headline/event text.
@@ -45,6 +49,8 @@ def news(symbol: Optional[str] = None) -> Dict[str, Any]:
         - `general_news`: important recent general news
         - `related_news`: symbol-relevant news and events
         - `impact_news`: high-importance systemic market headlines
+        - `upcoming_events`: future scheduled events relevant to the instrument
+        - `recent_events`: latest relevant scheduled releases for the instrument
         - `source_details`: per-source candidate and selected counts
         - `matching`: summary of the relevance model
     """

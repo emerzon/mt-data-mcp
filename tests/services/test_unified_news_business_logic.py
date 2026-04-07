@@ -73,6 +73,75 @@ def test_fetch_unified_news_without_symbol_returns_only_general_bucket(monkeypat
     assert set(result["sources_used"]) == {"finviz", "mt5"}
 
 
+def test_fetch_unified_news_defaults_to_twenty_general_items(monkeypatch) -> None:
+    def fake_general_news(news_type: str = "news", limit: int = 20, page: int = 1):
+        return {
+            "success": True,
+            "items": [
+                {
+                    "Title": f"Headline {idx}",
+                    "Source": "Reuters",
+                    "Date": f"2026-03-{idx + 1:02d}T08:00:00Z",
+                    "Link": f"https://example.com/headline-{idx}",
+                }
+                for idx in range(30)
+            ],
+        }
+
+    monkeypatch.setattr(svc, "get_general_news", fake_general_news)
+    monkeypatch.setattr(svc, "get_mt5_news", lambda **_kwargs: {"success": True, "news": []})
+    monkeypatch.setattr(svc, "get_symbol_info_cached", lambda symbol: None)
+    _disable_ycnbc(monkeypatch)
+    _disable_embeddings(monkeypatch)
+    _reset_aggregator(monkeypatch)
+
+    result = svc.fetch_unified_news()
+
+    assert result["success"] is True
+    assert result["general_count"] == 20
+    assert len(result["general_news"]) == 20
+    assert result["general_news"][0]["title"] == "Headline 29"
+
+
+def test_fetch_unified_news_prioritizes_more_recent_general_headlines(monkeypatch) -> None:
+    recent_time = (datetime.now(timezone.utc) - timedelta(hours=4)).isoformat()
+    stale_time = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
+
+    monkeypatch.setattr(
+        svc,
+        "get_general_news",
+        lambda news_type="news", limit=20, page=1: {
+            "success": True,
+            "items": [
+                {
+                    "Title": "Inflation update older",
+                    "Source": "Reuters",
+                    "Date": stale_time,
+                    "Link": "https://example.com/older",
+                },
+                {
+                    "Title": "Inflation update recent",
+                    "Source": "Reuters",
+                    "Date": recent_time,
+                    "Link": "https://example.com/recent",
+                },
+            ],
+        },
+    )
+    monkeypatch.setattr(svc, "get_mt5_news", lambda **_kwargs: {"success": True, "news": []})
+    monkeypatch.setattr(svc, "get_symbol_info_cached", lambda symbol: None)
+    _disable_ycnbc(monkeypatch)
+    _disable_embeddings(monkeypatch)
+    _reset_aggregator(monkeypatch)
+
+    result = svc.fetch_unified_news()
+
+    assert [item["title"] for item in result["general_news"][:2]] == [
+        "Inflation update recent",
+        "Inflation update older",
+    ]
+
+
 def test_fetch_unified_news_uses_symbol_metadata_for_crypto_classification(monkeypatch) -> None:
     class FakeInfo:
         path = "Crypto\\Majors"
@@ -146,7 +215,6 @@ def test_fetch_unified_news_uses_symbol_metadata_for_crypto_classification(monke
     assert result["instrument"]["asset_class"] == "crypto"
     assert result["instrument"]["metadata_hints"]["currency_base"] == "BTC"
     assert any("market snapshot" in title.lower() for title in titles)
-    assert any("US CPI" in title for title in titles)
     assert any("Bitcoin steady ahead of CPI release" == title for title in titles)
 
 
@@ -191,6 +259,53 @@ def test_fetch_unified_news_includes_direct_equity_news(monkeypatch) -> None:
     assert result["instrument"]["asset_class"] == "equity"
     assert result["related_news"][0]["kind"] == "direct_symbol"
     assert result["related_news"][0]["title"] == "Apple unveils new AI features"
+
+
+def test_fetch_unified_news_uses_root_ticker_for_equity_cfd_symbols(monkeypatch) -> None:
+    class FakeInfo:
+        path = "Stock CFD's\\Nasdaq\\24HR NAS"
+        description = "Apple Inc"
+        currency_profit = "USD"
+
+    seen_symbols: list[str] = []
+
+    def fake_stock_news(symbol: str, limit: int = 20, page: int = 1):
+        seen_symbols.append(symbol)
+        if symbol != "AAPL":
+            return {"success": False, "error": "unsupported"}
+        return {
+            "success": True,
+            "news": [
+                {
+                    "Title": "Apple unveils new AI features",
+                    "Source": "Reuters",
+                    "Date": "2026-03-29T09:00:00Z",
+                    "Link": "https://example.com/aapl-ai",
+                }
+            ],
+        }
+
+    monkeypatch.setattr(svc, "get_symbol_info_cached", lambda symbol: FakeInfo())
+    monkeypatch.setattr(svc, "get_general_news", lambda news_type="news", limit=20, page=1: {"success": True, "items": []})
+    monkeypatch.setattr(svc, "get_stock_news", fake_stock_news)
+    monkeypatch.setattr(svc, "get_mt5_news", lambda **_kwargs: {"success": True, "news": []})
+    monkeypatch.setattr(
+        svc,
+        "get_economic_calendar",
+        lambda limit=100, page=1, impact=None, date_from=None, date_to=None: {"success": True, "items": []},
+    )
+    _disable_ycnbc(monkeypatch)
+    _disable_embeddings(monkeypatch)
+    _reset_aggregator(monkeypatch)
+
+    result = svc.fetch_unified_news("AAPL.NAS-24")
+
+    assert seen_symbols == ["AAPL"]
+    assert result["success"] is True
+    assert result["instrument"]["symbol"] == "AAPL.NAS-24"
+    assert result["related_news"][0]["title"] == "Apple unveils new AI features"
+    assert result["related_news"][0]["metadata"]["direct_symbol"] == "AAPL.NAS-24"
+    assert result["related_news"][0]["metadata"]["source_symbol"] == "AAPL"
 
 
 def test_equity_stock_page_news_requires_company_evidence(monkeypatch) -> None:
@@ -892,6 +1007,7 @@ def test_systemic_impact_news_surfaces_major_war_headline(monkeypatch) -> None:
 
 
 def test_european_index_matches_regional_macro_events(monkeypatch) -> None:
+    future_time = (datetime.now(timezone.utc) + timedelta(hours=4)).strftime("%Y-%m-%dT%H:%M:%SZ")
     monkeypatch.setattr(svc, "get_general_news", lambda news_type="news", limit=20, page=1: {"success": True, "items": []})
     monkeypatch.setattr(svc, "get_futures_performance", lambda: {"success": True, "futures": []})
     monkeypatch.setattr(
@@ -901,7 +1017,7 @@ def test_european_index_matches_regional_macro_events(monkeypatch) -> None:
             "success": True,
             "items": [
                 {
-                    "Datetime": "2026-03-29T09:00:00Z",
+                    "Datetime": future_time,
                     "Release": "German CPI",
                     "For": "EUR",
                     "Impact": "high",
@@ -917,7 +1033,181 @@ def test_european_index_matches_regional_macro_events(monkeypatch) -> None:
 
     result = svc.fetch_unified_news("GER40")
 
-    assert any("German CPI" in item["title"] for item in result["related_news"])
+    assert any("German CPI" in item["title"] for item in result["upcoming_events"])
+
+
+def test_fetch_unified_news_surfaces_future_currency_events_in_dedicated_bucket(monkeypatch) -> None:
+    future_time = (datetime.now(timezone.utc) + timedelta(hours=3)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    monkeypatch.setattr(svc, "get_general_news", lambda news_type="news", limit=20, page=1: {"success": True, "items": []})
+    monkeypatch.setattr(svc, "get_forex_performance", lambda: {"success": True, "pairs": []})
+    monkeypatch.setattr(
+        svc,
+        "get_economic_calendar",
+        lambda limit=100, page=1, impact=None, date_from=None, date_to=None: {
+            "success": True,
+            "items": [
+                {
+                    "Datetime": future_time,
+                    "Release": "ADP Employment Change Weekly",
+                    "For": "USAAECW",
+                    "Impact": "medium",
+                    "Category": "Labor",
+                    "Reference": "Mar",
+                },
+                {
+                    "Datetime": future_time,
+                    "Release": "Machine Orders",
+                    "For": "JAPANMACHINEORDERS",
+                    "Impact": "medium",
+                    "Category": "Manufacturing",
+                    "Reference": "Feb",
+                },
+                {
+                    "Datetime": future_time,
+                    "Release": "German Factory Orders",
+                    "For": "GERMANYFACTORYORDERS",
+                    "Impact": "high",
+                    "Category": "Manufacturing",
+                    "Reference": "Feb",
+                },
+            ],
+        },
+    )
+    monkeypatch.setattr(svc, "get_mt5_news", lambda **_kwargs: {"success": True, "news": []})
+    monkeypatch.setattr(svc, "get_symbol_info_cached", lambda symbol: None)
+    _disable_ycnbc(monkeypatch)
+    _disable_embeddings(monkeypatch)
+    _reset_aggregator(monkeypatch)
+
+    result = svc.fetch_unified_news("USDJPY")
+
+    upcoming_titles = [item["title"] for item in result["upcoming_events"]]
+    assert set(upcoming_titles) == {
+        "ADP Employment Change Weekly (USD)",
+        "Machine Orders (JPY)",
+    }
+    assert result["upcoming_count"] == 2
+    assert result["related_news"] == []
+    assert all(item["kind"] == "economic_event" for item in result["upcoming_events"])
+    assert {item["metadata"]["event_for"] for item in result["upcoming_events"]} == {"USD", "JPY"}
+
+
+def test_fetch_unified_news_keeps_future_macro_events_out_of_related_bucket(monkeypatch) -> None:
+    future_time = (datetime.now(timezone.utc) + timedelta(hours=6)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    monkeypatch.setattr(svc, "get_general_news", lambda news_type="news", limit=20, page=1: {"success": True, "items": []})
+    monkeypatch.setattr(svc, "get_forex_performance", lambda: {"success": True, "pairs": []})
+    monkeypatch.setattr(
+        svc,
+        "get_economic_calendar",
+        lambda limit=100, page=1, impact=None, date_from=None, date_to=None: {
+            "success": True,
+            "items": [
+                {
+                    "Datetime": future_time,
+                    "Release": "CPI",
+                    "For": "USD",
+                    "Impact": "high",
+                    "Category": "Consumer Price Index CPI",
+                    "Reference": "Mar",
+                }
+            ],
+        },
+    )
+    monkeypatch.setattr(svc, "get_mt5_news", lambda **_kwargs: {"success": True, "news": []})
+    monkeypatch.setattr(svc, "get_symbol_info_cached", lambda symbol: None)
+    _disable_ycnbc(monkeypatch)
+    _disable_embeddings(monkeypatch)
+    _reset_aggregator(monkeypatch)
+
+    result = svc.fetch_unified_news("USDJPY")
+
+    assert [item["title"] for item in result["upcoming_events"]] == ["CPI (USD)"]
+    assert result["related_news"] == []
+
+
+def test_fetch_unified_news_caps_upcoming_events_bucket_at_twenty(monkeypatch) -> None:
+    future_base = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+
+    monkeypatch.setattr(svc, "get_general_news", lambda news_type="news", limit=20, page=1: {"success": True, "items": []})
+    monkeypatch.setattr(svc, "get_forex_performance", lambda: {"success": True, "pairs": []})
+    monkeypatch.setattr(
+        svc,
+        "get_economic_calendar",
+        lambda limit=100, page=1, impact=None, date_from=None, date_to=None: {
+            "success": True,
+            "items": [
+                {
+                    "Datetime": (future_base + timedelta(hours=idx)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "Release": f"CPI {idx}",
+                    "For": "USD",
+                    "Impact": "high",
+                    "Category": "Consumer Price Index CPI",
+                    "Reference": "Mar",
+                }
+                for idx in range(25)
+            ],
+        },
+    )
+    monkeypatch.setattr(svc, "get_mt5_news", lambda **_kwargs: {"success": True, "news": []})
+    monkeypatch.setattr(svc, "get_symbol_info_cached", lambda symbol: None)
+    _disable_ycnbc(monkeypatch)
+    _disable_embeddings(monkeypatch)
+    _reset_aggregator(monkeypatch)
+
+    result = svc.fetch_unified_news("USDJPY")
+
+    assert result["upcoming_count"] == 20
+    assert len(result["upcoming_events"]) == 20
+    assert [item["title"] for item in result["upcoming_events"][:2]] == ["CPI 0 (USD)", "CPI 1 (USD)"]
+    assert result["related_news"] == []
+
+
+def test_fetch_unified_news_surfaces_recent_events_bucket_with_latest_five(monkeypatch) -> None:
+    recent_base = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0) - timedelta(hours=1)
+
+    monkeypatch.setattr(svc, "get_general_news", lambda news_type="news", limit=20, page=1: {"success": True, "items": []})
+    monkeypatch.setattr(svc, "get_forex_performance", lambda: {"success": True, "pairs": []})
+    monkeypatch.setattr(
+        svc,
+        "get_economic_calendar",
+        lambda limit=100, page=1, impact=None, date_from=None, date_to=None: {
+            "success": True,
+            "items": [
+                {
+                    "Datetime": (recent_base - timedelta(hours=idx)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "Release": f"CPI {idx}",
+                    "For": "USD",
+                    "Impact": "high",
+                    "Actual": f"{idx}.0%",
+                    "Expected": f"{idx}.1%",
+                    "Prior": f"{idx}.2%",
+                    "Category": "Consumer Price Index CPI",
+                    "Reference": "Mar",
+                }
+                for idx in range(7)
+            ],
+        },
+    )
+    monkeypatch.setattr(svc, "get_mt5_news", lambda **_kwargs: {"success": True, "news": []})
+    monkeypatch.setattr(svc, "get_symbol_info_cached", lambda symbol: None)
+    _disable_ycnbc(monkeypatch)
+    _disable_embeddings(monkeypatch)
+    _reset_aggregator(monkeypatch)
+
+    result = svc.fetch_unified_news("USDJPY")
+
+    assert result["recent_count"] == 5
+    assert [item["title"] for item in result["recent_events"]] == [
+        "CPI 0 (USD)",
+        "CPI 1 (USD)",
+        "CPI 2 (USD)",
+        "CPI 3 (USD)",
+        "CPI 4 (USD)",
+    ]
+    assert all("Actual:" in (item["summary"] or "") for item in result["recent_events"])
+    assert result["related_news"] == []
 
 
 def test_fetch_unified_news_can_rerank_with_embeddings(monkeypatch) -> None:

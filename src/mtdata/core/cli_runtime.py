@@ -316,6 +316,8 @@ def create_command_function(
                 )
                 return 1
 
+        if bool(getattr(args, "verbose", False)):
+            kwargs["verbose"] = True
         kwargs["__cli_raw"] = True
         if invoke_tool_function is not None:
             result = invoke_tool_function(
