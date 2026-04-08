@@ -304,6 +304,40 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
         self.assertTrue(result.get("grid"))
         self.assertIsInstance(result.get("best"), dict)
 
+    def test_forecast_barrier_optimize_optuna_backend_without_explicit_seed(self):
+        if importlib.util.find_spec("optuna") is None:
+            self.skipTest("optuna package not installed")
+        self._set_flat_history(1.0)
+        paths = self._sample_paths()
+        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc') as mock_sim:
+            mock_sim.return_value = {"price_paths": paths}
+            result = forecast_barrier_optimize(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=4,
+                method="mc_gbm",
+                direction="long",
+                mode="pct",
+                tp_min=0.2, tp_max=1.0, tp_steps=3,
+                sl_min=0.2, sl_max=1.0, sl_steps=3,
+                objective="ev",
+                params={
+                    "optimizer": "optuna",
+                    "n_trials": 12,
+                    "n_jobs": 1,
+                    "sampler": "random",
+                    "pruner": "none",
+                },
+                return_grid=True,
+            )
+        self.assertTrue(result.get("success"))
+        self.assertEqual(result.get("optimizer"), "optuna")
+        self.assertIn("optuna", result)
+        self.assertGreaterEqual(result["optuna"].get("completed_trials", 0), 1)
+        self.assertGreater(result.get("results_total", 0), 0)
+        self.assertTrue(result.get("grid"))
+        self.assertIsInstance(result.get("best"), dict)
+
     def test_forecast_barrier_optimize_optuna_pareto_front(self):
         if importlib.util.find_spec("optuna") is None:
             self.skipTest("optuna package not installed")

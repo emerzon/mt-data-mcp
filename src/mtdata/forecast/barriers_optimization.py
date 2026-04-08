@@ -982,7 +982,14 @@ def forecast_barrier_optimize(
         sims = int(params_dict.get('n_sims', params_dict.get('sims', sims_default)) or sims_default)
         if sims <= 0:
             return {"error": f"Invalid n_sims: {sims}. Must be >= 1."}
-        seed = int(params_dict.get('seed', 42) or 42)
+        seed_raw = params_dict.get('seed')
+        seed = int(seed_raw) if seed_raw is not None else None
+        request_seed_base = (
+            int(seed)
+            if seed is not None
+            else int(np.random.default_rng().integers(0, np.iinfo(np.int32).max))
+        )
+        optuna_seed = int(request_seed_base)
         n_seeds = int(params_dict.get('n_seeds', 1) or 1)
         if n_seeds <= 0:
             return {"error": f"Invalid n_seeds: {n_seeds}. Must be >= 1."}
@@ -1482,7 +1489,7 @@ def forecast_barrier_optimize(
             )
 
         def _simulate_paths_for_seed_range(
-            seed_base: int,
+            seed_base: Optional[int],
             seed_count: int,
         ) -> Tuple[
             np.ndarray,
@@ -1495,6 +1502,11 @@ def forecast_barrier_optimize(
             local_paths_list: List[np.ndarray] = []
             local_bb_enabled = method_name == 'mc_gbm_bb'
             effective_seed_count = max(1, int(seed_count))
+            local_seed_base = (
+                int(seed_base)
+                if seed_base is not None
+                else int(np.random.default_rng().integers(0, np.iinfo(np.int32).max))
+            )
 
             if method_name in ('mc_gbm', 'mc_gbm_bb'):
                 for offset in range(effective_seed_count):
@@ -1502,7 +1514,7 @@ def forecast_barrier_optimize(
                         prices,
                         horizon=horizon_val,
                         n_sims=int(sims),
-                        seed=int(seed_base + offset),
+                        seed=int(local_seed_base + offset),
                     )
                     local_paths_list.append(np.asarray(sim['price_paths'], dtype=float))
             elif method_name == 'hmm_mc':
@@ -1513,7 +1525,7 @@ def forecast_barrier_optimize(
                         horizon=horizon_val,
                         n_states=int(n_states),
                         n_sims=int(sims),
-                        seed=int(seed_base + offset),
+                        seed=int(local_seed_base + offset),
                     )
                     local_paths_list.append(np.asarray(sim['price_paths'], dtype=float))
             elif method_name == 'garch':
@@ -1524,7 +1536,7 @@ def forecast_barrier_optimize(
                         prices,
                         horizon=horizon_val,
                         n_sims=int(sims),
-                        seed=int(seed_base + offset),
+                        seed=int(local_seed_base + offset),
                         p_order=p_order,
                         q_order=q_order,
                     )
@@ -1538,7 +1550,7 @@ def forecast_barrier_optimize(
                         prices,
                         horizon=horizon_val,
                         n_sims=int(sims),
-                        seed=int(seed_base + offset),
+                        seed=int(local_seed_base + offset),
                         block_size=bs,
                     )
                     local_paths_list.append(np.asarray(sim['price_paths'], dtype=float))
@@ -1548,7 +1560,7 @@ def forecast_barrier_optimize(
                         prices,
                         horizon=horizon_val,
                         n_sims=int(sims),
-                        seed=int(seed_base + offset),
+                        seed=int(local_seed_base + offset),
                         kappa=params_dict.get('kappa'),
                         theta=params_dict.get('theta'),
                         xi=params_dict.get('xi'),
@@ -1562,7 +1574,7 @@ def forecast_barrier_optimize(
                         prices,
                         horizon=horizon_val,
                         n_sims=int(sims),
-                        seed=int(seed_base + offset),
+                        seed=int(local_seed_base + offset),
                         jump_lambda=params_dict.get('jump_lambda', params_dict.get('lambda')),
                         jump_mu=params_dict.get('jump_mu'),
                         jump_sigma=params_dict.get('jump_sigma'),
@@ -1609,7 +1621,7 @@ def forecast_barrier_optimize(
                         [np.full((local_sims_total, 1), log_s0), log_paths],
                         axis=1,
                     )
-                    rng_bb = np.random.RandomState(int(seed_base) + 7)
+                    rng_bb = np.random.RandomState(int(local_seed_base) + 7)
                     local_bb_uniform_tp = rng_bb.rand(local_sims_total, local_horizon)
                     local_bb_uniform_sl = rng_bb.rand(local_sims_total, local_horizon)
 
@@ -1630,7 +1642,7 @@ def forecast_barrier_optimize(
                 bb_log_paths,
                 bb_uniform_tp,
                 bb_uniform_sl,
-            ) = _simulate_paths_for_seed_range(seed_base=int(seed), seed_count=int(n_seeds))
+            ) = _simulate_paths_for_seed_range(seed_base=request_seed_base, seed_count=int(n_seeds))
         except (ValueError, RuntimeError, np.linalg.LinAlgError) as e:
             return {
                 "error": f"Simulation failed ({method_name}): {e}",
@@ -1945,14 +1957,14 @@ def forecast_barrier_optimize(
 
             sampler_name = optuna_sampler_val
             if sampler_name == 'random':
-                sampler_obj = optuna.samplers.RandomSampler(seed=int(seed))
+                sampler_obj = optuna.samplers.RandomSampler(seed=optuna_seed)
             elif sampler_name == 'cmaes':
-                sampler_obj = optuna.samplers.CmaEsSampler(seed=int(seed))
+                sampler_obj = optuna.samplers.CmaEsSampler(seed=optuna_seed)
             else:
                 sampler_name = 'tpe'
                 with warnings.catch_warnings():
                     _suppress_optuna_experimental_warnings()
-                    sampler_obj = optuna.samplers.TPESampler(seed=int(seed), multivariate=True)
+                    sampler_obj = optuna.samplers.TPESampler(seed=optuna_seed, multivariate=True)
 
             pruner_name = optuna_pruner_val
             if pruner_name in {'none'}:
@@ -2344,7 +2356,7 @@ def forecast_barrier_optimize(
             if n_seeds_stability_val > 1:
                 results_by_seed: Dict[int, Dict[str, Any]] = {}
                 for seed_offset in range(1, min(n_seeds_stability_val, 5) + 1):
-                    seed_key = int(seed + seed_offset)
+                    seed_key = int(request_seed_base + seed_offset)
                     try:
                         (
                             stability_paths,
