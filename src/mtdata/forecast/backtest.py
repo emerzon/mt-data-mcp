@@ -51,6 +51,7 @@ def _compute_performance_metrics(
     timeframe: str,
     horizon: int,
     slippage_bps: float,
+    trade_spacing_bars: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Compute portfolio-level performance statistics from per-trade returns."""
 
@@ -64,7 +65,8 @@ def _compute_performance_metrics(
         return metrics
 
     bars_per_year = _bars_per_year(timeframe)
-    trades_per_year = float(bars_per_year / max(1, int(horizon))) if math.isfinite(bars_per_year) else float('nan')
+    cadence = max(1, int(trade_spacing_bars)) if trade_spacing_bars is not None else max(1, int(horizon))
+    trades_per_year = float(bars_per_year / cadence) if math.isfinite(bars_per_year) else float('nan')
 
     avg_return = float(np.mean(arr))
     win_rate = float(np.mean(arr > 0.0)) if arr.size > 0 else float('nan')
@@ -325,7 +327,10 @@ def forecast_backtest(
                     })
                 else:
                     if target_mode == 'return':
-                        fc = r.get('forecast_return') or r.get('forecast_price')
+                        fc = r.get('forecast_return')
+                        if not fc:
+                            per_anchor.append({"anchor": anchor_time, "success": False, "error": "Missing forecast_return for return mode"})
+                            continue
                     else:
                         fc = r.get('forecast_price')
                     if not fc:
@@ -337,9 +342,15 @@ def forecast_backtest(
                     if m <= 0:
                         per_anchor.append({"anchor": anchor_time, "success": False, "error": "No overlap"})
                         continue
+                    if not np.all(np.isfinite(fcv[:m])):
+                        per_anchor.append({"anchor": anchor_time, "success": False, "error": "Non-finite forecast values"})
+                        continue
                     mae = float(np.mean(np.abs(fcv[:m] - act[:m])))
                     rmse = float(np.sqrt(np.mean((fcv[:m] - act[:m])**2)))
-                    if m > 1:
+                    if target_mode == 'return':
+                        # Return mode: DA = did forecast correctly predict the sign of each bar's return?
+                        da = float(np.mean(np.sign(fcv[:m]) == np.sign(act[:m]))) if m > 0 else float('nan')
+                    elif m > 1:
                         da = float(np.mean(np.sign(np.diff(fcv[:m])) == np.sign(np.diff(act[:m]))))
                     else:
                         da = float('nan')
@@ -458,9 +469,22 @@ def forecast_backtest(
                     da_vals = [v for v in da_vals if v is not None and np.isfinite(v)]
                     if da_vals:
                         agg["avg_directional_accuracy"] = float(np.mean(da_vals))
-                    trade_returns = [x.get('trade_return') for x in ok if x.get('trade_return') is not None]
-                    trade_returns = [float(v) for v in trade_returns if v is not None and np.isfinite(v)]
-                    metrics = _compute_performance_metrics(trade_returns, timeframe, int(horizon), float(slippage_bps)) if trade_returns else {}
+                    # Exclude flat positions from trade metrics
+                    trade_returns = [
+                        float(x['trade_return']) for x in ok
+                        if x.get('trade_return') is not None
+                        and x.get('position') != 'flat'
+                        and np.isfinite(x['trade_return'])
+                    ]
+                    # Compute actual trade spacing from anchor indices
+                    _spacing: Optional[int] = None
+                    if len(anchor_indices) > 1:
+                        _diffs = [anchor_indices[i + 1] - anchor_indices[i] for i in range(len(anchor_indices) - 1)]
+                        _spacing = int(np.median(_diffs))
+                    metrics = _compute_performance_metrics(
+                        trade_returns, timeframe, int(horizon), float(slippage_bps),
+                        trade_spacing_bars=_spacing,
+                    ) if trade_returns else {}
                     if metrics:
                         agg["metrics"] = metrics
                         agg["slippage_bps"] = float(slippage_bps)
