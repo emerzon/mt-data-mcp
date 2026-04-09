@@ -111,6 +111,36 @@ def _floor_volume_steps(raw_volume: float, volume_step: float) -> int:
     return step_count
 
 
+def _epoch_series_to_utc_and_text(
+    raw_series: Any,
+    *,
+    pd_module: Any,
+    mt5_epoch_to_utc: Any,
+    fmt_time: Any,
+    require_positive: bool = False,
+) -> tuple[Any, Any]:
+    numeric = pd_module.to_numeric(raw_series, errors="coerce")
+    utc_values: List[float] = []
+    text_values: List[Optional[str]] = []
+    for raw_value in numeric.tolist():
+        if pd_module.isna(raw_value):
+            utc_values.append(float("nan"))
+            text_values.append(None)
+            continue
+        epoch_value = float(raw_value)
+        if require_positive and epoch_value <= 0.0:
+            utc_values.append(float("nan"))
+            text_values.append(None)
+            continue
+        utc_value = float(mt5_epoch_to_utc(epoch_value))
+        utc_values.append(utc_value)
+        text_values.append(fmt_time(utc_value))
+    return (
+        pd_module.Series(utc_values, index=numeric.index),
+        pd_module.Series(text_values, index=numeric.index),
+    )
+
+
 def run_trade_place(  # noqa: C901
     request: TradePlaceRequest,
     *,
@@ -779,9 +809,13 @@ def run_trade_history(  # noqa: C901
             def _normalize_time_col(df: "pd.DataFrame", col: str) -> Optional["pd.Series"]:
                 if col not in df.columns:
                     return None
-                raw = pd.to_numeric(df[col], errors="coerce")
-                utc = raw.apply(lambda x: mt5_epoch_to_utc(float(x)) if pd.notna(x) else float("nan"))
-                df[col] = utc.apply(lambda x: fmt_time(float(x)) if pd.notna(x) else None)
+                utc, text = _epoch_series_to_utc_and_text(
+                    df[col],
+                    pd_module=pd,
+                    mt5_epoch_to_utc=mt5_epoch_to_utc,
+                    fmt_time=fmt_time,
+                )
+                df[col] = text
                 return utc
 
             if request.start and request.minutes_back not in (None, ""):
@@ -1599,17 +1633,17 @@ def _build_trade_time_columns(
     time_src = None
     for field in time_source_fields:
         if field in df.columns:
-            time_src = pd_module.to_numeric(df[field], errors="coerce")
+            time_src = df[field]
             break
     if time_src is None:
         time_utc = pd_module.Series([float("nan")] * len(df), index=df.index)
         time_txt = pd_module.Series([None] * len(df), index=df.index)
     else:
-        time_utc = time_src.apply(
-            lambda x: mt5_epoch_to_utc(float(x)) if pd_module.notna(x) else float("nan")
-        )
-        time_txt = time_utc.apply(
-            lambda x: fmt_time(float(x)) if pd_module.notna(x) else None
+        time_utc, time_txt = _epoch_series_to_utc_and_text(
+            time_src,
+            pd_module=pd_module,
+            mt5_epoch_to_utc=mt5_epoch_to_utc,
+            fmt_time=fmt_time,
         )
     return time_utc, time_txt
 
@@ -1710,17 +1744,23 @@ def _build_trade_get_pending_output(
     pending_df = df.copy()
     if "time_expiration" in pending_df.columns:
         exp_raw = pd_module.to_numeric(pending_df["time_expiration"], errors="coerce")
-        exp_utc = exp_raw.apply(
-            lambda x: mt5_epoch_to_utc(float(x))
-            if pd_module.notna(x) and float(x) > 0
-            else float("nan")
+        _, exp_text = _epoch_series_to_utc_and_text(
+            exp_raw,
+            pd_module=pd_module,
+            mt5_epoch_to_utc=mt5_epoch_to_utc,
+            fmt_time=fmt_time,
+            require_positive=True,
         )
-        expiration = exp_raw.apply(
-            lambda x: "GTC" if pd_module.notna(x) and float(x) <= 0 else None
-        )
-        expiration = expiration.where(
-            exp_raw.isna() | (exp_raw <= 0),
-            other=exp_utc.apply(lambda x: fmt_time(float(x)) if pd_module.notna(x) else None),
+        expiration = pd_module.Series(
+            [
+                None
+                if pd_module.isna(raw_value)
+                else "GTC"
+                if float(raw_value) <= 0.0
+                else text_value
+                for raw_value, text_value in zip(exp_raw.tolist(), exp_text.tolist())
+            ],
+            index=exp_raw.index,
         )
     else:
         expiration = pd_module.Series([None] * len(pending_df), index=pending_df.index)
