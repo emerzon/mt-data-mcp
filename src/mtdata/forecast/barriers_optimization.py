@@ -944,7 +944,7 @@ def forecast_barrier_optimize(
                 str(p).strip().lower() for p in sensitivity_params_requested if str(p).strip()
             ]
 
-        need = int(max(300, horizon_val + 100))
+        need = int(max(2000, horizon_val + 100))
         df = _fetch_history(symbol, timeframe, need, as_of=None)
         if len(df) < 10:
             return {"error": "Insufficient history for simulation"}

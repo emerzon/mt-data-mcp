@@ -71,7 +71,7 @@ def forecast_barrier_hit_probabilities(
         p = _parse_kv_or_json(params)
         warnings_out: List[str] = []
         # Fetch enough history for calibration
-        need = int(max(300, horizon_val + 100))
+        need = int(max(2000, horizon_val + 100))
         df = _fetch_history(symbol, timeframe, need, as_of=None)
         if len(df) < 10:
             return {"error": "Insufficient history for simulation"}
@@ -419,7 +419,7 @@ def forecast_barrier_closed_form(
         direction_norm, direction_error = normalize_trade_direction(direction)
         if direction_error:
             return {"error": direction_error}
-        need = int(max(400, horizon + 100))
+        need = int(max(2000, horizon + 100))
         df = _fetch_history(symbol, timeframe, need, as_of=None)
         if len(df) < 10:
             return {"error": "Insufficient history"}
