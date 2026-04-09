@@ -598,7 +598,7 @@ def regime_detect(  # noqa: C901
                 },
             }
             # Add reliability info
-            reliability = _hmm_reliability_from_gamma(gamma_for_payload, state)
+            reliability = _hmm_reliability_from_gamma(gamma_for_payload)
             payload["reliability"] = reliability
 
             if output in ('summary','compact'):

@@ -8,7 +8,7 @@ _ENTROPY_TREND_IMPROVING_MULTIPLIER = 1.0 - _ENTROPY_TREND_RELATIVE_CHANGE
 _ENTROPY_TREND_DEGRADING_MULTIPLIER = 1.0 + _ENTROPY_TREND_RELATIVE_CHANGE
 
 
-def _hmm_reliability_from_gamma(gamma: np.ndarray, states: np.ndarray) -> Dict[str, Any]:
+def _hmm_reliability_from_gamma(gamma: np.ndarray) -> Dict[str, Any]:
     """Estimate HMM reliability from marginal probabilities.
 
     ``entropy_trend`` compares the mean entropy in the second half of the
