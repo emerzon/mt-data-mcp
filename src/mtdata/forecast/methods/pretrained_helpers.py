@@ -76,54 +76,6 @@ def validate_and_clean_data(
     return cleaned_data, None
 
 
-def extract_forecast_values(
-    forecast_obj: Any,
-    fh: int,
-    method_name: str = "forecast",
-    do_mean: bool = True,
-    do_median: bool = True
-) -> Tuple[Optional[np.ndarray], Optional[str]]:
-    """
-    Extract point forecast values from forecast object with fallback logic.
-    
-    Args:
-        forecast_obj: Forecast object with mean, median, or samples attributes
-        fh: Forecast horizon
-        method_name: Name of the forecasting method for error messages
-        do_mean: Whether to prefer mean estimate
-        do_median: Whether to fallback to median estimate
-        
-    Returns:
-        Tuple of (forecast_values, error_message)
-    """
-    f_vals = None
-    
-    try:
-        # Try mean first if requested
-        if do_mean and hasattr(forecast_obj, 'mean') and forecast_obj.mean is not None:
-            f_vals = np.asarray(forecast_obj.mean, dtype=float)
-        # Try median if requested and mean not available
-        elif do_median and hasattr(forecast_obj, 'median') and forecast_obj.median is not None:
-            f_vals = np.asarray(forecast_obj.median, dtype=float)
-        # Fallback to samples if available
-        elif hasattr(forecast_obj, 'samples') and forecast_obj.samples is not None:
-            samples = np.asarray(forecast_obj.samples, dtype=float)
-            if samples.ndim >= 2:
-                f_vals = np.mean(samples, axis=0)
-            else:
-                f_vals = samples
-        else:
-            return None, f"{method_name} error: no forecast values available (no mean, median, or samples)"
-    except Exception as extract_ex:
-        return None, f"{method_name} error: failed to extract forecast values: {extract_ex}"
-    
-    # Validate extracted forecast
-    if f_vals is None or len(f_vals) == 0:
-        return None, f"{method_name} error: extracted forecast is empty or invalid"
-    
-    return f_vals, None
-
-
 def adjust_forecast_length(
     values: np.ndarray,
     fh: int,
@@ -277,49 +229,3 @@ def safe_import_modules(
     return imported_modules, None
 
 
-def validate_required_params(
-    params: Dict[str, Any],
-    required_keys: List[str],
-    method_name: str = "forecast"
-) -> Tuple[bool, Optional[str]]:
-    """
-    Validate that required parameters are present.
-    
-    Args:
-        params: Parameters dictionary
-        required_keys: List of required parameter keys
-        method_name: Name of the forecasting method for error messages
-        
-    Returns:
-        Tuple of (is_valid, error_message)
-    """
-    missing_keys = []
-    for key in required_keys:
-        if key not in params or params[key] is None:
-            missing_keys.append(key)
-    
-    if missing_keys:
-        return False, f"{method_name} requires parameters: {', '.join(missing_keys)}"
-    
-    return True, None
-
-
-def create_return_tuple(
-    f_vals: Optional[np.ndarray],
-    fq: Optional[Dict[str, List[float]]],
-    params_used: Dict[str, Any],
-    error: Optional[str]
-) -> Tuple[Optional[np.ndarray], Optional[Dict[str, List[float]]], Dict[str, Any], Optional[str]]:
-    """
-    Create standardized return tuple for forecast functions.
-    
-    Args:
-        f_vals: Forecast values
-        fq: Quantile forecasts
-        params_used: Parameters used
-        error: Error message
-        
-    Returns:
-        Standardized return tuple
-    """
-    return (f_vals, fq, params_used, error)
