@@ -834,6 +834,19 @@ def run_trade_history(
             if kind == "orders" and deal_ticket_value is not None:
                 return {"error": "deal_ticket is only valid when history_kind='deals'."}
 
+            deal_enum_columns = (
+                ("type", "DEAL_TYPE_"),
+                ("entry", "DEAL_ENTRY_"),
+                ("reason", "DEAL_REASON_"),
+            )
+            order_enum_columns = (
+                ("type", "ORDER_TYPE_"),
+                ("state", "ORDER_STATE_"),
+                ("type_time", "ORDER_TIME_"),
+                ("type_filling", "ORDER_FILLING_"),
+                ("reason", "ORDER_REASON_"),
+            )
+
             def _decode_enum_column(df: "pd.DataFrame", col: str, prefix: str) -> None:
                 if col not in df.columns:
                     return
@@ -961,9 +974,8 @@ def run_trade_history(
                 if len(df) == 0:
                     return _empty_history_message("deals")
                 sort_src = _normalize_time_col(df, "time")
-                _decode_enum_column(df, "type", "DEAL_TYPE_")
-                _decode_enum_column(df, "entry", "DEAL_ENTRY_")
-                _decode_enum_column(df, "reason", "DEAL_REASON_")
+                for col, prefix in deal_enum_columns:
+                    _decode_enum_column(df, col, prefix)
                 if len(df) > 0:
                     triggers = df.apply(
                         lambda row: _extract_exit_trigger(
@@ -1013,11 +1025,8 @@ def run_trade_history(
                 if sort_src is None:
                     sort_src = _normalize_time_col(df, "time")
                 _normalize_time_col(df, "time_done")
-                _decode_enum_column(df, "type", "ORDER_TYPE_")
-                _decode_enum_column(df, "state", "ORDER_STATE_")
-                _decode_enum_column(df, "type_time", "ORDER_TIME_")
-                _decode_enum_column(df, "type_filling", "ORDER_FILLING_")
-                _decode_enum_column(df, "reason", "ORDER_REASON_")
+                for col, prefix in order_enum_columns:
+                    _decode_enum_column(df, col, prefix)
 
             df["__sort_utc"] = (
                 sort_src if sort_src is not None else pd.Series([float("nan")] * len(df))
