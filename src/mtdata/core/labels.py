@@ -1,6 +1,7 @@
 from typing import Any, Dict, Optional, Literal, List
 import logging
 import math
+import numpy as np
 
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
@@ -19,6 +20,119 @@ from ..utils.barriers import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _first_true_offsets(mask: np.ndarray) -> np.ndarray:
+    if mask.size == 0:
+        return np.array([], dtype=int)
+    hits = np.any(mask, axis=1)
+    offsets = np.argmax(mask, axis=1).astype(int, copy=False) + 1
+    offsets[~hits] = -1
+    return offsets
+
+
+def _build_triple_barrier_outputs(
+    *,
+    closes: np.ndarray,
+    highs: Optional[np.ndarray],
+    lows: Optional[np.ndarray],
+    times: np.ndarray,
+    horizon: int,
+    label_on: str,
+    direction_value: str,
+    pip_size: float,
+    barrier_kwargs: Dict[str, Any],
+) -> tuple[List[int], List[int], List[str], List[Optional[str]], List[Optional[str]], int]:
+    max_entry_index = len(closes) - int(horizon)
+    if max_entry_index <= 0:
+        return [], [], [], [], [], 0
+
+    entry_prices = closes[:max_entry_index]
+    valid_price_mask = np.isfinite(entry_prices) & (entry_prices > 0.0)
+    tp_levels = np.full(max_entry_index, np.nan, dtype=float)
+    sl_levels = np.full(max_entry_index, np.nan, dtype=float)
+    valid_barrier_mask = np.zeros(max_entry_index, dtype=bool)
+
+    for idx in np.flatnonzero(valid_price_mask):
+        price = float(entry_prices[idx])
+        tp_price, sl_price = _resolve_barrier_prices(
+            price=price,
+            direction=direction_value,
+            pip_size=pip_size,
+            adjust_inverted=True,
+            **barrier_kwargs,
+        )
+        if tp_price is None or sl_price is None:
+            continue
+        if not _barrier_prices_are_valid(
+            price=price,
+            direction=direction_value,
+            tp_price=tp_price,
+            sl_price=sl_price,
+        ):
+            continue
+        tp_levels[idx] = float(tp_price)
+        sl_levels[idx] = float(sl_price)
+        valid_barrier_mask[idx] = True
+
+    valid_entry_mask = valid_price_mask & valid_barrier_mask
+    skipped_entries = int(max_entry_index - np.count_nonzero(valid_entry_mask))
+
+    if label_on == 'close':
+        close_windows = np.lib.stride_tricks.sliding_window_view(closes[1:], int(horizon))
+        if direction_value == "long":
+            tp_hits = close_windows >= tp_levels[:, None]
+            sl_hits = close_windows <= sl_levels[:, None]
+        else:
+            tp_hits = close_windows <= tp_levels[:, None]
+            sl_hits = close_windows >= sl_levels[:, None]
+    else:
+        high_values = highs if highs is not None else closes
+        low_values = lows if lows is not None else closes
+        high_windows = np.lib.stride_tricks.sliding_window_view(high_values[1:], int(horizon))
+        low_windows = np.lib.stride_tricks.sliding_window_view(low_values[1:], int(horizon))
+        if direction_value == "long":
+            tp_hits = high_windows >= tp_levels[:, None]
+            sl_hits = low_windows <= sl_levels[:, None]
+        else:
+            tp_hits = low_windows <= tp_levels[:, None]
+            sl_hits = high_windows >= sl_levels[:, None]
+
+    hit_tp = _first_true_offsets(tp_hits)
+    hit_sl = _first_true_offsets(sl_hits)
+
+    labels: List[int] = []
+    hold: List[int] = []
+    entries: List[str] = []
+    tp_times: List[Optional[str]] = []
+    sl_times: List[Optional[str]] = []
+
+    for idx in np.flatnonzero(valid_entry_mask):
+        tp_offset = int(hit_tp[idx])
+        sl_offset = int(hit_sl[idx])
+        if tp_offset < 0 and sl_offset < 0:
+            labels.append(0)
+            hold.append(int(horizon))
+            tp_times.append(None)
+            sl_times.append(None)
+        elif tp_offset > 0 and (sl_offset < 0 or tp_offset < sl_offset):
+            labels.append(1)
+            hold.append(tp_offset)
+            tp_times.append(_format_time_minimal(times[idx + tp_offset]))
+            sl_times.append(None)
+        elif sl_offset > 0 and (tp_offset < 0 or sl_offset <= tp_offset):
+            labels.append(-1)
+            hold.append(sl_offset)
+            tp_times.append(None)
+            sl_times.append(_format_time_minimal(times[idx + sl_offset]))
+        else:
+            labels.append(0)
+            hold.append(min(tp_offset, sl_offset))
+            tp_times.append(_format_time_minimal(times[idx + tp_offset]))
+            sl_times.append(_format_time_minimal(times[idx + sl_offset]))
+        entries.append(_format_time_minimal(times[idx]))
+
+    return labels, hold, entries, tp_times, sl_times, skipped_entries
 
 
 @mcp.tool()
@@ -82,11 +196,6 @@ def labels_triple_barrier(
             pip_size = _get_pip_size(symbol)
 
             N = len(closes)
-            labels: List[int] = []
-            hold: List[int] = []
-            t_entry: List[str] = []
-            tp_times: List[Optional[str]] = []
-            sl_times: List[Optional[str]] = []
             barrier_kwargs = _build_barrier_kwargs_from(
                 {
                     "tp_abs": tp_abs,
@@ -124,80 +233,17 @@ def labels_triple_barrier(
                 sl_price=sample_sl,
             ):
                 return {"error": "Resolved TP/SL barriers are invalid for the entry price."}
-            skipped_entries = 0
-
-            for i in range(0, max_entry_index):
-                p0 = float(closes[i])
-                if not math.isfinite(p0) or p0 <= 0.0:
-                    skipped_entries += 1
-                    continue
-                tp, sl = _resolve_barrier_prices(
-                    price=p0,
-                    direction=direction_value,
-                    pip_size=pip_size,
-                    adjust_inverted=True,
-                    **barrier_kwargs,
-                )
-                if tp is None or sl is None:
-                    skipped_entries += 1
-                    continue
-                if not _barrier_prices_are_valid(
-                    price=p0,
-                    direction=direction_value,
-                    tp_price=tp,
-                    sl_price=sl,
-                ):
-                    skipped_entries += 1
-                    continue
-
-                hit_tp = -1
-                hit_sl = -1
-                for k in range(1, int(horizon) + 1):
-                    idx = i + k
-                    if idx >= N:
-                        break
-                    if label_on == 'close':
-                        x = closes[idx]
-                        tp_hit = x >= tp if direction_value == "long" else x <= tp
-                        sl_hit = x <= sl if direction_value == "long" else x >= sl
-                        if tp_hit and hit_tp < 0:
-                            hit_tp = k
-                        if sl_hit and hit_sl < 0:
-                            hit_sl = k
-                    else:
-                        h = highs[idx] if highs is not None else closes[idx]
-                        lw = lows[idx] if lows is not None else closes[idx]
-                        tp_hit = h >= tp if direction_value == "long" else lw <= tp
-                        sl_hit = lw <= sl if direction_value == "long" else h >= sl
-                        if tp_hit and hit_tp < 0:
-                            hit_tp = k
-                        if sl_hit and hit_sl < 0:
-                            hit_sl = k
-                    if hit_tp > 0 or hit_sl > 0:
-                        break
-                if hit_tp < 0 and hit_sl < 0:
-                    labels.append(0)
-                    hold.append(int(horizon))
-                    tp_times.append(None)
-                    sl_times.append(None)
-                elif hit_tp > 0 and (hit_sl < 0 or hit_tp < hit_sl):
-                    labels.append(1)
-                    hold.append(hit_tp)
-                    tp_times.append(_format_time_minimal(times[i + hit_tp]))
-                    sl_times.append(None)
-                # For high/low mode, both barriers can be touched in the same bar.
-                # Without tick ordering, assume the loss barrier was hit first.
-                elif hit_sl > 0 and (hit_tp < 0 or hit_sl <= hit_tp):
-                    labels.append(-1)
-                    hold.append(hit_sl)
-                    tp_times.append(None)
-                    sl_times.append(_format_time_minimal(times[i + hit_sl]))
-                else:
-                    labels.append(0)
-                    hold.append(min(hit_tp, hit_sl))
-                    tp_times.append(_format_time_minimal(times[i + hit_tp]))
-                    sl_times.append(_format_time_minimal(times[i + hit_sl]))
-                t_entry.append(_format_time_minimal(times[i]))
+            labels, hold, t_entry, tp_times, sl_times, skipped_entries = _build_triple_barrier_outputs(
+                closes=closes,
+                highs=highs,
+                lows=lows,
+                times=times,
+                horizon=int(horizon),
+                label_on=label_on,
+                direction_value=direction_value,
+                pip_size=pip_size,
+                barrier_kwargs=barrier_kwargs,
+            )
 
             payload: Dict[str, Any] = {
                 "success": True,
