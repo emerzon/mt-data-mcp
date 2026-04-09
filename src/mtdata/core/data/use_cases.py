@@ -15,6 +15,7 @@ from .requests import (
 from ..execution_logging import run_logged_operation
 from ..trading.time import _next_candle_wait_payload, _sleep_until_next_candle
 from .wait_events import run_wait_event_loop
+from ...shared.result import Ok, Err, Result, to_dict
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +69,7 @@ def run_wait_candle(
     *,
     sleep_impl: Any = time.sleep,
 ) -> Dict[str, Any]:
-    return run_logged_operation(
+    result = run_logged_operation(
         logger,
         operation="wait_candle",
         timeframe=request.timeframe,
@@ -78,6 +79,7 @@ def run_wait_candle(
             sleep_impl=sleep_impl,
         ),
     )
+    return to_dict(result) if isinstance(result, (Ok, Err)) else result
 
 
 def run_wait_event(
@@ -88,7 +90,7 @@ def run_wait_event(
     monotonic_impl: Any = time.monotonic,
     now_utc_impl: Any = lambda: datetime.now(timezone.utc),
 ) -> Dict[str, Any]:
-    return run_logged_operation(
+    result = run_logged_operation(
         logger,
         operation="wait_event",
         watch_for=len(request.watch_for or []),
@@ -101,8 +103,11 @@ def run_wait_event(
             monotonic_impl=monotonic_impl,
             now_utc_impl=now_utc_impl,
         ),
-        success_eval=lambda result: "error" not in result,
+        success_eval=lambda r: (
+            isinstance(r, Ok) or (isinstance(r, dict) and "error" not in r)
+        ),
     )
+    return to_dict(result) if isinstance(result, (Ok, Err)) else result
 
 
 def _run_data_fetch_candles_impl(
@@ -151,7 +156,7 @@ def _run_wait_candle_impl(
     *,
     request: WaitCandleRequest,
     sleep_impl: Any,
-) -> Dict[str, Any]:
+) -> Result[Dict[str, Any]]:
     try:
         preview = _next_candle_wait_payload(
             request.timeframe,
@@ -169,7 +174,7 @@ def _run_wait_candle_impl(
                 "Skipping blocking wait because the remaining candle wait exceeds max_wait_seconds. "
                 "Increase max_wait_seconds in clients that allow longer MCP tool timeouts."
             )
-            return preview
+            return Ok(preview)
 
         payload = _sleep_until_next_candle(
             request.timeframe,
@@ -177,13 +182,13 @@ def _run_wait_candle_impl(
             sleep_impl=sleep_impl,
         )
     except ValueError as exc:
-        return {"error": str(exc)}
+        return Err(str(exc))
 
     payload["max_wait_seconds"] = (
         None if request.max_wait_seconds is None else float(request.max_wait_seconds)
     )
     payload["success"] = True
-    return payload
+    return Ok(payload)
 
 
 def _run_wait_event_impl(
@@ -193,21 +198,24 @@ def _run_wait_event_impl(
     sleep_impl: Any,
     monotonic_impl: Any,
     now_utc_impl: Any,
-) -> Dict[str, Any]:
+) -> Result[Dict[str, Any]]:
     try:
         if _wait_event_needs_gateway(request):
             connection_error = _ensure_gateway_connection(gateway)
             if connection_error is not None:
-                return connection_error
-        return run_wait_event_loop(
+                return Err(
+                    str(connection_error.get("error", "MT5 connection failed")),
+                    code="MT5_CONNECTION",
+                )
+        return Ok(run_wait_event_loop(
             request,
             gateway=gateway,
             sleep_impl=sleep_impl,
             monotonic_impl=monotonic_impl,
             now_utc_impl=now_utc_impl,
-        )
+        ))
     except ValueError as exc:
-        return {"error": str(exc)}
+        return Err(str(exc))
 
 
 def _wait_event_needs_gateway(request: WaitEventRequest) -> bool:

@@ -7,6 +7,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
+from ...shared.result import Ok, Err, Result, to_dict
 from ...utils.barriers import normalize_trade_direction
 from ...utils.mt5 import MT5ConnectionError
 from . import validation
@@ -1487,7 +1488,7 @@ def run_trade_get_open(
     comment_row_metadata: Any,
 ) -> List[Dict[str, Any]]:
     import pandas as pd
-    return run_logged_operation(
+    result = run_logged_operation(
         logger,
         operation="trade_get_open",
         symbol=request.symbol,
@@ -1505,6 +1506,11 @@ def run_trade_get_open(
             pd_module=pd,
         ),
     )
+    if isinstance(result, Ok):
+        return result.value
+    if isinstance(result, Err):
+        return [to_dict(result)]
+    return result
 
 
 def run_trade_get_pending(
@@ -1519,7 +1525,7 @@ def run_trade_get_pending(
     comment_row_metadata: Any,
 ) -> List[Dict[str, Any]]:
     import pandas as pd
-    return run_logged_operation(
+    result = run_logged_operation(
         logger,
         operation="trade_get_pending",
         symbol=request.symbol,
@@ -1537,6 +1543,11 @@ def run_trade_get_pending(
             pd_module=pd,
         ),
     )
+    if isinstance(result, Ok):
+        return result.value
+    if isinstance(result, Err):
+        return [to_dict(result)]
+    return result
 
 
 def _mt5_int_const(gateway: Any, name: str, fallback: int) -> int:
@@ -1783,11 +1794,11 @@ def _run_trade_query_impl(
     no_rows_message: str,
     time_source_fields: tuple[str, ...],
     build_output: Any,
-) -> List[Dict[str, Any]]:
+) -> Result[List[Dict[str, Any]]]:
     try:
         gateway.ensure_connection()
     except MT5ConnectionError as exc:
-        return [{"error": str(exc)}]
+        return Err(str(exc), code="MT5_CONNECTION")
 
     try:
         fmt_time = format_time_minimal_local if use_client_tz() else format_time_minimal
@@ -1799,7 +1810,7 @@ def _run_trade_query_impl(
             no_rows_message=no_rows_message,
         )
         if empty_response is not None:
-            return empty_response
+            return Ok(empty_response)
 
         df = pd_module.DataFrame(list(rows), columns=rows[0]._asdict().keys())
         time_utc, time_txt = _build_trade_time_columns(
@@ -1829,9 +1840,9 @@ def _run_trade_query_impl(
             limit=request.limit,
             normalize_limit=normalize_limit,
         )
-        return out_df.to_dict(orient="records")
+        return Ok(out_df.to_dict(orient="records"))
     except Exception as exc:
-        return [{"error": str(exc)}]
+        return Err(str(exc))
 
 
 def _run_trade_get_open_impl(
@@ -1845,7 +1856,7 @@ def _run_trade_get_open_impl(
     normalize_limit: Any,
     comment_row_metadata: Any,
     pd_module: Any,
-) -> List[Dict[str, Any]]:
+) -> Result[List[Dict[str, Any]]]:
     return _run_trade_query_impl(
         request=request,
         gateway=gateway,
@@ -1876,7 +1887,7 @@ def _run_trade_get_pending_impl(
     normalize_limit: Any,
     comment_row_metadata: Any,
     pd_module: Any,
-) -> List[Dict[str, Any]]:
+) -> Result[List[Dict[str, Any]]]:
     return _run_trade_query_impl(
         request=request,
         gateway=gateway,

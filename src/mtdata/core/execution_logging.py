@@ -16,6 +16,13 @@ _ACTIVE_OPERATIONS: ContextVar[tuple[str, ...]] = ContextVar(
 
 
 def infer_result_success(result: Any) -> bool:
+    # Support shared.result.Ok / Err without importing at module level
+    # to avoid circular-import risk.
+    cls_name = type(result).__name__
+    cls_module = type(result).__module__ or ""
+    if cls_module.startswith("mtdata.shared.result"):
+        return cls_name == "Ok"
+
     if isinstance(result, dict):
         error_text = result.get("error")
         if isinstance(error_text, str) and error_text.strip():
