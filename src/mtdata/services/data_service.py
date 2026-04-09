@@ -298,7 +298,7 @@ def _shift_rate_times(rates: Any, shift_seconds: int) -> Any:
     if rates is None or int(shift_seconds) == 0:
         return rates
 
-    shift_value = float(shift_seconds)
+    shift_value = int(shift_seconds)
     try:
         names = getattr(getattr(rates, "dtype", None), "names", None)
     except Exception:
@@ -307,8 +307,7 @@ def _shift_rate_times(rates: Any, shift_seconds: int) -> Any:
     if names and "time" in names:
         try:
             shifted_rates = rates.copy()
-            for idx in range(len(shifted_rates)):
-                shifted_rates[idx]["time"] = float(shifted_rates[idx]["time"]) + shift_value
+            shifted_rates["time"] = shifted_rates["time"] + shift_value
         except Exception:
             return rates
         return shifted_rates
