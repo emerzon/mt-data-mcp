@@ -83,17 +83,9 @@ def finviz_http_get(
     return _FINVIZ_HTTP_SESSION.get(url, headers=headers, params=params, timeout=timeout_value)
 
 
-def reset_finviz_http_session() -> None:
-    """Reset the HTTP session (useful for testing)."""
-    global _FINVIZ_HTTP_SESSION
-    with _FINVIZ_HTTP_SESSION_LOCK:
-        _FINVIZ_HTTP_SESSION = None
-
-
 __all__ = [
     "get_finviz_http_timeout",
     "get_finviz_screener_max_rows",
     "get_finviz_page_limit_max",
     "finviz_http_get",
-    "reset_finviz_http_session",
 ]
