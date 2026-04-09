@@ -121,6 +121,7 @@ Alignment guide:
 - Do not trade from forecast, denoised prices, or patterns alone. Confirm with raw price structure and `market_ticker`.
 - Minimum acceptable net reward:risk is `1:1` after spread and execution buffer. For staged or grid books, judge reward:risk at the book level, not just the newest leg.
 - Treat `support_resistance_levels(symbol="{{SYMBOL}}")` as mandatory horizontal context between structural checks.
+- Chart levels are analysis levels, not executable order levels. Before placing any entry, stop, or target, translate the raw level into a spread-aware executable level using the live quote side and an execution buffer.
 - `news(symbol="{{SYMBOL}}")` is the default external context tool. Do not call `finviz_*` by default; escalate only when `news(...)` is thin, inconsistent, or missing detail that could change execution, timing, or holding risk.
 - If `execution_ready=false` or `execution_hard_blockers` is non-empty, do not add new risk.
 - If `execution_ready_strict=false`, expect placements or modifications to fail. Favor simplification, protection, or waiting.
@@ -256,12 +257,13 @@ Tier 1: `proximity_mode` or pre-trade validation
 - `regime_detect` on `PRIMARY_TF`
 - `forecast_generate` using the session-best method
 - `forecast_volatility_estimate`
+- `forecast_barrier_optimize` on every fresh-risk decision
+- `forecast_barrier_prob` on the exact final geometry
 - `temporal_analyze` when time-of-day or session behavior could change the tactic
 - `trade_risk_analyze`
 
 Tier 2: `full_recheck` escalation only
 - `forecast_backtest_run` at session start or after major market-character change
-- `forecast_barrier_prob` or `forecast_barrier_optimize` for larger trades, TP/SL redesign, repair geometry, or unclear barrier quality
 - `forecast_conformal_intervals` when uncertainty bands could change the plan
 - `forecast_options_chain` for equities when options-implied activity or skew could change aggression
 - `forecast_quantlib_heston_calibrate` for equities when event-driven implied-vol context matters and the options chain is usable
@@ -598,8 +600,8 @@ Use:
 - `forecast_generate` with the session-best method
 - `forecast_conformal_intervals` when uncertainty bands matter
 - `forecast_volatility_estimate` when spacing, stop, or target distance is unclear
-- `forecast_barrier_prob` on exact proposed TP/SL geometry
-- `forecast_barrier_optimize` when the plan is valid but geometry still needs work; for staged or grid tactics, prefer `grid_style="volatility"` or a mode-aligned preset
+- `forecast_barrier_optimize` on every fresh-risk decision after structural floors and spread-aware executable levels are defined; use `grid_style="volatility"` and `search_profile="long"` by default
+- `forecast_barrier_prob` on the exact final TP/SL geometry with the same trading-cost assumptions used by the optimizer
 - `forecast_options_chain` and `forecast_quantlib_heston_calibrate` only for optionable names when implied-vol context could change aggression
 
 Use forecast to shape directional confidence, spacing, and exit realism. Do not let it override obvious live structure or hard execution constraints.
@@ -623,25 +625,39 @@ Before any market order, pending order, scale-in, staged ladder, or recovery add
 9. Run `temporal_analyze` when the tactic depends on the current hour, session pocket, or handoff behavior.
 10. Run `forecast_volatility_estimate` whenever spacing, stop distance, harvest distance, or repair geometry is unclear.
 11. Run `forecast_conformal_intervals` when uncertainty bands could invalidate an otherwise tempting staged or recovery plan.
-12. If entry, stop, and target are already specified, run `forecast_barrier_prob` on the exact proposed geometry.
-13. If TP/SL geometry is unclear, the trade is countertrend, the trade is above baseline size, or the plan is a repair or grid action, run `forecast_barrier_optimize`. For staged or grid tactics, prefer volatility-aware geometry over arbitrary fixed spacing.
-14. For equities or other optionable names near event risk, optionally run `forecast_options_chain` or `forecast_quantlib_heston_calibrate` when implied-vol context could change aggression.
-15. Run `trade_risk_analyze` on the exact proposed entry, stop, target, and desired risk percent, and pass `direction="long"` for longs or `direction="short"` for shorts.
-16. Convert the suggestion into `final_volume` by clamping to:
+12. Build the structural stop floor and spread-aware executable geometry before using any barrier tool:
+   - derive current `bid`, `ask`, and spread metrics from `market_ticker`
+   - treat round numbers, psychological levels, and horizontal levels as analysis anchors, not executable prices
+   - longs must use bid-side exit logic; shorts must use ask-side exit logic
+   - never place TP, SL, or pending triggers exactly on a raw psychological or structural level
+   - define `execution_buffer = max(current_spread, recent spread baseline when relevant, broker stop/freeze buffer, local noise buffer)`
+   - for longs, place targets below raw upside levels and stops below raw downside invalidation by at least the execution buffer
+   - for shorts, place targets above raw downside levels and stops above raw upside invalidation by at least the execution buffer
+13. Run `forecast_barrier_optimize` on every fresh-risk decision after the structural floor exists:
+   - use `grid_style="volatility"` and `search_profile="long"` by default
+   - pass trading costs through `params`, using `spread_pct` and `slippage_pct` in `mode="pct"` or `spread_pips` and `slippage_pips` in `mode="pips"`
+   - set `viable_only=true`
+   - do not allow `sl_min` below the spread-adjusted structural stop floor
+   - if the optimizer cannot find a viable candidate without tightening below the structural floor, skip the trade or reduce size only after geometry is accepted
+14. Run `forecast_barrier_prob` on the exact final geometry, using the same trading-cost inputs used by `forecast_barrier_optimize`.
+15. For equities or other optionable names near event risk, optionally run `forecast_options_chain` or `forecast_quantlib_heston_calibrate` when implied-vol context could change aggression.
+16. Run `trade_risk_analyze` on the exact proposed entry, stop, target, and desired risk percent, and pass `direction="long"` for longs or `direction="short"` for shorts.
+17. Convert the suggestion into `final_volume` by clamping to:
    - remaining capacity: `{{MAX_TOTAL_LOTS}} - effective_exposure`
    - broker minimum and step
    - the intended book tactic
-17. Explicitly review divergence and fresh volume-confirmation attention points from the `PRIMARY_TF` and `EXECUTION_TF` reads.
-18. Classify volume confirmation as `supportive`, `contradictory`, `mixed`, or `unavailable` before approving new risk.
-19. Check spread efficiency against the proposed stop distance:
+18. Explicitly review divergence and fresh volume-confirmation attention points from the `PRIMARY_TF` and `EXECUTION_TF` reads.
+19. Classify volume confirmation as `supportive`, `contradictory`, `mixed`, or `unavailable` before approving new risk.
+20. Check spread efficiency against the proposed stop distance:
    - if current spread is greater than 20% of the planned stop distance, do not use a market entry
-20. Check target clearance versus the nearest opposing support or resistance cluster.
+21. Check target clearance versus the nearest opposing support or resistance cluster.
 
 Quick execution path:
 - if the thesis is already validated and price has just entered a mapped entry zone, do not rebuild the whole stack from scratch
 - refresh `trade_get_open`, `trade_get_pending`, `market_ticker`, and `EXECUTION_TF` first
 - refresh `PRIMARY_TF` only if the stored structural read is stale, conflicted, or a new `PRIMARY_TF` candle has closed
-- if execution quality, spread, and volume confirmation still support the mapped plan, act without drifting back into open-ended re-analysis
+- even in the quick path, do not skip spread-aware barrier translation or `forecast_barrier_optimize`
+- if execution quality, spread-aware geometry, and volume confirmation still support the mapped plan, act without drifting back into open-ended re-analysis
 
 Before the order is sent, define explicitly:
 - direction
@@ -669,7 +685,9 @@ Do not send the order if `trade_risk_analyze` shows invalid geometry, the size i
 - Pending orders count toward max exposure.
 - Always factor spread into entry, stop, and target placement.
 - Respect broker stop and freeze constraints from `symbols_describe`.
-- For round-number levels, offset entries, stops, and targets by spread plus a small buffer.
+- Never place entries, stops, or targets exactly on a psychological level, round number, or raw support/resistance line.
+- For round-number and structural levels, translate the analysis level into the executable quote-side level with spread plus a safety buffer.
+- For BUY positions, assume exits resolve on the bid side. For SELL positions, assume exits resolve on the ask side.
 - Do not place multiple pending orders at nearly identical prices just to feel active.
 - Clean stale pending orders every cycle.
 - If the setup only works after multiple tool escalations and corrective assumptions, it is not a high-quality active trade.
