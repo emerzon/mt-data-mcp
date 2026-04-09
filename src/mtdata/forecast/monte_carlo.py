@@ -199,6 +199,62 @@ def fit_gaussian_mixture_1d(
     return w[order], mu[order], sigma[order], gamma[:, order], ll
 
 
+# ---------------------------------------------------------------------------
+# HMM degeneracy detection constants
+# ---------------------------------------------------------------------------
+_DEGEN_MAX_SIGMA_RATIO: float = 100.0
+"""Standalone trigger: if max(σ)/min(σ) across states exceeds this, the
+model has a ghost state with an implausible variance."""
+
+_DEGEN_MIN_OCCUPANCY_ABS: int = 5
+"""Absolute floor on posterior occupancy (expected observation count)."""
+
+_DEGEN_MIN_OCCUPANCY_FRAC: float = 0.01
+"""Relative floor on posterior occupancy (fraction of N)."""
+
+_DEGEN_COMBINED_SELF_TRANS: float = 0.99
+"""Self-transition threshold used *together* with low occupancy."""
+
+
+def _is_hmm_degenerate(
+    model: object, x2: np.ndarray, K: int, N: int,
+) -> bool:
+    """Return *True* if the fitted HMM has collapsed/ghost states.
+
+    Two independent criteria (either triggers fallback):
+
+    1. **Extreme variance pathology** — any state's σ is > 100× another's.
+       This catches ghost states with physically impossible volatility.
+
+    2. **Low occupancy + absorbing transition** — a state's posterior
+       occupancy (soft count from ``predict_proba``) is below
+       ``max(5, 0.01 * N)`` *and* the highest diagonal entry in the
+       transition matrix exceeds 0.99.  Neither alone is sufficient:
+       rare-but-real regimes can have low occupancy, and persistent
+       regimes can have high self-transition.
+    """
+    if K <= 1:
+        return False
+
+    # --- criterion 1: sigma ratio ---
+    covars = np.asarray(model.covars_, dtype=float).reshape(K, -1)[:, 0]
+    sigma = np.sqrt(np.clip(covars, 1e-12, None))
+    if sigma.max() / max(sigma.min(), 1e-12) > _DEGEN_MAX_SIGMA_RATIO:
+        return True
+
+    # --- criterion 2: low posterior occupancy + absorbing transition ---
+    gamma = np.asarray(model.predict_proba(x2), dtype=float)
+    min_occupancy = float(gamma.sum(axis=0).min())
+    occ_threshold = max(_DEGEN_MIN_OCCUPANCY_ABS, _DEGEN_MIN_OCCUPANCY_FRAC * N)
+
+    if min_occupancy < occ_threshold:
+        diag = np.diag(np.asarray(model.transmat_, dtype=float))
+        if float(diag.max()) > _DEGEN_COMBINED_SELF_TRANS:
+            return True
+
+    return False
+
+
 def _fit_hmmlearn_gaussian_hmm_1d(
     x: np.ndarray,
     n_states: int = 2,
@@ -206,7 +262,11 @@ def _fit_hmmlearn_gaussian_hmm_1d(
     tol: float = 1e-6,
     seed: Optional[int] = 42,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Fit a 1D GaussianHMM via hmmlearn.
+    """Fit a 1D GaussianHMM via hmmlearn, with automatic degeneracy fallback.
+
+    If the fitted model has ghost/collapsed states (detected via
+    ``_is_hmm_degenerate``), the function silently re-fits with fewer
+    components until a non-degenerate fit is found (minimum K=1).
 
     Returns (mu, sigma, A, init).
     """
@@ -215,28 +275,36 @@ def _fit_hmmlearn_gaussian_hmm_1d(
     x = np.asarray(x, dtype=float)
     x = x[np.isfinite(x)]
     N = int(x.size)
-    K = max(1, int(n_states))
-    if N < max(4, K + 1):
+    requested_K = max(1, int(n_states))
+    if N < max(4, requested_K + 1):
         raise ValueError("Not enough returns for GaussianHMM calibration")
 
-    # Exclude 'm' from init_params so hmmlearn respects our pre-set means
-    # and skips its KMeans initialization step.  KMeans blocks indefinitely
-    # in asyncio.to_thread worker threads on Windows when joblib probes CPU
-    # topology (same root cause patched for GaussianMixture above).
-    model = GaussianHMM(
-        n_components=K,
-        covariance_type='diag',
-        n_iter=int(max_iter),
-        tol=float(tol),
-        random_state=seed,
-        init_params='stc',
-    )
     x2 = x.reshape(-1, 1)
-    quantiles = np.linspace(0.0, 1.0, K + 2, dtype=float)[1:-1]
-    model.means_ = np.quantile(x, quantiles).reshape(K, 1)
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        model.fit(x2)
+
+    # Try from requested K down to 1; stop at first non-degenerate fit.
+    for K in range(requested_K, 0, -1):
+        # Exclude 'm' from init_params so hmmlearn respects our pre-set
+        # means and skips its KMeans initialization step.  KMeans blocks
+        # indefinitely in asyncio.to_thread workers on Windows (joblib
+        # CPU-topology probe).
+        model = GaussianHMM(
+            n_components=K,
+            covariance_type='diag',
+            n_iter=int(max_iter),
+            tol=float(tol),
+            random_state=seed,
+            init_params='stc',
+        )
+        quantiles = np.linspace(0.0, 1.0, K + 2, dtype=float)[1:-1]
+        model.means_ = np.quantile(x, quantiles).reshape(K, 1)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            model.fit(x2)
+
+        if K == 1 or not _is_hmm_degenerate(model, x2, K, N):
+            break
+
+    # Extract parameters from the accepted fit.
     gamma = np.asarray(model.predict_proba(x2), dtype=float)
     mu = np.asarray(model.means_, dtype=float).reshape(-1)
     covars = np.asarray(model.covars_, dtype=float)
@@ -316,6 +384,8 @@ def simulate_hmm_mc(
     - sigma: (K,)
     - trans: (K,K)
     - init: (K,)
+    - requested_n_states: int
+    - fitted_n_states: int  (may be < requested if model degenerated)
     """
     rng = np.random.RandomState(seed)
     _, rets, last_price = _prepare_simulation_history(prices, "hmm")
@@ -352,6 +422,8 @@ def simulate_hmm_mc(
         'trans': A,
         'init': init,
         'model_type': "gaussian_hmm_baum_welch",
+        'requested_n_states': int(n_states),
+        'fitted_n_states': K,
     }
 
 
