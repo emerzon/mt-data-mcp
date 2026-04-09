@@ -415,7 +415,12 @@ def _classify_waves(
         if not np.all(np.isfinite(scaled)):
             return np.array([]), None, None, None, None
 
-        gmm = GaussianMixture(n_components=config.gmm_components, random_state=42)
+        gmm = GaussianMixture(
+            n_components=config.gmm_components, random_state=42,
+            # Skip default KMeans initialization — it blocks indefinitely in
+            # asyncio.to_thread worker threads on Windows (joblib CPU probe).
+            init_params='random_from_data',
+        )
         gmm.fit(scaled)
         labels = gmm.predict(scaled)
         if np.unique(labels).size < int(config.gmm_components):

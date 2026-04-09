@@ -666,8 +666,17 @@ def regime_detect(
             else:
                 X_final = X_scaled
 
-            # Cluster
-            kmeans = kmeans_cls(n_clusters=k_regimes, random_state=42, n_init='auto')
+            # Cluster — seed centroids from evenly-spaced rows so KMeans++
+            # init is skipped.  KMeans++ triggers joblib CPU-topology probing
+            # which blocks indefinitely in asyncio.to_thread workers on Windows.
+            n_samples = X_final.shape[0]
+            if n_samples < k_regimes:
+                return _finish({"error": f"Not enough samples ({n_samples}) for {k_regimes} clusters"})
+            idx = np.round(np.linspace(0, n_samples - 1, k_regimes)).astype(int)
+            kmeans = kmeans_cls(
+                n_clusters=k_regimes, random_state=42, n_init=1,
+                init=X_final[idx],
+            )
             labels = kmeans.fit_predict(X_final)
 
             # Map back to full length
