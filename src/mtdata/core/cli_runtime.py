@@ -318,7 +318,14 @@ def create_command_function(  # noqa: C901
                 )
                 return 1
 
-        if bool(getattr(args, "verbose", False)):
+        cli_verbose = getattr(args, "verbose", False)
+        if isinstance(cli_verbose, str):
+            normalized_verbose = cli_verbose.strip().lower()
+            if normalized_verbose == "true":
+                cli_verbose = True
+            elif normalized_verbose == "false":
+                cli_verbose = False
+        if bool(cli_verbose):
             kwargs["verbose"] = True
         kwargs["__cli_raw"] = True
         if invoke_tool_function is not None:
