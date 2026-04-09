@@ -227,6 +227,12 @@ def _fit_hmmlearn_gaussian_hmm_1d(
         random_state=seed,
     )
     x2 = x.reshape(-1, 1)
+    # Pre-set means so hmmlearn skips its KMeans initialization step.
+    # KMeans blocks indefinitely in asyncio.to_thread worker threads on
+    # Windows when joblib probes CPU topology (same issue patched for
+    # GaussianMixture in _gaussian_mixture_init_kwargs above).
+    quantiles = np.linspace(0.0, 1.0, K + 2, dtype=float)[1:-1]
+    model.means_ = np.quantile(x, quantiles).reshape(K, 1)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         model.fit(x2)
