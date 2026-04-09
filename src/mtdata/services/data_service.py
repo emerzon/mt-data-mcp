@@ -47,9 +47,6 @@ from ..utils.denoise import (
     normalize_denoise_spec as _normalize_denoise_spec,
 )
 
-# Keep legacy patch seams available for tests and external callers.
-_DATA_SERVICE_COMPAT_EXPORTS = (_mt5_epoch_to_utc,)
-
 # Simplify entrypoint and helpers.
 from ..utils.simplify import (
     _choose_simplify_points,
