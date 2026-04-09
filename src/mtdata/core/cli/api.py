@@ -5,12 +5,9 @@ Automatically discovers function parameters and creates CLI arguments
 """
 
 import argparse
-from contextlib import contextmanager, redirect_stderr, redirect_stdout
 import difflib
 import inspect
-import io
 import json
-import logging
 import os
 import sys
 import types
@@ -55,6 +52,14 @@ from ..cli_runtime import (
     parse_kv_string as _parse_kv_string_impl,
     parse_set_overrides as _parse_set_overrides_impl,
 )
+from .runtime import (
+    _argparse_color_enabled,
+    _configure_cli_logging,
+    _debug,
+    _debug_enabled,
+    _suppress_cli_side_output,
+    _temporary_environment,
+)
 
 # Keep formatting helpers in this module namespace for backward-compatible
 # exports via mtdata.core.cli.__init__'s namespace copy.
@@ -63,33 +68,8 @@ _CLI_NAMESPACE_EXPORTS = (
     _build_cli_timezone_meta,
     _build_cli_timezone_meta_brief,
     _safe_tz_name,
+    _temporary_environment,
 )
-
-# Simple debug logging controlled by env var MTDATA_CLI_DEBUG
-def _debug_enabled() -> bool:
-    try:
-        v = os.environ.get("MTDATA_CLI_DEBUG", "").strip().lower()
-        return v not in ("", "0", "false", "no")
-    except Exception:
-        return False
-
-
-def _debug(msg: str) -> None:
-    if _debug_enabled():
-        try:
-            print(f"[cli-debug] {msg}", file=sys.stderr)
-        except Exception:
-            pass
-
-
-def _argparse_color_enabled() -> bool:
-    if os.environ.get("NO_COLOR") is not None:
-        return False
-    try:
-        return bool(sys.stderr.isatty())
-    except Exception:
-        return False
-
 
 def _is_typed_dict_type(value: Any) -> bool:
     try:
@@ -102,70 +82,6 @@ def _is_typed_dict_type(value: Any) -> bool:
         getattr(value, "__required_keys__", None) is not None
         or getattr(value, "__optional_keys__", None) is not None
     )
-
-
-def _configure_cli_logging(*, verbose: bool) -> None:
-    """Keep CLI output clean by default while preserving opt-in execution logs."""
-    try:
-        mtdata_logger = logging.getLogger("mtdata")
-        mtdata_logger.setLevel(logging.INFO if verbose else logging.WARNING)
-        mtdata_logger.propagate = bool(verbose)
-        if not any(isinstance(handler, logging.NullHandler) for handler in mtdata_logger.handlers):
-            mtdata_logger.addHandler(logging.NullHandler())
-    except Exception:
-        pass
-
-
-@contextmanager
-def _temporary_environment(overrides: Dict[str, Optional[str]]):
-    previous: Dict[str, Optional[str]] = {}
-    missing: set[str] = set()
-    for key, value in overrides.items():
-        if key in os.environ:
-            previous[key] = os.environ.get(key)
-        else:
-            missing.add(key)
-        if value is None:
-            os.environ.pop(key, None)
-        else:
-            os.environ[key] = str(value)
-    try:
-        yield
-    finally:
-        for key in overrides:
-            if key in missing:
-                os.environ.pop(key, None)
-                continue
-            restored = previous.get(key)
-            if restored is None:
-                os.environ.pop(key, None)
-            else:
-                os.environ[key] = restored
-
-
-@contextmanager
-def _suppress_cli_side_output(*, enabled: bool):
-    if not enabled:
-        yield
-        return
-
-    stdout_buffer = io.StringIO()
-    stderr_buffer = io.StringIO()
-    previous_disable = logging.root.manager.disable
-    env_overrides = {
-        "HF_HUB_DISABLE_PROGRESS_BARS": "1",
-        "TOKENIZERS_PARALLELISM": "false",
-        "TRANSFORMERS_VERBOSITY": "error",
-        "TQDM_DISABLE": "1",
-    }
-    try:
-        logging.disable(logging.CRITICAL)
-        with _temporary_environment(env_overrides):
-            with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
-                yield
-    finally:
-        logging.disable(previous_disable)
-
 
 def _invoke_cli_tool_function(func: Any, *, args: Any, cmd_name: str, kwargs: Dict[str, Any]) -> Any:
     del cmd_name
