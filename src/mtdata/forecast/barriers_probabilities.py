@@ -130,7 +130,13 @@ def forecast_barrier_hit_probabilities(
         sims = int(p.get('n_sims', p.get('sims', 2000)) or 2000)
         if sims <= 0:
             return {"error": f"Invalid n_sims: {sims}. Must be >= 1."}
-        seed = int(p.get('seed', 42) or 42)
+        seed_raw = p.get('seed')
+        seed = int(seed_raw) if seed_raw is not None else None
+        request_seed_base = (
+            int(seed)
+            if seed is not None
+            else int(np.random.default_rng().integers(0, np.iinfo(np.int32).max))
+        )
         method_key = str(method).lower().strip()
         method_requested = method_key
         auto_reason = None
@@ -142,24 +148,48 @@ def forecast_barrier_hit_probabilities(
         
         try:
             if method_key in ('mc_gbm', 'mc_gbm_bb'):
-                sim = _simulate_gbm_mc(prices, horizon=horizon_val, n_sims=int(sims), seed=int(seed))
+                sim = _simulate_gbm_mc(
+                    prices,
+                    horizon=horizon_val,
+                    n_sims=int(sims),
+                    seed=int(request_seed_base),
+                )
             elif method_key == 'hmm_mc':
                 n_states = int(p.get('n_states', 2) or 2)
-                sim = _simulate_hmm_mc(prices, horizon=horizon_val, n_states=int(n_states), n_sims=int(sims), seed=int(seed))
+                sim = _simulate_hmm_mc(
+                    prices,
+                    horizon=horizon_val,
+                    n_states=int(n_states),
+                    n_sims=int(sims),
+                    seed=int(request_seed_base),
+                )
             elif method_key == 'garch':
                 p_order = int(p.get('p', 1))
                 q_order = int(p.get('q', 1))
-                sim = _simulate_garch_mc(prices, horizon=horizon_val, n_sims=int(sims), seed=int(seed), p_order=p_order, q_order=q_order)
+                sim = _simulate_garch_mc(
+                    prices,
+                    horizon=horizon_val,
+                    n_sims=int(sims),
+                    seed=int(request_seed_base),
+                    p_order=p_order,
+                    q_order=q_order,
+                )
             elif method_key == 'bootstrap':
                 bs = p.get('block_size')
                 if bs: bs = int(bs)
-                sim = _simulate_bootstrap_mc(prices, horizon=horizon_val, n_sims=int(sims), seed=int(seed), block_size=bs)
+                sim = _simulate_bootstrap_mc(
+                    prices,
+                    horizon=horizon_val,
+                    n_sims=int(sims),
+                    seed=int(request_seed_base),
+                    block_size=bs,
+                )
             elif method_key == 'heston':
                 sim = _simulate_heston_mc(
                     prices,
                     horizon=horizon_val,
                     n_sims=int(sims),
-                    seed=int(seed),
+                    seed=int(request_seed_base),
                     kappa=p.get('kappa'),
                     theta=p.get('theta'),
                     xi=p.get('xi'),
@@ -171,7 +201,7 @@ def forecast_barrier_hit_probabilities(
                     prices,
                     horizon=horizon_val,
                     n_sims=int(sims),
-                    seed=int(seed),
+                    seed=int(request_seed_base),
                     jump_lambda=p.get('jump_lambda', p.get('lambda')),
                     jump_mu=p.get('jump_mu'),
                     jump_sigma=p.get('jump_sigma'),
@@ -212,7 +242,7 @@ def forecast_barrier_hit_probabilities(
                 log_paths = np.log(np.clip(price_paths, 1e-12, None))
                 log_s0 = float(np.log(max(last_price, 1e-12)))
                 bb_log_paths = np.concatenate([np.full((S, 1), log_s0), log_paths], axis=1)
-                rng_bb = np.random.RandomState(int(seed) + 7)
+                rng_bb = np.random.RandomState(int(request_seed_base) + 7)
                 bb_uniform_tp = rng_bb.rand(S, H)
                 bb_uniform_sl = rng_bb.rand(S, H)
         

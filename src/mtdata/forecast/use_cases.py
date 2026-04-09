@@ -727,12 +727,6 @@ def run_forecast_barrier_optimize(
     params_norm = parse_kv_or_json(request.params)
     if not isinstance(params_norm, dict):
         params_norm = {}
-    defaults = {
-        "seed": 42,
-    }
-    for key, value in defaults.items():
-        if key not in params_norm:
-            params_norm[key] = value
     if str(params_norm.get("optimizer", "")).strip().lower() == "optuna":
         optuna_defaults = {
             "sampler": "tpe",

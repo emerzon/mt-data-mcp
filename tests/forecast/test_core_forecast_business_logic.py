@@ -975,11 +975,11 @@ def test_forecast_barrier_optimize_keeps_grid_default_path(monkeypatch):
     assert out["ok"] is True
     assert called["method"] == "auto"
     assert called["search_profile"] == "medium"
+    assert "seed" not in called["params"]
     assert "optimizer" not in called["params"]
     assert "sampler" not in called["params"]
     assert "pruner" not in called["params"]
     assert "n_jobs" not in called["params"]
-    assert called["params"]["seed"] == 42
 
 
 def test_forecast_barrier_optimize_applies_optuna_defaults_when_requested(monkeypatch):
@@ -999,7 +999,22 @@ def test_forecast_barrier_optimize_applies_optuna_defaults_when_requested(monkey
     assert called["params"]["sampler"] == "tpe"
     assert called["params"]["pruner"] == "median"
     assert int(called["params"]["n_jobs"]) >= 1
-    assert called["params"]["seed"] == 42
+
+
+def test_forecast_barrier_optimize_preserves_explicit_seed(monkeypatch):
+    raw_opt = _unwrap(cf.forecast_barrier_optimize)
+    called = {}
+
+    import mtdata.forecast.barriers as barriers_mod
+
+    def fake_optimize(**kwargs):
+        called.update(kwargs)
+        return {"ok": True}
+
+    monkeypatch.setattr(barriers_mod, "forecast_barrier_optimize", fake_optimize)
+    out = raw_opt(request=ForecastBarrierOptimizeRequest(symbol="BTCUSD", params={"seed": 17}))
+    assert out["ok"] is True
+    assert called["params"]["seed"] == 17
 
 
 def test_forecast_barrier_optimize_returns_connection_error_payload(monkeypatch):
