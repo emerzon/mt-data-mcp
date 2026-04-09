@@ -59,8 +59,8 @@ Use these tools for the classifier:
 1. `trade_account_info`
 2. `market_ticker(symbol="{{SYMBOL}}")`
 3. `news(symbol="{{SYMBOL}}")`
-4. `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="H1", limit=220, indicators="adx(14),chop(14),er(10),natr(14),aroon(14),squeeze_pro,mfi(14)")`
-5. `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="H4", limit=220, indicators="adx(14),chop(14),er(10),natr(14),aroon(14),squeeze_pro,mfi(14)")` when deciding between `intraday` and `swing`
+4. `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="H1", limit=220, indicators="adx(14),atr(14),chop(14),er(10),natr(14),aroon(14),squeeze_pro,mfi(14)")`
+5. `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="H4", limit=220, indicators="adx(14),atr(14),chop(14),er(10),natr(14),aroon(14),squeeze_pro,mfi(14)")` when deciding between `intraday` and `swing`
 6. `regime_detect` on the proposed `PRIMARY_TF` when uncertain
 7. `forecast_volatility_estimate` only if volatility regime ambiguity could change the mode
 
@@ -257,7 +257,7 @@ Tier 1: `proximity_mode` or pre-trade validation
 - `regime_detect` on `PRIMARY_TF`
 - `forecast_generate` using the session-best method
 - `forecast_volatility_estimate`
-- `forecast_barrier_optimize` on every fresh-risk decision
+- `forecast_barrier_optimize` when fresh risk still needs TP/SL discovery after the structural stop floor is defined
 - `forecast_barrier_prob` on the exact final geometry
 - `temporal_analyze` when time-of-day or session behavior could change the tactic
 - `trade_risk_analyze`
@@ -355,9 +355,9 @@ Run at session start, after reconnect, after a major event, or after repeated ex
 8. Resolve the active ladder:
    - if `PRIMARY_TF` and `EXECUTION_TF` were user-pinned, keep them and derive `HIGHER_TF`
    - otherwise determine `TRADING_MODE` and assign `HIGHER_TF`, `PRIMARY_TF`, and `EXECUTION_TF` from the mode ladder
-9. `data_fetch_candles(symbol="{{SYMBOL}}", timeframe=HIGHER_TF, limit=220, indicators="ema(20),ema(50),rsi(14),macd(12,26,9),adx(14),mfi(14)")`
-10. `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{PRIMARY_TF}}", limit=180, indicators="ema(20),ema(50),rsi(14),macd(12,26,9),adx(14),mfi(14)")`
-11. `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{EXECUTION_TF}}", limit=140, indicators="ema(20),ema(50),rsi(14),macd(12,26,9),adx(14),natr(14),supertrend(7,3),mfi(14),obv")`
+9. `data_fetch_candles(symbol="{{SYMBOL}}", timeframe=HIGHER_TF, limit=220, indicators="ema(20),ema(50),rsi(14),macd(12,26,9),adx(14),atr(14),mfi(14)")`
+10. `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{PRIMARY_TF}}", limit=180, indicators="ema(20),ema(50),rsi(14),macd(12,26,9),adx(14),atr(14),mfi(14)")`
+11. `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{EXECUTION_TF}}", limit=140, indicators="ema(20),ema(50),rsi(14),macd(12,26,9),adx(14),atr(14),natr(14),supertrend(7,3),mfi(14),obv")`
 12. `support_resistance_levels(symbol="{{SYMBOL}}")`
 13. `forecast_list_methods()`
 14. Optional asset-specific context drill-down only when `news(...)` is thin or asset-specific detail could still change the plan:
@@ -425,9 +425,9 @@ Escalate to `proximity_mode` when:
 - a `price_touch_level`, `price_break_level`, `price_enter_zone`, `pending_near_fill`, or `stop_threat` event fires
 
 In `proximity_mode`, refresh only what is needed:
-- `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{EXECUTION_TF}}", limit=120, indicators="ema(20),ema(50),rsi(14),macd(12,26,9),adx(14),natr(14),supertrend(7,3),mfi(14),obv")`
+- `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{EXECUTION_TF}}", limit=120, indicators="ema(20),ema(50),rsi(14),macd(12,26,9),adx(14),atr(14),natr(14),supertrend(7,3),mfi(14),obv")`
 - `support_resistance_levels(symbol="{{SYMBOL}}")` only when price is interacting with the mapped structure or the level map is stale
-- `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{PRIMARY_TF}}", limit=140, indicators="ema(20),ema(50),rsi(14),macd(12,26,9),adx(14),mfi(14)")` only when a new `PRIMARY_TF` candle closed, execution quality conflicts with the stored thesis, or fresh risk may be added
+- `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{PRIMARY_TF}}", limit=140, indicators="ema(20),ema(50),rsi(14),macd(12,26,9),adx(14),atr(14),mfi(14)")` only when a new `PRIMARY_TF` candle closed, execution quality conflicts with the stored thesis, or fresh risk may be added
 
 Escalate to `reaction_mode` when:
 - a volume or range expansion is abnormal
@@ -497,6 +497,18 @@ Volatility usage rules:
 - use the returned per-bar and horizon volatility to decide whether the outer leg can realistically be harvested before the invalidation zone is threatened
 - if volatility is expanding sharply against the book, simplify rather than adding another repair leg
 
+### ATR and Structural Stop Policy
+- `forecast_volatility_estimate` and `atr(14)` are complements, not substitutes. Use ATR for local noise and stop-buffer sizing; use the volatility forecast for expected excursion and horizon realism.
+- Use `support_resistance_levels` zone envelopes as the structural invalidation map. Use `zone_low` and `zone_high` when available; use the level `value` only as fallback.
+- Define `atr_exec = ATR(14)` on `EXECUTION_TF` and `atr_primary = ATR(14)` on `PRIMARY_TF` for any fresh-risk decision.
+- Define `execution_buffer = max(1.5 * current_spread, recent spread baseline when relevant, broker stop/freeze buffer, local noise buffer)`.
+- Define `volatility_buffer = max(0.5 * atr_exec, 0.25 * atr_primary)`.
+- Add `liquidity_buffer = 0` by default and raise it to around `0.1 * atr_exec` to `0.25 * atr_exec` when the stop would sit near a meaningful round number, pivot cluster, prior obvious sweep point, or highly visible swing extreme.
+- For longs, the protective SL must sit below the lower edge of the adverse invalidation zone by at least `max(execution_buffer, volatility_buffer) + liquidity_buffer`.
+- For shorts, the protective SL must sit above the upper edge of the adverse invalidation zone by at least `max(execution_buffer, volatility_buffer) + liquidity_buffer`.
+- If the required protective stop makes the setup unattractive, reduce size or skip. Do not tighten the protective stop just to preserve reward:risk.
+- Distinguish the protective SL from the management exit. If the thesis weakens before the catastrophic stop is touched, reduce or close earlier instead of waiting for the hard stop to save the analysis.
+
 ### Uncertainty Bands
 Use `forecast_conformal_intervals` when a point forecast and raw volatility estimate are not enough.
 - if uncertainty bands are too wide, reduce aggression, widen spacing, or wait
@@ -537,11 +549,11 @@ Priority:
 
 ### Core Indicator Pack
 Default review pack:
-`ema(20),ema(50),rsi(14),macd(12,26,9),adx(14),mfi(14)`
+`ema(20),ema(50),rsi(14),macd(12,26,9),adx(14),atr(14),mfi(14)`
 
 ### Execution and Timing Pack
 Use on `EXECUTION_TF` whenever timing, staging, or grid spacing matters:
-`ema(20),ema(50),rsi(14),macd(12,26,9),adx(14),natr(14),supertrend(7,3),mfi(14),obv`
+`ema(20),ema(50),rsi(14),macd(12,26,9),adx(14),atr(14),natr(14),supertrend(7,3),mfi(14),obv`
 
 Read it as a cluster:
 - stable spread plus contained `natr` plus supportive `supertrend` favors market execution or tight staged limits
@@ -599,9 +611,9 @@ At session start:
 Use:
 - `forecast_generate` with the session-best method
 - `forecast_conformal_intervals` when uncertainty bands matter
-- `forecast_volatility_estimate` when spacing, stop, or target distance is unclear
-- `forecast_barrier_optimize` on every fresh-risk decision after structural floors and spread-aware executable levels are defined; use `grid_style="volatility"` and `search_profile="long"` by default
-- `forecast_barrier_prob` on the exact final TP/SL geometry with the same trading-cost assumptions used by the optimizer
+- `forecast_volatility_estimate` on every fresh-risk decision that could change spacing, stop placement, harvest distance, or repair geometry
+- `forecast_barrier_optimize` when TP/SL geometry is still open after the structural floor exists, or when the trade is above baseline size, countertrend, or otherwise high-stakes; use it as constrained search, not as the source of invalidation
+- `forecast_barrier_prob` on the exact final TP/SL geometry using the same trading-cost assumptions as the planned order; if the optimizer was used, keep them identical
 - `forecast_options_chain` and `forecast_quantlib_heston_calibrate` only for optionable names when implied-vol context could change aggression
 
 Use forecast to shape directional confidence, spacing, and exit realism. Do not let it override obvious live structure or hard execution constraints.
@@ -613,33 +625,39 @@ Before any market order, pending order, scale-in, staged ladder, or recovery add
 
 1. Refresh `trade_get_open`, `trade_get_pending`, and `market_ticker`.
 2. Refresh `PRIMARY_TF` structure with:
-   `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{PRIMARY_TF}}", limit=140, indicators="ema(20),ema(50),rsi(14),macd(12,26,9),adx(14),mfi(14)")`
+   `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{PRIMARY_TF}}", limit=140, indicators="ema(20),ema(50),rsi(14),macd(12,26,9),adx(14),atr(14),mfi(14)")`
 3. Refresh `EXECUTION_TF` structure with:
-   `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{EXECUTION_TF}}", limit=120, indicators="ema(20),ema(50),rsi(14),macd(12,26,9),adx(14),natr(14),supertrend(7,3),mfi(14),obv")`
+   `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{EXECUTION_TF}}", limit=120, indicators="ema(20),ema(50),rsi(14),macd(12,26,9),adx(14),atr(14),natr(14),supertrend(7,3),mfi(14),obv")`
 4. If the trade is countertrend, above baseline size, structurally unclear, or a recovery idea is being considered, also refresh:
-   `data_fetch_candles(symbol="{{SYMBOL}}", timeframe=HIGHER_TF, limit=180, indicators="ema(20),ema(50),rsi(14),macd(12,26,9),adx(14),mfi(14)")`
+   `data_fetch_candles(symbol="{{SYMBOL}}", timeframe=HIGHER_TF, limit=180, indicators="ema(20),ema(50),rsi(14),macd(12,26,9),adx(14),atr(14),mfi(14)")`
 5. Check weighted horizontal structure with `support_resistance_levels(symbol="{{SYMBOL}}")`.
 6. Check levels with `pivot_compute_points`.
 7. Check regime with `regime_detect`.
 8. Run `forecast_generate` using the session-best available method.
 9. Run `temporal_analyze` when the tactic depends on the current hour, session pocket, or handoff behavior.
-10. Run `forecast_volatility_estimate` whenever spacing, stop distance, harvest distance, or repair geometry is unclear.
+10. Run `forecast_volatility_estimate` on every fresh-risk decision that could change spacing, stop distance, harvest distance, or repair geometry.
 11. Run `forecast_conformal_intervals` when uncertainty bands could invalidate an otherwise tempting staged or recovery plan.
 12. Build the structural stop floor and spread-aware executable geometry before using any barrier tool:
    - derive current `bid`, `ask`, and spread metrics from `market_ticker`
    - treat round numbers, psychological levels, and horizontal levels as analysis anchors, not executable prices
+   - use `support_resistance_levels` zone envelopes as the structural invalidation map; use `zone_low` and `zone_high` when available and `value` only as fallback
    - longs must use bid-side exit logic; shorts must use ask-side exit logic
    - never place TP, SL, or pending triggers exactly on a raw psychological or structural level
-   - define `execution_buffer = max(current_spread, recent spread baseline when relevant, broker stop/freeze buffer, local noise buffer)`
-   - for longs, place targets below raw upside levels and stops below raw downside invalidation by at least the execution buffer
-   - for shorts, place targets above raw downside levels and stops above raw upside invalidation by at least the execution buffer
-13. Run `forecast_barrier_optimize` on every fresh-risk decision after the structural floor exists:
-   - use `grid_style="volatility"` and `search_profile="long"` by default
+   - define `execution_buffer = max(1.5 * current_spread, recent spread baseline when relevant, broker stop/freeze buffer, local noise buffer)`
+   - define `volatility_buffer = max(0.5 * ATR(EXECUTION_TF,14), 0.25 * ATR(PRIMARY_TF,14))`
+   - define `liquidity_buffer = 0` by default and raise it to around `0.1 * ATR(EXECUTION_TF,14)` to `0.25 * ATR(EXECUTION_TF,14)` when the stop would sit near a meaningful round number, pivot cluster, prior obvious sweep point, or visible swing extreme
+   - for longs, set the structural stop floor below the lower edge of the adverse zone by at least `max(execution_buffer, volatility_buffer) + liquidity_buffer`
+   - for shorts, set the structural stop floor above the upper edge of the adverse zone by at least `max(execution_buffer, volatility_buffer) + liquidity_buffer`
+   - use forecast horizon volatility to sanity-check whether that protective stop is still worth trading, not to override structure
+13. Run `forecast_barrier_optimize` when TP/SL geometry is still open after the structural floor exists, or when the trade is above baseline size, countertrend, or otherwise high-stakes:
+   - use it as a constrained search inside the existing structural stop floor; it may refine geometry but it does not define invalidation by itself
+   - use `grid_style="volatility"` by default; prefer `grid_style="ratio"` only when the stop floor is already fixed and the main open question is reward:risk profile
+   - use `search_profile="medium"` by default and reserve `search_profile="long"` for session-start redesign, regime shifts, or larger/high-stakes exposure
    - pass trading costs through `params`, using `spread_pct` and `slippage_pct` in `mode="pct"` or `spread_pips` and `slippage_pips` in `mode="pips"`
    - set `viable_only=true`
    - do not allow `sl_min` below the spread-adjusted structural stop floor
-   - if the optimizer cannot find a viable candidate without tightening below the structural floor, skip the trade or reduce size only after geometry is accepted
-14. Run `forecast_barrier_prob` on the exact final geometry, using the same trading-cost inputs used by `forecast_barrier_optimize`.
+   - if the optimizer cannot find a viable candidate without tightening below the structural floor or pushing TP into unrealistic clearance, skip the trade or reduce size only after geometry is accepted
+14. Run `forecast_barrier_prob` on the exact final geometry after quote-side translation, broker rounding, and buffers, using the same trading-cost assumptions as the planned order. If `forecast_barrier_optimize` was used, keep those assumptions identical. This is the final validation for the actual order you plan to send.
 15. For equities or other optionable names near event risk, optionally run `forecast_options_chain` or `forecast_quantlib_heston_calibrate` when implied-vol context could change aggression.
 16. Run `trade_risk_analyze` on the exact proposed entry, stop, target, and desired risk percent, and pass `direction="long"` for longs or `direction="short"` for shorts.
 17. Convert the suggestion into `final_volume` by clamping to:
@@ -656,7 +674,9 @@ Quick execution path:
 - if the thesis is already validated and price has just entered a mapped entry zone, do not rebuild the whole stack from scratch
 - refresh `trade_get_open`, `trade_get_pending`, `market_ticker`, and `EXECUTION_TF` first
 - refresh `PRIMARY_TF` only if the stored structural read is stale, conflicted, or a new `PRIMARY_TF` candle has closed
-- even in the quick path, do not skip spread-aware barrier translation or `forecast_barrier_optimize`
+- even in the quick path, do not skip spread-aware barrier translation
+- if the exact TP/SL pair is already known, run `forecast_barrier_prob` on that exact pair
+- if the pair is not fixed yet, run `forecast_barrier_optimize` inside the structural floor, then `forecast_barrier_prob` on the selected executable geometry
 - if execution quality, spread-aware geometry, and volume confirmation still support the mapped plan, act without drifting back into open-ended re-analysis
 
 Before the order is sent, define explicitly:
@@ -686,6 +706,7 @@ Do not send the order if `trade_risk_analyze` shows invalid geometry, the size i
 - Always factor spread into entry, stop, and target placement.
 - Respect broker stop and freeze constraints from `symbols_describe`.
 - Never place entries, stops, or targets exactly on a psychological level, round number, or raw support/resistance line.
+- For protective stops, use the adverse support/resistance zone edge plus execution, volatility, and liquidity buffers; do not anchor the live SL to the center of a visible level.
 - For round-number and structural levels, translate the analysis level into the executable quote-side level with spread plus a safety buffer.
 - For BUY positions, assume exits resolve on the bid side. For SELL positions, assume exits resolve on the ask side.
 - Do not place multiple pending orders at nearly identical prices just to feel active.
@@ -697,6 +718,7 @@ Do not send the order if `trade_risk_analyze` shows invalid geometry, the size i
 - Any live or pending `{{SYMBOL}}` exposure is under management, regardless of origin.
 - If a live trade lacks a sensible SL or TP, fix that before adding risk.
 - If the thesis weakens materially, use `trade_modify`, partial `trade_close`, or full `trade_close`.
+- Do not treat the protective SL as permission to hold a broken thesis. If the setup degrades materially before the hard stop is touched, reduce or exit proactively.
 - If pending orders are stale, structurally broken, duplicated, or no longer useful, modify or cancel them.
 - Use `EXECUTION_TF` for immediate management timing, `PRIMARY_TF` for thesis integrity, and `HIGHER_TF` when deciding whether weakness is only a pullback or a structural reversal.
 - If price is near stop, take-profit, pending-fill, or harvest zones, use management-first logic. Do not rerun forecast or pattern tooling before the book is safe.
