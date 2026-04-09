@@ -1,5 +1,6 @@
 from __future__ import annotations
 import copy
+from dataclasses import replace
 from typing import List, Optional, Dict, Any
 import numpy as np
 import pandas as pd
@@ -196,16 +197,7 @@ def _postprocess_classic_results(
         recent_bars = max(1, int(getattr(cfg, "stale_completion_recent_bars", 3)))
         for i, r in enumerate(results):
             if r.status == 'forming' and r.end_index < (n - recent_bars):
-                results[i] = ClassicPatternResult(
-                    name=r.name,
-                    status='completed',
-                    confidence=r.confidence,
-                    start_index=r.start_index,
-                    end_index=r.end_index,
-                    start_time=r.start_time,
-                    end_time=r.end_time,
-                    details=r.details,
-                )
+                results[i] = replace(r, status='completed')
 
     for r in results:
         raw_conf = float(r.confidence)
