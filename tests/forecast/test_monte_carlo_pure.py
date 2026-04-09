@@ -1,5 +1,7 @@
 """Tests for forecast/monte_carlo.py — pure NumPy simulation functions."""
 from typing import get_args, get_origin, get_type_hints
+from types import ModuleType, SimpleNamespace
+import sys
 
 import numpy as np
 import pytest
@@ -314,6 +316,62 @@ class TestSimulateGarchMc:
     def test_too_few(self):
         with pytest.raises(ValueError, match="Not enough"):
             simulate_garch_mc(np.array([1.0] * 10), horizon=5)
+
+
+def test_simulate_garch_mc_uses_canonical_arch_model_keywords(monkeypatch):
+    captured = {}
+
+    def fake_arch_model(_y, **kwargs):
+        captured.update(kwargs)
+
+        class _Model:
+            def fit(self, disp='off', show_warning=False):
+                class _Result:
+                    def forecast(self, horizon, method, simulations, rng, random_state, reindex):
+                        values = np.zeros((1, simulations, horizon), dtype=float)
+                        return SimpleNamespace(simulations=SimpleNamespace(values=values))
+
+                    def summary(self):
+                        return "summary"
+
+                return _Result()
+
+        return _Model()
+
+    fake_arch = ModuleType("arch")
+    fake_arch.arch_model = fake_arch_model
+    monkeypatch.setitem(sys.modules, "arch", fake_arch)
+
+    prices = np.exp(np.cumsum(np.random.RandomState(5).normal(0.0, 0.01, 200))) * 100.0
+    result = simulate_garch_mc(prices=prices, horizon=4, n_sims=6, seed=2)
+
+    assert captured["vol"] == "GARCH"
+    assert captured["dist"] == "normal"
+    assert result["price_paths"].shape == (6, 4)
+
+
+def test_simulate_garch_mc_raises_when_forecast_has_no_simulations(monkeypatch):
+    def fake_arch_model(_y, **kwargs):
+        class _Model:
+            def fit(self, disp='off', show_warning=False):
+                class _Result:
+                    def forecast(self, **_forecast_kwargs):
+                        return SimpleNamespace(simulations=None)
+
+                    def summary(self):
+                        return "summary"
+
+                return _Result()
+
+        return _Model()
+
+    fake_arch = ModuleType("arch")
+    fake_arch.arch_model = fake_arch_model
+    monkeypatch.setitem(sys.modules, "arch", fake_arch)
+
+    prices = np.exp(np.cumsum(np.random.RandomState(11).normal(0.0, 0.01, 200))) * 100.0
+    with pytest.raises(RuntimeError, match="did not return simulation paths"):
+        simulate_garch_mc(prices=prices, horizon=3, n_sims=5, seed=4)
 
 
 class TestSimulateBootstrapMc:

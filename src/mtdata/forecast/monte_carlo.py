@@ -15,6 +15,7 @@ This module relies on numpy/pandas plus sklearn (GaussianMixture), hmmlearn
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Dict, Tuple, Optional, Union
 import numpy as np
 import warnings
@@ -25,6 +26,23 @@ except Exception:  # pragma: no cover - defensive fallback
     _SklearnConvergenceWarning = Warning
 
 HmmSimulationValue = Union[np.ndarray, str]
+
+
+@dataclass(frozen=True)
+class _SimulationRequirements:
+    min_prices: int
+    min_returns: int
+    label: str
+
+
+_SIMULATION_REQUIREMENTS: Dict[str, _SimulationRequirements] = {
+    "hmm": _SimulationRequirements(min_prices=5, min_returns=4, label="HMM calibration"),
+    "gbm": _SimulationRequirements(min_prices=5, min_returns=2, label="GBM calibration"),
+    "heston": _SimulationRequirements(min_prices=10, min_returns=5, label="Heston calibration"),
+    "jump_diffusion": _SimulationRequirements(min_prices=10, min_returns=5, label="jump diffusion calibration"),
+    "garch": _SimulationRequirements(min_prices=50, min_returns=10, label="GARCH calibration (need > 50)"),
+    "bootstrap": _SimulationRequirements(min_prices=11, min_returns=10, label="bootstrapping"),
+}
 
 
 def _load_circular_block_bootstrap():
@@ -91,6 +109,16 @@ def _prepare_price_history(
     if rets.size < int(min_returns):
         raise ValueError(f"Not enough returns for {label}")
     return arr, rets, float(arr[-1])
+
+
+def _prepare_simulation_history(prices: np.ndarray, method: str) -> tuple[np.ndarray, np.ndarray, float]:
+    requirements = _SIMULATION_REQUIREMENTS[str(method)]
+    return _prepare_price_history(
+        prices,
+        min_prices=requirements.min_prices,
+        min_returns=requirements.min_returns,
+        label=requirements.label,
+    )
 
 
 def _reconstruct_price_paths(last_price: float, return_paths: np.ndarray) -> np.ndarray:
@@ -283,12 +311,7 @@ def simulate_hmm_mc(
     - init: (K,)
     """
     rng = np.random.RandomState(seed)
-    _, rets, last_price = _prepare_price_history(
-        prices,
-        min_prices=5,
-        min_returns=4,
-        label="HMM calibration",
-    )
+    _, rets, last_price = _prepare_simulation_history(prices, "hmm")
 
     mu, sigma, A, init = _fit_hmmlearn_gaussian_hmm_1d(
         rets,
@@ -337,12 +360,7 @@ def simulate_gbm_mc(
     Returns dict with keys 'price_paths', 'return_paths', 'mu', and 'sigma'.
     """
     rng = np.random.RandomState(seed)
-    _prices, rets, last_price = _prepare_price_history(
-        prices,
-        min_prices=5,
-        min_returns=2,
-        label="GBM calibration",
-    )
+    _, rets, last_price = _prepare_simulation_history(prices, "gbm")
     mu = float(np.mean(rets))
     sigma = float(np.std(rets, ddof=1) + 1e-12)
     sims_i = int(n_sims)
@@ -378,12 +396,7 @@ def simulate_heston_mc(
 ) -> Dict[str, np.ndarray]:
     """Simulate a Heston stochastic volatility model using Euler discretization."""
     rng = np.random.RandomState(seed)
-    _, rets, last_price = _prepare_price_history(
-        prices,
-        min_prices=10,
-        min_returns=5,
-        label="Heston calibration",
-    )
+    _, rets, last_price = _prepare_simulation_history(prices, "heston")
 
     mu = float(np.mean(rets))
     ret_var = float(np.var(rets, ddof=1))
@@ -484,12 +497,7 @@ def simulate_jump_diffusion_mc(
 ) -> Dict[str, np.ndarray]:
     """Simulate a Merton jump-diffusion model."""
     rng = np.random.RandomState(seed)
-    _, rets, last_price = _prepare_price_history(
-        prices,
-        min_prices=10,
-        min_returns=5,
-        label="jump diffusion calibration",
-    )
+    _, rets, last_price = _prepare_simulation_history(prices, "jump_diffusion")
 
     mu = float(np.mean(rets))
     sigma = float(np.std(rets, ddof=1)) + 1e-12
@@ -554,12 +562,7 @@ def simulate_garch_mc(
     except ImportError:
         raise ImportError("The 'arch' library is required for GARCH simulations.")
 
-    _, rets, last_price = _prepare_price_history(
-        prices,
-        min_prices=50,
-        min_returns=10,
-        label="GARCH calibration (need > 50)",
-    )
+    _, rets, last_price = _prepare_simulation_history(prices, "garch")
     
     # Scale returns for numerical stability (common practice with GARCH)
     scale = 100.0
@@ -568,7 +571,7 @@ def simulate_garch_mc(
     # Fit GARCH(p,q)
     # Use Mean='Zero' assuming daily drift is negligible compared to vol for short horizons,
     # or 'Constant' to capture drift. Let's use Constant.
-    am = arch_model(rets_scaled, vol='Garch', p=p_order, q=q_order, dist='Normal', mean='Constant')
+    am = arch_model(rets_scaled, vol='GARCH', p=p_order, q=q_order, dist='normal', mean='Constant')
     
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
@@ -587,9 +590,19 @@ def simulate_garch_mc(
         reindex=False,
     )
     
-    # Get simulated paths (1, n_sims, horizon) -> (n_sims, horizon)
-    # forecasts.simulations.values contains the simulated returns
-    sim_rets_scaled = forecasts.simulations.values[-1]
+    simulations = getattr(forecasts, "simulations", None)
+    simulation_values = getattr(simulations, "values", None) if simulations is not None else None
+    if simulation_values is None:
+        raise RuntimeError("GARCH forecast did not return simulation paths")
+    simulation_values = np.asarray(simulation_values, dtype=float)
+    if simulation_values.size == 0:
+        raise RuntimeError("GARCH forecast returned empty simulation paths")
+    if simulation_values.ndim == 3:
+        sim_rets_scaled = simulation_values[-1]
+    elif simulation_values.ndim == 2:
+        sim_rets_scaled = simulation_values
+    else:
+        raise RuntimeError("GARCH forecast simulation paths have unexpected shape")
     
     # Unscale
     sim_rets = sim_rets_scaled / scale
@@ -612,12 +625,7 @@ def simulate_bootstrap_mc(
     block_size: Optional[int] = None
 ) -> Dict[str, np.ndarray]:
     """Circular Block Bootstrap simulation."""
-    _, rets, last_price = _prepare_price_history(
-        prices,
-        min_prices=11,
-        min_returns=10,
-        label="bootstrapping",
-    )
+    _, rets, last_price = _prepare_simulation_history(prices, "bootstrap")
     n = len(rets)
     
     if block_size is None:
