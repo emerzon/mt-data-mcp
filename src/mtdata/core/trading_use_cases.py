@@ -1110,10 +1110,14 @@ def run_trade_risk_analyze(
             total_risk_currency = 0.0
             positions_without_sl = 0
             total_notional_exposure = 0.0
+            symbol_info_cache: Dict[str, Any] = {}
 
             for pos in positions:
                 try:
-                    sym_info = gateway.symbol_info(pos.symbol)
+                    symbol_key = str(getattr(pos, "symbol", ""))
+                    if symbol_key not in symbol_info_cache:
+                        symbol_info_cache[symbol_key] = gateway.symbol_info(pos.symbol)
+                    sym_info = symbol_info_cache[symbol_key]
                     if sym_info is None:
                         risk_calculation_failures.append(
                             {

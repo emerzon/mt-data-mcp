@@ -332,6 +332,49 @@ def test_run_trade_risk_analyze_uses_gateway_position_type_constants() -> None:
     assert out["positions"][0]["type"] == "BUY"
 
 
+def test_run_trade_risk_analyze_caches_symbol_info_per_symbol() -> None:
+    symbol_info = _make_symbol_info()
+    symbol_info_calls: list[str] = []
+
+    def _symbol_info(symbol: str):
+        symbol_info_calls.append(symbol)
+        return symbol_info
+
+    gateway = SimpleNamespace(
+        ensure_connection=lambda: None,
+        account_info=lambda: SimpleNamespace(equity=1000.0, currency="USD"),
+        positions_get=lambda symbol=None: [
+            SimpleNamespace(
+                ticket=21,
+                symbol="EURUSD",
+                type=0,
+                volume=0.1,
+                price_open=100.0,
+                sl=90.0,
+                tp=110.0,
+            ),
+            SimpleNamespace(
+                ticket=22,
+                symbol="EURUSD",
+                type=0,
+                volume=0.2,
+                price_open=101.0,
+                sl=91.0,
+                tp=111.0,
+            ),
+        ],
+        symbol_info=_symbol_info,
+    )
+
+    out = run_trade_risk_analyze(
+        TradeRiskAnalyzeRequest(),
+        gateway=gateway,
+    )
+
+    assert out["success"] is True
+    assert symbol_info_calls == ["EURUSD"]
+
+
 def test_trade_risk_analyze_reports_calculation_failures() -> None:
     mt5 = MagicMock()
     mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
