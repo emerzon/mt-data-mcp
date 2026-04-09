@@ -23,6 +23,10 @@ class _OrderSubmitOutcome(TypedDict):
     fill_mode_attempts: List[Dict[str, Any]]
     used_request: Dict[str, Any]
 
+
+_POSITION_RESOLUTION_WAIT_SCHEDULE_SECONDS = (0.15, 0.3, 0.6, 1.2)
+
+
 def _compact_sl_tp_levels(
     *,
     sl: Optional[float],
@@ -420,8 +424,9 @@ def _place_market_order(
                     # position ticket. Resolve robustly and retry briefly while the
                     # terminal updates its position book.
                     position_obj = None
-                    lookup_attempts = 3
-                    lookup_wait_seconds = 0.25
+                    lookup_wait_schedule = _POSITION_RESOLUTION_WAIT_SCHEDULE_SECONDS
+                    lookup_attempts = len(lookup_wait_schedule) + 1
+                    last_resolve_info: Optional[Dict[str, Any]] = None
                     for attempt_idx in range(lookup_attempts):
                         pos, resolved_ticket, resolve_info = _resolve_open_position(
                             mt5,
@@ -430,6 +435,8 @@ def _place_market_order(
                             side=side,
                             volume=volume_validated,
                         )
+                        if isinstance(resolve_info, dict):
+                            last_resolve_info = dict(resolve_info)
                         if pos is not None and resolved_ticket is not None:
                             position_obj = pos
                             position_ticket = resolved_ticket
@@ -439,7 +446,13 @@ def _place_market_order(
                             }
                             break
                         if attempt_idx + 1 < lookup_attempts:
-                            time.sleep(lookup_wait_seconds)
+                            time.sleep(float(lookup_wait_schedule[attempt_idx]))
+                    if position_ticket_resolution is None and last_resolve_info is not None:
+                        position_ticket_resolution = {
+                            **last_resolve_info,
+                            "attempts": int(lookup_attempts),
+                            "matched": False,
+                        }
 
                     if position_obj is not None and position_ticket is not None:
                         # Use TRADE_ACTION_SLTP to set TP/SL on the position

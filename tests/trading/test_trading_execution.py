@@ -769,6 +769,35 @@ def test_place_market_order_preserves_existing_position_magic_on_sltp_follow_up(
     assert sltp_req["magic"] == 24680
 
 
+def test_place_market_order_waits_for_delayed_position_resolution(mock_mt5):
+    mock_mt5.TRADE_ACTION_SLTP = 6
+    position = SimpleNamespace(symbol="EURUSD", sl=0.0, tp=0.0, type=0, magic=24680)
+    unresolved = (None, None, {"method": "positions_get", "matched": False})
+
+    with patch(
+        "src.mtdata.core.trading_orders._resolve_open_position",
+        side_effect=[
+            unresolved,
+            unresolved,
+            unresolved,
+            (position, 456, {"method": "positions_get(ticket)", "candidate": 456}),
+        ],
+    ) as mock_resolve, patch("src.mtdata.core.trading_orders.time.sleep") as mock_sleep:
+        res = _place_market_order(
+            symbol="EURUSD",
+            volume=0.1,
+            order_type="BUY",
+            stop_loss=1.04000,
+            take_profit=1.06000,
+        )
+
+    assert "error" not in res
+    assert res["sl_tp_result"]["status"] == "applied"
+    assert res["position_ticket"] == 456
+    assert mock_resolve.call_count == 4
+    assert [call.args[0] for call in mock_sleep.call_args_list[:3]] == [0.15, 0.3, 0.6]
+
+
 def test_place_market_order_retries_sltp_without_comment_when_comment_is_invalid(mock_mt5):
     mock_mt5.TRADE_ACTION_SLTP = 6
     position = SimpleNamespace(symbol="EURUSD", sl=0.0, tp=0.0, type=0, magic=24680)
