@@ -1654,16 +1654,19 @@ def _append_trade_comment_metadata(
     comment_series: Any,
     comment_row_metadata: Any,
 ) -> None:
-    comment_meta = comment_series.apply(comment_row_metadata)
-    out_df["Comment Length"] = comment_meta.apply(
-        lambda value: value.get("comment_visible_length")
-    )
-    out_df["Comment Limit"] = comment_meta.apply(
-        lambda value: value.get("comment_max_length")
-    )
-    out_df["Comment May Be Truncated"] = comment_meta.apply(
-        lambda value: value.get("comment_may_be_truncated")
-    )
+    comment_lengths: List[Any] = []
+    comment_limits: List[Any] = []
+    comment_truncation: List[Any] = []
+    for comment_value in comment_series.tolist():
+        metadata = comment_row_metadata(comment_value)
+        if not isinstance(metadata, dict):
+            metadata = {}
+        comment_lengths.append(metadata.get("comment_visible_length"))
+        comment_limits.append(metadata.get("comment_max_length"))
+        comment_truncation.append(metadata.get("comment_may_be_truncated"))
+    out_df["Comment Length"] = comment_lengths
+    out_df["Comment Limit"] = comment_limits
+    out_df["Comment May Be Truncated"] = comment_truncation
 
 
 def _apply_trade_query_limit(
