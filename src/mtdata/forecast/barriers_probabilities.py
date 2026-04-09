@@ -375,6 +375,17 @@ def forecast_barrier_hit_probabilities(
             out["bridge_correction"] = True
         if 'model_summary' in sim:
             out['model_summary'] = str(sim['model_summary'])
+        # Expose simulation model metadata (e.g. HMM fitted vs requested states)
+        _meta_keys = ('fitted_n_states', 'requested_n_states', 'model_type')
+        sim_meta = {k: sim[k] for k in _meta_keys if k in sim}
+        if 'mu' in sim:
+            import numpy as _np
+            sim_meta['mu'] = [float(v) for v in _np.asarray(sim['mu']).ravel()]
+        if 'sigma' in sim:
+            import numpy as _np
+            sim_meta['sigma'] = [float(v) for v in _np.asarray(sim['sigma']).ravel()]
+        if sim_meta:
+            out['sim_meta'] = sim_meta
         if warnings_out:
             out["warnings"] = warnings_out
              
