@@ -3,10 +3,10 @@ from __future__ import annotations
 import os
 import sys
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
-from unittest.mock import patch
 
 # Add src to path to ensure local package is found
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))

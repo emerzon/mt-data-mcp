@@ -20,10 +20,10 @@ Notes:
 
 from __future__ import annotations
 
-import sys
-from typing import Dict, Any, List, Optional, Tuple
-from pathlib import Path
 import os
+import sys
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
 
 def _ensure_repo_paths():
@@ -112,7 +112,9 @@ def generate_backtest_plots(
     if not mt5_connection._ensure_connection():
         return {"error": "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."}
 
-    from src.mtdata.forecast.backtest import forecast_backtest as _forecast_backtest_impl
+    from src.mtdata.forecast.backtest import (
+        forecast_backtest as _forecast_backtest_impl,
+    )
 
     bt = _forecast_backtest_impl(
         symbol=symbol,

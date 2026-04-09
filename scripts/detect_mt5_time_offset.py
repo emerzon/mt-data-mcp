@@ -47,7 +47,7 @@ def _get_tick_epoch_seconds(symbol: str) -> Optional[int]:
     if tick is None:
         return None
     try:
-        value = int(getattr(tick, "time"))
+        value = int(tick.time)
     except Exception:
         return None
     return value if value > 0 else None
