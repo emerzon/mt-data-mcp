@@ -2,7 +2,7 @@ from typing import Any, Dict, Optional, List
 
 from math import isfinite
 from ..schema import DenoiseSpec
-from ..report_utils import now_utc_iso, parse_table_tail, pick_best_forecast_method, summarize_barrier_grid, attach_multi_timeframes
+from ..report.utils import now_utc_iso, parse_table_tail, pick_best_forecast_method, summarize_barrier_grid, attach_multi_timeframes
 from ..tool_calling import call_tool_sync_raw
 from ...utils.utils import _safe_float
 
@@ -527,7 +527,7 @@ def template_basic(
     try:
         secs = report.setdefault('sections', {})
         if 'contexts_multi' not in secs or 'pivot_multi' not in secs:
-            from ..report_utils import context_for_tf, _extract_base_timeframe
+            from ..report.utils import context_for_tf, _extract_base_timeframe
             base_tf = _extract_base_timeframe(report)
             tf_list = ['M15','H1','H4','D1']
             ctxs: Dict[str, Any] = {}

@@ -6,10 +6,10 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 import sys
 
-from mtdata.core import trading_risk as core_trading_risk
+from mtdata.core.trading import risk as core_trading_risk
 from mtdata.core.trading import trade_risk_analyze as _trade_risk_analyze_tool
-from mtdata.core.trading_requests import TradeRiskAnalyzeRequest
-from mtdata.core.trading_use_cases import (
+from mtdata.core.trading.requests import TradeRiskAnalyzeRequest
+from mtdata.core.trading.use_cases import (
     _floor_volume_steps,
     _resolve_trade_risk_direction,
     run_trade_risk_analyze,
@@ -28,7 +28,7 @@ def trade_risk_analyze(**kwargs):
     request = kwargs.pop("request", None)
     if request is None:
         request = TradeRiskAnalyzeRequest(**kwargs)
-    with patch("mtdata.core.trading_risk.ensure_mt5_connection_or_raise", return_value=None):
+    with patch("mtdata.core.trading.risk.ensure_mt5_connection_or_raise", return_value=None):
         return _trade_risk_analyze_tool(request=request, __cli_raw=raw_output)
 
 
@@ -253,7 +253,7 @@ def test_trade_risk_analyze_rejects_wrong_side_take_profit_for_long_trade() -> N
 
 def test_trade_risk_analyze_returns_connection_error_payload() -> None:
     with patch(
-        "mtdata.core.trading_risk.ensure_mt5_connection_or_raise",
+        "mtdata.core.trading.risk.ensure_mt5_connection_or_raise",
         side_effect=MT5ConnectionError("Failed to connect to MetaTrader5. Ensure MT5 terminal is running."),
     ):
         out = _trade_risk_analyze_tool(
@@ -273,7 +273,7 @@ def test_run_trade_risk_analyze_logs_finish_event(caplog) -> None:
         positions_get=lambda symbol=None: [],
     )
 
-    with caplog.at_level("INFO", logger="mtdata.core.trading_use_cases"):
+    with caplog.at_level("INFO", logger="mtdata.core.trading.use_cases"):
         out = run_trade_risk_analyze(
             TradeRiskAnalyzeRequest(),
             gateway=gateway,
@@ -428,7 +428,7 @@ def test_trade_risk_analyze_flags_invalid_tick_configuration_with_existing_stop_
 
     raw = _unwrap(_trade_risk_analyze_tool)
     with _patched_mt5_module(mt5), patch(
-        "mtdata.core.trading_risk.ensure_mt5_connection_or_raise",
+        "mtdata.core.trading.risk.ensure_mt5_connection_or_raise",
         return_value=None,
     ):
         out = raw(request=TradeRiskAnalyzeRequest())

@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel
 
-from .schema import DenoiseSpec
+from ..schema import DenoiseSpec
 
 
 ReportOutput = Literal["toon", "markdown"]

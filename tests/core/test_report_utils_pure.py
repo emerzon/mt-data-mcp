@@ -1,4 +1,4 @@
-"""Comprehensive pure-function tests for mtdata.core.report_utils.
+"""Comprehensive pure-function tests for mtdata.core.report.utils.
 
 Every test is deterministic – no MT5, no network, no side effects.
 """
@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 import pytest
 
-from mtdata.core.report_utils import (
+from mtdata.core.report.utils import (
     _as_float,
     _compact_scalar,
     _compact_table_value,
@@ -508,7 +508,7 @@ class TestApplyMarketGates:
 
 
 class TestMarketSnapshot:
-    @patch("mtdata.core.report_utils._get_pip_size", return_value=0.00001)
+    @patch("mtdata.core.report.utils._get_pip_size", return_value=0.00001)
     def test_spread_pips_uses_true_pip_units(self, mock_pip):
         with patch(
             "mtdata.core.market_depth.market_depth_fetch",
@@ -998,11 +998,11 @@ class TestAttachMultiTimeframes:
         }
 
         monkeypatch.setattr(
-            "mtdata.core.report_utils.context_for_tf",
+            "mtdata.core.report.utils.context_for_tf",
             lambda *args, **kwargs: dict(snap),
         )
         monkeypatch.setattr(
-            "mtdata.core.report_utils._extract_base_timeframe",
+            "mtdata.core.report.utils._extract_base_timeframe",
             lambda report: None,
         )
 
@@ -1025,11 +1025,11 @@ class TestAttachMultiTimeframes:
         }
 
         monkeypatch.setattr(
-            "mtdata.core.report_utils.context_for_tf",
+            "mtdata.core.report.utils.context_for_tf",
             lambda *args, **kwargs: dict(snap),
         )
         monkeypatch.setattr(
-            "mtdata.core.report_utils._extract_base_timeframe",
+            "mtdata.core.report.utils._extract_base_timeframe",
             lambda report: None,
         )
 

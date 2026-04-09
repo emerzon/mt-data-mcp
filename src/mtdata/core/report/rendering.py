@@ -6,7 +6,7 @@ import math
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Tuple
 
-from .report_shared import (
+from .shared import (
     _as_float,
     _format_decimal,
     _format_probability,

@@ -2,7 +2,7 @@ from typing import Any, Dict, List, Optional
 
 from ..schema import DenoiseSpec
 from .basic import template_basic
-from ..report_utils import attach_report_timeframes, attach_market_and_timeframes
+from ..report.utils import attach_report_timeframes, attach_market_and_timeframes
 
 
 def build_report_with_timeframes(

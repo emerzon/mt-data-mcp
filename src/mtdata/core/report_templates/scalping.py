@@ -1,7 +1,7 @@
 from typing import Any, Dict, Optional
 from ..schema import DenoiseSpec
 from .common import build_report_with_market
-from ..report_utils import merge_params, market_snapshot
+from ..report.utils import merge_params, market_snapshot
 from ...utils.barriers import get_pip_size as _get_pip_size
 
 

@@ -1,15 +1,15 @@
 """Order placement workflows for MetaTrader integration."""
 
 import math
-import time
+import time as _stdlib_time
 from typing import Optional, Union, List, Dict, Any, TypedDict
 
-from . import trading_comments, trading_common, trading_time, trading_validation
-from .trading_execution import _modify_position
-from .trading_gateway import MT5TradingGateway, create_trading_gateway, trading_connection_error
-from .trading_positions import _resolve_open_position
-from .trading_time import ExpirationValue
-from .trading_validation import MarketOrderTypeInput, OrderTypeInput
+from . import comments, common, time, validation
+from .execution import _modify_position
+from .gateway import MT5TradingGateway, create_trading_gateway, trading_connection_error
+from .positions import _resolve_open_position
+from .time import ExpirationValue
+from .validation import MarketOrderTypeInput, OrderTypeInput
 
 
 class _OrderSymbolContext(TypedDict):
@@ -89,7 +89,7 @@ def _send_order_with_comment_fallback(
     mt5: Any,
     request: Dict[str, Any],
 ) -> tuple[Any, Optional[Dict[str, Any]], Any]:
-    return trading_comments._send_order_with_comment_fallback(mt5, request)
+    return comments._send_order_with_comment_fallback(mt5, request)
 
 def _send_order_with_fill_mode_retry(
     mt5: Any,
@@ -100,7 +100,7 @@ def _send_order_with_fill_mode_retry(
     last_comment_fallback = None
     last_error = None
     last_request = dict(request)
-    for fill_mode in trading_validation._candidate_fill_modes(mt5):
+    for fill_mode in validation._candidate_fill_modes(mt5):
         attempt_request = dict(request)
         attempt_request["type_filling"] = int(fill_mode)
         result, comment_fallback, last_error = _send_order_with_comment_fallback(mt5, attempt_request)
@@ -125,7 +125,7 @@ def _send_order_with_fill_mode_retry(
             else attempt_request
         )
         try:
-            if result is not None and trading_validation._retcode_is_done(mt5, getattr(result, "retcode", -1)):
+            if result is not None and validation._retcode_is_done(mt5, getattr(result, "retcode", -1)):
                 return result, comment_fallback, last_error, attempts, last_request
         except Exception:
             pass
@@ -154,7 +154,7 @@ def _prepare_order_symbol_context(
 ) -> tuple[Optional[_OrderSymbolContext], Optional[Dict[str, Any]]]:
     preflight = mt5.build_trade_preflight()
     if not preflight.get("execution_ready_strict", preflight.get("execution_ready", True)):
-        guidance = trading_common._build_trade_preflight_guidance(preflight)
+        guidance = common._build_trade_preflight_guidance(preflight)
         return None, {
             "error": "Trading not ready in MT5 terminal/account preflight.",
             "preflight": preflight,
@@ -169,7 +169,7 @@ def _prepare_order_symbol_context(
     if not symbol_info.visible and not mt5.symbol_select(symbol, True):
         return None, {"error": f"Failed to select symbol {symbol}"}
 
-    volume_validated, volume_error = trading_validation._validate_volume(volume, symbol_info)
+    volume_validated, volume_error = validation._validate_volume(volume, symbol_info)
     if volume_error:
         return None, {"error": volume_error}
 
@@ -184,11 +184,11 @@ def _build_order_comment_payload(
     *,
     default: str,
 ) -> tuple[str, Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
-    request_comment = trading_comments._normalize_trade_comment(comment, default=default)
+    request_comment = comments._normalize_trade_comment(comment, default=default)
     return (
         request_comment,
-        trading_comments._comment_sanitization_info(comment, request_comment),
-        trading_comments._comment_truncation_info(comment, request_comment),
+        comments._comment_sanitization_info(comment, request_comment),
+        comments._comment_truncation_info(comment, request_comment),
     )
 
 
@@ -208,7 +208,7 @@ def _submit_order_request(
             "fill_mode_attempts": fill_mode_attempts,
         }
 
-    if not trading_validation._retcode_is_done(mt5, getattr(result, "retcode", None)):
+    if not validation._retcode_is_done(mt5, getattr(result, "retcode", None)):
         error_message = base_error
         invalid_comment = (
             comment_fallback.get("invalid_comment_error")
@@ -289,18 +289,18 @@ def _place_market_order(
             volume_validated = order_context["volume"]
 
             # Normalize and validate requested order type
-            t, order_type_error = trading_validation._normalize_order_type_input(order_type)
+            t, order_type_error = validation._normalize_order_type_input(order_type)
             if order_type_error:
                 return {"error": order_type_error}
             if t not in {"BUY", "SELL"}:
                 return {"error": f"Unsupported order_type '{order_type}'. Use BUY or SELL for market orders."}
             side = t
 
-            deviation_validated, deviation_error = trading_validation._validate_deviation(deviation)
+            deviation_validated, deviation_error = validation._validate_deviation(deviation)
             if deviation_error:
                 return {"error": deviation_error}
 
-            price_inputs, price_inputs_error = trading_validation._normalize_trade_price_inputs(
+            price_inputs, price_inputs_error = validation._normalize_trade_price_inputs(
                 symbol_info=symbol_info,
                 stop_loss=stop_loss,
                 take_profit=take_profit,
@@ -327,7 +327,7 @@ def _place_market_order(
                     return {"error": f"take_profit must be above entry for BUY orders. tp={norm_tp}, price={validate_price}"}
                 if side == "SELL" and norm_tp >= validate_price:
                     return {"error": f"take_profit must be below entry for SELL orders. tp={norm_tp}, price={validate_price}"}
-            live_protection_error = trading_validation._validate_live_protection_levels(
+            live_protection_error = validation._validate_live_protection_levels(
                 symbol_info=symbol_info,
                 tick=validate_tick,
                 side=side,
@@ -353,7 +353,7 @@ def _place_market_order(
                     return {"error": f"take_profit must be above entry for BUY orders at send time. tp={norm_tp}, price={price}"}
                 if side == "SELL" and norm_tp >= price:
                     return {"error": f"take_profit must be below entry for SELL orders at send time. tp={norm_tp}, price={price}"}
-            live_protection_error = trading_validation._validate_live_protection_levels(
+            live_protection_error = validation._validate_live_protection_levels(
                 symbol_info=symbol_info,
                 tick=send_tick,
                 side=side,
@@ -376,7 +376,7 @@ def _place_market_order(
                 "magic": 234000,
                 "comment": request_comment,
                 "type_time": mt5.ORDER_TIME_GTC,
-                "type_filling": trading_validation._safe_int_attr(mt5, "ORDER_FILLING_IOC", 1),
+                "type_filling": validation._safe_int_attr(mt5, "ORDER_FILLING_IOC", 1),
             }
             send_outcome, send_error = _submit_order_request(
                 mt5,
@@ -396,8 +396,8 @@ def _place_market_order(
             used_request = send_outcome["used_request"]
 
             # If TP/SL were specified, modify the position immediately
-            order_ticket = trading_validation._safe_int_ticket(getattr(result, "order", None))
-            deal_ticket = trading_validation._safe_int_ticket(getattr(result, "deal", None))
+            order_ticket = validation._safe_int_ticket(getattr(result, "order", None))
+            deal_ticket = validation._safe_int_ticket(getattr(result, "deal", None))
             position_ticket_candidates: List[int] = []
             for cand in (order_ticket, deal_ticket):
                 if cand is not None and cand not in position_ticket_candidates:
@@ -446,7 +446,7 @@ def _place_market_order(
                             }
                             break
                         if attempt_idx + 1 < lookup_attempts:
-                            time.sleep(float(lookup_wait_schedule[attempt_idx]))
+                            _stdlib_time.sleep(float(lookup_wait_schedule[attempt_idx]))
                     if position_ticket_resolution is None and last_resolve_info is not None:
                         position_ticket_resolution = {
                             **last_resolve_info,
@@ -462,13 +462,13 @@ def _place_market_order(
                             "position": position_ticket,
                             "sl": 0.0 if norm_sl is None else float(norm_sl),
                             "tp": 0.0 if norm_tp is None else float(norm_tp),
-                            "comment": trading_comments._normalize_trade_comment(
+                            "comment": comments._normalize_trade_comment(
                                 comment,
                                 default=request_comment,
                                 suffix=" - set TP/SL",
                             ),
                         }
-                        modify_magic = trading_validation._safe_int_ticket(getattr(position_obj, "magic", None))
+                        modify_magic = validation._safe_int_ticket(getattr(position_obj, "magic", None))
                         if modify_magic is not None:
                             modify_request["magic"] = modify_magic
                         modify_result = None
@@ -492,7 +492,7 @@ def _place_market_order(
                             if modify_result and getattr(modify_result, "retcode", None) == mt5.TRADE_RETCODE_DONE:
                                 break
                             if modify_try + 1 < max_modify_attempts:
-                                time.sleep(0.35)
+                                _stdlib_time.sleep(0.35)
 
                         if modify_result and getattr(modify_result, "retcode", None) == mt5.TRADE_RETCODE_DONE:
                             sl_tp_apply_status = "applied"
@@ -535,7 +535,7 @@ def _place_market_order(
                             fallback_out: Dict[str, Any] = {}
                             if position_ticket is not None:
                                 sl_tp_fallback_used = True
-                                time.sleep(0.35)
+                                _stdlib_time.sleep(0.35)
                                 try:
                                     fallback_out = _modify_position(
                                         ticket=position_ticket,
@@ -727,12 +727,12 @@ def _place_pending_order(
             if initial_tick is None:
                 return {"error": f"Failed to get current price for {symbol}"}
 
-            deviation_validated, deviation_error = trading_validation._validate_deviation(deviation)
+            deviation_validated, deviation_error = validation._validate_deviation(deviation)
             if deviation_error:
                 return {"error": deviation_error}
 
             # Normalize and validate requested order type
-            t, order_type_error = trading_validation._normalize_order_type_input(order_type)
+            t, order_type_error = validation._normalize_order_type_input(order_type)
             if order_type_error:
                 return {"error": order_type_error}
             explicit_map = {
@@ -742,7 +742,7 @@ def _place_pending_order(
                 "SELL_STOP": mt5.ORDER_TYPE_SELL_STOP,
             }
 
-            price_inputs, price_inputs_error = trading_validation._normalize_trade_price_inputs(
+            price_inputs, price_inputs_error = validation._normalize_trade_price_inputs(
                 symbol_info=symbol_info,
                 price=price,
                 require_price=True,
@@ -756,7 +756,7 @@ def _place_pending_order(
             norm_sl = price_inputs["stop_loss"]
             norm_tp = price_inputs["take_profit"]
 
-            normalized_expiration, expiration_specified = trading_time._normalize_pending_expiration(expiration)
+            normalized_expiration, expiration_specified = time._normalize_pending_expiration(expiration)
             live_tick = mt5.symbol_info_tick(symbol) or initial_tick
             if live_tick is None:
                 return {"error": f"Failed to refresh current price for {symbol}"}
@@ -794,7 +794,7 @@ def _place_pending_order(
                     )
                 }
 
-            pending_level_error = trading_validation._validate_pending_order_levels(
+            pending_level_error = validation._validate_pending_order_levels(
                 symbol_info=symbol_info,
                 tick=live_tick,
                 order_type_value=order_type_value,
@@ -822,7 +822,7 @@ def _place_pending_order(
                 "magic": 234000,
                 "comment": request_comment,
                 "type_time": mt5.ORDER_TIME_GTC,
-                "type_filling": trading_validation._safe_int_attr(mt5, "ORDER_FILLING_IOC", 1),
+                "type_filling": validation._safe_int_attr(mt5, "ORDER_FILLING_IOC", 1),
             }
 
             if expiration_specified:

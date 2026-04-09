@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, Optional
 
-from .mt5_gateway import MT5Gateway
-from ..utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise, mt5_adapter
+from ..mt5_gateway import MT5Gateway
+from ...utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise, mt5_adapter
 
 
 class MT5TradingGateway(MT5Gateway):
@@ -62,7 +62,7 @@ def create_trading_gateway(
 
     gateway_kwargs: Dict[str, Any] = {}
     if include_trade_preflight or include_retcode_name:
-        from .trading_common import _build_trade_preflight, _retcode_name
+        from .common import _build_trade_preflight, _retcode_name
 
         if include_trade_preflight:
             gateway_kwargs["build_trade_preflight_impl"] = _build_trade_preflight

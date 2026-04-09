@@ -2,16 +2,16 @@
 
 import logging
 
-from ._mcp_instance import mcp
-from . import trading_time, trading_validation
-from .execution_logging import run_logged_operation
-from .trading_account import lookup_trade_ticket_history, trade_account_info, trade_history
-from .trading_execution import _cancel_pending, _close_positions, _modify_pending_order, _modify_position
-from .trading_orders import _place_market_order, _place_pending_order
-from .trading_positions import trade_get_open, trade_get_pending
-from .trading_requests import TradeCloseRequest, TradeModifyRequest, TradePlaceRequest
-from .trading_risk import trade_risk_analyze
-from .trading_use_cases import run_trade_close, run_trade_modify, run_trade_place
+from .._mcp_instance import mcp
+from . import time, validation
+from ..execution_logging import run_logged_operation
+from .account import lookup_trade_ticket_history, trade_account_info, trade_history
+from .execution import _cancel_pending, _close_positions, _modify_pending_order, _modify_position
+from .orders import _place_market_order, _place_pending_order
+from .positions import trade_get_open, trade_get_pending
+from .requests import TradeCloseRequest, TradeModifyRequest, TradePlaceRequest
+from .risk import trade_risk_analyze
+from .use_cases import run_trade_close, run_trade_modify, run_trade_place
 
 logger = logging.getLogger(__name__)
 
@@ -39,13 +39,13 @@ def trade_place(request: TradePlaceRequest) -> dict:
         volume=request.volume,
         func=lambda: run_trade_place(
             request,
-            normalize_order_type_input=trading_validation._normalize_order_type_input,
-            normalize_pending_expiration=trading_time._normalize_pending_expiration,
-            prevalidate_trade_place_market_input=trading_validation._prevalidate_trade_place_market_input,
+            normalize_order_type_input=validation._normalize_order_type_input,
+            normalize_pending_expiration=time._normalize_pending_expiration,
+            prevalidate_trade_place_market_input=validation._prevalidate_trade_place_market_input,
             place_market_order=_place_market_order,
             place_pending_order=_place_pending_order,
             close_positions=_close_positions,
-            safe_int_ticket=trading_validation._safe_int_ticket,
+            safe_int_ticket=validation._safe_int_ticket,
         ),
     )
 
@@ -59,7 +59,7 @@ def trade_modify(request: TradeModifyRequest) -> dict:
         ticket=request.ticket,
         func=lambda: run_trade_modify(
             request,
-            normalize_pending_expiration=trading_time._normalize_pending_expiration,
+            normalize_pending_expiration=time._normalize_pending_expiration,
             modify_pending_order=_modify_pending_order,
             modify_position=_modify_position,
         ),

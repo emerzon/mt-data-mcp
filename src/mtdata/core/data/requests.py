@@ -6,7 +6,7 @@ from typing import Annotated, Any, Dict, List, Literal, Optional, Union
 
 from pydantic import AfterValidator, BaseModel, BeforeValidator, Field, field_validator, model_validator
 
-from .schema import DenoiseSpec, IndicatorSpec, SimplifySpec, TimeframeLiteral
+from ..schema import DenoiseSpec, IndicatorSpec, SimplifySpec, TimeframeLiteral
 
 
 def _split_indicator_tokens(spec: str) -> List[str]:

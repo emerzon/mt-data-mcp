@@ -2,16 +2,16 @@ from datetime import datetime, timezone
 
 import pytest
 
-from mtdata.core.data_requests import WaitCandleRequest
-from mtdata.core import trading_time
-from mtdata.core.trading_time import _next_candle_close_server_time, _next_candle_wait_payload, _sleep_until_next_candle
+from mtdata.core.data.requests import WaitCandleRequest
+from mtdata.core.trading import time
+from mtdata.core.trading.time import _next_candle_close_server_time, _next_candle_wait_payload, _sleep_until_next_candle
 
 
 @pytest.fixture()
 def utc_server_clock(monkeypatch):
-    monkeypatch.setattr(trading_time.mt5_config, "get_server_tz", lambda: None)
-    monkeypatch.setattr(trading_time.mt5_config, "get_time_offset_seconds", lambda: 0)
-    monkeypatch.setattr(trading_time.mt5_config, "server_tz_name", None)
+    monkeypatch.setattr(time.mt5_config, "get_server_tz", lambda: None)
+    monkeypatch.setattr(time.mt5_config, "get_time_offset_seconds", lambda: 0)
+    monkeypatch.setattr(time.mt5_config, "server_tz_name", None)
 
 
 def test_wait_candle_request_rejects_negative_buffer() -> None:
@@ -50,9 +50,9 @@ def test_next_candle_close_server_time_uses_shared_unsupported_timeframe_error(
     utc_server_clock,
     monkeypatch,
 ) -> None:
-    monkeypatch.setitem(trading_time.TIMEFRAME_SECONDS, "M5", 0)
+    monkeypatch.setitem(time.TIMEFRAME_SECONDS, "M5", 0)
     monkeypatch.setattr(
-        trading_time,
+        time,
         "unsupported_timeframe_seconds_error",
         lambda timeframe: f"custom unsupported {timeframe}",
     )
@@ -81,9 +81,9 @@ def test_sleep_until_next_candle_returns_expected_wait(utc_server_clock) -> None
 def test_next_candle_wait_payload_handles_pytz_dst_gap(monkeypatch) -> None:
     pytz = pytest.importorskip("pytz")
 
-    monkeypatch.setattr(trading_time.mt5_config, "get_server_tz", lambda: pytz.timezone("Europe/Nicosia"))
-    monkeypatch.setattr(trading_time.mt5_config, "get_time_offset_seconds", lambda: 7200)
-    monkeypatch.setattr(trading_time.mt5_config, "server_tz_name", "Europe/Nicosia")
+    monkeypatch.setattr(time.mt5_config, "get_server_tz", lambda: pytz.timezone("Europe/Nicosia"))
+    monkeypatch.setattr(time.mt5_config, "get_time_offset_seconds", lambda: 7200)
+    monkeypatch.setattr(time.mt5_config, "server_tz_name", "Europe/Nicosia")
 
     payload = _next_candle_wait_payload(
         "M15",

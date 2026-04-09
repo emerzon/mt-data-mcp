@@ -26,7 +26,7 @@ def _get_report_generate():
 
     def _call(symbol, **kwargs):
         from mtdata.core import report as report_mod
-        from mtdata.core.report_requests import ReportGenerateRequest
+        from mtdata.core.report.requests import ReportGenerateRequest
 
         with patch.object(report_mod, "ensure_mt5_connection_or_raise", return_value=None):
             return raw(request=ReportGenerateRequest(symbol=symbol, **kwargs))
@@ -45,8 +45,8 @@ def _make_report(sections=None, error=None):
 
 
 def test_run_report_generate_logs_finish_event(caplog):
-    from mtdata.core.report_requests import ReportGenerateRequest
-    from mtdata.core.report_use_cases import run_report_generate
+    from mtdata.core.report.requests import ReportGenerateRequest
+    from mtdata.core.report.use_cases import run_report_generate
 
     basic_template = MagicMock(return_value={"sections": {}, "diagnostics": {}})
     with patch("mtdata.core.report_templates.template_basic", basic_template, create=True), \
@@ -56,7 +56,7 @@ def test_run_report_generate_logs_finish_event(caplog):
          patch("mtdata.core.report_templates.template_intraday", basic_template, create=True), \
          patch("mtdata.core.report_templates.template_swing", basic_template, create=True), \
          patch("mtdata.core.report_templates.template_position", basic_template, create=True), \
-         caplog.at_level("INFO", logger="mtdata.core.report_use_cases"):
+         caplog.at_level("INFO", logger="mtdata.core.report.use_cases"):
         result = run_report_generate(
             ReportGenerateRequest(symbol="EURUSD"),
             render_report=lambda rep: "# report",

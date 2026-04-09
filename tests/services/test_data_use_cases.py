@@ -1,15 +1,15 @@
 from types import SimpleNamespace
 
-from mtdata.core.data_requests import DataFetchCandlesRequest, DataFetchTicksRequest
+from mtdata.core.data.requests import DataFetchCandlesRequest, DataFetchTicksRequest
 from mtdata.core import data as core_data
-from mtdata.core.data_use_cases import run_data_fetch_candles, run_data_fetch_ticks
+from mtdata.core.data.use_cases import run_data_fetch_candles, run_data_fetch_ticks
 from mtdata.utils.mt5 import MT5ConnectionError
 
 
 def test_run_data_fetch_candles_logs_finish_event(caplog):
     request = DataFetchCandlesRequest(symbol="EURUSD", timeframe="H1", limit=10)
 
-    with caplog.at_level("INFO", logger="mtdata.core.data_use_cases"):
+    with caplog.at_level("INFO", logger="mtdata.core.data.use_cases"):
         result = run_data_fetch_candles(
             request,
             gateway=SimpleNamespace(ensure_connection=lambda: None),
@@ -26,7 +26,7 @@ def test_run_data_fetch_candles_logs_finish_event(caplog):
 def test_run_data_fetch_ticks_logs_connection_error(caplog):
     request = DataFetchTicksRequest(symbol="EURUSD", limit=5)
 
-    with caplog.at_level("INFO", logger="mtdata.core.data_use_cases"):
+    with caplog.at_level("INFO", logger="mtdata.core.data.use_cases"):
         result = run_data_fetch_ticks(
             request,
             gateway=SimpleNamespace(

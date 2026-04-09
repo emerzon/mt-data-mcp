@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from mtdata.core import trading_positions
+from mtdata.core.trading import positions
 
 
 class _FakeMt5:
@@ -35,7 +35,7 @@ def test_resolve_open_position_uses_candidate_ticket_when_direct_lookup_ticket_i
         ]
     )
 
-    pos, resolved_ticket, info = trading_positions._resolve_open_position(
+    pos, resolved_ticket, info = positions._resolve_open_position(
         mt5,
         ticket_candidates=[456],
         symbol="EURUSD",
@@ -67,7 +67,7 @@ def test_resolve_open_position_uses_exact_match_value_when_ticket_field_is_inval
         ],
     )
 
-    pos, resolved_ticket, info = trading_positions._resolve_open_position(
+    pos, resolved_ticket, info = positions._resolve_open_position(
         mt5,
         ticket_candidates=[789],
         symbol="EURUSD",
@@ -100,7 +100,7 @@ def test_resolve_open_position_uses_other_ticket_like_fields_in_heuristic_path()
         ],
     )
 
-    pos, resolved_ticket, info = trading_positions._resolve_open_position(
+    pos, resolved_ticket, info = positions._resolve_open_position(
         mt5,
         ticket_candidates=[],
         symbol="EURUSD",

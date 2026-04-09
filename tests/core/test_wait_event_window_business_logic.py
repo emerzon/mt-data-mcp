@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from mtdata.core import wait_events
+from mtdata.core.data import wait_events
 
 
 def test_window_ticks_uses_time_window_cutoff() -> None:

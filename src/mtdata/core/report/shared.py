@@ -5,8 +5,8 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List, Optional
 
-from ..utils.formatting import format_float, format_number as _format_number
-from ..utils.minimal_output import format_table_toon as _format_table_toon
+from ...utils.formatting import format_float, format_number as _format_number
+from ...utils.minimal_output import format_table_toon as _format_table_toon
 
 
 def format_number(value: Any) -> str:

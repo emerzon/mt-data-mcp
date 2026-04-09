@@ -3,7 +3,7 @@ from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, get_args
 
 from pydantic import ValidationError
 
-from .data_requests import _normalize_indicator_specs as _shared_normalize_indicator_specs
+from .data.requests import _normalize_indicator_specs as _shared_normalize_indicator_specs
 
 
 def parse_kv_string(s: str, *, debug: Callable[[str], None]) -> Optional[Dict[str, Any]]:

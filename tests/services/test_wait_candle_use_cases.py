@@ -1,10 +1,10 @@
-from mtdata.core.data_requests import WaitCandleRequest
-from mtdata.core.data_use_cases import run_wait_candle
+from mtdata.core.data.requests import WaitCandleRequest
+from mtdata.core.data.use_cases import run_wait_candle
 
 
 def test_run_wait_candle_returns_success(monkeypatch) -> None:
     monkeypatch.setattr(
-        "mtdata.core.data_use_cases._sleep_until_next_candle",
+        "mtdata.core.data.use_cases._sleep_until_next_candle",
         lambda timeframe, buffer_seconds, sleep_impl: {
             "timeframe": timeframe,
             "buffer_seconds": buffer_seconds,
@@ -20,7 +20,7 @@ def test_run_wait_candle_returns_success(monkeypatch) -> None:
         },
     )
     monkeypatch.setattr(
-        "mtdata.core.data_use_cases._next_candle_wait_payload",
+        "mtdata.core.data.use_cases._next_candle_wait_payload",
         lambda timeframe, buffer_seconds: {
             "timeframe": timeframe,
             "buffer_seconds": buffer_seconds,
@@ -39,7 +39,7 @@ def test_run_wait_candle_returns_success(monkeypatch) -> None:
     assert result["status"] == "completed"
 def test_run_wait_candle_defers_when_wait_exceeds_cap(monkeypatch) -> None:
     monkeypatch.setattr(
-        "mtdata.core.data_use_cases._next_candle_wait_payload",
+        "mtdata.core.data.use_cases._next_candle_wait_payload",
         lambda timeframe, buffer_seconds: {
             "timeframe": timeframe,
             "buffer_seconds": buffer_seconds,

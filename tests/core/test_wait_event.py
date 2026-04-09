@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from mtdata.core.data_requests import WaitEventRequest
+from mtdata.core.data.requests import WaitEventRequest
 
 
 def test_wait_event_request_defaults_watch_for_to_inferred_set() -> None:

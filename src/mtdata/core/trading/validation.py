@@ -5,8 +5,8 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, Literal, Optional, Tuple, Union
 
-from .trading_gateway import MT5TradingGateway, create_trading_gateway, trading_connection_error
-from ..utils.utils import _coerce_finite_float, _coerce_scalar
+from .gateway import MT5TradingGateway, create_trading_gateway, trading_connection_error
+from ...utils.utils import _coerce_finite_float, _coerce_scalar
 
 
 MarketOrderTypeLiteral = Literal["BUY", "SELL"]

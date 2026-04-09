@@ -19,7 +19,7 @@ from src.mtdata.core.trading import trade_get_open
 from src.mtdata.core.trading import trade_get_pending
 from src.mtdata.core.patterns import patterns_detect
 from src.mtdata.core.forecast import forecast_barrier_prob
-from src.mtdata.core.trading_requests import TradeGetOpenRequest, TradeGetPendingRequest
+from src.mtdata.core.trading.requests import TradeGetOpenRequest, TradeGetPendingRequest
 from src.mtdata.core.patterns_requests import PatternsDetectRequest
 from src.mtdata.forecast.requests import ForecastBarrierProbRequest
 
@@ -254,7 +254,7 @@ class TestMergedTools(unittest.TestCase):
         self.mt5.order_send.return_value = MagicMock(retcode=self.mt5.TRADE_RETCODE_DONE)
         
         from src.mtdata.core.trading import trade_close
-        from src.mtdata.core.trading_requests import TradeCloseRequest
+        from src.mtdata.core.trading.requests import TradeCloseRequest
 
         # Test close by ticket
         trade_close(request=TradeCloseRequest(ticket=123), __cli_raw=True)
@@ -278,7 +278,7 @@ class TestMergedTools(unittest.TestCase):
         self.mt5.order_send.return_value = MagicMock(retcode=self.mt5.TRADE_RETCODE_DONE) 
 
         from src.mtdata.core.trading import trade_close
-        from src.mtdata.core.trading_requests import TradeCloseRequest
+        from src.mtdata.core.trading.requests import TradeCloseRequest
 
         # Test cancel by ticket
         trade_close(request=TradeCloseRequest(ticket=456), __cli_raw=True)

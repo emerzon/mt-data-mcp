@@ -7,10 +7,10 @@ from unittest.mock import MagicMock, patch
 import sys
 
 from mtdata.core.trading import trade_account_info
-from mtdata.core import trading_account as core_trading_account
-from mtdata.core import trading_positions as core_trading_positions
-from mtdata.core.trading_requests import TradeGetOpenRequest, TradeGetPendingRequest
-from mtdata.core.trading_use_cases import run_trade_get_open, run_trade_get_pending
+from mtdata.core.trading import account as core_trading_account
+from mtdata.core.trading import positions as core_trading_positions
+from mtdata.core.trading.requests import TradeGetOpenRequest, TradeGetPendingRequest
+from mtdata.core.trading.use_cases import run_trade_get_open, run_trade_get_pending
 from mtdata.utils.mt5 import MT5ConnectionError
 
 
@@ -51,7 +51,7 @@ def test_trade_account_info_includes_execution_preflight_fields() -> None:
     )
 
     raw = _unwrap(trade_account_info)
-    with patch("mtdata.core.trading_account.ensure_mt5_connection_or_raise", return_value=None):
+    with patch("mtdata.core.trading.account.ensure_mt5_connection_or_raise", return_value=None):
         out = raw()
 
     if prev is not None:
@@ -100,7 +100,7 @@ def test_trade_account_info_returns_connection_error_payload() -> None:
     raw = _unwrap(trade_account_info)
 
     with patch(
-        "mtdata.core.trading_account.ensure_mt5_connection_or_raise",
+        "mtdata.core.trading.account.ensure_mt5_connection_or_raise",
         side_effect=MT5ConnectionError("Failed to connect to MetaTrader5. Ensure MT5 terminal is running."),
     ):
         out = raw()
@@ -182,7 +182,7 @@ def test_run_trade_get_open_logs_finish_event(caplog) -> None:
         POSITION_TYPE_SELL=1,
     )
 
-    with caplog.at_level("INFO", logger="mtdata.core.trading_use_cases"):
+    with caplog.at_level("INFO", logger="mtdata.core.trading.use_cases"):
         out = run_trade_get_open(
             TradeGetOpenRequest(),
             gateway=gateway,
@@ -238,7 +238,7 @@ def test_run_trade_get_pending_logs_finish_event(caplog) -> None:
         ORDER_TYPE_SELL_STOP_LIMIT=7,
     )
 
-    with caplog.at_level("INFO", logger="mtdata.core.trading_use_cases"):
+    with caplog.at_level("INFO", logger="mtdata.core.trading.use_cases"):
         out = run_trade_get_pending(
             TradeGetPendingRequest(),
             gateway=gateway,

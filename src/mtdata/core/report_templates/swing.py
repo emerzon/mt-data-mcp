@@ -1,7 +1,7 @@
 from typing import Any, Dict, Optional
 from ..schema import DenoiseSpec
 from .common import build_report_with_timeframes
-from ..report_utils import merge_params
+from ..report.utils import merge_params
 
 
 def template_swing(

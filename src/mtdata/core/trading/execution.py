@@ -1,28 +1,28 @@
 """Trade modification and closure workflows for MetaTrader integration."""
 
 import math
-import time
+import time as _stdlib_time
 import traceback
 from datetime import datetime, timezone
 from typing import Optional, Union, List, Dict, Any
 
-from . import trading_comments, trading_time, trading_validation
-from .trading_gateway import MT5TradingGateway, create_trading_gateway, trading_connection_error
-from .trading_positions import _resolve_open_position, _resolve_pending_order
-from .trading_time import ExpirationValue
-from ..utils.mt5 import _mt5_epoch_to_utc
+from . import comments, time, validation
+from .gateway import MT5TradingGateway, create_trading_gateway, trading_connection_error
+from .positions import _resolve_open_position, _resolve_pending_order
+from .time import ExpirationValue
+from ...utils.mt5 import _mt5_epoch_to_utc
 
 
 def _resolve_position_side(position: Any, mt5: Any) -> Optional[str]:
-    position_type_buy = trading_validation._safe_int_attr(
+    position_type_buy = validation._safe_int_attr(
         mt5,
         "POSITION_TYPE_BUY",
-        trading_validation._safe_int_attr(mt5, "ORDER_TYPE_BUY", 0),
+        validation._safe_int_attr(mt5, "ORDER_TYPE_BUY", 0),
     )
-    position_type_sell = trading_validation._safe_int_attr(
+    position_type_sell = validation._safe_int_attr(
         mt5,
         "POSITION_TYPE_SELL",
-        trading_validation._safe_int_attr(mt5, "ORDER_TYPE_SELL", 1),
+        validation._safe_int_attr(mt5, "ORDER_TYPE_SELL", 1),
     )
     try:
         position_type = int(getattr(position, "type"))
@@ -66,7 +66,7 @@ def _unexpected_operation_error(
         "error_detail": str(exc),
         "traceback": traceback.format_exc(limit=5).strip(),
     }
-    last_error = trading_validation._safe_last_error(mt5)
+    last_error = validation._safe_last_error(mt5)
     if last_error is not None:
         payload["last_error"] = last_error
     if context:
@@ -76,9 +76,9 @@ def _unexpected_operation_error(
 
 def _count_done_results(mt5: Any, results: List[Dict[str, Any]]) -> int:
     success_count = 0
-    done_codes = trading_validation._trade_done_codes(mt5)
+    done_codes = validation._trade_done_codes(mt5)
     for item in results:
-        if trading_validation._retcode_is_done(mt5, item.get("retcode"), done_codes):
+        if validation._retcode_is_done(mt5, item.get("retcode"), done_codes):
             success_count += 1
     return success_count
 
@@ -114,7 +114,7 @@ def _modify_position(
             if symbol_info is None:
                 return {"error": f"Failed to get symbol info for {position.symbol}"}
 
-            price_inputs, price_inputs_error = trading_validation._normalize_trade_price_inputs(
+            price_inputs, price_inputs_error = validation._normalize_trade_price_inputs(
                 symbol_info=symbol_info,
                 stop_loss=stop_loss,
                 take_profit=take_profit,
@@ -129,12 +129,12 @@ def _modify_position(
             explicit_remove_tp = bool(price_inputs["explicit_remove_take_profit"])
 
             # Normalize SL/TP values
-            existing_sl = trading_validation._normalize_price_for_symbol(
+            existing_sl = validation._normalize_price_for_symbol(
                 getattr(position, "sl", None),
                 point=point,
                 digits=digits,
             )
-            existing_tp = trading_validation._normalize_price_for_symbol(
+            existing_tp = validation._normalize_price_for_symbol(
                 getattr(position, "tp", None),
                 point=point,
                 digits=digits,
@@ -167,7 +167,7 @@ def _modify_position(
             desired_tp = _normalize_protection_level(norm_tp, tol=price_tol)
 
             if _protection_levels_match(current_sl, desired_sl, tol=price_tol) and _protection_levels_match(current_tp, desired_tp, tol=price_tol):
-                no_change_code = trading_validation._safe_int_attr(mt5, "TRADE_RETCODE_NO_CHANGES", 10025)
+                no_change_code = validation._safe_int_attr(mt5, "TRADE_RETCODE_NO_CHANGES", 10025)
                 return {
                     "success": True,
                     "retcode": no_change_code,
@@ -189,7 +189,7 @@ def _modify_position(
             tick = mt5.symbol_info_tick(position.symbol)
             if tick is None:
                 return {"error": f"Failed to get current price for {position.symbol}"}
-            live_protection_error = trading_validation._validate_live_protection_levels(
+            live_protection_error = validation._validate_live_protection_levels(
                 symbol_info=symbol_info,
                 tick=tick,
                 side=side,
@@ -205,13 +205,13 @@ def _modify_position(
                 "position": resolved_ticket,
                 "sl": norm_sl,
                 "tp": norm_tp,
-                "comment": trading_comments._normalize_trade_comment(comment, default="MCP modify position"),
+                "comment": comments._normalize_trade_comment(comment, default="MCP modify position"),
             }
-            request_magic = trading_validation._safe_int_ticket(getattr(position, "magic", None))
+            request_magic = validation._safe_int_ticket(getattr(position, "magic", None))
             if request_magic is not None:
                 request["magic"] = request_magic
 
-            result, comment_fallback, last_error = trading_comments._send_order_with_comment_fallback(
+            result, comment_fallback, last_error = comments._send_order_with_comment_fallback(
                 mt5,
                 request,
             )
@@ -219,7 +219,7 @@ def _modify_position(
                 return {"error": "Failed to modify position", "last_error": last_error}
 
             result_retcode = getattr(result, "retcode", None)
-            no_change_code = trading_validation._safe_int_attr(mt5, "TRADE_RETCODE_NO_CHANGES", 10025)
+            no_change_code = validation._safe_int_attr(mt5, "TRADE_RETCODE_NO_CHANGES", 10025)
 
             if result_retcode == no_change_code:
                 refreshed_position = None
@@ -232,12 +232,12 @@ def _modify_position(
                         refreshed_position = list(refreshed_rows)[0]
                     except Exception:
                         refreshed_position = None
-                refreshed_sl = trading_validation._normalize_price_for_symbol(
+                refreshed_sl = validation._normalize_price_for_symbol(
                     getattr(refreshed_position, "sl", None) if refreshed_position is not None else getattr(position, "sl", None),
                     point=point,
                     digits=digits,
                 )
-                refreshed_tp = trading_validation._normalize_price_for_symbol(
+                refreshed_tp = validation._normalize_price_for_symbol(
                     getattr(refreshed_position, "tp", None) if refreshed_position is not None else getattr(position, "tp", None),
                     point=point,
                     digits=digits,
@@ -335,14 +335,14 @@ def _modify_pending_order(
             )
             if order is None:
                 return {"error": f"Pending order {ticket} not found", "checked_scopes": ["pending_orders"]}
-            normalized_expiration, expiration_specified = trading_time._normalize_pending_expiration(expiration)
+            normalized_expiration, expiration_specified = time._normalize_pending_expiration(expiration)
             symbol_info = mt5.symbol_info(order.symbol)
             if symbol_info is None:
                 return {"error": f"Failed to get symbol info for {order.symbol}"}
             tick = mt5.symbol_info_tick(order.symbol)
             if tick is None:
                 return {"error": f"Failed to get current price for {order.symbol}"}
-            price_inputs, price_inputs_error = trading_validation._normalize_trade_price_inputs(
+            price_inputs, price_inputs_error = validation._normalize_trade_price_inputs(
                 symbol_info=symbol_info,
                 price=price if price is not None else getattr(order, "price_open", None),
                 require_price=True,
@@ -359,12 +359,12 @@ def _modify_pending_order(
             explicit_remove_sl = bool(price_inputs["explicit_remove_stop_loss"])
             explicit_remove_tp = bool(price_inputs["explicit_remove_take_profit"])
 
-            existing_sl = trading_validation._normalize_price_for_symbol(
+            existing_sl = validation._normalize_price_for_symbol(
                 getattr(order, "sl", None),
                 point=point,
                 digits=digits,
             )
-            existing_tp = trading_validation._normalize_price_for_symbol(
+            existing_tp = validation._normalize_price_for_symbol(
                 getattr(order, "tp", None),
                 point=point,
                 digits=digits,
@@ -388,8 +388,8 @@ def _modify_pending_order(
                 )
             )
 
-            order_type_value = trading_validation._safe_int_attr(order, "type", -1)
-            pending_level_error = trading_validation._validate_pending_order_levels(
+            order_type_value = validation._safe_int_attr(order, "type", -1)
+            pending_level_error = validation._validate_pending_order_levels(
                 symbol_info=symbol_info,
                 tick=tick,
                 order_type_value=order_type_value,
@@ -410,9 +410,9 @@ def _modify_pending_order(
                 "price": float(normalized_price),
                 "sl": request_sl,
                 "tp": request_tp,
-                "comment": trading_comments._normalize_trade_comment(comment, default="MCP modify pending order"),
+                "comment": comments._normalize_trade_comment(comment, default="MCP modify pending order"),
             }
-            request_magic = trading_validation._safe_int_ticket(getattr(order, "magic", None))
+            request_magic = validation._safe_int_ticket(getattr(order, "magic", None))
             if request_magic is not None:
                 request["magic"] = request_magic
 
@@ -432,12 +432,12 @@ def _modify_pending_order(
                             request["expiration"] = int(current_expiration)
                         except Exception:
                             if isinstance(current_expiration, datetime):
-                                server_dt = trading_time._to_server_time_naive(current_expiration)
-                                request["expiration"] = trading_time._server_time_naive_to_mt5_timestamp(server_dt)
+                                server_dt = time._to_server_time_naive(current_expiration)
+                                request["expiration"] = time._server_time_naive_to_mt5_timestamp(server_dt)
 
             result = mt5.order_send(request)
             if result is None:
-                last_err = trading_validation._safe_last_error(mt5)
+                last_err = validation._safe_last_error(mt5)
                 return {"error": "Failed to modify pending order", "last_error": last_err}
 
             if getattr(result, "retcode", None) != mt5.TRADE_RETCODE_DONE:
@@ -447,7 +447,7 @@ def _modify_pending_order(
                     "retcode_name": mt5.retcode_name(result.retcode),
                     "comment": result.comment,
                     "request_id": result.request_id,
-                    "last_error": trading_validation._safe_last_error(mt5),
+                    "last_error": validation._safe_last_error(mt5),
                 }
 
             return {
@@ -541,7 +541,7 @@ def _close_positions(
             if not to_close:
                 return {"message": "No positions matched criteria"}
 
-            deviation_validated, deviation_error = trading_validation._validate_deviation(deviation)
+            deviation_validated, deviation_error = validation._validate_deviation(deviation)
             if deviation_error:
                 return {"error": deviation_error}
 
@@ -563,7 +563,7 @@ def _close_positions(
                             "error": f"Failed to get symbol info for {position.symbol}",
                         })
                         continue
-                    requested_volume, requested_volume_error = trading_validation._validate_volume(
+                    requested_volume, requested_volume_error = validation._validate_volume(
                         volume,
                         symbol_info,
                     )
@@ -597,7 +597,7 @@ def _close_positions(
                         continue
                     remaining_volume_estimate = max(0.0, position_volume_before - requested_volume)
                     if remaining_volume_estimate > 1e-12:
-                        _, remaining_error = trading_validation._validate_volume(
+                        _, remaining_error = validation._validate_volume(
                             remaining_volume_estimate,
                             symbol_info,
                         )
@@ -614,7 +614,7 @@ def _close_positions(
                             })
                             continue
 
-                fill_modes = trading_validation._candidate_fill_modes(mt5)
+                fill_modes = validation._candidate_fill_modes(mt5)
 
                 result = None
                 request = None
@@ -633,7 +633,7 @@ def _close_positions(
                 is_buy_position = position_side == "BUY"
                 tick = mt5.symbol_info_tick(position.symbol)
                 if tick is None:
-                    tick_error = trading_validation._safe_last_error(mt5)
+                    tick_error = validation._safe_last_error(mt5)
                     results.append(
                         {
                             "ticket": position.ticket,
@@ -654,7 +654,7 @@ def _close_positions(
                         getattr(tick, "ask", 0.0) or 0.0
                     )
                     close_type = close_type_sell if is_buy_position else close_type_buy
-                    close_comment = trading_comments._normalize_trade_comment(comment, default="MCP close")
+                    close_comment = comments._normalize_trade_comment(comment, default="MCP close")
                     # Some brokers reject edge-length comments during close-deal requests.
                     if len(close_comment) > 24:
                         close_comment = close_comment[:24]
@@ -671,13 +671,13 @@ def _close_positions(
                         "type_time": mt5.ORDER_TIME_GTC,
                         "type_filling": int(fill_mode),
                     }
-                    request_magic = trading_validation._safe_int_ticket(getattr(position, "magic", None))
+                    request_magic = validation._safe_int_ticket(getattr(position, "magic", None))
                     if request_magic is not None:
                         request["magic"] = request_magic
 
                     result = mt5.order_send(request)
                     if result is None:
-                        send_error = trading_validation._safe_last_error(mt5)
+                        send_error = validation._safe_last_error(mt5)
                         send_error_text = str(send_error).lower() if send_error is not None else ""
                         # Retry with a minimal/no comment when broker rejects the comment field.
                         if "invalid" in send_error_text and "comment" in send_error_text:
@@ -692,7 +692,7 @@ def _close_positions(
                             for alt_req in alt_requests:
                                 alt_res = mt5.order_send(alt_req)
                                 if alt_res is None:
-                                    alt_err = trading_validation._safe_last_error(mt5)
+                                    alt_err = validation._safe_last_error(mt5)
                                     attempts.append(
                                         {
                                             "type_filling": int(fill_mode),
@@ -717,9 +717,9 @@ def _close_positions(
                                 break
                             if recovered:
                                 retcode_val = getattr(result, "retcode", None)
-                                if trading_validation._retcode_is_done(mt5, retcode_val):
+                                if validation._retcode_is_done(mt5, retcode_val):
                                     break
-                                time.sleep(0.15)
+                                _stdlib_time.sleep(0.15)
                                 continue
                         attempts.append(
                             {
@@ -728,7 +728,7 @@ def _close_positions(
                                 "last_error": send_error,
                             }
                         )
-                        time.sleep(0.15)
+                        _stdlib_time.sleep(0.15)
                         continue
 
                     retcode_val = getattr(result, "retcode", None)
@@ -740,22 +740,22 @@ def _close_positions(
                             "comment": getattr(result, "comment", None),
                         }
                     )
-                    if trading_validation._retcode_is_done(mt5, retcode_val):
+                    if validation._retcode_is_done(mt5, retcode_val):
                         break
                     price_changed_codes = {
-                        trading_validation._safe_int_attr(mt5, "TRADE_RETCODE_PRICE_CHANGED", 10020),
-                        trading_validation._safe_int_attr(mt5, "TRADE_RETCODE_REQUOTE", 10004),
+                        validation._safe_int_attr(mt5, "TRADE_RETCODE_PRICE_CHANGED", 10020),
+                        validation._safe_int_attr(mt5, "TRADE_RETCODE_REQUOTE", 10004),
                     }
                     if retcode_val in price_changed_codes:
                         refreshed_tick = mt5.symbol_info_tick(position.symbol)
                         if refreshed_tick is not None:
                             tick = refreshed_tick
-                    time.sleep(0.15)
+                    _stdlib_time.sleep(0.15)
 
-                close_ok = trading_validation._retcode_is_done(mt5, getattr(result, "retcode", None)) if result is not None else False
+                close_ok = validation._retcode_is_done(mt5, getattr(result, "retcode", None)) if result is not None else False
 
                 if not close_ok:
-                    last_error = trading_validation._safe_last_error(mt5)
+                    last_error = validation._safe_last_error(mt5)
                     tick_failures = [
                         a for a in attempts if "tick data" in str(a.get("error", "")).lower()
                     ]
@@ -895,9 +895,9 @@ def _cancel_pending(
                 request = {
                     "action": mt5.TRADE_ACTION_REMOVE,
                     "order": order.ticket,
-                    "comment": trading_comments._normalize_trade_comment(comment, default="MCP cancel pending order"),
+                    "comment": comments._normalize_trade_comment(comment, default="MCP cancel pending order"),
                 }
-                request_magic = trading_validation._safe_int_ticket(getattr(order, "magic", None))
+                request_magic = validation._safe_int_ticket(getattr(order, "magic", None))
                 if request_magic is not None:
                     request["magic"] = request_magic
 

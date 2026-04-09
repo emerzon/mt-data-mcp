@@ -8,9 +8,9 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple, Union
 
-from .config import mt5_config
-from ..shared.constants import TIMEFRAME_SECONDS
-from ..shared.validators import unsupported_timeframe_seconds_error
+from ..config import mt5_config
+from ...shared.constants import TIMEFRAME_SECONDS
+from ...shared.validators import unsupported_timeframe_seconds_error
 
 
 ExpirationValue = Union[int, float, str, datetime]

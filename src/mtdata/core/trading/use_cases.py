@@ -7,16 +7,16 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
-from ..utils.barriers import normalize_trade_direction
-from ..utils.mt5 import MT5ConnectionError
-from . import trading_validation
-from .execution_logging import (
+from ...utils.barriers import normalize_trade_direction
+from ...utils.mt5 import MT5ConnectionError
+from . import validation
+from ..execution_logging import (
     infer_result_success,
     log_operation_finish,
     log_operation_start,
     run_logged_operation,
 )
-from .trading_requests import (
+from .requests import (
     TradeCloseRequest,
     TradeGetOpenRequest,
     TradeGetPendingRequest,
@@ -1104,15 +1104,15 @@ def run_trade_risk_analyze(
             if positions is None:
                 positions = []
 
-            position_type_buy = trading_validation._safe_int_attr(
+            position_type_buy = validation._safe_int_attr(
                 gateway,
                 "POSITION_TYPE_BUY",
-                trading_validation._safe_int_attr(gateway, "ORDER_TYPE_BUY", 0),
+                validation._safe_int_attr(gateway, "ORDER_TYPE_BUY", 0),
             )
-            position_type_sell = trading_validation._safe_int_attr(
+            position_type_sell = validation._safe_int_attr(
                 gateway,
                 "POSITION_TYPE_SELL",
-                trading_validation._safe_int_attr(gateway, "ORDER_TYPE_SELL", 1),
+                validation._safe_int_attr(gateway, "ORDER_TYPE_SELL", 1),
             )
             position_risks: List[Dict[str, Any]] = []
             risk_calculation_failures: List[Dict[str, Any]] = []
@@ -1161,7 +1161,7 @@ def run_trade_risk_analyze(
                     reward_currency = None
                     rr_ratio = None
                     risk_status = "undefined"
-                    position_type = trading_validation._safe_int_attr(pos, "type", position_type_sell)
+                    position_type = validation._safe_int_attr(pos, "type", position_type_sell)
                     is_buy_position = int(position_type) == int(position_type_buy)
 
                     if sl_price and tick_size > 0 and tick_value_valid:
@@ -1540,7 +1540,7 @@ def run_trade_get_pending(
 
 
 def _mt5_int_const(gateway: Any, name: str, fallback: int) -> int:
-    return trading_validation._safe_int_attr(gateway, name, fallback)
+    return validation._safe_int_attr(gateway, name, fallback)
 
 
 def _pick_trade_series(df: Any, pd_module: Any, *names: str):

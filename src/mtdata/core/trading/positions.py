@@ -6,14 +6,14 @@ import logging
 import math
 from typing import Any, Dict, List, Optional, Tuple
 
-from ._mcp_instance import mcp
-from . import trading_comments, trading_validation
-from .execution_logging import run_logged_operation
-from .trading_gateway import create_trading_gateway
-from .trading_requests import TradeGetOpenRequest, TradeGetPendingRequest
-from .trading_use_cases import run_trade_get_open, run_trade_get_pending
-from ..utils.mt5 import _mt5_epoch_to_utc
-from ..utils.utils import (
+from .._mcp_instance import mcp
+from . import comments, validation
+from ..execution_logging import run_logged_operation
+from .gateway import create_trading_gateway
+from .requests import TradeGetOpenRequest, TradeGetPendingRequest
+from .use_cases import run_trade_get_open, run_trade_get_pending
+from ...utils.mt5 import _mt5_epoch_to_utc
+from ...utils.utils import (
     _format_time_minimal,
     _format_time_minimal_local,
     _normalize_limit,
@@ -64,7 +64,7 @@ def _position_side_matches(position: Any, side: Optional[str], mt5: Any) -> bool
 def _position_ticket_fields(position: Any) -> Dict[str, int]:
     out: Dict[str, int] = {}
     for field in ("ticket", "identifier", "position_id", "position", "order", "deal"):
-        ticket = trading_validation._safe_int_ticket(getattr(position, field, None))
+        ticket = validation._safe_int_ticket(getattr(position, field, None))
         if ticket is not None:
             out[field] = ticket
     return out
@@ -76,13 +76,13 @@ def _resolved_position_ticket(position: Any, *, fallback: Optional[int] = None) 
         ticket = fields.get(field)
         if ticket is not None:
             return ticket
-    return trading_validation._safe_int_ticket(fallback)
+    return validation._safe_int_ticket(fallback)
 
 
 def _pending_order_ticket_fields(order: Any) -> Dict[str, int]:
     out: Dict[str, int] = {}
     for field in ("ticket", "identifier", "position_id", "position", "order", "deal"):
-        ticket = trading_validation._safe_int_ticket(getattr(order, field, None))
+        ticket = validation._safe_int_ticket(getattr(order, field, None))
         if ticket is not None:
             out[field] = ticket
     return out
@@ -94,7 +94,7 @@ def _resolved_pending_order_ticket(order: Any, *, fallback: Optional[int] = None
         ticket = fields.get(field)
         if ticket is not None:
             return ticket
-    return trading_validation._safe_int_ticket(fallback)
+    return validation._safe_int_ticket(fallback)
 
 
 def _trade_read_scope(request: Any) -> str:
@@ -212,7 +212,7 @@ def _resolve_open_position(
     """Resolve an open position robustly across ticket/identifier mismatches."""
     candidate_ids: List[int] = []
     for raw in list(ticket_candidates or []):
-        ticket = trading_validation._safe_int_ticket(raw)
+        ticket = validation._safe_int_ticket(raw)
         if ticket is not None and ticket not in candidate_ids:
             candidate_ids.append(ticket)
 
@@ -279,7 +279,7 @@ def _resolve_pending_order(
     """Resolve a pending order robustly across ticket/identifier mismatches."""
     candidate_ids: List[int] = []
     for raw in list(ticket_candidates or []):
-        ticket = trading_validation._safe_int_ticket(raw)
+        ticket = validation._safe_int_ticket(raw)
         if ticket is not None and ticket not in candidate_ids:
             candidate_ids.append(ticket)
 
@@ -344,7 +344,7 @@ def trade_get_open(
                 format_time_minimal_local=_format_time_minimal_local,
                 mt5_epoch_to_utc=_mt5_epoch_to_utc,
                 normalize_limit=_normalize_limit,
-                comment_row_metadata=trading_comments._comment_row_metadata,
+                comment_row_metadata=comments._comment_row_metadata,
             ),
             request=request,
             kind="open_positions",
@@ -371,7 +371,7 @@ def trade_get_pending(
                 format_time_minimal_local=_format_time_minimal_local,
                 mt5_epoch_to_utc=_mt5_epoch_to_utc,
                 normalize_limit=_normalize_limit,
-                comment_row_metadata=trading_comments._comment_row_metadata,
+                comment_row_metadata=comments._comment_row_metadata,
             ),
             request=request,
             kind="pending_orders",

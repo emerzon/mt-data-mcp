@@ -6,8 +6,8 @@ from unittest.mock import MagicMock, patch
 import sys
 
 from mtdata.core.trading import trade_history as _trade_history_tool
-from mtdata.core.trading_requests import TradeHistoryRequest
-from mtdata.core.trading_use_cases import run_trade_history
+from mtdata.core.trading.requests import TradeHistoryRequest
+from mtdata.core.trading.use_cases import run_trade_history
 from mtdata.utils.mt5 import MT5ConnectionError, _mt5_epoch_to_utc
 from mtdata.utils.utils import _format_time_minimal
 
@@ -23,7 +23,7 @@ def trade_history(**kwargs):
     request = kwargs.pop("request", None)
     if request is None:
         request = TradeHistoryRequest(**kwargs)
-    with patch("mtdata.core.trading_account.ensure_mt5_connection_or_raise", return_value=None):
+    with patch("mtdata.core.trading.account.ensure_mt5_connection_or_raise", return_value=None):
         if raw_output:
             return _unwrap(_trade_history_tool)(request=request)
         return _trade_history_tool(request=request, __cli_raw=False)
@@ -41,7 +41,7 @@ def test_trade_history_deals_normalizes_time_to_utc_string() -> None:
     Deal = namedtuple("Deal", ["ticket", "time", "symbol"])
     mt5.history_deals_get.return_value = [Deal(ticket=1, time=1700000000, symbol="EURUSD")]
 
-    with patch("mtdata.core.trading_account._use_client_tz", lambda: False):
+    with patch("mtdata.core.trading.account._use_client_tz", lambda: False):
         out = trade_history(history_kind="deals", __cli_raw=True)
     if prev is not None:
         sys.modules["MetaTrader5"] = prev
@@ -58,7 +58,7 @@ def test_trade_history_orders_normalizes_setup_and_done_times() -> None:
         Order(ticket=1, time_setup=1700000000, time_done=1700003600, symbol="EURUSD")
     ]
 
-    with patch("mtdata.core.trading_account._use_client_tz", lambda: False):
+    with patch("mtdata.core.trading.account._use_client_tz", lambda: False):
         out = trade_history(history_kind="orders", __cli_raw=True)
     if prev is not None:
         sys.modules["MetaTrader5"] = prev
@@ -77,7 +77,7 @@ def test_trade_history_filters_rows_by_symbol_even_if_mt5_returns_mixed_rows() -
         Deal(ticket=2, time=1700003600, symbol="XAUUSD"),
     ]
 
-    with patch("mtdata.core.trading_account._use_client_tz", lambda: False):
+    with patch("mtdata.core.trading.account._use_client_tz", lambda: False):
         out = trade_history(history_kind="deals", symbol="BTCUSD", __cli_raw=True)
     if prev is not None:
         sys.modules["MetaTrader5"] = prev
@@ -97,7 +97,7 @@ def test_trade_history_deals_decodes_enum_codes_to_labels() -> None:
         Deal(ticket=1, time=1700000000, symbol="EURUSD", type=0, entry=0, reason=0)
     ]
 
-    with patch("mtdata.core.trading_account._use_client_tz", lambda: False):
+    with patch("mtdata.core.trading.account._use_client_tz", lambda: False):
         out = trade_history(history_kind="deals", __cli_raw=True)
     if prev is not None:
         sys.modules["MetaTrader5"] = prev
@@ -127,7 +127,7 @@ def test_trade_history_deals_extracts_exit_trigger_from_comment() -> None:
         )
     ]
 
-    with patch("mtdata.core.trading_account._use_client_tz", lambda: False):
+    with patch("mtdata.core.trading.account._use_client_tz", lambda: False):
         out = trade_history(history_kind="deals", __cli_raw=True)
     if prev is not None:
         sys.modules["MetaTrader5"] = prev
@@ -154,7 +154,7 @@ def test_trade_history_deals_extracts_exit_trigger_from_reason_when_comment_miss
         )
     ]
 
-    with patch("mtdata.core.trading_account._use_client_tz", lambda: False):
+    with patch("mtdata.core.trading.account._use_client_tz", lambda: False):
         out = trade_history(history_kind="deals", __cli_raw=True)
     if prev is not None:
         sys.modules["MetaTrader5"] = prev
@@ -198,7 +198,7 @@ def test_trade_history_deals_drops_non_informative_noise_columns() -> None:
         )
     ]
 
-    with patch("mtdata.core.trading_account._use_client_tz", lambda: False):
+    with patch("mtdata.core.trading.account._use_client_tz", lambda: False):
         out = trade_history(history_kind="deals", __cli_raw=True)
     if prev is not None:
         sys.modules["MetaTrader5"] = prev
@@ -243,7 +243,7 @@ def test_trade_history_deals_keeps_fee_when_non_zero() -> None:
         )
     ]
 
-    with patch("mtdata.core.trading_account._use_client_tz", lambda: False):
+    with patch("mtdata.core.trading.account._use_client_tz", lambda: False):
         out = trade_history(history_kind="deals", __cli_raw=True)
     if prev is not None:
         sys.modules["MetaTrader5"] = prev
@@ -260,7 +260,7 @@ def test_trade_history_replaces_non_finite_values_with_none() -> None:
         Deal(ticket=1, time=1700000000, symbol="EURUSD", profit=float("nan"))
     ]
 
-    with patch("mtdata.core.trading_account._use_client_tz", lambda: False):
+    with patch("mtdata.core.trading.account._use_client_tz", lambda: False):
         out = trade_history(history_kind="deals", __cli_raw=True)
     if prev is not None:
         sys.modules["MetaTrader5"] = prev
@@ -278,7 +278,7 @@ def test_run_trade_history_logs_finish_event(caplog) -> None:
         ],
     )
 
-    with caplog.at_level("INFO", logger="mtdata.core.trading_use_cases"):
+    with caplog.at_level("INFO", logger="mtdata.core.trading.use_cases"):
         out = run_trade_history(
             TradeHistoryRequest(history_kind="deals"),
             gateway=gateway,
@@ -310,7 +310,7 @@ def test_trade_history_filters_deals_by_position_ticket() -> None:
         Deal(ticket=2, time=1700003600, symbol="BTCUSD", position_id=222),
     ]
 
-    with patch("mtdata.core.trading_account._use_client_tz", lambda: False):
+    with patch("mtdata.core.trading.account._use_client_tz", lambda: False):
         out = trade_history(history_kind="deals", symbol="BTCUSD", position_ticket=222, __cli_raw=True)
     if prev is not None:
         sys.modules["MetaTrader5"] = prev
@@ -327,7 +327,7 @@ def test_trade_history_without_range_uses_full_history_start() -> None:
         Deal(ticket=1, time=1700000000, symbol="EURUSD")
     ]
 
-    with patch("mtdata.core.trading_account._use_client_tz", lambda: False):
+    with patch("mtdata.core.trading.account._use_client_tz", lambda: False):
         out = trade_history(history_kind="deals", __cli_raw=True)
     if prev is not None:
         sys.modules["MetaTrader5"] = prev
@@ -344,7 +344,7 @@ def test_trade_history_surfaces_mt5_history_exception_with_actionable_hint() -> 
         "<built-in function history_deals_get> returned a result with an exception set"
     )
 
-    with patch("mtdata.core.trading_account._use_client_tz", lambda: False):
+    with patch("mtdata.core.trading.account._use_client_tz", lambda: False):
         out = trade_history(history_kind="deals", __cli_raw=True)
     if prev is not None:
         sys.modules["MetaTrader5"] = prev
@@ -373,7 +373,7 @@ def test_trade_history_surfaces_comment_limit_metadata() -> None:
         Deal(ticket=1, time=1700000000, symbol="BTCUSD", comment="audit short"),
     ]
 
-    with patch("mtdata.core.trading_account._use_client_tz", lambda: False):
+    with patch("mtdata.core.trading.account._use_client_tz", lambda: False):
         out = trade_history(history_kind="deals", symbol="BTCUSD", __cli_raw=True)
     if prev is not None:
         sys.modules["MetaTrader5"] = prev
@@ -388,7 +388,7 @@ def test_trade_history_empty_deals_message_includes_orders_hint() -> None:
     mt5, prev = _install_mock_mt5()
     mt5.history_deals_get.return_value = []
 
-    with patch("mtdata.core.trading_account._use_client_tz", lambda: False):
+    with patch("mtdata.core.trading.account._use_client_tz", lambda: False):
         out = trade_history(history_kind="deals", __cli_raw=True)
     if prev is not None:
         sys.modules["MetaTrader5"] = prev
@@ -401,7 +401,7 @@ def test_trade_history_small_window_empty_orders_message_includes_propagation_no
     mt5, prev = _install_mock_mt5()
     mt5.history_orders_get.return_value = []
 
-    with patch("mtdata.core.trading_account._use_client_tz", lambda: False):
+    with patch("mtdata.core.trading.account._use_client_tz", lambda: False):
         out = trade_history(history_kind="orders", minutes_back=5, __cli_raw=True)
     if prev is not None:
         sys.modules["MetaTrader5"] = prev
@@ -412,7 +412,7 @@ def test_trade_history_small_window_empty_orders_message_includes_propagation_no
 
 def test_trade_history_returns_connection_error_payload() -> None:
     with patch(
-        "mtdata.core.trading_account.ensure_mt5_connection_or_raise",
+        "mtdata.core.trading.account.ensure_mt5_connection_or_raise",
         side_effect=MT5ConnectionError("Failed to connect to MetaTrader5. Ensure MT5 terminal is running."),
     ):
         out = _unwrap(_trade_history_tool)(request=TradeHistoryRequest(history_kind="deals"))

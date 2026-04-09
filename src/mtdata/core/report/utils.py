@@ -2,9 +2,9 @@ from typing import Any, Dict, Optional, List, Tuple, Callable
 from datetime import datetime, timezone
 import math
 
-from ..utils.constants import TIME_DISPLAY_FORMAT
-from ..utils.barriers import get_pip_size as _get_pip_size
-from .report_shared import (
+from ...utils.constants import TIME_DISPLAY_FORMAT
+from ...utils.barriers import get_pip_size as _get_pip_size
+from .shared import (
     _as_float,
     _format_decimal,
     _format_probability,
@@ -16,7 +16,7 @@ from .report_shared import (
     _indicator_key_variants,
     format_number,
 )
-from .tool_calling import call_tool_sync_raw
+from ..tool_calling import call_tool_sync_raw
 
 
 def now_utc_iso() -> str:
@@ -243,7 +243,7 @@ def merge_params(base: Optional[Dict[str, Any]], extra: Dict[str, Any], override
 
 def market_snapshot(symbol: str, timezone: str = 'UTC') -> Dict[str, Any]:
     try:
-        from .market_depth import market_depth_fetch as _fetch_market_depth
+        from ..market_depth import market_depth_fetch as _fetch_market_depth
         try:
             dom = _fetch_market_depth(symbol=symbol, __cli_raw=True)
         except TypeError:
@@ -349,7 +349,7 @@ def apply_market_gates(section: Dict[str, Any], params: Dict[str, Any]) -> Dict[
 
 def context_for_tf(symbol: str, timeframe: str, denoise: Optional[Dict[str, Any]], limit: int = 200, tail: int = 30) -> Optional[Dict[str, Any]]:
     try:
-        from .data import data_fetch_candles as _fetch_candles
+        from ..data import data_fetch_candles as _fetch_candles
         indicators = "ema(20),ema(50),ema(200),rsi(14),macd(12,26,9)"
         res = call_tool_sync_raw(
             _fetch_candles,
@@ -378,7 +378,7 @@ def context_for_tf(symbol: str, timeframe: str, denoise: Optional[Dict[str, Any]
 
         # Compute trend compact data for MTF matrix
         try:
-            from .report_templates.basic import _compute_compact_trend
+            from ..report_templates.basic import _compute_compact_trend
             compact = _compute_compact_trend(rows)
             if compact:
                 out['trend_compact'] = compact
@@ -479,7 +479,7 @@ def attach_multi_timeframes(report: Dict[str, Any], symbol: str, denoise: Option
         pivs: Dict[str, Any] = {}
         if filtered_tfs:
             try:
-                from .pivot import pivot_compute_points as _compute_pivot_points
+                from ..pivot import pivot_compute_points as _compute_pivot_points
                 for tfp in filtered_tfs:
                     res = _compute_pivot_points(symbol=symbol, timeframe=tfp)
                     if isinstance(res, dict) and not res.get('error'):
@@ -618,7 +618,7 @@ def _compact_table_value(value: Any) -> str:
 
 
 
-from .report_rendering import (
+from .rendering import (
     _build_pivot_context_line,
     _render_backtest_section,
     _render_barriers_section,

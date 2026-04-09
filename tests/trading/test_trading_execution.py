@@ -12,8 +12,8 @@ from src.mtdata.core.trading import (
     _place_market_order,
     _place_pending_order,
 )
-from src.mtdata.core.trading_gateway import MT5TradingGateway
-from src.mtdata.core.trading_gateway import create_trading_gateway as create_real_trading_gateway
+from src.mtdata.core.trading.gateway import MT5TradingGateway
+from src.mtdata.core.trading.gateway import create_trading_gateway as create_real_trading_gateway
 
 
 @pytest.fixture
@@ -74,8 +74,8 @@ def mock_mt5():
             ensure_connection_impl=lambda: None,
         )
 
-    with patch("src.mtdata.core.trading_orders.create_trading_gateway", side_effect=_build_gateway), patch(
-        "src.mtdata.core.trading_execution.create_trading_gateway", side_effect=_build_gateway
+    with patch("src.mtdata.core.trading.orders.create_trading_gateway", side_effect=_build_gateway), patch(
+        "src.mtdata.core.trading.execution.create_trading_gateway", side_effect=_build_gateway
     ):
         yield mock_mt5
     if prev_mt5 is not None:
@@ -576,7 +576,7 @@ def test_place_market_order_accepts_injected_gateway():
     )
 
     with patch(
-        "src.mtdata.core.trading_orders._resolve_open_position",
+        "src.mtdata.core.trading.orders._resolve_open_position",
         return_value=(MagicMock(sl=0.0, tp=0.0), 456, {}),
     ):
         res = _place_market_order(
@@ -753,7 +753,7 @@ def test_place_market_order_preserves_existing_position_magic_on_sltp_follow_up(
     position = SimpleNamespace(symbol="EURUSD", sl=0.0, tp=0.0, type=0, magic=24680)
 
     with patch(
-        "src.mtdata.core.trading_orders._resolve_open_position",
+        "src.mtdata.core.trading.orders._resolve_open_position",
         return_value=(position, 456, {}),
     ):
         res = _place_market_order(
@@ -775,14 +775,14 @@ def test_place_market_order_waits_for_delayed_position_resolution(mock_mt5):
     unresolved = (None, None, {"method": "positions_get", "matched": False})
 
     with patch(
-        "src.mtdata.core.trading_orders._resolve_open_position",
+        "src.mtdata.core.trading.orders._resolve_open_position",
         side_effect=[
             unresolved,
             unresolved,
             unresolved,
             (position, 456, {"method": "positions_get(ticket)", "candidate": 456}),
         ],
-    ) as mock_resolve, patch("src.mtdata.core.trading_orders.time.sleep") as mock_sleep:
+    ) as mock_resolve, patch("mtdata.core.trading.orders._stdlib_time.sleep") as mock_sleep:
         res = _place_market_order(
             symbol="EURUSD",
             volume=0.1,
@@ -831,7 +831,7 @@ def test_place_market_order_retries_sltp_without_comment_when_comment_is_invalid
     ]
 
     with patch(
-        "src.mtdata.core.trading_orders._resolve_open_position",
+        "src.mtdata.core.trading.orders._resolve_open_position",
         return_value=(position, 456, {}),
     ):
         res = _place_market_order(
@@ -857,7 +857,7 @@ def test_modify_position_preserves_existing_magic(mock_mt5):
     position = SimpleNamespace(symbol="EURUSD", sl=1.03000, tp=1.05000, type=0, magic=98765)
 
     with patch(
-        "src.mtdata.core.trading_execution._resolve_open_position",
+        "src.mtdata.core.trading.execution._resolve_open_position",
         return_value=(position, 456, {}),
     ):
         res = _modify_position(
@@ -892,7 +892,7 @@ def test_modify_position_retries_without_comment_when_comment_is_invalid(mock_mt
     ]
 
     with patch(
-        "src.mtdata.core.trading_execution._resolve_open_position",
+        "src.mtdata.core.trading.execution._resolve_open_position",
         return_value=(position, 456, {}),
     ):
         res = _modify_position(

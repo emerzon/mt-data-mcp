@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Iterable, Optional
 
-from ..report_utils import now_utc_iso, parse_table_tail
+from ..report.utils import now_utc_iso, parse_table_tail
 from ..schema import DenoiseSpec
 from .basic import _TREND_COMPACT_LEGEND, _compute_compact_trend, _get_raw_result
 

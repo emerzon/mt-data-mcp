@@ -6,16 +6,16 @@ import logging
 import math
 from typing import Any, Dict, List, Optional
 
-from ._mcp_instance import mcp
-from . import trading_comments, trading_validation
-from .config import mt5_config
-from .execution_logging import run_logged_operation
-from .trading_gateway import create_trading_gateway
-from .trading_requests import TradeHistoryRequest
-from .trading_use_cases import run_trade_history
-from ..utils.mt5 import MT5ConnectionError, _mt5_epoch_to_utc, ensure_mt5_connection_or_raise, mt5_adapter
-from ..utils.mt5_enums import decode_mt5_enum_label
-from ..utils.utils import (
+from .._mcp_instance import mcp
+from . import comments, validation
+from ..config import mt5_config
+from ..execution_logging import run_logged_operation
+from .gateway import create_trading_gateway
+from .requests import TradeHistoryRequest
+from .use_cases import run_trade_history
+from ...utils.mt5 import MT5ConnectionError, _mt5_epoch_to_utc, ensure_mt5_connection_or_raise, mt5_adapter
+from ...utils.mt5_enums import decode_mt5_enum_label
+from ...utils.utils import (
     _format_time_minimal,
     _format_time_minimal_local,
     _normalize_limit,
@@ -40,9 +40,9 @@ def _run_trade_history_request(request: TradeHistoryRequest) -> Any:
         mt5_epoch_to_utc=_mt5_epoch_to_utc,
         parse_start_datetime=_parse_start_datetime,
         normalize_limit=_normalize_limit,
-        comment_row_metadata=trading_comments._comment_row_metadata,
-        normalize_ticket_filter=trading_validation._normalize_ticket_filter,
-        normalize_minutes_back=trading_validation._normalize_minutes_back,
+        comment_row_metadata=comments._comment_row_metadata,
+        normalize_ticket_filter=validation._normalize_ticket_filter,
+        normalize_minutes_back=validation._normalize_minutes_back,
         decode_mt5_enum_label=decode_mt5_enum_label,
         mt5_config=mt5_config,
     )

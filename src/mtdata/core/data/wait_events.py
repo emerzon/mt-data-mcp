@@ -7,7 +7,7 @@ import re
 import statistics
 from typing import Any, Callable, Dict, List, Optional
 
-from .data_requests import (
+from .requests import (
     CandleCloseEventSpec,
     OrderCancelledEventSpec,
     OrderCreatedEventSpec,
@@ -30,8 +30,8 @@ from .data_requests import (
     WaitEventRequest,
     WaitEventWindow,
 )
-from .trading_time import _next_candle_wait_payload, _sleep_until_next_candle
-from ..utils.mt5 import _mt5_epoch_to_utc, _to_server_naive_dt
+from ..trading.time import _next_candle_wait_payload, _sleep_until_next_candle
+from ...utils.mt5 import _mt5_epoch_to_utc, _to_server_naive_dt
 
 _MARKET_BOOTSTRAP_MIN_SECONDS = 60.0
 _MARKET_BOOTSTRAP_MAX_SECONDS = 14400.0

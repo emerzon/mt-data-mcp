@@ -18,8 +18,8 @@ from unittest.mock import MagicMock, patch, call
 import pytest
 
 from mtdata.forecast.requests import ForecastGenerateRequest
-from mtdata.core.data_requests import DataFetchCandlesRequest
-from mtdata.core.trading_requests import TradeHistoryRequest
+from mtdata.core.data.requests import DataFetchCandlesRequest
+from mtdata.core.trading.requests import TradeHistoryRequest
 
 # ---------------------------------------------------------------------------
 # Fixture: ensure the cli module is importable with heavy deps mocked
@@ -2735,7 +2735,7 @@ class TestDiscoverTools:
             """Fake tool."""
             pass
 
-        fake_tool.__module__ = "mtdata.core.trading_positions"
+        fake_tool.__module__ = "mtdata.core.trading.positions"
 
         class FakeModule:
             __name__ = "mtdata.core.trading"

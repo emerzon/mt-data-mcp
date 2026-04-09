@@ -4,8 +4,8 @@ from typing import Literal, Optional, Union
 
 from pydantic import BaseModel
 
-from .trading_time import ExpirationValue
-from .trading_validation import OrderTypeInput
+from .time import ExpirationValue
+from .validation import OrderTypeInput
 
 
 class TradePlaceRequest(BaseModel):

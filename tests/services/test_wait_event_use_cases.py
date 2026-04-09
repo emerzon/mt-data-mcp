@@ -7,9 +7,9 @@ from types import SimpleNamespace
 import pytest
 
 from mtdata.core import data as core_data
-from mtdata.core import wait_events as wait_events_mod
-from mtdata.core.data_requests import WaitEventRequest
-from mtdata.core.data_use_cases import run_wait_event
+from mtdata.core.data import wait_events as wait_events_mod
+from mtdata.core.data.requests import WaitEventRequest
+from mtdata.core.data.use_cases import run_wait_event
 
 
 class FakeClock:
@@ -393,7 +393,7 @@ def test_pivot_zone_watchers_use_adjacent_pivot_bands(monkeypatch) -> None:
 
 def test_run_wait_event_defers_boundary_only_when_cap_is_short(monkeypatch) -> None:
     monkeypatch.setattr(
-        "mtdata.core.wait_events._next_candle_wait_payload",
+        "mtdata.core.data.wait_events._next_candle_wait_payload",
         lambda timeframe, buffer_seconds, now_utc: {
             "timeframe": timeframe,
             "buffer_seconds": buffer_seconds,
@@ -525,7 +525,7 @@ def test_run_wait_event_uses_all_default_watchers_when_omitted() -> None:
 
 def test_run_wait_event_infers_candle_boundary_from_request_timeframe(monkeypatch) -> None:
     monkeypatch.setattr(
-        "mtdata.core.wait_events._next_candle_wait_payload",
+        "mtdata.core.data.wait_events._next_candle_wait_payload",
         lambda timeframe, buffer_seconds, now_utc: {
             "timeframe": timeframe,
             "buffer_seconds": buffer_seconds,
@@ -799,7 +799,7 @@ def test_trim_market_ticks_still_honors_keep_tick_floor(monkeypatch) -> None:
 
 def test_run_wait_event_uses_timeframe_as_boundary_when_watchers_are_inferred(monkeypatch) -> None:
     monkeypatch.setattr(
-        "mtdata.core.wait_events._next_candle_wait_payload",
+        "mtdata.core.data.wait_events._next_candle_wait_payload",
         lambda timeframe, buffer_seconds, now_utc: {
             "timeframe": timeframe,
             "buffer_seconds": buffer_seconds,
@@ -853,7 +853,7 @@ def test_run_wait_event_uses_timeframe_as_boundary_when_watchers_are_inferred(mo
 
 def test_run_wait_event_boundary_only_includes_gateway_quote_when_symbol_is_set(monkeypatch) -> None:
     monkeypatch.setattr(
-        "mtdata.core.wait_events._next_candle_wait_payload",
+        "mtdata.core.data.wait_events._next_candle_wait_payload",
         lambda timeframe, buffer_seconds, now_utc: {
             "timeframe": timeframe,
             "buffer_seconds": buffer_seconds,
@@ -865,7 +865,7 @@ def test_run_wait_event_boundary_only_includes_gateway_quote_when_symbol_is_set(
         },
     )
     monkeypatch.setattr(
-        "mtdata.core.wait_events._sleep_until_next_candle",
+        "mtdata.core.data.wait_events._sleep_until_next_candle",
         lambda timeframe, buffer_seconds, sleep_impl, now_utc: {
             "timeframe": timeframe,
             "buffer_seconds": buffer_seconds,
@@ -918,7 +918,7 @@ def test_run_wait_event_boundary_only_includes_gateway_quote_when_symbol_is_set(
 
 def test_run_wait_event_still_matches_pre_boundary_market_event_after_oversleep(monkeypatch) -> None:
     monkeypatch.setattr(
-        "mtdata.core.wait_events._next_candle_wait_payload",
+        "mtdata.core.data.wait_events._next_candle_wait_payload",
         lambda timeframe, buffer_seconds, now_utc: {
             "timeframe": timeframe,
             "buffer_seconds": buffer_seconds,
@@ -981,7 +981,7 @@ def test_run_wait_event_still_matches_pre_boundary_market_event_after_oversleep(
 
 def test_run_wait_event_stops_on_candle_boundary_when_no_watch_event(monkeypatch) -> None:
     monkeypatch.setattr(
-        "mtdata.core.wait_events._next_candle_wait_payload",
+        "mtdata.core.data.wait_events._next_candle_wait_payload",
         lambda timeframe, buffer_seconds, now_utc: {
             "timeframe": timeframe,
             "buffer_seconds": buffer_seconds,
@@ -1014,7 +1014,7 @@ def test_run_wait_event_stops_on_candle_boundary_when_no_watch_event(monkeypatch
 
 def test_run_wait_event_respects_boundary_when_live_state_changes_after_oversleep(monkeypatch) -> None:
     monkeypatch.setattr(
-        "mtdata.core.wait_events._next_candle_wait_payload",
+        "mtdata.core.data.wait_events._next_candle_wait_payload",
         lambda timeframe, buffer_seconds, now_utc: {
             "timeframe": timeframe,
             "buffer_seconds": buffer_seconds,
@@ -1063,11 +1063,11 @@ def test_run_wait_event_respects_boundary_when_live_state_changes_after_overslee
 
 def test_run_wait_event_waits_across_pytz_dst_gap(monkeypatch) -> None:
     pytz = pytest.importorskip("pytz")
-    from mtdata.core import trading_time
+    from mtdata.core.trading import time
 
-    monkeypatch.setattr(trading_time.mt5_config, "get_server_tz", lambda: pytz.timezone("Europe/Nicosia"))
-    monkeypatch.setattr(trading_time.mt5_config, "get_time_offset_seconds", lambda: 7200)
-    monkeypatch.setattr(trading_time.mt5_config, "server_tz_name", "Europe/Nicosia")
+    monkeypatch.setattr(time.mt5_config, "get_server_tz", lambda: pytz.timezone("Europe/Nicosia"))
+    monkeypatch.setattr(time.mt5_config, "get_time_offset_seconds", lambda: 7200)
+    monkeypatch.setattr(time.mt5_config, "server_tz_name", "Europe/Nicosia")
 
     gateway = SequenceGateway(orders_seq=[[], [], [], []])
     clock = FakeClock(datetime(2026, 3, 29, 0, 54, 0, tzinfo=timezone.utc))

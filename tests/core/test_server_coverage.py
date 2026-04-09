@@ -483,7 +483,7 @@ class TestCoerceKwargsForCallable:
         assert "horizon" not in kw
 
     def test_coerces_indicator_string_into_data_request_model(self):
-        from mtdata.core.data_requests import DataFetchCandlesRequest
+        from mtdata.core.data.requests import DataFetchCandlesRequest
 
         def fn(request: DataFetchCandlesRequest): ...
 
@@ -503,7 +503,7 @@ class TestCoerceKwargsForCallable:
         from pydantic import TypeAdapter
 
         from mtdata.core._mcp_tools import _request_model_signature_fields
-        from mtdata.core.data_requests import DataFetchCandlesRequest
+        from mtdata.core.data.requests import DataFetchCandlesRequest
 
         def fn(request: DataFetchCandlesRequest): ...
 
@@ -794,7 +794,7 @@ class TestRecordingToolDecorator:
 
     def test_flattens_request_model_signature_for_mcp_and_keeps_nested_request_compat(self):
         import mtdata.core.server as srv
-        from mtdata.core.data_requests import WaitEventRequest
+        from mtdata.core.data.requests import WaitEventRequest
         from mtdata.core._mcp_tools import _TOOL_REGISTRY
 
         original = srv._ORIG_TOOL_DECORATOR

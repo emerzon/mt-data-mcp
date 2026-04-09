@@ -9,8 +9,8 @@ from unittest.mock import patch
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
 from mtdata.core.trading import trade_place as _trade_place_tool, trade_modify as _trade_modify_tool
-from mtdata.core.trading_requests import TradeModifyRequest, TradePlaceRequest
-from mtdata.core.trading_validation import _normalize_order_type_input
+from mtdata.core.trading.requests import TradeModifyRequest, TradePlaceRequest
+from mtdata.core.trading.validation import _normalize_order_type_input
 
 
 def trade_place(**kwargs):
@@ -128,7 +128,7 @@ def test_trade_place_blank_expiration_keeps_market_routing() -> None:
 
 def test_trade_place_require_sl_tp_needs_inputs_before_market_send() -> None:
     with patch(
-        "mtdata.core.trading_validation._prevalidate_trade_place_market_input",
+        "mtdata.core.trading.validation._prevalidate_trade_place_market_input",
         return_value=None,
     ) as mock_prevalidate, patch("mtdata.core.trading._place_market_order") as mock_market:
         out = trade_place(
@@ -147,7 +147,7 @@ def test_trade_place_require_sl_tp_needs_inputs_before_market_send() -> None:
 
 def test_trade_place_reports_symbol_error_before_sl_tp_requirement() -> None:
     with patch(
-        "mtdata.core.trading_validation._prevalidate_trade_place_market_input",
+        "mtdata.core.trading.validation._prevalidate_trade_place_market_input",
         return_value={"error": "Symbol FAKESYM not found"},
     ) as mock_prevalidate, patch("mtdata.core.trading._place_market_order") as mock_market:
         out = trade_place(
