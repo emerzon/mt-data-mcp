@@ -113,14 +113,12 @@ _DEFAULT_SPACES_METHOD_SCOPED: Dict[str, Dict[str, Any]] = {
     "mlf_rf": {
         "n_estimators": {"type": "int", "min": 100, "max": 500},
         "max_depth": {"type": "categorical", "choices": [None, 5, 10, 15, 20]},
-        "rolling_agg": {"type": "categorical", "choices": ["mean", "min", "max", "std"]},
     },
     "mlf_lightgbm": {
         "n_estimators": {"type": "int", "min": 100, "max": 500},
         "learning_rate": {"type": "float", "min": 0.01, "max": 0.2},
         "num_leaves": {"type": "int", "min": 15, "max": 63},
         "max_depth": {"type": "categorical", "choices": [-1, 6, 8, 12, 16]},
-        "rolling_agg": {"type": "categorical", "choices": ["mean", "min", "max", "std"]},
     },
     # Transformer family (point forecasts use context length primarily)
     "chronos_bolt": {

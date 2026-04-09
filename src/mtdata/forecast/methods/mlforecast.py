@@ -95,17 +95,17 @@ class MLForecastMethod(ForecastMethod):
             lags = list(range(1, max_lag + 1))
             params = dict(params or {})
             params["lags"] = lags
+        rolling_agg = params.get("rolling_agg")
         
         try:
+            if rolling_agg is not None and str(rolling_agg).strip():
+                raise RuntimeError(
+                    "rolling_agg is not supported for mlforecast methods."
+                )
             # Pass lags to constructor
             # Use freq=1 because _create_training_dataframes uses integer index
             mlf = MLForecast(models=[model], freq=1, lags=lags)
-            
-            # rolling_agg support requires window_ops or similar, disabling for now to fix basic functionality
-            # if rolling_agg in {'mean', 'min', 'max', 'std'} and lags:
-            #     for w in sorted(set([x for x in lags if x and x > 1])):
-            #         mlf = mlf.add_rolling_windows(rolling_features={rolling_agg: [w]})
-            
+
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
                 if X_df is not None:
@@ -150,7 +150,6 @@ class MLFRandomForest(MLForecastMethod):
         {"name": "n_estimators", "type": "int", "description": "Number of trees (default: 200)."},
         {"name": "max_depth", "type": "int|null", "description": "Maximum depth (default: None)."},
         {"name": "lags", "type": "list", "description": "Lag features to use (auto if omitted)."},
-        {"name": "rolling_agg", "type": "str|null", "description": "Rolling agg (reserved)."},
     ]
 
     @property
@@ -180,7 +179,6 @@ class MLFLightGBM(MLForecastMethod):
         {"name": "num_leaves", "type": "int", "description": "Number of leaves (default: 31)."},
         {"name": "max_depth", "type": "int", "description": "Maximum depth (default: -1)."},
         {"name": "lags", "type": "list", "description": "Lag features to use (auto if omitted)."},
-        {"name": "rolling_agg", "type": "str|null", "description": "Rolling agg (reserved)."},
     ]
 
     @property
@@ -212,7 +210,6 @@ class GenericMLForecastMethod(MLForecastMethod):
     PARAMS: List[Dict[str, Any]] = [
         {"name": "model", "type": "str", "description": "Approved dotted class path for ML model."},
         {"name": "lags", "type": "list", "description": "Lag features to use (auto if omitted)."},
-        {"name": "rolling_agg", "type": "str|null", "description": "Rolling agg (reserved)."},
     ]
     
     @property

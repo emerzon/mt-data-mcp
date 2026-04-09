@@ -137,6 +137,25 @@ def test_mlforecast_forecast_without_exog_uses_simple_fit_and_predict(monkeypatc
     assert calls["predict_x"] is None
 
 
+def test_mlforecast_forecast_rejects_unsupported_rolling_agg(monkeypatch):
+    fake_ml_mod = ModuleType("mlforecast")
+    fake_ml_mod.MLForecast = object
+    monkeypatch.setitem(sys.modules, "mlforecast", fake_ml_mod)
+    monkeypatch.setattr(
+        common_mod,
+        "_create_training_dataframes",
+        lambda *args, **kwargs: (pd.DataFrame({"y": [1.0]}), None, None),
+    )
+
+    with pytest.raises(RuntimeError, match="dummy_ml error: rolling_agg is not supported"):
+        _DummyMLMethod().forecast(
+            pd.Series([1.0, 2.0]),
+            horizon=1,
+            seasonality=0,
+            params={"lags": [1, 2], "rolling_agg": "mean"},
+        )
+
+
 def test_mlforecast_forecast_wraps_runtime_errors(monkeypatch):
     class FakeMLForecast:
         def __init__(self, models, freq, lags):
@@ -335,3 +354,9 @@ def test_mlforecast_legacy_wrappers_route_to_registry(monkeypatch):
     }
     assert np.array_equal(calls[0]["kwargs"]["exog_used"], exog_used)
     assert np.array_equal(calls[1]["kwargs"]["exog_future"], exog_future)
+
+
+def test_mlforecast_public_params_do_not_advertise_rolling_agg():
+    for method_cls in (mlm.MLFRandomForest, mlm.MLFLightGBM, mlm.GenericMLForecastMethod):
+        names = {row["name"] for row in method_cls.PARAMS}
+        assert "rolling_agg" not in names

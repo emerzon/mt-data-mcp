@@ -23,6 +23,14 @@ def test_default_search_space_modes():
     assert "theta" in none_given
 
 
+def test_default_search_space_does_not_advertise_disabled_mlforecast_rolling_agg():
+    rf_space = tune.default_search_space(method="mlf_rf")
+    lgbm_space = tune.default_search_space(method="mlf_lightgbm")
+
+    assert "rolling_agg" not in rf_space
+    assert "rolling_agg" not in lgbm_space
+
+
 def test_sample_and_mutate_param_helpers():
     rng = random.Random(7)
 
