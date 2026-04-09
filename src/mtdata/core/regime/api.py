@@ -10,7 +10,7 @@ from ..mt5_gateway import get_mt5_gateway, mt5_connection_error
 from ..schema import TimeframeLiteral, DenoiseSpec
 from ..features import extract_rolling_features
 from .. import features as _features_module
-from ...forecast.common import fetch_history as _fetch_history
+from ...forecast.common import fetch_history as _fetch_history, log_returns_from_prices as _log_returns_from_prices
 from ...utils.utils import _format_time_minimal
 from ...utils.denoise import _resolve_denoise_base_col
 from ...utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise
@@ -48,6 +48,106 @@ def _regime_connection_error() -> Optional[Dict[str, Any]]:
     return mt5_connection_error(
         get_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise),
     )
+
+
+def _coerce_param(
+    params: Dict[str, Any],
+    key: str,
+    *,
+    default: Any,
+    cast: Any,
+    error: Optional[str] = None,
+) -> tuple[Any, Optional[str]]:
+    raw = params.get(key, default)
+    if raw is None:
+        return default, None
+    try:
+        return cast(raw), None
+    except Exception:
+        if error is not None:
+            return None, error
+        return default, None
+
+
+def _summary_window_size(lookback: int, size: int) -> int:
+    try:
+        lookback_i = int(lookback)
+    except Exception:
+        lookback_i = int(size)
+    return min(max(lookback_i, 0), int(size))
+
+
+def _apply_bocpd_output_mode(
+    payload: Dict[str, Any],
+    *,
+    output: str,
+    lookback: int,
+    cp_prob: np.ndarray,
+    change_points: List[Dict[str, Any]],
+    raw_cp_idx: List[int],
+    reliability: Dict[str, Any],
+    expected_fa_rate: float,
+    calibration_age_bars: int,
+    tuning_hint: Optional[str],
+) -> Dict[str, Any]:
+    n = _summary_window_size(lookback, len(cp_prob))
+    tail = np.asarray(cp_prob[-n:], dtype=float) if n > 0 else np.asarray(cp_prob, dtype=float)
+    recent_floor = len(cp_prob) - n
+    recent_cps = [cp for cp in change_points if cp.get('idx', 0) >= recent_floor]
+    summary = {
+        "lookback": int(n),
+        "last_cp_prob": float(cp_prob[-1]) if len(cp_prob) else float('nan'),
+        "max_cp_prob": float(np.nanmax(tail)) if tail.size else float('nan'),
+        "mean_cp_prob": float(np.nanmean(tail)) if tail.size else float('nan'),
+        "change_points_count": int(len(recent_cps)),
+        "raw_change_points_count": int(sum(1 for idx in raw_cp_idx if int(idx) >= recent_floor)),
+        "filtered_change_points_count": int(
+            max(0, sum(1 for idx in raw_cp_idx if int(idx) >= recent_floor) - int(len(recent_cps)))
+        ),
+        "recent_change_points": recent_cps[-5:],
+        "confidence": float(reliability.get("confidence", 0.0)),
+        "expected_false_alarm_rate": float(reliability.get("expected_false_alarm_rate", expected_fa_rate)),
+        "calibration_age_bars": int(reliability.get("calibration_age_bars", calibration_age_bars)),
+    }
+    if tuning_hint is not None:
+        summary["tuning_hint"] = tuning_hint
+    payload["summary"] = summary
+    if output == "summary":
+        return _summary_only_payload(payload)
+    if output == 'compact' and n > 0:
+        tail_offset = len(payload.get("times", [])) - n
+        payload["times"] = payload["times"][-n:]
+        payload["cp_prob"] = payload["cp_prob"][-n:]
+        tail_cps: List[Dict[str, Any]] = []
+        for cp in payload.get("change_points", []):
+            if not isinstance(cp, dict):
+                continue
+            idx = cp.get("idx")
+            if isinstance(idx, int) and idx >= tail_offset:
+                cp_tail = dict(cp)
+                cp_tail["idx"] = idx - tail_offset
+                tail_cps.append(cp_tail)
+        payload["change_points"] = tail_cps
+    return payload
+
+
+def _apply_state_output_mode(
+    payload: Dict[str, Any],
+    *,
+    output: str,
+    lookback: int,
+    summary: Dict[str, Any],
+) -> Dict[str, Any]:
+    payload["summary"] = summary
+    if output == "summary":
+        return _summary_only_payload(payload)
+    n = _summary_window_size(lookback, len(payload.get("state", [])))
+    if output == 'compact' and n > 0:
+        payload["times"] = payload["times"][-n:]
+        payload["state"] = payload["state"][-n:]
+        if isinstance(payload.get("state_probabilities"), list):
+            payload["state_probabilities"] = payload["state_probabilities"][-n:]
+    return payload
 
 
 @mcp.tool()
@@ -114,10 +214,15 @@ def regime_detect(
         return _finish(connection_error)
     try:
         p = dict(params or {})
-        try:
-            min_regime_bars_val = int(p.get("min_regime_bars", min_regime_bars))
-        except Exception:
-            return _finish({"error": "min_regime_bars must be an integer >= 1."})
+        min_regime_bars_val, min_regime_bars_error = _coerce_param(
+            p,
+            "min_regime_bars",
+            default=min_regime_bars,
+            cast=int,
+            error="min_regime_bars must be an integer >= 1.",
+        )
+        if min_regime_bars_error is not None:
+            return _finish({"error": min_regime_bars_error})
         if min_regime_bars_val < 1:
             return _finish({"error": "min_regime_bars must be >= 1."})
         df = _fetch_history(symbol, timeframe, int(max(limit, 50)), as_of=None)
@@ -126,12 +231,14 @@ def regime_detect(
         base_col = _resolve_denoise_base_col(df, denoise, base_col='close', default_when='pre_ti')
         y = df[base_col].astype(float).to_numpy()
         times = df['time'].astype(float).to_numpy()
-        with np.errstate(divide='ignore', invalid='ignore'):
-            calibration_returns = np.diff(np.log(np.maximum(y, 1e-12)))
+        try:
+            return_series = _log_returns_from_prices(y)
+        except ValueError as exc:
+            return _finish({"error": str(exc)})
+        calibration_returns = return_series
         calibration_returns = calibration_returns[np.isfinite(calibration_returns)]
         if target == 'return':
-            with np.errstate(divide='ignore', invalid='ignore'):
-                x_raw = np.diff(np.log(np.maximum(y, 1e-12)))
+            x_raw = return_series
             return_mask = np.isfinite(x_raw)
             x = x_raw[return_mask]
             t = times[1:][return_mask]
@@ -184,7 +291,12 @@ def regime_detect(
                 else:
                     threshold_used = float(threshold)
                     threshold_src = "arg"
-            max_rl = int(p.get('max_run_length', min(1000, x.size)))
+            max_rl, _ = _coerce_param(
+                p,
+                'max_run_length',
+                default=min(1000, x.size),
+                cast=int,
+            )
             threshold_cal_mode = str(
                 p.get("cp_threshold_calibration_mode", "walkforward_quantile")
                 or "walkforward_quantile"
@@ -192,26 +304,36 @@ def regime_detect(
             if threshold_cal_mode in {"auto", "walkforward", "quantile"}:
                 threshold_cal_mode = "walkforward_quantile"
             if threshold_src in {"auto_calibrated", "auto_default"} and threshold_cal_mode == "walkforward_quantile":
-                try:
-                    target_fa = float(p.get("threshold_target_false_alarm_rate", 0.02))
-                except Exception:
-                    target_fa = 0.02
-                try:
-                    cal_window = int(p["threshold_calibration_window"]) if "threshold_calibration_window" in p and p.get("threshold_calibration_window") is not None else None
-                except Exception:
-                    cal_window = None
-                try:
-                    cal_step = int(p["threshold_calibration_step"]) if "threshold_calibration_step" in p and p.get("threshold_calibration_step") is not None else None
-                except Exception:
-                    cal_step = None
-                try:
-                    cal_max_windows = int(p.get("threshold_calibration_max_windows", 6))
-                except Exception:
-                    cal_max_windows = 6
-                try:
-                    cal_boot = int(p.get("threshold_calibration_bootstraps", 2))
-                except Exception:
-                    cal_boot = 2
+                target_fa, _ = _coerce_param(
+                    p,
+                    "threshold_target_false_alarm_rate",
+                    default=0.02,
+                    cast=float,
+                )
+                cal_window, _ = _coerce_param(
+                    p,
+                    "threshold_calibration_window",
+                    default=None,
+                    cast=int,
+                )
+                cal_step, _ = _coerce_param(
+                    p,
+                    "threshold_calibration_step",
+                    default=None,
+                    cast=int,
+                )
+                cal_max_windows, _ = _coerce_param(
+                    p,
+                    "threshold_calibration_max_windows",
+                    default=6,
+                    cast=int,
+                )
+                cal_boot, _ = _coerce_param(
+                    p,
+                    "threshold_calibration_bootstraps",
+                    default=2,
+                    cast=int,
+                )
                 threshold_used, threshold_calibration_info = _walkforward_quantile_threshold_calibration(
                     series=x,
                     hazard_lambda=hazard_lambda,
@@ -225,19 +347,25 @@ def regime_detect(
             res = bocpd_gaussian(x, hazard_lambda=hazard_lambda, max_run_length=max_rl)
             cp_prob = np.asarray(res.get('cp_prob', np.zeros_like(x, dtype=float)), dtype=float)
             raw_cp_idx = [int(i) for i, v in enumerate(cp_prob.tolist()) if np.isfinite(v) and float(v) >= float(threshold_used)]
-            try:
-                cp_confirm_bars = int(p.get("cp_confirm_bars", 1))
-            except Exception:
-                cp_confirm_bars = 1
-            try:
-                cp_confirm_relaxed_mult = float(p.get("cp_confirm_relaxed_mult", 0.90))
-            except Exception:
-                cp_confirm_relaxed_mult = 0.90
+            cp_confirm_bars, _ = _coerce_param(
+                p,
+                "cp_confirm_bars",
+                default=1,
+                cast=int,
+            )
+            cp_confirm_relaxed_mult, _ = _coerce_param(
+                p,
+                "cp_confirm_relaxed_mult",
+                default=0.90,
+                cast=float,
+            )
             if "cp_edge_multiplier" in p and p.get("cp_edge_multiplier") is not None:
-                try:
-                    cp_edge_multiplier = float(p.get("cp_edge_multiplier"))
-                except Exception:
-                    cp_edge_multiplier = 1.08
+                cp_edge_multiplier, _ = _coerce_param(
+                    p,
+                    "cp_edge_multiplier",
+                    default=1.08,
+                    cast=float,
+                )
             else:
                 # When threshold is already calibrated via walk-forward null quantiles,
                 # avoid double-tightening the edge gate.
@@ -249,10 +377,12 @@ def regime_detect(
                     cp_edge_multiplier = 1.0
                 else:
                     cp_edge_multiplier = 1.08
-            try:
-                min_cp_distance_bars = int(p.get("min_cp_distance_bars", max(2, min_regime_bars_val)))
-            except Exception:
-                min_cp_distance_bars = max(2, min_regime_bars_val)
+            min_cp_distance_bars, _ = _coerce_param(
+                p,
+                "min_cp_distance_bars",
+                default=max(2, min_regime_bars_val),
+                cast=int,
+            )
             cp_idx, cp_filter_meta = _filter_bocpd_change_points(
                 cp_prob=cp_prob,
                 threshold=float(threshold_used),
@@ -331,50 +461,20 @@ def regime_detect(
             if tuning_hint is not None:
                 payload["tuning_hint"] = tuning_hint
             if output in ('summary','compact'):
-                n = min(int(lookback), len(cp_prob))
-                tail = np.asarray(cp_prob[-n:], dtype=float) if n > 0 else np.asarray(cp_prob, dtype=float)
-                recent_cps = [c for c in cps if c.get('idx', 0) >= (len(cp_prob) - n)]
-                summary = {
-                    "lookback": int(n),
-                    "last_cp_prob": float(cp_prob[-1]) if len(cp_prob) else float('nan'),
-                    "max_cp_prob": float(np.nanmax(tail)) if tail.size else float('nan'),
-                    "mean_cp_prob": float(np.nanmean(tail)) if tail.size else float('nan'),
-                    "change_points_count": int(len(recent_cps)),
-                    "raw_change_points_count": int(
-                        sum(1 for idx in raw_cp_idx if int(idx) >= (len(cp_prob) - n))
-                    ),
-                    "filtered_change_points_count": int(
-                        max(
-                            0,
-                            sum(1 for idx in raw_cp_idx if int(idx) >= (len(cp_prob) - n)) - int(len(recent_cps)),
-                        )
-                    ),
-                    "recent_change_points": recent_cps[-5:],
-                    "confidence": float(reliability.get("confidence", 0.0)),
-                    "expected_false_alarm_rate": float(reliability.get("expected_false_alarm_rate", expected_fa_rate)),
-                    "calibration_age_bars": int(reliability.get("calibration_age_bars", calibration_age_bars)),
-                }
-                if tuning_hint is not None:
-                    summary["tuning_hint"] = tuning_hint
-                payload["summary"] = summary
+                payload = _apply_bocpd_output_mode(
+                    payload,
+                    output=output,
+                    lookback=lookback,
+                    cp_prob=cp_prob,
+                    change_points=cps,
+                    raw_cp_idx=raw_cp_idx,
+                    reliability=reliability,
+                    expected_fa_rate=expected_fa_rate,
+                    calibration_age_bars=calibration_age_bars,
+                    tuning_hint=tuning_hint,
+                )
                 if output == "summary":
-                    return _finish(_summary_only_payload(payload))
-                if output == 'compact' and n > 0:
-                    # Compact mode uses the tail of the series; remap CP indices so they
-                    # remain consistent with the truncated `times` array used by consolidation.
-                    tail_offset = len(t_fmt) - n
-                    payload["times"] = t_fmt[-n:]
-                    payload["cp_prob"] = payload["cp_prob"][-n:]
-                    tail_cps: List[Dict[str, Any]] = []
-                    for cp in payload.get("change_points", []):
-                        if not isinstance(cp, dict):
-                            continue
-                        idx = cp.get("idx")
-                        if isinstance(idx, int) and idx >= tail_offset:
-                            cp_tail = dict(cp)
-                            cp_tail["idx"] = idx - tail_offset
-                            tail_cps.append(cp_tail)
-                    payload["change_points"] = tail_cps
+                    return _finish(payload)
 
             return _finish(_consolidate_payload(payload, method, output, include_series=include_series))
 
@@ -383,11 +483,12 @@ def regime_detect(
                 from statsmodels.tsa.regime_switching.markov_regression import MarkovRegression  # type: ignore
             except Exception:
                 return _finish({"error": "statsmodels MarkovRegression not available. Install statsmodels."})
-            k_regimes = int(p.get('k_regimes', 2))
-            order = int(p.get('order', 0))
+            k_regimes, _ = _coerce_param(p, 'k_regimes', default=2, cast=int)
+            order, _ = _coerce_param(p, 'order', default=0, cast=int)
             try:
                 mod = MarkovRegression(endog=x, k_regimes=max(2, k_regimes), trend='c', order=max(0, order), switching_variance=True)
-                res = mod.fit(disp=False, maxiter=int(p.get('maxiter', 100)))
+                maxiter, _ = _coerce_param(p, 'maxiter', default=100, cast=int)
+                res = mod.fit(disp=False, maxiter=maxiter)
                 smoothed = res.smoothed_marginal_probabilities
                 if hasattr(smoothed, "values"):
                     smoothed = smoothed.values
@@ -414,27 +515,33 @@ def regime_detect(
             payload["reliability"] = reliability
 
             if output in ('summary','compact'):
-                n = min(int(lookback), len(state))
+                n = _summary_window_size(lookback, len(state))
                 st_tail = state[-n:] if n > 0 else state
                 last_s = int(state[-1]) if len(state) else None
                 unique, counts = np.unique(st_tail, return_counts=True)
                 shares = {int(k): float(c) / float(len(st_tail) or 1) for k, c in zip(unique, counts)}
                 summary = {"lookback": int(n), "last_state": last_s, "state_shares": shares}
-                payload["summary"] = summary
+                payload = _apply_state_output_mode(
+                    payload,
+                    output=output,
+                    lookback=lookback,
+                    summary=summary,
+                )
                 if output == "summary":
-                    return _finish(_summary_only_payload(payload))
-                if output == 'compact' and n > 0:
-                    payload["times"] = t_fmt[-n:]
-                    payload["state"] = payload["state"][-n:]
-                    payload["state_probabilities"] = payload["state_probabilities"][-n:]
+                    return _finish(payload)
 
             return _finish(_consolidate_payload(payload, method, output, include_series=include_series))
 
         elif method == 'hmm':  # 'hmm' (mixture/HMM-lite)
-            try:
-                n_states = int(p.get('n_states', 2))
-            except Exception:
-                return _finish({"error": "n_states must be an integer >= 2 for hmm."})
+            n_states, n_states_error = _coerce_param(
+                p,
+                'n_states',
+                default=2,
+                cast=int,
+                error="n_states must be an integer >= 2 for hmm.",
+            )
+            if n_states_error is not None:
+                return _finish({"error": n_states_error})
             if n_states < 2:
                 return _finish({"error": "n_states must be >= 2 for hmm."})
             try:
@@ -487,7 +594,7 @@ def regime_detect(
             payload["reliability"] = reliability
 
             if output in ('summary','compact'):
-                n = min(int(lookback), len(state))
+                n = _summary_window_size(lookback, len(state))
                 st_tail = state[-n:] if n > 0 else state
                 last_s = int(state[-1]) if len(state) else None
                 unique, counts = np.unique(st_tail, return_counts=True)
@@ -504,14 +611,14 @@ def regime_detect(
                     "transitions_after": int(smoothing_meta.get("transitions_after", 0)),
                     "smoothing_applied": bool(smoothing_meta.get("smoothing_applied", False)),
                 }
-                payload["summary"] = summary
+                payload = _apply_state_output_mode(
+                    payload,
+                    output=output,
+                    lookback=lookback,
+                    summary=summary,
+                )
                 if output == "summary":
-                    return _finish(_summary_only_payload(payload))
-                if output == 'compact' and n > 0:
-                    payload["times"] = t_fmt[-n:]
-                    payload["state"] = payload["state"][-n:]
-                    if isinstance(gamma_for_payload, np.ndarray) and len(gamma_for_payload) >= n:
-                         payload["state_probabilities"] = payload["state_probabilities"][-n:]
+                    return _finish(payload)
 
             return _finish(_consolidate_payload(payload, method, output, include_series=include_series))
 
@@ -528,10 +635,10 @@ def regime_detect(
                     from sklearn.decomposition import PCA as pca_cls
             except ImportError as ex:
                 return _finish({"error": f"Clustering dependencies missing: {ex}"})
-            window_size = int(p.get('window_size', 20))
-            k_regimes = int(p.get('k_regimes', 3))
+            window_size, _ = _coerce_param(p, 'window_size', default=20, cast=int)
+            k_regimes, _ = _coerce_param(p, 'k_regimes', default=3, cast=int)
             use_pca = bool(p.get('use_pca', True))
-            n_components = int(p.get('n_components', 3))
+            n_components, _ = _coerce_param(p, 'n_components', default=3, cast=int)
 
             # Extract features (use 'return' or 'price'? 'return' is stationary, usually better)
             # x is already computed based on target input
@@ -597,7 +704,7 @@ def regime_detect(
 
             # Summary stats
             if output in ('summary','compact'):
-                n_summary = min(int(lookback), len(full_states))
+                n_summary = _summary_window_size(lookback, len(full_states))
                 st_tail = full_states[-n_summary:] if n_summary > 0 else full_states
                 # Filter out -1
                 st_tail_valid = st_tail[st_tail != -1]
@@ -610,14 +717,14 @@ def regime_detect(
                     "last_state": int(full_states[-1]) if len(full_states) else None,
                     "state_shares": shares
                 }
-                payload["summary"] = summary
-
+                payload = _apply_state_output_mode(
+                    payload,
+                    output=output,
+                    lookback=lookback,
+                    summary=summary,
+                )
                 if output == "summary":
-                     return _finish(_summary_only_payload(payload))
-                if output == 'compact' and n_summary > 0:
-                     payload["times"] = t_fmt[-n_summary:]
-                     payload["state"] = payload["state"][-n_summary:]
-                     payload["state_probabilities"] = payload["state_probabilities"][-n_summary:]
+                    return _finish(payload)
 
             return _finish(_consolidate_payload(payload, method, output, include_series=include_series))
 
