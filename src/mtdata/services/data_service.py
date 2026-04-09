@@ -118,10 +118,10 @@ def _fetch_rates_with_warmup(
         end_datetime=end_datetime,
     )
     if start_datetime and end_datetime:
-        from_date = _parse_start_datetime(start_datetime)
-        to_date = _parse_start_datetime(end_datetime)
-        if not from_date or not to_date:
-            return None, "Invalid date format. Try '2025-08-29', '2025-08-29 14:30', 'yesterday 14:00'."
+        from_date, from_date_error = _parse_fetch_datetime_arg(start_datetime)
+        to_date, to_date_error = _parse_fetch_datetime_arg(end_datetime)
+        if from_date_error or to_date_error:
+            return None, from_date_error or to_date_error
         if from_date > to_date:
             return None, "start_datetime must be before end_datetime"
         seconds_per_bar = TIMEFRAME_SECONDS.get(timeframe, 60)
@@ -132,9 +132,9 @@ def _fetch_rates_with_warmup(
             return _mt5_copy_rates_range(symbol, mt5_timeframe, from_date_internal, to_date)
 
     elif start_datetime:
-        from_date = _parse_start_datetime(start_datetime)
-        if not from_date:
-            return None, "Invalid date format. Try '2025-08-29', '2025-08-29 14:30', 'yesterday 14:00'."
+        from_date, from_date_error = _parse_fetch_datetime_arg(start_datetime)
+        if from_date_error:
+            return None, from_date_error
         seconds_per_bar = TIMEFRAME_SECONDS.get(timeframe)
         if not seconds_per_bar:
             return None, f"Unable to determine timeframe seconds for {timeframe}"
@@ -146,9 +146,9 @@ def _fetch_rates_with_warmup(
             return _mt5_copy_rates_range(symbol, mt5_timeframe, from_date_internal, to_date)
 
     elif end_datetime:
-        to_date = _parse_start_datetime(end_datetime)
-        if not to_date:
-            return None, "Invalid date format. Try '2025-08-29', '2025-08-29 14:30', 'yesterday 14:00'."
+        to_date, to_date_error = _parse_fetch_datetime_arg(end_datetime)
+        if to_date_error:
+            return None, to_date_error
         seconds_per_bar = TIMEFRAME_SECONDS.get(timeframe, 60)
         expected_end_ts = _utc_epoch_seconds(to_date)
 
@@ -195,6 +195,13 @@ def _fetch_rates_with_warmup(
             f"freshness_cutoff={_format_time_minimal(float(freshness_cutoff))})."
         )
     return rates, None
+
+
+def _parse_fetch_datetime_arg(value: str) -> tuple[Optional[datetime], Optional[str]]:
+    parsed = _parse_start_datetime(value)
+    if parsed is None:
+        return None, "Invalid date format. Try '2025-08-29', '2025-08-29 14:30', 'yesterday 14:00'."
+    return parsed, None
 
 
 def _resolve_live_rate_auto_shift_seconds(
