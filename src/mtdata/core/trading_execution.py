@@ -8,7 +8,7 @@ from typing import Optional, Union, List, Dict, Any
 
 from . import trading_comments, trading_time, trading_validation
 from .trading_gateway import MT5TradingGateway, create_trading_gateway, trading_connection_error
-from .trading_positions import _resolve_open_position
+from .trading_positions import _resolve_open_position, _resolve_pending_order
 from .trading_time import ExpirationValue
 from ..utils.mt5 import _mt5_epoch_to_utc
 
@@ -110,34 +110,23 @@ def _modify_position(
             if position is None or resolved_ticket is None:
                 return {"error": f"Position {ticket} not found", "checked_scopes": ["positions"]}
 
-            # Get symbol info for price normalization
             symbol_info = mt5.symbol_info(position.symbol)
             if symbol_info is None:
                 return {"error": f"Failed to get symbol info for {position.symbol}"}
 
-            point = float(symbol_info.point or 0.0) if hasattr(symbol_info, "point") else 0.0
-            digits = trading_validation._safe_int_attr(symbol_info, "digits", 5)
-
-            requested_sl, explicit_remove_sl, sl_error = (
-                trading_validation._normalize_requested_protection_price(
-                    stop_loss,
-                    field_name="stop_loss",
-                    point=point,
-                    digits=digits,
-                )
+            price_inputs, price_inputs_error = trading_validation._normalize_trade_price_inputs(
+                symbol_info=symbol_info,
+                stop_loss=stop_loss,
+                take_profit=take_profit,
             )
-            if sl_error is not None:
-                return {"error": sl_error}
-            requested_tp, explicit_remove_tp, tp_error = (
-                trading_validation._normalize_requested_protection_price(
-                    take_profit,
-                    field_name="take_profit",
-                    point=point,
-                    digits=digits,
-                )
-            )
-            if tp_error is not None:
-                return {"error": tp_error}
+            if price_inputs_error is not None:
+                return {"error": price_inputs_error}
+            point = float(price_inputs["point"])
+            digits = int(price_inputs["digits"])
+            requested_sl = price_inputs["stop_loss"]
+            requested_tp = price_inputs["take_profit"]
+            explicit_remove_sl = bool(price_inputs["explicit_remove_stop_loss"])
+            explicit_remove_tp = bool(price_inputs["explicit_remove_take_profit"])
 
             # Normalize SL/TP values
             existing_sl = trading_validation._normalize_price_for_symbol(
@@ -340,11 +329,12 @@ def _modify_pending_order(
     def _modify_pending_order():
         try:
             ticket_id = int(ticket)
-            orders = mt5.orders_get(ticket=ticket_id)
-            if orders is None or len(orders) == 0:
+            order, resolved_ticket, ticket_resolution = _resolve_pending_order(
+                mt5,
+                ticket_candidates=[ticket_id],
+            )
+            if order is None:
                 return {"error": f"Pending order {ticket} not found", "checked_scopes": ["pending_orders"]}
-
-            order = orders[0]
             normalized_expiration, expiration_specified = trading_time._normalize_pending_expiration(expiration)
             symbol_info = mt5.symbol_info(order.symbol)
             if symbol_info is None:
@@ -352,36 +342,22 @@ def _modify_pending_order(
             tick = mt5.symbol_info_tick(order.symbol)
             if tick is None:
                 return {"error": f"Failed to get current price for {order.symbol}"}
-            point = float(getattr(symbol_info, "point", 0.0) or 0.0)
-            digits = trading_validation._safe_int_attr(symbol_info, "digits", 5)
-
-            normalized_price = trading_validation._normalize_price_for_symbol(
-                price if price is not None else getattr(order, "price_open", None),
-                point=point,
-                digits=digits,
+            price_inputs, price_inputs_error = trading_validation._normalize_trade_price_inputs(
+                symbol_info=symbol_info,
+                price=price if price is not None else getattr(order, "price_open", None),
+                require_price=True,
+                stop_loss=stop_loss,
+                take_profit=take_profit,
             )
-            if normalized_price is None:
-                return {"error": "price must be a non-zero finite number after symbol normalization."}
-            requested_sl, explicit_remove_sl, sl_error = (
-                trading_validation._normalize_requested_protection_price(
-                    stop_loss,
-                    field_name="stop_loss",
-                    point=point,
-                    digits=digits,
-                )
-            )
-            if sl_error is not None:
-                return {"error": sl_error}
-            requested_tp, explicit_remove_tp, tp_error = (
-                trading_validation._normalize_requested_protection_price(
-                    take_profit,
-                    field_name="take_profit",
-                    point=point,
-                    digits=digits,
-                )
-            )
-            if tp_error is not None:
-                return {"error": tp_error}
+            if price_inputs_error is not None:
+                return {"error": price_inputs_error}
+            point = float(price_inputs["point"])
+            digits = int(price_inputs["digits"])
+            normalized_price = float(price_inputs["price"])
+            requested_sl = price_inputs["stop_loss"]
+            requested_tp = price_inputs["take_profit"]
+            explicit_remove_sl = bool(price_inputs["explicit_remove_stop_loss"])
+            explicit_remove_tp = bool(price_inputs["explicit_remove_take_profit"])
 
             existing_sl = trading_validation._normalize_price_for_symbol(
                 getattr(order, "sl", None),
@@ -486,6 +462,9 @@ def _modify_pending_order(
                 "applied_sl": request.get("sl"),
                 "applied_tp": request.get("tp"),
                 "applied_expiration": request.get("expiration"),
+                "pending_order_ticket": resolved_ticket,
+                "ticket_requested": ticket_id,
+                "ticket_resolution": ticket_resolution,
             }
 
         except Exception as e:
@@ -527,9 +506,13 @@ def _close_positions(
             # 1. Fetch positions based on criteria
             if ticket is not None:
                 t_int = int(ticket)
-                positions = mt5.positions_get(ticket=t_int)
-                if positions is None or len(positions) == 0:
+                position, _, _ = _resolve_open_position(
+                    mt5,
+                    ticket_candidates=[t_int],
+                )
+                if position is None:
                     return {"error": f"Position {ticket} not found", "checked_scopes": ["positions"]}
+                positions = [position]
             elif symbol is not None:
                 positions = mt5.positions_get(symbol=symbol)
                 if positions is None or len(positions) == 0:
@@ -648,20 +631,25 @@ def _close_positions(
                     )
                     continue
                 is_buy_position = position_side == "BUY"
+                tick = mt5.symbol_info_tick(position.symbol)
+                if tick is None:
+                    tick_error = trading_validation._safe_last_error(mt5)
+                    results.append(
+                        {
+                            "ticket": position.ticket,
+                            "error": f"Failed to get tick data for {position.symbol}",
+                            "last_error": tick_error,
+                            "attempts": [
+                                {
+                                    "error": f"Failed to get tick data for {position.symbol}",
+                                    "last_error": tick_error,
+                                }
+                            ],
+                        }
+                    )
+                    continue
 
                 for fill_mode in fill_modes:
-                    tick = mt5.symbol_info_tick(position.symbol)
-                    if tick is None:
-                        tick_error = trading_validation._safe_last_error(mt5)
-                        attempts.append(
-                            {
-                                "type_filling": int(fill_mode),
-                                "error": f"Failed to get tick data for {position.symbol}",
-                                "last_error": tick_error,
-                            }
-                        )
-                        continue
-
                     close_price = float(getattr(tick, "bid", 0.0) or 0.0) if is_buy_position else float(
                         getattr(tick, "ask", 0.0) or 0.0
                     )
@@ -754,6 +742,14 @@ def _close_positions(
                     )
                     if trading_validation._retcode_is_done(mt5, retcode_val):
                         break
+                    price_changed_codes = {
+                        trading_validation._safe_int_attr(mt5, "TRADE_RETCODE_PRICE_CHANGED", 10020),
+                        trading_validation._safe_int_attr(mt5, "TRADE_RETCODE_REQUOTE", 10004),
+                    }
+                    if retcode_val in price_changed_codes:
+                        refreshed_tick = mt5.symbol_info_tick(position.symbol)
+                        if refreshed_tick is not None:
+                            tick = refreshed_tick
                     time.sleep(0.15)
 
                 close_ok = trading_validation._retcode_is_done(mt5, getattr(result, "retcode", None)) if result is not None else False
@@ -877,9 +873,13 @@ def _cancel_pending(
             # 1. Fetch orders based on criteria
             if ticket is not None:
                 t_int = int(ticket)
-                orders = mt5.orders_get(ticket=t_int)
-                if orders is None or len(orders) == 0:
+                order, _, _ = _resolve_pending_order(
+                    mt5,
+                    ticket_candidates=[t_int],
+                )
+                if order is None:
                     return {"error": f"Pending order {ticket} not found", "checked_scopes": ["pending_orders"]}
+                orders = [order]
             elif symbol is not None:
                 orders = mt5.orders_get(symbol=symbol)
                 if orders is None or len(orders) == 0:

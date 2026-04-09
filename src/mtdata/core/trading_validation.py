@@ -280,6 +280,64 @@ def _normalize_requested_protection_price(
     return float(normalized), explicit_remove, None
 
 
+def _symbol_price_context(symbol_info: Any) -> Dict[str, Any]:
+    try:
+        point = float(getattr(symbol_info, "point", 0.0) or 0.0)
+    except Exception:
+        point = 0.0
+    digits = _safe_int_attr(symbol_info, "digits", 5)
+    return {
+        "point": point,
+        "digits": digits,
+    }
+
+
+def _normalize_trade_price_inputs(
+    *,
+    symbol_info: Any,
+    price: Optional[Union[int, float]] = None,
+    price_field_name: str = "price",
+    require_price: bool = False,
+    stop_loss: Optional[Union[int, float]] = None,
+    take_profit: Optional[Union[int, float]] = None,
+) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+    context = _symbol_price_context(symbol_info)
+    point = float(context["point"])
+    digits = int(context["digits"])
+
+    normalized_price = None
+    if price is not None or require_price:
+        normalized_price = _normalize_price_for_symbol(price, point=point, digits=digits)
+        if normalized_price is None:
+            return None, f"{price_field_name} must be a non-zero finite number after symbol normalization."
+
+    requested_sl, explicit_remove_sl, sl_error = _normalize_requested_protection_price(
+        stop_loss,
+        field_name="stop_loss",
+        point=point,
+        digits=digits,
+    )
+    if sl_error is not None:
+        return None, sl_error
+    requested_tp, explicit_remove_tp, tp_error = _normalize_requested_protection_price(
+        take_profit,
+        field_name="take_profit",
+        point=point,
+        digits=digits,
+    )
+    if tp_error is not None:
+        return None, tp_error
+
+    return {
+        **context,
+        "price": normalized_price,
+        "stop_loss": requested_sl,
+        "take_profit": requested_tp,
+        "explicit_remove_stop_loss": explicit_remove_sl,
+        "explicit_remove_take_profit": explicit_remove_tp,
+    }, None
+
+
 def _broker_distance_metadata(symbol_info: Any) -> Dict[str, float]:
     try:
         point = float(getattr(symbol_info, "point", 0.0) or 0.0)

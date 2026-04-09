@@ -985,6 +985,75 @@ def test_close_positions_counts_done_partial_as_success(mock_mt5):
 
     assert res["closed_count"] == 1
 
+
+def test_close_positions_resolves_ticket_via_fallback_ticket_fields(mock_mt5):
+    mock_mt5.ORDER_FILLING_IOC = 1
+    mock_mt5.ORDER_FILLING_FOK = 0
+    mock_mt5.ORDER_FILLING_RETURN = 2
+    mock_mt5.ORDER_TIME_GTC = 0
+    position = SimpleNamespace(
+        ticket=999,
+        order=123,
+        symbol="EURUSD",
+        volume=0.1,
+        type=0,
+        profit=10.0,
+        magic=67890,
+        price_open=1.04000,
+        time=0,
+    )
+
+    def _positions_get(*args, **kwargs):
+        if kwargs.get("ticket") == 123:
+            return []
+        return [position]
+
+    mock_mt5.positions_get.side_effect = _positions_get
+
+    res = _close_positions(ticket=123)
+
+    assert "error" not in res
+    assert res["ticket"] == 999
+    req = mock_mt5.order_send.call_args[0][0]
+    assert req["position"] == 999
+
+
+def test_close_positions_fetches_tick_once_before_fill_mode_retries(mock_mt5):
+    mock_mt5.ORDER_FILLING_IOC = 1
+    mock_mt5.ORDER_FILLING_FOK = 0
+    mock_mt5.ORDER_FILLING_RETURN = 2
+    mock_mt5.ORDER_TIME_GTC = 0
+    mock_mt5.positions_get.return_value = [
+        SimpleNamespace(ticket=123, symbol="EURUSD", volume=0.1, type=0, profit=10.0, magic=67890)
+    ]
+    mock_mt5.order_send.side_effect = [
+        MagicMock(
+            retcode=10030,
+            deal=0,
+            order=0,
+            volume=0.1,
+            price=1.05010,
+            bid=1.05000,
+            ask=1.05010,
+            comment="IOC rejected",
+        ),
+        MagicMock(
+            retcode=10009,
+            deal=123,
+            order=456,
+            volume=0.1,
+            price=1.05010,
+            bid=1.05000,
+            ask=1.05010,
+            comment="",
+        ),
+    ]
+
+    res = _close_positions(symbol="EURUSD")
+
+    assert res["closed_count"] == 1
+    assert mock_mt5.symbol_info_tick.call_count == 1
+
 def test_cancel_pending_counts_done_partial_as_success(mock_mt5):
     mock_mt5.TRADE_ACTION_REMOVE = 8
     mock_mt5.TRADE_RETCODE_DONE_PARTIAL = 10010
@@ -999,6 +1068,25 @@ def test_cancel_pending_counts_done_partial_as_success(mock_mt5):
     res = _cancel_pending(symbol="EURUSD")
 
     assert res["cancelled_count"] == 1
+
+
+def test_cancel_pending_resolves_ticket_via_fallback_ticket_fields(mock_mt5):
+    mock_mt5.TRADE_ACTION_REMOVE = 8
+    order = SimpleNamespace(ticket=999, position=123, symbol="EURUSD", magic=54321)
+
+    def _orders_get(*args, **kwargs):
+        if kwargs.get("ticket") == 123:
+            return []
+        return [order]
+
+    mock_mt5.orders_get.side_effect = _orders_get
+
+    res = _cancel_pending(ticket=123)
+
+    assert "error" not in res
+    assert res["ticket"] == 999
+    req = mock_mt5.order_send.call_args[0][0]
+    assert req["order"] == 999
 
 
 def test_cancel_pending_preserves_existing_magic(mock_mt5):

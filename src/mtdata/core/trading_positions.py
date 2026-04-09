@@ -35,6 +35,18 @@ def _position_sort_key(position: Any) -> float:
     return 0.0
 
 
+def _order_sort_key(order: Any) -> float:
+    """Prefer the most recently updated pending order when multiple candidates exist."""
+    for field in ("time_done_msc", "time_setup_msc", "time_done", "time_setup", "time"):
+        try:
+            value = float(getattr(order, field, 0.0) or 0.0)
+            if math.isfinite(value):
+                return value
+        except Exception:
+            continue
+    return 0.0
+
+
 def _position_side_matches(position: Any, side: Optional[str], mt5: Any) -> bool:
     if side not in {"BUY", "SELL"}:
         return True
@@ -60,6 +72,24 @@ def _position_ticket_fields(position: Any) -> Dict[str, int]:
 
 def _resolved_position_ticket(position: Any, *, fallback: Optional[int] = None) -> Optional[int]:
     fields = _position_ticket_fields(position)
+    for field in ("ticket", "identifier", "position_id", "position", "order", "deal"):
+        ticket = fields.get(field)
+        if ticket is not None:
+            return ticket
+    return trading_validation._safe_int_ticket(fallback)
+
+
+def _pending_order_ticket_fields(order: Any) -> Dict[str, int]:
+    out: Dict[str, int] = {}
+    for field in ("ticket", "identifier", "position_id", "position", "order", "deal"):
+        ticket = trading_validation._safe_int_ticket(getattr(order, field, None))
+        if ticket is not None:
+            out[field] = ticket
+    return out
+
+
+def _resolved_pending_order_ticket(order: Any, *, fallback: Optional[int] = None) -> Optional[int]:
+    fields = _pending_order_ticket_fields(order)
     for field in ("ticket", "identifier", "position_id", "position", "order", "deal"):
         ticket = fields.get(field)
         if ticket is not None:
@@ -154,6 +184,23 @@ def _select_position_candidate(
     return candidates[0] if candidates else None
 
 
+def _select_pending_order_candidate(
+    rows: List[Any],
+    *,
+    symbol: Optional[str],
+) -> Optional[Any]:
+    if not rows:
+        return None
+    candidates = list(rows)
+    if symbol:
+        symbol_upper = str(symbol).upper()
+        symbol_filtered = [order for order in candidates if str(getattr(order, "symbol", "")).upper() == symbol_upper]
+        if symbol_filtered:
+            candidates = symbol_filtered
+    candidates.sort(key=_order_sort_key, reverse=True)
+    return candidates[0] if candidates else None
+
+
 def _resolve_open_position(
     mt5: Any,
     *,
@@ -221,6 +268,61 @@ def _resolve_open_position(
         return None, None, {"method": "positions_get(fallback_heuristic)", "candidate_ids": candidate_ids, "matched": False}
     resolved = _resolved_position_ticket(picked)
     return picked, resolved, {"method": "positions_get(fallback_heuristic)"}
+
+
+def _resolve_pending_order(
+    mt5: Any,
+    *,
+    ticket_candidates: Optional[List[int]] = None,
+    symbol: Optional[str] = None,
+) -> Tuple[Optional[Any], Optional[int], Dict[str, Any]]:
+    """Resolve a pending order robustly across ticket/identifier mismatches."""
+    candidate_ids: List[int] = []
+    for raw in list(ticket_candidates or []):
+        ticket = trading_validation._safe_int_ticket(raw)
+        if ticket is not None and ticket not in candidate_ids:
+            candidate_ids.append(ticket)
+
+    for candidate in candidate_ids:
+        try:
+            rows = mt5.orders_get(ticket=int(candidate))
+        except Exception:
+            rows = None
+        rows_list = list(rows) if rows else []
+        picked = _select_pending_order_candidate(rows_list, symbol=symbol)
+        if picked is not None:
+            resolved = _resolved_pending_order_ticket(picked, fallback=candidate)
+            return picked, resolved, {"method": "orders_get(ticket)", "candidate": candidate}
+
+    try:
+        rows_fallback = mt5.orders_get(symbol=symbol) if symbol else mt5.orders_get()
+    except Exception:
+        rows_fallback = None
+    rows_list = list(rows_fallback) if rows_fallback else []
+    if not rows_list:
+        return None, None, {"method": "orders_get", "candidate_ids": candidate_ids, "matched": False}
+
+    exact_matches: List[Tuple[Any, str, int]] = []
+    if candidate_ids:
+        for order in rows_list:
+            for field, value in _pending_order_ticket_fields(order).items():
+                if value in candidate_ids:
+                    exact_matches.append((order, field, value))
+        if exact_matches:
+            exact_matches.sort(key=lambda item: _order_sort_key(item[0]), reverse=True)
+            order, field, matched_value = exact_matches[0]
+            resolved = _resolved_pending_order_ticket(order, fallback=matched_value)
+            return order, resolved, {
+                "method": "orders_get(fallback_exact)",
+                "matched_field": field,
+                "matched_value": matched_value,
+            }
+
+    picked = _select_pending_order_candidate(rows_list, symbol=symbol)
+    if picked is None:
+        return None, None, {"method": "orders_get(fallback_heuristic)", "candidate_ids": candidate_ids, "matched": False}
+    resolved = _resolved_pending_order_ticket(picked)
+    return picked, resolved, {"method": "orders_get(fallback_heuristic)"}
 
 
 @mcp.tool()
