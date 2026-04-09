@@ -1676,18 +1676,14 @@ def _apply_trade_query_limit(
     limit: Any,
     normalize_limit: Any,
 ) -> Any:
-    limited_df = out_df.copy()
-    limited_df["__time_utc"] = time_utc
     limit_value = normalize_limit(limit)
-    if limit_value and len(limited_df) > limit_value:
-        limited_df = limited_df.sort_values(
-            "__time_utc",
-            kind="stable",
-            na_position="first",
-        ).tail(limit_value)
-    if "__time_utc" in limited_df.columns:
-        limited_df = limited_df.drop(columns=["__time_utc"])
-    return limited_df
+    if not limit_value or len(out_df) <= limit_value:
+        return out_df
+    sorted_index = time_utc.sort_values(
+        kind="stable",
+        na_position="first",
+    ).tail(limit_value).index
+    return out_df.loc[sorted_index].copy()
 
 
 def _build_trade_get_open_output(
