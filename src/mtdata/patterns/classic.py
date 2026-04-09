@@ -1,5 +1,4 @@
 from __future__ import annotations
-import copy
 from dataclasses import replace
 from typing import List, Optional, Dict, Any
 import numpy as np
@@ -161,8 +160,7 @@ def _scan_classic_patterns(
     if not prefix_ends or prefix_ends[-1] != n_total:
         prefix_ends.append(n_total)
 
-    scan_cfg = copy.deepcopy(cfg)
-    scan_cfg.scan_historical = False
+    scan_cfg = replace(cfg, scan_historical=False)
     try:
         full_peaks, full_troughs = _detect_pivots_close(c, scan_cfg, h, l)
     except TypeError:
