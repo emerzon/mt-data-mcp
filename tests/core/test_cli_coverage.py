@@ -13,13 +13,13 @@ import sys
 import types
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
-from mtdata.forecast.requests import ForecastGenerateRequest
 from mtdata.core.data.requests import DataFetchCandlesRequest
 from mtdata.core.trading.requests import TradeHistoryRequest
+from mtdata.forecast.requests import ForecastGenerateRequest
 
 # ---------------------------------------------------------------------------
 # Fixture: ensure the cli module is importable with heavy deps mocked
@@ -36,51 +36,50 @@ def _isolate_env(monkeypatch):
 # We import lazily inside tests where heavy server machinery is needed,
 # but the pure-logic helpers can be imported directly.
 from mtdata.core.cli import (
-    _debug_enabled,
-    _debug,
-    _argparse_color_enabled,
-    _configure_cli_logging,
-    _is_typed_dict_type,
-    _format_result_minimal,
-    _json_default,
-    _format_result_for_cli,
-    _write_cli_text,
-    _safe_tz_name,
-    _build_cli_timezone_meta,
-    _attach_cli_meta,
-    _normalize_cli_argv_aliases,
-    get_function_info,
-    _apply_schema_overrides,
+    _add_forecast_generate_args,
     _apply_cli_output_mode_defaults,
-    _extract_function_from_tool_obj,
-    _extract_metadata_from_tool_obj,
-    _is_union_origin,
-    _is_literal_origin,
-    _resolve_param_kwargs,
-    _parse_kv_string,
-    _unwrap_optional_type,
-    _normalize_cli_list_value,
+    _apply_schema_overrides,
+    _argparse_color_enabled,
+    _attach_cli_meta,
+    _build_cli_timezone_meta,
+    _build_epilog,
+    _build_usage_examples,
     _coerce_cli_scalar,
-    _parse_set_overrides,
-    _merge_dict,
-    create_command_function,
-    _type_name,
+    _configure_cli_logging,
+    _debug,
+    _debug_enabled,
+    _example_value,
+    _extract_function_from_tool_obj,
+    _extract_help_query,
+    _extract_metadata_from_tool_obj,
     _first_line,
     _format_cli_literal,
-    _quote_cli_value,
-    _example_value,
-    _build_usage_examples,
+    _format_result_for_cli,
+    _format_result_minimal,
+    _is_literal_origin,
+    _is_typed_dict_type,
+    _is_union_origin,
+    _json_default,
     _match_commands,
-    _suggest_commands,
-    _extract_help_query,
+    _merge_dict,
+    _normalize_cli_argv_aliases,
+    _normalize_cli_list_value,
+    _parse_kv_string,
+    _parse_set_overrides,
     _print_extended_help,
-    _build_epilog,
-    _add_forecast_generate_args,
+    _quote_cli_value,
+    _resolve_param_kwargs,
+    _safe_tz_name,
+    _suggest_commands,
+    _type_name,
+    _unwrap_optional_type,
+    _write_cli_text,
     add_dynamic_arguments,
+    create_command_function,
     discover_tools,
+    get_function_info,
     main,
 )
-
 
 # ========================================================================
 # _debug_enabled / _debug

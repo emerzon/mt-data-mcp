@@ -3,7 +3,9 @@ from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, get_args
 
 from pydantic import ValidationError
 
-from .data.requests import _normalize_indicator_specs as _shared_normalize_indicator_specs
+from .data.requests import (
+    _normalize_indicator_specs as _shared_normalize_indicator_specs,
+)
 
 
 def parse_kv_string(s: str, *, debug: Callable[[str], None]) -> Optional[Dict[str, Any]]:
@@ -18,7 +20,7 @@ def parse_kv_string(s: str, *, debug: Callable[[str], None]) -> Optional[Dict[st
         return None
 
 
-def normalize_cli_list_value(value: Any) -> Any:
+def normalize_cli_list_value(value: Any) -> Any:  # noqa: C901
     """Normalize CLI list values from comma, whitespace, or JSON input."""
     if value is None:
         return None
@@ -165,7 +167,7 @@ _SIMPLIFY_METHOD_DESCRIPTIONS = {
 }
 
 
-def create_command_function(
+def create_command_function(  # noqa: C901
     func_info: Dict[str, Any],
     *,
     cmd_name: str,
@@ -224,7 +226,7 @@ def create_command_function(
                 messages.append(msg)
         return "; ".join(messages) or str(exc)
 
-    def command_func(args: Any) -> int:
+    def command_func(args: Any) -> int:  # noqa: C901
         kwargs: Dict[str, Any] = {}
         missing_required: List[str] = []
         for param in func_info["params"]:

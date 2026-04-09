@@ -3,12 +3,13 @@
 Covers lines 45-245 by mocking template functions and external data fetching.
 """
 import logging
-import pytest
 import warnings
-from unittest.mock import patch, MagicMock
 from typing import Any, Dict, List
-from mtdata.utils.mt5 import MT5ConnectionError
+from unittest.mock import MagicMock, patch
 
+import pytest
+
+from mtdata.utils.mt5 import MT5ConnectionError
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -163,7 +164,7 @@ def _patch_templates():
 # Error helpers
 # ---------------------------------------------------------------------------
 
-from mtdata.core.report import _report_error_text, _report_error_payload
+from mtdata.core.report import _report_error_payload, _report_error_text
 
 
 class TestReportErrorHelpers:

@@ -1,8 +1,9 @@
-import pytest
+import math
+import sys
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
-import sys
-import math
+
+import pytest
 
 from src.mtdata.core.trading import (
     _cancel_pending,
@@ -13,7 +14,9 @@ from src.mtdata.core.trading import (
     _place_pending_order,
 )
 from src.mtdata.core.trading.gateway import MT5TradingGateway
-from src.mtdata.core.trading.gateway import create_trading_gateway as create_real_trading_gateway
+from src.mtdata.core.trading.gateway import (
+    create_trading_gateway as create_real_trading_gateway,
+)
 
 
 @pytest.fixture

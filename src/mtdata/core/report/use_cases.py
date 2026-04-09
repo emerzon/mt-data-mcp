@@ -58,7 +58,7 @@ def _build_sections_status(sections: Dict[str, Any]) -> Dict[str, Any]:
     return {"summary": summary, "sections": statuses}
 
 
-def run_report_generate(
+def run_report_generate(  # noqa: C901
     request: ReportGenerateRequest,
     *,
     render_report: Any,
@@ -71,7 +71,7 @@ def run_report_generate(
     output_mode = str(request.output or "toon").strip().lower()
     template_name = (request.template or "basic").lower().strip()
 
-    def _run() -> str | Dict[str, Any]:
+    def _run() -> str | Dict[str, Any]:  # noqa: C901
         started_at = time.perf_counter()
 
         try:
@@ -85,11 +85,23 @@ def run_report_generate(
             try:
                 from ..report_templates import (
                     template_advanced as _t_advanced,
+                )
+                from ..report_templates import (
                     template_basic as _t_basic,
+                )
+                from ..report_templates import (
                     template_intraday as _t_intraday,
+                )
+                from ..report_templates import (
                     template_minimal as _t_minimal,
+                )
+                from ..report_templates import (
                     template_position as _t_position,
+                )
+                from ..report_templates import (
                     template_scalping as _t_scalping,
+                )
+                from ..report_templates import (
                     template_swing as _t_swing,
                 )
             except Exception as ex:

@@ -4,13 +4,13 @@ import math
 import time as _stdlib_time
 import traceback
 from datetime import datetime, timezone
-from typing import Optional, Union, List, Dict, Any
+from typing import Any, Dict, List, Optional, Union
 
+from ...utils.mt5 import _mt5_epoch_to_utc
 from . import comments, time, validation
 from .gateway import MT5TradingGateway, create_trading_gateway, trading_connection_error
 from .positions import _resolve_open_position, _resolve_pending_order
 from .time import ExpirationValue
-from ...utils.mt5 import _mt5_epoch_to_utc
 
 
 def _resolve_position_side(position: Any, mt5: Any) -> Optional[str]:
@@ -25,7 +25,7 @@ def _resolve_position_side(position: Any, mt5: Any) -> Optional[str]:
         validation._safe_int_attr(mt5, "ORDER_TYPE_SELL", 1),
     )
     try:
-        position_type = int(getattr(position, "type"))
+        position_type = int(position.type)
     except Exception:
         return None
     if position_type == int(position_type_buy):
@@ -478,7 +478,7 @@ def _modify_pending_order(
     return _modify_pending_order()
 
 
-def _close_positions(
+def _close_positions(  # noqa: C901
     ticket: Optional[Union[int, str]] = None,
     symbol: Optional[str] = None,
     volume: Optional[Union[int, float]] = None,
@@ -498,7 +498,7 @@ def _close_positions(
     if connection_error is not None:
         return connection_error
 
-    def _close_positions():
+    def _close_positions():  # noqa: C901
         try:
             if profit_only and loss_only:
                 return {"error": "profit_only and loss_only cannot both be true."}

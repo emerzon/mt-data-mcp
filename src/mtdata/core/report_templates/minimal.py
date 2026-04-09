@@ -6,7 +6,6 @@ from ..report.utils import now_utc_iso, parse_table_tail
 from ..schema import DenoiseSpec
 from .basic import _TREND_COMPACT_LEGEND, _compute_compact_trend, _get_raw_result
 
-
 _MINIMAL_SKIPPED_SECTIONS = (
     "pivot",
     "contexts_multi",

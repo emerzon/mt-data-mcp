@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from collections import namedtuple
 import logging
+import sys
+from collections import namedtuple
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
-import sys
 
-from mtdata.core.trading import trade_account_info
 from mtdata.core.trading import account as core_trading_account
 from mtdata.core.trading import positions as core_trading_positions
+from mtdata.core.trading import trade_account_info
 from mtdata.core.trading.requests import TradeGetOpenRequest, TradeGetPendingRequest
 from mtdata.core.trading.use_cases import run_trade_get_open, run_trade_get_pending
 from mtdata.utils.mt5 import MT5ConnectionError

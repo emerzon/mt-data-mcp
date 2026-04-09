@@ -438,7 +438,7 @@ def _render_forecast_section(data: Any) -> List[str]:
     return lines
 
 
-def _render_barriers_section(data: Any) -> List[str]:
+def _render_barriers_section(data: Any) -> List[str]:  # noqa: C901
     if not isinstance(data, dict):
         return []
     if any(key in data for key in ("long", "short")):

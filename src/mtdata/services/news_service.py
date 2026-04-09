@@ -1,11 +1,11 @@
 """MT5 local news database parser."""
 
-import subprocess
+import logging
 import struct
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Any
-import logging
+from typing import Any, Dict, List, Optional
 
 from ..core.runtime_metadata import build_runtime_timezone_meta
 from ..utils.mt5 import _mt5_epoch_to_utc

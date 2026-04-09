@@ -1,29 +1,52 @@
 from __future__ import annotations
+
 from dataclasses import replace
-from typing import List, Optional, Dict, Any
+from typing import Any, Dict, List, Optional
+
 import numpy as np
 import pandas as pd
 
 from ..utils.utils import to_float_np
 from .classic_impl.config import ClassicDetectorConfig, ClassicPatternResult
-from .classic_impl.utils import (
-    _build_time_array, _detect_pivots_close, _calibrate_confidence,
-    _fit_lines_and_arrays, _count_recent_touches, _fit_line_robust,
-    _fit_line, _tol_abs_from_close, _level_close, _is_converging,
-    _find_recent_breakout, _find_forward_level_breakout, _result, _alias,
-    _count_touches, _conf, _last_touch_indexes, _compute_atr, _pivot_thresholds,
-    _znorm, _paa, _dtw_distance, _template_hs, _collect_calibration_points
-)
-from .classic_impl.trend import detect_trend_lines, detect_channels
-from .classic_impl.shapes import (
-    detect_rectangles, detect_triangles, detect_wedges, 
-    detect_broadening, detect_diamonds
-)
+from .classic_impl.continuation import detect_cup_handle, detect_flags_pennants
 from .classic_impl.reversal import (
-    detect_tops_bottoms, detect_head_shoulders, detect_rounding
+    detect_head_shoulders,
+    detect_rounding,
+    detect_tops_bottoms,
 )
-from .classic_impl.continuation import (
-    detect_flags_pennants, detect_cup_handle
+from .classic_impl.shapes import (
+    detect_broadening,
+    detect_diamonds,
+    detect_rectangles,
+    detect_triangles,
+    detect_wedges,
+)
+from .classic_impl.trend import detect_channels, detect_trend_lines
+from .classic_impl.utils import (
+    _alias,
+    _build_time_array,
+    _calibrate_confidence,
+    _collect_calibration_points,
+    _compute_atr,
+    _conf,
+    _count_recent_touches,
+    _count_touches,
+    _detect_pivots_close,
+    _dtw_distance,
+    _find_forward_level_breakout,
+    _find_recent_breakout,
+    _fit_line,
+    _fit_line_robust,
+    _fit_lines_and_arrays,
+    _is_converging,
+    _last_touch_indexes,
+    _level_close,
+    _paa,
+    _pivot_thresholds,
+    _result,
+    _template_hs,
+    _tol_abs_from_close,
+    _znorm,
 )
 
 # Re-export for backward compatibility

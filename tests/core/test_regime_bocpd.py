@@ -2,7 +2,7 @@
 import numpy as np
 import pytest
 
-from mtdata.utils.regime import bocpd_gaussian, _student_t_logpdf
+from mtdata.utils.regime import _student_t_logpdf, bocpd_gaussian
 
 
 class TestStudentTLogpdf:

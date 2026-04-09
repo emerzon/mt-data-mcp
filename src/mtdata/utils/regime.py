@@ -11,6 +11,7 @@ offline runs over a few thousand observations.
 """
 
 from typing import Dict
+
 import numpy as np
 from scipy.stats import t as _student_t
 

@@ -3,19 +3,19 @@ import numpy as np
 import pytest
 
 from mtdata.utils.simplify import (
-    _default_target_points,
+    _apca_select_indices,
     _choose_simplify_points,
+    _default_target_points,
     _fallback_lttb_indices,
     _finalize_indices,
-    _segment_endpoints_to_indices,
-    _n_bkps_from_segments_points,
     _lttb_select_indices,
+    _max_line_error,
+    _n_bkps_from_segments_points,
+    _pla_select_indices,
     _point_line_distance,
     _rdp_keep_mask,
     _rdp_select_indices,
-    _max_line_error,
-    _pla_select_indices,
-    _apca_select_indices,
+    _segment_endpoints_to_indices,
 )
 
 

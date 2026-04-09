@@ -6,9 +6,9 @@ from unittest.mock import patch
 import numpy as np
 import pandas as pd
 
-from mtdata.forecast.interface import ForecastResult
 from mtdata.forecast import forecast_engine as fe
 from mtdata.forecast import forecast_preprocessing as fp
+from mtdata.forecast.interface import ForecastResult
 from mtdata.utils.utils import _format_time_minimal
 
 

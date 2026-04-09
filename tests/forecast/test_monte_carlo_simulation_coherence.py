@@ -10,7 +10,6 @@ import pandas as pd
 # Add src to path to ensure local package is found
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
-from mtdata.forecast.registry import ForecastRegistry
 import mtdata.forecast.methods.monte_carlo  # noqa: F401
 from mtdata.forecast.monte_carlo import (
     estimate_transition_matrix_from_gamma,
@@ -18,6 +17,7 @@ from mtdata.forecast.monte_carlo import (
     simulate_gbm_mc,
     simulate_markov_chain,
 )
+from mtdata.forecast.registry import ForecastRegistry
 
 
 class TestMonteCarloSimulationCoherence(unittest.TestCase):

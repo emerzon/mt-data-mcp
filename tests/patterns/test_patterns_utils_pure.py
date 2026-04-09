@@ -7,10 +7,10 @@ import pytest
 from scipy.spatial import cKDTree
 
 from mtdata.utils.patterns import (
+    PatternIndex,
     _apply_metric_vector,
     _apply_scale_vector,
     _minmax_scale_row,
-    PatternIndex,
     _SeriesStore,
 )
 

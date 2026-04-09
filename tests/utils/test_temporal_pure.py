@@ -2,7 +2,7 @@
 
 import math
 from contextlib import contextmanager
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pandas as pd
@@ -11,13 +11,13 @@ import pytest
 from mtdata.core.temporal import (
     _error_response,
     _normalize_group_by,
-    _parse_weekday,
     _parse_month,
-    _parse_time_token,
     _parse_time_range,
-    _time_label,
+    _parse_time_token,
+    _parse_weekday,
     _safe_float,
     _stats_for_group,
+    _time_label,
     temporal_analyze,
 )
 

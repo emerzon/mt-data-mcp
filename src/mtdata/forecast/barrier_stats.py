@@ -10,8 +10,9 @@ barrier simulations, including:
 - Sensitivity analysis for barrier parameters
 """
 
-from typing import Any, Dict, List, Optional, Tuple, Union
 import math
+from typing import Any, Dict, List, Optional, Tuple, Union
+
 import numpy as np
 from scipy import stats as scipy_stats
 

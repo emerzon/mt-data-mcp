@@ -5,9 +5,11 @@ Simple global parameter definitions for mtdata functions.
 This module provides global parameters that work across all functions.
 """
 
-from typing import Optional
 import argparse
+from typing import Optional
+
 from .constants import DEFAULT_TIMEFRAME
+
 
 def add_global_args_to_parser(
     parser: argparse.ArgumentParser,

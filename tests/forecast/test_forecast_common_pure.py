@@ -4,11 +4,11 @@ import pandas as pd
 import pytest
 
 from mtdata.forecast.common import (
+    _create_training_dataframes,
+    _extract_forecast_values,
+    default_seasonality,
     edge_pad_to_length,
     log_returns_from_prices,
-    _extract_forecast_values,
-    _create_training_dataframes,
-    default_seasonality,
     next_times_from_last,
     pd_freq_from_timeframe,
 )

@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from functools import update_wrapper
-from pathlib import Path
 import inspect
 import types
+from functools import update_wrapper
+from pathlib import Path
 
 from . import api as _api
 

@@ -1,50 +1,65 @@
 
-from datetime import datetime, timedelta, timezone as dt_timezone
+import json
 import logging
 import math
 import re
-from typing import Any, Dict, Optional, List, Literal, Tuple
-import pandas as pd
-import warnings
-import json
 import time
+import warnings
+from datetime import datetime, timedelta
+from datetime import timezone as dt_timezone
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
-# Imports from core (schema, constants, server utils)
+import pandas as pd
 
-# Imports from core (schema, constants)
-from ..shared.schema import TimeframeLiteral, IndicatorSpec, DenoiseSpec, SimplifySpec
-from ..shared.constants import (
-    TIMEFRAME_MAP, TIMEFRAME_SECONDS, FETCH_RETRY_ATTEMPTS, FETCH_RETRY_DELAY,
-    SANITY_BARS_TOLERANCE, TI_NAN_WARMUP_FACTOR, TI_NAN_WARMUP_MIN_ADD,
-    SIMPLIFY_DEFAULT_METHOD, SIMPLIFY_DEFAULT_MODE, SIMPLIFY_DEFAULT_POINTS_RATIO_FROM_LIMIT, TICKS_LOOKBACK_DAYS,
-    DEFAULT_ROW_LIMIT, TIME_DISPLAY_FORMAT
-)
 from ..bootstrap.settings import mt5_config
 from ..core.runtime_metadata import build_runtime_timezone_meta
-from ..shared.validators import invalid_timeframe_error
-
-# Imports from utils
-from ..utils.mt5 import (
-    _mt5_copy_rates_from, _mt5_copy_rates_range,
-    _mt5_copy_ticks_range, _mt5_epoch_to_utc, _rates_to_df, _symbol_ready_guard,
-    get_cached_mt5_time_alignment, get_symbol_info_cached, mt5
+from ..shared.constants import (
+    DEFAULT_ROW_LIMIT,
+    FETCH_RETRY_ATTEMPTS,
+    FETCH_RETRY_DELAY,
+    SANITY_BARS_TOLERANCE,
+    SIMPLIFY_DEFAULT_METHOD,
+    SIMPLIFY_DEFAULT_MODE,
+    SIMPLIFY_DEFAULT_POINTS_RATIO_FROM_LIMIT,
+    TI_NAN_WARMUP_FACTOR,
+    TI_NAN_WARMUP_MIN_ADD,
+    TICKS_LOOKBACK_DAYS,
+    TIME_DISPLAY_FORMAT,
+    TIMEFRAME_MAP,
+    TIMEFRAME_SECONDS,
 )
-from ..utils.utils import (
-    _table_from_rows, _format_time_minimal, _format_time_minimal_local,
-    _resolve_client_tz, _time_format_from_epochs, _maybe_strip_year,
-    _style_time_format, _format_numeric_rows_from_df, _parse_start_datetime,    
-    _coerce_scalar, _normalize_ohlcv_arg, _utc_epoch_seconds
+
+# Imports from core (schema, constants, server utils)
+# Imports from core (schema, constants)
+from ..shared.schema import DenoiseSpec, IndicatorSpec, SimplifySpec, TimeframeLiteral
+from ..shared.validators import invalid_timeframe_error
+from ..utils.denoise import (
+    _apply_denoise as _apply_denoise_util,
+)
+from ..utils.denoise import (
+    _consume_denoise_warnings,
+)
+from ..utils.denoise import (
+    normalize_denoise_spec as _normalize_denoise_spec,
 )
 from ..utils.indicators import (
-    _estimate_warmup_bars_util,
     _apply_ta_indicators_util,
+    _estimate_warmup_bars_util,
     _find_unknown_ta_indicators_util,
     _parse_ti_specs,
 )
-from ..utils.denoise import (
-    _apply_denoise as _apply_denoise_util,
-    _consume_denoise_warnings,
-    normalize_denoise_spec as _normalize_denoise_spec,
+
+# Imports from utils
+from ..utils.mt5 import (
+    _mt5_copy_rates_from,
+    _mt5_copy_rates_range,
+    _mt5_copy_ticks_range,
+    _mt5_epoch_to_utc,
+    _rates_to_df,
+    _symbol_ready_guard,
+    get_cached_mt5_time_alignment,
+    get_symbol_info_cached,
+    mt5,
 )
 
 # Simplify entrypoint and helpers.
@@ -54,6 +69,21 @@ from ..utils.simplify import (
     _select_indices_for_timeseries,
     _simplify_dataframe_rows_ext,
 )
+from ..utils.utils import (
+    _coerce_scalar,
+    _format_numeric_rows_from_df,
+    _format_time_minimal,
+    _format_time_minimal_local,
+    _maybe_strip_year,
+    _normalize_ohlcv_arg,
+    _parse_start_datetime,
+    _resolve_client_tz,
+    _style_time_format,
+    _table_from_rows,
+    _time_format_from_epochs,
+    _utc_epoch_seconds,
+)
+
 logger = logging.getLogger(__name__)
 
 _AUTO_TIME_ALIGNMENT_MIN_SHIFT_SECONDS = 1800
@@ -796,7 +826,7 @@ def _public_simplify_meta(meta: Any) -> Optional[Dict[str, Any]]:
     return out or None
 
 
-def fetch_candles(
+def fetch_candles(  # noqa: C901
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
     limit: int = DEFAULT_ROW_LIMIT,
@@ -1097,7 +1127,7 @@ def fetch_candles(
     except Exception as e:
         return {"error": f"Error getting rates: {str(e)}"}
 
-def fetch_ticks(
+def fetch_ticks(  # noqa: C901
     symbol: str,
     limit: int = DEFAULT_ROW_LIMIT,
     start: Optional[str] = None,

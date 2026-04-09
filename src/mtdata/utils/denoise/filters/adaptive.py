@@ -1,9 +1,10 @@
 """Adaptive filters: LMS and RLS."""
 from typing import Any, Dict
-import pandas as pd
-import numpy as np
 
-from ..base import register_filter, _series_like
+import numpy as np
+import pandas as pd
+
+from ..base import _series_like, register_filter
 
 
 def _adaptive_lms_filter(

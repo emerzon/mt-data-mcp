@@ -8,7 +8,6 @@ from typing import Any, Dict, Optional
 
 from . import validation
 
-
 _MT5_COMMENT_MAX_LENGTH = 31
 _MT5_COMMENT_SANITIZE_RE = re.compile(r"[^A-Za-z0-9 _.!-]+")
 

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, List, Optional, Tuple
 import importlib
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from .forecast_registry import get_forecast_methods_data
 from .exceptions import ForecastError
+from .forecast_registry import get_forecast_methods_data
 from .interface import ForecastCapabilityDescriptor
 from .registry import ForecastRegistry
 

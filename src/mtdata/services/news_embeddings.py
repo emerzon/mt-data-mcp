@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from contextlib import contextmanager
 import logging
 import math
 import os
 from collections import OrderedDict
+from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, Iterable, Iterator, Optional, Sequence
 
 from ..bootstrap.settings import news_embeddings_config

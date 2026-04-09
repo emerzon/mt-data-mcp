@@ -4,26 +4,27 @@ These tests validate the statistical analysis tools added to make barrier
 optimization more robust and reliable for actual trading.
 """
 
-import unittest
-import numpy as np
-import sys
 import os
+import sys
+import unittest
 from unittest.mock import patch
+
+import numpy as np
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
 
 from mtdata.forecast.barrier_stats import (
     _confidence_interval_wilson_proportion,
-    minimum_simulations_for_ci_width,
-    confidence_interval_wilson,
-    confidence_interval_agresti_coull,
-    confidence_interval_jeffreys,
-    confidence_interval_bootstrap,
-    mc_convergence_diagnostic,
-    cross_seed_stability,
     bootstrap_metric_uncertainty,
-    statistical_power_analysis,
+    confidence_interval_agresti_coull,
+    confidence_interval_bootstrap,
+    confidence_interval_jeffreys,
+    confidence_interval_wilson,
+    cross_seed_stability,
     ensemble_ci_from_multiple_methods,
+    mc_convergence_diagnostic,
+    minimum_simulations_for_ci_width,
+    statistical_power_analysis,
 )
 from mtdata.forecast.barriers_shared import _binomial_wilson_95
 
@@ -504,6 +505,7 @@ class TestBarrierOptimizationWithStats(_BarrierOptimizationPatchMixin, unittest.
     def test_barrier_optimize_cross_seed_stability_replays_best_candidate(self):
         """Cross-seed stability should re-evaluate the selected barrier for each seed."""
         from unittest.mock import patch
+
         from mtdata.forecast.barriers import forecast_barrier_optimize
 
         seen_seeds = []
@@ -555,6 +557,7 @@ class TestBarrierOptimizationWithStats(_BarrierOptimizationPatchMixin, unittest.
     def test_barrier_optimize_convergence_tracks_selected_objective(self):
         """Convergence should track the running estimate for the selected objective."""
         from unittest.mock import patch
+
         from mtdata.forecast.barriers import forecast_barrier_optimize
 
         captured = {}
@@ -612,6 +615,7 @@ class TestBarrierOptimizationWithStats(_BarrierOptimizationPatchMixin, unittest.
     def test_barrier_optimize_with_sensitivity_analysis(self):
         """Sensitivity analysis should be present when explicitly enabled."""
         from unittest.mock import patch
+
         from mtdata.forecast.barriers import forecast_barrier_optimize
 
         def fake_sim(prices, horizon, n_sims, seed, **kwargs):
@@ -755,8 +759,10 @@ class TestBarrierSanityCheckFixes(unittest.TestCase):
     def test_closed_form_already_hit_flag(self):
         """Already-hit barriers should return prob=1.0 with already_hit flag."""
         import sys
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import MagicMock, patch
+
         import pandas as pd
+
         from mtdata.forecast.barriers_probabilities import forecast_barrier_closed_form
 
         dates = pd.date_range(start="2023-01-01", periods=600, freq="h")

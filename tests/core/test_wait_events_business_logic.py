@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from mtdata.core.data.requests import WaitEventRequest
 from mtdata.core.data import wait_events
+from mtdata.core.data.requests import WaitEventRequest
 
 
 def test_compile_request_precomputes_watcher_requirements() -> None:

@@ -1,13 +1,15 @@
 """Denoising filters subpackage."""
 
 # Import all filter modules to register filters
-from . import moving_average
-from . import spectral
-from . import polynomial
-from . import specialized
-from . import wavelet
-from . import decomposition
-from . import adaptive
-from . import trend
+from . import (
+    adaptive,
+    decomposition,
+    moving_average,
+    polynomial,
+    specialized,
+    spectral,
+    trend,
+    wavelet,
+)
 
 __all__ = []

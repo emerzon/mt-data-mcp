@@ -4,13 +4,13 @@ import pytest
 
 from mtdata.utils.dimred import (
     DimReducer,
-    NoneReducer,
-    PCAReducer,
-    SVDReducer,
-    SparsePCAReducer,
+    IsomapReducer,
     KPCAReducer,
     LaplacianReducer,
-    IsomapReducer,
+    NoneReducer,
+    PCAReducer,
+    SparsePCAReducer,
+    SVDReducer,
     TSNEReducer,
     create_reducer,
     list_dimred_methods,

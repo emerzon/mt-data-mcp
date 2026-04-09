@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, Optional
 
-from ..mt5_gateway import MT5Gateway
 from ...utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise, mt5_adapter
+from ..mt5_gateway import MT5Gateway
 
 
 class MT5TradingGateway(MT5Gateway):

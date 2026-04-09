@@ -2,11 +2,11 @@
 import pytest
 
 from mtdata.utils.barriers import (
-    resolve_barrier_prices,
+    barrier_prices_are_valid,
     build_barrier_kwargs,
     build_barrier_kwargs_from,
     normalize_trade_direction,
-    barrier_prices_are_valid,
+    resolve_barrier_prices,
 )
 
 

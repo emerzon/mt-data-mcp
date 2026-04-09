@@ -12,11 +12,14 @@ from typing import Any, Dict, Iterable, List, Optional
 
 from .constants import DISPLAY_MAX_DECIMALS
 from .formatting import (
-    format_number,
-    optimal_decimals as _optimal_decimals,
     format_float as _format_float,
 )
-
+from .formatting import (
+    format_number,
+)
+from .formatting import (
+    optimal_decimals as _optimal_decimals,
+)
 
 _INDENT = "  "
 _DEFAULT_DELIMITER = ","
@@ -462,7 +465,7 @@ def _encode_expanded_array(
     return "\n".join(lines)
 
 
-def _normalize_forecast_payload(payload: Dict[str, Any], verbose: bool = True) -> Optional[Dict[str, Any]]:
+def _normalize_forecast_payload(payload: Dict[str, Any], verbose: bool = True) -> Optional[Dict[str, Any]]:  # noqa: C901
     """Convert forecast payload into meta + tabular rows when possible."""
     try:
         # Detect time column

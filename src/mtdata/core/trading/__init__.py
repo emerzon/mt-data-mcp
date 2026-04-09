@@ -3,10 +3,15 @@
 import logging
 
 from .._mcp_instance import mcp
-from . import time, validation
 from ..execution_logging import run_logged_operation
+from . import time, validation
 from .account import lookup_trade_ticket_history, trade_account_info, trade_history
-from .execution import _cancel_pending, _close_positions, _modify_pending_order, _modify_position
+from .execution import (
+    _cancel_pending,
+    _close_positions,
+    _modify_pending_order,
+    _modify_position,
+)
 from .orders import _place_market_order, _place_pending_order
 from .positions import trade_get_open, trade_get_pending
 from .requests import TradeCloseRequest, TradeModifyRequest, TradePlaceRequest

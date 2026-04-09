@@ -1,20 +1,21 @@
 """Tests for src/mtdata/utils/minimal_output.py — TOON formatting helpers."""
 import math
+
 from mtdata.utils.minimal_output import (
-    _is_scalar_value,
-    _is_empty_value,
-    _minify_number,
-    _stringify_scalar,
-    _stringify_cell,
-    _indent_text,
-    _quote_if_needed,
-    _quote_key,
-    _format_complex_value,
-    _headers_from_dicts,
     _column_decimals,
     _encode_tabular,
+    _format_complex_value,
+    _headers_from_dicts,
+    _indent_text,
+    _is_empty_value,
+    _is_scalar_value,
+    _minify_number,
+    _quote_if_needed,
+    _quote_key,
+    _stringify_cell,
     _stringify_for_toon,
     _stringify_for_toon_value,
+    _stringify_scalar,
 )
 
 

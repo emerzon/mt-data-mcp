@@ -160,15 +160,22 @@ Repository = "https://github.com/emerzon/mt-data-mcp"
 target-version = "py314"
 
 [tool.ruff.lint]
-select = ["E", "F"]
-ignore = ["E402", "E501", "E701", "E702", "E741"]
+select = ["E", "F", "I", "B", "C901"]
+ignore = ["E402", "E501", "E701", "E702", "E741", "B904", "B905"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 25
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["E731", "F401", "F841"]
+"tests/**/*.py" = ["E731", "F401", "F841", "B007", "B017", "B023", "B028"]
 "src/mtdata/**/__init__.py" = ["F401"]
 "src/mtdata/core/regime/api.py" = ["F401"]
 "src/mtdata/core/report/utils.py" = ["F401"]
+"src/mtdata/core/web_api.py" = ["B008"]
 "src/mtdata/core/server.py" = ["F401"]
+"src/mtdata/core/schema_attach.py" = ["B023"]
+"src/mtdata/utils/indicators.py" = ["B023"]
+"src/mtdata/services/data_service.py" = ["F401"]
 "src/mtdata/forecast/barriers_shared.py" = ["F401"]
 "src/mtdata/forecast/forecast.py" = ["F401"]
 "src/mtdata/patterns/classic.py" = ["F401"]

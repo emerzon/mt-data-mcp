@@ -12,12 +12,12 @@ import pytest
 from scipy.spatial import cKDTree
 
 from mtdata.utils.patterns import (
-    _minmax_scale_row,
-    _mass_distance_profile,
-    _apply_scale_vector,
-    _apply_metric_vector,
-    _SeriesStore,
     PatternIndex,
+    _apply_metric_vector,
+    _apply_scale_vector,
+    _mass_distance_profile,
+    _minmax_scale_row,
+    _SeriesStore,
 )
 
 

@@ -5,14 +5,13 @@ sys.modules at import time.  Without cleanup the mocks leak into later
 test modules and cause spurious failures.
 """
 
-import os
-from pathlib import Path
 import logging
+import os
 import sys
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
-
 
 _ROOT = Path(__file__).resolve().parents[1]
 _SRC = _ROOT / "src"

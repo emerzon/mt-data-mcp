@@ -1,8 +1,9 @@
 """Trend extraction filters: L1 trend, HP filter, Whittaker, Beta, Gaussian."""
-from typing import Any, Dict
-import pandas as pd
-import numpy as np
 import math
+from typing import Any, Dict
+
+import numpy as np
+import pandas as pd
 
 try:
     from scipy import sparse as _sps
@@ -15,7 +16,7 @@ try:
 except Exception:
     _gaussian_filter1d = None  # type: ignore
 
-from ..base import register_filter, _series_like
+from ..base import _series_like, register_filter
 
 
 def _hp_filter(x: np.ndarray, lamb: float) -> np.ndarray:

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from contextvars import ContextVar
 import logging
 import time
+from contextvars import ContextVar
 from typing import Any, Callable, Optional, TypeVar
 
 ResultT = TypeVar("ResultT")

@@ -1,7 +1,7 @@
 import subprocess
 import sys
-from pathlib import Path
 import textwrap
+from pathlib import Path
 
 
 def test_core_forecast_import_does_not_touch_runtime_forecast_modules(monkeypatch):

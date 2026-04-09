@@ -9,12 +9,12 @@ from typing import Any, Callable, Dict, List, Optional
 from fastapi import HTTPException
 
 from ..forecast.exceptions import ForecastError
-from .pivot import compute_support_resistance_payload
 from ..utils.mt5 import MT5ConnectionError
 from ..utils.support_resistance import compact_support_resistance_payload
 from .error_envelope import build_http_error_detail
 from .mt5_gateway import get_default_mt5_gateway
 from .output_contract import ensure_common_meta
+from .pivot import compute_support_resistance_payload
 from .runtime_metadata import build_runtime_timezone_meta
 from .tool_calling import resolve_sync_tool_result
 from .web_api_models import BacktestBody, ForecastPriceBody, ForecastVolBody
@@ -281,7 +281,7 @@ def get_wavelets_response() -> Dict[str, Any]:
     return {"available": True, "families": families, "wavelets": flat, "by_family": by_family}
 
 
-def get_history_response(
+def get_history_response(  # noqa: C901
     *,
     symbol: str,
     timeframe: str,

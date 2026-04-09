@@ -8,7 +8,8 @@ from unittest.mock import patch
 # Add src to path to ensure local package is found
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
-from mtdata.core.trading import trade_place as _trade_place_tool, trade_modify as _trade_modify_tool
+from mtdata.core.trading import trade_modify as _trade_modify_tool
+from mtdata.core.trading import trade_place as _trade_place_tool
 from mtdata.core.trading.requests import TradeModifyRequest, TradePlaceRequest
 from mtdata.core.trading.validation import _normalize_order_type_input
 

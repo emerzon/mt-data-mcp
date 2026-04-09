@@ -1,20 +1,36 @@
-from typing import Any, Dict, Optional, List, Literal
-from datetime import datetime, timezone
-import numpy as np
-import pandas as pd
 import json
 import math
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Literal, Optional
+
+import numpy as np
+import pandas as pd
 
 from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
-from ..shared.schema import TimeframeLiteral, DenoiseSpec
-from ..shared.validators import invalid_timeframe_error, unsupported_timeframe_seconds_error
-from ..utils.mt5 import _ensure_symbol_ready, _mt5_copy_rates_from, _mt5_epoch_to_utc, mt5
+from ..shared.schema import DenoiseSpec, TimeframeLiteral
+from ..shared.validators import (
+    invalid_timeframe_error,
+    unsupported_timeframe_seconds_error,
+)
+from ..utils.denoise import _apply_denoise
+from ..utils.denoise import normalize_denoise_spec as _normalize_denoise_spec
+from ..utils.mt5 import (
+    _ensure_symbol_ready,
+    _mt5_copy_rates_from,
+    _mt5_epoch_to_utc,
+    mt5,
+)
 from ..utils.utils import _parse_start_datetime
-from ..utils.denoise import _apply_denoise, normalize_denoise_spec as _normalize_denoise_spec
 from .common import (
     bars_per_year as _bars_per_year,
+)
+from .common import (
     default_seasonality as _default_seasonality_period,
+)
+from .common import (
     log_returns_from_prices as _log_returns_from_prices,
+)
+from .common import (
     pd_freq_from_timeframe as _pd_freq_from_timeframe,
 )
 
@@ -352,7 +368,7 @@ def _fetch_mt5_rates_guarded(
                 pass
 
 
-def forecast_volatility(
+def forecast_volatility(  # noqa: C901
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
     horizon: int = 1,
@@ -645,9 +661,11 @@ def forecast_volatility(
                 if not _MLF_AVAILABLE:
                     return {"error": "mlf_rf requires 'mlforecast' and 'scikit-learn'"}
                 try:
-                    from mlforecast import MLForecast as _MLForecast  # type: ignore
-                    from sklearn.ensemble import RandomForestRegressor as _RF  # type: ignore
                     import pandas as _pd
+                    from mlforecast import MLForecast as _MLForecast  # type: ignore
+                    from sklearn.ensemble import (
+                        RandomForestRegressor as _RF,  # type: ignore
+                    )
                 except Exception as ex:
                     return {"error": f"Failed to import mlforecast/sklearn: {ex}"}
                 try:
@@ -677,9 +695,11 @@ def forecast_volatility(
                 if not _NF_AVAILABLE:
                     return {"error": "nhits requires 'neuralforecast[torch]'"}
                 try:
-                    from neuralforecast import NeuralForecast as _NeuralForecast  # type: ignore
-                    from neuralforecast.models import NHITS as _NF_NHITS  # type: ignore
                     import pandas as _pd
+                    from neuralforecast import (
+                        NeuralForecast as _NeuralForecast,  # type: ignore
+                    )
+                    from neuralforecast.models import NHITS as _NF_NHITS  # type: ignore
                 except Exception as ex:
                     return {"error": f"Failed to import neuralforecast: {ex}"}
                 max_epochs = int(p.get('max_epochs', 30))

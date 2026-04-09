@@ -1,13 +1,13 @@
 from __future__ import annotations
 
+import math
+import os
 from typing import Any, Dict, List, Optional, Tuple
 
-import os
-import math
 import numpy as np
 import pandas as pd
 
-from ..shared.constants import TIMEFRAME_SECONDS, TIMEFRAME_MAP
+from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..utils.mt5 import (
     _ensure_symbol_ready,
     _mt5_copy_rates_from,
@@ -16,7 +16,6 @@ from ..utils.mt5 import (
     mt5,
 )
 from ..utils.utils import _parse_start_datetime, _utc_epoch_seconds
-
 
 
 def edge_pad_to_length(values: np.ndarray, length: int) -> np.ndarray:
@@ -242,7 +241,7 @@ def pd_freq_from_timeframe(tf: str) -> str:
     return mapping.get(t, 'D')
 
 
-def nf_setup_and_predict(
+def nf_setup_and_predict(  # noqa: C901
     *,
     model_class,
     fh: int,
@@ -261,8 +260,8 @@ def nf_setup_and_predict(
     Handles max_steps/max_epochs differences, single-device training, optional X_df API,
     predict(h=...) signature differences, and quiet/performant trainer options.
     """
-    import warnings
     import inspect as _inspect
+    import warnings
 
     # Build model kwargs with compatibility
     try:

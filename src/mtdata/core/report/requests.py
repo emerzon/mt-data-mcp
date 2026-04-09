@@ -6,7 +6,6 @@ from pydantic import BaseModel
 
 from ..schema import DenoiseSpec
 
-
 ReportOutput = Literal["toon", "markdown"]
 
 

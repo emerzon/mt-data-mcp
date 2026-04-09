@@ -15,11 +15,13 @@ This module relies on numpy/pandas plus sklearn (GaussianMixture), hmmlearn
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Dict, Tuple, Optional, Union
-import numpy as np
 import warnings
+from dataclasses import dataclass
+from typing import Dict, Optional, Tuple, Union
+
+import numpy as np
 from sklearn.mixture import GaussianMixture
+
 try:
     from sklearn.exceptions import ConvergenceWarning as _SklearnConvergenceWarning
 except Exception:  # pragma: no cover - defensive fallback

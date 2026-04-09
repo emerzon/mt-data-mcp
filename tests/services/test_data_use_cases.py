@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 
-from mtdata.core.data.requests import DataFetchCandlesRequest, DataFetchTicksRequest
 from mtdata.core import data as core_data
+from mtdata.core.data.requests import DataFetchCandlesRequest, DataFetchTicksRequest
 from mtdata.core.data.use_cases import run_data_fetch_candles, run_data_fetch_ticks
 from mtdata.utils.mt5 import MT5ConnectionError
 

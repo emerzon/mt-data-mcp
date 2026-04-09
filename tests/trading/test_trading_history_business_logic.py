@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+import sys
 from collections import namedtuple
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
-import sys
 
 from mtdata.core.trading import trade_history as _trade_history_tool
 from mtdata.core.trading.requests import TradeHistoryRequest

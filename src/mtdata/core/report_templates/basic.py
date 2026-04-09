@@ -1,11 +1,16 @@
-from typing import Any, Dict, Optional, List
-
 from math import isfinite
-from ..schema import DenoiseSpec
-from ..report.utils import now_utc_iso, parse_table_tail, pick_best_forecast_method, summarize_barrier_grid, attach_multi_timeframes
-from ..tool_calling import call_tool_sync_raw
-from ...utils.utils import _safe_float
+from typing import Any, Dict, List, Optional
 
+from ...utils.utils import _safe_float
+from ..report.utils import (
+    attach_multi_timeframes,
+    now_utc_iso,
+    parse_table_tail,
+    pick_best_forecast_method,
+    summarize_barrier_grid,
+)
+from ..schema import DenoiseSpec
+from ..tool_calling import call_tool_sync_raw
 
 _TREND_COMPACT_LEGEND: Dict[str, str] = {
     "s": "ATR-adjusted slope score (x100) for windows [5, 20, 60] bars.",
@@ -435,7 +440,7 @@ def _is_degenerate_forecast_payload(payload: Dict[str, Any]) -> bool:
     return span <= tol
 
 
-def template_basic(
+def template_basic(  # noqa: C901
     symbol: str,
     horizon: int,
     denoise: Optional[DenoiseSpec],
@@ -527,7 +532,7 @@ def template_basic(
     try:
         secs = report.setdefault('sections', {})
         if 'contexts_multi' not in secs or 'pivot_multi' not in secs:
-            from ..report.utils import context_for_tf, _extract_base_timeframe
+            from ..report.utils import _extract_base_timeframe, context_for_tf
             base_tf = _extract_base_timeframe(report)
             tf_list = ['M15','H1','H4','D1']
             ctxs: Dict[str, Any] = {}

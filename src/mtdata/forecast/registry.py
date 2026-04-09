@@ -1,5 +1,7 @@
 from typing import Dict, List, Type
+
 from .interface import ForecastMethod
+
 
 class ForecastRegistry:
     """Registry for forecasting methods."""

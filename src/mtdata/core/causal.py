@@ -2,27 +2,27 @@
 
 from __future__ import annotations
 
-import math
 import logging
+import math
 import time
 import warnings
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 
+from ..utils.mt5 import (
+    _ensure_symbol_ready,
+    _mt5_copy_rates_from,
+    ensure_mt5_connection_or_raise,
+    mt5,
+)
+from ..utils.symbol import _extract_group_path as _extract_group_path_util
 from ._mcp_instance import mcp
 from .constants import TIMEFRAME_MAP
 from .execution_logging import run_logged_operation
 from .mt5_gateway import get_mt5_gateway, mt5_connection_error
-from ..utils.mt5 import (
-    ensure_mt5_connection_or_raise,
-    mt5,
-    _ensure_symbol_ready,
-    _mt5_copy_rates_from,
-)
-from ..utils.symbol import _extract_group_path as _extract_group_path_util
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +79,7 @@ def _fetch_series(symbol: str, timeframe, count: int, retries: int = 3, pause: f
     if err:
         return pd.Series(dtype=float), err
 
-    for attempt in range(retries):
+    for _attempt in range(retries):
         utc_now = datetime.now(timezone.utc)
         data = _mt5_copy_rates_from(symbol, timeframe, utc_now, count)
         if data is None or len(data) == 0:
@@ -374,7 +374,7 @@ def _format_alignment_detail_summary(detail: Dict[str, Any]) -> str:
 
 
 @mcp.tool()
-def causal_discover_signals(
+def causal_discover_signals(  # noqa: C901
     symbols: str,
     timeframe: str = "H1",
     limit: int = 500,
@@ -394,7 +394,7 @@ def causal_discover_signals(
         transform: Preprocessing transform: "log_return", "pct", "diff", or "level".
         normalize: Z-score columns before testing to stabilise scale.
     """
-    def _run() -> Dict[str, Any]:
+    def _run() -> Dict[str, Any]:  # noqa: C901
         connection_error = _causal_connection_error()
         if connection_error is not None:
             return connection_error

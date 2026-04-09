@@ -1,27 +1,24 @@
-from typing import Any, Dict, Optional, List, Literal
 import traceback
+from typing import Any, Dict, List, Literal, Optional
+
 import numpy as np
-from ..shared.schema import TimeframeLiteral, DenoiseSpec
+
 from ..shared.constants import TIMEFRAME_SECONDS
+from ..shared.schema import DenoiseSpec, TimeframeLiteral
 from ..shared.validators import unsupported_timeframe_seconds_error
-from .common import fetch_history as _fetch_history, log_returns_from_prices as _log_returns_from_prices
-from ..utils.utils import parse_kv_or_json as _parse_kv_or_json
 from ..utils.barriers import (
-    get_pip_size as _get_pip_size,
-    resolve_barrier_prices as _resolve_barrier_prices,
-    normalize_trade_direction,
     barrier_prices_are_valid as _barrier_prices_are_valid,
 )
-from .monte_carlo import (
-    simulate_gbm_mc as _simulate_gbm_mc, 
-    simulate_hmm_mc as _simulate_hmm_mc, 
-    simulate_garch_mc as _simulate_garch_mc,
-    simulate_bootstrap_mc as _simulate_bootstrap_mc,
-    simulate_heston_mc as _simulate_heston_mc,
-    simulate_jump_diffusion_mc as _simulate_jump_diffusion_mc,
-    gbm_single_barrier_upcross_prob as _gbm_upcross_prob
+from ..utils.barriers import (
+    get_pip_size as _get_pip_size,
 )
-
+from ..utils.barriers import (
+    normalize_trade_direction,
+)
+from ..utils.barriers import (
+    resolve_barrier_prices as _resolve_barrier_prices,
+)
+from ..utils.utils import parse_kv_or_json as _parse_kv_or_json
 from .barriers_shared import (
     _auto_barrier_method,
     _binomial_se,
@@ -31,9 +28,18 @@ from .barriers_shared import (
     _resolve_reference_prices,
     _scale_price_paths_to_reference,
 )
+from .common import fetch_history as _fetch_history
+from .common import log_returns_from_prices as _log_returns_from_prices
+from .monte_carlo import gbm_single_barrier_upcross_prob as _gbm_upcross_prob
+from .monte_carlo import simulate_bootstrap_mc as _simulate_bootstrap_mc
+from .monte_carlo import simulate_garch_mc as _simulate_garch_mc
+from .monte_carlo import simulate_gbm_mc as _simulate_gbm_mc
+from .monte_carlo import simulate_heston_mc as _simulate_heston_mc
+from .monte_carlo import simulate_hmm_mc as _simulate_hmm_mc
+from .monte_carlo import simulate_jump_diffusion_mc as _simulate_jump_diffusion_mc
 
 
-def forecast_barrier_hit_probabilities(
+def forecast_barrier_hit_probabilities(  # noqa: C901
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
     horizon: int = 12,

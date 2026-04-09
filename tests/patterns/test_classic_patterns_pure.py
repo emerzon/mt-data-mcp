@@ -4,11 +4,11 @@ import pandas as pd
 import pytest
 
 from mtdata.patterns.classic import (
-    detect_classic_patterns,
     ClassicDetectorConfig,
     ClassicPatternResult,
+    _postprocess_classic_results,
+    detect_classic_patterns,
 )
-from mtdata.patterns.classic import _postprocess_classic_results
 from mtdata.patterns.classic_impl.continuation import detect_flags_pennants
 from mtdata.patterns.classic_impl.shapes import detect_rectangles
 from mtdata.patterns.classic_impl.utils import _find_recent_breakout

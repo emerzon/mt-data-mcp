@@ -1,10 +1,21 @@
-import numpy as np
 from typing import Dict, List, Optional
+
+import numpy as np
+
 from .config import ClassicDetectorConfig, ClassicPatternResult
 from .utils import (
-    _detect_pivots_close, _fit_lines_and_arrays, _find_recent_breakout, _find_forward_level_breakout, _tol_abs_from_close,
-    _level_close, _conf, _result, _alias, _apply_breakout_confidence_bonus
+    _alias,
+    _apply_breakout_confidence_bonus,
+    _conf,
+    _detect_pivots_close,
+    _find_forward_level_breakout,
+    _find_recent_breakout,
+    _fit_lines_and_arrays,
+    _level_close,
+    _result,
+    _tol_abs_from_close,
 )
+
 
 def detect_flags_pennants(
     c: np.ndarray,

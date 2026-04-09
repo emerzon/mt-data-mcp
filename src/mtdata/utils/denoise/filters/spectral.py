@@ -1,7 +1,8 @@
 """Spectral/frequency domain filters: FFT, Butterworth."""
 from typing import Any, Dict, Optional
-import pandas as pd
+
 import numpy as np
+import pandas as pd
 
 try:
     from scipy.signal import butter as _butter
@@ -10,7 +11,7 @@ try:
 except Exception:
     _butter = _filtfilt = _lfilter = None  # type: ignore
 
-from ..base import register_filter, _series_like
+from ..base import _series_like, register_filter
 
 
 @register_filter('lowpass_fft')

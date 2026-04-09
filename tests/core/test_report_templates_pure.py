@@ -10,23 +10,23 @@ Every test is deterministic – no MT5, no network, no side effects.
 """
 
 import math
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
 
+from mtdata.core.report import _report_error_payload, _report_error_text
 from mtdata.core.report_templates.basic import (
-    _safe_float,
-    _ema,
-    _compute_tr,
-    _linreg_slope_r2,
-    _percentile_rank,
     _compute_compact_trend,
-    _parse_value,
-    _parse_table_data,
-    _parse_formatted_output,
+    _compute_tr,
+    _ema,
     _get_raw_result,
+    _linreg_slope_r2,
+    _parse_formatted_output,
+    _parse_table_data,
+    _parse_value,
+    _percentile_rank,
+    _safe_float,
 )
-from mtdata.core.report import _report_error_text, _report_error_payload
-
 
 # ---------------------------------------------------------------------------
 # Synthetic candle helpers

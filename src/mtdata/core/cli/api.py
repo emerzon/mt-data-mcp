@@ -11,15 +11,51 @@ import json
 import os
 import sys
 import types
-from typing import get_origin, get_args, Optional, Dict, Any, List, Tuple, Literal, Union, is_typeddict
+from typing import (
+    Any,
+    Dict,
+    List,
+    Literal,
+    Optional,
+    Tuple,
+    Union,
+    get_args,
+    get_origin,
+    is_typeddict,
+)
+
 from pydantic import BaseModel
-from ..config import load_environment
 
 from ...bootstrap.tools import bootstrap_tools
 from ...forecast.requests import ForecastGenerateRequest
 from ...utils.minimal_output import format_result_minimal as _shared_minimal
 from .._mcp_instance import mcp
-from .._mcp_tools import _get_pydantic_model_fields, get_tool_registry as get_registered_tools
+from .._mcp_tools import _get_pydantic_model_fields
+from .._mcp_tools import get_tool_registry as get_registered_tools
+from ..cli_discovery import (
+    add_dynamic_arguments as _add_dynamic_arguments_impl,
+)
+from ..cli_discovery import (
+    apply_schema_overrides as _apply_schema_overrides_impl,
+)
+from ..cli_discovery import (
+    discover_tools as _discover_tools_impl,
+)
+from ..cli_discovery import (
+    extract_function_from_tool_obj as _extract_function_from_tool_obj_impl,
+)
+from ..cli_discovery import (
+    extract_metadata_from_tool_obj as _extract_metadata_from_tool_obj_impl,
+)
+from ..cli_discovery import (
+    get_function_info as _get_function_info_impl,
+)
+from ..cli_discovery import (
+    resolve_param_kwargs as _resolve_param_kwargs_impl,
+)
+from ..cli_discovery import (
+    should_expose_cli_param as _should_expose_cli_param_impl,
+)
 from ..cli_formatting import (
     CLI_FORMAT_JSON,
     CLI_FORMAT_TOON,
@@ -34,24 +70,25 @@ from ..cli_formatting import (
     _safe_tz_name,
     _sanitize_json_compat,
 )
-from ..cli_discovery import (
-    add_dynamic_arguments as _add_dynamic_arguments_impl,
-    apply_schema_overrides as _apply_schema_overrides_impl,
-    discover_tools as _discover_tools_impl,
-    extract_function_from_tool_obj as _extract_function_from_tool_obj_impl,
-    extract_metadata_from_tool_obj as _extract_metadata_from_tool_obj_impl,
-    get_function_info as _get_function_info_impl,
-    resolve_param_kwargs as _resolve_param_kwargs_impl,
-    should_expose_cli_param as _should_expose_cli_param_impl,
-)
 from ..cli_runtime import (
     coerce_cli_scalar as _coerce_cli_scalar_impl,
+)
+from ..cli_runtime import (
     create_command_function as _create_command_function_impl,
+)
+from ..cli_runtime import (
     merge_dict as _merge_dict_impl,
+)
+from ..cli_runtime import (
     normalize_cli_list_value as _normalize_cli_list_value_impl,
+)
+from ..cli_runtime import (
     parse_kv_string as _parse_kv_string_impl,
+)
+from ..cli_runtime import (
     parse_set_overrides as _parse_set_overrides_impl,
 )
+from ..config import load_environment
 from .runtime import (
     _argparse_color_enabled,
     _configure_cli_logging,
@@ -88,9 +125,11 @@ def _invoke_cli_tool_function(func: Any, *, args: Any, cmd_name: str, kwargs: Di
     with _suppress_cli_side_output(enabled=bool(getattr(args, "json", False))):
         return func(**kwargs)
 
-from ..unified_params import add_global_args_to_parser
+from ..schema import PARAM_HINTS as _PARAM_HINTS
+from ..schema import enrich_schema_with_shared_defs
+from ..schema import get_function_info as _schema_get_function_info
 from ..server_utils import get_mcp_registry
-from ..schema import enrich_schema_with_shared_defs, get_function_info as _schema_get_function_info, PARAM_HINTS as _PARAM_HINTS
+from ..unified_params import add_global_args_to_parser
 
 # Types for discovered metadata
 ToolInfo = Dict[str, Any]
@@ -222,10 +261,10 @@ def _apply_global_cli_overrides(args: Any, argv: List[str]) -> Any:
     if not isinstance(command, str) or not command:
         return args
     command = command.replace("-", "_")
-    setattr(args, "command", command)
+    args.command = command
     global_timeframe = getattr(args, "_global_timeframe", None)
     if global_timeframe is not None and not _argv_option_present_after_command(argv, command, "--timeframe"):
-        setattr(args, "timeframe", global_timeframe)
+        args.timeframe = global_timeframe
     if command == "trade_history":
         history_days = getattr(args, "_trade_history_days", None)
         if history_days is not None and not (
@@ -233,9 +272,9 @@ def _apply_global_cli_overrides(args: Any, argv: List[str]) -> Any:
             or _argv_option_present_after_command(argv, command, "--minutes_back")
         ):
             try:
-                setattr(args, "minutes_back", int(round(float(history_days) * 1440.0)))
+                args.minutes_back = int(round(float(history_days) * 1440.0))
             except Exception:
-                setattr(args, "minutes_back", history_days)
+                args.minutes_back = history_days
     return args
 
 

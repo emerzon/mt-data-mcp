@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import logging
-from uuid import uuid4
 from typing import Any, Dict, Optional
+from uuid import uuid4
 
 
 def new_request_id() -> str:

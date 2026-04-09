@@ -11,8 +11,8 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pandas as pd
 import pytest
-from mtdata.core.patterns_requests import PatternsDetectRequest
 
+from mtdata.core.patterns_requests import PatternsDetectRequest
 
 # ---------------------------------------------------------------------------
 # Helpers to build mock data
@@ -149,7 +149,10 @@ class TestParseEngineList:
 class TestPatternStatusHelpers:
 
     def test_visible_pattern_rows_and_counts_share_status_normalization(self):
-        from mtdata.core.patterns_support import _count_patterns_with_status, _visible_pattern_rows
+        from mtdata.core.patterns_support import (
+            _count_patterns_with_status,
+            _visible_pattern_rows,
+        )
 
         rows = [
             {"status": " forming "},
@@ -972,7 +975,10 @@ class TestAvailableClassicEngines:
 class TestRegisterClassicEngine:
 
     def test_registers(self):
-        from mtdata.core.patterns import _register_classic_engine, _CLASSIC_ENGINE_REGISTRY
+        from mtdata.core.patterns import (
+            _CLASSIC_ENGINE_REGISTRY,
+            _register_classic_engine,
+        )
         @_register_classic_engine("__test_engine__")
         def dummy(symbol, df, cfg, config):
             return [], None
@@ -1006,7 +1012,10 @@ class TestRunClassicEngine:
 class TestLoadStockPatternUtils:
 
     def _call(self, config=None):
-        from mtdata.core.patterns import _load_stock_pattern_utils, _STOCK_PATTERN_UTILS_CACHE
+        from mtdata.core.patterns import (
+            _STOCK_PATTERN_UTILS_CACHE,
+            _load_stock_pattern_utils,
+        )
         _STOCK_PATTERN_UTILS_CACHE.clear()
         return _load_stock_pattern_utils(config)
 
@@ -1037,7 +1046,10 @@ class TestLoadStockPatternUtils:
 
     @patch("importlib.import_module")
     def test_concurrent_calls_import_once(self, mock_import):
-        from mtdata.core.patterns import _load_stock_pattern_utils, _STOCK_PATTERN_UTILS_CACHE
+        from mtdata.core.patterns import (
+            _STOCK_PATTERN_UTILS_CACHE,
+            _load_stock_pattern_utils,
+        )
 
         _STOCK_PATTERN_UTILS_CACHE.clear()
         try:

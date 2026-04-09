@@ -9,7 +9,8 @@ from sklearn.mixture import GaussianMixture
 from sklearn.preprocessing import StandardScaler
 
 from ..utils.utils import to_float_np
-from .common import PatternResultBase, interval_overlap_ratio as _interval_overlap_ratio
+from .common import PatternResultBase
+from .common import interval_overlap_ratio as _interval_overlap_ratio
 
 
 @dataclass

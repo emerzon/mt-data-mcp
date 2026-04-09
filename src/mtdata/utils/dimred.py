@@ -29,16 +29,18 @@ except Exception:
     _SKPCA = None
 
 try:  # scikit-learn TruncatedSVD, KernelPCA, SparsePCA
-    from sklearn.decomposition import TruncatedSVD as _SKSVD  # type: ignore
-    from sklearn.decomposition import SparsePCA as _SKSparsePCA  # type: ignore
     from sklearn.decomposition import KernelPCA as _SKKPCA  # type: ignore
+    from sklearn.decomposition import SparsePCA as _SKSparsePCA  # type: ignore
+    from sklearn.decomposition import TruncatedSVD as _SKSVD  # type: ignore
 except Exception:
     _SKSVD = None
     _SKSparsePCA = None
     _SKKPCA = None
 
 try:  # scikit-learn Linear Discriminant Analysis (supervised)
-    from sklearn.discriminant_analysis import LinearDiscriminantAnalysis as _SKLDA  # type: ignore
+    from sklearn.discriminant_analysis import (
+        LinearDiscriminantAnalysis as _SKLDA,  # type: ignore
+    )
 except Exception:
     _SKLDA = None
 
@@ -367,7 +369,9 @@ class DreamsCNEReducer(DimReducer):
         if self.regularizer and reg_emb is None:
             try:
                 # Use PCA with n_components matching embedding size
-                from sklearn.decomposition import PCA as _SKPCA_local  # local import to avoid hard dep if unused
+                from sklearn.decomposition import (
+                    PCA as _SKPCA_local,  # local import to avoid hard dep if unused
+                )
                 pca = _SKPCA_local(n_components=self.n_components)
                 reg_emb = pca.fit_transform(X)
                 if reg_emb.shape[1] >= 1:

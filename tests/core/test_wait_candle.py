@@ -4,7 +4,11 @@ import pytest
 
 from mtdata.core.data.requests import WaitCandleRequest
 from mtdata.core.trading import time
-from mtdata.core.trading.time import _next_candle_close_server_time, _next_candle_wait_payload, _sleep_until_next_candle
+from mtdata.core.trading.time import (
+    _next_candle_close_server_time,
+    _next_candle_wait_payload,
+    _sleep_until_next_candle,
+)
 
 
 @pytest.fixture()

@@ -5,10 +5,16 @@ This module delegates to utils.indicators to avoid duplicate discovery logic.
 from typing import Any, Dict, List
 
 from ..utils.indicators import (
-    list_ta_indicators as _list_ta_indicators,
-    clean_help_text as _clean_help_text_impl,
-    infer_defaults_from_doc as _infer_defaults_impl,
     _try_number as _try_number_impl,
+)
+from ..utils.indicators import (
+    clean_help_text as _clean_help_text_impl,
+)
+from ..utils.indicators import (
+    infer_defaults_from_doc as _infer_defaults_impl,
+)
+from ..utils.indicators import (
+    list_ta_indicators as _list_ta_indicators,
 )
 
 

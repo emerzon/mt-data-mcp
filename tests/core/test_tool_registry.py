@@ -2,7 +2,6 @@
 
 from mtdata.bootstrap.tools import bootstrap_tools, mcp
 
-
 EXPECTED_TOOL_NAMES = frozenset(
     {
         "causal_discover_signals",

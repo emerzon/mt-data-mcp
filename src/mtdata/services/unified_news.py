@@ -11,8 +11,18 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import IntEnum
 from time import monotonic
-from typing import Any, Collection, Dict, Iterable, List, Optional, Protocol, runtime_checkable
+from typing import (
+    Any,
+    Collection,
+    Dict,
+    Iterable,
+    List,
+    Optional,
+    Protocol,
+    runtime_checkable,
+)
 
+from ..utils.mt5 import get_symbol_info_cached
 from .finviz import (
     get_crypto_performance,
     get_economic_calendar,
@@ -23,7 +33,6 @@ from .finviz import (
 )
 from .news_embeddings import get_news_embedding_service
 from .news_service import get_mt5_news
-from ..utils.mt5 import get_symbol_info_cached
 
 logger = logging.getLogger(__name__)
 
@@ -624,7 +633,7 @@ def _import_ycnbc() -> tuple[Any, Optional[Any]]:
     return YCNBCNews, stocks_util
 
 
-def _classify_instrument(symbol: str) -> InstrumentContext:
+def _classify_instrument(symbol: str) -> InstrumentContext:  # noqa: C901
     symbol_norm = _normalize_symbol(symbol)
     if not symbol_norm:
         raise ValueError("symbol is required")

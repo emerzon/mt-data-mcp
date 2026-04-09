@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from bisect import bisect_left, bisect_right
-from datetime import datetime, timedelta, timezone
 import math
 import re
 import statistics
+from bisect import bisect_left, bisect_right
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional
 
+from ...utils.mt5 import _mt5_epoch_to_utc, _to_server_naive_dt
+from ..trading.time import _next_candle_wait_payload, _sleep_until_next_candle
 from .requests import (
     CandleCloseEventSpec,
     OrderCancelledEventSpec,
@@ -20,8 +22,8 @@ from .requests import (
     PriceEnterZoneEventSpec,
     PriceTouchLevelEventSpec,
     RangeExpansionEventSpec,
-    SpreadSpikeEventSpec,
     SlHitEventSpec,
+    SpreadSpikeEventSpec,
     StopThreatEventSpec,
     TickCountDroughtEventSpec,
     TickCountSpikeEventSpec,
@@ -30,8 +32,6 @@ from .requests import (
     WaitEventRequest,
     WaitEventWindow,
 )
-from ..trading.time import _next_candle_wait_payload, _sleep_until_next_candle
-from ...utils.mt5 import _mt5_epoch_to_utc, _to_server_naive_dt
 
 _MARKET_BOOTSTRAP_MIN_SECONDS = 60.0
 _MARKET_BOOTSTRAP_MAX_SECONDS = 14400.0
@@ -976,7 +976,7 @@ def _refresh_market_state(
     return market_state
 
 
-def _evaluate_watch_events(
+def _evaluate_watch_events(  # noqa: C901
     *,
     watch_for: List[Dict[str, Any]],
     snapshot: Dict[str, Any],

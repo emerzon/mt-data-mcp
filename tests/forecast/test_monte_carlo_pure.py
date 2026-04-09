@@ -1,27 +1,27 @@
 """Tests for forecast/monte_carlo.py — pure NumPy simulation functions."""
-from typing import get_args, get_origin, get_type_hints
-from types import ModuleType, SimpleNamespace
 import sys
+import warnings
+from types import ModuleType, SimpleNamespace
+from typing import get_args, get_origin, get_type_hints
 
 import numpy as np
 import pytest
-import warnings
 
 from mtdata.forecast.monte_carlo import (
     _normalize_probability_vector,
     _normalize_transition_matrix,
     _safe_log,
-    fit_gaussian_mixture_1d,
     estimate_transition_matrix_from_gamma,
-    simulate_markov_chain,
-    simulate_gbm_mc,
-    simulate_hmm_mc,
-    simulate_heston_mc,
-    simulate_jump_diffusion_mc,
-    simulate_garch_mc,
-    simulate_bootstrap_mc,
-    summarize_paths,
+    fit_gaussian_mixture_1d,
     gbm_single_barrier_upcross_prob,
+    simulate_bootstrap_mc,
+    simulate_garch_mc,
+    simulate_gbm_mc,
+    simulate_heston_mc,
+    simulate_hmm_mc,
+    simulate_jump_diffusion_mc,
+    simulate_markov_chain,
+    summarize_paths,
 )
 
 

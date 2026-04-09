@@ -4,7 +4,14 @@ import json
 import re
 from typing import Annotated, Any, Dict, List, Literal, Optional, Union
 
-from pydantic import AfterValidator, BaseModel, BeforeValidator, Field, field_validator, model_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    BeforeValidator,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 from ..schema import DenoiseSpec, IndicatorSpec, SimplifySpec, TimeframeLiteral
 

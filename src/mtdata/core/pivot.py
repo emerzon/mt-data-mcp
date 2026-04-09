@@ -1,20 +1,13 @@
 
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Literal, Optional
 import logging
 import math
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Literal, Optional
 
-from .execution_logging import run_logged_operation
-from .mt5_gateway import get_mt5_gateway
-from .schema import TimeframeLiteral, _PIVOT_METHODS
-from .constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
-from ..shared.validators import invalid_timeframe_error, unsupported_timeframe_seconds_error
 from ..forecast.common import fetch_history as _fetch_history
-from ..utils.support_resistance import (
-    compact_support_resistance_payload,
-    compute_support_resistance_levels,
-    get_auto_support_resistance_timeframes,
-    merge_support_resistance_results,
+from ..shared.validators import (
+    invalid_timeframe_error,
+    unsupported_timeframe_seconds_error,
 )
 from ..utils.mt5 import (
     MT5ConnectionError,
@@ -24,8 +17,22 @@ from ..utils.mt5 import (
     ensure_mt5_connection_or_raise,
     mt5,
 )
-from ..utils.utils import _format_time_minimal, _format_time_minimal_local, _use_client_tz
+from ..utils.support_resistance import (
+    compact_support_resistance_payload,
+    compute_support_resistance_levels,
+    get_auto_support_resistance_timeframes,
+    merge_support_resistance_results,
+)
+from ..utils.utils import (
+    _format_time_minimal,
+    _format_time_minimal_local,
+    _use_client_tz,
+)
 from ._mcp_instance import mcp
+from .constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
+from .execution_logging import run_logged_operation
+from .mt5_gateway import get_mt5_gateway
+from .schema import _PIVOT_METHODS, TimeframeLiteral
 
 logger = logging.getLogger(__name__)
 
@@ -109,7 +116,7 @@ def compute_support_resistance_payload(
 
 
 @mcp.tool()
-def pivot_compute_points(
+def pivot_compute_points(  # noqa: C901
     symbol: str,
     timeframe: TimeframeLiteral = "D1",
 ) -> Dict[str, Any]:
@@ -118,7 +125,7 @@ def pivot_compute_points(
 
     Returns JSON with shared source data plus levels for every supported pivot method.
     """
-    def _run() -> Dict[str, Any]:
+    def _run() -> Dict[str, Any]:  # noqa: C901
         try:
             mt5 = get_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise)
             mt5.ensure_connection()

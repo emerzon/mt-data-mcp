@@ -6,7 +6,20 @@ to per-tool parameter schemas.
 """
 import inspect
 import types
-from typing import Dict, Any, Optional, List, Tuple, Literal, Union, get_type_hints, get_origin, get_args, is_typeddict
+from typing import (
+    Any,
+    Dict,
+    List,
+    Literal,
+    Optional,
+    Tuple,
+    Union,
+    get_args,
+    get_origin,
+    get_type_hints,
+    is_typeddict,
+)
+
 from typing_extensions import TypedDict
 
 try:
@@ -15,7 +28,6 @@ except Exception:  # pragma: no cover - Python 3.14+ should provide this
     annotationlib = None
 
 from .constants import TIMEFRAME_MAP
-
 
 PARAM_HINTS = {
     "direction": "Trade direction (long/short).",
@@ -616,7 +628,7 @@ def _is_typed_dict_type(type_hint: Any) -> bool:
     )
 
 
-def _type_hint_to_schema(type_hint: Any) -> Dict[str, Any]:
+def _type_hint_to_schema(type_hint: Any) -> Dict[str, Any]:  # noqa: C901
     """Convert a Python type hint to a minimal JSON Schema fragment."""
     if type_hint is None:
         return {"type": "string"}

@@ -2,7 +2,7 @@
 
 import sys
 import types
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pandas as pd
@@ -37,15 +37,15 @@ _mt5_mock.TIMEFRAME_H12 = 16396; _mt5_mock.TIMEFRAME_D1 = 16408
 _mt5_mock.TIMEFRAME_W1 = 32769; _mt5_mock.TIMEFRAME_MN1 = 49153
 sys.modules["MetaTrader5"] = _mt5_mock
 
+from mtdata.forecast.interface import ForecastResult
 from mtdata.forecast.methods.neural import (
-    forecast_neural,
+    NBEATSXMethod,
     NeuralForecastMethod,
     NHITSMethod,
-    NBEATSXMethod,
-    TFTMethod,
     PatchTSTMethod,
+    TFTMethod,
+    forecast_neural,
 )
-from mtdata.forecast.interface import ForecastResult
 
 
 @pytest.fixture(autouse=True, scope="module")

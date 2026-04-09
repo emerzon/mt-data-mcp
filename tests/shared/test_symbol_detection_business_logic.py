@@ -1,8 +1,14 @@
 from __future__ import annotations
 
-from mtdata.core.regime.crypto import _is_probably_crypto_symbol as regime_is_crypto_symbol
-from mtdata.forecast.barriers_shared import _is_crypto_symbol as barrier_is_crypto_symbol
-from mtdata.patterns.common import _is_probably_crypto_symbol as pattern_is_crypto_symbol
+from mtdata.core.regime.crypto import (
+    _is_probably_crypto_symbol as regime_is_crypto_symbol,
+)
+from mtdata.forecast.barriers_shared import (
+    _is_crypto_symbol as barrier_is_crypto_symbol,
+)
+from mtdata.patterns.common import (
+    _is_probably_crypto_symbol as pattern_is_crypto_symbol,
+)
 from mtdata.shared.symbols import CRYPTO_SYMBOL_HINTS, is_probably_crypto_symbol
 
 

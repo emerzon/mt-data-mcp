@@ -1,9 +1,10 @@
 """BOCPD (Bayesian Online Change Point Detection) calibration utilities."""
 from typing import Any, Dict, Tuple
+
 import numpy as np
 
-from ...crypto import _is_probably_crypto_symbol
 from .....shared.constants import TIMEFRAME_SECONDS
+from ...crypto import _is_probably_crypto_symbol
 
 # Empirical BOCPD calibration defaults. Higher volatility, fatter tails, more
 # jump activity, and larger cumulative moves should make the detector react

@@ -2,7 +2,7 @@
 from typing import Any, Dict, List
 
 
-def _consolidate_payload(
+def _consolidate_payload(  # noqa: C901
     payload: Dict[str, Any],
     method: str,
     output_mode: str,
@@ -136,7 +136,7 @@ def _consolidate_payload(
         # For HMM, 'confidence' is avg prob of that state.
 
         final_segments = []
-        for i, seg in enumerate(segments):
+        for _i, seg in enumerate(segments):
             row = {
                 "start": seg["start"],
                 "end": seg["end"],

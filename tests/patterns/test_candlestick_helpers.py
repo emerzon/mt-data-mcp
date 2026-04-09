@@ -4,13 +4,13 @@ import pandas as pd
 import pytest
 
 from mtdata.patterns.candlestick import (
+    _candlestick_span_bars,
+    _candlestick_strength_score,
+    _discover_candlestick_pattern_methods,
+    _extract_candlestick_rows,
+    _is_candlestick_allowed,
     _normalize_candlestick_name,
     _parse_min_strength,
-    _candlestick_strength_score,
-    _is_candlestick_allowed,
-    _extract_candlestick_rows,
-    _discover_candlestick_pattern_methods,
-    _candlestick_span_bars,
 )
 
 

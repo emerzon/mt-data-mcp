@@ -1,14 +1,17 @@
 """Signal decomposition filters: EMD, EEMD, CEEMDAN, VMD, SSA."""
-from typing import Any, Dict, Optional
-import pandas as pd
-import numpy as np
-import math
 import logging
+import math
+from typing import Any, Dict, Optional
+
+import numpy as np
+import pandas as pd
 
 _logger = logging.getLogger(__name__)
 
 try:
-    from PyEMD import EMD as _EMD, EEMD as _EEMD, CEEMDAN as _CEEMDAN
+    from PyEMD import CEEMDAN as _CEEMDAN
+    from PyEMD import EEMD as _EEMD
+    from PyEMD import EMD as _EMD
 except Exception:
     _EMD = _EEMD = _CEEMDAN = None  # type: ignore
 
@@ -17,7 +20,7 @@ try:
 except Exception:
     _VMD = None  # type: ignore
 
-from ..base import register_filter, _series_like
+from ..base import _series_like, register_filter
 
 
 def _ssa_denoise(
@@ -73,7 +76,7 @@ def _denoise_ssa_series(
     return _series_like(s, y)
 
 
-def _vmd_denoise(
+def _vmd_denoise(  # noqa: C901
     x: np.ndarray,
     alpha: float,
     tau: float,

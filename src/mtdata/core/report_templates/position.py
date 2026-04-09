@@ -1,7 +1,8 @@
 from typing import Any, Dict, Optional
+
+from ..report.utils import merge_params
 from ..schema import DenoiseSpec
 from .common import build_report_with_timeframes
-from ..report.utils import merge_params
 
 
 def template_position(

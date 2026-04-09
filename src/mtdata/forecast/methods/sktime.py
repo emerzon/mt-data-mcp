@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, List
 import logging
 import warnings
+from typing import Any, Dict, List, Optional
+
 import numpy as np
 import pandas as pd
 
@@ -37,7 +38,7 @@ class SktimeMethod(ForecastMethod):
     def _get_estimator(self, seasonality: int, params: Dict[str, Any]):
         raise NotImplementedError
 
-    def forecast(
+    def forecast(  # noqa: C901
         self, 
         series: pd.Series, 
         horizon: int, 

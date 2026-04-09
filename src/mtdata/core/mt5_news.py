@@ -9,9 +9,9 @@ stored locally by the MT5 terminal.
 import logging
 from typing import Any, Dict, Optional
 
+from ..services.news_service import get_mt5_news, get_news_categories
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
-from ..services.news_service import get_mt5_news, get_news_categories
 
 logger = logging.getLogger(__name__)
 

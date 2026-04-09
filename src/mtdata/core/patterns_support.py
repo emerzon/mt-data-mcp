@@ -6,7 +6,8 @@ import numpy as np
 import pandas as pd
 
 from ..patterns.common import interval_overlap_ratio as _interval_overlap_ratio
-from ..utils.utils import _format_time_minimal, _safe_float, to_float_np as __to_float_np
+from ..utils.utils import _format_time_minimal, _safe_float
+from ..utils.utils import to_float_np as __to_float_np
 
 _STOCK_PATTERN_CODE_TO_NAME = {
     "TRNG": "Triangle",
@@ -282,7 +283,7 @@ def _summarize_pattern_bias(rows: List[Dict[str, Any]]) -> Optional[Dict[str, An
     return out
 
 
-def _compact_patterns_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+def _compact_patterns_payload(payload: Dict[str, Any]) -> Dict[str, Any]:  # noqa: C901
     if not isinstance(payload, dict) or payload.get("error"):
         return payload
 
@@ -1039,7 +1040,7 @@ def _classic_pattern_height(
     return None
 
 
-def _enrich_classic_pattern_row(
+def _enrich_classic_pattern_row(  # noqa: C901
     row: Dict[str, Any],
     df: pd.DataFrame,
     config: Any = None,

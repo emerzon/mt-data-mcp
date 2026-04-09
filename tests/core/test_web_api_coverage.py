@@ -5,27 +5,26 @@ import json
 import sys
 from datetime import datetime, timezone
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, PropertyMock, patch
 from zoneinfo import ZoneInfo
 
 import pytest
+from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from mtdata.bootstrap.runtime import WebApiRuntimeSettings
 from mtdata.core import web_api
 from mtdata.core.web_api import (
-    _call_tool_raw,
-    _list_sktime_forecasters,
+    BacktestBody,
     ForecastPriceBody,
     ForecastVolBody,
-    BacktestBody,
+    _call_tool_raw,
+    _list_sktime_forecasters,
     app,
 )
 from mtdata.core.web_api_runtime import create_web_api_app, mount_webui
 from mtdata.forecast.exceptions import ForecastError
 from mtdata.utils.mt5 import MT5ConnectionError
-
-from fastapi.testclient import TestClient
 
 _client = TestClient(app)
 
@@ -209,6 +208,7 @@ class TestWebApiRuntimeHelpers:
 class TestWebApiHandlers:
     def test_require_mt5_connection_uses_503_for_mt5_outage(self):
         from fastapi import HTTPException
+
         from mtdata.core import web_api_handlers
 
         gateway = MagicMock()

@@ -111,6 +111,7 @@ def apply_finvizfinance_timeout_patch() -> None:
         return
 
     import requests
+
     from .client import get_finviz_http_timeout
 
     _orig_get = requests.get

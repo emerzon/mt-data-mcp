@@ -1,14 +1,13 @@
-from ..utils.mt5 import mt5
-
 # Import shared constants to avoid duplication
 from ..utils.constants import (
     DISPLAY_MAX_DECIMALS,
-    PRECISION_REL_TOL,
     PRECISION_ABS_TOL,
     PRECISION_MAX_DECIMALS,
+    PRECISION_REL_TOL,
     TIME_DISPLAY_FORMAT,
     TIMEFRAME_SECONDS,
 )
+from ..utils.mt5 import mt5
 
 # Constants (centralize defaults instead of hardcoding inline)
 SERVICE_NAME = "MetaTrader5 Market Data Server"

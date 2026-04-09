@@ -1,8 +1,8 @@
 """CLI formatting utilities."""
 import json
 import math
-from typing import Any, Callable, Dict, List, Optional, Tuple
 from datetime import datetime, timezone
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 CLI_FORMAT_JSON = "json"
 CLI_FORMAT_TOON = "toon"

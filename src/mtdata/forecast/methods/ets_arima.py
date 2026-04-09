@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Tuple, List
 import warnings
+from typing import Any, Dict, List, Optional, Tuple
+
 import numpy as np
 import pandas as pd
 
@@ -9,7 +10,8 @@ from ..interface import ForecastMethod, ForecastResult
 from ..registry import ForecastRegistry
 
 try:
-    from statsmodels.tsa.holtwinters import SimpleExpSmoothing as _SES, ExponentialSmoothing as _ETS  # type: ignore
+    from statsmodels.tsa.holtwinters import ExponentialSmoothing as _ETS
+    from statsmodels.tsa.holtwinters import SimpleExpSmoothing as _SES  # type: ignore
     _SM_ETS_AVAILABLE = True
 except Exception:
     _SM_ETS_AVAILABLE = False

@@ -1,8 +1,8 @@
 """Finviz service implementation."""
-import logging
 import datetime
-from typing import Any, Dict, List, Optional, Literal
 import importlib
+import logging
+from typing import Any, Dict, List, Literal, Optional
 
 from .client import (
     get_finviz_http_timeout,

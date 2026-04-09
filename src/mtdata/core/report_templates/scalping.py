@@ -1,8 +1,9 @@
 from typing import Any, Dict, Optional
+
+from ...utils.barriers import get_pip_size as _get_pip_size
+from ..report.utils import market_snapshot, merge_params
 from ..schema import DenoiseSpec
 from .common import build_report_with_market
-from ..report.utils import merge_params, market_snapshot
-from ...utils.barriers import get_pip_size as _get_pip_size
 
 
 def template_scalping(

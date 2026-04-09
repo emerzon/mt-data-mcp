@@ -6,16 +6,17 @@ Targets: _is_crypto_symbol, _auto_barrier_method, _brownian_bridge_hits,
 """
 
 import math
+
 import numpy as np
 import pandas as pd
 import pytest
 
 from mtdata.forecast.barriers import (
-    _is_crypto_symbol,
+    BARRIER_GRID_PRESETS,
     _auto_barrier_method,
     _brownian_bridge_hits,
+    _is_crypto_symbol,
     _normalize_trade_direction,
-    BARRIER_GRID_PRESETS,
 )
 
 

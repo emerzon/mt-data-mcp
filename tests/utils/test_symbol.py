@@ -1,5 +1,6 @@
 """Tests for src/mtdata/utils/symbol.py"""
 from types import SimpleNamespace
+
 from mtdata.utils.symbol import _extract_group_path
 
 

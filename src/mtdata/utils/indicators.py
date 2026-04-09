@@ -1,9 +1,10 @@
-from typing import Any, Dict, List, Optional, Tuple
-
 import inspect
 import pydoc
 import re
+from typing import Any, Dict, List, Optional, Tuple
+
 import pandas as pd
+
 try:
     import pandas_ta as pta  # preferred module name
 except ModuleNotFoundError:  # fallback for alternate distribution import
@@ -337,7 +338,7 @@ def _resolve_indicator_series_inputs(
     return resolved
 
 
-def _apply_ta_indicators(df: pd.DataFrame, ti_spec: str) -> List[str]:
+def _apply_ta_indicators(df: pd.DataFrame, ti_spec: str) -> List[str]:  # noqa: C901
     """Apply indicators specified by ti_spec to df in-place, return list of added column names."""
     added_cols: List[str] = []
     if not ti_spec:

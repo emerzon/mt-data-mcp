@@ -1,5 +1,6 @@
 from datetime import timedelta, tzinfo
 from types import SimpleNamespace
+
 from mtdata.core import config as cfg
 
 

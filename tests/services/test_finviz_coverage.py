@@ -1,14 +1,13 @@
 """Tests for mtdata.services.finviz with mocked HTTP."""
 
 import datetime
-from unittest.mock import patch, MagicMock, PropertyMock
+from unittest.mock import MagicMock, PropertyMock, patch
 
 import pandas as pd
 import pytest
 
 from mtdata.services import finviz as svc
 from mtdata.services.finviz import dates as finviz_dates
-
 
 # ---------------------------------------------------------------------------
 # helpers

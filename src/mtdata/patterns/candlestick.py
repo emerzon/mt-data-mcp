@@ -1,11 +1,12 @@
-from datetime import datetime, timezone
 import logging
+import warnings
+from datetime import datetime, timezone
 from threading import Lock
 from typing import Any, Dict, List, Optional, Tuple
-import warnings
 
 import numpy as np
 import pandas as pd
+
 from ..core.patterns_support import (
     _config_bool,
     _config_float,
@@ -15,17 +16,17 @@ from ..core.patterns_support import (
     _round_value,
     _volume_window_mean,
 )
-from .common import data_quality_warnings
 from ..shared.constants import TIMEFRAME_SECONDS
 from ..shared.validators import invalid_timeframe_error
 from ..utils.utils import (
-    _table_from_rows,
     _format_time_minimal_local,
-    _use_client_tz,
-    _time_format_from_epochs,
     _maybe_strip_year,
     _style_time_format,
+    _table_from_rows,
+    _time_format_from_epochs,
+    _use_client_tz,
 )
+from .common import data_quality_warnings
 
 logger = logging.getLogger(__name__)
 ta: Any = None
@@ -181,7 +182,11 @@ def _ensure_candlestick_runtime() -> None:
         if _mt5_copy_rates_from is None or _rates_to_df is None or _symbol_ready_guard is None:
             from ..utils.mt5 import (
                 _mt5_copy_rates_from as copy_rates_from,
+            )
+            from ..utils.mt5 import (
                 _rates_to_df as rates_to_df,
+            )
+            from ..utils.mt5 import (
                 _symbol_ready_guard as symbol_ready_guard,
             )
 
@@ -387,7 +392,7 @@ def _is_candlestick_allowed(
     return True
 
 
-def detect_candlestick_patterns(
+def detect_candlestick_patterns(  # noqa: C901
     *,
     symbol: str,
     timeframe: str,

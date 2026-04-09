@@ -1,7 +1,7 @@
 """CLI parsing utilities."""
-from typing import Any, Dict, List, Optional, Tuple, get_args, get_origin
+from typing import Any, Dict, List, Optional, Tuple, get_args, get_origin, is_typeddict
+
 from pydantic import BaseModel
-from typing import is_typeddict
 
 
 def _is_pydantic_model_type(value: Any) -> bool:

@@ -1,7 +1,7 @@
-from datetime import datetime, timezone
 import math
-from typing import Any, Dict, List, Optional, Tuple, Set
+from datetime import datetime, timezone
 from numbers import Number
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import dateparser
 import numpy as np
@@ -15,9 +15,13 @@ from .constants import (
     TIME_DISPLAY_FORMAT,
 )
 from .formatting import (
-    format_number,
-    optimal_decimals as _optimal_decimals_shared,
     format_float as _format_float_shared,
+)
+from .formatting import (
+    format_number,
+)
+from .formatting import (
+    optimal_decimals as _optimal_decimals_shared,
 )
 
 

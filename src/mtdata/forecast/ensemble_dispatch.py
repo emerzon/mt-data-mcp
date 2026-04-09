@@ -11,7 +11,7 @@ FAILURE_DETAIL_LIMIT = 12
 
 def clear_dispatch_error(dispatch_method: Any) -> None:
     try:
-        setattr(dispatch_method, "_last_error", None)
+        dispatch_method._last_error = None
     except Exception:
         pass
 
@@ -30,7 +30,7 @@ def consume_dispatch_error(dispatch_method: Any, *, method_name: str) -> Optiona
     except Exception:
         return None
     try:
-        setattr(dispatch_method, "_last_error", None)
+        dispatch_method._last_error = None
     except Exception:
         pass
     if not isinstance(error, dict):

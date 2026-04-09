@@ -1,45 +1,51 @@
 """Regime detection implementation."""
-from typing import Any, Dict, List, Literal, Optional
 import logging
 import time
+from typing import Any, Dict, List, Literal, Optional
+
 import numpy as np
 
-from .._mcp_instance import mcp
-from ..execution_logging import infer_result_success, log_operation_finish, log_operation_start
-from ..mt5_gateway import get_mt5_gateway, mt5_connection_error
-from ..schema import TimeframeLiteral, DenoiseSpec
-from ..features import extract_rolling_features
-from .. import features as _features_module
-from ...forecast.common import fetch_history as _fetch_history, log_returns_from_prices as _log_returns_from_prices
-from ...utils.utils import _format_time_minimal
+from ...forecast.common import fetch_history as _fetch_history
+from ...forecast.common import log_returns_from_prices as _log_returns_from_prices
 from ...utils.denoise import _resolve_denoise_base_col
 from ...utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise
-
-# Import from package submodules directly to avoid circular imports
-from .smoothing import (
-    _count_state_transitions,
-    _state_runs,
-    _smooth_short_state_runs,
-    _normalize_state_probability_matrix,
+from ...utils.utils import _format_time_minimal
+from .. import features as _features_module
+from .._mcp_instance import mcp
+from ..execution_logging import (
+    infer_result_success,
+    log_operation_finish,
+    log_operation_start,
 )
+from ..features import extract_rolling_features
+from ..mt5_gateway import get_mt5_gateway, mt5_connection_error
+from ..schema import DenoiseSpec, TimeframeLiteral
 from .crypto import (
-    _is_probably_crypto_symbol,
     _CRYPTO_SYMBOL_HINTS,
+    _is_probably_crypto_symbol,
 )
+from .methods.bocpd import (
+    _auto_calibrate_bocpd_params,
+    _bocpd_reliability_score,
+    _default_bocpd_cp_threshold,
+    _default_bocpd_hazard_lambda,
+    _filter_bocpd_change_points,
+    _walkforward_quantile_threshold_calibration,
+)
+from .methods.hmm import _hmm_reliability_from_gamma
+from .methods.ms_ar import _ms_ar_reliability_from_smoothed
 from .payload import (
     _consolidate_payload,
     _summary_only_payload,
 )
-from .methods.bocpd import (
-    _default_bocpd_hazard_lambda,
-    _default_bocpd_cp_threshold,
-    _auto_calibrate_bocpd_params,
-    _bocpd_reliability_score,
-    _walkforward_quantile_threshold_calibration,
-    _filter_bocpd_change_points,
+
+# Import from package submodules directly to avoid circular imports
+from .smoothing import (
+    _count_state_transitions,
+    _normalize_state_probability_matrix,
+    _smooth_short_state_runs,
+    _state_runs,
 )
-from .methods.hmm import _hmm_reliability_from_gamma
-from .methods.ms_ar import _ms_ar_reliability_from_smoothed
 
 logger = logging.getLogger(__name__)
 
@@ -151,7 +157,7 @@ def _apply_state_output_mode(
 
 
 @mcp.tool()
-def regime_detect(
+def regime_detect(  # noqa: C901
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
     limit: int = 800,
@@ -480,7 +486,9 @@ def regime_detect(
 
         elif method == 'ms_ar':
             try:
-                from statsmodels.tsa.regime_switching.markov_regression import MarkovRegression  # type: ignore
+                from statsmodels.tsa.regime_switching.markov_regression import (
+                    MarkovRegression,  # type: ignore
+                )
             except Exception:
                 return _finish({"error": "statsmodels MarkovRegression not available. Install statsmodels."})
             k_regimes, _ = _coerce_param(p, 'k_regimes', default=2, cast=int)
@@ -628,7 +636,9 @@ def regime_detect(
                 kmeans_cls = globals().get("KMeans")
                 pca_cls = globals().get("PCA")
                 if standard_scaler_cls is None:
-                    from sklearn.preprocessing import StandardScaler as standard_scaler_cls
+                    from sklearn.preprocessing import (
+                        StandardScaler as standard_scaler_cls,
+                    )
                 if kmeans_cls is None:
                     from sklearn.cluster import KMeans as kmeans_cls
                 if pca_cls is None:

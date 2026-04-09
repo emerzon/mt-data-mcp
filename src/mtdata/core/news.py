@@ -5,9 +5,9 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Optional
 
+from ..services.unified_news import fetch_unified_news
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
-from ..services.unified_news import fetch_unified_news
 
 logger = logging.getLogger(__name__)
 

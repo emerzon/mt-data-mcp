@@ -1,16 +1,14 @@
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional, List, Literal, Tuple
 import logging
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
 import numpy as np
 import pandas as pd
 
-from ._mcp_instance import mcp
-from .execution_logging import run_logged_operation
-from .mt5_gateway import get_mt5_gateway
-from .schema import TimeframeLiteral
-from .constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
-from ..shared.validators import invalid_timeframe_error, unsupported_timeframe_seconds_error
+from ..shared.validators import (
+    invalid_timeframe_error,
+    unsupported_timeframe_seconds_error,
+)
 from ..utils.mt5 import (
     MT5ConnectionError,
     _mt5_copy_rates_from,
@@ -22,12 +20,17 @@ from ..utils.mt5 import (
     mt5,
 )
 from ..utils.utils import (
-    _parse_start_datetime,
     _format_time_minimal,
     _format_time_minimal_local,
+    _parse_start_datetime,
     _resolve_client_tz,
     _safe_float,
 )
+from ._mcp_instance import mcp
+from .constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
+from .execution_logging import run_logged_operation
+from .mt5_gateway import get_mt5_gateway
+from .schema import TimeframeLiteral
 
 logger = logging.getLogger(__name__)
 
@@ -280,7 +283,7 @@ def _fetch_rates(
 
 
 @mcp.tool()
-def temporal_analyze(
+def temporal_analyze(  # noqa: C901
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
     limit: int = 1000,
@@ -304,7 +307,7 @@ def temporal_analyze(
     Returns grouped averages for returns and volatility plus simple extras.
     Use group_by='all' for a single overall summary.
     """
-    def _run() -> Dict[str, Any]:
+    def _run() -> Dict[str, Any]:  # noqa: C901
         context: Dict[str, Any] = {
             "symbol": symbol,
             "timeframe": timeframe,

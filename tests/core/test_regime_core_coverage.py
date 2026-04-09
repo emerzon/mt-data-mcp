@@ -3,12 +3,13 @@
 Covers lines 90-102, 175-178, 223-487 by mocking MT5, data_service, and
 regime utility calls.
 """
+from unittest.mock import MagicMock, patch
+
 import numpy as np
 import pandas as pd
 import pytest
-from mtdata.core import regime as regime_mod
-from unittest.mock import patch, MagicMock
 
+from mtdata.core import regime as regime_mod
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -35,7 +36,11 @@ def _time_fmt_stub(epoch):
 # _consolidate_payload tests
 # ---------------------------------------------------------------------------
 
-from mtdata.core.regime import _consolidate_payload, _smooth_short_state_runs, _summary_only_payload
+from mtdata.core.regime import (
+    _consolidate_payload,
+    _smooth_short_state_runs,
+    _summary_only_payload,
+)
 
 
 class TestConsolidatePayloadBOCPD:

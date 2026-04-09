@@ -1,19 +1,11 @@
 
-from typing import Any, Dict, Optional, Literal, List
 import logging
 import math
 import time
+from typing import Any, Dict, List, Literal, Optional
 
-from ..utils.utils import _table_from_rows, _normalize_limit
-from ..utils.utils import _format_time_minimal
-from ..utils.symbol import _extract_group_path as _extract_group_path_util
-from ..utils.mt5_enums import decode_mt5_enum_label, decode_mt5_bitmask_labels
 from ..shared.schema import TimeframeLiteral
 from ..shared.validators import invalid_timeframe_error
-from ._mcp_instance import mcp
-from .execution_logging import run_logged_operation
-from .mt5_gateway import get_mt5_gateway
-from .constants import GROUP_SEARCH_THRESHOLD, DEFAULT_ROW_LIMIT, TIMEFRAME_MAP
 from ..utils.mt5 import (
     MT5ConnectionError,
     _mt5_copy_rates_from_pos,
@@ -21,6 +13,13 @@ from ..utils.mt5 import (
     ensure_mt5_connection_or_raise,
     mt5,
 )
+from ..utils.mt5_enums import decode_mt5_bitmask_labels, decode_mt5_enum_label
+from ..utils.symbol import _extract_group_path as _extract_group_path_util
+from ..utils.utils import _format_time_minimal, _normalize_limit, _table_from_rows
+from ._mcp_instance import mcp
+from .constants import DEFAULT_ROW_LIMIT, GROUP_SEARCH_THRESHOLD, TIMEFRAME_MAP
+from .execution_logging import run_logged_operation
+from .mt5_gateway import get_mt5_gateway
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +69,7 @@ _SYMBOL_DESCRIBE_FIELDS: tuple[str, ...] = (
 
 
 @mcp.tool()
-def symbols_list(
+def symbols_list(  # noqa: C901
     search_term: Optional[str] = None,
     limit: Optional[int] = DEFAULT_ROW_LIMIT,
     list_mode: Literal["symbols", "groups"] = "symbols",  # type: ignore
@@ -435,7 +434,7 @@ def _market_scan_table(headers: List[str], rows: List[Dict[str, Any]]) -> Dict[s
 
 
 @mcp.tool()
-def symbols_top_markets(
+def symbols_top_markets(  # noqa: C901
     rank_by: Literal["all", "spread", "volume", "price_change"] = "all",  # type: ignore
     limit: Optional[int] = 10,
     universe: Literal["visible", "all"] = "visible",  # type: ignore
@@ -449,7 +448,7 @@ def symbols_top_markets(
     price-change rankings use the most recent completed bar on `timeframe`.
     """
 
-    def _run() -> Dict[str, Any]:
+    def _run() -> Dict[str, Any]:  # noqa: C901
         try:
             rank_by_value = str(rank_by or "all").strip().lower()
             if rank_by_value not in {"all", "spread", "volume", "price_change"}:

@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
+import stumpy as _stumpy
 from scipy.signal import correlate
 from scipy.spatial import cKDTree
-import stumpy as _stumpy
 
 try:
     import hnswlib as _HNSW  # type: ignore
@@ -16,16 +16,20 @@ except Exception:
     _HNSW = None  # optional ANN backend
 
 # Dimensionality reduction abstraction
-from .dimred import create_reducer as _create_reducer, DimReducer as _DimReducer
-
 # Reuse existing MT5 helpers and denoise utilities
 from ..shared.constants import TIMEFRAME_MAP
-from .mt5 import _mt5_copy_rates_from, _rates_to_df
 from .denoise import (
     _denoise_series as _apply_denoise_series,
+)
+from .denoise import (
     get_denoise_methods_data as _get_denoise_methods_data,
+)
+from .denoise import (
     normalize_denoise_spec as _normalize_denoise_spec,
 )
+from .dimred import DimReducer as _DimReducer
+from .dimred import create_reducer as _create_reducer
+from .mt5 import _mt5_copy_rates_from, _rates_to_df
 from .utils import align_finite
 
 
@@ -685,7 +689,7 @@ def build_index(
         # If reducer requires n_components, ensure it does not exceed window length
         try:
             if hasattr(reducer, "n_components"):
-                nc = int(getattr(reducer, "n_components"))
+                nc = int(reducer.n_components)
                 if nc > int(X.shape[1]):
                     # Recreate reducer with clipped components
                     effective_dimred_params["n_components"] = int(X.shape[1])

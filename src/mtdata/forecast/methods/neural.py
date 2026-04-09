@@ -5,7 +5,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from ..common import edge_pad_to_length as _edge_pad_to_length, nf_setup_and_predict as _nf_setup_and_predict  # type: ignore
+from ..common import edge_pad_to_length as _edge_pad_to_length  # type: ignore
+from ..common import nf_setup_and_predict as _nf_setup_and_predict
 from ..interface import ForecastMethod, ForecastResult
 from ..registry import ForecastRegistry
 
@@ -29,7 +30,10 @@ def forecast_neural(
     Returns (forecast_values, params_used).
     """
     try:
-        from neuralforecast.models import NHITS as _NF_NHITS, NBEATSx as _NF_NBEATSX, TFT as _NF_TFT, PatchTST as _NF_PATCHTST  # type: ignore
+        from neuralforecast.models import NHITS as _NF_NHITS  # type: ignore
+        from neuralforecast.models import TFT as _NF_TFT
+        from neuralforecast.models import NBEATSx as _NF_NBEATSX
+        from neuralforecast.models import PatchTST as _NF_PATCHTST
     except Exception as ex:
         raise RuntimeError(f"Failed to import neuralforecast models: {ex}")
 

@@ -1,11 +1,13 @@
 """Tests for src/mtdata/utils/formatting.py"""
 import math
+
 import pytest
+
 from mtdata.utils.formatting import (
     _adaptive_decimals,
     format_float,
-    optimal_decimals,
     format_number,
+    optimal_decimals,
 )
 
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import random
+
 import pytest
 
 from mtdata.forecast import tune

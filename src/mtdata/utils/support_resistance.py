@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import math
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import numpy as np
@@ -981,7 +981,7 @@ def _cluster_has_same_event_signature(
     return False
 
 
-def merge_support_resistance_results(
+def merge_support_resistance_results(  # noqa: C901
     results: List[Dict[str, Any]],
     *,
     symbol: Optional[str] = None,

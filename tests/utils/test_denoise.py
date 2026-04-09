@@ -1,9 +1,9 @@
 import sys
 from pathlib import Path
 
-import pytest
-import pandas as pd
 import numpy as np
+import pandas as pd
+import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "src"

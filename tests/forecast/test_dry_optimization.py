@@ -6,10 +6,11 @@ This script validates that the refactored code produces the same results
 as the original code while being more maintainable.
 """
 
+import inspect
 import os
 import sys
+
 import numpy as np
-import inspect
 
 # Add the src directory to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
@@ -55,10 +56,10 @@ def test_helper_functions():
     print("Testing DRY helper functions...")
     
     from mtdata.forecast.methods.pretrained_helpers import (
-        extract_context_window,
-        validate_and_clean_data,
         adjust_forecast_length,
-        process_quantile_levels
+        extract_context_window,
+        process_quantile_levels,
+        validate_and_clean_data,
     )
     
     # Test extract_context_window
@@ -169,10 +170,10 @@ def test_end_to_end():
     print("Running end-to-end test...")
     
     from mtdata.forecast.methods.pretrained_helpers import (
+        build_params_used,
         extract_context_window,
-        validate_and_clean_data,
         process_quantile_levels,
-        build_params_used
+        validate_and_clean_data,
     )
     
     # Simulate a forecasting workflow

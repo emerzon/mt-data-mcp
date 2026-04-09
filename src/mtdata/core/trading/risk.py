@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import logging
 
+from ...utils.mt5 import ensure_mt5_connection_or_raise, mt5_adapter
 from .._mcp_instance import mcp
 from ..execution_logging import run_logged_operation
 from .gateway import create_trading_gateway
 from .requests import TradeRiskAnalyzeRequest
 from .use_cases import run_trade_risk_analyze
-from ...utils.mt5 import ensure_mt5_connection_or_raise, mt5_adapter
 
 logger = logging.getLogger(__name__)
 

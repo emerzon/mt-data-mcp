@@ -1,35 +1,48 @@
-from dataclasses import dataclass
-from typing import Any, Dict, Optional, List, Literal, Tuple, Set
 import math
 import traceback
 import warnings
+from dataclasses import dataclass
+from typing import Any, Dict, List, Literal, Optional, Set, Tuple
+
 import numpy as np
-from ..shared.schema import TimeframeLiteral, DenoiseSpec
+
 from ..shared.constants import TIMEFRAME_SECONDS
-from .common import fetch_history as _fetch_history, log_returns_from_prices as _log_returns_from_prices
-from ..utils.utils import _parse_bool_like, _UNPARSED_BOOL, parse_kv_or_json as _parse_kv_or_json
+from ..shared.schema import DenoiseSpec, TimeframeLiteral
 from ..utils.barriers import (
     get_pip_size as _get_pip_size,
+)
+from ..utils.barriers import (
     normalize_trade_direction,
 )
-from .monte_carlo import (
-    simulate_gbm_mc as _simulate_gbm_mc, 
-    simulate_hmm_mc as _simulate_hmm_mc, 
-    simulate_garch_mc as _simulate_garch_mc,
-    simulate_bootstrap_mc as _simulate_bootstrap_mc,
-    simulate_heston_mc as _simulate_heston_mc,
-    simulate_jump_diffusion_mc as _simulate_jump_diffusion_mc,
+from ..utils.utils import _UNPARSED_BOOL, _parse_bool_like
+from ..utils.utils import parse_kv_or_json as _parse_kv_or_json
+from .barrier_stats import (
+    bootstrap_metric_uncertainty as _bootstrap_uncertainty,
 )
-
+from .barrier_stats import (
+    cross_seed_stability as _cross_seed_stability,
+)
+from .barrier_stats import (
+    mc_convergence_diagnostic as _mc_convergence,
+)
+from .barrier_stats import (
+    minimum_simulations_for_ci_width as _min_sims_for_ci,
+)
+from .barrier_stats import (
+    sensitivity_analysis_single_parameter as _sensitivity_analysis,
+)
+from .barrier_stats import (
+    statistical_power_analysis as _power_analysis,
+)
 from .barriers_shared import (
     BARRIER_GRID_PRESETS,
     DEGENERATE_OBJECTIVE_MIN_RESOLVE,
-    _build_actionability_payload,
     _annotate_candidate_metrics,
     _auto_barrier_method,
     _binomial_se,
     _binomial_wilson_95,
     _brownian_bridge_hits,
+    _build_actionability_payload,
     _build_selection_diagnostics,
     _candidate_is_viable,
     _candidate_status_reason,
@@ -40,15 +53,26 @@ from .barriers_shared import (
     _scale_price_paths_to_reference,
     _sort_candidate_results,
 )
-from .barrier_stats import (
-    minimum_simulations_for_ci_width as _min_sims_for_ci,
-    mc_convergence_diagnostic as _mc_convergence,
-    cross_seed_stability as _cross_seed_stability,
-    bootstrap_metric_uncertainty as _bootstrap_uncertainty,
-    sensitivity_analysis_single_parameter as _sensitivity_analysis,
-    statistical_power_analysis as _power_analysis,
+from .common import fetch_history as _fetch_history
+from .common import log_returns_from_prices as _log_returns_from_prices
+from .monte_carlo import (
+    simulate_bootstrap_mc as _simulate_bootstrap_mc,
 )
-
+from .monte_carlo import (
+    simulate_garch_mc as _simulate_garch_mc,
+)
+from .monte_carlo import (
+    simulate_gbm_mc as _simulate_gbm_mc,
+)
+from .monte_carlo import (
+    simulate_heston_mc as _simulate_heston_mc,
+)
+from .monte_carlo import (
+    simulate_hmm_mc as _simulate_hmm_mc,
+)
+from .monte_carlo import (
+    simulate_jump_diffusion_mc as _simulate_jump_diffusion_mc,
+)
 
 _BARRIER_SEARCH_PROFILE_DEFAULTS: Dict[str, Dict[str, Any]] = {
     "fast": {
@@ -553,7 +577,7 @@ def _select_barrier_candidate_views(
     }
 
 
-def forecast_barrier_optimize(
+def forecast_barrier_optimize(  # noqa: C901
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
     horizon: int = 12,
@@ -1932,7 +1956,9 @@ def forecast_barrier_optimize(
             try:
                 import optuna
                 try:
-                    from optuna.exceptions import ExperimentalWarning as _OptunaExperimentalWarning
+                    from optuna.exceptions import (
+                        ExperimentalWarning as _OptunaExperimentalWarning,
+                    )
                 except Exception:
                     _OptunaExperimentalWarning = Warning
             except Exception as ex:

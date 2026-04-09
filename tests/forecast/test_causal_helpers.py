@@ -4,10 +4,10 @@ import pandas as pd
 import pytest
 
 from mtdata.core.causal import (
-    _parse_symbols,
-    _transform_frame,
-    _standardize_frame,
     _format_summary,
+    _parse_symbols,
+    _standardize_frame,
+    _transform_frame,
 )
 
 

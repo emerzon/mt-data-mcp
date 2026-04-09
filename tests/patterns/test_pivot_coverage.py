@@ -3,12 +3,12 @@
 Covers lines 25-273 by mocking MT5 calls and _symbol_ready_guard.
 """
 import math
-import numpy as np
-import pytest
-from unittest.mock import patch, MagicMock, PropertyMock
 from contextlib import contextmanager
 from typing import Any, Dict
+from unittest.mock import MagicMock, PropertyMock, patch
 
+import numpy as np
+import pytest
 
 # ---------------------------------------------------------------------------
 # Helpers

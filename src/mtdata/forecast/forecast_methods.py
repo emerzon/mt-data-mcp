@@ -6,9 +6,14 @@ from typing import Any, Dict, List, Optional
 
 from .forecast_registry import (
     DEFAULT_METHOD_SUPPORTS as _DEFAULT_METHOD_SUPPORTS,
+)
+from .forecast_registry import (
     _find_method_definition as _registry_find_method_definition,
+)
+from .forecast_registry import (
     get_forecast_methods_data as _registry_methods_data,
 )
+
 
 def get_forecast_methods_data() -> Dict[str, Any]:
     """Get comprehensive data about available forecast methods."""

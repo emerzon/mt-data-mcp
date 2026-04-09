@@ -4,11 +4,11 @@ Forecast method registry and metadata management.
 Centralizes method definitions, requirements, and availability checking.
 """
 
-from typing import Any, Dict, List, Tuple
-from functools import lru_cache
 import importlib as _importlib
 import importlib.util as _importlib_util
 import sys
+from functools import lru_cache
+from typing import Any, Dict, List, Tuple
 
 from .registry import ForecastRegistry
 

@@ -1,11 +1,22 @@
-import numpy as np
 from typing import List
+
+import numpy as np
+
 from .config import ClassicDetectorConfig, ClassicPatternResult
 from .utils import (
-    _fit_line, _fit_line_robust, _tol_abs_from_close, _last_touch_indexes,
-    _count_recent_touches, _result, _alias, _fit_lines_and_arrays,
-    _is_converging, _count_touches, _conf, _find_recent_breakout,
+    _alias,
     _boundaries_are_ordered,
+    _conf,
+    _count_recent_touches,
+    _count_touches,
+    _find_recent_breakout,
+    _fit_line,
+    _fit_line_robust,
+    _fit_lines_and_arrays,
+    _is_converging,
+    _last_touch_indexes,
+    _result,
+    _tol_abs_from_close,
 )
 
 

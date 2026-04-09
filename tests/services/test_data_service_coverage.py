@@ -4,17 +4,18 @@ Targets ~294 uncovered lines with 50+ tests covering public methods,
 private helpers, data transformation, validation, and error handling.
 """
 
+import os
+import sys
 import unittest
-from unittest.mock import patch, MagicMock
 from contextlib import contextmanager
-from typing import Any, Iterator, Tuple
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
+from typing import Any, Iterator, Tuple
+from unittest.mock import MagicMock, patch
 from zoneinfo import ZoneInfo
-import sys
-import os
 
 import numpy as np
+
 # Ensure src is importable
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
 
@@ -25,8 +26,8 @@ sys.modules['MetaTrader5'] = _mt5_mock
 import pandas as pd  # noqa: E402
 
 from mtdata.services.data_service import (  # noqa: E402
-    _fetch_rates_with_warmup,
     _build_rates_df,
+    _fetch_rates_with_warmup,
     _shift_rate_times,
     _trim_df_to_target,
     fetch_candles,

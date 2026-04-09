@@ -1,13 +1,17 @@
-from contextlib import contextmanager
 import logging
+from contextlib import contextmanager
+from types import SimpleNamespace
+
 import numpy as np
 import pandas as pd
 import pytest
-from types import SimpleNamespace
 
+import src.mtdata.core.patterns_support as patterns_support_mod
+import src.mtdata.patterns.candlestick as candlestick_mod
+import src.mtdata.patterns.classic as classic_mod
 from src.mtdata.core import patterns as core_patterns
-from src.mtdata.core.patterns_requests import PatternsDetectRequest
 from src.mtdata.core.patterns import _apply_config_to_obj, _build_pattern_response
+from src.mtdata.core.patterns_requests import PatternsDetectRequest
 from src.mtdata.patterns.candlestick import (
     _extract_candlestick_rows,
     _get_candlestick_pattern_methods,
@@ -17,13 +21,10 @@ from src.mtdata.patterns.candlestick import (
 from src.mtdata.patterns.classic import (
     ClassicDetectorConfig,
     ClassicPatternResult,
-    _fit_lines_and_arrays,
     _count_recent_touches,
+    _fit_lines_and_arrays,
     detect_classic_patterns,
 )
-import src.mtdata.patterns.candlestick as candlestick_mod
-import src.mtdata.patterns.classic as classic_mod
-import src.mtdata.core.patterns_support as patterns_support_mod
 from src.mtdata.utils.mt5 import MT5ConnectionError
 
 

@@ -9,17 +9,22 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from mtdata.forecast.backtest import (
+    _bars_per_year,
+    _compute_performance_metrics,
+)
+
 # ---------------------------------------------------------------------------
 # Imports under test
 # ---------------------------------------------------------------------------
 from mtdata.forecast.common import (
+    _create_training_dataframes,
+    _extract_forecast_values,
+    _normalize_weights,
     build_ci_diagnostics,
+    default_seasonality,
     edge_pad_to_length,
     log_returns_from_prices,
-    _normalize_weights,
-    _extract_forecast_values,
-    _create_training_dataframes,
-    default_seasonality,
     next_times_from_last,
     pd_freq_from_timeframe,
 )
@@ -27,19 +32,15 @@ from mtdata.forecast.forecast_engine import (
     _calculate_lookback_bars,
     _format_forecast_output,
 )
-from mtdata.forecast.backtest import (
-    _bars_per_year,
-    _compute_performance_metrics,
-)
-from mtdata.utils.utils import _format_time_minimal
 from mtdata.forecast.forecast_preprocessing import (
-    _prepare_base_data,
-    _process_include_specification,
     _collect_indicator_columns,
+    _create_dow_features,
     _create_fourier_features,
     _create_hour_features,
-    _create_dow_features,
+    _prepare_base_data,
+    _process_include_specification,
 )
+from mtdata.utils.utils import _format_time_minimal
 
 RS = np.random.RandomState(42)
 

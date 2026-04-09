@@ -1,15 +1,20 @@
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, List, Optional, Tuple
 import inspect
 import math
+from typing import Any, Callable, Dict, List, Optional, Tuple
+
 import numpy as np
 import pandas as pd
 
 from ..common import _normalize_weights as _normalize_weights_default
 from ..ensemble_dispatch import (
     append_failure as _append_failure,
+)
+from ..ensemble_dispatch import (
     build_dispatch_error as _build_dispatch_error,
+)
+from ..ensemble_dispatch import (
     dispatch_callback_with_error as _dispatch_callback_with_error,
 )
 from ..interface import ForecastCallContext, ForecastMethod, ForecastResult
@@ -219,7 +224,7 @@ class EnsembleMethod(ForecastMethod):
         call_kwargs_out["get_available_methods"] = _forecast_engine._get_available_methods
         return dict(params), call_kwargs_out
 
-    def forecast(
+    def forecast(  # noqa: C901
         self,
         series: pd.Series,
         horizon: int,

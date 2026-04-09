@@ -1,6 +1,5 @@
-from typing import Any, Optional, Tuple, Literal, Dict
-
 import math
+from typing import Any, Dict, Literal, Optional, Tuple
 
 from .mt5 import get_symbol_info_cached
 from .utils import _coerce_finite_float

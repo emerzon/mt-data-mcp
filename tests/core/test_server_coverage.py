@@ -7,10 +7,9 @@ import os
 import sys
 import types
 from typing import Optional, Union
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Helpers under test are importable without triggering full server bootstrap
@@ -79,7 +78,10 @@ class TestMcpRuntimeSettings:
         assert settings.host == "0.0.0.0"
 
     def test_apply_to_mcp_settings(self):
-        from mtdata.bootstrap.runtime import McpRuntimeSettings, apply_mcp_runtime_settings
+        from mtdata.bootstrap.runtime import (
+            McpRuntimeSettings,
+            apply_mcp_runtime_settings,
+        )
 
         mcp = MagicMock()
         mcp.settings = MagicMock()
@@ -627,7 +629,11 @@ class TestToolRegistries:
         mock_bootstrap.assert_called_once()
 
     def test_registries_are_copies(self):
-        from mtdata.core.server import get_tool_registry, get_tool_functions, _TOOL_REGISTRY
+        from mtdata.core.server import (
+            _TOOL_REGISTRY,
+            get_tool_functions,
+            get_tool_registry,
+        )
         r1 = get_tool_registry()
         r2 = get_tool_functions()
         # Mutating returned dict should not affect internal state
@@ -641,8 +647,8 @@ class TestToolRegistries:
 class TestRecordingToolDecorator:
 
     def test_noop_fallback_when_no_orig(self):
-        from mtdata.core.server import _recording_tool_decorator, _TOOL_REGISTRY
         import mtdata.core.server as srv
+        from mtdata.core.server import _TOOL_REGISTRY, _recording_tool_decorator
         orig = srv._ORIG_TOOL_DECORATOR
         try:
             srv._ORIG_TOOL_DECORATOR = None
@@ -764,6 +770,7 @@ class TestRecordingToolDecorator:
 
     def test_async_wrapped_timeout_returns_structured_error_payload(self):
         import asyncio
+
         import mtdata.core.server as srv
 
         original = srv._ORIG_TOOL_DECORATOR
@@ -775,7 +782,7 @@ class TestRecordingToolDecorator:
                 return {"success": True}
 
             wrapped = dec(slow_tool)
-            async_wrapped = getattr(wrapped, "_mcp_async_wrapper")
+            async_wrapped = wrapped._mcp_async_wrapper
 
             async def _raise_timeout(coro, timeout):
                 if hasattr(coro, "close"):
@@ -794,8 +801,8 @@ class TestRecordingToolDecorator:
 
     def test_flattens_request_model_signature_for_mcp_and_keeps_nested_request_compat(self):
         import mtdata.core.server as srv
-        from mtdata.core.data.requests import WaitEventRequest
         from mtdata.core._mcp_tools import _TOOL_REGISTRY
+        from mtdata.core.data.requests import WaitEventRequest
 
         original = srv._ORIG_TOOL_DECORATOR
         calls = []

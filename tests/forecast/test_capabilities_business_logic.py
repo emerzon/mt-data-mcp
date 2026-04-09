@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from types import ModuleType
 import sys
+from types import ModuleType
 
 import mtdata.forecast.capabilities as caps
 

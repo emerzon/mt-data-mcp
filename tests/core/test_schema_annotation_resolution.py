@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import get_args, get_origin
+
 from typing_extensions import TypedDict
 
 from mtdata.core import cli

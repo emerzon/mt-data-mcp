@@ -2,11 +2,10 @@ from __future__ import annotations
 
 """Options market-data service helpers."""
 
-from typing import Any, Dict, List, Optional
 import datetime as _dt
+from typing import Any, Dict, List, Optional
 
 import requests
-
 
 _YAHOO_OPTIONS_URL = "https://query2.finance.yahoo.com/v7/finance/options/{symbol}"
 _HTTP_TIMEOUT = 15.0

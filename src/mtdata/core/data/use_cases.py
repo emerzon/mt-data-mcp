@@ -5,17 +5,17 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Dict
 
+from ...shared.result import Err, Ok, Result, to_dict
+from ..execution_logging import run_logged_operation
 from ..mt5_gateway import mt5_connection_error
+from ..trading.time import _next_candle_wait_payload, _sleep_until_next_candle
 from .requests import (
     DataFetchCandlesRequest,
     DataFetchTicksRequest,
     WaitCandleRequest,
     WaitEventRequest,
 )
-from ..execution_logging import run_logged_operation
-from ..trading.time import _next_candle_wait_payload, _sleep_until_next_candle
 from .wait_events import run_wait_event_loop
-from ...shared.result import Ok, Err, Result, to_dict
 
 logger = logging.getLogger(__name__)
 

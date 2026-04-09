@@ -2,7 +2,7 @@
 
 import math
 import time as _stdlib_time
-from typing import Optional, Union, List, Dict, Any, TypedDict
+from typing import Any, Dict, List, Optional, TypedDict, Union
 
 from . import comments, common, time, validation
 from .execution import _modify_position
@@ -261,7 +261,7 @@ def _attach_comment_response_metadata(
             warnings_out.append(fallback_warning)
 
 
-def _place_market_order(
+def _place_market_order(  # noqa: C901
     symbol: str,
     volume: float,
     order_type: MarketOrderTypeInput,
@@ -276,7 +276,7 @@ def _place_market_order(
     if connection_error is not None:
         return connection_error
 
-    def _place_market_order():
+    def _place_market_order():  # noqa: C901
         try:
             order_context, order_context_error = _prepare_order_symbol_context(
                 mt5,

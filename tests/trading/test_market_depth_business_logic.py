@@ -7,8 +7,8 @@ from unittest.mock import patch
 import pytest
 
 import mtdata.core.market_depth as market_depth_mod
-from mtdata.core.market_depth import market_depth_fetch, market_ticker
 from mtdata.core._mcp_tools import get_tool_functions
+from mtdata.core.market_depth import market_depth_fetch, market_ticker
 from mtdata.utils.mt5 import MT5ConnectionError
 
 

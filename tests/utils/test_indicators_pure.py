@@ -9,66 +9,64 @@ Covers:
 
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Literal, Union
-from typing_extensions import TypedDict
+from typing import Any, Dict, List, Literal, Optional, Union
 
 import numpy as np
 import pandas as pd
 import pytest
+from typing_extensions import TypedDict
+
+from mtdata.core.schema import (
+    _DENOISE_METHODS,
+    _PIVOT_METHODS,
+    _SIMPLIFY_METHODS,
+    _SIMPLIFY_MODES,
+    PARAM_HINTS,
+    _allow_null,
+    _ensure_defs,
+    _is_typed_dict_type,
+    _load_indicator_doc_choices,
+    _parameters_obj,
+    _type_hint_to_schema,
+    apply_param_hints,
+    apply_timeframe_ref,
+    build_minimal_schema,
+    complex_defs,
+    enrich_schema_with_shared_defs,
+    get_function_info,
+    get_shared_enum_lists,
+    shared_defs,
+)
 
 # ---------------------------------------------------------------------------
 # Module imports
 # ---------------------------------------------------------------------------
 from mtdata.utils.indicators import (
-    clean_help_text,
-    _try_number,
-    _parse_ti_number,
-    infer_defaults_from_doc,
-    _find_unknown_ta_indicators,
-    _parse_ti_specs,
     _estimate_warmup_bars,
+    _find_unknown_ta_indicators,
+    _parse_ti_number,
+    _parse_ti_specs,
+    _try_number,
+    clean_help_text,
+    infer_defaults_from_doc,
 )
-
 from mtdata.utils.utils import (
     _coerce_scalar,
-    _normalize_ohlcv_arg,
-    _normalize_limit,
-    _table_from_rows,
-    _format_time_minimal,
-    _style_time_format,
-    parse_kv_or_json,
     _format_float,
     _format_numeric_rows_from_df,
-    to_float_np,
-    align_finite,
-    _parse_start_datetime,
-    _utc_epoch_seconds,
-    _time_format_from_epochs,
+    _format_time_minimal,
     _maybe_strip_year,
+    _normalize_limit,
+    _normalize_ohlcv_arg,
+    _parse_start_datetime,
+    _style_time_format,
+    _table_from_rows,
+    _time_format_from_epochs,
+    _utc_epoch_seconds,
+    align_finite,
+    parse_kv_or_json,
+    to_float_np,
 )
-
-from mtdata.core.schema import (
-    shared_defs,
-    complex_defs,
-    _ensure_defs,
-    _load_indicator_doc_choices,
-    apply_param_hints,
-    _parameters_obj,
-    apply_timeframe_ref,
-    _allow_null,
-    _type_hint_to_schema,
-    build_minimal_schema,
-    enrich_schema_with_shared_defs,
-    get_shared_enum_lists,
-    get_function_info,
-    _is_typed_dict_type,
-    PARAM_HINTS,
-    _DENOISE_METHODS,
-    _SIMPLIFY_MODES,
-    _SIMPLIFY_METHODS,
-    _PIVOT_METHODS,
-)
-
 
 # ---------------------------------------------------------------------------
 # Helpers

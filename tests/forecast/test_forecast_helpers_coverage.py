@@ -1,6 +1,8 @@
 """Tests for common forecast helper utilities."""
 from mtdata.forecast.common import (
     default_seasonality as default_seasonality_period,
+)
+from mtdata.forecast.common import (
     next_times_from_last,
     pd_freq_from_timeframe,
 )

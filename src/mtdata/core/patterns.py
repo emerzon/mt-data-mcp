@@ -1,20 +1,37 @@
-from datetime import datetime, timezone
-import math
-from typing import Any, Callable, Dict, Optional, List, Tuple, Literal
 import copy
 import logging
+import math
+import warnings
+from datetime import datetime, timezone
+from typing import Any, Callable, Dict, List, Literal, Optional, Tuple
+
 import numpy as np
 import pandas as pd
-import warnings
 
+from ..patterns.candlestick import (
+    detect_candlestick_patterns as _detect_candlestick_patterns,
+)
+from ..patterns.classic import ClassicDetectorConfig as _ClassicCfg
+from ..patterns.classic import detect_classic_patterns as _detect_classic_patterns
+from ..patterns.common import data_quality_warnings
+from ..patterns.elliott import ElliottWaveConfig as _ElliottCfg
+from ..patterns.elliott import detect_elliott_waves as _detect_elliott_waves
+from ..shared.validators import invalid_timeframe_error
+from ..utils.denoise import _apply_denoise as _apply_denoise_util
+from ..utils.denoise import normalize_denoise_spec as _normalize_denoise_spec
+from ..utils.mt5 import _mt5_copy_rates_from, ensure_mt5_connection_or_raise, mt5
+from ..utils.utils import _UNPARSED_BOOL, _format_time_minimal, _parse_bool_like
+from ..utils.utils import to_float_np as __to_float_np
+from ._mcp_instance import mcp
 from .constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from .execution_logging import run_logged_operation
 from .mt5_gateway import get_mt5_gateway, mt5_connection_error
+from .patterns_requests import PatternsDetectRequest
 from .patterns_support import (
     _STOCK_PATTERN_UTILS_CACHE,  # noqa: F401
     _build_stock_pattern_frame,
-    _count_patterns_with_status,
     _compact_patterns_payload,
+    _count_patterns_with_status,
     _elliott_completed_preview,
     _elliott_hidden_completed_note,
     _enrich_classic_patterns,
@@ -40,19 +57,7 @@ from .patterns_support import (
     _to_jsonable,
     _visible_pattern_rows,
 )
-from ..utils.utils import _parse_bool_like, _UNPARSED_BOOL
-from ..utils.mt5 import _mt5_copy_rates_from
-from ..utils.utils import _format_time_minimal, to_float_np as __to_float_np
-from ..patterns.candlestick import detect_candlestick_patterns as _detect_candlestick_patterns
-from ..patterns.classic import detect_classic_patterns as _detect_classic_patterns, ClassicDetectorConfig as _ClassicCfg
-from ..patterns.common import data_quality_warnings
-from ..patterns.elliott import detect_elliott_waves as _detect_elliott_waves, ElliottWaveConfig as _ElliottCfg
-from ._mcp_instance import mcp
-from .patterns_requests import PatternsDetectRequest
 from .patterns_use_cases import PatternsDetectDeps, run_patterns_detect
-from ..shared.validators import invalid_timeframe_error
-from ..utils.denoise import _apply_denoise as _apply_denoise_util, normalize_denoise_spec as _normalize_denoise_spec
-from ..utils.mt5 import ensure_mt5_connection_or_raise, mt5
 
 logger = logging.getLogger(__name__)
 

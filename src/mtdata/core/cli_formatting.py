@@ -4,13 +4,16 @@ import types
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from .output_contract import apply_output_verbosity
-from .runtime_metadata import build_runtime_timezone_meta, _safe_tz_name as _runtime_safe_tz_name
 from ..utils.minimal_output import (
-    format_result_minimal as _shared_minimal,
     _is_empty_value,
 )
+from ..utils.minimal_output import (
+    format_result_minimal as _shared_minimal,
+)
 from .mt5_gateway import get_default_mt5_gateway
+from .output_contract import apply_output_verbosity
+from .runtime_metadata import _safe_tz_name as _runtime_safe_tz_name
+from .runtime_metadata import build_runtime_timezone_meta
 
 CLI_FORMAT_TOON = "toon"
 CLI_FORMAT_JSON = "json"

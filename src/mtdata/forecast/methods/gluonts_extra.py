@@ -12,8 +12,8 @@ from ..registry import ForecastRegistry
 
 def _build_list_dataset(series: np.ndarray, freq: str):
     try:
-        from gluonts.dataset.common import ListDataset  # type: ignore
         import pandas as pd  # type: ignore
+        from gluonts.dataset.common import ListDataset  # type: ignore
     except Exception as ex:  # pragma: no cover
         raise RuntimeError(f"gluonts dataset deps missing: {ex}")
 
@@ -150,7 +150,9 @@ def forecast_gt_sfeedforward(
 
     try:
         try:
-            from gluonts.torch.model.simple_feedforward import SimpleFeedForwardEstimator  # type: ignore
+            from gluonts.torch.model.simple_feedforward import (
+                SimpleFeedForwardEstimator,  # type: ignore
+            )
         except Exception:
             from gluonts.torch import SimpleFeedForwardEstimator  # type: ignore
     except Exception as ex:
@@ -262,7 +264,9 @@ def forecast_gt_tft(
 
     try:
         try:
-            from gluonts.torch.model.tft import TemporalFusionTransformerEstimator  # type: ignore
+            from gluonts.torch.model.tft import (
+                TemporalFusionTransformerEstimator,  # type: ignore
+            )
         except Exception:
             from gluonts.torch import TemporalFusionTransformerEstimator  # type: ignore
     except Exception as ex:
@@ -432,13 +436,19 @@ def forecast_gt_mqf2(
 
     try:
         try:
-            from gluonts.torch.model.mqf2.estimator import MQF2Estimator as _MQF2  # type: ignore
+            from gluonts.torch.model.mqf2.estimator import (
+                MQF2Estimator as _MQF2,  # type: ignore
+            )
         except Exception:
             try:
-                from gluonts.torch.model.mqf2 import MQF2Estimator as _MQF2  # type: ignore
+                from gluonts.torch.model.mqf2 import (
+                    MQF2Estimator as _MQF2,  # type: ignore
+                )
             except Exception:
                 # Some releases expose MQF2MultiHorizonEstimator instead
-                from gluonts.torch.model.mqf2.estimator import MQF2MultiHorizonEstimator as _MQF2  # type: ignore
+                from gluonts.torch.model.mqf2.estimator import (
+                    MQF2MultiHorizonEstimator as _MQF2,  # type: ignore
+                )
     except Exception as ex:
         # MQF2 depends on 'cpflows' and a GluonTS build that exposes the estimator.
         return (None, None, {}, "mqf2 requires gluonts[torch] (with MQF2 estimator) and cpflows. "

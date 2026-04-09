@@ -1,10 +1,11 @@
 
-import unittest
 import importlib.util
-import pandas as pd
-import numpy as np
-import sys
 import os
+import sys
+import unittest
+
+import numpy as np
+import pandas as pd
 
 # Add project roots to path for imports
 _ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -13,10 +14,11 @@ for _p in (_SRC, _ROOT):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from mtdata.forecast.registry import ForecastRegistry
-from mtdata.forecast.forecast_engine import forecast_engine
 from mtdata.forecast.forecast import forecast
+from mtdata.forecast.forecast_engine import forecast_engine
 from mtdata.forecast.interface import ForecastResult
+from mtdata.forecast.registry import ForecastRegistry
+
 # Ensure engine is imported to register methods
 
 class TestUnifiedForecast(unittest.TestCase):

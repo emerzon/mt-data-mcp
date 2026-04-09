@@ -1,9 +1,11 @@
 """Target series construction and transformation logic."""
-from typing import Dict, Any, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
+
 import numpy as np
 import pandas as pd
 
-from ..utils.indicators import _parse_ti_specs as _parse_ti_specs_util, _apply_ta_indicators as _apply_ta_indicators_util
+from ..utils.indicators import _apply_ta_indicators as _apply_ta_indicators_util
+from ..utils.indicators import _parse_ti_specs as _parse_ti_specs_util
 
 
 def resolve_alias_base(arrs: Dict[str, np.ndarray], name: str) -> Optional[np.ndarray]:

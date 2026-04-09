@@ -1,13 +1,13 @@
 
 
 import math
-import unittest
-from unittest.mock import patch, MagicMock
-from contextlib import contextmanager
-from typing import Any, Iterator, Tuple
-from datetime import datetime, timedelta, timezone
-import sys
 import os
+import sys
+import unittest
+from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
+from typing import Any, Iterator, Tuple
+from unittest.mock import MagicMock, patch
 
 # Add src to path to ensure local package is found
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
@@ -347,6 +347,7 @@ class TestDataService(unittest.TestCase):
 
     def test_format_candle_times_vectorizes_utc_formatting(self):
         import pandas as pd
+
         from mtdata.services import data_service as data_service_mod
 
         df = pd.DataFrame({
@@ -369,6 +370,7 @@ class TestDataService(unittest.TestCase):
 
     def test_format_candle_times_vectorizes_client_tz_formatting(self):
         import pandas as pd
+
         from mtdata.services import data_service as data_service_mod
 
         df = pd.DataFrame({

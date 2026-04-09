@@ -1,6 +1,7 @@
 from typing import Any, Dict, Optional
+
 from ..schema import DenoiseSpec
-from .basic import template_basic, _get_raw_result
+from .basic import _get_raw_result, template_basic
 
 
 def template_advanced(

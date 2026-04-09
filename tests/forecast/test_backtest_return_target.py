@@ -7,7 +7,6 @@ from unittest.mock import patch
 import numpy as np
 import pandas as pd
 
-
 _ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 _SRC = os.path.join(_ROOT, "src")
 for _p in (_SRC, _ROOT):

@@ -1,14 +1,16 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Tuple, List
+import inspect
 import json
 import logging
 import warnings
+from typing import Any, Dict, List, Optional, Tuple
+
 import numpy as np
 import pandas as pd
-import inspect
 
-from ..common import build_ci_diagnostics as _build_ci_diagnostics, edge_pad_to_length as _edge_pad_to_length
+from ..common import build_ci_diagnostics as _build_ci_diagnostics
+from ..common import edge_pad_to_length as _edge_pad_to_length
 from ..interface import ForecastMethod, ForecastResult
 from ..registry import ForecastRegistry
 

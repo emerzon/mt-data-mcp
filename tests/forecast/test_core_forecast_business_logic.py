@@ -1,16 +1,16 @@
 from __future__ import annotations
 
-from types import ModuleType, SimpleNamespace
 import importlib
 import logging
 import pkgutil
 import sys
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
 from mtdata.core import forecast as cf
-from mtdata.forecast.exceptions import ForecastError
 from mtdata.forecast import use_cases as forecast_use_cases
+from mtdata.forecast.exceptions import ForecastError
 from mtdata.forecast.requests import (
     ForecastBacktestRequest,
     ForecastBarrierOptimizeRequest,
@@ -827,8 +827,8 @@ def test_forecast_options_and_quantlib_tool_routing(monkeypatch):
     raw_price = _unwrap(cf.forecast_quantlib_barrier_price)
     raw_cal = _unwrap(cf.forecast_quantlib_heston_calibrate)
 
-    import mtdata.services.options_service as options_service
     import mtdata.forecast.quantlib_tools as quantlib_tools
+    import mtdata.services.options_service as options_service
 
     monkeypatch.setattr(options_service, "get_options_expirations", lambda **kwargs: {"kind": "exp", **kwargs})
     monkeypatch.setattr(options_service, "get_options_chain", lambda **kwargs: {"kind": "chain", **kwargs})

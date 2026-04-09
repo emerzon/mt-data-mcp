@@ -3,22 +3,22 @@ import pytest
 
 from mtdata.utils.minimal_output import (
     _build_forecast_meta,
-    _is_scalar_value,
-    _is_empty_value,
-    _normalize_market_ticker_payload,
-    _stringify_scalar,
-    _stringify_cell,
     _compact_forecast_ci,
+    _encode_expanded_array,
+    _encode_inline_array,
+    _format_complex_value,
+    _format_to_toon,
+    _is_empty_value,
+    _is_scalar_value,
     _normalize_forecast_payload,
+    _normalize_market_ticker_payload,
     _normalize_trade_payload,
     _normalize_trade_table_payload,
     _normalize_triple_barrier_payload,
-    format_table_toon,
-    _encode_inline_array,
-    _encode_expanded_array,
-    _format_to_toon,
-    _format_complex_value,
+    _stringify_cell,
+    _stringify_scalar,
     format_result_minimal,
+    format_table_toon,
 )
 
 

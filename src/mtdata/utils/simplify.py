@@ -5,8 +5,8 @@ Contains target-point selection utilities and core selection algorithms.
 """
 from typing import Any, Dict, List, Optional, Tuple
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 import ruptures as rpt
 
 try:
@@ -20,9 +20,9 @@ def _get_simplify_defaults() -> Tuple[float, int, int]:
     """Lazy-load simplify defaults from core.constants to avoid circular imports."""
     try:
         from ..shared.constants import (
-            SIMPLIFY_DEFAULT_RATIO,
-            SIMPLIFY_DEFAULT_MIN_POINTS,
             SIMPLIFY_DEFAULT_MAX_POINTS,
+            SIMPLIFY_DEFAULT_MIN_POINTS,
+            SIMPLIFY_DEFAULT_RATIO,
         )
         return (SIMPLIFY_DEFAULT_RATIO, SIMPLIFY_DEFAULT_MIN_POINTS, SIMPLIFY_DEFAULT_MAX_POINTS)
     except ImportError:
@@ -350,7 +350,7 @@ def _apca_autotune_max_error(y: List[float], target_points: int, max_iter: int =
     return idxs, 0.0
 
 
-def _select_indices_for_timeseries(x: List[float], y: List[float], spec: Optional[Dict[str, Any]]) -> Tuple[List[int], str, Dict[str, Any]]:
+def _select_indices_for_timeseries(x: List[float], y: List[float], spec: Optional[Dict[str, Any]]) -> Tuple[List[int], str, Dict[str, Any]]:  # noqa: C901
     """Select representative indices according to simplify spec.
 
     Returns (indices, method_used, params_meta).
@@ -744,7 +744,7 @@ def _simplify_dataframe_rows_ext(
     return _handle_select_mode(df, headers, spec)
 
 
-def _simplify_dataframe_rows(df: pd.DataFrame, headers: List[str], simplify: Optional[Dict[str, Any]]) -> Tuple[pd.DataFrame, Optional[Dict[str, Any]]]:
+def _simplify_dataframe_rows(df: pd.DataFrame, headers: List[str], simplify: Optional[Dict[str, Any]]) -> Tuple[pd.DataFrame, Optional[Dict[str, Any]]]:  # noqa: C901
     """Reduce or transform rows across numeric columns.
 
     Modes (simplify['mode']):

@@ -5,7 +5,7 @@ from __future__ import annotations
 import importlib
 import sys
 import types
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, PropertyMock, patch
 
 import numpy as np
 import pandas as pd
@@ -174,18 +174,17 @@ for name, mod in _NON_TORCH_STUBS.items():
     sys.modules[name] = mod
 
 # Now import the module under test
-from mtdata.forecast.methods.pretrained import (
-    _resolve_chronos_device_map,
-    ChronosBoltMethod,
-    TimesFMMethod,
-    LagLlamaMethod,
-    forecast_chronos_bolt,
-    forecast_timesfm,
-    forecast_lag_llama,
-    PretrainedMethod,
-)
 from mtdata.forecast.interface import ForecastResult
-
+from mtdata.forecast.methods.pretrained import (
+    ChronosBoltMethod,
+    LagLlamaMethod,
+    PretrainedMethod,
+    TimesFMMethod,
+    _resolve_chronos_device_map,
+    forecast_chronos_bolt,
+    forecast_lag_llama,
+    forecast_timesfm,
+)
 
 # ---------------------------------------------------------------------------
 # Per-test fixtures to ensure stubs are present even if other modules

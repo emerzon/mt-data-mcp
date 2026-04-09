@@ -5,11 +5,20 @@ import os
 import time
 from typing import Any, Dict
 
+from ..utils.mt5 import (
+    MT5ConnectionError,
+    _mt5_epoch_to_utc,
+    ensure_mt5_connection_or_raise,
+    mt5,
+)
+from ..utils.utils import (
+    _format_time_minimal,
+    _format_time_minimal_local,
+    _use_client_tz,
+)
+from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
 from .mt5_gateway import get_mt5_gateway
-from ..utils.mt5 import MT5ConnectionError, _mt5_epoch_to_utc, ensure_mt5_connection_or_raise, mt5
-from ..utils.utils import _format_time_minimal, _format_time_minimal_local, _use_client_tz
-from ._mcp_instance import mcp
 
 logger = logging.getLogger(__name__)
 _MARKET_DEPTH_ENABLE_ENV = "MTDATA_ENABLE_MARKET_DEPTH_FETCH"
@@ -66,12 +75,12 @@ def _unregister_market_depth_fetch_tool() -> None:
         pass
 
 
-def _market_depth_fetch_impl(symbol: str, spread: bool = False, compact: bool = False) -> Dict[str, Any]:
+def _market_depth_fetch_impl(symbol: str, spread: bool = False, compact: bool = False) -> Dict[str, Any]:  # noqa: C901
     """Return DOM if available; otherwise current bid/ask snapshot for `symbol`.
 
     Parameters: symbol
     """
-    def _run() -> Dict[str, Any]:
+    def _run() -> Dict[str, Any]:  # noqa: C901
         try:
             mt5_gateway = get_mt5_gateway(
                 adapter=mt5,

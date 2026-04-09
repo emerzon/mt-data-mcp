@@ -3,8 +3,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from ...utils.patterns import build_index
 from ...utils.mt5 import _mt5_epoch_to_utc
+from ...utils.patterns import build_index
 from ..interface import ForecastCallContext, ForecastMethod, ForecastResult
 from ..registry import ForecastRegistry
 
@@ -424,7 +424,7 @@ class AnalogMethod(ForecastMethod):
             unique.append(key)
         return unique
 
-    def _run_single_timeframe(
+    def _run_single_timeframe(  # noqa: C901
         self,
         symbol: str,
         timeframe: str,
@@ -700,7 +700,7 @@ class AnalogMethod(ForecastMethod):
         self._record_timeframe_diagnostic(str(timeframe), diagnostic)
         return futures, meta_list
 
-    def forecast(
+    def forecast(  # noqa: C901
         self,
         series: pd.Series,
         horizon: int,

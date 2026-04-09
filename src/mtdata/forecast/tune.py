@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple
-
 import math
 import random
 import threading
+from typing import Any, Dict, List, Optional, Tuple
 
 from .backtest import forecast_backtest as _forecast_backtest
-
 
 # Sensible default search spaces per method (lightweight, CPU-friendly)
 # These are intentionally conservative to keep runtime practical.
@@ -394,7 +392,7 @@ def _crossover_for_method(
     return child
 
 
-def optuna_search_forecast_params(
+def optuna_search_forecast_params(  # noqa: C901
     *,
     symbol: str,
     timeframe: str,
@@ -403,7 +401,7 @@ def optuna_search_forecast_params(
     horizon: int = 12,
     steps: int = 5,
     spacing: int = 20,
-    search_space: Dict[str, Any] = {},
+    search_space: Optional[Dict[str, Any]] = None,
     metric: Metric = 'avg_rmse',
     mode: str = 'min',
     n_trials: int = 40,
@@ -636,7 +634,7 @@ def optuna_search_forecast_params(
     return payload
 
 
-def genetic_search_forecast_params(
+def genetic_search_forecast_params(  # noqa: C901
     *,
     symbol: str,
     timeframe: str,
@@ -645,7 +643,7 @@ def genetic_search_forecast_params(
     horizon: int = 12,
     steps: int = 5,
     spacing: int = 20,
-    search_space: Dict[str, Any] = {},
+    search_space: Optional[Dict[str, Any]] = None,
     metric: Metric = 'avg_rmse',
     mode: str = 'min',
     population: int = 12,

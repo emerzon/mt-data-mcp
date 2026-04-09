@@ -1,6 +1,6 @@
 """Shared formatting helpers for consistent text output."""
-from typing import Any, List, Optional
 import math
+from typing import Any, List, Optional
 
 from .constants import (
     PRECISION_ABS_TOL,

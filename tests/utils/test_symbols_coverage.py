@@ -2,9 +2,9 @@
 
 Covers lines 20-199 by mocking MT5.
 """
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
+import pytest
 
 # ---------------------------------------------------------------------------
 # Helpers

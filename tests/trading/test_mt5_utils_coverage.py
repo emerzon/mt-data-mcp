@@ -1,10 +1,10 @@
 """Coverage tests for mtdata.utils.mt5 – targeting uncovered lines."""
 
 import sys
-import types
 import time
+import types
 from datetime import datetime, timedelta, timezone
-from unittest.mock import patch, MagicMock, PropertyMock
+from unittest.mock import MagicMock, PropertyMock, patch
 
 import numpy as np
 import pandas as pd
@@ -36,33 +36,33 @@ _mt5_mock.TIMEFRAME_MN1 = 49153
 sys.modules["MetaTrader5"] = _mt5_mock
 
 import mtdata.utils.mt5 as _mt5_mod
+
 _mt5_mod.mt5 = _mt5_mock
 
 from mtdata.utils.mt5 import (
-    get_symbol_info_cached,
-    clear_symbol_info_cache,
-    clear_mt5_time_alignment_cache,
-    _mt5_epoch_to_utc,
-    _rates_to_df,
-    _to_server_naive_dt,
-    _normalize_times_in_struct,
-    _mt5_copy_rates_from,
-    _mt5_copy_rates_range,
-    _mt5_copy_ticks_from,
-    _mt5_copy_rates_from_pos,
-    _mt5_copy_ticks_range,
+    MT5Adapter,
     MT5Connection,
     MT5ConnectionError,
-    MT5Adapter,
     MT5Service,
-    ensure_mt5_connection_or_raise,
     _ensure_symbol_ready,
+    _mt5_copy_rates_from,
+    _mt5_copy_rates_from_pos,
+    _mt5_copy_rates_range,
+    _mt5_copy_ticks_from,
+    _mt5_copy_ticks_range,
+    _mt5_epoch_to_utc,
+    _normalize_times_in_struct,
+    _rates_to_df,
     _symbol_ready_guard,
+    _to_server_naive_dt,
+    clear_mt5_time_alignment_cache,
+    clear_symbol_info_cache,
+    ensure_mt5_connection_or_raise,
     estimate_server_offset,
     get_cached_mt5_time_alignment,
+    get_symbol_info_cached,
     inspect_mt5_time_alignment,
 )
-
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 

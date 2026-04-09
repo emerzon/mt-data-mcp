@@ -8,6 +8,7 @@ forecasting models to reduce code duplication and improve maintainability.
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple, Union
+
 import numpy as np
 
 from ..common import edge_pad_to_length as _edge_pad_to_length

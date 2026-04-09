@@ -1,20 +1,22 @@
 from __future__ import annotations
 
 import gc
-from typing import Any, Dict, List, Optional, Tuple
 import importlib.util as _importlib_util
+from typing import Any, Dict, List, Optional, Tuple
+
 import numpy as np
 import pandas as pd
 
 from ..interface import ForecastMethod, ForecastResult
 from ..registry import ForecastRegistry
 from .pretrained_helpers import (
-    extract_context_window,
     adjust_forecast_length,
-    process_quantile_levels,
     build_params_used,
+    extract_context_window,
+    process_quantile_levels,
     safe_import_modules,
 )
+
 
 class PretrainedMethod(ForecastMethod):
     """Base class for pretrained foundation models."""
@@ -85,7 +87,7 @@ class ChronosBoltMethod(PretrainedMethod):
     def required_packages(self) -> List[str]:
         return ["chronos", "torch"]
 
-    def forecast(
+    def forecast(  # noqa: C901
         self, 
         series: pd.Series, 
         horizon: int, 
@@ -335,7 +337,7 @@ class TimesFMMethod(PretrainedMethod):
     def required_packages(self) -> List[str]:
         return ["timesfm", "torch"]
 
-    def forecast(
+    def forecast(  # noqa: C901
         self, 
         series: pd.Series, 
         horizon: int, 
@@ -352,7 +354,9 @@ class TimesFMMethod(PretrainedMethod):
             except Exception:
                 pass
             try:
-                from timesfm.timesfm_2p5 import timesfm_2p5_torch as _timesfm_2p5_torch  # type: ignore
+                from timesfm.timesfm_2p5 import (
+                    timesfm_2p5_torch as _timesfm_2p5_torch,  # type: ignore
+                )
                 mods.append(_timesfm_2p5_torch)
             except Exception:
                 pass
@@ -363,7 +367,9 @@ class TimesFMMethod(PretrainedMethod):
             if cfg is not None:
                 return cfg
             try:
-                from timesfm.configs import ForecastConfig as _ForecastConfig  # type: ignore
+                from timesfm.configs import (
+                    ForecastConfig as _ForecastConfig,  # type: ignore
+                )
                 return _ForecastConfig
             except Exception:
                 return None
@@ -581,7 +587,7 @@ class LagLlamaMethod(PretrainedMethod):
     def required_packages(self) -> List[str]:
         return ["lag-llama", "gluonts", "torch"]
 
-    def forecast(
+    def forecast(  # noqa: C901
         self, 
         series: pd.Series, 
         horizon: int, 
@@ -624,11 +630,11 @@ class LagLlamaMethod(PretrainedMethod):
             context = np.asarray(vals, dtype=float)
 
         try:
-            import torch  # type: ignore
-            from lag_llama.gluon.estimator import LagLlamaEstimator  # type: ignore
-            from gluonts.evaluation import make_evaluation_predictions  # type: ignore
-            from gluonts.dataset.common import ListDataset  # type: ignore
             import pandas as pd  # type: ignore
+            import torch  # type: ignore
+            from gluonts.dataset.common import ListDataset  # type: ignore
+            from gluonts.evaluation import make_evaluation_predictions  # type: ignore
+            from lag_llama.gluon.estimator import LagLlamaEstimator  # type: ignore
         except Exception as ex:
             raise RuntimeError(f"lag_llama dependencies missing: {ex}")
 

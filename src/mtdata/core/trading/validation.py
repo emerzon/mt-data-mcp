@@ -5,9 +5,8 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, Literal, Optional, Tuple, Union
 
-from .gateway import MT5TradingGateway, create_trading_gateway, trading_connection_error
 from ...utils.utils import _coerce_finite_float, _coerce_scalar
-
+from .gateway import MT5TradingGateway, create_trading_gateway, trading_connection_error
 
 MarketOrderTypeLiteral = Literal["BUY", "SELL"]
 OrderTypeLiteral = Literal[
@@ -374,7 +373,7 @@ def _broker_distance_metadata(symbol_info: Any) -> Dict[str, float]:
     }
 
 
-def _validate_pending_order_levels(
+def _validate_pending_order_levels(  # noqa: C901
     *,
     symbol_info: Any,
     tick: Any,

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import sys
+import types
+
 import numpy as np
 import pandas as pd
 import pytest
-import sys
-import types
 
 from mtdata.core.features import extract_rolling_features
 

@@ -7,16 +7,16 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
-from ...shared.result import Ok, Err, Result, to_dict
+from ...shared.result import Err, Ok, Result, to_dict
 from ...utils.barriers import normalize_trade_direction
 from ...utils.mt5 import MT5ConnectionError
-from . import validation
 from ..execution_logging import (
     infer_result_success,
     log_operation_finish,
     log_operation_start,
     run_logged_operation,
 )
+from . import validation
 from .requests import (
     TradeCloseRequest,
     TradeGetOpenRequest,
@@ -111,7 +111,7 @@ def _floor_volume_steps(raw_volume: float, volume_step: float) -> int:
     return step_count
 
 
-def run_trade_place(
+def run_trade_place(  # noqa: C901
     request: TradePlaceRequest,
     *,
     normalize_order_type_input: Any,
@@ -518,7 +518,7 @@ def run_trade_modify(
     return _finish(position_result, pending=False)
 
 
-def run_trade_close(
+def run_trade_close(  # noqa: C901
     request: TradeCloseRequest,
     *,
     close_positions: Any,
@@ -723,7 +723,7 @@ def run_trade_close(
     return _finish(position_result, scope="positions")
 
 
-def run_trade_history(
+def run_trade_history(  # noqa: C901
     request: TradeHistoryRequest,
     *,
     gateway: Any,
@@ -769,7 +769,7 @@ def run_trade_history(
     except MT5ConnectionError as exc:
         return _finish({"error": str(exc)})
 
-    def _get_history():
+    def _get_history():  # noqa: C901
         try:
             use_client_tz_value = use_client_tz()
             fmt_time = format_time_minimal_local if use_client_tz_value else format_time_minimal
@@ -1064,7 +1064,7 @@ def run_trade_history(
     return _finish(_get_history())
 
 
-def run_trade_risk_analyze(
+def run_trade_risk_analyze(  # noqa: C901
     request: TradeRiskAnalyzeRequest,
     *,
     gateway: Any,
@@ -1093,7 +1093,7 @@ def run_trade_risk_analyze(
     except MT5ConnectionError as exc:
         return _finish({"error": str(exc)})
 
-    def _analyze_risk():
+    def _analyze_risk():  # noqa: C901
         try:
             account = gateway.account_info()
             if account is None:

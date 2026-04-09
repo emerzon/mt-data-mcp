@@ -1,8 +1,8 @@
 import numbers
+import warnings
 
 import numpy as np
 import pandas as pd
-import warnings
 
 
 def _normalize_window_size(window_size: int) -> int:
@@ -47,8 +47,11 @@ def extract_rolling_features(
     window_size = _normalize_window_size(window_size)
     try:
         from tsfresh import extract_features
+        from tsfresh.feature_extraction import (
+            EfficientFCParameters,
+            MinimalFCParameters,
+        )
         from tsfresh.utilities.dataframe_functions import roll_time_series
-        from tsfresh.feature_extraction import EfficientFCParameters, MinimalFCParameters
     except ImportError:
         raise ImportError("tsfresh is required for this feature. Please install it.")
 

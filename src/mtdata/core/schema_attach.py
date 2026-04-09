@@ -4,15 +4,23 @@ Extracted from core.server to keep server thinner.
 """
 import logging
 from typing import Any, Callable, Dict
-from .server_utils import get_mcp_registry
 
 from .schema import (
-    enrich_schema_with_shared_defs as _enrich_schema_with_shared_defs,
-    build_minimal_schema as _build_minimal_schema,
-    get_function_info as _get_function_info,
-    complex_defs as _complex_defs,
     apply_param_hints as _apply_param_hints,
 )
+from .schema import (
+    build_minimal_schema as _build_minimal_schema,
+)
+from .schema import (
+    complex_defs as _complex_defs,
+)
+from .schema import (
+    enrich_schema_with_shared_defs as _enrich_schema_with_shared_defs,
+)
+from .schema import (
+    get_function_info as _get_function_info,
+)
+from .server_utils import get_mcp_registry
 
 logger = logging.getLogger(__name__)
 

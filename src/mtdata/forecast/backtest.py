@@ -1,23 +1,28 @@
-from typing import Any, Dict, List, Optional, Tuple, Literal
-import numpy as np
 import math
+from typing import Any, Dict, List, Literal, Optional, Tuple
+
+import numpy as np
 
 from ..shared.constants import TIMEFRAME_MAP
-from ..shared.schema import TimeframeLiteral, DenoiseSpec
+from ..shared.schema import DenoiseSpec, TimeframeLiteral
 from ..shared.validators import invalid_timeframe_error
-from ..utils.utils import _format_time_minimal
-from .exceptions import ForecastError, raise_if_error_result
-from .volatility import forecast_volatility
-from .forecast import forecast
 from ..utils.denoise import normalize_denoise_spec as _normalize_denoise_spec
+from ..utils.utils import _format_time_minimal
 from .common import (
     bars_per_year as _bars_per_year,
+)
+from .common import (
     fetch_history as _fetch_history,
+)
+from .common import (
     log_returns_from_prices as _log_returns_from_prices,
+)
+from .common import (
     quantity_to_target as _quantity_to_target,
 )
-
-
+from .exceptions import ForecastError, raise_if_error_result
+from .forecast import forecast
+from .volatility import forecast_volatility
 
 
 def _get_forecast_methods_data_safe() -> Dict[str, Any]:
@@ -129,7 +134,7 @@ def _compute_performance_metrics(
     return metrics
 
 
-def forecast_backtest(
+def forecast_backtest(  # noqa: C901
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
     horizon: int = 12,

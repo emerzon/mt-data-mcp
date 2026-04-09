@@ -1,18 +1,19 @@
 """Extended coverage tests for utils/dimred.py targeting uncovered lines."""
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, PropertyMock, patch
+
 import numpy as np
 import pytest
 
 from mtdata.utils.dimred import (
     DimReducer,
-    NoneReducer,
-    PCAReducer,
-    SVDReducer,
-    TSNEReducer,
-    LaplacianReducer,
     IsomapReducer,
     KPCAReducer,
+    LaplacianReducer,
+    NoneReducer,
+    PCAReducer,
     SparsePCAReducer,
+    SVDReducer,
+    TSNEReducer,
     create_reducer,
     list_dimred_methods,
 )

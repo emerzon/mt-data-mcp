@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
 import logging
+import sys
+from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
-import sys
 
 from mtdata.core.trading import risk as core_trading_risk
 from mtdata.core.trading import trade_risk_analyze as _trade_risk_analyze_tool

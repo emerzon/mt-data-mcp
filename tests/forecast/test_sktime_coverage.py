@@ -80,16 +80,17 @@ for name, mod in _STUBS.items():
 
 # Patch _HAS_SKTIME before importing sktime module
 import mtdata.forecast.methods.sktime as _sktime_mod  # noqa: E402
+
 _orig_has_sktime = _sktime_mod._HAS_SKTIME
 _sktime_mod._HAS_SKTIME = True
 
+from mtdata.forecast.interface import ForecastResult  # noqa: E402
 from mtdata.forecast.methods.sktime import (  # noqa: E402
     GenericSktimeMethod,
-    SktThetaMethod,
-    SktNaiveMethod,
     SktAutoETSMethod,
+    SktNaiveMethod,
+    SktThetaMethod,
 )
-from mtdata.forecast.interface import ForecastResult  # noqa: E402
 
 
 @pytest.fixture(autouse=True, scope="module")

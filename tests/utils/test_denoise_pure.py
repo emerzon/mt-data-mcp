@@ -12,7 +12,10 @@ from mtdata.utils.denoise import (
     get_denoise_methods_data,
     normalize_denoise_spec,
 )
-from mtdata.utils.denoise.filters.adaptive import _adaptive_lms_filter, _adaptive_rls_filter
+from mtdata.utils.denoise.filters.adaptive import (
+    _adaptive_lms_filter,
+    _adaptive_rls_filter,
+)
 from mtdata.utils.denoise.filters.decomposition import _ssa_denoise, _vmd_denoise
 from mtdata.utils.denoise.filters.specialized import (
     _bilateral_filter_1d,

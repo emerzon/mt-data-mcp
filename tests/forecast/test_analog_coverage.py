@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, PropertyMock, patch
+
 import numpy as np
 import pandas as pd
 import pytest
 from scipy.spatial import cKDTree
 
-from mtdata.forecast.methods.analog import AnalogMethod
 from mtdata.forecast.interface import ForecastResult
+from mtdata.forecast.methods.analog import AnalogMethod
 from mtdata.utils.patterns import PatternIndex, _SeriesStore
-
 
 # ===========================================================================
 # Helpers

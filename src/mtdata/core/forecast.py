@@ -1,10 +1,7 @@
-from importlib import import_module
-from typing import Any, Dict, Optional, List, Literal
 import logging
+from importlib import import_module
+from typing import Any, Dict, List, Literal, Optional
 
-from .mt5_gateway import get_mt5_gateway, mt5_connection_error
-from ._mcp_instance import mcp
-from .execution_logging import run_logged_operation
 from ..forecast.exceptions import ForecastError
 from ..forecast.requests import (
     ForecastBacktestRequest,
@@ -16,12 +13,17 @@ from ..forecast.requests import (
     ForecastTuneOptunaRequest,
     ForecastVolatilityEstimateRequest,
 )
-from ..utils.mt5 import ensure_mt5_connection_or_raise
-from ..utils.utils import parse_kv_or_json as _parse_kv_or_json
 from ..utils.barriers import (
     build_barrier_kwargs_from as _build_barrier_kwargs_from,
+)
+from ..utils.barriers import (
     normalize_trade_direction,
 )
+from ..utils.mt5 import ensure_mt5_connection_or_raise
+from ..utils.utils import parse_kv_or_json as _parse_kv_or_json
+from ._mcp_instance import mcp
+from .execution_logging import run_logged_operation
+from .mt5_gateway import get_mt5_gateway, mt5_connection_error
 
 logger = logging.getLogger(__name__)
 
@@ -441,7 +443,9 @@ def forecast_quantlib_heston_calibrate(
     max_contracts: int = 25,
 ) -> Dict[str, Any]:
     """Calibrate Heston parameters from an option chain using QuantLib."""
-    from ..forecast.quantlib_tools import calibrate_heston_quantlib_from_options as _impl
+    from ..forecast.quantlib_tools import (
+        calibrate_heston_quantlib_from_options as _impl,
+    )
     return _run_forecast_operation(
         "forecast_quantlib_heston_calibrate",
         symbol=symbol,
@@ -569,6 +573,8 @@ def forecast_barrier_prob(
     def _execute() -> Dict[str, Any]:
         from ..forecast.barriers import (
             forecast_barrier_closed_form as _barrier_closed_form_impl,
+        )
+        from ..forecast.barriers import (
             forecast_barrier_hit_probabilities as _barrier_hit_probabilities_impl,
         )
 
@@ -597,7 +603,9 @@ def forecast_barrier_optimize(
 ) -> Dict[str, Any]:
     """Optimize TP/SL barriers with support for presets, volatility scaling, ratios, and two-stage refinement."""
     def _execute() -> Dict[str, Any]:
-        from ..forecast.barriers import forecast_barrier_optimize as _barrier_optimize_impl
+        from ..forecast.barriers import (
+            forecast_barrier_optimize as _barrier_optimize_impl,
+        )
 
         return run_forecast_barrier_optimize(
             request,
@@ -707,7 +715,7 @@ def _forecast_list_library_models_impl(
     return {"library": lib, "error": "Unsupported library (supported: native, statsforecast, sktime, pretrained, mlforecast)"}
 
 
-def _forecast_list_methods_impl(
+def _forecast_list_methods_impl(  # noqa: C901
     *,
     detail: Literal["compact", "full"] = "compact",
     limit: Optional[int] = None,

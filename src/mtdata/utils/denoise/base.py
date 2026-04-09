@@ -1,8 +1,9 @@
 """Denoising filters package - refactored from monolithic denoise.py."""
 
 from typing import Any, Callable, Dict, Optional
-import pandas as pd
+
 import numpy as np
+import pandas as pd
 
 # Registry of filter methods
 _FILTER_REGISTRY: Dict[str, Callable[[pd.Series, np.ndarray, Dict[str, Any], str], pd.Series]] = {}

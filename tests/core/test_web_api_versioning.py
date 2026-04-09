@@ -7,7 +7,6 @@ from fastapi.testclient import TestClient
 
 from mtdata.core.web_api import app
 
-
 client = TestClient(app)
 
 

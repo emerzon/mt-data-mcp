@@ -3,9 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from .patterns_support import _elliott_completed_preview, _elliott_hidden_completed_note
 from .patterns_requests import PatternsDetectRequest
-
+from .patterns_support import _elliott_completed_preview, _elliott_hidden_completed_note
 
 _CLASSIC_CONFIG_EXTRA_KEYS = {
     "ensemble_weights",
@@ -49,7 +48,7 @@ class PatternsDetectDeps:
     to_float_np: Any
 
 
-def run_patterns_detect(
+def run_patterns_detect(  # noqa: C901
     request: PatternsDetectRequest,
     deps: PatternsDetectDeps,
 ) -> Dict[str, Any]:

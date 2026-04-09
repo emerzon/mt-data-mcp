@@ -12,9 +12,13 @@ from typing import Any, Dict, List, Union, cast, get_args, get_origin
 
 from pydantic import BaseModel
 
-from .error_envelope import build_error_payload, log_transport_exception, normalize_error_payload
+from ..utils.utils import _UNPARSED_BOOL, _coerce_scalar, _parse_bool_like
+from .error_envelope import (
+    build_error_payload,
+    log_transport_exception,
+    normalize_error_payload,
+)
 from .output_contract import apply_output_verbosity
-from ..utils.utils import _coerce_scalar, _parse_bool_like, _UNPARSED_BOOL
 
 try:
     import annotationlib
@@ -353,7 +357,7 @@ def _extract_verbose_flag(kwargs: Dict[str, Any]) -> bool:
         if not isinstance(candidate, BaseModel):
             continue
         try:
-            verbose_value = getattr(candidate, "verbose")
+            verbose_value = candidate.verbose
         except Exception:
             continue
         return bool(verbose_value)
@@ -381,7 +385,7 @@ def _augment_signature_with_global_verbose(
     return out_params, out_annotations
 
 
-def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]
+def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # noqa: C901
     if _ORIG_TOOL_DECORATOR is None:
         def _noop(func):
             _TOOL_REGISTRY[getattr(func, "__name__", "tool")] = func
@@ -417,12 +421,15 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]
             cleaned["return"] = _normalize_exposed_annotation(ann["return"])
         return cleaned
 
-    def _wrap(func):
+    def _wrap(func):  # noqa: C901
         def _fallback_minimal(value: Any, **_: Any) -> str:
             return str(value) if value is not None else ""
 
         try:
-            from ..utils.minimal_output import format_result_minimal as _fmt_min, to_methods_availability_toon as _fmt_methods
+            from ..utils.minimal_output import format_result_minimal as _fmt_min
+            from ..utils.minimal_output import (
+                to_methods_availability_toon as _fmt_methods,
+            )
         except Exception:
             _fmt_min = _fallback_minimal
             _fmt_methods = None
@@ -439,7 +446,9 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]
                     kw.pop("verbose", None)
                 try:
                     if "denoise" in kw:
-                        from ..utils.denoise import normalize_denoise_spec as _norm_dn  # type: ignore
+                        from ..utils.denoise import (
+                            normalize_denoise_spec as _norm_dn,  # type: ignore
+                        )
 
                         kw["denoise"] = _norm_dn(kw.get("denoise"))
                 except Exception:
@@ -516,7 +525,7 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]
             params, cleaned = _augment_signature_with_global_verbose(params, cleaned)
             _wrapped.__annotations__ = cleaned
             return_ann = cleaned.get("return", inspect._empty)
-            setattr(_wrapped, "__signature__", inspect.Signature(parameters=params, return_annotation=return_ann))
+            _wrapped.__signature__ = inspect.Signature(parameters=params, return_annotation=return_ann)
         except Exception:
             pass
 
@@ -558,8 +567,8 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]
         res = dec(_async_wrapped)
         name = getattr(func, "__name__", None)
         try:
-            setattr(_wrapped, "_mcp_async_wrapper", _async_wrapped)
-            setattr(_wrapped, "_mcp_tool_object", res)
+            _wrapped._mcp_async_wrapper = _async_wrapped
+            _wrapped._mcp_tool_object = res
         except Exception:
             pass
         if name:
@@ -582,11 +591,11 @@ def install_tool_registry(mcp_obj: Any) -> None:
         except Exception:
             _ORIG_TOOL_DECORATOR = None
     try:
-        setattr(mcp_obj, "tool", _recording_tool_decorator)
-        setattr(mcp_obj, "tools", _TOOL_REGISTRY)
-        setattr(mcp_obj, "registry", _TOOL_REGISTRY)
-        setattr(mcp_obj, "_tools", _TOOL_REGISTRY)
-        setattr(mcp_obj, "_tool_registry", _TOOL_REGISTRY)
+        mcp_obj.tool = _recording_tool_decorator
+        mcp_obj.tools = _TOOL_REGISTRY
+        mcp_obj.registry = _TOOL_REGISTRY
+        mcp_obj._tools = _TOOL_REGISTRY
+        mcp_obj._tool_registry = _TOOL_REGISTRY
     except Exception:
         pass
 

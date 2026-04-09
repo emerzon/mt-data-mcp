@@ -1,8 +1,8 @@
 """Extended coverage tests for mtdata.forecast.backtest – targeting uncovered lines."""
 
-import sys
 import math
-from unittest.mock import patch, MagicMock
+import sys
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pandas as pd
@@ -21,13 +21,12 @@ _mt5_mock.TIMEFRAME_W1 = 32769; _mt5_mock.TIMEFRAME_MN1 = 49153
 sys.modules["MetaTrader5"] = _mt5_mock
 
 from mtdata.forecast.backtest import (
-    _get_forecast_methods_data_safe,
     _bars_per_year,
     _compute_performance_metrics,
+    _get_forecast_methods_data_safe,
     forecast_backtest,
 )
 from mtdata.utils.utils import _format_time_minimal
-
 
 # ── Helper to build a fake df ────────────────────────────────────────────────
 

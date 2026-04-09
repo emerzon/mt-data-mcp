@@ -1,23 +1,24 @@
 """Tests for src/mtdata/utils/utils.py — pure utility functions."""
 import math
 from datetime import datetime, timezone
+
 import numpy as np
 import pandas as pd
 import pytest
 
 from mtdata.utils.utils import (
-    _safe_float,
     _coerce_scalar,
-    _normalize_ohlcv_arg,
-    _normalize_limit,
-    _table_from_rows,
     _format_time_minimal,
-    _time_format_from_epochs,
     _maybe_strip_year,
+    _normalize_limit,
+    _normalize_ohlcv_arg,
+    _safe_float,
     _style_time_format,
-    to_float_np,
-    align_finite,
+    _table_from_rows,
+    _time_format_from_epochs,
     _utc_epoch_seconds,
+    align_finite,
+    to_float_np,
 )
 
 

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import numpy as np
 import pandas as pd
 import pytest
-from unittest.mock import patch
 
-from mtdata.forecast.interface import ForecastCallContext
 from mtdata.forecast import forecast_engine as fe
+from mtdata.forecast.interface import ForecastCallContext
 from mtdata.forecast.methods import ensemble as em
 
 

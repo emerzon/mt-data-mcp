@@ -1,26 +1,26 @@
 """Tests for src/mtdata/forecast/forecast_validation.py"""
-import pytest
-import pandas as pd
 import numpy as np
+import pandas as pd
+import pytest
 
+import mtdata.forecast.forecast_validation as fv
 from mtdata.forecast.forecast_validation import (
-    validate_horizon,
-    validate_lookback,
-    validate_ci_alpha,
-    validate_method,
-    validate_quantity_method_combination,
-    validate_denoise_spec,
-    validate_features_spec,
-    validate_dimred_spec,
-    validate_target_spec,
-    validate_data_sufficiency,
-    validate_seasonality_for_method,
+    ForecastValidationError,
     create_error_response,
     safe_cast_numeric,
     sanitize_params,
-    ForecastValidationError,
+    validate_ci_alpha,
+    validate_data_sufficiency,
+    validate_denoise_spec,
+    validate_dimred_spec,
+    validate_features_spec,
+    validate_horizon,
+    validate_lookback,
+    validate_method,
+    validate_quantity_method_combination,
+    validate_seasonality_for_method,
+    validate_target_spec,
 )
-import mtdata.forecast.forecast_validation as fv
 
 
 class TestValidateHorizon:

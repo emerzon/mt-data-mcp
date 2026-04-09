@@ -1,5 +1,6 @@
 """BOCPD (Bayesian Online Change Point Detection) core algorithm."""
 from typing import Any, Dict, List, Optional, Tuple
+
 import numpy as np
 
 

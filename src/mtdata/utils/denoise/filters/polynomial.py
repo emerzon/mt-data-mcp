@@ -1,8 +1,9 @@
 """Polynomial and regression-based filters: Savgol, LOESS, STL."""
-from typing import Any, Dict
-import pandas as pd
-import numpy as np
 import logging
+from typing import Any, Dict
+
+import numpy as np
+import pandas as pd
 
 _logger = logging.getLogger(__name__)
 
@@ -21,7 +22,7 @@ try:
 except Exception:
     _STL = None  # type: ignore
 
-from ..base import register_filter, _series_like
+from ..base import _series_like, register_filter
 
 
 @register_filter('savgol')

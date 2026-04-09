@@ -2,7 +2,7 @@
 
 import pytest
 
-from mtdata.shared.result import Ok, Err, Result, is_ok, is_err, to_dict
+from mtdata.shared.result import Err, Ok, Result, is_err, is_ok, to_dict
 
 
 # ---------------------------------------------------------------------------

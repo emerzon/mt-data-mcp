@@ -1,10 +1,14 @@
-import unittest
-from unittest.mock import MagicMock, patch
 import sys
+import unittest
 from collections import namedtuple
+from unittest.mock import MagicMock, patch
 
 from src.mtdata.utils.mt5 import _mt5_epoch_to_utc
-from src.mtdata.utils.utils import _format_time_minimal, _format_time_minimal_local, _use_client_tz
+from src.mtdata.utils.utils import (
+    _format_time_minimal,
+    _format_time_minimal_local,
+    _use_client_tz,
+)
 
 # Mock mt5 before importing the module
 sys.modules['MetaTrader5'] = MagicMock()
@@ -13,14 +17,14 @@ sys.modules['MetaTrader5'] = MagicMock()
 # Now import the tools
 # We need to make sure the path is in sys.path
 import os
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from src.mtdata.core.trading import trade_get_open
-from src.mtdata.core.trading import trade_get_pending
-from src.mtdata.core.patterns import patterns_detect
 from src.mtdata.core.forecast import forecast_barrier_prob
-from src.mtdata.core.trading.requests import TradeGetOpenRequest, TradeGetPendingRequest
+from src.mtdata.core.patterns import patterns_detect
 from src.mtdata.core.patterns_requests import PatternsDetectRequest
+from src.mtdata.core.trading import trade_get_open, trade_get_pending
+from src.mtdata.core.trading.requests import TradeGetOpenRequest, TradeGetPendingRequest
 from src.mtdata.forecast.requests import ForecastBarrierProbRequest
 
 

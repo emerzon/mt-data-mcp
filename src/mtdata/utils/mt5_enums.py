@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-
 _ABBREVIATIONS = {"SL", "TP", "SO", "IOC", "FOK", "BOC", "GTC", "EA", "DMA"}
 _CANONICAL_ENUM_NAMES: Dict[str, Dict[int, str]] = {
     "SYMBOL_TRADE_EXECUTION_": {

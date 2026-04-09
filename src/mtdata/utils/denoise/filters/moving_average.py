@@ -1,8 +1,10 @@
 """Moving average filters: EMA, SMA, median."""
 from typing import Any, Dict
-import pandas as pd
+
 import numpy as np
-from ..base import register_filter, _series_like
+import pandas as pd
+
+from ..base import _series_like, register_filter
 
 
 @register_filter('ema')

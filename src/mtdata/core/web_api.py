@@ -7,43 +7,22 @@ import logging
 from importlib.util import find_spec as _find_spec
 from typing import Any, Dict, Optional
 
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from ..bootstrap.runtime import is_loopback_host, load_web_api_runtime_settings
-from .error_envelope import build_http_error_detail
-from .config import load_environment
-
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
-
-from .constants import TIMEFRAME_MAP
-from .mt5_gateway import get_web_api_mt5_gateway
-from .pivot import pivot_compute_points
-from .web_api_handlers import (
-    get_dimred_methods_response as _get_dimred_methods_response,
-    get_denoise_methods_response as _get_denoise_methods_response,
-    get_history_response as _get_history_response,
-    get_instruments_response as _get_instruments_response,
-    get_methods_response as _get_methods_response,
-    get_pivots_response as _get_pivots_response,
-    get_support_resistance_response as _get_support_resistance_response,
-    get_tick_response as _get_tick_response,
-    get_vol_methods_response as _get_vol_methods_response,
-    get_wavelets_response as _get_wavelets_response,
-    post_backtest_response as _post_backtest_response,
-    post_forecast_price_response as _post_forecast_price_response,
-    post_forecast_volatility_response as _post_forecast_volatility_response,
-)
-from .web_api_models import BacktestBody, ForecastPriceBody, ForecastVolBody
-from .web_api_runtime import create_web_api_app, mount_webui, run_webapi
-from .tool_calling import unwrap_tool_callable
 from ..forecast.common import fetch_history as _fetch_history_impl
 from ..forecast.forecast import get_forecast_methods_data as _get_methods_impl
 from ..forecast.use_cases import (
     run_forecast_backtest as _run_forecast_backtest_impl,
+)
+from ..forecast.use_cases import (
     run_forecast_generate as _run_forecast_generate_impl,
 )
 from ..forecast.volatility import (
     forecast_volatility as _forecast_vol_impl,
+)
+from ..forecast.volatility import (
     get_volatility_methods_data as _get_vol_methods,
 )
 from ..services.data_service import fetch_candles as _fetch_candles_impl
@@ -52,7 +31,53 @@ from ..utils.denoise import normalize_denoise_spec as _norm_dn
 from ..utils.dimred import list_dimred_methods as _list_dimred_methods
 from ..utils.mt5 import _ensure_symbol_ready, mt5, mt5_connection
 from ..utils.symbol import _extract_group_path as _extract_group_path_util
-from .config import mt5_config
+from .config import load_environment, mt5_config
+from .constants import TIMEFRAME_MAP
+from .error_envelope import build_http_error_detail
+from .mt5_gateway import get_web_api_mt5_gateway
+from .pivot import pivot_compute_points
+from .tool_calling import unwrap_tool_callable
+from .web_api_handlers import (
+    get_denoise_methods_response as _get_denoise_methods_response,
+)
+from .web_api_handlers import (
+    get_dimred_methods_response as _get_dimred_methods_response,
+)
+from .web_api_handlers import (
+    get_history_response as _get_history_response,
+)
+from .web_api_handlers import (
+    get_instruments_response as _get_instruments_response,
+)
+from .web_api_handlers import (
+    get_methods_response as _get_methods_response,
+)
+from .web_api_handlers import (
+    get_pivots_response as _get_pivots_response,
+)
+from .web_api_handlers import (
+    get_support_resistance_response as _get_support_resistance_response,
+)
+from .web_api_handlers import (
+    get_tick_response as _get_tick_response,
+)
+from .web_api_handlers import (
+    get_vol_methods_response as _get_vol_methods_response,
+)
+from .web_api_handlers import (
+    get_wavelets_response as _get_wavelets_response,
+)
+from .web_api_handlers import (
+    post_backtest_response as _post_backtest_response,
+)
+from .web_api_handlers import (
+    post_forecast_price_response as _post_forecast_price_response,
+)
+from .web_api_handlers import (
+    post_forecast_volatility_response as _post_forecast_volatility_response,
+)
+from .web_api_models import BacktestBody, ForecastPriceBody, ForecastVolBody
+from .web_api_runtime import create_web_api_app, mount_webui, run_webapi
 
 API_PREFIXES = ("/api", "/api/v1")
 

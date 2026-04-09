@@ -3,7 +3,7 @@
 import math
 import time
 import warnings
-from unittest.mock import patch, MagicMock, PropertyMock
+from unittest.mock import MagicMock, PropertyMock, patch
 
 import numpy as np
 import pandas as pd
@@ -11,13 +11,13 @@ import pytest
 
 from mtdata.core import causal as causal_mod
 from mtdata.core.causal import (
-    _parse_symbols,
     _expand_symbols_for_group,
     _fetch_series,
-    _pair_overlap_symbols,
-    _transform_frame,
-    _standardize_frame,
     _format_summary,
+    _pair_overlap_symbols,
+    _parse_symbols,
+    _standardize_frame,
+    _transform_frame,
     causal_discover_signals,
 )
 from mtdata.utils.mt5 import MT5ConnectionError

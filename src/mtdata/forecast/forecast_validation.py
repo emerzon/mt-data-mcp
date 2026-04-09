@@ -3,13 +3,18 @@ Forecast validation utilities and error handling.
 """
 
 import difflib
-from typing import Any, Dict, Optional, List, Literal, Union
+from typing import Any, Dict, List, Literal, Optional, Union
+
 import pandas as pd
 
 from ..shared.constants import TIMEFRAME_MAP
-from ..shared.schema import ForecastMethodLiteral, TimeframeLiteral, DenoiseSpec
+from ..shared.schema import DenoiseSpec, ForecastMethodLiteral, TimeframeLiteral
 from ..shared.validators import invalid_timeframe_error
-from .forecast_methods import get_forecast_method_names, validate_method_params, get_method_requirements
+from .forecast_methods import (
+    get_forecast_method_names,
+    get_method_requirements,
+    validate_method_params,
+)
 
 
 class ForecastValidationError(Exception):

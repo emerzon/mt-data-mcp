@@ -1,11 +1,21 @@
-import numpy as np
 from typing import List
-from ..common import PatternResultBase, interval_overlap_ratio as _interval_overlap_ratio
+
+import numpy as np
+
+from ..common import PatternResultBase
+from ..common import interval_overlap_ratio as _interval_overlap_ratio
 from .config import ClassicDetectorConfig, ClassicPatternResult
 from .utils import (
-    _level_close, _tol_abs_from_close, _find_forward_level_breakout,
-    _fit_line, _result, 
-    _template_hs_variants, _znorm, _paa, _dtw_distance, _apply_breakout_confidence_bonus
+    _apply_breakout_confidence_bonus,
+    _dtw_distance,
+    _find_forward_level_breakout,
+    _fit_line,
+    _level_close,
+    _paa,
+    _result,
+    _template_hs_variants,
+    _tol_abs_from_close,
+    _znorm,
 )
 
 
@@ -140,7 +150,7 @@ def detect_tops_bottoms(
     group_levels(troughs[-10:], "Double Bottom", "Triple Bottom", "bottom")
     return out
 
-def detect_head_shoulders(
+def detect_head_shoulders(  # noqa: C901
     c: np.ndarray,
     peaks: np.ndarray,
     troughs: np.ndarray,

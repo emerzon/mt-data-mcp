@@ -1,25 +1,24 @@
 """Tests for forecast/common.py — extended coverage for nf_setup_and_predict and fetch_history."""
 
-import os
 import inspect
-from unittest.mock import patch, MagicMock, PropertyMock, call
+import os
+from unittest.mock import MagicMock, PropertyMock, call, patch
 
 import numpy as np
 import pandas as pd
 import pytest
 
 from mtdata.forecast.common import (
-    edge_pad_to_length,
-    log_returns_from_prices,
-    _extract_forecast_values,
     _create_training_dataframes,
+    _extract_forecast_values,
     default_seasonality,
-    next_times_from_last,
-    pd_freq_from_timeframe,
-    nf_setup_and_predict,
+    edge_pad_to_length,
     fetch_history,
+    log_returns_from_prices,
+    next_times_from_last,
+    nf_setup_and_predict,
+    pd_freq_from_timeframe,
 )
-
 
 # ---------------------------------------------------------------------------
 # nf_setup_and_predict (lines 159-345) — heavily mocked

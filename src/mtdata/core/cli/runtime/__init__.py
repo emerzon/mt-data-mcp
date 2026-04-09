@@ -1,10 +1,10 @@
 """CLI runtime utilities."""
+import io
+import logging
 import os
 import sys
-import logging
-from typing import Any, Dict, Optional
 from contextlib import contextmanager, redirect_stderr, redirect_stdout
-import io
+from typing import Any, Dict, Optional
 
 
 def _debug_enabled() -> bool:

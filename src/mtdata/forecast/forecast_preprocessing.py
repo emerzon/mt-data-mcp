@@ -7,15 +7,18 @@ wrapper and engine can stay thin.
 
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, List, Optional, Tuple
 import math
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
 
-from ..utils.denoise import _apply_denoise, normalize_denoise_spec as _normalize_denoise_spec
+from ..utils.denoise import _apply_denoise
+from ..utils.denoise import normalize_denoise_spec as _normalize_denoise_spec
 from ..utils.indicators import (
     _apply_ta_indicators as _apply_ta_indicators_util,
+)
+from ..utils.indicators import (
     _parse_ti_specs as _parse_ti_specs_util,
 )
 from ..utils.utils import parse_kv_or_json as _parse_kv_or_json
@@ -311,7 +314,7 @@ def _create_dow_features(
         return None, None
 
 
-def _build_calendar_features(
+def _build_calendar_features(  # noqa: C901
     df: pd.DataFrame,
     fcfg: Dict[str, Any],
     future_times: List[float],

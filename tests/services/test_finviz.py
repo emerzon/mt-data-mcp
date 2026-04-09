@@ -2,7 +2,8 @@
 Tests for finviz service and tools.
 """
 
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
 import pandas as pd
 
 

@@ -1,9 +1,10 @@
 """Canonical denoising API."""
-from typing import Any, Dict, List, Optional
-from copy import deepcopy
-import pandas as pd
-import numpy as np
 import logging
+from copy import deepcopy
+from typing import Any, Dict, List, Optional
+
+import numpy as np
+import pandas as pd
 
 # Import optional dependencies for availability checking
 try:
@@ -12,7 +13,9 @@ except Exception:
     _pywt = None  # type: ignore
 
 try:
-    from PyEMD import EMD as _EMD, EEMD as _EEMD, CEEMDAN as _CEEMDAN
+    from PyEMD import CEEMDAN as _CEEMDAN
+    from PyEMD import EEMD as _EEMD
+    from PyEMD import EMD as _EMD
 except Exception:
     _EMD = _EEMD = _CEEMDAN = None  # type: ignore
 
@@ -52,8 +55,8 @@ try:
 except Exception:
     _VMD = None  # type: ignore
 
-from .base import get_filter, list_filters
 from . import filters  # noqa: F401 - registers all filters
+from .base import get_filter, list_filters
 
 _logger = logging.getLogger(__name__)
 

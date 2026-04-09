@@ -1,10 +1,11 @@
 """Specialized filters: Kalman, Hampel, bilateral, TV denoising."""
 from typing import Any, Dict, Optional
-import pandas as pd
+
 import numpy as np
+import pandas as pd
 from skimage.restoration import denoise_tv_chambolle as _denoise_tv_chambolle
 
-from ..base import register_filter, _series_like
+from ..base import _series_like, register_filter
 
 
 def _kalman_filter_1d(

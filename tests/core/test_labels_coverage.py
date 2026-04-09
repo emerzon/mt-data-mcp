@@ -1,11 +1,11 @@
 """Tests for core/labels.py — triple barrier labeling (mocked MT5)."""
 
 import inspect
+from unittest.mock import MagicMock, patch
+
 import numpy as np
 import pandas as pd
 import pytest
-from unittest.mock import patch, MagicMock
-
 
 # ---------------------------------------------------------------------------
 # Helper to build a mock OHLC DataFrame

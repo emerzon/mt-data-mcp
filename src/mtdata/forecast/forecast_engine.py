@@ -2,18 +2,24 @@
 Forecast engine core logic and orchestration.
 """
 
-from typing import Any, Dict, Optional, List, Literal, Tuple
 import logging
+from typing import Any, Dict, List, Literal, Optional, Tuple
+
 import numpy as np
 import pandas as pd
 
 from ..bootstrap.settings import mt5_config
 from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
-from ..shared.schema import ForecastMethodLiteral, TimeframeLiteral, DenoiseSpec
-from ..shared.validators import invalid_timeframe_error, unsupported_timeframe_seconds_error
+from ..shared.schema import DenoiseSpec, ForecastMethodLiteral, TimeframeLiteral
+from ..shared.validators import (
+    invalid_timeframe_error,
+    unsupported_timeframe_seconds_error,
+)
 from ..utils.denoise import (
     _apply_denoise,
     _consume_denoise_warnings,
+)
+from ..utils.denoise import (
     normalize_denoise_spec as _normalize_denoise_spec,
 )
 from ..utils.mt5 import get_cached_mt5_time_alignment, get_symbol_info_cached
@@ -21,24 +27,30 @@ from ..utils.utils import (
     _format_time_minimal,
     _format_time_minimal_local,
     _use_client_tz,
+)
+from ..utils.utils import (
     parse_kv_or_json as _parse_kv_or_json,
 )
 from . import forecast_preprocessing as _forecast_preprocessing
 from .common import _normalize_weights as _normalize_weights_impl
 from .common import (
     default_seasonality,
-    fetch_history as _fetch_history,
     next_times_from_last,
+)
+from .common import (
+    fetch_history as _fetch_history,
 )
 from .ensemble_dispatch import (
     append_failure as _append_ensemble_failure,
+)
+from .ensemble_dispatch import (
     build_dispatch_error as _build_ensemble_dispatch_error,
+)
+from .ensemble_dispatch import (
     dispatch_callback_with_error as _dispatch_ensemble_callback_with_error,
 )
 from .forecast_validation import format_invalid_method_error
 from .interface import ForecastCallContext
-from .registry import ForecastRegistry
-from .target_builder import build_target_series
 
 # Import all method modules to ensure registration
 from .methods import analog as _analog_methods
@@ -52,6 +64,8 @@ from .methods import neural as _neural_methods
 from .methods import pretrained as _pretrained_methods
 from .methods import sktime as _sktime_methods
 from .methods import statsforecast as _statsforecast_methods
+from .registry import ForecastRegistry
+from .target_builder import build_target_series
 
 _REGISTERED_METHOD_MODULES = (
     _analog_methods,
@@ -646,7 +660,7 @@ def _format_forecast_output(
     return result
 
 
-def forecast_engine(
+def forecast_engine(  # noqa: C901
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
     method: ForecastMethodLiteral = "theta",

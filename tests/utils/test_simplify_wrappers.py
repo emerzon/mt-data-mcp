@@ -2,16 +2,16 @@
 import pytest
 
 from mtdata.utils.simplify import (
-    _point_line_distance,
-    _max_line_error,
-    _rdp_select_indices,
-    _pla_select_indices,
+    _apca_autotune_max_error,
     _apca_select_indices,
     _choose_simplify_points,
     _default_target_points,
-    _rdp_autotune_epsilon,
+    _max_line_error,
     _pla_autotune_max_error,
-    _apca_autotune_max_error,
+    _pla_select_indices,
+    _point_line_distance,
+    _rdp_autotune_epsilon,
+    _rdp_select_indices,
     _select_indices_for_timeseries,
 )
 

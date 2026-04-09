@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Tuple, List
 import math
+from typing import Any, Dict, List, Optional, Tuple
+
 import numpy as np
 import pandas as pd
 
 from ..interface import ForecastMethod, ForecastResult
 from ..registry import ForecastRegistry
+
 
 class ClassicalMethod(ForecastMethod):
     """Base class for classical methods."""

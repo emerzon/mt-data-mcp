@@ -6,12 +6,6 @@ import logging
 import math
 from typing import Any, Dict, List, Optional, Tuple
 
-from .._mcp_instance import mcp
-from . import comments, validation
-from ..execution_logging import run_logged_operation
-from .gateway import create_trading_gateway
-from .requests import TradeGetOpenRequest, TradeGetPendingRequest
-from .use_cases import run_trade_get_open, run_trade_get_pending
 from ...utils.mt5 import _mt5_epoch_to_utc
 from ...utils.utils import (
     _format_time_minimal,
@@ -19,6 +13,12 @@ from ...utils.utils import (
     _normalize_limit,
     _use_client_tz,
 )
+from .._mcp_instance import mcp
+from ..execution_logging import run_logged_operation
+from . import comments, validation
+from .gateway import create_trading_gateway
+from .requests import TradeGetOpenRequest, TradeGetPendingRequest
+from .use_cases import run_trade_get_open, run_trade_get_pending
 
 logger = logging.getLogger(__name__)
 

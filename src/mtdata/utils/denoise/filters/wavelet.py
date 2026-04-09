@@ -1,14 +1,15 @@
 """Wavelet-based filters: standard DWT and wavelet packet denoising."""
 from typing import Any, Dict, Optional
-import pandas as pd
+
 import numpy as np
+import pandas as pd
 
 try:
     import pywt as _pywt
 except Exception:
     _pywt = None  # type: ignore
 
-from ..base import register_filter, _series_like
+from ..base import _series_like, register_filter
 
 
 def _wavelet_packet_denoise(

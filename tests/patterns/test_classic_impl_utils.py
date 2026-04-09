@@ -5,27 +5,27 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from mtdata.patterns.classic_impl.config import ClassicDetectorConfig
 import mtdata.patterns.classic_impl.utils as utils_mod
+from mtdata.patterns.classic_impl.config import ClassicDetectorConfig
 from mtdata.patterns.classic_impl.utils import (
-    _level_close,
-    _fit_line,
-    _fit_line_robust,
-    _znorm,
-    _paa,
-    _dtw_distance,
-    _template_hs,
-    _compute_atr,
-    _pivot_thresholds,
-    _detect_pivots_close,
-    _tol_abs_from_close,
-    _is_converging,
-    _count_touches,
+    _build_time_array,
     _calibrate_confidence,
     _collect_calibration_points,
-    _find_recent_breakout,
-    _build_time_array,
+    _compute_atr,
     _conf,
+    _count_touches,
+    _detect_pivots_close,
+    _dtw_distance,
+    _find_recent_breakout,
+    _fit_line,
+    _fit_line_robust,
+    _is_converging,
+    _level_close,
+    _paa,
+    _pivot_thresholds,
+    _template_hs,
+    _tol_abs_from_close,
+    _znorm,
 )
 
 

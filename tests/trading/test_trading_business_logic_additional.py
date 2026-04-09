@@ -2,17 +2,20 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+from mtdata.core.trading.comments import (
+    _comment_sanitization_info,
+    _normalize_trade_comment,
+)
 from mtdata.core.trading.requests import TradeCloseRequest, TradePlaceRequest
-from mtdata.core.trading.use_cases import run_trade_close, run_trade_place
-from mtdata.core.trading.comments import _comment_sanitization_info, _normalize_trade_comment
 from mtdata.core.trading.time import _server_time_naive_to_mt5_timestamp
+from mtdata.core.trading.use_cases import run_trade_close, run_trade_place
 from mtdata.core.trading.validation import (
     _normalize_order_type_input,
     _normalize_price_for_symbol,
     _retcode_is_done,
     _trade_done_codes,
-    _validate_live_protection_levels,
     _validate_deviation,
+    _validate_live_protection_levels,
     _validate_volume,
 )
 

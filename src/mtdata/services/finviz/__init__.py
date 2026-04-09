@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from functools import update_wrapper
 import inspect
 import types
+from functools import update_wrapper
 
 from . import api as _api
 

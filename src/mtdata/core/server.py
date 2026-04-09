@@ -1,15 +1,21 @@
 """Main entry point for the MCP server."""
 
-import logging
 import atexit
+import logging
 from typing import Literal, Optional, cast
 
-from ..bootstrap.runtime import McpRuntimeSettings, apply_mcp_runtime_settings, load_mcp_runtime_settings
+from ..bootstrap.runtime import (
+    McpRuntimeSettings,
+    apply_mcp_runtime_settings,
+    load_mcp_runtime_settings,
+)
 from ..bootstrap.tools import bootstrap_tools
-from .config import load_environment
+from ..utils.mt5 import _ensure_symbol_ready, mt5_connection
 
-from ._mcp_instance import mcp
+# Lightweight helpers used by tool modules
+from ..utils.utils import _normalize_ohlcv_arg
 from . import _mcp_tools
+from ._mcp_instance import mcp
 from ._mcp_tools import (
     _TOOL_OBJECT_REGISTRY,
     _TOOL_REGISTRY,
@@ -21,17 +27,21 @@ from ._mcp_tools import (
     _get_runtime_signature,
     _unwrap_optional_annotation,
 )
-from .config import mt5_config
-from .constants import SERVICE_NAME, TIMEFRAME_MAP, TIMEFRAME_SECONDS  # re-export for CLI/tests
+from .config import load_environment, mt5_config
+from .constants import (  # re-export for CLI/tests
+    SERVICE_NAME,
+    TIMEFRAME_MAP,
+    TIMEFRAME_SECONDS,
+)
 from .server_entrypoints import (
     main_sse as _main_sse_entrypoint,
+)
+from .server_entrypoints import (
     main_stdio as _main_stdio_entrypoint,
+)
+from .server_entrypoints import (
     main_streamable_http as _main_streamable_http_entrypoint,
 )
-from ..utils.mt5 import mt5_connection, _ensure_symbol_ready
-
-# Lightweight helpers used by tool modules
-from ..utils.utils import _normalize_ohlcv_arg
 
 _ORIG_TOOL_DECORATOR = _mcp_tools._ORIG_TOOL_DECORATOR
 

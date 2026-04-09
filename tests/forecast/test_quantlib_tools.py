@@ -5,7 +5,7 @@ import types
 from mtdata.forecast import quantlib_tools as qtools
 
 
-def _make_fake_quantlib():
+def _make_fake_quantlib():  # noqa: C901
     class _Settings:
         _instance = None
 

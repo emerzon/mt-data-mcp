@@ -14,31 +14,30 @@ import pandas as pd
 import pytest
 
 from mtdata.utils.simplify import (
+    _apca_autotune_max_error,
+    _apca_select_indices,
     _choose_simplify_points,
     _default_target_points,
     _fallback_lttb_indices,
     _finalize_indices,
-    _lttb_select_indices,
-    _point_line_distance,
-    _rdp_keep_mask,
-    _rdp_select_indices,
-    _rdp_autotune_epsilon,
-    _pla_select_indices,
-    _pla_autotune_max_error,
-    _apca_select_indices,
-    _apca_autotune_max_error,
-    _select_indices_for_timeseries,
-    _handle_select_mode,
     _handle_encode_mode,
     _handle_segment_mode,
+    _handle_select_mode,
     _handle_symbolic_mode,
-    _simplify_dataframe_rows_ext,
-    _simplify_dataframe_rows,
-    _segment_endpoints_to_indices,
-    _n_bkps_from_segments_points,
+    _lttb_select_indices,
     _max_line_error,
+    _n_bkps_from_segments_points,
+    _pla_autotune_max_error,
+    _pla_select_indices,
+    _point_line_distance,
+    _rdp_autotune_epsilon,
+    _rdp_keep_mask,
+    _rdp_select_indices,
+    _segment_endpoints_to_indices,
+    _select_indices_for_timeseries,
+    _simplify_dataframe_rows,
+    _simplify_dataframe_rows_ext,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers

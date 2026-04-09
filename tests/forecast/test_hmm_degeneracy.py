@@ -10,13 +10,13 @@ import numpy as np
 import pytest
 
 from mtdata.forecast.monte_carlo import (
-    _is_hmm_degenerate,
-    _fit_hmmlearn_gaussian_hmm_1d,
-    simulate_hmm_mc,
+    _DEGEN_COMBINED_SELF_TRANS,
     _DEGEN_MAX_SIGMA_RATIO,
     _DEGEN_MIN_OCCUPANCY_ABS,
     _DEGEN_MIN_OCCUPANCY_FRAC,
-    _DEGEN_COMBINED_SELF_TRANS,
+    _fit_hmmlearn_gaussian_hmm_1d,
+    _is_hmm_degenerate,
+    simulate_hmm_mc,
 )
 
 

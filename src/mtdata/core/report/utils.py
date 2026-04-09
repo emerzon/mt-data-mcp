@@ -1,9 +1,10 @@
-from typing import Any, Dict, Optional, List, Tuple, Callable
-from datetime import datetime, timezone
 import math
+from datetime import datetime, timezone
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from ...utils.constants import TIME_DISPLAY_FORMAT
 from ...utils.barriers import get_pip_size as _get_pip_size
+from ...utils.constants import TIME_DISPLAY_FORMAT
+from ..tool_calling import call_tool_sync_raw
 from .shared import (
     _as_float,
     _format_decimal,
@@ -16,7 +17,6 @@ from .shared import (
     _indicator_key_variants,
     format_number,
 )
-from ..tool_calling import call_tool_sync_raw
 
 
 def now_utc_iso() -> str:
