@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional, Tuple
 
 import os
+import math
 import numpy as np
 import pandas as pd
 
@@ -74,8 +75,17 @@ def log_returns_from_prices(prices: np.ndarray, eps: float = 1e-12) -> np.ndarra
     arr = np.asarray(prices, dtype=float).ravel()
     if arr.size < 2:
         return np.array([], dtype=float)
+    try:
+        eps_value = float(eps)
+    except Exception as exc:
+        raise ValueError("eps must be a positive finite number") from exc
+    if not math.isfinite(eps_value) or eps_value <= 0.0:
+        raise ValueError("eps must be a positive finite number")
+    finite = arr[np.isfinite(arr)]
+    if finite.size and np.any(finite < 0.0):
+        raise ValueError("prices must not contain negative values")
     with np.errstate(divide='ignore', invalid='ignore'):
-        rets = np.diff(np.log(np.clip(arr, float(eps), None)))
+        rets = np.diff(np.log(np.clip(arr, eps_value, None)))
     return np.asarray(rets, dtype=float)
 
 
@@ -141,22 +151,33 @@ def _create_training_dataframes(series: np.ndarray, fh: int, exog_used: Optional
     """
     import pandas as _pd
     
-    # Build single-series training dataframe
-    Y_df = _pd.DataFrame({
-        'unique_id': ['ts'] * int(len(series)),
-        'ds': _pd.RangeIndex(start=0, stop=int(len(series))),
-        'y': series.astype(float),
-    })
+    train_len = int(len(series))
+    train_index = _pd.RangeIndex(start=0, stop=train_len)
+    base_train = _pd.DataFrame(
+        {
+            'unique_id': ['ts'] * train_len,
+            'ds': train_index,
+        }
+    )
+    Y_df = base_train.copy()
+    Y_df['y'] = np.asarray(series, dtype=float)
     
     X_df = None
     Xf_df = None
     if exog_used is not None and isinstance(exog_used, np.ndarray) and exog_used.size:
         cols = [f'x{i}' for i in range(exog_used.shape[1])]
-        X_df = _pd.DataFrame({'unique_id': ['ts'] * int(len(series)), 'ds': _pd.RangeIndex(start=0, stop=int(len(series)))})
+        X_df = base_train.copy()
         for j, cname in enumerate(cols):
             X_df[cname] = exog_used[:, j]
         if exog_future is not None and isinstance(exog_future, np.ndarray) and exog_future.size:
-            Xf_df = _pd.DataFrame({'unique_id': ['ts'] * int(fh), 'ds': _pd.RangeIndex(start=int(len(series)), stop=int(len(series))+int(fh))})
+            future_len = int(fh)
+            future_index = _pd.RangeIndex(start=train_len, stop=train_len + future_len)
+            Xf_df = _pd.DataFrame(
+                {
+                    'unique_id': ['ts'] * future_len,
+                    'ds': future_index,
+                }
+            )
             for j, cname in enumerate(cols):
                 Xf_df[cname] = exog_future[:, j]
     

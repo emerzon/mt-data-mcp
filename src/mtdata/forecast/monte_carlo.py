@@ -73,6 +73,30 @@ def _safe_log(x: np.ndarray, eps: float = 1e-12) -> np.ndarray:
     return np.log(np.clip(x, eps, None))
 
 
+def _prepare_price_history(
+    prices: np.ndarray,
+    *,
+    min_prices: int,
+    min_returns: int,
+    label: str,
+) -> tuple[np.ndarray, np.ndarray, float]:
+    arr = np.asarray(prices, dtype=float).reshape(-1)
+    arr = arr[np.isfinite(arr)]
+    if arr.size < int(min_prices):
+        raise ValueError(f"Not enough prices for {label}")
+    if np.any(arr <= 0.0):
+        raise ValueError(f"{label} requires strictly positive prices")
+    rets = np.diff(_safe_log(arr))
+    rets = rets[np.isfinite(rets)]
+    if rets.size < int(min_returns):
+        raise ValueError(f"Not enough returns for {label}")
+    return arr, rets, float(arr[-1])
+
+
+def _reconstruct_price_paths(last_price: float, return_paths: np.ndarray) -> np.ndarray:
+    return float(last_price) * np.exp(np.cumsum(np.asarray(return_paths, dtype=float), axis=1))
+
+
 def _gaussian_mixture_init_kwargs(x: np.ndarray, n_states: int) -> Dict[str, np.ndarray | str]:
     """Build deterministic non-KMeans initialization for 1D GaussianMixture.
 
@@ -259,14 +283,12 @@ def simulate_hmm_mc(
     - init: (K,)
     """
     rng = np.random.RandomState(seed)
-    prices = np.asarray(prices, dtype=float)
-    prices = prices[np.isfinite(prices)]
-    if prices.size < 5:
-        raise ValueError("Not enough prices for HMM calibration")
-    rets = np.diff(_safe_log(prices))
-    rets = rets[np.isfinite(rets)]
-    if rets.size < 4:
-        raise ValueError("Not enough returns for HMM calibration")
+    _, rets, last_price = _prepare_price_history(
+        prices,
+        min_prices=5,
+        min_returns=4,
+        label="HMM calibration",
+    )
 
     mu, sigma, A, init = _fit_hmmlearn_gaussian_hmm_1d(
         rets,
@@ -289,8 +311,7 @@ def simulate_hmm_mc(
             ret_paths[idx] = rng.normal(loc=mu[k], scale=max(sigma[k], 1e-12), size=n_k)
 
     # Build price paths from last observed price
-    last_price = float(prices[-1])
-    price_paths = last_price * np.exp(np.cumsum(ret_paths, axis=1))
+    price_paths = _reconstruct_price_paths(last_price, ret_paths)
 
     return {
         'price_paths': price_paths,
@@ -316,17 +337,14 @@ def simulate_gbm_mc(
     Returns dict with keys 'price_paths', 'return_paths', 'mu', and 'sigma'.
     """
     rng = np.random.RandomState(seed)
-    prices = np.asarray(prices, dtype=float)
-    prices = prices[np.isfinite(prices)]
-    if prices.size < 5:
-        raise ValueError("Not enough prices for GBM calibration")
-    rets = np.diff(_safe_log(prices))
-    rets = rets[np.isfinite(rets)]
-    if rets.size < 2:
-        raise ValueError("Not enough returns for GBM calibration")
+    _prices, rets, last_price = _prepare_price_history(
+        prices,
+        min_prices=5,
+        min_returns=2,
+        label="GBM calibration",
+    )
     mu = float(np.mean(rets))
     sigma = float(np.std(rets, ddof=1) + 1e-12)
-    last_price = float(prices[-1])
     sims_i = int(n_sims)
     horizon_i = int(horizon)
 
@@ -337,7 +355,7 @@ def simulate_gbm_mc(
         ret_paths = mu + sigma * z
     else:
         ret_paths = rng.normal(loc=mu, scale=sigma, size=(sims_i, horizon_i))
-    price_paths = last_price * np.exp(np.cumsum(ret_paths, axis=1))
+    price_paths = _reconstruct_price_paths(last_price, ret_paths)
     return {
         'price_paths': price_paths,
         'return_paths': ret_paths,
@@ -360,15 +378,12 @@ def simulate_heston_mc(
 ) -> Dict[str, np.ndarray]:
     """Simulate a Heston stochastic volatility model using Euler discretization."""
     rng = np.random.RandomState(seed)
-    prices = np.asarray(prices, dtype=float)
-    prices = prices[np.isfinite(prices)]
-    if prices.size < 10:
-        raise ValueError("Not enough prices for Heston calibration")
-
-    rets = np.diff(_safe_log(prices))
-    rets = rets[np.isfinite(rets)]
-    if rets.size < 5:
-        raise ValueError("Not enough returns for Heston calibration")
+    _, rets, last_price = _prepare_price_history(
+        prices,
+        min_prices=10,
+        min_returns=5,
+        label="Heston calibration",
+    )
 
     mu = float(np.mean(rets))
     ret_var = float(np.var(rets, ddof=1))
@@ -417,7 +432,6 @@ def simulate_heston_mc(
     xi_val = float(max(1e-6, xi_val))
     rho_val = float(np.clip(rho_val, -0.99, 0.99))
 
-    last_price = float(prices[-1])
     price_paths = np.zeros((int(n_sims), int(horizon)), dtype=float)
     ret_paths = np.zeros_like(price_paths, dtype=float)
     vol_paths = np.zeros_like(price_paths, dtype=float)
@@ -470,15 +484,12 @@ def simulate_jump_diffusion_mc(
 ) -> Dict[str, np.ndarray]:
     """Simulate a Merton jump-diffusion model."""
     rng = np.random.RandomState(seed)
-    prices = np.asarray(prices, dtype=float)
-    prices = prices[np.isfinite(prices)]
-    if prices.size < 10:
-        raise ValueError("Not enough prices for jump diffusion calibration")
-
-    rets = np.diff(_safe_log(prices))
-    rets = rets[np.isfinite(rets)]
-    if rets.size < 5:
-        raise ValueError("Not enough returns for jump diffusion calibration")
+    _, rets, last_price = _prepare_price_history(
+        prices,
+        min_prices=10,
+        min_returns=5,
+        label="jump diffusion calibration",
+    )
 
     mu = float(np.mean(rets))
     sigma = float(np.std(rets, ddof=1)) + 1e-12
@@ -497,7 +508,6 @@ def simulate_jump_diffusion_mc(
     k = np.exp(mu_j + 0.5 * sigma_j * sigma_j) - 1.0
     drift = mu - lambda_val * k
 
-    last_price = float(prices[-1])
     price_paths = np.zeros((int(n_sims), int(horizon)), dtype=float)
     ret_paths = np.zeros_like(price_paths, dtype=float)
 
@@ -544,13 +554,12 @@ def simulate_garch_mc(
     except ImportError:
         raise ImportError("The 'arch' library is required for GARCH simulations.")
 
-    prices = np.asarray(prices, dtype=float)
-    prices = prices[np.isfinite(prices)]
-    if prices.size < 50:  # GARCH needs decent history
-        raise ValueError("Not enough prices for GARCH calibration (need > 50)")
-    
-    rets = np.diff(_safe_log(prices))
-    rets = rets[np.isfinite(rets)]
+    _, rets, last_price = _prepare_price_history(
+        prices,
+        min_prices=50,
+        min_returns=10,
+        label="GARCH calibration (need > 50)",
+    )
     
     # Scale returns for numerical stability (common practice with GARCH)
     scale = 100.0
@@ -586,10 +595,7 @@ def simulate_garch_mc(
     sim_rets = sim_rets_scaled / scale
     
     # Reconstruct prices
-    last_price = float(prices[-1])
-    # cumsum of log returns
-    cum_rets = np.cumsum(sim_rets, axis=1)
-    price_paths = last_price * np.exp(cum_rets)
+    price_paths = _reconstruct_price_paths(last_price, sim_rets)
     
     return {
         'price_paths': price_paths,
@@ -606,14 +612,13 @@ def simulate_bootstrap_mc(
     block_size: Optional[int] = None
 ) -> Dict[str, np.ndarray]:
     """Circular Block Bootstrap simulation."""
-    prices = np.asarray(prices, dtype=float)
-    prices = prices[np.isfinite(prices)]
-    rets = np.diff(_safe_log(prices))
-    rets = rets[np.isfinite(rets)]
+    _, rets, last_price = _prepare_price_history(
+        prices,
+        min_prices=11,
+        min_returns=10,
+        label="bootstrapping",
+    )
     n = len(rets)
-    
-    if n < 10:
-        raise ValueError("Not enough returns for bootstrapping")
     
     if block_size is None:
         # Politis & White rule of thumb approx n^(1/3)
@@ -643,10 +648,7 @@ def simulate_bootstrap_mc(
             sampled_paths.append(existing[int(idx)].copy())
     sim_rets = np.asarray(sampled_paths[:sims_i], dtype=float)
 
-    # Reconstruct prices
-    last_price = float(prices[-1])
-    cum_rets = np.cumsum(sim_rets, axis=1)
-    price_paths = last_price * np.exp(cum_rets)
+    price_paths = _reconstruct_price_paths(last_price, sim_rets)
     
     return {
         'price_paths': price_paths,

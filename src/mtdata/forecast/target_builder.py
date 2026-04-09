@@ -141,21 +141,56 @@ def aggregate_horizon_target(
     Returns:
         (aggregated_array, agg_info_dict)
     """
-    if not agg_spec or agg_spec == 'last':
-        return y, {'agg': 'last', 'normalize': 'none'}
-    
-    agg_info: Dict[str, Any] = {'agg': agg_spec, 'normalize': normalize}
-    
-    # Simple aggregations for now (full implementation would use rolling windows)
-    if agg_spec == 'mean':
-        result = y  # Placeholder
-    elif agg_spec == 'sum':
-        result = y
-    elif agg_spec == 'slope':
-        result = y
-    elif agg_spec == 'vol':
-        result = y
-    else:
-        result = y
-    
-    return result, agg_info
+    arr = np.asarray(y, dtype=float).ravel()
+    horizon_i = max(1, int(horizon))
+    agg_name = str(agg_spec or 'last').strip().lower()
+    normalize_mode = str(normalize or 'none').strip().lower()
+
+    if agg_name == 'last' or arr.size == 0 or horizon_i <= 1:
+        return arr.astype(float, copy=False), {'agg': 'last' if agg_name == 'last' else agg_name, 'normalize': 'none' if agg_name == 'last' else normalize_mode}
+
+    if agg_name not in {'mean', 'sum', 'slope', 'max', 'min', 'range', 'vol'}:
+        return arr.astype(float, copy=False), {'agg': agg_name, 'normalize': normalize_mode}
+
+    result = np.full(arr.shape, np.nan, dtype=float)
+    if arr.size < horizon_i:
+        return result, {'agg': agg_name, 'normalize': normalize_mode, 'horizon': horizon_i, 'aligned': 'forward'}
+
+    windows = np.lib.stride_tricks.sliding_window_view(arr, horizon_i)
+    valid_mask = np.all(np.isfinite(windows), axis=1)
+    raw = np.full(windows.shape[0], np.nan, dtype=float)
+    if np.any(valid_mask):
+        valid_windows = windows[valid_mask]
+        if agg_name == 'mean':
+            raw[valid_mask] = np.mean(valid_windows, axis=1)
+        elif agg_name == 'sum':
+            raw[valid_mask] = np.sum(valid_windows, axis=1)
+        elif agg_name == 'max':
+            raw[valid_mask] = np.max(valid_windows, axis=1)
+        elif agg_name == 'min':
+            raw[valid_mask] = np.min(valid_windows, axis=1)
+        elif agg_name == 'range':
+            raw[valid_mask] = np.max(valid_windows, axis=1) - np.min(valid_windows, axis=1)
+        elif agg_name == 'vol':
+            ddof = 1 if horizon_i > 1 else 0
+            raw[valid_mask] = np.std(valid_windows, axis=1, ddof=ddof)
+        elif agg_name == 'slope':
+            x = np.arange(horizon_i, dtype=float)
+            x_centered = x - np.mean(x)
+            denom = float(np.sum(x_centered * x_centered))
+            centered = valid_windows - np.mean(valid_windows, axis=1, keepdims=True)
+            raw[valid_mask] = (centered @ x_centered) / max(denom, 1e-12)
+
+        if normalize_mode == 'per_bar':
+            if agg_name in {'sum', 'range'}:
+                raw[valid_mask] = raw[valid_mask] / float(horizon_i)
+        elif normalize_mode == 'pct':
+            base = np.abs(valid_windows[:, 0])
+            pct_vals = np.full(valid_windows.shape[0], np.nan, dtype=float)
+            base_ok = base > 1e-12
+            if np.any(base_ok):
+                pct_vals[base_ok] = 100.0 * raw[valid_mask][base_ok] / base[base_ok]
+            raw[valid_mask] = pct_vals
+
+    result[: raw.shape[0]] = raw
+    return result, {'agg': agg_name, 'normalize': normalize_mode, 'horizon': horizon_i, 'aligned': 'forward'}

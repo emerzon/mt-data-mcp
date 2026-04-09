@@ -139,11 +139,10 @@ class TestLogReturnsFromPrices:
         rets = log_returns_from_prices(prices)
         np.testing.assert_allclose(rets, 0.0, atol=1e-12)
 
-    def test_clipping_negative_prices(self):
+    def test_negative_prices_raise_value_error(self):
         prices = np.array([100.0, -5.0, 100.0])
-        rets = log_returns_from_prices(prices)
-        assert rets.shape == (2,)
-        assert np.all(np.isfinite(rets))
+        with pytest.raises(ValueError, match="negative values"):
+            log_returns_from_prices(prices)
 
     def test_eps_parameter(self):
         prices = np.array([0.0, 100.0])
