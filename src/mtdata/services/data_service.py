@@ -118,13 +118,15 @@ def _fetch_rates_with_warmup(
         end_datetime=end_datetime,
     )
     if start_datetime and end_datetime:
+        seconds_per_bar, timeframe_error = _resolve_fetch_timeframe_seconds(timeframe)
+        if timeframe_error:
+            return None, timeframe_error
         from_date, from_date_error = _parse_fetch_datetime_arg(start_datetime)
         to_date, to_date_error = _parse_fetch_datetime_arg(end_datetime)
         if from_date_error or to_date_error:
             return None, from_date_error or to_date_error
         if from_date > to_date:
             return None, "start_datetime must be before end_datetime"
-        seconds_per_bar = TIMEFRAME_SECONDS.get(timeframe, 60)
         from_date_internal = from_date - timedelta(seconds=seconds_per_bar * (warmup_bars + extra_bars))
         expected_end_ts = _utc_epoch_seconds(to_date)
 
@@ -135,9 +137,9 @@ def _fetch_rates_with_warmup(
         from_date, from_date_error = _parse_fetch_datetime_arg(start_datetime)
         if from_date_error:
             return None, from_date_error
-        seconds_per_bar = TIMEFRAME_SECONDS.get(timeframe)
-        if not seconds_per_bar:
-            return None, f"Unable to determine timeframe seconds for {timeframe}"
+        seconds_per_bar, timeframe_error = _resolve_fetch_timeframe_seconds(timeframe)
+        if timeframe_error:
+            return None, timeframe_error
         to_date = from_date + timedelta(seconds=seconds_per_bar * (candles + 2 + extra_bars))
         from_date_internal = from_date - timedelta(seconds=seconds_per_bar * (warmup_bars + extra_bars))
         expected_end_ts = _utc_epoch_seconds(to_date)
@@ -149,7 +151,9 @@ def _fetch_rates_with_warmup(
         to_date, to_date_error = _parse_fetch_datetime_arg(end_datetime)
         if to_date_error:
             return None, to_date_error
-        seconds_per_bar = TIMEFRAME_SECONDS.get(timeframe, 60)
+        seconds_per_bar, timeframe_error = _resolve_fetch_timeframe_seconds(timeframe)
+        if timeframe_error:
+            return None, timeframe_error
         expected_end_ts = _utc_epoch_seconds(to_date)
 
         def _fetch():
@@ -157,7 +161,9 @@ def _fetch_rates_with_warmup(
 
     else:
         utc_now = datetime.now(dt_timezone.utc)
-        seconds_per_bar = TIMEFRAME_SECONDS.get(timeframe, 60)
+        seconds_per_bar, timeframe_error = _resolve_fetch_timeframe_seconds(timeframe)
+        if timeframe_error:
+            return None, timeframe_error
         expected_end_ts = _utc_epoch_seconds(utc_now)
 
         def _fetch():
@@ -202,6 +208,13 @@ def _parse_fetch_datetime_arg(value: str) -> tuple[Optional[datetime], Optional[
     if parsed is None:
         return None, "Invalid date format. Try '2025-08-29', '2025-08-29 14:30', 'yesterday 14:00'."
     return parsed, None
+
+
+def _resolve_fetch_timeframe_seconds(timeframe: TimeframeLiteral) -> tuple[Optional[int], Optional[str]]:
+    seconds_per_bar = TIMEFRAME_SECONDS.get(timeframe)
+    if not seconds_per_bar:
+        return None, f"Unable to determine timeframe seconds for {timeframe}"
+    return int(seconds_per_bar), None
 
 
 def _resolve_live_rate_auto_shift_seconds(

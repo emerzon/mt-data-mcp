@@ -296,6 +296,22 @@ class TestFetchRatesWithWarmup(unittest.TestCase):
         self.assertIsNone(result)
         self.assertIn('Unable to determine', err)
 
+    @patch(_RATES_RANGE)
+    @patch(_PARSE_START)
+    def test_start_and_end_unknown_timeframe_seconds(self, mock_parse, mock_range):
+        """start/end fetches should fail fast when timeframe seconds are unavailable."""
+        mock_parse.side_effect = [
+            datetime(2025, 1, 1, tzinfo=_UTC),
+            datetime(2025, 1, 2, tzinfo=_UTC),
+        ]
+        with patch(f'{_DS}.TIMEFRAME_SECONDS', {}):
+            result, err = _fetch_rates_with_warmup(
+                'EURUSD', 16385, 'H1', 5, 0, '2025-01-01', '2025-01-02',
+                retry=False, sanity_check=False,
+            )
+        self.assertIsNone(result)
+        self.assertIn('Unable to determine', err)
+
     @patch(_RATES_FROM)
     @patch(_PARSE_START)
     def test_end_only(self, mock_parse, mock_from):
@@ -322,6 +338,17 @@ class TestFetchRatesWithWarmup(unittest.TestCase):
         )
         self.assertIsNone(result)
         self.assertIn('Invalid date', err)
+
+    @patch(_RATES_FROM)
+    def test_no_datetime_unknown_timeframe_seconds(self, mock_from):
+        """Default fetches should fail fast when timeframe seconds are unavailable."""
+        with patch(f'{_DS}.TIMEFRAME_SECONDS', {}):
+            result, err = _fetch_rates_with_warmup(
+                'EURUSD', 16385, 'H1', 5, 0, None, None,
+                retry=False, sanity_check=False,
+            )
+        self.assertIsNone(result)
+        self.assertIn('Unable to determine', err)
 
     @patch(_RATES_FROM)
     def test_retry_logic(self, mock_from):
