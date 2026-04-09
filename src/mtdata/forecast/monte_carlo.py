@@ -219,18 +219,19 @@ def _fit_hmmlearn_gaussian_hmm_1d(
     if N < max(4, K + 1):
         raise ValueError("Not enough returns for GaussianHMM calibration")
 
+    # Exclude 'm' from init_params so hmmlearn respects our pre-set means
+    # and skips its KMeans initialization step.  KMeans blocks indefinitely
+    # in asyncio.to_thread worker threads on Windows when joblib probes CPU
+    # topology (same root cause patched for GaussianMixture above).
     model = GaussianHMM(
         n_components=K,
         covariance_type='diag',
         n_iter=int(max_iter),
         tol=float(tol),
         random_state=seed,
+        init_params='stc',
     )
     x2 = x.reshape(-1, 1)
-    # Pre-set means so hmmlearn skips its KMeans initialization step.
-    # KMeans blocks indefinitely in asyncio.to_thread worker threads on
-    # Windows when joblib probes CPU topology (same issue patched for
-    # GaussianMixture in _gaussian_mixture_init_kwargs above).
     quantiles = np.linspace(0.0, 1.0, K + 2, dtype=float)[1:-1]
     model.means_ = np.quantile(x, quantiles).reshape(K, 1)
     with warnings.catch_warnings():
