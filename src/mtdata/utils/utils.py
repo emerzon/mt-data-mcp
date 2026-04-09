@@ -359,10 +359,9 @@ def _format_numeric_rows_from_df(
             col_decimals[col] = _optimal_decimals(values)
 
     out_rows: List[List[Any]] = []
-    for _, row in df[headers].iterrows():
+    for row_values in df[headers].itertuples(index=False, name=None):
         out_row: List[Any] = []
-        for col in headers:
-            val = row[col]
+        for col, val in zip(headers, row_values):
             if col == 'time':
                 out_row.append(str(val) if stringify else val)
             elif val is None or isinstance(val, bool):
