@@ -156,7 +156,7 @@ def _list_sktime_forecasters() -> Dict[str, Any]:
 
         estimators = all_estimators(estimator_types="forecaster", as_dataframe=True)
         items = []
-        for _, row in estimators.iterrows():
+        for row in estimators.to_dict("records"):
             cls = row.get("object") or row.get("class")
             name = row.get("name") or getattr(cls, "__name__", None)
             module = row.get("module") or getattr(cls, "__module__", None)
