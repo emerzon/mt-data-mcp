@@ -196,6 +196,23 @@ class TestForecastNeural:
         assert pu["input_size"] == 88  # fallback now reserves room for the forecast horizon
 
     @patch("mtdata.forecast.methods.neural._nf_setup_and_predict")
+    def test_ignores_auxiliary_non_numeric_columns_when_selecting_forecast(self, predict_mock):
+        predict_mock.return_value = pd.DataFrame(
+            {
+                "unique_id": ["ts"] * 3,
+                "ds": [0, 1, 2],
+                "cutoff": ["2026-04-09"] * 3,
+                "NHITS": [1.0, 2.0, 3.0],
+            }
+        )
+        Y_df = pd.DataFrame({"unique_id": ["ts"] * 50, "ds": list(range(50)), "y": np.linspace(100, 110, 50)})
+        vals, _ = forecast_neural(
+            method="nhits", series=np.linspace(100, 110, 50),
+            fh=3, timeframe="H1", n=50, m=12, params={}, Y_df=Y_df,
+        )
+        np.testing.assert_array_equal(vals, np.array([1.0, 2.0, 3.0]))
+
+    @patch("mtdata.forecast.methods.neural._nf_setup_and_predict")
     @patch("mtdata.forecast.methods.neural._edge_pad_to_length", side_effect=lambda v, l: v[:l] if len(v) >= l else np.pad(v, (0, l - len(v)), mode="edge"))
     def test_auto_input_size_reserves_horizon(self, pad_mock, predict_mock):
         predict_mock.return_value = _make_Yf(12)

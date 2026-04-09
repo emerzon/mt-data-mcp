@@ -23,6 +23,17 @@ def test_extract_forecast_values_handles_standard_alt_and_padding():
     out = fc._extract_forecast_values(yf_with_actuals, fh=2, method_name="m")
     assert out.tolist() == [9.0, 9.0]
 
+    yf_with_auxiliary = pd.DataFrame(
+        {
+            "unique_id": ["ts"],
+            "ds": [0],
+            "cutoff": ["2026-04-09T00:00:00Z"],
+            "NHITS": [7.5],
+        }
+    )
+    out = fc._extract_forecast_values(yf_with_auxiliary, fh=2, method_name="nhits")
+    assert out.tolist() == [7.5, 7.5]
+
     with pytest.raises(RuntimeError, match="prediction columns not found"):
         fc._extract_forecast_values(pd.DataFrame({"unique_id": ["ts"], "ds": [0]}), fh=1, method_name="demo")
 

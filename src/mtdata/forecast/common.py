@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import os
+import re
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -16,6 +17,13 @@ from ..utils.mt5 import (
     mt5,
 )
 from ..utils.utils import _parse_start_datetime, _utc_epoch_seconds
+
+_FORECAST_RESERVED_COLUMNS = {"unique_id", "ds", "y"}
+_FORECAST_PREFERRED_COLUMNS = ("y_hat", "mean", "median", "pred", "forecast")
+_FORECAST_AUXILIARY_COLUMN_RE = re.compile(
+    r"(?:^|[-_])(lo|low|lower|hi|high|upper|interval|quantile|fitted|residual|cutoff)(?:[-_].*)?$",
+    re.IGNORECASE,
+)
 
 
 def edge_pad_to_length(values: np.ndarray, length: int) -> np.ndarray:
@@ -111,25 +119,64 @@ def _normalize_weights(weights: Any, size: int) -> Optional[np.ndarray]:
     return arr / total
 
 
-def _extract_forecast_values(Yf: Any, fh: int, method_name: str = "forecast") -> "np.ndarray":
+def _extract_forecast_values(
+    Yf: Any,
+    fh: int,
+    method_name: str = "forecast",
+    *,
+    allow_actual_fallback: bool = True,
+) -> "np.ndarray":
     """Extract forecast values from prediction DataFrame.
     
     Common logic for finding prediction columns and extracting values.
     """
-    # Find the prediction column
     pred_col = None
     try:
-        pred_candidates = [c for c in list(Yf.columns) if c not in ('unique_id', 'ds', 'y')]
-        if pred_candidates:
-            preferred = ('y_hat', 'mean', 'median', 'pred', 'forecast')
-            for name in preferred:
-                if name in pred_candidates:
-                    pred_col = name
-                    break
-            if pred_col is None:
-                pred_col = pred_candidates[0]
-        elif 'y' in Yf.columns:
-            pred_col = 'y'
+        columns = list(Yf.columns)
+        pred_candidates = [c for c in columns if c not in _FORECAST_RESERVED_COLUMNS]
+        numeric_candidates = []
+        for candidate in pred_candidates:
+            series = pd.to_numeric(Yf[candidate], errors="coerce")
+            if bool(series.notna().any()):
+                numeric_candidates.append(candidate)
+
+        preferred_map = {str(candidate).lower(): candidate for candidate in numeric_candidates}
+        for preferred_name in _FORECAST_PREFERRED_COLUMNS:
+            pred_col = preferred_map.get(preferred_name)
+            if pred_col is not None:
+                break
+
+        def _method_named_candidates(candidates: List[Any]) -> List[Any]:
+            method_tokens = [
+                token
+                for token in re.split(r"[^a-z0-9]+", str(method_name).lower())
+                if len(token) >= 3 and token not in {"forecast", "statsforecast", "neuralforecast"}
+            ]
+            if not method_tokens:
+                return []
+            matches = [
+                candidate
+                for candidate in candidates
+                if any(token in str(candidate).lower() for token in method_tokens)
+            ]
+            return matches
+
+        if pred_col is None:
+            filtered_candidates = [
+                candidate
+                for candidate in numeric_candidates
+                if _FORECAST_AUXILIARY_COLUMN_RE.search(str(candidate)) is None
+            ]
+
+            named_matches = _method_named_candidates(filtered_candidates)
+            if len(named_matches) == 1:
+                pred_col = named_matches[0]
+            elif len(filtered_candidates) == 1:
+                pred_col = filtered_candidates[0]
+            elif len(numeric_candidates) == 1:
+                pred_col = numeric_candidates[0]
+            elif allow_actual_fallback and not numeric_candidates and "y" in columns:
+                pred_col = "y"
     except Exception:
         pass
     
