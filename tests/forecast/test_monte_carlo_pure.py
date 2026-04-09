@@ -221,6 +221,12 @@ class TestSimulateGbmMc:
         expected = np.std(np.diff(np.log(prices)), ddof=1) + 1e-12
         assert result["sigma"] == pytest.approx(expected)
 
+    def test_overrides_replace_calibrated_mu_and_sigma(self):
+        prices = self._prices()
+        result = simulate_gbm_mc(prices, horizon=3, n_sims=6, seed=2, antithetic=False, mu=0.03, sigma=0.07)
+        assert result["mu"] == pytest.approx(0.03)
+        assert result["sigma"] == pytest.approx(0.07)
+
 
 class TestSimulateHmmMc:
     def _prices(self, n=200, seed=42):

@@ -435,6 +435,8 @@ def simulate_gbm_mc(
     n_sims: int = 500,
     seed: Optional[int] = 42,
     antithetic: bool = True,
+    mu: Optional[float] = None,
+    sigma: Optional[float] = None,
 ) -> Dict[str, np.ndarray]:
     """Calibrate GBM from historical log-returns and simulate forward paths.
 
@@ -442,8 +444,10 @@ def simulate_gbm_mc(
     """
     rng = np.random.RandomState(seed)
     _, rets, last_price = _prepare_simulation_history(prices, "gbm")
-    mu = float(np.mean(rets))
-    sigma = float(np.std(rets, ddof=1) + 1e-12)
+    calibrated_mu = float(np.mean(rets))
+    calibrated_sigma = float(np.std(rets, ddof=1) + 1e-12)
+    mu = float(mu) if mu is not None else calibrated_mu
+    sigma = float(sigma) if sigma is not None else calibrated_sigma
     sims_i = int(n_sims)
     horizon_i = int(horizon)
 

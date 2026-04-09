@@ -89,38 +89,30 @@ class MonteCarloGBMMethod(ForecastMethod):
             prices = x
             mu_override = params.get("mu", None)
             sigma_override = params.get("sigma", None)
-            if mu_override is None and sigma_override is None:
-                sim = simulate_gbm_mc(prices=prices, horizon=fh, n_sims=n_sims, seed=seed)
-                paths = np.asarray(sim["price_paths"], dtype=float)
-                point = np.median(paths, axis=0)
-                ci = None
-                if isinstance(ci_alpha, (float, int)) and 0.0 < float(ci_alpha) < 1.0:
-                    ci = _ci_from_sims(paths, float(ci_alpha))
-                params_used = {
-                    "n_sims": n_sims,
-                    "seed": seed,
-                    "mu": float(sim.get("mu", 0.0)),
-                    "sigma": float(sim.get("sigma", 0.0)),
-                }
-                if ci_alpha is not None:
-                    params_used["ci_alpha"] = float(ci_alpha)
-                return ForecastResult(forecast=point, ci_values=ci, params_used=params_used)
-
-            rets = _log_returns_from_prices(prices)
-            mu = float(mu_override) if mu_override is not None else float(np.mean(rets))
-            sigma = float(sigma_override) if sigma_override is not None else float(np.std(rets) + 1e-12)
-            rng = np.random.RandomState(seed)
-            ret_paths = rng.normal(loc=mu, scale=max(sigma, 1e-12), size=(n_sims, fh))
-            price_paths = np.zeros_like(ret_paths, dtype=float)
-            cur = np.full(n_sims, float(prices[-1]), dtype=float)
-            for t in range(fh):
-                cur = cur * np.exp(ret_paths[:, t])
-                price_paths[:, t] = cur
-            point = np.median(price_paths, axis=0)
+            calibrated_rets = _log_returns_from_prices(prices)
+            sim = simulate_gbm_mc(
+                prices=prices,
+                horizon=fh,
+                n_sims=n_sims,
+                seed=seed,
+                mu=float(mu_override) if mu_override is not None else None,
+                sigma=float(sigma_override) if sigma_override is not None else None,
+            )
+            paths = np.asarray(sim["price_paths"], dtype=float)
+            point = np.median(paths, axis=0)
             ci = None
             if isinstance(ci_alpha, (float, int)) and 0.0 < float(ci_alpha) < 1.0:
-                ci = _ci_from_sims(price_paths, float(ci_alpha))
-            params_used = {"n_sims": n_sims, "seed": seed, "mu": mu, "sigma": sigma}
+                ci = _ci_from_sims(paths, float(ci_alpha))
+            params_used = {
+                "n_sims": n_sims,
+                "seed": seed,
+                "mu": float(sim.get("mu", 0.0)),
+                "sigma": float(sim.get("sigma", 0.0)),
+            }
+            if mu_override is not None and calibrated_rets.size:
+                params_used["mu_calibrated"] = float(np.mean(calibrated_rets))
+            if sigma_override is not None and calibrated_rets.size:
+                params_used["sigma_calibrated"] = float(np.std(calibrated_rets, ddof=1) + 1e-12)
             if ci_alpha is not None:
                 params_used["ci_alpha"] = float(ci_alpha)
             return ForecastResult(forecast=point, ci_values=ci, params_used=params_used)

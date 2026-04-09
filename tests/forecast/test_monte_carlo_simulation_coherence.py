@@ -6,6 +6,7 @@ import unittest
 
 import numpy as np
 import pandas as pd
+from unittest.mock import patch
 
 # Add src to path to ensure local package is found
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
@@ -50,6 +51,34 @@ class TestMonteCarloSimulationCoherence(unittest.TestCase):
         self.assertEqual(result.forecast.shape[0], 6)
         self.assertIn("mu", result.params_used)
         self.assertIn("sigma", result.params_used)
+
+    def test_monte_carlo_registry_method_routes_overrides_through_shared_simulator(self) -> None:
+        series = np.linspace(100.0, 120.0, 200)
+        fake_sim = {
+            "price_paths": np.full((4, 3), 123.0, dtype=float),
+            "return_paths": np.full((4, 3), 0.01, dtype=float),
+            "mu": 0.02,
+            "sigma": 0.05,
+        }
+        method = ForecastRegistry.get("mc_gbm")
+
+        with patch("mtdata.forecast.methods.monte_carlo.simulate_gbm_mc", return_value=fake_sim) as mock_sim:
+            result = method.forecast(
+                series=pd.Series(series),
+                horizon=3,
+                seasonality=1,
+                params={"n_sims": 4, "seed": 9, "mu": 0.02, "sigma": 0.05},
+            )
+
+        self.assertEqual(result.forecast.shape[0], 3)
+        self.assertEqual(result.params_used["mu"], 0.02)
+        self.assertEqual(result.params_used["sigma"], 0.05)
+        called_kwargs = mock_sim.call_args.kwargs
+        self.assertEqual(called_kwargs["horizon"], 3)
+        self.assertEqual(called_kwargs["n_sims"], 4)
+        self.assertEqual(called_kwargs["seed"], 9)
+        self.assertEqual(called_kwargs["mu"], 0.02)
+        self.assertEqual(called_kwargs["sigma"], 0.05)
 
     def test_simulate_garch_mc_is_reproducible_with_seed(self) -> None:
         try:
