@@ -3,6 +3,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
+from ...utils.denoise import normalize_denoise_spec as _normalize_denoise_spec
 from ...utils.mt5 import _mt5_epoch_to_utc
 from ...utils.patterns import build_index
 from ..interface import ForecastCallContext, ForecastMethod, ForecastResult
@@ -56,6 +57,15 @@ def _effective_sample_size(weights: np.ndarray) -> float:
         return 0.0
     norm = w / total
     return float(1.0 / np.sum(norm * norm))
+
+
+def _normalized_denoise_spec_for_comparison(spec: Optional[Any]) -> Optional[Any]:
+    if spec is None:
+        return None
+    try:
+        return _normalize_denoise_spec(spec)
+    except Exception:
+        return spec
 
 
 @ForecastRegistry.register("analog")
@@ -793,7 +803,15 @@ class AnalogMethod(ForecastMethod):
         base_col = str(params.get("base_col") or base_name or "").strip().lower()
         history_df = kwargs.get("history_df")
         history_base_col = str(kwargs.get("history_base_col") or base_col or "close").strip().lower() or "close"
-        history_denoise_spec = kwargs.get("history_denoise_spec") if kwargs.get("history_denoise_spec") is not None else denoise_spec
+        raw_history_denoise_spec = kwargs.get("history_denoise_spec")
+        if denoise_spec is not None and raw_history_denoise_spec is not None:
+            normalized_requested_denoise = _normalized_denoise_spec_for_comparison(denoise_spec)
+            normalized_history_denoise = _normalized_denoise_spec_for_comparison(raw_history_denoise_spec)
+            if normalized_requested_denoise != normalized_history_denoise:
+                raise ValueError(
+                    "Analog method received conflicting denoise specs for the query series and provided history context"
+                )
+        history_denoise_spec = raw_history_denoise_spec if raw_history_denoise_spec is not None else denoise_spec
         raw_history_by_timeframe = kwargs.get("history_by_timeframe")
         history_by_timeframe = {
             str(key): value

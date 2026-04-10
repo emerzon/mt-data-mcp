@@ -154,6 +154,33 @@ def test_analog_method_requires_denoise_spec_for_close_dn_series():
         )
 
 
+def test_analog_method_rejects_conflicting_denoise_between_params_and_history_context():
+    method = AnalogMethod()
+    series = pd.Series(np.linspace(100.0, 108.0, 80), name="close_dn")
+    history_df = pd.DataFrame(
+        {
+            "time": np.arange(80, dtype=float),
+            "close_dn": np.linspace(100.0, 108.0, 80, dtype=float),
+        }
+    )
+
+    with pytest.raises(ValueError, match="conflicting denoise specs"):
+        method.forecast(
+            series,
+            horizon=3,
+            seasonality=1,
+            params={
+                "symbol": "EURUSD",
+                "timeframe": "H1",
+                "base_col": "close_dn",
+                "denoise": {"method": "ema", "params": {"span": 5}},
+            },
+            history_df=history_df,
+            history_base_col="close_dn",
+            history_denoise_spec={"method": "sma", "params": {"window": 3}},
+        )
+
+
 def test_analog_method_reports_only_contributing_components(monkeypatch):
     method = AnalogMethod()
     series = pd.Series(np.linspace(100.0, 108.0, 80), name="close")
