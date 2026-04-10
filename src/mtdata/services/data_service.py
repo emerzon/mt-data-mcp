@@ -773,7 +773,7 @@ def _format_candle_times(
     epochs = pd.to_numeric(df['__epoch'], errors='coerce').astype(float)
     if time_as_epoch:
         df['time'] = epochs
-        df.__dict__['_tz_used_name'] = 'UTC'
+        df.attrs['_tz_used_name'] = 'UTC'
         return
 
     fmt = TIME_DISPLAY_FORMAT
@@ -785,7 +785,7 @@ def _format_candle_times(
             tz_used_name = getattr(client_tz, 'zone', None) or str(client_tz)
             time_values = time_values.dt.tz_convert(client_tz)
         df['time'] = time_values.dt.strftime(fmt)
-    df.__dict__['_tz_used_name'] = tz_used_name
+    df.attrs['_tz_used_name'] = tz_used_name
 
 
 def _normalize_simplify_spec(
