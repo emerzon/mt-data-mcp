@@ -55,25 +55,21 @@ def _level_components(vals: np.ndarray, tol_pct: float) -> List[List[int]]:
     n = int(vals.size)
     if n <= 0:
         return []
-    visited = np.zeros(n, dtype=bool)
+    order = np.argsort(np.asarray(vals, dtype=float), kind="mergesort")
     components: List[List[int]] = []
-    for i in range(n):
-        if visited[i]:
+    component = [int(order[0])]
+    for pos in range(1, n):
+        prev_idx = int(order[pos - 1])
+        cur_idx = int(order[pos])
+        if _level_close(float(vals[prev_idx]), float(vals[cur_idx]), tol_pct):
+            component.append(cur_idx)
             continue
-        queue = [int(i)]
-        visited[i] = True
-        component = [int(i)]
-        while queue:
-            cur = queue.pop()
-            for j in range(n):
-                if visited[j]:
-                    continue
-                if _level_close(float(vals[cur]), float(vals[j]), tol_pct):
-                    visited[j] = True
-                    queue.append(int(j))
-                    component.append(int(j))
         component.sort()
         components.append(component)
+        component = [cur_idx]
+    component.sort()
+    components.append(component)
+    components.sort(key=lambda item: item[0])
     return components
 
 

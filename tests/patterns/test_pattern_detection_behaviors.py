@@ -2142,6 +2142,14 @@ def test_detect_tops_bottoms_merges_connected_same_level_cluster():
     assert triple_top.details["touches"] == 4
 
 
+def test_level_components_preserves_transitive_clusters_in_input_order():
+    from src.mtdata.patterns.classic_impl.reversal import _level_components
+
+    vals = np.array([100.0, 112.0, 103.0, 115.0, 106.0], dtype=float)
+
+    assert _level_components(vals, 5.0) == [[0, 2, 4], [1, 3]]
+
+
 def test_detect_head_shoulders_fits_neckline_with_reaction_troughs(monkeypatch):
     from src.mtdata.patterns.classic_impl import reversal
 
