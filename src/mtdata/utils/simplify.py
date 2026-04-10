@@ -510,36 +510,129 @@ def _handle_select_mode(df: pd.DataFrame, headers: List[str], spec: Dict[str, An
     return simplified_df, meta
 
 
-def _handle_resample_mode(df: pd.DataFrame, headers: List[str], spec: Dict[str, Any]) -> Tuple[pd.DataFrame, Optional[Dict[str, Any]]]:
-    rule = spec.get('rule') or spec.get('interval')
-    if not rule:
-        return df, {'error': 'Missing rule for resample'}
+def _first_non_null_value(series: pd.Series) -> Any:
+    for value in series.tolist():
+        if pd.notna(value):
+            return value
+    return series.iloc[0] if len(series) else None
+
+
+def _last_non_null_value(series: pd.Series) -> Any:
+    values = series.tolist()
+    for value in reversed(values):
+        if pd.notna(value):
+            return value
+    return series.iloc[-1] if len(series) else None
+
+
+def _resolve_resample_bucket_seconds(df: pd.DataFrame, spec: Dict[str, Any]) -> Optional[int]:
+    bucket_seconds = spec.get("bucket_seconds")
+    if bucket_seconds is not None:
+        try:
+            return max(1, int(bucket_seconds))
+        except Exception:
+            return None
+
+    # Only infer a relative bucket size when the caller supplied a target shape.
+    if "__epoch" not in df.columns:
+        return None
+    if not any(spec.get(key) is not None for key in ("points", "target_points", "max_points", "ratio")):
+        return None
+
     try:
-        if 'time' in df.columns:
-            if '__epoch' in df.columns:
-                df = df.set_index(pd.to_datetime(df['__epoch'], unit='s'))
-            else:
-                df = df.set_index(pd.to_datetime(df['time']))
+        n_out = _choose_simplify_points(len(df), spec)
+        t0 = float(df["__epoch"].iloc[0])
+        t1 = float(df["__epoch"].iloc[-1])
+        span = max(1.0, t1 - t0)
+        return max(1, int(round(span / max(1, n_out))))
+    except Exception:
+        return None
 
-        agg_map: Dict[str, str] = {}
-        for h in headers:
-            if h in ['open']:
-                agg_map[h] = 'first'
-            elif h in ['high']:
-                agg_map[h] = 'max'
-            elif h in ['low']:
-                agg_map[h] = 'min'
-            elif h in ['close']:
-                agg_map[h] = 'last'
-            elif h in ['tick_volume', 'real_volume', 'volume']:
-                agg_map[h] = 'sum'
-            else:
-                agg_map[h] = 'last'
 
-        resampled = df.resample(rule).agg(agg_map).dropna()
-        return resampled, {'mode': 'resample', 'rule': rule, 'rows': int(len(resampled))}
+def _aggregate_resample_segment(seg: pd.DataFrame, columns: List[str]) -> Dict[str, Any]:
+    row: Dict[str, Any] = {}
+    for col in columns:
+        if col not in seg.columns:
+            continue
+        series = seg[col]
+        if col == "time":
+            row[col] = _first_non_null_value(series)
+            continue
+        if col == "__epoch":
+            numeric = pd.to_numeric(series, errors="coerce").dropna()
+            row[col] = float(numeric.iloc[0]) if not numeric.empty else _first_non_null_value(series)
+            continue
+        if col == "open":
+            row[col] = _first_non_null_value(series)
+            continue
+        if col in {"high", "low", "tick_volume", "real_volume", "volume"}:
+            numeric = pd.to_numeric(series, errors="coerce").dropna()
+            if numeric.empty:
+                row[col] = _last_non_null_value(series)
+            elif col == "high":
+                row[col] = float(numeric.max())
+            elif col == "low":
+                row[col] = float(numeric.min())
+            else:
+                row[col] = float(numeric.sum())
+            continue
+        row[col] = _last_non_null_value(series)
+    return row
+
+
+def _handle_resample_mode(df: pd.DataFrame, headers: List[str], spec: Dict[str, Any]) -> Tuple[pd.DataFrame, Optional[Dict[str, Any]]]:
+    rule = spec.get("rule") or spec.get("interval")
+    bucket_seconds = _resolve_resample_bucket_seconds(df, spec)
+    if not rule and bucket_seconds is None:
+        return df, {"error": "Missing rule for resample"}
+    try:
+        if "__epoch" in df.columns:
+            time_index = pd.to_datetime(pd.to_numeric(df["__epoch"], errors="coerce"), unit="s", utc=True)
+        elif "time" in df.columns:
+            time_index = pd.to_datetime(df["time"], errors="coerce")
+        else:
+            return df, {"error": "Resample requires a time or __epoch column"}
+
+        working = df.copy()
+        working["__time_index"] = time_index
+        working = working[working["__time_index"].notna()].copy()
+        if working.empty:
+            return df, {"error": "Resample requires at least one valid timestamp"}
+
+        source_columns = [col for col in df.columns if col != "__time_index"]
+        rows: List[Dict[str, Any]] = []
+
+        if rule:
+            grouped = working.groupby(pd.Grouper(key="__time_index", freq=str(rule)), sort=True)
+        else:
+            if "__epoch" in working.columns:
+                base_seconds = pd.to_numeric(working["__epoch"], errors="coerce")
+            else:
+                base_seconds = working["__time_index"].astype("int64") / 1_000_000_000.0
+            base_seconds = pd.to_numeric(base_seconds, errors="coerce")
+            working = working[base_seconds.notna()].copy()
+            if working.empty:
+                return df, {"error": "Resample requires at least one valid timestamp"}
+            base_seconds = pd.to_numeric(base_seconds[base_seconds.notna()], errors="coerce")
+            origin = float(base_seconds.iloc[0])
+            bucket_keys = ((base_seconds - origin) // int(bucket_seconds)).astype(int)
+            grouped = working.groupby(bucket_keys, sort=True)
+
+        for bucket, seg in grouped:
+            if seg.empty or pd.isna(bucket):
+                continue
+            rows.append(_aggregate_resample_segment(seg, source_columns))
+
+        out_df = pd.DataFrame(rows)
+        if rule:
+            return out_df.reset_index(drop=True), {"mode": "resample", "rule": str(rule), "rows": int(len(out_df))}
+        return out_df.reset_index(drop=True), {
+            "mode": "resample",
+            "bucket_seconds": int(bucket_seconds),
+            "rows": int(len(out_df)),
+        }
     except Exception as exc:
-        return df, {'error': f'Resample failed: {exc}'}
+        return df, {"error": f"Resample failed: {exc}"}
 
 
 def _handle_encode_mode(df: pd.DataFrame, headers: List[str], spec: Dict[str, Any]) -> Tuple[pd.DataFrame, Optional[Dict[str, Any]]]:
@@ -750,11 +843,11 @@ def _simplify_dataframe_rows(df: pd.DataFrame, headers: List[str], simplify: Opt
     Modes (simplify['mode']):
     - 'select' (default): pick representative existing rows using the chosen method.
     - 'approximate': partition by selected breakpoints and aggregate numeric columns per segment.
-    - 'resample': time-based bucketing by '__epoch' with 'bucket_seconds'; aggregates numeric columns.
+    - 'resample': time-based bucketing via 'rule'/'interval' or '__epoch' with 'bucket_seconds'.
     - 'encode': transform per-row representation to a compact schema (e.g., envelope or delta) and
                 optionally pre-select rows before encoding.
 
-    Aggregation: mean for numeric columns; first value for non-numeric columns like 'time'.
+    Aggregation depends on mode; resample preserves OHLC semantics and sums volume-like columns.
     """
     if not simplify:
         return df, None
@@ -776,82 +869,16 @@ def _simplify_dataframe_rows(df: pd.DataFrame, headers: List[str], simplify: Opt
                 mode = method
         spec_eff = dict(simplify)
         spec_eff["mode"] = mode
-
-        # Helper: numeric columns in requested headers order, then any others
-        def _numeric_columns_from_headers() -> List[str]:
-            cols: List[str] = []
-            for h in headers:
-                if h in ('time',) or str(h).startswith('_'):
-                    continue
-                try:
-                    if h in df.columns and pd.api.types.is_numeric_dtype(df[h]):
-                        cols.append(h)
-                except Exception:
-                    continue
-            if not cols:
-                for c in df.columns:
-                    if c in ('time',) or str(c).startswith('_'):
-                        continue
-                    try:
-                        if pd.api.types.is_numeric_dtype(df[c]):
-                            cols.append(c)
-                    except Exception:
-                        continue
-            return cols
-
-        # Aggregation helper for approximate/resample modes
-        def _aggregate_segment(i0: int, i1: int) -> Dict[str, Any]:
-            seg = df.iloc[i0:i1]
-            row: Dict[str, Any] = {}
-            if "time" in df.columns and "time" in headers:
-                row["time"] = seg.iloc[0]["time"]
-            for col in headers:
-                if col == "time":
-                    continue
-                if col in seg.columns and pd.api.types.is_numeric_dtype(seg[col]):
-                    row[col] = float(seg[col].mean())
-                elif col in seg.columns:
-                    try:
-                        row[col] = next((v for v in seg[col].tolist() if pd.notna(v)), seg.iloc[0][col])
-                    except Exception:
-                        row[col] = seg.iloc[0][col]
-            return row
-
-        # Determine target number of points early (used for select and to infer resample/encode)
-        n_out = _choose_simplify_points(total, spec_eff)
-        
-        if mode == "resample" and "__epoch" in df.columns:
-            bs = spec_eff.get("bucket_seconds")
-            if bs is None or (isinstance(bs, (int, float)) and bs <= 0):
-                try:
-                    # Infer bucket by total time span / target buckets
-                    t0 = float(df["__epoch"].iloc[0])
-                    t1 = float(df["__epoch"].iloc[-1])
-                    span = max(1.0, t1 - t0)
-                    bs = max(1, int(round(span / max(1, n_out))))
-                except Exception:
-                    # Fallback to rough bucket from count
-                    bs = max(1, int(round(total / float(max(1, n_out)))))
-            try:
-                bs = max(1, int(bs))
-            except Exception:
-                bs = max(1, int(round(total / float(max(1, n_out)))))
-            grp = ((df["__epoch"].astype(float) - float(df["__epoch"].iloc[0])) // bs).astype(int)
-            out_rows: List[Dict[str, Any]] = []
-            for _, seg in df.groupby(grp):
-                i0 = seg.index[0]
-                i1 = seg.index[-1] + 1
-                out_rows.append(_aggregate_segment(i0, i1))
-            out_df = pd.DataFrame(out_rows)
-            meta = {
-                "mode": "resample",
-                "method": method or SIMPLIFY_DEFAULT_METHOD,
-                "bucket_seconds": int(bs),
-                "original_rows": total,
-                "returned_rows": len(out_df),
-                "points": len(out_df),
-            }
-            return out_df.reset_index(drop=True), meta
+        if mode == "resample":
+            if (
+                "__epoch" in df.columns
+                and spec_eff.get("rule") is None
+                and spec_eff.get("interval") is None
+                and spec_eff.get("bucket_seconds") is None
+                and not any(spec_eff.get(key) is not None for key in ("points", "target_points", "max_points", "ratio"))
+            ):
+                spec_eff["points"] = _choose_simplify_points(total, spec_eff)
+            return _handle_resample_mode(df, headers, spec_eff)
 
         return _simplify_dataframe_rows_ext(df, headers, spec_eff)
         

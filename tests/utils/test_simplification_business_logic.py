@@ -55,17 +55,59 @@ def test_handle_resample_missing_rule_returns_error_metadata():
 
 def test_handle_resample_aggregates_ohlc_and_volume():
     df = _sample_ohlc_df()
-    headers = ["open", "high", "low", "close", "volume"]
+    headers = ["time", "open", "high", "low", "close", "volume"]
 
     result_df, meta = simp._handle_resample_mode(df, headers, {"rule": "1h"})
 
     assert len(result_df) == 3
+    assert "time" in result_df.columns
+    assert "__epoch" in result_df.columns
+    assert result_df.iloc[0]["time"] == df.iloc[0]["time"]
+    assert result_df.iloc[0]["__epoch"] == df.iloc[0]["__epoch"]
     assert result_df.iloc[0]["open"] == 1.0
     assert result_df.iloc[0]["high"] == 4.0
     assert result_df.iloc[0]["low"] == 0.5
     assert result_df.iloc[0]["close"] == 3.0
     assert result_df.iloc[0]["volume"] == 15
     assert meta == {"mode": "resample", "rule": "1h", "rows": 3}
+
+
+def test_handle_resample_supports_bucket_seconds():
+    df = _sample_ohlc_df()
+    headers = ["time", "open", "high", "low", "close", "volume"]
+
+    result_df, meta = simp._handle_resample_mode(df, headers, {"bucket_seconds": 3600, "points": 3})
+
+    assert len(result_df) == 3
+    assert result_df.iloc[0]["time"] == df.iloc[0]["time"]
+    assert result_df.iloc[0]["__epoch"] == df.iloc[0]["__epoch"]
+    assert result_df.iloc[0]["open"] == 1.0
+    assert result_df.iloc[0]["high"] == 4.0
+    assert result_df.iloc[0]["low"] == 0.5
+    assert result_df.iloc[0]["close"] == 3.0
+    assert result_df.iloc[0]["volume"] == 15
+    assert meta == {"mode": "resample", "bucket_seconds": 3600, "rows": 3}
+
+
+def test_simplify_dataframe_rows_resample_uses_shared_bucketed_aggregation():
+    df = _sample_ohlc_df()
+    headers = ["time", "open", "high", "low", "close", "volume"]
+
+    result_df, meta = simp._simplify_dataframe_rows(
+        df,
+        headers,
+        {"mode": "resample", "bucket_seconds": 3600},
+    )
+
+    assert len(result_df) == 3
+    assert result_df.iloc[0]["time"] == df.iloc[0]["time"]
+    assert result_df.iloc[0]["__epoch"] == df.iloc[0]["__epoch"]
+    assert result_df.iloc[0]["open"] == 1.0
+    assert result_df.iloc[0]["high"] == 4.0
+    assert result_df.iloc[0]["low"] == 0.5
+    assert result_df.iloc[0]["close"] == 3.0
+    assert result_df.iloc[0]["volume"] == 15
+    assert meta == {"mode": "resample", "bucket_seconds": 3600, "rows": 3}
 
 
 def test_handle_select_returns_subset_and_metadata(monkeypatch):
