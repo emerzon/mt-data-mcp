@@ -1233,6 +1233,42 @@ class TestFetchCandles(unittest.TestCase):
         self.assertFalse(warmup_retry['applied'])
         self.assertEqual(warmup_retry['raw_bars_fetched'], 0)
 
+    @patch(_MT5_CONFIG)
+    @patch(f"{_DS}._rebuild_candle_indicator_window", side_effect=RuntimeError("retry boom"))
+    @patch(_APPLY_TI)
+    @patch(_RATES_FROM)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=14)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_nan_warmup_retry_failure_surfaces_warning_and_meta_error(
+        self,
+        mock_warmup,
+        mock_ctz,
+        mock_info,
+        mock_from,
+        mock_ti,
+        mock_rebuild,
+        mock_cfg,
+    ):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        mock_from.side_effect = [_make_rates(30), _make_rates(60)]
+
+        def add_nan_col(df, spec):
+            df['rsi_14'] = float('nan')
+            return ['rsi_14']
+
+        mock_ti.side_effect = add_nan_col
+
+        result = fetch_candles('EURUSD', limit=5, indicators=[{'name': 'rsi', 'params': [14]}])
+
+        self.assertTrue(result.get('success'))
+        warmup_retry = result['meta']['diagnostics']['query']['warmup_retry']
+        self.assertTrue(warmup_retry['applied'])
+        self.assertEqual(warmup_retry['error'], 'retry boom')
+        self.assertTrue(any('Indicator warmup retry failed: retry boom' in str(w) for w in result.get('warnings', [])))
+        self.assertEqual(mock_rebuild.call_count, 1)
+
     # -- Simplify ------------------------------------------------------------
 
     @patch(_MT5_CONFIG)

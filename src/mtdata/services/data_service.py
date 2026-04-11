@@ -1016,6 +1016,7 @@ def fetch_candles(  # noqa: C901
         # Track denoise metadata if applied
         denoise_apps: List[Dict[str, Any]] = []
         denoise_warnings: List[str] = []
+        ti_warnings: List[str] = []
         _apply_pre_ti_denoise(df, headers, denoise, denoise_apps)
         denoise_warnings.extend(_consume_denoise_warnings(df))
         ti_cols = _apply_indicator_stage(df, headers, ti_spec, denoise)
@@ -1035,7 +1036,7 @@ def fetch_candles(  # noqa: C901
                 if df[ti_cols].isna().any().any():
                     # Increase warmup and refetch once
                     warmup_bars_retry = max(int(warmup_bars * TI_NAN_WARMUP_FACTOR), warmup_bars + TI_NAN_WARMUP_MIN_ADD)
-                    rates_retry, _ = _fetch_rates_with_warmup(
+                    rates_retry, rates_retry_error = _fetch_rates_with_warmup(
                         symbol,
                         mt5_timeframe,
                         timeframe,
@@ -1053,6 +1054,12 @@ def fetch_candles(  # noqa: C901
                         "warmup_bars": int(warmup_bars_retry),
                         "raw_bars_fetched": int(len(rates_retry)) if rates_retry is not None else 0,
                     }
+                    if rates_retry_error:
+                        warmup_retry_meta["error"] = str(rates_retry_error)
+                        ti_warnings.append(
+                            "Indicator warmup retry failed: "
+                            f"{rates_retry_error}. Indicator values may be incomplete."
+                        )
                     # Rebuild df and indicators with the larger window
                     if retry_applied:
                         df, ti_cols = _rebuild_candle_indicator_window(
@@ -1066,8 +1073,12 @@ def fetch_candles(  # noqa: C901
                         # Re-trim to target window
                         df = _trim_df_to_target(df, start_datetime, end_datetime, candles, copy_rows=False)
                         rows_after_target_trim = int(len(df))
-            except Exception:
-                pass
+            except Exception as exc:
+                warmup_retry_meta["error"] = str(exc)
+                logger.warning("Indicator warmup retry failed", exc_info=True)
+                ti_warnings.append(
+                    f"Indicator warmup retry failed: {exc}. Indicator values may be incomplete."
+                )
 
         # Authoritative incomplete-tail trim: covers the initial fetch *and*
         # the TI-retry rebuild path, applied before any non-causal transforms.
@@ -1188,6 +1199,14 @@ def fetch_candles(  # noqa: C901
             if not isinstance(warns, list):
                 warns = []
             for warning_text in denoise_warnings:
+                if warning_text not in warns:
+                    warns.append(warning_text)
+            payload['warnings'] = warns
+        if ti_warnings:
+            warns = payload.get('warnings')
+            if not isinstance(warns, list):
+                warns = []
+            for warning_text in ti_warnings:
                 if warning_text not in warns:
                     warns.append(warning_text)
             payload['warnings'] = warns
