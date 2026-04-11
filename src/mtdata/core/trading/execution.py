@@ -3,7 +3,7 @@
 import math
 import time as _stdlib_time
 import traceback
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Union
 
 from ...utils.mt5 import _mt5_epoch_to_utc
@@ -72,6 +72,66 @@ def _unexpected_operation_error(
     if context:
         payload["context"] = context
     return payload
+
+
+def _deal_history_sort_key(row: Any) -> float:
+    for field in ("time_msc", "time", "time_update_msc", "time_update"):
+        try:
+            value = float(getattr(row, field, 0.0) or 0.0)
+            if math.isfinite(value):
+                return value
+        except Exception:
+            continue
+    return 0.0
+
+
+def _resolve_closed_deal_from_history(
+    mt5: Any,
+    *,
+    result: Any,
+    position: Any,
+    closed_at_utc: datetime,
+) -> Optional[Any]:
+    deal_ticket = validation._safe_int_ticket(getattr(result, "deal", None))
+    order_ticket = validation._safe_int_ticket(getattr(result, "order", None))
+    position_ticket = validation._safe_int_ticket(getattr(position, "ticket", None))
+    if deal_ticket is None and order_ticket is None and position_ticket is None:
+        return None
+    try:
+        rows = mt5.history_deals_get(
+            closed_at_utc - timedelta(minutes=5),
+            closed_at_utc + timedelta(minutes=1),
+        )
+    except Exception:
+        return None
+    if not rows:
+        return None
+
+    exact_deal_matches: List[Any] = []
+    order_matches: List[Any] = []
+    position_matches: List[Any] = []
+    for row in rows:
+        row_ticket = validation._safe_int_ticket(getattr(row, "ticket", None))
+        row_order = validation._safe_int_ticket(getattr(row, "order", None))
+        row_position_candidates = {
+            validation._safe_int_ticket(getattr(row, "position_id", None)),
+            validation._safe_int_ticket(getattr(row, "position_by_id", None)),
+            validation._safe_int_ticket(getattr(row, "position", None)),
+        }
+        row_position_candidates.discard(None)
+        if deal_ticket is not None and row_ticket == deal_ticket:
+            exact_deal_matches.append(row)
+            continue
+        if order_ticket is not None and row_order == order_ticket:
+            order_matches.append(row)
+            continue
+        if position_ticket is not None and position_ticket in row_position_candidates:
+            position_matches.append(row)
+
+    for matches in (exact_deal_matches, order_matches, position_matches):
+        if matches:
+            return max(matches, key=_deal_history_sort_key)
+    return None
 
 
 def _count_done_results(mt5: Any, results: List[Dict[str, Any]]) -> int:
@@ -781,6 +841,7 @@ def _close_positions(  # noqa: C901
                         close_exec_price = float(close_exec_price) if close_exec_price is not None else None
                     except Exception:
                         close_exec_price = None
+                    close_observed_at_utc = datetime.now(timezone.utc)
                     open_epoch = getattr(position, "time", None)
                     try:
                         open_epoch_utc = _mt5_epoch_to_utc(float(open_epoch)) if open_epoch is not None else None
@@ -790,7 +851,7 @@ def _close_positions(  # noqa: C901
                     if open_epoch_utc is not None:
                         try:
                             duration_seconds = int(
-                                max(0.0, datetime.now(timezone.utc).timestamp() - float(open_epoch_utc))
+                                max(0.0, close_observed_at_utc.timestamp() - float(open_epoch_utc))
                             )
                         except Exception:
                             duration_seconds = None
@@ -801,10 +862,17 @@ def _close_positions(  # noqa: C901
                     except Exception:
                         realized_pnl = None
                     if realized_pnl is None:
-                        try:
-                            realized_pnl = float(getattr(position, "profit", None))
-                        except Exception:
-                            realized_pnl = None
+                        history_deal = _resolve_closed_deal_from_history(
+                            mt5,
+                            result=result,
+                            position=position,
+                            closed_at_utc=close_observed_at_utc,
+                        )
+                        if history_deal is not None:
+                            try:
+                                realized_pnl = float(getattr(history_deal, "profit", None))
+                            except Exception:
+                                realized_pnl = None
 
                     pnl_price_delta = None
                     if open_price is not None and close_exec_price is not None:

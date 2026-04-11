@@ -1044,6 +1044,47 @@ def test_close_positions_preserves_existing_magic(mock_mt5):
     assert req["magic"] == 67890
 
 
+def test_close_positions_uses_history_deal_profit_when_result_profit_is_missing(mock_mt5):
+    mock_mt5.ORDER_FILLING_IOC = 1
+    mock_mt5.ORDER_FILLING_FOK = 0
+    mock_mt5.ORDER_FILLING_RETURN = 2
+    mock_mt5.ORDER_TIME_GTC = 0
+    mock_mt5.positions_get.return_value = [
+        SimpleNamespace(
+            ticket=123,
+            symbol="EURUSD",
+            volume=0.1,
+            type=0,
+            profit=10.0,
+            magic=67890,
+            price_open=1.04000,
+            time=1700000000,
+        )
+    ]
+    mock_mt5.order_send.return_value = SimpleNamespace(
+        retcode=10009,
+        deal=987,
+        order=456,
+        volume=0.1,
+        price=1.05010,
+        bid=1.05000,
+        ask=1.05010,
+        comment="",
+        profit=None,
+    )
+    mock_mt5.history_deals_get.return_value = [
+        SimpleNamespace(ticket=111, order=111, position_id=123, profit=1.0, time=1700000100),
+        SimpleNamespace(ticket=987, order=456, position_id=123, profit=42.5, time=1700000200),
+    ]
+
+    res = _close_positions(ticket=123)
+
+    assert "error" not in res
+    assert res["pnl"] == pytest.approx(42.5)
+    assert res["pnl"] != pytest.approx(10.0)
+    mock_mt5.history_deals_get.assert_called_once()
+
+
 def test_close_positions_retries_without_comment_when_result_retcode_rejects_comment(mock_mt5):
     mock_mt5.ORDER_FILLING_IOC = 1
     mock_mt5.ORDER_FILLING_FOK = 0
