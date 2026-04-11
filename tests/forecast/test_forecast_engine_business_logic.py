@@ -443,6 +443,53 @@ def test_forecast_engine_preserves_prefetched_denoised_base_column(monkeypatch):
     assert captured["last_value"] == float(df["close_dn"].iloc[-1])
 
 
+def test_forecast_engine_reconstructs_return_prices_from_prefetched_denoised_base(monkeypatch):
+    captured = {}
+
+    class CaptureForecaster:
+        def forecast(self, series, horizon, seasonality, params, exog_future=None, **kwargs):
+            captured["series_name"] = series.name
+            captured["last_value"] = float(series.iloc[-1])
+            return ForecastResult(
+                forecast=np.array([0.0], dtype=float),
+                params_used={},
+                metadata={},
+            )
+
+    class FakeRegistry:
+        @staticmethod
+        def get(name):
+            return CaptureForecaster()
+
+    monkeypatch.setattr(fe, "TIMEFRAME_MAP", {"H1": 1})
+    monkeypatch.setattr(fe, "TIMEFRAME_SECONDS", {"H1": 3600})
+    monkeypatch.setattr(fe, "_get_available_methods", lambda: ("naive",))
+    monkeypatch.setattr(fe, "_parse_kv_or_json", lambda v: dict(v or {}))
+    monkeypatch.setattr(fe, "ForecastRegistry", FakeRegistry)
+    monkeypatch.setattr(fe, "get_symbol_info_cached", lambda symbol: None)
+
+    df = _df(20)
+    df["close_dn"] = df["close"] * 10.0
+
+    out = fe.forecast_engine(
+        symbol="EURUSD",
+        timeframe="H1",
+        method="naive",
+        horizon=1,
+        quantity="return",
+        prefetched_df=df,
+        prefetched_base_col="close_dn",
+        prefetched_denoise_spec={"method": "ema"},
+    )
+
+    assert out["success"] is True
+    assert out["base_col"] == "__log_return"
+    assert out["forecast_return"] == [0.0]
+    assert out["forecast_price"] == [float(df["close_dn"].iloc[-1])]
+    assert out["denoise_applied"] is True
+    assert captured["series_name"] == "__log_return"
+
+
 def test_forecast_engine_applies_denoise_to_prefetched_raw_history(monkeypatch):
     captured = {}
 

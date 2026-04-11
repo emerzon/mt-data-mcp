@@ -745,12 +745,6 @@ def forecast_engine(  # noqa: C901
             return {"error": str(ex)}
         denoise_warnings = _consume_denoise_warnings(df)
 
-        # Track last close for potential price reconstruction
-        try:
-            last_close = float(df['close'].iloc[-1])
-        except Exception:
-            last_close = float('nan')
-
         # Prepare target series, honoring target_spec if provided
         try:
             target_series, base_col_initial, base_col = _prepare_target_series_context(
@@ -765,6 +759,14 @@ def forecast_engine(  # noqa: C901
 
         if len(target_series) < 3:
             return {"error": f"Not enough valid data points in column '{base_col}'"}
+
+        price_anchor_col = base_col
+        if quantity_l == "return" and str(base_col).startswith("__"):
+            price_anchor_col = base_col_initial
+        try:
+            last_close = float(df[price_anchor_col].iloc[-1])
+        except Exception:
+            last_close = float("nan")
 
         # Prepare feature matrices if applicable (only if exog_used not provided).
         X, future_exog, feature_info = _prepare_feature_context(
