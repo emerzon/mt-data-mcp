@@ -249,13 +249,15 @@ class GenericStatsForecastMethod(StatsForecastMethod):
         if target not in available:
             raise ValueError(f"Unknown StatsForecast model: {model_name}. Available: {list(available.keys())}")
             
-        model_cls = getattr(models, available[target])
+        model_cls = getattr(models, available[target], None)
+        if not inspect.isclass(model_cls):
+            raise ValueError(f"StatsForecast model {model_name!r} is not available as a class")
         
         # Filter params for the model constructor
         try:
             sig = inspect.signature(model_cls)
             valid_params = set(sig.parameters.keys())
-        except ValueError:
+        except (TypeError, ValueError):
             valid_params = set()
             
         model_params = {k: v for k, v in params.items() if k in valid_params}
@@ -268,7 +270,12 @@ class GenericStatsForecastMethod(StatsForecastMethod):
         if 'periods' in valid_params and 'periods' not in model_params:
             model_params['periods'] = [max(1, seasonality)]
             
-        return model_cls(**model_params)
+        try:
+            return model_cls(**model_params)
+        except TypeError as ex:
+            raise ValueError(
+                f"Invalid parameters for StatsForecast model {available[target]}: {ex}"
+            ) from ex
 
 _SF_MODEL_CLASS_NAMES: Tuple[str, ...] = (
     # Keep this list lightweight (no import-time statsforecast dependency).

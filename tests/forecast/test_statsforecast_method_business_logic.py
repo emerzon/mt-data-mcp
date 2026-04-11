@@ -93,3 +93,23 @@ def test_statsforecast_forecast_records_ci_diagnostics_when_columns_missing(monk
     assert res.metadata["diagnostics"]["ci"]["available"] is False
     assert res.metadata["diagnostics"]["ci"]["status"] == "unavailable"
     assert res.metadata["diagnostics"]["ci"]["level"] == 95
+
+
+def test_generic_statsforecast_get_model_wraps_constructor_type_errors(monkeypatch):
+    fake_stats_mod = ModuleType("statsforecast")
+    models_mod = ModuleType("statsforecast.models")
+
+    class NeedsArg:
+        def __init__(self, required):
+            self.required = required
+
+    models_mod.NeedsArg = NeedsArg
+    fake_stats_mod.models = models_mod
+
+    monkeypatch.setitem(sys.modules, "statsforecast", fake_stats_mod)
+    monkeypatch.setitem(sys.modules, "statsforecast.models", models_mod)
+
+    method = sfm.GenericStatsForecastMethod()
+
+    with pytest.raises(ValueError, match="Invalid parameters for StatsForecast model NeedsArg"):
+        method._get_model(1, {"model_name": "NeedsArg"})
