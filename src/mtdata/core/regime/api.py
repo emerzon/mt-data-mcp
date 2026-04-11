@@ -682,6 +682,11 @@ def regime_detect(  # noqa: C901
             k_regimes, _ = _coerce_param(p, 'k_regimes', default=3, cast=int)
             use_pca = bool(p.get('use_pca', True))
             n_components, _ = _coerce_param(p, 'n_components', default=3, cast=int)
+            warnings: List[str] = []
+            if target == 'price':
+                warnings.append(
+                    "Clustering on price features may produce level-dependent regimes. Consider target='return'."
+                )
 
             # Extract features (use 'return' or 'price'? 'return' is stationary, usually better)
             # x is already computed based on target input
@@ -753,6 +758,8 @@ def regime_detect(  # noqa: C901
                     "n_components": n_components
                 },
             }
+            if warnings:
+                payload["warnings"] = warnings
 
             # Summary stats
             if output in ('summary','compact'):

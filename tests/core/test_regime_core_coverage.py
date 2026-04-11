@@ -814,6 +814,37 @@ class TestRegimeDetectClustering:
     @patch(_FMT, side_effect=_time_fmt_stub)
     @patch(_DENOISE, return_value="close")
     @patch(_FETCH)
+    def test_clustering_price_target_warns_about_level_dependence(self, mock_fetch, mock_denoise, mock_fmt):
+        df = _make_df(80)
+        mock_fetch.return_value = df
+        n = 80  # price target keeps the original series length
+        features = pd.DataFrame({"f1": np.random.default_rng(0).random(n),
+                                  "f2": np.random.default_rng(1).random(n)})
+        mock_extract = MagicMock(return_value=features)
+        with patch("mtdata.core.regime.extract_rolling_features", mock_extract, create=True), \
+             patch("mtdata.core.regime.StandardScaler", create=True) as mock_scaler_cls, \
+             patch("mtdata.core.regime.KMeans", create=True) as mock_kmeans_cls, \
+             patch("mtdata.core.regime.PCA", create=True) as mock_pca_cls:
+            mock_scaler = MagicMock()
+            mock_scaler.fit_transform.return_value = np.random.default_rng(2).random((n, 2))
+            mock_scaler_cls.return_value = mock_scaler
+            mock_pca = MagicMock()
+            mock_pca.fit_transform.return_value = np.random.default_rng(3).random((n, 2))
+            mock_pca_cls.return_value = mock_pca
+            mock_kmeans = MagicMock()
+            mock_kmeans.fit_predict.return_value = np.array([i % 3 for i in range(n)])
+            mock_kmeans_cls.return_value = mock_kmeans
+
+            fn = _get_regime_detect()
+            res = fn("EURUSD", limit=80, method="clustering", target="price", output="full")
+        assert isinstance(res, dict)
+        assert res["warnings"] == [
+            "Clustering on price features may produce level-dependent regimes. Consider target='return'."
+        ]
+
+    @patch(_FMT, side_effect=_time_fmt_stub)
+    @patch(_DENOISE, return_value="close")
+    @patch(_FETCH)
     def test_clustering_import_error(self, mock_fetch, mock_denoise, mock_fmt):
         df = _make_df(50)
         mock_fetch.return_value = df
