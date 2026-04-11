@@ -448,11 +448,17 @@ class TestValidateVolume:
 
     def test_misaligned_step(self):
         vol, err = _validate_volume(0.015, _sym(volume_step=0.01))
-        assert vol is None and "step" in err
+        assert vol is None
+        assert err == "volume must align to step 0.01. Try 0.01"
 
     def test_step_rounding_accepted(self):
         vol, err = _validate_volume(0.10, _sym(volume_step=0.01))
         assert err is None
+
+    def test_step_alignment_without_lower_aligned_value_reports_minimum(self):
+        vol, err = _validate_volume(0.005, _sym(volume_min=None, volume_step=0.01))
+        assert vol is None
+        assert err == "volume must align to step 0.01. Minimum aligned volume is 0.01"
 
     def test_none_constraints_accepted(self):
         si = SimpleNamespace(volume_min=None, volume_max=None, volume_step=None)

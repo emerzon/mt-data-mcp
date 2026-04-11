@@ -145,7 +145,12 @@ def _validate_volume(volume: Union[int, float], symbol_info: Any) -> Tuple[Optio
         normalized = float(f"{normalized:.10f}")
         tol = step * 1e-6
         if abs(normalized - vol) > tol:
-            return None, f"volume must align to step {step}. Try {normalized}"
+            aligned_down = math.floor(vol / step) * step
+            aligned_down = float(f"{aligned_down:.10f}")
+            if aligned_down > 0.0:
+                return None, f"volume must align to step {step}. Try {aligned_down}"
+            minimum_aligned = float(f"{step:.10f}")
+            return None, f"volume must align to step {step}. Minimum aligned volume is {minimum_aligned}"
         vol = normalized
         if min_vol is not None and vol < (min_vol - 1e-12):
             return None, f"volume must be >= {min_vol}"
