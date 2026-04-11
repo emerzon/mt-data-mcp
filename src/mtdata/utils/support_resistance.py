@@ -187,9 +187,15 @@ def _resolve_adaptive_settings(
             "volatility_ratio": 1.0,
         }
 
-    recent_window = max(3, min(_DEFAULT_ADAPTIVE_RECENT_WINDOW, len(atr_pct_values)))
-    baseline_atr_pct = float(np.nanmedian(np.asarray(atr_pct_values, dtype=float)))
-    current_atr_pct = float(np.nanmedian(np.asarray(atr_pct_values[-recent_window:], dtype=float)))
+    atr_pct_array = np.asarray(atr_pct_values, dtype=float)
+    recent_window = max(3, min(_DEFAULT_ADAPTIVE_RECENT_WINDOW, len(atr_pct_array)))
+    current_slice = atr_pct_array[-recent_window:]
+    baseline_slice = atr_pct_array[:-recent_window]
+    if baseline_slice.size == 0:
+        baseline_slice = atr_pct_array
+
+    baseline_atr_pct = float(np.nanmedian(baseline_slice))
+    current_atr_pct = float(np.nanmedian(current_slice))
     if not math.isfinite(baseline_atr_pct) or baseline_atr_pct <= 0.0:
         baseline_atr_pct = current_atr_pct if math.isfinite(current_atr_pct) and current_atr_pct > 0.0 else 0.0
 

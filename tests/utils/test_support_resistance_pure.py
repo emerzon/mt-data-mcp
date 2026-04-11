@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
+import pytest
 
 from mtdata.utils.support_resistance import (
+    _resolve_adaptive_settings,
     compute_support_resistance_levels,
     merge_support_resistance_results,
 )
@@ -306,6 +309,22 @@ def test_volatility_compression_narrows_tolerance_and_extends_reaction_window():
     assert result["effective_tolerance_pct"] < result["tolerance_pct"]
     assert result["effective_reaction_bars"] > result["reaction_bars"]
     assert result["volatility_ratio"] < 1.0
+
+
+def test_adaptive_settings_excludes_recent_window_from_baseline():
+    closes = np.full(12, 100.0)
+    atr = np.array([1.0] * 4 + [3.0] * 8, dtype=float)
+
+    result = _resolve_adaptive_settings(
+        closes,
+        atr,
+        base_tolerance_pct=0.0015,
+        base_reaction_bars=6,
+    )
+
+    assert result["baseline_atr_pct"] == pytest.approx(0.01)
+    assert result["current_atr_pct"] == pytest.approx(0.03)
+    assert result["volatility_ratio"] == pytest.approx(3.0)
 
 
 def test_episode_counting_keeps_raw_touches_secondary_to_distinct_tests():
