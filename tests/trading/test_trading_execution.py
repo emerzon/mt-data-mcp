@@ -962,6 +962,48 @@ def test_modify_pending_order_preserves_existing_magic(mock_mt5):
     assert req["magic"] == 54321
 
 
+def test_modify_pending_order_retries_without_comment_when_comment_is_invalid(mock_mt5):
+    mock_mt5.TRADE_ACTION_MODIFY = 7
+    mock_mt5.ORDER_TIME_GTC = 0
+    mock_mt5.last_error.side_effect = [
+        (-2, 'Invalid "comment" argument'),
+        (-2, 'Invalid "comment" argument'),
+        (1, "Success"),
+    ]
+    mock_mt5.orders_get.return_value = [
+        SimpleNamespace(
+            ticket=123,
+            symbol="EURUSD",
+            volume=0.1,
+            type=mock_mt5.ORDER_TYPE_BUY_LIMIT,
+            price_open=1.04000,
+            sl=1.03000,
+            tp=1.06000,
+            magic=54321,
+            type_time=0,
+            time_expiration=0,
+        )
+    ]
+    mock_mt5.order_send.side_effect = [
+        MagicMock(retcode=10013, comment='Invalid "comment" argument', request_id=790),
+        MagicMock(retcode=10013, comment='Invalid "comment" argument', request_id=791),
+        MagicMock(retcode=10009, deal=0, order=123, comment="", request_id=792),
+    ]
+
+    res = _modify_pending_order(
+        ticket=123,
+        price=1.04000,
+        comment="Breakout scalp comment that will be truncated anyway",
+    )
+
+    assert res.get("success") is True
+    assert res.get("comment_fallback", {}).get("used") is True
+    assert res.get("comment_fallback", {}).get("strategy") == "none"
+    assert any("pending order was retried" in str(w) for w in res.get("warnings", []))
+    final_req = mock_mt5.order_send.call_args_list[-1].args[0]
+    assert "comment" not in final_req
+
+
 def test_close_positions_preserves_existing_magic(mock_mt5):
     mock_mt5.ORDER_FILLING_IOC = 1
     mock_mt5.ORDER_FILLING_FOK = 0
@@ -976,6 +1018,62 @@ def test_close_positions_preserves_existing_magic(mock_mt5):
     assert "error" not in res
     req = mock_mt5.order_send.call_args[0][0]
     assert req["magic"] == 67890
+
+
+def test_close_positions_retries_without_comment_when_result_retcode_rejects_comment(mock_mt5):
+    mock_mt5.ORDER_FILLING_IOC = 1
+    mock_mt5.ORDER_FILLING_FOK = 0
+    mock_mt5.ORDER_FILLING_RETURN = 2
+    mock_mt5.ORDER_TIME_GTC = 0
+    mock_mt5.last_error.side_effect = [
+        (-2, 'Invalid "comment" argument'),
+        (-2, 'Invalid "comment" argument'),
+        (1, "Success"),
+    ]
+    mock_mt5.positions_get.return_value = [
+        SimpleNamespace(ticket=123, symbol="EURUSD", volume=0.1, type=0, profit=10.0, magic=67890)
+    ]
+    mock_mt5.order_send.side_effect = [
+        MagicMock(
+            retcode=10013,
+            deal=0,
+            order=0,
+            volume=0.1,
+            price=1.05010,
+            bid=1.05000,
+            ask=1.05010,
+            comment='Invalid "comment" argument',
+        ),
+        MagicMock(
+            retcode=10013,
+            deal=0,
+            order=0,
+            volume=0.1,
+            price=1.05010,
+            bid=1.05000,
+            ask=1.05010,
+            comment='Invalid "comment" argument',
+        ),
+        MagicMock(
+            retcode=10009,
+            deal=123,
+            order=456,
+            volume=0.1,
+            price=1.05010,
+            bid=1.05000,
+            ask=1.05010,
+            comment="",
+        ),
+    ]
+
+    res = _close_positions(ticket=123, comment="Breakout scalp comment that will be truncated anyway")
+
+    assert res.get("retcode") == 10009
+    assert res.get("comment_fallback", {}).get("used") is True
+    assert res.get("comment_fallback", {}).get("strategy") == "none"
+    assert any("close order was retried" in str(w) for w in res.get("warnings", []))
+    final_req = mock_mt5.order_send.call_args_list[-1].args[0]
+    assert "comment" not in final_req
 
 
 def test_close_positions_retries_default_fill_mode_when_fok_constant_missing(mock_mt5):

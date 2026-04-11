@@ -435,22 +435,30 @@ def _modify_pending_order(
                                 server_dt = time._to_server_time_naive(current_expiration)
                                 request["expiration"] = time._server_time_naive_to_mt5_timestamp(server_dt)
 
-            result = mt5.order_send(request)
+            result, comment_fallback, last_error = comments._send_order_with_comment_fallback(
+                mt5,
+                request,
+            )
             if result is None:
-                last_err = validation._safe_last_error(mt5)
-                return {"error": "Failed to modify pending order", "last_error": last_err}
+                out = {"error": "Failed to modify pending order", "last_error": last_error}
+                if isinstance(comment_fallback, dict):
+                    out["comment_fallback"] = comment_fallback
+                return out
 
             if getattr(result, "retcode", None) != mt5.TRADE_RETCODE_DONE:
-                return {
+                out = {
                     "error": "Failed to modify pending order",
                     "retcode": result.retcode,
                     "retcode_name": mt5.retcode_name(result.retcode),
                     "comment": result.comment,
                     "request_id": result.request_id,
-                    "last_error": validation._safe_last_error(mt5),
+                    "last_error": last_error,
                 }
+                if isinstance(comment_fallback, dict):
+                    out["comment_fallback"] = comment_fallback
+                return out
 
-            return {
+            out = {
                 "success": True,
                 "retcode": result.retcode,
                 "retcode_name": mt5.retcode_name(result.retcode),
@@ -466,6 +474,13 @@ def _modify_pending_order(
                 "ticket_requested": ticket_id,
                 "ticket_resolution": ticket_resolution,
             }
+            if isinstance(comment_fallback, dict):
+                out["comment_fallback"] = comment_fallback
+                if comment_fallback.get("used"):
+                    out["warnings"] = [
+                        "Broker rejected the comment field; pending order was retried with a minimal MT5-safe comment."
+                    ]
+            return out
 
         except Exception as e:
             return _unexpected_operation_error(
@@ -618,6 +633,8 @@ def _close_positions(  # noqa: C901
 
                 result = None
                 request = None
+                last_send_error = None
+                close_comment_fallback = None
                 attempts: List[Dict[str, Any]] = []
                 close_type_buy = getattr(mt5, "ORDER_TYPE_BUY", 0)
                 close_type_sell = getattr(mt5, "ORDER_TYPE_SELL", 1)
@@ -675,59 +692,22 @@ def _close_positions(  # noqa: C901
                     if request_magic is not None:
                         request["magic"] = request_magic
 
-                    result = mt5.order_send(request)
+                    result, attempt_comment_fallback, last_send_error = comments._send_order_with_comment_fallback(
+                        mt5,
+                        request,
+                    )
+                    if isinstance(attempt_comment_fallback, dict):
+                        close_comment_fallback = attempt_comment_fallback
                     if result is None:
-                        send_error = validation._safe_last_error(mt5)
-                        send_error_text = str(send_error).lower() if send_error is not None else ""
-                        # Retry with a minimal/no comment when broker rejects the comment field.
-                        if "invalid" in send_error_text and "comment" in send_error_text:
-                            alt_requests: List[Dict[str, Any]] = []
-                            req_short = dict(request)
-                            req_short["comment"] = "MCP"
-                            alt_requests.append(req_short)
-                            req_nocomment = dict(request)
-                            req_nocomment.pop("comment", None)
-                            alt_requests.append(req_nocomment)
-                            recovered = False
-                            for alt_req in alt_requests:
-                                alt_res = mt5.order_send(alt_req)
-                                if alt_res is None:
-                                    alt_err = validation._safe_last_error(mt5)
-                                    attempts.append(
-                                        {
-                                            "type_filling": int(fill_mode),
-                                            "error": "Failed to send close order",
-                                            "last_error": alt_err,
-                                            "comment_fallback": True,
-                                        }
-                                    )
-                                    continue
-                                attempts.append(
-                                    {
-                                        "type_filling": int(fill_mode),
-                                        "retcode": getattr(alt_res, "retcode", None),
-                                        "retcode_name": mt5.retcode_name(getattr(alt_res, "retcode", None)),
-                                        "comment": getattr(alt_res, "comment", None),
-                                        "comment_fallback": True,
-                                    }
-                                )
-                                result = alt_res
-                                request = alt_req
-                                recovered = True
-                                break
-                            if recovered:
-                                retcode_val = getattr(result, "retcode", None)
-                                if validation._retcode_is_done(mt5, retcode_val):
-                                    break
-                                _stdlib_time.sleep(0.15)
-                                continue
                         attempts.append(
                             {
                                 "type_filling": int(fill_mode),
                                 "error": "Failed to send close order",
-                                "last_error": send_error,
+                                "last_error": last_send_error,
                             }
                         )
+                        if isinstance(attempt_comment_fallback, dict):
+                            attempts[-1]["comment_fallback"] = attempt_comment_fallback
                         _stdlib_time.sleep(0.15)
                         continue
 
@@ -740,6 +720,8 @@ def _close_positions(  # noqa: C901
                             "comment": getattr(result, "comment", None),
                         }
                     )
+                    if isinstance(attempt_comment_fallback, dict):
+                        attempts[-1]["comment_fallback"] = attempt_comment_fallback
                     if validation._retcode_is_done(mt5, retcode_val):
                         break
                     price_changed_codes = {
@@ -755,7 +737,7 @@ def _close_positions(  # noqa: C901
                 close_ok = validation._retcode_is_done(mt5, getattr(result, "retcode", None)) if result is not None else False
 
                 if not close_ok:
-                    last_error = validation._safe_last_error(mt5)
+                    last_error = last_send_error
                     tick_failures = [
                         a for a in attempts if "tick data" in str(a.get("error", "")).lower()
                     ]
@@ -771,6 +753,8 @@ def _close_positions(  # noqa: C901
                             "last_error": last_error,
                         }
                     )
+                    if isinstance(close_comment_fallback, dict):
+                        results[-1]["comment_fallback"] = close_comment_fallback
                     continue
 
                 if result is not None:
@@ -838,6 +822,12 @@ def _close_positions(  # noqa: C901
                         "position_volume_remaining_estimate": remaining_volume_estimate,
                         "attempts": attempts,
                     }
+                    if isinstance(close_comment_fallback, dict):
+                        res_dict["comment_fallback"] = close_comment_fallback
+                        if close_comment_fallback.get("used"):
+                            res_dict["warnings"] = [
+                                "Broker rejected the comment field; close order was retried with a minimal MT5-safe comment."
+                            ]
                     results.append(res_dict)
 
             # If only one position was targeted by ticket, return single result
