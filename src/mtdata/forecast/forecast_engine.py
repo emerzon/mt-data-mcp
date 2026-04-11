@@ -65,7 +65,7 @@ from .methods import pretrained as _pretrained_methods
 from .methods import sktime as _sktime_methods
 from .methods import statsforecast as _statsforecast_methods
 from .registry import ForecastRegistry
-from .target_builder import build_target_series
+from .target_builder import build_target_series, resolve_alias_base
 
 _REGISTERED_METHOD_MODULES = (
     _analog_methods,
@@ -382,23 +382,47 @@ def _prepare_target_series_context(
 
 def _reconstruct_prices_from_target(
     forecast_values: np.ndarray,
-    last_close: float,
+    price_history: Optional[np.ndarray],
     target_info: Optional[Dict[str, Any]],
 ) -> Optional[np.ndarray]:
-    if not np.isfinite(last_close):
+    history = np.asarray(price_history, dtype=float).reshape(-1) if price_history is not None else np.asarray([], dtype=float)
+    if history.size == 0:
         return None
 
     forecast_arr = np.asarray(forecast_values, dtype=float)
     transform = str((target_info or {}).get("transform", "log_return")).strip().lower()
-    if transform.startswith("return("):
-        return last_close * np.cumprod(1.0 + forecast_arr)
-    if transform.startswith("pct_change("):
-        return last_close * np.cumprod(1.0 + forecast_arr)
-    if transform.startswith("pct("):
-        return last_close * np.cumprod(1.0 + (forecast_arr / 100.0))
-    if transform.startswith("diff("):
-        return last_close + np.cumsum(forecast_arr)
-    return last_close * np.exp(np.cumsum(forecast_arr))
+    lag = 1
+    if "(k=" in transform:
+        try:
+            lag = max(1, int(transform.rsplit("(k=", 1)[1].rstrip(") ")))
+        except Exception:
+            lag = 1
+
+    if transform == "none":
+        return forecast_arr.astype(float, copy=True)
+    if transform == "log":
+        return np.exp(forecast_arr)
+    if history.size < lag or not np.all(np.isfinite(history[-lag:])):
+        return None
+
+    reconstructed: List[float] = []
+    anchors = history.astype(float).tolist()
+    for value in forecast_arr:
+        anchor = anchors[-lag]
+        if not (np.isfinite(anchor) and np.isfinite(value)):
+            price = float("nan")
+        elif transform.startswith("return(") or transform.startswith("pct_change("):
+            price = anchor * (1.0 + float(value))
+        elif transform.startswith("pct("):
+            price = anchor * (1.0 + (float(value) / 100.0))
+        elif transform.startswith("diff("):
+            price = anchor + float(value)
+        else:
+            price = anchor * float(np.exp(value))
+        anchors.append(price)
+        reconstructed.append(price)
+
+    return np.asarray(reconstructed, dtype=float)
 
 
 def _prepare_feature_context(
@@ -784,13 +808,18 @@ def forecast_engine(  # noqa: C901
         if len(target_series) < 3:
             return {"error": f"Not enough valid data points in column '{base_col}'"}
 
-        price_anchor_col = base_col
+        price_anchor_base = str((target_info or {}).get("base") or base_col)
         if quantity_l == "return" and str(base_col).startswith("__"):
-            price_anchor_col = base_col_initial
-        try:
-            last_close = float(df[price_anchor_col].iloc[-1])
-        except Exception:
-            last_close = float("nan")
+            price_anchor_base = base_col_initial
+        if price_anchor_base in df.columns:
+            price_anchor_history = df[price_anchor_base].astype(float).to_numpy()
+        else:
+            alias_inputs = {
+                name: df[name].to_numpy()
+                for name in ("open", "high", "low", "close")
+                if name in df.columns
+            }
+            price_anchor_history = resolve_alias_base(alias_inputs, price_anchor_base)
 
         # Prepare feature matrices if applicable (only if exog_used not provided).
         X, future_exog, feature_info = _prepare_feature_context(
@@ -889,7 +918,7 @@ def forecast_engine(  # noqa: C901
             forecast_return_vals = np.asarray(forecast_values, dtype=float)
             reconstructed_prices = _reconstruct_prices_from_target(
                 forecast_return_vals,
-                last_close,
+                price_anchor_history,
                 target_info,
             )
 
