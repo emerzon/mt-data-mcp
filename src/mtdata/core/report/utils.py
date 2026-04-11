@@ -347,7 +347,10 @@ def apply_market_gates(section: Dict[str, Any], params: Dict[str, Any]) -> Dict[
     return gate
 
 
-def context_for_tf(symbol: str, timeframe: str, denoise: Optional[Dict[str, Any]], limit: int = 200, tail: int = 30) -> Optional[Dict[str, Any]]:
+def context_for_tf(symbol: str, timeframe: str, denoise: Optional[Dict[str, Any]], limit: int = 200, tail: int = 30, *, _fetch_cache: Optional[Dict[Tuple[str, str], Optional[Dict[str, Any]]]] = None) -> Optional[Dict[str, Any]]:
+    cache_key = (symbol.upper(), timeframe.upper())
+    if _fetch_cache is not None and cache_key in _fetch_cache:
+        return _fetch_cache[cache_key]
     try:
         from ..data import data_fetch_candles as _fetch_candles
         indicators = "ema(20),ema(50),ema(200),rsi(14),macd(12,26,9)"
@@ -362,10 +365,14 @@ def context_for_tf(symbol: str, timeframe: str, denoise: Optional[Dict[str, Any]
         )
 
         if not isinstance(res, dict) or res.get('error'):
+            if _fetch_cache is not None:
+                _fetch_cache[cache_key] = None
             return None
         rows = parse_table_tail(res, tail=int(tail))
 
         if not rows:
+            if _fetch_cache is not None:
+                _fetch_cache[cache_key] = None
             return None
         last = rows[-1]
         out = {
@@ -397,8 +404,12 @@ def context_for_tf(symbol: str, timeframe: str, denoise: Optional[Dict[str, Any]
             out['ema200'] = _get_indicator_value(last_row, 'EMA_200')
             out['price'] = last_row.get('close')
 
+        if _fetch_cache is not None:
+            _fetch_cache[cache_key] = out
         return out
     except Exception:
+        if _fetch_cache is not None:
+            _fetch_cache[cache_key] = None
         return None
 
 
@@ -422,7 +433,7 @@ def _extract_base_timeframe(report: Dict[str, Any]) -> Optional[str]:
     return base_tf
 
 
-def attach_multi_timeframes(report: Dict[str, Any], symbol: str, denoise: Optional[Dict[str, Any]], extra_timeframes: List[str], pivot_timeframes: Optional[List[str]] = None) -> None:
+def attach_multi_timeframes(report: Dict[str, Any], symbol: str, denoise: Optional[Dict[str, Any]], extra_timeframes: List[str], pivot_timeframes: Optional[List[str]] = None, *, _fetch_cache: Optional[Dict[Tuple[str, str], Optional[Dict[str, Any]]]] = None) -> None:
     contexts: Dict[str, Any] = {}
     trend_mtf: Dict[str, Any] = {}
     base_tf = _extract_base_timeframe(report)
@@ -431,7 +442,7 @@ def attach_multi_timeframes(report: Dict[str, Any], symbol: str, denoise: Option
         tf_str = str(tf).upper()
         if base_tf and tf_str == base_tf:
             continue
-        snap = context_for_tf(symbol, tf, denoise, limit=200, tail=30)
+        snap = context_for_tf(symbol, tf, denoise, limit=200, tail=30, _fetch_cache=_fetch_cache)
         if snap:
             snap_for_contexts = snap
             if isinstance(snap, dict):
@@ -507,6 +518,7 @@ def attach_report_timeframes(
     *,
     default_extra: List[str],
     default_pivots: Optional[List[str]] = None,
+    _fetch_cache: Optional[Dict[Tuple[str, str], Optional[Dict[str, Any]]]] = None,
 ) -> None:
     extra = (params or {}).get('extra_timeframes') or default_extra
     pivots = (params or {}).get('pivot_timeframes') or default_pivots
@@ -516,6 +528,7 @@ def attach_report_timeframes(
         denoise,
         extra_timeframes=extra,
         pivot_timeframes=pivots,
+        _fetch_cache=_fetch_cache,
     )
 
 
@@ -528,6 +541,7 @@ def attach_market_and_timeframes(
     default_extra: List[str],
     default_pivots: Optional[List[str]] = None,
     snapshot: Optional[Dict[str, Any]] = None,
+    _fetch_cache: Optional[Dict[Tuple[str, str], Optional[Dict[str, Any]]]] = None,
 ) -> Dict[str, Any]:
     snap = snapshot if snapshot is not None else market_snapshot(symbol)
     report.setdefault('sections', {})['market'] = snap
@@ -541,6 +555,7 @@ def attach_market_and_timeframes(
         params,
         default_extra=default_extra,
         default_pivots=default_pivots,
+        _fetch_cache=_fetch_cache,
     )
     return snap
 def _needs_yaml_quotes(text: str) -> bool:

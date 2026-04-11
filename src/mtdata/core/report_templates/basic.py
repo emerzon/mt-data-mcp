@@ -460,6 +460,10 @@ def template_basic(  # noqa: C901
         'sections': {},
     }
 
+    # Request-scoped cache: avoids re-fetching the same (symbol, timeframe)
+    # across attach_multi_timeframes and the fallback MTF block.
+    _fetch_cache: Dict = {}
+
     # Context
     indicators = "ema(20),ema(50),rsi(14),macd(12,26,9)"
     from ..data import data_fetch_candles
@@ -523,7 +527,7 @@ def template_basic(  # noqa: C901
         }
         # Attach multi-timeframe context and pivots for MTF alignment (lightweight)
         try:
-            attach_multi_timeframes(report, symbol, denoise, extra_timeframes=['M15','H1','H4','D1'], pivot_timeframes=['H4','D1'])
+            attach_multi_timeframes(report, symbol, denoise, extra_timeframes=['M15','H1','H4','D1'], pivot_timeframes=['H4','D1'], _fetch_cache=_fetch_cache)
         except Exception:
             pass
 
@@ -539,7 +543,7 @@ def template_basic(  # noqa: C901
             for tf_i in tf_list:
                 if base_tf and tf_i.upper() == base_tf:
                     continue
-                snap = context_for_tf(symbol, tf_i, denoise, limit=200, tail=30)
+                snap = context_for_tf(symbol, tf_i, denoise, limit=200, tail=30, _fetch_cache=_fetch_cache)
                 if snap and any(v is not None for v in snap.values()):
                     ctxs[tf_i] = snap
             if ctxs:
