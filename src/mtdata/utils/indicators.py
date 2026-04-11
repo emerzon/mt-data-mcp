@@ -1,4 +1,5 @@
 import inspect
+import logging
 import pydoc
 import re
 from typing import Any, Dict, List, Optional, Tuple
@@ -24,6 +25,7 @@ _INDICATOR_ALIASES: dict[str, str] = {
 }
 _INDICATOR_SERIES_NAMES = ("open", "high", "low", "close", "volume")
 _VOLUME_SOURCE_COLUMNS = ("volume", "real_volume", "tick_volume")
+logger = logging.getLogger(__name__)
 
 
 def _normalize_ta_indicator_name(name: str) -> str:
@@ -408,10 +410,12 @@ def _apply_ta_indicators(df: pd.DataFrame, ti_spec: str) -> List[str]:  # noqa: 
             try:
                 out = func(*call_args, **call_kwargs)
             except Exception:
+                logger.debug("Indicator %s primary call failed", lname, exc_info=True)
                 try:
                     # Fallback: also pass numeric args positionally after series
                     out = func(*([*call_args, *args]), **call_kwargs)
                 except Exception:
+                    logger.debug("Indicator %s positional fallback failed", lname, exc_info=True)
                     try:
                         # Fallback: keyword-only attempt including close
                         kw_only = dict(call_kwargs)
@@ -419,6 +423,11 @@ def _apply_ta_indicators(df: pd.DataFrame, ti_spec: str) -> List[str]:  # noqa: 
                             kw_only['close'] = df['close']
                         out = func(**kw_only)
                     except Exception:
+                        logger.warning(
+                            "Indicator %s failed after all call fallbacks",
+                            lname,
+                            exc_info=True,
+                        )
                         out = None
             if isinstance(out, pd.DataFrame):
                 for c in out.columns:
@@ -428,6 +437,7 @@ def _apply_ta_indicators(df: pd.DataFrame, ti_spec: str) -> List[str]:  # noqa: 
         except ValueError:
             raise
         except Exception:
+            logger.warning("Indicator %s failed while applying output", lname, exc_info=True)
             continue
         new_cols = [c for c in df.columns if c not in before]
         added_cols.extend(new_cols)
