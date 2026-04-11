@@ -361,6 +361,21 @@ def _apply_denoise(
             continue
         for warning_text in y.attrs.get("denoise_warnings", []):
             _append_denoise_warning(df, warning_text)
+        # Detect silent fallback: filter returned input unchanged
+        try:
+            orig_vals = df[col].to_numpy(dtype=float, na_value=np.nan)
+            new_vals = y.to_numpy(dtype=float, na_value=np.nan)
+            if orig_vals.shape == new_vals.shape and np.allclose(
+                orig_vals, new_vals, equal_nan=True, rtol=0, atol=0,
+            ):
+                _append_denoise_warning(
+                    df,
+                    f"Denoise method '{method}' on column '{col}' returned output identical "
+                    "to input. The filter may have silently fallen back due to invalid "
+                    "parameters or insufficient data.",
+                )
+        except Exception:
+            pass
         if keep_original:
             new_col = f"{col}{suffix}"
             df[new_col] = y

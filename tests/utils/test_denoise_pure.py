@@ -584,6 +584,23 @@ class TestApplyDenoise:
         assert "denoise_warnings" in df.attrs
         assert "does not support causality='causal'" in df.attrs["denoise_warnings"][0]
 
+    def test_silent_fallback_appends_identity_warning(self):
+        pytest.importorskip("scipy.signal")
+        df = self._make_df()
+
+        added = _apply_denoise(
+            df,
+            {
+                "method": "butterworth",
+                "columns": ["close"],
+                "params": {"cutoff": 0.6},
+                "keep_original": True,
+            },
+        )
+
+        warnings = df.attrs.get("denoise_warnings", [])
+        assert any("returned output identical to input" in w for w in warnings)
+
 
 # ======================================================================
 # 4. _resolve_denoise_base_col
