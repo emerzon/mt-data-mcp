@@ -3,12 +3,28 @@ from __future__ import annotations
 """Options market-data service helpers."""
 
 import datetime as _dt
+import threading as _threading
+import time as _time
 from typing import Any, Dict, List, Optional
 
 import requests
 
 _YAHOO_OPTIONS_URL = "https://query2.finance.yahoo.com/v7/finance/options/{symbol}"
 _HTTP_TIMEOUT = 15.0
+_YAHOO_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+    )
+}
+_YAHOO_RETRY_STATUS_CODES = {429, 503}
+_YAHOO_MAX_ATTEMPTS = 3
+_YAHOO_BACKOFF_SECONDS = 0.5
+_YAHOO_MIN_REQUEST_INTERVAL_SECONDS = 1.0
+_YAHOO_SESSION: Optional[requests.Session] = None
+_YAHOO_SESSION_LOCK = _threading.Lock()
+_YAHOO_RATE_LIMIT_LOCK = _threading.Lock()
+_YAHOO_LAST_REQUEST_MONOTONIC = 0.0
 
 
 def _to_numeric(value: Any, numeric_type: type, default: Any) -> Any:
@@ -42,13 +58,52 @@ def _ymd_to_epoch(ymd: str) -> int:
     return int(dt.timestamp())
 
 
+def _get_yahoo_session() -> requests.Session:
+    global _YAHOO_SESSION
+    with _YAHOO_SESSION_LOCK:
+        if _YAHOO_SESSION is None:
+            _YAHOO_SESSION = requests.Session()
+        return _YAHOO_SESSION
+
+
+def _throttle_yahoo_request() -> None:
+    global _YAHOO_LAST_REQUEST_MONOTONIC
+    with _YAHOO_RATE_LIMIT_LOCK:
+        now = _time.monotonic()
+        wait_seconds = _YAHOO_MIN_REQUEST_INTERVAL_SECONDS - (now - _YAHOO_LAST_REQUEST_MONOTONIC)
+        if _YAHOO_LAST_REQUEST_MONOTONIC > 0.0 and wait_seconds > 0.0:
+            _time.sleep(wait_seconds)
+            now = _time.monotonic()
+        _YAHOO_LAST_REQUEST_MONOTONIC = now
+
+
+def _yahoo_http_get(url: str, *, params: Dict[str, Any], headers: Dict[str, str]) -> requests.Response:
+    session = _get_yahoo_session()
+    backoff_seconds = _YAHOO_BACKOFF_SECONDS
+    response: Optional[requests.Response] = None
+    for attempt in range(_YAHOO_MAX_ATTEMPTS):
+        _throttle_yahoo_request()
+        response = session.get(url, params=params, headers=headers, timeout=_HTTP_TIMEOUT)
+        if response.status_code not in _YAHOO_RETRY_STATUS_CODES or attempt + 1 >= _YAHOO_MAX_ATTEMPTS:
+            return response
+        retry_after_raw = response.headers.get("Retry-After")
+        try:
+            retry_after = float(retry_after_raw) if retry_after_raw is not None else backoff_seconds
+        except (TypeError, ValueError):
+            retry_after = backoff_seconds
+        _time.sleep(max(backoff_seconds, retry_after))
+        backoff_seconds *= 2.0
+    if response is None:
+        raise RuntimeError("Yahoo options request did not return a response")
+    return response
+
+
 def _fetch_yahoo_options_payload(symbol: str, expiry_epoch: Optional[int] = None) -> Dict[str, Any]:
     params: Dict[str, Any] = {}
     if expiry_epoch is not None:
         params["date"] = int(expiry_epoch)
-    headers = {"User-Agent": "Mozilla/5.0"}
     url = _YAHOO_OPTIONS_URL.format(symbol=str(symbol).upper().strip())
-    response = requests.get(url, params=params, headers=headers, timeout=_HTTP_TIMEOUT)
+    response = _yahoo_http_get(url, params=params, headers=dict(_YAHOO_HEADERS))
     response.raise_for_status()
     data = response.json()
     chain = data.get("optionChain", {})

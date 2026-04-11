@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+from unittest.mock import MagicMock
+
 from mtdata.services import options_service as osvc
 
 
@@ -127,3 +130,50 @@ def test_get_options_chain_rejects_unavailable_expiration(monkeypatch):
     assert "error" in out
     assert "not available" in out["error"]
     assert out["expirations"] == ["2026-04-17"]
+
+
+def test_get_yahoo_session_reuses_single_session(monkeypatch):
+    sessions = []
+
+    def fake_session():
+        session = MagicMock()
+        sessions.append(session)
+        return session
+
+    monkeypatch.setattr(osvc.requests, "Session", fake_session)
+    monkeypatch.setattr(osvc, "_YAHOO_SESSION", None)
+
+    first = osvc._get_yahoo_session()
+    second = osvc._get_yahoo_session()
+
+    assert first is second
+    assert len(sessions) == 1
+
+
+def test_fetch_yahoo_options_payload_retries_rate_limited_response(monkeypatch):
+    retry_response = SimpleNamespace(status_code=429, headers={"Retry-After": "1"})
+    ok_response = MagicMock(status_code=200, headers={})
+    ok_response.raise_for_status.return_value = None
+    ok_response.json.return_value = {
+        "optionChain": {
+            "result": [
+                {
+                    "quote": {"regularMarketPrice": 100.5, "currency": "USD"},
+                    "expirationDates": [],
+                }
+            ]
+        }
+    }
+    session = MagicMock()
+    session.get.side_effect = [retry_response, ok_response]
+    sleep_calls = []
+
+    monkeypatch.setattr(osvc, "_get_yahoo_session", lambda: session)
+    monkeypatch.setattr(osvc, "_throttle_yahoo_request", lambda: None)
+    monkeypatch.setattr(osvc._time, "sleep", lambda seconds: sleep_calls.append(seconds))
+
+    out = osvc._fetch_yahoo_options_payload("AAPL")
+
+    assert out["quote"]["regularMarketPrice"] == 100.5
+    assert session.get.call_count == 2
+    assert sleep_calls == [1.0]
