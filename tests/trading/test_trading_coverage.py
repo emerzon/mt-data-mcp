@@ -811,6 +811,7 @@ class TestTradeClose:
             volume=0.05,
             profit_only=False,
             loss_only=False,
+            close_priority=None,
             comment=None,
             deviation=20,
         )

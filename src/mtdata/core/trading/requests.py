@@ -39,6 +39,7 @@ class TradeCloseRequest(BaseModel):
     volume: Optional[float] = None
     profit_only: bool = False
     loss_only: bool = False
+    close_priority: Optional[Literal["loss_first", "profit_first", "largest_first"]] = None
     comment: Optional[str] = None
     deviation: int = 20
 

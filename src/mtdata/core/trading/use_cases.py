@@ -648,6 +648,7 @@ def run_trade_close(  # noqa: C901
             volume=None,
             profit_only=request.profit_only,
             loss_only=request.loss_only,
+            close_priority=request.close_priority,
             comment=request.comment,
             deviation=request.deviation,
         )
@@ -664,6 +665,7 @@ def run_trade_close(  # noqa: C901
             volume=request.volume,
             profit_only=False,
             loss_only=False,
+            close_priority=request.close_priority,
             comment=request.comment,
             deviation=request.deviation,
         )
@@ -713,6 +715,7 @@ def run_trade_close(  # noqa: C901
             volume=None,
             profit_only=False,
             loss_only=False,
+            close_priority=request.close_priority,
             comment=request.comment,
             deviation=request.deviation,
         )
@@ -739,6 +742,7 @@ def run_trade_close(  # noqa: C901
         volume=None,
         profit_only=False,
         loss_only=False,
+        close_priority=request.close_priority,
         comment=request.comment,
         deviation=request.deviation,
     )

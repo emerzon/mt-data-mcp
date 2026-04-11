@@ -777,12 +777,49 @@ def _execute_single_close(
     return res_dict
 
 
+def _sort_close_positions(
+    positions: List[Any],
+    priority: Optional[str],
+) -> List[Any]:
+    """Sort positions for close ordering. Returns a new list.
+
+    Supported priorities:
+    - None: discovery order (no change)
+    - "loss_first": most negative PnL first (close losers first)
+    - "profit_first": most positive PnL first (take profits first)
+    - "largest_first": largest notional volume first
+    """
+    if not priority or not positions:
+        return list(positions)
+
+    def _safe_profit(pos: Any) -> float:
+        try:
+            return float(getattr(pos, "profit", 0.0) or 0.0)
+        except Exception:
+            return 0.0
+
+    def _safe_volume(pos: Any) -> float:
+        try:
+            return float(getattr(pos, "volume", 0.0) or 0.0)
+        except Exception:
+            return 0.0
+
+    if priority == "loss_first":
+        return sorted(positions, key=_safe_profit)
+    elif priority == "profit_first":
+        return sorted(positions, key=_safe_profit, reverse=True)
+    elif priority == "largest_first":
+        return sorted(positions, key=_safe_volume, reverse=True)
+    return list(positions)
+
+
 def _close_positions(  # noqa: C901
     ticket: Optional[Union[int, str]] = None,
     symbol: Optional[str] = None,
     volume: Optional[Union[int, float]] = None,
     profit_only: bool = False,
     loss_only: bool = False,
+    close_priority: Optional[str] = None,
     comment: Optional[str] = None,
     deviation: int = 20,
     gateway: Optional[MT5TradingGateway] = None,
@@ -839,6 +876,8 @@ def _close_positions(  # noqa: C901
 
             if not to_close:
                 return {"message": "No positions matched criteria"}
+
+            to_close = _sort_close_positions(to_close, close_priority)
 
             deviation_validated, deviation_error = validation._validate_deviation(deviation)
             if deviation_error:
@@ -967,7 +1006,14 @@ def _close_positions(  # noqa: C901
             if ticket is not None and len(results) == 1:
                 return results[0]
             success_count = _count_done_results(mt5, results)
-            return {"closed_count": success_count, "attempted_count": len(results), "results": results}
+            bulk_result: Dict[str, Any] = {
+                "closed_count": success_count,
+                "attempted_count": len(results),
+                "results": results,
+            }
+            if close_priority:
+                bulk_result["close_priority"] = close_priority
+            return bulk_result
 
         except Exception as e:
             if "results" not in locals():

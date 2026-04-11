@@ -1655,6 +1655,103 @@ def test_close_positions_resets_abort_counter_on_success(mock_mt5):
     assert results[-1]["ticket"] == 6
     assert results[-1].get("aborted") is None
 
+
+# ---------------------------------------------------------------------------
+# _sort_close_positions and close_priority integration tests
+# ---------------------------------------------------------------------------
+
+from src.mtdata.core.trading.execution import _sort_close_positions
+
+
+def test_sort_close_positions_loss_first():
+    """loss_first sorts by ascending profit (most negative first)."""
+    positions = [
+        SimpleNamespace(ticket=1, profit=50.0, volume=0.1),
+        SimpleNamespace(ticket=2, profit=-100.0, volume=0.2),
+        SimpleNamespace(ticket=3, profit=-20.0, volume=0.3),
+    ]
+    result = _sort_close_positions(positions, "loss_first")
+    assert [p.ticket for p in result] == [2, 3, 1]
+
+
+def test_sort_close_positions_profit_first():
+    """profit_first sorts by descending profit (most positive first)."""
+    positions = [
+        SimpleNamespace(ticket=1, profit=-10.0, volume=0.1),
+        SimpleNamespace(ticket=2, profit=100.0, volume=0.2),
+        SimpleNamespace(ticket=3, profit=50.0, volume=0.3),
+    ]
+    result = _sort_close_positions(positions, "profit_first")
+    assert [p.ticket for p in result] == [2, 3, 1]
+
+
+def test_sort_close_positions_largest_first():
+    """largest_first sorts by descending volume."""
+    positions = [
+        SimpleNamespace(ticket=1, profit=10.0, volume=0.01),
+        SimpleNamespace(ticket=2, profit=20.0, volume=1.0),
+        SimpleNamespace(ticket=3, profit=-5.0, volume=0.5),
+    ]
+    result = _sort_close_positions(positions, "largest_first")
+    assert [p.ticket for p in result] == [2, 3, 1]
+
+
+def test_sort_close_positions_none_preserves_order():
+    """None priority preserves discovery order."""
+    positions = [
+        SimpleNamespace(ticket=3, profit=10.0, volume=0.1),
+        SimpleNamespace(ticket=1, profit=-10.0, volume=0.5),
+    ]
+    result = _sort_close_positions(positions, None)
+    assert [p.ticket for p in result] == [3, 1]
+
+
+def test_sort_close_positions_missing_profit():
+    """Handles positions with missing profit attribute gracefully."""
+    positions = [
+        SimpleNamespace(ticket=1, volume=0.1),
+        SimpleNamespace(ticket=2, profit=-50.0, volume=0.2),
+    ]
+    result = _sort_close_positions(positions, "loss_first")
+    # Missing profit defaults to 0.0, so -50 sorts first
+    assert [p.ticket for p in result] == [2, 1]
+
+
+def test_close_positions_loss_first_integration(mock_mt5):
+    """close_priority=loss_first closes losers before winners."""
+    mock_mt5.ORDER_FILLING_IOC = 1
+    mock_mt5.ORDER_FILLING_FOK = 0
+    mock_mt5.ORDER_FILLING_RETURN = 2
+    mock_mt5.ORDER_TIME_GTC = 0
+    mock_mt5.TRADE_RETCODE_DONE = 10009
+
+    positions = [
+        SimpleNamespace(ticket=1, symbol="EURUSD", volume=0.1, type=0, profit=100.0, magic=0, price_open=1.04, time=1700000000),
+        SimpleNamespace(ticket=2, symbol="EURUSD", volume=0.1, type=0, profit=-50.0, magic=0, price_open=1.06, time=1700000000),
+        SimpleNamespace(ticket=3, symbol="EURUSD", volume=0.1, type=0, profit=-200.0, magic=0, price_open=1.07, time=1700000000),
+    ]
+
+    mock_mt5.order_send.return_value = SimpleNamespace(
+        retcode=10009, deal=500, order=600, volume=0.1,
+        price=1.05, comment="ok", profit=5.0,
+    )
+    mock_mt5.symbol_info_tick.return_value = SimpleNamespace(bid=1.05, ask=1.0501)
+
+    def _positions_get(*args, **kwargs):
+        t = kwargs.get("ticket")
+        if t is not None:
+            return [p for p in positions if p.ticket == t] or None
+        return positions
+    mock_mt5.positions_get.side_effect = _positions_get
+
+    res = _close_positions(symbol="EURUSD", close_priority="loss_first")
+
+    assert res["close_priority"] == "loss_first"
+    tickets_in_order = [r["ticket"] for r in res["results"]]
+    # Should close biggest loser first: 3 (-200), then 2 (-50), then 1 (+100)
+    assert tickets_in_order == [3, 2, 1]
+
+
 def test_cancel_pending_counts_done_partial_as_success(mock_mt5):
     mock_mt5.TRADE_ACTION_REMOVE = 8
     mock_mt5.TRADE_RETCODE_DONE_PARTIAL = 10010
