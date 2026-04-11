@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, NoReturn, Optional
 
 from fastapi import HTTPException
 
@@ -48,7 +48,7 @@ def _http_error(
     return HTTPException(status_code=status_code, detail=payload)
 
 
-def _raise_history_fetch_error(exc: Exception) -> None:
+def _raise_history_fetch_error(exc: Exception) -> NoReturn:
     if isinstance(exc, MT5ConnectionError):
         raise _http_error(
             503,
@@ -72,7 +72,7 @@ def _raise_history_fetch_error(exc: Exception) -> None:
     )
 
 
-def _raise_internal_handler_error(*, operation: str, code: str, message: str) -> None:
+def _raise_internal_handler_error(*, operation: str, code: str, message: str) -> NoReturn:
     logger.exception("transport=web_api operation=%s unhandled_exception", operation)
     raise _http_error(500, message, code=code, operation=operation)
 
