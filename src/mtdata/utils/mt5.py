@@ -1,3 +1,35 @@
+"""MT5 connectivity, time alignment, and low-level data helpers.
+
+Time Alignment Contract
+-----------------------
+All MT5 timestamps pass through a single normalisation chain:
+
+1. **Outbound** (UTC → server-local): ``_to_server_naive_dt()`` converts
+   UTC datetimes to the broker's server-local representation before each
+   MT5 API call.  It uses either a ``pytz`` timezone (``MT5_SERVER_TZ``)
+   or a static offset (``MT5_TIME_OFFSET_MINUTES``).
+
+2. **Inbound** (server-local → UTC): ``_normalize_times_in_struct()``
+   converts every ``time`` field in the returned structured arrays back
+   to UTC.  When a server timezone is configured it delegates per-element
+   to ``_mt5_epoch_to_utc()`` (DST-aware); otherwise it subtracts the
+   static offset in bulk (fast path).
+
+3. **Diagnostic** (optional): ``inspect_mt5_time_alignment()`` samples
+   the latest tick and bar to infer the actual broker offset, compares it
+   to the configured offset, and reports ``ok | misaligned | stale``.
+   Results are TTL-cached via ``get_cached_mt5_time_alignment()``.
+
+Configuration priority (``MT5Config.get_time_offset_seconds``):
+  static ``MT5_TIME_OFFSET_MINUTES`` > dynamic ``MT5_SERVER_TZ`` > 0
+
+Every ``_mt5_copy_*`` wrapper in this module applies steps 1 + 2 so
+callers always receive UTC-normalised data.  The higher-level data
+service may apply an additional auto-correction shift
+(``_shift_rate_times``) for live data when diagnostic alignment detects
+a mismatch, bounded to [30 min, 18 h].
+"""
+
 import importlib
 import logging
 import math
