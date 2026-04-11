@@ -172,83 +172,24 @@ def _prepare_ensemble_cv(
     min_train: int,
     failure_sink: Optional[List[Dict[str, Any]]] = None,
 ) -> Tuple[np.ndarray, np.ndarray]:
-    """Collect walk-forward one-step predictions for ensemble weighting."""
+    """Collect walk-forward one-step predictions for ensemble weighting.
 
-    n = len(series)
-    if n <= max(min_train, horizon + 2):
-        return np.empty((0, len(methods))), np.empty((0,))
+    Delegates to the shared implementation in
+    ``methods.ensemble._prepare_ensemble_cv_default``.
+    """
+    from .methods.ensemble import _prepare_ensemble_cv_default
 
-    end = n - horizon
-    candidate_idx = list(range(max(min_train, 3), end))
-    if not candidate_idx:
-        return np.empty((0, len(methods))), np.empty((0,))
-    if cv_points and len(candidate_idx) > cv_points:
-        candidate_idx = candidate_idx[-cv_points:]
-
-    rows: List[List[float]] = []
-    targets: List[float] = []
-    horizon_i = int(horizon)
-    for idx in candidate_idx:
-        train = series.iloc[:idx]
-        if len(train) < min_train:
-            continue
-        row_forecasts: List[np.ndarray] = []
-        success = True
-        for m in methods:
-            fc, error_detail = _ensemble_dispatch_with_error(
-                m,
-                train,
-                horizon,
-                seasonality,
-                params_map.get(m, {}),
-            )
-            if fc is None:
-                _append_ensemble_failure(
-                    failure_sink,
-                    stage="cv",
-                    method_name=m,
-                    anchor_index=idx,
-                    error_detail=error_detail
-                    or {"error": "Component forecast unavailable", "error_type": "forecast_unavailable"},
-                )
-                success = False
-                break
-            try:
-                fc_arr = np.asarray(fc, dtype=float).reshape(-1)
-            except Exception as ex:
-                _append_ensemble_failure(
-                    failure_sink,
-                    stage="cv",
-                    method_name=m,
-                    anchor_index=idx,
-                    error_detail={"error": str(ex), "error_type": type(ex).__name__},
-                )
-                success = False
-                break
-            if fc_arr.size < horizon_i or not np.all(np.isfinite(fc_arr[:horizon_i])):
-                _append_ensemble_failure(
-                    failure_sink,
-                    stage="cv",
-                    method_name=m,
-                    anchor_index=idx,
-                    error_detail={"error": "Forecast output was too short or non-finite", "error_type": "invalid_forecast"},
-                )
-                success = False
-                break
-            row_forecasts.append(fc_arr[:horizon_i])
-        if not success:
-            continue
-        target_slice = np.asarray(series.iloc[idx: idx + horizon_i], dtype=float).reshape(-1)
-        if target_slice.size < horizon_i or not np.all(np.isfinite(target_slice)):
-            continue
-        for step_idx in range(horizon_i):
-            rows.append([float(forecast[step_idx]) for forecast in row_forecasts])
-            targets.append(float(target_slice[step_idx]))
-
-    if not rows:
-        return np.empty((0, len(methods))), np.empty((0,))
-
-    return np.asarray(rows, dtype=float), np.asarray(targets, dtype=float)
+    return _prepare_ensemble_cv_default(
+        series,
+        methods,
+        horizon,
+        seasonality,
+        params_map,
+        cv_points,
+        min_train,
+        dispatch_with_error=_ensemble_dispatch_with_error,
+        failure_sink=failure_sink,
+    )
 
 
 # Supported forecast methods - dynamically fetch from registry
