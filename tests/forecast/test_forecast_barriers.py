@@ -2324,5 +2324,32 @@ class TestUnresolvedTerminalPnl(unittest.TestCase):
         self.assertIn("ev_unresolved", result)
 
 
+class TestCandidateBarrierGeometry(unittest.TestCase):
+    def _make_context(self, *, dir_long=True, last_price=1.1000):
+        from mtdata.forecast.barriers_optimization import _BarrierEvaluationContext
+        return _BarrierEvaluationContext(
+            mode_val="pct",
+            dir_long=dir_long,
+            last_price=last_price,
+            pip_size=0.0001,
+            rr_min_val=None,
+            rr_max_val=None,
+            has_trading_costs=False,
+            ev_deduct_cost=0.0,
+            cost_per_trade=0.0,
+            min_prob_win_val=None,
+            max_prob_no_hit_val=None,
+            min_prob_resolve_val=None,
+            max_median_time_val=None,
+        )
+
+    def test_rejects_non_positive_or_non_finite_anchor_price(self):
+        from mtdata.forecast.barriers_optimization import _candidate_barrier_geometry_is_valid
+
+        for last_price in (0.0, -1.0, float("nan"), float("inf")):
+            ctx = self._make_context(last_price=last_price)
+            assert _candidate_barrier_geometry_is_valid(101.0, 99.0, context=ctx) is False
+
+
 if __name__ == '__main__':
     unittest.main()

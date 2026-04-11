@@ -202,13 +202,13 @@ def _candidate_barrier_geometry_is_valid(
 ) -> bool:
     if not np.isfinite(tp_price) or not np.isfinite(sl_price):
         return False
-    if np.isfinite(context.last_price) and context.last_price > 0.0:
-        if tp_price <= 0.0 or sl_price <= 0.0:
-            return False
-        if context.dir_long:
-            return sl_price < context.last_price < tp_price
-        return tp_price < context.last_price < sl_price
-    return True
+    if not np.isfinite(context.last_price) or context.last_price <= 0.0:
+        return False
+    if tp_price <= 0.0 or sl_price <= 0.0:
+        return False
+    if context.dir_long:
+        return sl_price < context.last_price < tp_price
+    return tp_price < context.last_price < sl_price
 
 
 def _candidate_hit_arrays(
