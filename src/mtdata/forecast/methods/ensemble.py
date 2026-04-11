@@ -124,12 +124,13 @@ def _prepare_ensemble_cv_default(
     rows: List[List[float]] = []
     targets: List[float] = []
     horizon_i = int(horizon)
+    nan_forecast = np.full(horizon_i, np.nan, dtype=float)
     for idx in candidate_idx:
         train = series.iloc[:idx]
         if len(train) < min_train:
             continue
         row_forecasts: List[np.ndarray] = []
-        success = True
+        any_valid = False
         for method_name in methods:
             fc, error_detail = dispatch_with_error(
                 method_name,
@@ -147,8 +148,8 @@ def _prepare_ensemble_cv_default(
                     error_detail=error_detail
                     or {"error": "Component forecast unavailable", "error_type": "forecast_unavailable"},
                 )
-                success = False
-                break
+                row_forecasts.append(nan_forecast)
+                continue
             try:
                 fc_arr = np.asarray(fc, dtype=float).reshape(-1)
             except Exception as ex:
@@ -159,8 +160,8 @@ def _prepare_ensemble_cv_default(
                     anchor_index=idx,
                     error_detail={"error": str(ex), "error_type": type(ex).__name__},
                 )
-                success = False
-                break
+                row_forecasts.append(nan_forecast)
+                continue
             if fc_arr.size < horizon_i or not np.all(np.isfinite(fc_arr[:horizon_i])):
                 _append_failure(
                     failure_sink,
@@ -169,10 +170,11 @@ def _prepare_ensemble_cv_default(
                     anchor_index=idx,
                     error_detail={"error": "Forecast output was too short or non-finite", "error_type": "invalid_forecast"},
                 )
-                success = False
-                break
+                row_forecasts.append(nan_forecast)
+                continue
             row_forecasts.append(fc_arr[:horizon_i])
-        if not success:
+            any_valid = True
+        if not any_valid:
             continue
         target_slice = np.asarray(series.iloc[idx: idx + horizon_i], dtype=float).reshape(-1)
         if target_slice.size < horizon_i or not np.all(np.isfinite(target_slice)):
@@ -356,17 +358,31 @@ class EnsembleMethod(ForecastMethod):
                 **prepare_kwargs,
             )
             cv_rows = int(len(y_cv))
+            cv_valid_per_method = np.sum(np.isfinite(X_cv), axis=0) if X_cv.size else np.zeros(len(base_methods))
+            ensemble_meta['cv_valid_per_method'] = cv_valid_per_method.astype(int).tolist()
+            ensemble_meta['cv_total_rows'] = cv_rows
             if X_cv.shape[0] >= max(3, len(base_methods)):
                 if mode == 'bma':
                     errors = X_cv - y_cv[:, None]
-                    rmse = np.sqrt(np.mean(np.square(errors), axis=0))
-                    weights_vec = _stabilized_bma_weights(rmse)
+                    with np.errstate(invalid='ignore'):
+                        rmse = np.sqrt(np.nanmean(np.square(errors), axis=0))
+                    if np.all(np.isfinite(rmse)) and np.all(cv_valid_per_method >= 3):
+                        weights_vec = _stabilized_bma_weights(rmse)
+                    else:
+                        effective_mode = 'average'
                 else:
-                    X_aug = np.column_stack([np.ones(X_cv.shape[0]), X_cv])
-                    beta, *_ = np.linalg.lstsq(X_aug, y_cv, rcond=None)
-                    ensemble_intercept = float(beta[0])
-                    coeffs = beta[1:]
-                    effective_mode = 'stacking'
+                    # Stacking requires fully populated rows
+                    complete_mask = np.all(np.isfinite(X_cv), axis=1)
+                    X_clean = X_cv[complete_mask]
+                    y_clean = y_cv[complete_mask]
+                    if X_clean.shape[0] >= max(3, len(base_methods)):
+                        X_aug = np.column_stack([np.ones(X_clean.shape[0]), X_clean])
+                        beta, *_ = np.linalg.lstsq(X_aug, y_clean, rcond=None)
+                        ensemble_intercept = float(beta[0])
+                        coeffs = beta[1:]
+                        effective_mode = 'stacking'
+                    else:
+                        effective_mode = 'average'
             else:
                 effective_mode = 'average'
 

@@ -170,8 +170,12 @@ def test_prepare_ensemble_cv_uses_valid_rows_only(monkeypatch):
         cv_points=4,
         min_train=3,
     )
-    assert x.shape == (0, 2)
-    assert y.shape == (0,)
+    # Sparse rows: "naive" column is valid, "broken" column is NaN
+    assert x.shape[0] == 4
+    assert x.shape[1] == 2
+    assert np.all(np.isfinite(x[:, 0]))   # naive column fully valid
+    assert np.all(np.isnan(x[:, 1]))       # broken column all NaN
+    assert y.shape[0] == 4
 
     x, y = fe._prepare_ensemble_cv(
         series=series,
@@ -244,12 +248,69 @@ def test_prepare_ensemble_cv_records_dispatch_errors_without_function_state(monk
         failure_sink=failures,
     )
 
-    assert x.shape == (0, 2)
-    assert y.shape == (0,)
+    # Sparse: "bad" column is NaN, "naive" column is valid
+    assert x.shape[1] == 2
+    assert x.shape[0] >= 1
+    assert np.all(np.isnan(x[:, 0]))      # bad column all NaN
+    assert np.all(np.isfinite(x[:, 1]))    # naive column valid
     assert failures[0]["method"] == "bad"
     assert failures[0]["error"] == "boom"
     assert failures[0]["error_type"] == "RuntimeError"
     assert getattr(fe._ensemble_dispatch_with_error, "_last_error", None) is None
+
+
+def test_prepare_ensemble_cv_sparse_failure_preserves_valid_methods(monkeypatch):
+    """When one method fails intermittently, the CV matrix keeps valid entries
+    and marks failures as NaN, instead of discarding the entire anchor."""
+    series = pd.Series(np.arange(1.0, 21.0))
+    call_count = {"flaky": 0}
+
+    def fake_dispatch_with_error(method_name, train, horizon, seasonality, params):
+        if method_name == "flaky":
+            call_count["flaky"] += 1
+            if call_count["flaky"] % 2 == 0:
+                return None, {"error": "intermittent", "error_type": "RuntimeError"}
+        return np.array([float(train.iloc[-1] + 1.0)], dtype=float), None
+
+    monkeypatch.setattr(fe, "_ensemble_dispatch_with_error", fake_dispatch_with_error)
+
+    failures: list = []
+    x, y = fe._prepare_ensemble_cv(
+        series=series,
+        methods=["good", "flaky"],
+        horizon=1,
+        seasonality=1,
+        params_map={},
+        cv_points=4,
+        min_train=3,
+        failure_sink=failures,
+    )
+
+    assert x.shape[0] == 4
+    assert x.shape[1] == 2
+    # "good" column always valid
+    assert np.all(np.isfinite(x[:, 0]))
+    # "flaky" column has a mix of valid and NaN
+    n_nan = np.sum(np.isnan(x[:, 1]))
+    n_valid = np.sum(np.isfinite(x[:, 1]))
+    assert n_nan > 0
+    assert n_valid > 0
+    assert len(failures) == n_nan
+
+
+def test_prepare_ensemble_cv_all_methods_fail_returns_empty():
+    """When ALL methods fail at every anchor, the matrix is empty."""
+    series = pd.Series(np.arange(1.0, 21.0))
+
+    def always_fail(method_name, train, horizon, seasonality, params):
+        return None, {"error": "fail", "error_type": "ValueError"}
+
+    from mtdata.forecast.methods.ensemble import _prepare_ensemble_cv_default
+    x, y = _prepare_ensemble_cv_default(
+        series, ["a", "b"], 1, 1, {}, 4, 3, always_fail,
+    )
+    assert x.shape == (0, 2)
+    assert y.shape == (0,)
 
 
 def test_forecast_engine_validation_and_top_level_errors(monkeypatch):
