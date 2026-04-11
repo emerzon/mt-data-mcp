@@ -647,7 +647,7 @@ class TestGetHistory:
         denoise_params_json = json.dumps({
             "columns": ["close", "high"],
             "when": "pre_ti",
-            "causality": True,
+            "causality": "causal",
             "keep_original": False,
         })
         with patch.object(web_api.mt5_connection, "_ensure_connection", return_value=True), \
@@ -663,8 +663,60 @@ class TestGetHistory:
         call_arg = mock_norm.call_args[0][0]
         assert call_arg["columns"] == ["close", "high"]
         assert call_arg["when"] == "pre_ti"
-        assert call_arg["causality"] is True
+        assert call_arg["causality"] == "causal"
         assert call_arg["keep_original"] is False
+
+    def test_denoise_json_string_false_is_parsed_as_false(self):
+        payload = {"data": [{"time": 1.0}]}
+        dn_methods = {"methods": [{"method": "wavelet", "available": True}]}
+        denoise_params_json = json.dumps({"keep_original": "false"})
+        with patch.object(web_api.mt5_connection, "_ensure_connection", return_value=True), \
+             patch("mtdata.core.web_api._fetch_candles_impl", return_value=payload), \
+             patch("mtdata.core.web_api._get_denoise_methods", return_value=dn_methods), \
+             patch("mtdata.core.web_api._norm_dn", return_value={"method": "wavelet"}) as mock_norm, \
+             patch("mtdata.core.web_api.mt5_config") as mock_cfg:
+            mock_cfg.get_time_offset_seconds.return_value = 0
+            _client.get("/api/history", params={
+                "symbol": "EURUSD",
+                "denoise_method": "wavelet",
+                "denoise_params": denoise_params_json,
+            })
+        call_arg = mock_norm.call_args[0][0]
+        assert call_arg["keep_original"] is False
+
+    def test_denoise_json_rejects_invalid_causality_type(self):
+        dn_methods = {"methods": [{"method": "wavelet", "available": True}]}
+        denoise_params_json = json.dumps({"causality": True})
+        with patch.object(web_api.mt5_connection, "_ensure_connection", return_value=True), \
+             patch("mtdata.core.web_api._get_denoise_methods", return_value=dn_methods), \
+             patch("mtdata.core.web_api.mt5_config") as mock_cfg:
+            mock_cfg.get_time_offset_seconds.return_value = 0
+            resp = _client.get("/api/history", params={
+                "symbol": "EURUSD",
+                "denoise_method": "wavelet",
+                "denoise_params": denoise_params_json,
+            })
+        assert resp.status_code == 400
+        detail = resp.json()["detail"]
+        assert detail["error_code"] == "denoise_params_invalid"
+        assert "causality" in detail["error"]
+
+    def test_denoise_json_rejects_non_object_params(self):
+        dn_methods = {"methods": [{"method": "wavelet", "available": True}]}
+        denoise_params_json = json.dumps({"params": [1, 2, 3]})
+        with patch.object(web_api.mt5_connection, "_ensure_connection", return_value=True), \
+             patch("mtdata.core.web_api._get_denoise_methods", return_value=dn_methods), \
+             patch("mtdata.core.web_api.mt5_config") as mock_cfg:
+            mock_cfg.get_time_offset_seconds.return_value = 0
+            resp = _client.get("/api/history", params={
+                "symbol": "EURUSD",
+                "denoise_method": "wavelet",
+                "denoise_params": denoise_params_json,
+            })
+        assert resp.status_code == 400
+        detail = resp.json()["detail"]
+        assert detail["error_code"] == "denoise_params_invalid"
+        assert "params" in detail["error"]
 
     def test_data_not_list(self):
         payload = {"data": "not_a_list"}

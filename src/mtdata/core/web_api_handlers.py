@@ -11,6 +11,7 @@ from fastapi import HTTPException
 from ..forecast.exceptions import ForecastError
 from ..utils.mt5 import MT5ConnectionError
 from ..utils.support_resistance import compact_support_resistance_payload
+from ..utils.utils import _UNPARSED_BOOL, _parse_bool_like
 from .error_envelope import build_http_error_detail
 from .mt5_gateway import get_default_mt5_gateway
 from .output_contract import ensure_common_meta
@@ -87,6 +88,51 @@ def _require_mt5_connection() -> None:
             code="mt5_connection_error",
             operation="require_mt5_connection",
         )
+
+
+def _history_denoise_bool(value: Any, *, field_name: str) -> bool:
+    parsed = _parse_bool_like(value)
+    if parsed is _UNPARSED_BOOL:
+        raise _http_error(
+            400,
+            f"denoise_params.{field_name} must be a boolean value.",
+            code="denoise_params_invalid",
+            operation="get_history",
+        )
+    return bool(parsed)
+
+
+def _history_denoise_choice(value: Any, *, field_name: str, allowed: set[str]) -> str:
+    if not isinstance(value, str):
+        raise _http_error(
+            400,
+            f"denoise_params.{field_name} must be a string.",
+            code="denoise_params_invalid",
+            operation="get_history",
+        )
+    normalized = value.strip().lower()
+    if normalized not in allowed:
+        allowed_text = ", ".join(sorted(allowed))
+        raise _http_error(
+            400,
+            f"denoise_params.{field_name} must be one of: {allowed_text}.",
+            code="denoise_params_invalid",
+            operation="get_history",
+        )
+    return normalized
+
+
+def _history_denoise_params_dict(value: Any) -> Dict[str, Any]:
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise _http_error(
+            400,
+            "denoise_params.params must be a JSON object.",
+            code="denoise_params_invalid",
+            operation="get_history",
+        )
+    return dict(value)
 
 
 def get_instruments_response(
@@ -345,7 +391,7 @@ def get_history_response(  # noqa: C901
                 payload = json.loads(denoise_params_val)
                 if isinstance(payload, dict):
                     if "params" in payload:
-                        spec_input["params"] = payload.pop("params") or {}
+                        spec_input["params"] = _history_denoise_params_dict(payload.pop("params"))
                     else:
                         reserved = {"columns", "when", "causality", "keep_original"}
                         extra_params = {key: value for key, value in payload.items() if key not in reserved}
@@ -360,13 +406,26 @@ def get_history_response(  # noqa: C901
                         if cols:
                             spec_input["columns"] = cols
                     if "when" in payload:
-                        spec_input["when"] = payload["when"]
+                        spec_input["when"] = _history_denoise_choice(
+                            payload["when"],
+                            field_name="when",
+                            allowed={"post_ti", "pre_ti"},
+                        )
                     if "causality" in payload:
-                        spec_input["causality"] = payload["causality"]
+                        spec_input["causality"] = _history_denoise_choice(
+                            payload["causality"],
+                            field_name="causality",
+                            allowed={"causal", "zero_phase"},
+                        )
                     if "keep_original" in payload:
-                        spec_input["keep_original"] = bool(payload["keep_original"])
+                        spec_input["keep_original"] = _history_denoise_bool(
+                            payload["keep_original"],
+                            field_name="keep_original",
+                        )
                 else:
                     raise ValueError("payload not dict")
+            except HTTPException:
+                raise
             except Exception:
                 params_dict: Dict[str, Any] = {}
                 for part in denoise_params_val.split(","):
