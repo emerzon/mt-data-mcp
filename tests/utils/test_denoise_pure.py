@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from mtdata.utils.denoise.api import _run_denoise_handler
 from mtdata.utils.denoise import (
     _apply_denoise,
     _denoise_series,
@@ -543,6 +544,15 @@ class TestApplyDenoise:
         assert "denoise_warnings" in df.attrs
         assert "Unknown denoise method 'nonexistent_method'" in df.attrs["denoise_warnings"][0]
 
+    def test_all_nan_series_appends_warning_and_skips_column(self):
+        df = pd.DataFrame({"close": [np.nan, np.nan, np.nan]})
+
+        added = _apply_denoise(df, {"method": "ema", "columns": ["close"]})
+
+        assert added == []
+        assert "denoise_warnings" in df.attrs
+        assert "contains no finite values for denoise" in df.attrs["denoise_warnings"][0]
+
 
 # ======================================================================
 # 4. _resolve_denoise_base_col
@@ -571,6 +581,18 @@ class TestResolveDenoisBaseCol:
         spec = {"method": "sma", "params": {"window": 5}, "columns": ["close"], "keep_original": False}
         result = _resolve_denoise_base_col(df, spec)
         assert result == "close"
+
+
+def test_run_denoise_handler_rejects_all_nan_series():
+    s = pd.Series([np.nan, np.nan, np.nan], name="close")
+
+    with pytest.raises(ValueError, match="contains no finite values for denoise"):
+        _run_denoise_handler(
+            s,
+            lambda series, values, params, causality: series,
+            {},
+            "causal",
+        )
 
 
 # ======================================================================

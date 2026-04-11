@@ -195,7 +195,11 @@ def _run_denoise_handler(
     causality: str,
 ) -> pd.Series:
     # Materialize a writable contiguous buffer
-    x = np.array(s.astype(float).ffill().bfill().to_numpy(copy=True), dtype=float, copy=True, order='C')
+    prepared = pd.to_numeric(s, errors="coerce").replace([np.inf, -np.inf], np.nan).ffill().bfill()
+    x = np.array(prepared.to_numpy(copy=True), dtype=float, copy=True, order='C')
+    if x.size == 0 or not np.isfinite(x).any():
+        series_name = str(getattr(s, "name", "") or "<unnamed>")
+        raise ValueError(f"Series '{series_name}' contains no finite values for denoise")
     return handler(s, x, params, causality)
 
 
