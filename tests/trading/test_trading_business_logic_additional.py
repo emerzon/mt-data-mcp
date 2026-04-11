@@ -13,6 +13,7 @@ from mtdata.core.trading.validation import (
     _normalize_order_type_input,
     _normalize_price_for_symbol,
     _retcode_is_done,
+    _safe_float_attr,
     _trade_done_codes,
     _validate_deviation,
     _validate_live_protection_levels,
@@ -380,3 +381,68 @@ def test_run_trade_place_without_any_ticket_guides_to_trade_get_open():
     assert result["protection_status"] == "unprotected_position"
     assert any("trade_get_open" in str(w) for w in result.get("warnings", []))
     assert not any("trade_modify now" in str(w) for w in result.get("warnings", []))
+
+
+# ---------------------------------------------------------------------------
+# _safe_float_attr tests
+# ---------------------------------------------------------------------------
+
+class TestSafeFloatAttr:
+    def test_normal_float_attribute(self):
+        obj = SimpleNamespace(price=1.2345)
+        assert _safe_float_attr(obj, "price") == 1.2345
+
+    def test_int_attribute_coerced(self):
+        obj = SimpleNamespace(volume=100)
+        assert _safe_float_attr(obj, "volume") == 100.0
+
+    def test_string_numeric_coerced(self):
+        obj = SimpleNamespace(value="3.14")
+        assert _safe_float_attr(obj, "value") == 3.14
+
+    def test_missing_attribute_returns_default(self):
+        obj = SimpleNamespace()
+        assert _safe_float_attr(obj, "price") == 0.0
+        assert _safe_float_attr(obj, "price", -1.0) == -1.0
+
+    def test_none_attribute_returns_default(self):
+        obj = SimpleNamespace(profit=None)
+        assert _safe_float_attr(obj, "profit") == 0.0
+
+    def test_bool_attribute_returns_default(self):
+        obj = SimpleNamespace(flag=True)
+        assert _safe_float_attr(obj, "flag") == 0.0
+
+    def test_nan_returns_default(self):
+        obj = SimpleNamespace(price=float("nan"))
+        assert _safe_float_attr(obj, "price") == 0.0
+
+    def test_inf_returns_default(self):
+        obj = SimpleNamespace(price=float("inf"))
+        assert _safe_float_attr(obj, "price") == 0.0
+
+    def test_negative_inf_returns_default(self):
+        obj = SimpleNamespace(price=float("-inf"))
+        assert _safe_float_attr(obj, "price") == 0.0
+
+    def test_non_numeric_string_returns_default(self):
+        obj = SimpleNamespace(price="not_a_number")
+        assert _safe_float_attr(obj, "price") == 0.0
+
+    def test_zero_is_valid(self):
+        obj = SimpleNamespace(profit=0.0)
+        assert _safe_float_attr(obj, "profit") == 0.0
+
+    def test_negative_is_valid(self):
+        obj = SimpleNamespace(profit=-42.5)
+        assert _safe_float_attr(obj, "profit") == -42.5
+
+    def test_getattr_exception_returns_default(self):
+        class Broken:
+            def __getattr__(self, name):
+                raise RuntimeError("boom")
+        assert _safe_float_attr(Broken(), "price") == 0.0
+
+    def test_custom_default(self):
+        obj = SimpleNamespace()
+        assert _safe_float_attr(obj, "bid", 99.0) == 99.0

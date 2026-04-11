@@ -1188,9 +1188,9 @@ def run_trade_risk_analyze(  # noqa: C901
                     volume = float(pos.volume)
 
                     contract_size = float(sym_info.trade_contract_size)
-                    point = float(getattr(sym_info, "point", 0.0) or 0.0)
-                    tick_value = float(getattr(sym_info, "trade_tick_value", 0.0) or 0.0)
-                    tick_size = float(getattr(sym_info, "trade_tick_size", 0.0) or 0.0)
+                    point = validation._safe_float_attr(sym_info, "point")
+                    tick_value = validation._safe_float_attr(sym_info, "trade_tick_value")
+                    tick_size = validation._safe_float_attr(sym_info, "trade_tick_size")
                     if not math.isfinite(tick_size) or tick_size <= 0:
                         tick_size = point if math.isfinite(point) and point > 0 else 0.0
                     tick_value_valid = math.isfinite(tick_value) and tick_value > 0
@@ -1330,9 +1330,9 @@ def run_trade_risk_analyze(  # noqa: C901
                     return {"error": f"Symbol {request.symbol} not found"}
 
                 contract_size = float(sym_info.trade_contract_size)
-                point = float(getattr(sym_info, "point", 0.0) or 0.0)
-                tick_value = float(getattr(sym_info, "trade_tick_value", 0.0) or 0.0)
-                tick_size = float(getattr(sym_info, "trade_tick_size", 0.0) or 0.0)
+                point = validation._safe_float_attr(sym_info, "point")
+                tick_value = validation._safe_float_attr(sym_info, "trade_tick_value")
+                tick_size = validation._safe_float_attr(sym_info, "trade_tick_size")
                 if not math.isfinite(tick_size) or tick_size <= 0:
                     tick_size = point if math.isfinite(point) and point > 0 else 0.0
                 min_volume = float(sym_info.volume_min)

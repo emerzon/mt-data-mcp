@@ -447,7 +447,7 @@ def _modify_pending_order(
                 "action": mt5.TRADE_ACTION_MODIFY,
                 "order": ticket_id,
                 "symbol": order.symbol,
-                "volume": float(getattr(order, "volume", 0.0) or 0.0),
+                "volume": validation._safe_float_attr(order, "volume"),
                 "type": order_type_value,
                 "price": float(normalized_price),
                 "sl": request_sl,
@@ -587,9 +587,9 @@ def _execute_single_close(
 
     for fill_mode in fill_modes:
         close_price = (
-            float(getattr(tick, "bid", 0.0) or 0.0)
+            validation._safe_float_attr(tick, "bid")
             if is_buy_position
-            else float(getattr(tick, "ask", 0.0) or 0.0)
+            else validation._safe_float_attr(tick, "ask")
         )
         close_type = close_type_sell if is_buy_position else close_type_buy
         close_comment = comments._normalize_close_trade_comment(comment, default="MCP close")
@@ -775,16 +775,10 @@ def _sort_close_positions(
         return list(positions)
 
     def _safe_profit(pos: Any) -> float:
-        try:
-            return float(getattr(pos, "profit", 0.0) or 0.0)
-        except Exception:
-            return 0.0
+        return validation._safe_float_attr(pos, "profit")
 
     def _safe_volume(pos: Any) -> float:
-        try:
-            return float(getattr(pos, "volume", 0.0) or 0.0)
-        except Exception:
-            return 0.0
+        return validation._safe_float_attr(pos, "volume")
 
     if priority == "loss_first":
         return sorted(positions, key=_safe_profit)
@@ -843,13 +837,7 @@ def _close_positions(  # noqa: C901
             # 2. Filter positions
             to_close = []
             for pos in positions:
-                position_profit: Optional[float]
-                try:
-                    position_profit = float(getattr(pos, "profit", 0.0) or 0.0)
-                except Exception:
-                    position_profit = None
-                if position_profit is None and (profit_only or loss_only):
-                    continue
+                position_profit = validation._safe_float_attr(pos, "profit")
                 if profit_only and position_profit <= 0.0:
                     continue
                 if loss_only and position_profit >= 0.0:
@@ -902,10 +890,7 @@ def _close_positions(  # noqa: C901
                 requested_volume = None
                 position_volume_before = None
                 remaining_volume_estimate = None
-                try:
-                    position_volume_before = float(getattr(position, "volume", 0.0) or 0.0)
-                except Exception:
-                    position_volume_before = None
+                position_volume_before = validation._safe_float_attr(position, "volume") or None
                 if volume is not None:
                     symbol_info = mt5.symbol_info(position.symbol)
                     if symbol_info is None:

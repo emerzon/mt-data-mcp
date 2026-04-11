@@ -254,6 +254,26 @@ def _safe_int_attr(obj: Any, name: str, default: int) -> int:
     return int(numeric)
 
 
+def _safe_float_attr(obj: Any, name: str, default: float = 0.0) -> float:
+    """Safely coerce an object attribute to a float with fallback.
+
+    Mirrors ``_safe_int_attr`` but for float extraction.  Handles missing
+    attributes, ``None``, non-numeric values, and non-finite results
+    (NaN / ±Inf) by returning *default*.
+    """
+    try:
+        raw = getattr(obj, name, None)
+    except Exception:
+        return default
+    if raw is None or isinstance(raw, bool):
+        return default
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return default
+    return value if math.isfinite(value) else default
+
+
 def _resolve_position_side(position: Any, mt5: Any) -> Optional[str]:
     position_type_buy = _safe_int_attr(
         mt5,

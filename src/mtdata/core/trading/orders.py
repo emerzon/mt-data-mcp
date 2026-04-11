@@ -259,8 +259,8 @@ def _attach_post_fill_protection(
                         positions_after = [fallback_pos] if fallback_pos is not None else []
                     if positions_after and len(positions_after) > 0:
                         pos_after = positions_after[0]
-                        sl_applied = float(getattr(pos_after, "sl", 0.0) or 0.0) or None
-                        tp_applied = float(getattr(pos_after, "tp", 0.0) or 0.0) or None
+                        sl_applied = validation._safe_float_attr(pos_after, "sl") or None
+                        tp_applied = validation._safe_float_attr(pos_after, "tp") or None
                 except Exception as verify_exc:
                     sl_tp_verification_failed = True
                     logger.warning(
@@ -269,7 +269,7 @@ def _attach_post_fill_protection(
                         verify_exc,
                     )
 
-                price_tol = float(getattr(symbol_info, "point", 0.0) or 0.0)
+                price_tol = validation._safe_float_attr(symbol_info, "point")
                 if not math.isfinite(price_tol) or price_tol <= 0:
                     price_tol = 1e-9
                 if stop_loss is not None and sl_applied is not None:
@@ -311,7 +311,7 @@ def _attach_post_fill_protection(
                         # Mark when fallback applied broker-adjusted levels.
                         if stop_loss is not None and sl_applied is not None:
                             try:
-                                if abs(float(sl_applied) - float(stop_loss)) > (float(getattr(symbol_info, "point", 0.0) or 1e-9)):
+                                if abs(float(sl_applied) - float(stop_loss)) > (validation._safe_float_attr(symbol_info, "point") or 1e-9):
                                     sl_tp_broker_adjusted = True
                                     sl_tp_adjustment["sl"] = {
                                         "requested": float(stop_loss),
@@ -321,7 +321,7 @@ def _attach_post_fill_protection(
                                 pass
                         if take_profit is not None and tp_applied is not None:
                             try:
-                                if abs(float(tp_applied) - float(take_profit)) > (float(getattr(symbol_info, "point", 0.0) or 1e-9)):
+                                if abs(float(tp_applied) - float(take_profit)) > (validation._safe_float_attr(symbol_info, "point") or 1e-9):
                                     sl_tp_broker_adjusted = True
                                     sl_tp_adjustment["tp"] = {
                                         "requested": float(take_profit),
@@ -915,8 +915,8 @@ def _place_pending_order(
             live_tick = mt5.symbol_info_tick(symbol) or initial_tick
             if live_tick is None:
                 return {"error": f"Failed to refresh current price for {symbol}"}
-            bid = float(getattr(live_tick, "bid", 0.0) or 0.0)
-            ask = float(getattr(live_tick, "ask", 0.0) or 0.0)
+            bid = validation._safe_float_attr(live_tick, "bid")
+            ask = validation._safe_float_attr(live_tick, "ask")
             price_tol = point * 0.1 if point > 0 else 1e-9
 
             if t == "BUY" and abs(norm_price - ask) <= price_tol:

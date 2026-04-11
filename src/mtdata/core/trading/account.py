@@ -152,8 +152,8 @@ def trade_account_info() -> dict:
         margin_level: Optional[float] = getattr(info, "margin_level", None)
         margin_level_note: Optional[str] = None
         try:
-            margin_val = float(getattr(info, "margin", 0.0) or 0.0)
-            ml_val = float(getattr(info, "margin_level", 0.0) or 0.0)
+            margin_val = validation._safe_float_attr(info, "margin")
+            ml_val = validation._safe_float_attr(info, "margin_level")
             if margin_val <= 0.0 and ml_val <= 0.0:
                 margin_level = None
                 margin_level_note = "N/A (no open margin/positions)"
