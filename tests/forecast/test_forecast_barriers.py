@@ -581,6 +581,37 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
         self.assertIsInstance(result["best"], dict)
         self.assertIn("ev", result["best"])
 
+    def test_forecast_barrier_optimize_ensemble_fetches_history_once(self):
+        self._set_flat_history(1.0)
+        self.mock_fetch_history_opt.reset_mock()
+        paths = self._sample_paths()
+        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc') as mock_gbm, \
+             patch(f'{_BARRIER_OPT_ROOT}._simulate_bootstrap_mc') as mock_bootstrap, \
+             patch(f'{_BARRIER_OPT_ROOT}._get_live_reference_price', return_value=(None, None)):
+            mock_gbm.return_value = {"price_paths": paths}
+            mock_bootstrap.return_value = {"price_paths": paths}
+            result = forecast_barrier_optimize(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=4,
+                method="ensemble",
+                direction="long",
+                mode="pct",
+                tp_min=0.5, tp_max=0.5, tp_steps=1,
+                sl_min=0.5, sl_max=0.5, sl_steps=1,
+                params={
+                    "ensemble_methods": ["mc_gbm", "bootstrap"],
+                    "ensemble_agg": "median",
+                    "optimizer": "grid",
+                    "n_sims": 50,
+                    "n_seeds": 1,
+                },
+                return_grid=False,
+                output="summary",
+            )
+        self.assertTrue(result.get("success"))
+        self.assertEqual(self.mock_fetch_history_opt.call_count, 1)
+
     def test_optimize_rejects_non_finite_trailing_close_without_live_reference(self):
         df = self.df.copy()
         df.loc[df.index[-1], "close"] = np.nan

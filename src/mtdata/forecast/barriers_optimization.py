@@ -642,6 +642,7 @@ def forecast_barrier_optimize(  # noqa: C901
     power_effect_size: float = 0.05,
     enable_sensitivity_analysis: bool = False,
     sensitivity_params: Optional[List[str]] = None,
+    _prefetched_history: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """Optimize TP/SL barriers over a grid of candidate levels.
 
@@ -968,8 +969,14 @@ def forecast_barrier_optimize(  # noqa: C901
                 str(p).strip().lower() for p in sensitivity_params_requested if str(p).strip()
             ]
 
-        need = int(max(2000, horizon_val + 100))
-        df = _fetch_history(symbol, timeframe, need, as_of=None)
+        if _prefetched_history is not None:
+            try:
+                df = _prefetched_history.copy()
+            except Exception:
+                df = _prefetched_history
+        else:
+            need = int(max(2000, horizon_val + 100))
+            df = _fetch_history(symbol, timeframe, need, as_of=None)
         if len(df) < 10:
             return {"error": "Insufficient history for simulation"}
         use_live_price_raw = params_dict.get('use_live_price', params_dict.get('live_price', True))
@@ -1176,6 +1183,7 @@ def forecast_barrier_optimize(  # noqa: C901
                     power_effect_size=power_effect_size_val,
                     enable_sensitivity_analysis=bool(enable_sensitivity_analysis_val),
                     sensitivity_params=sensitivity_params_requested,
+                    _prefetched_history=df,
                 )
                 if not isinstance(member_out, dict) or not member_out.get('success'):
                     err_msg = None
