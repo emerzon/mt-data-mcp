@@ -438,12 +438,43 @@ class TestCausalDiscoverSignals:
         assert isinstance(result["data"]["links"], list)
         assert "summary_text" not in result["data"]
         assert result["meta"]["pairs_tested"] >= 1
+        assert result["meta"]["p_value_correction"] == "bonferroni_across_lags"
         assert not any("verbose" in str(w.message).lower() for w in records)
         assert "verbose" not in mock_granger.call_args.kwargs
         assert any(
             "event=finish operation=causal_discover_signals success=True" in record.message
             for record in caplog.records
         )
+
+    @patch("statsmodels.tsa.stattools.grangercausalitytests")
+    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal._fetch_series")
+    def test_best_lag_p_value_is_bonferroni_adjusted(self, mock_fetch, mock_granger):
+        idx = pd.date_range("2024-01-01", periods=80, freq="h")
+        base = np.linspace(1.0, 2.0, 80)
+        series_map = {
+            "A": pd.Series(base, index=idx),
+            "B": pd.Series(base * 1.01 + 0.001, index=idx),
+        }
+
+        def _fetch_side_effect(symbol, timeframe, count):
+            return series_map[symbol], None
+
+        mock_fetch.side_effect = _fetch_side_effect
+        mock_granger.return_value = {
+            1: ({"ssr_ftest": (1.0, 0.02, 10, 1)}, None),
+            2: ({"ssr_ftest": (1.0, 0.03, 10, 1)}, None),
+        }
+
+        result = self._unwrapped()("A,B", max_lag=2, transform="diff", normalize=False)
+
+        assert result["success"] is True
+        link = result["data"]["links"][0]
+        assert link["lag"] == 1
+        assert link["p_value_raw"] == pytest.approx(0.02)
+        assert link["lag_tests_run"] == 2
+        assert link["p_value"] == pytest.approx(0.04)
+        assert link["significant"] is True
 
     @patch("statsmodels.tsa.stattools.grangercausalitytests")
     @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})

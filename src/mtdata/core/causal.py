@@ -161,7 +161,8 @@ def _format_summary(rows: List[Dict[str, object]], symbols: List[str], transform
         )
     lines.append("")
     lines.append("Lag refers to the history length of the cause series used in the best-performing test (ssr_ftest).")
-    lines.append("Use the p-value to gauge strength; results are pairwise and do not imply full causal graphs.")
+    lines.append("Displayed p-values use Bonferroni correction across tested lags for each pair.")
+    lines.append("Results are pairwise and do not imply full causal graphs.")
     return "\n".join(lines)
 
 
@@ -670,22 +671,29 @@ def causal_discover_signals(  # noqa: C901
                     continue
                 pair_success += 1
                 best_lag = None
-                best_p = None
+                best_p_raw = None
+                tested_lags = 0
                 for lag, result in tests.items():
                     stat, pvalue, *_ = result[0]["ssr_ftest"]
                     if math.isnan(pvalue):
                         continue
-                    if best_p is None or pvalue < best_p:
-                        best_p = float(pvalue)
+                    tested_lags += 1
+                    if best_p_raw is None or pvalue < best_p_raw:
+                        best_p_raw = float(pvalue)
                         best_lag = int(lag)
-                if best_p is None or best_lag is None:
+                if best_p_raw is None or best_lag is None:
                     continue
+                lag_correction_factor = max(1, int(tested_lags))
+                best_p = float(min(1.0, best_p_raw * lag_correction_factor))
                 rows.append(
                     {
                         "effect": effect,
                         "cause": cause,
                         "lag": best_lag,
                         "p_value": best_p,
+                        "p_value_raw": float(best_p_raw),
+                        "p_value_correction": "bonferroni",
+                        "lag_tests_run": lag_correction_factor,
                         "samples": len(subset),
                         "significant": bool(best_p < significance),
                     }
@@ -698,6 +706,7 @@ def causal_discover_signals(  # noqa: C901
             "pairs_attempted": int(pair_attempts),
             "pairs_tested": int(pair_success),
             "pairs_failed": int(max(pair_attempts - pair_success, 0)),
+            "p_value_correction": "bonferroni_across_lags",
         })
         if pair_failures:
             meta["pair_failures"] = pair_failures
