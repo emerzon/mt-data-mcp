@@ -29,6 +29,83 @@ from ..utils.utils import (
 from .common import data_quality_warnings, should_drop_last_live_bar
 
 logger = logging.getLogger(__name__)
+
+
+class CandlestickRuntime:
+    """Container for lazily-loaded candlestick detection dependencies.
+
+    Replaces scattered module-level mutable globals with a single
+    object whose attributes can still be monkeypatched in tests
+    via ``candlestick_mod._runtime.ta = ...``.
+    """
+
+    __slots__ = ("ta", "mt5", "TIMEFRAME_MAP",
+                 "_mt5_copy_rates_from", "_rates_to_df", "_symbol_ready_guard",
+                 "_lock", "_loaded")
+
+    def __init__(self) -> None:
+        self.ta: Any = None
+        self.mt5: Any = None
+        self.TIMEFRAME_MAP: Optional[Dict[str, Any]] = None
+        self._mt5_copy_rates_from: Any = None
+        self._rates_to_df: Any = None
+        self._symbol_ready_guard: Any = None
+        self._lock = Lock()
+        self._loaded = False
+
+    @property
+    def ready(self) -> bool:
+        return self._loaded
+
+    def ensure_loaded(self) -> None:
+        """Lazily load all runtime deps (idempotent, thread-safe)."""
+        if self._loaded:
+            return
+        with self._lock:
+            if self._loaded:
+                return
+            if self.ta is None:
+                try:
+                    import pandas_ta as ta_mod  # type: ignore
+                except ModuleNotFoundError:
+                    try:
+                        import pandas_ta_classic as ta_mod  # type: ignore
+                    except ModuleNotFoundError as e:
+                        raise ModuleNotFoundError(
+                            "pandas_ta not found. Install 'pandas-ta-classic' (or 'pandas-ta')."
+                        ) from e
+                self.ta = ta_mod
+
+            if self.mt5 is None:
+                try:
+                    from ..utils.mt5 import mt5 as mt5_mod
+                except ModuleNotFoundError as e:
+                    raise ModuleNotFoundError(
+                        "MetaTrader5 not found. Install 'MetaTrader5' to use candlestick detection."
+                    ) from e
+                self.mt5 = mt5_mod
+
+            if self.TIMEFRAME_MAP is None:
+                from ..shared.constants import TIMEFRAME_MAP as timeframe_map
+                self.TIMEFRAME_MAP = timeframe_map
+
+            if self._mt5_copy_rates_from is None or self._rates_to_df is None or self._symbol_ready_guard is None:
+                from ..utils.mt5 import (
+                    _mt5_copy_rates_from as copy_rates_from,
+                    _rates_to_df as rates_to_df,
+                    _symbol_ready_guard as symbol_ready_guard,
+                )
+                self._mt5_copy_rates_from = copy_rates_from
+                self._rates_to_df = rates_to_df
+                self._symbol_ready_guard = symbol_ready_guard
+
+            self._loaded = True
+
+
+_runtime = CandlestickRuntime()
+
+# Backward-compat aliases so existing code referencing module-level names
+# continues to work.  New code should use ``_runtime.<attr>`` directly.
 ta: Any = None
 mt5: Any = None
 TIMEFRAME_MAP: Optional[Dict[str, Any]] = None
@@ -38,7 +115,6 @@ _symbol_ready_guard: Any = None
 _CANDLESTICK_PATTERN_METHOD_CACHE: Optional[Tuple[str, ...]] = None
 _CANDLESTICK_PATTERN_METHOD_CACHE_KEY: Optional[str] = None
 _CANDLESTICK_PATTERN_METHOD_CACHE_LOCK = Lock()
-_CANDLESTICK_RUNTIME_LOCK = Lock()
 _ROBUST_CANDLESTICK_WHITELIST = {
     'engulfing', 'harami', '3inside', '3outside', 'eveningstar', 'morningstar',
     'darkcloudcover', 'piercing', 'inside', 'outside', 'hikkake'
@@ -152,47 +228,20 @@ def _ensure_candlestick_runtime() -> None:
     ):
         return
 
-    with _CANDLESTICK_RUNTIME_LOCK:
-        if ta is None:
-            try:
-                import pandas_ta as ta_mod  # type: ignore
-            except ModuleNotFoundError:
-                try:
-                    import pandas_ta_classic as ta_mod  # type: ignore
-                except ModuleNotFoundError as e:
-                    raise ModuleNotFoundError(
-                        "pandas_ta not found. Install 'pandas-ta-classic' (or 'pandas-ta')."
-                    ) from e
-            ta = ta_mod
-
-        if mt5 is None:
-            try:
-                from ..utils.mt5 import mt5 as mt5_mod
-            except ModuleNotFoundError as e:
-                raise ModuleNotFoundError(
-                    "MetaTrader5 not found. Install 'MetaTrader5' to use candlestick detection."
-                ) from e
-            mt5 = mt5_mod
-
-        if TIMEFRAME_MAP is None:
-            from ..shared.constants import TIMEFRAME_MAP as timeframe_map
-
-            TIMEFRAME_MAP = timeframe_map
-
-        if _mt5_copy_rates_from is None or _rates_to_df is None or _symbol_ready_guard is None:
-            from ..utils.mt5 import (
-                _mt5_copy_rates_from as copy_rates_from,
-            )
-            from ..utils.mt5 import (
-                _rates_to_df as rates_to_df,
-            )
-            from ..utils.mt5 import (
-                _symbol_ready_guard as symbol_ready_guard,
-            )
-
-            _mt5_copy_rates_from = copy_rates_from
-            _rates_to_df = rates_to_df
-            _symbol_ready_guard = symbol_ready_guard
+    _runtime.ensure_loaded()
+    # Only populate globals that are still None (preserves monkeypatches)
+    if ta is None:
+        ta = _runtime.ta
+    if mt5 is None:
+        mt5 = _runtime.mt5
+    if TIMEFRAME_MAP is None:
+        TIMEFRAME_MAP = _runtime.TIMEFRAME_MAP
+    if _mt5_copy_rates_from is None:
+        _mt5_copy_rates_from = _runtime._mt5_copy_rates_from
+    if _rates_to_df is None:
+        _rates_to_df = _runtime._rates_to_df
+    if _symbol_ready_guard is None:
+        _symbol_ready_guard = _runtime._symbol_ready_guard
 
 
 def _discover_candlestick_pattern_methods(ta_accessor: Any) -> Tuple[str, ...]:
