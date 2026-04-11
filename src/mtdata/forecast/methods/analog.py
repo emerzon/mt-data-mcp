@@ -84,7 +84,7 @@ class AnalogMethod(ForecastMethod):
         {"name": "affine_alpha_min", "type": "float", "description": "Lower bound for affine refinement scale."},
         {"name": "affine_alpha_max", "type": "float", "description": "Upper bound for affine refinement scale."},
         {"name": "affine_penalty", "type": "float", "description": "Penalty for affine scale departure from 1.0."},
-        {"name": "search_engine", "type": "str", "description": "Search engine (ckdtree|hnsw|matrix_profile|mass)."},
+        {"name": "search_engine", "type": "str", "description": "Search engine (ckdtree|hnsw|matrix_profile|mass). `hnsw` requires the optional hnswlib backend and is not part of the default Python 3.14 environment."},
         {"name": "search_symbols", "type": "str|list", "description": "Optional symbol universe to search; primary symbol is always included."},
         {"name": "secondary_timeframes", "type": "str|list", "description": "Secondary timeframes to ensemble."},
         {"name": "component_weights", "type": "dict|str", "description": "Optional timeframe weights (e.g. H1=2,H4=1)."},

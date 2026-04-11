@@ -64,6 +64,7 @@ Notes:
 
 ### LTTB (`method=lttb`)
 **Largest-Triangle-Three-Buckets** downsampling preserves visual shape well for plotting.
+mtdata uses `tsdownsample` when available and falls back to the built-in Python implementation otherwise. The default Python 3.14 environment uses the fallback path.
 
 Recommended parameters:
 - `points` (or `ratio`)
@@ -128,4 +129,3 @@ mtdata-cli data_fetch_candles EURUSD --limit 5000 --simplify apca \
 - [DENOISING.md](DENOISING.md) — Signal denoising (complementary technique)
 - [TECHNICAL_INDICATORS.md](TECHNICAL_INDICATORS.md) — Indicator reference
 - [CLI.md](CLI.md) — Full command reference
-

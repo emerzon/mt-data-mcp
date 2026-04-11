@@ -160,7 +160,7 @@ This first finds candidates with fast Euclidean distance, then refines ranking u
 | Engine | Description |
 |--------|-------------|
 | `ckdtree` | Scipy KD-tree (default, fast) |
-| `hnsw` | Approximate nearest neighbor (scalable) |
+| `hnsw` | Approximate nearest neighbor (scalable, optional `hnswlib` backend; not part of the default Python 3.14 environment) |
 | `matrix_profile` | STUMPY-based (specialized for time series) |
 | `mass` | Mueen's MASS algorithm |
 
