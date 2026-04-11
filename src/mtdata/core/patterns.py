@@ -108,12 +108,15 @@ def _fetch_pattern_data(
     )
     mt5_tf = TIMEFRAME_MAP[timeframe]
     _info = mt5_gateway.symbol_info(symbol)
+    if _info is None:
+        return None, {"error": f"Symbol '{symbol}' not found or is not available in MT5."}
     _was_visible = bool(_info.visible) if _info is not None else None
     try:
         if _was_visible is False:
-            mt5_gateway.symbol_select(symbol, True)
-    except Exception:
-        pass
+            if not mt5_gateway.symbol_select(symbol, True):
+                return None, {"error": f"Symbol '{symbol}' is not visible and could not be selected in MT5."}
+    except Exception as exc:
+        return None, {"error": f"Failed to enable symbol '{symbol}' in MT5: {exc}"}
     
     utc_now = datetime.now(timezone.utc)
     count = max(400, int(limit) + 2)

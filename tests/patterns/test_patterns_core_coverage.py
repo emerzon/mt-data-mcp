@@ -1138,7 +1138,20 @@ class TestFetchPatternData:
         mock_mt5.symbol_info.return_value = None
         mock_rates.return_value = _make_rates_array(200)
         df, err = self._call("EURUSD", "H1", 100)
-        assert err is None  # should still succeed
+        assert df is None
+        assert "not found" in err["error"]
+
+    @patch("mtdata.core.patterns.mt5")
+    @patch("mtdata.core.patterns._mt5_copy_rates_from")
+    def test_symbol_select_failure_returns_clear_error(self, mock_rates, mock_mt5):
+        mock_mt5.symbol_info.return_value = MagicMock(visible=False)
+        mock_mt5.symbol_select.return_value = False
+
+        df, err = self._call("EURUSD", "H1", 100)
+
+        assert df is None
+        assert "could not be selected" in err["error"]
+        mock_rates.assert_not_called()
 
     @patch("mtdata.core.patterns.mt5")
     @patch("mtdata.core.patterns.datetime")
