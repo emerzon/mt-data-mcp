@@ -915,7 +915,37 @@ def _close_positions(  # noqa: C901
             return {"closed_count": success_count, "attempted_count": len(results), "results": results}
 
         except Exception as e:
-            return {"error": str(e)}
+            if "results" not in locals():
+                return {"error": str(e)}
+
+            error_result: Dict[str, Any] = {"error": str(e)}
+            current_position = locals().get("position")
+            current_ticket = validation._safe_int_ticket(getattr(current_position, "ticket", None))
+            if current_ticket is None and current_position is not None:
+                current_ticket = getattr(current_position, "ticket", None)
+            if current_ticket is not None:
+                error_result["ticket"] = current_ticket
+
+            last_error = validation._safe_last_error(mt5)
+            if last_error is not None:
+                error_result["last_error"] = last_error
+
+            if current_ticket is None or not any(
+                isinstance(result_item, dict) and result_item.get("ticket") == current_ticket
+                for result_item in results
+            ):
+                results.append(error_result)
+
+            if ticket is not None and len(results) == 1:
+                return results[0]
+
+            return {
+                "closed_count": _count_done_results(mt5, results),
+                "attempted_count": len(results),
+                "partial_failure": True,
+                "error": str(e),
+                "results": results,
+            }
 
     return _close_positions()
 

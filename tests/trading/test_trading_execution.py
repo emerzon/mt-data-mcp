@@ -1262,6 +1262,69 @@ def test_close_positions_counts_done_partial_as_success(mock_mt5):
     assert res["closed_count"] == 1
 
 
+def test_close_positions_preserves_partial_results_when_later_position_raises(mock_mt5):
+    mock_mt5.ORDER_FILLING_IOC = 1
+    mock_mt5.ORDER_FILLING_FOK = 0
+    mock_mt5.ORDER_FILLING_RETURN = 2
+    mock_mt5.ORDER_TIME_GTC = 0
+    position_one = SimpleNamespace(
+        ticket=123,
+        symbol="EURUSD",
+        volume=0.1,
+        type=0,
+        profit=10.0,
+        magic=67890,
+        price_open=1.04000,
+        time=0,
+    )
+    position_two = SimpleNamespace(
+        ticket=456,
+        symbol="GBPUSD",
+        volume=0.1,
+        type=0,
+        profit=5.0,
+        magic=67890,
+        price_open=1.24000,
+        time=0,
+    )
+
+    def _positions_get(*args, **kwargs):
+        ticket = kwargs.get("ticket")
+        if ticket == 123:
+            return [position_one]
+        if ticket == 456:
+            return [position_two]
+        return [position_one, position_two]
+
+    def _symbol_info_tick(symbol):
+        if symbol == "EURUSD":
+            return MagicMock(bid=1.05000, ask=1.05010)
+        raise RuntimeError("tick feed exploded")
+
+    mock_mt5.positions_get.side_effect = _positions_get
+    mock_mt5.symbol_info_tick.side_effect = _symbol_info_tick
+    mock_mt5.order_send.return_value = MagicMock(
+        retcode=10009,
+        deal=123,
+        order=456,
+        volume=0.1,
+        price=1.05010,
+        bid=1.05000,
+        ask=1.05010,
+        comment="",
+    )
+
+    res = _close_positions()
+
+    assert res["closed_count"] == 1
+    assert res["attempted_count"] == 2
+    assert res["partial_failure"] is True
+    assert res["results"][0]["ticket"] == 123
+    assert res["results"][0]["retcode"] == 10009
+    assert res["results"][1]["ticket"] == 456
+    assert res["results"][1]["error"] == "tick feed exploded"
+
+
 def test_close_positions_resolves_ticket_via_fallback_ticket_fields(mock_mt5):
     mock_mt5.ORDER_FILLING_IOC = 1
     mock_mt5.ORDER_FILLING_FOK = 0
