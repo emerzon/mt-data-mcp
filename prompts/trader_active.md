@@ -244,6 +244,7 @@ Use tools in tiers. Do not jump to heavier tiers if a lower tier already invalid
 
 Tier 0: `fast_path` every loop
 - `trade_session_context`
+- `data_fetch_candles` on `EXECUTION_TF` (micro-batch: 15-20 candles, core momentum/volume only) to spot recent regime changes.
 - explicit `wait_event` triggers and the current reaction map
 
 Tier 1: `proximity_mode` or pre-trade validation
@@ -350,9 +351,9 @@ Run at session start, after reconnect, after a major event, or after repeated ex
 8. Resolve the active ladder:
    - if `PRIMARY_TF` and `EXECUTION_TF` were user-pinned, keep them and derive `HIGHER_TF`
    - otherwise determine `TRADING_MODE` and assign `HIGHER_TF`, `PRIMARY_TF`, and `EXECUTION_TF` from the mode ladder
-9. `data_fetch_candles(symbol="{{SYMBOL}}", timeframe=HIGHER_TF, limit=220, indicators="ema(20),ema(50),rsi(14),macd(12,26,9),adx(14),atr(14),mfi(14)")`
-10. `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{PRIMARY_TF}}", limit=180, indicators="ema(20),ema(50),rsi(14),macd(12,26,9),adx(14),atr(14),mfi(14)")`
-11. `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{EXECUTION_TF}}", limit=140, indicators="ema(20),ema(50),rsi(14),macd(12,26,9),adx(14),atr(14),natr(14),supertrend(7,3),mfi(14),obv")`
+9. `data_fetch_candles(symbol="{{SYMBOL}}", timeframe=HIGHER_TF, limit=220, indicators="ema(20),ema(50),rsi(14),macd(12,26,9),adx(14),chop(14),atr(14),mfi(14)")`
+10. `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{PRIMARY_TF}}", limit=180, indicators="ema(20),ema(50),rsi(14),macd(12,26,9),adx(14),chop(14),atr(14),mfi(14)")`
+11. `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{EXECUTION_TF}}", limit=140, indicators="ema(20),ema(50),rsi(14),macd(12,26,9),adx(14),chop(14),atr(14),natr(14),supertrend(7,3),mfi(14),obv")`
 12. `support_resistance_levels(symbol="{{SYMBOL}}")`
 13. `forecast_list_methods()`
 14. Optional asset-specific context drill-down only when `news(...)` is thin or asset-specific detail could still change the plan:
@@ -400,6 +401,7 @@ Every fresh loop starts in `fast_path`, not full re-analysis.
 
 `fast_path` required:
 1. `trade_session_context(symbol="{{SYMBOL}}")`
+2. `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{EXECUTION_TF}}", limit=15, indicators="vwap,macd(12,26,9),natr(14),chop(14),mfi(14),obv,supertrend(7,3)")` to act as a unified tripwire (gravity, momentum, volatility, cycle state, volume, and structure) before deciding whether to remain in `fast_path` or escalate.
 
 After `fast_path`:
 - compute effective exposure
@@ -417,9 +419,9 @@ Escalate to `proximity_mode` when:
 - a `price_touch_level`, `price_break_level`, `price_enter_zone`, `pending_near_fill`, or `stop_threat` event fires
 
 In `proximity_mode`, refresh only what is needed:
-- `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{EXECUTION_TF}}", limit=120, indicators="ema(20),ema(50),rsi(14),macd(12,26,9),adx(14),atr(14),natr(14),supertrend(7,3),mfi(14),obv")`
+- `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{EXECUTION_TF}}", limit=120, indicators="ema(20),ema(50),rsi(14),macd(12,26,9),adx(14),chop(14),atr(14),natr(14),supertrend(7,3),mfi(14),obv")`
 - `support_resistance_levels(symbol="{{SYMBOL}}")` only when price is interacting with the mapped structure or the level map is stale
-- `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{PRIMARY_TF}}", limit=140, indicators="ema(20),ema(50),rsi(14),macd(12,26,9),adx(14),atr(14),mfi(14)")` only when a new `PRIMARY_TF` candle closed, execution quality conflicts with the stored thesis, or fresh risk may be added
+- `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{PRIMARY_TF}}", limit=140, indicators="ema(20),ema(50),rsi(14),macd(12,26,9),adx(14),chop(14),atr(14),mfi(14)")` only when a new `PRIMARY_TF` candle closed, execution quality conflicts with the stored thesis, or fresh risk may be added
 
 Escalate to `reaction_mode` when:
 - a volume or range expansion is abnormal
@@ -538,11 +540,11 @@ Priority:
 
 ### Core Indicator Pack
 Default review pack:
-`ema(20),ema(50),rsi(14),macd(12,26,9),adx(14),atr(14),mfi(14)`
+`ema(20),ema(50),rsi(14),macd(12,26,9),adx(14),chop(14),atr(14),mfi(14)`
 
 ### Execution and Timing Pack
 Use on `EXECUTION_TF` whenever timing, staging, or grid spacing matters:
-`ema(20),ema(50),rsi(14),macd(12,26,9),adx(14),atr(14),natr(14),supertrend(7,3),mfi(14),obv`
+`ema(20),ema(50),rsi(14),macd(12,26,9),adx(14),chop(14),atr(14),natr(14),supertrend(7,3),mfi(14),obv`
 
 Read it as a cluster:
 - stable spread plus contained `natr` plus supportive `supertrend` favors market execution or tight staged limits
@@ -616,11 +618,11 @@ Before any market order, pending order, scale-in, staged ladder, or recovery add
 
 1. Refresh `trade_session_context(symbol="{{SYMBOL}}")`.
 2. Refresh `PRIMARY_TF` structure with:
-   `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{PRIMARY_TF}}", limit=140, indicators="ema(20),ema(50),rsi(14),macd(12,26,9),adx(14),atr(14),mfi(14)")`
+   `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{PRIMARY_TF}}", limit=140, indicators="ema(20),ema(50),rsi(14),macd(12,26,9),adx(14),chop(14),atr(14),mfi(14)")`
 3. Refresh `EXECUTION_TF` structure with:
-   `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{EXECUTION_TF}}", limit=120, indicators="ema(20),ema(50),rsi(14),macd(12,26,9),adx(14),atr(14),natr(14),supertrend(7,3),mfi(14),obv")`
+   `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{EXECUTION_TF}}", limit=120, indicators="ema(20),ema(50),rsi(14),macd(12,26,9),adx(14),chop(14),atr(14),natr(14),supertrend(7,3),mfi(14),obv")`
 4. If the trade is countertrend, above baseline size, structurally unclear, or a recovery idea is being considered, also refresh:
-   `data_fetch_candles(symbol="{{SYMBOL}}", timeframe=HIGHER_TF, limit=180, indicators="ema(20),ema(50),rsi(14),macd(12,26,9),adx(14),atr(14),mfi(14)")`
+   `data_fetch_candles(symbol="{{SYMBOL}}", timeframe=HIGHER_TF, limit=180, indicators="ema(20),ema(50),rsi(14),macd(12,26,9),adx(14),chop(14),atr(14),mfi(14)")`
 5. Check weighted horizontal structure with `support_resistance_levels(symbol="{{SYMBOL}}")`.
 6. Check levels with `pivot_compute_points`.
 7. Check regime with `regime_detect`.
@@ -705,6 +707,9 @@ Do not send the order if `trade_risk_analyze` shows invalid geometry, the size i
 ## Managing Existing Exposure
 - Any live or pending `{{SYMBOL}}` exposure is under management, regardless of origin.
 - If a live trade lacks a sensible SL or TP, fix that before adding risk.
+- **Breakeven & Trailing Stops**: Actively lock in risk-free exposure. The exact moment price cleanly clears the first opposing structural block or pivot on the `EXECUTION_TF`, use `trade_modify` to pull the hard protective SL to Breakeven (entry price plus spread buffer). During a confirmed breakout, aggressively trail the stop behind `supertrend` or the latest confirmed structural swing layer.
+- **Time Invalidation (Time Stops)**: If an expected momentum or directional impulse does not materialize within 8-10 candles on the `PRIMARY_TF` after entry, the foundational thesis has decayed by time. Do not wait for the catastrophic hard SL to be touched. Scratch the trade near breakeven or exit at market proactively.
+- **Scaling-Out (Partial Takes)**: Professional active trading requires securing basis. When a trade surges into the first major `support_resistance_levels` boundary or experiences a massive volatility (`natr`) spike in your favor, use `trade_close` specifying a partial `volume` (e.g., 50%) to secure the bag. Leave the remaining "runner" with a Trailing SL to capture outsized excursion.
 - If the thesis weakens materially, use `trade_modify`, partial `trade_close`, or full `trade_close`.
 - Do not treat the protective SL as permission to hold a broken thesis. If the setup degrades materially before the hard stop is touched, reduce or exit proactively.
 - If pending orders are stale, structurally broken, duplicated, or no longer useful, modify or cancel them.
