@@ -13,7 +13,7 @@ from ..patterns.candlestick import (
 )
 from ..patterns.classic import ClassicDetectorConfig as _ClassicCfg
 from ..patterns.classic import detect_classic_patterns as _detect_classic_patterns
-from ..patterns.common import data_quality_warnings
+from ..patterns.common import data_quality_warnings, should_drop_last_live_bar
 from ..patterns.elliott import ElliottWaveConfig as _ElliottCfg
 from ..patterns.elliott import detect_elliott_waves as _detect_elliott_waves
 from ..shared.validators import invalid_timeframe_error
@@ -84,22 +84,7 @@ def _should_drop_last_pattern_bar(
     *,
     now_utc: Optional[datetime] = None,
 ) -> bool:
-    if len(df) < 2:
-        return False
-    seconds_per_bar = float(TIMEFRAME_SECONDS.get(timeframe, 0) or 0)
-    if seconds_per_bar <= 0 or "time" not in df.columns:
-        return True
-    try:
-        last_open = float(pd.to_numeric(df["time"], errors="coerce").iloc[-1])
-    except Exception:
-        return True
-    if not math.isfinite(last_open):
-        return True
-    current_ts = float((now_utc or datetime.now(timezone.utc)).timestamp())
-    elapsed = current_ts - last_open
-    if elapsed < 0:
-        return True
-    return elapsed < seconds_per_bar
+    return should_drop_last_live_bar(df, timeframe, now_utc=now_utc)
 
 
 def _fetch_pattern_data(

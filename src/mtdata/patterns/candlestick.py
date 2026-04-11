@@ -26,7 +26,7 @@ from ..utils.utils import (
     _time_format_from_epochs,
     _use_client_tz,
 )
-from .common import data_quality_warnings
+from .common import data_quality_warnings, should_drop_last_live_bar
 
 logger = logging.getLogger(__name__)
 ta: Any = None
@@ -430,6 +430,10 @@ def detect_candlestick_patterns(  # noqa: C901
         return {"error": "No candle data available"}
 
     df = _rates_to_df(rates)
+    if should_drop_last_live_bar(df, timeframe, now_utc=utc_now):
+        df = df.iloc[:-1].copy()
+    if len(df) == 0:
+        return {"error": "No closed candle data available"}
     warnings_out = data_quality_warnings(
         df,
         symbol=symbol,

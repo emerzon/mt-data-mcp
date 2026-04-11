@@ -1,9 +1,12 @@
+import math
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 import numpy as np
 import pandas as pd
 
+from ..shared.constants import TIMEFRAME_SECONDS
 from ..shared.symbols import is_probably_crypto_symbol
 
 
@@ -110,3 +113,28 @@ def data_quality_warnings(
                     warnings.append("Data quality warning: zero-volume bars dominate the sample.")
 
     return warnings
+
+
+def should_drop_last_live_bar(
+    df: pd.DataFrame,
+    timeframe: str,
+    *,
+    now_utc: Optional[datetime] = None,
+) -> bool:
+    """Return True when the last bar is still forming or cannot be validated."""
+    if len(df) < 2:
+        return False
+    seconds_per_bar = float(TIMEFRAME_SECONDS.get(timeframe, 0) or 0)
+    if seconds_per_bar <= 0 or "time" not in df.columns:
+        return True
+    try:
+        last_open = float(pd.to_numeric(df["time"], errors="coerce").iloc[-1])
+    except Exception:
+        return True
+    if not math.isfinite(last_open):
+        return True
+    current_ts = float((now_utc or datetime.now(timezone.utc)).timestamp())
+    elapsed = current_ts - last_open
+    if elapsed < 0:
+        return True
+    return elapsed < seconds_per_bar
