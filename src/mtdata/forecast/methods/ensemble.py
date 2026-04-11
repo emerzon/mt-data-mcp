@@ -20,6 +20,14 @@ from ..ensemble_dispatch import (
 from ..interface import ForecastCallContext, ForecastMethod, ForecastResult
 from ..registry import ForecastRegistry
 
+# Canonical type for component dispatch callables.  Every ensemble dispatch
+# route (engine-injected or standalone default) must conform to this
+# signature: (method_name, series, horizon, seasonality, params) → (forecast, error_detail).
+ComponentDispatchFn = Callable[
+    [str, pd.Series, int, Optional[int], Optional[Dict[str, Any]]],
+    Tuple[Optional[np.ndarray], Optional[Dict[str, Any]]],
+]
+
 
 def _stabilized_bma_weights(rmse: np.ndarray) -> Optional[np.ndarray]:
     rmse_arr = np.asarray(rmse, dtype=float).reshape(-1)
@@ -99,10 +107,7 @@ def _prepare_ensemble_cv_default(
     params_map: Dict[str, Dict[str, Any]],
     cv_points: int,
     min_train: int,
-    dispatch_with_error: Callable[
-        [str, pd.Series, int, Optional[int], Optional[Dict[str, Any]]],
-        Tuple[Optional[np.ndarray], Optional[Dict[str, Any]]],
-    ],
+    dispatch_with_error: ComponentDispatchFn,
     failure_sink: Optional[List[Dict[str, Any]]] = None,
 ) -> Tuple[np.ndarray, np.ndarray]:
     n = len(series)
@@ -367,13 +372,15 @@ class EnsembleMethod(ForecastMethod):
 
         component_methods: List[str] = []
         component_forecasts: List[np.ndarray] = []
+        component_params_applied: Dict[str, Dict[str, Any]] = {}
         for method_name in base_methods:
+            method_params = params_map.get(method_name, {})
             fc, error_detail = dispatch_with_error(
                 method_name,
                 series,
                 horizon,
                 seasonality,
-                params_map.get(method_name, {}),
+                method_params,
             )
             if fc is None:
                 _append_failure(
@@ -404,6 +411,8 @@ class EnsembleMethod(ForecastMethod):
                 continue
             component_methods.append(method_name)
             component_forecasts.append(fc_arr[: int(horizon)])
+            if method_params:
+                component_params_applied[method_name] = method_params
 
         if not component_forecasts:
             raise ValueError("Ensemble failed: no component forecasts")
@@ -457,6 +466,8 @@ class EnsembleMethod(ForecastMethod):
             ensemble_meta['cv_failures'] = cv_failures
         if component_failures:
             ensemble_meta['component_failures'] = component_failures
+        if component_params_applied:
+            ensemble_meta['params_applied'] = component_params_applied
         if expose_components:
             ensemble_meta['components'] = {
                 method_name: [float(value) for value in forecast.tolist()]

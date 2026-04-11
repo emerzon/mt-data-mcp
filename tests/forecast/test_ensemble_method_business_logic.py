@@ -197,3 +197,49 @@ def test_ensemble_prepare_forecast_call_injects_engine_helpers():
 
 def test_ensemble_default_normalize_weights_reuses_shared_helper():
     assert em._normalize_weights_default is fe._normalize_weights
+
+
+def test_ensemble_params_applied_metadata():
+    """Verify component-specific params are tracked in metadata."""
+    series = pd.Series(np.linspace(1.0, 20.0, 20))
+    method = em.EnsembleMethod()
+
+    captured_params = {}
+
+    def dispatch(method_name, series_in, horizon, seasonality, params):
+        captured_params[method_name] = params
+        return np.array([5.0, 6.0], dtype=float)
+
+    def dispatch_with_error(method_name, series_in, horizon, seasonality, params):
+        captured_params[method_name] = params
+        return np.array([5.0, 6.0], dtype=float), None
+
+    out = method.forecast(
+        series,
+        horizon=2,
+        seasonality=1,
+        params={
+            "methods": ["naive", "theta"],
+            "mode": "average",
+            "method_params": {"naive": {"alpha": 0.5}, "theta": {}},
+        },
+        ensemble_dispatch_method=dispatch,
+        ensemble_dispatch_with_error=dispatch_with_error,
+        get_available_methods=lambda: ("naive", "theta"),
+    )
+
+    # naive had non-empty params → should appear in params_applied
+    assert "params_applied" in out.metadata
+    assert out.metadata["params_applied"]["naive"] == {"alpha": 0.5}
+    # theta had empty dict → should NOT appear
+    assert "theta" not in out.metadata["params_applied"]
+    # verify dispatch actually received the params
+    assert captured_params["naive"] == {"alpha": 0.5}
+    assert captured_params["theta"] == {}
+
+
+def test_component_dispatch_fn_type_alias_exists():
+    """Verify the canonical dispatch type alias is importable."""
+    assert hasattr(em, "ComponentDispatchFn")
+    # Should be a typing alias (callable type)
+    assert em.ComponentDispatchFn is not None
