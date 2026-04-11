@@ -17,6 +17,61 @@ class _FakeMt5:
         return list(self._fallback_rows)
 
 
+def test_position_side_matches_uses_numeric_defaults_when_mt5_constants_are_missing():
+    mt5 = SimpleNamespace()
+
+    assert positions._position_side_matches(SimpleNamespace(type=0), "BUY", mt5) is True
+    assert positions._position_side_matches(SimpleNamespace(type=1), "BUY", mt5) is False
+    assert positions._position_side_matches(SimpleNamespace(type=1), "SELL", mt5) is True
+
+
+def test_resolve_open_position_respects_side_filter_when_mt5_constants_are_missing():
+    class _NoConstantsMt5:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def positions_get(self, **kwargs):
+            return list(self._rows)
+
+    rows = [
+        SimpleNamespace(
+            ticket=100,
+            identifier=100,
+            position_id=None,
+            position=None,
+            order=None,
+            deal=None,
+            symbol="EURUSD",
+            type=0,
+            volume=0.1,
+            time_update_msc=1000,
+        ),
+        SimpleNamespace(
+            ticket=200,
+            identifier=200,
+            position_id=None,
+            position=None,
+            order=None,
+            deal=None,
+            symbol="EURUSD",
+            type=1,
+            volume=0.1,
+            time_update_msc=2000,
+        ),
+    ]
+
+    pos, resolved_ticket, info = positions._resolve_open_position(
+        _NoConstantsMt5(rows),
+        symbol="EURUSD",
+        side="BUY",
+        volume=0.1,
+    )
+
+    assert pos is not None
+    assert resolved_ticket == 100
+    assert info["method"] == "positions_get(fallback_heuristic)"
+
+
 def test_resolve_open_position_uses_candidate_ticket_when_direct_lookup_ticket_is_invalid():
     mt5 = _FakeMt5(
         ticket_rows=[

@@ -254,6 +254,28 @@ def _safe_int_attr(obj: Any, name: str, default: int) -> int:
     return int(numeric)
 
 
+def _resolve_position_side(position: Any, mt5: Any) -> Optional[str]:
+    position_type_buy = _safe_int_attr(
+        mt5,
+        "POSITION_TYPE_BUY",
+        _safe_int_attr(mt5, "ORDER_TYPE_BUY", 0),
+    )
+    position_type_sell = _safe_int_attr(
+        mt5,
+        "POSITION_TYPE_SELL",
+        _safe_int_attr(mt5, "ORDER_TYPE_SELL", 1),
+    )
+    try:
+        position_type = int(getattr(position, "type"))
+    except Exception:
+        return None
+    if position_type == int(position_type_buy):
+        return "BUY"
+    if position_type == int(position_type_sell):
+        return "SELL"
+    return None
+
+
 def _trade_done_codes(mt5: Any) -> set[int]:
     return {
         _safe_int_attr(mt5, "TRADE_RETCODE_DONE", 10009),

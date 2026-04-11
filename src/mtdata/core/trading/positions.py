@@ -50,15 +50,7 @@ def _order_sort_key(order: Any) -> float:
 def _position_side_matches(position: Any, side: Optional[str], mt5: Any) -> bool:
     if side not in {"BUY", "SELL"}:
         return True
-    expected_buy = getattr(mt5, "POSITION_TYPE_BUY", getattr(mt5, "ORDER_TYPE_BUY", None))
-    expected_sell = getattr(mt5, "POSITION_TYPE_SELL", getattr(mt5, "ORDER_TYPE_SELL", None))
-    expected = expected_buy if side == "BUY" else expected_sell
-    if expected is None:
-        return True
-    try:
-        return int(getattr(position, "type", -99999)) == int(expected)
-    except Exception:
-        return False
+    return validation._resolve_position_side(position, mt5) == side
 
 
 def _position_ticket_fields(position: Any) -> Dict[str, int]:

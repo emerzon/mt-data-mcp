@@ -14,25 +14,7 @@ from .time import ExpirationValue
 
 
 def _resolve_position_side(position: Any, mt5: Any) -> Optional[str]:
-    position_type_buy = validation._safe_int_attr(
-        mt5,
-        "POSITION_TYPE_BUY",
-        validation._safe_int_attr(mt5, "ORDER_TYPE_BUY", 0),
-    )
-    position_type_sell = validation._safe_int_attr(
-        mt5,
-        "POSITION_TYPE_SELL",
-        validation._safe_int_attr(mt5, "ORDER_TYPE_SELL", 1),
-    )
-    try:
-        position_type = int(position.type)
-    except Exception:
-        return None
-    if position_type == int(position_type_buy):
-        return "BUY"
-    if position_type == int(position_type_sell):
-        return "SELL"
-    return None
+    return validation._resolve_position_side(position, mt5)
 
 
 def _normalize_protection_level(value: Optional[float], *, tol: float) -> Optional[float]:
