@@ -239,6 +239,29 @@ class TestParseTiSpecs:
     def test_bollinger_aliases_are_not_reported_as_unknown(self):
         assert _find_unknown_ta_indicators("bb(20),bollinger_bands(20)") == []
 
+    def test_indicator_lookup_results_are_cached(self, monkeypatch):
+        import mtdata.utils.indicators as indicators_mod
+
+        class _ProxyPta:
+            def __init__(self) -> None:
+                self.lookups = 0
+
+            def __getattr__(self, name: str):
+                self.lookups += 1
+                if name == "ema":
+                    return lambda *args, **kwargs: None
+                raise AttributeError(name)
+
+        proxy = _ProxyPta()
+        monkeypatch.setattr(indicators_mod, "pta", proxy)
+        indicators_mod._is_available_ta_indicator.cache_clear()
+
+        assert indicators_mod._find_unknown_ta_indicators("ema(20),ema(50)") == []
+        assert indicators_mod._find_unknown_ta_indicators("ema(20)") == []
+        assert proxy.lookups == 1
+
+        indicators_mod._is_available_ta_indicator.cache_clear()
+
 
 class TestEstimateWarmupBars:
     def test_empty_spec(self):

@@ -2,6 +2,7 @@ import inspect
 import logging
 import pydoc
 import re
+from functools import lru_cache
 from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
@@ -263,6 +264,11 @@ def _parse_ti_specs(spec: str) -> List[Tuple[str, List[int | float], Dict[str, i
     return specs
 
 
+@lru_cache(maxsize=None)
+def _is_available_ta_indicator(name: str) -> bool:
+    return callable(getattr(pta, str(name or "").strip(), None))
+
+
 def _find_unknown_ta_indicators(spec: str) -> List[str]:
     """Return normalized indicator names not available in pandas_ta."""
     text = str(spec or "").strip()
@@ -273,7 +279,7 @@ def _find_unknown_ta_indicators(spec: str) -> List[str]:
         lname = _normalize_ta_indicator_name(str(name or "").strip())
         if not lname:
             continue
-        if not callable(getattr(pta, lname, None)):
+        if not _is_available_ta_indicator(lname):
             unknown.append(lname)
     return sorted(set(unknown))
 
