@@ -164,6 +164,8 @@ def _consolidate_payload(  # noqa: C901
             new_payload["reliability"] = payload["reliability"]
         if "tuning_hint" in payload:
             new_payload["tuning_hint"] = payload["tuning_hint"]
+        if "warnings" in payload:
+            new_payload["warnings"] = payload["warnings"]
 
         # Add consolidated table
         new_payload["regimes"] = final_segments
@@ -215,6 +217,8 @@ def _summary_only_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         out["threshold"] = payload["threshold"]
     if "tuning_hint" in payload:
         out["tuning_hint"] = payload["tuning_hint"]
+    if "warnings" in payload:
+        out["warnings"] = payload["warnings"]
     return out
 
 

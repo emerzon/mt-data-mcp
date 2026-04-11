@@ -594,6 +594,33 @@ class TestRegimeDetectMSAR:
                 res = fn("EURUSD", limit=60, method="ms_ar", output="full")
         assert isinstance(res, dict)
 
+    @patch(_FMT, side_effect=_time_fmt_stub)
+    @patch(_DENOISE, return_value="close")
+    @patch(_FETCH)
+    def test_ms_ar_surfaces_non_convergence_and_applies_smoothing(self, mock_fetch, mock_denoise, mock_fmt):
+        df = _make_df(60)
+        mock_fetch.return_value = df
+        probs = np.tile(np.array([[0.95, 0.05], [0.05, 0.95]], dtype=float), (30, 1))[:59]
+        mock_res = MagicMock()
+        mock_res.smoothed_marginal_probabilities = probs
+        mock_res.mle_retvals = {"converged": False}
+        mock_mod = MagicMock()
+        mock_mod.return_value = mock_mod
+        mock_mod.fit.return_value = mock_res
+
+        with patch.dict("sys.modules", {"statsmodels.tsa.regime_switching.markov_regression": MagicMock()}):
+            with patch("statsmodels.tsa.regime_switching.markov_regression.MarkovRegression", mock_mod, create=True):
+                fn = _get_regime_detect()
+                res = fn("EURUSD", limit=60, method="ms_ar", output="compact", lookback=20, min_regime_bars=2)
+
+        assert isinstance(res, dict)
+        assert res.get("params_used", {}).get("converged") is False
+        assert res.get("params_used", {}).get("min_regime_bars") == 2
+        assert res.get("params_used", {}).get("smoothing_applied") is True
+        assert "transitions_before" in res.get("params_used", {})
+        assert "transitions_after" in res.get("params_used", {})
+        assert any("did not converge" in str(w) for w in res.get("warnings", []))
+
 
 class TestRegimeDetectHMM:
 

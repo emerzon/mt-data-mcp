@@ -500,8 +500,22 @@ def regime_detect(  # noqa: C901
                 smoothed = res.smoothed_marginal_probabilities
                 if hasattr(smoothed, "values"):
                     smoothed = smoothed.values
-                state = np.argmax(smoothed, axis=1)
-                probs = smoothed
+                probs = np.asarray(smoothed, dtype=float)
+                state = np.argmax(probs, axis=1)
+                state, probs, smoothing_meta = _smooth_short_state_runs(
+                    state=np.asarray(state, dtype=int),
+                    probs=probs,
+                    min_regime_bars=min_regime_bars_val,
+                )
+                mle_retvals = getattr(res, "mle_retvals", None)
+                converged = None
+                if isinstance(mle_retvals, dict):
+                    converged = mle_retvals.get("converged")
+                elif mle_retvals is not None and hasattr(mle_retvals, "get"):
+                    try:
+                        converged = mle_retvals.get("converged")
+                    except Exception:
+                        converged = getattr(mle_retvals, "converged", None)
             except Exception as ex:
                 return _finish({"error": f"MS-AR fitting error: {ex}"})
             payload = {
@@ -513,8 +527,19 @@ def regime_detect(  # noqa: C901
                 "times": t_fmt,
                 "state": [int(s) for s in state.tolist()],
                 "state_probabilities": [[float(v) for v in row] for row in probs.tolist()],
-                "params_used": {"k_regimes": k_regimes, "order": order},
+                "params_used": {
+                    "k_regimes": k_regimes,
+                    "order": order,
+                    "min_regime_bars": int(min_regime_bars_val),
+                    "smoothing_applied": bool(smoothing_meta.get("smoothing_applied", False)),
+                    "transitions_before": int(smoothing_meta.get("transitions_before", 0)),
+                    "transitions_after": int(smoothing_meta.get("transitions_after", 0)),
+                },
             }
+            if converged is not None:
+                payload["params_used"]["converged"] = bool(converged)
+                if converged is False:
+                    payload["warnings"] = ["MS-AR model did not converge; regime probabilities may be unreliable."]
             # Add reliability info
             reliability = _ms_ar_reliability_from_smoothed(
                 smoothed_probs=probs,
@@ -528,7 +553,14 @@ def regime_detect(  # noqa: C901
                 last_s = int(state[-1]) if len(state) else None
                 unique, counts = np.unique(st_tail, return_counts=True)
                 shares = {int(k): float(c) / float(len(st_tail) or 1) for k, c in zip(unique, counts)}
-                summary = {"lookback": int(n), "last_state": last_s, "state_shares": shares}
+                summary = {
+                    "lookback": int(n),
+                    "last_state": last_s,
+                    "state_shares": shares,
+                    "transitions_before": int(smoothing_meta.get("transitions_before", 0)),
+                    "transitions_after": int(smoothing_meta.get("transitions_after", 0)),
+                    "smoothing_applied": bool(smoothing_meta.get("smoothing_applied", False)),
+                }
                 payload = _apply_state_output_mode(
                     payload,
                     output=output,
