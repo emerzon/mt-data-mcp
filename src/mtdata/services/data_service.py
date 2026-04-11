@@ -61,6 +61,7 @@ from ..utils.mt5 import (
     get_symbol_info_cached,
     mt5,
 )
+from ..utils.ohlcv import validate_and_clean_ohlcv_frame
 
 # Simplify entrypoint and helpers.
 from ..utils.simplify import (
@@ -1012,6 +1013,17 @@ def fetch_candles(  # noqa: C901
         client_tz = _resolve_client_tz()
         _use_ctz = client_tz is not None
         df = _build_rates_df(rates, _use_ctz)
+        quality_rows_removed = 0
+        ohlcv_warnings: List[str] = []
+        try:
+            rows_before_quality = int(len(df))
+            df, new_ohlcv_warnings = validate_and_clean_ohlcv_frame(df, epoch_col="__epoch")
+        except ValueError as exc:
+            return {"error": str(exc)}
+        quality_rows_removed += max(0, rows_before_quality - int(len(df)))
+        ohlcv_warnings.extend(new_ohlcv_warnings)
+        if len(df) == 0:
+            return {"error": f"No valid candle data available for {symbol}"}
 
         # Track denoise metadata if applied
         denoise_apps: List[Dict[str, Any]] = []
@@ -1070,6 +1082,17 @@ def fetch_candles(  # noqa: C901
                             headers=headers,
                         )
                         denoise_warnings.extend(_consume_denoise_warnings(df))
+                        try:
+                            rows_before_quality = int(len(df))
+                            df, retry_ohlcv_warnings = validate_and_clean_ohlcv_frame(df, epoch_col="__epoch")
+                        except ValueError as exc:
+                            return {"error": str(exc)}
+                        quality_rows_removed += max(0, rows_before_quality - int(len(df)))
+                        for warning_text in retry_ohlcv_warnings:
+                            if warning_text not in ohlcv_warnings:
+                                ohlcv_warnings.append(warning_text)
+                        if len(df) == 0:
+                            return {"error": f"No valid candle data available for {symbol}"}
                         # Re-trim to target window
                         df = _trim_df_to_target(df, start_datetime, end_datetime, candles, copy_rows=False)
                         rows_after_target_trim = int(len(df))
@@ -1170,6 +1193,7 @@ def fetch_candles(  # noqa: C901
                         "warmup_bars": int(warmup_bars),
                         "raw_bars_fetched": raw_bars_fetched,
                         "rows_after_target_trim": rows_after_target_trim,
+                        "quality_rows_removed": int(quality_rows_removed),
                         "cache_status": "unknown",
                         "warmup_retry": warmup_retry_meta,
                     },
@@ -1199,6 +1223,14 @@ def fetch_candles(  # noqa: C901
             if not isinstance(warns, list):
                 warns = []
             for warning_text in denoise_warnings:
+                if warning_text not in warns:
+                    warns.append(warning_text)
+            payload['warnings'] = warns
+        if ohlcv_warnings:
+            warns = payload.get('warnings')
+            if not isinstance(warns, list):
+                warns = []
+            for warning_text in ohlcv_warnings:
                 if warning_text not in warns:
                     warns.append(warning_text)
             payload['warnings'] = warns

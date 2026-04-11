@@ -918,6 +918,47 @@ class TestFetchCandles(unittest.TestCase):
             "Session gap diagnostics unavailable.",
         )
 
+    @patch(_MT5_CONFIG)
+    @patch(_RATES_FROM)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=0)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_quality_filter_removes_malformed_rows_and_warns(
+        self,
+        mock_warmup,
+        mock_ctz,
+        mock_info,
+        mock_from,
+        mock_cfg,
+    ):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        rates = _make_rates(8, step=3600)
+        rates[1]['close'] = float('nan')
+        rates[2]['low'] = rates[2]['high'] + 0.0001
+        rates[4]['time'] = rates[3]['time']
+        rates[6]['time'] = rates[5]['time'] - 7200
+        mock_from.return_value = rates
+
+        result = fetch_candles(
+            'EURUSD',
+            timeframe='H1',
+            limit=8,
+            time_as_epoch=True,
+            include_incomplete=True,
+        )
+
+        self.assertTrue(result.get('success'))
+        self.assertEqual(result['candles'], 4)
+        times = [float(row['time']) for row in result['data']]
+        self.assertEqual(times, sorted(times))
+        self.assertEqual(len(times), len(set(times)))
+        self.assertEqual(result['meta']['diagnostics']['query']['quality_rows_removed'], 4)
+        self.assertTrue(any('non-finite time/OHLC values' in str(w) for w in result.get('warnings', [])))
+        self.assertTrue(any('inconsistent OHLC ranges' in str(w) for w in result.get('warnings', [])))
+        self.assertTrue(any('duplicate candle timestamp' in str(w) for w in result.get('warnings', [])))
+        self.assertTrue(any('Sorted candle rows by timestamp' in str(w) for w in result.get('warnings', [])))
+
     # -- Error paths ---------------------------------------------------------
 
     def test_invalid_timeframe(self):

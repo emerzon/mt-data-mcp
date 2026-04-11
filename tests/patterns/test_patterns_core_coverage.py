@@ -1199,6 +1199,29 @@ class TestFetchPatternData:
 
     @patch("mtdata.core.patterns.mt5")
     @patch("mtdata.core.patterns._mt5_copy_rates_from")
+    def test_invalid_rows_are_removed_before_pattern_detection(self, mock_rates, mock_mt5):
+        mock_mt5.symbol_info.return_value = MagicMock(visible=True)
+        rates = _make_rates_array(200)
+        rates["close"][5] = np.nan
+        rates["low"][6] = rates["high"][6] + 0.001
+        rates["time"][8] = rates["time"][7]
+        rates["time"][10] = rates["time"][9] - 7200
+        mock_rates.return_value = rates
+
+        df, err = self._call("EURUSD", "H1", 100)
+
+        assert err is None
+        assert df is not None
+        assert bool(df["time"].is_monotonic_increasing)
+        assert int(df["time"].duplicated().sum()) == 0
+        assert "warnings" in df.attrs
+        assert any("non-finite time/OHLC values" in str(w) for w in df.attrs["warnings"])
+        assert any("inconsistent OHLC ranges" in str(w) for w in df.attrs["warnings"])
+        assert any("duplicate candle timestamp" in str(w) for w in df.attrs["warnings"])
+        assert any("Sorted candle rows by timestamp" in str(w) for w in df.attrs["warnings"])
+
+    @patch("mtdata.core.patterns.mt5")
+    @patch("mtdata.core.patterns._mt5_copy_rates_from")
     def test_crypto_zero_volume_warning_adds_context(self, mock_rates, mock_mt5):
         mock_mt5.symbol_info.return_value = MagicMock(visible=True)
         rates = _make_rates_array(200)

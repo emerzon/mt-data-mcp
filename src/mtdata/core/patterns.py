@@ -20,6 +20,7 @@ from ..shared.validators import invalid_timeframe_error
 from ..utils.denoise import _apply_denoise as _apply_denoise_util
 from ..utils.denoise import normalize_denoise_spec as _normalize_denoise_spec
 from ..utils.mt5 import _mt5_copy_rates_from, ensure_mt5_connection_or_raise, mt5
+from ..utils.ohlcv import validate_and_clean_ohlcv_frame
 from ..utils.utils import _UNPARSED_BOOL, _format_time_minimal, _parse_bool_like
 from ..utils.utils import to_float_np as __to_float_np
 from ._mcp_instance import mcp
@@ -128,6 +129,13 @@ def _fetch_pattern_data(
             df['volume'] = df['tick_volume']
 
     warnings_out: List[str] = []
+    try:
+        df, quality_warnings = validate_and_clean_ohlcv_frame(df, epoch_col="time")
+    except ValueError as exc:
+        return None, {"error": str(exc)}
+    if len(df) == 0:
+        return None, {"error": f"No valid bars available for {symbol}"}
+    warnings_out.extend(quality_warnings)
 
     # Drop the last bar only when it is still open or cannot be validated.
     if _should_drop_last_pattern_bar(df, timeframe, now_utc=utc_now):
