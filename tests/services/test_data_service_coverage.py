@@ -703,6 +703,45 @@ class TestFetchCandles(unittest.TestCase):
     @patch(_RESOLVE_CTZ, return_value=None)
     @patch(_ESTIMATE_WARMUP, return_value=0)
     @patch(_GUARD, _mock_symbol_guard)
+    def test_recent_broker_tick_drives_incomplete_bar_trim(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_cfg):
+        base_ts = _NOW_TS
+        mock_cfg.get_server_tz.return_value = None
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        mock_from.return_value = _make_rates(6, base_ts=base_ts, step=3600)
+        with patch(f'{_DS}._utc_epoch_seconds', return_value=base_ts - 60), \
+             patch(f'{_DS}.mt5.symbol_info_tick', return_value=SimpleNamespace(time=base_ts + 120)):
+            result = fetch_candles('EURUSD', timeframe='H1', limit=5, time_as_epoch=True)
+        self.assertTrue(result.get('success'))
+        returned_times = [row['time'] for row in result.get('data', [])]
+        self.assertNotIn(base_ts, returned_times)
+        self.assertEqual(returned_times[-1], base_ts - 3600)
+        self.assertFalse(result['last_candle_open'])
+
+    @patch(_MT5_CONFIG)
+    @patch(_RATES_FROM)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=0)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_stale_broker_tick_does_not_mark_closed_bar_as_live(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_cfg):
+        base_ts = _NOW_TS
+        mock_cfg.get_server_tz.return_value = None
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        mock_from.return_value = _make_rates(6, base_ts=base_ts, step=3600)
+        with patch(f'{_DS}._utc_epoch_seconds', return_value=base_ts + 7200), \
+             patch(f'{_DS}.mt5.symbol_info_tick', return_value=SimpleNamespace(time=base_ts + 120)):
+            result = fetch_candles('EURUSD', timeframe='H1', limit=5, time_as_epoch=True)
+        self.assertTrue(result.get('success'))
+        returned_times = [row['time'] for row in result.get('data', [])]
+        self.assertIn(base_ts, returned_times)
+        self.assertFalse(result['last_candle_open'])
+
+    @patch(_MT5_CONFIG)
+    @patch(_RATES_FROM)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=0)
+    @patch(_GUARD, _mock_symbol_guard)
     def test_meta_server_tz_offset(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_cfg):
         mock_cfg.server_tz_name = "Europe/Nicosia"
         mock_cfg.client_tz_name = None

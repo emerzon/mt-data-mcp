@@ -123,11 +123,43 @@ def _indicator_param_syntax_error(ti_spec: Optional[str]) -> Optional[str]:
     return None
 
 
-def _is_last_candle_open(rates_or_df: Any, timeframe: str) -> bool:
+def _resolve_live_bar_reference_epoch(symbol: Optional[str], timeframe: str) -> float:
+    """Prefer a fresh broker tick timestamp when classifying the live bar."""
+    seconds_per_bar = int(TIMEFRAME_SECONDS.get(timeframe, 3600) or 3600)
+    system_epoch = _utc_epoch_seconds(datetime.now(dt_timezone.utc))
+    symbol_name = str(symbol or "").strip()
+    if not symbol_name:
+        return float(system_epoch)
+    try:
+        tick = mt5.symbol_info_tick(symbol_name)
+        tick_time = getattr(tick, "time", None) if tick is not None else None
+        if tick_time is None:
+            return float(system_epoch)
+        tick_epoch = float(_mt5_epoch_to_utc(float(tick_time)))
+        if not math.isfinite(tick_epoch):
+            return float(system_epoch)
+        freshness_limit = float(max(seconds_per_bar, 300))
+        if abs(float(system_epoch) - tick_epoch) <= freshness_limit:
+            return tick_epoch
+    except Exception:
+        pass
+    return float(system_epoch)
+
+
+def _is_last_candle_open(
+    rates_or_df: Any,
+    timeframe: str,
+    *,
+    current_time_epoch: Optional[float] = None,
+) -> bool:
     """Return True if the last bar in *rates_or_df* is still forming."""
     try:
         seconds_per_bar = TIMEFRAME_SECONDS.get(timeframe, 3600)
-        current_time = _utc_epoch_seconds(datetime.now(dt_timezone.utc))
+        current_time = (
+            float(current_time_epoch)
+            if current_time_epoch is not None and math.isfinite(float(current_time_epoch))
+            else float(_utc_epoch_seconds(datetime.now(dt_timezone.utc)))
+        )
         if isinstance(rates_or_df, pd.DataFrame):
             if len(rates_or_df) == 0 or '__epoch' not in rates_or_df.columns:
                 return False
@@ -141,16 +173,30 @@ def _is_last_candle_open(rates_or_df: Any, timeframe: str) -> bool:
         return False
 
 
-def _drop_incomplete_tail(rates: Any, timeframe: str) -> Any:
+def _drop_incomplete_tail(
+    rates: Any,
+    timeframe: str,
+    *,
+    current_time_epoch: Optional[float] = None,
+) -> Any:
     """Drop the last bar from *rates* if it is still forming."""
-    if rates is not None and len(rates) > 0 and _is_last_candle_open(rates, timeframe):
+    if (
+        rates is not None
+        and len(rates) > 0
+        and _is_last_candle_open(rates, timeframe, current_time_epoch=current_time_epoch)
+    ):
         return rates[:-1]
     return rates
 
 
-def _drop_incomplete_tail_df(df: pd.DataFrame, timeframe: str) -> Tuple[pd.DataFrame, bool]:
+def _drop_incomplete_tail_df(
+    df: pd.DataFrame,
+    timeframe: str,
+    *,
+    current_time_epoch: Optional[float] = None,
+) -> Tuple[pd.DataFrame, bool]:
     """Drop the last row from *df* if it is still forming.  Returns (df, trimmed)."""
-    if len(df) > 0 and _is_last_candle_open(df, timeframe):
+    if len(df) > 0 and _is_last_candle_open(df, timeframe, current_time_epoch=current_time_epoch):
         return df.iloc[:-1], True
     return df, False
 
@@ -951,8 +997,13 @@ def fetch_candles(  # noqa: C901
         if len(rates) == 0:
             return {"error": "No data available"}
         raw_bars_fetched = int(len(rates))
+        live_bar_reference_epoch = _resolve_live_bar_reference_epoch(symbol, timeframe)
         if not include_incomplete:
-            rates = _drop_incomplete_tail(rates, timeframe)
+            rates = _drop_incomplete_tail(
+                rates,
+                timeframe,
+                current_time_epoch=live_bar_reference_epoch,
+            )
         if len(rates) == 0:
             return {"error": "No data available"}
         headers = _build_candle_headers(rates, ohlcv)
@@ -1021,7 +1072,11 @@ def fetch_candles(  # noqa: C901
         # Authoritative incomplete-tail trim: covers the initial fetch *and*
         # the TI-retry rebuild path, applied before any non-causal transforms.
         if not include_incomplete:
-            df, _trimmed_incomplete = _drop_incomplete_tail_df(df, timeframe)
+            df, _trimmed_incomplete = _drop_incomplete_tail_df(
+                df,
+                timeframe,
+                current_time_epoch=live_bar_reference_epoch,
+            )
 
         # Optional post-TI denoising (adds new columns by default)
         _apply_post_ti_denoise(df, headers, denoise, denoise_apps)
@@ -1054,7 +1109,11 @@ def fetch_candles(  # noqa: C901
             headers = [h for h in simplify_meta['headers'] if isinstance(h, str)]
 
         # Assemble rows from (possibly reduced) DataFrame for selected headers
-        last_candle_open = _is_last_candle_open(df, timeframe)
+        last_candle_open = _is_last_candle_open(
+            df,
+            timeframe,
+            current_time_epoch=live_bar_reference_epoch,
+        )
         rows = _format_numeric_rows_from_df(df, headers, stringify=False)
         query_latency_ms = round((time.perf_counter() - query_started_at) * 1000.0, 3)
         query_mode = "range" if (start_datetime or end_datetime) else "latest"
