@@ -202,9 +202,11 @@ class TestMt5EpochToUtc:
         assert isinstance(result, float)
 
     @patch("mtdata.utils.mt5.mt5_config")
-    def test_exception_returns_raw(self, cfg):
+    def test_exception_returns_raw(self, cfg, caplog):
         cfg.get_server_tz.side_effect = Exception("boom")
-        assert _mt5_epoch_to_utc(42.0) == 42.0
+        result = _mt5_epoch_to_utc(42.0)
+        assert result == 42.0
+        assert any("Failed to convert MT5 epoch 42.0 to UTC" in record.message for record in caplog.records)
 
 
 # ── _rates_to_df  (lines 62-72) ──────────────────────────────────────────────
@@ -248,10 +250,11 @@ class TestToServerNaiveDt:
         assert isinstance(result, datetime)
 
     @patch("mtdata.utils.mt5.mt5_config")
-    def test_exception_returns_original(self, cfg):
+    def test_exception_returns_original(self, cfg, caplog):
         cfg.get_server_tz.side_effect = Exception("fail")
         dt = datetime(2024, 6, 15)
         assert _to_server_naive_dt(dt) == dt
+        assert any("Failed to convert UTC datetime" in record.message for record in caplog.records)
 
 
 # ── _normalize_times_in_struct  (lines 88-102) ───────────────────────────────
@@ -294,6 +297,22 @@ class TestNormalizeTimesInStruct:
         obj.__len__ = MagicMock(side_effect=TypeError)
         result = _normalize_times_in_struct(obj)
         assert result is obj
+
+    def test_element_conversion_exception_logs_and_keeps_raw_time(self, caplog):
+        dt = np.dtype([("time", float), ("close", float)])
+        arr = np.array([(1000.0, 1.1), (2000.0, 1.2)], dtype=dt)
+
+        def _convert(value):
+            if value == 1000.0:
+                raise ValueError("bad element")
+            return value + 1.0
+
+        with patch("mtdata.utils.mt5._mt5_epoch_to_utc", side_effect=_convert):
+            result = _normalize_times_in_struct(arr)
+
+        assert float(result[0]["time"]) == 1000.0
+        assert float(result[1]["time"]) == 2001.0
+        assert any("Failed to normalize MT5 timestamp at index 0" in record.message for record in caplog.records)
 
 
 # ── MT5 copy wrappers  (lines 105-133) ───────────────────────────────────────

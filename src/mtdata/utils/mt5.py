@@ -213,7 +213,12 @@ def _mt5_epoch_to_utc(epoch_seconds: float) -> float:
             return dt_local.astimezone(timezone.utc).timestamp()
         off = int(mt5_config.get_time_offset_seconds())
         return float(epoch_seconds) - float(off)
-    except Exception:
+    except Exception as exc:
+        logger.warning(
+            "Failed to convert MT5 epoch %s to UTC; leaving raw value unchanged: %s",
+            epoch_seconds,
+            exc,
+        )
         return float(epoch_seconds)
 
 
@@ -238,7 +243,12 @@ def _to_server_naive_dt(dt: datetime) -> datetime:
         aware_utc = dt.replace(tzinfo=timezone.utc)
         aware_srv = aware_utc.astimezone(tz)
         return aware_srv.replace(tzinfo=None)
-    except Exception:
+    except Exception as exc:
+        logger.warning(
+            "Failed to convert UTC datetime %s to MT5 server-local time; using original datetime: %s",
+            dt,
+            exc,
+        )
         return dt
 
 
@@ -256,10 +266,19 @@ def _normalize_times_in_struct(arr: Any):
         for i in range(len(out)):
             try:
                 out[i]['time'] = _mt5_epoch_to_utc(float(out[i]['time']))
-            except Exception:
+            except Exception as exc:
+                logger.warning(
+                    "Failed to normalize MT5 timestamp at index %s; leaving raw value unchanged: %s",
+                    i,
+                    exc,
+                )
                 continue
         return out
-    except Exception:
+    except Exception as exc:
+        logger.warning(
+            "Failed to normalize MT5 timestamps in structured array; leaving values unchanged: %s",
+            exc,
+        )
         return arr
 
 
