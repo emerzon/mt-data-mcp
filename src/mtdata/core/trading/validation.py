@@ -171,6 +171,70 @@ def _validate_deviation(deviation: Union[int, float]) -> Tuple[Optional[int], Op
     return dev, None
 
 
+def _resolve_slippage_to_deviation(
+    *,
+    deviation: Optional[Union[int, float]] = None,
+    slippage_pips: Optional[float] = None,
+    symbol_info: Any = None,
+) -> Tuple[Optional[int], Optional[Dict[str, Any]], Optional[str]]:
+    """Convert user-facing slippage inputs to MT5 deviation (points).
+
+    Precedence: explicit *deviation* wins; then *slippage_pips* is converted
+    using the symbol's ``point`` attribute.  Returns ``(deviation, metadata, error)``.
+    """
+    # Explicit deviation takes precedence
+    if deviation is not None:
+        dev, err = _validate_deviation(deviation)
+        if err:
+            return None, None, err
+        return dev, {"source": "deviation", "deviation": dev}, None
+
+    if slippage_pips is None:
+        return 20, {"source": "default", "deviation": 20}, None
+
+    try:
+        pips = float(slippage_pips)
+    except (TypeError, ValueError):
+        return None, None, "slippage_pips must be numeric."
+    if not math.isfinite(pips) or pips < 0:
+        return None, None, "slippage_pips must be >= 0 and finite."
+
+    point = None
+    if symbol_info is not None:
+        try:
+            point = float(getattr(symbol_info, "point", None))
+        except (TypeError, ValueError):
+            point = None
+
+    if point is None or point <= 0:
+        return None, None, (
+            "Cannot convert slippage_pips: symbol point value unavailable."
+        )
+
+    # 1 pip = 10 points for 5-digit brokers (point=0.00001),
+    # 1 pip = 1 point for 4-digit (point=0.0001), etc.
+    digits = 0
+    if symbol_info is not None:
+        try:
+            digits = int(getattr(symbol_info, "digits", 0))
+        except (TypeError, ValueError):
+            digits = 0
+
+    if digits in (3, 5):
+        points_per_pip = 10
+    else:
+        points_per_pip = 1
+
+    dev = max(0, int(round(pips * points_per_pip)))
+    meta = {
+        "source": "slippage_pips",
+        "slippage_pips": pips,
+        "points_per_pip": points_per_pip,
+        "deviation": dev,
+    }
+    return dev, meta, None
+
+
 def _safe_int_attr(obj: Any, name: str, default: int) -> int:
     """Safely coerce an object attribute to an integer fallback."""
     try:
