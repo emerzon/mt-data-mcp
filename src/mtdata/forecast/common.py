@@ -9,6 +9,10 @@ import numpy as np
 import pandas as pd
 
 from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
+from ..services.data_service import (
+    _resolve_live_rate_auto_shift_seconds,
+    _shift_rate_times,
+)
 from ..utils.mt5 import (
     _ensure_symbol_ready,
     _mt5_copy_rates_from,
@@ -542,6 +546,14 @@ def fetch_history(
             # Use position-based fetch for "latest" to avoid TZ issues and ensure open candle
             # start_pos=0 includes the current forming bar
             rates = _mt5_copy_rates_from_pos(symbol, mt5_tf, 0, int(need))
+            auto_shift_seconds = _resolve_live_rate_auto_shift_seconds(
+                symbol=symbol,
+                timeframe=timeframe,
+                start_datetime=None,
+                end_datetime=None,
+            )
+            if auto_shift_seconds:
+                rates = _shift_rate_times(rates, auto_shift_seconds)
     finally:
         if was_visible is False:
             try:

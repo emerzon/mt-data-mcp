@@ -7,6 +7,10 @@ import numpy as np
 import pandas as pd
 
 from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
+from ..services.data_service import (
+    _resolve_live_rate_auto_shift_seconds,
+    _shift_rate_times,
+)
 from ..shared.schema import DenoiseSpec, TimeframeLiteral
 from ..shared.validators import (
     invalid_timeframe_error,
@@ -340,6 +344,7 @@ def _fetch_mt5_rates_guarded(
     count: int,
     *,
     as_of: Optional[str] = None,
+    timeframe: Optional[str] = None,
 ) -> tuple[Optional[Any], Optional[str]]:
     info_before = mt5.symbol_info(symbol)
     was_visible = bool(info_before.visible) if info_before is not None else None
@@ -359,7 +364,18 @@ def _fetch_mt5_rates_guarded(
             server_now_dt = datetime.fromtimestamp(t_utc, tz=timezone.utc)
         else:
             server_now_dt = datetime.now(timezone.utc)
-        return _mt5_copy_rates_from(symbol, mt5_timeframe, server_now_dt, count), None
+        rates = _mt5_copy_rates_from(symbol, mt5_timeframe, server_now_dt, count)
+        timeframe_name = str(timeframe).upper().strip() if timeframe is not None else None
+        if timeframe_name:
+            auto_shift_seconds = _resolve_live_rate_auto_shift_seconds(
+                symbol=symbol,
+                timeframe=timeframe_name,
+                start_datetime=None,
+                end_datetime=None,
+            )
+            if auto_shift_seconds:
+                rates = _shift_rate_times(rates, auto_shift_seconds)
+        return rates, None
     finally:
         if was_visible is False:
             try:
@@ -594,6 +610,7 @@ def forecast_volatility(  # noqa: C901
                 mt5_tf,
                 need,
                 as_of=as_of,
+                timeframe=timeframe,
             )
             if fetch_error:
                 return {"error": fetch_error}
@@ -779,6 +796,7 @@ def forecast_volatility(  # noqa: C901
                     rv_mt5_tf,
                     bars_needed,
                     as_of=as_of,
+                    timeframe=rv_tf,
                 )
                 if fetch_error:
                     return {"error": fetch_error}
@@ -862,6 +880,7 @@ def forecast_volatility(  # noqa: C901
             mt5_tf,
             need,
             as_of=as_of,
+            timeframe=timeframe,
         )
         if fetch_error:
             return {"error": fetch_error}

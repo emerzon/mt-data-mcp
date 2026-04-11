@@ -350,6 +350,16 @@ class TestFetchMt5RatesGuarded:
         assert err == "Symbol not available"
         env["copy_rates"].assert_not_called()
 
+    def test_live_fetch_applies_auto_shift_when_timeframe_provided(self):
+        with _mock_env(n_bars=5) as env:
+            with patch(f"{MOD}._resolve_live_rate_auto_shift_seconds", return_value=7200):
+                rates, err = vol_mod._fetch_mt5_rates_guarded("EURUSD", object(), 25, timeframe="H1")
+
+        assert err is None
+        assert rates is not None
+        assert float(rates["time"][0]) == 1_704_067_200.0 + 7200.0
+        env["copy_rates"].assert_called_once()
+
 
 # ===================================================================
 # 6. General methods – proxy variants  (lines 440-445, 559-564)

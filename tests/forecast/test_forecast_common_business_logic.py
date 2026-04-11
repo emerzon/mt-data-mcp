@@ -131,6 +131,26 @@ def test_fetch_history_as_of_anchors_directly_not_latest_window(monkeypatch):
     assert out["time"].tolist() == [100.0, 200.0]
 
 
+def test_fetch_history_applies_live_auto_shift(monkeypatch):
+    monkeypatch.setattr(fc, "TIMEFRAME_MAP", {"H1": 1})
+    monkeypatch.setattr(fc, "_ensure_symbol_ready", lambda _symbol: None)
+    monkeypatch.setattr(fc, "get_symbol_info_cached", lambda _symbol: SimpleNamespace(visible=True))
+    monkeypatch.setattr(fc.mt5, "last_error", lambda: (1, "err"))
+    monkeypatch.setattr(
+        fc,
+        "_mt5_copy_rates_from_pos",
+        lambda symbol, tf, start, count: [
+            {"time": 100.0, "open": 1.0},
+            {"time": 200.0, "open": 2.0},
+            {"time": 300.0, "open": 3.0},
+        ],
+    )
+    monkeypatch.setattr(fc, "_resolve_live_rate_auto_shift_seconds", lambda **kwargs: 7200)
+
+    out = fc.fetch_history("EURUSD", "H1", need=3, as_of=None, drop_last_live=False)
+    assert out["time"].tolist() == [7300.0, 7400.0, 7500.0]
+
+
 def test_fetch_history_handles_invalid_as_of_and_empty_rates(monkeypatch):
     monkeypatch.setattr(fc, "TIMEFRAME_MAP", {"H1": 1})
     monkeypatch.setattr(fc, "_ensure_symbol_ready", lambda _symbol: None)
