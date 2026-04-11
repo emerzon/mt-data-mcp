@@ -311,7 +311,6 @@ def _prepare_target_series_context(
     else:
         base_col_final = base_col_prepared
         if quantity_l == 'return':
-            target_series = df[base_col_final].dropna()
             target_info = {'mode': 'return', 'base': base_col_initial, 'transform': 'log_return'}
         else:
             target_series = df[base_col_final]
