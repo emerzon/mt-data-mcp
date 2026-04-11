@@ -880,6 +880,30 @@ def test_place_market_order_retries_sltp_without_comment_when_comment_is_invalid
     assert "comment" not in final_req
 
 
+def test_place_market_order_surfaces_sltp_verification_failures(mock_mt5, caplog):
+    mock_mt5.TRADE_ACTION_SLTP = 6
+    position = SimpleNamespace(symbol="EURUSD", sl=0.0, tp=0.0, type=0, magic=24680)
+    mock_mt5.positions_get.side_effect = RuntimeError("readback lost")
+
+    with patch(
+        "src.mtdata.core.trading.orders._resolve_open_position",
+        return_value=(position, 456, {}),
+    ):
+        res = _place_market_order(
+            symbol="EURUSD",
+            volume=0.1,
+            order_type="BUY",
+            stop_loss=1.04000,
+            take_profit=1.06000,
+        )
+
+    assert "error" not in res
+    assert res["sl_tp_result"]["status"] == "applied"
+    assert res["sl_tp_result"]["verification_failed"] is True
+    assert any("verification readback failed" in str(w) for w in res.get("warnings", []))
+    assert any("SL/TP verification failed for ticket 456" in record.message for record in caplog.records)
+
+
 def test_modify_position_preserves_existing_magic(mock_mt5):
     mock_mt5.TRADE_ACTION_SLTP = 6
     position = SimpleNamespace(symbol="EURUSD", sl=1.03000, tp=1.05000, type=0, magic=98765)

@@ -1,5 +1,6 @@
 """Order placement workflows for MetaTrader integration."""
 
+import logging
 import math
 import time as _stdlib_time
 from typing import Any, Dict, List, Optional, TypedDict, Union
@@ -27,6 +28,7 @@ class _OrderSubmitOutcome(TypedDict):
 
 _POSITION_RESOLUTION_WAIT_SCHEDULE_SECONDS = (0.15, 0.3, 0.6, 1.2)
 _DEFAULT_ORDER_MAGIC = 234000
+logger = logging.getLogger(__name__)
 
 
 def _configured_order_magic() -> int:
@@ -65,6 +67,7 @@ def _build_sl_tp_result(
     comment_fallback: Optional[Dict[str, Any]],
     fallback_used: bool,
     fallback_result: Optional[Dict[str, Any]],
+    verification_failed: bool = False,
 ) -> Dict[str, Any]:
     out: Dict[str, Any] = {"status": status}
     requested = _compact_sl_tp_levels(sl=requested_sl, tp=requested_tp)
@@ -91,6 +94,8 @@ def _build_sl_tp_result(
         out["fallback_used"] = True
     if fallback_result is not None:
         out["fallback_result"] = fallback_result
+    if verification_failed:
+        out["verification_failed"] = True
     return out
 
 
@@ -418,6 +423,7 @@ def _place_market_order(  # noqa: C901
             sl_tp_apply_status = "not_requested"
             sl_applied = None
             tp_applied = None
+            sl_tp_verification_failed = False
             sl_tp_broker_adjusted = False
             sl_tp_adjustment: Dict[str, Any] = {}
             sl_tp_attempts = 0
@@ -520,8 +526,13 @@ def _place_market_order(  # noqa: C901
                                     pos_after = positions_after[0]
                                     sl_applied = float(getattr(pos_after, "sl", 0.0) or 0.0) or None
                                     tp_applied = float(getattr(pos_after, "tp", 0.0) or 0.0) or None
-                            except Exception:
-                                pass
+                            except Exception as verify_exc:
+                                sl_tp_verification_failed = True
+                                logger.warning(
+                                    "SL/TP verification failed for ticket %s: %s",
+                                    position_ticket,
+                                    verify_exc,
+                                )
 
                             price_tol = float(getattr(symbol_info, "point", 0.0) or 0.0)
                             if not math.isfinite(price_tol) or price_tol <= 0:
@@ -639,6 +650,10 @@ def _place_market_order(  # noqa: C901
                 warnings_out.append(
                     "TP/SL protection required a post-fill fallback modification. Verify the live position is protected."
                 )
+            if sl_tp_requested and sl_tp_verification_failed:
+                warnings_out.append(
+                    "SL/TP verification readback failed after broker acceptance. Verify the live position protection directly."
+                )
 
             out: Dict[str, Any] = {
                 "retcode": result.retcode,
@@ -670,6 +685,7 @@ def _place_market_order(  # noqa: C901
                     comment_fallback=sl_tp_comment_fallback,
                     fallback_used=sl_tp_fallback_used,
                     fallback_result=sl_tp_fallback_result,
+                    verification_failed=sl_tp_verification_failed,
                 ),
             }
             _attach_comment_response_metadata(
