@@ -744,10 +744,7 @@ def _close_positions(  # noqa: C901
                         getattr(tick, "ask", 0.0) or 0.0
                     )
                     close_type = close_type_sell if is_buy_position else close_type_buy
-                    close_comment = comments._normalize_trade_comment(comment, default="MCP close")
-                    # Some brokers reject edge-length comments during close-deal requests.
-                    if len(close_comment) > 24:
-                        close_comment = close_comment[:24]
+                    close_comment = comments._normalize_close_trade_comment(comment, default="MCP close")
 
                     request = {
                         "action": mt5.TRADE_ACTION_DEAL,

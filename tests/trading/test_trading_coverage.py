@@ -69,7 +69,11 @@ from mtdata.core.trading import (
 from mtdata.core.trading import (
     trade_risk_analyze as _trade_risk_analyze_tool,
 )
-from mtdata.core.trading.comments import _comment_row_metadata, _normalize_trade_comment
+from mtdata.core.trading.comments import (
+    _comment_row_metadata,
+    _normalize_close_trade_comment,
+    _normalize_trade_comment,
+)
 from mtdata.core.trading.requests import (
     TradeCloseRequest,
     TradeModifyRequest,
@@ -548,6 +552,13 @@ class TestNormalizeTradeComment:
     def test_empty_default_falls_back_to_mcp(self):
         result = _normalize_trade_comment(None, default="")
         assert result == "MCP"
+
+
+class TestNormalizeCloseTradeComment:
+
+    def test_truncation_at_close_limit(self):
+        result = _normalize_close_trade_comment("a" * 50)
+        assert len(result) == 24
 
     def test_very_long_suffix(self):
         result = _normalize_trade_comment("b", default="x", suffix="S" * 40)

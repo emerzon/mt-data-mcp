@@ -9,6 +9,7 @@ from typing import Any, Dict, Optional
 from . import validation
 
 _MT5_COMMENT_MAX_LENGTH = 31
+_MT5_CLOSE_COMMENT_MAX_LENGTH = 24
 _MT5_COMMENT_SANITIZE_RE = re.compile(r"[^A-Za-z0-9 _.!-]+")
 
 
@@ -49,6 +50,12 @@ def _normalize_trade_comment(comment: Optional[str], *, default: str, suffix: st
     except Exception:
         full = (_sanitize_trade_comment_text(default) or "MCP")[:_MT5_COMMENT_MAX_LENGTH]
     return full.strip()
+
+
+def _normalize_close_trade_comment(comment: Optional[str], *, default: str = "MCP close") -> str:
+    """Return a close-deal-safe comment string."""
+    close_comment = _normalize_trade_comment(comment, default=default)
+    return close_comment[:_MT5_CLOSE_COMMENT_MAX_LENGTH].strip()
 
 
 def _comment_sanitization_info(comment: Optional[str], applied_comment: str) -> Optional[Dict[str, Any]]:
