@@ -526,6 +526,16 @@ class TestApplyDenoise:
         spec = {"method": "sma", "params": {"window": 5}, "columns": ["nonexistent"], "keep_original": True}
         added = _apply_denoise(df, spec)
         assert added == []
+        assert "denoise_warnings" in df.attrs
+        assert "skipped missing column 'nonexistent'" in df.attrs["denoise_warnings"][0]
+
+    def test_missing_column_warning_does_not_block_valid_columns(self):
+        df = self._make_df()
+        spec = {"method": "sma", "params": {"window": 5}, "columns": ["close", "nonexistent"], "keep_original": True}
+        added = _apply_denoise(df, spec)
+        assert "close_dn" in added
+        assert "denoise_warnings" in df.attrs
+        assert any("skipped missing column 'nonexistent'" in msg for msg in df.attrs["denoise_warnings"])
 
     def test_all_columns(self):
         df = self._make_df()

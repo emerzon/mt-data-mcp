@@ -272,6 +272,10 @@ def _apply_denoise(
 
     for col in cols:
         if col not in df.columns:
+            _append_denoise_warning(
+                df,
+                f"Denoise skipped missing column '{col}'.",
+            )
             continue
         try:
             y = _run_denoise_handler(df[col], handler, params, causality)
