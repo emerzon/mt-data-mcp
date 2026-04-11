@@ -245,12 +245,30 @@ def _run_denoise_handler(
     causality: str,
 ) -> pd.Series:
     # Materialize a writable contiguous buffer
-    prepared = pd.to_numeric(s, errors="coerce").replace([np.inf, -np.inf], np.nan).ffill().bfill()
+    numeric = pd.to_numeric(s, errors="coerce").replace([np.inf, -np.inf], np.nan)
+    missing_mask = numeric.isna()
+    prepared = numeric.ffill().bfill()
     x = np.array(prepared.to_numpy(copy=True), dtype=float, copy=True, order='C')
     if x.size == 0 or not np.isfinite(x).any():
         series_name = str(getattr(s, "name", "") or "<unnamed>")
         raise ValueError(f"Series '{series_name}' contains no finite values for denoise")
-    return handler(s, x, params, causality)
+    result = handler(s, x, params, causality)
+    if not isinstance(result, pd.Series):
+        result = pd.Series(result, index=s.index)
+    if bool(missing_mask.any()):
+        result = result.copy()
+        result.loc[missing_mask] = np.nan
+        warnings_out = result.attrs.get("denoise_warnings")
+        if not isinstance(warnings_out, list):
+            warnings_out = []
+        warning_text = (
+            f"Series '{getattr(s, 'name', '') or '<unnamed>'}' contained non-finite values. "
+            "Denoise imputed them internally and restored those positions to NaN in the output."
+        )
+        if warning_text not in warnings_out:
+            warnings_out.append(warning_text)
+        result.attrs["denoise_warnings"] = warnings_out
+    return result
 
 
 def _denoise_series(
@@ -341,6 +359,8 @@ def _apply_denoise(
                 f"Denoise method '{method}' failed on column '{col}': {ex}",
             )
             continue
+        for warning_text in y.attrs.get("denoise_warnings", []):
+            _append_denoise_warning(df, warning_text)
         if keep_original:
             new_col = f"{col}{suffix}"
             df[new_col] = y

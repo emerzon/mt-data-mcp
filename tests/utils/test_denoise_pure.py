@@ -563,6 +563,15 @@ class TestApplyDenoise:
         assert "denoise_warnings" in df.attrs
         assert "contains no finite values for denoise" in df.attrs["denoise_warnings"][0]
 
+    def test_missing_values_are_restored_and_warned(self):
+        df = pd.DataFrame({"close": [1.0, np.nan, 3.0, 4.0]})
+
+        added = _apply_denoise(df, {"method": "ema", "columns": ["close"]})
+
+        assert "close_dn" in added
+        assert np.isnan(df.loc[1, "close_dn"])
+        assert any("restored those positions to NaN" in msg for msg in df.attrs["denoise_warnings"])
+
     def test_unsupported_causality_appends_warning_and_skips_column(self):
         df = self._make_df()
 
@@ -615,6 +624,20 @@ def test_run_denoise_handler_rejects_all_nan_series():
             {},
             "causal",
         )
+
+
+def test_run_denoise_handler_restores_missing_positions():
+    s = pd.Series([1.0, np.nan, 3.0, np.inf], name="close")
+
+    result = _run_denoise_handler(
+        s,
+        lambda series, values, params, causality: pd.Series(values, index=series.index),
+        {},
+        "zero_phase",
+    )
+
+    assert result.isna().tolist() == [False, True, False, True]
+    assert any("restored those positions to NaN" in msg for msg in result.attrs.get("denoise_warnings", []))
 
 
 def test_denoise_series_rejects_unsupported_causal_mode():
