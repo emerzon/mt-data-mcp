@@ -6,6 +6,14 @@ from unittest.mock import MagicMock
 from mtdata.services import options_service as osvc
 
 
+def test_to_numeric_logs_non_empty_conversion_failures(caplog):
+    with caplog.at_level("WARNING"):
+        out = osvc._to_numeric("bad-data", float, float("nan"), field_name="strike")
+
+    assert out != out
+    assert "Failed to coerce Yahoo options 'strike' value 'bad-data' to float" in caplog.text
+
+
 def test_get_options_expirations_parses_payload(monkeypatch):
     expiry_a = osvc._ymd_to_epoch("2026-04-17")
     expiry_b = osvc._ymd_to_epoch("2026-05-15")

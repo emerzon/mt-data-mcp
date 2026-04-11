@@ -3,11 +3,14 @@ from __future__ import annotations
 """Options market-data service helpers."""
 
 import datetime as _dt
+import logging
 import threading as _threading
 import time as _time
 from typing import Any, Dict, List, Optional
 
 import requests
+
+logger = logging.getLogger(__name__)
 
 _YAHOO_OPTIONS_URL = "https://query2.finance.yahoo.com/v7/finance/options/{symbol}"
 _HTTP_TIMEOUT = 15.0
@@ -27,11 +30,29 @@ _YAHOO_RATE_LIMIT_LOCK = _threading.Lock()
 _YAHOO_LAST_REQUEST_MONOTONIC = 0.0
 
 
-def _to_numeric(value: Any, numeric_type: type, default: Any) -> Any:
+def _to_numeric(
+    value: Any,
+    numeric_type: type,
+    default: Any,
+    *,
+    field_name: Optional[str] = None,
+) -> Any:
     try:
         return numeric_type(value)
-    except Exception:
-        return numeric_type(default)
+    except Exception as exc:
+        fallback = numeric_type(default)
+        if value not in (None, ""):
+            type_name = getattr(numeric_type, "__name__", str(numeric_type))
+            field_label = f" '{field_name}'" if field_name else ""
+            logger.warning(
+                "Failed to coerce Yahoo options%s value %r to %s; using default %r: %s",
+                field_label,
+                value,
+                type_name,
+                fallback,
+                exc,
+            )
+        return fallback
 
 
 def _extract_expiration_epochs(payload: Dict[str, Any]) -> List[int]:
@@ -126,7 +147,12 @@ def get_options_expirations(symbol: str) -> Dict[str, Any]:
         return {
             "success": True,
             "symbol": str(symbol).upper().strip(),
-            "underlying_price": _to_numeric(quote.get("regularMarketPrice"), float, float("nan")),
+            "underlying_price": _to_numeric(
+                quote.get("regularMarketPrice"),
+                float,
+                float("nan"),
+                field_name="quote.regularMarketPrice",
+            ),
             "currency": quote.get("currency"),
             "expirations": expirations,
             "expiration_count": int(len(expirations)),
@@ -181,36 +207,46 @@ def get_options_chain(
         calls_raw = calls_raw if isinstance(calls_raw, list) else []
         puts_raw = puts_raw if isinstance(puts_raw, list) else []
 
-        min_oi = max(0, _to_numeric(min_open_interest, int, 0))
-        min_vol = max(0, _to_numeric(min_volume, int, 0))
-        max_rows = max(1, _to_numeric(limit, int, 200))
+        min_oi = max(0, _to_numeric(min_open_interest, int, 0, field_name="min_open_interest"))
+        min_vol = max(0, _to_numeric(min_volume, int, 0, field_name="min_volume"))
+        max_rows = max(1, _to_numeric(limit, int, 200, field_name="limit"))
 
         def _norm(rows: List[Dict[str, Any]], side: str) -> List[Dict[str, Any]]:
             out: List[Dict[str, Any]] = []
             for row in rows:
                 if not isinstance(row, dict):
                     continue
-                oi = max(0, _to_numeric(row.get("openInterest"), int, 0))
-                vol = max(0, _to_numeric(row.get("volume"), int, 0))
+                oi = max(0, _to_numeric(row.get("openInterest"), int, 0, field_name="openInterest"))
+                vol = max(0, _to_numeric(row.get("volume"), int, 0, field_name="volume"))
                 if oi < min_oi or vol < min_vol:
                     continue
-                strike = _to_numeric(row.get("strike"), float, float("nan"))
+                strike = _to_numeric(row.get("strike"), float, float("nan"), field_name="strike")
                 if not (strike == strike and strike > 0):
                     continue
                 entry: Dict[str, Any] = {
                     "side": side,
                     "contract": row.get("contractSymbol"),
                     "strike": float(strike),
-                    "last": _to_numeric(row.get("lastPrice"), float, float("nan")),
-                    "bid": _to_numeric(row.get("bid"), float, float("nan")),
-                    "ask": _to_numeric(row.get("ask"), float, float("nan")),
-                    "change": _to_numeric(row.get("change"), float, float("nan")),
-                    "percent_change": _to_numeric(row.get("percentChange"), float, float("nan")),
+                    "last": _to_numeric(row.get("lastPrice"), float, float("nan"), field_name="lastPrice"),
+                    "bid": _to_numeric(row.get("bid"), float, float("nan"), field_name="bid"),
+                    "ask": _to_numeric(row.get("ask"), float, float("nan"), field_name="ask"),
+                    "change": _to_numeric(row.get("change"), float, float("nan"), field_name="change"),
+                    "percent_change": _to_numeric(
+                        row.get("percentChange"),
+                        float,
+                        float("nan"),
+                        field_name="percentChange",
+                    ),
                     "volume": int(vol),
                     "open_interest": int(oi),
-                    "implied_volatility": _to_numeric(row.get("impliedVolatility"), float, float("nan")),
+                    "implied_volatility": _to_numeric(
+                        row.get("impliedVolatility"),
+                        float,
+                        float("nan"),
+                        field_name="impliedVolatility",
+                    ),
                     "in_the_money": bool(row.get("inTheMoney", False)),
-                    "last_trade_epoch": _to_numeric(row.get("lastTradeDate"), int, 0),
+                    "last_trade_epoch": _to_numeric(row.get("lastTradeDate"), int, 0, field_name="lastTradeDate"),
                     "currency": row.get("currency"),
                 }
                 out.append(entry)
@@ -225,7 +261,12 @@ def get_options_chain(
             "success": True,
             "symbol": symbol_norm,
             "expiration": chosen_expiry_ymd,
-            "underlying_price": _to_numeric(quote.get("regularMarketPrice"), float, float("nan")),
+            "underlying_price": _to_numeric(
+                quote.get("regularMarketPrice"),
+                float,
+                float("nan"),
+                field_name="quote.regularMarketPrice",
+            ),
             "currency": quote.get("currency"),
             "contract_size": quote.get("contractSize"),
             "expirations": sorted(available_map),
