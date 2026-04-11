@@ -882,6 +882,8 @@ def template_basic(  # noqa: C901
     p.setdefault('vol_window', 250)
     p.setdefault('vol_min_mult', 0.6)
     p.setdefault('vol_max_mult', 2.2)
+    if 'vol_sl_extra' in p and 'vol_sl_multiplier' not in p:
+        p['vol_sl_multiplier'] = p.get('vol_sl_extra')
     p.setdefault('vol_sl_multiplier', 1.7)
     p.setdefault('vol_sl_steps', 9)
     # Set floors to avoid too-tight levels depending on mode
@@ -903,7 +905,6 @@ def template_basic(  # noqa: C901
         'vol_min_mult',
         'vol_max_mult',
         'vol_steps',
-        'vol_sl_extra',
         'vol_sl_multiplier',
         'vol_sl_steps',
         'vol_floor_pct',

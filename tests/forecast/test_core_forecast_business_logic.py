@@ -362,6 +362,12 @@ def test_forecast_barrier_optimize_request_defaults_to_summary_output():
     assert request.search_profile == "medium"
 
 
+def test_forecast_barrier_optimize_request_accepts_legacy_vol_sl_extra():
+    request = ForecastBarrierOptimizeRequest(symbol="EURUSD", vol_sl_extra=2.1)
+
+    assert request.vol_sl_multiplier == 2.1
+
+
 def test_forecast_list_library_models_and_list_methods(monkeypatch):
     stats_mod = ModuleType("statsforecast")
     models_mod = ModuleType("statsforecast.models")
@@ -973,6 +979,29 @@ def test_forecast_barrier_optimize_routes_statistical_robustness_args(monkeypatc
     assert called["power_effect_size"] == 0.02
     assert called["enable_sensitivity_analysis"] is True
     assert called["sensitivity_params"] == ["tp", "sl"]
+
+
+def test_forecast_barrier_optimize_routes_canonical_vol_sl_multiplier(monkeypatch):
+    raw_opt = _unwrap(cf.forecast_barrier_optimize)
+    called = {}
+
+    import mtdata.forecast.barriers as barriers_mod
+
+    def fake_optimize(**kwargs):
+        called.update(kwargs)
+        return {"ok": True}
+
+    monkeypatch.setattr(barriers_mod, "forecast_barrier_optimize", fake_optimize)
+    out = raw_opt(
+        request=ForecastBarrierOptimizeRequest(
+            symbol="EURUSD",
+            vol_sl_extra=2.1,
+        )
+    )
+
+    assert out["ok"] is True
+    assert called["vol_sl_multiplier"] == 2.1
+    assert "vol_sl_extra" not in called
 
 
 def test_forecast_barrier_optimize_keeps_grid_default_path(monkeypatch):

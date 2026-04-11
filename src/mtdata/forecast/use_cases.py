@@ -765,7 +765,7 @@ def run_forecast_barrier_optimize(
             vol_min_mult=request.vol_min_mult,
             vol_max_mult=request.vol_max_mult,
             vol_steps=request.vol_steps,
-            vol_sl_extra=request.vol_sl_extra,
+            vol_sl_multiplier=request.vol_sl_multiplier,
             vol_floor_pct=request.vol_floor_pct,
             vol_floor_pips=request.vol_floor_pips,
             ratio_min=request.ratio_min,

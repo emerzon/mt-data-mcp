@@ -172,7 +172,7 @@ class ForecastBarrierOptimizeRequest(BaseModel):
     vol_min_mult: float = 0.5
     vol_max_mult: float = 4.0
     vol_steps: Optional[int] = Field(None, ge=1)
-    vol_sl_extra: float = 1.8
+    vol_sl_multiplier: float = 1.8
     vol_floor_pct: float = 0.15
     vol_floor_pips: float = 8.0
     ratio_min: float = 0.5
@@ -198,6 +198,15 @@ class ForecastBarrierOptimizeRequest(BaseModel):
     power_effect_size: float = 0.05
     enable_sensitivity_analysis: bool = False
     sensitivity_params: Optional[List[str]] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_legacy_vol_sl_extra(cls, values: Any) -> Any:
+        if isinstance(values, dict) and "vol_sl_multiplier" not in values and "vol_sl_extra" in values:
+            updated = dict(values)
+            updated["vol_sl_multiplier"] = updated.pop("vol_sl_extra")
+            return updated
+        return values
 
 
 class ForecastVolatilityEstimateRequest(BaseModel):

@@ -650,7 +650,7 @@ def forecast_barrier_optimize(  # noqa: C901
     vol_min_mult: float = 0.5,
     vol_max_mult: float = 4.0,
     vol_steps: Optional[int] = None,
-    vol_sl_extra: float = 1.8,
+    vol_sl_multiplier: float = 1.8,
     vol_floor_pct: float = 0.15,
     vol_floor_pips: float = 8.0,
     ratio_min: float = 0.5,
@@ -873,7 +873,7 @@ def forecast_barrier_optimize(  # noqa: C901
             )
         )
         vol_steps_val = max(2, int(params_dict.get('vol_steps', vol_steps_default)))
-        vol_sl_extra_val = float(params_dict.get('vol_sl_extra', vol_sl_extra))
+        vol_sl_extra_val = float(params_dict.get('vol_sl_extra', vol_sl_multiplier))
         vol_sl_multiplier_val = float(params_dict.get('vol_sl_multiplier', vol_sl_extra_val))
         vol_sl_steps_val = max(vol_steps_val, int(params_dict.get('vol_sl_steps', vol_steps_val + 2)))
         vol_floor_pct_val = float(params_dict.get('vol_floor_pct', vol_floor_pct))
@@ -1191,7 +1191,7 @@ def forecast_barrier_optimize(  # noqa: C901
                     vol_min_mult=vol_min_mult_val,
                     vol_max_mult=vol_max_mult_val,
                     vol_steps=vol_steps_val,
-                    vol_sl_extra=vol_sl_extra_val,
+                    vol_sl_multiplier=vol_sl_multiplier_val,
                     vol_floor_pct=vol_floor_pct_val,
                     vol_floor_pips=vol_floor_pips_val,
                     ratio_min=ratio_min_val,
