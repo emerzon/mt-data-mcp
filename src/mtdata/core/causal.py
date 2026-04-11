@@ -655,7 +655,7 @@ def causal_discover_signals(  # noqa: C901
                 try:
                     with warnings.catch_warnings():
                         warnings.simplefilter("ignore", category=FutureWarning)
-                        tests = grangercausalitytests(subset[[effect, cause]], maxlag=max_lag, verbose=False)
+                        tests = grangercausalitytests(subset[[effect, cause]], maxlag=max_lag)
                 except Exception as ex:
                     if len(pair_failures) < 10:
                         pair_failures.append(

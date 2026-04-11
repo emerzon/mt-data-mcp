@@ -417,7 +417,6 @@ class TestCausalDiscoverSignals:
 
         mock_fetch.side_effect = _fetch_side_effect
         def _granger_side_effect(*args, **kwargs):
-            warnings.warn("'verbose' is deprecated", FutureWarning)
             return {
                 1: ({"ssr_ftest": (1.0, 0.02, 10, 1)}, None),
                 2: ({"ssr_ftest": (1.0, 0.03, 10, 1)}, None),
@@ -440,6 +439,7 @@ class TestCausalDiscoverSignals:
         assert "summary_text" not in result["data"]
         assert result["meta"]["pairs_tested"] >= 1
         assert not any("verbose" in str(w.message).lower() for w in records)
+        assert "verbose" not in mock_granger.call_args.kwargs
         assert any(
             "event=finish operation=causal_discover_signals success=True" in record.message
             for record in caplog.records
