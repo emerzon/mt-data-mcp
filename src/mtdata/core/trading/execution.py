@@ -563,6 +563,19 @@ def _close_positions(  # noqa: C901
             # 3. Close positions
             results = []
             for position in to_close:
+                try:
+                    fresh_positions = mt5.positions_get(ticket=position.ticket)
+                except Exception:
+                    fresh_positions = None
+                if not fresh_positions:
+                    results.append(
+                        {
+                            "ticket": position.ticket,
+                            "error": "Position no longer open.",
+                        }
+                    )
+                    continue
+                position = fresh_positions[0]
                 requested_volume = None
                 position_volume_before = None
                 remaining_volume_estimate = None

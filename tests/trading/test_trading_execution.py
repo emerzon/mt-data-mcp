@@ -1233,6 +1233,33 @@ def test_close_positions_fetches_tick_once_before_fill_mode_retries(mock_mt5):
     assert res["closed_count"] == 1
     assert mock_mt5.symbol_info_tick.call_count == 1
 
+
+def test_close_positions_refreshes_live_volume_before_partial_close_validation(mock_mt5):
+    mock_mt5.ORDER_FILLING_IOC = 1
+    mock_mt5.ORDER_FILLING_FOK = 0
+    mock_mt5.ORDER_FILLING_RETURN = 2
+    mock_mt5.ORDER_TIME_GTC = 0
+
+    stale_position = SimpleNamespace(ticket=123, symbol="EURUSD", volume=0.2, type=0, profit=10.0, magic=67890)
+    fresh_position = SimpleNamespace(ticket=123, symbol="EURUSD", volume=0.1, type=0, profit=10.0, magic=67890)
+
+    def _positions_get(*args, **kwargs):
+        if kwargs.get("ticket") == 123:
+            return [fresh_position]
+        if kwargs.get("symbol") == "EURUSD":
+            return [stale_position]
+        return [stale_position]
+
+    mock_mt5.positions_get.side_effect = _positions_get
+
+    res = _close_positions(symbol="EURUSD", volume=0.15)
+
+    assert res["closed_count"] == 0
+    assert res["results"][0]["ticket"] == 123
+    assert "volume must be <= open position volume (0.1)" in res["results"][0]["error"]
+    assert res["results"][0]["position_volume"] == 0.1
+    assert mock_mt5.order_send.call_count == 0
+
 def test_cancel_pending_counts_done_partial_as_success(mock_mt5):
     mock_mt5.TRADE_ACTION_REMOVE = 8
     mock_mt5.TRADE_RETCODE_DONE_PARTIAL = 10010
