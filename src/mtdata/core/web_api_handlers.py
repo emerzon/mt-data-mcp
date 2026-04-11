@@ -135,6 +135,39 @@ def _history_denoise_params_dict(value: Any) -> Dict[str, Any]:
     return dict(value)
 
 
+def _history_denoise_columns(value: Any) -> List[str]:
+    if isinstance(value, str):
+        columns = [col.strip() for col in value.split(",") if col.strip()]
+    elif isinstance(value, list):
+        columns = []
+        for index, item in enumerate(value):
+            if not isinstance(item, str):
+                raise _http_error(
+                    400,
+                    f"denoise_params.columns[{index}] must be a string.",
+                    code="denoise_params_invalid",
+                    operation="get_history",
+                )
+            name = item.strip()
+            if name:
+                columns.append(name)
+    else:
+        raise _http_error(
+            400,
+            "denoise_params.columns must be a string or list of strings.",
+            code="denoise_params_invalid",
+            operation="get_history",
+        )
+    if not columns:
+        raise _http_error(
+            400,
+            "denoise_params.columns must contain at least one column name.",
+            code="denoise_params_invalid",
+            operation="get_history",
+        )
+    return columns
+
+
 def get_instruments_response(
     *,
     search: Optional[str],
@@ -398,13 +431,7 @@ def get_history_response(  # noqa: C901
                         if extra_params:
                             spec_input["params"] = extra_params
                     if "columns" in payload:
-                        cols = payload["columns"]
-                        if isinstance(cols, str):
-                            cols = [col.strip() for col in cols.split(",") if col.strip()]
-                        elif isinstance(cols, list):
-                            cols = [str(col).strip() for col in cols if str(col).strip()]
-                        if cols:
-                            spec_input["columns"] = cols
+                        spec_input["columns"] = _history_denoise_columns(payload["columns"])
                     if "when" in payload:
                         spec_input["when"] = _history_denoise_choice(
                             payload["when"],

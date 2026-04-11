@@ -666,6 +666,40 @@ class TestGetHistory:
         assert call_arg["causality"] == "causal"
         assert call_arg["keep_original"] is False
 
+    def test_denoise_json_rejects_invalid_columns_type(self):
+        dn_methods = {"methods": [{"method": "wavelet", "available": True}]}
+        denoise_params_json = json.dumps({"columns": {"nested": "object"}})
+        with patch.object(web_api.mt5_connection, "_ensure_connection", return_value=True), \
+             patch("mtdata.core.web_api._get_denoise_methods", return_value=dn_methods), \
+             patch("mtdata.core.web_api.mt5_config") as mock_cfg:
+            mock_cfg.get_time_offset_seconds.return_value = 0
+            resp = _client.get("/api/history", params={
+                "symbol": "EURUSD",
+                "denoise_method": "wavelet",
+                "denoise_params": denoise_params_json,
+            })
+        assert resp.status_code == 400
+        detail = resp.json()["detail"]
+        assert detail["error_code"] == "denoise_params_invalid"
+        assert "columns" in detail["error"]
+
+    def test_denoise_json_rejects_non_string_column_items(self):
+        dn_methods = {"methods": [{"method": "wavelet", "available": True}]}
+        denoise_params_json = json.dumps({"columns": ["close", {"bad": "item"}]})
+        with patch.object(web_api.mt5_connection, "_ensure_connection", return_value=True), \
+             patch("mtdata.core.web_api._get_denoise_methods", return_value=dn_methods), \
+             patch("mtdata.core.web_api.mt5_config") as mock_cfg:
+            mock_cfg.get_time_offset_seconds.return_value = 0
+            resp = _client.get("/api/history", params={
+                "symbol": "EURUSD",
+                "denoise_method": "wavelet",
+                "denoise_params": denoise_params_json,
+            })
+        assert resp.status_code == 400
+        detail = resp.json()["detail"]
+        assert detail["error_code"] == "denoise_params_invalid"
+        assert "columns[1]" in detail["error"]
+
     def test_denoise_json_string_false_is_parsed_as_false(self):
         payload = {"data": [{"time": 1.0}]}
         dn_methods = {"methods": [{"method": "wavelet", "available": True}]}
