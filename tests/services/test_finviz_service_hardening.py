@@ -164,3 +164,70 @@ def test_get_earnings_calendar_uses_earnings_contract_with_pagination(monkeypatc
     assert result.get("pages") == 3
     assert result.get("truncated") is False
     assert FakeEarnings.last_period == "This Week"
+
+
+# ---------------------------------------------------------------------------
+# Finviz HTTP session lifecycle tests
+# ---------------------------------------------------------------------------
+
+
+def test_build_finviz_session_sets_user_agent():
+    session = finviz_client._build_finviz_session()
+    assert session.headers.get("User-Agent") == "Mozilla/5.0"
+    session.close()
+
+
+def test_reset_finviz_session_clears_singleton(monkeypatch):
+    """After reset, the next _build will create a fresh session."""
+    sentinel = finviz_client._build_finviz_session()
+    monkeypatch.setattr(finviz_client, "_FINVIZ_HTTP_SESSION", sentinel)
+
+    finviz_client._reset_finviz_session()
+    assert finviz_client._FINVIZ_HTTP_SESSION is None
+
+
+def test_reset_finviz_session_tolerates_already_none():
+    """Reset is safe to call even when no session has been created."""
+    original = finviz_client._FINVIZ_HTTP_SESSION
+    try:
+        finviz_client._FINVIZ_HTTP_SESSION = None
+        finviz_client._reset_finviz_session()
+        assert finviz_client._FINVIZ_HTTP_SESSION is None
+    finally:
+        finviz_client._FINVIZ_HTTP_SESSION = original
+
+
+def test_finviz_http_get_uses_build_session(monkeypatch):
+    """When the session is None and requests.get is not patched, _build_finviz_session is called."""
+    calls = {"built": 0, "get": []}
+
+    class FakeSession:
+        headers = {}
+
+        def update(self, _):
+            pass
+
+        def get(self, url, **kwargs):
+            calls["get"].append(url)
+            return "ok"
+
+    fake = FakeSession()
+    fake.headers = {"User-Agent": "Mozilla/5.0"}
+
+    def fake_build():
+        calls["built"] += 1
+        return fake
+
+    monkeypatch.setattr(finviz_client, "_FINVIZ_HTTP_SESSION", None)
+    monkeypatch.setattr(finviz_client, "_build_finviz_session", fake_build)
+    # Ensure the monkeypatch hook is NOT triggered:
+    import requests as _req
+    monkeypatch.setattr(_req, "get", _req.api.get)
+
+    result = finviz_client.finviz_http_get(
+        "https://example.test", headers={}, params={}, timeout=5.0
+    )
+
+    assert calls["built"] == 1
+    assert calls["get"] == ["https://example.test"]
+    assert result == "ok"

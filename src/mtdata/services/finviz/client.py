@@ -60,6 +60,26 @@ def get_finviz_page_limit_max() -> int:
     return _FINVIZ_PAGE_LIMIT_MAX
 
 
+def _build_finviz_session() -> requests.Session:
+    """Create a configured Finviz HTTP session."""
+    session = requests.Session()
+    session.headers.update({"User-Agent": "Mozilla/5.0"})
+    return session
+
+
+def _reset_finviz_session() -> None:
+    """Close and discard the shared Finviz session so the next request rebuilds it."""
+    global _FINVIZ_HTTP_SESSION
+    with _FINVIZ_HTTP_SESSION_LOCK:
+        old = _FINVIZ_HTTP_SESSION
+        _FINVIZ_HTTP_SESSION = None
+    if old is not None:
+        try:
+            old.close()
+        except Exception:
+            pass
+
+
 def finviz_http_get(
     url: str,
     *,
@@ -77,9 +97,7 @@ def finviz_http_get(
     if _FINVIZ_HTTP_SESSION is None:
         with _FINVIZ_HTTP_SESSION_LOCK:
             if _FINVIZ_HTTP_SESSION is None:
-                session = requests.Session()
-                session.headers.update({"User-Agent": "Mozilla/5.0"})
-                _FINVIZ_HTTP_SESSION = session
+                _FINVIZ_HTTP_SESSION = _build_finviz_session()
     return _FINVIZ_HTTP_SESSION.get(url, headers=headers, params=params, timeout=timeout_value)
 
 
@@ -88,4 +106,6 @@ __all__ = [
     "get_finviz_screener_max_rows",
     "get_finviz_page_limit_max",
     "finviz_http_get",
+    "_build_finviz_session",
+    "_reset_finviz_session",
 ]
