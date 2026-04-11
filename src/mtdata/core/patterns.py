@@ -84,8 +84,14 @@ def _should_drop_last_pattern_bar(
     timeframe: str,
     *,
     now_utc: Optional[datetime] = None,
+    current_time_epoch: Optional[float] = None,
 ) -> bool:
-    return should_drop_last_live_bar(df, timeframe, now_utc=now_utc)
+    return should_drop_last_live_bar(
+        df,
+        timeframe,
+        now_utc=now_utc,
+        current_time_epoch=current_time_epoch,
+    )
 
 
 def _fetch_pattern_data(
@@ -141,7 +147,15 @@ def _fetch_pattern_data(
     warnings_out.extend(quality_warnings)
 
     # Drop the last bar only when it is still open or cannot be validated.
-    if _should_drop_last_pattern_bar(df, timeframe, now_utc=utc_now):
+    from ..services.data_service import _resolve_live_bar_reference_epoch
+
+    live_bar_reference_epoch = _resolve_live_bar_reference_epoch(symbol, timeframe)
+    if _should_drop_last_pattern_bar(
+        df,
+        timeframe,
+        now_utc=utc_now,
+        current_time_epoch=live_bar_reference_epoch,
+    ):
         df = df.iloc[:-1].copy()
     
     # Apply denoising if requested

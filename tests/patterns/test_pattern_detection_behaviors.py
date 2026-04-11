@@ -10,6 +10,7 @@ import pytest
 import src.mtdata.core.patterns_support as patterns_support_mod
 import src.mtdata.patterns.candlestick as candlestick_mod
 import src.mtdata.patterns.classic as classic_mod
+import src.mtdata.services.data_service as data_service_mod
 from src.mtdata.core import patterns as core_patterns
 from src.mtdata.core.patterns import _apply_config_to_obj, _build_pattern_response
 from src.mtdata.core.patterns_requests import PatternsDetectRequest
@@ -442,6 +443,68 @@ def test_detect_candlestick_patterns_drops_still_forming_last_bar(monkeypatch):
         )
 
     monkeypatch.setattr(candlestick_mod, "_rates_to_df", _fake_rates_to_df)
+
+    res = candlestick_mod.detect_candlestick_patterns(
+        symbol="EURUSD",
+        timeframe="H1",
+        limit=10,
+        min_strength=0.95,
+        min_gap=0,
+        robust_only=False,
+        whitelist=None,
+        top_k=2,
+    )
+
+    assert res["success"] is True
+    assert len(res["data"]) == 1
+    assert res["data"][0]["end_index"] == 1
+
+
+def test_detect_candlestick_patterns_uses_broker_tick_reference_for_live_bar_trim(monkeypatch):
+    class _FakeFrame(pd.DataFrame):
+        @property
+        def _constructor(self):
+            return _FakeFrame
+
+        @property
+        def ta(self):
+            frame = self
+
+            class _Accessor:
+                def cdl_alpha(self, append=True):
+                    _ = append
+                    values = [0.0] * len(frame)
+                    values[-1] = 200.0
+                    frame["cdl_alpha"] = values
+
+            return _Accessor()
+
+    now_ts = float(datetime.now(timezone.utc).timestamp())
+    last_bar_open = now_ts - 3660.0
+
+    monkeypatch.setattr(candlestick_mod, "_ensure_candlestick_runtime", lambda: None)
+    monkeypatch.setattr(candlestick_mod, "TIMEFRAME_MAP", {"H1": 1})
+    monkeypatch.setattr(candlestick_mod, "_symbol_ready_guard", _always_ready_guard)
+    monkeypatch.setattr(candlestick_mod, "_mt5_copy_rates_from", lambda *_a, **_k: [object(), object(), object()])
+    monkeypatch.setattr(candlestick_mod, "_get_candlestick_pattern_methods", lambda _temp: ["cdl_alpha"])
+
+    def _fake_rates_to_df(_rates):
+        return _FakeFrame(
+            {
+                "time": [last_bar_open - 7200.0, last_bar_open - 3600.0, last_bar_open],
+                "open": [100.0, 101.0, 102.0],
+                "high": [101.0, 102.0, 103.0],
+                "low": [99.0, 100.0, 101.0],
+                "close": [100.5, 101.5, 102.5],
+            }
+        )
+
+    monkeypatch.setattr(candlestick_mod, "_rates_to_df", _fake_rates_to_df)
+    monkeypatch.setattr(
+        data_service_mod,
+        "_resolve_live_bar_reference_epoch",
+        lambda *_a, **_k: last_bar_open + 120.0,
+    )
 
     res = candlestick_mod.detect_candlestick_patterns(
         symbol="EURUSD",

@@ -1175,7 +1175,32 @@ class TestFetchPatternData:
         mock_rates.return_value = _make_rates_array(200)
         mock_datetime.now.return_value = datetime(2024, 1, 9, 7, 30, tzinfo=timezone.utc)
 
-        df, err = self._call("EURUSD", "H1", 100)
+        with patch(
+            "mtdata.services.data_service._resolve_live_bar_reference_epoch",
+            return_value=float(mock_rates.return_value[-1].time) + 1800.0,
+        ):
+            df, err = self._call("EURUSD", "H1", 100)
+
+        assert err is None
+        assert df is not None
+        assert int(df["time"].iloc[-1]) == int(mock_rates.return_value[-2].time)
+
+    @patch("mtdata.core.patterns.mt5")
+    @patch("mtdata.core.patterns._mt5_copy_rates_from")
+    def test_uses_broker_tick_reference_for_live_bar_trim(self, mock_rates, mock_mt5):
+        mock_mt5.symbol_info.return_value = MagicMock(visible=True)
+        now_ts = int(datetime.now(timezone.utc).timestamp())
+        rates_df = _make_ohlcv_df(200)
+        start_ts = now_ts - (((len(rates_df) - 1) * 3600) + 3660)
+        rates_df["time"] = np.arange(start_ts, start_ts + len(rates_df) * 3600, 3600)
+        mock_rates.return_value = rates_df.to_records(index=False)
+        live_bar_reference_epoch = float(rates_df["time"].iloc[-1] + 120)
+
+        with patch(
+            "mtdata.services.data_service._resolve_live_bar_reference_epoch",
+            return_value=live_bar_reference_epoch,
+        ):
+            df, err = self._call("EURUSD", "H1", 200)
 
         assert err is None
         assert df is not None

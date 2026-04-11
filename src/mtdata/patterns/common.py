@@ -120,6 +120,7 @@ def should_drop_last_live_bar(
     timeframe: str,
     *,
     now_utc: Optional[datetime] = None,
+    current_time_epoch: Optional[float] = None,
 ) -> bool:
     """Return True when the last bar is still forming or cannot be validated."""
     if len(df) < 2:
@@ -133,7 +134,15 @@ def should_drop_last_live_bar(
         return True
     if not math.isfinite(last_open):
         return True
-    current_ts = float((now_utc or datetime.now(timezone.utc)).timestamp())
+    if current_time_epoch is not None:
+        try:
+            current_ts = float(current_time_epoch)
+        except Exception:
+            current_ts = float("nan")
+        if not math.isfinite(current_ts):
+            current_ts = float((now_utc or datetime.now(timezone.utc)).timestamp())
+    else:
+        current_ts = float((now_utc or datetime.now(timezone.utc)).timestamp())
     elapsed = current_ts - last_open
     if elapsed < 0:
         return True

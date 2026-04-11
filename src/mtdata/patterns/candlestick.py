@@ -479,7 +479,15 @@ def detect_candlestick_patterns(  # noqa: C901
         return {"error": "No candle data available"}
 
     df = _rates_to_df(rates)
-    if should_drop_last_live_bar(df, timeframe, now_utc=utc_now):
+    from ..services.data_service import _resolve_live_bar_reference_epoch
+
+    live_bar_reference_epoch = _resolve_live_bar_reference_epoch(symbol, timeframe)
+    if should_drop_last_live_bar(
+        df,
+        timeframe,
+        now_utc=utc_now,
+        current_time_epoch=live_bar_reference_epoch,
+    ):
         df = df.iloc[:-1].copy()
     if len(df) == 0:
         return {"error": "No closed candle data available"}
