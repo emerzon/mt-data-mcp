@@ -34,11 +34,11 @@ class TestDataService(unittest.TestCase):
     @patch('mtdata.services.data_service._symbol_ready_guard', _mock_symbol_ready_guard)
     def test_fetch_candles_basic(self, _mock_epoch_to_utc, mock_copy_rates):
         
-        # Mock rates data
+        # Mock rates data — use H1-spaced bars so the last bar is clearly closed
         now = datetime.now(timezone.utc)
         rates = []
         for i in range(10):
-            t = now - timedelta(minutes=10-i)
+            t = now - timedelta(hours=10-i)
             rates.append({
                 'time': t.timestamp(),
                 'open': 1.1, 'high': 1.2, 'low': 1.0, 'close': 1.15,
@@ -93,12 +93,12 @@ class TestDataService(unittest.TestCase):
         now = datetime.now(timezone.utc)
         rates = [
             {
-                'time': (now - timedelta(minutes=2)).timestamp(),
+                'time': (now - timedelta(hours=2)).timestamp(),
                 'open': 1.1, 'high': 1.2, 'low': 1.0, 'close': 1.15,
                 'tick_volume': 100, 'real_volume': 0, 'spread': 1,
             },
             {
-                'time': (now - timedelta(minutes=1)).timestamp(),
+                'time': (now - timedelta(hours=1)).timestamp(),
                 'open': 1.15, 'high': 1.25, 'low': 1.05, 'close': 1.2,
                 'tick_volume': 120, 'real_volume': 0, 'spread': 1,
             },

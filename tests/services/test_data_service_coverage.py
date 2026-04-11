@@ -323,7 +323,7 @@ class TestFetchRatesWithWarmup(unittest.TestCase):
         mock_from.return_value = rates
         result, err = _fetch_rates_with_warmup(
             'EURUSD', 16385, 'H1', 5, 0, None, '2025-01-02',
-            retry=False, sanity_check=False,
+            include_incomplete=True, retry=False, sanity_check=False,
         )
         self.assertIsNone(err)
         self.assertEqual(result, rates)
@@ -572,7 +572,7 @@ class TestFetchCandles(unittest.TestCase):
     @patch(_GUARD, _mock_symbol_guard)
     def test_basic_success(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_cfg):
         mock_cfg.get_time_offset_seconds.return_value = 0
-        mock_from.return_value = _make_rates(10)
+        mock_from.return_value = _make_rates(10, step=3600)
         result = fetch_candles('EURUSD', limit=5)
         self.assertTrue(result.get('success'))
         self.assertEqual(result['candles'], 5)
@@ -748,7 +748,7 @@ class TestFetchCandles(unittest.TestCase):
     @patch(_GUARD, _mock_symbol_guard)
     def test_meta_includes_query_diagnostics(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_cfg):
         mock_cfg.get_time_offset_seconds.return_value = 0
-        mock_from.return_value = _make_rates(10)
+        mock_from.return_value = _make_rates(10, step=3600)
         result = fetch_candles('EURUSD', limit=5)
         self.assertTrue(result.get('success'))
         diagnostics = result['meta']['diagnostics']
@@ -1739,7 +1739,7 @@ class TestEdgeCases(unittest.TestCase):
     @patch(_GUARD, _mock_symbol_guard)
     def test_single_candle(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_cfg):
         mock_cfg.get_time_offset_seconds.return_value = 0
-        mock_from.return_value = _make_rates(1)
+        mock_from.return_value = _make_rates(1, base_ts=_NOW_TS - 7200, step=3600)
         result = fetch_candles('EURUSD', limit=1)
         self.assertTrue(result.get('success'))
         self.assertEqual(result['candles'], 1)
@@ -1752,7 +1752,7 @@ class TestEdgeCases(unittest.TestCase):
     @patch(_GUARD, _mock_symbol_guard)
     def test_limit_larger_than_data(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_cfg):
         mock_cfg.get_time_offset_seconds.return_value = 0
-        mock_from.return_value = _make_rates(3)
+        mock_from.return_value = _make_rates(3, base_ts=_NOW_TS - 7200, step=3600)
         result = fetch_candles('EURUSD', limit=100)
         self.assertTrue(result.get('success'))
         self.assertEqual(result['candles'], 3)

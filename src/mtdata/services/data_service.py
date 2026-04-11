@@ -123,6 +123,38 @@ def _indicator_param_syntax_error(ti_spec: Optional[str]) -> Optional[str]:
     return None
 
 
+def _is_last_candle_open(rates_or_df: Any, timeframe: str) -> bool:
+    """Return True if the last bar in *rates_or_df* is still forming."""
+    try:
+        seconds_per_bar = TIMEFRAME_SECONDS.get(timeframe, 3600)
+        current_time = _utc_epoch_seconds(datetime.now(dt_timezone.utc))
+        if isinstance(rates_or_df, pd.DataFrame):
+            if len(rates_or_df) == 0 or '__epoch' not in rates_or_df.columns:
+                return False
+            last_epoch = float(rates_or_df['__epoch'].iloc[-1])
+        else:
+            if not rates_or_df or len(rates_or_df) == 0:
+                return False
+            last_epoch = float(rates_or_df[-1]["time"])
+        return 0 <= current_time - last_epoch < seconds_per_bar
+    except Exception:
+        return False
+
+
+def _drop_incomplete_tail(rates: Any, timeframe: str) -> Any:
+    """Drop the last bar from *rates* if it is still forming."""
+    if rates is not None and len(rates) > 0 and _is_last_candle_open(rates, timeframe):
+        return rates[:-1]
+    return rates
+
+
+def _drop_incomplete_tail_df(df: pd.DataFrame, timeframe: str) -> Tuple[pd.DataFrame, bool]:
+    """Drop the last row from *df* if it is still forming.  Returns (df, trimmed)."""
+    if len(df) > 0 and _is_last_candle_open(df, timeframe):
+        return df.iloc[:-1], True
+    return df, False
+
+
 def _fetch_rates_with_warmup(
     symbol: str,
     mt5_timeframe: int,
@@ -132,7 +164,7 @@ def _fetch_rates_with_warmup(
     start_datetime: Optional[str],
     end_datetime: Optional[str],
     *,
-    include_incomplete: bool = True,
+    include_incomplete: bool = False,
     retry: bool = True,
     sanity_check: bool = True,
 ):
@@ -920,15 +952,7 @@ def fetch_candles(  # noqa: C901
             return {"error": "No data available"}
         raw_bars_fetched = int(len(rates))
         if not include_incomplete:
-            try:
-                last_epoch = float(rates[-1]["time"])
-                seconds_per_bar = TIMEFRAME_SECONDS.get(timeframe, 3600)
-                current_time = _utc_epoch_seconds(datetime.now(dt_timezone.utc))
-                _last_candle_open = 0 <= current_time - last_epoch < seconds_per_bar
-            except Exception:
-                _last_candle_open = False
-            if _last_candle_open and len(rates) > candles:
-                rates = rates[:-1]
+            rates = _drop_incomplete_tail(rates, timeframe)
         if len(rates) == 0:
             return {"error": "No data available"}
         headers = _build_candle_headers(rates, ohlcv)
@@ -994,6 +1018,11 @@ def fetch_candles(  # noqa: C901
             except Exception:
                 pass
 
+        # Authoritative incomplete-tail trim: covers the initial fetch *and*
+        # the TI-retry rebuild path, applied before any non-causal transforms.
+        if not include_incomplete:
+            df, _trimmed_incomplete = _drop_incomplete_tail_df(df, timeframe)
+
         # Optional post-TI denoising (adds new columns by default)
         _apply_post_ti_denoise(df, headers, denoise, denoise_apps)
         denoise_warnings.extend(_consume_denoise_warnings(df))
@@ -1025,6 +1054,7 @@ def fetch_candles(  # noqa: C901
             headers = [h for h in simplify_meta['headers'] if isinstance(h, str)]
 
         # Assemble rows from (possibly reduced) DataFrame for selected headers
+        last_candle_open = _is_last_candle_open(df, timeframe)
         rows = _format_numeric_rows_from_df(df, headers, stringify=False)
         query_latency_ms = round((time.perf_counter() - query_started_at) * 1000.0, 3)
         query_mode = "range" if (start_datetime or end_datetime) else "latest"
@@ -1041,17 +1071,6 @@ def fetch_candles(  # noqa: C901
                         row["time"] = float(row["time"])
                     except Exception:
                         pass
-        
-        # Determine if the last candle is open or closed
-        last_candle_open = False
-        if len(df) > 0 and '__epoch' in df.columns:
-            last_epoch = float(df['__epoch'].iloc[-1])
-            seconds_per_bar = TIMEFRAME_SECONDS.get(timeframe, 3600)
-            current_time = _utc_epoch_seconds(datetime.now(dt_timezone.utc))
-            
-            # A candle is "open" if current time is within its timeframe window
-            time_since_candle_start = current_time - last_epoch
-            last_candle_open = 0 <= time_since_candle_start < seconds_per_bar
         
         timezone_meta_input: Dict[str, Any] = dict(payload)
         if not _use_ctz:
