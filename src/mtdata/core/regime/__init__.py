@@ -1,25 +1,26 @@
-"""Canonical regime package."""
+"""Canonical regime package.
+
+Copies the ``api`` namespace into the package so that tests can
+monkeypatch internal helpers (e.g. ``_fetch_history``) at the
+``mtdata.core.regime`` level.  A lightweight ``_sync_api_namespace()``
+pushes those patches back to ``api`` before every public entry-point
+call.
+"""
 
 from __future__ import annotations
 
 import inspect
-import types
 from functools import update_wrapper
-from pathlib import Path
 
 from . import api as _api
 from . import methods
 
-_REBOUND_CACHE: dict[int, types.FunctionType] = {}
-_SYNC_EXCLUDED = {
+# ---- namespace import (one-time at package load) ---------------------------
+
+_SYNC_EXCLUDED = frozenset({
     "_api",
     "methods",
-    "_REBOUND_CACHE",
     "_SYNC_EXCLUDED",
-    "_matches_module_file",
-    "_rebind_function",
-    "_copy_namespace",
-    "_unwrap_function",
     "_sync_api_namespace",
     "_ORIG_REGIME_CONNECTION_ERROR",
     "_REGIME_DETECT_IMPL",
@@ -27,64 +28,15 @@ _SYNC_EXCLUDED = {
     "_regime_detect_raw",
     "_regime_connection_error",
     "regime_detect",
-}
+})
+
+for _name, _value in vars(_api).items():
+    if not _name.startswith("__"):
+        globals()[_name] = _value
+del _name, _value
 
 
-def _matches_module_file(func: object, module_file: str | None) -> bool:
-    code = getattr(func, "__code__", None)
-    filename = getattr(code, "co_filename", None)
-    if not module_file or not filename:
-        return False
-    try:
-        return Path(filename).resolve() == Path(module_file).resolve()
-    except Exception:
-        return filename == module_file
-
-
-def _rebind_function(func: types.FunctionType, module_file: str | None) -> types.FunctionType:
-    cached = _REBOUND_CACHE.get(id(func))
-    if cached is not None:
-        return cached
-
-    rebound = types.FunctionType(
-        func.__code__,
-        globals(),
-        name=func.__name__,
-        argdefs=func.__defaults__,
-        closure=func.__closure__,
-    )
-    _REBOUND_CACHE[id(func)] = rebound
-    update_wrapper(rebound, func)
-    rebound.__kwdefaults__ = getattr(func, "__kwdefaults__", None)
-    rebound.__dict__.update(getattr(func, "__dict__", {}))
-    rebound.__module__ = __name__
-    signature = getattr(func, "__signature__", None)
-    if signature is not None:
-        rebound.__signature__ = signature
-    wrapped = getattr(func, "__wrapped__", None)
-    if inspect.isfunction(wrapped) and _matches_module_file(wrapped, module_file):
-        rebound.__wrapped__ = _rebind_function(wrapped, module_file)
-    return rebound
-
-
-def _copy_namespace(module) -> None:
-    module_file = getattr(module, "__file__", None)
-    for name, value in vars(module).items():
-        if name.startswith("__"):
-            continue
-        globals()[name] = value
-
-    for name, value in list(vars(module).items()):
-        if inspect.isfunction(value) and _matches_module_file(value, module_file):
-            globals()[name] = _rebind_function(value, module_file)
-
-
-def _unwrap_function(func):
-    raw = func
-    while inspect.isfunction(getattr(raw, "__wrapped__", None)):
-        raw = raw.__wrapped__
-    return raw
-
+# ---- per-call sync (pushes monkeypatches back to _api) ---------------------
 
 def _sync_api_namespace() -> None:
     for name, value in list(globals().items()):
@@ -95,11 +47,14 @@ def _sync_api_namespace() -> None:
     _api._regime_connection_error = _regime_connection_error
 
 
-_copy_namespace(_api)
+# ---- thin public wrappers --------------------------------------------------
 
 _ORIG_REGIME_CONNECTION_ERROR = _api._regime_connection_error
 _REGIME_DETECT_IMPL = _api.regime_detect
-_REGIME_DETECT_RAW_IMPL = _unwrap_function(_REGIME_DETECT_IMPL)
+
+_REGIME_DETECT_RAW_IMPL = _REGIME_DETECT_IMPL
+while hasattr(_REGIME_DETECT_RAW_IMPL, "__wrapped__"):
+    _REGIME_DETECT_RAW_IMPL = _REGIME_DETECT_RAW_IMPL.__wrapped__
 
 
 def _regime_connection_error():
@@ -165,6 +120,3 @@ __all__ = [
     "_ms_ar_reliability_from_smoothed",
     "methods",
 ]
-
-del _copy_namespace
-del _unwrap_function
