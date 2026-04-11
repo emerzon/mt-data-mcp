@@ -563,6 +563,18 @@ class TestApplyDenoise:
         assert "denoise_warnings" in df.attrs
         assert "contains no finite values for denoise" in df.attrs["denoise_warnings"][0]
 
+    def test_unsupported_causality_appends_warning_and_skips_column(self):
+        df = self._make_df()
+
+        added = _apply_denoise(
+            df,
+            {"method": "wavelet", "columns": ["close"], "causality": "causal"},
+        )
+
+        assert added == []
+        assert "denoise_warnings" in df.attrs
+        assert "does not support causality='causal'" in df.attrs["denoise_warnings"][0]
+
 
 # ======================================================================
 # 4. _resolve_denoise_base_col
@@ -603,6 +615,13 @@ def test_run_denoise_handler_rejects_all_nan_series():
             {},
             "causal",
         )
+
+
+def test_denoise_series_rejects_unsupported_causal_mode():
+    s = pd.Series(np.arange(10.0), name="close")
+
+    with pytest.raises(ValueError, match="does not support causality='causal'"):
+        _denoise_series(s, method="wavelet", causality="causal")
 
 
 # ======================================================================
@@ -988,6 +1007,13 @@ class TestGetDenoiseMethodsData:
     def test_schema_version(self):
         data = get_denoise_methods_data()
         assert data["schema_version"] == 1
+
+    def test_reports_method_specific_causality_support(self):
+        data = get_denoise_methods_data()
+        methods = {entry["method"]: entry for entry in data["methods"]}
+
+        assert methods["ema"]["supports"]["causality"] == ["causal", "zero_phase"]
+        assert methods["wavelet"]["supports"]["causality"] == ["zero_phase"]
 
 
 # ======================================================================

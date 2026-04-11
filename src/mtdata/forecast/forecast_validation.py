@@ -132,11 +132,27 @@ def validate_denoise_spec(denoise: Optional[DenoiseSpec]) -> List[str]:
         errors.append("denoise must be a dictionary")
         return errors
 
+    method = ""
+    method_supports: Dict[str, Any] = {}
+    try:
+        from ..utils.denoise import get_denoise_methods_data as _get_denoise_methods_data
+
+        methods_data = _get_denoise_methods_data()
+        methods = methods_data.get("methods") if isinstance(methods_data, dict) else None
+        if isinstance(methods, list):
+            method_supports = {
+                str(entry.get("method")).lower(): dict(entry)
+                for entry in methods
+                if isinstance(entry, dict) and entry.get("method")
+            }
+    except Exception:
+        method_supports = {}
+
     # Validate required fields
     if 'method' not in denoise:
         errors.append("denoise must specify a 'method'")
     else:
-        valid_methods = ['none', 'ema', 'sma', 'median', 'lowpass_fft', 'wavelet', 'emd', 'eemd', 'ceemdan']
+        valid_methods = sorted(method_supports) or ['none', 'ema', 'sma', 'median', 'lowpass_fft', 'wavelet', 'emd', 'eemd', 'ceemdan']
         method = str(denoise['method']).lower()
         if method not in valid_methods:
             errors.append(f"Invalid denoise method: {method}. Valid options: {valid_methods}")
@@ -146,6 +162,13 @@ def validate_denoise_spec(denoise: Optional[DenoiseSpec]) -> List[str]:
         causality = str(denoise['causality']).lower()
         if causality not in ['causal', 'zero_phase']:
             errors.append(f"Invalid denoise causality: {causality}. Must be 'causal' or 'zero_phase'")
+        elif method and method in method_supports:
+            supported = method_supports[method].get("supports", {}).get("causality") or []
+            if causality not in supported:
+                errors.append(
+                    f"Invalid denoise causality for {method}: {causality}. "
+                    f"Supported values: {supported}"
+                )
 
     # Validate when parameter
     if 'when' in denoise:

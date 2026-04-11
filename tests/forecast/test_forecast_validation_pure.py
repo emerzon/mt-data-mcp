@@ -144,6 +144,10 @@ class TestValidateDenoiseSpec:
         errors = validate_denoise_spec({"method": "ema", "causality": "bogus"})
         assert any("causality" in e for e in errors)
 
+    def test_rejects_unsupported_causal_mode_for_method(self):
+        errors = validate_denoise_spec({"method": "wavelet", "causality": "causal"})
+        assert any("Supported values" in e for e in errors)
+
     def test_valid_when(self):
         errors = validate_denoise_spec({"method": "ema", "when": "pre_ti"})
         assert errors == []

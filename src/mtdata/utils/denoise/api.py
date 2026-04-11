@@ -126,6 +126,36 @@ _DENOISE_METHOD_SUPPORTS = {
     "causality": ["causal", "zero_phase"],
 }
 
+_DENOISE_METHOD_CAUSALITY_SUPPORT = {
+    "none": ("causal", "zero_phase"),
+    "ema": ("causal", "zero_phase"),
+    "sma": ("causal", "zero_phase"),
+    "median": ("causal", "zero_phase"),
+    "butterworth": ("causal", "zero_phase"),
+    "kalman": ("causal", "zero_phase"),
+    "hampel": ("causal", "zero_phase"),
+    "bilateral": ("causal", "zero_phase"),
+    "lms": ("causal", "zero_phase"),
+    "rls": ("causal", "zero_phase"),
+    "beta": ("causal", "zero_phase"),
+    "lowpass_fft": ("zero_phase",),
+    "wavelet": ("zero_phase",),
+    "wavelet_packet": ("zero_phase",),
+    "hp": ("zero_phase",),
+    "whittaker": ("zero_phase",),
+    "l1_trend": ("zero_phase",),
+    "gaussian": ("zero_phase",),
+    "savgol": ("zero_phase",),
+    "loess": ("zero_phase",),
+    "stl": ("zero_phase",),
+    "tv": ("zero_phase",),
+    "ssa": ("zero_phase",),
+    "vmd": ("zero_phase",),
+    "emd": ("zero_phase",),
+    "eemd": ("zero_phase",),
+    "ceemdan": ("zero_phase",),
+}
+
 
 def _denoise_availability(name: str) -> tuple[bool, str]:
     if name == 'wavelet':
@@ -188,6 +218,26 @@ def _resolve_denoise_handler(method: str):
     return handler
 
 
+def _supported_denoise_causality(method: str) -> List[str]:
+    method_name = str(method or "none").strip().lower() or "none"
+    supported = _DENOISE_METHOD_CAUSALITY_SUPPORT.get(method_name)
+    if supported is None:
+        return list(_DENOISE_METHOD_SUPPORTS["causality"])
+    return list(supported)
+
+
+def _normalize_denoise_causality(method: str, causality: str) -> str:
+    normalized = str(causality or "zero_phase").strip().lower() or "zero_phase"
+    supported = _supported_denoise_causality(method)
+    if normalized not in supported:
+        supported_txt = ", ".join(supported)
+        raise ValueError(
+            f"Denoise method '{method}' does not support causality='{normalized}'. "
+            f"Supported values: {supported_txt}."
+        )
+    return normalized
+
+
 def _run_denoise_handler(
     s: pd.Series,
     handler,
@@ -216,6 +266,7 @@ def _denoise_series(
     if method == 'none':
         return s
     handler = _resolve_denoise_handler(method)
+    causality = _normalize_denoise_causality(method, causality)
     n = len(s)
     if n < 3:
         return s
@@ -266,6 +317,11 @@ def _apply_denoise(
     suffix = str(spec.get('suffix') or '_dn')
     try:
         handler = _resolve_denoise_handler(method)
+    except Exception as ex:
+        _append_denoise_warning(df, str(ex))
+        return added_cols
+    try:
+        causality = _normalize_denoise_causality(method, causality)
     except Exception as ex:
         _append_denoise_warning(df, str(ex))
         return added_cols
@@ -361,7 +417,7 @@ def get_denoise_methods_data() -> Dict[str, Any]:
             "description": _DENOISE_METHOD_DESCRIPTIONS["none"],
             "requires": "",
             "params": [],
-            "supports": dict(_DENOISE_METHOD_SUPPORTS),
+            "supports": {"causality": _supported_denoise_causality("none")},
             "defaults": base_defaults,
         }
     ]
@@ -379,7 +435,7 @@ def get_denoise_methods_data() -> Dict[str, Any]:
             ),
             "requires": requires,
             "params": list(default_params.keys()),
-            "supports": dict(_DENOISE_METHOD_SUPPORTS),
+            "supports": {"causality": _supported_denoise_causality(method_name)},
             "defaults": base_defaults,
         })
 
