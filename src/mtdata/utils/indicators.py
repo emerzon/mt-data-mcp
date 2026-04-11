@@ -308,6 +308,8 @@ def _resolve_indicator_series_inputs(
     df: pd.DataFrame,
     indicator_name: str,
     params: Dict[str, inspect.Parameter],
+    *,
+    volume_series: Optional[pd.Series] = None,
 ) -> Dict[str, pd.Series]:
     required = [name for name in _INDICATOR_SERIES_NAMES if name in params]
     resolved: Dict[str, pd.Series] = {}
@@ -315,11 +317,14 @@ def _resolve_indicator_series_inputs(
 
     for name in required:
         if name == "volume":
-            volume_col = next((col for col in _VOLUME_SOURCE_COLUMNS if col in df.columns), None)
-            if volume_col is None:
+            if volume_series is None:
+                volume_col = next((col for col in _VOLUME_SOURCE_COLUMNS if col in df.columns), None)
+                if volume_col is not None:
+                    volume_series = df[volume_col]
+            if volume_series is None:
                 missing.append(name)
             else:
-                resolved[name] = df[volume_col]
+                resolved[name] = volume_series
             continue
 
         if name not in df.columns:
@@ -357,6 +362,8 @@ def _apply_ta_indicators(df: pd.DataFrame, ti_spec: str) -> List[str]:  # noqa: 
                 pass
     before = set(df.columns)
     specs = _parse_ti_specs(ti_spec)
+    volume_col = next((col for col in _VOLUME_SOURCE_COLUMNS if col in df.columns), None)
+    volume_series = df[volume_col] if volume_col is not None else None
     for name, args, kwargs in specs:
         lname = _normalize_ta_indicator_name(name)
         func = getattr(pta, lname, None)
@@ -365,7 +372,12 @@ def _apply_ta_indicators(df: pd.DataFrame, ti_spec: str) -> List[str]:  # noqa: 
         try:
             sig = inspect.signature(func)
             params = sig.parameters
-            series_inputs = _resolve_indicator_series_inputs(df, lname, params)
+            series_inputs = _resolve_indicator_series_inputs(
+                df,
+                lname,
+                params,
+                volume_series=volume_series,
+            )
             # Prepare positional and keyword arguments safely
             call_kwargs = dict(kwargs)
             call_args = []
