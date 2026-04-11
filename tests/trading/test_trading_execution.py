@@ -187,7 +187,7 @@ def test_place_market_order_sl_tp_logic_violations(mock_mt5):
         stop_loss=1.06000,  # Ask is 1.05010
     )
     assert "error" in res
-    assert "stop_loss must be below entry" in res["error"]
+    assert "stop_loss must be below the live bid" in res["error"]
 
     # SELL with SL below price (invalid)
     res = _place_market_order(
@@ -197,7 +197,7 @@ def test_place_market_order_sl_tp_logic_violations(mock_mt5):
         stop_loss=1.04000,  # Bid is 1.05000
     )
     assert "error" in res
-    assert "stop_loss must be above entry" in res["error"]
+    assert "stop_loss must be above the live ask" in res["error"]
 
     # BUY with TP below price (invalid)
     res = _place_market_order(
@@ -207,7 +207,7 @@ def test_place_market_order_sl_tp_logic_violations(mock_mt5):
         take_profit=1.04000,  # Ask is 1.05010
     )
     assert "error" in res
-    assert "take_profit must be above entry" in res["error"]
+    assert "take_profit must be above the live bid" in res["error"]
 
     # SELL with TP above price (invalid)
     res = _place_market_order(
@@ -217,7 +217,7 @@ def test_place_market_order_sl_tp_logic_violations(mock_mt5):
         take_profit=1.06000,  # Bid is 1.05000
     )
     assert "error" in res
-    assert "take_profit must be below entry" in res["error"]
+    assert "take_profit must be below the live ask" in res["error"]
 
 
 def test_place_market_order_rejects_buy_stop_loss_inside_live_spread(mock_mt5):
@@ -232,6 +232,34 @@ def test_place_market_order_rejects_buy_stop_loss_inside_live_spread(mock_mt5):
     assert "error" in res
     assert "live bid" in res["error"]
     mock_mt5.order_send.assert_not_called()
+
+
+def test_place_market_order_accepts_buy_take_profit_inside_live_spread(mock_mt5):
+    res = _place_market_order(
+        symbol="EURUSD",
+        volume=0.1,
+        order_type="BUY",
+        stop_loss=1.04000,
+        take_profit=1.05005,
+    )
+
+    assert "error" not in res
+    assert res["retcode"] == mock_mt5.TRADE_RETCODE_DONE
+    assert res["sl_tp_result"]["status"] == "applied"
+
+
+def test_place_market_order_accepts_sell_take_profit_inside_live_spread(mock_mt5):
+    res = _place_market_order(
+        symbol="EURUSD",
+        volume=0.1,
+        order_type="SELL",
+        stop_loss=1.06000,
+        take_profit=1.05005,
+    )
+
+    assert "error" not in res
+    assert res["retcode"] == mock_mt5.TRADE_RETCODE_DONE
+    assert res["sl_tp_result"]["status"] == "applied"
 
 
 def test_place_market_order_rejects_levels_inside_broker_stop_distance(mock_mt5):
