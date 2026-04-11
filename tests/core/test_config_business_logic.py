@@ -150,6 +150,16 @@ def test_mt5_config_reads_broker_time_check_settings(monkeypatch):
     assert conf.broker_time_check_ttl_seconds == 300
 
 
+def test_mt5_config_reads_order_magic_setting(monkeypatch):
+    monkeypatch.setenv("MT5_TIME_OFFSET_MINUTES", "0")
+    monkeypatch.setenv("MTDATA_ORDER_MAGIC", "345678")
+    monkeypatch.setattr(cfg, "_WARNED_SERVER_TZ", False)
+
+    conf = cfg.MT5Config()
+
+    assert conf.order_magic == 345678
+
+
 def test_mt5_config_handles_invalid_broker_time_check_ttl(monkeypatch):
     monkeypatch.setenv("MT5_TIME_OFFSET_MINUTES", "0")
     monkeypatch.setenv("MTDATA_BROKER_TIME_CHECK", "off")

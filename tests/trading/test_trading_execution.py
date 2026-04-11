@@ -117,6 +117,31 @@ def test_place_market_order_success(mock_mt5):
     assert sltp_req["position"] == 456  # Matching the 'order' ticket from the mock result
 
 
+def test_place_orders_use_configured_magic_number(mock_mt5, monkeypatch):
+    monkeypatch.setattr("src.mtdata.core.trading.orders.mt5_config.order_magic", 345678)
+
+    market_res = _place_market_order(
+        symbol="EURUSD",
+        volume=0.1,
+        order_type="BUY",
+    )
+    assert "error" not in market_res
+    market_req = mock_mt5.order_send.call_args_list[0].args[0]
+    assert market_req["magic"] == 345678
+
+    mock_mt5.order_send.reset_mock()
+
+    pending_res = _place_pending_order(
+        symbol="EURUSD",
+        volume=0.1,
+        order_type="BUY_LIMIT",
+        price=1.04000,
+    )
+    assert "error" not in pending_res
+    pending_req = mock_mt5.order_send.call_args[0][0]
+    assert pending_req["magic"] == 345678
+
+
 def test_place_market_order_treats_tiny_zero_stop_loss_as_omitted(mock_mt5):
     res = _place_market_order(
         symbol="EURUSD",

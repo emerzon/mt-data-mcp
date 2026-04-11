@@ -187,6 +187,7 @@ class MT5Config:
         self.time_offset_minutes = 0
         self.broker_time_check_enabled = False
         self.broker_time_check_ttl_seconds = 60
+        self.order_magic = 234000
         self.reload_from_env(warn_if_timezone_missing=warn_if_timezone_missing)
 
     def reload_from_env(self, *, warn_if_timezone_missing: bool = True) -> None:
@@ -207,6 +208,15 @@ class MT5Config:
                 ttl_raw,
             )
         self.broker_time_check_ttl_seconds = max(0, ttl_seconds)
+        magic_raw = os.getenv("MTDATA_ORDER_MAGIC")
+        magic_value = _env_int("MTDATA_ORDER_MAGIC", 234000)
+        if magic_value <= 0:
+            _LOGGER.warning(
+                "MTDATA_ORDER_MAGIC=%r is not a positive integer; using default 234000.",
+                magic_raw,
+            )
+            magic_value = 234000
+        self.order_magic = int(magic_value)
         if warn_if_timezone_missing:
             self._warn_if_timezone_missing()
 

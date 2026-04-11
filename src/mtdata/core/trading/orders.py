@@ -4,6 +4,7 @@ import math
 import time as _stdlib_time
 from typing import Any, Dict, List, Optional, TypedDict, Union
 
+from ..config import mt5_config
 from . import comments, common, time, validation
 from .execution import _modify_position
 from .gateway import MT5TradingGateway, create_trading_gateway, trading_connection_error
@@ -25,6 +26,14 @@ class _OrderSubmitOutcome(TypedDict):
 
 
 _POSITION_RESOLUTION_WAIT_SCHEDULE_SECONDS = (0.15, 0.3, 0.6, 1.2)
+_DEFAULT_ORDER_MAGIC = 234000
+
+
+def _configured_order_magic() -> int:
+    configured = validation._safe_int_ticket(getattr(mt5_config, "order_magic", None))
+    if configured is not None:
+        return int(configured)
+    return _DEFAULT_ORDER_MAGIC
 
 
 def _compact_sl_tp_levels(
@@ -373,7 +382,7 @@ def _place_market_order(  # noqa: C901
                 "type": mt5.ORDER_TYPE_BUY if side == "BUY" else mt5.ORDER_TYPE_SELL,
                 "price": price,
                 "deviation": deviation_validated,
-                "magic": 234000,
+                "magic": _configured_order_magic(),
                 "comment": request_comment,
                 "type_time": mt5.ORDER_TIME_GTC,
                 "type_filling": validation._safe_int_attr(mt5, "ORDER_FILLING_IOC", 1),
@@ -819,7 +828,7 @@ def _place_pending_order(
                 "sl": 0.0 if norm_sl is None else float(norm_sl),
                 "tp": 0.0 if norm_tp is None else float(norm_tp),
                 "deviation": deviation_validated,
-                "magic": 234000,
+                "magic": _configured_order_magic(),
                 "comment": request_comment,
                 "type_time": mt5.ORDER_TIME_GTC,
                 "type_filling": validation._safe_int_attr(mt5, "ORDER_FILLING_IOC", 1),
