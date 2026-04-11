@@ -880,6 +880,62 @@ def test_place_market_order_retries_sltp_without_comment_when_comment_is_invalid
     assert "comment" not in final_req
 
 
+def test_place_market_order_retries_after_stopiteration_during_sltp(mock_mt5):
+    mock_mt5.TRADE_ACTION_SLTP = 6
+    position = SimpleNamespace(symbol="EURUSD", sl=0.0, tp=0.0, type=0, magic=24680)
+    mock_mt5.positions_get.return_value = [
+        SimpleNamespace(symbol="EURUSD", sl=1.04000, tp=1.06000, type=0, magic=24680)
+    ]
+    market_result = MagicMock(
+        retcode=10009,
+        deal=123,
+        order=456,
+        volume=0.1,
+        price=1.05010,
+        bid=1.05000,
+        ask=1.05010,
+        comment="",
+        request_id=789,
+    )
+    sltp_result = MagicMock(
+        retcode=10009,
+        deal=0,
+        order=456,
+        comment="",
+        request_id=790,
+    )
+
+    with patch(
+        "src.mtdata.core.trading.orders._resolve_open_position",
+        return_value=(position, 456, {}),
+    ), patch(
+        "src.mtdata.core.trading.orders._send_order_with_comment_fallback",
+        side_effect=[
+            (market_result, None, (1, "Success")),
+            StopIteration("adapter exhausted"),
+            (sltp_result, None, (1, "Success")),
+        ],
+    ) as send_mock, patch(
+        "src.mtdata.core.trading.orders._modify_position",
+    ) as fallback_modify, patch(
+        "src.mtdata.core.trading.orders._stdlib_time.sleep",
+    ):
+        res = _place_market_order(
+            symbol="EURUSD",
+            volume=0.1,
+            order_type="BUY",
+            stop_loss=1.04000,
+            take_profit=1.06000,
+        )
+
+    assert "error" not in res
+    assert res["sl_tp_result"]["status"] == "applied"
+    assert res["sl_tp_result"]["attempts"] == 2
+    assert res["sl_tp_result"].get("fallback_used") is not True
+    assert send_mock.call_count == 3
+    fallback_modify.assert_not_called()
+
+
 def test_place_market_order_surfaces_sltp_verification_failures(mock_mt5, caplog):
     mock_mt5.TRADE_ACTION_SLTP = 6
     position = SimpleNamespace(symbol="EURUSD", sl=0.0, tp=0.0, type=0, magic=24680)

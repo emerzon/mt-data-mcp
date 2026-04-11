@@ -495,9 +495,6 @@ def _place_market_order(  # noqa: C901
                                     mt5,
                                     modify_request,
                                 )
-                            except StopIteration:
-                                modify_result = None
-                                break
                             except Exception as ex:
                                 modify_result = None
                                 sl_tp_error = f"Error setting TP/SL: {str(ex)}"
