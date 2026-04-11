@@ -75,6 +75,8 @@ class TestConsolidatePayloadBOCPD:
         # BOCPD segments should NOT have avg_conf
         for seg in res["regimes"]:
             assert "avg_conf" not in seg
+        assert "transition_conf" not in res["regimes"][0]
+        assert res["regimes"][1]["transition_conf"] == 0.9
 
     def test_bocpd_no_change_points(self):
         payload = {

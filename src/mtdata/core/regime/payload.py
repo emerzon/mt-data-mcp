@@ -78,18 +78,28 @@ def _consolidate_payload(  # noqa: C901
             if state_value is None or state_value < 0:
                 continue
             prob_value = probs[idx] if idx < len(probs) else None
-            filtered_entries.append((times[idx], state_value, prob_value))
+            filtered_entries.append((idx, times[idx], state_value, prob_value))
         if filtered_entries and len(filtered_entries) != len(times):
-            times = [entry[0] for entry in filtered_entries]
-            states = [entry[1] for entry in filtered_entries]
-            probs = [entry[2] for entry in filtered_entries]
+            times = [entry[1] for entry in filtered_entries]
+            states = [entry[2] for entry in filtered_entries]
+            probs = [entry[3] for entry in filtered_entries]
+            original_indices = [entry[0] for entry in filtered_entries]
+        else:
+            original_indices = list(range(len(times)))
 
         # Consolidate
         # Loop through
         curr_start = times[0]
         curr_state = states[0]
+        curr_start_index = original_indices[0]
         curr_prob_sum = 0.0
         curr_count = 0
+        curr_transition_conf = None
+        if method == "bocpd" and curr_start_index in cps_idx and probs:
+            try:
+                curr_transition_conf = float(probs[0])
+            except Exception:
+                curr_transition_conf = None
 
         i = 0
         while i < len(times):
@@ -107,13 +117,21 @@ def _consolidate_payload(  # noqa: C901
                     "end": times[i - 1] if i > 0 else curr_start,
                     "duration": curr_count,
                     "regime": curr_state,  # state ID or regime ID
-                    "confidence": avg_prob  # average prob of being in this state/regime
+                    "confidence": avg_prob,  # average prob of being in this state/regime
+                    "transition_conf": curr_transition_conf,
                 })
                 # New segment
                 curr_start = t
                 curr_state = s
+                curr_start_index = original_indices[i]
                 curr_prob_sum = 0.0
                 curr_count = 0
+                curr_transition_conf = None
+                if method == "bocpd":
+                    try:
+                        curr_transition_conf = float(p)
+                    except Exception:
+                        curr_transition_conf = None
 
             curr_prob_sum += p
             curr_count += 1
@@ -127,7 +145,8 @@ def _consolidate_payload(  # noqa: C901
                 "end": times[-1],
                 "duration": curr_count,
                 "regime": curr_state,
-                "confidence": avg_prob
+                "confidence": avg_prob,
+                "transition_conf": curr_transition_conf,
             })
 
         # Post-process segments for readability
@@ -145,6 +164,8 @@ def _consolidate_payload(  # noqa: C901
             }
             if method != 'bocpd':
                 row["avg_conf"] = round(seg["confidence"], 4)
+            elif seg.get("transition_conf") is not None:
+                row["transition_conf"] = round(float(seg["transition_conf"]), 4)
             final_segments.append(row)
 
         # Restructure Payload
