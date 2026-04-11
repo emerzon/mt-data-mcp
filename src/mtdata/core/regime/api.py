@@ -84,6 +84,50 @@ def _summary_window_size(lookback: int, size: int) -> int:
     return min(max(lookback_i, 0), int(size))
 
 
+def _resolve_bocpd_priors(
+    params: Dict[str, Any],
+    series: np.ndarray,
+) -> Dict[str, float]:
+    """Extract BOCPD prior hyper-parameters from *params* dict.
+
+    If a prior param (mu0, kappa0, alpha0, beta0) is explicitly provided,
+    use it.  Otherwise fall back to data-driven defaults derived from the
+    series statistics, which are more appropriate than the hard-coded
+    ``bocpd_gaussian`` defaults (mu0=0, kappa0=1, alpha0=1, beta0=1)
+    when the data mean / variance is far from those assumptions.
+    """
+    x = np.asarray(series, dtype=float)
+    x = x[np.isfinite(x)]
+
+    # Data-driven defaults
+    if x.size >= 10:
+        mu_data = float(np.mean(x))
+        var_data = float(np.var(x, ddof=0))
+        var_safe = max(var_data, 1e-16)
+        dd_mu0 = mu_data
+        dd_kappa0 = 1.0
+        dd_alpha0 = max(1.0, x.size / 20.0)
+        dd_beta0 = max(1e-8, var_safe * dd_alpha0)
+    else:
+        dd_mu0, dd_kappa0, dd_alpha0, dd_beta0 = 0.0, 1.0, 1.0, 1.0
+
+    mode = str(params.get("prior_mode", "data_driven") or "data_driven").strip().lower()
+    if mode == "fixed":
+        dd_mu0, dd_kappa0, dd_alpha0, dd_beta0 = 0.0, 1.0, 1.0, 1.0
+
+    mu0, _ = _coerce_param(params, "mu0", default=dd_mu0, cast=float)
+    kappa0, _ = _coerce_param(params, "kappa0", default=dd_kappa0, cast=float)
+    alpha0, _ = _coerce_param(params, "alpha0", default=dd_alpha0, cast=float)
+    beta0, _ = _coerce_param(params, "beta0", default=dd_beta0, cast=float)
+
+    return {
+        "mu0": float(mu0),
+        "kappa0": max(1e-8, float(kappa0)),
+        "alpha0": max(0.5, float(alpha0)),
+        "beta0": max(1e-12, float(beta0)),
+    }
+
+
 def _apply_bocpd_output_mode(
     payload: Dict[str, Any],
     *,
@@ -352,7 +396,16 @@ def regime_detect(  # noqa: C901
                     max_windows=cal_max_windows,
                     bootstrap_runs=cal_boot,
                 )
-            res = bocpd_gaussian(x, hazard_lambda=hazard_lambda, max_run_length=max_rl)
+            bocpd_priors = _resolve_bocpd_priors(p, x)
+            res = bocpd_gaussian(
+                x,
+                hazard_lambda=hazard_lambda,
+                max_run_length=max_rl,
+                mu0=bocpd_priors["mu0"],
+                kappa0=bocpd_priors["kappa0"],
+                alpha0=bocpd_priors["alpha0"],
+                beta0=bocpd_priors["beta0"],
+            )
             cp_prob = np.asarray(res.get('cp_prob', np.zeros_like(x, dtype=float)), dtype=float)
             raw_cp_idx = [int(i) for i, v in enumerate(cp_prob.tolist()) if np.isfinite(v) and float(v) >= float(threshold_used)]
             cp_confirm_bars, _ = _coerce_param(
@@ -460,6 +513,7 @@ def regime_detect(  # noqa: C901
                     "hazard_mode": hazard_mode,
                     "max_run_length": max_rl,
                     "cp_filter": cp_filter_meta,
+                    "priors": bocpd_priors,
                 },
             }
             if isinstance(calibration_info, dict):

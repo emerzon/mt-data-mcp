@@ -70,7 +70,7 @@ def test_bocpd_uses_crypto_sensitive_auto_hazard_default() -> None:
     raw = _unwrap(regime_detect)
     capture = {}
 
-    def _fake_bocpd(x, hazard_lambda=0, max_run_length=0):
+    def _fake_bocpd(x, hazard_lambda=0, max_run_length=0, **kwargs):
         capture["hazard_lambda"] = int(hazard_lambda)
         capture["max_run_length"] = int(max_run_length)
         return {"cp_prob": np.zeros_like(x, dtype=float)}
@@ -105,7 +105,7 @@ def test_bocpd_hazard_lambda_param_override_is_preserved() -> None:
     raw = _unwrap(regime_detect)
     capture = {}
 
-    def _fake_bocpd(x, hazard_lambda=0, max_run_length=0):
+    def _fake_bocpd(x, hazard_lambda=0, max_run_length=0, **kwargs):
         capture["hazard_lambda"] = int(hazard_lambda)
         capture["max_run_length"] = int(max_run_length)
         return {"cp_prob": np.zeros_like(x, dtype=float)}
@@ -288,7 +288,7 @@ def test_bocpd_zero_change_points_includes_tuning_hint() -> None:
 def test_bocpd_filters_last_bar_spike_with_strict_confirmation() -> None:
     raw = _unwrap(regime_detect)
 
-    def _fake_bocpd(x, hazard_lambda=0, max_run_length=0):
+    def _fake_bocpd(x, hazard_lambda=0, max_run_length=0, **kwargs):
         cp = np.zeros(len(x), dtype=float)
         if cp.size:
             cp[-1] = 0.9
@@ -326,7 +326,7 @@ def test_bocpd_filters_last_bar_spike_with_strict_confirmation() -> None:
 def test_bocpd_walkforward_threshold_calibration_metadata_is_exposed() -> None:
     raw = _unwrap(regime_detect)
 
-    def _fake_bocpd(x, hazard_lambda=0, max_run_length=0):
+    def _fake_bocpd(x, hazard_lambda=0, max_run_length=0, **kwargs):
         cp = np.full(len(x), 0.01, dtype=float)
         return {"cp_prob": cp}
 
@@ -378,7 +378,7 @@ def test_bocpd_summary_contains_reliability_fields() -> None:
 def test_bocpd_calibrated_threshold_does_not_overreject_at_edge_by_default() -> None:
     raw = _unwrap(regime_detect)
 
-    def _fake_bocpd(x, hazard_lambda=0, max_run_length=0):
+    def _fake_bocpd(x, hazard_lambda=0, max_run_length=0, **kwargs):
         cp = np.zeros(len(x), dtype=float)
         if cp.size >= 2:
             cp[-2] = 0.44
@@ -418,7 +418,7 @@ def test_bocpd_calibrated_threshold_does_not_overreject_at_edge_by_default() -> 
 def test_bocpd_default_cp_confirm_bars_is_live_mode_one() -> None:
     raw = _unwrap(regime_detect)
 
-    def _fake_bocpd(x, hazard_lambda=0, max_run_length=0):
+    def _fake_bocpd(x, hazard_lambda=0, max_run_length=0, **kwargs):
         cp = np.zeros(len(x), dtype=float)
         if cp.size >= 1:
             cp[-1] = 0.44

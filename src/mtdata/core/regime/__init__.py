@@ -113,6 +113,7 @@ __all__ = [
     "_summary_only_payload",
     "_default_bocpd_hazard_lambda",
     "_default_bocpd_cp_threshold",
+    "_resolve_bocpd_priors",
     "_auto_calibrate_bocpd_params",
     "_bocpd_reliability_score",
     "_walkforward_quantile_threshold_calibration",
