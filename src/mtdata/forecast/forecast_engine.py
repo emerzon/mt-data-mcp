@@ -46,9 +46,7 @@ from .ensemble_dispatch import (
 from .ensemble_dispatch import (
     build_dispatch_error as _build_ensemble_dispatch_error,
 )
-from .ensemble_dispatch import (
-    dispatch_callback_with_error as _dispatch_ensemble_callback_with_error,
-)
+
 from .forecast_validation import format_invalid_method_error
 from .interface import ForecastCallContext
 
@@ -133,7 +131,6 @@ def _ensemble_dispatch_method(
     return forecast
 
 
-_DEFAULT_ENSEMBLE_DISPATCH_METHOD = _ensemble_dispatch_method
 
 
 def _ensemble_dispatch_with_error(
@@ -143,16 +140,6 @@ def _ensemble_dispatch_with_error(
     seasonality: Optional[int],
     params: Optional[Dict[str, Any]],
 ) -> Tuple[Optional[np.ndarray], Optional[Dict[str, Any]]]:
-    dispatch_method = globals().get("_ensemble_dispatch_method")
-    if callable(dispatch_method) and dispatch_method is not _DEFAULT_ENSEMBLE_DISPATCH_METHOD:
-        return _dispatch_ensemble_callback_with_error(
-            dispatch_method,
-            method_name,
-            series,
-            horizon,
-            seasonality,
-            params,
-        )
     return _ensemble_dispatch_method_impl(
         method_name,
         series,
