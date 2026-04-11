@@ -100,6 +100,50 @@ def test_market_depth_full_depth_includes_price_display() -> None:
     assert out["data"]["sell_orders"][0]["price_display"] == "65602.50"
 
 
+def test_market_depth_subscribes_and_releases_book_snapshot() -> None:
+    depth = [
+        {"price": 65601.0, "volume": 1.0, "volume_real": 1.0, "type": 0},
+        {"price": 65602.5, "volume": 2.0, "volume_real": 2.0, "type": 1},
+    ]
+    with patch("mtdata.core.market_depth.mt5") as mt5:
+        mt5.symbol_select.return_value = True
+        mt5.symbol_info.return_value = SimpleNamespace(digits=2)
+        mt5.market_book_add.return_value = True
+        mt5.market_book_get.return_value = depth
+
+        out = _raw_market_depth_fetch("BTCUSD")
+
+    assert out["success"] is True
+    mt5.market_book_add.assert_called_once_with("BTCUSD")
+    mt5.market_book_get.assert_called_once_with("BTCUSD")
+    mt5.market_book_release.assert_called_once_with("BTCUSD")
+
+
+def test_market_depth_releases_book_after_empty_snapshot() -> None:
+    tick = SimpleNamespace(
+        bid=65601.0,
+        ask=65601.5,
+        last=65601.0,
+        volume=12,
+        time=1700000000,
+    )
+    with patch("mtdata.core.market_depth.mt5") as mt5, patch(
+        "mtdata.core.market_depth._use_client_tz", return_value=False
+    ):
+        mt5.symbol_select.return_value = True
+        mt5.symbol_info.return_value = SimpleNamespace(digits=2)
+        mt5.market_book_add.return_value = True
+        mt5.market_book_get.return_value = []
+        mt5.symbol_info_tick.return_value = tick
+
+        out = _raw_market_depth_fetch("BTCUSD")
+
+    assert out["success"] is True
+    assert out["type"] == "tick_data"
+    mt5.market_book_add.assert_called_once_with("BTCUSD")
+    mt5.market_book_release.assert_called_once_with("BTCUSD")
+
+
 def test_market_depth_tick_fallback_includes_spread_metrics_when_requested() -> None:
     tick = SimpleNamespace(
         bid=100.0,

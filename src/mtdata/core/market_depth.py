@@ -136,7 +136,19 @@ def _market_depth_fetch_impl(symbol: str, spread: bool = False, compact: bool = 
                 except Exception:
                     return None
 
-            depth = mt5_gateway.market_book_get(symbol)
+            book_subscription_active = False
+            try:
+                book_subscription_active = bool(mt5_gateway.market_book_add(symbol))
+            except Exception:
+                book_subscription_active = False
+            try:
+                depth = mt5_gateway.market_book_get(symbol)
+            finally:
+                if book_subscription_active:
+                    try:
+                        mt5_gateway.market_book_release(symbol)
+                    except Exception:
+                        pass
 
             if depth is not None and len(depth) > 0:
                 buy_orders = []
