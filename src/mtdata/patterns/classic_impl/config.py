@@ -152,3 +152,81 @@ class ClassicPatternResult(PatternResultBase):
     name: str
     status: str  # "completed" | "forming"
     details: Dict[str, Any]
+
+
+import logging as _logging
+
+_logger = _logging.getLogger(__name__)
+
+
+def validate_classic_detector_config(
+    cfg: ClassicDetectorConfig,
+) -> list[str]:
+    """Check obvious invariants on *cfg* and return a list of warning strings.
+
+    This deliberately does **not** raise; callers decide how to handle the
+    warnings (log, surface to the user, or ignore).
+    """
+    warnings: list[str] = []
+
+    # Positive bar/window counts
+    for attr in (
+        "max_bars",
+        "min_input_bars",
+        "scan_step_bars",
+        "scan_min_prefix_bars",
+        "min_distance",
+        "pivot_atr_period",
+        "max_pattern_pivots",
+        "breakout_lookahead",
+        "cup_handle_min_window_bars",
+        "cup_handle_max_window_bars",
+        "diamond_min_window_bars",
+        "diamond_max_window_bars",
+        "rounding_window_bars",
+        "max_consolidation_bars",
+        "volume_confirm_lookback_bars",
+        "volume_confirm_breakout_bars",
+        "regime_window_bars",
+        "completion_confirm_bars",
+        "completion_lookback_bars",
+    ):
+        val = getattr(cfg, attr, None)
+        if isinstance(val, (int, float)) and val <= 0:
+            warnings.append(f"{attr} must be positive, got {val}")
+
+    # min <= max relationships
+    if cfg.min_input_bars > cfg.max_bars:
+        warnings.append(
+            f"min_input_bars ({cfg.min_input_bars}) exceeds max_bars ({cfg.max_bars})"
+        )
+    if cfg.cup_handle_min_window_bars > cfg.cup_handle_max_window_bars:
+        warnings.append(
+            f"cup_handle_min_window_bars ({cfg.cup_handle_min_window_bars}) exceeds "
+            f"cup_handle_max_window_bars ({cfg.cup_handle_max_window_bars})"
+        )
+    if cfg.diamond_min_window_bars > cfg.diamond_max_window_bars:
+        warnings.append(
+            f"diamond_min_window_bars ({cfg.diamond_min_window_bars}) exceeds "
+            f"diamond_max_window_bars ({cfg.diamond_max_window_bars})"
+        )
+
+    # Non-negative percentages/thresholds
+    for attr in (
+        "min_prominence_pct",
+        "same_level_tol_pct",
+        "min_pole_return_pct",
+        "min_confidence",
+        "min_r2",
+    ):
+        val = getattr(cfg, attr, None)
+        if isinstance(val, (int, float)) and val < 0:
+            warnings.append(f"{attr} must be non-negative, got {val}")
+
+    # Confidence blending weights
+    for attr in ("touch_weight", "r2_weight", "geometry_weight"):
+        val = getattr(cfg, attr, None)
+        if isinstance(val, (int, float)) and val < 0:
+            warnings.append(f"{attr} must be non-negative, got {val}")
+
+    return warnings

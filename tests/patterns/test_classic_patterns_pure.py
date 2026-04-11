@@ -9,6 +9,7 @@ from mtdata.patterns.classic import (
     _postprocess_classic_results,
     detect_classic_patterns,
 )
+from mtdata.patterns.classic_impl.config import validate_classic_detector_config
 from mtdata.patterns.classic_impl.continuation import detect_flags_pennants
 from mtdata.patterns.classic_impl.shapes import detect_rectangles
 from mtdata.patterns.classic_impl.utils import _find_recent_breakout
@@ -198,6 +199,26 @@ class TestClassicDetectorConfig:
         cfg = ClassicDetectorConfig(min_touches=5, min_r2=0.8)
         assert cfg.min_touches == 5
         assert cfg.min_r2 == 0.8
+
+    def test_defaults_pass_validation(self):
+        cfg = ClassicDetectorConfig()
+        warnings = validate_classic_detector_config(cfg)
+        assert warnings == []
+
+    def test_negative_bar_count_warns(self):
+        cfg = ClassicDetectorConfig(max_bars=-1)
+        warnings = validate_classic_detector_config(cfg)
+        assert any("max_bars" in w for w in warnings)
+
+    def test_min_exceeds_max_warns(self):
+        cfg = ClassicDetectorConfig(min_input_bars=2000, max_bars=500)
+        warnings = validate_classic_detector_config(cfg)
+        assert any("min_input_bars" in w and "max_bars" in w for w in warnings)
+
+    def test_negative_confidence_weight_warns(self):
+        cfg = ClassicDetectorConfig(touch_weight=-0.5)
+        warnings = validate_classic_detector_config(cfg)
+        assert any("touch_weight" in w for w in warnings)
 
 
 class TestClassicPatternResult:

@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 
 from ..utils.utils import to_float_np
-from .classic_impl.config import ClassicDetectorConfig, ClassicPatternResult
+from .classic_impl.config import ClassicDetectorConfig, ClassicPatternResult, validate_classic_detector_config
 from .classic_impl.continuation import detect_cup_handle, detect_flags_pennants
 from .classic_impl.reversal import (
     detect_head_shoulders,
@@ -274,6 +274,12 @@ def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfi
     """Detect classic chart patterns on OHLCV DataFrame with 'time' and 'close' columns."""
     if cfg is None:
         cfg = ClassicDetectorConfig()
+    config_warnings = validate_classic_detector_config(cfg)
+    if config_warnings:
+        import logging
+        _log = logging.getLogger(__name__)
+        for w in config_warnings:
+            _log.warning("ClassicDetectorConfig: %s", w)
     prepared = _prepare_classic_inputs(df, cfg)
     if prepared is None:
         return []
