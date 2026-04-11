@@ -798,9 +798,9 @@ class TestDetectElliottWaves:
         )
 
         monkeypatch.setattr(
-            elliott_mod,
-            "_pivot_signature_for_settings",
-            lambda _close, threshold_pct, _min_distance: (0, 10, 20, 30, 40, int(float(threshold_pct) * 100)),
+            elliott_mod.ElliottWaveAnalyzer,
+            "pivot_signature",
+            lambda _self, threshold_pct, _min_distance: (0, 10, 20, 30, 40, int(float(threshold_pct) * 100)),
         )
 
         def _fake_analyze(self, threshold_pct, min_distance):
@@ -839,8 +839,8 @@ class TestDetectElliottWaves:
         call_log = []
 
         monkeypatch.setattr(
-            elliott_mod,
-            "_pivot_signature_for_settings",
+            elliott_mod.ElliottWaveAnalyzer,
+            "pivot_signature",
             lambda *_args, **_kwargs: (0, 10, 20, 30),
         )
 
@@ -882,9 +882,9 @@ class TestDetectElliottWaves:
         call_log = []
 
         monkeypatch.setattr(
-            elliott_mod,
-            "_pivot_signature_for_settings",
-            lambda _close, threshold_pct, _min_distance: (0, 10, 20, 30, int(float(threshold_pct) * 100)),
+            elliott_mod.ElliottWaveAnalyzer,
+            "pivot_signature",
+            lambda _self, threshold_pct, _min_distance: (0, 10, 20, 30, int(float(threshold_pct) * 100)),
         )
 
         def _fake_analyze(self, threshold_pct, min_distance):
@@ -924,9 +924,9 @@ class TestDetectElliottWaves:
         )
 
         monkeypatch.setattr(
-            elliott_mod,
-            "_pivot_signature_for_settings",
-            lambda _close, threshold_pct, _min_distance: (0, 10, 20, 30, 40, int(float(threshold_pct) * 100)),
+            elliott_mod.ElliottWaveAnalyzer,
+            "pivot_signature",
+            lambda _self, threshold_pct, _min_distance: (0, 10, 20, 30, 40, int(float(threshold_pct) * 100)),
         )
 
         def _fake_analyze(self, threshold_pct, min_distance):

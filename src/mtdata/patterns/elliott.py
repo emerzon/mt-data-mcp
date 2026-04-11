@@ -948,6 +948,9 @@ class ElliottWaveAnalyzer:
         self.config = config
         self.high = high if isinstance(high, np.ndarray) else np.asarray([], dtype=float)
         self.low = low if isinstance(low, np.ndarray) else np.asarray([], dtype=float)
+        # Request-scoped caches
+        self._pivot_cache: Dict[Tuple[float, int], List[int]] = {}
+        self._wave_feature_cache: Dict[Tuple[float, int], Tuple[np.ndarray, Dict[int, int], List[Tuple[int, int]]]] = {}
 
     def _normalized_pivot_price_source(self) -> str:
         raw = str(getattr(self.config, "pivot_price_source", "close") or "close").strip().lower()
@@ -984,19 +987,39 @@ class ElliottWaveAnalyzer:
             "zone_high": float(max(equal_wave1, wave3_0618)),
         }
 
-    def analyze_once(self, threshold_pct: float, min_distance: int) -> List[ElliottScenario]:
+    def _get_pivots(self, threshold_pct: float, min_distance: int) -> List[int]:
+        """Return pivot indices, caching by (threshold, min_distance)."""
+        key = (float(threshold_pct), int(min_distance))
+        cached = self._pivot_cache.get(key)
+        if cached is not None:
+            return cached
         piv_idx, _ = _zigzag_pivots_indices(self.close, float(threshold_pct))
         piv_idx = _enforce_min_distance_on_pivots(piv_idx, self.close, min_distance)
+        self._pivot_cache[key] = piv_idx
+        return piv_idx
+
+    def pivot_signature(self, threshold_pct: float, min_distance: int) -> Tuple[int, ...]:
+        """Return pivot signature tuple, leveraging the pivot cache."""
+        return tuple(int(i) for i in self._get_pivots(threshold_pct, min_distance))
+
+    def analyze_once(self, threshold_pct: float, min_distance: int) -> List[ElliottScenario]:
+        piv_idx = self._get_pivots(float(threshold_pct), int(min_distance))
         if len(piv_idx) < 4:
             return []
 
-        waves = _segment_waves_from_pivots(piv_idx)
-        if not waves:
-            return []
-
-        features, wave_index_map = _extract_wave_features_with_index(waves, self.close)
-        if features.shape[0] == 0:
-            return []
+        # Cache wave features by the same key
+        feat_key = (float(threshold_pct), int(min_distance))
+        cached_feat = self._wave_feature_cache.get(feat_key)
+        if cached_feat is not None:
+            features, wave_index_map, waves = cached_feat
+        else:
+            waves = _segment_waves_from_pivots(piv_idx)
+            if not waves:
+                return []
+            features, wave_index_map = _extract_wave_features_with_index(waves, self.close)
+            if features.shape[0] == 0:
+                return []
+            self._wave_feature_cache[feat_key] = (features, wave_index_map, waves)
 
         out: List[ElliottScenario] = []
         pattern_types = _normalize_pattern_types(self.config)
@@ -1396,7 +1419,7 @@ def detect_elliott_waves(df: pd.DataFrame, config: Optional[ElliottWaveConfig] =
                 except Exception:
                     continue
                 if bool(getattr(config, "autotune_skip_repeated_pivots", True)):
-                    signature = _pivot_signature_for_settings(c, thr_f, md_i)
+                    signature = analyzer.pivot_signature(thr_f, md_i)
                     if len(signature) > 1 and signature in seen_pivot_signatures:
                         continue
                     if len(signature) > 1:
