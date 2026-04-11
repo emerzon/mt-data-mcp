@@ -2387,6 +2387,21 @@ def test_detect_classic_patterns_disables_aliases_by_default(monkeypatch):
     assert "Trend Line" in names_alias or "Trend Channel" in names_alias
 
 
+def test_detect_classic_patterns_reraises_internal_pivot_type_errors(monkeypatch):
+    n = 150
+    x = np.linspace(0, 4 * np.pi, n)
+    close = 100 + 0.3 * np.arange(n) + 4.0 * np.sin(x)
+    df = pd.DataFrame({"time": np.arange(n, dtype=float), "close": close})
+
+    def _bad_pivots(c, cfg, *args):
+        raise TypeError("internal pivot failure")
+
+    monkeypatch.setattr(classic_mod, "_detect_pivots_close", _bad_pivots)
+
+    with pytest.raises(TypeError, match="internal pivot failure"):
+        detect_classic_patterns(df, ClassicDetectorConfig(max_consolidation_bars=5))
+
+
 def test_patterns_detect_classic_ensemble_merges_engine_outputs(monkeypatch, caplog):
     df = pd.DataFrame(
         {

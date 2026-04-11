@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import inspect
 from typing import Any, Dict, List, Optional
 
 import numpy as np
@@ -56,6 +57,35 @@ __all__ = [
     "detect_classic_patterns",
 ]
 
+
+def _call_detect_pivots_close(
+    c: np.ndarray,
+    cfg: ClassicDetectorConfig,
+    h: np.ndarray,
+    l: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    try:
+        return _detect_pivots_close(c, cfg, h, l)
+    except TypeError as ex:
+        msg = str(ex)
+        if "positional argument" not in msg and "required positional argument" not in msg:
+            raise
+        try:
+            sig = inspect.signature(_detect_pivots_close)
+        except (TypeError, ValueError):
+            return _detect_pivots_close(c, cfg)
+        params = list(sig.parameters.values())
+        if any(param.kind == inspect.Parameter.VAR_POSITIONAL for param in params):
+            return _detect_pivots_close(c, cfg)
+        positional = [
+            param
+            for param in params
+            if param.kind in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+        ]
+        if len(positional) > 2:
+            raise
+        return _detect_pivots_close(c, cfg)
+
 def _prepare_classic_inputs(
     df: pd.DataFrame,
     cfg: ClassicDetectorConfig,
@@ -92,11 +122,7 @@ def _detect_classic_patterns_once(
     troughs: Optional[np.ndarray] = None,
 ) -> List[ClassicPatternResult]:
     if peaks is None or troughs is None:
-        try:
-            peaks, troughs = _detect_pivots_close(c, cfg, h, l)
-        except TypeError:
-            # Keep compatibility with monkeypatched tests that still use the old 2-arg signature.
-            peaks, troughs = _detect_pivots_close(c, cfg)
+        peaks, troughs = _call_detect_pivots_close(c, cfg, h, l)
     else:
         peaks = np.asarray(peaks, dtype=int)
         troughs = np.asarray(troughs, dtype=int)
@@ -184,10 +210,7 @@ def _scan_classic_patterns(
         prefix_ends.append(n_total)
 
     scan_cfg = replace(cfg, scan_historical=False)
-    try:
-        full_peaks, full_troughs = _detect_pivots_close(c, scan_cfg, h, l)
-    except TypeError:
-        full_peaks, full_troughs = _detect_pivots_close(c, scan_cfg)
+    full_peaks, full_troughs = _call_detect_pivots_close(c, scan_cfg, h, l)
     full_peaks = np.asarray(full_peaks, dtype=int)
     full_troughs = np.asarray(full_troughs, dtype=int)
     pivot_confirm_gap = max(2, int(getattr(scan_cfg, "min_distance", 5)))
