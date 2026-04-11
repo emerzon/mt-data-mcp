@@ -189,17 +189,38 @@ class TestMt5EpochToUtc:
         assert _mt5_epoch_to_utc(100000.0) == 999.0
 
     @patch("mtdata.utils.mt5.mt5_config")
-    def test_with_tz_localize_fails_fallback(self, cfg):
+    def test_with_tz_localize_resolves_ambiguous_time(self, cfg, caplog):
         tz = MagicMock()
         cfg.get_server_tz.return_value = tz
-        tz.localize.side_effect = Exception("ambiguous")
-        dt_replaced = MagicMock()
-        dt_replaced.astimezone.return_value.timestamp.return_value = 888.0
-        # replace(tzinfo=...) is called on the naive datetime
-        with patch("mtdata.utils.mt5.datetime") as dt_cls:
-            dt_cls.side_effect = lambda *a, **kw: datetime(*a, **kw)
-            result = _mt5_epoch_to_utc(100000.0)
-        assert isinstance(result, float)
+        dt_local = MagicMock()
+        dt_local.astimezone.return_value.timestamp.return_value = 888.0
+        tz.localize.side_effect = [_mt5_mod.AmbiguousTimeError("ambiguous"), dt_local]
+
+        result = _mt5_epoch_to_utc(100000.0)
+
+        assert result == 888.0
+        assert tz.localize.call_args_list[0].args[0] == datetime(1970, 1, 2, 3, 46, 40)
+        assert tz.localize.call_args_list[0].kwargs == {"is_dst": None}
+        assert tz.localize.call_args_list[1].args[0] == datetime(1970, 1, 2, 3, 46, 40)
+        assert tz.localize.call_args_list[1].kwargs == {"is_dst": False}
+        assert any("Ambiguous MT5 server-local time" in record.message for record in caplog.records)
+
+    @patch("mtdata.utils.mt5.mt5_config")
+    def test_with_tz_localize_shifts_nonexistent_time(self, cfg, caplog):
+        tz = MagicMock()
+        cfg.get_server_tz.return_value = tz
+        dt_local = MagicMock()
+        dt_local.astimezone.return_value.timestamp.return_value = 777.0
+        tz.localize.side_effect = [_mt5_mod.NonExistentTimeError("missing"), dt_local]
+
+        result = _mt5_epoch_to_utc(100000.0)
+
+        assert result == 777.0
+        assert tz.localize.call_args_list[0].args[0] == datetime(1970, 1, 2, 3, 46, 40)
+        assert tz.localize.call_args_list[0].kwargs == {"is_dst": None}
+        assert tz.localize.call_args_list[1].args[0] == datetime(1970, 1, 2, 4, 46, 40)
+        assert tz.localize.call_args_list[1].kwargs == {"is_dst": False}
+        assert any("Non-existent MT5 server-local time" in record.message for record in caplog.records)
 
     @patch("mtdata.utils.mt5.mt5_config")
     def test_exception_returns_raw(self, cfg, caplog):

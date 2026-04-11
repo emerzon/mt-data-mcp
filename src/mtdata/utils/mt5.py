@@ -12,6 +12,15 @@ from ..bootstrap.settings import mt5_config
 
 logger = logging.getLogger(__name__)
 
+try:
+    from pytz.exceptions import AmbiguousTimeError, NonExistentTimeError
+except Exception:  # pragma: no cover - pytz is optional at import time
+    class AmbiguousTimeError(Exception):
+        """Fallback when pytz is unavailable."""
+
+    class NonExistentTimeError(Exception):
+        """Fallback when pytz is unavailable."""
+
 _SYMBOL_INFO_TTL_SECONDS = 5
 _SYMBOL_INFO_TTL_MAX_SECONDS = 3600.0
 _MT5_CONNECTION_FAILURE_MESSAGE = "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."
@@ -208,8 +217,20 @@ def _mt5_epoch_to_utc(epoch_seconds: float) -> float:
             dt_local_naive = base + timedelta(seconds=float(epoch_seconds))
             try:
                 dt_local = tz.localize(dt_local_naive, is_dst=None)
-            except Exception:
-                dt_local = dt_local_naive.replace(tzinfo=tz)
+            except AmbiguousTimeError:
+                logger.warning(
+                    "Ambiguous MT5 server-local time %s in %s; resolving with standard-time offset.",
+                    dt_local_naive,
+                    getattr(tz, "zone", tz),
+                )
+                dt_local = tz.localize(dt_local_naive, is_dst=False)
+            except NonExistentTimeError:
+                logger.warning(
+                    "Non-existent MT5 server-local time %s in %s; shifting to the next valid local instant.",
+                    dt_local_naive,
+                    getattr(tz, "zone", tz),
+                )
+                dt_local = tz.localize(dt_local_naive + timedelta(hours=1), is_dst=False)
             return dt_local.astimezone(timezone.utc).timestamp()
         off = int(mt5_config.get_time_offset_seconds())
         return float(epoch_seconds) - float(off)
