@@ -693,7 +693,7 @@ def _forecast_list_library_models_impl(
                 {
                     "method": "lag_llama",
                     "requires": ["lag-llama", "gluonts", "torch"],
-                    "notes": "May not be installable on Python 3.13 due to upstream pins; included for completeness.",
+                    "notes": "Manual/nonstandard setup only; not part of the project's supported Python 3.14 environment, but still documented for completeness.",
                 },
             ],
             "capabilities": capabilities,
