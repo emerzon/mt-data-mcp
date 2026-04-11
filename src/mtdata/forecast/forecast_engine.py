@@ -346,24 +346,56 @@ def _reconstruct_prices_from_target(
     if history.size < lag or not np.all(np.isfinite(history[-lag:])):
         return None
 
+    inverse_fn = _RECONSTRUCTION_MODES.get(
+        transform.split("(")[0] if "(" in transform else transform,
+        _inverse_log_return,
+    )
+
     reconstructed: List[float] = []
     anchors = history.astype(float).tolist()
+    nan_propagated = False
     for value in forecast_arr:
         anchor = anchors[-lag]
-        if not (np.isfinite(anchor) and np.isfinite(value)):
+        if nan_propagated or not (np.isfinite(anchor) and np.isfinite(value)):
+            nan_propagated = True
             price = float("nan")
-        elif transform.startswith("return(") or transform.startswith("pct_change("):
-            price = anchor * (1.0 + float(value))
-        elif transform.startswith("pct("):
-            price = anchor * (1.0 + (float(value) / 100.0))
-        elif transform.startswith("diff("):
-            price = anchor + float(value)
         else:
-            price = anchor * float(np.exp(value))
+            price = inverse_fn(anchor, float(value))
+            if not np.isfinite(price):
+                nan_propagated = True
         anchors.append(price)
         reconstructed.append(price)
 
     return np.asarray(reconstructed, dtype=float)
+
+
+def _inverse_log_return(anchor: float, value: float) -> float:
+    """log_return: price = anchor * exp(value)"""
+    return anchor * float(np.exp(value))
+
+
+def _inverse_return(anchor: float, value: float) -> float:
+    """return / pct_change: price = anchor * (1 + value)"""
+    return anchor * (1.0 + value)
+
+
+def _inverse_pct(anchor: float, value: float) -> float:
+    """pct: price = anchor * (1 + value/100)"""
+    return anchor * (1.0 + value / 100.0)
+
+
+def _inverse_diff(anchor: float, value: float) -> float:
+    """diff: price = anchor + value"""
+    return anchor + value
+
+
+_RECONSTRUCTION_MODES = {
+    "log_return": _inverse_log_return,
+    "return": _inverse_return,
+    "pct_change": _inverse_return,
+    "pct": _inverse_pct,
+    "diff": _inverse_diff,
+}
 
 
 def _prepare_feature_context(
