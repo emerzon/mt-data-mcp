@@ -42,11 +42,10 @@ mtdata-cli data_fetch_candles EURUSD --timeframe H1 --limit 200 \
 
 ## Dependencies
 
-Some denoising methods require optional packages:
+Most denoising methods are available with the base install. A few require extras:
 
-- `statsmodels`: used by several statistical filters (for example HP/STL)
-- `PyWavelets`: required for wavelet denoising (`wavelet`)
-- `vmdpy`, `EMD-signal`: required for some decomposition-based methods
+- `statsmodels`: used by HP, STL, and related filters — install separately if missing
+- `PyWavelets`, `vmdpy`, `EMD-signal`: bundled as core dependencies, so wavelet, VMD, and EMD-family methods work out of the box
 
 Tip: `GET /api/denoise/methods` (see [WEB_API.md](WEB_API.md)) reports availability and required packages for the current environment.
 
@@ -174,12 +173,12 @@ Split into components and reconstruct smoother parts.
 |--------|-------------|------------|
 | `stl` | Seasonal-Trend decomposition | `period`, `component` (default `trend`) |
 | `ssa` | Singular Spectrum Analysis | `window` |
-| `vmd` | Variational Mode Decomposition | `k`, `alpha` |
+| `vmd` | Variational Mode Decomposition | `k`, `alpha`, `drop_modes` |
 | `wavelet` | Wavelet denoising | `wavelet`, `level` |
 | `wavelet_packet` | Wavelet packet denoising | `wavelet`, `level` |
-| `emd` | Empirical Mode Decomposition | `drop_modes` |
-| `eemd` | Ensemble EMD | `drop_modes`, `noise_width` |
-| `ceemdan` | Complete EEMD with Adaptive Noise | `drop_modes` |
+| `emd` | Empirical Mode Decomposition | `drop_imfs` |
+| `eemd` | Ensemble EMD | `drop_imfs`, `noise_strength` |
+| `ceemdan` | Complete EEMD with Adaptive Noise | `drop_imfs` |
 
 **Example:**
 ```bash

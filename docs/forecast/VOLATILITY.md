@@ -20,7 +20,7 @@ mtdata-cli forecast_volatility_estimate EURUSD --timeframe H1 --horizon 12 --met
 
 # With custom smoothing
 mtdata-cli forecast_volatility_estimate EURUSD --timeframe H1 --horizon 12 \
-  --method ewma --params "lambda=0.94"
+  --method ewma --params "lambda_=0.94"
 ```
 
 ---
@@ -65,7 +65,7 @@ Use recent data to estimate current volatility. Best for quick calculations.
 **EWMA Example:**
 ```bash
 mtdata-cli forecast_volatility_estimate EURUSD --timeframe H1 --horizon 12 \
-  --method ewma --params "lambda=0.94"
+  --method ewma --params "lambda_=0.94"
 ```
 
 **Parkinson Example:**
@@ -82,10 +82,20 @@ Models volatility clustering—the tendency for high-volatility periods to follo
 
 | Method | Description |
 |--------|-------------|
-| `garch` | Standard GARCH(1,1) |
-| `egarch` | Exponential GARCH (asymmetric) |
-| `gjr_garch` | GJR-GARCH (leverage effect) |
+| `garch` | Standard GARCH(1,1) — Normal innovations |
+| `garch_t` | GARCH(1,1) — Student-t innovations (heavier tails) |
+| `egarch` | Exponential GARCH (asymmetric) — Normal innovations |
+| `egarch_t` | EGARCH — Student-t innovations |
+| `gjr_garch` | GJR-GARCH (leverage effect) — Normal innovations |
+| `gjr_garch_t` | GJR-GARCH — Student-t innovations |
 | `figarch` | Long-memory GARCH |
+| `arima` | ARIMA on volatility proxy |
+| `sarima` | Seasonal ARIMA on volatility proxy |
+| `ets` | Exponential smoothing state-space |
+| `theta` | Theta method |
+| `nhits` | Neural Hierarchical Interpolation (requires neuralforecast) |
+| `mlf_rf` | Random Forest via MLForecast |
+| `ensemble` | Ensemble of fast estimators |
 
 **GARCH Example:**
 ```bash
@@ -134,7 +144,7 @@ mtdata-cli forecast_volatility_estimate EURUSD --timeframe H1 --horizon 12 \
 **Proxies available:**
 - `squared_return`: (close/prev_close - 1)²
 - `abs_return`: |close/prev_close - 1|
-- `range`: (high - low) / close
+- `log_r2`: squared log-return
 
 ---
 

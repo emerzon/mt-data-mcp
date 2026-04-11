@@ -108,13 +108,11 @@ pip install chronos-forecasting torch  # For Chronos
 pip install statsforecast              # For StatsForecast models
 pip install arch                       # For GARCH
 pip install statsmodels                # For ARIMA/ETS + causal_discover_signals
-pip install PyWavelets                 # For wavelet denoising
 pip install umap-learn                 # For UMAP dimred (Web UI / analysis)
 pip install gluonts[torch]             # For Lag-Llama (pretrained)
 pip install QuantLib                   # For barrier option pricing & Heston calibration
 pip install optuna                     # For Bayesian hyperparameter tuning
 pip install neuralforecast torch       # For NHiTS, TFT, PatchTST, NBEATSx
-pip install finvizfinance              # For fundamental data, screening, insider activity
 pip install -e .[forecast-timesfm]     # From the repo root; installs the TimesFM Git-backed extra
 # Lag-Llama may require a separate Python env due to upstream pins (see `requirements.txt`).
 ```
@@ -301,11 +299,10 @@ On Windows, a pre-built wheel is available. On Linux, you may need build tools (
 **Symptom:** `finviz_*` commands return empty data or connection errors.
 
 **Possible causes:**
-- `finvizfinance` package not installed → `pip install finvizfinance`
 - Network/firewall blocking finviz.com
 - Rate limiting (finviz throttles rapid requests)
 
-**Note:** Finviz data is US equities only and delayed 15–20 minutes.
+**Note:** `finvizfinance` is a core dependency — it is installed automatically with `pip install -e .`. If you see an import error, your install may be incomplete; reinstall with `pip install -e .` or `pip install -r requirements.txt`. Finviz data is US equities only and delayed 15–20 minutes.
 
 ### Optuna Not Available
 
@@ -340,7 +337,7 @@ These models require PyTorch. GPU is recommended for training speed but not requ
 | Wrong timestamps | Set `MT5_TIME_OFFSET_MINUTES` in `.env` |
 | Command slow | Reduce `--limit`, use faster method |
 | QuantLib import error | `pip install QuantLib` |
-| Finviz empty data | `pip install finvizfinance`, check network |
+| Finviz empty data | Check network / firewall (finvizfinance is pre-installed) |
 | Optuna not found | `pip install optuna` |
 | Neural models unavailable | `pip install neuralforecast torch` |
 

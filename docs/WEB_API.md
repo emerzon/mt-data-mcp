@@ -117,6 +117,8 @@ List sktime estimators (when sktime is installed).
 #### `POST /api/forecast/price`
 Generate price forecasts.
 
+> **Note:** The Web API always uses the `native` forecast library regardless of any `library` field in the request body. For other libraries (sktime, mlforecast, statsforecast) use the CLI.
+
 **Body (JSON):**
 ```json
 {
@@ -181,6 +183,10 @@ Run a rolling-origin backtest.
   "detail": "compact"
 }
 ```
+
+The `detail` field controls response verbosity:
+- `"compact"` (default): aggregate metrics only.
+- `"full"`: includes per-anchor detail records.
 
 ## Running the Server
 

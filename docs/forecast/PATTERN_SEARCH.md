@@ -71,9 +71,9 @@ mtdata-cli patterns_detect EURUSD --timeframe H1 --mode classic --limit 500
 |-----------|---------|-------------|
 | `--mode` | `candlestick` | Pattern type: candlestick, classic, elliott |
 | `--limit` | 500 | Bars to analyze |
-| `--robust-only` | false | Only return high-confidence patterns |
+| `--robust-only` | true | Only return high-confidence patterns. Pass `false` to include all. |
 | `--whitelist` | — | Comma-separated list of specific patterns |
-| `--min-strength` | — | Minimum semantic candlestick conviction score (0.0-1.0) |
+| `--min-strength` | 0.90 | Minimum semantic candlestick conviction score (0.0-1.0) |
 
 ### Filtering Patterns
 
@@ -132,13 +132,20 @@ mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 \
 
 ### Distance Metrics
 
+The `metric` parameter controls the initial candidate search (must be fast — Euclidean-family):
+
 | Metric | Description |
 |--------|-------------|
-| `euclidean` | Standard L2 distance (fast) |
-| `cosine` | Cosine similarity (shape-focused) |
-| `dtw` | Dynamic Time Warping (handles warping) |
+| `euclidean` | Standard L2 distance (default, fastest) |
+
+The `refine_metric` parameter re-ranks candidates using a slower, more precise metric:
+
+| Refine Metric | Description |
+|---------------|-------------|
+| `dtw` | Dynamic Time Warping (handles time warping) |
 | `softdtw` | Differentiable DTW |
 | `ncc` | Normalized cross-correlation |
+| `affine` | Affine-invariant distance |
 
 **Example with refinement:**
 ```bash

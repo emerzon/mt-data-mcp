@@ -92,7 +92,7 @@ Available timeframes: `M1`, `M5`, `M15`, `M30`, `H1`, `H4`, `D1`, `W1`, `MN1`
 ### Parameters
 Pass method-specific parameters with `--params`:
 ```bash
-mtdata-cli forecast_volatility_estimate EURUSD --method ewma --params "lambda=0.94"
+mtdata-cli forecast_volatility_estimate EURUSD --method ewma --params "lambda_=0.94"
 mtdata-cli regime_detect EURUSD --method hmm --params "n_states=3"
 ```
 

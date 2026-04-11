@@ -142,7 +142,7 @@ mtdata-cli forecast_backtest_run EURUSD --horizon 12 --methods theta \
 
 Dimred methods supported by the forecasting pipeline: `pca`, `tsne`, `selectkbest` (requires `scikit-learn`).
 
-Tip: for `forecast_backtest_run`, pass dimred params as JSON (or use `--dimred-params-params`):
+Tip: for `forecast_backtest_run`, pass dimred params as JSON:
 ```bash
 mtdata-cli forecast_backtest_run EURUSD --horizon 12 --methods mlf_lightgbm \
   --features '{"include":["close","volume"]}' \

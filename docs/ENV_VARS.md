@@ -152,6 +152,14 @@ Configure the HuggingFace model used to rerank MT5 / external news by relevance.
 
 ---
 
+## Trading
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MTDATA_ORDER_MAGIC` | `234000` | Magic number stamped on all orders placed by mtdata. Change this to distinguish mtdata orders from orders placed by other EAs or scripts on the same account. |
+
+---
+
 ## CLI & Debug
 
 | Variable | Default | Description |
@@ -211,6 +219,9 @@ A starter template with all sections. Uncomment and fill in what you need.
 
 # ── Market Depth ───────────────────────────────────────
 # MTDATA_ENABLE_MARKET_DEPTH_FETCH=0
+
+# ── Trading ────────────────────────────────────────────
+# MTDATA_ORDER_MAGIC=234000
 
 # ── CLI / Debug ────────────────────────────────────────
 # MTDATA_CLI_DEBUG=0

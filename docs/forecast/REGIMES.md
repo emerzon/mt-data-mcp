@@ -126,6 +126,21 @@ mtdata-cli regime_detect EURUSD --timeframe H1 --method ms_ar --params "k_regime
 
 ---
 
+### 4. Clustering (`clustering`)
+
+**What it does:** Groups bars into regimes using distance-based clustering (e.g. KMeans on return/volatility features). Does not assume a hidden Markov structure.
+
+**Example:**
+```bash
+mtdata-cli regime_detect EURUSD --timeframe H1 --method clustering --params "n_clusters=3"
+```
+
+**When to use:**
+- Exploratory regime discovery without a parametric model
+- When HMM convergence is unstable
+
+---
+
 ## Practical Strategies
 
 ### Strategy 1: Regime Filter
@@ -174,17 +189,17 @@ mtdata-cli forecast_barrier_optimize EURUSD --timeframe H1 --horizon 12 \
 
 ## Output Formats
 
-### Summary Output (Default)
-```bash
-mtdata-cli regime_detect EURUSD --timeframe H1 --method hmm --output summary
-```
-Shows aggregate statistics: current state, state distributions, volatility per state.
-
-### Compact Output
+### Compact Output (Default)
 ```bash
 mtdata-cli regime_detect EURUSD --timeframe H1 --method hmm --output compact
 ```
 Shows regime segments: start time, end time, duration, state ID.
+
+### Summary Output
+```bash
+mtdata-cli regime_detect EURUSD --timeframe H1 --method hmm --output summary
+```
+Shows aggregate statistics: current state, state distributions, volatility per state.
 
 ### Full Output
 ```bash
@@ -202,6 +217,7 @@ Shows per-bar state assignments and probabilities.
 | Classify regimes (3 states) | `mtdata-cli regime_detect EURUSD --method hmm --params "n_states=3"` |
 | Detect change points | `mtdata-cli regime_detect EURUSD --method bocpd --threshold 0.5` |
 | Markov-switching AR | `mtdata-cli regime_detect EURUSD --method ms_ar --params "k_regimes=2"` |
+| Clustering | `mtdata-cli regime_detect EURUSD --method clustering --params "n_clusters=3"` |
 
 ---
 

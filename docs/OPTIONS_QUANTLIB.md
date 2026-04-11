@@ -114,7 +114,7 @@ mtdata-cli forecast_quantlib_heston_calibrate TSLA \
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `symbol` | (required) | Stock ticker |
-| `--expiration` | (latest) | Specific expiration to calibrate against |
+| `--expiration` | (nearest) | Specific expiration to calibrate against |
 | `--option-type` | `call` | `call`, `put`, or `both` |
 | `--risk-free-rate` | 0.02 | Risk-free rate (decimal) |
 | `--dividend-yield` | 0.0 | Dividend yield (decimal) |

@@ -492,8 +492,8 @@ Total combinations: tp_steps × sl_steps
 mtdata-cli forecast_barrier_optimize \
   EURUSD --timeframe H1 --horizon 12 \
   --method hmm_mc --mode pct \
-  --tp_min 0.25 --tp_max 1.5 --tp_steps 7 \
-  --sl_min 0.25 --sl_max 2.5 --sl_steps 9
+  --tp-min 0.25 --tp-max 1.5 --tp-steps 7 \
+  --sl-min 0.25 --sl-max 2.5 --sl-steps 9
 ```
 
 ---
@@ -545,7 +545,7 @@ mtdata-cli forecast_barrier_optimize \
   EURUSD --timeframe H1 --horizon 12 \
   --method hmm_mc --mode pct --grid-style ratio \
   --ratio_min 1.5 --ratio_max 3.0 --ratio_steps 5 \
-  --sl_min 0.3 --sl_max 1.0 --sl_steps 5
+  --sl-min 0.3 --sl-max 1.0 --sl-steps 5
 ```
 
 ---
@@ -675,8 +675,8 @@ Notes:
 mtdata-cli forecast_barrier_optimize \
   EURUSD --timeframe H1 --horizon 12 \
   --method hmm_mc --mode pct \
-  --tp_min 0.25 --tp_max 1.5 --tp_steps 5 \
-  --sl_min 0.25 --sl_max 2.5 --sl_steps 5 \
+  --tp-min 0.25 --tp-max 1.5 --tp-steps 5 \
+  --sl-min 0.25 --sl-max 2.5 --sl-steps 5 \
   --refine true --refine_radius 0.35 --refine_steps 7
 ```
 
@@ -697,8 +697,8 @@ Filter candidates before ranking:
 mtdata-cli forecast_barrier_optimize \
   EURUSD --timeframe H1 --horizon 12 \
   --method hmm_mc --mode pct \
-  --tp_min 0.5 --tp_max 2.0 --tp_steps 5 \
-  --sl_min 0.5 --sl_max 2.0 --sl_steps 5 \
+  --tp-min 0.5 --tp-max 2.0 --tp-steps 5 \
+  --sl-min 0.5 --sl-max 2.0 --sl-steps 5 \
   --min_prob_win 0.55 --max_prob_no_hit 0.15 --max_median_time 8
 ```
 
@@ -913,8 +913,8 @@ mtdata-cli forecast_barrier_optimize \
 mtdata-cli forecast_barrier_optimize \
   AAPL --timeframe D1 --horizon 5 \
   --method jump_diffusion --mode pct \
-  --tp_min 3.0 --tp_max 10.0 --tp_steps 5 \
-  --sl_min 2.0 --sl_max 6.0 --sl_steps 5 \
+  --tp-min 3.0 --tp-max 10.0 --tp-steps 5 \
+  --sl-min 2.0 --sl-max 6.0 --sl-steps 5 \
   --params "jump_lambda=0.3" \
   --objective ev
 ```
@@ -941,8 +941,8 @@ mtdata-cli forecast_barrier_optimize \
 mtdata-cli forecast_barrier_optimize \
   EURUSD --timeframe H1 --horizon 12 \
   --method bootstrap --mode pct \
-  --tp_min 0.2 --tp_max 0.6 --tp_steps 5 \
-  --sl_min 0.2 --sl_max 0.6 --sl_steps 5 \
+  --tp-min 0.2 --tp-max 0.6 --tp-steps 5 \
+  --sl-min 0.2 --sl-max 0.6 --sl-steps 5 \
   --objective prob_resolve \
   --max_prob_no_hit 0.3
 ```
@@ -1128,7 +1128,7 @@ mtdata-cli regime_detect EURUSD --timeframe H1 --method hmm --params "n_states=3
 # Example: 2 pip spread on EURUSD
 mtdata-cli forecast_barrier_prob \
   EURUSD --timeframe M5 --horizon 12 \
-  --method hmm_mc --tp_pips 20 --sl_pips 15  # RR = 1.33 after spread
+  --method hmm_mc --tp-pips 20 --sl-pips 15  # RR = 1.33 after spread
 ```
 
 ---
