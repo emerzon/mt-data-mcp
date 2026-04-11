@@ -9,6 +9,7 @@ import pytest
 
 from mtdata.core import regime as regime_mod
 from mtdata.core.regime import _auto_calibrate_bocpd_params, regime_detect
+from mtdata.core.regime.methods.bocpd.core import _walkforward_quantile_threshold_calibration
 from mtdata.utils.mt5 import MT5ConnectionError
 
 
@@ -448,3 +449,9 @@ def test_bocpd_default_cp_confirm_bars_is_live_mode_one() -> None:
     assert int(cp_filter.get("confirm_bars", 0)) == 1
     assert int(cp_filter.get("raw_candidates_count", 0)) >= 1
     assert int(cp_filter.get("accepted_count", 0)) >= 1
+
+
+def test_bocpd_walkforward_calibration_defaults_collect_larger_null_sample() -> None:
+    sig = inspect.signature(_walkforward_quantile_threshold_calibration)
+    assert int(sig.parameters["max_windows"].default) == 10
+    assert int(sig.parameters["bootstrap_runs"].default) == 20

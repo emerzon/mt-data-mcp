@@ -78,8 +78,8 @@ def _walkforward_quantile_threshold_calibration(
     target_false_alarm_rate: float = 0.02,
     window: Optional[int] = None,
     step: Optional[int] = None,
-    max_windows: int = 6,
-    bootstrap_runs: int = 2,
+    max_windows: int = 10,
+    bootstrap_runs: int = 20,
     seed: int = 42,
 ) -> Tuple[float, Dict[str, Any]]:
     """Calibrate CP threshold from null BOCPD maxima over walk-forward windows."""
