@@ -74,7 +74,8 @@ Notes:
 - NeuralForecast-based models (`nhits`, `tft`, `patchtst`, `nbeatsx`) are not installed by `requirements.txt` or any package extra today; install them manually with `pip install neuralforecast torch` if you want to experiment with them.
 - Conda is a supported way to isolate the install before running the pip commands above.
 - Git-backed add-ons stay explicit: `pip install -e .[forecast-timesfm]` for TimesFM, `pip install -e .[patterns-ext]` for `precise-patterns`, `pip install -e .[news-ycnbc]` for the CNBC adapter, or `pip install -e .[all-git]` for everything in one go.
-- GluonTS/Lag-Llama, GluonTS `gt_*` methods, `hnswlib`, and `tsdownsample` are intentionally excluded from the supported Python 3.14 environment because current wheel/runtime support is incomplete or incompatible.
+- GluonTS/Lag-Llama and GluonTS `gt_*` methods remain excluded from the supported Python 3.14 environment because upstream runtime constraints are still incompatible.
+- Optional accelerators `hnswlib` and `tsdownsample` remain excluded from the supported default install, but an opt-in native/source-build path is documented via `requirements-optional-src.txt` and [docs/SETUP.md](docs/SETUP.md).
 
 ## Documentation
 
@@ -128,6 +129,7 @@ mtdata reads dozens of environment variables covering MT5 connection, timezone, 
 
 ```
 mtdata/
+├── requirements-optional-src.txt  # Opt-in native/source-built accelerators
 ├── src/mtdata/
 │   ├── bootstrap/      # Runtime startup, settings, tool loading
 │   ├── core/           # Tool registry, schemas, server logic, all 57 MCP tools

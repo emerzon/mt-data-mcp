@@ -284,6 +284,32 @@ MTDATA_CLI_DEBUG=1 mtdata-cli forecast_generate EURUSD --horizon 12
 
 If a Git-backed extra still fails, leave it out and use the rest of mtdata without that integration. For pretrained forecasts, `chronos2` and `chronos_bolt` remain available from the stable install path.
 
+### Optional Native Accelerator Source Build Fails
+
+**Symptom:** `pip install -r requirements-optional-src.txt` fails while building `hnswlib` or `tsdownsample` on Python 3.14.
+
+**What this path is for:**
+- `hnswlib`: optional accelerator for `search_engine=hnsw`
+- `tsdownsample`: optional accelerator for faster LTTB simplification
+
+**Requirements by package:**
+1. `hnswlib`
+   - Visual Studio Build Tools 2022 with the **Desktop development with C++** workload
+2. `tsdownsample`
+   - Visual Studio Build Tools 2022 with the **Desktop development with C++** workload
+   - Rust toolchain installed via `rustup`
+
+**Recommended recovery steps:**
+```bash
+# Install only the package you need first
+pip install hnswlib==0.8.0
+pip install tsdownsample==0.1.4.1
+```
+
+If `tsdownsample` fails and you do not want to install Rust, leave it out. mtdata already falls back to the built-in Python simplification path.
+
+If `hnswlib` fails, leave it out and use `search_engine=ckdtree` instead.
+
 ### QuantLib Import Error
 
 **Symptom:** `ModuleNotFoundError: No module named 'QuantLib'` when using `forecast_quantlib_*` commands.

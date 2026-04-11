@@ -2,5 +2,7 @@
 # The base package is intentionally leaner; use this file when you want
 # the validated research/web stack without Git-backed extras.
 # Optional Git-backed add-ons (TimesFM, precise-patterns, ycnbc) are documented in docs/SETUP.md.
+# Optional native accelerators that may need source builds on Python 3.14 live in
+# requirements-optional-src.txt.
 
 -e .[all]

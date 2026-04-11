@@ -1,0 +1,15 @@
+# Optional native accelerators for Python 3.14.
+#
+# These packages are intentionally kept out of requirements.txt because the
+# validated default stack stays on package-index releases with broad wheel
+# coverage. On Python 3.14, pip may need to build these from source.
+#
+# Windows prerequisites:
+# - hnswlib: Visual Studio Build Tools 2022 with the Desktop development with C++ workload
+# - tsdownsample: Rust toolchain via rustup in addition to the Windows C/C++ build tools
+#
+# These accelerators are opt-in and are not part of the project's supported
+# default Python 3.14 environment.
+
+hnswlib==0.8.0
+tsdownsample==0.1.4.1
