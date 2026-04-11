@@ -398,6 +398,11 @@ def run_trade_place(  # noqa: C901
                 if bool(request.auto_close_on_sl_tp_fail):
                     close_ticket = safe_int_ticket(pos_ticket)
                     if close_ticket is None:
+                        for candidate_ticket in candidate_tickets:
+                            close_ticket = safe_int_ticket(candidate_ticket)
+                            if close_ticket is not None:
+                                break
+                    if close_ticket is None:
                         auto_close_result: Dict[str, Any] = {
                             "error": "Auto-close skipped: position_ticket unavailable."
                         }

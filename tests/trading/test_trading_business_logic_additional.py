@@ -318,6 +318,42 @@ def test_run_trade_place_uses_candidate_tickets_when_position_ticket_is_missing(
     assert any("trade_get_open" in str(w) for w in result.get("warnings", []))
 
 
+def test_run_trade_place_auto_close_uses_candidate_ticket_when_primary_is_missing():
+    request = TradePlaceRequest(
+        symbol="EURUSD",
+        volume=0.1,
+        order_type="BUY",
+        stop_loss=1.08,
+        take_profit=1.12,
+        auto_close_on_sl_tp_fail=True,
+    )
+    close_calls = []
+
+    def close_positions(**kwargs):
+        close_calls.append(kwargs)
+        return {"closed_count": 1}
+
+    result = run_trade_place(
+        request,
+        normalize_order_type_input=lambda value: ("BUY", None),
+        normalize_pending_expiration=lambda value: (value, False),
+        prevalidate_trade_place_market_input=lambda symbol, volume: None,
+        place_market_order=lambda **kwargs: {
+            "retcode": 10009,
+            "sl_tp_result": {"status": "failed", "requested": {"sl": 1.08, "tp": 1.12}},
+            "position_ticket_candidates": [111, 222],
+        },
+        place_pending_order=lambda **kwargs: {"success": True, "path": "pending"},
+        close_positions=close_positions,
+        safe_int_ticket=lambda value: value,
+    )
+
+    assert close_calls and close_calls[0]["ticket"] == 111
+    assert result["auto_close_on_sl_tp_fail"] is True
+    assert result["protection_status"] == "auto_closed_after_sl_tp_fail"
+    assert result["auto_close_result"]["closed_count"] == 1
+
+
 def test_run_trade_place_without_any_ticket_guides_to_trade_get_open():
     request = TradePlaceRequest(
         symbol="EURUSD",
