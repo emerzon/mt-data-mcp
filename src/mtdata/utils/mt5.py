@@ -243,6 +243,9 @@ def _mt5_epoch_to_utc(epoch_seconds: float) -> float:
         return float(epoch_seconds)
 
 
+_DEFAULT_MT5_EPOCH_TO_UTC = _mt5_epoch_to_utc
+
+
 def _rates_to_df(rates: Any):
     """Convert MT5 rates into a DataFrame.
 
@@ -287,6 +290,13 @@ def _normalize_times_in_struct(arr: Any):
         flags = getattr(arr, 'flags', None)
         if flags is not None and not bool(getattr(flags, 'writeable', True)):
             out = arr.copy()
+        if _mt5_epoch_to_utc is _DEFAULT_MT5_EPOCH_TO_UTC:
+            tz = mt5_config.get_server_tz()
+            if tz is None:
+                offset_seconds = int(mt5_config.get_time_offset_seconds())
+                if offset_seconds:
+                    out["time"] = out["time"] - float(offset_seconds)
+                return out
         for i in range(len(out)):
             try:
                 out[i]['time'] = _mt5_epoch_to_utc(float(out[i]['time']))

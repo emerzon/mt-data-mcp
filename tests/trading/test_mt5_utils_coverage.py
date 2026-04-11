@@ -320,6 +320,24 @@ class TestNormalizeTimesInStruct:
         assert float(result[0]["time"]) == 990.0
         assert float(arr[0]["time"]) == 1000.0
 
+    @patch("mtdata.utils.mt5.mt5_config")
+    def test_with_time_field_uses_static_offset_fast_path(self, cfg):
+        dt = np.dtype([("time", float), ("close", float)])
+        arr = np.array([(1000.0, 1.1), (2000.0, 1.2)], dtype=dt)
+        cfg.get_server_tz.return_value = None
+        cfg.get_time_offset_seconds.return_value = 60
+        sentinel = MagicMock(side_effect=AssertionError("slow path should not run"))
+
+        with patch("mtdata.utils.mt5._mt5_epoch_to_utc", new=sentinel), patch(
+            "mtdata.utils.mt5._DEFAULT_MT5_EPOCH_TO_UTC",
+            new=sentinel,
+        ):
+            result = _normalize_times_in_struct(arr)
+
+        assert float(result[0]["time"]) == 940.0
+        assert float(result[1]["time"]) == 1940.0
+        sentinel.assert_not_called()
+
     def test_exception_returns_input(self):
         obj = MagicMock()
         obj.dtype = MagicMock()
