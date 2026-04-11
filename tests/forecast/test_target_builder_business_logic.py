@@ -116,6 +116,27 @@ def test_build_target_series_invalid_base_raises_value_error():
         )
 
 
+def test_build_target_series_indicator_failures_raise_clear_error(monkeypatch, caplog):
+    df = _ohlc_df(5)
+
+    monkeypatch.setattr(tb, "_parse_ti_specs_util", lambda spec: [{"ti": spec}])
+
+    def _raise(*args, **kwargs):
+        raise RuntimeError("indicator boom")
+
+    monkeypatch.setattr(tb, "_apply_ta_indicators_util", _raise)
+
+    with caplog.at_level("WARNING"):
+        with pytest.raises(ValueError, match="Failed to apply target_spec indicators: indicator boom"):
+            tb.build_target_series(
+                df,
+                base_col="close",
+                target_spec={"base": "close", "transform": "none", "indicators": "rsi(14)"},
+            )
+
+    assert "Failed to apply target_spec indicators" in caplog.text
+
+
 def test_aggregate_horizon_target_applies_forward_window_aggregations():
     y = np.array([1.0, 2.0, 3.0], dtype=float)
 

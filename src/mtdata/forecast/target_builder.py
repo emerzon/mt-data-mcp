@@ -1,4 +1,5 @@
 """Target series construction and transformation logic."""
+import logging
 from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
@@ -6,6 +7,8 @@ import pandas as pd
 
 from ..utils.indicators import _apply_ta_indicators as _apply_ta_indicators_util
 from ..utils.indicators import _parse_ti_specs as _parse_ti_specs_util
+
+logger = logging.getLogger(__name__)
 
 
 def resolve_alias_base(arrs: Dict[str, np.ndarray], name: str) -> Optional[np.ndarray]:
@@ -60,8 +63,9 @@ def build_target_series(
         try:
             specs = _parse_ti_specs_util(str(ts_inds)) if isinstance(ts_inds, str) else ts_inds
             _apply_ta_indicators_util(df, specs, default_when='pre_ti')
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Failed to apply target_spec indicators %r: %s", ts_inds, exc)
+            raise ValueError(f"Failed to apply target_spec indicators: {exc}") from exc
     
     base_name = str(ts.get('base', ts.get('column', base_col)))
     
