@@ -2,6 +2,7 @@
 
 import inspect
 import os
+import types
 from unittest.mock import MagicMock, PropertyMock, call, patch
 
 import numpy as np
@@ -130,6 +131,157 @@ class TestNfSetupAndPredict:
                 Y_df=_make_y_df(), input_size=24, batch_size=32, steps=5,
             )
         assert isinstance(result, pd.DataFrame)
+
+    @patch("mtdata.forecast.common.pd_freq_from_timeframe", return_value="1h")
+    def test_prefers_trainer_object_over_trainer_kwargs_when_construction_succeeds(self, mock_freq):
+        model_cls = _mock_nf_class()
+        captured_nf_kwargs = {}
+
+        class FakeTrainer:
+            def __init__(self, **kwargs):
+                self.kwargs = dict(kwargs)
+
+        def _nf_init(self, *, models, freq, **kwargs):
+            captured_nf_kwargs.update(kwargs)
+
+        _nf_init.__signature__ = inspect.Signature(
+            [
+                inspect.Parameter("self", inspect.Parameter.POSITIONAL_OR_KEYWORD),
+                inspect.Parameter("models", inspect.Parameter.KEYWORD_ONLY),
+                inspect.Parameter("freq", inspect.Parameter.KEYWORD_ONLY),
+                inspect.Parameter("trainer_kwargs", inspect.Parameter.KEYWORD_ONLY, default=None),
+                inspect.Parameter("kwargs", inspect.Parameter.VAR_KEYWORD),
+            ]
+        )
+
+        def _fit(self, **kwargs):
+            return None
+
+        _fit.__signature__ = inspect.Signature(
+            [
+                inspect.Parameter("self", inspect.Parameter.POSITIONAL_OR_KEYWORD),
+                inspect.Parameter("df", inspect.Parameter.KEYWORD_ONLY),
+            ]
+        )
+
+        def _predict(self, **kwargs):
+            return _make_yf(2)
+
+        _predict.__signature__ = inspect.Signature(
+            [
+                inspect.Parameter("self", inspect.Parameter.POSITIONAL_OR_KEYWORD),
+                inspect.Parameter("h", inspect.Parameter.KEYWORD_ONLY, default=None),
+            ]
+        )
+
+        FakeNF = type("FakeNF", (), {"__init__": _nf_init, "fit": _fit, "predict": _predict})
+        nf_module = types.ModuleType("neuralforecast")
+        nf_module.NeuralForecast = FakeNF
+        lightning_module = types.ModuleType("lightning")
+        lightning_pytorch_module = types.ModuleType("lightning.pytorch")
+        lightning_pytorch_module.Trainer = FakeTrainer
+        lightning_module.pytorch = lightning_pytorch_module
+        torch_module = types.ModuleType("torch")
+        torch_module.cuda = types.SimpleNamespace(is_available=lambda: False, device_count=lambda: 0)
+
+        with patch.dict(
+            "sys.modules",
+            {
+                "neuralforecast": nf_module,
+                "lightning": lightning_module,
+                "lightning.pytorch": lightning_pytorch_module,
+                "torch": torch_module,
+            },
+        ):
+            result = nf_setup_and_predict(
+                model_class=model_cls,
+                fh=2,
+                timeframe="H1",
+                Y_df=_make_y_df(),
+                input_size=24,
+                batch_size=32,
+                steps=5,
+            )
+
+        assert isinstance(result, pd.DataFrame)
+        assert "trainer" in captured_nf_kwargs
+        assert "trainer_kwargs" not in captured_nf_kwargs
+
+    @patch("mtdata.forecast.common.pd_freq_from_timeframe", return_value="1h")
+    def test_falls_back_to_trainer_kwargs_when_trainer_construction_fails(self, mock_freq):
+        model_cls = _mock_nf_class()
+        captured_nf_kwargs = {}
+
+        class FailingTrainer:
+            def __init__(self, **kwargs):
+                raise RuntimeError("trainer boom")
+
+        def _nf_init(self, *, models, freq, **kwargs):
+            captured_nf_kwargs.update(kwargs)
+
+        _nf_init.__signature__ = inspect.Signature(
+            [
+                inspect.Parameter("self", inspect.Parameter.POSITIONAL_OR_KEYWORD),
+                inspect.Parameter("models", inspect.Parameter.KEYWORD_ONLY),
+                inspect.Parameter("freq", inspect.Parameter.KEYWORD_ONLY),
+                inspect.Parameter("trainer_kwargs", inspect.Parameter.KEYWORD_ONLY, default=None),
+                inspect.Parameter("kwargs", inspect.Parameter.VAR_KEYWORD),
+            ]
+        )
+
+        def _fit(self, **kwargs):
+            return None
+
+        _fit.__signature__ = inspect.Signature(
+            [
+                inspect.Parameter("self", inspect.Parameter.POSITIONAL_OR_KEYWORD),
+                inspect.Parameter("df", inspect.Parameter.KEYWORD_ONLY),
+            ]
+        )
+
+        def _predict(self, **kwargs):
+            return _make_yf(2)
+
+        _predict.__signature__ = inspect.Signature(
+            [
+                inspect.Parameter("self", inspect.Parameter.POSITIONAL_OR_KEYWORD),
+                inspect.Parameter("h", inspect.Parameter.KEYWORD_ONLY, default=None),
+            ]
+        )
+
+        FakeNF = type("FakeNF", (), {"__init__": _nf_init, "fit": _fit, "predict": _predict})
+        nf_module = types.ModuleType("neuralforecast")
+        nf_module.NeuralForecast = FakeNF
+        lightning_module = types.ModuleType("lightning")
+        lightning_pytorch_module = types.ModuleType("lightning.pytorch")
+        lightning_pytorch_module.Trainer = FailingTrainer
+        lightning_module.pytorch = lightning_pytorch_module
+        torch_module = types.ModuleType("torch")
+        torch_module.cuda = types.SimpleNamespace(is_available=lambda: False, device_count=lambda: 0)
+
+        with patch.dict(
+            "sys.modules",
+            {
+                "neuralforecast": nf_module,
+                "lightning": lightning_module,
+                "lightning.pytorch": lightning_pytorch_module,
+                "torch": torch_module,
+            },
+        ):
+            result = nf_setup_and_predict(
+                model_class=model_cls,
+                fh=2,
+                timeframe="H1",
+                Y_df=_make_y_df(),
+                input_size=24,
+                batch_size=32,
+                steps=5,
+            )
+
+        assert isinstance(result, pd.DataFrame)
+        assert "trainer" not in captured_nf_kwargs
+        assert "trainer_kwargs" in captured_nf_kwargs
+        assert captured_nf_kwargs["trainer_kwargs"]["logger"] is False
 
 
 # ---------------------------------------------------------------------------

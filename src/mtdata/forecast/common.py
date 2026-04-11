@@ -407,7 +407,6 @@ def nf_setup_and_predict(  # noqa: C901
         _nf_init_params = _inspect.signature(_NeuralForecast.__init__).parameters  # type: ignore[attr-defined]
     except Exception:
         _nf_init_params = {}
-    trainer_kwargs = None
     if 'trainer_kwargs' in _nf_init_params:
         nf_trainer = dict(base_trainer)
         cand_opts = {
@@ -431,11 +430,10 @@ def nf_setup_and_predict(  # noqa: C901
                 trainer_obj = _Trainer(**nf_trainer)  # type: ignore[call-arg]
                 nf_kwargs['trainer'] = trainer_obj
             except Exception:
-                pass
+                nf_kwargs['trainer_kwargs'] = nf_trainer
         except Exception:
             nf_trainer.update(cand_opts)
-        trainer_kwargs = nf_trainer
-        nf_kwargs['trainer_kwargs'] = trainer_kwargs
+            nf_kwargs['trainer_kwargs'] = nf_trainer
     # Restrict visible GPUs to one when CUDA is available
     try:
         if accel == 'gpu':
