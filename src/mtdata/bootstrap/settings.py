@@ -22,6 +22,7 @@ except Exception:
     tzlocal = None  # optional
 
 _WARNED_SERVER_TZ = False
+_WARNED_STATIC_OFFSET_OVERRIDE = False
 _ENV_LOADED = False
 _LOGGER = logging.getLogger(__name__)
 
@@ -259,6 +260,13 @@ class MT5Config:
         """
         # 1. Prefer explicit offset in minutes (if set)
         if self.time_offset_minutes != 0:
+            global _WARNED_STATIC_OFFSET_OVERRIDE
+            if self.server_tz_name and not _WARNED_STATIC_OFFSET_OVERRIDE:
+                _WARNED_STATIC_OFFSET_OVERRIDE = True
+                _LOGGER.warning(
+                    "MT5_TIME_OFFSET_MINUTES overrides MT5_SERVER_TZ; static offsets do not adjust for DST. "
+                    "Prefer MT5_SERVER_TZ alone for DST-aware conversion."
+                )
             return int(self.time_offset_minutes) * 60
             
         # 2. Derive from MT5_SERVER_TZ if available

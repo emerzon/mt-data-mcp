@@ -71,10 +71,31 @@ def test_get_time_offset_seconds_prefers_explicit_minutes(monkeypatch):
     monkeypatch.setenv("MT5_TIME_OFFSET_MINUTES", "90")
     monkeypatch.setenv("MT5_SERVER_TZ", "any/tz")
     monkeypatch.setattr(cfg, "_WARNED_SERVER_TZ", False)
+    monkeypatch.setattr(cfg, "_WARNED_STATIC_OFFSET_OVERRIDE", False)
 
     conf = cfg.MT5Config()
 
     assert conf.get_time_offset_seconds() == 5400
+
+
+def test_get_time_offset_seconds_warns_when_static_offset_overrides_timezone(monkeypatch, caplog):
+    monkeypatch.setenv("MT5_TIME_OFFSET_MINUTES", "90")
+    monkeypatch.setenv("MT5_SERVER_TZ", "Europe/Athens")
+    monkeypatch.setattr(cfg, "_WARNED_SERVER_TZ", False)
+    monkeypatch.setattr(cfg, "_WARNED_STATIC_OFFSET_OVERRIDE", False)
+
+    conf = cfg.MT5Config()
+
+    with caplog.at_level("WARNING", logger=cfg.__name__):
+        assert conf.get_time_offset_seconds() == 5400
+        assert conf.get_time_offset_seconds() == 5400
+
+    warnings = [
+        record.message
+        for record in caplog.records
+        if "MT5_TIME_OFFSET_MINUTES overrides MT5_SERVER_TZ" in record.message
+    ]
+    assert len(warnings) == 1
 
 
 def test_get_time_offset_seconds_uses_server_timezone_when_offset_zero(monkeypatch):
