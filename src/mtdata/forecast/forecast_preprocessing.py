@@ -49,6 +49,11 @@ def _pd_freq_from_timeframe(tf: str) -> str:
 
 
 def _safe_log_return_series(values: pd.Series) -> pd.Series:
+    """Feature-engineering log returns with NaN masking for non-positive prices.
+
+    For target-series log returns with floor-clamping, see
+    ``target_builder._log_return_array`` instead.
+    """
     numeric = pd.to_numeric(values, errors="coerce").astype(float)
     prev = numeric.shift(1)
     with np.errstate(divide="ignore", invalid="ignore"):

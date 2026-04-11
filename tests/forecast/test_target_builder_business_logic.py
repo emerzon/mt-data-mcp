@@ -137,6 +137,129 @@ def test_build_target_series_indicator_failures_raise_clear_error(monkeypatch, c
     assert "Failed to apply target_spec indicators" in caplog.text
 
 
+
+# -- _log_return_array and path consistency tests ---------------------------
+
+
+class TestLogReturnArray:
+    """Tests for the canonical _log_return_array helper."""
+
+    def test_positive_prices_k1(self):
+        prices = np.array([100.0, 102.0, 101.0, 105.0])
+        y = tb._log_return_array(prices, k=1)
+        assert np.isnan(y[0])
+        expected = np.log(prices[1:]) - np.log(prices[:-1])
+        np.testing.assert_allclose(y[1:], expected)
+
+    def test_positive_prices_k2(self):
+        prices = np.array([100.0, 102.0, 101.0, 105.0, 108.0])
+        y = tb._log_return_array(prices, k=2)
+        assert np.isnan(y[:2]).all()
+        expected = np.log(prices[2:]) - np.log(prices[:-2])
+        np.testing.assert_allclose(y[2:], expected)
+
+    def test_nonpositive_prices_are_clamped(self):
+        """Non-positive prices are floor-clamped to produce finite targets."""
+        prices = np.array([100.0, 0.0, -5.0, 50.0])
+        y = tb._log_return_array(prices, k=1)
+        assert np.isnan(y[0])
+        assert np.all(np.isfinite(y[1:])), "clamping should prevent NaN/inf"
+
+    def test_single_element(self):
+        y = tb._log_return_array(np.array([42.0]), k=1)
+        assert y.shape == (1,)
+        assert np.isnan(y[0])
+
+    def test_empty_array(self):
+        y = tb._log_return_array(np.array([]), k=1)
+        assert y.shape == (0,)
+
+    def test_list_input_coerced(self):
+        y = tb._log_return_array([100.0, 110.0, 105.0], k=1)
+        assert y.shape == (3,)
+        assert np.isnan(y[0])
+        assert np.isfinite(y[1:]).all()
+
+    def test_floor_k_minimum(self):
+        """k < 1 is clamped to 1."""
+        prices = np.array([100.0, 105.0, 110.0])
+        y = tb._log_return_array(prices, k=0)
+        assert np.isnan(y[0])
+        assert np.isfinite(y[1:]).all()
+
+
+class TestLegacyCustomParity:
+    """Legacy (no target_spec) and custom (target_spec log_return k=1)
+    should produce numerically identical log-return targets."""
+
+    def test_legacy_and_custom_same_values(self):
+        df = _ohlc_df(10)
+        y_legacy, info_legacy = tb.build_target_series(
+            df, base_col="close", target_spec=None, quantity="return",
+        )
+        y_custom, info_custom = tb.build_target_series(
+            df, base_col="close",
+            target_spec={"base": "close", "transform": "log_return", "k": 1},
+        )
+        np.testing.assert_allclose(y_legacy, y_custom, rtol=1e-12)
+        # Metadata labels differ by design but both reconstruct identically
+        assert info_legacy["transform"] == "log_return"
+        assert info_custom["transform"] == "log_return(k=1)"
+
+
+class TestLogReturnReconstructionRoundTrip:
+    """Reconstruction via _inverse_log_return should recover original prices
+    for strictly positive price series."""
+
+    def test_round_trip_k1(self):
+        from mtdata.forecast.forecast_engine import _reconstruct_prices_from_target
+
+        prices = np.array([100.0, 102.0, 98.0, 105.0, 103.0])
+        log_rets = tb._log_return_array(prices, k=1)
+
+        reconstructed = _reconstruct_prices_from_target(
+            log_rets[1:],
+            prices[:1],
+            {"transform": "log_return"},
+        )
+        np.testing.assert_allclose(reconstructed, prices[1:], rtol=1e-10)
+
+    def test_round_trip_k2(self):
+        from mtdata.forecast.forecast_engine import _reconstruct_prices_from_target
+
+        prices = np.array([100.0, 102.0, 98.0, 105.0, 103.0, 107.0])
+        log_rets = tb._log_return_array(prices, k=2)
+
+        reconstructed = _reconstruct_prices_from_target(
+            log_rets[2:],
+            prices[:2],
+            {"transform": "log_return(k=2)"},
+        )
+        np.testing.assert_allclose(reconstructed, prices[2:], rtol=1e-10)
+
+
+class TestFeatureVsTargetDivergence:
+    """Document that _safe_log_return_series (feature engineering, NaN policy)
+    and _log_return_array (target building, clamp policy) intentionally diverge
+    on non-positive inputs."""
+
+    def test_nonpositive_feature_returns_nan(self):
+        from mtdata.forecast.forecast_preprocessing import _safe_log_return_series
+
+        s = pd.Series([100.0, 0.0, -5.0, 50.0])
+        feat = _safe_log_return_series(s)
+        # Feature path masks non-positive to NaN
+        assert np.isnan(feat.iloc[1])
+        assert np.isnan(feat.iloc[2])
+
+    def test_nonpositive_target_returns_finite(self):
+        prices = np.array([100.0, 0.0, -5.0, 50.0])
+        tgt = tb._log_return_array(prices, k=1)
+        # Target path clamps non-positive to floor → finite values
+        assert np.isnan(tgt[0])
+        assert np.all(np.isfinite(tgt[1:]))
+
+
 def test_aggregate_horizon_target_applies_forward_window_aggregations():
     y = np.array([1.0, 2.0, 3.0], dtype=float)
 

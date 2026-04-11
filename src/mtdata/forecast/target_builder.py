@@ -11,6 +11,28 @@ from ..utils.indicators import _parse_ti_specs as _parse_ti_specs_util
 logger = logging.getLogger(__name__)
 
 
+def _log_return_array(
+    prices: np.ndarray, k: int = 1, floor: float = 1e-12,
+) -> np.ndarray:
+    """Canonical log-return computation for target series.
+
+    Non-positive prices are clamped to *floor* so the target array stays finite
+    (NaN-free) for downstream model training.  The first *k* elements are set
+    to NaN because they have no valid lag reference.
+
+    For feature-engineering log returns with NaN masking, see
+    ``forecast_preprocessing._safe_log_return_series`` instead.
+    """
+    prices = np.asarray(prices, dtype=float).reshape(-1)
+    k = max(1, int(k))
+    prev = np.roll(prices, k)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        y = np.log(np.maximum(prices, floor)) - np.log(np.maximum(prev, floor))
+    y = y.astype(float, copy=False)
+    y[:k] = np.nan
+    return y
+
+
 def resolve_alias_base(arrs: Dict[str, np.ndarray], name: str) -> Optional[np.ndarray]:
     """Resolve alias base columns like 'typical', 'hl2', 'ohlc4'."""
     nm = name.strip().lower()
@@ -44,10 +66,7 @@ def build_target_series(
     
     if not target_spec or not isinstance(target_spec, dict):
         if str(quantity).strip().lower() == 'return':
-            log_prices = np.log(np.maximum(df[base_col].astype(float).to_numpy(), 1e-12))
-            y = np.full(log_prices.shape, np.nan, dtype=float)
-            if log_prices.size > 1:
-                y[1:] = np.diff(log_prices)
+            y = _log_return_array(df[base_col].astype(float).to_numpy(), k=1)
             target_info = {'mode': 'return', 'base': base_col, 'transform': 'log_return'}
         else:
             y = df[base_col].astype(float).to_numpy()
@@ -98,11 +117,7 @@ def build_target_series(
         y[:k] = np.nan
         target_info['transform'] = f'return(k={k})'
     elif transform == 'log_return':
-        prev = np.roll(y_base, k)
-        with np.errstate(divide='ignore', invalid='ignore'):
-            y = np.log(np.maximum(y_base, 1e-12)) - np.log(np.maximum(prev, 1e-12))
-        y = y.astype(float, copy=False)
-        y[:k] = np.nan
+        y = _log_return_array(y_base, k=k)
         target_info['transform'] = f'log_return(k={k})'
     elif transform == 'log':
         y = np.log(np.maximum(y_base, 1e-12))
