@@ -1,7 +1,59 @@
 """BOCPD (Bayesian Online Change Point Detection) core algorithm."""
+import hashlib
+import threading
+import time
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
+
+
+# ---------------------------------------------------------------------------
+# Walk-forward calibration cache
+# ---------------------------------------------------------------------------
+
+_CALIBRATION_CACHE_MAX_SIZE = 32
+_CALIBRATION_CACHE_TTL_SECONDS = 300  # 5 minutes
+
+_calibration_cache: Dict[str, Tuple[float, Dict[str, Any], float]] = {}  # key → (threshold, diag, timestamp)
+_calibration_cache_lock = threading.Lock()
+
+
+def _calibration_cache_key(
+    series: np.ndarray,
+    hazard_lambda: int,
+    base_threshold: float,
+    target_false_alarm_rate: float,
+    max_windows: int,
+    bootstrap_runs: int,
+) -> str:
+    """Build a stable cache key from series content hash + calibration params."""
+    h = hashlib.sha256()
+    arr = np.asarray(series, dtype=np.float64)
+    h.update(arr.tobytes())
+    h.update(f"|{hazard_lambda}|{base_threshold:.6f}|{target_false_alarm_rate:.6f}|{max_windows}|{bootstrap_runs}".encode())
+    return h.hexdigest()[:24]
+
+
+def _calibration_cache_get(key: str) -> Optional[Tuple[float, Dict[str, Any]]]:
+    """Return cached (threshold, diagnostics) if present and not expired."""
+    with _calibration_cache_lock:
+        entry = _calibration_cache.get(key)
+        if entry is None:
+            return None
+        threshold, diag, ts = entry
+        if (time.monotonic() - ts) > _CALIBRATION_CACHE_TTL_SECONDS:
+            _calibration_cache.pop(key, None)
+            return None
+        return threshold, diag
+
+
+def _calibration_cache_put(key: str, threshold: float, diag: Dict[str, Any]) -> None:
+    """Store calibration result, evicting oldest if over capacity."""
+    with _calibration_cache_lock:
+        _calibration_cache[key] = (threshold, diag, time.monotonic())
+        if len(_calibration_cache) > _CALIBRATION_CACHE_MAX_SIZE:
+            oldest_key = min(_calibration_cache, key=lambda k: _calibration_cache[k][2])
+            _calibration_cache.pop(oldest_key, None)
 
 
 def _bocpd_reliability_score(
@@ -96,6 +148,19 @@ def _walkforward_quantile_threshold_calibration(
         diagnostics["reason"] = "insufficient_points"
         return float(base_threshold), diagnostics
 
+    # Check calibration cache
+    cache_key = _calibration_cache_key(
+        x, int(hazard_lambda), float(base_threshold),
+        diagnostics["target_false_alarm_rate"],
+        int(max_windows), int(bootstrap_runs),
+    )
+    cached = _calibration_cache_get(cache_key)
+    if cached is not None:
+        cached_threshold, cached_diag = cached
+        cached_diag = dict(cached_diag)
+        cached_diag["cache_hit"] = True
+        return cached_threshold, cached_diag
+
     win = int(window) if window is not None else int(min(240, max(80, x.size // 3)))
     win = int(np.clip(win, 60, max(60, x.size)))
     stp = int(step) if step is not None else int(max(20, win // 3))
@@ -149,6 +214,8 @@ def _walkforward_quantile_threshold_calibration(
                 "threshold_delta": float(calibrated - float(base_threshold)),
             }
         )
+        diagnostics["cache_hit"] = False
+        _calibration_cache_put(cache_key, calibrated, diagnostics)
         return calibrated, diagnostics
     except Exception as ex:
         diagnostics["reason"] = "calibration_error"
@@ -234,4 +301,11 @@ __all__ = [
     "_bocpd_reliability_score",
     "_walkforward_quantile_threshold_calibration",
     "_filter_bocpd_change_points",
+    "_calibration_cache_key",
+    "_calibration_cache_get",
+    "_calibration_cache_put",
+    "_calibration_cache",
+    "_calibration_cache_lock",
+    "_CALIBRATION_CACHE_MAX_SIZE",
+    "_CALIBRATION_CACHE_TTL_SECONDS",
 ]
