@@ -185,12 +185,6 @@ def list_ta_indicators(*, detailed: bool = False) -> List[Dict[str, Any]]:
     items.sort(key=lambda x: x["name"])
     return items
 
-
-def _list_ta_indicators() -> List[Dict[str, Any]]:
-    """Dynamically list TA indicators available via pandas_ta."""
-    return list_ta_indicators(detailed=False)
-
-
 def _parse_ti_specs(spec: str) -> List[Tuple[str, List[int | float], Dict[str, int | float]]]:
     """Parse a compact indicator spec string into [(name, args, kwargs)].
 
