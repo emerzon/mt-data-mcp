@@ -876,7 +876,7 @@ class TestMcpToolSchemas:
         assert props["timeframe"]["type"] == "string"
         assert "enum" in props["timeframe"]
         assert props["method"]["type"] == "string"
-        assert props["method"]["enum"] == ["bocpd", "hmm", "ms_ar"]
+        assert props["method"]["enum"] == ["bocpd", "hmm", "ms_ar", "clustering"]
         assert props["target"]["type"] == "string"
         assert props["target"]["enum"] == ["return", "price"]
         assert props["output"]["type"] == "string"

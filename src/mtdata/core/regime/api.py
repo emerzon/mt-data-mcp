@@ -161,7 +161,7 @@ def regime_detect(  # noqa: C901
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
     limit: int = 800,
-    method: Literal['bocpd','hmm','ms_ar'] = 'bocpd',  # type: ignore
+    method: Literal['bocpd','hmm','ms_ar','clustering'] = 'bocpd',  # type: ignore
     target: Literal['return','price'] = 'return',  # type: ignore
     params: Optional[Dict[str, Any]] = None,
     denoise: Optional[DenoiseSpec] = None,
@@ -173,7 +173,8 @@ def regime_detect(  # noqa: C901
 ) -> Dict[str, Any]:
     """Detect regimes and/or change-points over the last `limit` bars.
 
-    - method: 'bocpd' (Bayesian online change-point; Gaussian), 'hmm' (Gaussian mixture/HMM-lite), or 'ms_ar' (Markov-switching AR).
+    - method: 'bocpd' (Bayesian online change-point; Gaussian), 'hmm' (Gaussian mixture/HMM-lite),
+      'ms_ar' (Markov-switching AR), or 'clustering' (rolling-feature clustering via tsfresh + KMeans).
     - params (bocpd): optional `hazard_mode` = auto_default|auto_calibrated (defaults to auto_calibrated).
       Explicit `hazard_lambda` / `cp_threshold` always take precedence over auto selection.
       Optional robustness params:
