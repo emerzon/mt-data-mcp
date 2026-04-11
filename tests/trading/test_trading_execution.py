@@ -1467,6 +1467,194 @@ def test_close_positions_refreshes_live_volume_before_partial_close_validation(m
     assert res["results"][0]["position_volume"] == 0.1
     assert mock_mt5.order_send.call_count == 0
 
+
+# ---------------------------------------------------------------------------
+# _execute_single_close unit tests
+# ---------------------------------------------------------------------------
+
+from src.mtdata.core.trading.execution import _execute_single_close
+
+
+def test_execute_single_close_success(mock_mt5):
+    """Successful close returns result with PnL metadata."""
+    mock_mt5.ORDER_FILLING_IOC = 1
+    mock_mt5.ORDER_TIME_GTC = 0
+    mock_mt5.TRADE_RETCODE_DONE = 10009
+
+    position = SimpleNamespace(
+        ticket=42, symbol="EURUSD", volume=0.1, type=0,
+        price_open=1.04000, time=1700000000, magic=100,
+    )
+    mock_mt5.order_send.return_value = SimpleNamespace(
+        retcode=10009, deal=500, order=600, volume=0.1,
+        price=1.05000, comment="close", profit=10.0,
+    )
+    mock_mt5.symbol_info_tick.return_value = SimpleNamespace(bid=1.05000, ask=1.05010)
+
+    from src.mtdata.core.trading.gateway import create_trading_gateway
+    gw = create_trading_gateway(
+        adapter=mock_mt5, include_retcode_name=True,
+        ensure_connection_impl=lambda: None,
+    )
+    fill_modes = [getattr(mock_mt5, "ORDER_FILLING_IOC", 1)]
+
+    result = _execute_single_close(
+        gw, position,
+        requested_volume=None, position_volume_before=0.1,
+        remaining_volume_estimate=None, deviation=20,
+        comment="test", fill_modes=fill_modes,
+    )
+    assert result["ticket"] == 42
+    assert result["retcode"] == 10009
+    assert result.get("error") is None
+    assert result["pnl"] == 10.0
+
+
+def test_execute_single_close_no_tick(mock_mt5):
+    """Returns error when tick data unavailable."""
+    mock_mt5.ORDER_FILLING_IOC = 1
+    mock_mt5.ORDER_TIME_GTC = 0
+
+    position = SimpleNamespace(
+        ticket=42, symbol="XYZUSD", volume=0.1, type=0,
+        price_open=1.0, time=1700000000, magic=100,
+    )
+    mock_mt5.symbol_info_tick.return_value = None
+    mock_mt5.last_error.return_value = (10006, "No tick")
+
+    from src.mtdata.core.trading.gateway import create_trading_gateway
+    gw = create_trading_gateway(
+        adapter=mock_mt5, include_retcode_name=True,
+        ensure_connection_impl=lambda: None,
+    )
+    fill_modes = [1]
+
+    result = _execute_single_close(
+        gw, position,
+        requested_volume=None, position_volume_before=0.1,
+        remaining_volume_estimate=None, deviation=20,
+        comment=None, fill_modes=fill_modes,
+    )
+    assert result["ticket"] == 42
+    assert "tick data" in result["error"].lower()
+
+
+def test_execute_single_close_unknown_side(mock_mt5):
+    """Returns error when position side cannot be determined."""
+    mock_mt5.ORDER_FILLING_IOC = 1
+    mock_mt5.ORDER_TIME_GTC = 0
+
+    # Position with no type attribute at all
+    position = SimpleNamespace(ticket=42, symbol="EURUSD", volume=0.1, magic=100)
+
+    from src.mtdata.core.trading.gateway import create_trading_gateway
+    gw = create_trading_gateway(
+        adapter=mock_mt5, include_retcode_name=True,
+        ensure_connection_impl=lambda: None,
+    )
+    fill_modes = [1]
+
+    result = _execute_single_close(
+        gw, position,
+        requested_volume=None, position_volume_before=0.1,
+        remaining_volume_estimate=None, deviation=20,
+        comment=None, fill_modes=fill_modes,
+    )
+    assert result["ticket"] == 42
+    assert "side" in result["error"].lower()
+
+
+# ---------------------------------------------------------------------------
+# Abort policy tests
+# ---------------------------------------------------------------------------
+
+def test_close_positions_aborts_after_consecutive_failures(mock_mt5):
+    """Bulk close skips remaining positions after 3 consecutive failures."""
+    mock_mt5.ORDER_FILLING_IOC = 1
+    mock_mt5.ORDER_FILLING_FOK = 0
+    mock_mt5.ORDER_FILLING_RETURN = 2
+    mock_mt5.ORDER_TIME_GTC = 0
+
+    positions = [
+        SimpleNamespace(ticket=i, symbol="EURUSD", volume=0.1, type=0, profit=1.0, magic=0)
+        for i in range(1, 6)
+    ]
+    mock_mt5.positions_get.return_value = positions
+
+    # All order_sends fail
+    mock_mt5.order_send.return_value = None
+    mock_mt5.last_error.return_value = (10004, "Connection lost")
+    mock_mt5.symbol_info_tick.return_value = SimpleNamespace(bid=1.05, ask=1.0501)
+
+    # positions_get with ticket= returns the matching position
+    def _positions_get(*args, **kwargs):
+        t = kwargs.get("ticket")
+        if t is not None:
+            return [p for p in positions if p.ticket == t] or None
+        return positions
+    mock_mt5.positions_get.side_effect = _positions_get
+
+    res = _close_positions(symbol="EURUSD")
+
+    results = res.get("results", [res])
+    aborted = [r for r in results if r.get("aborted")]
+    # Positions 4 and 5 should be aborted (after 3 consecutive failures on 1,2,3)
+    assert len(aborted) == 2
+    assert all("consecutive" in r["error"].lower() for r in aborted)
+
+
+def test_close_positions_resets_abort_counter_on_success(mock_mt5):
+    """A successful close resets the consecutive failure counter."""
+    mock_mt5.ORDER_FILLING_IOC = 1
+    mock_mt5.ORDER_FILLING_FOK = 0
+    mock_mt5.ORDER_FILLING_RETURN = 2
+    mock_mt5.ORDER_TIME_GTC = 0
+    mock_mt5.TRADE_RETCODE_DONE = 10009
+
+    positions = [
+        SimpleNamespace(ticket=i, symbol="EURUSD", volume=0.1, type=0, profit=1.0, magic=0, price_open=1.04, time=1700000000)
+        for i in range(1, 7)
+    ]
+
+    # Position 3 succeeds, all others fail
+    def _order_send(request):
+        if request.get("position") == 3:
+            return SimpleNamespace(
+                retcode=10009, deal=500, order=600, volume=0.1,
+                price=1.05, comment="ok", profit=5.0,
+            )
+        return None
+
+    mock_mt5.order_send.side_effect = _order_send
+    mock_mt5.last_error.return_value = (10004, "err")
+    mock_mt5.symbol_info_tick.return_value = SimpleNamespace(bid=1.05, ask=1.0501)
+
+    def _positions_get(*args, **kwargs):
+        t = kwargs.get("ticket")
+        if t is not None:
+            return [p for p in positions if p.ticket == t] or None
+        return positions
+    mock_mt5.positions_get.side_effect = _positions_get
+
+    res = _close_positions(symbol="EURUSD")
+
+    results = res.get("results", [res])
+    aborted = [r for r in results if r.get("aborted")]
+    # Pos 1 fail, 2 fail, 3 success (resets), 4 fail, 5 fail, 6 fail → abort on remaining
+    # After pos 6, consecutive=3 but loop ends. No positions after 6.
+    # Actually: check happens at top of loop, so
+    # Pos 1: consec=0 → execute → fail → consec=1
+    # Pos 2: consec=1 → execute → fail → consec=2
+    # Pos 3: consec=2 → execute → success → consec=0
+    # Pos 4: consec=0 → execute → fail → consec=1
+    # Pos 5: consec=1 → execute → fail → consec=2
+    # Pos 6: consec=2 → execute → fail → consec=3
+    # No aborts since threshold is never reached at loop top.
+    assert len(aborted) == 0
+    # But the counter was reset — verify pos 6 was attempted (not aborted)
+    assert results[-1]["ticket"] == 6
+    assert results[-1].get("aborted") is None
+
 def test_cancel_pending_counts_done_partial_as_success(mock_mt5):
     mock_mt5.TRADE_ACTION_REMOVE = 8
     mock_mt5.TRADE_RETCODE_DONE_PARTIAL = 10010

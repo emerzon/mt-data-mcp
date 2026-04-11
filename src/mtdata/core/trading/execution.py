@@ -553,6 +553,230 @@ def _modify_pending_order(
     return _modify_pending_order()
 
 
+_CLOSE_ABORT_CONSECUTIVE_FAILURES = 3
+
+
+def _execute_single_close(
+    mt5: Any,
+    position: Any,
+    *,
+    requested_volume: Optional[float],
+    position_volume_before: Optional[float],
+    remaining_volume_estimate: Optional[float],
+    deviation: int,
+    comment: Optional[str],
+    fill_modes: List[Any],
+) -> Dict[str, Any]:
+    """Execute a close for a single position with fill-mode retry.
+
+    Returns a result dict suitable for inclusion in the bulk-close results list.
+    Handles tick refresh on requote/price-change and comment fallback.
+    """
+    position_side = _resolve_position_side(position, mt5)
+    if position_side is None:
+        return {
+            "ticket": position.ticket,
+            "error": "Unable to determine position side for close request.",
+        }
+    is_buy_position = position_side == "BUY"
+
+    tick = mt5.symbol_info_tick(position.symbol)
+    if tick is None:
+        tick_error = validation._safe_last_error(mt5)
+        return {
+            "ticket": position.ticket,
+            "error": f"Failed to get tick data for {position.symbol}",
+            "last_error": tick_error,
+            "attempts": [
+                {
+                    "error": f"Failed to get tick data for {position.symbol}",
+                    "last_error": tick_error,
+                }
+            ],
+        }
+
+    close_type_buy = getattr(mt5, "ORDER_TYPE_BUY", 0)
+    close_type_sell = getattr(mt5, "ORDER_TYPE_SELL", 1)
+    result = None
+    request = None
+    last_send_error = None
+    close_comment_fallback = None
+    attempts: List[Dict[str, Any]] = []
+
+    for fill_mode in fill_modes:
+        close_price = (
+            float(getattr(tick, "bid", 0.0) or 0.0)
+            if is_buy_position
+            else float(getattr(tick, "ask", 0.0) or 0.0)
+        )
+        close_type = close_type_sell if is_buy_position else close_type_buy
+        close_comment = comments._normalize_close_trade_comment(comment, default="MCP close")
+
+        request = {
+            "action": mt5.TRADE_ACTION_DEAL,
+            "position": position.ticket,
+            "symbol": position.symbol,
+            "volume": requested_volume if requested_volume is not None else position.volume,
+            "type": close_type,
+            "price": close_price,
+            "deviation": deviation,
+            "comment": close_comment,
+            "type_time": mt5.ORDER_TIME_GTC,
+            "type_filling": int(fill_mode),
+        }
+        request_magic = validation._safe_int_ticket(getattr(position, "magic", None))
+        if request_magic is not None:
+            request["magic"] = request_magic
+
+        result, attempt_comment_fallback, last_send_error = comments._send_order_with_comment_fallback(
+            mt5,
+            request,
+        )
+        if isinstance(attempt_comment_fallback, dict):
+            close_comment_fallback = attempt_comment_fallback
+        if result is None:
+            attempts.append(
+                {
+                    "type_filling": int(fill_mode),
+                    "error": "Failed to send close order",
+                    "last_error": last_send_error,
+                }
+            )
+            if isinstance(attempt_comment_fallback, dict):
+                attempts[-1]["comment_fallback"] = attempt_comment_fallback
+            _stdlib_time.sleep(0.15)
+            continue
+
+        retcode_val = getattr(result, "retcode", None)
+        attempts.append(
+            {
+                "type_filling": int(fill_mode),
+                "retcode": retcode_val,
+                "retcode_name": mt5.retcode_name(retcode_val),
+                "comment": getattr(result, "comment", None),
+            }
+        )
+        if isinstance(attempt_comment_fallback, dict):
+            attempts[-1]["comment_fallback"] = attempt_comment_fallback
+        if validation._retcode_is_done(mt5, retcode_val):
+            break
+        price_changed_codes = {
+            validation._safe_int_attr(mt5, "TRADE_RETCODE_PRICE_CHANGED", 10020),
+            validation._safe_int_attr(mt5, "TRADE_RETCODE_REQUOTE", 10004),
+        }
+        if retcode_val in price_changed_codes:
+            refreshed_tick = mt5.symbol_info_tick(position.symbol)
+            if refreshed_tick is not None:
+                tick = refreshed_tick
+        _stdlib_time.sleep(0.15)
+
+    close_ok = (
+        validation._retcode_is_done(mt5, getattr(result, "retcode", None))
+        if result is not None
+        else False
+    )
+
+    if not close_ok:
+        tick_failures = [
+            a for a in attempts if "tick data" in str(a.get("error", "")).lower()
+        ]
+        error_msg = (
+            f"Failed to get tick data for {position.symbol}"
+            if attempts and len(tick_failures) == len(attempts)
+            else "Failed to send close order"
+        )
+        fail_result: Dict[str, Any] = {
+            "ticket": position.ticket,
+            "error": error_msg,
+            "attempts": attempts,
+            "last_error": last_send_error,
+        }
+        if isinstance(close_comment_fallback, dict):
+            fail_result["comment_fallback"] = close_comment_fallback
+        return fail_result
+
+    # Build success result with PnL metadata
+    open_price = getattr(position, "price_open", None)
+    try:
+        open_price = float(open_price) if open_price is not None else None
+    except Exception:
+        open_price = None
+    close_exec_price = getattr(result, "price", None)
+    try:
+        close_exec_price = float(close_exec_price) if close_exec_price is not None else None
+    except Exception:
+        close_exec_price = None
+    close_observed_at_utc = datetime.now(timezone.utc)
+    open_epoch = getattr(position, "time", None)
+    try:
+        open_epoch_utc = _mt5_epoch_to_utc(float(open_epoch)) if open_epoch is not None else None
+    except Exception:
+        open_epoch_utc = None
+    duration_seconds = None
+    if open_epoch_utc is not None:
+        try:
+            duration_seconds = int(
+                max(0.0, close_observed_at_utc.timestamp() - float(open_epoch_utc))
+            )
+        except Exception:
+            duration_seconds = None
+
+    realized_pnl = getattr(result, "profit", None)
+    try:
+        realized_pnl = float(realized_pnl) if realized_pnl is not None else None
+    except Exception:
+        realized_pnl = None
+    if realized_pnl is None:
+        history_deal = _resolve_closed_deal_from_history(
+            mt5,
+            result=result,
+            position=position,
+            closed_at_utc=close_observed_at_utc,
+        )
+        if history_deal is not None:
+            try:
+                realized_pnl = float(getattr(history_deal, "profit", None))
+            except Exception:
+                realized_pnl = None
+
+    pnl_price_delta = None
+    if open_price is not None and close_exec_price is not None:
+        try:
+            if is_buy_position:
+                pnl_price_delta = close_exec_price - open_price
+            else:
+                pnl_price_delta = open_price - close_exec_price
+        except Exception:
+            pnl_price_delta = None
+
+    res_dict: Dict[str, Any] = {
+        "ticket": position.ticket,
+        "retcode": result.retcode,
+        "retcode_name": mt5.retcode_name(result.retcode),
+        "deal": result.deal,
+        "order": result.order,
+        "volume": result.volume,
+        "price": result.price,
+        "comment": result.comment,
+        "open_price": open_price,
+        "close_price": close_exec_price,
+        "pnl": realized_pnl,
+        "pnl_price_delta": pnl_price_delta,
+        "duration_seconds": duration_seconds,
+        "requested_volume": requested_volume if requested_volume is not None else position_volume_before,
+        "position_volume_before": position_volume_before,
+        "position_volume_remaining_estimate": remaining_volume_estimate,
+        "attempts": attempts,
+    }
+    if isinstance(close_comment_fallback, dict):
+        res_dict["comment_fallback"] = close_comment_fallback
+        if close_comment_fallback.get("used"):
+            res_dict["warnings"] = [
+                "Broker rejected the comment field; close order was retried with a minimal MT5-safe comment."
+            ]
+    return res_dict
+
+
 def _close_positions(  # noqa: C901
     ticket: Optional[Union[int, str]] = None,
     symbol: Optional[str] = None,
@@ -622,7 +846,22 @@ def _close_positions(  # noqa: C901
 
             # 3. Close positions
             results = []
+            consecutive_failures = 0
             for position in to_close:
+                # Abort early if consecutive transport/broker failures suggest
+                # a connection problem rather than per-position issues.
+                if consecutive_failures >= _CLOSE_ABORT_CONSECUTIVE_FAILURES:
+                    results.append({
+                        "ticket": getattr(position, "ticket", None),
+                        "error": (
+                            f"Skipped: {consecutive_failures} consecutive close failures "
+                            "suggest a broker/transport problem."
+                        ),
+                        "aborted": True,
+                    })
+                    continue
+
+                # Re-read position to check it still exists
                 try:
                     fresh_positions = mt5.positions_get(ticket=position.ticket)
                 except Exception:
@@ -634,8 +873,11 @@ def _close_positions(  # noqa: C901
                             "error": "Position no longer open.",
                         }
                     )
+                    # Disappearing position is not a transport failure
                     continue
                 position = fresh_positions[0]
+
+                # Volume validation for partial closes
                 requested_volume = None
                 position_volume_before = None
                 remaining_volume_estimate = None
@@ -703,210 +945,23 @@ def _close_positions(  # noqa: C901
                             continue
 
                 fill_modes = validation._candidate_fill_modes(mt5)
+                close_result = _execute_single_close(
+                    mt5,
+                    position,
+                    requested_volume=requested_volume,
+                    position_volume_before=position_volume_before,
+                    remaining_volume_estimate=remaining_volume_estimate,
+                    deviation=deviation_validated,
+                    comment=comment,
+                    fill_modes=fill_modes,
+                )
+                results.append(close_result)
 
-                result = None
-                request = None
-                last_send_error = None
-                close_comment_fallback = None
-                attempts: List[Dict[str, Any]] = []
-                close_type_buy = getattr(mt5, "ORDER_TYPE_BUY", 0)
-                close_type_sell = getattr(mt5, "ORDER_TYPE_SELL", 1)
-                position_side = _resolve_position_side(position, mt5)
-                if position_side is None:
-                    results.append(
-                        {
-                            "ticket": position.ticket,
-                            "error": "Unable to determine position side for close request.",
-                        }
-                    )
-                    continue
-                is_buy_position = position_side == "BUY"
-                tick = mt5.symbol_info_tick(position.symbol)
-                if tick is None:
-                    tick_error = validation._safe_last_error(mt5)
-                    results.append(
-                        {
-                            "ticket": position.ticket,
-                            "error": f"Failed to get tick data for {position.symbol}",
-                            "last_error": tick_error,
-                            "attempts": [
-                                {
-                                    "error": f"Failed to get tick data for {position.symbol}",
-                                    "last_error": tick_error,
-                                }
-                            ],
-                        }
-                    )
-                    continue
-
-                for fill_mode in fill_modes:
-                    close_price = float(getattr(tick, "bid", 0.0) or 0.0) if is_buy_position else float(
-                        getattr(tick, "ask", 0.0) or 0.0
-                    )
-                    close_type = close_type_sell if is_buy_position else close_type_buy
-                    close_comment = comments._normalize_close_trade_comment(comment, default="MCP close")
-
-                    request = {
-                        "action": mt5.TRADE_ACTION_DEAL,
-                        "position": position.ticket,
-                        "symbol": position.symbol,
-                        "volume": requested_volume if requested_volume is not None else position.volume,
-                        "type": close_type,
-                        "price": close_price,
-                        "deviation": deviation_validated,
-                        "comment": close_comment,
-                        "type_time": mt5.ORDER_TIME_GTC,
-                        "type_filling": int(fill_mode),
-                    }
-                    request_magic = validation._safe_int_ticket(getattr(position, "magic", None))
-                    if request_magic is not None:
-                        request["magic"] = request_magic
-
-                    result, attempt_comment_fallback, last_send_error = comments._send_order_with_comment_fallback(
-                        mt5,
-                        request,
-                    )
-                    if isinstance(attempt_comment_fallback, dict):
-                        close_comment_fallback = attempt_comment_fallback
-                    if result is None:
-                        attempts.append(
-                            {
-                                "type_filling": int(fill_mode),
-                                "error": "Failed to send close order",
-                                "last_error": last_send_error,
-                            }
-                        )
-                        if isinstance(attempt_comment_fallback, dict):
-                            attempts[-1]["comment_fallback"] = attempt_comment_fallback
-                        _stdlib_time.sleep(0.15)
-                        continue
-
-                    retcode_val = getattr(result, "retcode", None)
-                    attempts.append(
-                        {
-                            "type_filling": int(fill_mode),
-                            "retcode": retcode_val,
-                            "retcode_name": mt5.retcode_name(retcode_val),
-                            "comment": getattr(result, "comment", None),
-                        }
-                    )
-                    if isinstance(attempt_comment_fallback, dict):
-                        attempts[-1]["comment_fallback"] = attempt_comment_fallback
-                    if validation._retcode_is_done(mt5, retcode_val):
-                        break
-                    price_changed_codes = {
-                        validation._safe_int_attr(mt5, "TRADE_RETCODE_PRICE_CHANGED", 10020),
-                        validation._safe_int_attr(mt5, "TRADE_RETCODE_REQUOTE", 10004),
-                    }
-                    if retcode_val in price_changed_codes:
-                        refreshed_tick = mt5.symbol_info_tick(position.symbol)
-                        if refreshed_tick is not None:
-                            tick = refreshed_tick
-                    _stdlib_time.sleep(0.15)
-
-                close_ok = validation._retcode_is_done(mt5, getattr(result, "retcode", None)) if result is not None else False
-
-                if not close_ok:
-                    last_error = last_send_error
-                    tick_failures = [
-                        a for a in attempts if "tick data" in str(a.get("error", "")).lower()
-                    ]
-                    if attempts and len(tick_failures) == len(attempts):
-                        error_msg = f"Failed to get tick data for {position.symbol}"
-                    else:
-                        error_msg = "Failed to send close order"
-                    results.append(
-                        {
-                            "ticket": position.ticket,
-                            "error": error_msg,
-                            "attempts": attempts,
-                            "last_error": last_error,
-                        }
-                    )
-                    if isinstance(close_comment_fallback, dict):
-                        results[-1]["comment_fallback"] = close_comment_fallback
-                    continue
-
-                if result is not None:
-                    open_price = getattr(position, "price_open", None)
-                    try:
-                        open_price = float(open_price) if open_price is not None else None
-                    except Exception:
-                        open_price = None
-                    close_exec_price = getattr(result, "price", close_price)
-                    try:
-                        close_exec_price = float(close_exec_price) if close_exec_price is not None else None
-                    except Exception:
-                        close_exec_price = None
-                    close_observed_at_utc = datetime.now(timezone.utc)
-                    open_epoch = getattr(position, "time", None)
-                    try:
-                        open_epoch_utc = _mt5_epoch_to_utc(float(open_epoch)) if open_epoch is not None else None
-                    except Exception:
-                        open_epoch_utc = None
-                    duration_seconds = None
-                    if open_epoch_utc is not None:
-                        try:
-                            duration_seconds = int(
-                                max(0.0, close_observed_at_utc.timestamp() - float(open_epoch_utc))
-                            )
-                        except Exception:
-                            duration_seconds = None
-
-                    realized_pnl = getattr(result, "profit", None)
-                    try:
-                        realized_pnl = float(realized_pnl) if realized_pnl is not None else None
-                    except Exception:
-                        realized_pnl = None
-                    if realized_pnl is None:
-                        history_deal = _resolve_closed_deal_from_history(
-                            mt5,
-                            result=result,
-                            position=position,
-                            closed_at_utc=close_observed_at_utc,
-                        )
-                        if history_deal is not None:
-                            try:
-                                realized_pnl = float(getattr(history_deal, "profit", None))
-                            except Exception:
-                                realized_pnl = None
-
-                    pnl_price_delta = None
-                    if open_price is not None and close_exec_price is not None:
-                        try:
-                            if is_buy_position:
-                                pnl_price_delta = close_exec_price - open_price
-                            else:
-                                pnl_price_delta = open_price - close_exec_price
-                        except Exception:
-                            pnl_price_delta = None
-
-                    res_dict = {
-                        "ticket": position.ticket,
-                        "retcode": result.retcode,
-                        "retcode_name": mt5.retcode_name(result.retcode),
-                        "deal": result.deal,
-                        "order": result.order,
-                        "volume": result.volume,
-                        "price": result.price,
-                        "comment": result.comment,
-                        "open_price": open_price,
-                        "close_price": close_exec_price,
-                        "pnl": realized_pnl,
-                        "pnl_price_delta": pnl_price_delta,
-                        "duration_seconds": duration_seconds,
-                        "requested_volume": requested_volume if requested_volume is not None else position_volume_before,
-                        "position_volume_before": position_volume_before,
-                        "position_volume_remaining_estimate": remaining_volume_estimate,
-                        "attempts": attempts,
-                    }
-                    if isinstance(close_comment_fallback, dict):
-                        res_dict["comment_fallback"] = close_comment_fallback
-                        if close_comment_fallback.get("used"):
-                            res_dict["warnings"] = [
-                                "Broker rejected the comment field; close order was retried with a minimal MT5-safe comment."
-                            ]
-                    results.append(res_dict)
+                # Track consecutive failures for abort policy
+                if close_result.get("error"):
+                    consecutive_failures += 1
+                else:
+                    consecutive_failures = 0
 
             # If only one position was targeted by ticket, return single result
             if ticket is not None and len(results) == 1:
