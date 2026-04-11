@@ -409,7 +409,18 @@ def test_arima_conf_int_errors_are_reported_in_metadata(monkeypatch):
     out = ea.ARIMAMethod().forecast(pd.Series([1.0, 2.0, 3.0]), horizon=1, seasonality=0, params={})
     assert np.allclose(out.forecast, [3.0])
     assert out.ci_values is None
-    assert out.metadata == {"ci_warning": "Failed to compute confidence intervals: no ci"}
+    assert out.metadata is not None
+    assert out.metadata["ci_warning"] == "Failed to compute confidence intervals: no ci"
+    assert out.metadata["diagnostics"]["ci"] == {
+        "provider": "arima",
+        "requested": True,
+        "available": False,
+        "status": "failed",
+        "alpha": 0.05,
+        "warning": "Failed to compute confidence intervals: no ci",
+        "error": "no ci",
+        "error_type": "RuntimeError",
+    }
 
 
 def test_legacy_wrappers_route_to_registry(monkeypatch):

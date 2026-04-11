@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
+from ..common import build_ci_diagnostics as _build_ci_diagnostics
 from ..interface import ForecastMethod, ForecastResult
 from ..registry import ForecastRegistry
 
@@ -447,14 +448,37 @@ class ARIMAMethod(ETSArimaMethod):
         
         ci = None
         metadata: Optional[Dict[str, Any]] = None
+        _alpha = float(ci_alpha) if ci_alpha is not None else 0.05
         try:
-            _alpha = float(ci_alpha) if ci_alpha is not None else 0.05
             ci_df = pred.conf_int(alpha=_alpha)
             ci_arr = np.asarray(ci_df)
             if ci_arr.ndim == 2 and ci_arr.shape[1] >= 2:
                 ci = (ci_arr[:, 0], ci_arr[:, 1])
+            else:
+                warning_text = "Confidence interval output did not include two numeric bounds."
+                metadata = _build_ci_diagnostics(
+                    provider=self.name,
+                    requested=True,
+                    available=False,
+                    status="unavailable",
+                    alpha=_alpha,
+                    warning=warning_text,
+                    interval_columns=list(getattr(ci_df, "columns", [])),
+                )
+                metadata["ci_warning"] = warning_text
         except Exception as ex:
-            metadata = {"ci_warning": f"Failed to compute confidence intervals: {ex}"}
+            warning_text = f"Failed to compute confidence intervals: {ex}"
+            metadata = _build_ci_diagnostics(
+                provider=self.name,
+                requested=True,
+                available=False,
+                status="failed",
+                alpha=_alpha,
+                warning=warning_text,
+                error=str(ex),
+                error_type=type(ex).__name__,
+            )
+            metadata["ci_warning"] = warning_text
             
         params_used = {"order": tuple(order), "seasonal_order": tuple(seasonal_order), "trend": str(trend)}
         if exog_u is not None:
