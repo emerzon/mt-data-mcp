@@ -1,4 +1,5 @@
 import logging
+from functools import lru_cache
 from importlib import import_module
 from typing import Any, Dict, List, Literal, Optional
 
@@ -72,6 +73,7 @@ def _get_forecast_methods_data():
     return _forecast_module().get_forecast_methods_data()
 
 
+@lru_cache(maxsize=1)
 def _get_registered_forecast_capabilities():
     return _forecast_capabilities_module().get_registered_capabilities()
 

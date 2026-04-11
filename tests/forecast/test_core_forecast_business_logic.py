@@ -520,6 +520,25 @@ def test_forecast_list_methods_does_not_require_mt5_connection(monkeypatch):
     assert out["methods"][0]["method"] == "theta"
 
 
+def test_registered_forecast_capabilities_are_cached(monkeypatch):
+    calls = {"count": 0}
+
+    class _FakeCapabilitiesModule:
+        @staticmethod
+        def get_registered_capabilities():
+            calls["count"] += 1
+            return [{"method": "theta"}]
+
+    cf._get_registered_forecast_capabilities.cache_clear()
+    monkeypatch.setattr(cf, "_forecast_capabilities_module", lambda: _FakeCapabilitiesModule())
+
+    assert cf._get_registered_forecast_capabilities() == [{"method": "theta"}]
+    assert cf._get_registered_forecast_capabilities() == [{"method": "theta"}]
+    assert calls["count"] == 1
+
+    cf._get_registered_forecast_capabilities.cache_clear()
+
+
 def test_forecast_list_library_models_logs_finish_event(caplog):
     raw_list_models = _unwrap(cf.forecast_list_library_models)
 
