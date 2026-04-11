@@ -1192,6 +1192,43 @@ def test_forecast_engine_target_spec_column_alias_is_applied(monkeypatch):
     assert captured["last_value"] == float(df["open"].iloc[-1])
 
 
+def test_forecast_engine_reconstructs_custom_simple_return_targets(monkeypatch):
+    class CaptureForecaster:
+        def forecast(self, series, horizon, seasonality, params, exog_future=None, **kwargs):
+            return ForecastResult(
+                forecast=np.array([0.10, 0.10], dtype=float),
+                params_used={},
+                metadata={},
+            )
+
+    class FakeRegistry:
+        @staticmethod
+        def get(name):
+            return CaptureForecaster()
+
+    monkeypatch.setattr(fe, "TIMEFRAME_MAP", {"H1": 1})
+    monkeypatch.setattr(fe, "TIMEFRAME_SECONDS", {"H1": 3600})
+    monkeypatch.setattr(fe, "_get_available_methods", lambda: ("naive",))
+    monkeypatch.setattr(fe, "_parse_kv_or_json", lambda v: dict(v or {}))
+    monkeypatch.setattr(fe, "ForecastRegistry", FakeRegistry)
+    monkeypatch.setattr(fe, "get_symbol_info_cached", lambda symbol: None)
+
+    df = _df(20)
+    out = fe.forecast_engine(
+        symbol="EURUSD",
+        timeframe="H1",
+        method="naive",
+        horizon=2,
+        quantity="return",
+        prefetched_df=df,
+        target_spec={"base": "close", "transform": "return", "k": 1},
+    )
+
+    assert out["success"] is True
+    assert out["forecast_return"] == [0.1, 0.1]
+    np.testing.assert_allclose(out["forecast_price"], np.array([115.5, 127.05]))
+
+
 def test_forecast_engine_ensemble_paths(monkeypatch):
     monkeypatch.setattr(fe, "TIMEFRAME_MAP", {"H1": 1})
     monkeypatch.setattr(fe, "TIMEFRAME_SECONDS", {"H1": 3600})

@@ -86,6 +86,16 @@ def test_build_target_series_custom_with_indicators_and_transforms(monkeypatch):
     assert np.isfinite(y_pct[2:]).all()
     assert info_pct["transform"] == "pct_change(k=2)"
 
+    y_pct_scaled, info_pct_scaled = tb.build_target_series(
+        df,
+        base_col="close",
+        target_spec={"base": "close", "transform": "pct", "k": 1},
+    )
+    assert y_pct_scaled.shape[0] == len(df)
+    assert np.isnan(y_pct_scaled[0])
+    assert np.isfinite(y_pct_scaled[1:]).all()
+    assert info_pct_scaled["transform"] == "pct(k=1)"
+
     y_alias, info_alias = tb.build_target_series(
         df,
         base_col="close",

@@ -349,7 +349,7 @@ def _prepare_target_series_context(
     base_col: str,
     features: Optional[Dict[str, Any]],
     target_spec: Optional[Dict[str, Any]],
-) -> Tuple[pd.Series, str, str]:
+) -> Tuple[pd.Series, str, str, Dict[str, Any]]:
     """Prepare the effective base column and target series consumed by forecasters."""
     base_col_initial = base_col
     base_col_prepared = _forecast_preprocessing._prepare_base_data(df, quantity_l, base_col)
@@ -362,6 +362,7 @@ def _prepare_target_series_context(
     )
 
     target_series = df[base_col_prepared].dropna()
+    target_info: Dict[str, Any] = {}
     if target_spec:
         y_arr, target_info = build_target_series(df, base_col_initial, target_spec, quantity=quantity_l)
         target_series = pd.Series(y_arr, index=df.index)
@@ -370,11 +371,34 @@ def _prepare_target_series_context(
         base_col_final = base_col_prepared
         if quantity_l == 'return':
             target_series = df[base_col_final].dropna()
+            target_info = {'mode': 'return', 'base': base_col_initial, 'transform': 'log_return'}
         else:
             target_series = df[base_col_final]
+            target_info = {'mode': quantity_l, 'base': base_col_final, 'transform': 'none'}
 
     target_series = target_series.dropna()
-    return target_series, base_col_initial, base_col_final
+    return target_series, base_col_initial, base_col_final, target_info
+
+
+def _reconstruct_prices_from_target(
+    forecast_values: np.ndarray,
+    last_close: float,
+    target_info: Optional[Dict[str, Any]],
+) -> Optional[np.ndarray]:
+    if not np.isfinite(last_close):
+        return None
+
+    forecast_arr = np.asarray(forecast_values, dtype=float)
+    transform = str((target_info or {}).get("transform", "log_return")).strip().lower()
+    if transform.startswith("return("):
+        return last_close * np.cumprod(1.0 + forecast_arr)
+    if transform.startswith("pct_change("):
+        return last_close * np.cumprod(1.0 + forecast_arr)
+    if transform.startswith("pct("):
+        return last_close * np.cumprod(1.0 + (forecast_arr / 100.0))
+    if transform.startswith("diff("):
+        return last_close + np.cumsum(forecast_arr)
+    return last_close * np.exp(np.cumsum(forecast_arr))
 
 
 def _prepare_feature_context(
@@ -747,7 +771,7 @@ def forecast_engine(  # noqa: C901
 
         # Prepare target series, honoring target_spec if provided
         try:
-            target_series, base_col_initial, base_col = _prepare_target_series_context(
+            target_series, base_col_initial, base_col, target_info = _prepare_target_series_context(
                 df=df,
                 quantity_l=quantity_l,
                 base_col=base_col,
@@ -863,8 +887,11 @@ def forecast_engine(  # noqa: C901
         reconstructed_prices = None
         if quantity_l == 'return':
             forecast_return_vals = np.asarray(forecast_values, dtype=float)
-            if np.isfinite(last_close):
-                reconstructed_prices = last_close * np.exp(np.cumsum(forecast_return_vals))
+            reconstructed_prices = _reconstruct_prices_from_target(
+                forecast_return_vals,
+                last_close,
+                target_info,
+            )
 
         # Format and return output
         denoise_used = dn_spec_used is not None

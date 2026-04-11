@@ -117,7 +117,7 @@ def build_target_series(
             y = 100.0 * y
         y = y.astype(float, copy=False)
         y[:k] = np.nan
-        target_info['transform'] = f'pct_change(k={k})'
+        target_info['transform'] = f'{"pct" if transform == "pct" else "pct_change"}(k={k})'
     else:
         y = y_base
         target_info['transform'] = 'none'
