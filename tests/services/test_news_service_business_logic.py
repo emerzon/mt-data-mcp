@@ -95,3 +95,29 @@ def test_get_mt5_news_does_not_double_wrap_missing_file_error() -> None:
     result = svc.get_mt5_news(news_db_path="C:/definitely-missing/news.dat")
 
     assert result["error"].count("News database not found:") == 1
+
+
+def test_parse_records_scans_only_candidate_prefix_offsets(monkeypatch) -> None:
+    parser = object.__new__(svc.MT5NewsParser)
+    offsets: list[int] = []
+
+    def _fake_parse_inline_record(data: bytes, offset: int):
+        offsets.append(offset)
+        return None
+
+    monkeypatch.setattr(parser, "_parse_inline_record", _fake_parse_inline_record)
+
+    data = (
+        b"A" * svc.MT5NewsParser.HEADER_SIZE
+        + b"noise"
+        + (b"\x00" * 12)
+        + b"middle"
+        + (b"\x00" * 12)
+        + b"tail" * 32
+    )
+
+    parser._parse_records(data)
+
+    first = svc.MT5NewsParser.HEADER_SIZE + len(b"noise")
+    second = first + 12 + len(b"middle")
+    assert offsets == [first, second]

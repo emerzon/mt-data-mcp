@@ -114,18 +114,28 @@ class MT5NewsParser:
         """Parse all news records from the binary data."""
         records: List[MT5NewsRecord] = []
         seen_keys = set()
+        prefix = b"\x00" * 12
+        max_offset = len(data) - 80
+        offset = self.HEADER_SIZE
 
-        for offset in range(self.HEADER_SIZE, len(data) - 80):
+        while offset < max_offset:
+            offset = data.find(prefix, offset, max_offset)
+            if offset < 0:
+                break
+
             record = self._parse_inline_record(data, offset)
             if not record:
+                offset += len(prefix)
                 continue
 
             record_key = (record.timestamp, record.subject, record.source)
             if record_key in seen_keys:
+                offset += len(prefix)
                 continue
 
             seen_keys.add(record_key)
             records.append(record)
+            offset += len(prefix)
 
         return records
 
