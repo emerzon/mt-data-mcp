@@ -66,9 +66,11 @@ class TestLogReturnsFromPrices:
 
 
 class TestExtractForecastValues:
-    def test_y_column(self):
+    def test_y_column_requires_explicit_actual_fallback(self):
         df = pd.DataFrame({"y": [1.0, 2.0, 3.0]})
-        result = _extract_forecast_values(df, 3)
+        with pytest.raises(RuntimeError, match="refusing to use actuals column 'y'"):
+            _extract_forecast_values(df, 3)
+        result = _extract_forecast_values(df, 3, allow_actual_fallback=True)
         np.testing.assert_array_equal(result, [1.0, 2.0, 3.0])
 
     def test_non_y_column(self):
@@ -77,7 +79,7 @@ class TestExtractForecastValues:
         np.testing.assert_array_equal(result, [10.0, 20.0])
 
     def test_pads_if_short(self):
-        df = pd.DataFrame({"y": [1.0, 2.0]})
+        df = pd.DataFrame({"pred": [1.0, 2.0]})
         result = _extract_forecast_values(df, 5)
         assert len(result) == 5
         assert result[-1] == 2.0  # edge-padded

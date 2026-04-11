@@ -124,7 +124,7 @@ def _extract_forecast_values(
     fh: int,
     method_name: str = "forecast",
     *,
-    allow_actual_fallback: bool = True,
+    allow_actual_fallback: bool = False,
 ) -> "np.ndarray":
     """Extract forecast values from prediction DataFrame.
     
@@ -181,7 +181,17 @@ def _extract_forecast_values(
         pass
     
     if pred_col is None:
-        raise RuntimeError(f"{method_name} prediction columns not found")
+        columns = []
+        try:
+            columns = list(Yf.columns)
+        except Exception:
+            columns = []
+        if not allow_actual_fallback and "y" in columns:
+            raise RuntimeError(
+                f"{method_name} prediction columns not found; refusing to use actuals column 'y'. "
+                f"Available columns: {columns}"
+            )
+        raise RuntimeError(f"{method_name} prediction columns not found. Available columns: {columns}")
     
     vals = np.asarray(Yf[pred_col].to_numpy(), dtype=float)
     return edge_pad_to_length(vals, int(fh))

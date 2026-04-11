@@ -11,7 +11,7 @@ from mtdata.forecast import common as fc
 
 
 def test_extract_forecast_values_handles_standard_alt_and_padding():
-    yf_standard = pd.DataFrame({"y": [1.0, 2.0, 3.0]})
+    yf_standard = pd.DataFrame({"pred": [1.0, 2.0, 3.0]})
     out = fc._extract_forecast_values(yf_standard, fh=2, method_name="m")
     assert out.tolist() == [1.0, 2.0]
 
@@ -22,6 +22,9 @@ def test_extract_forecast_values_handles_standard_alt_and_padding():
     yf_with_actuals = pd.DataFrame({"unique_id": ["ts"], "ds": [0], "y": [1.0], "pred": [9.0]})
     out = fc._extract_forecast_values(yf_with_actuals, fh=2, method_name="m")
     assert out.tolist() == [9.0, 9.0]
+
+    with pytest.raises(RuntimeError, match="refusing to use actuals column 'y'"):
+        fc._extract_forecast_values(pd.DataFrame({"y": [1.0, 2.0]}), fh=2, method_name="m")
 
     yf_with_auxiliary = pd.DataFrame(
         {

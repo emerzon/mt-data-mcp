@@ -167,9 +167,11 @@ class TestLogReturnsFromPrices:
 # 3. _extract_forecast_values
 # ===================================================================
 class TestExtractForecastValues:
-    def test_y_column(self):
+    def test_y_column_requires_explicit_actual_fallback(self):
         df = pd.DataFrame({"unique_id": ["ts"] * 5, "ds": range(5), "y": [1.0, 2.0, 3.0, 4.0, 5.0]})
-        result = _extract_forecast_values(df, fh=3)
+        with pytest.raises(RuntimeError, match="refusing to use actuals column 'y'"):
+            _extract_forecast_values(df, fh=3)
+        result = _extract_forecast_values(df, fh=3, allow_actual_fallback=True)
         assert result.shape == (3,)
         np.testing.assert_array_equal(result, [1.0, 2.0, 3.0])
 
@@ -179,13 +181,13 @@ class TestExtractForecastValues:
         np.testing.assert_array_equal(result, [10.0, 20.0, 30.0, 40.0])
 
     def test_pad_when_fewer_values(self):
-        df = pd.DataFrame({"unique_id": ["ts"] * 2, "ds": range(2), "y": [1.0, 2.0]})
+        df = pd.DataFrame({"unique_id": ["ts"] * 2, "ds": range(2), "pred": [1.0, 2.0]})
         result = _extract_forecast_values(df, fh=5)
         assert result.shape == (5,)
         np.testing.assert_array_equal(result[:2], [1.0, 2.0])
 
     def test_trim_when_more_values(self):
-        df = pd.DataFrame({"y": range(10)})
+        df = pd.DataFrame({"pred": range(10)})
         result = _extract_forecast_values(df, fh=3)
         assert result.shape == (3,)
 

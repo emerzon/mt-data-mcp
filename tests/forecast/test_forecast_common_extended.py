@@ -247,9 +247,11 @@ class TestFetchHistory:
 
 
 class TestExtractForecastValues:
-    def test_y_column(self):
+    def test_y_column_requires_explicit_actual_fallback(self):
         df = pd.DataFrame({"unique_id": ["ts"] * 5, "ds": range(5), "y": [1.0, 2, 3, 4, 5]})
-        vals = _extract_forecast_values(df, 5)
+        with pytest.raises(RuntimeError, match="refusing to use actuals column 'y'"):
+            _extract_forecast_values(df, 5)
+        vals = _extract_forecast_values(df, 5, allow_actual_fallback=True)
         assert len(vals) == 5
 
     def test_non_y_column(self):
@@ -258,7 +260,7 @@ class TestExtractForecastValues:
         np.testing.assert_array_equal(vals, [10, 20, 30])
 
     def test_pads_short(self):
-        df = pd.DataFrame({"unique_id": ["ts"] * 2, "ds": range(2), "y": [1.0, 2.0]})
+        df = pd.DataFrame({"unique_id": ["ts"] * 2, "ds": range(2), "prediction": [1.0, 2.0]})
         vals = _extract_forecast_values(df, 5)
         assert len(vals) == 5
 
