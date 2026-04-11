@@ -262,6 +262,32 @@ def _candidate_hit_arrays(
     return first_tp, first_sl, wins, losses, ties
 
 
+def _unresolved_terminal_pnl(
+    eval_paths: np.ndarray,
+    unresolved_mask: np.ndarray,
+    *,
+    context: _BarrierEvaluationContext,
+) -> float:
+    """Mean PnL (in barrier units) for paths that never hit TP or SL."""
+    if not np.any(unresolved_mask):
+        return 0.0
+    terminal_prices = eval_paths[unresolved_mask, -1]
+    if context.mode_val == "pct":
+        if context.last_price <= 0:
+            return 0.0
+        pnl_pct = (terminal_prices - context.last_price) / context.last_price * 100.0
+        if not context.dir_long:
+            pnl_pct = -pnl_pct
+    elif context.pip_size and context.pip_size > 0:
+        pnl_pips = (terminal_prices - context.last_price) / context.pip_size
+        if not context.dir_long:
+            pnl_pips = -pnl_pips
+        pnl_pct = pnl_pips
+    else:
+        return 0.0
+    return float(np.mean(pnl_pct))
+
+
 def _barrier_return_fractions(
     net_reward: float,
     net_risk: float,
@@ -335,9 +361,16 @@ def _evaluate_barrier_candidate(
     net_risk = risk + context.ev_deduct_cost if context.has_trading_costs else risk
     net_rr = net_reward / net_risk if net_risk > 0 else 0.0
 
-    ev_gross = effective_prob_win * reward - effective_prob_loss * risk
+    # Terminal PnL contribution from paths that never hit TP or SL.
+    unresolved_mask = ~(wins | losses | ties)
+    unresolved_mean_pnl = _unresolved_terminal_pnl(
+        eval_paths, unresolved_mask, context=context,
+    )
+    ev_unresolved = prob_neutral * unresolved_mean_pnl
+
+    ev_gross = effective_prob_win * reward - effective_prob_loss * risk + ev_unresolved
     ev_val = (
-        effective_prob_win * net_reward - effective_prob_loss * net_risk
+        effective_prob_win * net_reward - effective_prob_loss * net_risk + ev_unresolved
         if context.has_trading_costs
         else ev_gross
     )
@@ -435,6 +468,7 @@ def _evaluate_barrier_candidate(
         "ev": ev_val,
         "ev_gross": ev_gross if context.has_trading_costs else None,
         "ev_net": ev_val if context.has_trading_costs else None,
+        "ev_unresolved": ev_unresolved,
         "ev_cond": ev_cond,
         "edge": edge,
         "kelly": kelly_val,
