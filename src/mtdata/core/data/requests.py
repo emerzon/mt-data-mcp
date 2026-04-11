@@ -296,7 +296,6 @@ class _WaitAccountEventBase(BaseModel):
             raise ValueError("side must be 'buy' or 'sell'.")
         return text
 
-
 class CandleCloseEventSpec(BaseModel):
     type: Literal["candle_close"] = "candle_close"
     timeframe: Optional[TimeframeLiteral] = None
@@ -676,3 +675,11 @@ class WaitEventRequest(BaseModel):
         if text not in {"buy", "sell"}:
             raise ValueError("side must be 'buy' or 'sell'.")
         return text
+
+    @model_validator(mode="after")
+    def _validate_explicit_empty_watchers(self) -> "WaitEventRequest":
+        if self.watch_for == [] and not self.end_on and self.timeframe is None:
+            raise ValueError(
+                "watch_for cannot be an explicit empty list unless end_on or timeframe is provided."
+            )
+        return self

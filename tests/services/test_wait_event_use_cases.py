@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
+from pydantic import ValidationError
 
 from mtdata.core import data as core_data
 from mtdata.core.data import wait_events as wait_events_mod
@@ -493,6 +494,14 @@ def test_run_wait_event_matches_short_lived_order_from_history() -> None:
     assert result["status"] == "matched"
     assert result["matched_event"]["type"] == "order_created"
     assert result["matched_event"]["observed"]["ticket"] == 7001
+
+
+def test_wait_event_request_rejects_explicit_empty_watchers_without_boundary() -> None:
+    with pytest.raises(
+        ValidationError,
+        match="watch_for cannot be an explicit empty list unless end_on or timeframe is provided",
+    ):
+        WaitEventRequest(watch_for=[])
 
 
 def test_run_wait_event_uses_all_default_watchers_when_omitted() -> None:
