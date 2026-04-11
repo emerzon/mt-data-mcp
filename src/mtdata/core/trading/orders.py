@@ -120,6 +120,7 @@ def _attach_post_fill_protection(
     symbol_info: Any,
     comment: Optional[str],
     request_comment: str,
+    magic: Optional[int] = None,
 ) -> _ProtectionOutcome:
     """Resolve the filled position and attach SL/TP protection.
 
@@ -183,6 +184,7 @@ def _attach_post_fill_protection(
                 symbol=symbol,
                 side=side,
                 volume=volume,
+                magic=magic,
             )
             if isinstance(resolve_info, dict):
                 last_resolve_info = dict(resolve_info)
@@ -252,6 +254,7 @@ def _attach_post_fill_protection(
                             symbol=symbol,
                             side=side,
                             volume=volume,
+                            magic=magic,
                         )
                         positions_after = [fallback_pos] if fallback_pos is not None else []
                     if positions_after and len(positions_after) > 0:
@@ -760,6 +763,7 @@ def _place_market_order(  # noqa: C901
                 symbol_info=symbol_info,
                 comment=comment,
                 request_comment=request_comment,
+                magic=validation._safe_int_ticket(request.get("magic")),
             )
 
             warnings_out: List[str] = list(protection.get("warnings") or [])

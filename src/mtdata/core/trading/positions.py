@@ -157,6 +157,7 @@ def _select_position_candidate(
     symbol: Optional[str],
     side: Optional[str],
     volume: Optional[float],
+    magic: Optional[int] = None,
     mt5: Any,
 ) -> Optional[Any]:
     if not rows:
@@ -170,6 +171,13 @@ def _select_position_candidate(
     side_filtered = [pos for pos in candidates if _position_side_matches(pos, side, mt5)]
     if side_filtered:
         candidates = side_filtered
+    if magic is not None:
+        magic_filtered = [
+            pos for pos in candidates
+            if validation._safe_int_ticket(getattr(pos, "magic", None)) == magic
+        ]
+        if magic_filtered:
+            candidates = magic_filtered
     if volume is not None:
         volume_filtered: List[Any] = []
         for pos in candidates:
@@ -208,6 +216,7 @@ def _resolve_open_position(
     symbol: Optional[str] = None,
     side: Optional[str] = None,
     volume: Optional[float] = None,
+    magic: Optional[int] = None,
 ) -> Tuple[Optional[Any], Optional[int], Dict[str, Any]]:
     """Resolve an open position robustly across ticket/identifier mismatches."""
     candidate_ids: List[int] = []
@@ -227,11 +236,15 @@ def _resolve_open_position(
             symbol=symbol,
             side=side,
             volume=volume,
+            magic=magic,
             mt5=mt5,
         )
         if picked is not None:
             resolved = _resolved_position_ticket(picked, fallback=candidate)
-            return picked, resolved, {"method": "positions_get(ticket)", "candidate": candidate}
+            diag: Dict[str, Any] = {"method": "positions_get(ticket)", "candidate": candidate}
+            if magic is not None:
+                diag["magic_filter"] = magic
+            return picked, resolved, diag
 
     try:
         rows_fallback = mt5.positions_get(symbol=symbol) if symbol else mt5.positions_get()
@@ -262,12 +275,18 @@ def _resolve_open_position(
         symbol=symbol,
         side=side,
         volume=volume,
+        magic=magic,
         mt5=mt5,
     )
     if picked is None:
         return None, None, {"method": "positions_get(fallback_heuristic)", "candidate_ids": candidate_ids, "matched": False}
     resolved = _resolved_position_ticket(picked)
-    return picked, resolved, {"method": "positions_get(fallback_heuristic)"}
+    diag = {"method": "positions_get(fallback_heuristic)"}
+    if magic is not None:
+        diag["magic_filter"] = magic
+    if len(rows_list) > 1:
+        diag["candidates_count"] = len(rows_list)
+    return picked, resolved, diag
 
 
 def _resolve_pending_order(
