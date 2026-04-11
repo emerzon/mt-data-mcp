@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(C:\\Users\\Admin/**)",
+      "Bash(dir *)"
+    ]
+  },
+  "$version": 3
+}

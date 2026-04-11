@@ -106,6 +106,7 @@ __all__ = [
     "_state_runs",
     "_smooth_short_state_runs",
     "_normalize_state_probability_matrix",
+    "_canonicalize_regime_labels",
     "_is_probably_crypto_symbol",
     "_CRYPTO_SYMBOL_HINTS",
     "_consolidate_payload",

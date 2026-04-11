@@ -156,9 +156,87 @@ def _normalize_state_probability_matrix(
     return out
 
 
+def _canonicalize_regime_labels(
+    state: np.ndarray,
+    probs: Optional[np.ndarray],
+    series: np.ndarray,
+) -> Tuple[np.ndarray, Optional[np.ndarray], Dict[str, Any]]:
+    """Reorder regime state labels by ascending mean of *series* per state.
+
+    After HMM / MS-AR fitting and smoothing, state IDs are positional
+    (depend on random init, fitting order, or smoothing elimination).
+    This function produces a canonical numbering where state 0 always
+    corresponds to the lowest mean value in *series* (typically the
+    most bearish regime when series = returns).
+
+    Also renumbers to eliminate gaps left by smoothing (e.g. {0,1,3} → {0,1,2}).
+
+    Returns (state, probs, meta) where *meta* contains the old→new mapping.
+    """
+    state_arr = np.asarray(state, dtype=int)
+    unique_states = np.unique(state_arr)
+
+    if unique_states.size <= 1:
+        # Single state — just ensure it's 0
+        if unique_states.size == 1 and unique_states[0] != 0:
+            state_arr = np.zeros_like(state_arr)
+            if probs is not None:
+                probs = np.asarray(probs)
+        return state_arr, probs, {"relabeled": False, "mapping": {}}
+
+    series_arr = np.asarray(series, dtype=float)
+    n = min(len(state_arr), len(series_arr))
+    state_arr_trimmed = state_arr[:n]
+    series_trimmed = series_arr[:n]
+
+    # Compute mean series value per state
+    means: Dict[int, float] = {}
+    for s in unique_states:
+        mask = state_arr_trimmed == s
+        if mask.any():
+            means[int(s)] = float(np.nanmean(series_trimmed[mask]))
+        else:
+            means[int(s)] = 0.0
+
+    # Sort by mean value (ascending)
+    sorted_states = sorted(means.keys(), key=lambda s: means[s])
+    old_to_new = {old: new for new, old in enumerate(sorted_states)}
+
+    # Check if already canonical
+    is_identity = all(old == new for old, new in old_to_new.items())
+    if is_identity:
+        return state_arr, probs, {"relabeled": False, "mapping": {}}
+
+    # Apply relabeling
+    new_state = np.empty_like(state_arr)
+    for old, new in old_to_new.items():
+        new_state[state_arr == old] = new
+
+    new_probs: Optional[np.ndarray] = None
+    if probs is not None:
+        probs_arr = np.asarray(probs, dtype=float)
+        if probs_arr.ndim == 2 and probs_arr.shape[1] >= max(unique_states) + 1:
+            new_probs = np.empty_like(probs_arr)
+            col_map = {old: new for old, new in old_to_new.items()}
+            for old_col, new_col in col_map.items():
+                if old_col < probs_arr.shape[1] and new_col < probs_arr.shape[1]:
+                    new_probs[:, new_col] = probs_arr[:, old_col]
+            # Copy any extra columns (shouldn't exist normally)
+            mapped_new = set(old_to_new.values())
+            for c in range(probs_arr.shape[1]):
+                if c not in mapped_new:
+                    new_probs[:, c] = probs_arr[:, c]
+        else:
+            new_probs = probs_arr
+
+    mapping_str = {str(old): int(new) for old, new in old_to_new.items()}
+    return new_state, new_probs, {"relabeled": True, "mapping": mapping_str}
+
+
 __all__ = [
     "_count_state_transitions",
     "_state_runs",
     "_smooth_short_state_runs",
     "_normalize_state_probability_matrix",
+    "_canonicalize_regime_labels",
 ]

@@ -41,6 +41,7 @@ from .payload import (
 
 # Import from package submodules directly to avoid circular imports
 from .smoothing import (
+    _canonicalize_regime_labels,
     _count_state_transitions,
     _normalize_state_probability_matrix,
     _smooth_short_state_runs,
@@ -508,6 +509,10 @@ def regime_detect(  # noqa: C901
                     probs=probs,
                     min_regime_bars=min_regime_bars_val,
                 )
+                state, probs, canon_meta = _canonicalize_regime_labels(
+                    state, probs, x,
+                )
+                smoothing_meta["relabeled"] = canon_meta.get("relabeled", False)
                 mle_retvals = getattr(res, "mle_retvals", None)
                 converged = None
                 if isinstance(mle_retvals, dict):
@@ -603,6 +608,10 @@ def regime_detect(  # noqa: C901
                 probs=gamma_smoothed,
                 min_regime_bars=min_regime_bars_val,
             )
+            state, gamma_smoothed, canon_meta = _canonicalize_regime_labels(
+                state, gamma_smoothed, x,
+            )
+            smoothing_meta["relabeled"] = canon_meta.get("relabeled", False)
             gamma_for_payload = (
                 gamma_smoothed
                 if isinstance(gamma_smoothed, np.ndarray)
