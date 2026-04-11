@@ -346,10 +346,6 @@ def test_forecast_barrier_optimize_logs_finish_event(caplog, monkeypatch):
     raw = _unwrap(cf.forecast_barrier_optimize)
     monkeypatch.setattr(cf, "run_forecast_barrier_optimize", lambda request, parse_kv_or_json, barrier_optimize_impl: {"success": True, "best": {}})
 
-    fake_barriers = ModuleType("mtdata.forecast.barriers")
-    fake_barriers.forecast_barrier_optimize = lambda **kwargs: {"unused": True}
-    monkeypatch.setitem(sys.modules, "mtdata.forecast.barriers", fake_barriers)
-
     with caplog.at_level(logging.INFO, logger=cf.logger.name):
         out = raw(request=ForecastBarrierOptimizeRequest(symbol="EURUSD"))
 
