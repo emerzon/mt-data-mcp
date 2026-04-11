@@ -108,13 +108,15 @@ def _send_order_with_comment_fallback(
 def _send_order_with_fill_mode_retry(
     mt5: Any,
     request: Dict[str, Any],
+    *,
+    symbol_info: Any = None,
 ) -> tuple[Any, Optional[Dict[str, Any]], Any, List[Dict[str, Any]], Dict[str, Any]]:
     attempts: List[Dict[str, Any]] = []
     last_result = None
     last_comment_fallback = None
     last_error = None
     last_request = dict(request)
-    for fill_mode in validation._candidate_fill_modes(mt5):
+    for fill_mode in validation._candidate_fill_modes(mt5, symbol_info):
         attempt_request = dict(request)
         attempt_request["type_filling"] = int(fill_mode)
         result, comment_fallback, last_error = _send_order_with_comment_fallback(mt5, attempt_request)
@@ -212,8 +214,13 @@ def _submit_order_request(
     *,
     base_error: str,
     invalid_comment_error: str,
+    symbol_info: Any = None,
 ) -> tuple[Optional[_OrderSubmitOutcome], Optional[Dict[str, Any]]]:
-    result, comment_fallback, last_error, fill_mode_attempts, used_request = _send_order_with_fill_mode_retry(mt5, request)
+    result, comment_fallback, last_error, fill_mode_attempts, used_request = _send_order_with_fill_mode_retry(
+        mt5,
+        request,
+        symbol_info=symbol_info,
+    )
     if result is None:
         return None, {
             "error": base_error,
@@ -401,6 +408,7 @@ def _place_market_order(  # noqa: C901
                     "Comments are sanitized to letters/numbers/spaces/_/./-; "
                     "try a simpler comment or omit --comment."
                 ),
+                symbol_info=symbol_info,
             )
             if send_error is not None:
                 return send_error
@@ -863,6 +871,7 @@ def _place_pending_order(
                     "Comments are sanitized to letters/numbers/spaces/_/./-; "
                     "try a simpler comment or omit --comment."
                 ),
+                symbol_info=symbol_info,
             )
             if send_error is not None:
                 return send_error

@@ -697,6 +697,29 @@ def test_place_market_order_accepts_done_partial_without_retry(mock_mt5):
     assert mock_mt5.order_send.call_count == 1
 
 
+def test_place_market_order_prefers_symbol_fill_mode(mock_mt5):
+    mock_mt5.ORDER_FILLING_IOC = 1
+    mock_mt5.ORDER_FILLING_FOK = 0
+    mock_mt5.ORDER_FILLING_RETURN = 2
+    mock_mt5.SYMBOL_FILLING_FOK = 1
+    mock_mt5.SYMBOL_FILLING_IOC = 2
+    mock_mt5.SYMBOL_FILLING_RETURN = 4
+    mock_mt5.ORDER_TIME_GTC = 0
+    mock_mt5.symbol_info.return_value.filling_mode = mock_mt5.SYMBOL_FILLING_FOK
+
+    res = _place_market_order(
+        symbol="EURUSD",
+        volume=0.1,
+        order_type="BUY",
+    )
+
+    assert "error" not in res
+    assert res["type_filling_used"] == mock_mt5.ORDER_FILLING_FOK
+    assert mock_mt5.order_send.call_count == 1
+    first_req = mock_mt5.order_send.call_args.args[0]
+    assert first_req["type_filling"] == mock_mt5.ORDER_FILLING_FOK
+
+
 def test_place_pending_order_retries_fill_modes_when_first_mode_fails(mock_mt5):
     mock_mt5.ORDER_FILLING_IOC = 1
     mock_mt5.ORDER_FILLING_FOK = 0
@@ -741,6 +764,30 @@ def test_place_pending_order_retries_fill_modes_when_first_mode_fails(mock_mt5):
     second_req = mock_mt5.order_send.call_args_list[1].args[0]
     assert first_req["type_filling"] == mock_mt5.ORDER_FILLING_IOC
     assert second_req["type_filling"] == mock_mt5.ORDER_FILLING_FOK
+
+
+def test_place_pending_order_prefers_symbol_fill_mode(mock_mt5):
+    mock_mt5.ORDER_FILLING_IOC = 1
+    mock_mt5.ORDER_FILLING_FOK = 0
+    mock_mt5.ORDER_FILLING_RETURN = 2
+    mock_mt5.SYMBOL_FILLING_FOK = 1
+    mock_mt5.SYMBOL_FILLING_IOC = 2
+    mock_mt5.SYMBOL_FILLING_RETURN = 4
+    mock_mt5.ORDER_TIME_GTC = 0
+    mock_mt5.symbol_info.return_value.filling_mode = mock_mt5.SYMBOL_FILLING_FOK
+
+    res = _place_pending_order(
+        symbol="EURUSD",
+        volume=0.1,
+        order_type="BUY_LIMIT",
+        price=1.04000,
+    )
+
+    assert "error" not in res
+    assert res["type_filling_used"] == mock_mt5.ORDER_FILLING_FOK
+    assert mock_mt5.order_send.call_count == 1
+    first_req = mock_mt5.order_send.call_args.args[0]
+    assert first_req["type_filling"] == mock_mt5.ORDER_FILLING_FOK
 
 
 def test_place_pending_order_accepts_done_partial_without_retry(mock_mt5):

@@ -210,9 +210,42 @@ def _retcode_is_done(
         return False
 
 
-def _candidate_fill_modes(mt5: Any) -> list[int]:
+def _candidate_fill_modes(mt5: Any, symbol_info: Any = None) -> list[int]:
     """Return deduplicated fill-mode candidates with stable MT5-compatible fallbacks."""
     fill_modes: list[int] = []
+    preferred_fill_mode = None
+    if symbol_info is not None:
+        try:
+            raw_fill_mode = getattr(symbol_info, "filling_mode", None)
+        except Exception:
+            raw_fill_mode = None
+        if isinstance(raw_fill_mode, (int, float)) and not isinstance(raw_fill_mode, bool):
+            preferred_fill_mode = int(raw_fill_mode)
+
+    if preferred_fill_mode is not None:
+        for symbol_attr, fill_attr, default in (
+            ("SYMBOL_FILLING_FOK", "ORDER_FILLING_FOK", 0),
+            ("SYMBOL_FILLING_IOC", "ORDER_FILLING_IOC", 1),
+            ("SYMBOL_FILLING_RETURN", "ORDER_FILLING_RETURN", 2),
+        ):
+            symbol_flag = _safe_int_attr(mt5, symbol_attr, None)
+            fill_mode = _safe_int_attr(mt5, fill_attr, default)
+            if (
+                symbol_flag is not None
+                and symbol_flag > 0
+                and (preferred_fill_mode & symbol_flag) == symbol_flag
+                and fill_mode not in fill_modes
+            ):
+                fill_modes.append(fill_mode)
+        for fill_attr, default in (
+            ("ORDER_FILLING_IOC", 1),
+            ("ORDER_FILLING_FOK", 0),
+            ("ORDER_FILLING_RETURN", 2),
+        ):
+            fill_mode = _safe_int_attr(mt5, fill_attr, default)
+            if preferred_fill_mode == fill_mode and fill_mode not in fill_modes:
+                fill_modes.append(fill_mode)
+
     for fill_attr, default in (
         ("ORDER_FILLING_IOC", 1),
         ("ORDER_FILLING_FOK", 0),
