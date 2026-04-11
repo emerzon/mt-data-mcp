@@ -92,3 +92,86 @@ def _evaluate_safety_policy(
         "error": "Order blocked by safety policy.",
         "violations": violations,
     }
+
+
+# ---------------------------------------------------------------------------
+# Account-level risk gate
+# ---------------------------------------------------------------------------
+
+
+class AccountRiskLimits(BaseModel):
+    """Configurable account-level risk thresholds.
+
+    All fields are ``None`` (disabled) by default.
+    """
+
+    min_margin_level_pct: Optional[float] = None
+    """Reject if account margin level (%) is below this threshold."""
+
+    max_floating_loss: Optional[float] = None
+    """Reject if unrealized loss exceeds this absolute value (positive number)."""
+
+    max_total_exposure_lots: Optional[float] = None
+    """Reject if total open volume (lots) would exceed this after the new order."""
+
+
+def _evaluate_account_risk_gate(
+    limits: Optional[AccountRiskLimits],
+    *,
+    account_info: Any = None,
+    new_volume: float = 0.0,
+    existing_volume: float = 0.0,
+) -> Optional[Dict[str, Any]]:
+    """Evaluate *limits* against current account state.
+
+    Returns ``None`` when the request passes all gates.  Returns a
+    structured error dict when a gate blocks the request.
+    """
+    if limits is None:
+        return None
+
+    violations: List[str] = []
+
+    if limits.min_margin_level_pct is not None and account_info is not None:
+        margin_level = _safe_float_attr(account_info, "margin_level")
+        if margin_level is not None and margin_level < limits.min_margin_level_pct:
+            violations.append(
+                f"Margin level {margin_level:.1f}% is below the "
+                f"minimum threshold of {limits.min_margin_level_pct:.1f}%."
+            )
+
+    if limits.max_floating_loss is not None and account_info is not None:
+        profit = _safe_float_attr(account_info, "profit")
+        if profit is not None and profit < 0 and abs(profit) > limits.max_floating_loss:
+            violations.append(
+                f"Floating loss ${abs(profit):.2f} exceeds the "
+                f"limit of ${limits.max_floating_loss:.2f}."
+            )
+
+    if limits.max_total_exposure_lots is not None:
+        total_after = existing_volume + new_volume
+        if total_after > limits.max_total_exposure_lots:
+            violations.append(
+                f"Total exposure {total_after:.2f} lots would exceed the "
+                f"limit of {limits.max_total_exposure_lots:.2f} lots."
+            )
+
+    if not violations:
+        return None
+
+    return {
+        "error": "Order blocked by account risk gate.",
+        "violations": violations,
+    }
+
+
+def _safe_float_attr(obj: Any, name: str) -> Optional[float]:
+    """Extract a float attribute safely, returning None on failure."""
+    try:
+        val = getattr(obj, name, None)
+        if val is None:
+            return None
+        fv = float(val)
+        return fv if math.isfinite(fv) else None
+    except (TypeError, ValueError):
+        return None
