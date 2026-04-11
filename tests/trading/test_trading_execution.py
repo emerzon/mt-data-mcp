@@ -1512,3 +1512,176 @@ def test_cancel_pending_preserves_existing_magic(mock_mt5):
     req = mock_mt5.order_send.call_args[0][0]
     assert req["magic"] == 54321
 
+
+# ---------------------------------------------------------------------------
+# _attach_post_fill_protection unit tests
+# ---------------------------------------------------------------------------
+
+from src.mtdata.core.trading.orders import _attach_post_fill_protection
+
+
+def _make_protection_gateway(mock_mt5):
+    """Build a gateway for _attach_post_fill_protection tests."""
+    from src.mtdata.core.trading.gateway import create_trading_gateway as _cg
+
+    return _cg(
+        adapter=mock_mt5,
+        include_trade_preflight=False,
+        include_retcode_name=True,
+        ensure_connection_impl=lambda: None,
+    )
+
+
+def test_attach_protection_not_requested(mock_mt5):
+    gw = _make_protection_gateway(mock_mt5)
+    symbol_info = mock_mt5.symbol_info.return_value
+
+    outcome = _attach_post_fill_protection(
+        gw,
+        symbol="EURUSD",
+        side="BUY",
+        volume=0.1,
+        position_ticket_candidates=[456],
+        stop_loss=None,
+        take_profit=None,
+        symbol_info=symbol_info,
+        comment=None,
+        request_comment="MCP order",
+    )
+
+    assert outcome["sl_tp_result"]["status"] == "not_requested"
+    assert "protection_status" not in outcome
+    assert outcome["warnings"] == []
+
+
+def test_attach_protection_success(mock_mt5):
+    gw = _make_protection_gateway(mock_mt5)
+    symbol_info = mock_mt5.symbol_info.return_value
+    mock_mt5.TRADE_ACTION_SLTP = 6
+    mock_mt5.positions_get.return_value = [
+        SimpleNamespace(
+            ticket=456, symbol="EURUSD", type=0, sl=1.04, tp=1.06,
+            volume=0.1, magic=234000, time_update_msc=1000,
+        )
+    ]
+
+    outcome = _attach_post_fill_protection(
+        gw,
+        symbol="EURUSD",
+        side="BUY",
+        volume=0.1,
+        position_ticket_candidates=[456],
+        stop_loss=1.04,
+        take_profit=1.06,
+        symbol_info=symbol_info,
+        comment=None,
+        request_comment="MCP order",
+    )
+
+    assert outcome["sl_tp_result"]["status"] == "applied"
+    assert outcome["protection_status"] == "protected"
+    assert outcome["position_ticket"] == 456
+    assert outcome["warnings"] == []
+
+
+def test_attach_protection_fallback_success(mock_mt5):
+    """Direct SLTP fails, _modify_position fallback succeeds."""
+    gw = _make_protection_gateway(mock_mt5)
+    symbol_info = mock_mt5.symbol_info.return_value
+    mock_mt5.TRADE_ACTION_SLTP = 6
+    mock_mt5.positions_get.return_value = [
+        SimpleNamespace(
+            ticket=456, symbol="EURUSD", type=0, sl=0.0, tp=0.0,
+            volume=0.1, magic=234000, time_update_msc=1000,
+        )
+    ]
+    # Direct SLTP always fails
+    failed_result = SimpleNamespace(retcode=10006, comment="Rejected")
+    mock_mt5.order_send.return_value = failed_result
+
+    with patch(
+        "src.mtdata.core.trading.orders._modify_position",
+        return_value={"success": True, "applied_sl": 1.04, "applied_tp": 1.06},
+    ):
+        outcome = _attach_post_fill_protection(
+            gw,
+            symbol="EURUSD",
+            side="BUY",
+            volume=0.1,
+            position_ticket_candidates=[456],
+            stop_loss=1.04,
+            take_profit=1.06,
+            symbol_info=symbol_info,
+            comment=None,
+            request_comment="MCP order",
+        )
+
+    assert outcome["sl_tp_result"]["status"] == "applied"
+    assert outcome["protection_status"] == "protected_after_fallback"
+    assert outcome["sl_tp_result"]["fallback_used"] is True
+    assert any("fallback" in w.lower() for w in outcome["warnings"])
+
+
+def test_attach_protection_all_fail(mock_mt5):
+    """Both direct SLTP and fallback fail → unprotected."""
+    gw = _make_protection_gateway(mock_mt5)
+    symbol_info = mock_mt5.symbol_info.return_value
+    mock_mt5.TRADE_ACTION_SLTP = 6
+    mock_mt5.positions_get.return_value = [
+        SimpleNamespace(
+            ticket=456, symbol="EURUSD", type=0, sl=0.0, tp=0.0,
+            volume=0.1, magic=234000, time_update_msc=1000,
+        )
+    ]
+    failed_result = SimpleNamespace(retcode=10006, comment="Rejected")
+    mock_mt5.order_send.return_value = failed_result
+
+    with patch(
+        "src.mtdata.core.trading.orders._modify_position",
+        return_value={"error": "Modify also failed"},
+    ):
+        outcome = _attach_post_fill_protection(
+            gw,
+            symbol="EURUSD",
+            side="BUY",
+            volume=0.1,
+            position_ticket_candidates=[456],
+            stop_loss=1.04,
+            take_profit=1.06,
+            symbol_info=symbol_info,
+            comment=None,
+            request_comment="MCP order",
+        )
+
+    assert outcome["sl_tp_result"]["status"] == "failed"
+    assert outcome["protection_status"] == "unprotected_position"
+    assert any("CRITICAL" in w for w in outcome["warnings"])
+
+
+def test_attach_protection_position_not_found(mock_mt5):
+    """Position resolution never succeeds → failed with candidates info."""
+    gw = _make_protection_gateway(mock_mt5)
+    symbol_info = mock_mt5.symbol_info.return_value
+    mock_mt5.TRADE_ACTION_SLTP = 6
+    mock_mt5.positions_get.return_value = []
+
+    outcome = _attach_post_fill_protection(
+        gw,
+        symbol="EURUSD",
+        side="BUY",
+        volume=0.1,
+        position_ticket_candidates=[456, 123],
+        stop_loss=1.04,
+        take_profit=None,
+        symbol_info=symbol_info,
+        comment=None,
+        request_comment="MCP order",
+    )
+
+    assert outcome["sl_tp_result"]["status"] == "failed"
+    assert outcome["protection_status"] == "unprotected_position"
+    assert outcome["position_ticket"] is None
+    resolution = outcome["position_ticket_resolution"]
+    assert resolution is not None
+    assert resolution.get("matched") is False
+
