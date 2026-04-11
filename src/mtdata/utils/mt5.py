@@ -235,10 +235,13 @@ def _rates_to_df(rates: Any):
 
 
 def _to_server_naive_dt(dt: datetime) -> datetime:
-    """Convert a UTC-naive datetime to server-local naive datetime if server TZ configured."""
+    """Convert a UTC-naive datetime to server-local naive datetime."""
     try:
         tz = mt5_config.get_server_tz()
         if tz is None:
+            offset_seconds = int(mt5_config.get_time_offset_seconds())
+            if offset_seconds:
+                return dt + timedelta(seconds=offset_seconds)
             return dt
         aware_utc = dt.replace(tzinfo=timezone.utc)
         aware_srv = aware_utc.astimezone(tz)

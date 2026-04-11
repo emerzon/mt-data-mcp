@@ -234,8 +234,17 @@ class TestToServerNaiveDt:
     @patch("mtdata.utils.mt5.mt5_config")
     def test_no_tz_returns_same(self, cfg):
         cfg.get_server_tz.return_value = None
+        cfg.get_time_offset_seconds.return_value = 0
         dt = datetime(2024, 1, 1)
         assert _to_server_naive_dt(dt) == dt
+
+    @patch("mtdata.utils.mt5.mt5_config")
+    def test_static_offset_is_applied_when_timezone_is_unset(self, cfg):
+        cfg.get_server_tz.return_value = None
+        cfg.get_time_offset_seconds.return_value = 7200
+        dt = datetime(2024, 1, 1, 12, 0)
+
+        assert _to_server_naive_dt(dt) == datetime(2024, 1, 1, 14, 0)
 
     @patch("mtdata.utils.mt5.mt5_config")
     def test_with_tz(self, cfg):
