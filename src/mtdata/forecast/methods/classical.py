@@ -117,13 +117,19 @@ class ThetaMethod(ClassicalMethod):
         exog_future: Optional[pd.DataFrame] = None,
         **kwargs
     ) -> ForecastResult:
-        vals = series.values
+        vals = np.asarray(series.values, dtype=float)
         n = int(vals.size)
+        if n == 0:
+            raise ValueError("Theta forecast requires at least 1 data point")
+        if not np.all(np.isfinite(vals)):
+            raise ValueError("Theta forecast requires all series values to be finite")
         alpha = float(params.get('alpha', 0.2))
         
         tt = np.arange(1, n + 1, dtype=float)
         A = np.vstack([np.ones(n), tt]).T
         coef, _, _, _ = np.linalg.lstsq(A, vals, rcond=None)
+        if coef.size < 2 or not np.all(np.isfinite(coef)):
+            raise ValueError("Theta trend fit produced non-finite coefficients")
         a, b = float(coef[0]), float(coef[1])
         trend_future = a + b * (tt[-1] + np.arange(1, int(horizon) + 1, dtype=float))
         

@@ -63,6 +63,13 @@ def test_theta_forecast_tracks_trend_and_reports_alpha_and_slope():
     assert np.all(out.forecast > 0.0)
 
 
+def test_theta_forecast_rejects_non_finite_series_values():
+    method = cl.ThetaMethod()
+
+    with pytest.raises(ValueError, match="finite"):
+        method.forecast(pd.Series([2.0, np.nan, 6.0]), horizon=2, seasonality=0, params={})
+
+
 def test_fourier_ols_default_and_custom_params():
     method = cl.FourierOLSMethod()
     series = pd.Series(np.linspace(10.0, 20.0, 24))
