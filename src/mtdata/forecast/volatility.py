@@ -1,4 +1,3 @@
-import json
 import math
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional
@@ -24,7 +23,7 @@ from ..utils.mt5 import (
     _mt5_epoch_to_utc,
     mt5,
 )
-from ..utils.utils import _parse_start_datetime
+from ..utils.utils import _parse_start_datetime, parse_kv_or_json
 from .common import (
     bars_per_year as _bars_per_year,
 )
@@ -421,48 +420,7 @@ def forecast_volatility(  # noqa: C901
 
         # Parse method params: accept dict, JSON string, or k=v pairs
         __stage = 'parse_params'
-        if isinstance(params, dict):
-            p = dict(params)
-        elif isinstance(params, str):
-            s = params.strip()
-            if (s.startswith('{') and s.endswith('}')):
-                try:
-                    p = json.loads(s)
-                except Exception:
-                    # Fallback to colon or equals pairs within braces
-                    p = {}
-                    toks = [tok for tok in s.strip().strip('{}').split() if tok]
-                    i = 0
-                    while i < len(toks):
-                        tok = toks[i].strip().strip(',')
-                        if not tok:
-                            i += 1; continue
-                        if '=' in tok:
-                            k, v = tok.split('=', 1)
-                            p[k.strip()] = v.strip().strip(',')
-                            i += 1; continue
-                        if tok.endswith(':'):
-                            key = tok[:-1].strip()
-                            val = ''
-                            if i + 1 < len(toks):
-                                val = toks[i+1].strip().strip(',')
-                                i += 2
-                            else:
-                                i += 1
-                            p[key] = val
-                            continue
-                        i += 1
-            else:
-                # Parse simple k=v pairs separated by comma/space
-                p = {}
-                for tok in s.split():
-                    t = tok.strip().strip(',')
-                    if '=' in t:
-                        k, v = t.split('=', 1)
-                        p[k.strip()] = v.strip()
-                    # ignore stray tokens without '='
-        else:
-            p = {}
+        p = parse_kv_or_json(params)
 
         # Backward-compatible alias: callers passing 'lambda' are normalised to 'lambda_'
         if 'lambda' in p and 'lambda_' not in p:

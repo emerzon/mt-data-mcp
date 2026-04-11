@@ -227,6 +227,19 @@ class TestParamsParsing:
                                     params="{lookback=300, extra: 5, junk}")
             assert r.get("success") is True
 
+    def test_comma_separated_kv_pairs_without_spaces(self):
+        with _mock_env():
+            r = forecast_volatility(
+                "EURUSD",
+                "H1",
+                1,
+                method="ewma",
+                params="lookback=300,lambda=0.9",
+            )
+            assert r.get("success") is True
+            assert r["params_used"]["lookback"] == 300
+            assert r["params_used"]["lambda_"] == 0.9
+
 
 # ===================================================================
 # 4. tf_secs falsy  (line 336)
