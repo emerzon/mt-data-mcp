@@ -333,13 +333,33 @@ def _shift_rate_times(rates: Any, shift_seconds: int) -> Any:
     return rates
 
 
+def _format_rate_times(epoch_series: pd.Series, *, use_client_tz: bool) -> pd.Series:
+    epochs = pd.to_numeric(epoch_series, errors="coerce")
+    dt_series = pd.to_datetime(epochs, unit="s", utc=True, errors="coerce")
+
+    if use_client_tz:
+        try:
+            target_tz = mt5_config.get_client_tz()
+            if target_tz is None:
+                target_tz = datetime.now().astimezone().tzinfo
+            if target_tz is not None:
+                dt_series = dt_series.dt.tz_convert(target_tz)
+        except Exception:
+            pass
+
+    formatted = dt_series.dt.strftime(TIME_DISPLAY_FORMAT)
+    if bool(formatted.isna().any()):
+        formatter = _format_time_minimal_local if use_client_tz else _format_time_minimal
+        fallback = epochs.map(lambda value: formatter(float(value)) if pd.notna(value) else None)
+        formatted = formatted.where(~formatted.isna(), fallback)
+    return formatted
+
+
 def _build_rates_df(rates: Any, use_client_tz: bool) -> pd.DataFrame:
     """Normalize raw MT5 rates into a DataFrame with epoch and display time columns."""
     df = _rates_to_df(rates)
     df['__epoch'] = df['time']
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        df["time"] = df["time"].apply(_format_time_minimal_local if use_client_tz else _format_time_minimal)
+    df["time"] = _format_rate_times(df["time"], use_client_tz=use_client_tz)
     if 'volume' not in df.columns and 'tick_volume' in df.columns:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
