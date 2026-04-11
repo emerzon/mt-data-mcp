@@ -824,3 +824,63 @@ def _safe_int_ticket(value: Any) -> Optional[int]:
         iv = int(fv)
         return iv if iv > 0 else None
     return None
+
+
+# ---------------------------------------------------------------------------
+# Tick freshness
+# ---------------------------------------------------------------------------
+
+import time as _time_module
+
+_DEFAULT_TICK_MAX_AGE_SECONDS = 30.0
+
+
+def _tick_age_seconds(tick: Any) -> Optional[float]:
+    """Compute tick age in seconds from tick timestamp fields.
+
+    Prefers ``time_msc`` (millisecond epoch) over ``time`` (second epoch).
+    Returns ``None`` when the tick has no usable timestamp.
+    """
+    now_ms = _time_module.time() * 1000.0
+
+    for field, divisor in (("time_msc", 1.0), ("time", 1000.0)):
+        try:
+            raw = getattr(tick, field, None)
+            if raw is None:
+                continue
+            ts_ms = float(raw) * divisor
+            if not math.isfinite(ts_ms) or ts_ms <= 0:
+                continue
+            age_s = (now_ms - ts_ms) / 1000.0
+            return max(0.0, age_s)
+        except Exception:
+            continue
+    return None
+
+
+def _validate_tick_freshness(
+    tick: Any,
+    *,
+    symbol: str,
+    max_age_seconds: Optional[float] = None,
+) -> Optional[Dict[str, Any]]:
+    """Return an error dict if *tick* is stale; ``None`` when fresh or age unknown.
+
+    When the tick carries no timestamp, the validator does **not** reject it
+    (preserving existing null-tick-only failure semantics).
+    """
+    threshold = (
+        float(max_age_seconds)
+        if max_age_seconds is not None
+        else _DEFAULT_TICK_MAX_AGE_SECONDS
+    )
+    age = _tick_age_seconds(tick)
+    if age is None:
+        return None
+    if age <= threshold:
+        return None
+    return {
+        "error": f"Tick for {symbol} is stale ({age:.1f}s old, threshold {threshold:.0f}s).",
+        "tick_age_seconds": round(age, 2),
+        "tick_max_age_seconds": threshold,
+    }

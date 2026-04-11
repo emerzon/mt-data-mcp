@@ -1970,3 +1970,74 @@ def test_attach_protection_position_not_found(mock_mt5):
     assert resolution is not None
     assert resolution.get("matched") is False
 
+
+# ---------------------------------------------------------------------------
+# Tick freshness validator
+# ---------------------------------------------------------------------------
+import time as _time_module
+
+from src.mtdata.core.trading.validation import (
+    _tick_age_seconds,
+    _validate_tick_freshness,
+    _DEFAULT_TICK_MAX_AGE_SECONDS,
+)
+
+
+def test_tick_age_seconds_from_time_msc():
+    """Prefers time_msc (millisecond epoch) when available."""
+    now_ms = _time_module.time() * 1000.0
+    tick = SimpleNamespace(time_msc=now_ms - 5000, time=0)
+    age = _tick_age_seconds(tick)
+    assert age is not None
+    assert 4.5 <= age <= 6.0
+
+
+def test_tick_age_seconds_from_time_seconds():
+    """Falls back to time (seconds) when time_msc missing."""
+    now_s = _time_module.time()
+    tick = SimpleNamespace(time=int(now_s) - 10)
+    age = _tick_age_seconds(tick)
+    assert age is not None
+    assert 9.0 <= age <= 12.0
+
+
+def test_tick_age_seconds_no_timestamp():
+    """Returns None when tick carries no usable timestamp."""
+    tick = SimpleNamespace()
+    assert _tick_age_seconds(tick) is None
+    tick2 = SimpleNamespace(time_msc=None, time=None)
+    assert _tick_age_seconds(tick2) is None
+
+
+def test_validate_tick_freshness_fresh():
+    """Fresh tick passes validation."""
+    now_ms = _time_module.time() * 1000.0
+    tick = SimpleNamespace(time_msc=now_ms - 1000)
+    result = _validate_tick_freshness(tick, symbol="EURUSD")
+    assert result is None
+
+
+def test_validate_tick_freshness_stale():
+    """Stale tick returns error dict with metadata."""
+    now_ms = _time_module.time() * 1000.0
+    tick = SimpleNamespace(time_msc=now_ms - 60_000)  # 60s old
+    result = _validate_tick_freshness(tick, symbol="EURUSD")
+    assert result is not None
+    assert "stale" in result["error"].lower()
+    assert result["tick_age_seconds"] > 50
+    assert result["tick_max_age_seconds"] == _DEFAULT_TICK_MAX_AGE_SECONDS
+
+
+def test_validate_tick_freshness_custom_threshold():
+    """Custom threshold narrows acceptance window."""
+    now_ms = _time_module.time() * 1000.0
+    tick = SimpleNamespace(time_msc=now_ms - 3000)  # 3s old
+    assert _validate_tick_freshness(tick, symbol="GOLD", max_age_seconds=2.0) is not None
+    assert _validate_tick_freshness(tick, symbol="GOLD", max_age_seconds=5.0) is None
+
+
+def test_validate_tick_freshness_no_timestamp():
+    """Tick without timestamp passes (preserves existing null-tick semantics)."""
+    tick = SimpleNamespace()
+    assert _validate_tick_freshness(tick, symbol="EURUSD") is None
+
