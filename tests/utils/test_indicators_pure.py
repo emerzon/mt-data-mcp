@@ -899,6 +899,19 @@ class TestSharedDefs:
         assert categories == []
         assert names == []
 
+    def test_load_indicator_doc_choices_logs_loader_error(self, caplog):
+        with caplog.at_level(logging.WARNING):
+            categories, names = _load_indicator_doc_choices(
+                lambda *, detailed=False: (_ for _ in ()).throw(RuntimeError("boom"))
+            )
+
+        assert categories == []
+        assert names == []
+        assert any(
+            "indicator metadata loading failed" in record.message.lower()
+            for record in caplog.records
+        )
+
 
 class TestComplexDefs:
     def test_has_expected_keys(self):

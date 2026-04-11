@@ -4,6 +4,7 @@ Shared JSON schema helpers for CLI/server tool inputs.
 Provides reusable $defs such as TimeframeSpec and helpers to apply them
 to per-tool parameter schemas.
 """
+import logging
 import inspect
 import types
 from typing import (
@@ -28,6 +29,8 @@ except Exception:  # pragma: no cover - Python 3.14+ should provide this
     annotationlib = None
 
 from .constants import TIMEFRAME_MAP
+
+_logger = logging.getLogger(__name__)
 
 PARAM_HINTS = {
     "direction": "Trade direction (long/short).",
@@ -220,13 +223,25 @@ def _load_indicator_doc_choices(
     if list_ta_indicators_docs is None:
         try:
             from ..utils.indicators import list_ta_indicators as list_ta_indicators_docs
-        except Exception:
+        except Exception as ex:
+            _logger.warning(
+                "Indicator schema choices are unavailable because indicator metadata could not be imported: %s",
+                ex,
+            )
             return [], []
     try:
         docs = list_ta_indicators_docs(detailed=False)
-    except Exception:
+    except Exception as ex:
+        _logger.warning(
+            "Indicator schema choices are unavailable because indicator metadata loading failed: %s",
+            ex,
+        )
         return [], []
     if not isinstance(docs, list):
+        _logger.warning(
+            "Indicator schema choices are unavailable because indicator metadata returned %s instead of a list.",
+            type(docs).__name__,
+        )
         return [], []
 
     categories = sorted(
