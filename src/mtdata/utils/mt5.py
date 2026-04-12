@@ -430,9 +430,52 @@ def _mt5_copy_ticks_range(symbol: str, from_dt_utc: datetime, to_dt_utc: datetim
 class MT5Connection:
     def __init__(self):
         self.connected = False
+        self._connection_identity: Optional[tuple[Optional[int], Optional[str]]] = None
+
+    def _read_connection_identity(self) -> tuple[Optional[int], Optional[str]]:
+        login: Optional[int] = None
+        server: Optional[str] = None
+        try:
+            account_info = mt5.account_info()
+        except Exception:
+            account_info = None
+        if account_info is not None:
+            try:
+                login_value = getattr(account_info, "login", None)
+                if login_value is not None:
+                    login = int(login_value)
+            except Exception:
+                login = None
+            try:
+                server_value = getattr(account_info, "server", None)
+                if server_value:
+                    server = str(server_value)
+            except Exception:
+                server = None
+        if server is None:
+            try:
+                terminal_info = mt5.terminal_info()
+            except Exception:
+                terminal_info = None
+            if terminal_info is not None:
+                try:
+                    server_value = getattr(terminal_info, "server", None)
+                    if server_value:
+                        server = str(server_value)
+                except Exception:
+                    server = None
+        return login, server
+
+    def _refresh_connection_identity(self) -> None:
+        current_identity = self._read_connection_identity()
+        if self._connection_identity != current_identity:
+            clear_symbol_info_cache()
+            clear_mt5_time_alignment_cache()
+            self._connection_identity = current_identity
 
     def _ensure_connection(self) -> bool:
         if self.is_connected():
+            self._refresh_connection_identity()
             return True
         try:
             if mt5_config.has_credentials():
@@ -453,6 +496,7 @@ class MT5Connection:
                 else:
                     logger.debug("Connected to MT5 using terminal's current login")
             self.connected = True
+            self._refresh_connection_identity()
             return True
         except Exception as e:
             logger.error(f"Error connecting to MT5: {e}")
@@ -462,6 +506,9 @@ class MT5Connection:
         if self.connected:
             mt5.shutdown()
             self.connected = False
+            self._connection_identity = None
+            clear_symbol_info_cache()
+            clear_mt5_time_alignment_cache()
             logger.debug("Disconnected from MetaTrader5")
 
     def is_connected(self) -> bool:

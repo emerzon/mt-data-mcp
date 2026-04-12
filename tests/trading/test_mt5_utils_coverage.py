@@ -471,6 +471,34 @@ class TestMT5Connection:
         _mt5_mock.initialize.return_value = True
         assert conn._ensure_connection() is True
 
+    @patch("mtdata.utils.mt5.clear_mt5_time_alignment_cache")
+    @patch("mtdata.utils.mt5.clear_symbol_info_cache")
+    @patch("mtdata.utils.mt5.mt5_config")
+    def test_ensure_connection_success_clears_mt5_caches(self, cfg, clear_symbol_cache, clear_alignment_cache):
+        conn = MT5Connection()
+        _mt5_mock.terminal_info.return_value = None
+        _mt5_mock.account_info.return_value = MagicMock(login=12345, server="Demo")
+        cfg.has_credentials.return_value = False
+        _mt5_mock.initialize.return_value = True
+
+        assert conn._ensure_connection() is True
+        clear_symbol_cache.assert_called_once()
+        clear_alignment_cache.assert_called_once()
+
+    @patch("mtdata.utils.mt5.clear_mt5_time_alignment_cache")
+    @patch("mtdata.utils.mt5.clear_symbol_info_cache")
+    def test_connected_session_refresh_clears_caches_when_identity_changes(self, clear_symbol_cache, clear_alignment_cache):
+        conn = MT5Connection()
+        conn.connected = True
+        conn._connection_identity = (12345, "Demo-A")
+        _mt5_mock.terminal_info.return_value = MagicMock(connected=True, server="Demo-B")
+        _mt5_mock.account_info.return_value = MagicMock(login=67890, server="Demo-B")
+
+        assert conn._ensure_connection() is True
+        clear_symbol_cache.assert_called_once()
+        clear_alignment_cache.assert_called_once()
+        assert conn._connection_identity == (67890, "Demo-B")
+
     @patch("mtdata.utils.mt5.mt5_config")
     def test_ensure_connection_no_cred_fail(self, cfg):
         conn = MT5Connection()
