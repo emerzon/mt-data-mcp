@@ -133,6 +133,92 @@ class TestNfSetupAndPredict:
         assert isinstance(result, pd.DataFrame)
 
     @patch("mtdata.forecast.common.pd_freq_from_timeframe", return_value="1h")
+    def test_restores_environment_after_prediction(self, mock_freq, monkeypatch):
+        model_cls = _mock_nf_class()
+        mock_nf_inst = MagicMock()
+        mock_nf_inst.fit = MagicMock()
+        mock_nf_inst.predict = MagicMock(return_value=_make_yf(2))
+        mock_nf_inst.predict.__signature__ = inspect.Signature(
+            [
+                inspect.Parameter("self", inspect.Parameter.POSITIONAL_OR_KEYWORD),
+                inspect.Parameter("h", inspect.Parameter.KEYWORD_ONLY, default=None),
+            ]
+        )
+        mock_nf_inst.fit.__signature__ = inspect.Signature(
+            [
+                inspect.Parameter("self", inspect.Parameter.POSITIONAL_OR_KEYWORD),
+                inspect.Parameter("df", inspect.Parameter.KEYWORD_ONLY),
+            ]
+        )
+
+        def _nf_init(self, *, models, freq, **kw):
+            pass
+
+        _nf_init.__signature__ = inspect.Signature(
+            [
+                inspect.Parameter("self", inspect.Parameter.POSITIONAL_OR_KEYWORD),
+                inspect.Parameter("models", inspect.Parameter.KEYWORD_ONLY),
+                inspect.Parameter("freq", inspect.Parameter.KEYWORD_ONLY),
+            ]
+        )
+
+        class FakeNF:
+            __init__ = _nf_init
+            fit = mock_nf_inst.fit
+            predict = mock_nf_inst.predict
+
+        nf_module = types.ModuleType("neuralforecast")
+        nf_module.NeuralForecast = FakeNF
+
+        torch_dist_module = types.ModuleType("torch.distributed")
+        torch_dist_module.is_available = lambda: False
+        torch_dist_module.is_initialized = lambda: False
+        torch_dist_module.destroy_process_group = lambda: None
+
+        torch_module = types.ModuleType("torch")
+        torch_module.set_float32_matmul_precision = lambda value: None
+        torch_module.cuda = types.SimpleNamespace(
+            is_available=lambda: True,
+            device_count=lambda: 2,
+            synchronize=lambda: None,
+            empty_cache=lambda: None,
+        )
+        torch_module.distributed = torch_dist_module
+
+        original_env = {
+            "KUBERNETES_SERVICE_HOST": "kube-host",
+            "RANK": "7",
+            "PL_TORCH_DISTRIBUTED_BACKEND": "nccl",
+            "LT_DISABLE_DISTRIBUTED": "0",
+            "CUDA_VISIBLE_DEVICES": "2,3",
+            "MTDATA_NF_ACCEL": "gpu",
+        }
+        for key, value in original_env.items():
+            monkeypatch.setenv(key, value)
+
+        with patch.dict(
+            "sys.modules",
+            {
+                "neuralforecast": nf_module,
+                "torch": torch_module,
+                "torch.distributed": torch_dist_module,
+            },
+        ):
+            result = nf_setup_and_predict(
+                model_class=model_cls,
+                fh=2,
+                timeframe="H1",
+                Y_df=_make_y_df(),
+                input_size=24,
+                batch_size=32,
+                steps=5,
+            )
+
+        assert isinstance(result, pd.DataFrame)
+        for key, value in original_env.items():
+            assert os.environ.get(key) == value
+
+    @patch("mtdata.forecast.common.pd_freq_from_timeframe", return_value="1h")
     def test_prefers_trainer_object_over_trainer_kwargs_when_construction_succeeds(self, mock_freq):
         model_cls = _mock_nf_class()
         captured_nf_kwargs = {}
