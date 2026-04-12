@@ -605,72 +605,82 @@ def _execute_single_close(
     close_comment_fallback = None
     attempts: List[Dict[str, Any]] = []
 
+    price_changed_codes = {
+        validation._safe_int_attr(mt5, "TRADE_RETCODE_PRICE_CHANGED", 10020),
+        validation._safe_int_attr(mt5, "TRADE_RETCODE_REQUOTE", 10004),
+    }
     for fill_mode in fill_modes:
-        close_price = (
-            validation._safe_float_attr(tick, "bid")
-            if is_buy_position
-            else validation._safe_float_attr(tick, "ask")
-        )
-        close_type = close_type_sell if is_buy_position else close_type_buy
-        close_comment = comments._normalize_close_trade_comment(comment, default="MCP close")
+        price_retry_count = 0
+        while True:
+            close_price = (
+                validation._safe_float_attr(tick, "bid")
+                if is_buy_position
+                else validation._safe_float_attr(tick, "ask")
+            )
+            close_type = close_type_sell if is_buy_position else close_type_buy
+            close_comment = comments._normalize_close_trade_comment(comment, default="MCP close")
 
-        request = {
-            "action": mt5.TRADE_ACTION_DEAL,
-            "position": position.ticket,
-            "symbol": position.symbol,
-            "volume": requested_volume if requested_volume is not None else position.volume,
-            "type": close_type,
-            "price": close_price,
-            "deviation": deviation,
-            "comment": close_comment,
-            "type_time": mt5.ORDER_TIME_GTC,
-            "type_filling": int(fill_mode),
-        }
-        request_magic = validation._safe_int_ticket(getattr(position, "magic", None))
-        if request_magic is not None:
-            request["magic"] = request_magic
+            request = {
+                "action": mt5.TRADE_ACTION_DEAL,
+                "position": position.ticket,
+                "symbol": position.symbol,
+                "volume": requested_volume if requested_volume is not None else position.volume,
+                "type": close_type,
+                "price": close_price,
+                "deviation": deviation,
+                "comment": close_comment,
+                "type_time": mt5.ORDER_TIME_GTC,
+                "type_filling": int(fill_mode),
+            }
+            request_magic = validation._safe_int_ticket(getattr(position, "magic", None))
+            if request_magic is not None:
+                request["magic"] = request_magic
 
-        result, attempt_comment_fallback, last_send_error = comments._send_order_with_comment_fallback(
-            mt5,
-            request,
-        )
-        if isinstance(attempt_comment_fallback, dict):
-            close_comment_fallback = attempt_comment_fallback
-        if result is None:
-            attempts.append(
-                {
-                    "type_filling": int(fill_mode),
-                    "error": "Failed to send close order",
-                    "last_error": last_send_error,
-                }
+            result, attempt_comment_fallback, last_send_error = comments._send_order_with_comment_fallback(
+                mt5,
+                request,
             )
             if isinstance(attempt_comment_fallback, dict):
-                attempts[-1]["comment_fallback"] = attempt_comment_fallback
-            _stdlib_time.sleep(0.15)
-            continue
+                close_comment_fallback = attempt_comment_fallback
+            if result is None:
+                attempts.append(
+                    {
+                        "type_filling": int(fill_mode),
+                        "error": "Failed to send close order",
+                        "last_error": last_send_error,
+                    }
+                )
+                if isinstance(attempt_comment_fallback, dict):
+                    attempts[-1]["comment_fallback"] = attempt_comment_fallback
+                _stdlib_time.sleep(0.15)
+                break
 
-        retcode_val = getattr(result, "retcode", None)
-        attempts.append(
-            {
+            retcode_val = getattr(result, "retcode", None)
+            attempt: Dict[str, Any] = {
                 "type_filling": int(fill_mode),
                 "retcode": retcode_val,
                 "retcode_name": mt5.retcode_name(retcode_val),
                 "comment": getattr(result, "comment", None),
             }
-        )
-        if isinstance(attempt_comment_fallback, dict):
-            attempts[-1]["comment_fallback"] = attempt_comment_fallback
-        if validation._retcode_is_done(mt5, retcode_val):
-            break
-        price_changed_codes = {
-            validation._safe_int_attr(mt5, "TRADE_RETCODE_PRICE_CHANGED", 10020),
-            validation._safe_int_attr(mt5, "TRADE_RETCODE_REQUOTE", 10004),
-        }
-        if retcode_val in price_changed_codes:
+            if price_retry_count > 0:
+                attempt["price_retry"] = int(price_retry_count)
+            attempts.append(attempt)
+            if isinstance(attempt_comment_fallback, dict):
+                attempts[-1]["comment_fallback"] = attempt_comment_fallback
+            if validation._retcode_is_done(mt5, retcode_val):
+                break
+            if retcode_val not in price_changed_codes or price_retry_count >= 3:
+                _stdlib_time.sleep(0.15)
+                break
             refreshed_tick = mt5.symbol_info_tick(position.symbol)
-            if refreshed_tick is not None:
-                tick = refreshed_tick
-        _stdlib_time.sleep(0.15)
+            if refreshed_tick is None:
+                _stdlib_time.sleep(0.15)
+                break
+            tick = refreshed_tick
+            price_retry_count += 1
+            _stdlib_time.sleep(0.15)
+        if validation._retcode_is_done(mt5, getattr(result, "retcode", None) if result is not None else None):
+            break
 
     close_ok = (
         validation._retcode_is_done(mt5, getattr(result, "retcode", None))

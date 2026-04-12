@@ -3,7 +3,7 @@
 import logging
 import math
 import time as _stdlib_time
-from typing import Any, Dict, List, Optional, TypedDict, Union
+from typing import Any, Callable, Dict, List, Optional, TypedDict, Union
 
 from ..config import mt5_config
 from . import comments, common, time, validation
@@ -438,41 +438,72 @@ def _send_order_with_fill_mode_retry(
     request: Dict[str, Any],
     *,
     symbol_info: Any = None,
+    price_refresh: Optional[Callable[[Dict[str, Any]], bool]] = None,
+    max_price_retries: int = 3,
 ) -> tuple[Any, Optional[Dict[str, Any]], Any, List[Dict[str, Any]], Dict[str, Any]]:
     attempts: List[Dict[str, Any]] = []
     last_result = None
     last_comment_fallback = None
     last_error = None
     last_request = dict(request)
+    price_changed_codes = {
+        validation._safe_int_attr(mt5, "TRADE_RETCODE_PRICE_CHANGED", 10020),
+        validation._safe_int_attr(mt5, "TRADE_RETCODE_REQUOTE", 10004),
+    }
     for fill_mode in validation._candidate_fill_modes(mt5, symbol_info):
         attempt_request = dict(request)
         attempt_request["type_filling"] = int(fill_mode)
-        result, comment_fallback, last_error = _send_order_with_comment_fallback(mt5, attempt_request)
-        attempt: Dict[str, Any] = {"type_filling": int(fill_mode)}
-        if result is None:
-            attempt["error"] = "order_send returned None"
-            if last_error is not None:
-                attempt["last_error"] = last_error
-        else:
-            retcode = getattr(result, "retcode", None)
-            attempt["retcode"] = retcode
-            attempt["retcode_name"] = mt5.retcode_name(retcode)
-            attempt["comment"] = getattr(result, "comment", None)
-        if comment_fallback:
-            attempt["comment_fallback"] = comment_fallback
-        attempts.append(attempt)
-        last_result = result
-        last_comment_fallback = comment_fallback
-        last_request = (
-            dict(comment_fallback["request"])
-            if isinstance(comment_fallback, dict) and comment_fallback.get("used") and isinstance(comment_fallback.get("request"), dict)
-            else attempt_request
-        )
-        try:
-            if result is not None and validation._retcode_is_done(mt5, getattr(result, "retcode", -1)):
-                return result, comment_fallback, last_error, attempts, last_request
-        except Exception:
-            pass
+        price_retry_count = 0
+        while True:
+            request_to_send = dict(attempt_request)
+            result, comment_fallback, last_error = _send_order_with_comment_fallback(mt5, request_to_send)
+            attempt: Dict[str, Any] = {"type_filling": int(fill_mode)}
+            if price_retry_count > 0:
+                attempt["price_retry"] = int(price_retry_count)
+            if result is None:
+                attempt["error"] = "order_send returned None"
+                if last_error is not None:
+                    attempt["last_error"] = last_error
+            else:
+                retcode = getattr(result, "retcode", None)
+                attempt["retcode"] = retcode
+                attempt["retcode_name"] = mt5.retcode_name(retcode)
+                attempt["comment"] = getattr(result, "comment", None)
+            if comment_fallback:
+                attempt["comment_fallback"] = comment_fallback
+            attempts.append(attempt)
+            last_result = result
+            last_comment_fallback = comment_fallback
+            last_request = (
+                dict(comment_fallback["request"])
+                if isinstance(comment_fallback, dict) and comment_fallback.get("used") and isinstance(comment_fallback.get("request"), dict)
+                else request_to_send
+            )
+            try:
+                if result is not None and validation._retcode_is_done(mt5, getattr(result, "retcode", -1)):
+                    return result, comment_fallback, last_error, attempts, last_request
+            except Exception:
+                pass
+
+            retcode = getattr(result, "retcode", None) if result is not None else None
+            should_retry_same_fill = (
+                retcode in price_changed_codes
+                and price_retry_count < max(0, int(max_price_retries))
+            )
+            if not should_retry_same_fill:
+                break
+
+            refreshed = True
+            if price_refresh is not None:
+                try:
+                    refreshed = bool(price_refresh(attempt_request))
+                except Exception:
+                    refreshed = False
+            if not refreshed:
+                break
+
+            price_retry_count += 1
+            _stdlib_time.sleep(0.15)
     return last_result, last_comment_fallback, last_error, attempts, last_request
 
 
@@ -543,11 +574,13 @@ def _submit_order_request(
     base_error: str,
     invalid_comment_error: str,
     symbol_info: Any = None,
+    price_refresh: Optional[Callable[[Dict[str, Any]], bool]] = None,
 ) -> tuple[Optional[_OrderSubmitOutcome], Optional[Dict[str, Any]]]:
     result, comment_fallback, last_error, fill_mode_attempts, used_request = _send_order_with_fill_mode_retry(
         mt5,
         request,
         symbol_info=symbol_info,
+        price_refresh=price_refresh,
     )
     if result is None:
         return None, {
@@ -768,6 +801,21 @@ def _place_market_order(  # noqa: C901
                 "type_time": mt5.ORDER_TIME_GTC,
                 "type_filling": validation._safe_int_attr(mt5, "ORDER_FILLING_IOC", 1),
             }
+
+            def _refresh_market_order_price(attempt_request: Dict[str, Any]) -> bool:
+                refreshed_tick = mt5.symbol_info_tick(symbol)
+                if refreshed_tick is None:
+                    return False
+                refreshed_price = refreshed_tick.ask if side == "BUY" else refreshed_tick.bid
+                try:
+                    refreshed_price = float(refreshed_price)
+                except Exception:
+                    return False
+                if not math.isfinite(refreshed_price) or refreshed_price <= 0.0:
+                    return False
+                attempt_request["price"] = refreshed_price
+                return True
+
             send_outcome, send_error = _submit_order_request(
                 mt5,
                 request,
@@ -778,6 +826,7 @@ def _place_market_order(  # noqa: C901
                     "try a simpler comment or omit --comment."
                 ),
                 symbol_info=symbol_info,
+                price_refresh=_refresh_market_order_price,
             )
             if send_error is not None:
                 return send_error

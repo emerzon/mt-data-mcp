@@ -694,6 +694,63 @@ def test_place_market_order_retries_fill_modes_when_first_mode_fails(mock_mt5):
     assert second_req["type_filling"] == mock_mt5.ORDER_FILLING_FOK
 
 
+def test_place_market_order_retries_same_fill_mode_after_price_change(mock_mt5):
+    mock_mt5.ORDER_FILLING_IOC = 1
+    mock_mt5.ORDER_FILLING_FOK = 0
+    mock_mt5.ORDER_FILLING_RETURN = 2
+    mock_mt5.SYMBOL_FILLING_FOK = 1
+    mock_mt5.SYMBOL_FILLING_IOC = 2
+    mock_mt5.SYMBOL_FILLING_RETURN = 4
+    mock_mt5.TRADE_RETCODE_PRICE_CHANGED = 10020
+    mock_mt5.ORDER_TIME_GTC = 0
+    mock_mt5.symbol_info.return_value.filling_mode = mock_mt5.SYMBOL_FILLING_FOK
+    mock_mt5.symbol_info_tick.side_effect = [
+        MagicMock(bid=1.05000, ask=1.05010),
+        MagicMock(bid=1.05000, ask=1.05010),
+        MagicMock(bid=1.05020, ask=1.05030),
+    ]
+    mock_mt5.order_send.side_effect = [
+        MagicMock(
+            retcode=10020,
+            deal=0,
+            order=0,
+            volume=0.1,
+            price=1.05010,
+            bid=1.05000,
+            ask=1.05010,
+            comment="price changed",
+            request_id=703,
+        ),
+        MagicMock(
+            retcode=10009,
+            deal=123,
+            order=456,
+            volume=0.1,
+            price=1.05030,
+            bid=1.05020,
+            ask=1.05030,
+            comment="",
+            request_id=704,
+        ),
+    ]
+
+    res = _place_market_order(
+        symbol="EURUSD",
+        volume=0.1,
+        order_type="BUY",
+    )
+
+    assert "error" not in res
+    assert mock_mt5.order_send.call_count == 2
+    first_req = mock_mt5.order_send.call_args_list[0].args[0]
+    second_req = mock_mt5.order_send.call_args_list[1].args[0]
+    assert first_req["type_filling"] == mock_mt5.ORDER_FILLING_FOK
+    assert second_req["type_filling"] == mock_mt5.ORDER_FILLING_FOK
+    assert first_req["price"] == pytest.approx(1.05010)
+    assert second_req["price"] == pytest.approx(1.05030)
+    assert res["type_filling_used"] == mock_mt5.ORDER_FILLING_FOK
+
+
 def test_place_market_order_accepts_done_partial_without_retry(mock_mt5):
     mock_mt5.ORDER_FILLING_IOC = 1
     mock_mt5.ORDER_FILLING_FOK = 0
@@ -1536,6 +1593,55 @@ def test_execute_single_close_success(mock_mt5):
     assert result["retcode"] == 10009
     assert result.get("error") is None
     assert result["pnl"] == 10.0
+
+
+def test_execute_single_close_retries_same_fill_mode_after_price_change(mock_mt5):
+    mock_mt5.ORDER_FILLING_FOK = 0
+    mock_mt5.ORDER_TIME_GTC = 0
+    mock_mt5.TRADE_RETCODE_DONE = 10009
+    mock_mt5.TRADE_RETCODE_PRICE_CHANGED = 10020
+
+    position = SimpleNamespace(
+        ticket=42, symbol="EURUSD", volume=0.1, type=0,
+        price_open=1.04000, time=1700000000, magic=100,
+    )
+    mock_mt5.order_send.side_effect = [
+        SimpleNamespace(
+            retcode=10020, deal=0, order=0, volume=0.1,
+            price=1.05000, comment="price changed", profit=None,
+        ),
+        SimpleNamespace(
+            retcode=10009, deal=500, order=600, volume=0.1,
+            price=1.04990, comment="close", profit=9.0,
+        ),
+    ]
+    mock_mt5.symbol_info_tick.side_effect = [
+        SimpleNamespace(bid=1.05000, ask=1.05010),
+        SimpleNamespace(bid=1.04990, ask=1.05000),
+    ]
+
+    from src.mtdata.core.trading.gateway import create_trading_gateway
+    gw = create_trading_gateway(
+        adapter=mock_mt5, include_retcode_name=True,
+        ensure_connection_impl=lambda: None,
+    )
+
+    result = _execute_single_close(
+        gw, position,
+        requested_volume=None, position_volume_before=0.1,
+        remaining_volume_estimate=None, deviation=20,
+        comment="test", fill_modes=[mock_mt5.ORDER_FILLING_FOK],
+    )
+
+    assert result["ticket"] == 42
+    assert result["retcode"] == 10009
+    assert mock_mt5.order_send.call_count == 2
+    first_req = mock_mt5.order_send.call_args_list[0].args[0]
+    second_req = mock_mt5.order_send.call_args_list[1].args[0]
+    assert first_req["type_filling"] == mock_mt5.ORDER_FILLING_FOK
+    assert second_req["type_filling"] == mock_mt5.ORDER_FILLING_FOK
+    assert first_req["price"] == pytest.approx(1.05000)
+    assert second_req["price"] == pytest.approx(1.04990)
 
 
 def test_execute_single_close_no_tick(mock_mt5):
