@@ -162,6 +162,7 @@ mtdata-cli data_fetch_candles EURUSD --start "2025-12-01" --end "2025-12-31"
 | `forecast_list_methods` | List available forecasting methods |
 | `forecast_list_library_models` | List models in a specific library |
 | `forecast_backtest_run` | Run rolling-origin backtest |
+| `strategy_backtest` | Backtest simple indicator-driven trading strategies |
 | `forecast_conformal_intervals` | Generate calibrated confidence bands |
 | `forecast_volatility_estimate` | Forecast volatility |
 | `forecast_tune_genetic` | Optimize model parameters (genetic algorithm) |
@@ -298,6 +299,15 @@ mtdata-cli forecast_generate EURUSD --library pretrained --method chronos2 --hor
 
 # Monte Carlo simulation
 mtdata-cli forecast_generate EURUSD --method mc_gbm --params "n_sims=2000"
+```
+
+### Backtest Trading Rules
+```bash
+mtdata-cli strategy_backtest EURUSD --timeframe H1 --strategy sma_cross \
+  --fast-period 10 --slow-period 30 --lookback 300 --json
+
+mtdata-cli strategy_backtest EURUSD --timeframe H1 --strategy rsi_reversion \
+  --rsi-length 14 --oversold 30 --overbought 70 --position-mode long_only --json
 ```
 
 ### Analyze Risk

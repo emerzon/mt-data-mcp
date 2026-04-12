@@ -188,7 +188,8 @@ class ClassicDetectorConfig:
         False  # backward-compat aging of old forming patterns
     )
     stale_completion_recent_bars: int = 3
-    max_pattern_age_bars: int = 500  # maximum age (bars from current) for forming patterns; older patterns are filtered out
+    max_pattern_age_bars: int = 300  # maximum age (bars from current) for forming patterns; older patterns are filtered out
+    max_pattern_span_bars: int = 200  # maximum span (end_index - start_index) for forming patterns; longer patterns are filtered out as too stale
     include_lifecycle_metadata: bool = True
     # Optional confidence calibration map:
     # { "default": {"0.40": 0.35, "0.70": 0.62, "0.90": 0.82},

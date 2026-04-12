@@ -270,6 +270,11 @@ def _postprocess_classic_results(
         cutoff_index = n - max_age
         results = [r for r in results if r.end_index >= cutoff_index]
 
+    # Filter out patterns that span too many bars (stale long-running patterns)
+    max_span = int(getattr(cfg, "max_pattern_span_bars", 0))
+    if max_span > 0:
+        results = [r for r in results if (r.end_index - r.start_index) <= max_span]
+
     for r in results:
         raw_conf = float(r.confidence)
         cal_conf = _calibrate_confidence(raw_conf, r.name, cfg)

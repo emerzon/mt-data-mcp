@@ -259,7 +259,10 @@ def strategy_backtest(  # noqa: C901
         if float(oversold) >= float(overbought):
             return {"error": "oversold must be less than overbought"}
 
-        warmup_bars = max(int(slow_period), int(rsi_length) + 1, 5)
+        if strategy_value in {"sma_cross", "ema_cross"}:
+            warmup_bars = max(int(slow_period), 5)
+        else:
+            warmup_bars = max(int(rsi_length) + 1, 5)
         need = int(lookback) + int(warmup_bars) + 5
         try:
             df = _fetch_history(symbol, timeframe, int(need), as_of=None)

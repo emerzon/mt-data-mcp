@@ -17,7 +17,7 @@ class FractalDetectorConfig:
     breakout_basis: str = "close"
     min_prominence_pct: float = 0.0
     confidence_prominence_cap_pct: float = 1.0
-    max_age_bars: int = 500  # maximum age (bars from current) for active fractal levels; older levels are filtered out
+    max_age_bars: int = 300  # maximum age (bars from current) for active fractal levels; older levels are filtered out
 
 
 @dataclass

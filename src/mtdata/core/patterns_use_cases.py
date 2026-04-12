@@ -529,8 +529,16 @@ def run_patterns_detect(  # noqa: C901
         # Enable auto-complete for stale forming patterns by default in "all" mode
         # This prevents ancient patterns from showing as "forming" indefinitely
         classic_cfg.auto_complete_stale_forming = True
-        classic_cfg.max_pattern_age_bars = 500
-        fractal_cfg.max_age_bars = 500
+        classic_cfg.stale_completion_recent_bars = (
+            10  # More aggressive - patterns ending >10 bars ago = completed
+        )
+        # Use 1/4 of the lookback limit as max pattern age for relevant results
+        # This ensures patterns are recent regardless of timeframe
+        classic_cfg.max_pattern_age_bars = max(100, request.limit // 4)
+        # Limit pattern span to prevent ancient long-running patterns (e.g., 3-year trend lines)
+        # This filters patterns that span more than ~2-3 months on daily charts
+        classic_cfg.max_pattern_span_bars = max(50, request.limit // 6)
+        fractal_cfg.max_age_bars = max(100, request.limit // 4)
 
         classic_invalid: List[str] = []
         elliott_invalid: List[str] = []
