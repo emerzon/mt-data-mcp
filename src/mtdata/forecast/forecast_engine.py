@@ -334,8 +334,10 @@ def _reconstruct_prices_from_target(
 
     inverse_fn = _RECONSTRUCTION_MODES.get(
         transform.split("(")[0] if "(" in transform else transform,
-        _inverse_log_return,
     )
+    if inverse_fn is None:
+        logger.warning("Unknown transform %r – cannot reconstruct prices", transform)
+        return None
 
     reconstructed: List[float] = []
     anchors = history.astype(float).tolist()
