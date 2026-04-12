@@ -23,14 +23,22 @@ def _calibration_cache_key(
     hazard_lambda: int,
     base_threshold: float,
     target_false_alarm_rate: float,
+    window: int,
+    step: int,
     max_windows: int,
     bootstrap_runs: int,
+    seed: int,
 ) -> str:
     """Build a stable cache key from series content hash + calibration params."""
     h = hashlib.sha256()
     arr = np.asarray(series, dtype=np.float64)
     h.update(arr.tobytes())
-    h.update(f"|{hazard_lambda}|{base_threshold:.6f}|{target_false_alarm_rate:.6f}|{max_windows}|{bootstrap_runs}".encode())
+    h.update(
+        (
+            f"|{hazard_lambda}|{base_threshold:.6f}|{target_false_alarm_rate:.6f}"
+            f"|{window}|{step}|{max_windows}|{bootstrap_runs}|{seed}"
+        ).encode()
+    )
     return h.hexdigest()[:24]
 
 
@@ -148,11 +156,19 @@ def _walkforward_quantile_threshold_calibration(
         diagnostics["reason"] = "insufficient_points"
         return float(base_threshold), diagnostics
 
+    win = int(window) if window is not None else int(min(240, max(80, x.size // 3)))
+    win = int(np.clip(win, 60, max(60, x.size)))
+    stp = int(step) if step is not None else int(max(20, win // 3))
+    stp = int(max(10, stp))
+    max_w = int(max(1, max_windows))
+    n_boot = int(max(1, bootstrap_runs))
+    seed_val = int(seed)
+
     # Check calibration cache
     cache_key = _calibration_cache_key(
         x, int(hazard_lambda), float(base_threshold),
         diagnostics["target_false_alarm_rate"],
-        int(max_windows), int(bootstrap_runs),
+        int(win), int(stp), int(max_w), int(n_boot), seed_val,
     )
     cached = _calibration_cache_get(cache_key)
     if cached is not None:
@@ -160,13 +176,6 @@ def _walkforward_quantile_threshold_calibration(
         cached_diag = dict(cached_diag)
         cached_diag["cache_hit"] = True
         return cached_threshold, cached_diag
-
-    win = int(window) if window is not None else int(min(240, max(80, x.size // 3)))
-    win = int(np.clip(win, 60, max(60, x.size)))
-    stp = int(step) if step is not None else int(max(20, win // 3))
-    stp = int(max(10, stp))
-    max_w = int(max(1, max_windows))
-    n_boot = int(max(1, bootstrap_runs))
     q = float(np.clip(1.0 - diagnostics["target_false_alarm_rate"], 0.50, 0.999))
 
     starts = list(range(0, max(1, x.size - win + 1), stp))
@@ -177,7 +186,7 @@ def _walkforward_quantile_threshold_calibration(
     try:
         from .....utils.regime import bocpd_gaussian
 
-        rng = np.random.default_rng(int(seed))
+        rng = np.random.default_rng(seed_val)
         null_maxima: List[float] = []
         for s in starts:
             seg = x[int(s): int(s + win)]

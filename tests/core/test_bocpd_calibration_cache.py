@@ -29,22 +29,29 @@ class TestCalibrationCacheKey:
 
     def test_deterministic(self):
         series = np.array([0.01, -0.02, 0.03, 0.0, -0.01])
-        k1 = _calibration_cache_key(series, 250, 0.50, 0.02, 6, 2)
-        k2 = _calibration_cache_key(series, 250, 0.50, 0.02, 6, 2)
+        k1 = _calibration_cache_key(series, 250, 0.50, 0.02, 80, 20, 6, 2, 42)
+        k2 = _calibration_cache_key(series, 250, 0.50, 0.02, 80, 20, 6, 2, 42)
         assert k1 == k2
 
     def test_different_series(self):
         s1 = np.array([0.01, -0.02, 0.03])
         s2 = np.array([0.01, -0.02, 0.04])
-        k1 = _calibration_cache_key(s1, 250, 0.50, 0.02, 6, 2)
-        k2 = _calibration_cache_key(s2, 250, 0.50, 0.02, 6, 2)
+        k1 = _calibration_cache_key(s1, 250, 0.50, 0.02, 80, 20, 6, 2, 42)
+        k2 = _calibration_cache_key(s2, 250, 0.50, 0.02, 80, 20, 6, 2, 42)
         assert k1 != k2
 
     def test_different_params(self):
         series = np.array([0.01, -0.02, 0.03])
-        k1 = _calibration_cache_key(series, 250, 0.50, 0.02, 6, 2)
-        k2 = _calibration_cache_key(series, 100, 0.50, 0.02, 6, 2)
+        k1 = _calibration_cache_key(series, 250, 0.50, 0.02, 80, 20, 6, 2, 42)
+        k2 = _calibration_cache_key(series, 100, 0.50, 0.02, 80, 20, 6, 2, 42)
         assert k1 != k2
+
+    def test_different_window_step_or_seed(self):
+        series = np.array([0.01, -0.02, 0.03])
+        base = _calibration_cache_key(series, 250, 0.50, 0.02, 80, 20, 6, 2, 42)
+        assert base != _calibration_cache_key(series, 250, 0.50, 0.02, 120, 20, 6, 2, 42)
+        assert base != _calibration_cache_key(series, 250, 0.50, 0.02, 80, 30, 6, 2, 42)
+        assert base != _calibration_cache_key(series, 250, 0.50, 0.02, 80, 20, 6, 2, 99)
 
 
 class TestCalibrationCacheOps:
@@ -94,6 +101,34 @@ class TestWalkforwardCacheIntegration:
         )
         assert d2.get("cache_hit") is True
         assert t1 == t2
+
+    def test_custom_window_step_or_seed_bypass_stale_cache(self):
+        rng = np.random.default_rng(42)
+        series = rng.normal(0.0, 0.01, 200)
+
+        _walkforward_quantile_threshold_calibration(
+            series,
+            hazard_lambda=250,
+            base_threshold=0.50,
+            window=120,
+            step=30,
+            max_windows=2,
+            bootstrap_runs=2,
+            seed=42,
+        )
+
+        _, d2 = _walkforward_quantile_threshold_calibration(
+            series,
+            hazard_lambda=250,
+            base_threshold=0.50,
+            window=120,
+            step=30,
+            max_windows=2,
+            bootstrap_runs=2,
+            seed=99,
+        )
+
+        assert d2.get("cache_hit") is not True
 
     def test_no_cache_for_short_series(self):
         series = np.array([0.01] * 50)
