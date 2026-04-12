@@ -68,6 +68,14 @@ class TestFitLine:
         assert abs(slope - 0.5) < 0.1
         assert r2 > 0.8
 
+    def test_perfect_horizontal_line_has_unit_r2(self):
+        x = np.array([0.0, 1.0, 2.0, 3.0])
+        y = np.array([5.0, 5.0, 5.0, 5.0])
+        slope, intercept, r2 = _fit_line(x, y)
+        assert abs(slope) < 1e-12
+        assert abs(intercept - 5.0) < 1e-6
+        assert abs(r2 - 1.0) < 1e-6
+
 
 class TestFitLineRobust:
     def test_ordinary_fallback(self):
@@ -85,6 +93,15 @@ class TestFitLineRobust:
         y[5] = 999.0  # outlier
         slope, intercept, r2 = _fit_line_robust(x, y, cfg)
         assert abs(slope - 2.0) < 0.5
+
+    def test_ransac_preserves_unit_r2_for_perfect_horizontal_line(self):
+        cfg = ClassicDetectorConfig(use_robust_fit=True)
+        x = np.arange(6, dtype=float)
+        y = np.full(6, 7.5, dtype=float)
+        slope, intercept, r2 = _fit_line_robust(x, y, cfg)
+        assert abs(slope) < 1e-12
+        assert abs(intercept - 7.5) < 1e-6
+        assert abs(r2 - 1.0) < 1e-6
 
     def test_residual_threshold_is_shift_invariant(self, monkeypatch):
         thresholds = []

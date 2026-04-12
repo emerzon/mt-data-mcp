@@ -32,6 +32,12 @@ def _get_ts_dtw():
     return _ts_dtw
 
 
+def _stable_r2(ss_res: float, ss_tot: float) -> float:
+    if ss_tot == 0.0:
+        return 1.0 if ss_res <= 1e-12 else 0.0
+    return max(0.0, 1.0 - ss_res / ss_tot)
+
+
 def _fit_line(x: np.ndarray, y: np.ndarray) -> Tuple[float, float, float]:
     # slope, intercept, r2
     x = np.asarray(x, dtype=float)
@@ -42,7 +48,7 @@ def _fit_line(x: np.ndarray, y: np.ndarray) -> Tuple[float, float, float]:
     y_hat = p[0] * x + p[1]
     ss_res = float(np.sum((y - y_hat) ** 2))
     ss_tot = float(np.sum((y - y.mean()) ** 2)) if y.size else 0.0
-    r2 = 0.0 if ss_tot == 0 else max(0.0, 1.0 - ss_res / ss_tot)
+    r2 = _stable_r2(ss_res, ss_tot)
     return float(p[0]), float(p[1]), float(r2)
 
 
@@ -90,7 +96,7 @@ def _fit_line_robust(x: np.ndarray, y: np.ndarray, cfg: ClassicDetectorConfig) -
         y_hat = slope * x + intercept
         ss_res = float(np.sum((yv - y_hat) ** 2))
         ss_tot = float(np.sum((yv - yv.mean()) ** 2)) if yv.size else 0.0
-        r2 = 0.0 if ss_tot == 0 else max(0.0, 1.0 - ss_res / ss_tot)
+        r2 = _stable_r2(ss_res, ss_tot)
         return slope, intercept, r2
     except (AttributeError, TypeError, ValueError, RuntimeError):
         return _fit_line(x, y)
