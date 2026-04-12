@@ -1732,3 +1732,35 @@ class TestPatternsDetectAllMode:
         result = _call_patterns_detect(symbol="EURUSD", mode="bad_mode")
         assert "error" in result
         assert "all" in result["error"].lower()
+
+    @patch("mtdata.core.patterns._format_elliott_patterns")
+    @patch("mtdata.core.patterns._run_classic_engine")
+    @patch("mtdata.core.patterns._fetch_pattern_data")
+    @patch("mtdata.core.patterns._detect_candlestick_patterns")
+    def test_all_mode_sorted_by_confidence_desc(self, mock_candle, mock_fetch, mock_engine, mock_elliott):
+        """Each section is sorted by confidence descending."""
+        df = _make_ohlcv_df(200)
+        mock_candle.return_value = {
+            "data": [
+                {"pattern": "Low", "confidence": 0.3},
+                {"pattern": "High", "confidence": 0.95},
+                {"pattern": "Mid", "confidence": 0.6},
+            ],
+        }
+        mock_fetch.return_value = (df, None)
+        mock_engine.return_value = ([
+            {"name": "A", "status": "forming", "confidence": 0.5, "start_index": 0, "end_index": 5},
+            {"name": "B", "status": "forming", "confidence": 0.9, "start_index": 0, "end_index": 5},
+        ], None)
+        mock_elliott.return_value = [
+            {"wave_type": "X", "status": "forming", "confidence": 0.4},
+            {"wave_type": "Y", "status": "forming", "confidence": 0.8},
+        ]
+
+        result = _call_patterns_detect(symbol="EURUSD", mode="all", timeframe="H1")
+        candle_confs = [p["confidence"] for p in result["candlestick"]["patterns"]]
+        classic_confs = [p["confidence"] for p in result["classic"]["patterns"]]
+        elliott_confs = [p["confidence"] for p in result["elliott"]["patterns"]]
+        assert candle_confs == sorted(candle_confs, reverse=True)
+        assert classic_confs == sorted(classic_confs, reverse=True)
+        assert elliott_confs == sorted(elliott_confs, reverse=True)

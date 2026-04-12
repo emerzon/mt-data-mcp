@@ -457,6 +457,17 @@ def run_patterns_detect(  # noqa: C901
                 if str(r.get("status", "")).lower() != "completed"
             ]
 
+        # Sort each section by confidence descending
+        def _conf_key(r: Dict[str, Any]) -> float:
+            try:
+                return float(r.get("confidence", 0))
+            except (TypeError, ValueError):
+                return 0.0
+
+        candlestick_patterns.sort(key=_conf_key, reverse=True)
+        classic_patterns.sort(key=_conf_key, reverse=True)
+        elliott_patterns.sort(key=_conf_key, reverse=True)
+
         total = len(candlestick_patterns) + len(classic_patterns) + len(elliott_patterns)
 
         if total == 0 and section_errors:
