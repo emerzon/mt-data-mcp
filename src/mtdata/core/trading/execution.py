@@ -1087,18 +1087,31 @@ def _cancel_pending(
                 if request_magic is not None:
                     request["magic"] = request_magic
 
-                result = mt5.order_send(request)
+                result, comment_fallback, last_error = comments._send_order_with_comment_fallback(
+                    mt5,
+                    request,
+                )
                 if result is None:
-                    results.append({"ticket": order.ticket, "error": "Failed to send cancel order"})
+                    result_entry = {
+                        "ticket": order.ticket,
+                        "error": "Failed to send cancel order",
+                        "last_error": last_error,
+                    }
+                    if isinstance(comment_fallback, dict):
+                        result_entry["comment_fallback"] = comment_fallback
+                    results.append(result_entry)
                 else:
-                    results.append({
+                    result_entry = {
                         "ticket": order.ticket,
                         "retcode": result.retcode,
                         "retcode_name": mt5.retcode_name(result.retcode),
                         "deal": result.deal,
                         "order": result.order,
                         "comment": result.comment,
-                    })
+                    }
+                    if isinstance(comment_fallback, dict):
+                        result_entry["comment_fallback"] = comment_fallback
+                    results.append(result_entry)
 
             # If only one order was targeted by ticket, return single result
             if ticket is not None and len(results) == 1:

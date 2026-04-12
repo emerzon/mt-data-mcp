@@ -1826,6 +1826,32 @@ def test_cancel_pending_preserves_existing_magic(mock_mt5):
     assert req["magic"] == 54321
 
 
+def test_cancel_pending_retries_without_comment_when_comment_is_invalid(mock_mt5):
+    mock_mt5.TRADE_ACTION_REMOVE = 8
+    mock_mt5.orders_get.return_value = [SimpleNamespace(ticket=123, magic=54321)]
+    mock_mt5.last_error.side_effect = [
+        (-2, 'Invalid "comment" argument'),
+        (-2, 'Invalid "comment" argument'),
+        (1, "Success"),
+    ]
+    mock_mt5.order_send.side_effect = [
+        MagicMock(retcode=10013, deal=0, order=123, comment='Invalid "comment" argument'),
+        MagicMock(retcode=10013, deal=0, order=123, comment='Invalid "comment" argument'),
+        MagicMock(retcode=10009, deal=0, order=123, comment=""),
+    ]
+
+    res = _cancel_pending(
+        ticket=123,
+        comment="Breakout scalp comment that will be truncated anyway",
+    )
+
+    assert "error" not in res
+    assert res.get("comment_fallback", {}).get("used") is True
+    assert res.get("comment_fallback", {}).get("strategy") == "none"
+    final_req = mock_mt5.order_send.call_args_list[-1].args[0]
+    assert "comment" not in final_req
+
+
 # ---------------------------------------------------------------------------
 # _attach_post_fill_protection unit tests
 # ---------------------------------------------------------------------------
