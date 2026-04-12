@@ -8,7 +8,11 @@ import numpy as np
 import pandas as pd
 
 from ..utils.utils import to_float_np
-from .classic_impl.config import ClassicDetectorConfig, ClassicPatternResult, validate_classic_detector_config
+from .classic_impl.config import (
+    ClassicDetectorConfig,
+    ClassicPatternResult,
+    validate_classic_detector_config,
+)
 from .classic_impl.continuation import detect_cup_handle, detect_flags_pennants
 from .classic_impl.reversal import (
     detect_head_shoulders,
@@ -68,11 +72,14 @@ def _call_detect_pivots_close(
         return _detect_pivots_close(c, cfg, h, l)
     except TypeError as ex:
         msg = str(ex)
-        if "positional argument" not in msg and "required positional argument" not in msg:
+        if (
+            "positional argument" not in msg
+            and "required positional argument" not in msg
+        ):
             raise
         try:
             sig = inspect.signature(_detect_pivots_close)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             return _detect_pivots_close(c, cfg)
         params = list(sig.parameters.values())
         if any(param.kind == inspect.Parameter.VAR_POSITIONAL for param in params):
@@ -80,25 +87,30 @@ def _call_detect_pivots_close(
         positional = [
             param
             for param in params
-            if param.kind in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+            if param.kind
+            in (
+                inspect.Parameter.POSITIONAL_ONLY,
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            )
         ]
         if len(positional) > 2:
             raise
         return _detect_pivots_close(c, cfg)
 
+
 def _prepare_classic_inputs(
     df: pd.DataFrame,
     cfg: ClassicDetectorConfig,
 ) -> Optional[tuple[pd.DataFrame, np.ndarray, np.ndarray, np.ndarray, np.ndarray, int]]:
-    if not isinstance(df, pd.DataFrame) or 'close' not in df.columns:
+    if not isinstance(df, pd.DataFrame) or "close" not in df.columns:
         return None
     if len(df) > cfg.max_bars:
-        df = df.iloc[-cfg.max_bars:].copy()
+        df = df.iloc[-cfg.max_bars :].copy()
 
     t = _build_time_array(df)
-    c = to_float_np(df['close'])
-    h = to_float_np(df['high']) if 'high' in df.columns else c
-    l = to_float_np(df['low']) if 'low' in df.columns else c
+    c = to_float_np(df["close"])
+    h = to_float_np(df["high"]) if "high" in df.columns else c
+    l = to_float_np(df["low"]) if "low" in df.columns else c
     if h.size != c.size:
         h = c
     if l.size != c.size:
@@ -138,7 +150,9 @@ def _detect_classic_patterns_once(
     results.extend(detect_tops_bottoms(c, peaks, troughs, t, cfg))
     results.extend(detect_head_shoulders(c, peaks, troughs, t, cfg))
     results.extend(detect_rounding(c, t, cfg))
-    results.extend(detect_flags_pennants(c, h, l, t, n, cfg, peaks=peaks, troughs=troughs))
+    results.extend(
+        detect_flags_pennants(c, h, l, t, n, cfg, peaks=peaks, troughs=troughs)
+    )
     results.extend(detect_cup_handle(c, t, cfg))
     return results
 
@@ -149,7 +163,11 @@ def _pattern_overlap_ratio(a: ClassicPatternResult, b: ClassicPatternResult) -> 
     if hi < lo:
         return 0.0
     inter = hi - lo + 1
-    union = max(int(a.end_index), int(b.end_index)) - min(int(a.start_index), int(b.start_index)) + 1
+    union = (
+        max(int(a.end_index), int(b.end_index))
+        - min(int(a.start_index), int(b.start_index))
+        + 1
+    )
     if union <= 0:
         return 0.0
     return float(inter) / float(union)
@@ -204,7 +222,10 @@ def _scan_classic_patterns(
 ) -> List[ClassicPatternResult]:
     n_total = int(c.size)
     step = max(1, int(getattr(cfg, "scan_step_bars", 10)))
-    min_prefix = max(int(getattr(cfg, "min_input_bars", 100)), int(getattr(cfg, "scan_min_prefix_bars", 120)))
+    min_prefix = max(
+        int(getattr(cfg, "min_input_bars", 100)),
+        int(getattr(cfg, "scan_min_prefix_bars", 120)),
+    )
     prefix_ends = list(range(min_prefix, n_total + 1, step))
     if not prefix_ends or prefix_ends[-1] != n_total:
         prefix_ends.append(n_total)
@@ -240,8 +261,14 @@ def _postprocess_classic_results(
     if bool(cfg.auto_complete_stale_forming):
         recent_bars = max(1, int(getattr(cfg, "stale_completion_recent_bars", 3)))
         for i, r in enumerate(results):
-            if r.status == 'forming' and r.end_index < (n - recent_bars):
-                results[i] = replace(r, status='completed')
+            if r.status == "forming" and r.end_index < (n - recent_bars):
+                results[i] = replace(r, status="completed")
+
+    # Filter out old forming patterns based on max_pattern_age_bars
+    max_age = int(getattr(cfg, "max_pattern_age_bars", 500))
+    if max_age > 0:
+        cutoff_index = n - max_age
+        results = [r for r in results if r.end_index >= cutoff_index]
 
     for r in results:
         raw_conf = float(r.confidence)
@@ -270,13 +297,16 @@ def _postprocess_classic_results(
     return results
 
 
-def detect_classic_patterns(df: pd.DataFrame, cfg: Optional[ClassicDetectorConfig] = None) -> List[ClassicPatternResult]:
+def detect_classic_patterns(
+    df: pd.DataFrame, cfg: Optional[ClassicDetectorConfig] = None
+) -> List[ClassicPatternResult]:
     """Detect classic chart patterns on OHLCV DataFrame with 'time' and 'close' columns."""
     if cfg is None:
         cfg = ClassicDetectorConfig()
     config_warnings = validate_classic_detector_config(cfg)
     if config_warnings:
         import logging
+
         _log = logging.getLogger(__name__)
         for w in config_warnings:
             _log.warning("ClassicDetectorConfig: %s", w)

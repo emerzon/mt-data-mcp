@@ -134,6 +134,318 @@ def _compute_performance_metrics(
     return metrics
 
 
+def _strategy_signal_label(value: float) -> str:
+    if value > 0:
+        return "long"
+    if value < 0:
+        return "short"
+    return "flat"
+
+
+def _build_strategy_signal_series(
+    df: Any,
+    *,
+    strategy: str,
+    position_mode: str,
+    fast_period: int,
+    slow_period: int,
+    rsi_length: int,
+    oversold: float,
+    overbought: float,
+) -> tuple[Any, Dict[str, Any], int]:
+    close = df["close"].astype(float)
+    diagnostics: Dict[str, Any] = {"fast_ma": None, "slow_ma": None, "rsi": None}
+
+    if strategy == "sma_cross":
+        fast_ma = close.rolling(window=int(fast_period), min_periods=int(fast_period)).mean()
+        slow_ma = close.rolling(window=int(slow_period), min_periods=int(slow_period)).mean()
+        signal = fast_ma * 0.0
+        signal[:] = np.where(fast_ma > slow_ma, 1.0, np.where(fast_ma < slow_ma, -1.0, 0.0))
+        signal[(~np.isfinite(fast_ma)) | (~np.isfinite(slow_ma))] = np.nan
+        diagnostics["fast_ma"] = fast_ma
+        diagnostics["slow_ma"] = slow_ma
+        warmup = int(slow_period)
+    elif strategy == "ema_cross":
+        fast_ma = close.ewm(span=int(fast_period), adjust=False, min_periods=int(fast_period)).mean()
+        slow_ma = close.ewm(span=int(slow_period), adjust=False, min_periods=int(slow_period)).mean()
+        signal = fast_ma * 0.0
+        signal[:] = np.where(fast_ma > slow_ma, 1.0, np.where(fast_ma < slow_ma, -1.0, 0.0))
+        signal[(~np.isfinite(fast_ma)) | (~np.isfinite(slow_ma))] = np.nan
+        diagnostics["fast_ma"] = fast_ma
+        diagnostics["slow_ma"] = slow_ma
+        warmup = int(slow_period)
+    elif strategy == "rsi_reversion":
+        delta = close.diff()
+        gain = delta.clip(lower=0.0)
+        loss = (-delta).clip(lower=0.0)
+        avg_gain = gain.ewm(alpha=1.0 / float(rsi_length), adjust=False, min_periods=int(rsi_length)).mean()
+        avg_loss = loss.ewm(alpha=1.0 / float(rsi_length), adjust=False, min_periods=int(rsi_length)).mean()
+        rs = avg_gain / avg_loss.replace(0.0, np.nan)
+        rsi = 100.0 - (100.0 / (1.0 + rs))
+        rsi = rsi.where(avg_loss != 0.0, 100.0)
+        rsi = rsi.where(~((avg_gain == 0.0) & (avg_loss == 0.0)), 50.0)
+        signal = rsi * 0.0
+        signal[:] = np.where(rsi < float(oversold), 1.0, np.where(rsi > float(overbought), -1.0, 0.0))
+        signal[~np.isfinite(rsi)] = np.nan
+        diagnostics["rsi"] = rsi
+        warmup = int(rsi_length) + 1
+    else:
+        raise ForecastError(f"Unsupported strategy '{strategy}'")
+
+    if position_mode == "long_only":
+        signal = signal.where(~np.isfinite(signal), np.where(signal > 0.0, 1.0, 0.0))
+    return signal, diagnostics, warmup
+
+
+def _build_strategy_trade(
+    *,
+    direction: int,
+    entry_idx: int,
+    exit_idx: int,
+    entry_time: float,
+    exit_time: float,
+    entry_price: float,
+    exit_price: float,
+    slippage_bps: float,
+) -> Dict[str, Any]:
+    gross_return = float(direction) * ((float(exit_price) - float(entry_price)) / float(entry_price))
+    slip = float(abs(slippage_bps) or 0.0) / 10000.0
+    net_return = gross_return - (2.0 * slip)
+    if net_return <= -0.999:
+        net_return = -0.999
+    return {
+        "direction": _strategy_signal_label(float(direction)),
+        "entry_time": _format_time_minimal(float(entry_time)),
+        "exit_time": _format_time_minimal(float(exit_time)),
+        "entry_price": float(entry_price),
+        "exit_price": float(exit_price),
+        "bars_held": int(max(1, exit_idx - entry_idx)),
+        "return_gross": gross_return,
+        "return_net": net_return,
+    }
+
+
+def strategy_backtest(  # noqa: C901
+    symbol: str,
+    timeframe: TimeframeLiteral = "H1",
+    strategy: Literal["sma_cross", "ema_cross", "rsi_reversion"] = "sma_cross",  # type: ignore
+    lookback: int = 500,
+    detail: Literal["compact", "full"] = "compact",  # type: ignore
+    position_mode: Literal["long_only", "long_short"] = "long_short",  # type: ignore
+    fast_period: int = 10,
+    slow_period: int = 30,
+    rsi_length: int = 14,
+    oversold: float = 30.0,
+    overbought: float = 70.0,
+    max_hold_bars: Optional[int] = None,
+    slippage_bps: float = 0.0,
+) -> Dict[str, Any]:
+    try:
+        strategy_value = str(strategy or "sma_cross").strip().lower()
+        if strategy_value not in {"sma_cross", "ema_cross", "rsi_reversion"}:
+            return {"error": "strategy must be one of: sma_cross, ema_cross, rsi_reversion"}
+        position_mode_value = str(position_mode or "long_short").strip().lower()
+        if position_mode_value not in {"long_only", "long_short"}:
+            return {"error": "position_mode must be 'long_only' or 'long_short'"}
+        detail_mode = str(detail or "compact").strip().lower()
+        if detail_mode not in {"compact", "full"}:
+            return {"error": "detail must be 'compact' or 'full'"}
+        if timeframe not in TIMEFRAME_MAP:
+            return {"error": invalid_timeframe_error(timeframe, TIMEFRAME_MAP)}
+        if int(lookback) < 5:
+            return {"error": "lookback must be at least 5"}
+        if int(fast_period) >= int(slow_period):
+            return {"error": "fast_period must be less than slow_period"}
+        if float(oversold) >= float(overbought):
+            return {"error": "oversold must be less than overbought"}
+
+        warmup_bars = max(int(slow_period), int(rsi_length) + 1, 5)
+        need = int(lookback) + int(warmup_bars) + 5
+        try:
+            df = _fetch_history(symbol, timeframe, int(need), as_of=None)
+        except Exception as ex:
+            return {"error": str(ex)}
+        if len(df) < max(int(lookback), warmup_bars + 5):
+            return {"error": "Not enough closed bars for strategy backtest"}
+
+        signal_series, diagnostics, signal_warmup = _build_strategy_signal_series(
+            df,
+            strategy=strategy_value,
+            position_mode=position_mode_value,
+            fast_period=int(fast_period),
+            slow_period=int(slow_period),
+            rsi_length=int(rsi_length),
+            oversold=float(oversold),
+            overbought=float(overbought),
+        )
+
+        start_signal_idx = max(int(signal_warmup), len(df) - int(lookback))
+        times = df["time"].astype(float).to_numpy()
+        opens = df["open"].astype(float).to_numpy()
+        closes = df["close"].astype(float).to_numpy()
+        signals = signal_series.to_numpy(dtype=float)
+
+        trades: List[Dict[str, Any]] = []
+        current_direction = 0
+        entry_idx = None
+        entry_time = None
+        entry_price = None
+
+        def _execution_price(bar_idx: int) -> Optional[float]:
+            if bar_idx < 0 or bar_idx >= len(opens):
+                return None
+            open_price = float(opens[bar_idx])
+            if math.isfinite(open_price) and open_price > 0.0:
+                return open_price
+            close_price = float(closes[bar_idx])
+            if math.isfinite(close_price) and close_price > 0.0:
+                return close_price
+            return None
+
+        for signal_idx in range(int(start_signal_idx), len(df) - 1):
+            raw_signal = float(signals[signal_idx]) if math.isfinite(float(signals[signal_idx])) else 0.0
+            desired_direction = int(np.sign(raw_signal))
+            action_idx = int(signal_idx + 1)
+            action_price = _execution_price(action_idx)
+            if action_price is None:
+                continue
+
+            if current_direction == 0:
+                if desired_direction != 0:
+                    current_direction = desired_direction
+                    entry_idx = action_idx
+                    entry_time = float(times[action_idx])
+                    entry_price = float(action_price)
+                continue
+
+            assert entry_idx is not None and entry_time is not None and entry_price is not None
+            bars_held = int(action_idx - entry_idx)
+            hit_max_hold = max_hold_bars is not None and bars_held >= int(max_hold_bars)
+            if desired_direction == current_direction and not hit_max_hold:
+                continue
+
+            trades.append(
+                _build_strategy_trade(
+                    direction=current_direction,
+                    entry_idx=int(entry_idx),
+                    exit_idx=action_idx,
+                    entry_time=float(entry_time),
+                    exit_time=float(times[action_idx]),
+                    entry_price=float(entry_price),
+                    exit_price=float(action_price),
+                    slippage_bps=float(slippage_bps),
+                )
+            )
+            current_direction = 0
+            entry_idx = None
+            entry_time = None
+            entry_price = None
+
+            if desired_direction != 0:
+                current_direction = desired_direction
+                entry_idx = action_idx
+                entry_time = float(times[action_idx])
+                entry_price = float(action_price)
+
+        if current_direction != 0 and entry_idx is not None and entry_time is not None and entry_price is not None:
+            final_exit_idx = len(df) - 1
+            final_exit_price = float(closes[final_exit_idx])
+            if not math.isfinite(final_exit_price) or final_exit_price <= 0.0:
+                final_exit_price = _execution_price(final_exit_idx) or float(entry_price)
+            trades.append(
+                _build_strategy_trade(
+                    direction=current_direction,
+                    entry_idx=int(entry_idx),
+                    exit_idx=int(final_exit_idx),
+                    entry_time=float(entry_time),
+                    exit_time=float(times[final_exit_idx]),
+                    entry_price=float(entry_price),
+                    exit_price=float(final_exit_price),
+                    slippage_bps=float(slippage_bps),
+                )
+            )
+
+        trade_returns = [float(trade["return_net"]) for trade in trades if trade.get("return_net") is not None]
+        entry_indices = []
+        for trade in trades:
+            entry_time_text = str(trade.get("entry_time") or "")
+            try:
+                entry_idx = next(i for i, ts in enumerate(times) if _format_time_minimal(float(ts)) == entry_time_text)
+            except Exception:
+                entry_idx = None
+            if entry_idx is not None:
+                entry_indices.append(entry_idx)
+        trade_spacing = None
+        if len(entry_indices) > 1:
+            trade_spacing = int(np.median(np.diff(entry_indices)))
+
+        metrics = _compute_performance_metrics(
+            trade_returns,
+            timeframe,
+            1,
+            float(slippage_bps),
+            trade_spacing_bars=trade_spacing,
+        ) if trade_returns else {}
+
+        gross_equity = np.cumprod([1.0 + float(trade["return_gross"]) for trade in trades]) if trades else np.array([1.0])
+        net_equity = np.cumprod([1.0 + float(trade["return_net"]) for trade in trades]) if trades else np.array([1.0])
+        long_trades = int(sum(1 for trade in trades if trade.get("direction") == "long"))
+        short_trades = int(sum(1 for trade in trades if trade.get("direction") == "short"))
+        last_idx = len(df) - 1
+        last_signal_value = float(signals[last_idx]) if math.isfinite(float(signals[last_idx])) else 0.0
+
+        result: Dict[str, Any] = {
+            "success": True,
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "strategy": strategy_value,
+            "detail": detail_mode,
+            "position_mode": position_mode_value,
+            "parameters": {
+                "lookback": int(lookback),
+                "fast_period": int(fast_period),
+                "slow_period": int(slow_period),
+                "rsi_length": int(rsi_length),
+                "oversold": float(oversold),
+                "overbought": float(overbought),
+                "max_hold_bars": int(max_hold_bars) if max_hold_bars is not None else None,
+                "slippage_bps": float(slippage_bps),
+            },
+            "summary": {
+                "bars_used": int(lookback),
+                "warmup_bars": int(signal_warmup),
+                "trade_count": int(len(trades)),
+                "long_trades": long_trades,
+                "short_trades": short_trades,
+                "gross_return": float(gross_equity[-1] - 1.0),
+                "net_return": float(net_equity[-1] - 1.0),
+            },
+            "metrics": metrics,
+            "last_signal": {
+                "signal": _strategy_signal_label(last_signal_value),
+                "close": float(closes[last_idx]),
+                "fast_ma": float(diagnostics["fast_ma"].iloc[last_idx]) if diagnostics.get("fast_ma") is not None and np.isfinite(float(diagnostics["fast_ma"].iloc[last_idx])) else None,
+                "slow_ma": float(diagnostics["slow_ma"].iloc[last_idx]) if diagnostics.get("slow_ma") is not None and np.isfinite(float(diagnostics["slow_ma"].iloc[last_idx])) else None,
+                "rsi": float(diagnostics["rsi"].iloc[last_idx]) if diagnostics.get("rsi") is not None and np.isfinite(float(diagnostics["rsi"].iloc[last_idx])) else None,
+                "time": _format_time_minimal(float(times[last_idx])),
+            },
+        }
+        if trades:
+            if detail_mode == "full":
+                result["trades"] = trades
+            else:
+                result["trade_sample"] = trades[: min(10, len(trades))]
+        else:
+            result["no_action"] = True
+            result["message"] = "The strategy generated no trades on the requested history."
+        return result
+    except Exception as e:
+        return {"error": f"Error in strategy_backtest: {str(e)}"}
+
+
+execute_strategy_backtest = strategy_backtest
+
+
 def forecast_backtest(  # noqa: C901
     symbol: str,
     timeframe: TimeframeLiteral = "H1",

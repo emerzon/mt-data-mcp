@@ -114,7 +114,9 @@ def run_patterns_detect(  # noqa: C901
     deps: PatternsDetectDeps,
 ) -> Dict[str, Any]:
     tf_norm: Optional[str] = (
-        str(request.timeframe).strip().upper() if request.timeframe is not None else None
+        str(request.timeframe).strip().upper()
+        if request.timeframe is not None
+        else None
     )
     if not tf_norm:
         tf_norm = None
@@ -149,7 +151,9 @@ def run_patterns_detect(  # noqa: C901
             config=request.config if isinstance(request.config, dict) else None,
         )
         if detail_value == "compact":
-            return deps.compact_patterns_payload(out if isinstance(out, dict) else {"data": out})
+            return deps.compact_patterns_payload(
+                out if isinstance(out, dict) else {"data": out}
+            )
         return out
 
     if mode_value == "classic":
@@ -161,10 +165,14 @@ def run_patterns_detect(  # noqa: C901
         )
         if unknown_cfg:
             return {"error": f"Invalid config key(s): {sorted(unknown_cfg)}"}
-        df, err = deps.fetch_pattern_data(request.symbol, tf_single, request.limit, request.denoise)
+        df, err = deps.fetch_pattern_data(
+            request.symbol, tf_single, request.limit, request.denoise
+        )
         if err:
             return err
-        engines, invalid_engines = deps.select_classic_engines(request.engine, request.ensemble)
+        engines, invalid_engines = deps.select_classic_engines(
+            request.engine, request.ensemble
+        )
         if invalid_engines:
             return {
                 "error": (
@@ -183,7 +191,9 @@ def run_patterns_detect(  # noqa: C901
                 engine_errors[eng] = eng_err
             per_engine[eng] = patt_rows
 
-        non_empty = {engine_name: rows for engine_name, rows in per_engine.items() if rows}
+        non_empty = {
+            engine_name: rows for engine_name, rows in per_engine.items() if rows
+        }
         if not non_empty:
             if engine_errors and len(engine_errors) == len(engines):
                 return {
@@ -203,7 +213,11 @@ def run_patterns_detect(  # noqa: C901
                 df,
                 detail=detail_value,
             )
-            resp["engine"] = "ensemble" if (bool(request.ensemble) or len(engines) > 1) else engines[0]
+            resp["engine"] = (
+                "ensemble"
+                if (bool(request.ensemble) or len(engines) > 1)
+                else engines[0]
+            )
             resp["engines_run"] = engines
             resp["engine_findings"] = deps.summarize_engine_findings(
                 per_engine, engines, request.include_completed
@@ -275,7 +289,9 @@ def run_patterns_detect(  # noqa: C901
         if config_errors:
             return {"error": f"Invalid fractal config: {config_errors[0]}"}
 
-        df, err = deps.fetch_pattern_data(request.symbol, tf_single, request.limit, request.denoise)
+        df, err = deps.fetch_pattern_data(
+            request.symbol, tf_single, request.limit, request.denoise
+        )
         if err:
             return err
 
@@ -327,7 +343,9 @@ def run_patterns_detect(  # noqa: C901
             return {"error": f"Invalid config key(s): {sorted(unknown_cfg)}"}
 
         if tf_norm:
-            df, err = deps.fetch_pattern_data(request.symbol, tf_norm, request.limit, request.denoise)
+            df, err = deps.fetch_pattern_data(
+                request.symbol, tf_norm, request.limit, request.denoise
+            )
             if err:
                 return err
 
@@ -355,7 +373,9 @@ def run_patterns_detect(  # noqa: C901
         hidden_completed_rows_total: List[Dict[str, Any]] = []
 
         for tf in scanned_timeframes:
-            df, err = deps.fetch_pattern_data(request.symbol, tf, request.limit, request.denoise)
+            df, err = deps.fetch_pattern_data(
+                request.symbol, tf, request.limit, request.denoise
+            )
             if err:
                 failed_timeframes[tf] = str(err.get("error", "Unknown error"))
                 continue
@@ -365,11 +385,21 @@ def run_patterns_detect(  # noqa: C901
                 tf_patterns
                 if request.include_completed
                 else [
-                    d for d in tf_patterns if str(d.get("status", "")).lower() == "forming"
+                    d
+                    for d in tf_patterns
+                    if str(d.get("status", "")).lower() == "forming"
                 ]
             )
-            completed_hidden = 0 if request.include_completed else int(
-                sum(1 for d in tf_patterns if str(d.get("status", "")).lower() == "completed")
+            completed_hidden = (
+                0
+                if request.include_completed
+                else int(
+                    sum(
+                        1
+                        for d in tf_patterns
+                        if str(d.get("status", "")).lower() == "completed"
+                    )
+                )
             )
             completed_hidden_total += int(completed_hidden)
             hidden_completed_rows = [
@@ -388,7 +418,9 @@ def run_patterns_detect(  # noqa: C901
                 finding_row["completed_patterns_hidden"] = int(completed_hidden)
                 if completed_preview:
                     finding_row["completed_patterns_preview"] = completed_preview
-                finding_row["note"] = _elliott_hidden_completed_note(completed_hidden, completed_preview)
+                finding_row["note"] = _elliott_hidden_completed_note(
+                    completed_hidden, completed_preview
+                )
             tf_warnings = df.attrs.get("warnings")
             if isinstance(tf_warnings, list) and tf_warnings:
                 finding_row["warnings"] = [str(w) for w in tf_warnings if str(w)]
@@ -414,7 +446,9 @@ def run_patterns_detect(  # noqa: C901
 
             if request.include_series:
                 series_payload: Dict[str, Any] = {
-                    "series_close": [float(v) for v in deps.to_float_np(df.get("close")).tolist()]
+                    "series_close": [
+                        float(v) for v in deps.to_float_np(df.get("close")).tolist()
+                    ]
                 }
                 if "time" in df.columns:
                     if str(request.series_time).lower() == "epoch":
@@ -461,10 +495,14 @@ def run_patterns_detect(  # noqa: C901
                 )
         if completed_hidden_total > 0:
             resp["completed_patterns_hidden"] = int(completed_hidden_total)
-            completed_preview_total = _elliott_completed_preview(hidden_completed_rows_total)
+            completed_preview_total = _elliott_completed_preview(
+                hidden_completed_rows_total
+            )
             if completed_preview_total:
                 resp["completed_patterns_preview"] = completed_preview_total
-            resp["note"] = _elliott_hidden_completed_note(completed_hidden_total, completed_preview_total)
+            resp["note"] = _elliott_hidden_completed_note(
+                completed_hidden_total, completed_preview_total
+            )
         if failed_timeframes:
             resp["failed_timeframes"] = failed_timeframes
         if warnings_out:
@@ -487,6 +525,13 @@ def run_patterns_detect(  # noqa: C901
         classic_cfg = deps.classic_cfg_cls()
         elliott_cfg = deps.elliott_cfg_cls()
         fractal_cfg = deps.fractal_cfg_cls()
+
+        # Enable auto-complete for stale forming patterns by default in "all" mode
+        # This prevents ancient patterns from showing as "forming" indefinitely
+        classic_cfg.auto_complete_stale_forming = True
+        classic_cfg.max_pattern_age_bars = 500
+        fractal_cfg.max_age_bars = 500
+
         classic_invalid: List[str] = []
         elliott_invalid: List[str] = []
         fractal_invalid: List[str] = []
@@ -604,15 +649,18 @@ def run_patterns_detect(  # noqa: C901
         # Filter completed patterns for classic/elliott/fractal
         if not request.include_completed:
             classic_patterns = [
-                r for r in classic_patterns
+                r
+                for r in classic_patterns
                 if str(r.get("status", "")).lower() != "completed"
             ]
             elliott_patterns = [
-                r for r in elliott_patterns
+                r
+                for r in elliott_patterns
                 if str(r.get("status", "")).lower() != "completed"
             ]
             fractal_patterns = [
-                r for r in fractal_patterns
+                r
+                for r in fractal_patterns
                 if str(r.get("status", "")).lower() != "completed"
             ]
 

@@ -13,6 +13,7 @@ from ..forecast.requests import (
     ForecastTuneGeneticRequest,
     ForecastTuneOptunaRequest,
     ForecastVolatilityEstimateRequest,
+    StrategyBacktestRequest,
 )
 from ..utils.barriers import (
     build_barrier_kwargs_from as _build_barrier_kwargs_from,
@@ -65,6 +66,12 @@ def _forecast_backtest_impl(**kwargs):
     return func(**kwargs)
 
 
+def _strategy_backtest_impl(**kwargs):
+    module = _forecast_backtest_module()
+    func = getattr(module, "execute_strategy_backtest", module.strategy_backtest)
+    return func(**kwargs)
+
+
 def _forecast_volatility_impl(**kwargs):
     return _forecast_volatility_module().forecast_volatility(**kwargs)
 
@@ -114,6 +121,10 @@ def run_forecast_generate(*args, **kwargs):
 
 def run_forecast_backtest(*args, **kwargs):
     return _forecast_use_cases_module().run_forecast_backtest(*args, **kwargs)
+
+
+def run_strategy_backtest(*args, **kwargs):
+    return _forecast_use_cases_module().run_strategy_backtest(*args, **kwargs)
 
 
 def run_forecast_conformal_intervals(*args, **kwargs):
@@ -236,6 +247,25 @@ def forecast_backtest_run(request: ForecastBacktestRequest) -> Dict[str, Any]:
         timeframe=request.timeframe,
         horizon=request.horizon,
         detail=request.detail,
+        require_connection=True,
+        func=_execute,
+    )
+
+
+@mcp.tool()
+def strategy_backtest(request: StrategyBacktestRequest) -> Dict[str, Any]:
+    """Backtest simple indicator-driven trading strategies on MT5 candle history."""
+    def _execute() -> Dict[str, Any]:
+        return run_strategy_backtest(
+            request,
+            strategy_backtest_impl=_strategy_backtest_impl,
+        )
+
+    return _run_forecast_operation(
+        "strategy_backtest",
+        symbol=request.symbol,
+        timeframe=request.timeframe,
+        strategy=request.strategy,
         require_connection=True,
         func=_execute,
     )

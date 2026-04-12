@@ -29,6 +29,7 @@ from .requests import (
     ForecastTuneGeneticRequest,
     ForecastTuneOptunaRequest,
     ForecastVolatilityEstimateRequest,
+    StrategyBacktestRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -331,6 +332,60 @@ def run_forecast_backtest(
         timeframe=request.timeframe,
         horizon=request.horizon,
         methods=len(request.methods or []),
+    )
+    return result
+
+
+def run_strategy_backtest(
+    request: StrategyBacktestRequest,
+    *,
+    strategy_backtest_impl: Any,
+) -> Dict[str, Any]:
+    started_at = time.perf_counter()
+    log_operation_start(
+        logger,
+        operation="strategy_backtest",
+        symbol=request.symbol,
+        timeframe=request.timeframe,
+        strategy=request.strategy,
+        lookback=request.lookback,
+    )
+    try:
+        result = strategy_backtest_impl(
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            strategy=request.strategy,
+            lookback=request.lookback,
+            detail=request.detail,
+            position_mode=request.position_mode,
+            fast_period=request.fast_period,
+            slow_period=request.slow_period,
+            rsi_length=request.rsi_length,
+            oversold=request.oversold,
+            overbought=request.overbought,
+            max_hold_bars=request.max_hold_bars,
+            slippage_bps=request.slippage_bps,
+        )
+    except Exception as exc:
+        log_operation_exception(
+            logger,
+            operation="strategy_backtest",
+            started_at=started_at,
+            exc=exc,
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            strategy=request.strategy,
+        )
+        raise
+    log_operation_finish(
+        logger,
+        operation="strategy_backtest",
+        started_at=started_at,
+        success=infer_result_success(result),
+        symbol=request.symbol,
+        timeframe=request.timeframe,
+        strategy=request.strategy,
+        lookback=request.lookback,
     )
     return result
 

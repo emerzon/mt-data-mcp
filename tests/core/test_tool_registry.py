@@ -47,6 +47,7 @@ EXPECTED_TOOL_NAMES = frozenset(
         "pivot_compute_points",
         "regime_detect",
         "report_generate",
+        "strategy_backtest",
         "support_resistance_levels",
         "symbols_describe",
         "symbols_list",

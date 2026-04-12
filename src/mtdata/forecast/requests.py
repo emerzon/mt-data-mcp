@@ -60,6 +60,30 @@ class ForecastBacktestRequest(BaseModel):
         return _reject_removed_field(values, field_name="target", replacement="quantity")
 
 
+class StrategyBacktestRequest(BaseModel):
+    symbol: str
+    timeframe: TimeframeLiteral = "H1"
+    strategy: Literal["sma_cross", "ema_cross", "rsi_reversion"] = "sma_cross"
+    lookback: int = Field(500, ge=5)
+    detail: Literal["compact", "full"] = "compact"
+    position_mode: Literal["long_only", "long_short"] = "long_short"
+    fast_period: int = Field(10, ge=1)
+    slow_period: int = Field(30, ge=2)
+    rsi_length: int = Field(14, ge=1)
+    oversold: float = Field(30.0, gt=0.0, lt=100.0)
+    overbought: float = Field(70.0, gt=0.0, lt=100.0)
+    max_hold_bars: Optional[int] = Field(None, ge=1)
+    slippage_bps: float = 0.0
+
+    @model_validator(mode="after")
+    def _validate_strategy_thresholds(self) -> "StrategyBacktestRequest":
+        if self.strategy in {"sma_cross", "ema_cross"} and self.fast_period >= self.slow_period:
+            raise ValueError("fast_period must be less than slow_period")
+        if self.oversold >= self.overbought:
+            raise ValueError("oversold must be less than overbought")
+        return self
+
+
 class ForecastConformalIntervalsRequest(BaseModel):
     symbol: str
     timeframe: TimeframeLiteral = "H1"

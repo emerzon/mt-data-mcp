@@ -17,6 +17,7 @@ class FractalDetectorConfig:
     breakout_basis: str = "close"
     min_prominence_pct: float = 0.0
     confidence_prominence_cap_pct: float = 1.0
+    max_age_bars: int = 500  # maximum age (bars from current) for active fractal levels; older levels are filtered out
 
 
 @dataclass
@@ -48,8 +49,7 @@ def validate_fractal_detector_config(
     breakout_basis = str(cfg.breakout_basis or "").strip().lower()
     if breakout_basis not in {"close", "high_low"}:
         warnings.append(
-            "breakout_basis must be 'close' or 'high_low', "
-            f"got {cfg.breakout_basis!r}"
+            f"breakout_basis must be 'close' or 'high_low', got {cfg.breakout_basis!r}"
         )
     return warnings
 
@@ -135,7 +135,7 @@ def _find_breakout(
         lows=lows,
         closes=closes,
     )
-    future = series[int(confirmation_index) + 1:]
+    future = series[int(confirmation_index) + 1 :]
     if future.size <= 0:
         return None, None, None
 
@@ -252,7 +252,9 @@ def detect_fractal_patterns(
     if breakout_basis not in {"close", "high_low"}:
         breakout_basis = "close"
 
-    highs = to_float_np(df["high"]) if "high" in df.columns else to_float_np(df["close"])
+    highs = (
+        to_float_np(df["high"]) if "high" in df.columns else to_float_np(df["close"])
+    )
     lows = to_float_np(df["low"]) if "low" in df.columns else to_float_np(df["close"])
     closes = to_float_np(df["close"])
     if highs.size != closes.size:
@@ -279,10 +281,10 @@ def detect_fractal_patterns(
         if not (np.isfinite(high) and np.isfinite(low)):
             continue
 
-        left_highs = highs[center_index - left_bars:center_index]
-        right_highs = highs[center_index + 1:center_index + 1 + right_bars]
-        left_lows = lows[center_index - left_bars:center_index]
-        right_lows = lows[center_index + 1:center_index + 1 + right_bars]
+        left_highs = highs[center_index - left_bars : center_index]
+        right_highs = highs[center_index + 1 : center_index + 1 + right_bars]
+        left_lows = lows[center_index - left_bars : center_index]
+        right_lows = lows[center_index + 1 : center_index + 1 + right_bars]
 
         if _is_bearish_fractal(high, left_highs, right_highs, left_bars, right_bars):
             prominence_pct = _fractal_prominence_pct(
@@ -354,5 +356,13 @@ def detect_fractal_patterns(
                     )
                 )
 
-    results.sort(key=lambda item: (int(item.end_index), float(item.confidence)), reverse=True)
+    # Filter out old active fractal levels based on max_age_bars
+    max_age = int(getattr(cfg, "max_age_bars", 500))
+    if max_age > 0:
+        cutoff_index = n_bars - max_age
+        results = [r for r in results if r.end_index >= cutoff_index]
+
+    results.sort(
+        key=lambda item: (int(item.end_index), float(item.confidence)), reverse=True
+    )
     return results
