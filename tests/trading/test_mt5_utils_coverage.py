@@ -613,15 +613,14 @@ class TestSymbolReadyGuard:
 # ── estimate_server_offset  (lines 267-307) ──────────────────────────────────
 
 class TestEstimateServerOffset:
-    @patch("mtdata.utils.mt5.mt5_connection")
-    def test_connection_fails(self, conn):
-        conn._ensure_connection.return_value = False
+    @patch("mtdata.utils.mt5.ensure_mt5_connection_or_raise",
+           side_effect=MT5ConnectionError("no connection"))
+    def test_connection_fails(self, _mock_conn):
         assert estimate_server_offset() == 0
 
     @patch("mtdata.utils.mt5.time")
-    @patch("mtdata.utils.mt5.mt5_connection")
-    def test_success(self, conn, mock_time):
-        conn._ensure_connection.return_value = True
+    @patch("mtdata.utils.mt5.ensure_mt5_connection_or_raise")
+    def test_success(self, _mock_conn, mock_time):
         _mt5_mock.symbol_select.return_value = True
         now = 1700000000.0
         mock_time.time.return_value = now
@@ -633,9 +632,8 @@ class TestEstimateServerOffset:
         assert result == 7200
 
     @patch("mtdata.utils.mt5.time")
-    @patch("mtdata.utils.mt5.mt5_connection")
-    def test_no_ticks(self, conn, mock_time):
-        conn._ensure_connection.return_value = True
+    @patch("mtdata.utils.mt5.ensure_mt5_connection_or_raise")
+    def test_no_ticks(self, _mock_conn, mock_time):
         _mt5_mock.symbol_select.return_value = True
         mock_time.time.return_value = 1700000000.0
         mock_time.sleep = MagicMock()
@@ -643,9 +641,8 @@ class TestEstimateServerOffset:
         assert estimate_server_offset("EURUSD", samples=2) == 0
 
     @patch("mtdata.utils.mt5.time")
-    @patch("mtdata.utils.mt5.mt5_connection")
-    def test_fallback_symbol(self, conn, mock_time):
-        conn._ensure_connection.return_value = True
+    @patch("mtdata.utils.mt5.ensure_mt5_connection_or_raise")
+    def test_fallback_symbol(self, _mock_conn, mock_time):
         # First symbol_select fails, then GBPUSD succeeds
         _mt5_mock.symbol_select.side_effect = [False, True]
         mock_time.time.return_value = 1700000000.0
@@ -657,11 +654,10 @@ class TestEstimateServerOffset:
         assert isinstance(result, int)
         _mt5_mock.symbol_select.side_effect = None
 
-    @patch("mtdata.utils.mt5.mt5_connection")
-    def test_exception(self, conn):
-        conn._ensure_connection.side_effect = Exception("boom")
+    @patch("mtdata.utils.mt5.ensure_mt5_connection_or_raise",
+           side_effect=Exception("boom"))
+    def test_exception(self, _mock_conn):
         assert estimate_server_offset() == 0
-        conn._ensure_connection.side_effect = None
 
 
 class TestCachedMt5TimeAlignment:

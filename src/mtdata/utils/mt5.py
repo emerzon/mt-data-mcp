@@ -556,7 +556,7 @@ def estimate_server_offset(symbol: str = "EURUSD", samples: int = 5) -> int:
     Returns 0 if failed.
     """
     try:
-        ensure_mt5_connection_or_raise(service=MT5Service(mt5_connection))
+        ensure_mt5_connection_or_raise()
         
         # Ensure symbol is ready
         if not mt5.symbol_select(symbol, True):
@@ -636,7 +636,7 @@ def inspect_mt5_time_alignment(
     }
 
     try:
-        ensure_mt5_connection_or_raise(service=MT5Service(mt5_connection))
+        ensure_mt5_connection_or_raise()
     except Exception as exc:
         out["reason"] = "connection_failed"
         out["error"] = str(exc)
