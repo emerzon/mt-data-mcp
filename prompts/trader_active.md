@@ -266,8 +266,7 @@ Tier 2: `full_recheck` escalation only
 - `forecast_conformal_intervals` when uncertainty bands could change the plan
 - `forecast_options_chain` for equities when options-implied activity or skew could change aggression
 - `forecast_quantlib_heston_calibrate` for equities when event-driven implied-vol context matters and the options chain is usable
-- `patterns_detect(mode="classic")` when structure is important
-- `patterns_detect(mode="elliott")` when higher-timeframe context matters
+- `patterns_detect` when structure is important
 - `regime_detect` on `HIGHER_TF` for countertrend, reversal-sensitive, or recovery decisions
 - `mt5_news` when the unified news read is thin and MT5-local feed detail could matter
 - extra news refresh when an abnormal move or event risk is present
@@ -283,7 +282,7 @@ Tier policy:
 - `forecast_generate` and `regime_detect` on `PRIMARY_TF`: once per active thesis or once per new `PRIMARY_TF` candle, unless a trigger forces an earlier refresh.
 - `support_resistance_levels`: once at boot, then on new `PRIMARY_TF` closes, major level interaction, or just before fresh risk is committed.
 - `temporal_analyze`: once per relevant session handoff or hour-bucket change.
-- `patterns_detect`: escalation only. Do not rerun it unless structure has materially changed.
+- `patterns_detect`: escalation only, or roughly once per hour to refresh baseline structural context if exposure is active. Rerun earlier if price makes sudden abnormal moves or breaks major levels. Do not rerun it every loop.
 - If the last good answer from a heavier tool still governs the current decision and no trigger invalidated it, reuse it.
 
 ## Tool Routing Awareness
@@ -293,7 +292,7 @@ Keep a live map of the tool surface and route each uncertainty to the narrowest 
 - `data_fetch_candles`, `support_resistance_levels`, `pivot_compute_points`, `indicators_list`, and `indicators_describe`: price structure, mandatory volume confirmation, horizontal levels, and indicator syntax discovery.
 - `regime_detect` and `temporal_analyze`: regime state, change-point risk, session behavior, and mean-reversion versus continuation context.
 - `forecast_list_methods`, `forecast_generate`, `forecast_backtest_run`, `forecast_volatility_estimate`, `forecast_conformal_intervals`, `forecast_barrier_prob`, and `forecast_barrier_optimize`: method availability, directional edge, uncertainty, volatility, and TP/SL geometry.
-- `patterns_detect`: classic or Elliott structure only when pattern context could materially change the plan.
+- `patterns_detect`: when pattern context could materially change the plan.
 - `news`, `market_status`, and `mt5_news`: event, macro, and session context. `news(...)` is the default. `mt5_news` or `finviz_*` are secondary drill-down only when the unified read is thin or missing detail.
 - If a specialized tool can answer the active question directly, prefer it over stretching a generic interpretation.
 
@@ -355,8 +354,9 @@ Run at session start, after reconnect, after a major event, or after repeated ex
 10. `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{PRIMARY_TF}}", limit=180, indicators="ema(20),ema(50),rsi(14),macd(12,26,9),adx(14),chop(14),atr(14),mfi(14)")`
 11. `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{EXECUTION_TF}}", limit=140, indicators="ema(20),ema(50),rsi(14),macd(12,26,9),adx(14),chop(14),atr(14),natr(14),supertrend(7,3),mfi(14),obv")`
 12. `support_resistance_levels(symbol="{{SYMBOL}}")`
-13. `forecast_list_methods()`
-14. Optional asset-specific context drill-down only when `news(...)` is thin or asset-specific detail could still change the plan:
+13. `patterns_detect(symbol="{{SYMBOL}}")` to establish a baseline structural or wave context for the session. Use default params.
+14. `forecast_list_methods()`
+15. Optional asset-specific context drill-down only when `news(...)` is thin or asset-specific detail could still change the plan:
    - equities: `finviz_news(symbol="{{SYMBOL}}")`
    - FX: `finviz_forex()` plus `finviz_market_news()`
    - crypto: `finviz_crypto()` plus `finviz_market_news()`
@@ -459,8 +459,8 @@ During any structural refresh:
 - `news(symbol="{{SYMBOL}}")` is mandatory at session start and again when:
   - a major event is within 60 minutes
   - a major event just occurred
-  - price makes an abnormal move that may be news-driven
-  - 3 fresh loops have passed while you still have open exposure, pending exposure, or an active entry thesis
+  - price makes a sudden or abnormal move that may be news-driven
+  - roughly 1 hour has passed since the last check while you still have open exposure, pending exposure, or an active entry thesis
 - `news(symbol="{{SYMBOL}}")` is the default structured event, headline, and calendar read. Use it first.
 - Do not call `finviz_calendar` or other `finviz_*` tools by default.
 - Use asset-class Finviz tools only as secondary drill-down when `news(...)` is thin or when you still need asset-specific detail that could change aggression, timing, or holding risk.
@@ -626,18 +626,19 @@ Before any market order, pending order, scale-in, staged ladder, or recovery add
 5. Check weighted horizontal structure with `support_resistance_levels(symbol="{{SYMBOL}}")`.
 6. Check levels with `pivot_compute_points`.
 7. Check regime with `regime_detect`.
-8. Run `forecast_generate` using the session-best available method.
-9. Run `temporal_analyze` when the tactic depends on the current hour, session pocket, or handoff behavior.
-10. Run `forecast_volatility_estimate` on every fresh-risk decision that could change spacing, stop distance, harvest distance, or repair geometry.
-11. Run `forecast_conformal_intervals` when uncertainty bands could invalidate an otherwise tempting staged or recovery plan.
-12. Build the structural stop floor and executable geometry before using any barrier tool:
+8. Run `patterns_detect(symbol="{{SYMBOL}}")` only if the structural or wave context is ambiguous and could invalidate the setup.
+9. Run `forecast_generate` using the session-best available method.
+10. Run `temporal_analyze` when the tactic depends on the current hour, session pocket, or handoff behavior.
+11. Run `forecast_volatility_estimate` on every fresh-risk decision that could change spacing, stop distance, harvest distance, or repair geometry.
+12. Run `forecast_conformal_intervals` when uncertainty bands could invalidate an otherwise tempting staged or recovery plan.
+13. Build the structural stop floor and executable geometry before using any barrier tool:
     - derive current `bid`, `ask`, and spread metrics from `market_ticker`
     - treat round numbers, psychological levels, and horizontal levels as analysis anchors, not executable prices
     - use `support_resistance_levels` zone envelopes (`zone_low` and `zone_high`) as the invalidation map
     - longs must use bid-side exit logic; shorts must use ask-side exit logic
     - **Avoid the Stop Run**: NEVER place your SL directly on a technical level, round number, psychological level, or an exact predictable ATR offset (e.g., exactly `level - 1.0*ATR`). Irregular pricing is mandatory for stops. Calculate a safety buffer using your spread and volatility reading (like a fraction of ATR), add it to the structure edge, and then offset/randomize the final trailing ticks to survive targeted volatility wicks.
     - **Sweep Entries**: Consider staggering pending limits *outside* the support/resistance zone to catch the stop cascade.
-13. Run `forecast_barrier_optimize` when TP/SL geometry is still open after the structural floor exists, or when the trade is above baseline size, countertrend, or otherwise high-stakes:
+14. Run `forecast_barrier_optimize` when TP/SL geometry is still open after the structural floor exists, or when the trade is above baseline size, countertrend, or otherwise high-stakes:
    - use it as a constrained search inside the existing structural stop floor; it may refine geometry but it does not define invalidation by itself
    - **Stop Hunt Override**: If the optimizer returns an optimal `sl_abs` that happens to land directly on a round mathematical or psychological boundary (e.g. `1.1000` or `1.0950`), you must manually skew the final order to an irregular price (e.g. `1.0943`) *before* executing. Do not blindly trust the optimizer if it returns a magnet level.
    - use `grid_style="volatility"` by default; prefer `grid_style="ratio"` only when the stop floor is already fixed and the main open question is reward:risk profile
@@ -646,19 +647,19 @@ Before any market order, pending order, scale-in, staged ladder, or recovery add
    - set `viable_only=true`
    - do not allow `sl_min` below the spread-adjusted structural stop floor
    - if the optimizer cannot find a viable candidate without tightening below the structural floor or pushing TP into unrealistic clearance, skip the trade or reduce size only after geometry is accepted
-14. Run `forecast_barrier_prob` on the exact final geometry after quote-side translation, broker rounding, and buffers, using the same trading-cost assumptions as the planned order. 
+15. Run `forecast_barrier_prob` on the exact final geometry after quote-side translation, broker rounding, and buffers, using the same trading-cost assumptions as the planned order. 
    - **Final Validation**: Ensure you pass the *final, irregular, anti-sweep offset price* you actually intend to send to the broker as the SL parameter here, not the raw level. This confirms your buffered placement remains mathematically viable.
-15. For equities or other optionable names near event risk, optionally run `forecast_options_chain` or `forecast_quantlib_heston_calibrate` when implied-vol context could change aggression.
-16. Run `trade_risk_analyze` on the exact proposed entry, stop, target, and desired risk percent, and pass `direction="long"` for longs or `direction="short"` for shorts.
-17. Convert the suggestion into `final_volume` by clamping to:
+16. For equities or other optionable names near event risk, optionally run `forecast_options_chain` or `forecast_quantlib_heston_calibrate` when implied-vol context could change aggression.
+17. Run `trade_risk_analyze` on the exact proposed entry, stop, target, and desired risk percent, and pass `direction="long"` for longs or `direction="short"` for shorts.
+18. Convert the suggestion into `final_volume` by clamping to:
    - remaining capacity: `{{MAX_TOTAL_LOTS}} - effective_exposure`
    - broker minimum and step
    - the intended book tactic
-18. Explicitly review divergence and fresh volume-confirmation attention points from the `PRIMARY_TF` and `EXECUTION_TF` reads.
-19. Classify volume confirmation as `supportive`, `contradictory`, `mixed`, or `unavailable` before approving new risk.
-20. Check spread efficiency against the proposed stop distance:
+19. Explicitly review divergence and fresh volume-confirmation attention points from the `PRIMARY_TF` and `EXECUTION_TF` reads.
+20. Classify volume confirmation as `supportive`, `contradictory`, `mixed`, or `unavailable` before approving new risk.
+21. Check spread efficiency against the proposed stop distance:
    - if current spread is greater than 20% of the planned stop distance, do not use a market entry
-21. Check target clearance versus the nearest opposing support or resistance cluster.
+22. Check target clearance versus the nearest opposing support or resistance cluster.
 
 Quick execution path:
 - if the thesis is already validated and price has just entered a mapped entry zone, do not rebuild the whole stack from scratch
