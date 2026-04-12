@@ -15,7 +15,7 @@ class PatternsDetectRequest(BaseModel):
     limit: int = 1000
     min_strength: float = 0.90
     min_gap: int = 3
-    robust_only: bool = True
+    robust_only: bool = False
     whitelist: Optional[str] = None
     top_k: int = 1
     last_n_bars: Optional[int] = None
