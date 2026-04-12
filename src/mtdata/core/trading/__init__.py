@@ -5,7 +5,12 @@ import logging
 from .._mcp_instance import mcp
 from ..execution_logging import run_logged_operation
 from . import time, validation
-from .account import lookup_trade_ticket_history, trade_account_info, trade_history
+from .account import (
+    lookup_trade_ticket_history,
+    trade_account_info,
+    trade_history,
+    trade_journal_analyze,
+)
 from .context import trade_session_context
 from .execution import (
     _cancel_pending,

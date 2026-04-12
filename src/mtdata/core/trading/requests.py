@@ -56,6 +56,17 @@ class TradeHistoryRequest(BaseModel):
     limit: Optional[int] = 200
 
 
+class TradeJournalAnalyzeRequest(BaseModel):
+    start: Optional[str] = None
+    end: Optional[str] = None
+    symbol: Optional[str] = None
+    position_ticket: Optional[Union[int, str]] = None
+    deal_ticket: Optional[Union[int, str]] = None
+    minutes_back: Optional[int] = None
+    limit: Optional[int] = 200
+    breakdown_limit: int = 10
+
+
 class TradeRiskAnalyzeRequest(BaseModel):
     symbol: Optional[str] = None
     desired_risk_pct: Optional[float] = None

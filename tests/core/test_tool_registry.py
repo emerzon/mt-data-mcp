@@ -57,6 +57,7 @@ EXPECTED_TOOL_NAMES = frozenset(
         "trade_get_open",
         "trade_get_pending",
         "trade_history",
+        "trade_journal_analyze",
         "trade_modify",
         "trade_place",
         "trade_risk_analyze",

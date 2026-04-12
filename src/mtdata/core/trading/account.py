@@ -25,7 +25,7 @@ from ..config import mt5_config
 from ..execution_logging import run_logged_operation
 from . import comments, validation
 from .gateway import create_trading_gateway
-from .requests import TradeHistoryRequest
+from .requests import TradeHistoryRequest, TradeJournalAnalyzeRequest
 from .use_cases import run_trade_history
 
 logger = logging.getLogger(__name__)
@@ -51,6 +51,233 @@ def _run_trade_history_request(request: TradeHistoryRequest) -> Any:
         decode_mt5_enum_label=decode_mt5_enum_label,
         mt5_config=mt5_config,
     )
+
+
+def _safe_trade_journal_float(value: Any) -> Optional[float]:
+    try:
+        numeric = float(value)
+    except Exception:
+        return None
+    if not math.isfinite(numeric):
+        return None
+    return float(numeric)
+
+
+def _is_exit_deal_row(row: Dict[str, Any]) -> bool:
+    entry_text = str(row.get("entry") or "").strip().lower()
+    if entry_text and "out" in entry_text:
+        return True
+    return bool(str(row.get("exit_trigger") or "").strip())
+
+
+def _trade_journal_net_pnl(row: Dict[str, Any]) -> Optional[float]:
+    seen = False
+    total = 0.0
+    for key in ("profit", "commission", "swap", "fee"):
+        value = _safe_trade_journal_float(row.get(key))
+        if value is None:
+            continue
+        total += value
+        seen = True
+    return float(total) if seen else None
+
+
+def _trade_journal_metrics(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    pnls = [
+        float(row["net_pnl"])
+        for row in rows
+        if _safe_trade_journal_float(row.get("net_pnl")) is not None
+    ]
+    count = int(len(pnls))
+    wins = int(sum(1 for pnl in pnls if pnl > 0.0))
+    losses = int(sum(1 for pnl in pnls if pnl < 0.0))
+    flats = int(sum(1 for pnl in pnls if pnl == 0.0))
+    gross_profit = float(sum(pnl for pnl in pnls if pnl > 0.0))
+    gross_loss = float(abs(sum(pnl for pnl in pnls if pnl < 0.0)))
+    net_pnl = float(sum(pnls))
+    avg_pnl = float(net_pnl / count) if count else None
+    avg_win = float(gross_profit / wins) if wins else None
+    avg_loss = float(gross_loss / losses) if losses else None
+    profit_factor = float(gross_profit / gross_loss) if gross_loss > 0.0 else None
+    win_rate = float(wins / count) if count else None
+    return {
+        "closed_deals": count,
+        "wins": wins,
+        "losses": losses,
+        "flats": flats,
+        "win_rate": win_rate,
+        "net_pnl": net_pnl,
+        "gross_profit": gross_profit,
+        "gross_loss": gross_loss,
+        "profit_factor": profit_factor,
+        "expectancy": avg_pnl,
+        "avg_pnl": avg_pnl,
+        "avg_win": avg_win,
+        "avg_loss": avg_loss,
+        "best_trade": max(pnls) if pnls else None,
+        "worst_trade": min(pnls) if pnls else None,
+    }
+
+
+def _build_trade_journal_breakdown(
+    rows: List[Dict[str, Any]],
+    *,
+    key_name: str,
+    label_name: str,
+    limit: int,
+) -> List[Dict[str, Any]]:
+    groups: Dict[str, List[Dict[str, Any]]] = {}
+    for row in rows:
+        label = str(row.get(key_name) or "").strip() or "Unspecified"
+        groups.setdefault(label, []).append(row)
+
+    output: List[Dict[str, Any]] = []
+    for label, items in groups.items():
+        metrics = _trade_journal_metrics(items)
+        metrics[label_name] = label
+        output.append(metrics)
+
+    output.sort(
+        key=lambda item: (
+            -abs(float(item.get("net_pnl") or 0.0)),
+            -int(item.get("closed_deals") or 0),
+            str(item.get(label_name) or ""),
+        )
+    )
+    return output[: max(1, int(limit))]
+
+
+def _trade_journal_trade_snapshot(row: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "ticket": row.get("ticket"),
+        "symbol": row.get("symbol"),
+        "time": row.get("time"),
+        "side": row.get("side"),
+        "exit_trigger": row.get("exit_trigger"),
+        "net_pnl": row.get("net_pnl"),
+        "profit": row.get("profit"),
+        "commission": row.get("commission"),
+        "swap": row.get("swap"),
+        "fee": row.get("fee"),
+        "volume": row.get("volume"),
+    }
+
+
+def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str, Any]:
+    history_result = _run_trade_history_request(
+        TradeHistoryRequest(
+            history_kind="deals",
+            start=request.start,
+            end=request.end,
+            symbol=request.symbol,
+            position_ticket=request.position_ticket,
+            deal_ticket=request.deal_ticket,
+            minutes_back=request.minutes_back,
+            limit=request.limit,
+        )
+    )
+    if isinstance(history_result, dict):
+        if history_result.get("error"):
+            return history_result
+        message = history_result.get("message")
+        if isinstance(message, str) and message.strip():
+            return {
+                "success": True,
+                "summary": _trade_journal_metrics([]),
+                "breakdowns": {
+                    "by_symbol": [],
+                    "by_side": [],
+                    "by_exit_trigger": [],
+                },
+                "message": message,
+                "meta": {
+                    "history_rows": 0,
+                    "exit_deals": 0,
+                    "breakdown_limit": int(max(1, int(request.breakdown_limit))),
+                },
+            }
+        return {"error": "Unexpected trade_history response shape."}
+
+    rows = [row for row in history_result if isinstance(row, dict)]
+    analyzed_rows: List[Dict[str, Any]] = []
+    for row in rows:
+        symbol = str(row.get("symbol") or "").strip()
+        if not symbol or not _is_exit_deal_row(row):
+            continue
+        net_pnl = _trade_journal_net_pnl(row)
+        if net_pnl is None:
+            continue
+        enriched = dict(row)
+        enriched["symbol"] = symbol
+        enriched["side"] = str(row.get("type") or "").strip() or "Unknown"
+        enriched["exit_trigger"] = str(row.get("exit_trigger") or "").strip() or "Unspecified"
+        enriched["net_pnl"] = net_pnl
+        analyzed_rows.append(enriched)
+
+    breakdown_limit = int(max(1, int(request.breakdown_limit)))
+    if not analyzed_rows:
+        return {
+            "success": True,
+            "summary": _trade_journal_metrics([]),
+            "breakdowns": {
+                "by_symbol": [],
+                "by_side": [],
+                "by_exit_trigger": [],
+            },
+            "message": "No realized exit deals found in the requested trade history.",
+            "meta": {
+                "history_rows": int(len(rows)),
+                "exit_deals": 0,
+                "breakdown_limit": breakdown_limit,
+            },
+        }
+
+    ranked_best = sorted(
+        analyzed_rows,
+        key=lambda row: float(row.get("net_pnl") or 0.0),
+        reverse=True,
+    )
+    ranked_worst = sorted(
+        analyzed_rows,
+        key=lambda row: float(row.get("net_pnl") or 0.0),
+    )
+    return {
+        "success": True,
+        "summary": _trade_journal_metrics(analyzed_rows),
+        "breakdowns": {
+            "by_symbol": _build_trade_journal_breakdown(
+                analyzed_rows,
+                key_name="symbol",
+                label_name="symbol",
+                limit=breakdown_limit,
+            ),
+            "by_side": _build_trade_journal_breakdown(
+                analyzed_rows,
+                key_name="side",
+                label_name="side",
+                limit=breakdown_limit,
+            ),
+            "by_exit_trigger": _build_trade_journal_breakdown(
+                analyzed_rows,
+                key_name="exit_trigger",
+                label_name="exit_trigger",
+                limit=breakdown_limit,
+            ),
+        },
+        "best_trades": [
+            _trade_journal_trade_snapshot(row)
+            for row in ranked_best[: min(5, len(ranked_best))]
+        ],
+        "worst_trades": [
+            _trade_journal_trade_snapshot(row)
+            for row in ranked_worst[: min(5, len(ranked_worst))]
+        ],
+        "meta": {
+            "history_rows": int(len(rows)),
+            "exit_deals": int(len(analyzed_rows)),
+            "breakdown_limit": breakdown_limit,
+        },
+    }
 
 
 def lookup_trade_ticket_history(ticket: Any) -> Optional[Dict[str, Any]]:
@@ -209,4 +436,16 @@ def trade_history(request: TradeHistoryRequest) -> List[Dict[str, Any]]:
         symbol=request.symbol,
         limit=request.limit,
         func=lambda: _run_trade_history_request(request),
+    )
+
+
+@mcp.tool()
+def trade_journal_analyze(request: TradeJournalAnalyzeRequest) -> Dict[str, Any]:
+    """Analyze realized exit deals from MT5 trade history."""
+    return run_logged_operation(
+        logger,
+        operation="trade_journal_analyze",
+        symbol=request.symbol,
+        limit=request.limit,
+        func=lambda: _run_trade_journal_request(request),
     )

@@ -196,6 +196,7 @@ mtdata-cli data_fetch_candles EURUSD --start "2025-12-01" --end "2025-12-31"
 | `trade_get_open` | Get open positions |
 | `trade_get_pending` | Get pending orders |
 | `trade_history` | Get trading history |
+| `trade_journal_analyze` | Summarize realized exit-deal performance |
 | `trade_risk_analyze` | Analyze position risk |
 
 ### News
@@ -322,6 +323,12 @@ mtdata-cli trade_place BTCUSD --volume 0.03 --order-type ORDER_TYPE_BUY_LIMIT --
 
 # Same order_type using MT5 numeric constant
 mtdata-cli trade_place BTCUSD --volume 0.03 --order-type 2 --price 68750
+```
+
+### Review Trade Journal
+```bash
+mtdata-cli trade_journal_analyze --minutes-back 10080 --json
+mtdata-cli trade_journal_analyze --symbol EURUSD --minutes-back 43200 --breakdown-limit 5 --json
 ```
 
 ### Detect Patterns and Regimes

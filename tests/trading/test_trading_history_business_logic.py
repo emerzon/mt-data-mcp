@@ -6,7 +6,8 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from mtdata.core.trading import trade_history as _trade_history_tool
-from mtdata.core.trading.requests import TradeHistoryRequest
+from mtdata.core.trading.account import trade_journal_analyze as _trade_journal_tool
+from mtdata.core.trading.requests import TradeHistoryRequest, TradeJournalAnalyzeRequest
 from mtdata.core.trading.use_cases import run_trade_history
 from mtdata.utils.mt5 import MT5ConnectionError, _mt5_epoch_to_utc
 from mtdata.utils.utils import _format_time_minimal
@@ -27,6 +28,17 @@ def trade_history(**kwargs):
         if raw_output:
             return _unwrap(_trade_history_tool)(request=request)
         return _trade_history_tool(request=request, __cli_raw=False)
+
+
+def trade_journal_analyze(**kwargs):
+    raw_output = bool(kwargs.pop("__cli_raw", False))
+    request = kwargs.pop("request", None)
+    if request is None:
+        request = TradeJournalAnalyzeRequest(**kwargs)
+    with patch("mtdata.core.trading.account.ensure_mt5_connection_or_raise", return_value=None):
+        if raw_output:
+            return _unwrap(_trade_journal_tool)(request=request)
+        return _trade_journal_tool(request=request, __cli_raw=False)
 
 
 def _install_mock_mt5() -> tuple[MagicMock, object]:
@@ -418,3 +430,83 @@ def test_trade_history_returns_connection_error_payload() -> None:
         out = _unwrap(_trade_history_tool)(request=TradeHistoryRequest(history_kind="deals"))
 
     assert out["error"] == "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."
+
+
+def test_trade_journal_analyze_summarizes_realized_exit_deals() -> None:
+    history_rows = [
+        {
+            "ticket": 1,
+            "symbol": "EURUSD",
+            "entry": "In",
+            "type": "Buy",
+            "profit": 0.0,
+            "commission": -1.0,
+            "swap": 0.0,
+            "time": "2026-01-01 10:00",
+        },
+        {
+            "ticket": 2,
+            "symbol": "EURUSD",
+            "entry": "Out",
+            "type": "Buy",
+            "profit": 25.0,
+            "commission": -1.0,
+            "swap": -0.5,
+            "exit_trigger": "TP",
+            "time": "2026-01-01 12:00",
+            "volume": 0.1,
+        },
+        {
+            "ticket": 3,
+            "symbol": "GBPUSD",
+            "entry": "Out",
+            "type": "Sell",
+            "profit": -10.0,
+            "commission": -0.5,
+            "swap": 0.0,
+            "exit_trigger": "SL",
+            "time": "2026-01-02 09:00",
+            "volume": 0.2,
+        },
+    ]
+
+    with patch("mtdata.core.trading.account._run_trade_history_request", return_value=history_rows):
+        out = trade_journal_analyze(__cli_raw=True)
+
+    assert out["success"] is True
+    assert out["summary"]["closed_deals"] == 2
+    assert out["summary"]["wins"] == 1
+    assert out["summary"]["losses"] == 1
+    assert out["summary"]["net_pnl"] == 13.0
+    assert out["summary"]["profit_factor"] == 2.238095238095238
+    assert out["breakdowns"]["by_symbol"][0]["symbol"] == "EURUSD"
+    assert out["best_trades"][0]["ticket"] == 2
+    assert out["worst_trades"][0]["ticket"] == 3
+
+
+def test_trade_journal_analyze_returns_message_when_no_exit_deals_found() -> None:
+    history_rows = [
+        {
+            "ticket": 1,
+            "symbol": "EURUSD",
+            "entry": "In",
+            "type": "Buy",
+            "profit": 0.0,
+            "commission": -1.0,
+            "time": "2026-01-01 10:00",
+        },
+    ]
+
+    with patch("mtdata.core.trading.account._run_trade_history_request", return_value=history_rows):
+        out = trade_journal_analyze(__cli_raw=True)
+
+    assert out["success"] is True
+    assert out["summary"]["closed_deals"] == 0
+    assert "No realized exit deals found" in out["message"]
+
+
+def test_trade_journal_analyze_propagates_history_errors() -> None:
+    with patch("mtdata.core.trading.account._run_trade_history_request", return_value={"error": "boom"}):
+        out = trade_journal_analyze(__cli_raw=True)
+
+    assert out == {"error": "boom"}
