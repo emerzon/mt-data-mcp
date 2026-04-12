@@ -209,6 +209,8 @@ def _build_strategy_trade(
     slippage_bps: float,
 ) -> Dict[str, Any]:
     gross_return = float(direction) * ((float(exit_price) - float(entry_price)) / float(entry_price))
+    if gross_return <= -0.999:
+        gross_return = -0.999
     slip = float(abs(slippage_bps) or 0.0) / 10000.0
     net_return = gross_return - (2.0 * slip)
     if net_return <= -0.999:

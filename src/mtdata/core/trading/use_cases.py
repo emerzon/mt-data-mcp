@@ -163,7 +163,7 @@ def _historical_var_cvar_tail(pnl_values: List[float], confidence: float) -> tup
     alpha = 1.0 - confidence
     index = max(0, min(len(ordered) - 1, int(math.floor(alpha * (len(ordered) - 1)))))
     threshold = float(ordered[index])
-    tail_values = [float(value) for value in ordered if value <= threshold]
+    tail_values = [float(value) for value in ordered[:index + 1]]
     tail_mean = float(sum(tail_values) / len(tail_values)) if tail_values else threshold
     var_value = max(0.0, -threshold)
     cvar_value = max(0.0, -tail_mean)

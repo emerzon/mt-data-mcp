@@ -113,7 +113,7 @@ def test_core_strategy_backtest_wrapper_routes_request(monkeypatch):
 
 
 def test_strategy_backtest_request_rejects_invalid_ma_periods():
-    with pytest.raises(Exception):
+    with pytest.raises(ValueError, match="fast_period must be less than slow_period"):
         StrategyBacktestRequest(
             symbol="EURUSD",
             strategy="sma_cross",
