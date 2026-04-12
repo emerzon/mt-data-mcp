@@ -808,18 +808,21 @@ class TestGetPivots:
             mock_ctr.return_value = MagicMock(return_value={"error": "bad", "levels": []})
             resp = _client.get("/api/pivots", params={"symbol": "EURUSD", "method": "classic"})
         assert resp.status_code == 400
+        assert resp.json()["detail"]["error_code"] == "pivot_tool_error"
 
     def test_no_levels_found(self):
         with patch("mtdata.core.web_api._call_tool_raw") as mock_ctr:
             mock_ctr.return_value = MagicMock(return_value={"levels": [{"level": "P", "fibonacci": 1.1}]})
             resp = _client.get("/api/pivots", params={"symbol": "EURUSD", "method": "classic"})
         assert resp.status_code == 404
+        assert resp.json()["detail"]["error_code"] == "pivot_levels_missing"
 
     def test_non_dict_result(self):
         with patch("mtdata.core.web_api._call_tool_raw") as mock_ctr:
             mock_ctr.return_value = MagicMock(return_value=42)
             resp = _client.get("/api/pivots", params={"symbol": "EURUSD", "method": "classic"})
         assert resp.status_code == 500
+        assert resp.json()["detail"]["error_code"] == "pivot_payload_invalid"
 
     def test_typeerror_fallback(self):
         """When the raw function raises TypeError, falls back to calling original."""
@@ -847,6 +850,7 @@ class TestGetPivots:
         with patch("mtdata.core.web_api._call_tool_raw", return_value=raw_fn):
             resp = _client.get("/api/pivots", params={"symbol": "EURUSD", "method": "classic"})
         assert resp.status_code == 500
+        assert resp.json()["detail"]["error_code"] == "pivot_compute_failed"
 
     def test_string_not_json(self):
         import json as _json_mod
@@ -855,6 +859,7 @@ class TestGetPivots:
             with patch.object(web_api, "json", _json_mod, create=True):
                 resp = _client.get("/api/pivots", params={"symbol": "EURUSD", "method": "classic"})
         assert resp.status_code == 500
+        assert resp.json()["detail"]["error_code"] == "pivot_output_invalid"
 
 
 # ===========================================================================
@@ -1104,17 +1109,20 @@ class TestGetSupportResistance:
         with patch("mtdata.core.web_api._fetch_history_impl", side_effect=RuntimeError("fail")):
             resp = _client.get("/api/support-resistance", params=self._sr_params())
         assert resp.status_code == 400
+        assert resp.json()["detail"]["error_code"] == "support_resistance_history_failed"
 
     def test_empty_df(self):
         import pandas as pd
         with patch("mtdata.core.web_api._fetch_history_impl", return_value=pd.DataFrame()):
             resp = _client.get("/api/support-resistance", params=self._sr_params())
         assert resp.status_code == 404
+        assert resp.json()["detail"]["error_code"] == "support_resistance_history_missing"
 
     def test_none_df(self):
         with patch("mtdata.core.web_api._fetch_history_impl", return_value=None):
             resp = _client.get("/api/support-resistance", params=self._sr_params())
         assert resp.status_code == 404
+        assert resp.json()["detail"]["error_code"] == "support_resistance_history_missing"
 
     def test_missing_columns(self):
         import pandas as pd
@@ -1122,7 +1130,9 @@ class TestGetSupportResistance:
         with patch("mtdata.core.web_api._fetch_history_impl", return_value=df):
             resp = _client.get("/api/support-resistance", params=self._sr_params())
         assert resp.status_code == 400
-        assert "Missing columns" in resp.json()["detail"]
+        detail = resp.json()["detail"]
+        assert detail["error_code"] == "support_resistance_history_failed"
+        assert "Missing columns" in detail["error"]
 
     def test_too_few_bars(self):
         import pandas as pd
@@ -1192,6 +1202,7 @@ class TestGetSupportResistance:
                 min_touches=100, max_levels=4,
             ))
         assert resp.status_code == 404
+        assert resp.json()["detail"]["error_code"] == "support_resistance_levels_missing"
 
     def test_no_time_column(self):
         import pandas as pd

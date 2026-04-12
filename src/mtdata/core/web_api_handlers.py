@@ -552,18 +552,38 @@ def get_pivots_response(
     except TypeError:
         result = resolve_sync_tool_result(pivot_tool(symbol=symbol, timeframe=timeframe))
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"pivot compute failed: {exc}")
+        raise _http_error(
+            500,
+            f"pivot compute failed: {exc}",
+            code="pivot_compute_failed",
+            operation="get_pivots",
+        )
 
     if isinstance(result, str):
         try:
             result = json.loads(result)
         except Exception:
-            raise HTTPException(status_code=500, detail="Unexpected pivot output format")
+            raise _http_error(
+                500,
+                "Unexpected pivot output format",
+                code="pivot_output_invalid",
+                operation="get_pivots",
+            )
 
     if isinstance(result, dict) and result.get("error"):
-        raise HTTPException(status_code=400, detail=str(result["error"]))
+        raise _http_error(
+            400,
+            str(result["error"]),
+            code="pivot_tool_error",
+            operation="get_pivots",
+        )
     if not isinstance(result, dict):
-        raise HTTPException(status_code=500, detail="Pivot tool returned non-JSON payload")
+        raise _http_error(
+            500,
+            "Pivot tool returned non-JSON payload",
+            code="pivot_payload_invalid",
+            operation="get_pivots",
+        )
 
     levels = []
     method_key = str(method).lower().strip()
@@ -577,7 +597,12 @@ def get_pivots_response(
         except Exception:
             continue
     if not levels:
-        raise HTTPException(status_code=404, detail=f"No pivot levels for method {method}")
+        raise _http_error(
+            404,
+            f"No pivot levels for method {method}",
+            code="pivot_levels_missing",
+            operation="get_pivots",
+        )
     return {
         "levels": levels,
         "period": result.get("period"),
@@ -615,10 +640,20 @@ def get_support_resistance_response(
         message = str(exc)
         status_code = 404 if "No history available" in message else 400
         detail = message if status_code == 404 else f"history fetch failed: {message}"
-        raise HTTPException(status_code=status_code, detail=detail)
+        raise _http_error(
+            status_code,
+            detail,
+            code="support_resistance_history_failed" if status_code != 404 else "support_resistance_history_missing",
+            operation="get_support_resistance",
+        )
 
     if not isinstance(result, dict) or not result.get("levels"):
-        raise HTTPException(status_code=404, detail="No support/resistance levels detected")
+        raise _http_error(
+            404,
+            "No support/resistance levels detected",
+            code="support_resistance_levels_missing",
+            operation="get_support_resistance",
+        )
     if str(detail).strip().lower() == "compact":
         return compact_support_resistance_payload(result)
     return result
