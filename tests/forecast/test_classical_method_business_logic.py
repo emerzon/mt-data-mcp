@@ -144,3 +144,21 @@ def test_classical_legacy_wrappers_route_to_registry(monkeypatch):
     assert calls[2]["seasonality"] == 12
     assert calls[3]["params"] == {"alpha": 0.4}
     assert calls[4]["params"] == {"terms": 2, "trend": False}
+
+
+def test_classical_legacy_wrappers_preserve_missing_params_used(monkeypatch):
+    class FakeMethod:
+        def forecast(self, series, horizon, seasonality, params, **kwargs):
+            return ForecastResult(forecast=np.array([42.0], dtype=float), params_used=None)
+
+    class FakeRegistry:
+        @staticmethod
+        def get(name):
+            return FakeMethod()
+
+    monkeypatch.setattr(cl, "ForecastRegistry", FakeRegistry)
+
+    forecast, params_used = cl.forecast_naive(np.array([1.0, 2.0]), fh=1)
+
+    assert np.allclose(forecast, [42.0])
+    assert params_used is None
