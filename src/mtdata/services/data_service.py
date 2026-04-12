@@ -580,13 +580,11 @@ def _normalize_indicator_spec(indicators: Optional[List[IndicatorSpec]]) -> Opti
     source: Any = indicators
     if isinstance(source, str):
         payload = source.strip()
-        if (payload.startswith('[') and payload.endswith(']')) or (
-            payload.startswith('{') and payload.endswith('}')
-        ):
+        if payload.startswith('[') or payload.startswith('{'):
             try:
                 source = json.loads(payload)
-            except (json.JSONDecodeError, TypeError, ValueError):
-                source = indicators
+            except (json.JSONDecodeError, TypeError, ValueError) as exc:
+                raise ValueError(f"Invalid indicator JSON: {exc}") from exc
 
     if isinstance(source, (list, tuple)):
         parts: List[str] = []
@@ -959,7 +957,10 @@ def fetch_candles(  # noqa: C901
             if err:
                 return {"error": err}
 
-            ti_spec = _normalize_indicator_spec(ti)
+            try:
+                ti_spec = _normalize_indicator_spec(ti)
+            except ValueError as exc:
+                return {"error": str(exc)}
             indicator_syntax_error = _indicator_param_syntax_error(ti_spec)
             if indicator_syntax_error:
                 return {"error": indicator_syntax_error}

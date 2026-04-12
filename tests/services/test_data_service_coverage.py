@@ -1173,6 +1173,25 @@ class TestFetchCandles(unittest.TestCase):
         mock_from.assert_not_called()
 
     @patch(_MT5_CONFIG)
+    @patch(_RATES_FROM)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=0)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_invalid_indicator_json_returns_parse_error(
+        self,
+        mock_warmup,
+        mock_ctz,
+        mock_info,
+        mock_from,
+        mock_cfg,
+    ):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        result = fetch_candles('EURUSD', limit=10, indicators='[{"name":"rsi","params":[14]}')
+        self.assertTrue(result['error'].startswith('Invalid indicator JSON:'))
+        mock_from.assert_not_called()
+
+    @patch(_MT5_CONFIG)
     @patch(_APPLY_TI, return_value=['rsi_14'])
     @patch(_RATES_FROM)
     @patch(_CACHED_INFO, return_value=MagicMock())
