@@ -1598,7 +1598,7 @@ class TestPatternsDetectAllMode:
         assert result["success"] is True
         assert result["mode"] == "all"
         assert result["symbol"] == "EURUSD"
-        assert set(result["timeframes"]) == {"H1", "H4", "D1"}
+        assert set(result["timeframes"]) == {"M30", "H1", "H4", "D1", "W1"}
         assert result["candlestick"]["n_patterns"] > 0
         assert result["classic"]["n_patterns"] > 0
         assert result["elliott"]["n_patterns"] > 0
@@ -1737,30 +1737,158 @@ class TestPatternsDetectAllMode:
     @patch("mtdata.core.patterns._run_classic_engine")
     @patch("mtdata.core.patterns._fetch_pattern_data")
     @patch("mtdata.core.patterns._detect_candlestick_patterns")
-    def test_all_mode_sorted_by_confidence_desc(self, mock_candle, mock_fetch, mock_engine, mock_elliott):
-        """Each section is sorted by confidence descending."""
+    def test_all_mode_sorted_by_relevance_desc(self, mock_candle, mock_fetch, mock_engine, mock_elliott):
+        """Each section is sorted by relevance (confidence + recency) descending."""
         df = _make_ohlcv_df(200)
         mock_candle.return_value = {
             "data": [
-                {"pattern": "Low", "confidence": 0.3},
-                {"pattern": "High", "confidence": 0.95},
-                {"pattern": "Mid", "confidence": 0.6},
+                {"pattern": "Old-High-Conf", "confidence": 0.95, "end_index": 10},
+                {"pattern": "New-Low-Conf", "confidence": 0.3, "end_index": 195},
+                {"pattern": "Mid", "confidence": 0.6, "end_index": 100},
             ],
         }
         mock_fetch.return_value = (df, None)
         mock_engine.return_value = ([
-            {"name": "A", "status": "forming", "confidence": 0.5, "start_index": 0, "end_index": 5},
+            {"name": "A", "status": "forming", "confidence": 0.5, "start_index": 0, "end_index": 190},
             {"name": "B", "status": "forming", "confidence": 0.9, "start_index": 0, "end_index": 5},
         ], None)
         mock_elliott.return_value = [
-            {"wave_type": "X", "status": "forming", "confidence": 0.4},
-            {"wave_type": "Y", "status": "forming", "confidence": 0.8},
+            {"wave_type": "X", "status": "forming", "confidence": 0.4, "end_index": 195},
+            {"wave_type": "Y", "status": "forming", "confidence": 0.8, "end_index": 10},
         ]
 
         result = _call_patterns_detect(symbol="EURUSD", mode="all", timeframe="H1")
-        candle_confs = [p["confidence"] for p in result["candlestick"]["patterns"]]
-        classic_confs = [p["confidence"] for p in result["classic"]["patterns"]]
-        elliott_confs = [p["confidence"] for p in result["elliott"]["patterns"]]
-        assert candle_confs == sorted(candle_confs, reverse=True)
-        assert classic_confs == sorted(classic_confs, reverse=True)
-        assert elliott_confs == sorted(elliott_confs, reverse=True)
+        # Each section must have relevance scores attached and sorted desc
+        for section in ("candlestick", "classic", "elliott"):
+            patterns = result[section]["patterns"]
+            relevances = [p.get("relevance", 0) for p in patterns]
+            assert relevances == sorted(relevances, reverse=True), f"{section} not sorted by relevance"
+            # All patterns should have relevance and recency scores
+            for p in patterns:
+                assert "relevance" in p
+                assert "recency" in p
+
+    @patch("mtdata.core.patterns._format_elliott_patterns")
+    @patch("mtdata.core.patterns._run_classic_engine")
+    @patch("mtdata.core.patterns._fetch_pattern_data")
+    @patch("mtdata.core.patterns._detect_candlestick_patterns")
+    def test_all_mode_has_highlights(self, mock_candle, mock_fetch, mock_engine, mock_elliott):
+        """Response includes a top-level highlights list merged across sections."""
+        df = _make_ohlcv_df(200)
+        mock_candle.return_value = {
+            "data": [{"pattern": "Hammer", "confidence": 0.9, "direction": "bullish",
+                       "end_index": 198}],
+        }
+        mock_fetch.return_value = (df, None)
+        mock_engine.return_value = ([{
+            "name": "Triangle", "status": "forming", "confidence": 0.85,
+            "start_index": 100, "end_index": 195,
+        }], None)
+        mock_elliott.return_value = [{
+            "wave_type": "impulse", "status": "forming", "confidence": 0.7,
+            "end_index": 190,
+        }]
+
+        result = _call_patterns_detect(symbol="EURUSD", mode="all", timeframe="H1")
+        assert "highlights" in result
+        highlights = result["highlights"]
+        assert isinstance(highlights, list)
+        assert len(highlights) > 0
+        assert len(highlights) <= 5
+        # Each highlight has section, name, confidence, relevance
+        for h in highlights:
+            assert "section" in h
+            assert "relevance" in h
+            assert "confidence" in h
+        # Highlights sorted by relevance desc
+        rels = [h["relevance"] for h in highlights]
+        assert rels == sorted(rels, reverse=True)
+
+    @patch("mtdata.core.patterns._format_elliott_patterns")
+    @patch("mtdata.core.patterns._run_classic_engine")
+    @patch("mtdata.core.patterns._fetch_pattern_data")
+    @patch("mtdata.core.patterns._detect_candlestick_patterns")
+    def test_all_mode_recency_boosts_recent(self, mock_candle, mock_fetch, mock_engine, mock_elliott):
+        """A recent pattern with moderate confidence outranks old high-confidence."""
+        df = _make_ohlcv_df(500)
+        # Recent moderate confidence vs old high confidence
+        mock_candle.return_value = {"data": []}
+        mock_fetch.return_value = (df, None)
+        mock_engine.return_value = ([
+            {"name": "Old-Strong", "status": "forming", "confidence": 0.90,
+             "start_index": 0, "end_index": 10},
+            {"name": "New-Moderate", "status": "forming", "confidence": 0.65,
+             "start_index": 400, "end_index": 495},
+        ], None)
+        mock_elliott.return_value = []
+
+        result = _call_patterns_detect(symbol="EURUSD", mode="all", timeframe="H1", limit=500)
+        classic_names = [p["name"] for p in result["classic"]["patterns"]]
+        # New-Moderate should rank first due to recency boost
+        assert classic_names[0] == "New-Moderate"
+
+
+class TestRelevanceScoring:
+    """Unit tests for the relevance scoring helpers."""
+
+    def test_bar_age_recency_recent(self):
+        from mtdata.core.patterns_support import _bar_age_recency
+        # end_index at the very end → recency near 1.0
+        score = _bar_age_recency({"end_index": 499}, 500)
+        assert score > 0.95
+
+    def test_bar_age_recency_old(self):
+        from mtdata.core.patterns_support import _bar_age_recency
+        # end_index near the start → recency near 0.0
+        score = _bar_age_recency({"end_index": 5}, 500)
+        assert score < 0.1
+
+    def test_bar_age_recency_missing_end_index(self):
+        from mtdata.core.patterns_support import _bar_age_recency
+        score = _bar_age_recency({}, 500)
+        assert score < 0.01
+
+    def test_bar_age_recency_zero_limit(self):
+        from mtdata.core.patterns_support import _bar_age_recency
+        score = _bar_age_recency({"end_index": 50}, 0)
+        assert score == 0.0
+
+    def test_score_all_mode_patterns_attaches_fields(self):
+        from mtdata.core.patterns_support import score_all_mode_patterns
+        rows = [
+            {"confidence": 0.9, "end_index": 10},
+            {"confidence": 0.5, "end_index": 190},
+        ]
+        score_all_mode_patterns(rows, 200)
+        for r in rows:
+            assert "relevance" in r
+            assert "recency" in r
+        # The recent one (end_index=190) should be first
+        assert rows[0]["end_index"] == 190
+
+    def test_build_highlights_merges_sections(self):
+        from mtdata.core.patterns_support import _build_highlights
+        payload = {
+            "candlestick": {"patterns": [
+                {"pattern": "Doji", "direction": "neutral", "confidence": 0.5,
+                 "relevance": 0.5, "recency": 0.3, "timeframe": "H1"},
+            ]},
+            "classic": {"patterns": [
+                {"name": "Triangle", "bias": "bullish", "status": "forming",
+                 "confidence": 0.9, "relevance": 0.85, "recency": 0.8, "timeframe": "D1"},
+            ]},
+            "elliott": {"patterns": [
+                {"wave_type": "impulse", "status": "forming",
+                 "confidence": 0.7, "relevance": 0.7, "recency": 0.6, "timeframe": "H4"},
+            ]},
+        }
+        highlights = _build_highlights(payload, limit=3)
+        assert len(highlights) == 3
+        # Sorted by relevance desc
+        rels = [h["relevance"] for h in highlights]
+        assert rels == sorted(rels, reverse=True)
+        # First should be classic (highest relevance)
+        assert highlights[0]["section"] == "classic"
+        # Candlestick entries get status="trigger"
+        candle_h = [h for h in highlights if h["section"] == "candlestick"]
+        assert candle_h[0]["status"] == "trigger"

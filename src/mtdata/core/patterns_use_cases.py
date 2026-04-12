@@ -5,12 +5,14 @@ from typing import Any, Dict, List, Optional
 
 from .patterns_requests import PatternsDetectRequest
 from .patterns_support import (
+    _build_highlights,
     _compact_all_mode_payload,
     _elliott_completed_preview,
     _elliott_hidden_completed_note,
+    score_all_mode_patterns,
 )
 
-_ALL_MODE_TIMEFRAMES = ("H1", "H4", "D1")
+_ALL_MODE_TIMEFRAMES = ("M30", "H1", "H4", "D1", "W1")
 
 _CLASSIC_CONFIG_EXTRA_KEYS = {
     "ensemble_weights",
@@ -457,16 +459,10 @@ def run_patterns_detect(  # noqa: C901
                 if str(r.get("status", "")).lower() != "completed"
             ]
 
-        # Sort each section by confidence descending
-        def _conf_key(r: Dict[str, Any]) -> float:
-            try:
-                return float(r.get("confidence", 0))
-            except (TypeError, ValueError):
-                return 0.0
-
-        candlestick_patterns.sort(key=_conf_key, reverse=True)
-        classic_patterns.sort(key=_conf_key, reverse=True)
-        elliott_patterns.sort(key=_conf_key, reverse=True)
+        # Score and sort each section by relevance (confidence + recency)
+        score_all_mode_patterns(candlestick_patterns, request.limit)
+        score_all_mode_patterns(classic_patterns, request.limit)
+        score_all_mode_patterns(elliott_patterns, request.limit)
 
         total = len(candlestick_patterns) + len(classic_patterns) + len(elliott_patterns)
 
@@ -507,6 +503,9 @@ def run_patterns_detect(  # noqa: C901
 
         if section_errors:
             resp["errors"] = section_errors
+
+        # Merged cross-section highlights for quick trader read
+        resp["highlights"] = _build_highlights(resp, limit=5)
 
         if detail_value == "compact":
             return _compact_all_mode_payload(resp)

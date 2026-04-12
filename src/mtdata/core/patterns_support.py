@@ -509,16 +509,124 @@ def _compact_patterns_payload(payload: Dict[str, Any]) -> Dict[str, Any]:  # noq
 
 _ALL_COMPACT_CANDLESTICK_KEYS = (
     "timeframe", "pattern", "direction", "confidence", "time", "price",
+    "relevance", "recency",
 )
 _ALL_COMPACT_CLASSIC_KEYS = (
     "timeframe", "name", "status", "confidence", "bias",
     "reference_price", "target_price", "invalidation_price",
     "bars_to_completion", "start_date", "end_date",
+    "relevance", "recency",
 )
 _ALL_COMPACT_ELLIOTT_KEYS = (
     "timeframe", "wave_type", "status", "confidence",
     "start_date", "end_date",
+    "relevance", "recency",
 )
+
+_HIGHLIGHT_KEYS = (
+    "section", "timeframe", "name", "direction", "status",
+    "confidence", "relevance", "recency",
+)
+
+# Weights for relevance = w_conf * confidence + w_rec * recency
+_W_CONFIDENCE = 0.6
+_W_RECENCY = 0.4
+
+
+def _bar_age_recency(row: Dict[str, Any], limit: int) -> float:
+    """Compute a 0‑1 recency score from bar‑age.
+
+    ``end_index`` close to ``limit`` means the pattern is recent.
+    Uses an exponential decay so the score drops quickly for older patterns.
+    """
+    if "end_index" not in row:
+        return 0.0
+    try:
+        end_idx = int(row["end_index"])
+    except (TypeError, ValueError):
+        return 0.0
+    if limit <= 0:
+        return 0.0
+    # bars_ago: 0 = most recent, limit = oldest
+    bars_ago = max(limit - 1 - end_idx, 0)
+    # half-life of ~20% of the window
+    half_life = max(limit * 0.20, 1.0)
+    import math
+    return math.exp(-0.693 * bars_ago / half_life)
+
+
+def _compute_relevance(row: Dict[str, Any], limit: int) -> float:
+    conf = 0.0
+    try:
+        conf = float(row.get("confidence", 0))
+    except (TypeError, ValueError):
+        pass
+    rec = _bar_age_recency(row, limit)
+    return round(_W_CONFIDENCE * conf + _W_RECENCY * rec, 4)
+
+
+def score_all_mode_patterns(
+    patterns: List[Dict[str, Any]],
+    limit: int,
+) -> None:
+    """Attach ``relevance`` and ``recency`` scores in-place, sort descending."""
+    for row in patterns:
+        rec = _bar_age_recency(row, limit)
+        row["recency"] = round(rec, 4)
+        row["relevance"] = _compute_relevance(row, limit)
+    patterns.sort(key=lambda r: r.get("relevance", 0), reverse=True)
+
+
+def _build_highlights(
+    payload: Dict[str, Any],
+    limit: int = 5,
+) -> List[Dict[str, Any]]:
+    """Build a merged top-N list across all sections, ranked by relevance."""
+    candidates: List[Dict[str, Any]] = []
+
+    for row in payload.get("candlestick", {}).get("patterns", []):
+        candidates.append({
+            "section": "candlestick",
+            "timeframe": row.get("timeframe"),
+            "name": row.get("pattern"),
+            "direction": row.get("direction"),
+            "status": "trigger",
+            "confidence": row.get("confidence"),
+            "relevance": row.get("relevance", 0),
+            "recency": row.get("recency", 0),
+        })
+
+    for row in payload.get("classic", {}).get("patterns", []):
+        candidates.append({
+            "section": "classic",
+            "timeframe": row.get("timeframe"),
+            "name": row.get("name"),
+            "direction": row.get("bias"),
+            "status": row.get("status"),
+            "confidence": row.get("confidence"),
+            "relevance": row.get("relevance", 0),
+            "recency": row.get("recency", 0),
+        })
+
+    for row in payload.get("elliott", {}).get("patterns", []):
+        candidates.append({
+            "section": "elliott",
+            "timeframe": row.get("timeframe"),
+            "name": row.get("wave_type"),
+            "direction": None,
+            "status": row.get("status"),
+            "confidence": row.get("confidence"),
+            "relevance": row.get("relevance", 0),
+            "recency": row.get("recency", 0),
+        })
+
+    candidates.sort(key=lambda r: r.get("relevance", 0), reverse=True)
+
+    highlights: List[Dict[str, Any]] = []
+    for c in candidates[:limit]:
+        item = {k: c[k] for k in _HIGHLIGHT_KEYS if c.get(k) is not None}
+        highlights.append(item)
+    return highlights
 
 
 def _trim_section_rows(
@@ -526,10 +634,10 @@ def _trim_section_rows(
     keys: Tuple[str, ...],
     limit: int = 8,
 ) -> List[Dict[str, Any]]:
-    """Sort rows by confidence descending and keep only *keys* fields."""
+    """Keep top rows by relevance (falls back to confidence) and project *keys*."""
     sorted_rows = sorted(
         rows,
-        key=lambda r: (_safe_float(r.get("confidence")) or 0.0),
+        key=lambda r: (r.get("relevance") or _safe_float(r.get("confidence")) or 0.0),
         reverse=True,
     )
     trimmed: List[Dict[str, Any]] = []
@@ -551,6 +659,11 @@ def _compact_all_mode_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "mode": "all",
         "timeframes": payload.get("timeframes"),
     }
+
+    # Top-level highlights first — the trader's quick-read
+    highlights = payload.get("highlights")
+    if highlights:
+        compact["highlights"] = highlights
 
     section_specs = (
         ("candlestick", _ALL_COMPACT_CANDLESTICK_KEYS),
