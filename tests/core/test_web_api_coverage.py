@@ -610,6 +610,20 @@ class TestGetHistory:
         assert call_arg["params"]["level"] == 3.0
         assert call_arg["params"]["wavelet"] == "db4"
 
+    def test_denoise_kv_params_rejects_duplicate_keys(self):
+        dn_methods = {"methods": [{"method": "wavelet", "available": True}]}
+        with patch.object(web_api.mt5_connection, "_ensure_connection", return_value=True), \
+             patch("mtdata.core.web_api._get_denoise_methods", return_value=dn_methods):
+            resp = _client.get("/api/history", params={
+                "symbol": "EURUSD",
+                "denoise_method": "wavelet",
+                "denoise_params": "level=3,level=4",
+            })
+        assert resp.status_code == 400
+        detail = resp.json()["detail"]
+        assert detail["error_code"] == "denoise_params_invalid"
+        assert "duplicate key 'level'" in detail["error"]
+
     def test_denoise_unavailable_method(self):
         dn_methods = {"methods": [{"method": "wavelet", "available": False, "requires": "pywt"}]}
         with patch.object(web_api.mt5_connection, "_ensure_connection", return_value=True), \

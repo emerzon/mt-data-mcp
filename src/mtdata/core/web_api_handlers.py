@@ -454,6 +454,13 @@ def get_history_response(  # noqa: C901
                         key, value = part.split("=", 1)
                         key = key.strip()
                         value = value.strip()
+                        if key in params_dict:
+                            raise _http_error(
+                                400,
+                                f"denoise_params contains duplicate key '{key}'",
+                                code="denoise_params_invalid",
+                                operation="get_history",
+                            )
                         try:
                             params_dict[key] = float(value) if value.replace(".", "", 1).lstrip("-").isdigit() else value
                         except Exception:
