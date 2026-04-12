@@ -220,10 +220,10 @@ def _resolve_slippage_to_deviation(
         except (TypeError, ValueError):
             digits = 0
 
-    if digits in (3, 5):
-        points_per_pip = 10
+    if digits >= 4:
+        points_per_pip = int(10 ** max(digits - 4, 0))
     else:
-        points_per_pip = 1
+        points_per_pip = int(10 ** max(digits - 2, 0))
 
     dev = max(0, int(round(pips * points_per_pip)))
     meta = {

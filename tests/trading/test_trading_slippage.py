@@ -83,6 +83,15 @@ def test_pips_2digit_broker():
     assert dev == 5
 
 
+def test_pips_6digit_broker():
+    """6-digit broker: 1 pip = 100 points."""
+    sym = SimpleNamespace(point=0.000001, digits=6)
+    dev, meta, err = _resolve_slippage_to_deviation(slippage_pips=2.0, symbol_info=sym)
+    assert err is None
+    assert dev == 200
+    assert meta["points_per_pip"] == 100
+
+
 def test_pips_zero_rejects():
     dev, meta, err = _resolve_slippage_to_deviation(slippage_pips=2.0, symbol_info=None)
     assert err is not None
