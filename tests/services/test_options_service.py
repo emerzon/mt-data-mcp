@@ -3,6 +3,8 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import requests
+
 from mtdata.services import options_service as osvc
 
 
@@ -185,3 +187,53 @@ def test_fetch_yahoo_options_payload_retries_rate_limited_response(monkeypatch):
     assert out["quote"]["regularMarketPrice"] == 100.5
     assert session.get.call_count == 2
     assert sleep_calls == [1.0]
+
+
+# ---------------------------------------------------------------------------
+# Yahoo session lifecycle tests
+# ---------------------------------------------------------------------------
+
+
+def test_build_yahoo_session_returns_fresh_session():
+    session = osvc._build_yahoo_session()
+    assert isinstance(session, requests.Session)
+    session.close()
+
+
+def test_reset_yahoo_session_clears_singleton(monkeypatch):
+    sentinel = osvc._build_yahoo_session()
+    monkeypatch.setattr(osvc, "_YAHOO_SESSION", sentinel)
+
+    osvc._reset_yahoo_session()
+    assert osvc._YAHOO_SESSION is None
+
+
+def test_reset_yahoo_session_tolerates_already_none():
+    original = osvc._YAHOO_SESSION
+    try:
+        osvc._YAHOO_SESSION = None
+        osvc._reset_yahoo_session()
+        assert osvc._YAHOO_SESSION is None
+    finally:
+        osvc._YAHOO_SESSION = original
+
+
+def test_get_yahoo_session_delegates_to_builder(monkeypatch):
+    calls = {"built": 0}
+
+    class FakeSession:
+        pass
+
+    def fake_build():
+        calls["built"] += 1
+        return FakeSession()
+
+    monkeypatch.setattr(osvc, "_YAHOO_SESSION", None)
+    monkeypatch.setattr(osvc, "_build_yahoo_session", fake_build)
+
+    first = osvc._get_yahoo_session()
+    second = osvc._get_yahoo_session()
+
+    assert first is second
+    assert calls["built"] == 1
+    assert isinstance(first, FakeSession)

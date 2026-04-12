@@ -79,11 +79,29 @@ def _ymd_to_epoch(ymd: str) -> int:
     return int(dt.timestamp())
 
 
+def _build_yahoo_session() -> requests.Session:
+    """Create a configured Yahoo HTTP session."""
+    return requests.Session()
+
+
+def _reset_yahoo_session() -> None:
+    """Close and discard the shared Yahoo session so the next request rebuilds it."""
+    global _YAHOO_SESSION
+    with _YAHOO_SESSION_LOCK:
+        old = _YAHOO_SESSION
+        _YAHOO_SESSION = None
+    if old is not None:
+        try:
+            old.close()
+        except Exception:
+            pass
+
+
 def _get_yahoo_session() -> requests.Session:
     global _YAHOO_SESSION
     with _YAHOO_SESSION_LOCK:
         if _YAHOO_SESSION is None:
-            _YAHOO_SESSION = requests.Session()
+            _YAHOO_SESSION = _build_yahoo_session()
         return _YAHOO_SESSION
 
 
