@@ -161,7 +161,7 @@ def test_get_yahoo_session_reuses_single_session(monkeypatch):
 
 
 def test_fetch_yahoo_options_payload_retries_rate_limited_response(monkeypatch):
-    retry_response = SimpleNamespace(status_code=429, headers={"Retry-After": "1"})
+    retry_response = SimpleNamespace(status_code=429, headers={"Retry-After": "1"}, close=lambda: None)
     ok_response = MagicMock(status_code=200, headers={})
     ok_response.raise_for_status.return_value = None
     ok_response.json.return_value = {

@@ -125,6 +125,7 @@ def _yahoo_http_get(url: str, *, params: Dict[str, Any], headers: Dict[str, str]
         response = session.get(url, params=params, headers=headers, timeout=_HTTP_TIMEOUT)
         if response.status_code not in _YAHOO_RETRY_STATUS_CODES or attempt + 1 >= _YAHOO_MAX_ATTEMPTS:
             return response
+        response.close()
         retry_after_raw = response.headers.get("Retry-After")
         try:
             retry_after = float(retry_after_raw) if retry_after_raw is not None else backoff_seconds
@@ -143,8 +144,11 @@ def _fetch_yahoo_options_payload(symbol: str, expiry_epoch: Optional[int] = None
         params["date"] = int(expiry_epoch)
     url = _YAHOO_OPTIONS_URL.format(symbol=str(symbol).upper().strip())
     response = _yahoo_http_get(url, params=params, headers=dict(_YAHOO_HEADERS))
-    response.raise_for_status()
-    data = response.json()
+    try:
+        response.raise_for_status()
+        data = response.json()
+    finally:
+        response.close()
     chain = data.get("optionChain", {})
     results = chain.get("result", [])
     if not isinstance(results, list) or not results:
