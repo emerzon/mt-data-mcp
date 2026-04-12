@@ -47,6 +47,8 @@ def test_seasonal_naive_validation_and_repeating_pattern():
         method.forecast(pd.Series([1.0, 2.0]), horizon=1, seasonality=3, params={})
     with pytest.raises(ValueError, match="Insufficient data"):
         method.forecast(pd.Series([1.0, 2.0]), horizon=1, seasonality=0, params={})
+    with pytest.raises(ValueError, match="finite"):
+        method.forecast(pd.Series([1.0, 2.0, np.nan, 4.0]), horizon=2, seasonality=2, params={})
 
     out = method.forecast(pd.Series([1.0, 2.0, 3.0, 4.0]), horizon=5, seasonality=2, params={})
     assert np.allclose(out.forecast, [3.0, 4.0, 3.0, 4.0, 3.0])
@@ -93,6 +95,9 @@ def test_fourier_ols_default_and_custom_params():
     seasonality_one = method.forecast(series, horizon=2, seasonality=1, params={"terms": 3, "trend": True})
     assert seasonality_one.params_used == {"m": 1, "K": 0, "trend": True}
     assert seasonality_one.forecast.shape == (2,)
+
+    with pytest.raises(ValueError, match="finite"):
+        method.forecast(pd.Series([10.0, 11.0, np.nan, 13.0]), horizon=2, seasonality=2, params={})
 
 
 def test_classical_legacy_wrappers_route_to_registry(monkeypatch):

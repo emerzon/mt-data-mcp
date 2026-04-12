@@ -95,7 +95,9 @@ class SeasonalNaiveMethod(ClassicalMethod):
         if m <= 0 or len(series) < m:
             raise ValueError("Insufficient data for seasonal_naive")
         
-        last_season = series.values[-m:]
+        last_season = np.asarray(series.values[-m:], dtype=float)
+        if not np.all(np.isfinite(last_season)):
+            raise ValueError("SeasonalNaive forecast requires last m values to be finite")
         reps = int(math.ceil(int(horizon) / float(m)))
         f_vals = np.tile(last_season, reps)[: int(horizon)]
         return ForecastResult(forecast=f_vals, params_used={"m": m})
@@ -164,7 +166,9 @@ class FourierOLSMethod(ClassicalMethod):
         exog_future: Optional[pd.DataFrame] = None,
         **kwargs
     ) -> ForecastResult:
-        vals = series.values
+        vals = np.asarray(series.values, dtype=float)
+        if not np.all(np.isfinite(vals)):
+            raise ValueError("FourierOLS forecast requires all series values to be finite")
         n = int(vals.size)
         m_eff = int(seasonality) if seasonality > 0 else 0
         K = params.get('terms')
