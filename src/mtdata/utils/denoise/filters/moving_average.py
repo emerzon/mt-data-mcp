@@ -22,9 +22,9 @@ def _denoise_ema_series(
         y = pd.Series(x).ewm(span=int(span), adjust=False).mean().values
     if causality == 'zero_phase':
         if alpha is not None:
-            y2 = pd.Series(y[::-1]).ewm(alpha=float(alpha), adjust=False).mean().values[::-1]
+            y2 = pd.Series(x[::-1]).ewm(alpha=float(alpha), adjust=False).mean().values[::-1]
         else:
-            y2 = pd.Series(y[::-1]).ewm(span=int(span), adjust=False).mean().values[::-1]
+            y2 = pd.Series(x[::-1]).ewm(span=int(span), adjust=False).mean().values[::-1]
         y = 0.5 * (y + y2)
     return _series_like(s, y)
 
