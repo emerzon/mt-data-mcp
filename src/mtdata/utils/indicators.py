@@ -352,111 +352,112 @@ def _apply_ta_indicators(df: pd.DataFrame, ti_spec: str) -> List[str]:  # noqa: 
         return added_cols
     # Many TA funcs expect a DatetimeIndex
     original_index = df.index
-    if not isinstance(df.index, pd.DatetimeIndex):
-        try:
-            df.index = pd.to_datetime(df['time'], unit='s', utc=True)
-        except Exception:
+    try:
+        if not isinstance(df.index, pd.DatetimeIndex):
             try:
-                df.index = pd.to_datetime(df['time'])
+                df.index = pd.to_datetime(df['time'], unit='s', utc=True)
             except Exception:
-                pass
-    before = set(df.columns)
-    specs = _parse_ti_specs(ti_spec)
-    volume_col = next((col for col in _VOLUME_SOURCE_COLUMNS if col in df.columns), None)
-    volume_series = df[volume_col] if volume_col is not None else None
-    for name, args, kwargs in specs:
-        lname = _normalize_ta_indicator_name(name)
-        func = getattr(pta, lname, None)
-        if not callable(func):
-            continue
-        try:
-            sig = inspect.signature(func)
-            params = sig.parameters
-            series_inputs = _resolve_indicator_series_inputs(
-                df,
-                lname,
-                params,
-                volume_series=volume_series,
-            )
-            # Prepare positional and keyword arguments safely
-            call_kwargs = dict(kwargs)
-            call_args = []
-            # Provide price/series inputs
-            if 'close' in series_inputs:
-                # Use positional for 'close' to prevent numeric args binding to it
-                call_args.append(series_inputs['close'])
-                call_kwargs.pop('close', None)
-            # Additional series as keywords if accepted
-            if 'open' in series_inputs and 'open' not in call_kwargs:
-                call_kwargs['open'] = series_inputs['open']
-            if 'high' in series_inputs and 'high' not in call_kwargs:
-                call_kwargs['high'] = series_inputs['high']
-            if 'low' in series_inputs and 'low' not in call_kwargs:
-                call_kwargs['low'] = series_inputs['low']
-            if 'volume' in series_inputs and 'volume' not in call_kwargs:
-                call_kwargs['volume'] = series_inputs['volume']
-
-            # Generic mapping: map provided numeric args to function parameters in declared order
-            # Skip series parameters and any already supplied in call_kwargs
-            series_names = {'open', 'high', 'low', 'close', 'volume'}
-            ordered_param_names = []
-            for pname, p in params.items():
-                if p.kind in (inspect.Parameter.VAR_KEYWORD, inspect.Parameter.VAR_POSITIONAL):
-                    continue
-                if pname in series_names:
-                    continue
-                ordered_param_names.append(pname)
-            # Assign args to next available param name not already set
-            ai = 0
-            for pname in ordered_param_names:
-                if ai >= len(args):
-                    break
-                if pname in call_kwargs:
-                    continue
-                # Use provided arg in order
-                call_kwargs[pname] = args[ai]
-                ai += 1
-
-            # Call indicator function with constructed arguments, with fallbacks
-            out = None
-            try:
-                out = func(*call_args, **call_kwargs)
-            except Exception:
-                logger.debug("Indicator %s primary call failed", lname, exc_info=True)
                 try:
-                    # Fallback: also pass numeric args positionally after series
-                    out = func(*([*call_args, *args]), **call_kwargs)
+                    df.index = pd.to_datetime(df['time'])
                 except Exception:
-                    logger.debug("Indicator %s positional fallback failed", lname, exc_info=True)
-                    try:
-                        # Fallback: keyword-only attempt including close
-                        kw_only = dict(call_kwargs)
-                        if 'close' in params and 'close' in df.columns:
-                            kw_only['close'] = df['close']
-                        out = func(**kw_only)
-                    except Exception:
-                        logger.warning(
-                            "Indicator %s failed after all call fallbacks",
-                            lname,
-                            exc_info=True,
-                        )
-                        out = None
-            if isinstance(out, pd.DataFrame):
-                for c in out.columns:
-                    df[c] = out[c]
-            elif isinstance(out, pd.Series):
-                df[out.name or lname] = out
-        except ValueError:
-            raise
-        except Exception:
-            logger.warning("Indicator %s failed while applying output", lname, exc_info=True)
-            continue
-        new_cols = [c for c in df.columns if c not in before]
-        added_cols.extend(new_cols)
+                    pass
         before = set(df.columns)
+        specs = _parse_ti_specs(ti_spec)
+        volume_col = next((col for col in _VOLUME_SOURCE_COLUMNS if col in df.columns), None)
+        volume_series = df[volume_col] if volume_col is not None else None
+        for name, args, kwargs in specs:
+            lname = _normalize_ta_indicator_name(name)
+            func = getattr(pta, lname, None)
+            if not callable(func):
+                continue
+            try:
+                sig = inspect.signature(func)
+                params = sig.parameters
+                series_inputs = _resolve_indicator_series_inputs(
+                    df,
+                    lname,
+                    params,
+                    volume_series=volume_series,
+                )
+                # Prepare positional and keyword arguments safely
+                call_kwargs = dict(kwargs)
+                call_args = []
+                # Provide price/series inputs
+                if 'close' in series_inputs:
+                    # Use positional for 'close' to prevent numeric args binding to it
+                    call_args.append(series_inputs['close'])
+                    call_kwargs.pop('close', None)
+                # Additional series as keywords if accepted
+                if 'open' in series_inputs and 'open' not in call_kwargs:
+                    call_kwargs['open'] = series_inputs['open']
+                if 'high' in series_inputs and 'high' not in call_kwargs:
+                    call_kwargs['high'] = series_inputs['high']
+                if 'low' in series_inputs and 'low' not in call_kwargs:
+                    call_kwargs['low'] = series_inputs['low']
+                if 'volume' in series_inputs and 'volume' not in call_kwargs:
+                    call_kwargs['volume'] = series_inputs['volume']
 
-    if original_index is not None:
-        df.index = original_index
+                # Generic mapping: map provided numeric args to function parameters in declared order
+                # Skip series parameters and any already supplied in call_kwargs
+                series_names = {'open', 'high', 'low', 'close', 'volume'}
+                ordered_param_names = []
+                for pname, p in params.items():
+                    if p.kind in (inspect.Parameter.VAR_KEYWORD, inspect.Parameter.VAR_POSITIONAL):
+                        continue
+                    if pname in series_names:
+                        continue
+                    ordered_param_names.append(pname)
+                # Assign args to next available param name not already set
+                ai = 0
+                for pname in ordered_param_names:
+                    if ai >= len(args):
+                        break
+                    if pname in call_kwargs:
+                        continue
+                    # Use provided arg in order
+                    call_kwargs[pname] = args[ai]
+                    ai += 1
+
+                # Call indicator function with constructed arguments, with fallbacks
+                out = None
+                try:
+                    out = func(*call_args, **call_kwargs)
+                except Exception:
+                    logger.debug("Indicator %s primary call failed", lname, exc_info=True)
+                    try:
+                        # Fallback: also pass numeric args positionally after series
+                        out = func(*([*call_args, *args]), **call_kwargs)
+                    except Exception:
+                        logger.debug("Indicator %s positional fallback failed", lname, exc_info=True)
+                        try:
+                            # Fallback: keyword-only attempt including close
+                            kw_only = dict(call_kwargs)
+                            if 'close' in params and 'close' in df.columns:
+                                kw_only['close'] = df['close']
+                            out = func(**kw_only)
+                        except Exception:
+                            logger.warning(
+                                "Indicator %s failed after all call fallbacks",
+                                lname,
+                                exc_info=True,
+                            )
+                            out = None
+                if isinstance(out, pd.DataFrame):
+                    for c in out.columns:
+                        df[c] = out[c]
+                elif isinstance(out, pd.Series):
+                    df[out.name or lname] = out
+            except ValueError:
+                raise
+            except Exception:
+                logger.warning("Indicator %s failed while applying output", lname, exc_info=True)
+                continue
+            new_cols = [c for c in df.columns if c not in before]
+            added_cols.extend(new_cols)
+            before = set(df.columns)
+    finally:
+        if original_index is not None:
+            df.index = original_index
     return added_cols
 
 # Backwards-compat alias

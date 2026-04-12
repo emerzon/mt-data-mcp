@@ -62,6 +62,21 @@ def test_apply_ta_indicators_raises_for_missing_required_columns() -> None:
         _apply_ta_indicators(df, "atr(14)")
 
 
+def test_apply_ta_indicators_restores_original_index_on_value_error() -> None:
+    df = pd.DataFrame(
+        {
+            "time": np.arange(1_700_000_000, 1_700_000_010),
+            "close": np.linspace(1.0, 2.0, 10),
+        }
+    )
+    original_index = df.index.copy()
+
+    with pytest.raises(ValueError, match=r"Indicator 'atr' requires columns: high, low, close"):
+        _apply_ta_indicators(df, "atr(14)")
+
+    assert df.index.equals(original_index)
+
+
 @pytest.mark.parametrize("volume_col", ["tick_volume", "real_volume"])
 def test_apply_ta_indicators_accepts_volume_alias_columns(volume_col: str) -> None:
     df = _sample_df()
