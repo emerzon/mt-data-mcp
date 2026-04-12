@@ -36,7 +36,7 @@ It runs as a **Model Context Protocol (MCP)** server or a standalone **CLI**.
 | **Indicators** | Compute 100+ technical indicators | `data_fetch_candles --indicators` |
 | **Denoising** | Smooth price data to reveal trends | `--denoise` option |
 | **Temporal** | Discover session effects and seasonal patterns | `temporal_analyze` |
-| **Multi-asset** | Explore cross-symbol correlation and lead/lag relationships | `correlation_matrix`, `causal_discover_signals` |
+| **Multi-asset** | Explore cross-symbol correlation, cointegration, and lead/lag relationships | `correlation_matrix`, `cointegration_test`, `causal_discover_signals` |
 | **Trading** | Place orders, manage positions | `trade_place`, `trade_close` |
 | **Fundamentals** | US equity data, screening, news, calendars | `finviz_fundamentals`, `finviz_screen`, `finviz_calendar` |
 | **Options** | Options chains and QuantLib barrier pricing | `forecast_options_chain`, `forecast_quantlib_barrier_price` |

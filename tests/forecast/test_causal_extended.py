@@ -20,6 +20,7 @@ from mtdata.core.causal import (
     _standardize_frame,
     _transform_frame,
     causal_discover_signals,
+    cointegration_test,
     correlation_matrix,
 )
 from mtdata.utils.mt5 import MT5ConnectionError
@@ -740,3 +741,82 @@ class TestCorrelationMatrix:
         assert result["error_code"] == "insufficient_overlap"
         assert "A-B: 0 rows (minimum 30 required)" in " ".join(result.get("details", []))
         assert result["meta"]["pair_overlaps"]["A-B"] == 0
+
+
+class TestCointegrationTest:
+    def _unwrapped(self):
+        fn = cointegration_test
+        while hasattr(fn, '__wrapped__'):
+            fn = fn.__wrapped__
+        return fn
+
+    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
+    def test_invalid_transform(self):
+        result = self._unwrapped()("A,B", transform="returns")
+        assert result["success"] is False
+        assert result["error_code"] == "invalid_transform"
+
+    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
+    def test_invalid_trend(self):
+        result = self._unwrapped()("A,B", trend="bad")
+        assert result["success"] is False
+        assert result["error_code"] == "invalid_trend"
+
+    def test_symbols_and_group_are_mutually_exclusive(self):
+        result = self._unwrapped()("A,B", group="Forex\\Majors")
+        assert result["success"] is False
+        assert result["error_code"] == "invalid_input"
+        assert "either symbols or group" in result["error"]
+
+    @patch("statsmodels.tsa.stattools.coint", return_value=(-4.5, 0.01, [-3.9, -3.3, -3.0]))
+    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal._expand_symbols_for_group_path", return_value=(["A", "B"], None, "Forex\\Majors"))
+    @patch("mtdata.core.causal._fetch_series")
+    def test_group_argument_returns_cointegrated_pair(self, mock_fetch, _mock_expand, _mock_coint):
+        idx = pd.date_range("2024-01-01", periods=120, freq="h")
+        base = np.cumsum(np.linspace(-0.01, 0.01, 120))
+        series_map = {
+            "A": pd.Series(100.0 * np.exp(base), index=idx),
+            "B": pd.Series(50.0 * np.exp(base * 0.98), index=idx),
+        }
+
+        def _fetch_side_effect(symbol, timeframe, count):
+            return series_map[symbol], None
+
+        mock_fetch.side_effect = _fetch_side_effect
+
+        result = self._unwrapped()(group="Forex\\Majors", min_overlap=40)
+
+        assert result["success"] is True
+        assert result["meta"]["group_resolved"] == "Forex\\Majors"
+        assert result["data"]["count_pairs"] == 1
+        assert result["data"]["count_cointegrated"] == 1
+        pair = result["data"]["pairs"][0]
+        assert pair["cointegrated"] is True
+        assert pair["p_value"] == pytest.approx(0.01)
+        assert pair["critical_values"]["5%"] == pytest.approx(-3.3)
+        assert pair["hedge_ratio"] is not None
+
+    @patch("statsmodels.tsa.stattools.coint", side_effect=RuntimeError("singular matrix"))
+    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal._fetch_series")
+    def test_failures_surface_test_failed_error(self, mock_fetch, _mock_coint):
+        idx = pd.date_range("2024-01-01", periods=120, freq="h")
+        base = np.cumsum(np.linspace(-0.01, 0.01, 120))
+        series_map = {
+            "A": pd.Series(100.0 * np.exp(base), index=idx),
+            "B": pd.Series(50.0 * np.exp(base * 0.98), index=idx),
+        }
+
+        def _fetch_side_effect(symbol, timeframe, count):
+            return series_map[symbol], None
+
+        mock_fetch.side_effect = _fetch_side_effect
+
+        result = self._unwrapped()("A,B", min_overlap=40)
+
+        assert result["success"] is False
+        assert result["error_code"] == "test_failed"
+        assert "Cointegration tests failed" in result["error"]
+        assert result["meta"]["pairs_failed"] >= 1
+        assert "warnings" in result

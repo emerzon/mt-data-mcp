@@ -51,6 +51,29 @@ _TRANSFORM_ALIASES: Dict[str, str] = {
     "price": "level",
 }
 
+_COINTEGRATION_TRANSFORM_ALIASES: Dict[str, str] = {
+    "level": "level",
+    "raw": "level",
+    "price": "level",
+    "log": "log_level",
+    "log_level": "log_level",
+    "log-price": "log_level",
+    "log_price": "log_level",
+}
+
+_COINTEGRATION_TREND_ALIASES: Dict[str, str] = {
+    "c": "c",
+    "const": "c",
+    "constant": "c",
+    "ct": "ct",
+    "trend": "ct",
+    "ctt": "ctt",
+    "quadratic": "ctt",
+    "n": "n",
+    "none": "n",
+    "no_const": "n",
+}
+
 
 def _causal_connection_error() -> Dict[str, Any] | None:
     return mt5_connection_error(
@@ -220,6 +243,20 @@ def _normalize_transform_name(value: str) -> str | None:
     return _TRANSFORM_ALIASES.get(text)
 
 
+def _normalize_cointegration_transform(value: str) -> str | None:
+    text = str(value).strip().lower()
+    if not text:
+        return None
+    return _COINTEGRATION_TRANSFORM_ALIASES.get(text)
+
+
+def _normalize_cointegration_trend(value: str) -> str | None:
+    text = str(value).strip().lower()
+    if not text:
+        return None
+    return _COINTEGRATION_TREND_ALIASES.get(text)
+
+
 def _standardize_frame(frame: pd.DataFrame) -> pd.DataFrame:
     if frame.empty:
         return frame
@@ -238,6 +275,18 @@ def _standardize_frame(frame: pd.DataFrame) -> pd.DataFrame:
         if not math.isfinite(std) or std == 0.0:
             standardized[col] = series
     return standardized
+
+
+def _transform_cointegration_frame(frame: pd.DataFrame, transform: str) -> pd.DataFrame:
+    mode = _normalize_cointegration_transform(transform)
+    numeric = frame.astype(float)
+    if mode == "log_level":
+        clean = numeric.where(numeric > 0)
+        clean = clean.mask(clean <= 0)
+        logged = np.log(clean)
+        logged = logged.replace([np.inf, -np.inf], np.nan)
+        return logged.dropna(how="all")
+    return numeric
 
 
 def _build_pairwise_frame(
@@ -371,6 +420,153 @@ def _format_pair_overlap_details(
         f"{pair_key}: {int(rows)} rows (minimum {int(minimum_required)} required)"
         for pair_key, rows in sorted(pair_overlaps.items(), key=lambda kv: (kv[1], kv[0]))
     ]
+
+
+def _critical_values_dict(values: Any) -> Dict[str, float | None]:
+    arr = np.asarray(values, dtype=float).reshape(-1) if values is not None else np.array([], dtype=float)
+    labels = ("1%", "5%", "10%")
+    return {
+        label: (
+            float(arr[idx])
+            if idx < arr.size and math.isfinite(float(arr[idx]))
+            else None
+        )
+        for idx, label in enumerate(labels)
+    }
+
+
+def _fit_cointegration_hedge(
+    dependent: pd.Series,
+    hedge: pd.Series,
+    *,
+    trend: str,
+) -> tuple[float | None, float | None, np.ndarray | None]:
+    y = dependent.to_numpy(dtype=float)
+    x = hedge.to_numpy(dtype=float)
+    if y.size != x.size or y.size < 2:
+        return None, None, None
+    if trend == "n":
+        design = x.reshape(-1, 1)
+    else:
+        design = np.column_stack([x, np.ones(x.size, dtype=float)])
+    coeffs, *_ = np.linalg.lstsq(design, y, rcond=None)
+    if coeffs.size < 1 or not math.isfinite(float(coeffs[0])):
+        return None, None, None
+    beta = float(coeffs[0])
+    intercept = 0.0 if trend == "n" else float(coeffs[1]) if coeffs.size > 1 else 0.0
+    spread = y - (beta * x + intercept)
+    return beta, intercept, spread
+
+
+def _evaluate_cointegration_pair(
+    subset: pd.DataFrame,
+    left: str,
+    right: str,
+    *,
+    trend: str,
+    significance: float,
+    coint_func: Any,
+) -> tuple[Dict[str, Any] | None, List[Dict[str, Any]]]:
+    failures: List[Dict[str, Any]] = []
+    best_row: Dict[str, Any] | None = None
+
+    for dependent, hedge in ((left, right), (right, left)):
+        try:
+            test_stat, p_value, critical_values = coint_func(
+                subset[dependent],
+                subset[hedge],
+                trend=trend,
+            )
+        except Exception as ex:
+            failures.append(
+                {
+                    "left": left,
+                    "right": right,
+                    "dependent": dependent,
+                    "hedge": hedge,
+                    "error": str(ex),
+                    "error_type": type(ex).__name__,
+                }
+            )
+            continue
+
+        if p_value is None or not math.isfinite(float(p_value)):
+            failures.append(
+                {
+                    "left": left,
+                    "right": right,
+                    "dependent": dependent,
+                    "hedge": hedge,
+                    "error": "Cointegration test returned a non-finite p-value.",
+                    "error_type": "NonFinitePValue",
+                }
+            )
+            continue
+
+        hedge_ratio, intercept, spread = _fit_cointegration_hedge(
+            subset[dependent],
+            subset[hedge],
+            trend=trend,
+        )
+        if hedge_ratio is None or spread is None:
+            failures.append(
+                {
+                    "left": left,
+                    "right": right,
+                    "dependent": dependent,
+                    "hedge": hedge,
+                    "error": "Failed to estimate hedge ratio for the candidate spread.",
+                    "error_type": "HedgeFitError",
+                }
+            )
+            continue
+
+        spread_last = float(spread[-1]) if spread.size else None
+        spread_mean = float(np.mean(spread)) if spread.size else float("nan")
+        spread_std = float(np.std(spread, ddof=0)) if spread.size else float("nan")
+        spread_zscore = None
+        if (
+            spread_last is not None
+            and math.isfinite(spread_last)
+            and math.isfinite(spread_std)
+            and spread_std > 0.0
+            and math.isfinite(spread_mean)
+        ):
+            spread_zscore = float((spread_last - spread_mean) / spread_std)
+
+        row = {
+            "left": left,
+            "right": right,
+            "dependent": dependent,
+            "hedge": hedge,
+            "test_stat": float(test_stat) if math.isfinite(float(test_stat)) else None,
+            "p_value": float(p_value),
+            "critical_values": _critical_values_dict(critical_values),
+            "hedge_ratio": float(hedge_ratio),
+            "intercept": float(intercept),
+            "spread_last": spread_last,
+            "spread_zscore": spread_zscore,
+            "samples": int(len(subset)),
+            "cointegrated": bool(float(p_value) < significance),
+            "relationship": "cointegrated" if float(p_value) < significance else "no_cointegration",
+        }
+        if best_row is None or float(row["p_value"]) < float(best_row["p_value"]):
+            best_row = row
+
+    return best_row, failures
+
+
+def _build_cointegration_summary(
+    rows: List[Dict[str, Any]],
+    *,
+    top_n: int = 5,
+) -> Dict[str, List[Dict[str, Any]]]:
+    limit = max(1, int(top_n))
+    cointegrated = [row for row in rows if bool(row.get("cointegrated"))]
+    return {
+        "best_pairs": rows[:limit],
+        "cointegrated_pairs": cointegrated[:limit],
+    }
 
 
 def _format_summary(rows: List[Dict[str, object]], symbols: List[str], transform: str, alpha: float, group_hint: str | None = None) -> str:
@@ -1243,6 +1439,348 @@ def correlation_matrix(  # noqa: C901
         limit=limit,
         method=method,
         transform=transform,
+        min_overlap=min_overlap,
+        func=_run,
+    )
+
+
+@mcp.tool()
+def cointegration_test(  # noqa: C901
+    symbols: Optional[str] = None,
+    group: Optional[str] = None,
+    timeframe: str = "H1",
+    limit: int = 500,
+    transform: str = "log_level",
+    trend: str = "c",
+    significance: float = 0.05,
+    min_overlap: int = 80,
+) -> Dict[str, Any]:
+    """Run pairwise Engle-Granger cointegration tests on MT5 symbols.
+
+    Args:
+        symbols: Comma-separated MT5 symbols; provide one symbol to auto-expand its group.
+            Optional when using `group`.
+        group: Explicit MT5 group path (for example "Forex\\Majors"). Mutually
+            exclusive with `symbols`.
+        timeframe: MT5 timeframe key (e.g. "M15", "H1").
+        limit: Maximum number of overlapping transformed samples used per pair.
+        transform: Price transform: "log_level" or "level".
+        trend: Deterministic trend term for the test: "c", "ct", "ctt", or "n".
+        significance: Alpha threshold for reporting cointegrated pairs.
+        min_overlap: Minimum overlapping transformed samples required per pair.
+    """
+
+    def _run() -> Dict[str, Any]:  # noqa: C901
+        connection_error = _causal_connection_error()
+        if connection_error is not None:
+            return connection_error
+        mt5_gateway = get_mt5_gateway(
+            adapter=mt5,
+            ensure_connection_impl=ensure_mt5_connection_or_raise,
+        )
+        meta: Dict[str, Any] = {
+            "timeframe": str(timeframe),
+            "limit": int(limit),
+            "transform": str(transform),
+            "trend": str(trend),
+            "significance": float(significance),
+            "min_overlap": int(min_overlap),
+        }
+
+        try:
+            from statsmodels.tsa.stattools import coint
+        except Exception:
+            return _causal_error(
+                "statsmodels is required for cointegration testing. Please install 'statsmodels'.",
+                code="dependency_missing",
+                meta=meta,
+            )
+
+        symbol_list = _parse_symbols(str(symbols or ""))
+        meta["symbols_input"] = list(symbol_list)
+        if group is not None:
+            meta["group_input"] = str(group)
+        requested_anchor = symbol_list[0] if group is None and len(symbol_list) == 1 else None
+        group_hint: str | None = None
+        if group and symbol_list:
+            return _causal_error(
+                "Provide either symbols or group for cointegration testing, not both.",
+                code="invalid_input",
+                meta=meta,
+            )
+        if group:
+            expanded, err, group_path = _expand_symbols_for_group_path(
+                group,
+                gateway=mt5_gateway,
+            )
+            if err:
+                return _causal_error(
+                    err,
+                    code="symbol_group_error",
+                    meta=meta,
+                )
+            symbol_list = expanded
+            group_hint = group_path
+            meta["group_resolved"] = group_path
+            meta["symbols_expanded"] = list(symbol_list)
+        elif not symbol_list:
+            return _causal_error(
+                "Provide at least one symbol or MT5 group for cointegration testing.",
+                code="invalid_input",
+                meta=meta,
+            )
+        elif len(symbol_list) == 1:
+            expanded, err, group_path = _expand_symbols_for_group(
+                symbol_list[0],
+                gateway=mt5_gateway,
+            )
+            if err:
+                return _causal_error(
+                    err,
+                    code="symbol_group_error",
+                    meta=meta,
+                )
+            symbol_list = expanded
+            group_hint = group_path
+            meta["symbols_expanded"] = list(symbol_list)
+
+        if len(symbol_list) < 2:
+            return _causal_error(
+                "Provide at least two symbols for cointegration testing (e.g. 'EURUSD,GBPUSD').",
+                code="invalid_input",
+                meta=meta,
+            )
+
+        tf = TIMEFRAME_MAP.get(timeframe)
+        if tf is None:
+            valid = ", ".join(sorted(TIMEFRAME_MAP.keys()))
+            return _causal_error(
+                f"Invalid timeframe '{timeframe}'. Valid options: {valid}",
+                code="invalid_timeframe",
+                meta=meta,
+            )
+
+        if limit < 2:
+            return _causal_error(
+                "limit must be at least 2.",
+                code="invalid_input",
+                meta=meta,
+            )
+
+        if min_overlap < 2:
+            return _causal_error(
+                "min_overlap must be at least 2.",
+                code="invalid_input",
+                meta=meta,
+            )
+
+        if not (0.0 < float(significance) < 1.0):
+            return _causal_error(
+                "significance must be between 0 and 1.",
+                code="invalid_input",
+                meta=meta,
+            )
+
+        transform_value = _normalize_cointegration_transform(transform)
+        if transform_value is None:
+            return _causal_error(
+                "Invalid transform. Valid options: log_level, level",
+                code="invalid_transform",
+                meta=meta,
+            )
+        meta["transform"] = transform_value
+
+        trend_value = _normalize_cointegration_trend(trend)
+        if trend_value is None:
+            return _causal_error(
+                "Invalid trend. Valid options: c, ct, ctt, n",
+                code="invalid_trend",
+                meta=meta,
+            )
+        meta["trend"] = trend_value
+
+        fetch_count = max(int(limit) + 10, int(min_overlap) + 10, 200)
+        meta["fetch_count"] = int(fetch_count)
+        series_map: Dict[str, pd.Series] = {}
+        errors: List[str] = []
+        for symbol in symbol_list:
+            series, err = _fetch_series(symbol, tf, fetch_count)
+            if err:
+                errors.append(err)
+            else:
+                series_map[symbol] = series
+
+        if errors and not series_map:
+            return _causal_error(
+                errors[0],
+                code="data_fetch_failed",
+                meta=meta,
+                details=errors,
+            )
+
+        warnings_out: List[str] = []
+        if errors:
+            warnings_out.extend(errors)
+            symbol_list = [symbol for symbol in symbol_list if symbol in series_map]
+
+        if requested_anchor and requested_anchor not in series_map:
+            details_out = []
+            expanded_symbols = meta.get("symbols_expanded")
+            if isinstance(expanded_symbols, list) and expanded_symbols:
+                details_out.append(
+                    f"Expanded group: {', '.join(str(sym) for sym in expanded_symbols)}"
+                )
+            return _causal_error(
+                f"Requested symbol {requested_anchor} could not be fetched from its auto-expanded group.",
+                code="anchor_symbol_missing",
+                meta=meta,
+                warnings=warnings_out,
+                details=details_out or None,
+            )
+
+        if len(series_map) < 2:
+            return _causal_error(
+                "Not enough valid symbol data fetched to run cointegration tests.",
+                code="insufficient_symbols",
+                meta=meta,
+                warnings=warnings_out,
+            )
+
+        symbol_rows: Dict[str, int] = {
+            str(symbol): int(len(series_map.get(symbol, pd.Series(dtype=float))))
+            for symbol in symbol_list
+            if symbol in series_map
+        }
+        if symbol_rows:
+            meta["symbol_rows"] = symbol_rows
+
+        frame = _build_pairwise_frame(series_map, symbol_list)
+        if frame.empty:
+            return _causal_error(
+                "Not enough valid symbol data fetched to run cointegration tests.",
+                code="insufficient_symbols",
+                meta=meta,
+                warnings=warnings_out,
+            )
+
+        transformed = _transform_cointegration_frame(frame, transform_value)
+        transformed = transformed.dropna(axis=1, how="all")
+        symbols_used = [symbol for symbol in symbol_list if symbol in transformed.columns]
+        transformed = transformed.reindex(columns=symbols_used)
+        meta["group_hint"] = group_hint
+        meta["symbols_used"] = list(symbols_used)
+
+        transformed_rows = {
+            str(symbol): int(transformed[symbol].dropna().shape[0])
+            for symbol in symbols_used
+        }
+        if transformed_rows:
+            meta["symbol_rows_after_transform"] = transformed_rows
+
+        if len(symbols_used) < 2:
+            return _causal_error(
+                "Not enough symbols retained after transform to run cointegration tests.",
+                code="insufficient_symbols",
+                meta=meta,
+                warnings=warnings_out,
+            )
+
+        rows: List[Dict[str, Any]] = []
+        pair_overlaps: Dict[str, int] = {}
+        pair_failures: List[Dict[str, Any]] = []
+        pairs_skipped_min_overlap = 0
+
+        for idx, left in enumerate(symbols_used):
+            for right in symbols_used[idx + 1 :]:
+                subset_all = transformed[[left, right]].dropna(how="any")
+                overlap_rows = int(len(subset_all))
+                pair_overlaps[f"{left}-{right}"] = overlap_rows
+                if overlap_rows < int(min_overlap):
+                    pairs_skipped_min_overlap += 1
+                    continue
+                subset = subset_all.tail(int(limit))
+                row, failures = _evaluate_cointegration_pair(
+                    subset,
+                    left,
+                    right,
+                    trend=trend_value,
+                    significance=float(significance),
+                    coint_func=coint,
+                )
+                if row is not None:
+                    row["overlap_rows"] = overlap_rows
+                    row["window_truncated"] = bool(len(subset) < overlap_rows)
+                    rows.append(row)
+                if failures:
+                    for failure in failures:
+                        if len(pair_failures) < 10:
+                            pair_failures.append(failure)
+
+        rows.sort(
+            key=lambda item: (
+                float(item["p_value"]),
+                -int(item["samples"]),
+                str(item["left"]),
+                str(item["right"]),
+            )
+        )
+        meta.update(
+            {
+                "pairs_attempted": int(max(len(symbols_used) * (len(symbols_used) - 1) // 2, 0)),
+                "pairs_tested": int(len(rows)),
+                "pairs_failed": int(len(pair_failures)),
+                "pairs_skipped_min_overlap": int(pairs_skipped_min_overlap),
+                "pair_overlaps": pair_overlaps,
+            }
+        )
+        if pair_failures:
+            meta["pair_failures"] = pair_failures
+            warnings_out.append(
+                f"{len(pair_failures)} orientation-level cointegration fits failed; see meta['pair_failures']."
+            )
+
+        if not rows:
+            error_code = "insufficient_overlap"
+            error_message = "No symbol pairs had enough overlapping transformed samples to run cointegration tests."
+            details = _format_pair_overlap_details(pair_overlaps, int(min_overlap)) or None
+            if pair_failures and any(rows_count >= int(min_overlap) for rows_count in pair_overlaps.values()):
+                error_code = "test_failed"
+                error_message = "Cointegration tests failed for all eligible symbol pairs."
+            return _causal_error(
+                error_message,
+                code=error_code,
+                meta=meta,
+                warnings=warnings_out,
+                details=details,
+            )
+
+        cointegrated_count = int(sum(1 for row in rows if bool(row.get("cointegrated"))))
+        out: Dict[str, Any] = {
+            "success": True,
+            "data": {
+                "pairs": rows,
+                "count_pairs": int(len(rows)),
+                "count_cointegrated": cointegrated_count,
+                **_build_cointegration_summary(rows),
+            },
+            "meta": meta,
+        }
+        if warnings_out:
+            out["warnings"] = warnings_out
+        if cointegrated_count == 0:
+            out["message"] = "No statistically significant cointegrated pairs detected at the selected threshold."
+        return out
+
+    return run_logged_operation(
+        logger,
+        operation="cointegration_test",
+        symbols=symbols,
+        group=group,
+        timeframe=timeframe,
+        limit=limit,
+        transform=transform,
+        trend=trend,
+        significance=significance,
         min_overlap=min_overlap,
         func=_run,
     )

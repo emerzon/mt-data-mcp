@@ -183,6 +183,7 @@ mtdata-cli data_fetch_candles EURUSD --start "2025-12-01" --end "2025-12-31"
 | `pivot_compute_points` | Calculate pivot levels |
 | `support_resistance_levels` | Compute support and resistance levels |
 | `correlation_matrix` | Pairwise correlation matrix between symbols |
+| `cointegration_test` | Pairwise cointegration test between symbols |
 | `causal_discover_signals` | Granger-style causal discovery between symbols |
 
 ### Trading
@@ -344,6 +345,10 @@ mtdata-cli correlation_matrix "EURUSD,GBPUSD,USDJPY" --timeframe H1 \
 # Use an explicit MT5 group path instead of naming symbols one-by-one
 mtdata-cli correlation_matrix --group "Forex\\Majors" --timeframe H1 \
   --limit 120 --method pearson --transform log_return --json
+
+# Find candidate mean-reverting pairs inside an MT5 group
+mtdata-cli cointegration_test --group "Forex\\Majors" --timeframe H1 \
+  --limit 400 --transform log_level --significance 0.05 --json
 
 # Compare a few symbols directly
 mtdata-cli causal_discover_signals "EURUSD,GBPUSD,USDJPY" --timeframe H1 \

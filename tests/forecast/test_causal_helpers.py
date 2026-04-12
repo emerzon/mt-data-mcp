@@ -7,10 +7,13 @@ from mtdata.core.causal import (
     _build_correlation_matrix,
     _build_correlation_summary,
     _format_summary,
+    _normalize_cointegration_transform,
+    _normalize_cointegration_trend,
     _normalize_correlation_method,
     _normalize_transform_name,
     _parse_symbols,
     _standardize_frame,
+    _transform_cointegration_frame,
     _transform_frame,
 )
 
@@ -101,6 +104,20 @@ class TestCorrelationHelpers:
         assert _normalize_transform_name("pct_change") == "pct"
         assert _normalize_transform_name("raw") == "level"
         assert _normalize_transform_name("mystery") is None
+
+    def test_normalize_cointegration_aliases(self):
+        assert _normalize_cointegration_transform("log") == "log_level"
+        assert _normalize_cointegration_transform("raw") == "level"
+        assert _normalize_cointegration_transform("mystery") is None
+        assert _normalize_cointegration_trend("constant") == "c"
+        assert _normalize_cointegration_trend("none") == "n"
+        assert _normalize_cointegration_trend("bad") is None
+
+    def test_transform_cointegration_frame_supports_log_levels(self):
+        df = pd.DataFrame({"A": [100.0, 101.0, 102.0], "B": [50.0, 0.0, 52.0]})
+        result = _transform_cointegration_frame(df, "log_level")
+        assert np.isfinite(result["A"]).all()
+        assert np.isnan(result["B"]).sum() >= 1
 
     def test_build_correlation_matrix_is_symmetric(self):
         matrix = _build_correlation_matrix(
