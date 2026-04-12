@@ -109,6 +109,12 @@ class MLForecastMethod(ForecastMethod):
 
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
+                if (X_df is None) != (Xf_df is None):
+                    raise ValueError(
+                        "Exogenous feature mismatch: training exog "
+                        f"{'absent' if X_df is None else 'present'} but future exog "
+                        f"{'absent' if Xf_df is None else 'present'}"
+                    )
                 if X_df is not None:
                     mlf.fit(Y_df, X_df=X_df)
                 else:
