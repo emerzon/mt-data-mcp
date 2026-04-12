@@ -26,6 +26,31 @@ from .mt5_gateway import get_mt5_gateway, mt5_connection_error
 
 logger = logging.getLogger(__name__)
 
+_CORRELATION_METHOD_ALIASES: Dict[str, str] = {
+    "pearson": "pearson",
+    "linear": "pearson",
+    "spearman": "spearman",
+    "rank": "spearman",
+    "rank_corr": "spearman",
+    "rank_correlation": "spearman",
+}
+
+_TRANSFORM_ALIASES: Dict[str, str] = {
+    "log_return": "log_return",
+    "logret": "log_return",
+    "log-returns": "log_return",
+    "pct": "pct",
+    "return": "pct",
+    "pct_change": "pct",
+    "diff": "diff",
+    "difference": "diff",
+    "first_diff": "diff",
+    "level": "level",
+    "none": "level",
+    "raw": "level",
+    "price": "level",
+}
+
 
 def _causal_connection_error() -> Dict[str, Any] | None:
     return mt5_connection_error(
@@ -45,6 +70,19 @@ def _parse_symbols(value: str) -> List[str]:
     return list(dict.fromkeys(items))  # dedupe preserving order
 
 
+def _visible_group_members(
+    all_symbols: Any,
+    group_path: str,
+) -> List[str]:
+    members: List[str] = []
+    for sym in all_symbols or []:
+        if not getattr(sym, 'visible', True):
+            continue
+        if _extract_group_path_util(sym) == group_path:
+            members.append(sym.name)
+    return list(dict.fromkeys(members))
+
+
 def _expand_symbols_for_group(anchor: str, gateway: Any = None) -> tuple[List[str], str | None, str | None]:
     """Return visible group members for anchor along with the group path."""
     mt5_gateway = gateway or get_mt5_gateway(
@@ -58,18 +96,66 @@ def _expand_symbols_for_group(anchor: str, gateway: Any = None) -> tuple[List[st
     all_symbols = mt5_gateway.symbols_get()
     if all_symbols is None:
         return [], f"Failed to load symbol list: {mt5_gateway.last_error()}", group_path
-    members: list[str] = []
-    for sym in all_symbols:
-        if not getattr(sym, 'visible', True) and sym.name != anchor:
-            continue
-        if _extract_group_path_util(sym) == group_path:
-            members.append(sym.name)
+    members = _visible_group_members(all_symbols, group_path)
     if anchor not in members:
         members.insert(0, anchor)
     deduped = list(dict.fromkeys(members))
     if len(deduped) < 2:
         return deduped, f"Symbol group {group_path} has fewer than two visible instruments", group_path
     return deduped, None, group_path
+
+
+def _expand_symbols_for_group_path(query: str, gateway: Any = None) -> tuple[List[str], str | None, str | None]:
+    """Return visible group members for an explicit MT5 group path query."""
+    mt5_gateway = gateway or get_mt5_gateway(
+        adapter=mt5,
+        ensure_connection_impl=ensure_mt5_connection_or_raise,
+    )
+    group_query = str(query or "").strip()
+    if not group_query:
+        return [], "Group path must not be empty.", None
+
+    all_symbols = mt5_gateway.symbols_get()
+    if all_symbols is None:
+        return [], f"Failed to load symbol list: {mt5_gateway.last_error()}", None
+
+    groups: Dict[str, List[str]] = {}
+    for sym in all_symbols:
+        group_path = _extract_group_path_util(sym)
+        if not group_path:
+            continue
+        if not getattr(sym, 'visible', True):
+            continue
+        groups.setdefault(group_path, []).append(sym.name)
+
+    if not groups:
+        return [], "No visible MT5 symbol groups are available.", None
+
+    query_lower = group_query.lower()
+    exact_matches = [group_path for group_path in groups if group_path.lower() == query_lower]
+    matched_paths = exact_matches or [
+        group_path for group_path in groups if query_lower in group_path.lower()
+    ]
+    matched_paths = list(dict.fromkeys(matched_paths))
+    if not matched_paths:
+        return [], f"Group '{group_query}' was not found among visible MT5 symbol groups.", None
+    if len(matched_paths) > 1:
+        preview = ", ".join(sorted(matched_paths)[:5])
+        suffix = ", ..." if len(matched_paths) > 5 else ""
+        return (
+            [],
+            (
+                f"Group '{group_query}' matched multiple visible MT5 symbol groups: "
+                f"{preview}{suffix}"
+            ),
+            None,
+        )
+
+    group_path = matched_paths[0]
+    members = _visible_group_members(all_symbols, group_path)
+    if len(members) < 2:
+        return members, f"Symbol group {group_path} has fewer than two visible instruments", group_path
+    return members, None, group_path
 
 
 
@@ -120,6 +206,20 @@ def _transform_frame(frame: pd.DataFrame, transform: str) -> pd.DataFrame:
     return frame.dropna(how="all")
 
 
+def _normalize_correlation_method(value: str) -> str | None:
+    text = str(value).strip().lower()
+    if not text:
+        return None
+    return _CORRELATION_METHOD_ALIASES.get(text)
+
+
+def _normalize_transform_name(value: str) -> str | None:
+    text = str(value).strip().lower()
+    if not text:
+        return None
+    return _TRANSFORM_ALIASES.get(text)
+
+
 def _standardize_frame(frame: pd.DataFrame) -> pd.DataFrame:
     if frame.empty:
         return frame
@@ -138,6 +238,139 @@ def _standardize_frame(frame: pd.DataFrame) -> pd.DataFrame:
         if not math.isfinite(std) or std == 0.0:
             standardized[col] = series
     return standardized
+
+
+def _build_pairwise_frame(
+    series_map: Dict[str, pd.Series],
+    symbols: List[str],
+) -> pd.DataFrame:
+    aligned_map = {
+        symbol: series_map[symbol]
+        for symbol in symbols
+        if isinstance(series_map.get(symbol), pd.Series)
+    }
+    if len(aligned_map) < 2:
+        return pd.DataFrame()
+    return pd.concat(aligned_map, axis=1, join="outer").sort_index()
+
+
+def _rank_correlation_pairs(
+    frame: pd.DataFrame,
+    symbols: List[str],
+    *,
+    method: str,
+    limit: int,
+    min_overlap: int,
+) -> tuple[List[Dict[str, Any]], Dict[str, int], Dict[str, int]]:
+    rows: List[Dict[str, Any]] = []
+    pair_overlaps: Dict[str, int] = {}
+    skipped = {
+        "min_overlap": 0,
+        "nonfinite": 0,
+    }
+
+    for idx, left in enumerate(symbols):
+        if left not in frame.columns:
+            continue
+        for right in symbols[idx + 1:]:
+            if right not in frame.columns:
+                continue
+            subset_all = frame[[left, right]].dropna(how="any")
+            overlap_rows = int(len(subset_all))
+            pair_overlaps[f"{left}-{right}"] = overlap_rows
+            if overlap_rows < min_overlap:
+                skipped["min_overlap"] += 1
+                continue
+            subset = subset_all.tail(limit)
+            corr = subset[left].corr(subset[right], method=method)
+            if corr is None or not math.isfinite(float(corr)):
+                skipped["nonfinite"] += 1
+                continue
+            corr_f = float(corr)
+            rows.append(
+                {
+                    "left": left,
+                    "right": right,
+                    "correlation": corr_f,
+                    "abs_correlation": abs(corr_f),
+                    "samples": int(len(subset)),
+                    "overlap_rows": overlap_rows,
+                    "window_truncated": bool(len(subset) < overlap_rows),
+                    "relationship": (
+                        "positive" if corr_f > 0 else "negative" if corr_f < 0 else "flat"
+                    ),
+                }
+            )
+
+    rows.sort(
+        key=lambda item: (
+            -float(item["abs_correlation"]),
+            -int(item["samples"]),
+            str(item["left"]),
+            str(item["right"]),
+        )
+    )
+    return rows, pair_overlaps, skipped
+
+
+def _build_correlation_matrix(
+    symbols: List[str],
+    rows: List[Dict[str, Any]],
+) -> Dict[str, Dict[str, float | None]]:
+    matrix: Dict[str, Dict[str, float | None]] = {
+        str(symbol): {str(other): None for other in symbols}
+        for symbol in symbols
+    }
+    for symbol in symbols:
+        matrix[str(symbol)][str(symbol)] = 1.0
+    for row in rows:
+        left = str(row["left"])
+        right = str(row["right"])
+        corr_f = float(row["correlation"])
+        matrix[left][right] = corr_f
+        matrix[right][left] = corr_f
+    return matrix
+
+
+def _build_correlation_summary(
+    rows: List[Dict[str, Any]],
+    *,
+    top_n: int = 5,
+) -> Dict[str, List[Dict[str, Any]]]:
+    limit = max(1, int(top_n))
+    positive = sorted(
+        [row for row in rows if float(row["correlation"]) > 0.0],
+        key=lambda item: (
+            -float(item["correlation"]),
+            -int(item["samples"]),
+            str(item["left"]),
+            str(item["right"]),
+        ),
+    )
+    negative = sorted(
+        [row for row in rows if float(row["correlation"]) < 0.0],
+        key=lambda item: (
+            float(item["correlation"]),
+            -int(item["samples"]),
+            str(item["left"]),
+            str(item["right"]),
+        ),
+    )
+    return {
+        "strongest_absolute": rows[:limit],
+        "strongest_positive": positive[:limit],
+        "strongest_negative": negative[:limit],
+    }
+
+
+def _format_pair_overlap_details(
+    pair_overlaps: Dict[str, int],
+    minimum_required: int,
+) -> List[str]:
+    return [
+        f"{pair_key}: {int(rows)} rows (minimum {int(minimum_required)} required)"
+        for pair_key, rows in sorted(pair_overlaps.items(), key=lambda kv: (kv[1], kv[0]))
+    ]
 
 
 def _format_summary(rows: List[Dict[str, object]], symbols: List[str], transform: str, alpha: float, group_hint: str | None = None) -> str:
@@ -735,5 +968,281 @@ def causal_discover_signals(  # noqa: C901
         timeframe=timeframe,
         limit=limit,
         max_lag=max_lag,
+        func=_run,
+    )
+
+
+@mcp.tool()
+def correlation_matrix(  # noqa: C901
+    symbols: Optional[str] = None,
+    group: Optional[str] = None,
+    timeframe: str = "H1",
+    limit: int = 500,
+    method: str = "pearson",
+    transform: str = "log_return",
+    min_overlap: int = 30,
+) -> Dict[str, Any]:
+    """Calculate pairwise symbol correlations from MT5 price history.
+
+    Args:
+        symbols: Comma-separated MT5 symbols; provide one symbol to auto-expand its group.
+            Optional when using `group`.
+        group: Explicit MT5 group path (for example "Forex\\Majors"). Mutually
+            exclusive with `symbols`.
+        timeframe: MT5 timeframe key (e.g. "M15", "H1").
+        limit: Maximum number of overlapping transformed samples used per pair.
+        method: Correlation method: "pearson" or "spearman".
+        transform: Preprocessing transform: "log_return", "pct", "diff", or "level".
+        min_overlap: Minimum overlapping transformed samples required per pair.
+    """
+
+    def _run() -> Dict[str, Any]:  # noqa: C901
+        connection_error = _causal_connection_error()
+        if connection_error is not None:
+            return connection_error
+        mt5_gateway = get_mt5_gateway(
+            adapter=mt5,
+            ensure_connection_impl=ensure_mt5_connection_or_raise,
+        )
+        meta: Dict[str, Any] = {
+            "timeframe": str(timeframe),
+            "limit": int(limit),
+            "method": str(method),
+            "transform": str(transform),
+            "min_overlap": int(min_overlap),
+        }
+
+        symbol_list = _parse_symbols(str(symbols or ""))
+        meta["symbols_input"] = list(symbol_list)
+        if group is not None:
+            meta["group_input"] = str(group)
+        requested_anchor = symbol_list[0] if group is None and len(symbol_list) == 1 else None
+        group_hint: str | None = None
+        if group and symbol_list:
+            return _causal_error(
+                "Provide either symbols or group for correlation analysis, not both.",
+                code="invalid_input",
+                meta=meta,
+            )
+        if group:
+            expanded, err, group_path = _expand_symbols_for_group_path(
+                group,
+                gateway=mt5_gateway,
+            )
+            if err:
+                return _causal_error(
+                    err,
+                    code="symbol_group_error",
+                    meta=meta,
+                )
+            symbol_list = expanded
+            group_hint = group_path
+            meta["group_resolved"] = group_path
+            meta["symbols_expanded"] = list(symbol_list)
+        elif not symbol_list:
+            return _causal_error(
+                "Provide at least one symbol or MT5 group for correlation analysis.",
+                code="invalid_input",
+                meta=meta,
+            )
+        elif len(symbol_list) == 1:
+            expanded, err, group_path = _expand_symbols_for_group(
+                symbol_list[0],
+                gateway=mt5_gateway,
+            )
+            if err:
+                return _causal_error(
+                    err,
+                    code="symbol_group_error",
+                    meta=meta,
+                )
+            symbol_list = expanded
+            group_hint = group_path
+            meta["symbols_expanded"] = list(symbol_list)
+
+        if len(symbol_list) < 2:
+            return _causal_error(
+                "Provide at least two symbols for correlation analysis (e.g. 'EURUSD,GBPUSD').",
+                code="invalid_input",
+                meta=meta,
+            )
+
+        tf = TIMEFRAME_MAP.get(timeframe)
+        if tf is None:
+            valid = ", ".join(sorted(TIMEFRAME_MAP.keys()))
+            return _causal_error(
+                f"Invalid timeframe '{timeframe}'. Valid options: {valid}",
+                code="invalid_timeframe",
+                meta=meta,
+            )
+
+        if limit < 2:
+            return _causal_error(
+                "limit must be at least 2.",
+                code="invalid_input",
+                meta=meta,
+            )
+
+        if min_overlap < 2:
+            return _causal_error(
+                "min_overlap must be at least 2.",
+                code="invalid_input",
+                meta=meta,
+            )
+
+        method_value = _normalize_correlation_method(method)
+        if method_value is None:
+            return _causal_error(
+                "Invalid method. Valid options: pearson, spearman",
+                code="invalid_method",
+                meta=meta,
+            )
+        meta["method"] = method_value
+
+        transform_value = _normalize_transform_name(transform)
+        if transform_value is None:
+            return _causal_error(
+                "Invalid transform. Valid options: log_return, pct, diff, level",
+                code="invalid_transform",
+                meta=meta,
+            )
+        meta["transform"] = transform_value
+
+        fetch_count = max(int(limit) + 10, int(min_overlap) + 10, 200)
+        meta["fetch_count"] = int(fetch_count)
+        series_map: Dict[str, pd.Series] = {}
+        errors: List[str] = []
+        for symbol in symbol_list:
+            series, err = _fetch_series(symbol, tf, fetch_count)
+            if err:
+                errors.append(err)
+            else:
+                series_map[symbol] = series
+
+        if errors and not series_map:
+            return _causal_error(
+                errors[0],
+                code="data_fetch_failed",
+                meta=meta,
+                details=errors,
+            )
+
+        warnings_out: List[str] = []
+        if errors:
+            warnings_out.extend(errors)
+            symbol_list = [symbol for symbol in symbol_list if symbol in series_map]
+
+        if requested_anchor and requested_anchor not in series_map:
+            details_out = []
+            expanded_symbols = meta.get("symbols_expanded")
+            if isinstance(expanded_symbols, list) and expanded_symbols:
+                details_out.append(
+                    f"Expanded group: {', '.join(str(sym) for sym in expanded_symbols)}"
+                )
+            return _causal_error(
+                f"Requested symbol {requested_anchor} could not be fetched from its auto-expanded group.",
+                code="anchor_symbol_missing",
+                meta=meta,
+                warnings=warnings_out,
+                details=details_out or None,
+            )
+
+        if len(series_map) < 2:
+            return _causal_error(
+                "Not enough valid symbol data fetched to calculate correlations.",
+                code="insufficient_symbols",
+                meta=meta,
+                warnings=warnings_out,
+            )
+
+        symbol_rows: Dict[str, int] = {
+            str(symbol): int(len(series_map.get(symbol, pd.Series(dtype=float))))
+            for symbol in symbol_list
+            if symbol in series_map
+        }
+        if symbol_rows:
+            meta["symbol_rows"] = symbol_rows
+
+        frame = _build_pairwise_frame(series_map, symbol_list)
+        if frame.empty:
+            return _causal_error(
+                "Not enough valid symbol data fetched to calculate correlations.",
+                code="insufficient_symbols",
+                meta=meta,
+                warnings=warnings_out,
+            )
+
+        transformed = _transform_frame(frame, transform_value)
+        transformed = transformed.dropna(axis=1, how="all")
+        symbols_used = [symbol for symbol in symbol_list if symbol in transformed.columns]
+        transformed = transformed.reindex(columns=symbols_used)
+        meta["group_hint"] = group_hint
+        meta["symbols_used"] = list(symbols_used)
+
+        transformed_rows = {
+            str(symbol): int(transformed[symbol].dropna().shape[0])
+            for symbol in symbols_used
+        }
+        if transformed_rows:
+            meta["symbol_rows_after_transform"] = transformed_rows
+
+        if len(symbols_used) < 2:
+            return _causal_error(
+                "Not enough symbols retained after transform to calculate correlations.",
+                code="insufficient_symbols",
+                meta=meta,
+                warnings=warnings_out,
+            )
+
+        rows, pair_overlaps, skipped = _rank_correlation_pairs(
+            transformed,
+            symbols_used,
+            method=method_value,
+            limit=int(limit),
+            min_overlap=int(min_overlap),
+        )
+        meta.update(
+            {
+                "pairs_attempted": int(max(len(symbols_used) * (len(symbols_used) - 1) // 2, 0)),
+                "pairs_computed": int(len(rows)),
+                "pairs_skipped_min_overlap": int(skipped["min_overlap"]),
+                "pairs_skipped_nonfinite": int(skipped["nonfinite"]),
+                "pair_overlaps": pair_overlaps,
+            }
+        )
+
+        if not rows:
+            return _causal_error(
+                "No symbol pairs had enough overlapping transformed samples to compute correlations.",
+                code="insufficient_overlap",
+                meta=meta,
+                warnings=warnings_out,
+                details=_format_pair_overlap_details(pair_overlaps, int(min_overlap)) or None,
+            )
+
+        out: Dict[str, Any] = {
+            "success": True,
+            "data": {
+                "matrix": _build_correlation_matrix(symbols_used, rows),
+                "pairs": rows,
+                "count_pairs": int(len(rows)),
+                **_build_correlation_summary(rows),
+            },
+            "meta": meta,
+        }
+        if warnings_out:
+            out["warnings"] = warnings_out
+        return out
+
+    return run_logged_operation(
+        logger,
+        operation="correlation_matrix",
+        symbols=symbols,
+        group=group,
+        timeframe=timeframe,
+        limit=limit,
+        method=method,
+        transform=transform,
+        min_overlap=min_overlap,
         func=_run,
     )

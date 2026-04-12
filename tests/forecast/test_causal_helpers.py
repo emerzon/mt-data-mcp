@@ -4,7 +4,11 @@ import pandas as pd
 import pytest
 
 from mtdata.core.causal import (
+    _build_correlation_matrix,
+    _build_correlation_summary,
     _format_summary,
+    _normalize_correlation_method,
+    _normalize_transform_name,
     _parse_symbols,
     _standardize_frame,
     _transform_frame,
@@ -83,6 +87,49 @@ class TestStandardizeFrame:
         result = _standardize_frame(df)
         # Constant column should be preserved as-is
         pd.testing.assert_series_equal(result["B"], df["B"], check_names=True)
+
+
+class TestCorrelationHelpers:
+    def test_normalize_correlation_method_aliases(self):
+        assert _normalize_correlation_method("pearson") == "pearson"
+        assert _normalize_correlation_method("Linear") == "pearson"
+        assert _normalize_correlation_method("rank") == "spearman"
+        assert _normalize_correlation_method("kendall") is None
+
+    def test_normalize_transform_aliases(self):
+        assert _normalize_transform_name("logret") == "log_return"
+        assert _normalize_transform_name("pct_change") == "pct"
+        assert _normalize_transform_name("raw") == "level"
+        assert _normalize_transform_name("mystery") is None
+
+    def test_build_correlation_matrix_is_symmetric(self):
+        matrix = _build_correlation_matrix(
+            ["EURUSD", "GBPUSD", "USDJPY"],
+            [
+                {"left": "EURUSD", "right": "GBPUSD", "correlation": 0.81},
+                {"left": "EURUSD", "right": "USDJPY", "correlation": -0.42},
+            ],
+        )
+
+        assert matrix["EURUSD"]["EURUSD"] == pytest.approx(1.0)
+        assert matrix["EURUSD"]["GBPUSD"] == pytest.approx(0.81)
+        assert matrix["GBPUSD"]["EURUSD"] == pytest.approx(0.81)
+        assert matrix["USDJPY"]["EURUSD"] == pytest.approx(-0.42)
+        assert matrix["GBPUSD"]["USDJPY"] is None
+
+    def test_build_correlation_summary_splits_positive_and_negative(self):
+        rows = [
+            {"left": "A", "right": "B", "correlation": 0.91, "samples": 100},
+            {"left": "A", "right": "C", "correlation": -0.87, "samples": 95},
+            {"left": "B", "right": "C", "correlation": 0.50, "samples": 90},
+        ]
+
+        summary = _build_correlation_summary(rows, top_n=1)
+
+        assert summary["strongest_absolute"][0]["left"] == "A"
+        assert summary["strongest_absolute"][0]["right"] == "B"
+        assert summary["strongest_positive"][0]["correlation"] == pytest.approx(0.91)
+        assert summary["strongest_negative"][0]["correlation"] == pytest.approx(-0.87)
 
 
 class TestFormatSummary:

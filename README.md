@@ -36,6 +36,7 @@ It runs as a **Model Context Protocol (MCP)** server or a standalone **CLI**.
 | **Indicators** | Compute 100+ technical indicators | `data_fetch_candles --indicators` |
 | **Denoising** | Smooth price data to reveal trends | `--denoise` option |
 | **Temporal** | Discover session effects and seasonal patterns | `temporal_analyze` |
+| **Multi-asset** | Explore cross-symbol correlation and lead/lag relationships | `correlation_matrix`, `causal_discover_signals` |
 | **Trading** | Place orders, manage positions | `trade_place`, `trade_close` |
 | **Fundamentals** | US equity data, screening, news, calendars | `finviz_fundamentals`, `finviz_screen`, `finviz_calendar` |
 | **Options** | Options chains and QuantLib barrier pricing | `forecast_options_chain`, `forecast_quantlib_barrier_price` |
@@ -132,7 +133,7 @@ mtdata/
 ├── requirements-optional-src.txt  # Opt-in native/source-built accelerators
 ├── src/mtdata/
 │   ├── bootstrap/      # Runtime startup, settings, tool loading
-│   ├── core/           # Tool registry, schemas, server logic, all 57 MCP tools
+│   ├── core/           # Tool registry, schemas, server logic, MCP tools
 │   │   ├── cli/        # Dynamic CLI (argparse, formatting, parsing, runtime)
 │   │   ├── regime/     # Regime detection (HMM, BOCPD, MS-AR)
 │   │   └── report_templates/  # Report generation templates

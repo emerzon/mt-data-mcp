@@ -2879,6 +2879,62 @@ class TestMain:
         mock_fn.assert_called_once_with(search_term="BTC", __cli_raw=True)
 
     @patch("mtdata.core.cli.discover_tools")
+    def test_correlation_matrix_keeps_optional_first_positional_symbols(self, mock_discover):
+        mock_fn = MagicMock(return_value="output text")
+        mock_fn.__module__ = "mtdata.core.server"
+        mock_fn.__name__ = "correlation_matrix"
+        mock_fn.__doc__ = "Correlation matrix."
+
+        def correlation_matrix(symbols: Optional[str] = None, group: Optional[str] = None):
+            """Correlation matrix."""
+            pass
+
+        info = get_function_info(correlation_matrix)
+        info["func"] = mock_fn
+
+        mock_discover.return_value = {
+            "correlation_matrix": {
+                "func": mock_fn,
+                "meta": {"description": "Correlation matrix"},
+                "_cli_func_info": info,
+            },
+        }
+
+        with patch("sys.argv", ["cli.py", "correlation_matrix", "EURUSD,GBPUSD"]):
+            result = main()
+
+        assert result == 0
+        mock_fn.assert_called_once_with(symbols="EURUSD,GBPUSD", __cli_raw=True)
+
+    @patch("mtdata.core.cli.discover_tools")
+    def test_correlation_matrix_accepts_group_without_symbols(self, mock_discover):
+        mock_fn = MagicMock(return_value="output text")
+        mock_fn.__module__ = "mtdata.core.server"
+        mock_fn.__name__ = "correlation_matrix"
+        mock_fn.__doc__ = "Correlation matrix."
+
+        def correlation_matrix(symbols: Optional[str] = None, group: Optional[str] = None):
+            """Correlation matrix."""
+            pass
+
+        info = get_function_info(correlation_matrix)
+        info["func"] = mock_fn
+
+        mock_discover.return_value = {
+            "correlation_matrix": {
+                "func": mock_fn,
+                "meta": {"description": "Correlation matrix"},
+                "_cli_func_info": info,
+            },
+        }
+
+        with patch("sys.argv", ["cli.py", "correlation_matrix", "--group", "Forex\\Majors"]):
+            result = main()
+
+        assert result == 0
+        mock_fn.assert_called_once_with(group="Forex\\Majors", __cli_raw=True)
+
+    @patch("mtdata.core.cli.discover_tools")
     def test_global_timeframe_before_command_is_applied(self, mock_discover):
         mock_fn = MagicMock(return_value="output text")
         mock_fn.__module__ = "mtdata.core.server"

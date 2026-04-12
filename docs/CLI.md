@@ -182,6 +182,7 @@ mtdata-cli data_fetch_candles EURUSD --start "2025-12-01" --end "2025-12-31"
 | `patterns_detect` | Detect candlestick/chart patterns |
 | `pivot_compute_points` | Calculate pivot levels |
 | `support_resistance_levels` | Compute support and resistance levels |
+| `correlation_matrix` | Pairwise correlation matrix between symbols |
 | `causal_discover_signals` | Granger-style causal discovery between symbols |
 
 ### Trading
@@ -334,8 +335,16 @@ mtdata-cli regime_detect EURUSD --method hmm --params "n_states=2"
 mtdata-cli regime_detect EURUSD --method bocpd --threshold 0.5
 ```
 
-### Discover Causal Links (Exploratory)
+### Compare Cross-Symbol Relationships (Exploratory)
 ```bash
+# Rank co-moving symbols with transformed-return correlations
+mtdata-cli correlation_matrix "EURUSD,GBPUSD,USDJPY" --timeframe H1 \
+  --limit 500 --method pearson --transform log_return --json
+
+# Use an explicit MT5 group path instead of naming symbols one-by-one
+mtdata-cli correlation_matrix --group "Forex\\Majors" --timeframe H1 \
+  --limit 120 --method pearson --transform log_return --json
+
 # Compare a few symbols directly
 mtdata-cli causal_discover_signals "EURUSD,GBPUSD,USDJPY" --timeframe H1 \
   --limit 800 --max-lag 5 --transform log_return --significance 0.05

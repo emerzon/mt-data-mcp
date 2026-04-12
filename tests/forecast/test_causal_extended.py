@@ -12,6 +12,7 @@ import pytest
 from mtdata.core import causal as causal_mod
 from mtdata.core.causal import (
     _expand_symbols_for_group,
+    _expand_symbols_for_group_path,
     _fetch_series,
     _format_summary,
     _pair_overlap_symbols,
@@ -19,6 +20,7 @@ from mtdata.core.causal import (
     _standardize_frame,
     _transform_frame,
     causal_discover_signals,
+    correlation_matrix,
 )
 from mtdata.utils.mt5 import MT5ConnectionError
 
@@ -100,6 +102,45 @@ class TestExpandSymbolsForGroup:
         mock_mt5.symbols_get.return_value = [s1, s2]
         syms, err, gp = _expand_symbols_for_group("EURUSD")
         assert syms[0] == "EURUSD"
+
+
+class TestExpandSymbolsForGroupPath:
+    def _symbol(self, name: str, group_path: str, *, visible: bool = True):
+        sym = MagicMock()
+        sym.name = name
+        sym.visible = visible
+        sym.group_path = group_path
+        return sym
+
+    @patch("mtdata.core.causal._extract_group_path_util", side_effect=lambda symbol: getattr(symbol, "group_path", None))
+    def test_exact_match_returns_visible_members(self, _mock_group):
+        gateway = MagicMock()
+        gateway.symbols_get.return_value = [
+            self._symbol("EURUSD", "Forex\\Majors"),
+            self._symbol("GBPUSD", "Forex\\Majors"),
+            self._symbol("USDJPY", "Forex\\Majors", visible=False),
+            self._symbol("BTCUSD", "Crypto\\Majors"),
+        ]
+
+        syms, err, gp = _expand_symbols_for_group_path("Forex\\Majors", gateway=gateway)
+
+        assert err is None
+        assert gp == "Forex\\Majors"
+        assert syms == ["EURUSD", "GBPUSD"]
+
+    @patch("mtdata.core.causal._extract_group_path_util", side_effect=lambda symbol: getattr(symbol, "group_path", None))
+    def test_ambiguous_partial_match_returns_error(self, _mock_group):
+        gateway = MagicMock()
+        gateway.symbols_get.return_value = [
+            self._symbol("EURUSD", "Forex\\Majors"),
+            self._symbol("BTCUSD", "Crypto\\Majors"),
+        ]
+
+        syms, err, gp = _expand_symbols_for_group_path("Majors", gateway=gateway)
+
+        assert syms == []
+        assert gp is None
+        assert "matched multiple visible MT5 symbol groups" in err
 
 
 # ---------------------------------------------------------------------------
@@ -499,3 +540,203 @@ class TestCausalDiscoverSignals:
         assert result["meta"]["pairs_failed"] >= 1
         assert result["meta"]["pair_failures"][0]["error_type"] == "RuntimeError"
         assert "warnings" in result
+
+
+class TestCorrelationMatrix:
+    def _unwrapped(self):
+        fn = correlation_matrix
+        while hasattr(fn, '__wrapped__'):
+            fn = fn.__wrapped__
+        return fn
+
+    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
+    def test_invalid_method(self):
+        result = self._unwrapped()("A,B", method="kendall")
+        assert result["success"] is False
+        assert result["error_code"] == "invalid_method"
+
+    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
+    def test_invalid_transform(self):
+        result = self._unwrapped()("A,B", transform="mystery")
+        assert result["success"] is False
+        assert result["error_code"] == "invalid_transform"
+
+    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
+    def test_min_overlap_too_small(self):
+        result = self._unwrapped()("A,B", min_overlap=1)
+        assert result["success"] is False
+        assert result["error_code"] == "invalid_input"
+        assert "min_overlap" in result["error"]
+
+    def test_symbols_and_group_are_mutually_exclusive(self):
+        result = self._unwrapped()("A,B", group="Forex\\Majors")
+        assert result["success"] is False
+        assert result["error_code"] == "invalid_input"
+        assert "either symbols or group" in result["error"]
+
+    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal._fetch_series")
+    def test_success_returns_matrix_and_ranked_pairs(self, mock_fetch, caplog):
+        idx = pd.date_range("2024-01-01", periods=80, freq="h")
+        rets = np.linspace(-0.01, 0.015, 80)
+        series_map = {
+            "A": pd.Series(100.0 * np.exp(np.cumsum(rets)), index=idx),
+            "B": pd.Series(80.0 * np.exp(np.cumsum((rets * 0.95) + 0.0005)), index=idx),
+            "C": pd.Series(120.0 * np.exp(np.cumsum(-rets)), index=idx),
+        }
+
+        def _fetch_side_effect(symbol, timeframe, count):
+            return series_map[symbol], None
+
+        mock_fetch.side_effect = _fetch_side_effect
+
+        with caplog.at_level("INFO", logger="mtdata.core.causal"):
+            result = self._unwrapped()(
+                "A,B,C",
+                method="pearson",
+                transform="log_return",
+                min_overlap=30,
+            )
+
+        assert result["success"] is True
+        data = result["data"]
+        assert data["count_pairs"] == 3
+        assert data["matrix"]["A"]["A"] == pytest.approx(1.0)
+        assert data["matrix"]["A"]["B"] > 0.95
+        assert data["matrix"]["A"]["C"] < -0.95
+        assert data["pairs"][0]["abs_correlation"] >= data["pairs"][1]["abs_correlation"]
+        assert data["strongest_positive"]
+        assert data["strongest_negative"]
+        assert result["meta"]["pairs_computed"] == 3
+        assert any(
+            "event=finish operation=correlation_matrix success=True" in record.message
+            for record in caplog.records
+        )
+
+    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal._fetch_series")
+    def test_pairwise_overlap_allows_partial_success(self, mock_fetch):
+        idx_ab = pd.date_range("2024-01-01", periods=80, freq="h")
+        idx_c = pd.date_range("2024-03-01", periods=80, freq="h")
+        rets = np.linspace(-0.01, 0.01, 80)
+        series_map = {
+            "A": pd.Series(100.0 * np.exp(np.cumsum(rets)), index=idx_ab),
+            "B": pd.Series(90.0 * np.exp(np.cumsum((rets * 1.02) + 0.0002)), index=idx_ab),
+            "C": pd.Series(110.0 * np.exp(np.cumsum(rets)), index=idx_c),
+        }
+
+        def _fetch_side_effect(symbol, timeframe, count):
+            return series_map[symbol], None
+
+        mock_fetch.side_effect = _fetch_side_effect
+
+        result = self._unwrapped()("A,B,C", min_overlap=20)
+
+        assert result["success"] is True
+        assert result["data"]["count_pairs"] == 1
+        assert result["data"]["matrix"]["A"]["B"] is not None
+        assert result["data"]["matrix"]["A"]["C"] is None
+        assert result["data"]["matrix"]["B"]["C"] is None
+        assert result["meta"]["pairs_computed"] == 1
+        assert result["meta"]["pair_overlaps"]["A-C"] == 0
+        assert result["meta"]["pair_overlaps"]["B-C"] == 0
+
+    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal._fetch_series")
+    def test_partial_fetch_failures_are_preserved_as_warnings(self, mock_fetch):
+        idx = pd.date_range("2024-01-01", periods=80, freq="h")
+        rets = np.linspace(-0.01, 0.01, 80)
+        series_map = {
+            "A": pd.Series(100.0 * np.exp(np.cumsum(rets)), index=idx),
+            "B": pd.Series(95.0 * np.exp(np.cumsum((rets * 0.9) + 0.0003)), index=idx),
+        }
+
+        def _fetch_side_effect(symbol, timeframe, count):
+            if symbol == "C":
+                return pd.Series(dtype=float), "Failed to fetch data for C"
+            return series_map[symbol], None
+
+        mock_fetch.side_effect = _fetch_side_effect
+
+        result = self._unwrapped()("A,B,C")
+
+        assert result["success"] is True
+        assert result["data"]["count_pairs"] == 1
+        assert result["meta"]["symbols_used"] == ["A", "B"]
+        assert "warnings" in result
+        assert any("Failed to fetch data for C" in warning for warning in result["warnings"])
+
+    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal._expand_symbols_for_group_path", return_value=(["EURUSD", "GBPUSD"], None, "Forex\\Majors"))
+    @patch("mtdata.core.causal._fetch_series")
+    def test_group_argument_expands_symbols(self, mock_fetch, _mock_expand):
+        idx = pd.date_range("2024-01-01", periods=80, freq="h")
+        rets = np.linspace(-0.01, 0.01, 80)
+        series_map = {
+            "EURUSD": pd.Series(100.0 * np.exp(np.cumsum(rets)), index=idx),
+            "GBPUSD": pd.Series(90.0 * np.exp(np.cumsum((rets * 0.98) + 0.0001)), index=idx),
+        }
+
+        def _fetch_side_effect(symbol, timeframe, count):
+            return series_map[symbol], None
+
+        mock_fetch.side_effect = _fetch_side_effect
+
+        result = self._unwrapped()(group="Forex\\Majors", min_overlap=20)
+
+        assert result["success"] is True
+        assert result["meta"]["group_input"] == "Forex\\Majors"
+        assert result["meta"]["group_resolved"] == "Forex\\Majors"
+        assert result["meta"]["symbols_expanded"] == ["EURUSD", "GBPUSD"]
+        assert result["data"]["count_pairs"] == 1
+
+    @patch("mtdata.core.causal._expand_symbols_for_group_path", return_value=([], "Group 'Forex' matched multiple visible MT5 symbol groups: Forex\\Majors, Forex\\Minors", None))
+    def test_group_argument_surfaces_resolution_error(self, _mock_expand):
+        result = self._unwrapped()(group="Forex")
+
+        assert result["success"] is False
+        assert result["error_code"] == "symbol_group_error"
+        assert "matched multiple visible MT5 symbol groups" in result["error"]
+
+    @patch("mtdata.core.causal._expand_symbols_for_group", return_value=(["BTCUSD", "ETHUSD"], None, "Crypto"))
+    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal._fetch_series")
+    def test_single_symbol_auto_expand_fails_when_anchor_missing(self, mock_fetch, _mock_expand):
+        idx = pd.date_range("2024-01-01", periods=80, freq="h")
+        series_eth = pd.Series(100.0 * np.exp(np.cumsum(np.linspace(-0.01, 0.01, 80))), index=idx)
+
+        def _fetch_side_effect(symbol, timeframe, count):
+            if symbol == "BTCUSD":
+                return pd.Series(dtype=float), "Failed to fetch data for BTCUSD"
+            return series_eth, None
+
+        mock_fetch.side_effect = _fetch_side_effect
+
+        result = self._unwrapped()("BTCUSD")
+
+        assert result["success"] is False
+        assert result["error_code"] == "anchor_symbol_missing"
+        assert "BTCUSD" in result["error"]
+        assert any("Failed to fetch data for BTCUSD" in warning for warning in result["warnings"])
+
+    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal._fetch_series")
+    def test_insufficient_overlap_includes_pair_details(self, mock_fetch):
+        idx_a = pd.date_range("2024-01-01", periods=50, freq="h")
+        idx_b = pd.date_range("2024-02-01", periods=50, freq="h")
+        series_map = {
+            "A": pd.Series(100.0 * np.exp(np.cumsum(np.linspace(-0.01, 0.01, 50))), index=idx_a),
+            "B": pd.Series(80.0 * np.exp(np.cumsum(np.linspace(-0.01, 0.01, 50))), index=idx_b),
+        }
+
+        def _fetch_side_effect(symbol, timeframe, count):
+            return series_map[symbol], None
+
+        mock_fetch.side_effect = _fetch_side_effect
+
+        result = self._unwrapped()("A,B", min_overlap=30)
+
+        assert result["success"] is False
+        assert result["error_code"] == "insufficient_overlap"
+        assert "A-B: 0 rows (minimum 30 required)" in " ".join(result.get("details", []))
+        assert result["meta"]["pair_overlaps"]["A-B"] == 0

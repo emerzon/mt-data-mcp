@@ -15,6 +15,7 @@ _BAR_LIMIT_ALIAS_COMMANDS: set[str] = {
 
 _OPTIONAL_FIRST_POSITIONAL_PARAMS: set[tuple[str, str]] = {
     ("finviz_news", "symbol"),
+    ("correlation_matrix", "symbols"),
 }
 
 _COMMAND_PARAM_CHOICE_OVERRIDES: Dict[tuple[str, str], list[str]] = {
