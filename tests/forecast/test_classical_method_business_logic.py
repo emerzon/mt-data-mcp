@@ -37,6 +37,9 @@ def test_naive_and_drift_forecasts_return_expected_values():
     with pytest.raises(ValueError, match="requires at least 2 data points"):
         cl.DriftMethod().forecast(pd.Series(dtype=float), horizon=2, seasonality=0, params={})
 
+    with pytest.raises(ValueError, match="finite"):
+        cl.DriftMethod().forecast(pd.Series([5.0, np.nan, 9.0]), horizon=2, seasonality=0, params={})
+
 
 def test_seasonal_naive_validation_and_repeating_pattern():
     method = cl.SeasonalNaiveMethod()

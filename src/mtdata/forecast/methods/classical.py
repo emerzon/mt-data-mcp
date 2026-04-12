@@ -60,12 +60,14 @@ class DriftMethod(ClassicalMethod):
         exog_future: Optional[pd.DataFrame] = None,
         **kwargs
     ) -> ForecastResult:
-        vals = series.values
+        vals = np.asarray(series.values, dtype=float)
         n = int(vals.size)
         if n < self.MIN_POINTS:
             raise ValueError(
                 f"DriftMethod requires at least {self.MIN_POINTS} data points, got {n}"
             )
+        if not np.all(np.isfinite(vals)):
+            raise ValueError("DriftMethod requires all series values to be finite")
         slope = (float(vals[-1]) - float(vals[0])) / float(n - 1)
         f_vals = float(vals[-1]) + slope * np.arange(1, int(horizon) + 1, dtype=float)
         return ForecastResult(forecast=f_vals, params_used={"slope": slope})
