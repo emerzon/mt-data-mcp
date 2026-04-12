@@ -2320,6 +2320,7 @@ def test_detect_tops_bottoms_merges_connected_same_level_cluster():
     assert out
     triple_top = next(pattern for pattern in out if pattern.name == "Triple Top")
     assert triple_top.details["touches"] == 4
+    assert triple_top.confidence == pytest.approx(0.7)
 
 
 def test_level_components_preserves_transitive_clusters_in_input_order():

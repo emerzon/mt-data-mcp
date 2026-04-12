@@ -124,9 +124,9 @@ def detect_tops_bottoms(
                     name=name,
                     status=status,
                     confidence=(
-                        _apply_breakout_confidence_bonus((0.5 + 0.1 * (len(cluster) - 2 + 2)), cfg)
+                        _apply_breakout_confidence_bonus((0.5 + 0.1 * (len(cluster) - 2)), cfg)
                         if break_i is not None
-                        else float(min(1.0, (0.5 + 0.1 * (len(cluster) - 2 + 2))))
+                        else float(min(1.0, (0.5 + 0.1 * (len(cluster) - 2))))
                     ),
                     start_index=start_i,
                     end_index=int(break_i if break_i is not None else end_i),
