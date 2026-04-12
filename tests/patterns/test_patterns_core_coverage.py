@@ -1599,10 +1599,9 @@ class TestPatternsDetectAllMode:
         assert result["mode"] == "all"
         assert result["symbol"] == "EURUSD"
         assert set(result["timeframes"]) == {"M30", "H1", "H4", "D1", "W1"}
-        assert result["candlestick"]["n_patterns"] > 0
-        assert result["classic"]["n_patterns"] > 0
-        assert result["elliott"]["n_patterns"] > 0
-        assert result["total_patterns"] > 0
+        assert result["candlestick"]["by_timeframe"]  # has TF data
+        assert len(result["classic"]["patterns"]) > 0
+        assert len(result["elliott"]["patterns"]) > 0
 
     @patch("mtdata.core.patterns._format_elliott_patterns")
     @patch("mtdata.core.patterns._run_classic_engine")
@@ -1632,9 +1631,9 @@ class TestPatternsDetectAllMode:
 
         result = _call_patterns_detect(symbol="EURUSD", mode="all", timeframe="H1")
         assert result["success"] is True
-        assert result["candlestick"]["n_patterns"] == 1
-        assert result["classic"]["n_patterns"] == 0
-        assert result["elliott"]["n_patterns"] == 0
+        assert result["candlestick"]["by_timeframe"]  # has candlestick data
+        assert result["classic"]["patterns"] == []
+        assert result["elliott"]["patterns"] == []
         assert "errors" in result
 
     @patch("mtdata.core.patterns._format_elliott_patterns")
@@ -1703,9 +1702,9 @@ class TestPatternsDetectAllMode:
         result = _call_patterns_detect(symbol="EURUSD", mode="all", timeframe="H1",
                                        detail="compact")
         assert result["success"] is True
-        # Candlestick is now a per-TF summary
+        # Candlestick is now a per-TF summary (no n_patterns in compact)
         assert "by_timeframe" in result["candlestick"]
-        assert result["candlestick"]["n_patterns"] == 12
+        assert "n_patterns" not in result["candlestick"]
         tf_summary = result["candlestick"]["by_timeframe"]["H1"]
         assert tf_summary["bullish"] == 12
         assert len(tf_summary["top"]) <= 3
@@ -1730,7 +1729,7 @@ class TestPatternsDetectAllMode:
             symbol="EURUSD", mode="all", timeframe="H1",
             config={"native_multiscale": True},
         )
-        assert result.get("success") is True or "error" not in result or result.get("total_patterns", 0) >= 0
+        assert result.get("success") is True or "error" not in result
 
     def test_unknown_mode_includes_all(self):
         """Error message for unknown mode mentions 'all'."""
@@ -1841,7 +1840,7 @@ class TestPatternsDetectAllMode:
 
         result = _call_patterns_detect(symbol="EURUSD", mode="all", timeframe="H1")
         assert result["success"] is True
-        assert result["elliott"]["n_patterns"] >= 1
+        assert result["elliott"]["patterns"]  # has forming patterns
 
 
 class TestRelevanceScoring:

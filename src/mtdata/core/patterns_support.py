@@ -626,12 +626,15 @@ def _summarize_candlestick_by_tf(
             tf_entry["top"] = top
         summary[tf] = tf_entry
 
-    return {
-        "n_patterns": len(patterns),
+    result: Dict[str, Any] = {
         "bullish_total": total_bullish,
         "bearish_total": total_bearish,
         "by_timeframe": summary,
     }
+    # Expose n_patterns for internal use (tests, full detail) but the compact
+    # formatter can choose to omit it.
+    result["n_patterns"] = len(patterns)
+    return result
 
 
 # ── Highlights builder ──────────────────────────────────────────────────
@@ -745,29 +748,27 @@ def _compact_all_mode_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     candle_section = payload.get("candlestick", {})
     candle_patterns = candle_section.get("patterns", [])
     if candle_patterns:
-        compact["candlestick"] = _summarize_candlestick_by_tf(candle_patterns)
+        candle_summary = _summarize_candlestick_by_tf(candle_patterns)
+        candle_summary.pop("n_patterns", None)
+        compact["candlestick"] = candle_summary
     else:
-        compact["candlestick"] = {"n_patterns": 0, "by_timeframe": {}}
+        compact["candlestick"] = {"by_timeframe": {}}
 
-    # Classic + Elliott: trimmed pattern lists
+    # Classic + Elliott: trimmed pattern lists (no raw counts — list is self-evident)
     for section_name, keys in (
         ("classic", _ALL_COMPACT_CLASSIC_KEYS),
         ("elliott", _ALL_COMPACT_ELLIOTT_KEYS),
     ):
         section = payload.get(section_name, {})
         rows = section.get("patterns", [])
-        n_total = section.get("n_patterns", len(rows))
         trimmed = _trim_section_rows(rows, keys) if rows else []
         result: Dict[str, Any] = {
-            "n_patterns": n_total,
             "patterns": trimmed,
         }
         bias = section.get("signal_bias")
         if bias:
             result["signal_bias"] = bias
         compact[section_name] = result
-
-    compact["total_patterns"] = payload.get("total_patterns", 0)
 
     errors = payload.get("errors")
     if errors:
