@@ -503,6 +503,7 @@ def regime_detect(  # noqa: C901
                 "times": t_fmt,
                 "cp_prob": [float(v) for v in np.asarray(cp_prob, dtype=float).tolist()],
                 "change_points": cps,
+                "_series_values": [float(v) for v in np.asarray(x, dtype=float).tolist()],
                 "threshold": float(threshold_used),
                 "reliability": reliability,
                 "params_used": {

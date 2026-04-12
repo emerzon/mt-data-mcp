@@ -1,6 +1,10 @@
 """Payload consolidation utilities for regime detection output formatting."""
 from typing import Any, Dict, List
 
+import numpy as np
+
+from .smoothing import _canonicalize_regime_labels
+
 
 def _consolidate_payload(  # noqa: C901
     payload: Dict[str, Any],
@@ -44,6 +48,19 @@ def _consolidate_payload(  # noqa: C901
                 probs = raw_probs
             else:
                 probs = [0.0] * len(times)
+
+            raw_series = payload.get("_series_values")
+            if isinstance(raw_series, list) and states:
+                canon_state, _, canon_meta = _canonicalize_regime_labels(
+                    np.asarray(states, dtype=int),
+                    None,
+                    np.asarray(raw_series, dtype=float),
+                )
+                states = [int(value) for value in canon_state.tolist()]
+                params_used = payload.get("params_used")
+                if isinstance(params_used, dict) and canon_meta.get("relabeled", False):
+                    params_used["relabeled"] = True
+                    params_used["label_mapping"] = canon_meta.get("mapping", {})
 
         elif method in ("ms_ar", "hmm", "clustering"):
             raw_state = payload.get("state")

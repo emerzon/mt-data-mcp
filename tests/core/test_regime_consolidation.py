@@ -94,3 +94,21 @@ class TestConsolidatePayload:
         }
         result = _consolidate_payload(payload, "hmm", "full")
         assert result.get("params_used") == {"n_states": 2}
+
+    def test_bocpd_regimes_are_canonicalized_by_series_mean(self):
+        payload = {
+            "symbol": "EURUSD",
+            "timeframe": "H1",
+            "method": "bocpd",
+            "success": True,
+            "times": [1.0, 2.0, 3.0, 4.0],
+            "cp_prob": [0.1, 0.1, 0.9, 0.1],
+            "change_points": [{"idx": 2, "time": 3.0, "prob": 0.9}],
+            "_series_values": [0.4, 0.5, -0.2, -0.1],
+            "params_used": {},
+        }
+
+        result = _consolidate_payload(payload, "bocpd", "full")
+
+        assert [segment["regime"] for segment in result["regimes"]] == [1, 0]
+        assert result["params_used"]["relabeled"] is True
