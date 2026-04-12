@@ -18,8 +18,8 @@ def _ms_ar_reliability_from_smoothed(
     max_probs = np.max(smoothed_probs, axis=1)
     avg_confidence = float(np.mean(max_probs))
 
-    # Check for absorbing states (prob == 1.0)
-    absorbing_count = int(np.sum(smoothed_probs >= 0.9999))
+    # Count observations whose dominant regime is effectively absorbing.
+    absorbing_count = int(np.sum(max_probs >= 0.9999))
 
     # Transition matrix precision estimate
     notes = "ok"
