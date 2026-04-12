@@ -179,9 +179,14 @@ def _canonicalize_regime_labels(
     if unique_states.size <= 1:
         # Single state — just ensure it's 0
         if unique_states.size == 1 and unique_states[0] != 0:
+            old_state = int(unique_states[0])
             state_arr = np.zeros_like(state_arr)
             if probs is not None:
-                probs = np.asarray(probs)
+                probs_arr = np.asarray(probs, dtype=float)
+                if probs_arr.ndim == 2 and old_state < probs_arr.shape[1]:
+                    probs_arr = probs_arr.copy()
+                    probs_arr[:, 0] = probs_arr[:, old_state]
+                probs = probs_arr
         return state_arr, probs, {"relabeled": False, "mapping": {}}
 
     series_arr = np.asarray(series, dtype=float)
