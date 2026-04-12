@@ -307,6 +307,26 @@ def _modify_position(
                         out["comment_fallback"] = comment_fallback
                     return out
 
+                out = {
+                    "error": "Broker reported no changes, but live SL/TP do not match the requested values.",
+                    "retcode": result_retcode,
+                    "retcode_name": mt5.retcode_name(result_retcode),
+                    "comment": result.comment,
+                    "request_id": result.request_id,
+                    "position_ticket": resolved_ticket,
+                    "ticket_requested": ticket_id,
+                    "ticket_resolution": ticket_resolution,
+                    "desired_sl": desired_sl,
+                    "desired_tp": desired_tp,
+                    "actual_sl": final_sl,
+                    "actual_tp": final_tp,
+                    "no_change": True,
+                    "last_error": last_error,
+                }
+                if isinstance(comment_fallback, dict):
+                    out["comment_fallback"] = comment_fallback
+                return out
+
             if result_retcode != mt5.TRADE_RETCODE_DONE:
                 out = {
                     "error": "Failed to modify position",

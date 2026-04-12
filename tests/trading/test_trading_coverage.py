@@ -1870,6 +1870,24 @@ class TestModifyPosition:
         assert result.get("retcode") == 10025
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_broker_no_changes_retcode_errors_when_live_position_still_differs(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.TRADE_RETCODE_NO_CHANGES = 10025
+        mt5.positions_get.side_effect = [
+            [_position(sl=1.09, tp=1.12)],
+            [_position(sl=1.09, tp=1.12)],
+        ]
+        mt5.symbol_info.return_value = _sym()
+        mt5.order_send.return_value = _order_result(retcode=10025, comment="No changes")
+        from mtdata.core.trading import _modify_position
+        result = _modify_position(ticket=1, stop_loss=1.08)
+        assert result.get("error")
+        assert result.get("no_change") is True
+        assert result.get("desired_sl") == 1.08
+        assert result.get("actual_sl") == 1.09
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_symbol_info_none(self):
         mt5 = sys.modules["MetaTrader5"]
         self._setup_mt5(mt5)
