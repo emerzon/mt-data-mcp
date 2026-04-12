@@ -239,7 +239,7 @@ class TestDenoiseSeriesDispatch:
 
     def test_short_series_missing_optional_dependency_still_raises(self, monkeypatch):
         s = _make_series(np.array([1.0, 2.0]))
-        monkeypatch.setattr("mtdata.utils.denoise._pywt", None)
+        monkeypatch.setattr("mtdata.utils.denoise.api._pywt", None)
 
         with pytest.raises(RuntimeError, match="requires PyWavelets"):
             _denoise_series(s, method="wavelet", params={"wavelet": "db4"})
@@ -432,7 +432,7 @@ class TestDenoiseSeriesDispatch:
 
     def test_missing_optional_dependency_raises_clear_error(self, monkeypatch):
         s = _make_series(NOISY_SIGNAL)
-        monkeypatch.setattr("mtdata.utils.denoise._pywt", None)
+        monkeypatch.setattr("mtdata.utils.denoise.api._pywt", None)
 
         with pytest.raises(RuntimeError, match="requires PyWavelets"):
             _denoise_series(s, method="wavelet", params={"wavelet": "db4"})
@@ -992,10 +992,10 @@ class TestVmdDenoise:
         _check_basic(y, N)
 
     def test_transposed_mode_fallback_uses_matching_axis(self, monkeypatch):
-        import mtdata.utils.denoise as denoise_mod
+        import mtdata.utils.denoise.filters.decomposition as decomp_mod
 
         monkeypatch.setattr(
-            denoise_mod,
+            decomp_mod,
             "_VMD",
             lambda *args, **kwargs: (
                 np.vstack([np.linspace(0.0, 1.0, 8), np.linspace(1.0, 2.0, 8)]).T,

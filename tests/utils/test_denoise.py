@@ -11,6 +11,7 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 import mtdata.utils.denoise as denoise
+from mtdata.utils.denoise import api as _denoise_api
 
 _denoise_series = denoise._denoise_series
 
@@ -42,7 +43,7 @@ def test_denoise_series_ema():
 
 
 def test_denoise_series_hp():
-    if denoise._sps is None:
+    if _denoise_api._sps is None:
         pytest.skip("scipy sparse not available")
     s = pd.Series(np.linspace(0, 1, 30))
     result = _denoise_series(s, method='hp', params={'lamb': 1600})
@@ -51,7 +52,7 @@ def test_denoise_series_hp():
 
 
 def test_denoise_series_savgol():
-    if denoise._savgol_filter is None:
+    if _denoise_api._savgol_filter is None:
         pytest.skip("savgol filter not available")
     s = pd.Series(np.sin(np.linspace(0, 2 * np.pi, 31)))
     result = _denoise_series(s, method='savgol', params={'window': 9, 'polyorder': 2})
@@ -70,7 +71,7 @@ def test_denoise_series_tv_kalman():
 
 
 def test_denoise_series_butterworth():
-    if denoise._butter is None:
+    if _denoise_api._butter is None:
         pytest.skip("scipy.signal not available")
     s = pd.Series(np.sin(np.linspace(0, 2 * np.pi, 64)))
     result = _denoise_series(s, method='butterworth', params={'cutoff': 0.2, 'order': 3})
@@ -89,7 +90,7 @@ def test_denoise_series_hampel_bilateral():
 
 
 def test_denoise_series_wavelet_packet():
-    if denoise._pywt is None:
+    if _denoise_api._pywt is None:
         pytest.skip("pywt not available")
     s = pd.Series(np.sin(np.linspace(0, 2 * np.pi, 64)))
     result = _denoise_series(s, method='wavelet_packet', params={'wavelet': 'db2', 'level': 2})
@@ -121,7 +122,7 @@ def test_denoise_series_adaptive_beta():
 
 
 def test_denoise_series_vmd():
-    if denoise._VMD is None:
+    if _denoise_api._VMD is None:
         pytest.skip("vmdpy not available")
     s = pd.Series(np.sin(np.linspace(0, 2 * np.pi, 64)))
     result = _denoise_series(s, method='vmd', params={'k': 3, 'alpha': 1000.0, 'drop_modes': [-1]})
