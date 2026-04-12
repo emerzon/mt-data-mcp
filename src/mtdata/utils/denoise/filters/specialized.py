@@ -3,7 +3,11 @@ from typing import Any, Dict, Optional
 
 import numpy as np
 import pandas as pd
-from skimage.restoration import denoise_tv_chambolle as _denoise_tv_chambolle
+
+try:
+    from skimage.restoration import denoise_tv_chambolle as _denoise_tv_chambolle
+except Exception:
+    _denoise_tv_chambolle = None  # type: ignore[assignment]
 
 from ..base import _series_like, register_filter
 
@@ -175,6 +179,8 @@ def _tv_denoise_1d(
     n = len(x)
     if n < 3:
         return x
+    if _denoise_tv_chambolle is None:
+        raise RuntimeError("TV denoise requires scikit-image")
     try:
         y = _denoise_tv_chambolle(
             x,

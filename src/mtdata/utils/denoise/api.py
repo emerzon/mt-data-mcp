@@ -41,6 +41,11 @@ except Exception:
     _gaussian_filter1d = None  # type: ignore
 
 try:
+    from skimage.restoration import denoise_tv_chambolle as _skimage_tv_chambolle
+except Exception:
+    _skimage_tv_chambolle = None  # type: ignore
+
+try:
     from statsmodels.nonparametric.smoothers_lowess import lowess as _lowess
 except Exception:
     _lowess = None  # type: ignore
@@ -160,6 +165,8 @@ _DENOISE_METHOD_CAUSALITY_SUPPORT = {
 def _denoise_availability(name: str) -> tuple[bool, str]:
     if name == 'wavelet':
         return (_pywt is not None, 'PyWavelets')
+    if name == 'tv':
+        return (_skimage_tv_chambolle is not None, 'scikit-image')
     if name in ('emd', 'eemd', 'ceemdan'):
         return (any(x is not None for x in (_EMD, _EEMD, _CEEMDAN)), 'EMD-signal')
     if name in ('hp', 'whittaker'):

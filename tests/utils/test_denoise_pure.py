@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from mtdata.utils.denoise import api as denoise_api
 from mtdata.utils.denoise.api import _run_denoise_handler
 from mtdata.utils.denoise import (
     _apply_denoise,
@@ -18,6 +19,7 @@ from mtdata.utils.denoise.filters.adaptive import (
     _adaptive_rls_filter,
 )
 from mtdata.utils.denoise.filters.decomposition import _ssa_denoise, _vmd_denoise
+from mtdata.utils.denoise.filters import specialized as specialized_filters
 from mtdata.utils.denoise.filters.specialized import (
     _bilateral_filter_1d,
     _hampel_filter,
@@ -712,6 +714,12 @@ class TestTvDenoise1d:
         y = _tv_denoise_1d(np.array([1.0, 2.0]), weight=0.1)
         assert len(y) == 2
 
+    def test_requires_scikit_image_when_unavailable(self, monkeypatch):
+        monkeypatch.setattr(specialized_filters, "_denoise_tv_chambolle", None)
+
+        with pytest.raises(RuntimeError, match="requires scikit-image"):
+            _tv_denoise_1d(NOISY_SIGNAL, weight=0.1, n_iter=50)
+
 
 class TestKalmanFilter1d:
     def test_basic(self):
@@ -1061,6 +1069,14 @@ class TestGetDenoiseMethodsData:
 
         assert methods["ema"]["supports"]["causality"] == ["causal", "zero_phase"]
         assert methods["wavelet"]["supports"]["causality"] == ["zero_phase"]
+
+    def test_reports_tv_unavailable_when_scikit_image_missing(self, monkeypatch):
+        monkeypatch.setattr(denoise_api, "_skimage_tv_chambolle", None)
+
+        data = get_denoise_methods_data()
+        methods = {entry["method"]: entry for entry in data["methods"]}
+
+        assert methods["tv"]["available"] is False
 
 
 # ======================================================================
