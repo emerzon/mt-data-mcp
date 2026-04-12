@@ -258,3 +258,59 @@ def test_resolve_open_position_magic_no_match_falls_through():
     )
     assert pos is not None
     assert pos.ticket == 100
+
+
+def test_select_position_candidate_ticket_candidates_disambiguates():
+    """ticket_candidates narrows candidates to positions matching known tickets."""
+    positions_list = [
+        SimpleNamespace(ticket=100, symbol="EURUSD", type=0, volume=0.1, magic=0, time_update_msc=9000),
+        SimpleNamespace(ticket=200, symbol="EURUSD", type=0, volume=0.1, magic=0, time_update_msc=5000),
+        SimpleNamespace(ticket=300, symbol="EURUSD", type=0, volume=0.1, magic=0, time_update_msc=8000),
+    ]
+    mt5 = _HedgedFakeMt5(positions_list)
+
+    # Without ticket_candidates: picks most recent (ticket 100, time_update_msc=9000)
+    picked = positions._select_position_candidate(
+        positions_list, symbol="EURUSD", side="BUY", volume=0.1, mt5=mt5,
+    )
+    assert picked.ticket == 100
+
+    # With ticket_candidates=[200]: narrows to ticket 200
+    picked = positions._select_position_candidate(
+        positions_list, symbol="EURUSD", side="BUY", volume=0.1,
+        ticket_candidates=[200], mt5=mt5,
+    )
+    assert picked.ticket == 200
+
+
+def test_resolve_open_position_phase3_preserves_ticket_preference():
+    """Phase 3 fallback passes ticket_candidates to _select_position_candidate."""
+    all_positions = [
+        SimpleNamespace(ticket=100, identifier=100, position_id=None, position=None, order=None, deal=None,
+                        symbol="EURUSD", type=0, volume=0.1, magic=0, time_update_msc=9000),
+        SimpleNamespace(ticket=200, identifier=200, position_id=None, position=None, order=None, deal=None,
+                        symbol="EURUSD", type=0, volume=0.1, magic=0, time_update_msc=5000),
+    ]
+
+    class _FakeMt5SkipPhase1(_HedgedFakeMt5):
+        """positions_get(ticket=X) returns None to skip Phase 1."""
+        def positions_get(self, **kwargs):
+            if "ticket" in kwargs:
+                return None
+            return super().positions_get(**kwargs)
+
+    mt5 = _FakeMt5SkipPhase1(all_positions)
+
+    # Phase 2 exact match still finds ticket 200 via identifier field
+    pos, ticket, info = positions._resolve_open_position(
+        mt5, ticket_candidates=[200], symbol="EURUSD", side="BUY", volume=0.1,
+    )
+    assert pos.ticket == 200
+    assert info["method"] == "positions_get(fallback_exact)"
+
+    # With unknown candidates, Phase 3 heuristic picks most recent
+    pos, ticket, info = positions._resolve_open_position(
+        mt5, ticket_candidates=[999], symbol="EURUSD", side="BUY", volume=0.1,
+    )
+    assert pos.ticket == 100
+    assert info["method"] == "positions_get(fallback_heuristic)"

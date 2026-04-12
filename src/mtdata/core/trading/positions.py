@@ -150,11 +150,20 @@ def _select_position_candidate(
     side: Optional[str],
     volume: Optional[float],
     magic: Optional[int] = None,
+    ticket_candidates: Optional[List[int]] = None,
     mt5: Any,
 ) -> Optional[Any]:
     if not rows:
         return None
     candidates = list(rows)
+    # Prefer positions matching known tickets when multiple are available
+    if ticket_candidates and len(candidates) > 1:
+        ticket_filtered = [
+            pos for pos in candidates
+            if any(v in ticket_candidates for v in _position_ticket_fields(pos).values())
+        ]
+        if ticket_filtered:
+            candidates = ticket_filtered
     if symbol:
         symbol_upper = str(symbol).upper()
         symbol_filtered = [pos for pos in candidates if str(getattr(pos, "symbol", "")).upper() == symbol_upper]
@@ -268,6 +277,7 @@ def _resolve_open_position(
         side=side,
         volume=volume,
         magic=magic,
+        ticket_candidates=candidate_ids or None,
         mt5=mt5,
     )
     if picked is None:
