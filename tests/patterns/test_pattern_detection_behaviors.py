@@ -1743,6 +1743,66 @@ def test_detect_triangles_reject_crossed_boundaries(monkeypatch):
     assert out == []
 
 
+def test_detect_triangles_reject_both_flat_boundaries(monkeypatch):
+    from src.mtdata.patterns.classic_impl import shapes
+
+    n = 150
+    peaks = np.array([30, 60, 90, 120], dtype=int)
+    troughs = np.array([20, 50, 80, 110], dtype=int)
+    close = np.linspace(100.0, 130.0, n)
+    top = np.linspace(112.0, 112.8, n)
+    bot = np.linspace(102.0, 101.2, n)
+    close[peaks] = top[peaks]
+    close[troughs] = bot[troughs]
+
+    monkeypatch.setattr(
+        shapes,
+        "_fit_lines_and_arrays",
+        lambda *_args, **_kwargs: (0.005, 112.0, 0.9, -0.005, 102.0, 0.9, top, bot),
+    )
+    monkeypatch.setattr(shapes, "_is_converging", lambda *_args, **_kwargs: True)
+
+    out = shapes.detect_triangles(
+        close,
+        peaks,
+        troughs,
+        np.arange(n, dtype=float),
+        ClassicDetectorConfig(min_channel_touches=2, max_flat_slope=0.02),
+    )
+
+    assert out == []
+
+
+def test_detect_wedges_reject_near_flat_boundaries(monkeypatch):
+    from src.mtdata.patterns.classic_impl import shapes
+
+    n = 150
+    peaks = np.array([30, 60, 90, 120], dtype=int)
+    troughs = np.array([20, 50, 80, 110], dtype=int)
+    close = np.linspace(100.0, 130.0, n)
+    top = np.linspace(112.0, 113.0, n)
+    bot = np.linspace(102.0, 102.9, n)
+    close[peaks] = top[peaks]
+    close[troughs] = bot[troughs]
+
+    monkeypatch.setattr(
+        shapes,
+        "_fit_lines_and_arrays",
+        lambda *_args, **_kwargs: (0.01, 112.0, 0.9, 0.008, 102.0, 0.9, top, bot),
+    )
+    monkeypatch.setattr(shapes, "_is_converging", lambda *_args, **_kwargs: True)
+
+    out = shapes.detect_wedges(
+        close,
+        peaks,
+        troughs,
+        np.arange(n, dtype=float),
+        ClassicDetectorConfig(min_channel_touches=2, max_flat_slope=0.02),
+    )
+
+    assert out == []
+
+
 def test_detect_flags_prefers_flag_when_convergence_is_only_noise(monkeypatch):
     from src.mtdata.patterns.classic_impl import continuation
 

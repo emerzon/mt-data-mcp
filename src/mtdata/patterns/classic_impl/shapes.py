@@ -209,6 +209,8 @@ def detect_triangles(
     )
     if same_sign and not can_be_flat_triangle:
         return []
+    if flat_top and flat_bottom:
+        return []
     if shape["touches"] < cfg.min_channel_touches - 1:
         return []
 
@@ -233,6 +235,8 @@ def detect_wedges(
         return []
     same_sign = (shape["sh"] > 0 and shape["sl"] > 0) or (shape["sh"] < 0 and shape["sl"] < 0)
     if not same_sign or shape["touches"] < cfg.min_channel_touches - 1:
+        return []
+    if abs(shape["sh"]) <= cfg.max_flat_slope and abs(shape["sl"]) <= cfg.max_flat_slope:
         return []
 
     name = "Rising Wedge" if shape["sh"] > 0 and shape["sl"] > 0 else "Falling Wedge"
