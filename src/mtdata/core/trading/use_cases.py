@@ -26,6 +26,7 @@ from .requests import (
     TradePlaceRequest,
     TradeRiskAnalyzeRequest,
 )
+from .sizing import _resolve_risk_tick_value
 
 logger = logging.getLogger(__name__)
 _DEFAULT_TRADE_HISTORY_LOOKBACK_DAYS = 7
@@ -1190,10 +1191,15 @@ def run_trade_risk_analyze(  # noqa: C901
                     contract_size = float(sym_info.trade_contract_size)
                     point = validation._safe_float_attr(sym_info, "point")
                     tick_value = validation._safe_float_attr(sym_info, "trade_tick_value")
+                    tick_value_loss = validation._safe_float_attr(sym_info, "trade_tick_value_loss")
                     tick_size = validation._safe_float_attr(sym_info, "trade_tick_size")
+                    risk_tick_value = _resolve_risk_tick_value(
+                        tick_value=tick_value,
+                        tick_value_loss=tick_value_loss,
+                    )
                     if not math.isfinite(tick_size) or tick_size <= 0:
                         tick_size = 0.0
-                    tick_value_valid = math.isfinite(tick_value) and tick_value > 0
+                    tick_value_valid = math.isfinite(risk_tick_value) and risk_tick_value > 0
                     if not math.isfinite(contract_size) or contract_size <= 0:
                         contract_size = 1.0
 
@@ -1214,7 +1220,7 @@ def run_trade_risk_analyze(  # noqa: C901
                             if is_buy_position
                             else (sl_price - entry_price) / tick_size
                         )
-                        risk_currency = abs(risk_ticks * tick_value * volume)
+                        risk_currency = abs(risk_ticks * risk_tick_value * volume)
                         risk_pct = (risk_currency / equity) * 100.0 if equity > 0 else 0.0
                         total_risk_currency += risk_currency
                         risk_status = "defined"
@@ -1332,15 +1338,20 @@ def run_trade_risk_analyze(  # noqa: C901
                 contract_size = float(sym_info.trade_contract_size)
                 point = validation._safe_float_attr(sym_info, "point")
                 tick_value = validation._safe_float_attr(sym_info, "trade_tick_value")
+                tick_value_loss = validation._safe_float_attr(sym_info, "trade_tick_value_loss")
                 tick_size = validation._safe_float_attr(sym_info, "trade_tick_size")
+                risk_tick_value = _resolve_risk_tick_value(
+                    tick_value=tick_value,
+                    tick_value_loss=tick_value_loss,
+                )
                 if not math.isfinite(tick_size) or tick_size <= 0:
                     tick_size = 0.0
                 min_volume = float(sym_info.volume_min)
                 max_volume = float(sym_info.volume_max)
                 volume_step = float(sym_info.volume_step)
                 if not (
-                    math.isfinite(tick_value)
-                    and tick_value > 0
+                    math.isfinite(risk_tick_value)
+                    and risk_tick_value > 0
                     and math.isfinite(tick_size)
                     and tick_size > 0
                 ):
@@ -1385,7 +1396,7 @@ def run_trade_risk_analyze(  # noqa: C901
                 else:
                     sl_distance_ticks = (request.proposed_sl - request.proposed_entry) / tick_size
                 if sl_distance_ticks > 0:
-                    raw_volume = risk_amount / (sl_distance_ticks * tick_value)
+                    raw_volume = risk_amount / (sl_distance_ticks * risk_tick_value)
                     if not math.isfinite(raw_volume) or raw_volume <= 0:
                         result["position_sizing_error"] = "Calculated volume is invalid"
                         return result
@@ -1427,7 +1438,7 @@ def run_trade_risk_analyze(  # noqa: C901
                     else:
                         suggested_volume = float(round(suggested_volume))
 
-                    actual_risk = sl_distance_ticks * tick_value * suggested_volume
+                    actual_risk = sl_distance_ticks * risk_tick_value * suggested_volume
                     actual_risk_pct = (actual_risk / equity) * 100.0
                     risk_pct_diff = actual_risk_pct - float(request.desired_risk_pct)
                     risk_over_target = actual_risk_pct > (float(request.desired_risk_pct) + 1e-9)

@@ -32,11 +32,19 @@ def trade_risk_analyze(**kwargs):
         return _trade_risk_analyze_tool(request=request, __cli_raw=raw_output)
 
 
-def _make_symbol_info(*, volume_min: float = 0.1, volume_step: float = 0.1, volume_max: float = 10.0):
+def _make_symbol_info(
+    *,
+    volume_min: float = 0.1,
+    volume_step: float = 0.1,
+    volume_max: float = 10.0,
+    trade_tick_value: float = 1.0,
+    trade_tick_value_loss: float | None = None,
+):
     return SimpleNamespace(
         trade_contract_size=1.0,
         point=1.0,
-        trade_tick_value=1.0,
+        trade_tick_value=trade_tick_value,
+        trade_tick_value_loss=trade_tick_value_loss,
         trade_tick_size=1.0,
         volume_min=volume_min,
         volume_max=volume_max,
@@ -161,6 +169,34 @@ def test_trade_risk_analyze_accepts_explicit_short_direction() -> None:
     assert sizing["direction_source"] == "explicit"
     assert sizing["risk_pct"] <= 1.0
     assert sizing["risk_compliance"] == "within_requested_risk"
+    assert sizing["rr_ratio"] == 1.0
+
+
+def test_trade_risk_analyze_uses_loss_tick_value_for_position_sizing() -> None:
+    mt5 = MagicMock()
+    mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
+    mt5.positions_get.return_value = []
+    mt5.symbol_info.return_value = _make_symbol_info(
+        trade_tick_value=1.0,
+        trade_tick_value_loss=2.0,
+        volume_min=0.1,
+        volume_step=0.1,
+        volume_max=10.0,
+    )
+
+    with _patched_mt5_module(mt5):
+        out = trade_risk_analyze(
+            symbol="EURUSD",
+            desired_risk_pct=1.0,
+            proposed_entry=100.0,
+            proposed_sl=90.0,
+            proposed_tp=120.0,
+        )
+
+    sizing = out["position_sizing"]
+    assert sizing["suggested_volume"] == 0.5
+    assert sizing["risk_currency"] == 10.0
+    assert sizing["reward_currency"] == 10.0
     assert sizing["rr_ratio"] == 1.0
 
 
@@ -429,6 +465,38 @@ def test_trade_risk_analyze_reports_calculation_failures() -> None:
     assert out["portfolio_risk"]["positions_with_risk_calculation_failures"] == 1
     assert len(out["risk_calculation_failures"]) == 1
     assert out["risk_calculation_failures"][0]["ticket"] == 7
+
+
+def test_trade_risk_analyze_uses_loss_tick_value_for_open_position_risk() -> None:
+    mt5 = MagicMock()
+    mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
+    mt5.positions_get.return_value = [
+        SimpleNamespace(
+            ticket=12,
+            symbol="EURUSD",
+            type=0,
+            volume=1.0,
+            price_open=100.0,
+            sl=90.0,
+            tp=110.0,
+        )
+    ]
+    mt5.symbol_info.return_value = _make_symbol_info(
+        trade_tick_value=1.0,
+        trade_tick_value_loss=2.0,
+        volume_min=0.1,
+        volume_step=0.1,
+        volume_max=10.0,
+    )
+
+    with _patched_mt5_module(mt5):
+        out = trade_risk_analyze(__cli_raw=True)
+
+    position = out["positions"][0]
+    assert position["risk_currency"] == 20.0
+    assert position["reward_currency"] == 10.0
+    assert position["rr_ratio"] == 0.5
+    assert out["portfolio_risk"]["total_risk_currency"] == 20.0
 
 
 def test_trade_risk_analyze_flags_invalid_tick_configuration_with_existing_stop_loss() -> None:

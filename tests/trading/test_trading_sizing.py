@@ -53,6 +53,24 @@ def test_risk_amount_scales_with_pct():
     assert vol2 > vol1
 
 
+def test_uses_loss_tick_value_when_available():
+    vol, meta = compute_risk_based_volume(**_base_params(
+        equity=1000.0,
+        risk_pct=1.0,
+        entry_price=100.0,
+        stop_loss_price=90.0,
+        tick_value=1.0,
+        tick_value_loss=2.0,
+        tick_size=1.0,
+        volume_min=0.1,
+        volume_max=10.0,
+        volume_step=0.1,
+    ))
+    assert vol == 0.5
+    assert meta["risk_tick_value"] == 2.0
+    assert meta["actual_risk"] == 10.0
+
+
 # ---------------------------------------------------------------------------
 # Volume clamping
 # ---------------------------------------------------------------------------

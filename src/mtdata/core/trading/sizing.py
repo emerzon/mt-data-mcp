@@ -18,6 +18,21 @@ def _floor_volume_steps(raw: float, step: float) -> int:
     return int(math.floor(raw / step))
 
 
+def _resolve_risk_tick_value(
+    *,
+    tick_value: float,
+    tick_value_loss: Optional[float] = None,
+) -> float:
+    """Prefer the broker-reported loss tick value for downside-risk math."""
+    try:
+        loss_tick_value = float(tick_value_loss)  # type: ignore[arg-type]
+    except Exception:
+        loss_tick_value = float("nan")
+    if math.isfinite(loss_tick_value) and loss_tick_value > 0:
+        return loss_tick_value
+    return float(tick_value)
+
+
 def compute_risk_based_volume(
     *,
     equity: float,
@@ -26,6 +41,7 @@ def compute_risk_based_volume(
     stop_loss_price: float,
     direction: str,
     tick_value: float,
+    tick_value_loss: Optional[float] = None,
     tick_size: float,
     volume_min: float,
     volume_max: float,
@@ -37,6 +53,10 @@ def compute_risk_based_volume(
     The metadata dict always contains either ``"error"`` or ``"suggested_volume"``.
     """
     errors: List[str] = []
+    risk_tick_value = _resolve_risk_tick_value(
+        tick_value=tick_value,
+        tick_value_loss=tick_value_loss,
+    )
 
     if not math.isfinite(equity) or equity <= 0:
         errors.append("Equity must be positive and finite.")
@@ -46,7 +66,7 @@ def compute_risk_based_volume(
         errors.append("entry_price must be finite.")
     if not math.isfinite(stop_loss_price):
         errors.append("stop_loss_price must be finite.")
-    if not math.isfinite(tick_value) or tick_value <= 0:
+    if not math.isfinite(risk_tick_value) or risk_tick_value <= 0:
         errors.append("tick_value must be positive and finite.")
     if not math.isfinite(tick_size) or tick_size <= 0:
         errors.append("tick_size must be positive and finite.")
@@ -67,7 +87,7 @@ def compute_risk_based_volume(
             "sl_distance_ticks": round(sl_distance_ticks, 4),
         }
 
-    raw_volume = risk_amount / (sl_distance_ticks * tick_value)
+    raw_volume = risk_amount / (sl_distance_ticks * risk_tick_value)
     if not math.isfinite(raw_volume) or raw_volume <= 0:
         return None, {"error": "Calculated volume is invalid."}
 
@@ -97,7 +117,7 @@ def compute_risk_based_volume(
     else:
         suggested = float(round(suggested))
 
-    actual_risk = sl_distance_ticks * tick_value * suggested
+    actual_risk = sl_distance_ticks * risk_tick_value * suggested
     actual_risk_pct = (actual_risk / equity) * 100.0
 
     return suggested, {
@@ -107,6 +127,7 @@ def compute_risk_based_volume(
         "actual_risk": round(actual_risk, 2),
         "actual_risk_pct": round(actual_risk_pct, 4),
         "sl_distance_ticks": round(sl_distance_ticks, 4),
+        "risk_tick_value": round(risk_tick_value, 8),
         "volume_rounding": rounding_mode,
         "notes": notes,
     }
