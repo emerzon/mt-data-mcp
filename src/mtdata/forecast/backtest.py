@@ -211,6 +211,18 @@ def forecast_backtest(  # noqa: C901
             anchor_indices = list(reversed(anchor_indices))
         if not anchor_indices:
             return {"error": "Failed to determine backtest anchors"}
+        if len(anchor_indices) > 1:
+            sorted_anchor_indices = sorted(anchor_indices)
+            for prev_idx, curr_idx in zip(sorted_anchor_indices, sorted_anchor_indices[1:]):
+                if (curr_idx - prev_idx) < int(horizon):
+                    prev_anchor = _format_time_minimal(float(df['time'].iloc[prev_idx]))
+                    curr_anchor = _format_time_minimal(float(df['time'].iloc[curr_idx]))
+                    return {
+                        "error": (
+                            "Explicit backtest anchors must be at least horizon bars apart to prevent "
+                            f"data leakage: {prev_anchor} -> {curr_anchor}"
+                        )
+                    }
 
         # Normalize methods input (allow comma or whitespace separated string)
         if isinstance(methods, str):

@@ -249,6 +249,34 @@ class TestForecastBacktest:
         assert isinstance(result, dict)
 
     @patch("mtdata.forecast.backtest._fetch_history")
+    def test_rejects_overlapping_explicit_anchor_windows(self, fetch):
+        df = _make_df(500)
+        fetch.return_value = df
+        from mtdata.utils.utils import _format_time_minimal
+
+        anchors = [
+            _format_time_minimal(float(df["time"].iloc[100])),
+            _format_time_minimal(float(df["time"].iloc[105])),
+        ]
+
+        with patch("mtdata.forecast.backtest.forecast") as fc:
+            result = forecast_backtest(
+                "EURUSD",
+                timeframe="H1",
+                horizon=12,
+                anchors=anchors,
+                methods=["naive"],
+            )
+
+        assert result == {
+            "error": (
+                "Explicit backtest anchors must be at least horizon bars apart to prevent "
+                f"data leakage: {anchors[0]} -> {anchors[1]}"
+            )
+        }
+        fc.assert_not_called()
+
+    @patch("mtdata.forecast.backtest._fetch_history")
     def test_anchor_no_valid_windows(self, fetch):
         df = _make_df(500)
         fetch.return_value = df
