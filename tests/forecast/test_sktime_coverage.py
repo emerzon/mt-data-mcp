@@ -304,6 +304,28 @@ class TestSktimeMethodForecast:
         finally:
             _FakeThetaForecaster.predict_interval = orig
 
+    def test_forecast_ci_tolerates_float_coverage_rounding(self):
+        orig = _FakeThetaForecaster.predict_interval
+
+        def _rounded_intervals(self, fh, X=None, coverage=0.9):
+            h = len(fh)
+            idx = pd.RangeIndex(h)
+            cols = pd.MultiIndex.from_tuples([
+                ("y", coverage + 5e-4, "lower"),
+                ("y", coverage + 5e-4, "upper"),
+            ])
+            data = np.column_stack([np.ones(h) * 40.0, np.ones(h) * 44.0])
+            return pd.DataFrame(data, index=idx, columns=cols)
+
+        _FakeThetaForecaster.predict_interval = _rounded_intervals
+        try:
+            m = GenericSktimeMethod()
+            res = m.forecast(_series(), horizon=5, seasonality=12, params={"ci_alpha": 0.1})
+            assert res.ci_values is not None
+            assert res.metadata["diagnostics"]["ci"]["available"] is True
+        finally:
+            _FakeThetaForecaster.predict_interval = orig
+
     def test_estimator_exception(self):
         """When estimator.fit raises, RuntimeError propagated."""
         orig = _FakeThetaForecaster.fit

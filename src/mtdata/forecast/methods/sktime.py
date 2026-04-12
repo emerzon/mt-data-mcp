@@ -164,9 +164,12 @@ class SktimeMethod(ForecastMethod):
                     for col in cols:
                         # col is a tuple
                         if isinstance(col, tuple) and len(col) >= 3:
-                            cov = col[1]
+                            try:
+                                cov = float(col[1])
+                            except (TypeError, ValueError):
+                                continue
                             direction = col[2]
-                            if abs(cov - coverage) < 1e-6:
+                            if np.isclose(cov, coverage, atol=1e-3, rtol=0.0):
                                 if direction == 'lower':
                                     lo_vals = intervals[col].values
                                 elif direction == 'upper':
