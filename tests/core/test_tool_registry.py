@@ -58,6 +58,7 @@ EXPECTED_TOOL_NAMES = frozenset(
         "trade_modify",
         "trade_place",
         "trade_risk_analyze",
+        "trade_session_context",
         "wait_event",
     }
 )

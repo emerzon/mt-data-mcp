@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 from scipy.signal import find_peaks
 
+from ...utils.dtw import dtw_distance_fallback
 from ...utils.utils import to_float_np
 from ..common import PatternResultBase
 from .config import ClassicDetectorConfig, ClassicPatternResult
@@ -125,11 +126,13 @@ def _paa(a: np.ndarray, m: int) -> np.ndarray:
 
 
 def _dtw_distance(a: np.ndarray, b: np.ndarray) -> float:
+    a_arr = np.asarray(a, dtype=float)
+    b_arr = np.asarray(b, dtype=float)
     try:
         ts_dtw = _get_ts_dtw()
-        return float(ts_dtw(a.astype(float), b.astype(float)))
-    except (ImportError, TypeError, ValueError, RuntimeError):
-        return float('inf')
+        return float(ts_dtw(a_arr, b_arr))
+    except Exception:
+        return dtw_distance_fallback(a_arr, b_arr)
 
 
 def _template_hs(L: int, inverse: bool = False) -> np.ndarray:

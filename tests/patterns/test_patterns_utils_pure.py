@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 from scipy.spatial import cKDTree
 
+import mtdata.utils.patterns as patterns_mod
 from mtdata.utils.patterns import (
     PatternIndex,
     _apply_metric_vector,
@@ -552,6 +553,19 @@ class TestRefineMatchesDTW:
             shape_metric="dtw", dtw_band_frac=0.2,
         )
         assert new_idxs.shape == (3,)
+
+    def test_dtw_reranking_falls_back_to_internal_dtw(self, monkeypatch):
+        def _raise():
+            raise RuntimeError("backend unavailable")
+
+        monkeypatch.setattr(patterns_mod, "_get_ts_dtw", _raise)
+        idxs, dists = self.pi.search(self.query, top_k=10)
+        new_idxs, new_scores = self.pi.refine_matches(
+            self.query, idxs, dists, top_k=5, shape_metric="dtw"
+        )
+        assert new_idxs.shape == (5,)
+        assert np.all(np.isfinite(new_scores))
+        assert np.all(np.diff(new_scores) >= -1e-10)
 
     def test_softdtw_reranking(self):
         pytest.importorskip("tslearn")

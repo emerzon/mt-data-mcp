@@ -262,15 +262,17 @@ class TestMergedTools(unittest.TestCase):
 
         # Test close by ticket
         trade_close(request=TradeCloseRequest(ticket=123), __cli_raw=True)
-        self.mt5.positions_get.assert_called_with(ticket=123)
+        self.mt5.positions_get.assert_any_call(ticket=123)
 
         # Test close by symbol
+        self.mt5.positions_get.reset_mock()
         trade_close(request=TradeCloseRequest(symbol="EURUSD", close_all=True), __cli_raw=True)
-        self.mt5.positions_get.assert_called_with(symbol="EURUSD")
+        self.mt5.positions_get.assert_any_call(symbol="EURUSD")
 
         # Test close all
+        self.mt5.positions_get.reset_mock()
         trade_close(request=TradeCloseRequest(close_all=True), __cli_raw=True)
-        self.mt5.positions_get.assert_called_with()
+        self.mt5.positions_get.assert_any_call()
 
     def test_trading_close_pending(self):
         # Mock orders
