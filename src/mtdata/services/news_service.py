@@ -66,6 +66,12 @@ class MT5NewsParser:
         self.filepath = Path(filepath)
         self.records: List[MT5NewsRecord] = []
         self.header_info: Dict[str, Any] = {}
+        self.parse_stats: Dict[str, int] = {
+            "candidates_scanned": 0,
+            "records_parsed": 0,
+            "duplicates_skipped": 0,
+            "validation_failures": 0,
+        }
         
     def parse(self) -> List[MT5NewsRecord]:
         """Parse the entire news.dat file."""
@@ -109,6 +115,23 @@ class MT5NewsParser:
         }
         
         logger.debug(f"Parsed header: {self.header_info}")
+
+    @property
+    def parse_health(self) -> Dict[str, Any]:
+        """Structured diagnostics for the most recent parse run."""
+        stats = self.parse_stats
+        scanned = stats["candidates_scanned"]
+        parsed = stats["records_parsed"]
+        failures = stats["validation_failures"]
+        if scanned == 0:
+            status = "empty"
+        elif failures > 0 and parsed == 0:
+            status = "failed"
+        elif failures > 0:
+            status = "degraded"
+        else:
+            status = "ok"
+        return {"status": status, **stats}
     
     def _parse_records(self, data: bytes) -> List[MT5NewsRecord]:
         """Parse all news records from the binary data."""
@@ -117,19 +140,25 @@ class MT5NewsParser:
         prefix = b"\x00" * 12
         max_offset = len(data) - 80
         offset = self.HEADER_SIZE
+        candidates = 0
+        duplicates = 0
+        failures = 0
 
         while offset < max_offset:
             offset = data.find(prefix, offset, max_offset)
             if offset < 0:
                 break
 
+            candidates += 1
             record = self._parse_inline_record(data, offset)
             if not record:
+                failures += 1
                 offset += len(prefix)
                 continue
 
             record_key = (record.timestamp, record.subject, record.source)
             if record_key in seen_keys:
+                duplicates += 1
                 offset += len(prefix)
                 continue
 
@@ -137,6 +166,10 @@ class MT5NewsParser:
             records.append(record)
             offset += len(prefix)
 
+        self.parse_stats["candidates_scanned"] = candidates
+        self.parse_stats["records_parsed"] = len(records)
+        self.parse_stats["duplicates_skipped"] = duplicates
+        self.parse_stats["validation_failures"] = failures
         return records
 
     def _parse_inline_record(self, data: bytes, offset: int) -> Optional[MT5NewsRecord]:
@@ -482,6 +515,7 @@ def get_mt5_news(
                 "total_records": len(records),
                 "database_path": str(news_db_path),
                 "header_info": parser.header_info,
+                "parse_health": parser.parse_health,
                 "available_categories": all_categories[:20],
                 "available_sources": all_sources[:20],
                 "news": [],
@@ -538,7 +572,8 @@ def get_mt5_news(
             "total_records": len(records),
             "database_path": str(news_db_path),
             "header_info": parser.header_info,
-            "available_categories": all_categories[:20],  # Limit for brevity
+            "parse_health": parser.parse_health,
+            "available_categories": all_categories[:20],
             "available_sources": all_sources[:20],
             "news": news_list
         }
@@ -642,7 +677,8 @@ def get_news_categories(news_db_path: Optional[str] = None) -> Dict[str, Any]:
                 for src, count in source_counts.most_common()
             ],
             "database_path": str(news_db_path),
-            "header_info": parser.header_info
+            "header_info": parser.header_info,
+            "parse_health": parser.parse_health,
         }
 
         use_client_tz = _use_client_tz()
