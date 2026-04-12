@@ -364,10 +364,21 @@ class EnsembleMethod(ForecastMethod):
             if X_cv.shape[0] >= max(3, len(base_methods)):
                 if mode == 'bma':
                     errors = X_cv - y_cv[:, None]
-                    with np.errstate(invalid='ignore'):
-                        rmse = np.sqrt(np.nanmean(np.square(errors), axis=0))
-                    if np.all(np.isfinite(rmse)) and np.all(cv_valid_per_method >= 3):
-                        weights_vec = _stabilized_bma_weights(rmse)
+                    rmse = np.full(len(base_methods), np.nan, dtype=float)
+                    valid_rmse_columns = np.any(np.isfinite(errors), axis=0)
+                    if np.any(valid_rmse_columns):
+                        with np.errstate(invalid='ignore'):
+                            rmse[valid_rmse_columns] = np.sqrt(
+                                np.nanmean(np.square(errors[:, valid_rmse_columns]), axis=0)
+                            )
+                    valid_bma_mask = np.isfinite(rmse) & (cv_valid_per_method >= 3)
+                    if np.any(valid_bma_mask):
+                        valid_weights = _stabilized_bma_weights(rmse[valid_bma_mask])
+                        if valid_weights is not None:
+                            weights_vec = np.zeros(len(base_methods), dtype=float)
+                            weights_vec[valid_bma_mask] = valid_weights
+                        else:
+                            effective_mode = 'average'
                     else:
                         effective_mode = 'average'
                 else:

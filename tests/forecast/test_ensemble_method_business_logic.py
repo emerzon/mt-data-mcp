@@ -46,6 +46,42 @@ def test_ensemble_bma_weights_remain_non_degenerate():
     assert weights[1] > 0.05
 
 
+def test_ensemble_bma_keeps_valid_members_when_some_cv_rmse_are_invalid():
+    series = pd.Series(np.linspace(1.0, 20.0, 20))
+    method = em.EnsembleMethod()
+
+    def dispatch(method_name, series_in, horizon, seasonality, params):
+        if method_name == "naive":
+            return np.array([10.0, 20.0], dtype=float)
+        return np.array([1.0, 2.0], dtype=float)
+
+    def prepare_cv(*args, **kwargs):
+        X_cv = np.array(
+            [
+                [1.0, np.nan],
+                [2.0, np.nan],
+                [3.0, np.nan],
+            ],
+            dtype=float,
+        )
+        y_cv = np.array([1.0, 2.0, 3.0], dtype=float)
+        return X_cv, y_cv
+
+    out = method.forecast(
+        series,
+        horizon=2,
+        seasonality=1,
+        params={"methods": ["naive", "theta"], "mode": "bma"},
+        ensemble_dispatch_method=dispatch,
+        prepare_ensemble_cv=prepare_cv,
+        get_available_methods=lambda: ("naive", "theta"),
+    )
+
+    assert out.metadata["mode_used"] == "bma"
+    assert out.metadata["weights"] == pytest.approx([1.0, 0.0])
+    assert np.allclose(out.forecast, [10.0, 20.0])
+
+
 def test_ensemble_reports_component_failures():
     series = pd.Series(np.linspace(1.0, 20.0, 20))
     method = em.EnsembleMethod()
