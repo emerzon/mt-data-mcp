@@ -348,34 +348,82 @@ def _normalize_times_in_struct(arr: Any):
         return arr
 
 
+# ---------------------------------------------------------------------------
+# Read-operation retry & rate-budget helpers
+# ---------------------------------------------------------------------------
+
+_MT5_READ_MAX_RETRIES = 2        # 3 total attempts for read-only calls
+_MT5_READ_BASE_DELAY = 0.5      # exponential backoff base (seconds)
+_MT5_READ_MIN_SPACING = 0.05    # minimum seconds between consecutive reads
+_mt5_last_read_ts: float = 0.0  # monotonic timestamp of last read call
+
+
+def _enforce_read_spacing() -> None:
+    """Sleep if needed to honour minimum spacing between MT5 read calls."""
+    global _mt5_last_read_ts
+    now = time.monotonic()
+    gap = _MT5_READ_MIN_SPACING - (now - _mt5_last_read_ts)
+    if gap > 0:
+        time.sleep(gap)
+    _mt5_last_read_ts = time.monotonic()
+
+
+def _mt5_read_with_retry(fn, *args, max_retries: int = _MT5_READ_MAX_RETRIES):
+    """Execute a read-only MT5 operation with bounded retry and backoff.
+
+    Only for **idempotent** read calls (``copy_rates_*``, ``copy_ticks_*``).
+    Write operations (``order_send``, ``symbol_select``, market-book lifecycle)
+    must **never** use this helper — duplicate execution would be dangerous.
+
+    Returns the first non-``None`` result, or ``None`` if all attempts fail.
+    """
+    for attempt in range(max_retries + 1):
+        _enforce_read_spacing()
+        result = fn(*args)
+        if result is not None:
+            return result
+        if attempt < max_retries:
+            delay = _MT5_READ_BASE_DELAY * (2 ** attempt)
+            logger.warning(
+                "MT5 read returned None (attempt %d/%d), retrying in %.1fs",
+                attempt + 1, max_retries + 1, delay,
+            )
+            time.sleep(delay)
+    logger.warning(
+        "MT5 read exhausted %d attempt(s) — returning None",
+        max_retries + 1,
+    )
+    return None
+
+
 def _mt5_copy_rates_from(symbol: str, timeframe, to_dt_utc: datetime, count: int):
     dt_srv = _to_server_naive_dt(to_dt_utc)
-    data = mt5.copy_rates_from(symbol, timeframe, dt_srv, count)
+    data = _mt5_read_with_retry(mt5.copy_rates_from, symbol, timeframe, dt_srv, count)
     return _normalize_times_in_struct(data)
 
 
 def _mt5_copy_rates_range(symbol: str, timeframe, from_dt_utc: datetime, to_dt_utc: datetime):
     dt_from = _to_server_naive_dt(from_dt_utc)
     dt_to = _to_server_naive_dt(to_dt_utc)
-    data = mt5.copy_rates_range(symbol, timeframe, dt_from, dt_to)
+    data = _mt5_read_with_retry(mt5.copy_rates_range, symbol, timeframe, dt_from, dt_to)
     return _normalize_times_in_struct(data)
 
 
 def _mt5_copy_ticks_from(symbol: str, from_dt_utc: datetime, count: int, flags: int):
     dt_from = _to_server_naive_dt(from_dt_utc)
-    data = mt5.copy_ticks_from(symbol, dt_from, count, flags)
+    data = _mt5_read_with_retry(mt5.copy_ticks_from, symbol, dt_from, count, flags)
     return _normalize_times_in_struct(data)
 
 
 def _mt5_copy_rates_from_pos(symbol: str, timeframe, start_pos: int, count: int):
-    data = mt5.copy_rates_from_pos(symbol, timeframe, start_pos, count)
+    data = _mt5_read_with_retry(mt5.copy_rates_from_pos, symbol, timeframe, start_pos, count)
     return _normalize_times_in_struct(data)
 
 
 def _mt5_copy_ticks_range(symbol: str, from_dt_utc: datetime, to_dt_utc: datetime, flags: int):
     dt_from = _to_server_naive_dt(from_dt_utc)
     dt_to = _to_server_naive_dt(to_dt_utc)
-    data = mt5.copy_ticks_range(symbol, dt_from, dt_to, flags)
+    data = _mt5_read_with_retry(mt5.copy_ticks_range, symbol, dt_from, dt_to, flags)
     return _normalize_times_in_struct(data)
 
 
