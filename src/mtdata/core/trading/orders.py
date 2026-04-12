@@ -193,7 +193,8 @@ def _attach_post_fill_protection(
                 position_ticket = resolved_ticket
                 position_ticket_resolution = {
                     **dict(resolve_info),
-                    "attempt": int(attempt_idx + 1),
+                    "attempts": int(attempt_idx + 1),
+                    "matched": True,
                 }
                 break
             if attempt_idx + 1 < lookup_attempts:
