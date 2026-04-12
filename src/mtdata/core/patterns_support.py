@@ -507,26 +507,23 @@ def _compact_patterns_payload(payload: Dict[str, Any]) -> Dict[str, Any]:  # noq
     return compact
 
 
-_ALL_COMPACT_CANDLESTICK_KEYS = (
-    "timeframe", "pattern", "direction", "confidence", "time", "price",
-    "relevance", "recency",
-)
 _ALL_COMPACT_CLASSIC_KEYS = (
     "timeframe", "name", "status", "confidence", "bias",
     "reference_price", "target_price", "invalidation_price",
     "bars_to_completion", "start_date", "end_date",
-    "relevance", "recency",
 )
 _ALL_COMPACT_ELLIOTT_KEYS = (
     "timeframe", "wave_type", "status", "confidence",
     "start_date", "end_date",
-    "relevance", "recency",
 )
 
 _HIGHLIGHT_KEYS = (
     "section", "timeframe", "name", "direction", "status",
-    "confidence", "relevance", "recency",
+    "confidence", "price", "target_price", "invalidation_price",
 )
+
+# Section weight multipliers for highlight ranking
+_SECTION_WEIGHT = {"classic": 1.0, "elliott": 1.0, "candlestick": 0.5}
 
 # Weights for relevance = w_conf * confidence + w_rec * recency
 _W_CONFIDENCE = 0.6
@@ -547,9 +544,7 @@ def _bar_age_recency(row: Dict[str, Any], limit: int) -> float:
         return 0.0
     if limit <= 0:
         return 0.0
-    # bars_ago: 0 = most recent, limit = oldest
     bars_ago = max(limit - 1 - end_idx, 0)
-    # half-life of ~20% of the window
     half_life = max(limit * 0.20, 1.0)
     import math
     return math.exp(-0.693 * bars_ago / half_life)
@@ -577,11 +572,79 @@ def score_all_mode_patterns(
     patterns.sort(key=lambda r: r.get("relevance", 0), reverse=True)
 
 
+# ── Candlestick per-timeframe summary ───────────────────────────────────
+
+def _summarize_candlestick_by_tf(
+    patterns: List[Dict[str, Any]],
+    top_n: int = 3,
+) -> Dict[str, Any]:
+    """Aggregate candlestick patterns into a per-timeframe summary.
+
+    Returns ``{"by_timeframe": {TF: {bullish, bearish, net, top: [...]}}, ...}``.
+    """
+    from collections import defaultdict
+
+    by_tf: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+    for p in patterns:
+        tf = p.get("timeframe", "?")
+        by_tf[tf].append(p)
+
+    summary: Dict[str, Any] = {}
+    total_bullish = 0
+    total_bearish = 0
+
+    for tf, rows in by_tf.items():
+        bullish = sum(1 for r in rows if str(r.get("direction", "")).lower() == "bullish")
+        bearish = sum(1 for r in rows if str(r.get("direction", "")).lower() == "bearish")
+        total_bullish += bullish
+        total_bearish += bearish
+
+        if bullish > bearish:
+            net = "bullish"
+        elif bearish > bullish:
+            net = "bearish"
+        else:
+            net = "mixed"
+
+        # Top N most recent (already sorted by relevance)
+        top = []
+        for r in rows[:top_n]:
+            item: Dict[str, Any] = {}
+            for k in ("pattern", "direction", "confidence", "time", "price"):
+                v = r.get(k)
+                if v not in (None, ""):
+                    item[k] = v
+            if item:
+                top.append(item)
+
+        tf_entry: Dict[str, Any] = {
+            "bullish": bullish,
+            "bearish": bearish,
+            "net": net,
+        }
+        if top:
+            tf_entry["top"] = top
+        summary[tf] = tf_entry
+
+    return {
+        "n_patterns": len(patterns),
+        "bullish_total": total_bullish,
+        "bearish_total": total_bearish,
+        "by_timeframe": summary,
+    }
+
+
+# ── Highlights builder ──────────────────────────────────────────────────
+
 def _build_highlights(
     payload: Dict[str, Any],
     limit: int = 5,
 ) -> List[Dict[str, Any]]:
-    """Build a merged top-N list across all sections, ranked by relevance."""
+    """Build a merged top-N list across all sections, ranked by weighted relevance.
+
+    Applies section weights (classic/elliott > candlestick) and enforces
+    diversity (max 2 entries from the same section+timeframe).
+    """
     candidates: List[Dict[str, Any]] = []
 
     for row in payload.get("candlestick", {}).get("patterns", []):
@@ -592,8 +655,8 @@ def _build_highlights(
             "direction": row.get("direction"),
             "status": "trigger",
             "confidence": row.get("confidence"),
-            "relevance": row.get("relevance", 0),
-            "recency": row.get("recency", 0),
+            "price": row.get("price"),
+            "_relevance": (row.get("relevance", 0) or 0) * _SECTION_WEIGHT["candlestick"],
         })
 
     for row in payload.get("classic", {}).get("patterns", []):
@@ -604,8 +667,10 @@ def _build_highlights(
             "direction": row.get("bias"),
             "status": row.get("status"),
             "confidence": row.get("confidence"),
-            "relevance": row.get("relevance", 0),
-            "recency": row.get("recency", 0),
+            "price": row.get("reference_price"),
+            "target_price": row.get("target_price"),
+            "invalidation_price": row.get("invalidation_price"),
+            "_relevance": (row.get("relevance", 0) or 0) * _SECTION_WEIGHT["classic"],
         })
 
     for row in payload.get("elliott", {}).get("patterns", []):
@@ -616,18 +681,29 @@ def _build_highlights(
             "direction": None,
             "status": row.get("status"),
             "confidence": row.get("confidence"),
-            "relevance": row.get("relevance", 0),
-            "recency": row.get("recency", 0),
+            "price": None,
+            "_relevance": (row.get("relevance", 0) or 0) * _SECTION_WEIGHT["elliott"],
         })
 
-    candidates.sort(key=lambda r: r.get("relevance", 0), reverse=True)
+    candidates.sort(key=lambda r: r.get("_relevance", 0), reverse=True)
 
+    # Diversity: max 2 per (section, timeframe) combo
+    from collections import defaultdict
+    seen: Dict[str, int] = defaultdict(int)
     highlights: List[Dict[str, Any]] = []
-    for c in candidates[:limit]:
+    for c in candidates:
+        if len(highlights) >= limit:
+            break
+        key = f"{c.get('section')}:{c.get('timeframe')}"
+        if seen[key] >= 2:
+            continue
+        seen[key] += 1
         item = {k: c[k] for k in _HIGHLIGHT_KEYS if c.get(k) is not None}
         highlights.append(item)
     return highlights
 
+
+# ── Section trimmer and compact formatter ───────────────────────────────
 
 def _trim_section_rows(
     rows: List[Dict[str, Any]],
@@ -660,18 +736,24 @@ def _compact_all_mode_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "timeframes": payload.get("timeframes"),
     }
 
-    # Top-level highlights first — the trader's quick-read
+    # Top-level highlights — the trader's quick-read
     highlights = payload.get("highlights")
     if highlights:
         compact["highlights"] = highlights
 
-    section_specs = (
-        ("candlestick", _ALL_COMPACT_CANDLESTICK_KEYS),
+    # Candlestick: per-TF summary instead of raw pattern list
+    candle_section = payload.get("candlestick", {})
+    candle_patterns = candle_section.get("patterns", [])
+    if candle_patterns:
+        compact["candlestick"] = _summarize_candlestick_by_tf(candle_patterns)
+    else:
+        compact["candlestick"] = {"n_patterns": 0, "by_timeframe": {}}
+
+    # Classic + Elliott: trimmed pattern lists
+    for section_name, keys in (
         ("classic", _ALL_COMPACT_CLASSIC_KEYS),
         ("elliott", _ALL_COMPACT_ELLIOTT_KEYS),
-    )
-
-    for section_name, keys in section_specs:
+    ):
         section = payload.get(section_name, {})
         rows = section.get("patterns", [])
         n_total = section.get("n_patterns", len(rows))
@@ -680,8 +762,6 @@ def _compact_all_mode_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
             "n_patterns": n_total,
             "patterns": trimmed,
         }
-        if n_total > len(trimmed):
-            result["more_patterns"] = n_total - len(trimmed)
         bias = section.get("signal_bias")
         if bias:
             result["signal_bias"] = bias

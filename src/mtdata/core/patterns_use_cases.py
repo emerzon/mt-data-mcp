@@ -381,6 +381,13 @@ def run_patterns_detect(  # noqa: C901
             deps.apply_config_to_obj(classic_cfg, request.config)
             deps.apply_config_to_obj(elliott_cfg, request.config)
 
+        # Elliott waves are multi-bar structures: a wave ending 20+ bars from
+        # the tip is still actively developing.  The default recent_bars=3 is
+        # too tight for all-mode and causes every pattern to be marked
+        # "completed" then filtered.  Use 10 % of the fetch window (floor 20).
+        if not (isinstance(request.config, dict) and "recent_bars" in request.config):
+            elliott_cfg.recent_bars = max(20, request.limit // 10)
+
         effective_top_k = max(request.top_k, 3)
 
         for tf in timeframes:
