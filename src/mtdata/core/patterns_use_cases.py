@@ -532,13 +532,15 @@ def run_patterns_detect(  # noqa: C901
         classic_cfg.stale_completion_recent_bars = (
             10  # More aggressive - patterns ending >10 bars ago = completed
         )
-        # Use 1/4 of the lookback limit as max pattern age for relevant results
+        # Use 1/3 of the lookback limit as max pattern age for relevant results
         # This ensures patterns are recent regardless of timeframe
-        classic_cfg.max_pattern_age_bars = max(100, request.limit // 4)
+        classic_cfg.max_pattern_age_bars = max(100, request.limit // 3)
         # Limit pattern span to prevent ancient long-running patterns (e.g., 3-year trend lines)
-        # This filters patterns that span more than ~2-3 months on daily charts
-        classic_cfg.max_pattern_span_bars = max(50, request.limit // 6)
-        fractal_cfg.max_age_bars = max(100, request.limit // 4)
+        # Cap at 150 bars max to prevent multi-year patterns on weekly charts while
+        # still allowing reasonable patterns (150 bars on W1 = ~3 years, on D1 = ~6 months)
+        span_limit = min(150, int(request.limit * 0.5))
+        classic_cfg.max_pattern_span_bars = max(60, span_limit)
+        fractal_cfg.max_age_bars = max(100, request.limit // 3)
 
         classic_invalid: List[str] = []
         elliott_invalid: List[str] = []
