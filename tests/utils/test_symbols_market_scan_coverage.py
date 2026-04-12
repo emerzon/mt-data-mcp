@@ -25,6 +25,18 @@ def _get_symbols_top_markets():
     return _call
 
 
+def _get_market_scan():
+    from mtdata.core.symbols import market_scan
+
+    raw = _unwrap(market_scan)
+
+    def _call(*args, **kwargs):
+        with patch("mtdata.core.symbols.ensure_mt5_connection_or_raise", return_value=None):
+            return raw(*args, **kwargs)
+
+    return _call
+
+
 def _make_symbol(
     name: str,
     *,
@@ -50,6 +62,23 @@ def _make_symbol(
 
 def _make_tick(*, bid: float, ask: float):
     return SimpleNamespace(bid=bid, ask=ask)
+
+
+def _make_bars(closes, *, tick_volume: int = 100):
+    closes = list(closes)
+    bars = []
+    for index, close in enumerate(closes):
+        open_price = closes[index - 1] if index > 0 else close
+        bars.append(
+            {
+                "time": 1700000000.0 + (index * 3600.0),
+                "open": open_price,
+                "close": close,
+                "tick_volume": tick_volume + index,
+                "real_volume": 0,
+            }
+        )
+    return bars
 
 
 @contextmanager
@@ -189,3 +218,114 @@ class TestSymbolsTopMarkets:
         assert result["evaluated_symbols"] == 1
         assert result["skipped_symbols"] == 1
         assert result["skipped_examples"][0]["symbol"] == "GBPUSD"
+
+
+class TestMarketScan:
+    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
+    @patch("mtdata.core.symbols.mt5.symbol_info_tick")
+    @patch("mtdata.core.symbols.mt5.symbols_get")
+    def test_market_scan_filters_by_rsi_and_sma(self, mock_symbols_get, mock_tick, mock_rates, mock_group):
+        mock_symbols_get.return_value = [
+            _make_symbol("EURUSD", description="Euro"),
+            _make_symbol("GBPUSD", description="Pound"),
+        ]
+        mock_tick.side_effect = lambda symbol: {
+            "EURUSD": _make_tick(bid=1.1000, ask=1.1001),
+            "GBPUSD": _make_tick(bid=1.3000, ask=1.3002),
+        }[symbol]
+        mock_rates.side_effect = lambda symbol, timeframe, start_pos, count: {
+            "EURUSD": _make_bars([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], tick_volume=120),
+            "GBPUSD": _make_bars([6.0, 5.0, 4.0, 3.0, 2.0, 1.0], tick_volume=80),
+        }[symbol]
+
+        fn = _get_market_scan()
+        result = fn(
+            timeframe="H1",
+            lookback=6,
+            rsi_length=3,
+            sma_period=3,
+            rsi_above=60,
+            price_vs_sma="above",
+            limit=10,
+        )
+
+        assert result["success"] is True
+        assert result["matched_symbols"] == 1
+        assert result["filtered_out_symbols"] == 1
+        assert result["data"][0]["symbol"] == "EURUSD"
+        assert result["data"][0]["rsi"] == 100.0
+        assert result["data"][0]["sma_value"] == 5.0
+
+    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols._symbol_ready_guard", side_effect=_ready_guard_ok)
+    @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
+    @patch("mtdata.core.symbols.mt5.symbol_info_tick")
+    @patch("mtdata.core.symbols.mt5.symbols_get")
+    def test_market_scan_group_universe_all_activates_hidden_symbols(
+        self,
+        mock_symbols_get,
+        mock_tick,
+        mock_rates,
+        mock_ready_guard,
+        mock_group,
+    ):
+        hidden_symbol = _make_symbol("USDJPY", visible=False)
+        mock_symbols_get.return_value = [
+            _make_symbol("EURUSD", visible=True),
+            hidden_symbol,
+        ]
+        mock_tick.side_effect = lambda symbol: {
+            "EURUSD": _make_tick(bid=1.1000, ask=1.1002),
+            "USDJPY": _make_tick(bid=150.00, ask=150.03),
+        }[symbol]
+        mock_rates.side_effect = lambda symbol, timeframe, start_pos, count: {
+            "EURUSD": _make_bars([1.0, 1.1, 1.2, 1.3], tick_volume=100),
+            "USDJPY": _make_bars([150.0, 150.2, 150.3, 150.4], tick_volume=90),
+        }[symbol]
+
+        fn = _get_market_scan()
+        result = fn(group="Forex\\Majors", universe="all", lookback=4, min_tick_volume=50)
+
+        assert result["success"] is True
+        assert result["scope"] == "group"
+        assert result["scanned_symbols"] == 2
+        assert result["matched_symbols"] == 2
+        mock_ready_guard.assert_called_once_with("USDJPY", info_before=hidden_symbol)
+
+    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
+    @patch("mtdata.core.symbols.mt5.symbol_info_tick")
+    @patch("mtdata.core.symbols.mt5.symbols_get")
+    def test_market_scan_returns_no_action_when_no_symbols_match(
+        self,
+        mock_symbols_get,
+        mock_tick,
+        mock_rates,
+        mock_group,
+    ):
+        mock_symbols_get.return_value = [_make_symbol("EURUSD", description="Euro")]
+        mock_tick.return_value = _make_tick(bid=1.1000, ask=1.1002)
+        mock_rates.return_value = _make_bars([1.0, 1.01, 1.02, 1.03], tick_volume=20)
+
+        fn = _get_market_scan()
+        result = fn(lookback=4, min_price_change_pct=50.0)
+
+        assert result["success"] is True
+        assert result["no_action"] is True
+        assert result["matched_symbols"] == 0
+        assert result["message"] == "No symbols matched the requested market scan filters."
+
+    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols.mt5.symbols_get")
+    def test_market_scan_rejects_ambiguous_group(self, mock_symbols_get, mock_group):
+        mock_symbols_get.return_value = [
+            _make_symbol("EURUSD", path="Forex\\Majors"),
+            _make_symbol("AUDCAD", path="Forex\\Minors"),
+        ]
+
+        fn = _get_market_scan()
+        result = fn(group="Forex")
+
+        assert "error" in result
+        assert "Ambiguous group" in result["error"]

@@ -147,6 +147,7 @@ mtdata-cli data_fetch_candles EURUSD --start "2025-12-01" --end "2025-12-31"
 | `symbols_list` | List available trading symbols |
 | `symbols_describe` | Get symbol details (pip size, contract, etc.) |
 | `symbols_top_markets` | Rank the top MT5 markets by spread, recent volume, or recent price change |
+| `market_scan` | Filter MT5 symbols by spread, price change, volume, RSI, and SMA |
 | `data_fetch_candles` | Fetch OHLCV candles with optional indicators |
 | `data_fetch_ticks` | Fetch tick data |
 | `market_depth_fetch` | Get order book (DOM) — requires `MTDATA_ENABLE_MARKET_DEPTH_FETCH=1` |
@@ -264,6 +265,13 @@ mtdata-cli symbols_top_markets --rank-by all --limit 5 --timeframe H1 --json
 
 # Opt into a slower full-universe scan when you need hidden tradable symbols too
 mtdata-cli symbols_top_markets --rank-by spread --limit 10 --universe all --json
+
+# Scan visible majors for strong RSI and price above SMA
+mtdata-cli market_scan --group "Forex\\Majors" --rsi-above 60 --price-vs-sma above \
+  --sma-period 20 --timeframe H1 --lookback 120 --json
+
+# Scan an explicit symbol basket for oversold names with tight spreads
+mtdata-cli market_scan EURUSD,GBPUSD,USDJPY --rsi-below 35 --max-spread-pct 0.03 --json
 ```
 
 ### Fetch Market Data

@@ -2991,6 +2991,62 @@ class TestMain:
         mock_fn.assert_called_once_with(group="Forex\\Majors", __cli_raw=True)
 
     @patch("mtdata.core.cli.discover_tools")
+    def test_market_scan_keeps_optional_first_positional_symbols(self, mock_discover):
+        mock_fn = MagicMock(return_value="output text")
+        mock_fn.__module__ = "mtdata.core.server"
+        mock_fn.__name__ = "market_scan"
+        mock_fn.__doc__ = "Market scan."
+
+        def market_scan(symbols: Optional[str] = None, group: Optional[str] = None):
+            """Market scan."""
+            pass
+
+        info = get_function_info(market_scan)
+        info["func"] = mock_fn
+
+        mock_discover.return_value = {
+            "market_scan": {
+                "func": mock_fn,
+                "meta": {"description": "Market scan"},
+                "_cli_func_info": info,
+            },
+        }
+
+        with patch("sys.argv", ["cli.py", "market_scan", "EURUSD,GBPUSD"]):
+            result = main()
+
+        assert result == 0
+        mock_fn.assert_called_once_with(symbols="EURUSD,GBPUSD", __cli_raw=True)
+
+    @patch("mtdata.core.cli.discover_tools")
+    def test_market_scan_accepts_group_without_symbols(self, mock_discover):
+        mock_fn = MagicMock(return_value="output text")
+        mock_fn.__module__ = "mtdata.core.server"
+        mock_fn.__name__ = "market_scan"
+        mock_fn.__doc__ = "Market scan."
+
+        def market_scan(symbols: Optional[str] = None, group: Optional[str] = None):
+            """Market scan."""
+            pass
+
+        info = get_function_info(market_scan)
+        info["func"] = mock_fn
+
+        mock_discover.return_value = {
+            "market_scan": {
+                "func": mock_fn,
+                "meta": {"description": "Market scan"},
+                "_cli_func_info": info,
+            },
+        }
+
+        with patch("sys.argv", ["cli.py", "market_scan", "--group", "Forex\\Majors"]):
+            result = main()
+
+        assert result == 0
+        mock_fn.assert_called_once_with(group="Forex\\Majors", __cli_raw=True)
+
+    @patch("mtdata.core.cli.discover_tools")
     def test_global_timeframe_before_command_is_applied(self, mock_discover):
         mock_fn = MagicMock(return_value="output text")
         mock_fn.__module__ = "mtdata.core.server"

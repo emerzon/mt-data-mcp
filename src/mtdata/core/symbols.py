@@ -433,6 +433,326 @@ def _market_scan_table(headers: List[str], rows: List[Dict[str, Any]]) -> Dict[s
     return _table_from_rows(headers, ordered_rows)
 
 
+def _parse_market_scan_symbols(symbols: Optional[str]) -> List[str]:
+    text = str(symbols or "").replace(";", ",").replace("\n", ",")
+    parsed: List[str] = []
+    seen: set[str] = set()
+    for chunk in text.split(","):
+        name = chunk.strip()
+        if not name:
+            continue
+        upper = name.upper()
+        if upper in seen:
+            continue
+        seen.add(upper)
+        parsed.append(name)
+    return parsed
+
+
+def _resolve_market_scan_group_path(
+    all_symbols: List[Any],
+    group: str,
+) -> tuple[Optional[str], Optional[str]]:
+    requested = str(group or "").strip()
+    if not requested:
+        return None, "group must not be empty."
+
+    groups: Dict[str, str] = {}
+    for symbol in all_symbols:
+        group_path = str(_extract_group_path_util(symbol) or "").strip()
+        if not group_path:
+            continue
+        groups.setdefault(group_path.lower(), group_path)
+
+    requested_lower = requested.lower()
+    exact = groups.get(requested_lower)
+    if exact is not None:
+        return exact, None
+
+    partial_matches = sorted(
+        value for value in groups.values()
+        if requested_lower in value.lower()
+    )
+    if len(partial_matches) == 1:
+        return partial_matches[0], None
+    if partial_matches:
+        return None, (
+            f"Ambiguous group '{requested}'. Matching groups: "
+            + ", ".join(partial_matches[:10])
+        )
+    return None, f"No symbol group matched '{requested}'."
+
+
+def _select_market_scan_symbols(
+    all_symbols: List[Any],
+    *,
+    symbols: Optional[str],
+    group: Optional[str],
+    universe: str,
+) -> tuple[List[Any], Dict[str, Any], Optional[str]]:
+    if symbols and group:
+        return [], {}, "Provide either symbols or group, not both."
+
+    tradable_symbols = [symbol for symbol in all_symbols if _market_scan_is_tradable(symbol)]
+
+    if symbols:
+        requested_names = _parse_market_scan_symbols(symbols)
+        if not requested_names:
+            return [], {}, "symbols must include at least one symbol name."
+        by_upper: Dict[str, Any] = {}
+        for symbol in tradable_symbols:
+            name = str(getattr(symbol, "name", "") or "").strip()
+            if not name:
+                continue
+            by_upper.setdefault(name.upper(), symbol)
+        selected: List[Any] = []
+        missing: List[str] = []
+        for name in requested_names:
+            symbol_obj = by_upper.get(name.upper())
+            if symbol_obj is None:
+                missing.append(name)
+                continue
+            selected.append(symbol_obj)
+        if not selected:
+            return [], {}, "None of the requested symbols matched the MT5 symbol list."
+        return selected, {
+            "scope": "symbols",
+            "requested_symbols": requested_names,
+            "missing_symbols": missing,
+        }, None
+
+    if group:
+        resolved_group, group_error = _resolve_market_scan_group_path(tradable_symbols, group)
+        if group_error or resolved_group is None:
+            return [], {}, group_error
+        selected = [
+            symbol for symbol in tradable_symbols
+            if str(_extract_group_path_util(symbol) or "").strip() == resolved_group
+            and (universe == "all" or bool(getattr(symbol, "visible", False)))
+        ]
+        return selected, {
+            "scope": "group",
+            "group": resolved_group,
+        }, None
+
+    selected = [
+        symbol for symbol in tradable_symbols
+        if universe == "all" or bool(getattr(symbol, "visible", False))
+    ]
+    return selected, {"scope": "universe"}, None
+
+
+def _market_scan_compute_rsi(closes: List[float], length: int) -> Optional[float]:
+    if length <= 0 or len(closes) < (length + 1):
+        return None
+
+    gains: List[float] = []
+    losses: List[float] = []
+    for prev_close, close in zip(closes[:-1], closes[1:]):
+        delta = float(close - prev_close)
+        gains.append(max(delta, 0.0))
+        losses.append(max(-delta, 0.0))
+
+    avg_gain = sum(gains[:length]) / float(length)
+    avg_loss = sum(losses[:length]) / float(length)
+    for gain, loss in zip(gains[length:], losses[length:]):
+        avg_gain = ((avg_gain * float(length - 1)) + float(gain)) / float(length)
+        avg_loss = ((avg_loss * float(length - 1)) + float(loss)) / float(length)
+
+    if avg_loss <= 0.0:
+        if avg_gain <= 0.0:
+            return 50.0
+        return 100.0
+
+    relative_strength = avg_gain / avg_loss
+    return 100.0 - (100.0 / (1.0 + relative_strength))
+
+
+def _build_market_scan_signal_row(
+    symbol: Any,
+    *,
+    timeframe: str,
+    mt5_timeframe: Any,
+    lookback: int,
+    rsi_length: int,
+    sma_period: int,
+) -> tuple[Optional[Dict[str, Any]], Optional[str]]:
+    rates = _mt5_copy_rates_from_pos(symbol.name, mt5_timeframe, 1, lookback)
+    if rates is None or len(rates) < 1:
+        return None, f"No completed {timeframe} bar data returned."
+
+    latest_bar = rates[-1]
+    open_price = _market_scan_float(latest_bar["open"])
+    close_price = _market_scan_float(latest_bar["close"])
+    if open_price is None or close_price is None:
+        return None, "Completed bar is missing open/close prices."
+    if open_price == 0:
+        return None, "Completed bar open price is zero."
+
+    close_values: List[float] = []
+    for bar in rates:
+        close_value = _market_scan_float(bar["close"])
+        if close_value is not None:
+            close_values.append(close_value)
+
+    digits = max(0, int(getattr(symbol, "digits", 0) or 0))
+    bar_time = _market_scan_float(latest_bar["time"])
+    tick_volume = _market_scan_bar_int(latest_bar["tick_volume"])
+    real_volume = _market_scan_bar_int(latest_bar["real_volume"])
+    sma_value = None
+    if len(close_values) >= max(1, int(sma_period)):
+        sma_window = close_values[-int(sma_period):]
+        sma_value = float(sum(sma_window) / len(sma_window))
+    rsi_value = _market_scan_compute_rsi(close_values, int(rsi_length))
+    sma_distance_pct = None
+    if sma_value is not None and sma_value != 0:
+        sma_distance_pct = ((close_price - sma_value) / sma_value) * 100.0
+
+    row = _market_scan_base_row(symbol)
+    row.update(
+        {
+            "timeframe": timeframe,
+            "bar_time": _format_time_minimal(bar_time) if bar_time is not None else None,
+            "open": _market_scan_round(open_price, digits=digits),
+            "close": _market_scan_round(close_price, digits=digits),
+            "tick_volume": tick_volume,
+            "real_volume": real_volume,
+            "price_change_pct": _market_scan_round(
+                ((close_price - open_price) / open_price) * 100.0,
+                digits=6,
+            ),
+            "rsi": _market_scan_round(rsi_value, digits=4),
+            "sma_value": _market_scan_round(sma_value, digits=digits),
+            "sma_distance_pct": _market_scan_round(sma_distance_pct, digits=6),
+        }
+    )
+    return row, None
+
+
+def _market_scan_missing_required_metric(
+    row: Dict[str, Any],
+    *,
+    rank_by: str,
+    rsi_above: Optional[float],
+    rsi_below: Optional[float],
+    price_vs_sma: Optional[str],
+    max_spread_pct: Optional[float],
+    min_tick_volume: Optional[int],
+    min_price_change_pct: Optional[float],
+    max_price_change_pct: Optional[float],
+    rsi_length: int,
+    sma_period: int,
+) -> Optional[str]:
+    requirements: List[tuple[str, str]] = []
+    if rank_by in {"abs_price_change_pct", "price_change_pct"}:
+        requirements.append(("price_change_pct", "price-change data is unavailable."))
+    elif rank_by == "tick_volume":
+        requirements.append(("tick_volume", "Tick-volume data is unavailable."))
+    elif rank_by == "rsi":
+        requirements.append(("rsi", f"Not enough history to compute RSI({int(rsi_length)})."))
+    elif rank_by == "spread_pct":
+        requirements.append(("spread_pct", "Spread data is unavailable."))
+
+    if min_price_change_pct is not None or max_price_change_pct is not None:
+        requirements.append(("price_change_pct", "price-change data is unavailable."))
+    if max_spread_pct is not None:
+        requirements.append(("spread_pct", "Spread data is unavailable."))
+    if min_tick_volume is not None:
+        requirements.append(("tick_volume", "Tick-volume data is unavailable."))
+    if rsi_above is not None or rsi_below is not None:
+        requirements.append(("rsi", f"Not enough history to compute RSI({int(rsi_length)})."))
+    if price_vs_sma is not None:
+        requirements.append(("sma_value", f"Not enough history to compute SMA({int(sma_period)})."))
+
+    for key, message in requirements:
+        if row.get(key) is None:
+            return message
+    return None
+
+
+def _market_scan_row_matches_filters(
+    row: Dict[str, Any],
+    *,
+    min_price_change_pct: Optional[float],
+    max_price_change_pct: Optional[float],
+    max_spread_pct: Optional[float],
+    min_tick_volume: Optional[int],
+    rsi_below: Optional[float],
+    rsi_above: Optional[float],
+    price_vs_sma: Optional[str],
+) -> bool:
+    price_change_pct = _market_scan_float(row.get("price_change_pct"))
+    spread_pct = _market_scan_float(row.get("spread_pct"))
+    tick_volume = _market_scan_bar_int(row.get("tick_volume"))
+    rsi_value = _market_scan_float(row.get("rsi"))
+    close_price = _market_scan_float(row.get("close"))
+    sma_value = _market_scan_float(row.get("sma_value"))
+
+    if min_price_change_pct is not None and (price_change_pct is None or price_change_pct < float(min_price_change_pct)):
+        return False
+    if max_price_change_pct is not None and (price_change_pct is None or price_change_pct > float(max_price_change_pct)):
+        return False
+    if max_spread_pct is not None and (spread_pct is None or spread_pct > float(max_spread_pct)):
+        return False
+    if min_tick_volume is not None and (tick_volume is None or tick_volume < int(min_tick_volume)):
+        return False
+    if rsi_below is not None and (rsi_value is None or rsi_value > float(rsi_below)):
+        return False
+    if rsi_above is not None and (rsi_value is None or rsi_value < float(rsi_above)):
+        return False
+    if price_vs_sma == "above" and (close_price is None or sma_value is None or close_price <= sma_value):
+        return False
+    if price_vs_sma == "below" and (close_price is None or sma_value is None or close_price >= sma_value):
+        return False
+    return True
+
+
+def _market_scan_sort_rows(
+    rows: List[Dict[str, Any]],
+    *,
+    rank_by: str,
+    rsi_above: Optional[float],
+    rsi_below: Optional[float],
+) -> None:
+    if rank_by == "spread_pct":
+        rows.sort(
+            key=lambda row: (
+                row.get("spread_pct") is None,
+                row.get("spread_pct") if row.get("spread_pct") is not None else float("inf"),
+                row.get("symbol") or "",
+            )
+        )
+        return
+
+    if rank_by == "rsi" and rsi_below is not None and rsi_above is None:
+        rows.sort(
+            key=lambda row: (
+                row.get("rsi") is None,
+                row.get("rsi") if row.get("rsi") is not None else float("inf"),
+                row.get("symbol") or "",
+            )
+        )
+        return
+
+    if rank_by == "abs_price_change_pct":
+        rows.sort(
+            key=lambda row: (
+                row.get("price_change_pct") is None,
+                -abs(float(row.get("price_change_pct") or 0.0)),
+                row.get("symbol") or "",
+            )
+        )
+        return
+
+    rows.sort(
+        key=lambda row: (
+            row.get(rank_by) is None,
+            -(float(row.get(rank_by) or 0.0)),
+            row.get("symbol") or "",
+        )
+    )
+
+
 @mcp.tool()
 def symbols_top_markets(  # noqa: C901
     rank_by: Literal["all", "spread", "volume", "price_change"] = "all",  # type: ignore
@@ -740,6 +1060,267 @@ def symbols_top_markets(  # noqa: C901
         logger,
         operation="symbols_top_markets",
         rank_by=rank_by,
+        limit=limit,
+        universe=universe,
+        timeframe=timeframe,
+        func=_run,
+    )
+
+
+@mcp.tool()
+def market_scan(  # noqa: C901
+    symbols: Optional[str] = None,
+    group: Optional[str] = None,
+    limit: Optional[int] = 20,
+    universe: Literal["visible", "all"] = "visible",  # type: ignore
+    timeframe: TimeframeLiteral = "H1",
+    lookback: int = 100,
+    rsi_length: int = 14,
+    sma_period: int = 20,
+    min_price_change_pct: Optional[float] = None,
+    max_price_change_pct: Optional[float] = None,
+    max_spread_pct: Optional[float] = None,
+    min_tick_volume: Optional[int] = None,
+    rsi_below: Optional[float] = None,
+    rsi_above: Optional[float] = None,
+    price_vs_sma: Optional[Literal["above", "below"]] = None,  # type: ignore
+    rank_by: Literal["abs_price_change_pct", "price_change_pct", "tick_volume", "rsi", "spread_pct"] = "abs_price_change_pct",  # type: ignore
+) -> Dict[str, Any]:
+    """Scan MT5 symbols with explicit price, spread, volume, RSI, and SMA filters."""
+
+    def _run() -> Dict[str, Any]:  # noqa: C901
+        try:
+            universe_value = str(universe or "visible").strip().lower()
+            if universe_value not in {"visible", "all"}:
+                return {"error": "universe must be 'visible' or 'all'."}
+
+            timeframe_value = str(timeframe or "H1").strip().upper()
+            if timeframe_value not in TIMEFRAME_MAP:
+                return {"error": invalid_timeframe_error(timeframe_value, TIMEFRAME_MAP)}
+            mt5_timeframe = TIMEFRAME_MAP[timeframe_value]
+
+            rank_by_value = str(rank_by or "abs_price_change_pct").strip().lower()
+            if rank_by_value not in {"abs_price_change_pct", "price_change_pct", "tick_volume", "rsi", "spread_pct"}:
+                return {
+                    "error": (
+                        "rank_by must be one of: abs_price_change_pct, "
+                        "price_change_pct, tick_volume, rsi, spread_pct."
+                    )
+                }
+
+            price_vs_sma_value = None
+            if price_vs_sma is not None:
+                price_vs_sma_value = str(price_vs_sma).strip().lower()
+                if price_vs_sma_value not in {"above", "below"}:
+                    return {"error": "price_vs_sma must be 'above' or 'below'."}
+
+            try:
+                lookback_value = int(lookback)
+                rsi_length_value = int(rsi_length)
+                sma_period_value = int(sma_period)
+            except Exception:
+                return {"error": "lookback, rsi_length, and sma_period must be integers."}
+            if lookback_value < 2:
+                return {"error": "lookback must be at least 2."}
+            if rsi_length_value < 1:
+                return {"error": "rsi_length must be at least 1."}
+            if sma_period_value < 1:
+                return {"error": "sma_period must be at least 1."}
+
+            required_lookback = 2
+            if rank_by_value == "rsi" or rsi_above is not None or rsi_below is not None:
+                required_lookback = max(required_lookback, rsi_length_value + 1)
+            if price_vs_sma_value is not None:
+                required_lookback = max(required_lookback, sma_period_value)
+            if lookback_value < required_lookback:
+                return {
+                    "error": (
+                        f"lookback={lookback_value} is too small for the requested filters; "
+                        f"need at least {required_lookback} bars."
+                    )
+                }
+
+            mt5_gateway = get_mt5_gateway(
+                adapter=mt5,
+                ensure_connection_impl=ensure_mt5_connection_or_raise,
+            )
+            mt5_gateway.ensure_connection()
+
+            raw_symbols = mt5_gateway.symbols_get()
+            if raw_symbols is None:
+                return {"error": f"Failed to get symbols: {mt5_gateway.last_error()}"}
+            all_symbols = list(raw_symbols)
+
+            selected_symbols, selection_meta, selection_error = _select_market_scan_symbols(
+                all_symbols,
+                symbols=symbols,
+                group=group,
+                universe=universe_value,
+            )
+            if selection_error:
+                return {"error": selection_error}
+
+            limit_value = _normalize_limit(limit) or 20
+            started_at = time.perf_counter()
+            matched_rows: List[Dict[str, Any]] = []
+            skipped_examples: List[Dict[str, str]] = []
+            skipped_symbols = 0
+            evaluated_symbols = 0
+
+            def _record_issue(symbol_name: str, reason: str) -> None:
+                nonlocal skipped_symbols
+                skipped_symbols += 1
+                if len(skipped_examples) < 10:
+                    skipped_examples.append({"symbol": symbol_name, "reason": reason})
+
+            for missing_symbol in selection_meta.get("missing_symbols", []):
+                if len(skipped_examples) < 10:
+                    skipped_examples.append({"symbol": missing_symbol, "reason": "Requested symbol not found."})
+
+            def _evaluate_symbol(symbol_obj: Any) -> None:
+                nonlocal evaluated_symbols
+                symbol_name = str(getattr(symbol_obj, "name", "") or "")
+
+                spread_row, spread_error = _build_market_scan_spread_row(symbol_obj, mt5_gateway)
+                if spread_error or spread_row is None:
+                    _record_issue(symbol_name, spread_error or "Spread data is unavailable.")
+                    return
+
+                signal_row, signal_error = _build_market_scan_signal_row(
+                    symbol_obj,
+                    timeframe=timeframe_value,
+                    mt5_timeframe=mt5_timeframe,
+                    lookback=lookback_value,
+                    rsi_length=rsi_length_value,
+                    sma_period=sma_period_value,
+                )
+                if signal_error or signal_row is None:
+                    _record_issue(symbol_name, signal_error or "Bar data is unavailable.")
+                    return
+
+                row = dict(spread_row)
+                row.update(signal_row)
+                metric_error = _market_scan_missing_required_metric(
+                    row,
+                    rank_by=rank_by_value,
+                    rsi_above=rsi_above,
+                    rsi_below=rsi_below,
+                    price_vs_sma=price_vs_sma_value,
+                    max_spread_pct=max_spread_pct,
+                    min_tick_volume=min_tick_volume,
+                    min_price_change_pct=min_price_change_pct,
+                    max_price_change_pct=max_price_change_pct,
+                    rsi_length=rsi_length_value,
+                    sma_period=sma_period_value,
+                )
+                if metric_error:
+                    _record_issue(symbol_name, metric_error)
+                    return
+
+                evaluated_symbols += 1
+                if not _market_scan_row_matches_filters(
+                    row,
+                    min_price_change_pct=min_price_change_pct,
+                    max_price_change_pct=max_price_change_pct,
+                    max_spread_pct=max_spread_pct,
+                    min_tick_volume=min_tick_volume,
+                    rsi_below=rsi_below,
+                    rsi_above=rsi_above,
+                    price_vs_sma=price_vs_sma_value,
+                ):
+                    return
+                matched_rows.append(row)
+
+            for symbol_obj in selected_symbols:
+                symbol_name = str(getattr(symbol_obj, "name", "") or "")
+                is_hidden = not bool(getattr(symbol_obj, "visible", False))
+                if is_hidden:
+                    with _symbol_ready_guard(symbol_name, info_before=symbol_obj) as (err, _):
+                        if err:
+                            _record_issue(symbol_name, err)
+                            continue
+                        _evaluate_symbol(symbol_obj)
+                    continue
+                _evaluate_symbol(symbol_obj)
+
+            _market_scan_sort_rows(
+                matched_rows,
+                rank_by=rank_by_value,
+                rsi_above=rsi_above,
+                rsi_below=rsi_below,
+            )
+            total_matches = len(matched_rows)
+            limited_rows = matched_rows[:limit_value]
+
+            headers = [
+                "symbol",
+                "group",
+                "description",
+                "timeframe",
+                "bar_time",
+                "close",
+                "price_change_pct",
+                "tick_volume",
+                "spread_pct",
+                "rsi",
+                "sma_value",
+                "sma_distance_pct",
+            ]
+            out = _market_scan_table(headers, limited_rows)
+            out.update(
+                {
+                    "success": True,
+                    "scope": selection_meta.get("scope"),
+                    "group": selection_meta.get("group"),
+                    "requested_symbols": selection_meta.get("requested_symbols"),
+                    "missing_symbols": selection_meta.get("missing_symbols"),
+                    "universe": universe_value,
+                    "timeframe": timeframe_value,
+                    "lookback": lookback_value,
+                    "limit": limit_value,
+                    "rank_by": rank_by_value,
+                    "scanned_symbols": len(selected_symbols),
+                    "evaluated_symbols": evaluated_symbols,
+                    "matched_symbols": total_matches,
+                    "filtered_out_symbols": max(0, evaluated_symbols - total_matches),
+                    "skipped_symbols": skipped_symbols,
+                    "skipped_examples": skipped_examples,
+                    "query_latency_ms": round((time.perf_counter() - started_at) * 1000.0, 3),
+                    "filters": {
+                        key: value
+                        for key, value in {
+                            "min_price_change_pct": min_price_change_pct,
+                            "max_price_change_pct": max_price_change_pct,
+                            "max_spread_pct": max_spread_pct,
+                            "min_tick_volume": min_tick_volume,
+                            "rsi_below": rsi_below,
+                            "rsi_above": rsi_above,
+                            "price_vs_sma": price_vs_sma_value,
+                            "rsi_length": rsi_length_value
+                            if (rsi_above is not None or rsi_below is not None or rank_by_value == "rsi")
+                            else None,
+                            "sma_period": sma_period_value
+                            if price_vs_sma_value is not None
+                            else None,
+                        }.items()
+                        if value is not None
+                    },
+                }
+            )
+            if total_matches == 0:
+                out["no_action"] = True
+                out["message"] = "No symbols matched the requested market scan filters."
+            return out
+        except MT5ConnectionError as exc:
+            return {"error": str(exc)}
+        except Exception as exc:
+            return {"error": f"Error running market scan: {str(exc)}"}
+
+    return run_logged_operation(
+        logger,
+        operation="market_scan",
+        symbols=symbols,
+        group=group,
         limit=limit,
         universe=universe,
         timeframe=timeframe,

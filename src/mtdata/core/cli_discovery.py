@@ -17,6 +17,7 @@ _OPTIONAL_FIRST_POSITIONAL_PARAMS: set[tuple[str, str]] = {
     ("finviz_news", "symbol"),
     ("correlation_matrix", "symbols"),
     ("cointegration_test", "symbols"),
+    ("market_scan", "symbols"),
 }
 
 _COMMAND_PARAM_CHOICE_OVERRIDES: Dict[tuple[str, str], list[str]] = {

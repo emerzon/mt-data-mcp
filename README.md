@@ -37,6 +37,7 @@ It runs as a **Model Context Protocol (MCP)** server or a standalone **CLI**.
 | **Denoising** | Smooth price data to reveal trends | `--denoise` option |
 | **Temporal** | Discover session effects and seasonal patterns | `temporal_analyze` |
 | **Multi-asset** | Explore cross-symbol correlation, cointegration, and lead/lag relationships | `correlation_matrix`, `cointegration_test`, `causal_discover_signals` |
+| **Scanning** | Screen MT5 symbols by spread, price change, volume, RSI, and SMA | `symbols_top_markets`, `market_scan` |
 | **Trading** | Place orders, manage positions, review realized performance, and estimate tail risk | `trade_place`, `trade_close`, `trade_journal_analyze`, `var_cvar_calculate` |
 | **Fundamentals** | US equity data, screening, news, calendars | `finviz_fundamentals`, `finviz_screen`, `finviz_calendar` |
 | **Options** | Options chains and QuantLib barrier pricing | `forecast_options_chain`, `forecast_quantlib_barrier_price` |

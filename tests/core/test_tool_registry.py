@@ -51,6 +51,7 @@ EXPECTED_TOOL_NAMES = frozenset(
         "symbols_describe",
         "symbols_list",
         "symbols_top_markets",
+        "market_scan",
         "temporal_analyze",
         "trade_account_info",
         "trade_close",
