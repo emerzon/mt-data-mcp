@@ -790,19 +790,25 @@ def regime_detect(  # noqa: C901
             )
             labels = kmeans.fit_predict(X_final)
 
-            # Map back to full length
-            # features_df has same length as x (n), but with NaNs at start
-            # We want to fill the result states.
-            # 0-fill or forward fill or -1?
-            # Let's say -1 for undefined.
+            # Smooth short runs and canonicalize on valid slice only
+            valid_probs = np.zeros((int(valid_mask.sum()), k_regimes))
+            valid_probs[np.arange(len(labels)), labels] = 1.0
+            labels, valid_probs, smoothing_meta = _smooth_short_state_runs(
+                state=np.asarray(labels, dtype=int),
+                probs=valid_probs,
+                min_regime_bars=min_regime_bars_val,
+            )
+            labels, valid_probs, canon_meta = _canonicalize_regime_labels(
+                labels, valid_probs, x[valid_mask],
+            )
+            smoothing_meta["relabeled"] = canon_meta.get("relabeled", False)
+
+            # Map back to full length (-1 for undefined leading window)
             full_states = np.full(len(x), -1, dtype=int)
             full_states[valid_mask] = labels
 
-            # Probabilities? KMeans doesn't give probs easily (distance based).
-            # We can use 1.0 for the assigned cluster or distance-to-center logic.
-            # Simplified: 1.0 for assigned.
             full_probs = np.zeros((len(x), k_regimes))
-            full_probs[valid_mask, labels] = 1.0
+            full_probs[valid_mask] = valid_probs
 
             # Reconstruct payload
             payload = {
@@ -818,7 +824,9 @@ def regime_detect(  # noqa: C901
                     "k_regimes": k_regimes,
                     "window_size": window_size,
                     "use_pca": use_pca,
-                    "n_components": n_components
+                    "n_components": n_components,
+                    "min_regime_bars": int(min_regime_bars_val),
+                    "smoothing_applied": smoothing_meta.get("smoothing_applied", False),
                 },
             }
             if warnings:
