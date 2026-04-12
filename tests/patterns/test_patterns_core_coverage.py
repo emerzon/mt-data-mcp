@@ -1552,6 +1552,65 @@ class TestPatternsDetect:
         result = _call_patterns_detect(symbol="EURUSD", mode="elliott", timeframe=None)
         assert "error" in result
 
+    @patch("mtdata.core.patterns._format_fractal_patterns")
+    @patch("mtdata.core.patterns._fetch_pattern_data")
+    def test_fractal_mode_success(self, mock_fetch, mock_format):
+        df = _make_ohlcv_df(200)
+        mock_fetch.return_value = (df, None)
+        mock_format.return_value = [
+            {
+                "name": "Bullish Fractal",
+                "status": "forming",
+                "confidence": 0.82,
+                "direction": "bullish",
+                "bias": "bullish",
+                "level_state": "active",
+                "price": 1.101,
+                "level_price": 1.101,
+                "reference_price": 1.108,
+                "start_index": 120,
+                "end_index": 122,
+                "confirmation_index": 122,
+                "confirmation_date": "2024-01-01 00:00",
+            }
+        ]
+
+        result = _call_patterns_detect(
+            symbol="EURUSD",
+            mode="fractal",
+            timeframe="H1",
+            detail="full",
+        )
+
+        assert result.get("success") is True
+        assert result.get("mode") == "fractal"
+        assert result.get("active_levels", {}).get("bullish", {}).get("level_price") == 1.101
+
+    @patch("mtdata.core.patterns._fetch_pattern_data")
+    def test_fractal_invalid_config_key_returns_error_before_fetch(self, mock_fetch):
+        result = _call_patterns_detect(
+            symbol="EURUSD",
+            mode="fractal",
+            timeframe="H1",
+            config={"not_a_real_fractal_key": 3},
+        )
+
+        assert result == {"error": "Invalid config key(s): ['not_a_real_fractal_key']"}
+        mock_fetch.assert_not_called()
+
+    @patch("mtdata.core.patterns._fetch_pattern_data")
+    def test_fractal_invalid_config_value_returns_error_before_fetch(self, mock_fetch):
+        result = _call_patterns_detect(
+            symbol="EURUSD",
+            mode="fractal",
+            timeframe="H1",
+            config={"breakout_basis": "intrabar"},
+        )
+
+        assert "error" in result
+        assert "Invalid fractal config" in result["error"]
+        mock_fetch.assert_not_called()
+
     @patch("mtdata.core.patterns._run_classic_engine")
     @patch("mtdata.core.patterns._fetch_pattern_data")
     def test_classic_invalid_engine(self, mock_fetch, mock_engine):
@@ -1574,11 +1633,12 @@ class TestPatternsDetect:
 class TestPatternsDetectAllMode:
     """Tests for mode='all' comprehensive scan."""
 
+    @patch("mtdata.core.patterns._format_fractal_patterns")
     @patch("mtdata.core.patterns._format_elliott_patterns")
     @patch("mtdata.core.patterns._run_classic_engine")
     @patch("mtdata.core.patterns._fetch_pattern_data")
     @patch("mtdata.core.patterns._detect_candlestick_patterns")
-    def test_all_mode_basic_success(self, mock_candle, mock_fetch, mock_engine, mock_elliott):
+    def test_all_mode_basic_success(self, mock_candle, mock_fetch, mock_engine, mock_elliott, mock_fractal):
         df = _make_ohlcv_df(200)
         mock_candle.return_value = {
             "data": [{"pattern": "Hammer", "direction": "bullish", "confidence": 0.9,
@@ -1593,6 +1653,20 @@ class TestPatternsDetectAllMode:
             "wave_type": "impulse", "status": "forming", "confidence": 0.7,
             "start_date": "2024-01-01", "end_date": "2024-01-10",
         }]
+        mock_fractal.return_value = [{
+            "name": "Bearish Fractal",
+            "status": "forming",
+            "confidence": 0.76,
+            "direction": "bearish",
+            "bias": "bearish",
+            "level_state": "active",
+            "price": 1.2,
+            "level_price": 1.2,
+            "start_index": 12,
+            "end_index": 14,
+            "confirmation_index": 14,
+            "confirmation_date": "2024-01-05",
+        }]
 
         result = _call_patterns_detect(symbol="EURUSD", mode="all")
         assert result["success"] is True
@@ -1602,6 +1676,7 @@ class TestPatternsDetectAllMode:
         assert result["candlestick"]["by_timeframe"]  # has TF data
         assert len(result["classic"]["patterns"]) > 0
         assert len(result["elliott"]["patterns"]) > 0
+        assert len(result["fractal"]["patterns"]) > 0
 
     @patch("mtdata.core.patterns._format_elliott_patterns")
     @patch("mtdata.core.patterns._run_classic_engine")
@@ -1617,6 +1692,214 @@ class TestPatternsDetectAllMode:
         result = _call_patterns_detect(symbol="EURUSD", mode="all", timeframe="M15")
         assert result["success"] is True
         assert result["timeframes"] == ["M15"]
+
+    @patch("mtdata.core.patterns._format_fractal_patterns")
+    @patch("mtdata.core.patterns._fetch_pattern_data")
+    def test_fractal_mode_hides_completed_levels_by_default(self, mock_fetch, mock_format):
+        df = _make_ohlcv_df(200)
+        mock_fetch.return_value = (df, None)
+        mock_format.return_value = [
+            {
+                "name": "Bullish Fractal",
+                "status": "forming",
+                "confidence": 0.82,
+                "direction": "bullish",
+                "bias": "bullish",
+                "level_state": "active",
+                "price": 1.101,
+                "level_price": 1.101,
+                "reference_price": 1.108,
+                "start_index": 120,
+                "end_index": 122,
+                "confirmation_index": 122,
+                "confirmation_date": "2024-01-01 00:00",
+            },
+            {
+                "name": "Bearish Fractal",
+                "status": "completed",
+                "confidence": 0.78,
+                "direction": "bearish",
+                "bias": "bullish",
+                "level_state": "broken",
+                "price": 1.205,
+                "level_price": 1.205,
+                "breakout_direction": "bullish",
+                "breakout_price": 1.21,
+                "breakout_date": "2024-01-02 00:00",
+                "start_index": 100,
+                "end_index": 130,
+                "confirmation_index": 102,
+                "confirmation_date": "2024-01-01 08:00",
+            },
+        ]
+
+        result = _call_patterns_detect(
+            symbol="EURUSD",
+            mode="fractal",
+            timeframe="H1",
+            detail="full",
+        )
+
+        assert result.get("success") is True
+        assert [row["name"] for row in result["patterns"]] == ["Bullish Fractal"]
+        assert result["completed_patterns_hidden"] == 1
+        assert "latest_breakouts" not in result
+        assert result.get("active_levels", {}).get("bullish", {}).get("level_price") == 1.101
+
+    @patch("mtdata.core.patterns._format_fractal_patterns")
+    @patch("mtdata.core.patterns._format_elliott_patterns")
+    @patch("mtdata.core.patterns._run_classic_engine")
+    @patch("mtdata.core.patterns._fetch_pattern_data")
+    @patch("mtdata.core.patterns._detect_candlestick_patterns")
+    def test_all_mode_compact_includes_fractal_section(
+        self,
+        mock_candle,
+        mock_fetch,
+        mock_engine,
+        mock_elliott,
+        mock_fractal,
+    ):
+        df = _make_ohlcv_df(200)
+        mock_candle.return_value = {"data": []}
+        mock_fetch.return_value = (df, None)
+        mock_engine.return_value = ([], None)
+        mock_elliott.return_value = []
+        mock_fractal.return_value = [
+            {
+                "name": f"Fractal {i}",
+                "status": "forming",
+                "confidence": 0.8,
+                "direction": "bullish" if i % 2 == 0 else "bearish",
+                "bias": "bullish" if i % 2 == 0 else "bearish",
+                "level_state": "active",
+                "price": 1.1 + (i * 0.01),
+                "level_price": 1.1 + (i * 0.01),
+                "reference_price": 1.2,
+                "start_index": i,
+                "end_index": 150 + i,
+                "confirmation_index": 150 + i,
+                "confirmation_date": "2024-01-01",
+            }
+            for i in range(12)
+        ]
+
+        result = _call_patterns_detect(
+            symbol="EURUSD",
+            mode="all",
+            timeframe="H1",
+            detail="compact",
+        )
+
+        assert result["success"] is True
+        assert "fractal" in result
+        assert len(result["fractal"]["patterns"]) <= 8
+
+    @patch("mtdata.core.patterns._format_fractal_patterns")
+    @patch("mtdata.core.patterns._format_elliott_patterns")
+    @patch("mtdata.core.patterns._run_classic_engine")
+    @patch("mtdata.core.patterns._fetch_pattern_data")
+    @patch("mtdata.core.patterns._detect_candlestick_patterns")
+    def test_all_mode_filters_completed_fractal_levels(
+        self,
+        mock_candle,
+        mock_fetch,
+        mock_engine,
+        mock_elliott,
+        mock_fractal,
+    ):
+        df = _make_ohlcv_df(200)
+        mock_candle.return_value = {"data": []}
+        mock_fetch.return_value = (df, None)
+        mock_engine.return_value = ([], None)
+        mock_elliott.return_value = []
+        mock_fractal.return_value = [
+            {
+                "name": "Active Fractal",
+                "status": "forming",
+                "confidence": 0.8,
+                "direction": "bullish",
+                "bias": "bullish",
+                "level_state": "active",
+                "price": 1.1,
+                "level_price": 1.1,
+                "start_index": 10,
+                "end_index": 12,
+                "confirmation_index": 12,
+                "confirmation_date": "2024-01-01",
+            },
+            {
+                "name": "Broken Fractal",
+                "status": "completed",
+                "confidence": 0.9,
+                "direction": "bearish",
+                "bias": "bullish",
+                "level_state": "broken",
+                "price": 1.2,
+                "level_price": 1.2,
+                "breakout_direction": "bullish",
+                "breakout_price": 1.22,
+                "breakout_date": "2024-01-02",
+                "start_index": 5,
+                "end_index": 30,
+                "confirmation_index": 7,
+                "confirmation_date": "2024-01-01",
+            },
+        ]
+
+        result = _call_patterns_detect(symbol="EURUSD", mode="all", timeframe="H1")
+
+        assert [row["name"] for row in result["fractal"]["patterns"]] == ["Active Fractal"]
+        assert "latest_breakouts" not in result["fractal"]
+        highlight_names = [row["name"] for row in result.get("highlights", []) if row.get("section") == "fractal"]
+        assert "Broken Fractal" not in highlight_names
+
+    @patch("mtdata.core.patterns._format_elliott_patterns")
+    @patch("mtdata.core.patterns._run_classic_engine")
+    @patch("mtdata.core.patterns._fetch_pattern_data")
+    @patch("mtdata.core.patterns._detect_candlestick_patterns")
+    def test_all_mode_reports_invalid_fractal_keys(self, mock_candle, mock_fetch, mock_engine, mock_elliott):
+        df = _make_ohlcv_df(200)
+        mock_candle.return_value = {
+            "data": [{"pattern": "Doji", "direction": "neutral", "confidence": 0.8}],
+        }
+        mock_fetch.return_value = (df, None)
+        mock_engine.return_value = ([], None)
+        mock_elliott.return_value = []
+
+        result = _call_patterns_detect(
+            symbol="EURUSD",
+            mode="all",
+            timeframe="H1",
+            config={"breakout_basiz": "high_low"},
+        )
+
+        assert result["success"] is True
+        assert result["fractal"]["patterns"] == []
+        assert result["errors"]["fractal"]["H1"] == "Invalid config key(s): ['breakout_basiz']"
+
+    @patch("mtdata.core.patterns._format_elliott_patterns")
+    @patch("mtdata.core.patterns._run_classic_engine")
+    @patch("mtdata.core.patterns._fetch_pattern_data")
+    @patch("mtdata.core.patterns._detect_candlestick_patterns")
+    def test_all_mode_reports_uncoercible_fractal_overrides(self, mock_candle, mock_fetch, mock_engine, mock_elliott):
+        df = _make_ohlcv_df(200)
+        mock_candle.return_value = {
+            "data": [{"pattern": "Doji", "direction": "neutral", "confidence": 0.8}],
+        }
+        mock_fetch.return_value = (df, None)
+        mock_engine.return_value = ([], None)
+        mock_elliott.return_value = []
+
+        result = _call_patterns_detect(
+            symbol="EURUSD",
+            mode="all",
+            timeframe="H1",
+            config={"right_bars": "oops"},
+        )
+
+        assert result["success"] is True
+        assert result["fractal"]["patterns"] == []
+        assert result["errors"]["fractal"]["H1"] == "Invalid config key(s): ['right_bars']"
 
     @patch("mtdata.core.patterns._format_elliott_patterns")
     @patch("mtdata.core.patterns._run_classic_engine")

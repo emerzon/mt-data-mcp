@@ -32,7 +32,7 @@ It runs as a **Model Context Protocol (MCP)** server or a standalone **CLI**.
 | **Volatility** | Estimate future price movement magnitude | `forecast_volatility_estimate` |
 | **Regimes** | Detect trending, ranging, or crisis market states | `regime_detect` |
 | **Barriers** | Calculate TP/SL hit probabilities via simulation | `forecast_barrier_prob`, `forecast_barrier_optimize` |
-| **Patterns** | Identify candlestick and chart patterns | `patterns_detect` |
+| **Patterns** | Identify candlestick, chart, Elliott, and fractal patterns | `patterns_detect` |
 | **Indicators** | Compute 100+ technical indicators | `data_fetch_candles --indicators` |
 | **Denoising** | Smooth price data to reveal trends | `--denoise` option |
 | **Temporal** | Discover session effects and seasonal patterns | `temporal_analyze` |

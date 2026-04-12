@@ -357,18 +357,25 @@ def _compact_patterns_payload(payload: Dict[str, Any]) -> Dict[str, Any]:  # noq
             "time",
             "start_date",
             "end_date",
+            "confirmation_date",
+            "breakout_date",
             "status",
             "confidence",
             "strength",
             "direction",
             "bias",
             "price",
+            "level_price",
+            "level_state",
             "reference_price",
+            "breakout_direction",
+            "breakout_price",
             "target_price",
             "target_stale",
             "target_reference_age_bars",
             "invalidation_price",
             "bars_to_completion",
+            "bars_since_confirmation",
         ):
             value = row.get(key)
             if value not in (None, ""):
@@ -390,13 +397,19 @@ def _compact_patterns_payload(payload: Dict[str, Any]) -> Dict[str, Any]:  # noq
             "timeframe",
             "time",
             "end_date",
+            "confirmation_date",
+            "breakout_date",
             "status",
             "confidence",
             "strength",
             "direction",
             "bias",
             "price",
+            "level_price",
+            "level_state",
             "reference_price",
+            "breakout_direction",
+            "breakout_price",
             "target_price",
             "target_stale",
             "invalidation_price",
@@ -516,6 +529,11 @@ _ALL_COMPACT_ELLIOTT_KEYS = (
     "timeframe", "wave_type", "status", "confidence",
     "start_date", "end_date",
 )
+_ALL_COMPACT_FRACTAL_KEYS = (
+    "timeframe", "name", "status", "confidence", "direction", "bias",
+    "level_price", "reference_price", "level_state",
+    "confirmation_date", "breakout_direction", "breakout_date", "breakout_price",
+)
 
 _HIGHLIGHT_KEYS = (
     "section", "timeframe", "name", "direction", "status",
@@ -523,7 +541,7 @@ _HIGHLIGHT_KEYS = (
 )
 
 # Section weight multipliers for highlight ranking
-_SECTION_WEIGHT = {"classic": 1.0, "elliott": 1.0, "candlestick": 0.5}
+_SECTION_WEIGHT = {"classic": 1.0, "elliott": 1.0, "fractal": 0.75, "candlestick": 0.5}
 
 # Weights for relevance = w_conf * confidence + w_rec * recency
 _W_CONFIDENCE = 0.6
@@ -688,6 +706,18 @@ def _build_highlights(
             "_relevance": (row.get("relevance", 0) or 0) * _SECTION_WEIGHT["elliott"],
         })
 
+    for row in payload.get("fractal", {}).get("patterns", []):
+        candidates.append({
+            "section": "fractal",
+            "timeframe": row.get("timeframe"),
+            "name": row.get("name"),
+            "direction": row.get("bias") or row.get("direction"),
+            "status": row.get("level_state") or row.get("status"),
+            "confidence": row.get("confidence"),
+            "price": row.get("level_price", row.get("price")),
+            "_relevance": (row.get("relevance", 0) or 0) * _SECTION_WEIGHT["fractal"],
+        })
+
     candidates.sort(key=lambda r: r.get("_relevance", 0), reverse=True)
 
     # Diversity: max 2 per (section, timeframe) combo
@@ -754,10 +784,11 @@ def _compact_all_mode_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     else:
         compact["candlestick"] = {"by_timeframe": {}}
 
-    # Classic + Elliott: trimmed pattern lists (no raw counts — list is self-evident)
+    # Classic + Elliott + Fractal: trimmed pattern lists (no raw counts — list is self-evident)
     for section_name, keys in (
         ("classic", _ALL_COMPACT_CLASSIC_KEYS),
         ("elliott", _ALL_COMPACT_ELLIOTT_KEYS),
+        ("fractal", _ALL_COMPACT_FRACTAL_KEYS),
     ):
         section = payload.get(section_name, {})
         rows = section.get("patterns", [])
@@ -768,6 +799,10 @@ def _compact_all_mode_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         bias = section.get("signal_bias")
         if bias:
             result["signal_bias"] = bias
+        for key in ("active_levels", "latest_breakouts"):
+            value = section.get(key)
+            if value not in (None, "", [], {}):
+                result[key] = value
         compact[section_name] = result
 
     errors = payload.get("errors")

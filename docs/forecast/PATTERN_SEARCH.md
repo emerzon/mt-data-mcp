@@ -65,15 +65,39 @@ mtdata-cli patterns_detect EURUSD --timeframe H1 --mode classic --limit 500
 | **Wedge** | Rising or falling wedge |
 | **Rectangle** | Horizontal consolidation |
 
+### Fractal Patterns
+
+Bill Williams-style bullish and bearish fractal levels with confirmation and breakout context.
+
+```bash
+mtdata-cli patterns_detect EURUSD --timeframe H1 --mode fractal --limit 300
+```
+
+**Useful fractal config:**
+```bash
+mtdata-cli patterns_detect EURUSD --timeframe H1 --mode fractal \
+  --config "left_bars=2 right_bars=2 breakout_basis=high_low"
+```
+
+**Common output fields:**
+| Field | Meaning |
+|-------|---------|
+| `level_price` | Confirmed fractal high/low level |
+| `level_state` | `active` when unbroken, `broken` after price breaches the level |
+| `confirmation_date` | When the fractal became knowable after the right-side bars closed |
+| `breakout_direction` | Direction of the later level break (`bullish` or `bearish`) |
+| `breakout_date` | When the breakout occurred, if any |
+
 ### Parameters
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `--mode` | `candlestick` | Pattern type: candlestick, classic, elliott |
-| `--limit` | 500 | Bars to analyze |
-| `--robust-only` | true | Only return high-confidence patterns. Pass `false` to include all. |
+| `--mode` | `all` | Pattern type: all, candlestick, classic, fractal, elliott |
+| `--limit` | 1000 | Bars to analyze |
+| `--robust-only` | false | Only return high-confidence candlestick patterns. Pass `true` to filter to the robust subset. |
 | `--whitelist` | — | Comma-separated list of specific patterns |
 | `--min-strength` | 0.90 | Minimum semantic candlestick conviction score (0.0-1.0) |
+| `--config` | — | Detector-specific overrides. Fractals support `left_bars`, `right_bars`, `breakout_basis`, `min_prominence_pct`, and `confidence_prominence_cap_pct`. |
 
 ### Filtering Patterns
 
@@ -246,6 +270,7 @@ data[5]{time,pattern}:
 | Candlestick patterns | `mtdata-cli patterns_detect EURUSD --mode candlestick` |
 | Robust patterns only | `mtdata-cli patterns_detect EURUSD --mode candlestick --robust-only true` |
 | Chart patterns | `mtdata-cli patterns_detect EURUSD --mode classic` |
+| Fractal levels and breakouts | `mtdata-cli patterns_detect EURUSD --mode fractal` |
 | Analog forecast | `mtdata-cli forecast_generate EURUSD --method analog --params "window_size=64 top_k=20"` |
 | Analog with DTW | `mtdata-cli forecast_generate EURUSD --method analog --params "refine_metric=dtw"` |
 

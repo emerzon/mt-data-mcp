@@ -1148,6 +1148,92 @@ def test_build_pattern_response_compact_keeps_actionable_fields():
     assert compact["summary"]["signal_bias"]["net_bias"] == "bullish"
 
 
+def test_build_pattern_response_compact_keeps_fractal_breakout_fields():
+    df = pd.DataFrame({"time": [1, 2, 3], "close": [10.0, 10.5, 9.8]})
+    patterns = [
+        {
+            "name": "Bullish Fractal",
+            "status": "completed",
+            "confidence": 0.82,
+            "end_index": 2,
+            "direction": "bullish",
+            "bias": "bearish",
+            "price": 9.9,
+            "level_price": 9.9,
+            "level_state": "broken",
+            "confirmation_date": "2026-03-01 00:00",
+            "breakout_direction": "bearish",
+            "breakout_date": "2026-03-02 00:00",
+            "breakout_price": 9.7,
+        }
+    ]
+
+    compact = _build_pattern_response(
+        "EURUSD",
+        "H1",
+        100,
+        "fractal",
+        patterns,
+        include_completed=True,
+        include_series=False,
+        series_time="string",
+        df=df,
+        detail="compact",
+    )
+
+    recent = compact["recent_patterns"][0]
+    assert recent["level_state"] == "broken"
+    assert recent["breakout_direction"] == "bearish"
+    assert recent["breakout_date"] == "2026-03-02 00:00"
+    assert recent["breakout_price"] == 9.7
+    assert compact["summary"]["signal_bias"]["net_bias"] == "bearish"
+
+
+def test_build_pattern_response_compact_hides_completed_fractal_rows_by_default():
+    df = pd.DataFrame({"time": [1, 2, 3], "close": [10.0, 10.5, 9.8]})
+    patterns = [
+        {
+            "name": "Active Fractal",
+            "status": "forming",
+            "confidence": 0.82,
+            "end_index": 1,
+            "direction": "bullish",
+            "bias": "bullish",
+            "price": 9.9,
+            "level_price": 9.9,
+            "level_state": "active",
+        },
+        {
+            "name": "Broken Fractal",
+            "status": "completed",
+            "confidence": 0.88,
+            "end_index": 2,
+            "direction": "bearish",
+            "bias": "bullish",
+            "price": 10.7,
+            "level_price": 10.7,
+            "level_state": "broken",
+            "breakout_direction": "bullish",
+        },
+    ]
+
+    compact = _build_pattern_response(
+        "EURUSD",
+        "H1",
+        100,
+        "fractal",
+        patterns,
+        include_completed=False,
+        include_series=False,
+        series_time="string",
+        df=df,
+        detail="compact",
+    )
+
+    assert [row["pattern"] for row in compact["recent_patterns"]] == ["Active Fractal"]
+    assert compact["completed_patterns_hidden"] == 1
+
+
 def test_build_pattern_response_compact_adds_hint_when_rows_are_truncated():
     df = pd.DataFrame({"time": list(range(12)), "close": [100.0 + i for i in range(12)]})
     patterns = [

@@ -1,6 +1,5 @@
 import copy
 import logging
-import math
 import warnings
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Literal, Optional, Tuple
@@ -16,6 +15,11 @@ from ..patterns.classic import detect_classic_patterns as _detect_classic_patter
 from ..patterns.common import data_quality_warnings, should_drop_last_live_bar
 from ..patterns.elliott import ElliottWaveConfig as _ElliottCfg
 from ..patterns.elliott import detect_elliott_waves as _detect_elliott_waves
+from ..patterns.fractal import FractalDetectorConfig as _FractalCfg
+from ..patterns.fractal import detect_fractal_patterns as _detect_fractal_patterns
+from ..patterns.fractal import (
+    validate_fractal_detector_config as _validate_fractal_detector_config,
+)
 from ..shared.validators import invalid_timeframe_error
 from ..utils.denoise import _apply_denoise as _apply_denoise_util
 from ..utils.denoise import normalize_denoise_spec as _normalize_denoise_spec
@@ -258,6 +262,7 @@ def _patterns_detect_deps() -> PatternsDetectDeps:
         fetch_pattern_data=_fetch_pattern_data,
         classic_cfg_cls=_ClassicCfg,
         elliott_cfg_cls=_ElliottCfg,
+        fractal_cfg_cls=_FractalCfg,
         apply_config_to_obj=_apply_config_to_obj,
         select_classic_engines=_select_classic_engines,
         available_classic_engines=_available_classic_engines,
@@ -269,9 +274,12 @@ def _patterns_detect_deps() -> PatternsDetectDeps:
         summarize_pattern_bias=_summarize_pattern_bias,
         build_pattern_response=_build_pattern_response,
         format_elliott_patterns=_format_elliott_patterns,
+        format_fractal_patterns=_format_fractal_patterns,
         detect_candlestick_patterns=_detect_candlestick_patterns,
         elliott_timeframe_suggestion=_elliott_timeframe_suggestion,
         resolve_elliott_scan_timeframes=_resolve_elliott_scan_timeframes,
+        validate_fractal_config=_validate_fractal_detector_config,
+        summarize_fractal_context=_summarize_fractal_context,
         format_time_minimal=_format_time_minimal,
         to_float_np=__to_float_np,
     )
@@ -389,6 +397,150 @@ def _format_elliott_patterns(df: pd.DataFrame, cfg: _ElliottCfg) -> List[Dict[st
         except Exception:
             continue
     return _enrich_elliott_patterns(out_list, df, cfg)
+
+
+def _format_pattern_timestamp(epoch_value: Any) -> Optional[str]:
+    try:
+        epoch = float(epoch_value)
+    except Exception:
+        return None
+    if not np.isfinite(epoch):
+        return None
+    return _format_time_minimal(epoch)
+
+
+def _format_fractal_patterns(
+    df: pd.DataFrame,
+    cfg: _FractalCfg,
+) -> List[Dict[str, Any]]:
+    pats = _detect_fractal_patterns(df, cfg)
+    out_list: List[Dict[str, Any]] = []
+    close_arr = __to_float_np(df.get("close"))
+    current_close: Optional[float] = None
+    if close_arr.size > 0:
+        last_close = float(close_arr[-1])
+        if np.isfinite(last_close):
+            current_close = float(last_close)
+
+    for p in pats:
+        try:
+            start_date, end_date = _format_pattern_dates(p.start_time, p.end_time)
+            details = {k: _round_value(v) for k, v in (p.details or {}).items()}
+            bias = str(details.get("bias") or p.direction or "").strip().lower()
+            if bias not in {"bullish", "bearish", "neutral", "mixed"}:
+                bias = str(p.direction).strip().lower()
+            row: Dict[str, Any] = {
+                "name": p.name,
+                "status": p.status,
+                "confidence": float(max(0.0, min(1.0, p.confidence))),
+                "start_index": int(p.start_index),
+                "end_index": int(p.end_index),
+                "start_date": start_date,
+                "end_date": end_date,
+                "direction": str(p.direction),
+                "bias": bias,
+                "price": float(p.price),
+                "level_price": float(p.price),
+                "details": details,
+            }
+            if current_close is not None:
+                row["reference_price"] = float(current_close)
+            for key in (
+                "level_state",
+                "level_role",
+                "confirmation_index",
+                "bars_since_confirmation",
+                "breakout_direction",
+                "breakout_index",
+                "breakout_price",
+                "breakout_bars_after_confirmation",
+                "breakout_basis",
+                "prominence_pct",
+            ):
+                value = details.get(key)
+                if value not in (None, ""):
+                    row[key] = value
+            confirmation_date = _format_pattern_timestamp(details.get("confirmation_time"))
+            if confirmation_date:
+                row["confirmation_date"] = confirmation_date
+            breakout_date = _format_pattern_timestamp(details.get("breakout_time"))
+            if breakout_date:
+                row["breakout_date"] = breakout_date
+            out_list.append(row)
+        except Exception:
+            continue
+    return out_list
+
+
+def _summarize_fractal_context(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    active_levels: Dict[str, Dict[str, Any]] = {}
+    latest_breakouts: Dict[str, Dict[str, Any]] = {}
+
+    def _latest_row(
+        candidates: List[Dict[str, Any]],
+        key_name: str,
+    ) -> Optional[Dict[str, Any]]:
+        latest: Optional[Dict[str, Any]] = None
+        latest_value = float("-inf")
+        for row in candidates:
+            try:
+                value = float(row.get(key_name))
+            except Exception:
+                value = float("-inf")
+            if value >= latest_value:
+                latest = row
+                latest_value = value
+        return latest
+
+    for direction in ("bullish", "bearish"):
+        active_candidates = [
+            row
+            for row in rows
+            if str(row.get("direction", "")).strip().lower() == direction
+            and str(row.get("level_state", "")).strip().lower() == "active"
+        ]
+        latest_active = _latest_row(active_candidates, "confirmation_index")
+        if latest_active is not None:
+            item: Dict[str, Any] = {
+                "pattern": latest_active.get("name"),
+                "level_price": latest_active.get("level_price", latest_active.get("price")),
+                "status": latest_active.get("status"),
+                "bias": latest_active.get("bias"),
+            }
+            for key in ("confirmation_date", "bars_since_confirmation", "reference_price"):
+                value = latest_active.get(key)
+                if value not in (None, ""):
+                    item[key] = value
+            active_levels[direction] = item
+
+    for breakout_direction in ("bullish", "bearish"):
+        breakout_candidates = [
+            row
+            for row in rows
+            if str(row.get("breakout_direction", "")).strip().lower() == breakout_direction
+        ]
+        latest_breakout = _latest_row(breakout_candidates, "breakout_index")
+        if latest_breakout is not None:
+            item = {
+                "pattern": latest_breakout.get("name"),
+                "breakout_direction": latest_breakout.get("breakout_direction"),
+                "level_price": latest_breakout.get("level_price", latest_breakout.get("price")),
+                "breakout_price": latest_breakout.get("breakout_price"),
+                "status": latest_breakout.get("status"),
+                "bias": latest_breakout.get("bias"),
+            }
+            for key in ("breakout_date", "confirmation_date", "reference_price"):
+                value = latest_breakout.get(key)
+                if value not in (None, ""):
+                    item[key] = value
+            latest_breakouts[breakout_direction] = item
+
+    out: Dict[str, Any] = {}
+    if active_levels:
+        out["active_levels"] = active_levels
+    if latest_breakouts:
+        out["latest_breakouts"] = latest_breakouts
+    return out
 
 
 def _format_classic_native_patterns(df: pd.DataFrame, cfg: _ClassicCfg) -> List[Dict[str, Any]]:
@@ -713,12 +865,13 @@ def _apply_config_to_obj(cfg: Any, config: Optional[Dict[str, Any]]) -> List[str
 def patterns_detect(
     request: PatternsDetectRequest,
 ) -> Dict[str, Any]:
-    """Detect chart patterns (candlestick, classic chart patterns, or Elliott Wave).
+    """Detect chart patterns (candlestick, classic chart patterns, fractals, or Elliott Wave).
     
     **REQUIRED**: symbol parameter must be provided (e.g., "EURUSD", "BTCUSD")
     
-    By default (mode="all"), runs all pattern types across H1/H4/D1 timeframes
-    and returns a sectioned response with candlestick, classic, and Elliott results.
+    By default (mode="all"), runs all pattern types across a default
+    multi-timeframe set (`M30`, `H1`, `H4`, `D1`, `W1`)
+    and returns a sectioned response with candlestick, classic, fractal, and Elliott results.
     
     Parameters:
     -----------
@@ -727,16 +880,19 @@ def patterns_detect(
     
     timeframe : str, optional
         Chart timeframe: "M1", "M5", "M15", "M30", "H1", "H4", "D1", "W1", "MN1"
-        For `mode="all"` or `mode="elliott"`, when omitted, a default
-        higher-structure subset (`H1`, `H4`, `D1`) is scanned automatically.
+        For `mode="all"`, when omitted, a default multi-timeframe set
+        (`M30`, `H1`, `H4`, `D1`, `W1`) is scanned automatically.
+        For `mode="elliott"`, when omitted, a higher-structure subset
+        (`H1`, `H4`, `D1`) is scanned automatically.
     
     mode : str, optional (default="all")
         Pattern detection method:
-        - "all": Comprehensive scan — candlestick + classic + Elliott across
+        - "all": Comprehensive scan — candlestick + classic + fractal + Elliott across
           multiple timeframes. Returns sectioned output.
         - "candlestick": Japanese candlestick patterns (Doji, Hammer, Engulfing, etc.)
         - "classic": Chart patterns (Head & Shoulders, Triangles, Flags, etc.)
         - "chart": Alias for classic chart patterns
+        - "fractal": Bill Williams-style bullish/bearish fractal levels with breakout context
         - "elliott": Elliott Wave patterns
 
     detail : str, optional (default="compact")
@@ -758,7 +914,7 @@ def patterns_detect(
     min_gap : int, optional (default=3)
         Minimum gap between patterns (in bars)
     
-    robust_only : bool, optional (default=True)
+    robust_only : bool, optional (default=False)
         Only return high-confidence patterns
     
     whitelist : str, optional
@@ -783,6 +939,10 @@ def patterns_detect(
         - native_scale_factors: list[float] (e.g. [0.8, 1.0, 1.25])
         - pivot_use_hl, pivot_use_atr_adaptive_prominence, pivot_use_atr_adaptive_distance
         - calibrate_confidence, confidence_calibration_map, confidence_calibration_blend
+        Useful fractal options include:
+        - left_bars, right_bars
+        - breakout_basis: "close" or "high_low"
+        - min_prominence_pct, confidence_prominence_cap_pct
 
     engine : str, optional (default="native")
         Classic engine selection: "native", "stock_pattern",
@@ -826,7 +986,10 @@ def patterns_detect(
     
     # Detect classic chart patterns
     patterns_detect(symbol="GBPUSD", mode="classic", limit=500)
-    
+
+    # Detect fractal levels and breakouts
+    patterns_detect(symbol="EURUSD", mode="fractal", timeframe="H1", config={"breakout_basis": "high_low"})
+
     # Detect Elliott Wave patterns
     patterns_detect(symbol="BTCUSD", mode="elliott", timeframe="H4", detail="full")
     """

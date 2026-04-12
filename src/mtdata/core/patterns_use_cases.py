@@ -32,12 +32,62 @@ def _unknown_config_keys_for_mode(mode: str, unknown_keys: List[str]) -> List[st
     return list(unknown_keys)
 
 
+def _all_mode_invalid_config_keys(
+    config: Optional[Dict[str, Any]],
+    *,
+    classic_cfg: Any,
+    elliott_cfg: Any,
+    fractal_cfg: Any,
+    classic_invalid: List[str],
+    elliott_invalid: List[str],
+    fractal_invalid: List[str],
+) -> List[str]:
+    if not isinstance(config, dict):
+        return []
+
+    known_keys = set(_CLASSIC_CONFIG_EXTRA_KEYS)
+    for cfg in (classic_cfg, elliott_cfg, fractal_cfg):
+        try:
+            known_keys.update(vars(cfg).keys())
+        except Exception:
+            continue
+
+    classic_invalid_set = {str(key) for key in classic_invalid}
+    elliott_invalid_set = {str(key) for key in elliott_invalid}
+    fractal_invalid_set = {str(key) for key in fractal_invalid}
+
+    out: List[str] = []
+    for key in config.keys():
+        key_str = str(key)
+        if key_str in _CLASSIC_CONFIG_EXTRA_KEYS:
+            continue
+        if key_str not in known_keys:
+            out.append(key_str)
+            continue
+
+        applicable_invalid_sets: List[set[str]] = []
+        if hasattr(classic_cfg, key_str):
+            applicable_invalid_sets.append(classic_invalid_set)
+        if hasattr(elliott_cfg, key_str):
+            applicable_invalid_sets.append(elliott_invalid_set)
+        if hasattr(fractal_cfg, key_str):
+            applicable_invalid_sets.append(fractal_invalid_set)
+
+        if applicable_invalid_sets and all(
+            key_str in invalid_set for invalid_set in applicable_invalid_sets
+        ):
+            out.append(key_str)
+
+    return list(dict.fromkeys(out))
+
+
 @dataclass(frozen=True)
 class PatternsDetectDeps:
     compact_patterns_payload: Any
     fetch_pattern_data: Any
     classic_cfg_cls: Any
     elliott_cfg_cls: Any
+    fractal_cfg_cls: Any
     apply_config_to_obj: Any
     select_classic_engines: Any
     available_classic_engines: Any
@@ -49,9 +99,12 @@ class PatternsDetectDeps:
     summarize_pattern_bias: Any
     build_pattern_response: Any
     format_elliott_patterns: Any
+    format_fractal_patterns: Any
     detect_candlestick_patterns: Any
     elliott_timeframe_suggestion: Any
     resolve_elliott_scan_timeframes: Any
+    validate_fractal_config: Any
+    summarize_fractal_context: Any
     format_time_minimal: Any
     to_float_np: Any
 
@@ -207,6 +260,61 @@ def run_patterns_detect(  # noqa: C901
             resp["signal_summary"] = signal_summary
         if engine_errors:
             resp["engine_errors"] = engine_errors
+        return resp
+
+    if mode_value == "fractal":
+        tf_single = tf_norm or "H1"
+        cfg = deps.fractal_cfg_cls()
+        unknown_cfg = _unknown_config_keys_for_mode(
+            mode_value,
+            deps.apply_config_to_obj(cfg, request.config),
+        )
+        if unknown_cfg:
+            return {"error": f"Invalid config key(s): {sorted(unknown_cfg)}"}
+        config_errors = deps.validate_fractal_config(cfg)
+        if config_errors:
+            return {"error": f"Invalid fractal config: {config_errors[0]}"}
+
+        df, err = deps.fetch_pattern_data(request.symbol, tf_single, request.limit, request.denoise)
+        if err:
+            return err
+
+        out_list = deps.format_fractal_patterns(df, cfg)
+        visible_rows = (
+            list(out_list)
+            if request.include_completed
+            else [
+                row
+                for row in out_list
+                if str(row.get("status", "")).strip().lower() == "forming"
+            ]
+        )
+        resp = deps.build_pattern_response(
+            request.symbol,
+            tf_single,
+            request.limit,
+            mode_value,
+            out_list,
+            request.include_completed,
+            request.include_series,
+            request.series_time,
+            df,
+            detail=detail_value,
+        )
+        fractal_context = deps.summarize_fractal_context(visible_rows)
+        if fractal_context:
+            resp.update(fractal_context)
+        signal_summary = None
+        if detail_value == "compact":
+            summary = resp.get("summary")
+            if isinstance(summary, dict):
+                signal_summary = summary.get("signal_bias")
+        else:
+            rows = resp.get("patterns")
+            if isinstance(rows, list):
+                signal_summary = deps.summarize_pattern_bias(rows)
+        if signal_summary:
+            resp["signal_summary"] = signal_summary
         return resp
 
     if mode_value == "elliott":
@@ -373,13 +481,39 @@ def run_patterns_detect(  # noqa: C901
         candlestick_patterns: List[Dict[str, Any]] = []
         classic_patterns: List[Dict[str, Any]] = []
         elliott_patterns: List[Dict[str, Any]] = []
+        fractal_patterns: List[Dict[str, Any]] = []
         section_errors: Dict[str, Dict[str, str]] = {}
 
         classic_cfg = deps.classic_cfg_cls()
         elliott_cfg = deps.elliott_cfg_cls()
+        fractal_cfg = deps.fractal_cfg_cls()
+        classic_invalid: List[str] = []
+        elliott_invalid: List[str] = []
+        fractal_invalid: List[str] = []
         if isinstance(request.config, dict):
-            deps.apply_config_to_obj(classic_cfg, request.config)
-            deps.apply_config_to_obj(elliott_cfg, request.config)
+            classic_invalid = deps.apply_config_to_obj(classic_cfg, request.config)
+            elliott_invalid = deps.apply_config_to_obj(elliott_cfg, request.config)
+            fractal_invalid = deps.apply_config_to_obj(fractal_cfg, request.config)
+
+        fractal_unapplied_keys = _all_mode_invalid_config_keys(
+            request.config,
+            classic_cfg=classic_cfg,
+            elliott_cfg=elliott_cfg,
+            fractal_cfg=fractal_cfg,
+            classic_invalid=classic_invalid,
+            elliott_invalid=elliott_invalid,
+            fractal_invalid=fractal_invalid,
+        )
+        if fractal_unapplied_keys:
+            msg = f"Invalid config key(s): {fractal_unapplied_keys}"
+            section_errors["fractal"] = {tf: msg for tf in timeframes}
+
+        fractal_config_errors = deps.validate_fractal_config(fractal_cfg)
+        if fractal_config_errors:
+            msg = f"Invalid fractal config: {fractal_config_errors[0]}"
+            section_errors.setdefault("fractal", {})
+            for tf in timeframes:
+                section_errors["fractal"][tf] = msg
 
         # Elliott waves are multi-bar structures: a wave ending 20+ bars from
         # the tip is still actively developing.  The default recent_bars=3 is
@@ -427,6 +561,7 @@ def run_patterns_detect(  # noqa: C901
                 err_msg = str(fetch_err.get("error", "data fetch failed"))
                 section_errors.setdefault("classic", {})[tf] = err_msg
                 section_errors.setdefault("elliott", {})[tf] = err_msg
+                section_errors.setdefault("fractal", {})[tf] = err_msg
                 continue
 
             # ── Classic (native engine) ──
@@ -455,7 +590,18 @@ def run_patterns_detect(  # noqa: C901
             except Exception as exc:
                 section_errors.setdefault("elliott", {})[tf] = str(exc)
 
-        # Filter completed patterns for classic/elliott
+            # ── Fractal ──
+            if tf not in section_errors.get("fractal", {}):
+                try:
+                    fractal_rows = deps.format_fractal_patterns(df, fractal_cfg)
+                    for row in fractal_rows:
+                        if isinstance(row, dict):
+                            row["timeframe"] = tf
+                            fractal_patterns.append(row)
+                except Exception as exc:
+                    section_errors.setdefault("fractal", {})[tf] = str(exc)
+
+        # Filter completed patterns for classic/elliott/fractal
         if not request.include_completed:
             classic_patterns = [
                 r for r in classic_patterns
@@ -465,13 +611,23 @@ def run_patterns_detect(  # noqa: C901
                 r for r in elliott_patterns
                 if str(r.get("status", "")).lower() != "completed"
             ]
+            fractal_patterns = [
+                r for r in fractal_patterns
+                if str(r.get("status", "")).lower() != "completed"
+            ]
 
         # Score and sort each section by relevance (confidence + recency)
         score_all_mode_patterns(candlestick_patterns, request.limit)
         score_all_mode_patterns(classic_patterns, request.limit)
         score_all_mode_patterns(elliott_patterns, request.limit)
+        score_all_mode_patterns(fractal_patterns, request.limit)
 
-        total = len(candlestick_patterns) + len(classic_patterns) + len(elliott_patterns)
+        total = (
+            len(candlestick_patterns)
+            + len(classic_patterns)
+            + len(elliott_patterns)
+            + len(fractal_patterns)
+        )
 
         if total == 0 and section_errors:
             flat: Dict[str, str] = {}
@@ -500,6 +656,10 @@ def run_patterns_detect(  # noqa: C901
                 "n_patterns": len(elliott_patterns),
                 "patterns": elliott_patterns,
             },
+            "fractal": {
+                "n_patterns": len(fractal_patterns),
+                "patterns": fractal_patterns,
+            },
             "total_patterns": total,
         }
 
@@ -507,6 +667,13 @@ def run_patterns_detect(  # noqa: C901
             bias = deps.summarize_pattern_bias(classic_patterns)
             if bias:
                 resp["classic"]["signal_bias"] = bias
+        if fractal_patterns:
+            bias = deps.summarize_pattern_bias(fractal_patterns)
+            if bias:
+                resp["fractal"]["signal_bias"] = bias
+            fractal_context = deps.summarize_fractal_context(fractal_patterns)
+            if fractal_context:
+                resp["fractal"].update(fractal_context)
 
         if section_errors:
             resp["errors"] = section_errors
@@ -518,4 +685,9 @@ def run_patterns_detect(  # noqa: C901
             return _compact_all_mode_payload(resp)
         return resp
 
-    return {"error": f"Unknown mode: {request.mode}. Use all, candlestick, classic/chart, or elliott."}
+    return {
+        "error": (
+            f"Unknown mode: {request.mode}. "
+            "Use all, candlestick, classic/chart, fractal, or elliott."
+        )
+    }

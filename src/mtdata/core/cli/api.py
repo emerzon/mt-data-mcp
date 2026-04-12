@@ -968,7 +968,7 @@ _EXTENDED_HELP_EXAMPLE_HINTS: Dict[str, Any] = {
 _COMMAND_USAGE_EXAMPLES: Dict[str, Tuple[str, Optional[str]]] = {
     "patterns_detect": (
         f"{CLI_PROGRAM} patterns_detect BTCUSD --timeframe H1 --mode candlestick",
-        f"{CLI_PROGRAM} patterns_detect BTCUSD --timeframe H1 --mode classic --detail full --limit 300",
+        f"{CLI_PROGRAM} patterns_detect BTCUSD --timeframe H1 --mode fractal --limit 300",
     ),
     "pivot_compute_points": (
         f"{CLI_PROGRAM} pivot_compute_points BTCUSD --timeframe D1",
