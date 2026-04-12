@@ -96,7 +96,12 @@ def _consolidate_payload(  # noqa: C901
                 continue
             prob_value = probs[idx] if idx < len(probs) else None
             filtered_entries.append((idx, times[idx], state_value, prob_value))
-        if filtered_entries and len(filtered_entries) != len(times):
+        if not filtered_entries:
+            times = []
+            states = []
+            probs = []
+            original_indices = []
+        elif len(filtered_entries) != len(times):
             times = [entry[1] for entry in filtered_entries]
             states = [entry[2] for entry in filtered_entries]
             probs = [entry[3] for entry in filtered_entries]
@@ -106,65 +111,66 @@ def _consolidate_payload(  # noqa: C901
 
         # Consolidate
         # Loop through
-        curr_start = times[0]
-        curr_state = states[0]
-        curr_start_index = original_indices[0]
-        curr_prob_sum = 0.0
-        curr_count = 0
-        curr_transition_conf = None
-        if method == "bocpd" and curr_start_index in cps_idx and probs:
-            try:
-                curr_transition_conf = float(probs[0])
-            except Exception:
-                curr_transition_conf = None
+        if times:
+            curr_start = times[0]
+            curr_state = states[0]
+            curr_start_index = original_indices[0]
+            curr_prob_sum = 0.0
+            curr_count = 0
+            curr_transition_conf = None
+            if method == "bocpd" and curr_start_index in cps_idx and probs:
+                try:
+                    curr_transition_conf = float(probs[0])
+                except Exception:
+                    curr_transition_conf = None
 
-        i = 0
-        while i < len(times):
-            t = times[i]
-            s = states[i]
-            p = probs[i] if i < len(probs) and probs[i] is not None else 0.0
+            i = 0
+            while i < len(times):
+                t = times[i]
+                s = states[i]
+                p = probs[i] if i < len(probs) and probs[i] is not None else 0.0
 
-            # Check change (state change)
-            # For BOCPD, 's' changes exactly at CP.
-            if s != curr_state and curr_count > 0:
-                # close segment
+                # Check change (state change)
+                # For BOCPD, 's' changes exactly at CP.
+                if s != curr_state and curr_count > 0:
+                    # close segment
+                    avg_prob = curr_prob_sum / max(1, curr_count)
+                    segments.append({
+                        "start": curr_start,
+                        "end": times[i - 1] if i > 0 else curr_start,
+                        "duration": curr_count,
+                        "regime": curr_state,  # state ID or regime ID
+                        "confidence": avg_prob,  # average prob of being in this state/regime
+                        "transition_conf": curr_transition_conf,
+                    })
+                    # New segment
+                    curr_start = t
+                    curr_state = s
+                    curr_start_index = original_indices[i]
+                    curr_prob_sum = 0.0
+                    curr_count = 0
+                    curr_transition_conf = None
+                    if method == "bocpd":
+                        try:
+                            curr_transition_conf = float(p)
+                        except Exception:
+                            curr_transition_conf = None
+
+                curr_prob_sum += p
+                curr_count += 1
+                i += 1
+
+            # Final segment
+            if curr_count > 0:
                 avg_prob = curr_prob_sum / max(1, curr_count)
                 segments.append({
                     "start": curr_start,
-                    "end": times[i - 1] if i > 0 else curr_start,
+                    "end": times[-1],
                     "duration": curr_count,
-                    "regime": curr_state,  # state ID or regime ID
-                    "confidence": avg_prob,  # average prob of being in this state/regime
+                    "regime": curr_state,
+                    "confidence": avg_prob,
                     "transition_conf": curr_transition_conf,
                 })
-                # New segment
-                curr_start = t
-                curr_state = s
-                curr_start_index = original_indices[i]
-                curr_prob_sum = 0.0
-                curr_count = 0
-                curr_transition_conf = None
-                if method == "bocpd":
-                    try:
-                        curr_transition_conf = float(p)
-                    except Exception:
-                        curr_transition_conf = None
-
-            curr_prob_sum += p
-            curr_count += 1
-            i += 1
-
-        # Final segment
-        if curr_count > 0:
-            avg_prob = curr_prob_sum / max(1, curr_count)
-            segments.append({
-                "start": curr_start,
-                "end": times[-1],
-                "duration": curr_count,
-                "regime": curr_state,
-                "confidence": avg_prob,
-                "transition_conf": curr_transition_conf,
-            })
 
         # Post-process segments for readability
         # For BOCPD, 'confidence' is avg cp_prob which is usually low except at edges.

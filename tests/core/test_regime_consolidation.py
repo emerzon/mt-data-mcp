@@ -112,3 +112,19 @@ class TestConsolidatePayload:
 
         assert [segment["regime"] for segment in result["regimes"]] == [1, 0]
         assert result["params_used"]["relabeled"] is True
+
+    def test_all_invalid_states_are_dropped_from_consolidated_regimes(self):
+        payload = {
+            "symbol": "EURUSD",
+            "timeframe": "H1",
+            "method": "clustering",
+            "success": True,
+            "times": [1.0, 2.0, 3.0],
+            "state": [-1, -1, -1],
+            "state_probabilities": [[0.1, 0.9], [0.2, 0.8], [0.3, 0.7]],
+        }
+
+        result = _consolidate_payload(payload, "clustering", "full")
+
+        assert result["success"] is True
+        assert result["regimes"] == []
