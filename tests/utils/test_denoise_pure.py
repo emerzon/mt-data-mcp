@@ -942,6 +942,13 @@ class TestL1TrendFilter:
         y = _l1_trend_filter(np.array([1.0, 2.0, 3.0]), lamb=5.0, n_iter=50, rho=1.0)
         assert len(y) == 3
 
+    def test_dense_fallback_rejects_large_series(self, monkeypatch):
+        monkeypatch.setattr("mtdata.utils.denoise.filters.trend._sps", None)
+        monkeypatch.setattr("mtdata.utils.denoise.filters.trend._sps_linalg", None)
+
+        with pytest.raises(ValueError, match="requires scipy\\.sparse"):
+            _l1_trend_filter(np.ones(2001, dtype=float), lamb=5.0, n_iter=1, rho=1.0)
+
 
 class TestWaveletPacketDenoise:
     def test_basic(self):

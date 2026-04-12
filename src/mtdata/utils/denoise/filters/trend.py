@@ -98,6 +98,10 @@ def _l1_trend_filter(x: np.ndarray, lamb: float, n_iter: int, rho: float) -> np.
             z = _soft_threshold(d_y + u, float(lamb) / float(rho))
             u = u + d_y - z
         return np.asarray(y)
+    if n > 2000:
+        raise ValueError(
+            "L1 trend filter requires scipy.sparse for series longer than 2000 points"
+        )
     d = np.zeros((n - 2, n), dtype=float)
     for i in range(n - 2):
         d[i, i : i + 3] = [1.0, -2.0, 1.0]
