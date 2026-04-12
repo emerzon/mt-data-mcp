@@ -1192,7 +1192,7 @@ def run_trade_risk_analyze(  # noqa: C901
                     tick_value = validation._safe_float_attr(sym_info, "trade_tick_value")
                     tick_size = validation._safe_float_attr(sym_info, "trade_tick_size")
                     if not math.isfinite(tick_size) or tick_size <= 0:
-                        tick_size = point if math.isfinite(point) and point > 0 else 0.0
+                        tick_size = 0.0
                     tick_value_valid = math.isfinite(tick_value) and tick_value > 0
                     if not math.isfinite(contract_size) or contract_size <= 0:
                         contract_size = 1.0
@@ -1334,7 +1334,7 @@ def run_trade_risk_analyze(  # noqa: C901
                 tick_value = validation._safe_float_attr(sym_info, "trade_tick_value")
                 tick_size = validation._safe_float_attr(sym_info, "trade_tick_size")
                 if not math.isfinite(tick_size) or tick_size <= 0:
-                    tick_size = point if math.isfinite(point) and point > 0 else 0.0
+                    tick_size = 0.0
                 min_volume = float(sym_info.volume_min)
                 max_volume = float(sym_info.volume_max)
                 volume_step = float(sym_info.volume_step)

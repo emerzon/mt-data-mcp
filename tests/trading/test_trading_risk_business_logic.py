@@ -251,6 +251,32 @@ def test_trade_risk_analyze_rejects_wrong_side_take_profit_for_long_trade() -> N
     assert "position_sizing" not in out
 
 
+def test_trade_risk_analyze_rejects_position_sizing_when_tick_size_is_invalid() -> None:
+    mt5 = MagicMock()
+    mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
+    mt5.positions_get.return_value = []
+    mt5.symbol_info.return_value = SimpleNamespace(
+        trade_contract_size=1.0,
+        point=1.0,
+        trade_tick_value=1.0,
+        trade_tick_size=0.0,
+        volume_min=0.1,
+        volume_max=10.0,
+        volume_step=0.1,
+    )
+
+    with _patched_mt5_module(mt5):
+        out = trade_risk_analyze(
+            symbol="EURUSD",
+            desired_risk_pct=1.0,
+            proposed_entry=100.0,
+            proposed_sl=95.0,
+        )
+
+    assert out["position_sizing_error"] == "Symbol tick configuration is invalid for risk sizing"
+    assert "position_sizing" not in out
+
+
 def test_trade_risk_analyze_returns_connection_error_payload() -> None:
     with patch(
         "mtdata.core.trading.risk.ensure_mt5_connection_or_raise",
@@ -438,6 +464,40 @@ def test_trade_risk_analyze_flags_invalid_tick_configuration_with_existing_stop_
     assert out["portfolio_risk"]["positions_with_risk_calculation_failures"] == 1
     assert out["positions"][0]["risk_status"] == "undefined"
     assert out["risk_calculation_failures"][0]["ticket"] == 8
+    assert out["risk_calculation_failures"][0]["error_type"] == "InvalidTickConfiguration"
+
+
+def test_trade_risk_analyze_flags_invalid_tick_size_even_when_point_is_available() -> None:
+    mt5 = MagicMock()
+    mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
+    mt5.positions_get.return_value = [
+        SimpleNamespace(
+            ticket=9,
+            symbol="EURUSD",
+            type=0,
+            volume=0.1,
+            price_open=100.0,
+            sl=90.0,
+            tp=110.0,
+        )
+    ]
+    mt5.symbol_info.return_value = SimpleNamespace(
+        trade_contract_size=1.0,
+        point=0.5,
+        trade_tick_value=1.0,
+        trade_tick_size=0.0,
+    )
+
+    raw = _unwrap(_trade_risk_analyze_tool)
+    with _patched_mt5_module(mt5), patch(
+        "mtdata.core.trading.risk.ensure_mt5_connection_or_raise",
+        return_value=None,
+    ):
+        out = raw(request=TradeRiskAnalyzeRequest())
+
+    assert out["portfolio_risk"]["positions_with_risk_calculation_failures"] == 1
+    assert out["positions"][0]["risk_status"] == "undefined"
+    assert out["risk_calculation_failures"][0]["ticket"] == 9
     assert out["risk_calculation_failures"][0]["error_type"] == "InvalidTickConfiguration"
 
 
