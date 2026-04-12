@@ -34,6 +34,6 @@ Exported from `__init__.py`:
 ## CONVENTIONS
 
 - `classic.py` is the ONLY entry point for classic patterns — never call `classic_impl/` directly.
-- Optional dependency `precise-patterns` (external git dep, `patterns-ext` group) adds additional detection.
+- Optional dependency `stock-pattern` (external git dep, `patterns-ext` group) adds additional detection.
 - Do NOT confuse with `utils/patterns.py` — that file has shared helpers, this package has detectors.
 - Consumed by `core/patterns.py` (MCP tools) and `core/patterns_support.py` (896 lines of helpers).

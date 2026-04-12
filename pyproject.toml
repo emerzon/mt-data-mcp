@@ -80,7 +80,7 @@ forecast-timesfm = [
     "timesfm @ git+https://github.com/google-research/timesfm.git@6bd8044275f8b76cdc9554f2fecccac5f31a156c",
 ]
 patterns-ext = [
-    "precise-patterns @ git+https://github.com/BennyThadikaran/precise-patterns.git@e92e10cbb1b6e414c89ad287be32ddae4214b353",
+    # stock-pattern has no setup.py/pyproject.toml; manual install required (see docs/SETUP.md)
 ]
 web = [
     "fastapi>=0.134.0",
@@ -138,7 +138,6 @@ all-git = [
     "transformers>=4.57.6,<5",
     "huggingface-hub>=0.36.2,<1",
     "timesfm @ git+https://github.com/google-research/timesfm.git@6bd8044275f8b76cdc9554f2fecccac5f31a156c",
-    "precise-patterns @ git+https://github.com/BennyThadikaran/precise-patterns.git@e92e10cbb1b6e414c89ad287be32ddae4214b353",
     "fastapi>=0.134.0",
     "uvicorn[standard]>=0.41.0",
     "sentence-transformers>=5.1.2,<6",

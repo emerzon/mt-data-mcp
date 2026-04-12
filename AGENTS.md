@@ -96,7 +96,7 @@ Request flow: `entry point → load_environment() → bootstrap_tools() → mcp.
 | Core | Always installed | MetaTrader5, fastmcp, pandas, numpy, scipy, scikit-learn, matplotlib, finvizfinance |
 | forecast-classical | Classical/ML models | arch, statsforecast, sktime, mlforecast, optuna, QuantLib, lightgbm |
 | forecast-foundation | Deep learning models | torch, chronos-forecasting, transformers, timesfm |
-| patterns-ext | External pattern lib | precise-patterns (git dep) |
+| patterns-ext | External pattern lib | stock-pattern (git dep) |
 | web | Web UI backend | fastapi, uvicorn |
 | all | Everything | Union of all above |
 

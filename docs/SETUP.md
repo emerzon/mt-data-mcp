@@ -52,7 +52,7 @@ For the validated research/web environment used in local development and most do
 pip install -r requirements.txt
 ```
 
-This path intentionally stays on package-index releases. Git-backed add-ons such as TimesFM, `precise-patterns`, and `ycnbc` stay opt-in so the default install does not depend on Git checkouts.
+This path intentionally stays on package-index releases. Git-backed add-ons such as TimesFM, `stock-pattern`, and `ycnbc` stay opt-in so the default install does not depend on Git checkouts.
 NeuralForecast-based models are also kept out of this default path; if you want `nhits`, `tft`, `patchtst`, or `nbeatsx`, install them manually with `pip install neuralforecast torch`.
 
 ### 4. Optional Dependencies
@@ -69,8 +69,8 @@ The base package is intentionally lean. Install extras as needed:
   `pip install -e .[forecast-timesfm]`
 - Web API:
   `pip install -e .[web]`
-- Experimental pattern engines (Git-backed):
-  `pip install -e .[patterns-ext]`
+- Experimental pattern engines (Git-backed, requires manual install):
+  `pip install -e .[patterns-ext]` (Note: stock-pattern requires manual copy to site-packages; see below)
 - News embeddings (semantic reranking):
   `pip install -e .[news-embeddings]`
 - CNBC news source (Git-backed):
@@ -120,6 +120,29 @@ Notes:
   - `pip install tsdownsample==0.1.4.1`
 
 Tip: `mtdata-cli forecast_list_methods --json` shows `available` and `requires` per method.
+
+### 6. Manual stock-pattern Installation
+
+The `stock-pattern` library (used by `patterns-ext`) does not have a `setup.py` or `pyproject.toml`, so it cannot be installed via pip. Install manually:
+
+**Windows:**
+```powershell
+# Clone and copy to site-packages
+git clone --depth 1 https://github.com/BennyThadikaran/stock-pattern.git $env:TEMP\stock-pattern-src
+robocopy $env:TEMP\stock-pattern-src\src $env:CONDA_PREFIX\Lib\site-packages\stock_pattern /E
+```
+
+**Linux/macOS:**
+```bash
+# Clone and copy to site-packages
+git clone --depth 1 https://github.com/BennyThadikaran/stock-pattern.git /tmp/stock-pattern-src
+cp -r /tmp/stock-pattern-src/src/* $(python -c "import site; print(site.getsitepackages()[0])")/stock_pattern/
+```
+
+Verify installation:
+```python
+python -c "import stock_pattern.utils; print('stock_pattern installed')"
+```
 
 ---
 

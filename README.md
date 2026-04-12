@@ -73,7 +73,7 @@ Notes:
 - `pip install -r requirements.txt` installs the validated Python 3.14 stack from package-index releases, including Chronos, StatsForecast, sktime, mlforecast, news embeddings, and the Web API.
 - NeuralForecast-based models (`nhits`, `tft`, `patchtst`, `nbeatsx`) are not installed by `requirements.txt` or any package extra today; install them manually with `pip install neuralforecast torch` if you want to experiment with them.
 - Conda is a supported way to isolate the install before running the pip commands above.
-- Git-backed add-ons stay explicit: `pip install -e .[forecast-timesfm]` for TimesFM, `pip install -e .[patterns-ext]` for `precise-patterns`, `pip install -e .[news-ycnbc]` for the CNBC adapter, or `pip install -e .[all-git]` for everything in one go.
+- Git-backed add-ons stay explicit: `pip install -e .[forecast-timesfm]` for TimesFM, `pip install -e .[patterns-ext]` for `stock-pattern`, `pip install -e .[news-ycnbc]` for the CNBC adapter, or `pip install -e .[all-git]` for everything in one go.
 - GluonTS/Lag-Llama and GluonTS `gt_*` methods remain excluded from the supported Python 3.14 environment because upstream runtime constraints are still incompatible.
 - Optional accelerators `hnswlib` and `tsdownsample` remain excluded from the supported default install, but an opt-in native/source-build path is documented via `requirements-optional-src.txt` and [docs/SETUP.md](docs/SETUP.md).
 
