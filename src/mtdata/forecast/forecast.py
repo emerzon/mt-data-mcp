@@ -35,6 +35,8 @@ def execute_forecast(
     prefetched_df: Optional[Any] = None,
     prefetched_base_col: Optional[str] = None,
     prefetched_denoise_spec: Optional[Any] = None,
+    async_mode: bool = False,
+    model_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Internal forecast entrypoint that raises ForecastError on failure."""
     try:
@@ -73,6 +75,8 @@ def execute_forecast(
             prefetched_df=prefetched_df,
             prefetched_base_col=prefetched_base_col,
             prefetched_denoise_spec=prefetched_denoise_spec,
+            async_mode=async_mode,
+            model_id=model_id,
         )
         return raise_if_error_result(result)
     except ForecastError:

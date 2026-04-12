@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Literal, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -12,6 +12,54 @@ class ForecastResult:
     ci_values: Optional[Tuple[np.ndarray, np.ndarray]] = None  # (lower, upper)
     params_used: Optional[Dict[str, Any]] = None
     metadata: Optional[Dict[str, Any]] = None
+
+
+@dataclass
+class TrainingProgress:
+    """Progress update emitted during model training via ``progress_callback``."""
+
+    step: int
+    total_steps: int
+    loss: Optional[float] = None
+    metrics: Optional[Dict[str, float]] = None
+    eta_seconds: Optional[float] = None
+    message: Optional[str] = None
+
+    @property
+    def fraction(self) -> float:
+        if self.total_steps <= 0:
+            return 0.0
+        return min(1.0, max(0.0, self.step / self.total_steps))
+
+
+TrainingCategory = Literal["instant", "fast", "moderate", "heavy"]
+ProgressCallback = Callable[[TrainingProgress], None]
+
+
+@dataclass
+class TrainedModelHandle:
+    """Opaque reference to a persisted trained model."""
+
+    model_id: str
+    method: str
+    data_scope: str
+    params_hash: str
+    created_at: float
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class TrainResult:
+    """Structured return value from :meth:`ForecastMethod.train`.
+
+    *artifact_bytes* is the method-serialized model (bytes).  The model
+    store persists this opaque blob; deserialization is method-owned via
+    :meth:`ForecastMethod.deserialize_artifact`.
+    """
+
+    artifact_bytes: bytes
+    params_used: Dict[str, Any] = field(default_factory=dict)
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -167,3 +215,116 @@ class ForecastMethod(ABC):
     ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         """Allow methods to request engine context without engine name checks."""
         return params, call_kwargs
+
+    # ------------------------------------------------------------------
+    # Train / predict lifecycle (opt-in for methods with heavy training)
+    # ------------------------------------------------------------------
+
+    @property
+    def supports_training(self) -> bool:
+        """Whether this method supports a separate train → predict lifecycle."""
+        return False
+
+    @property
+    def training_category(self) -> TrainingCategory:
+        """Hint for task routing: 'instant', 'fast', 'moderate', or 'heavy'."""
+        return "instant"
+
+    def train(
+        self,
+        series: pd.Series,
+        horizon: int,
+        seasonality: int,
+        params: Dict[str, Any],
+        *,
+        progress_callback: Optional[ProgressCallback] = None,
+        exog: Optional[np.ndarray] = None,
+        **kwargs: Any,
+    ) -> TrainResult:
+        """Train and return a serialized model artifact.
+
+        The returned :class:`TrainResult` contains method-serialized bytes
+        that :meth:`deserialize_artifact` can reconstruct.  Override in
+        methods that support separate training.
+        """
+        raise NotImplementedError(
+            f"{self.name} does not support separate training"
+        )
+
+    def predict_with_model(
+        self,
+        model: Any,
+        series: pd.Series,
+        horizon: int,
+        seasonality: int,
+        params: Dict[str, Any],
+        *,
+        exog_future: Optional[pd.DataFrame] = None,
+        **kwargs: Any,
+    ) -> ForecastResult:
+        """Generate a forecast using a previously trained model artifact.
+
+        *model* is the deserialized object returned by
+        :meth:`deserialize_artifact`.  Default implementation ignores
+        *model* and falls back to :meth:`forecast`.
+        """
+        return self.forecast(
+            series, horizon, seasonality, params,
+            exog_future=exog_future, **kwargs,
+        )
+
+    def serialize_artifact(self, artifact: Any) -> bytes:
+        """Serialize a trained model artifact to bytes.
+
+        Default uses pickle.  Override for framework-specific formats
+        (e.g. ``torch.save`` for neural models).
+        """
+        import pickle
+        return pickle.dumps(artifact, protocol=pickle.HIGHEST_PROTOCOL)
+
+    def deserialize_artifact(self, data: bytes) -> Any:
+        """Deserialize bytes produced by :meth:`serialize_artifact`.
+
+        Default uses pickle.  Override to match :meth:`serialize_artifact`.
+        """
+        import pickle
+        return pickle.loads(data)  # noqa: S301
+
+    def training_fingerprint(
+        self,
+        horizon: int,
+        seasonality: int,
+        params: Dict[str, Any],
+        *,
+        timeframe: Optional[str] = None,
+        has_exog: bool = False,
+    ) -> Dict[str, Any]:
+        """Return a canonical dict of training-relevant attributes.
+
+        This fingerprint is hashed to produce the ``params_hash`` used
+        for model identity.  Override to include method-specific training
+        parameters that affect the trained artifact.
+        """
+        _PREDICTION_ONLY_KEYS = frozenset({
+            "ci_alpha", "quantity", "as_of",
+        })
+        filtered_params = {
+            k: v for k, v in sorted((params or {}).items())
+            if k not in _PREDICTION_ONLY_KEYS
+        }
+        return {
+            "method": self.name,
+            "horizon": int(horizon),
+            "seasonality": int(seasonality),
+            "timeframe": timeframe,
+            "has_exog": bool(has_exog),
+            "params": filtered_params,
+        }
+
+    @staticmethod
+    def hash_fingerprint(fingerprint: Dict[str, Any]) -> str:
+        """Compute a stable short hash from a training fingerprint dict."""
+        import hashlib
+        import json
+        blob = json.dumps(fingerprint, sort_keys=True, default=str).encode()
+        return hashlib.sha256(blob).hexdigest()[:16]

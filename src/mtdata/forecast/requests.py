@@ -29,6 +29,14 @@ class ForecastGenerateRequest(BaseModel):
     dimred_method: Optional[str] = None
     dimred_params: Optional[Dict[str, Any]] = None
     target_spec: Optional[Dict[str, Any]] = None
+    async_mode: bool = Field(
+        False,
+        description="When True, heavy methods submit a background training task and return a task_id instead of blocking.",
+    )
+    model_id: Optional[str] = Field(
+        None,
+        description="Explicit trained-model params_hash to use for prediction. Skips training if the model exists in the store.",
+    )
 
     @model_validator(mode="before")
     @classmethod

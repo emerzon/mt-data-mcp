@@ -11,7 +11,7 @@ import pandas as pd
 
 from ..common import build_ci_diagnostics as _build_ci_diagnostics
 from ..common import edge_pad_to_length as _edge_pad_to_length
-from ..interface import ForecastMethod, ForecastResult
+from ..interface import ForecastMethod, ForecastResult, TrainResult
 from ..registry import ForecastRegistry
 
 logger = logging.getLogger(__name__)
@@ -69,6 +69,141 @@ class StatsForecastMethod(ForecastMethod):
 
     def _get_model(self, seasonality: int, params: Dict[str, Any]):
         raise NotImplementedError
+
+    # ------------------------------------------------------------------
+    # Train / predict lifecycle
+    # ------------------------------------------------------------------
+
+    @property
+    def supports_training(self) -> bool:
+        return True
+
+    @property
+    def training_category(self):
+        return "moderate"
+
+    def train(
+        self,
+        series: pd.Series,
+        horizon: int,
+        seasonality: int,
+        params: Dict[str, Any],
+        *,
+        progress_callback=None,
+        exog=None,
+        **kwargs,
+    ) -> TrainResult:
+        try:
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore",
+                    message=r"pkg_resources.*",
+                    category=UserWarning,
+                )
+                warnings.filterwarnings(
+                    "ignore",
+                    message=r"Deprecated call to.*pkg_resources.*",
+                    category=DeprecationWarning,
+                )
+                from statsforecast import StatsForecast
+        except ImportError as ex:
+            raise RuntimeError(f"Failed to import statsforecast: {ex}") from ex
+        from ..common import _create_training_dataframes
+
+        p = dict(params or {})
+        exog_used = exog if exog is not None else p.get("exog_used")
+        exog_future_arr = p.get("exog_future")
+
+        Y_df, X_df, _ = _create_training_dataframes(series.values, horizon, exog_used, exog_future_arr)
+        clean_params = _coerce_params(p)
+        model = self._get_model(seasonality, clean_params)
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            sf = StatsForecast(models=[model], freq=1)
+            if X_df is not None:
+                sf.fit(Y_df, X_df=X_df)
+            else:
+                sf.fit(Y_df)
+
+        artifact_bytes = self.serialize_artifact(sf)
+        internal_keys = {'symbol', 'timeframe', 'as_of', 'exog_used', 'exog_future', 'seasonality'}
+        clean_out = {k: v for k, v in clean_params.items() if k not in internal_keys}
+        return TrainResult(
+            artifact_bytes=artifact_bytes,
+            params_used={"seasonality": seasonality, **clean_out},
+        )
+
+    def predict_with_model(
+        self,
+        model,
+        series: pd.Series,
+        horizon: int,
+        seasonality: int,
+        params: Dict[str, Any],
+        *,
+        exog_future=None,
+        **kwargs,
+    ) -> ForecastResult:
+        from ..common import _create_training_dataframes, _extract_forecast_values
+
+        p = dict(params or {})
+        exog_future_arr = kwargs.get('exog_future')
+        if exog_future_arr is None:
+            exog_future_arr = exog_future if exog_future is not None else p.get('exog_future')
+
+        _, _, Xf_df = _create_training_dataframes(series.values, horizon, None, exog_future_arr)
+
+        ci_alpha = kwargs.get('ci_alpha', p.get('ci_alpha'))
+        level = None
+        if ci_alpha is not None:
+            alpha_val = float(ci_alpha)
+            if 0.0 < alpha_val < 1.0:
+                level = [max(1, min(99, int(round((1.0 - alpha_val) * 100.0))))]
+
+        sf = model  # deserialized StatsForecast object
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            if Xf_df is not None:
+                Yf = sf.predict(h=int(horizon), X_df=Xf_df, level=level)
+            else:
+                Yf = sf.predict(h=int(horizon), level=level)
+
+        # unique_id may be in the index or a column depending on statsforecast version
+        if 'unique_id' not in Yf.columns and Yf.index.name == 'unique_id':
+            Yf = Yf.reset_index()
+        if 'unique_id' in Yf.columns:
+            Yf = Yf[Yf['unique_id'] == 'ts']
+        f_vals = _extract_forecast_values(Yf, horizon, f"StatsForecast {self.name}")
+
+        ci_values = None
+        metadata: Dict[str, Any] = {}
+        if level:
+            from ..common import build_ci_diagnostics as _build_ci_diagnostics
+            from ..common import edge_pad_to_length as _edge_pad_to_length
+            lev_val = level[0]
+            lo_col = hi_col = None
+            for c in Yf.columns:
+                if str(c).endswith(f'-lo-{lev_val}'):
+                    lo_col = c
+                elif str(c).endswith(f'-hi-{lev_val}'):
+                    hi_col = c
+            if lo_col and hi_col:
+                lo_vals = _edge_pad_to_length(Yf[lo_col].values, int(horizon))
+                hi_vals = _edge_pad_to_length(Yf[hi_col].values, int(horizon))
+                ci_values = (lo_vals.astype(float), hi_vals.astype(float))
+                metadata = _build_ci_diagnostics(
+                    provider=self.name, requested=True, available=True,
+                    status="available", alpha=float(ci_alpha), level=lev_val,
+                )
+
+        internal_keys = {'symbol', 'timeframe', 'as_of', 'exog_used', 'exog_future', 'seasonality'}
+        clean_params = {k: v for k, v in _coerce_params(p).items() if k not in internal_keys}
+        return ForecastResult(
+            forecast=f_vals, ci_values=ci_values,
+            params_used={"seasonality": seasonality, **clean_params},
+            metadata=metadata or None,
+        )
 
     def forecast(
         self, 

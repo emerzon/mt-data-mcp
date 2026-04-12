@@ -13,6 +13,7 @@ from ..shared.schema import get_shared_enum_lists
 TOOL_MODULE_NAMES: Final[tuple[str, ...]] = (
     "mtdata.core.data",
     "mtdata.core.forecast",
+    "mtdata.core.forecast_tasks",
     "mtdata.core.causal",
     "mtdata.core.indicators",
     "mtdata.core.market_depth",

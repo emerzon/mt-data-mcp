@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from ..interface import ForecastMethod, ForecastResult
+from ..interface import ForecastMethod, ForecastResult, TrainResult
 from ..registry import ForecastRegistry
 
 _GENERIC_MLFORECAST_ALLOWED_MODELS = {
@@ -60,6 +60,95 @@ class MLForecastMethod(ForecastMethod):
 
     def _get_model(self, params: Dict[str, Any]):
         raise NotImplementedError
+
+    # ------------------------------------------------------------------
+    # Train / predict lifecycle
+    # ------------------------------------------------------------------
+
+    @property
+    def supports_training(self) -> bool:
+        return True
+
+    @property
+    def training_category(self):
+        return "fast"
+
+    def train(
+        self,
+        series: pd.Series,
+        horizon: int,
+        seasonality: int,
+        params: Dict[str, Any],
+        *,
+        progress_callback=None,
+        exog=None,
+        **kwargs,
+    ) -> TrainResult:
+        try:
+            from mlforecast import MLForecast
+        except ImportError as ex:
+            raise RuntimeError(f"Failed to import mlforecast: {ex}")
+        from ..common import _create_training_dataframes
+
+        p = dict(params or {})
+        exog_used = exog if exog is not None else p.get("exog_used")
+        exog_future_arr = p.get("exog_future")
+
+        Y_df, X_df, _ = _create_training_dataframes(series.values, horizon, exog_used, exog_future_arr)
+
+        model = self._get_model(p)
+        lags = p.get('lags')
+        if not lags:
+            base = int(seasonality) if seasonality and int(seasonality) > 0 else 24
+            max_lag = int(min(30, max(1, base)))
+            lags = list(range(1, max_lag + 1))
+
+        mlf = MLForecast(models=[model], freq=1, lags=lags)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            if X_df is not None:
+                mlf.fit(Y_df, X_df=X_df)
+            else:
+                mlf.fit(Y_df)
+
+        artifact_bytes = self.serialize_artifact(mlf)
+        return TrainResult(
+            artifact_bytes=artifact_bytes,
+            params_used={"lags": lags},
+        )
+
+    def predict_with_model(
+        self,
+        model,
+        series: pd.Series,
+        horizon: int,
+        seasonality: int,
+        params: Dict[str, Any],
+        *,
+        exog_future=None,
+        **kwargs,
+    ) -> ForecastResult:
+        from ..common import _create_training_dataframes, _extract_forecast_values
+
+        p = dict(params or {})
+        exog_future_arr = kwargs.get('exog_future')
+        if exog_future_arr is None:
+            exog_future_arr = exog_future if exog_future is not None else p.get('exog_future')
+
+        _, _, Xf_df = _create_training_dataframes(series.values, horizon, None, exog_future_arr)
+
+        mlf = model  # deserialized MLForecast object
+        if Xf_df is not None:
+            Yf = mlf.predict(h=int(horizon), X_df=Xf_df)
+        else:
+            Yf = mlf.predict(h=int(horizon))
+
+        Yf = Yf[Yf['unique_id'] == 'ts']
+        f_vals = _extract_forecast_values(Yf, horizon, self.name)
+
+        internal_keys = {'symbol', 'timeframe', 'as_of', 'exog_used', 'exog_future'}
+        clean_params = {k: v for k, v in p.items() if k not in internal_keys}
+        return ForecastResult(forecast=f_vals, ci_values=None, params_used=clean_params)
 
     def forecast(
         self, 

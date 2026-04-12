@@ -1,4 +1,4 @@
-from typing import Dict, List, Type
+from typing import Any, Dict, List, Type
 
 from .interface import ForecastMethod
 
@@ -39,3 +39,22 @@ class ForecastRegistry:
     def get_all_method_names(cls) -> List[str]:
         """Get all available forecast method names from the registered classes."""
         return sorted(cls._methods.keys())
+
+    @classmethod
+    def get_method_info(cls, name: str) -> Dict[str, Any]:
+        """Return capability metadata for a single registered method."""
+        inst = cls.get(name)
+        return {
+            "name": name,
+            "category": inst.category,
+            "supports_training": inst.supports_training,
+            "training_category": inst.training_category,
+        }
+
+    @classmethod
+    def list_trainable(cls) -> List[str]:
+        """Return names of methods that support the train/predict lifecycle."""
+        return [
+            name for name in cls._methods
+            if cls._methods[name]().supports_training
+        ]

@@ -237,6 +237,8 @@ def run_forecast_generate(
             dimred_method=request.dimred_method,
             dimred_params=request.dimred_params,
             target_spec=request.target_spec,
+            async_mode=getattr(request, 'async_mode', False),
+            model_id=getattr(request, 'model_id', None),
         )
         if isinstance(out, dict) and "success" not in out and infer_result_success(out):
             out["success"] = True

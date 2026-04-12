@@ -303,6 +303,306 @@ def pd_freq_from_timeframe(tf: str) -> str:
     }
     return mapping.get(t, 'D')
 
+
+# ------------------------------------------------------------------
+# Composable NeuralForecast building blocks (used by train/predict)
+# ------------------------------------------------------------------
+
+def _nf_resolve_accelerator() -> str:
+    """Return 'cpu' or 'gpu' based on torch availability and env."""
+    accel = 'cpu'
+    try:
+        import torch as _torch
+        accel_env = os.environ.get('MTDATA_NF_ACCEL')
+        if isinstance(accel_env, str):
+            accel = 'gpu' if accel_env.strip().lower() == 'gpu' else 'cpu'
+        else:
+            accel = 'gpu' if hasattr(_torch, 'cuda') and _torch.cuda.is_available() else 'cpu'
+        try:
+            if accel == 'gpu' and hasattr(_torch, 'set_float32_matmul_precision'):
+                _torch.set_float32_matmul_precision('high')
+        except Exception:
+            pass
+    except Exception:
+        accel = 'cpu'
+    return accel
+
+
+def nf_build_model_kwargs(
+    *,
+    model_class,
+    fh: int,
+    input_size: int,
+    batch_size: int,
+    steps: int,
+    learning_rate: Optional[float] = None,
+    accel: Optional[str] = None,
+    enable_progress_bar: bool = False,
+) -> Dict[str, Any]:
+    """Build keyword arguments for a NeuralForecast model constructor.
+
+    Does NOT instantiate the model — returns the kwargs dict so that
+    callers can inspect or modify them before construction.
+    """
+    import inspect as _inspect
+
+    if accel is None:
+        accel = _nf_resolve_accelerator()
+
+    try:
+        ctor_params = _inspect.signature(model_class.__init__).parameters
+    except Exception:
+        ctor_params = {}
+
+    model_kwargs: Dict[str, Any] = {
+        'h': int(fh),
+        'input_size': int(input_size),
+        'batch_size': int(batch_size),
+    }
+    if 'max_steps' in ctor_params:
+        model_kwargs['max_steps'] = int(steps)
+    elif 'max_epochs' in ctor_params:
+        model_kwargs['max_epochs'] = int(steps)
+    else:
+        model_kwargs['max_steps'] = int(steps)
+    if learning_rate is not None:
+        try:
+            model_kwargs['learning_rate'] = float(learning_rate)
+        except Exception:
+            pass
+
+    base_trainer: Dict[str, Any] = {
+        'accelerator': accel,
+        'devices': 1,
+        'num_nodes': 1,
+    }
+    quiet_opts: Dict[str, Any] = {
+        'logger': False,
+        'enable_progress_bar': enable_progress_bar,
+        'enable_checkpointing': False,
+        'enable_model_summary': False,
+        'log_every_n_steps': 0,
+    }
+    for _opt, _val in quiet_opts.items():
+        base_trainer.setdefault(_opt, _val)
+    for _opt, _val in base_trainer.items():
+        model_kwargs.setdefault(_opt, _val)
+
+    return model_kwargs
+
+
+_NF_ENV_VARS_TO_CLEAR = (
+    'KUBERNETES_SERVICE_HOST', 'KUBERNETES_SERVICE_PORT',
+    'GROUP_RANK', 'NODE_RANK', 'LOCAL_RANK', 'RANK', 'WORLD_SIZE',
+    'GLOBAL_RANK', 'MASTER_ADDR', 'MASTER_PORT',
+    'LT_CLOUD_PROVIDER', 'LT_CLUSTER', 'TORCHELASTIC_RUN_ID',
+    'ETCD_HOST', 'ETCD_PORT',
+)
+_NF_MANAGED_ENV_VARS = _NF_ENV_VARS_TO_CLEAR + (
+    'PL_TORCH_DISTRIBUTED_BACKEND',
+    'LT_DISABLE_DISTRIBUTED',
+    'CUDA_VISIBLE_DEVICES',
+)
+
+
+class _NfEnvGuard:
+    """Context manager that sanitizes env vars for single-device NF training."""
+
+    def __init__(self, accel: str = 'cpu') -> None:
+        self._accel = accel
+        self._snapshot: Dict[str, Optional[str]] = {}
+        self._missing: set[str] = set()
+
+    def __enter__(self) -> '_NfEnvGuard':
+        for key in _NF_MANAGED_ENV_VARS:
+            if key in os.environ:
+                self._snapshot[key] = os.environ.get(key)
+            else:
+                self._missing.add(key)
+        for _var in _NF_ENV_VARS_TO_CLEAR:
+            os.environ.pop(_var, None)
+        os.environ['PL_TORCH_DISTRIBUTED_BACKEND'] = 'gloo'
+        os.environ['LT_DISABLE_DISTRIBUTED'] = '1'
+        if self._accel == 'gpu':
+            try:
+                cvd = os.environ.get('CUDA_VISIBLE_DEVICES', '')
+                if ',' in cvd:
+                    os.environ['CUDA_VISIBLE_DEVICES'] = cvd.split(',')[0].strip()
+                elif cvd.strip() == '':
+                    import torch as _torch
+                    if _torch.cuda.device_count() > 1:
+                        os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+            except Exception:
+                pass
+        return self
+
+    def __exit__(self, *exc_info: Any) -> None:
+        try:
+            import torch.distributed as _dist
+            if _dist.is_available() and _dist.is_initialized():
+                _dist.destroy_process_group()
+        except Exception:
+            pass
+        try:
+            import torch as _torch
+            if hasattr(_torch, 'cuda') and _torch.cuda.is_available():
+                _torch.cuda.synchronize()
+                _torch.cuda.empty_cache()
+        except Exception:
+            pass
+        for key in _NF_MANAGED_ENV_VARS:
+            if key in self._missing:
+                os.environ.pop(key, None)
+                continue
+            restored = self._snapshot.get(key)
+            if restored is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = restored
+
+
+def _nf_build_trainer_kwargs(accel: str) -> Dict[str, Any]:
+    """Build trainer kwargs for the NeuralForecast constructor."""
+    import inspect as _inspect
+
+    base_trainer: Dict[str, Any] = {
+        'accelerator': accel,
+        'devices': 1,
+        'num_nodes': 1,
+    }
+    cand_opts: Dict[str, Any] = {
+        'logger': False,
+        'enable_progress_bar': False,
+        'enable_checkpointing': False,
+        'log_every_n_steps': 0,
+    }
+    try:
+        try:
+            import lightning.pytorch as _L
+            _Trainer = _L.Trainer
+        except Exception:
+            import pytorch_lightning as _pl
+            _Trainer = _pl.Trainer
+        _tparams = _inspect.signature(_Trainer.__init__).parameters
+        nf_trainer = dict(base_trainer)
+        for k, v in cand_opts.items():
+            if k in _tparams and k not in nf_trainer:
+                nf_trainer[k] = v
+        return nf_trainer
+    except Exception:
+        return {**base_trainer, **cand_opts}
+
+
+def nf_create_and_fit(
+    *,
+    model_class,
+    model_kwargs: Dict[str, Any],
+    timeframe: str,
+    Y_df: pd.DataFrame,
+    exog_used: Optional[np.ndarray] = None,
+    exog_future: Optional[np.ndarray] = None,
+    future_times: Optional[List[float]] = None,
+) -> Any:
+    """Instantiate a NeuralForecast wrapper, fit it, and return the fitted NF object.
+
+    Must be called inside ``_NF_ENV_LOCK`` and ``_NfEnvGuard``.
+    """
+    import inspect as _inspect
+    import warnings
+
+    try:
+        from neuralforecast import NeuralForecast as _NeuralForecast
+    except Exception as ex:
+        raise RuntimeError(f"Failed to import neuralforecast: {ex}")
+
+    accel = str(model_kwargs.get('accelerator', 'cpu'))
+    nf_kwargs: Dict[str, Any] = {
+        'models': [model_class(**model_kwargs)],
+        'freq': pd_freq_from_timeframe(timeframe),
+    }
+    try:
+        _nf_init_params = _inspect.signature(_NeuralForecast.__init__).parameters
+    except Exception:
+        _nf_init_params = {}
+    if 'trainer_kwargs' in _nf_init_params:
+        nf_trainer = _nf_build_trainer_kwargs(accel)
+        try:
+            try:
+                import lightning.pytorch as _L
+                _Trainer = _L.Trainer
+            except Exception:
+                import pytorch_lightning as _pl
+                _Trainer = _pl.Trainer
+            trainer_obj = _Trainer(**nf_trainer)
+            nf_kwargs['trainer'] = trainer_obj
+        except Exception:
+            nf_kwargs['trainer_kwargs'] = nf_trainer
+    if 'num_workers_loader' in _nf_init_params:
+        nf_kwargs['num_workers_loader'] = 0
+
+    nf = _NeuralForecast(**nf_kwargs)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        try:
+            _fit_params = _inspect.signature(nf.fit).parameters
+        except Exception:
+            _fit_params = {}
+        supports_x = 'X_df' in _fit_params
+
+        if exog_used is not None and isinstance(exog_used, np.ndarray) and exog_used.size and supports_x:
+            X_df = pd.DataFrame({'unique_id': ['ts'] * len(Y_df), 'ds': Y_df['ds'].values})
+            cols = [f'x{i}' for i in range(exog_used.shape[1])]
+            for j, cname in enumerate(cols):
+                X_df[cname] = exog_used[:, j]
+            nf.fit(df=Y_df, X_df=X_df, verbose=False)
+        else:
+            nf.fit(df=Y_df, verbose=False)
+
+    return nf
+
+
+def nf_predict_from_fitted(
+    nf: Any,
+    *,
+    fh: int,
+    exog_future: Optional[np.ndarray] = None,
+    future_times: Optional[List[float]] = None,
+) -> pd.DataFrame:
+    """Run predictions on an already-fitted NeuralForecast object.
+
+    Must be called inside ``_NF_ENV_LOCK`` and ``_NfEnvGuard``.
+    """
+    import inspect as _inspect
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        try:
+            _pred_params = _inspect.signature(nf.predict).parameters
+        except Exception:
+            _pred_params = {}
+        try:
+            _fit_params = _inspect.signature(nf.fit).parameters
+        except Exception:
+            _fit_params = {}
+        supports_x_predict = 'X_df' in _pred_params
+
+        if exog_future is not None and isinstance(exog_future, np.ndarray) and exog_future.size and future_times is not None and supports_x_predict:
+            ds_f = pd.to_datetime(pd.Series(future_times), unit='s', utc=True)
+            cols = [f'x{i}' for i in range(exog_future.shape[1])]
+            Xf_df = pd.DataFrame({'unique_id': ['ts'] * len(ds_f), 'ds': pd.Index(ds_f).to_pydatetime()})
+            for j, cname in enumerate(cols):
+                Xf_df[cname] = exog_future[:, j]
+            if 'h' in _pred_params:
+                return nf.predict(h=int(fh), X_df=Xf_df)
+            else:
+                return nf.predict(X_df=Xf_df)
+        else:
+            if 'h' in _pred_params:
+                return nf.predict(h=int(fh))
+            else:
+                return nf.predict()
+
 
 def nf_setup_and_predict(  # noqa: C901
     *,

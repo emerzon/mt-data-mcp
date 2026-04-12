@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 
 from ..common import build_ci_diagnostics as _build_ci_diagnostics
-from ..interface import ForecastMethod, ForecastResult
+from ..interface import ForecastMethod, ForecastResult, TrainResult
 from ..registry import ForecastRegistry
 
 try:
@@ -37,6 +37,100 @@ class SktimeMethod(ForecastMethod):
 
     def _get_estimator(self, seasonality: int, params: Dict[str, Any]):
         raise NotImplementedError
+
+    # ------------------------------------------------------------------
+    # Train / predict lifecycle
+    # ------------------------------------------------------------------
+
+    @property
+    def supports_training(self) -> bool:
+        return True
+
+    @property
+    def training_category(self):
+        return "fast"
+
+    def train(
+        self,
+        series: pd.Series,
+        horizon: int,
+        seasonality: int,
+        params: Dict[str, Any],
+        *,
+        progress_callback=None,
+        exog=None,
+        **kwargs,
+    ) -> TrainResult:
+        if not _HAS_SKTIME:
+            raise RuntimeError(_SKTIME_IMPORT_ERROR)
+
+        y = series.copy()
+        if not isinstance(y.index, pd.RangeIndex) and getattr(y.index, "freq", None) is None:
+            try:
+                y.index.freq = pd.infer_freq(y.index)
+            except Exception:
+                pass
+        if not isinstance(y.index, pd.RangeIndex) and getattr(y.index, "freq", None) is None:
+            y = y.reset_index(drop=True)
+
+        estimator = self._get_estimator(seasonality, params)
+
+        X = exog if exog is not None else params.get('exog_used')
+        if isinstance(X, np.ndarray):
+            X = pd.DataFrame(X, index=y.index)
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            if X is not None:
+                estimator.fit(y, X=X)
+            else:
+                estimator.fit(y)
+
+        artifact_bytes = self.serialize_artifact(estimator)
+        return TrainResult(
+            artifact_bytes=artifact_bytes,
+            params_used={"seasonality": seasonality, **params},
+        )
+
+    def predict_with_model(
+        self,
+        model,
+        series: pd.Series,
+        horizon: int,
+        seasonality: int,
+        params: Dict[str, Any],
+        *,
+        exog_future=None,
+        **kwargs,
+    ) -> ForecastResult:
+        if not _HAS_SKTIME:
+            raise RuntimeError(_SKTIME_IMPORT_ERROR)
+
+        estimator = model  # deserialized sktime estimator
+        fh = np.arange(1, horizon + 1)
+
+        X_future = kwargs.get('exog_future')
+        if X_future is None:
+            X_future = exog_future if exog_future is not None else params.get('exog_future')
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            if X_future is not None:
+                y_pred = estimator.predict(fh=fh, X=X_future)
+            else:
+                y_pred = estimator.predict(fh=fh)
+
+        if isinstance(y_pred, pd.Series):
+            f_vals = y_pred.values
+        elif isinstance(y_pred, pd.DataFrame):
+            f_vals = y_pred.iloc[:, 0].values
+        else:
+            f_vals = np.array(y_pred)
+
+        return ForecastResult(
+            forecast=f_vals,
+            params_used={"seasonality": seasonality, **params},
+        )
 
     def forecast(  # noqa: C901
         self, 

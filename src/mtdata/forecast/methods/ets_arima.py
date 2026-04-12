@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 
 from ..common import build_ci_diagnostics as _build_ci_diagnostics
-from ..interface import ForecastMethod, ForecastResult
+from ..interface import ForecastMethod, ForecastResult, TrainResult
 from ..registry import ForecastRegistry
 
 try:
@@ -37,6 +37,14 @@ class ETSArimaMethod(ForecastMethod):
     @property
     def supports_features(self) -> Dict[str, bool]:
         return {"price": True, "return": True, "volatility": True, "ci": True}
+
+    @property
+    def supports_training(self) -> bool:
+        return False
+
+    @property
+    def training_category(self):
+        return "fast"
 
 @ForecastRegistry.register("ses")
 class SESMethod(ETSArimaMethod):

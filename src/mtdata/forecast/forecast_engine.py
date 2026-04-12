@@ -50,6 +50,16 @@ from .ensemble_dispatch import (
 from .forecast_validation import format_invalid_method_error
 from .interface import ForecastCallContext
 
+
+class _AsyncTrainingStarted(Exception):
+    """Raised by ``_run_registered_forecast_method`` when an async training
+    task is submitted instead of producing a synchronous forecast."""
+
+    def __init__(self, response: Dict[str, Any]) -> None:
+        self.response = response
+        super().__init__("async training started")
+
+
 # Import all method modules to ensure registration
 from .methods import analog as _analog_methods
 from .methods import classical as _classical_methods
@@ -464,6 +474,120 @@ def _build_engine_diagnostics(
     return diagnostics
 
 
+def _compute_model_key(
+    forecaster: "ForecastMethod",
+    method_l: str,
+    horizon: int,
+    seasonality: int,
+    params: Dict[str, Any],
+    timeframe: str,
+    has_exog: bool,
+) -> str:
+    """Compute a stable params_hash for the model store lookup."""
+    from .interface import ForecastMethod as _FM
+    fp = forecaster.training_fingerprint(
+        horizon=horizon,
+        seasonality=seasonality,
+        params=params,
+        timeframe=timeframe,
+        has_exog=has_exog,
+    )
+    return _FM.hash_fingerprint(fp)
+
+
+def _try_predict_with_stored_model(
+    forecaster: "ForecastMethod",
+    method_l: str,
+    data_scope: str,
+    params_hash: str,
+    target_series: pd.Series,
+    horizon: int,
+    seasonality: int,
+    method_params: Dict[str, Any],
+    future_exog: Optional[np.ndarray],
+    call_kwargs: Dict[str, Any],
+) -> Optional[Tuple[np.ndarray, Optional[np.ndarray], Dict[str, Any]]]:
+    """Attempt to load a trained model and predict. Returns None if no model found."""
+    try:
+        from .model_store import model_store as _store
+        handle = _store.find(method_l, data_scope, params_hash)
+        if handle is None:
+            return None
+        raw = _store.load_bytes(handle.model_id)
+        if raw is None:
+            return None
+        artifact = forecaster.deserialize_artifact(raw)
+        res = forecaster.predict_with_model(
+            artifact,
+            target_series,
+            horizon,
+            seasonality,
+            method_params,
+            exog_future=future_exog,
+            **call_kwargs,
+        )
+        metadata = res.metadata or {}
+        metadata['params_used'] = res.params_used
+        metadata['model_info'] = {
+            'model_id': handle.model_id,
+            'trained_at': handle.created_at,
+            'data_scope': handle.data_scope,
+            'source': 'model_store',
+        }
+        return res.forecast, res.ci_values, metadata
+    except Exception as exc:
+        logger.debug("Model store predict failed for %s/%s: %s", method_l, data_scope, exc)
+        return None
+
+
+def _submit_async_training(
+    forecaster: "ForecastMethod",
+    method_l: str,
+    target_series: pd.Series,
+    horizon: int,
+    seasonality: int,
+    params: Dict[str, Any],
+    data_scope: str,
+    params_hash: str,
+    timeframe: str,
+    exog: Optional[np.ndarray],
+) -> Dict[str, Any]:
+    """Submit a background training task. Returns an async response dict."""
+    from .task_manager import get_task_manager
+
+    tm = get_task_manager()
+    task_id, is_new = tm.submit(
+        method_name=method_l,
+        series=target_series,
+        horizon=horizon,
+        seasonality=seasonality,
+        params=params,
+        data_scope=data_scope,
+        params_hash=params_hash,
+        exog=exog,
+        timeframe=timeframe,
+    )
+
+    category = getattr(forecaster, "training_category", "unknown")
+    duration_hint = {
+        "heavy": "1-10 minutes (GPU training)",
+        "moderate": "10-60 seconds",
+        "fast": "1-10 seconds",
+    }.get(category, "varies")
+
+    return {
+        "status": "training_started" if is_new else "training_in_progress",
+        "task_id": task_id,
+        "method": method_l,
+        "data_scope": data_scope,
+        "estimated_duration": duration_hint,
+        "next_step": (
+            f"Poll forecast_task_status(task_id='{task_id}') for progress. "
+            f"Once complete, call forecast_generate again — the trained model will be used automatically."
+        ),
+    }
+
+
 def _run_registered_forecast_method(
     *,
     method_l: str,
@@ -482,6 +606,8 @@ def _run_registered_forecast_method(
     denoise_spec_used: Optional[Any],
     X: Optional[np.ndarray],
     future_exog: Optional[np.ndarray],
+    async_mode: bool = False,
+    model_id: Optional[str] = None,
 ) -> Tuple[np.ndarray, Optional[np.ndarray], Dict[str, Any]]:
     forecaster = ForecastRegistry.get(method_l)
     method_params = dict(params)
@@ -520,6 +646,33 @@ def _run_registered_forecast_method(
             call_context,
         )
 
+    # --- Model store fast path ---
+    if getattr(forecaster, 'supports_training', False):
+        data_scope = f"{symbol}_{timeframe}"
+        has_exog = X is not None
+        params_hash = model_id or _compute_model_key(
+            forecaster, method_l, horizon, seasonality,
+            method_params, str(timeframe), has_exog,
+        )
+
+        stored_result = _try_predict_with_stored_model(
+            forecaster, method_l, data_scope, params_hash,
+            target_series, horizon, seasonality,
+            method_params, future_exog, call_kwargs,
+        )
+        if stored_result is not None:
+            return stored_result
+
+        # No stored model — async route for heavy/moderate methods
+        if async_mode and getattr(forecaster, 'training_category', 'instant') in ("heavy", "moderate"):
+            async_resp = _submit_async_training(
+                forecaster, method_l, target_series,
+                horizon, seasonality, method_params,
+                data_scope, params_hash, str(timeframe), X,
+            )
+            raise _AsyncTrainingStarted(async_resp)
+
+    # --- Default synchronous path (backward compatible) ---
     res = forecaster.forecast(
         target_series,
         horizon,
@@ -689,6 +842,8 @@ def forecast_engine(  # noqa: C901
     prefetched_df: Optional[pd.DataFrame] = None,
     prefetched_base_col: Optional[str] = None,
     prefetched_denoise_spec: Optional[Any] = None,
+    async_mode: bool = False,
+    model_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Core forecast engine implementation.
 
@@ -859,7 +1014,11 @@ def forecast_engine(  # noqa: C901
                 denoise_spec_used=dn_spec_used,
                 X=X,
                 future_exog=future_exog,
+                async_mode=async_mode,
+                model_id=model_id,
             )
+        except _AsyncTrainingStarted as at:
+            return at.response
         except ValueError as e:
             if method_l == 'ensemble':
                 return {"error": str(e)}
