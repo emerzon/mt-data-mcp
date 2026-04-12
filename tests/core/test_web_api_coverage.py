@@ -329,7 +329,7 @@ class TestGetMethods:
             with patch.object(importlib.util, "find_spec", return_value=MagicMock()):
                 res = web_api.get_methods()
         assert res["methods"][0]["available"] is True
-        assert res["methods"][0]["requires"] == []
+        assert res["methods"][0]["requires"] == ["timesfm"]
 
     def test_dynamic_check_chronos(self):
         data = {"methods": [{"method": "chronos_bolt", "available": False, "requires": ["chronos"]}]}
@@ -338,6 +338,7 @@ class TestGetMethods:
             with patch.object(importlib.util, "find_spec", return_value=MagicMock()):
                 res = web_api.get_methods()
         assert res["methods"][0]["available"] is True
+        assert res["methods"][0]["requires"] == ["chronos"]
 
     def test_dynamic_check_lag_llama(self):
         data = {"methods": [{"method": "lag_llama", "available": False, "requires": ["lag_llama"]}]}
@@ -346,6 +347,7 @@ class TestGetMethods:
             with patch.object(importlib.util, "find_spec", return_value=MagicMock()):
                 res = web_api.get_methods()
         assert res["methods"][0]["available"] is True
+        assert res["methods"][0]["requires"] == ["lag_llama"]
 
     def test_dynamic_check_timesfm_not_installed(self):
         data = {"methods": [{"method": "timesfm", "available": False, "requires": ["timesfm"]}]}
@@ -1334,6 +1336,7 @@ class TestMethodsDynamicCheckEdgeCases:
             with patch.object(importlib.util, "find_spec", return_value=MagicMock()):
                 res = web_api.get_methods()
         assert res["methods"][0]["available"] is True
+        assert res["methods"][0]["requires"] == ["chronos"]
 
     def test_dynamic_check_exception_passes(self):
         """Exception during dynamic check is swallowed."""

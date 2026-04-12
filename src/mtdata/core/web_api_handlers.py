@@ -226,18 +226,12 @@ def get_methods_response(*, get_methods_impl: Callable[[], Any]) -> Dict[str, An
                 if ok:
                     ok = _has("timesfm.timesfm_2p5_torch") or _has("timesfm.timesfm_2p5") or ok
                 method["available"] = bool(ok)
-                if ok:
-                    method["requires"] = []
             elif name in ("chronos_bolt", "chronos2"):
                 ok = _has("chronos")
                 method["available"] = bool(ok)
-                if ok:
-                    method["requires"] = []
             elif name == "lag_llama":
                 ok = _has("lag_llama")
                 method["available"] = bool(ok)
-                if ok:
-                    method["requires"] = []
     except Exception:
         pass
     return data
