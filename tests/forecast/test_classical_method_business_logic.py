@@ -90,6 +90,10 @@ def test_fourier_ols_default_and_custom_params():
     assert custom.params_used == {"m": 24, "K": 1, "trend": True}
     assert custom.forecast.shape == (2,)
 
+    seasonality_one = method.forecast(series, horizon=2, seasonality=1, params={"terms": 3, "trend": True})
+    assert seasonality_one.params_used == {"m": 1, "K": 0, "trend": True}
+    assert seasonality_one.forecast.shape == (2,)
+
 
 def test_classical_legacy_wrappers_route_to_registry(monkeypatch):
     calls = []

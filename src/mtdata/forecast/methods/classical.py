@@ -174,7 +174,9 @@ class FourierOLSMethod(ClassicalMethod):
             K_eff = min(3, max(1, (m_eff // 2) if m_eff else 2))
         else:
             K_eff = int(K)
-            
+        if m_eff == 1 and K_eff > 0:
+            K_eff = 0
+             
         tt = np.arange(1, n + 1, dtype=float)
         X_list = [np.ones(n)]
         if trend:
