@@ -1898,7 +1898,7 @@ class TestModifyPosition:
         assert "error" in result
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
-    def test_only_tp_change_does_not_revalidate_existing_sl(self):
+    def test_only_tp_change_revalidates_existing_sl(self):
         mt5 = sys.modules["MetaTrader5"]
         self._setup_mt5(mt5)
         mt5.positions_get.return_value = [_position(sl=1.10495, tp=1.12)]
@@ -1906,13 +1906,11 @@ class TestModifyPosition:
         symbol_info.trade_stops_level = 30
         symbol_info.trade_freeze_level = 0
         mt5.symbol_info.return_value = symbol_info
-        mt5.order_send.return_value = _order_result()
         from mtdata.core.trading import _modify_position
         result = _modify_position(ticket=1, take_profit=1.13)
-        assert result.get("success") is True
-        request = mt5.order_send.call_args.args[0]
-        assert request["sl"] == pytest.approx(1.10495)
-        assert request["tp"] == pytest.approx(1.13)
+        assert "error" in result
+        assert "stop_loss is too close" in result["error"]
+        mt5.order_send.assert_not_called()
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_digits_none_uses_safe_default_when_modifying_position(self):

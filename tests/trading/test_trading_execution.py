@@ -2103,6 +2103,44 @@ def test_attach_protection_all_fail(mock_mt5):
     assert any("CRITICAL" in w for w in outcome["warnings"])
 
 
+def test_attach_protection_invalid_stops_fails_fast_to_fallback(mock_mt5):
+    gw = _make_protection_gateway(mock_mt5)
+    symbol_info = mock_mt5.symbol_info.return_value
+    mock_mt5.TRADE_ACTION_SLTP = 6
+    mock_mt5.TRADE_RETCODE_INVALID_STOPS = 10016
+    mock_mt5.positions_get.return_value = [
+        SimpleNamespace(
+            ticket=456, symbol="EURUSD", type=0, sl=0.0, tp=0.0,
+            volume=0.1, magic=234000, time_update_msc=1000,
+        )
+    ]
+    mock_mt5.order_send.return_value = SimpleNamespace(retcode=10016, comment="Invalid stops")
+
+    with patch(
+        "src.mtdata.core.trading.orders._modify_position",
+        return_value={"error": "stop_loss is too close to the live bid for BUY positions."},
+    ) as fallback_modify:
+        outcome = _attach_post_fill_protection(
+            gw,
+            symbol="EURUSD",
+            side="BUY",
+            volume=0.1,
+            position_ticket_candidates=[456],
+            stop_loss=1.04,
+            take_profit=1.06,
+            symbol_info=symbol_info,
+            comment=None,
+            request_comment="MCP order",
+        )
+
+    assert mock_mt5.order_send.call_count == 1
+    fallback_modify.assert_called_once()
+    assert outcome["sl_tp_result"]["status"] == "failed"
+    assert outcome["sl_tp_result"]["attempts"] == 1
+    assert outcome["sl_tp_result"]["last_retcode"] == 10016
+    assert outcome["sl_tp_result"]["fallback_used"] is True
+
+
 def test_attach_protection_position_not_found(mock_mt5):
     """Position resolution never succeeds → failed with candidates info."""
     gw = _make_protection_gateway(mock_mt5)

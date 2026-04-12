@@ -225,6 +225,7 @@ def _attach_post_fill_protection(
                 modify_request["magic"] = modify_magic
             modify_result = None
             max_modify_attempts = 5
+            invalid_stops_code = validation._safe_int_attr(mt5, "TRADE_RETCODE_INVALID_STOPS", 10016)
             for modify_try in range(max_modify_attempts):
                 sl_tp_attempts = int(modify_try + 1)
                 try:
@@ -239,6 +240,8 @@ def _attach_post_fill_protection(
                     sl_tp_last_retcode = getattr(modify_result, "retcode", None)
                     sl_tp_last_comment = getattr(modify_result, "comment", None)
                 if modify_result and getattr(modify_result, "retcode", None) == mt5.TRADE_RETCODE_DONE:
+                    break
+                if sl_tp_last_retcode == invalid_stops_code:
                     break
                 if modify_try + 1 < max_modify_attempts:
                     _stdlib_time.sleep(0.35)

@@ -199,8 +199,16 @@ def _modify_position(
                     else float(existing_tp or 0.0)
                 )
             )
-            validate_sl = None if stop_loss is None or explicit_remove_sl else float(requested_sl)
-            validate_tp = None if take_profit is None or explicit_remove_tp else float(requested_tp)
+            validate_sl = (
+                float(norm_sl)
+                if not explicit_remove_sl and float(norm_sl) > 0.0
+                else None
+            )
+            validate_tp = (
+                float(norm_tp)
+                if not explicit_remove_tp and float(norm_tp) > 0.0
+                else None
+            )
 
             price_tol = point if math.isfinite(point) and point > 0.0 else 1e-9
             current_sl = _normalize_protection_level(existing_sl, tol=price_tol)
