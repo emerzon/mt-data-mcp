@@ -76,6 +76,16 @@ class TradeRiskAnalyzeRequest(BaseModel):
     proposed_tp: Optional[float] = None
 
 
+class TradeVarCvarRequest(BaseModel):
+    symbol: Optional[str] = None
+    timeframe: str = "H1"
+    lookback: int = 500
+    confidence: float = 0.95
+    method: str = "historical"
+    transform: str = "log_return"
+    min_observations: int = 50
+
+
 class TradeGetOpenRequest(BaseModel):
     symbol: Optional[str] = None
     ticket: Optional[Union[int, str]] = None

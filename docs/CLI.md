@@ -198,6 +198,7 @@ mtdata-cli data_fetch_candles EURUSD --start "2025-12-01" --end "2025-12-31"
 | `trade_history` | Get trading history |
 | `trade_journal_analyze` | Summarize realized exit-deal performance |
 | `trade_risk_analyze` | Analyze position risk |
+| `var_cvar_calculate` | Estimate portfolio VaR/CVaR from open positions |
 
 ### News
 | Command | Description |
@@ -329,6 +330,12 @@ mtdata-cli trade_place BTCUSD --volume 0.03 --order-type 2 --price 68750
 ```bash
 mtdata-cli trade_journal_analyze --minutes-back 10080 --json
 mtdata-cli trade_journal_analyze --symbol EURUSD --minutes-back 43200 --breakdown-limit 5 --json
+```
+
+### Estimate Portfolio Tail Risk
+```bash
+mtdata-cli var_cvar_calculate --timeframe H1 --lookback 500 --confidence 95 --json
+mtdata-cli var_cvar_calculate --symbol EURUSD --method gaussian --transform pct --lookback 300 --json
 ```
 
 ### Detect Patterns and Regimes

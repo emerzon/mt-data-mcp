@@ -7,7 +7,9 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
+from ...shared.constants import TIMEFRAME_MAP
 from ...shared.result import Err, Ok, Result, to_dict
+from ...shared.validators import invalid_timeframe_error
 from ...utils.barriers import normalize_trade_direction
 from ...utils.mt5 import MT5ConnectionError
 from ..execution_logging import (
@@ -25,6 +27,7 @@ from .requests import (
     TradeModifyRequest,
     TradePlaceRequest,
     TradeRiskAnalyzeRequest,
+    TradeVarCvarRequest,
 )
 from .sizing import _resolve_risk_tick_value
 
@@ -110,6 +113,137 @@ def _floor_volume_steps(raw_volume: float, volume_step: float) -> int:
         if remainder_to_next_step <= snap_tolerance:
             return step_count + 1
     return step_count
+
+
+def _normalize_var_cvar_method(method: Any) -> tuple[Optional[str], Optional[str]]:
+    method_text = str(method or "historical").strip().lower()
+    if method_text in {"historical", "hist"}:
+        return "historical", None
+    if method_text in {"gaussian", "normal", "parametric"}:
+        return "gaussian", None
+    return None, "Invalid method. Valid options: historical, gaussian"
+
+
+def _normalize_var_cvar_transform(transform: Any) -> tuple[Optional[str], Optional[str]]:
+    transform_text = str(transform or "log_return").strip().lower()
+    if transform_text in {"log_return", "log_returns", "log"}:
+        return "log_return", None
+    if transform_text in {
+        "pct",
+        "pct_return",
+        "pct_returns",
+        "percent",
+        "percent_return",
+        "percent_returns",
+        "simple_return",
+        "simple_returns",
+    }:
+        return "pct", None
+    return None, "Invalid transform. Valid options: log_return, pct"
+
+
+def _normalize_var_cvar_confidence(confidence: Any) -> tuple[Optional[float], Optional[str]]:
+    try:
+        confidence_value = float(confidence)
+    except (TypeError, ValueError):
+        return None, "confidence must be numeric"
+    if not math.isfinite(confidence_value):
+        return None, "confidence must be finite"
+    if confidence_value > 1.0:
+        confidence_value /= 100.0
+    if confidence_value <= 0.0 or confidence_value >= 1.0:
+        return None, "confidence must be between 0 and 1, or between 0 and 100 as a percentage"
+    return confidence_value, None
+
+
+def _historical_var_cvar_tail(pnl_values: List[float], confidence: float) -> tuple[float, float, float]:
+    ordered = sorted(float(value) for value in pnl_values)
+    if not ordered:
+        return 0.0, 0.0, 0.0
+    alpha = 1.0 - confidence
+    index = max(0, min(len(ordered) - 1, int(math.floor(alpha * (len(ordered) - 1)))))
+    threshold = float(ordered[index])
+    tail_values = [float(value) for value in ordered if value <= threshold]
+    tail_mean = float(sum(tail_values) / len(tail_values)) if tail_values else threshold
+    var_value = max(0.0, -threshold)
+    cvar_value = max(0.0, -tail_mean)
+    return var_value, cvar_value, threshold
+
+
+def _gaussian_var_cvar_tail(pnl_values: List[float], confidence: float) -> tuple[float, float, float]:
+    from scipy.stats import norm
+
+    ordered = [float(value) for value in pnl_values]
+    if not ordered:
+        return 0.0, 0.0, 0.0
+    mean_pnl = float(sum(ordered) / len(ordered))
+    if len(ordered) == 1:
+        threshold = mean_pnl
+        var_value = max(0.0, -threshold)
+        return var_value, var_value, threshold
+    variance = sum((value - mean_pnl) ** 2 for value in ordered) / float(len(ordered) - 1)
+    std_pnl = math.sqrt(max(0.0, variance))
+    if std_pnl <= 0.0:
+        threshold = mean_pnl
+        var_value = max(0.0, -threshold)
+        return var_value, var_value, threshold
+    alpha = 1.0 - confidence
+    z_score = float(norm.ppf(alpha))
+    threshold = mean_pnl + (std_pnl * z_score)
+    tail_mean = mean_pnl - (std_pnl * float(norm.pdf(z_score)) / alpha)
+    var_value = max(0.0, -threshold)
+    cvar_value = max(0.0, -tail_mean)
+    return var_value, cvar_value, threshold
+
+
+def _calculate_var_cvar_from_pnl(
+    pnl_values: List[float],
+    *,
+    confidence: float,
+    method: str,
+) -> tuple[float, float, float]:
+    if method == "historical":
+        return _historical_var_cvar_tail(pnl_values, confidence)
+    return _gaussian_var_cvar_tail(pnl_values, confidence)
+
+
+def _extract_var_cvar_return_series(
+    *,
+    symbol: str,
+    rates: Any,
+    transform: str,
+    pd_module: Any,
+    np_module: Any,
+) -> tuple[Any, Optional[str]]:
+    frame = pd_module.DataFrame(rates)
+    if frame.empty:
+        return None, f"No candle history returned for {symbol}"
+    if "time" not in frame.columns or "close" not in frame.columns:
+        return None, f"Candle history for {symbol} is missing time/close columns"
+    close = pd_module.to_numeric(frame["close"], errors="coerce")
+    timestamps = pd_module.to_datetime(frame["time"], unit="s", utc=True, errors="coerce")
+    series = pd_module.Series(close.to_numpy(), index=timestamps, name=symbol)
+    series = series[~series.index.isna()]
+    series = series.replace([np_module.inf, -np_module.inf], np_module.nan).dropna()
+    series = series[~series.index.duplicated(keep="last")]
+    if len(series) < 2:
+        return None, f"Not enough candle history for {symbol}"
+    if transform == "log_return":
+        returns = np_module.log(series / series.shift(1))
+    else:
+        returns = series.pct_change()
+    returns = returns.replace([np_module.inf, -np_module.inf], np_module.nan).dropna()
+    if returns.empty:
+        return None, f"No usable returns produced for {symbol}"
+    return returns, None
+
+
+def _format_var_cvar_timestamp(value: Any) -> str:
+    try:
+        text = value.isoformat()
+    except Exception:
+        return str(value)
+    return text.replace("+00:00", "Z")
 
 
 def _epoch_series_to_utc_and_text(
@@ -1189,7 +1323,6 @@ def run_trade_risk_analyze(  # noqa: C901
                     volume = float(pos.volume)
 
                     contract_size = float(sym_info.trade_contract_size)
-                    point = validation._safe_float_attr(sym_info, "point")
                     tick_value = validation._safe_float_attr(sym_info, "trade_tick_value")
                     tick_value_loss = validation._safe_float_attr(sym_info, "trade_tick_value_loss")
                     tick_size = validation._safe_float_attr(sym_info, "trade_tick_size")
@@ -1336,7 +1469,6 @@ def run_trade_risk_analyze(  # noqa: C901
                     return {"error": f"Symbol {request.symbol} not found"}
 
                 contract_size = float(sym_info.trade_contract_size)
-                point = validation._safe_float_attr(sym_info, "point")
                 tick_value = validation._safe_float_attr(sym_info, "trade_tick_value")
                 tick_value_loss = validation._safe_float_attr(sym_info, "trade_tick_value_loss")
                 tick_size = validation._safe_float_attr(sym_info, "trade_tick_size")
@@ -1528,6 +1660,367 @@ def run_trade_risk_analyze(  # noqa: C901
             return {"error": str(exc)}
 
     return _finish(_analyze_risk())
+
+
+def run_trade_var_cvar_calculate(  # noqa: C901
+    request: TradeVarCvarRequest,
+    *,
+    gateway: Any,
+) -> Dict[str, Any]:
+    import numpy as np
+    import pandas as pd
+
+    started_at = time.perf_counter()
+    log_operation_start(
+        logger,
+        operation="var_cvar_calculate",
+        symbol=request.symbol,
+        timeframe=request.timeframe,
+        method=request.method,
+        confidence=request.confidence,
+    )
+
+    def _finish(result: Dict[str, Any]) -> Dict[str, Any]:
+        log_operation_finish(
+            logger,
+            operation="var_cvar_calculate",
+            started_at=started_at,
+            success=infer_result_success(result),
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            method=request.method,
+            confidence=request.confidence,
+        )
+        return result
+
+    try:
+        gateway.ensure_connection()
+    except MT5ConnectionError as exc:
+        return _finish({"error": str(exc)})
+
+    timeframe_value = str(request.timeframe or "").strip().upper()
+    if timeframe_value not in TIMEFRAME_MAP:
+        return _finish({"error": invalid_timeframe_error(timeframe_value, TIMEFRAME_MAP)})
+
+    method_value, method_error = _normalize_var_cvar_method(request.method)
+    if method_error or method_value is None:
+        return _finish({"error": method_error})
+
+    transform_value, transform_error = _normalize_var_cvar_transform(request.transform)
+    if transform_error or transform_value is None:
+        return _finish({"error": transform_error})
+
+    confidence_value, confidence_error = _normalize_var_cvar_confidence(request.confidence)
+    if confidence_error or confidence_value is None:
+        return _finish({"error": confidence_error})
+
+    try:
+        lookback = int(request.lookback)
+    except (TypeError, ValueError):
+        return _finish({"error": "lookback must be an integer"})
+    if lookback < 2:
+        return _finish({"error": "lookback must be at least 2"})
+
+    try:
+        min_observations = int(request.min_observations)
+    except (TypeError, ValueError):
+        return _finish({"error": "min_observations must be an integer"})
+    if min_observations < 2:
+        return _finish({"error": "min_observations must be at least 2"})
+
+    try:
+        account = gateway.account_info()
+    except Exception:
+        account = None
+    equity = None
+    currency = None
+    if account is not None:
+        equity_value = validation._safe_float_attr(account, "equity", 0.0)
+        if equity_value > 0.0:
+            equity = float(equity_value)
+        currency_text = str(getattr(account, "currency", "") or "").strip()
+        if currency_text:
+            currency = currency_text
+
+    try:
+        positions = gateway.positions_get(symbol=request.symbol) if request.symbol else gateway.positions_get()
+    except Exception as exc:
+        return _finish({"error": str(exc)})
+    if positions is None:
+        positions = []
+    if not positions:
+        message = (
+            f"No open positions found for symbol {request.symbol}"
+            if request.symbol
+            else "No open positions found for VaR/CVaR calculation."
+        )
+        summary: Dict[str, Any] = {
+            "method": method_value,
+            "confidence": round(float(confidence_value), 6),
+            "transform": transform_value,
+            "timeframe": timeframe_value,
+            "lookback": int(lookback),
+            "min_observations": int(min_observations),
+            "observations": 0,
+            "positions": 0,
+            "symbols": 0,
+            "gross_notional": 0.0,
+            "net_exposure": 0.0,
+            "var": 0.0,
+            "cvar": 0.0,
+        }
+        if equity is not None and equity > 0.0:
+            summary["equity"] = round(float(equity), 2)
+            summary["var_pct_of_equity"] = 0.0
+            summary["cvar_pct_of_equity"] = 0.0
+        if currency:
+            summary["currency"] = currency
+        return _finish(
+            {
+                "success": True,
+                "message": message,
+                "no_action": True,
+                "summary": summary,
+                "symbol_exposures": [],
+                "positions": [],
+                "worst_observations": [],
+            }
+        )
+
+    position_type_buy = validation._safe_int_attr(
+        gateway,
+        "POSITION_TYPE_BUY",
+        validation._safe_int_attr(gateway, "ORDER_TYPE_BUY", 0),
+    )
+    position_type_sell = validation._safe_int_attr(
+        gateway,
+        "POSITION_TYPE_SELL",
+        validation._safe_int_attr(gateway, "ORDER_TYPE_SELL", 1),
+    )
+    mt5_timeframe = TIMEFRAME_MAP[timeframe_value]
+    symbol_info_cache: Dict[str, Any] = {}
+    history_failures: List[Dict[str, Any]] = []
+    warnings: List[Dict[str, Any]] = []
+    position_exposures: List[Dict[str, Any]] = []
+    symbol_exposures: Dict[str, Dict[str, Any]] = {}
+
+    for position in positions:
+        symbol = str(getattr(position, "symbol", "") or "").strip()
+        if not symbol:
+            warnings.append({"ticket": getattr(position, "ticket", None), "warning": "Position has no symbol"})
+            continue
+        if symbol not in symbol_info_cache:
+            symbol_info_cache[symbol] = gateway.symbol_info(symbol)
+        symbol_info = symbol_info_cache[symbol]
+        if symbol_info is None:
+            warnings.append({"ticket": getattr(position, "ticket", None), "symbol": symbol, "warning": "Symbol info unavailable"})
+            continue
+
+        volume = validation._safe_float_attr(position, "volume", 0.0)
+        if not math.isfinite(volume) or volume <= 0.0:
+            warnings.append({"ticket": getattr(position, "ticket", None), "symbol": symbol, "warning": "Position volume is invalid"})
+            continue
+
+        contract_size = validation._safe_float_attr(symbol_info, "trade_contract_size", 1.0)
+        if not math.isfinite(contract_size) or contract_size <= 0.0:
+            contract_size = 1.0
+        mark_price = validation._safe_float_attr(position, "price_current", 0.0)
+        if mark_price <= 0.0:
+            mark_price = validation._safe_float_attr(position, "price_open", 0.0)
+        if not math.isfinite(mark_price) or mark_price <= 0.0:
+            warnings.append({"ticket": getattr(position, "ticket", None), "symbol": symbol, "warning": "Position mark price is invalid"})
+            continue
+
+        position_type = validation._safe_int_attr(position, "type", position_type_sell)
+        side = "BUY" if int(position_type) == int(position_type_buy) else "SELL"
+        side_sign = 1.0 if side == "BUY" else -1.0
+        signed_notional = side_sign * volume * contract_size * mark_price
+
+        position_exposures.append(
+            {
+                "ticket": getattr(position, "ticket", None),
+                "symbol": symbol,
+                "side": side,
+                "volume": float(volume),
+                "mark_price": round(float(mark_price), 6),
+                "contract_size": round(float(contract_size), 6),
+                "signed_notional": round(float(signed_notional), 2),
+                "unrealized_profit": round(validation._safe_float_attr(position, "profit", 0.0), 2),
+            }
+        )
+
+        exposure = symbol_exposures.setdefault(
+            symbol,
+            {
+                "symbol": symbol,
+                "signed_notional": 0.0,
+                "gross_notional": 0.0,
+                "positions": 0,
+            },
+        )
+        exposure["signed_notional"] += float(signed_notional)
+        exposure["gross_notional"] += abs(float(signed_notional))
+        exposure["positions"] += 1
+
+    if not position_exposures:
+        return _finish({"error": "No usable open positions available for VaR/CVaR calculation."})
+
+    return_series: Dict[str, Any] = {}
+    for symbol in list(symbol_exposures.keys()):
+        try:
+            rates = gateway.copy_rates_from_pos(symbol, mt5_timeframe, 0, lookback)
+        except Exception as exc:
+            history_failures.append({"symbol": symbol, "error": str(exc)})
+            continue
+        returns, history_error = _extract_var_cvar_return_series(
+            symbol=symbol,
+            rates=rates,
+            transform=transform_value,
+            pd_module=pd,
+            np_module=np,
+        )
+        if history_error:
+            history_failures.append({"symbol": symbol, "error": history_error})
+            continue
+        return_series[symbol] = returns
+
+    if not return_series:
+        result: Dict[str, Any] = {
+            "error": "Unable to build return series for any open-position symbols.",
+        }
+        if history_failures:
+            result["history_failures"] = history_failures
+        if warnings:
+            result["warnings"] = warnings
+        return _finish(result)
+
+    valid_symbols = set(return_series)
+    position_exposures = [item for item in position_exposures if item["symbol"] in valid_symbols]
+    symbol_exposure_frame = {
+        symbol: data for symbol, data in symbol_exposures.items() if symbol in valid_symbols
+    }
+    if not position_exposures or not symbol_exposure_frame:
+        return _finish({"error": "No open positions remained after filtering unavailable history."})
+
+    aligned_returns = pd.concat(
+        [return_series[symbol].rename(symbol) for symbol in symbol_exposure_frame],
+        axis=1,
+        join="inner",
+    ).dropna(how="any")
+    if len(aligned_returns) < min_observations:
+        result = {
+            "error": (
+                f"Not enough aligned return observations for VaR/CVaR calculation "
+                f"({len(aligned_returns)} available, {min_observations} required)."
+            ),
+            "available_observations": int(len(aligned_returns)),
+        }
+        if history_failures:
+            result["history_failures"] = history_failures
+        if warnings:
+            result["warnings"] = warnings
+        return _finish(result)
+
+    exposure_vector = pd.Series(
+        {
+            symbol: float(data["signed_notional"])
+            for symbol, data in symbol_exposure_frame.items()
+        }
+    )
+    portfolio_pnl = aligned_returns[exposure_vector.index].mul(exposure_vector, axis=1).sum(axis=1)
+    pnl_values = [float(value) for value in portfolio_pnl.tolist() if math.isfinite(float(value))]
+    if len(pnl_values) < min_observations:
+        return _finish(
+            {
+                "error": (
+                    f"Not enough finite portfolio PnL observations for VaR/CVaR calculation "
+                    f"({len(pnl_values)} available, {min_observations} required)."
+                )
+            }
+        )
+
+    try:
+        var_value, cvar_value, threshold = _calculate_var_cvar_from_pnl(
+            pnl_values,
+            confidence=confidence_value,
+            method=method_value,
+        )
+    except Exception as exc:
+        return _finish({"error": str(exc)})
+
+    total_abs_notional = float(sum(abs(float(item["signed_notional"])) for item in position_exposures))
+    net_exposure = float(sum(float(item["signed_notional"]) for item in position_exposures))
+    mean_pnl = float(sum(pnl_values) / len(pnl_values))
+    if len(pnl_values) > 1:
+        variance = sum((value - mean_pnl) ** 2 for value in pnl_values) / float(len(pnl_values) - 1)
+        volatility_pnl = math.sqrt(max(0.0, variance))
+    else:
+        volatility_pnl = 0.0
+
+    symbol_rows: List[Dict[str, Any]] = []
+    for symbol, data in symbol_exposure_frame.items():
+        gross_notional = float(data["gross_notional"])
+        symbol_rows.append(
+            {
+                "symbol": symbol,
+                "positions": int(data["positions"]),
+                "signed_notional": round(float(data["signed_notional"]), 2),
+                "gross_notional": round(gross_notional, 2),
+                "gross_weight": round((gross_notional / total_abs_notional), 6)
+                if total_abs_notional > 0.0
+                else 0.0,
+            }
+        )
+    symbol_rows.sort(key=lambda item: (-abs(float(item["signed_notional"])), item["symbol"]))
+
+    worst_bars = portfolio_pnl.nsmallest(min(5, len(portfolio_pnl)))
+    worst_observations = [
+        {
+            "time": _format_var_cvar_timestamp(timestamp),
+            "simulated_pnl": round(float(value), 2),
+        }
+        for timestamp, value in worst_bars.items()
+    ]
+
+    summary: Dict[str, Any] = {
+        "method": method_value,
+        "confidence": round(float(confidence_value), 6),
+        "transform": transform_value,
+        "timeframe": timeframe_value,
+        "lookback": int(lookback),
+        "min_observations": int(min_observations),
+        "observations": int(len(pnl_values)),
+        "positions": int(len(position_exposures)),
+        "symbols": int(len(symbol_rows)),
+        "gross_notional": round(total_abs_notional, 2),
+        "net_exposure": round(net_exposure, 2),
+        "var": round(float(var_value), 2),
+        "cvar": round(float(cvar_value), 2),
+        "tail_threshold": round(float(threshold), 2),
+        "mean_pnl": round(mean_pnl, 2),
+        "volatility_pnl": round(float(volatility_pnl), 2),
+        "worst_observed_pnl": round(min(pnl_values), 2),
+        "best_observed_pnl": round(max(pnl_values), 2),
+    }
+    if equity is not None and equity > 0.0:
+        summary["equity"] = round(float(equity), 2)
+        summary["var_pct_of_equity"] = round((float(var_value) / equity) * 100.0, 4)
+        summary["cvar_pct_of_equity"] = round((float(cvar_value) / equity) * 100.0, 4)
+    if currency:
+        summary["currency"] = currency
+
+    result = {
+        "success": True,
+        "summary": summary,
+        "symbol_exposures": symbol_rows,
+        "positions": position_exposures,
+        "worst_observations": worst_observations,
+    }
+    if history_failures:
+        result["history_failures"] = history_failures
+    if warnings:
+        result["warnings"] = warnings
+    return _finish(result)
 
 
 def run_trade_get_open(
