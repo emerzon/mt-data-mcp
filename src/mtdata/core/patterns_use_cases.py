@@ -4,7 +4,13 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from .patterns_requests import PatternsDetectRequest
-from .patterns_support import _elliott_completed_preview, _elliott_hidden_completed_note
+from .patterns_support import (
+    _compact_all_mode_payload,
+    _elliott_completed_preview,
+    _elliott_hidden_completed_note,
+)
+
+_ALL_MODE_TIMEFRAMES = ("H1", "H4", "D1")
 
 _CLASSIC_CONFIG_EXTRA_KEYS = {
     "ensemble_weights",
@@ -359,4 +365,140 @@ def run_patterns_detect(  # noqa: C901
             return deps.compact_patterns_payload(resp)
         return resp
 
-    return {"error": f"Unknown mode: {request.mode}. Use candlestick, classic/chart, or elliott."}
+    if mode_value == "all":
+        timeframes = [tf_norm] if tf_norm else list(_ALL_MODE_TIMEFRAMES)
+
+        candlestick_patterns: List[Dict[str, Any]] = []
+        classic_patterns: List[Dict[str, Any]] = []
+        elliott_patterns: List[Dict[str, Any]] = []
+        section_errors: Dict[str, Dict[str, str]] = {}
+
+        classic_cfg = deps.classic_cfg_cls()
+        elliott_cfg = deps.elliott_cfg_cls()
+        if isinstance(request.config, dict):
+            deps.apply_config_to_obj(classic_cfg, request.config)
+            deps.apply_config_to_obj(elliott_cfg, request.config)
+
+        effective_top_k = max(request.top_k, 3)
+
+        for tf in timeframes:
+            # ── Candlestick ──
+            try:
+                candle_result = deps.detect_candlestick_patterns(
+                    symbol=request.symbol,
+                    timeframe=tf,
+                    limit=request.limit,
+                    min_strength=request.min_strength,
+                    min_gap=request.min_gap,
+                    robust_only=request.robust_only,
+                    whitelist=request.whitelist,
+                    top_k=effective_top_k,
+                    last_n_bars=request.last_n_bars,
+                    config=request.config if isinstance(request.config, dict) else None,
+                )
+                if isinstance(candle_result, dict) and not candle_result.get("error"):
+                    rows = candle_result.get("data", [])
+                    if isinstance(rows, list):
+                        for row in rows:
+                            if isinstance(row, dict):
+                                row["timeframe"] = tf
+                                candlestick_patterns.append(row)
+                elif isinstance(candle_result, dict) and candle_result.get("error"):
+                    section_errors.setdefault("candlestick", {})[tf] = str(
+                        candle_result["error"]
+                    )
+            except Exception as exc:
+                section_errors.setdefault("candlestick", {})[tf] = str(exc)
+
+            # ── Shared data fetch for classic + elliott ──
+            df, fetch_err = deps.fetch_pattern_data(
+                request.symbol, tf, request.limit, request.denoise
+            )
+            if fetch_err:
+                err_msg = str(fetch_err.get("error", "data fetch failed"))
+                section_errors.setdefault("classic", {})[tf] = err_msg
+                section_errors.setdefault("elliott", {})[tf] = err_msg
+                continue
+
+            # ── Classic (native engine) ──
+            try:
+                patt_rows, eng_err = deps.run_classic_engine(
+                    "native", request.symbol, df, classic_cfg, request.config
+                )
+                if eng_err:
+                    section_errors.setdefault("classic", {})[tf] = eng_err
+                if patt_rows:
+                    enriched = deps.enrich_classic_patterns(patt_rows, df, classic_cfg)
+                    for row in enriched:
+                        if isinstance(row, dict):
+                            row["timeframe"] = tf
+                            classic_patterns.append(row)
+            except Exception as exc:
+                section_errors.setdefault("classic", {})[tf] = str(exc)
+
+            # ── Elliott ──
+            try:
+                elliott_rows = deps.format_elliott_patterns(df, elliott_cfg)
+                for row in elliott_rows:
+                    if isinstance(row, dict):
+                        row["timeframe"] = tf
+                        elliott_patterns.append(row)
+            except Exception as exc:
+                section_errors.setdefault("elliott", {})[tf] = str(exc)
+
+        # Filter completed patterns for classic/elliott
+        if not request.include_completed:
+            classic_patterns = [
+                r for r in classic_patterns
+                if str(r.get("status", "")).lower() != "completed"
+            ]
+            elliott_patterns = [
+                r for r in elliott_patterns
+                if str(r.get("status", "")).lower() != "completed"
+            ]
+
+        total = len(candlestick_patterns) + len(classic_patterns) + len(elliott_patterns)
+
+        if total == 0 and section_errors:
+            flat: Dict[str, str] = {}
+            for section, tf_errs in section_errors.items():
+                for tf_name, msg in tf_errs.items():
+                    flat[f"{section}/{tf_name}"] = msg
+            return {
+                "error": "No patterns detected across any mode or timeframe.",
+                "details": flat,
+            }
+
+        resp: Dict[str, Any] = {
+            "success": True,
+            "symbol": request.symbol,
+            "mode": "all",
+            "timeframes": timeframes,
+            "candlestick": {
+                "n_patterns": len(candlestick_patterns),
+                "patterns": candlestick_patterns,
+            },
+            "classic": {
+                "n_patterns": len(classic_patterns),
+                "patterns": classic_patterns,
+            },
+            "elliott": {
+                "n_patterns": len(elliott_patterns),
+                "patterns": elliott_patterns,
+            },
+            "total_patterns": total,
+        }
+
+        if classic_patterns:
+            bias = deps.summarize_pattern_bias(classic_patterns)
+            if bias:
+                resp["classic"]["signal_bias"] = bias
+
+        if section_errors:
+            resp["errors"] = section_errors
+
+        if detail_value == "compact":
+            return _compact_all_mode_payload(resp)
+        return resp
+
+    return {"error": f"Unknown mode: {request.mode}. Use all, candlestick, classic/chart, or elliott."}

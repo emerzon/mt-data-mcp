@@ -10,7 +10,7 @@ from .schema import TimeframeLiteral
 class PatternsDetectRequest(BaseModel):
     symbol: str
     timeframe: Optional[TimeframeLiteral] = None
-    mode: str = "candlestick"
+    mode: str = "all"
     detail: str = "compact"
     limit: int = 1000
     min_strength: float = 0.90

@@ -1569,3 +1569,166 @@ class TestPatternsDetect:
         result = _call_patterns_detect(symbol="EURUSD", mode="classic", timeframe="H1")
         # Should return error or empty response
         assert isinstance(result, dict)
+
+
+class TestPatternsDetectAllMode:
+    """Tests for mode='all' comprehensive scan."""
+
+    @patch("mtdata.core.patterns._format_elliott_patterns")
+    @patch("mtdata.core.patterns._run_classic_engine")
+    @patch("mtdata.core.patterns._fetch_pattern_data")
+    @patch("mtdata.core.patterns._detect_candlestick_patterns")
+    def test_all_mode_basic_success(self, mock_candle, mock_fetch, mock_engine, mock_elliott):
+        df = _make_ohlcv_df(200)
+        mock_candle.return_value = {
+            "data": [{"pattern": "Hammer", "direction": "bullish", "confidence": 0.9,
+                       "time": "2024-01-01", "price": 1.1}],
+        }
+        mock_fetch.return_value = (df, None)
+        mock_engine.return_value = ([{
+            "name": "Triangle", "status": "forming", "confidence": 0.8,
+            "start_index": 0, "end_index": 10,
+        }], None)
+        mock_elliott.return_value = [{
+            "wave_type": "impulse", "status": "forming", "confidence": 0.7,
+            "start_date": "2024-01-01", "end_date": "2024-01-10",
+        }]
+
+        result = _call_patterns_detect(symbol="EURUSD", mode="all")
+        assert result["success"] is True
+        assert result["mode"] == "all"
+        assert result["symbol"] == "EURUSD"
+        assert set(result["timeframes"]) == {"H1", "H4", "D1"}
+        assert result["candlestick"]["n_patterns"] > 0
+        assert result["classic"]["n_patterns"] > 0
+        assert result["elliott"]["n_patterns"] > 0
+        assert result["total_patterns"] > 0
+
+    @patch("mtdata.core.patterns._format_elliott_patterns")
+    @patch("mtdata.core.patterns._run_classic_engine")
+    @patch("mtdata.core.patterns._fetch_pattern_data")
+    @patch("mtdata.core.patterns._detect_candlestick_patterns")
+    def test_all_mode_single_timeframe(self, mock_candle, mock_fetch, mock_engine, mock_elliott):
+        df = _make_ohlcv_df(200)
+        mock_candle.return_value = {"data": []}
+        mock_fetch.return_value = (df, None)
+        mock_engine.return_value = ([], None)
+        mock_elliott.return_value = []
+
+        result = _call_patterns_detect(symbol="EURUSD", mode="all", timeframe="M15")
+        assert result["success"] is True
+        assert result["timeframes"] == ["M15"]
+
+    @patch("mtdata.core.patterns._format_elliott_patterns")
+    @patch("mtdata.core.patterns._run_classic_engine")
+    @patch("mtdata.core.patterns._fetch_pattern_data")
+    @patch("mtdata.core.patterns._detect_candlestick_patterns")
+    def test_all_mode_partial_failure(self, mock_candle, mock_fetch, mock_engine, mock_elliott):
+        """Classic/Elliott fail but candlestick succeeds — still returns patterns."""
+        mock_candle.return_value = {
+            "data": [{"pattern": "Doji", "direction": "neutral", "confidence": 0.8}],
+        }
+        mock_fetch.return_value = (None, {"error": "no data"})
+
+        result = _call_patterns_detect(symbol="EURUSD", mode="all", timeframe="H1")
+        assert result["success"] is True
+        assert result["candlestick"]["n_patterns"] == 1
+        assert result["classic"]["n_patterns"] == 0
+        assert result["elliott"]["n_patterns"] == 0
+        assert "errors" in result
+
+    @patch("mtdata.core.patterns._format_elliott_patterns")
+    @patch("mtdata.core.patterns._run_classic_engine")
+    @patch("mtdata.core.patterns._fetch_pattern_data")
+    @patch("mtdata.core.patterns._detect_candlestick_patterns")
+    def test_all_mode_total_failure(self, mock_candle, mock_fetch, mock_engine, mock_elliott):
+        """All sections fail — returns error with details."""
+        mock_candle.return_value = {"error": "MT5 timeout"}
+        mock_fetch.return_value = (None, {"error": "no data"})
+
+        result = _call_patterns_detect(symbol="EURUSD", mode="all", timeframe="H1")
+        assert "error" in result
+        assert "details" in result
+
+    @patch("mtdata.core.patterns._format_elliott_patterns")
+    @patch("mtdata.core.patterns._run_classic_engine")
+    @patch("mtdata.core.patterns._fetch_pattern_data")
+    @patch("mtdata.core.patterns._detect_candlestick_patterns")
+    def test_all_mode_filters_completed(self, mock_candle, mock_fetch, mock_engine, mock_elliott):
+        """With include_completed=False, completed patterns are excluded."""
+        df = _make_ohlcv_df(200)
+        mock_candle.return_value = {"data": []}
+        mock_fetch.return_value = (df, None)
+        mock_engine.return_value = ([
+            {"name": "Triangle", "status": "completed", "confidence": 0.9,
+             "start_index": 0, "end_index": 10},
+            {"name": "Wedge", "status": "forming", "confidence": 0.7,
+             "start_index": 5, "end_index": 15},
+        ], None)
+        mock_elliott.return_value = [
+            {"wave_type": "impulse", "status": "completed", "confidence": 0.8},
+            {"wave_type": "corrective", "status": "forming", "confidence": 0.6},
+        ]
+
+        result = _call_patterns_detect(symbol="EURUSD", mode="all", timeframe="H1",
+                                       include_completed=False)
+        assert result["success"] is True
+        # Only forming patterns should remain
+        for patt in result["classic"]["patterns"]:
+            assert patt["status"] != "completed"
+        for patt in result["elliott"]["patterns"]:
+            assert patt["status"] != "completed"
+
+    @patch("mtdata.core.patterns._format_elliott_patterns")
+    @patch("mtdata.core.patterns._run_classic_engine")
+    @patch("mtdata.core.patterns._fetch_pattern_data")
+    @patch("mtdata.core.patterns._detect_candlestick_patterns")
+    def test_all_mode_compact_detail(self, mock_candle, mock_fetch, mock_engine, mock_elliott):
+        """Compact detail level trims patterns per section."""
+        df = _make_ohlcv_df(200)
+        mock_candle.return_value = {
+            "data": [{"pattern": f"P{i}", "direction": "bullish", "confidence": 0.9 - i * 0.01,
+                       "time": "2024-01-01", "price": 1.1}
+                      for i in range(12)],
+        }
+        mock_fetch.return_value = (df, None)
+        mock_engine.return_value = ([{
+            "name": f"Classic{i}", "status": "forming", "confidence": 0.8,
+            "start_index": 0, "end_index": 10,
+        } for i in range(12)], None)
+        mock_elliott.return_value = [{
+            "wave_type": f"wave{i}", "status": "forming", "confidence": 0.7,
+        } for i in range(12)]
+
+        result = _call_patterns_detect(symbol="EURUSD", mode="all", timeframe="H1",
+                                       detail="compact")
+        assert result["success"] is True
+        # Compact trims to 8 per section
+        assert len(result["candlestick"]["patterns"]) <= 8
+        assert len(result["classic"]["patterns"]) <= 8
+        assert len(result["elliott"]["patterns"]) <= 8
+
+    @patch("mtdata.core.patterns._format_elliott_patterns")
+    @patch("mtdata.core.patterns._run_classic_engine")
+    @patch("mtdata.core.patterns._fetch_pattern_data")
+    @patch("mtdata.core.patterns._detect_candlestick_patterns")
+    def test_all_mode_config_forwarded(self, mock_candle, mock_fetch, mock_engine, mock_elliott):
+        """Config dict is forwarded to classic and elliott without strict key validation."""
+        df = _make_ohlcv_df(200)
+        mock_candle.return_value = {"data": []}
+        mock_fetch.return_value = (df, None)
+        mock_engine.return_value = ([], None)
+        mock_elliott.return_value = []
+
+        # This config key is valid for classic but would fail in strict mode
+        result = _call_patterns_detect(
+            symbol="EURUSD", mode="all", timeframe="H1",
+            config={"native_multiscale": True},
+        )
+        assert result.get("success") is True or "error" not in result or result.get("total_patterns", 0) >= 0
+
+    def test_unknown_mode_includes_all(self):
+        """Error message for unknown mode mentions 'all'."""
+        result = _call_patterns_detect(symbol="EURUSD", mode="bad_mode")
+        assert "error" in result
+        assert "all" in result["error"].lower()

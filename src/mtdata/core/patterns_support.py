@@ -507,6 +507,82 @@ def _compact_patterns_payload(payload: Dict[str, Any]) -> Dict[str, Any]:  # noq
     return compact
 
 
+_ALL_COMPACT_CANDLESTICK_KEYS = (
+    "timeframe", "pattern", "direction", "confidence", "time", "price",
+)
+_ALL_COMPACT_CLASSIC_KEYS = (
+    "timeframe", "name", "status", "confidence", "bias",
+    "reference_price", "target_price", "invalidation_price",
+    "bars_to_completion", "start_date", "end_date",
+)
+_ALL_COMPACT_ELLIOTT_KEYS = (
+    "timeframe", "wave_type", "status", "confidence",
+    "start_date", "end_date",
+)
+
+
+def _trim_section_rows(
+    rows: List[Dict[str, Any]],
+    keys: Tuple[str, ...],
+    limit: int = 8,
+) -> List[Dict[str, Any]]:
+    """Sort rows by confidence descending and keep only *keys* fields."""
+    sorted_rows = sorted(
+        rows,
+        key=lambda r: (_safe_float(r.get("confidence")) or 0.0),
+        reverse=True,
+    )
+    trimmed: List[Dict[str, Any]] = []
+    for row in sorted_rows[:limit]:
+        item = {k: row[k] for k in keys if row.get(k) not in (None, "")}
+        if item:
+            trimmed.append(item)
+    return trimmed
+
+
+def _compact_all_mode_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Compact the all-mode response into a clean sectioned summary."""
+    if not isinstance(payload, dict) or payload.get("error"):
+        return payload
+
+    compact: Dict[str, Any] = {
+        "success": True,
+        "symbol": payload.get("symbol"),
+        "mode": "all",
+        "timeframes": payload.get("timeframes"),
+    }
+
+    section_specs = (
+        ("candlestick", _ALL_COMPACT_CANDLESTICK_KEYS),
+        ("classic", _ALL_COMPACT_CLASSIC_KEYS),
+        ("elliott", _ALL_COMPACT_ELLIOTT_KEYS),
+    )
+
+    for section_name, keys in section_specs:
+        section = payload.get(section_name, {})
+        rows = section.get("patterns", [])
+        n_total = section.get("n_patterns", len(rows))
+        trimmed = _trim_section_rows(rows, keys) if rows else []
+        result: Dict[str, Any] = {
+            "n_patterns": n_total,
+            "patterns": trimmed,
+        }
+        if n_total > len(trimmed):
+            result["more_patterns"] = n_total - len(trimmed)
+        bias = section.get("signal_bias")
+        if bias:
+            result["signal_bias"] = bias
+        compact[section_name] = result
+
+    compact["total_patterns"] = payload.get("total_patterns", 0)
+
+    errors = payload.get("errors")
+    if errors:
+        compact["errors"] = errors
+
+    return compact
+
+
 def _detail_float(details: Dict[str, Any], key: str) -> Optional[float]:
     try:
         value = float(details.get(key))

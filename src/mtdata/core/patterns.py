@@ -717,6 +717,9 @@ def patterns_detect(
     
     **REQUIRED**: symbol parameter must be provided (e.g., "EURUSD", "BTCUSD")
     
+    By default (mode="all"), runs all pattern types across H1/H4/D1 timeframes
+    and returns a sectioned response with candlestick, classic, and Elliott results.
+    
     Parameters:
     -----------
     symbol : str (REQUIRED)
@@ -724,12 +727,13 @@ def patterns_detect(
     
     timeframe : str, optional
         Chart timeframe: "M1", "M5", "M15", "M30", "H1", "H4", "D1", "W1", "MN1"
-        For `mode="elliott"`, when omitted, a default higher-structure subset
-        (`H1`, `H4`, `D1` when available) is scanned and returned in one
-        aggregated output.
+        For `mode="all"` or `mode="elliott"`, when omitted, a default
+        higher-structure subset (`H1`, `H4`, `D1`) is scanned automatically.
     
-    mode : str, optional (default="candlestick")
+    mode : str, optional (default="all")
         Pattern detection method:
+        - "all": Comprehensive scan — candlestick + classic + Elliott across
+          multiple timeframes. Returns sectioned output.
         - "candlestick": Japanese candlestick patterns (Doji, Hammer, Engulfing, etc.)
         - "classic": Chart patterns (Head & Shoulders, Triangles, Flags, etc.)
         - "chart": Alias for classic chart patterns
@@ -811,11 +815,14 @@ def patterns_detect(
     
     Examples:
     ---------
-    # Detect candlestick patterns
+    # Comprehensive scan across all pattern types and timeframes (default)
     patterns_detect(symbol="EURUSD")
     
-    # Detect candlestick patterns on M15 with custom parameters
-    patterns_detect(symbol="EURUSD", timeframe="M15", min_strength=0.90, top_k=3)
+    # Comprehensive scan on a single timeframe
+    patterns_detect(symbol="EURUSD", timeframe="H4")
+    
+    # Detect candlestick patterns only
+    patterns_detect(symbol="EURUSD", mode="candlestick", timeframe="M15", min_strength=0.90, top_k=3)
     
     # Detect classic chart patterns
     patterns_detect(symbol="GBPUSD", mode="classic", limit=500)
