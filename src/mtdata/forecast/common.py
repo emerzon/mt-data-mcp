@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 import os
 import re
+import threading
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -28,6 +29,7 @@ _FORECAST_AUXILIARY_COLUMN_RE = re.compile(
     r"(?:^|[-_])(lo|low|lower|hi|high|upper|interval|quantile|fitted|residual|cutoff)(?:[-_].*)?$",
     re.IGNORECASE,
 )
+_NF_ENV_LOCK = threading.RLock()
 
 
 def edge_pad_to_length(values: np.ndarray, length: int) -> np.ndarray:
@@ -375,160 +377,161 @@ def nf_setup_and_predict(  # noqa: C901
         'LT_DISABLE_DISTRIBUTED',
         'CUDA_VISIBLE_DEVICES',
     )
-    env_snapshot: Dict[str, Optional[str]] = {}
-    env_missing: set[str] = set()
-    for key in managed_env_vars:
-        if key in os.environ:
-            env_snapshot[key] = os.environ.get(key)
-        else:
-            env_missing.add(key)
-
-    try:
-        for _var in env_vars_to_clear:
-            os.environ.pop(_var, None)
-        os.environ['PL_TORCH_DISTRIBUTED_BACKEND'] = 'gloo'
-        os.environ['LT_DISABLE_DISTRIBUTED'] = '1'
-
-        base_trainer: Dict[str, Any] = {
-            'accelerator': accel,
-            'devices': 1,
-            'num_nodes': 1,
-        }
-        quiet_opts = {
-            'logger': False,
-            'enable_progress_bar': False,
-            'enable_checkpointing': False,
-            'enable_model_summary': False,
-            'log_every_n_steps': 0,
-        }
-        for _opt, _val in quiet_opts.items():
-            base_trainer.setdefault(_opt, _val)
-
-        for _opt, _val in base_trainer.items():
-            model_kwargs.setdefault(_opt, _val)
-
-        # Instantiate model and NeuralForecast
-        try:
-            from neuralforecast import NeuralForecast as _NeuralForecast  # type: ignore
-        except Exception as ex:
-            raise RuntimeError(f"Failed to import neuralforecast: {ex}")
-
-        nf_kwargs: Dict[str, Any] = {
-            'models': [model_class(**model_kwargs)],  # type: ignore
-            'freq': pd_freq_from_timeframe(timeframe),
-        }
+    with _NF_ENV_LOCK:
+        env_snapshot: Dict[str, Optional[str]] = {}
+        env_missing: set[str] = set()
+        for key in managed_env_vars:
+            if key in os.environ:
+                env_snapshot[key] = os.environ.get(key)
+            else:
+                env_missing.add(key)
 
         try:
-            _nf_init_params = _inspect.signature(_NeuralForecast.__init__).parameters  # type: ignore[attr-defined]
-        except Exception:
-            _nf_init_params = {}
-        if 'trainer_kwargs' in _nf_init_params:
-            nf_trainer = dict(base_trainer)
-            cand_opts = {
+            for _var in env_vars_to_clear:
+                os.environ.pop(_var, None)
+            os.environ['PL_TORCH_DISTRIBUTED_BACKEND'] = 'gloo'
+            os.environ['LT_DISABLE_DISTRIBUTED'] = '1'
+
+            base_trainer: Dict[str, Any] = {
+                'accelerator': accel,
+                'devices': 1,
+                'num_nodes': 1,
+            }
+            quiet_opts = {
                 'logger': False,
                 'enable_progress_bar': False,
                 'enable_checkpointing': False,
+                'enable_model_summary': False,
                 'log_every_n_steps': 0,
             }
+            for _opt, _val in quiet_opts.items():
+                base_trainer.setdefault(_opt, _val)
+
+            for _opt, _val in base_trainer.items():
+                model_kwargs.setdefault(_opt, _val)
+
+            # Instantiate model and NeuralForecast
             try:
+                from neuralforecast import NeuralForecast as _NeuralForecast  # type: ignore
+            except Exception as ex:
+                raise RuntimeError(f"Failed to import neuralforecast: {ex}")
+
+            nf_kwargs: Dict[str, Any] = {
+                'models': [model_class(**model_kwargs)],  # type: ignore
+                'freq': pd_freq_from_timeframe(timeframe),
+            }
+
+            try:
+                _nf_init_params = _inspect.signature(_NeuralForecast.__init__).parameters  # type: ignore[attr-defined]
+            except Exception:
+                _nf_init_params = {}
+            if 'trainer_kwargs' in _nf_init_params:
+                nf_trainer = dict(base_trainer)
+                cand_opts = {
+                    'logger': False,
+                    'enable_progress_bar': False,
+                    'enable_checkpointing': False,
+                    'log_every_n_steps': 0,
+                }
                 try:
-                    import lightning.pytorch as _L  # type: ignore
-                    _Trainer = _L.Trainer  # type: ignore[attr-defined]
+                    try:
+                        import lightning.pytorch as _L  # type: ignore
+                        _Trainer = _L.Trainer  # type: ignore[attr-defined]
+                    except Exception:
+                        import pytorch_lightning as _pl  # type: ignore
+                        _Trainer = _pl.Trainer  # type: ignore[attr-defined]
+                    _tparams = _inspect.signature(_Trainer.__init__).parameters  # type: ignore[attr-defined]
+                    for k, v in list(cand_opts.items()):
+                        if k in _tparams and k not in nf_trainer:
+                            nf_trainer[k] = v
+                    try:
+                        trainer_obj = _Trainer(**nf_trainer)  # type: ignore[call-arg]
+                        nf_kwargs['trainer'] = trainer_obj
+                    except Exception:
+                        nf_kwargs['trainer_kwargs'] = nf_trainer
                 except Exception:
-                    import pytorch_lightning as _pl  # type: ignore
-                    _Trainer = _pl.Trainer  # type: ignore[attr-defined]
-                _tparams = _inspect.signature(_Trainer.__init__).parameters  # type: ignore[attr-defined]
-                for k, v in list(cand_opts.items()):
-                    if k in _tparams and k not in nf_trainer:
-                        nf_trainer[k] = v
-                try:
-                    trainer_obj = _Trainer(**nf_trainer)  # type: ignore[call-arg]
-                    nf_kwargs['trainer'] = trainer_obj
-                except Exception:
+                    nf_trainer.update(cand_opts)
                     nf_kwargs['trainer_kwargs'] = nf_trainer
-            except Exception:
-                nf_trainer.update(cand_opts)
-                nf_kwargs['trainer_kwargs'] = nf_trainer
-        # Restrict visible GPUs to one when CUDA is available
-        try:
-            if accel == 'gpu':
-                cvd = os.environ.get('CUDA_VISIBLE_DEVICES', '')
-                if ',' in cvd:
-                    os.environ['CUDA_VISIBLE_DEVICES'] = cvd.split(',')[0].strip()
-                elif cvd.strip() == '':
-                    import torch as _torch  # type: ignore
-                    if _torch.cuda.device_count() > 1:  # type: ignore[attr-defined]
-                        os.environ['CUDA_VISIBLE_DEVICES'] = '0'
-        except Exception:
-            pass
-        if 'num_workers_loader' in _nf_init_params:
-            nf_kwargs['num_workers_loader'] = 0
-
-        nf = _NeuralForecast(**nf_kwargs)
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            # Detect X_df and predict(h) support
+            # Restrict visible GPUs to one when CUDA is available
             try:
-                _fit_params = _inspect.signature(nf.fit).parameters  # type: ignore[attr-defined]
+                if accel == 'gpu':
+                    cvd = os.environ.get('CUDA_VISIBLE_DEVICES', '')
+                    if ',' in cvd:
+                        os.environ['CUDA_VISIBLE_DEVICES'] = cvd.split(',')[0].strip()
+                    elif cvd.strip() == '':
+                        import torch as _torch  # type: ignore
+                        if _torch.cuda.device_count() > 1:  # type: ignore[attr-defined]
+                            os.environ['CUDA_VISIBLE_DEVICES'] = '0'
             except Exception:
-                _fit_params = {}
-            try:
-                _pred_params = _inspect.signature(nf.predict).parameters  # type: ignore[attr-defined]
-            except Exception:
-                _pred_params = {}
-            supports_x = ('X_df' in _fit_params) and ('X_df' in _pred_params)
+                pass
+            if 'num_workers_loader' in _nf_init_params:
+                nf_kwargs['num_workers_loader'] = 0
 
-            if exog_used is not None and isinstance(exog_used, np.ndarray) and exog_used.size and supports_x:
-                # Build X_df and X_future for NF (newer API)
-                X_df = pd.DataFrame({'unique_id': ['ts'] * int(len(Y_df)), 'ds': Y_df['ds'].values})
-                cols = [f'x{i}' for i in range(exog_used.shape[1])]
-                for j, cname in enumerate(cols):
-                    X_df[cname] = exog_used[:, j]
-                nf.fit(df=Y_df, X_df=X_df, verbose=False)  # type: ignore
-                if exog_future is not None and isinstance(exog_future, np.ndarray) and exog_future.size and future_times is not None:
-                    ds_f = pd.to_datetime(pd.Series(future_times), unit='s', utc=True)
-                    Xf_df = pd.DataFrame({'unique_id': ['ts'] * int(len(ds_f)), 'ds': pd.Index(ds_f).to_pydatetime()})
+            nf = _NeuralForecast(**nf_kwargs)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                # Detect X_df and predict(h) support
+                try:
+                    _fit_params = _inspect.signature(nf.fit).parameters  # type: ignore[attr-defined]
+                except Exception:
+                    _fit_params = {}
+                try:
+                    _pred_params = _inspect.signature(nf.predict).parameters  # type: ignore[attr-defined]
+                except Exception:
+                    _pred_params = {}
+                supports_x = ('X_df' in _fit_params) and ('X_df' in _pred_params)
+
+                if exog_used is not None and isinstance(exog_used, np.ndarray) and exog_used.size and supports_x:
+                    # Build X_df and X_future for NF (newer API)
+                    X_df = pd.DataFrame({'unique_id': ['ts'] * int(len(Y_df)), 'ds': Y_df['ds'].values})
+                    cols = [f'x{i}' for i in range(exog_used.shape[1])]
                     for j, cname in enumerate(cols):
-                        Xf_df[cname] = exog_future[:, j]
-                    if 'h' in _pred_params:
-                        Yf = nf.predict(h=int(fh), X_df=Xf_df)  # type: ignore
+                        X_df[cname] = exog_used[:, j]
+                    nf.fit(df=Y_df, X_df=X_df, verbose=False)  # type: ignore
+                    if exog_future is not None and isinstance(exog_future, np.ndarray) and exog_future.size and future_times is not None:
+                        ds_f = pd.to_datetime(pd.Series(future_times), unit='s', utc=True)
+                        Xf_df = pd.DataFrame({'unique_id': ['ts'] * int(len(ds_f)), 'ds': pd.Index(ds_f).to_pydatetime()})
+                        for j, cname in enumerate(cols):
+                            Xf_df[cname] = exog_future[:, j]
+                        if 'h' in _pred_params:
+                            Yf = nf.predict(h=int(fh), X_df=Xf_df)  # type: ignore
+                        else:
+                            Yf = nf.predict(X_df=Xf_df)  # type: ignore
                     else:
-                        Yf = nf.predict(X_df=Xf_df)  # type: ignore
+                        if 'h' in _pred_params:
+                            Yf = nf.predict(h=int(fh))  # type: ignore
+                        else:
+                            Yf = nf.predict()  # type: ignore
                 else:
+                    nf.fit(df=Y_df, verbose=False)  # type: ignore
                     if 'h' in _pred_params:
                         Yf = nf.predict(h=int(fh))  # type: ignore
                     else:
                         Yf = nf.predict()  # type: ignore
-            else:
-                nf.fit(df=Y_df, verbose=False)  # type: ignore
-                if 'h' in _pred_params:
-                    Yf = nf.predict(h=int(fh))  # type: ignore
+            return Yf
+        finally:
+            try:
+                import torch.distributed as _dist  # type: ignore
+                if _dist.is_available() and _dist.is_initialized():
+                    _dist.destroy_process_group()
+            except Exception:
+                pass
+            try:
+                import torch as _torch  # type: ignore
+                if hasattr(_torch, 'cuda') and _torch.cuda.is_available():
+                    _torch.cuda.synchronize()
+                    _torch.cuda.empty_cache()
+            except Exception:
+                pass
+            for key in managed_env_vars:
+                if key in env_missing:
+                    os.environ.pop(key, None)
+                    continue
+                restored = env_snapshot.get(key)
+                if restored is None:
+                    os.environ.pop(key, None)
                 else:
-                    Yf = nf.predict()  # type: ignore
-        return Yf
-    finally:
-        try:
-            import torch.distributed as _dist  # type: ignore
-            if _dist.is_available() and _dist.is_initialized():
-                _dist.destroy_process_group()
-        except Exception:
-            pass
-        try:
-            import torch as _torch  # type: ignore
-            if hasattr(_torch, 'cuda') and _torch.cuda.is_available():
-                _torch.cuda.synchronize()
-                _torch.cuda.empty_cache()
-        except Exception:
-            pass
-        for key in managed_env_vars:
-            if key in env_missing:
-                os.environ.pop(key, None)
-                continue
-            restored = env_snapshot.get(key)
-            if restored is None:
-                os.environ.pop(key, None)
-            else:
-                os.environ[key] = restored
+                    os.environ[key] = restored
 
 
 def fetch_history(

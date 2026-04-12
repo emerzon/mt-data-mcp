@@ -2,6 +2,8 @@
 
 import inspect
 import os
+import threading
+import time
 import types
 from unittest.mock import MagicMock, PropertyMock, call, patch
 
@@ -217,6 +219,115 @@ class TestNfSetupAndPredict:
         assert isinstance(result, pd.DataFrame)
         for key, value in original_env.items():
             assert os.environ.get(key) == value
+
+    @patch("mtdata.forecast.common.pd_freq_from_timeframe", return_value="1h")
+    def test_serializes_concurrent_environment_mutation(self, mock_freq, monkeypatch):
+        model_cls = _mock_nf_class()
+        active_calls = 0
+        max_active = 0
+        active_lock = threading.Lock()
+        entered = threading.Event()
+        release = threading.Event()
+        results = []
+        errors = []
+
+        def _nf_init(self, *, models, freq, **kw):
+            pass
+
+        _nf_init.__signature__ = inspect.Signature(
+            [
+                inspect.Parameter("self", inspect.Parameter.POSITIONAL_OR_KEYWORD),
+                inspect.Parameter("models", inspect.Parameter.KEYWORD_ONLY),
+                inspect.Parameter("freq", inspect.Parameter.KEYWORD_ONLY),
+            ]
+        )
+
+        def _fit(self, **kwargs):
+            nonlocal active_calls, max_active
+            with active_lock:
+                active_calls += 1
+                max_active = max(max_active, active_calls)
+                entered.set()
+            release.wait(timeout=2.0)
+            with active_lock:
+                active_calls -= 1
+            return None
+
+        _fit.__signature__ = inspect.Signature(
+            [
+                inspect.Parameter("self", inspect.Parameter.POSITIONAL_OR_KEYWORD),
+                inspect.Parameter("df", inspect.Parameter.KEYWORD_ONLY),
+            ]
+        )
+
+        def _predict(self, **kwargs):
+            return _make_yf(1)
+
+        _predict.__signature__ = inspect.Signature(
+            [
+                inspect.Parameter("self", inspect.Parameter.POSITIONAL_OR_KEYWORD),
+                inspect.Parameter("h", inspect.Parameter.KEYWORD_ONLY, default=None),
+            ]
+        )
+
+        FakeNF = type("FakeNF", (), {"__init__": _nf_init, "fit": _fit, "predict": _predict})
+        nf_module = types.ModuleType("neuralforecast")
+        nf_module.NeuralForecast = FakeNF
+
+        torch_dist_module = types.ModuleType("torch.distributed")
+        torch_dist_module.is_available = lambda: False
+        torch_dist_module.is_initialized = lambda: False
+        torch_dist_module.destroy_process_group = lambda: None
+
+        torch_module = types.ModuleType("torch")
+        torch_module.cuda = types.SimpleNamespace(
+            is_available=lambda: False,
+            device_count=lambda: 0,
+            synchronize=lambda: None,
+            empty_cache=lambda: None,
+        )
+        torch_module.distributed = torch_dist_module
+
+        monkeypatch.setenv("MTDATA_NF_ACCEL", "cpu")
+
+        def _call_predict():
+            try:
+                results.append(
+                    nf_setup_and_predict(
+                        model_class=model_cls,
+                        fh=1,
+                        timeframe="H1",
+                        Y_df=_make_y_df(),
+                        input_size=24,
+                        batch_size=32,
+                        steps=5,
+                    )
+                )
+            except Exception as exc:  # pragma: no cover - exercised only on failure
+                errors.append(exc)
+
+        with patch.dict(
+            "sys.modules",
+            {
+                "neuralforecast": nf_module,
+                "torch": torch_module,
+                "torch.distributed": torch_dist_module,
+            },
+        ):
+            t1 = threading.Thread(target=_call_predict)
+            t2 = threading.Thread(target=_call_predict)
+            t1.start()
+            assert entered.wait(timeout=1.0)
+            t2.start()
+            time.sleep(0.1)
+            assert max_active == 1
+            release.set()
+            t1.join(timeout=2.0)
+            t2.join(timeout=2.0)
+
+        assert not errors
+        assert len(results) == 2
+        assert max_active == 1
 
     @patch("mtdata.forecast.common.pd_freq_from_timeframe", return_value="1h")
     def test_prefers_trainer_object_over_trainer_kwargs_when_construction_succeeds(self, mock_freq):
