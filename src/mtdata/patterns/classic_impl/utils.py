@@ -265,7 +265,7 @@ def _fallback_local_extrema(
 ) -> np.ndarray:
     values = np.asarray(src, dtype=float)
     n = int(values.size)
-    if n <= (2 * order + 1):
+    if n < (2 * order + 1):
         return np.asarray([], dtype=int)
     candidates: List[int] = []
     for idx in range(order, n - order):

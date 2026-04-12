@@ -281,6 +281,16 @@ class TestDetectPivotsClose:
 
         assert peaks.tolist() == [2]
 
+    def test_fallback_local_extrema_allows_exact_window_boundary(self):
+        peaks = utils_mod._fallback_local_extrema(
+            np.array([1.0, 2.0, 3.0, 2.0, 1.0], dtype=float),
+            min_dist=1,
+            order=2,
+            prefer_high=True,
+        )
+
+        assert peaks.tolist() == [2]
+
 
 class TestConfidenceHelpers:
     def test_conf_normalizes_non_unit_weights(self):
