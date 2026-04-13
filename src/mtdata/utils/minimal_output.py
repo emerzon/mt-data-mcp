@@ -1118,6 +1118,188 @@ def _normalize_barrier_optimize_payload(
     return out
 
 
+def _normalize_analysis_legends_payload(
+    payload: Dict[str, Any],
+    *,
+    verbose: bool,
+    tool_name: str,
+) -> Optional[Dict[str, Any]]:
+    if verbose or tool_name not in {"causal_discover_signals", "correlation_matrix", "cointegration_test"}:
+        return None
+    if "legends" not in payload:
+        return None
+    out = dict(payload)
+    out.pop("legends", None)
+    return out
+
+
+def _normalize_forecast_methods_payload(
+    payload: Dict[str, Any],
+    *,
+    verbose: bool,
+    tool_name: str,
+) -> Optional[Dict[str, Any]]:
+    if tool_name != "forecast_list_methods" or verbose:
+        return None
+
+    if "error" in payload and not _is_empty_value(payload.get("error")):
+        return {"error": payload.get("error")}
+
+    out: Dict[str, Any] = {
+        "success": bool(payload.get("success")) if isinstance(payload.get("success"), bool) else True,
+    }
+    for key in ("detail", "total", "total_filtered", "available", "unavailable", "methods_shown", "methods_hidden"):
+        value = payload.get(key)
+        if not _is_empty_value(value):
+            out[key] = value
+
+    filters = payload.get("filters")
+    if isinstance(filters, dict):
+        filters_out = {str(key): value for key, value in filters.items() if not _is_empty_value(value)}
+        if filters_out:
+            out["filters"] = filters_out
+
+    methods = payload.get("methods")
+    if isinstance(methods, list):
+        dict_rows = [row for row in methods if isinstance(row, dict)]
+        if len(dict_rows) == len(methods):
+            compact_rows: List[Dict[str, Any]] = []
+            for row in dict_rows:
+                compact = {
+                    key: row.get(key)
+                    for key in ("method", "category", "available")
+                    if key in row and not _is_empty_value(row.get(key))
+                }
+                compact_rows.append(compact or dict(row))
+            out["methods"] = compact_rows
+        else:
+            out["methods"] = methods
+
+    hidden = payload.get("methods_hidden")
+    try:
+        if hidden is not None and int(hidden) > 0:
+            out["show_all_hint"] = "Use --detail full to see all methods."
+    except Exception:
+        pass
+
+    return out
+
+
+def _compact_support_resistance_level(
+    value: Any,
+    *,
+    preferred_keys: List[str],
+) -> Optional[Dict[str, Any]]:
+    if not isinstance(value, dict):
+        return None
+    out = {
+        key: value.get(key)
+        for key in preferred_keys
+        if key in value and not _is_empty_value(value.get(key))
+    }
+    return out or None
+
+
+def _normalize_support_resistance_payload(
+    payload: Dict[str, Any],
+    *,
+    verbose: bool,
+    tool_name: str,
+) -> Optional[Dict[str, Any]]:
+    if tool_name != "support_resistance_levels" or verbose:
+        return None
+
+    if "error" in payload and not _is_empty_value(payload.get("error")):
+        return {"error": payload.get("error")}
+
+    out: Dict[str, Any] = {}
+    for key in ("success", "symbol", "timeframe", "mode", "method", "current_price", "level_counts"):
+        value = payload.get(key)
+        if not _is_empty_value(value):
+            out[key] = value
+
+    nearest_in = payload.get("nearest")
+    if isinstance(nearest_in, dict):
+        nearest_out: Dict[str, Any] = {}
+        for side in ("support", "resistance"):
+            compact = _compact_support_resistance_level(
+                nearest_in.get(side),
+                preferred_keys=["value", "distance_pct", "touches", "status"],
+            )
+            if compact:
+                nearest_out[side] = compact
+        if nearest_out:
+            out["nearest"] = nearest_out
+
+    levels_in = payload.get("levels")
+    if isinstance(levels_in, list):
+        compact_levels = [
+            compact
+            for compact in (
+                _compact_support_resistance_level(
+                    row,
+                    preferred_keys=["type", "value", "distance_pct", "touches", "status"],
+                )
+                for row in levels_in
+            )
+            if compact
+        ]
+        if compact_levels:
+            out["levels"] = compact_levels
+
+    fibonacci_in = payload.get("fibonacci")
+    if isinstance(fibonacci_in, dict):
+        fibonacci_out: Dict[str, Any] = {}
+        fib_timeframe = fibonacci_in.get("selected_timeframe")
+        if _is_empty_value(fib_timeframe):
+            fib_timeframe = fibonacci_in.get("timeframe")
+        if not _is_empty_value(fib_timeframe):
+            fibonacci_out["timeframe"] = fib_timeframe
+
+        fib_nearest_in = fibonacci_in.get("nearest")
+        if isinstance(fib_nearest_in, dict):
+            fib_nearest_out: Dict[str, Any] = {}
+            for side in ("support", "resistance"):
+                compact = _compact_support_resistance_level(
+                    fib_nearest_in.get(side),
+                    preferred_keys=["label", "value", "distance_pct"],
+                )
+                if compact:
+                    fib_nearest_out[side] = compact
+            if fib_nearest_out:
+                fibonacci_out["nearest"] = fib_nearest_out
+
+        fib_levels_in = fibonacci_in.get("levels")
+        if isinstance(fib_levels_in, list):
+            fib_levels = [
+                compact
+                for compact in (
+                    _compact_support_resistance_level(
+                        row,
+                        preferred_keys=["label", "type", "value", "distance_pct"],
+                    )
+                    for row in fib_levels_in
+                )
+                if compact
+            ]
+            if fib_levels:
+                fibonacci_out["levels"] = fib_levels
+
+        if fibonacci_out:
+            out["fibonacci"] = fibonacci_out
+
+    warnings_out = payload.get("warnings")
+    if isinstance(warnings_out, list) and warnings_out:
+        out["warnings"] = warnings_out
+
+    if any(key in payload for key in ("coverage_gaps", "zone_overlap", "meta", "timeframes_analyzed", "window")):
+        out["show_all_hint"] = (
+            "Use --detail full for timeframe selection rationale, zone widths, and coverage diagnostics."
+        )
+
+    return out
+
+
 def _compact_forecast_ci(
     payload: Dict[str, Any],
     *,
@@ -1449,6 +1631,30 @@ def format_result_minimal(
                             forecast_norm = _normalize_forecast_payload(result, verbose=verbose)
                             if forecast_norm is not None:
                                 normalized = forecast_norm
+        if isinstance(normalized, dict):
+            analysis_legends_norm = _normalize_analysis_legends_payload(
+                normalized,
+                verbose=verbose,
+                tool_name=resolved_tool_name,
+            )
+            if analysis_legends_norm is not None:
+                normalized = analysis_legends_norm
+
+            forecast_methods_norm = _normalize_forecast_methods_payload(
+                normalized,
+                verbose=verbose,
+                tool_name=resolved_tool_name,
+            )
+            if forecast_methods_norm is not None:
+                normalized = forecast_methods_norm
+
+            support_resistance_norm = _normalize_support_resistance_payload(
+                normalized,
+                verbose=verbose,
+                tool_name=resolved_tool_name,
+            )
+            if support_resistance_norm is not None:
+                normalized = support_resistance_norm
         if isinstance(normalized, str):
             return normalized.strip()
         toon_text = _format_to_toon(normalized, simplify_numbers=simplify_numbers)

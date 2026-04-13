@@ -704,6 +704,141 @@ class TestFormatResultForCli:
         assert "window:" in regime
         assert "null_max_quantile" in regime
 
+    def test_toon_format_hides_analysis_legends_by_default(self):
+        payload = {
+            "success": True,
+            "data": {
+                "links": [{"effect": "EURUSD", "cause": "GBPUSD", "lag": 1, "p_value": 0.02}],
+            },
+            "legends": {
+                "transform": {"log_return": {"description": "Returns"}},
+                "note_p_value": "Lower is better",
+            },
+        }
+
+        compact = _format_result_for_cli(
+            payload,
+            fmt="toon",
+            verbose=False,
+            cmd_name="causal_discover_signals",
+        )
+        verbose = _format_result_for_cli(
+            payload,
+            fmt="toon",
+            verbose=True,
+            cmd_name="causal_discover_signals",
+        )
+
+        assert "legends" not in compact
+        assert "note_p_value" not in compact
+        assert "legends" in verbose
+
+    def test_toon_format_compacts_forecast_list_methods_output(self):
+        result = _format_result_for_cli(
+            {
+                "detail": "compact",
+                "total": 3,
+                "total_filtered": 3,
+                "available": 2,
+                "unavailable": 1,
+                "categories": {"native": ["theta"], "statsforecast": ["sf_theta", "sf_ets"]},
+                "category_summary": [
+                    {"category": "native", "total": 1, "examples": ["theta"]},
+                    {"category": "statsforecast", "total": 2, "examples": ["sf_theta", "sf_ets"]},
+                ],
+                "methods": [
+                    {"method": "theta", "category": "native", "available": True, "params_count": 1},
+                    {"method": "sf_theta", "category": "statsforecast", "available": True, "params_count": 0},
+                ],
+                "methods_shown": 2,
+                "methods_hidden": 1,
+                "note": "Use --detail full to see all methods.",
+            },
+            fmt="toon",
+            verbose=False,
+            cmd_name="forecast_list_methods",
+        )
+
+        assert "methods[2]{method,category,available}" in result
+        assert "category_summary" not in result
+        assert "categories" not in result
+        assert "params_count" not in result
+        assert "show_all_hint" in result
+
+    def test_toon_format_compacts_support_resistance_output(self):
+        result = _format_result_for_cli(
+            {
+                "success": True,
+                "symbol": "EURUSD",
+                "timeframe": "H1",
+                "mode": "auto",
+                "method": "weighted_retests",
+                "current_price": 1.176,
+                "timeframes_analyzed": ["M15", "H1", "H4"],
+                "window": {"start": "2025-01-01", "end": "2025-01-02"},
+                "level_counts": {"support": 1, "resistance": 1, "total": 2},
+                "nearest": {
+                    "support": {
+                        "value": 1.174,
+                        "distance_pct": 0.0015,
+                        "touches": 6,
+                        "status": "role_reversed_support",
+                        "zone_high": 1.175,
+                    },
+                    "resistance": {
+                        "value": 1.177,
+                        "distance_pct": 0.0009,
+                        "touches": 3,
+                        "status": "resistance",
+                        "zone_high": 1.178,
+                    },
+                },
+                "levels": [
+                    {
+                        "type": "support",
+                        "value": 1.174,
+                        "distance_pct": 0.0015,
+                        "touches": 6,
+                        "status": "role_reversed_support",
+                        "zone_high": 1.175,
+                    },
+                    {
+                        "type": "resistance",
+                        "value": 1.177,
+                        "distance_pct": 0.0009,
+                        "touches": 3,
+                        "status": "resistance",
+                        "zone_high": 1.178,
+                    },
+                ],
+                "fibonacci": {
+                    "selected_timeframe": "D1",
+                    "selection_rule": "verbose-internals",
+                    "nearest": {
+                        "support": {"label": "127.2%", "value": 1.169, "distance_pct": -0.0059},
+                        "resistance": {"label": "23.6%", "value": 1.179, "distance_pct": 0.0022},
+                    },
+                    "levels": [
+                        {"label": "127.2%", "type": "support", "value": 1.169, "distance_pct": -0.0059},
+                        {"label": "23.6%", "type": "resistance", "value": 1.179, "distance_pct": 0.0022},
+                    ],
+                },
+                "coverage_gaps": {"support": {"threshold_pct": 0.12}},
+                "zone_overlap": {"has_overlap": False},
+            },
+            fmt="toon",
+            verbose=False,
+            cmd_name="support_resistance_levels",
+        )
+
+        assert "nearest:" in result
+        assert "levels[2]{type,value,distance_pct,touches,status}" in result
+        assert "fibonacci:" in result
+        assert "zone_high" not in result
+        assert "coverage_gaps" not in result
+        assert "zone_overlap" not in result
+        assert "show_all_hint" in result
+
     def test_toon_format_hides_trade_metadata_in_non_verbose_output(self):
         open_out = _format_result_for_cli(
             [
