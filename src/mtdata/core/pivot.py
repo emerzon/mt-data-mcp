@@ -406,7 +406,7 @@ def support_resistance_levels(
     decay_half_life_bars: Optional[int] = None,
     detail: Literal["compact", "full"] = "compact",
 ) -> Dict[str, Any]:
-    """Detect support and resistance levels around the current price from weighted historical retests.
+    """Detect support/resistance plus Fibonacci swing levels around the current price from historical structure.
 
     `timeframe="auto"` (default) merges levels from M15, H1, H4, and D1.
 
@@ -415,6 +415,7 @@ def support_resistance_levels(
     - bounce strength after each test (normalized by ATR)
     - pre-test ADX trend strength
     - exponential time decay so recent tests matter more
+    - ATR-filtered Fibonacci retracement/extension levels from the most relevant completed swing
     """
 
     def _run() -> Dict[str, Any]:

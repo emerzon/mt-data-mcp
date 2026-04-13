@@ -64,6 +64,9 @@ def test_support_resistance_tool_returns_weighted_levels():
     assert result["level_counts"] == {"support": 1, "resistance": 1, "total": 2}
     assert result["nearest"]["support"]["type"] == "support"
     assert result["nearest"]["resistance"]["type"] == "resistance"
+    assert result["fibonacci"]["swing"]["direction"] == "up"
+    assert len(result["fibonacci"]["levels"]) == 7
+    assert result["fibonacci"]["nearest"]["support"]["type"] == "support"
     assert "supports" not in result
     assert "resistances" not in result
 
@@ -91,6 +94,9 @@ def test_support_resistance_tool_defaults_to_auto_mode():
     assert result["timeframes_analyzed"] == ["M15", "H1", "H4", "D1"]
     assert result["level_counts"] == {"support": 1, "resistance": 1, "total": 2}
     assert result["nearest"]["support"]["source_timeframes"] == ["M15", "H1", "H4", "D1"]
+    assert result["fibonacci"]["mode"] == "auto"
+    assert result["fibonacci"]["selected_timeframe"] == "D1"
+    assert result["fibonacci"]["available_timeframes"] == ["M15", "H1", "H4", "D1"]
     assert "supports" not in result
     assert "resistances" not in result
 
@@ -115,6 +121,9 @@ def test_support_resistance_tool_full_detail_retains_support_and_resistance_list
     assert len(result["resistances"]) == 1
     assert result["supports"][0]["type"] == "support"
     assert result["resistances"][0]["type"] == "resistance"
+    assert result["fibonacci"]["timeframe"] == "H1"
+    assert len(result["fibonacci"]["retracements"]) == 5
+    assert len(result["fibonacci"]["extensions"]) == 2
 
 
 def test_support_resistance_tool_wraps_fetch_errors():

@@ -78,7 +78,7 @@ Calculate pivot points.
   - `method` (string): "classic", "fibonacci", "woodie", "camarilla", "demark".
 
 #### `GET /api/support-resistance`
-Identify support and resistance levels.
+Identify support and resistance levels, plus Fibonacci retracement/extension levels from the most relevant completed swing.
 
 - **Query Params:**
   - `symbol` (string, required).
@@ -93,6 +93,7 @@ Identify support and resistance levels.
   - In `auto` mode, overlapping same-event confirmations across timeframes are deduped instead of fully double-counted.
   - Qualification now uses distinct test `episodes`, while raw `touches` remain available as secondary detail.
   - The response includes both base and effective adaptive settings: `tolerance_pct`/`reaction_bars` are the inputs, while `effective_tolerance_pct`/`effective_reaction_bars` reflect the current ATR regime.
+  - A `fibonacci` section exposes retracement levels `23.6%`, `38.2%`, `50%`, `61.8%`, `78.6%` and extensions `127.2%`, `161.8%`, anchored to ATR-filtered historical swings and labeled relative to the latest price.
 
 #### `GET /api/denoise/methods`
 List available denoising algorithms and their parameters.

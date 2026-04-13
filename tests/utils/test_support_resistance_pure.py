@@ -202,6 +202,43 @@ def test_compute_support_resistance_returns_ranked_levels_around_current_price()
     assert resistance["strength_rank"] == 1
 
 
+def test_compute_support_resistance_includes_fibonacci_levels_from_latest_relevant_swing():
+    result = compute_support_resistance_levels(
+        _clustered_levels_frame(),
+        symbol="EURUSD",
+        timeframe="H1",
+        limit=200,
+        tolerance_pct=0.005,
+        min_touches=2,
+        max_levels=3,
+        reaction_bars=4,
+    )
+
+    fibonacci = result["fibonacci"]
+    assert fibonacci["mode"] == "single"
+    assert fibonacci["timeframe"] == "H1"
+    assert fibonacci["swing"]["direction"] == "up"
+    assert fibonacci["swing"]["contains_current_price"] is True
+    assert fibonacci["swing"]["current_price_position"] == "within_swing"
+    assert fibonacci["swing"]["anchor_low"]["value"] == pytest.approx(100.0)
+    assert fibonacci["swing"]["anchor_high"]["value"] == pytest.approx(110.1)
+    assert [level["label"] for level in fibonacci["levels"]] == [
+        "78.6%",
+        "61.8%",
+        "50%",
+        "38.2%",
+        "23.6%",
+        "127.2%",
+        "161.8%",
+    ]
+    assert fibonacci["nearest"]["support"]["label"] == "61.8%"
+    assert fibonacci["nearest"]["support"]["type"] == "support"
+    assert fibonacci["nearest"]["support"]["value"] == pytest.approx(103.8582)
+    assert fibonacci["nearest"]["resistance"]["label"] == "50%"
+    assert fibonacci["nearest"]["resistance"]["type"] == "resistance"
+    assert fibonacci["nearest"]["resistance"]["value"] == pytest.approx(105.05)
+
+
 def test_recent_stronger_support_scores_above_older_weaker_support():
     result = compute_support_resistance_levels(
         _weighted_supports_frame(),
@@ -446,3 +483,8 @@ def test_merge_support_resistance_results_combines_multiple_timeframes():
     assert merged_support["score_breakdown"]["mtf_confirmation_bonus"] > 0.0
     assert merged_support["timeframe_contributions"][0]["merge_mode"] == "full"
     assert merged_support["timeframe_contributions"][1]["merge_mode"] == "deduped"
+    assert merged["fibonacci"]["mode"] == "auto"
+    assert merged["fibonacci"]["selected_timeframe"] == "H4"
+    assert merged["fibonacci"]["available_timeframes"] == ["H1", "H4"]
+    assert merged["fibonacci"]["swing"]["contains_current_price"] is True
+    assert merged["fibonacci"]["nearest"]["support"]["type"] == "support"

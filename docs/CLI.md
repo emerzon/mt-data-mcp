@@ -183,7 +183,7 @@ mtdata-cli data_fetch_candles EURUSD --start "2025-12-01" --end "2025-12-31"
 | `indicators_describe` | Get indicator details |
 | `patterns_detect` | Detect candlestick/chart patterns |
 | `pivot_compute_points` | Calculate pivot levels |
-| `support_resistance_levels` | Compute support and resistance levels |
+| `support_resistance_levels` | Compute support/resistance levels with Fibonacci swing context |
 | `correlation_matrix` | Pairwise correlation matrix between symbols |
 | `cointegration_test` | Pairwise cointegration test between symbols |
 | `causal_discover_signals` | Granger-style causal discovery between symbols |

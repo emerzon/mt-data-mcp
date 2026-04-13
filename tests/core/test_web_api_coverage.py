@@ -1177,6 +1177,9 @@ class TestGetSupportResistance:
         assert len(res["levels"]) > 0
         assert res["symbol"] == "EURUSD"
         assert "window" in res
+        assert "fibonacci" in res
+        assert len(res["fibonacci"]["levels"]) == 7
+        assert res["fibonacci"]["nearest"]["support"]["type"] == "support"
 
     def test_default_timeframe_uses_auto_mode(self):
         import pandas as pd
@@ -1199,6 +1202,8 @@ class TestGetSupportResistance:
         assert body["timeframe"] == "auto"
         assert body["mode"] == "auto"
         assert body["timeframes_analyzed"] == ["M15", "H1", "H4", "D1"]
+        assert body["fibonacci"]["mode"] == "auto"
+        assert body["fibonacci"]["selected_timeframe"] == "D1"
         assert mock_fetch.call_count == 4
 
     def test_no_levels_detected(self):
