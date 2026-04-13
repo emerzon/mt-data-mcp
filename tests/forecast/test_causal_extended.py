@@ -482,11 +482,39 @@ class TestCausalDiscoverSignals:
         assert result["meta"]["pairs_tested"] >= 1
         assert result["meta"]["p_value_correction"] == "bonferroni_across_lags"
         assert not any("verbose" in str(w.message).lower() for w in records)
-        assert "verbose" not in mock_granger.call_args.kwargs
+        assert mock_granger.call_args.kwargs.get("verbose") is False
         assert any(
             "event=finish operation=causal_discover_signals success=True" in record.message
             for record in caplog.records
         )
+
+    @patch("statsmodels.tsa.stattools.grangercausalitytests")
+    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal._fetch_series")
+    def test_granger_stdout_is_suppressed(self, mock_fetch, mock_granger, capsys):
+        idx = pd.date_range("2024-01-01", periods=80, freq="h")
+        base = np.linspace(1.0, 2.0, 80)
+        series_map = {
+            "A": pd.Series(base, index=idx),
+            "B": pd.Series(base * 1.01 + 0.001, index=idx),
+        }
+
+        def _fetch_side_effect(symbol, timeframe, count):
+            return series_map[symbol], None
+
+        def _granger_side_effect(*args, **kwargs):
+            print("Granger Causality")
+            return {
+                1: ({"ssr_ftest": (1.0, 0.02, 10, 1)}, None),
+            }
+
+        mock_fetch.side_effect = _fetch_side_effect
+        mock_granger.side_effect = _granger_side_effect
+
+        result = self._unwrapped()("A,B", max_lag=1, transform="diff", normalize=False)
+
+        assert result["success"] is True
+        assert "Granger Causality" not in capsys.readouterr().out
 
     @patch("statsmodels.tsa.stattools.grangercausalitytests")
     @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})

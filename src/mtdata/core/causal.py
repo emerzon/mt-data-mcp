@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+import io
 import logging
 import math
 import time
@@ -1214,10 +1216,12 @@ def causal_discover_signals(  # noqa: C901
                     continue
                 pair_attempts += 1
                 try:
-                    with warnings.catch_warnings():
+                    with warnings.catch_warnings(), contextlib.redirect_stdout(io.StringIO()):
                         warnings.simplefilter("ignore", category=FutureWarning)
                         tests = grangercausalitytests(
-                            subset[[effect, cause]], maxlag=max_lag
+                            subset[[effect, cause]],
+                            maxlag=max_lag,
+                            verbose=False,
                         )
                 except Exception as ex:
                     if len(pair_failures) < 10:
