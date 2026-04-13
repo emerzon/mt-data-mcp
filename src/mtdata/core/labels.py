@@ -51,7 +51,9 @@ def _build_triple_barrier_outputs(
     direction_value: str,
     pip_size: float,
     barrier_kwargs: Dict[str, Any],
-) -> tuple[List[int], List[int], List[str], List[Optional[str]], List[Optional[str]], int]:
+) -> tuple[
+    List[int], List[int], List[str], List[Optional[str]], List[Optional[str]], int
+]:
     max_entry_index = len(closes) - int(horizon)
     if max_entry_index <= 0:
         return [], [], [], [], [], 0
@@ -87,8 +89,10 @@ def _build_triple_barrier_outputs(
     valid_entry_mask = valid_price_mask & valid_barrier_mask
     skipped_entries = int(max_entry_index - np.count_nonzero(valid_entry_mask))
 
-    if label_on == 'close':
-        close_windows = np.lib.stride_tricks.sliding_window_view(closes[1:], int(horizon))
+    if label_on == "close":
+        close_windows = np.lib.stride_tricks.sliding_window_view(
+            closes[1:], int(horizon)
+        )
         if direction_value == "long":
             tp_hits = close_windows >= tp_levels[:, None]
             sl_hits = close_windows <= sl_levels[:, None]
@@ -98,8 +102,12 @@ def _build_triple_barrier_outputs(
     else:
         high_values = highs if highs is not None else closes
         low_values = lows if lows is not None else closes
-        high_windows = np.lib.stride_tricks.sliding_window_view(high_values[1:], int(horizon))
-        low_windows = np.lib.stride_tricks.sliding_window_view(low_values[1:], int(horizon))
+        high_windows = np.lib.stride_tricks.sliding_window_view(
+            high_values[1:], int(horizon)
+        )
+        low_windows = np.lib.stride_tricks.sliding_window_view(
+            low_values[1:], int(horizon)
+        )
         if direction_value == "long":
             tp_hits = high_windows >= tp_levels[:, None]
             sl_hits = low_windows <= sl_levels[:, None]
@@ -158,8 +166,8 @@ def labels_triple_barrier(
     sl_pips: Optional[float] = None,
     denoise: Optional[DenoiseSpec] = None,
     direction: Literal["long", "short"] = "long",  # type: ignore
-    label_on: Literal['close','high_low'] = 'high_low',  # type: ignore
-    output: Literal['full','summary','compact','summary_only'] = 'compact',  # type: ignore
+    label_on: Literal["close", "high_low"] = "high_low",  # type: ignore
+    output: Literal["full", "summary", "compact", "summary_only"] = "compact",  # type: ignore
     summary_only: bool = False,
     lookback: int = 300,
 ) -> Dict[str, Any]:
@@ -176,31 +184,48 @@ def labels_triple_barrier(
     direction='long' or 'short' controls which side is treated as TP/SL.
     Outputs label: +1 (TP first), -1 (SL first), 0 (neither by horizon), and holding_bars until decision.
     """
+
     def _run() -> Dict[str, Any]:
         try:
-            get_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise).ensure_connection()
+            get_mt5_gateway(
+                ensure_connection_impl=ensure_mt5_connection_or_raise
+            ).ensure_connection()
             direction_value, direction_error = _normalize_trade_direction(direction)
             if direction_error or direction_value is None:
                 return {"error": direction_error or "Invalid direction."}
             output_mode = str(output).strip().lower()
-            if output_mode == 'summary_only':
-                output_mode = 'summary'
+            if output_mode == "summary_only":
+                output_mode = "summary"
             if isinstance(summary_only, str):
-                summary_only_flag = summary_only.strip().lower() in {"1", "true", "yes", "y", "on"}
+                summary_only_flag = summary_only.strip().lower() in {
+                    "1",
+                    "true",
+                    "yes",
+                    "y",
+                    "on",
+                }
             else:
                 summary_only_flag = bool(summary_only)
             if summary_only_flag:
-                output_mode = 'summary'
-            if output_mode not in {'full', 'summary', 'compact'}:
-                return {"error": "Invalid output mode. Use 'full', 'summary', 'compact', or summary_only=True."}
-            df = _fetch_history(symbol, timeframe, int(max(limit, horizon + 50)), as_of=None)
+                output_mode = "summary"
+            if output_mode not in {"full", "summary", "compact"}:
+                return {
+                    "error": "Invalid output mode. Use 'full', 'summary', 'compact', or summary_only=True."
+                }
+            df = _fetch_history(
+                symbol, timeframe, int(max(limit, horizon + 50)), as_of=None
+            )
             if len(df) < horizon + 2:
                 return {"error": "Insufficient history for labeling"}
-            base_col = _resolve_denoise_base_col(df, denoise, base_col='close', default_when='pre_ti')
+            base_col = _resolve_denoise_base_col(
+                df, denoise, base_col="close", default_when="pre_ti"
+            )
             closes = df[base_col].astype(float).to_numpy()
-            highs = df['high'].astype(float).to_numpy() if 'high' in df.columns else None
-            lows = df['low'].astype(float).to_numpy() if 'low' in df.columns else None
-            times = df['time'].astype(float).to_numpy()
+            highs = (
+                df["high"].astype(float).to_numpy() if "high" in df.columns else None
+            )
+            lows = df["low"].astype(float).to_numpy() if "low" in df.columns else None
+            times = df["time"].astype(float).to_numpy()
 
             pip_size = _get_pip_size(symbol)
 
@@ -225,7 +250,9 @@ def labels_triple_barrier(
                 None,
             )
             if sample_entry_price is None:
-                return {"error": "No valid positive entry prices available for labeling."}
+                return {
+                    "error": "No valid positive entry prices available for labeling."
+                }
             sample_tp, sample_sl = _resolve_barrier_prices(
                 price=sample_entry_price,
                 direction=direction_value,
@@ -234,25 +261,50 @@ def labels_triple_barrier(
                 **barrier_kwargs,
             )
             if sample_tp is None or sample_sl is None:
-                return {"error": "Provide barriers via tp_abs/sl_abs or tp_pct/sl_pct or tp_pips/sl_pips"}
+                return {
+                    "error": "Provide barriers via tp_abs/sl_abs or tp_pct/sl_pct or tp_pips/sl_pips"
+                }
             if not _barrier_prices_are_valid(
                 price=sample_entry_price,
                 direction=direction_value,
                 tp_price=sample_tp,
                 sl_price=sample_sl,
             ):
-                return {"error": "Resolved TP/SL barriers are invalid for the entry price."}
-            labels, hold, t_entry, tp_times, sl_times, skipped_entries = _build_triple_barrier_outputs(
-                closes=closes,
-                highs=highs,
-                lows=lows,
-                times=times,
-                horizon=int(horizon),
-                label_on=label_on,
-                direction_value=direction_value,
-                pip_size=pip_size,
-                barrier_kwargs=barrier_kwargs,
+                return {
+                    "error": "Resolved TP/SL barriers are invalid for the entry price."
+                }
+            labels, hold, t_entry, tp_times, sl_times, skipped_entries = (
+                _build_triple_barrier_outputs(
+                    closes=closes,
+                    highs=highs,
+                    lows=lows,
+                    times=times,
+                    horizon=int(horizon),
+                    label_on=label_on,
+                    direction_value=direction_value,
+                    pip_size=pip_size,
+                    barrier_kwargs=barrier_kwargs,
+                )
             )
+
+            # Build label legend for interpretability
+            label_legend = {
+                "1": {
+                    "code": 1,
+                    "label": "tp_first",
+                    "description": "Take-profit barrier hit before stop-loss (profitable outcome)",
+                },
+                "-1": {
+                    "code": -1,
+                    "label": "sl_first",
+                    "description": "Stop-loss barrier hit before take-profit (loss outcome)",
+                },
+                "0": {
+                    "code": 0,
+                    "label": "hold",
+                    "description": "Neither barrier hit within horizon bars (neutral/timeout outcome)",
+                },
+            }
 
             payload: Dict[str, Any] = {
                 "success": True,
@@ -260,6 +312,7 @@ def labels_triple_barrier(
                 "timeframe": timeframe,
                 "direction": direction_value,
                 "horizon": int(horizon),
+                "label_legend": label_legend,
                 "entries": t_entry,
                 "labels": labels,
                 "holding_bars": hold,
@@ -271,17 +324,28 @@ def labels_triple_barrier(
                     f"Skipped {int(skipped_entries)} entries with invalid or non-positive entry prices."
                 ]
                 payload["skipped_entries"] = int(skipped_entries)
-            if output_mode in ('summary','compact'):
+            if output_mode in ("summary", "compact"):
                 import numpy as _np
+
                 n = min(int(lookback), len(labels))
                 lab_tail = labels[-n:] if n > 0 else labels
                 hold_tail = hold[-n:] if n > 0 else hold
-                counts = {"pos": int(sum(1 for v in lab_tail if v == 1)),
-                          "neg": int(sum(1 for v in lab_tail if v == -1)),
-                          "neut": int(sum(1 for v in lab_tail if v == 0))}
-                med_hold = float(_np.median(_np.array(hold_tail, dtype=float))) if hold_tail else float('nan')
-                summary = {"lookback": int(n), "counts": counts, "median_holding_bars": med_hold}
-                if output_mode == 'summary':
+                counts = {
+                    "pos": int(sum(1 for v in lab_tail if v == 1)),
+                    "neg": int(sum(1 for v in lab_tail if v == -1)),
+                    "neut": int(sum(1 for v in lab_tail if v == 0)),
+                }
+                med_hold = (
+                    float(_np.median(_np.array(hold_tail, dtype=float)))
+                    if hold_tail
+                    else float("nan")
+                )
+                summary = {
+                    "lookback": int(n),
+                    "counts": counts,
+                    "median_holding_bars": med_hold,
+                }
+                if output_mode == "summary":
                     out = {
                         "success": True,
                         "symbol": symbol,

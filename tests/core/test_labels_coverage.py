@@ -197,6 +197,17 @@ class TestLabelsTripleBarrier:
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
     @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
     @patch(f"{_LABELS_MOD}._fetch_history")
+    def test_full_output_includes_label_legend(self, mock_hist, mock_den, mock_pip):
+        mock_hist.return_value = _make_df(60)
+        result = _get_raw_fn()("EURUSD", tp_pct=0.5, sl_pct=0.5, horizon=5, output="full")
+
+        assert result["label_legend"]["1"]["label"] == "tp_first"
+        assert result["label_legend"]["-1"]["label"] == "sl_first"
+        assert result["label_legend"]["0"]["label"] == "hold"
+
+    @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
+    @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
+    @patch(f"{_LABELS_MOD}._fetch_history")
     def test_summary_only_flag(self, mock_hist, mock_den, mock_pip):
         mock_hist.return_value = _make_df(60)
         result = _get_raw_fn()("EURUSD", tp_pct=0.5, sl_pct=0.5, horizon=5, output="compact", summary_only=True)
