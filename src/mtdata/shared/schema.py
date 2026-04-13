@@ -48,7 +48,7 @@ PARAM_HINTS = {
     "return_mode": "Return calculation mode: pct or log.",
     "output": "Output mode (full/summary/compact).",
     "ohlcv": "OHLCV column selector (e.g. 'close', 'high,low').",
-    "indicators": "Indicators as compact specs like 'rsi(14),macd(12,26,9)' or JSON like '[{\"name\":\"rsi\",\"params\":[14]}]'. Bare names such as 'rsi' are also accepted.",
+    "indicators": "Indicators as compact specs like 'rsi_14', 'rsi(length=14)', 'macd(12,26,9)', or 'macd(fast=12,slow=26,signal=9)', or JSON like '[{\"name\":\"rsi\",\"params\":{\"length\":14}}]'. Bare names such as 'rsi' are also accepted.",
     "denoise": "Denoise preset or JSON spec.",
     "simplify": "Simplify preset or JSON spec. Examples: '--simplify select', '--simplify \"{\"\"mode\"\":\"\"select\"\",\"\"method\"\":\"\"lttb\"\",\"\"ratio\"\":0.2}\"', or '--simplify select --simplify-params \"ratio=0.2\"'.",
     "include_incomplete": "Include the latest forming candle; defaults to false so last_candle_open is false and fetches return the last closed bar.",
@@ -270,9 +270,11 @@ class IndicatorSpec(TypedDict, total=False):
     """Structured TI spec: name with optional numeric params.
 
     Note: 'name' accepts any string to allow compact forms like "rsi(20)".
+    The optional 'params' field accepts either positional numeric values or
+    a named numeric parameter map.
     """
     name: str
-    params: List[float]
+    params: Union[List[float], Dict[str, float]]
 
 # ---- Denoising (spec + application) ----
 # Allowed denoising methods for first phase (no extra dependencies)

@@ -116,6 +116,53 @@ def _extract_interpretation(sections: Dict[str, List[str]]) -> Optional[str]:
     return _join_doc_lines(overview) or None
 
 
+def _format_indicator_example_number(value: Any) -> Optional[str]:
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        if value.is_integer():
+            return str(int(value))
+        return str(value)
+    return None
+
+
+def _build_indicator_usage_examples(name: str, params: List[Dict[str, Any]]) -> List[str]:
+    indicator_name = str(name or "").strip()
+    if not indicator_name:
+        return []
+
+    examples = [f'mtdata-cli data_fetch_candles EURUSD --indicators "{indicator_name}"']
+    numeric_defaults: List[tuple[str, str]] = []
+    for raw in params or []:
+        if not isinstance(raw, dict):
+            continue
+        pname = str(raw.get("name") or "").strip()
+        rendered_default = _format_indicator_example_number(raw.get("default"))
+        if not pname or rendered_default is None:
+            continue
+        numeric_defaults.append((pname, rendered_default))
+        if len(numeric_defaults) >= 3:
+            break
+
+    if numeric_defaults and numeric_defaults[0][0] == "length":
+        examples.append(
+            f'mtdata-cli data_fetch_candles EURUSD --indicators "{indicator_name}_{numeric_defaults[0][1]}"'
+        )
+    if numeric_defaults:
+        positional = ",".join(value for _pname, value in numeric_defaults)
+        named = ",".join(f"{pname}={value}" for pname, value in numeric_defaults)
+        examples.append(
+            f'mtdata-cli data_fetch_candles EURUSD --indicators "{indicator_name}({positional})"'
+        )
+        examples.append(
+            f'mtdata-cli data_fetch_candles EURUSD --indicators "{indicator_name}({named})"'
+        )
+
+    return list(dict.fromkeys(examples))
+
+
 def _build_indicator_documentation(target: Dict[str, Any]) -> Dict[str, Any]:
     name = str(target.get("name") or "")
     raw_desc = str(target.get("description") or "")
@@ -283,6 +330,12 @@ def indicators_describe(name: IndicatorNameLiteral) -> Dict[str, Any]:  # type: 
             indicator = dict(target)
             docs = _build_indicator_documentation(indicator)
             indicator["description"] = docs.get("description") or indicator.get("description") or ""
+            usage_examples = _build_indicator_usage_examples(
+                str(indicator.get("name") or name),
+                docs.get("parameters") or indicator.get("params") or [],
+            )
+            if usage_examples:
+                indicator["usage_examples"] = usage_examples
             indicator["documentation"] = {
                 "calculation": docs.get("calculation"),
                 "parameters": docs.get("parameters") or [],

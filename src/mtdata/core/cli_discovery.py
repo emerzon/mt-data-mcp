@@ -38,7 +38,7 @@ _COMMAND_PARAM_CHOICE_OVERRIDES: Dict[tuple[str, str], list[str]] = {
 
 
 _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
-    ("data_fetch_candles", "indicators"): "Technical indicators. Use names like rsi, bb, or compact specs like sma(20) and macd(12,26,9). Use parentheses for params, not sma,20.",
+    ("data_fetch_candles", "indicators"): "Technical indicators. Use bare names like rsi, underscore forms like rsi_14, positional specs like sma(20) and macd(12,26,9), or named specs like rsi(length=14) and macd(fast=12,slow=26,signal=9). Use parentheses for params, not sma,20.",
     ("forecast_barrier_optimize", "method"): "Barrier simulation method: mc_gbm, mc_gbm_bb, hmm_mc, garch, bootstrap, heston, jump_diffusion, or auto.",
     ("forecast_quantlib_barrier_price", "option_type"): "Option side: call or put.",
     ("forecast_tune_optuna", "search_space"): "Optuna search space (JSON or k=v).",

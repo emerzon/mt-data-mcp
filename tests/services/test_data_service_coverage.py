@@ -1069,6 +1069,26 @@ class TestFetchCandles(unittest.TestCase):
         self.assertTrue(result.get('success'))
 
     @patch(_MT5_CONFIG)
+    @patch(_APPLY_TI, return_value=['rsi_14'])
+    @patch(_RATES_FROM)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=14)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_indicators_named_string_spec(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_ti, mock_cfg):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        mock_from.return_value = _make_rates(30)
+
+        def add_col(df, spec):
+            self.assertEqual(spec, 'rsi(length=14)')
+            df['rsi_14'] = 50.0
+            return ['rsi_14']
+
+        mock_ti.side_effect = add_col
+        result = fetch_candles('EURUSD', limit=10, indicators='rsi(length=14)')
+        self.assertTrue(result.get('success'))
+
+    @patch(_MT5_CONFIG)
     @patch(_APPLY_TI, return_value=['RSI_14', 'EMA_20', 'ATRr_14'])
     @patch(_RATES_FROM)
     @patch(_CACHED_INFO, return_value=MagicMock())
@@ -1208,6 +1228,30 @@ class TestFetchCandles(unittest.TestCase):
         result = fetch_candles(
             'EURUSD', limit=10,
             indicators='[{"name":"rsi","params":[14]}]',
+        )
+        self.assertTrue(result.get('success'))
+
+    @patch(_MT5_CONFIG)
+    @patch(_APPLY_TI, return_value=['rsi_14'])
+    @patch(_RATES_FROM)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=14)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_indicators_json_named_params(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_ti, mock_cfg):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        mock_from.return_value = _make_rates(30)
+
+        def add_col(df, spec):
+            self.assertEqual(spec, 'rsi(length=14)')
+            df['rsi_14'] = 50.0
+            return ['rsi_14']
+
+        mock_ti.side_effect = add_col
+        result = fetch_candles(
+            'EURUSD',
+            limit=10,
+            indicators='[{"name":"rsi","params":{"length":14}}]',
         )
         self.assertTrue(result.get('success'))
 

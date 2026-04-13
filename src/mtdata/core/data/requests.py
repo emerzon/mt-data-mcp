@@ -15,6 +15,12 @@ from pydantic import (
 
 from ..schema import DenoiseSpec, IndicatorSpec, SimplifySpec, TimeframeLiteral
 
+_INDICATOR_FORMAT_HELP = (
+    "Use bare names like 'rsi', underscore forms like 'rsi_14', "
+    "compact specs like 'sma(20)' and 'macd(12,26,9)', or named specs like "
+    "'rsi(length=14)' and 'macd(fast=12,slow=26,signal=9)'."
+)
+
 
 def _split_indicator_tokens(spec: str) -> List[str]:
     text = str(spec or "").strip()
@@ -55,12 +61,67 @@ def _split_indicator_tokens(spec: str) -> List[str]:
     return parts
 
 
+def _indicator_numeric_value_error(raw_text: str, source_spec: str) -> ValueError:
+    return ValueError(
+        f"Indicator params must be numeric. Invalid value {raw_text!r} in {source_spec!r}."
+    )
+
+
+def _parse_indicator_numeric_value(value: Any, *, raw_text: str, source_spec: str) -> float:
+    parsed = value
+    if isinstance(parsed, str):
+        text = parsed.strip()
+        if not text:
+            raise _indicator_numeric_value_error(raw_text, source_spec)
+        try:
+            parsed = json.loads(text)
+        except Exception:
+            try:
+                parsed = float(text)
+            except Exception as exc:
+                raise _indicator_numeric_value_error(raw_text, source_spec) from exc
+    if isinstance(parsed, bool) or not isinstance(parsed, (int, float)):
+        raise _indicator_numeric_value_error(raw_text, source_spec)
+    return float(parsed)
+
+
+def _normalize_indicator_param_mapping(params: Dict[Any, Any], *, source_spec: str) -> Dict[str, float]:
+    normalized: Dict[str, float] = {}
+    for raw_key, raw_value in params.items():
+        key = str(raw_key or "").strip()
+        if not key:
+            raise ValueError("Indicator param names must be non-empty strings.")
+        normalized[key] = _parse_indicator_numeric_value(
+            raw_value,
+            raw_text=f"{key}={raw_value}",
+            source_spec=source_spec,
+        )
+    return normalized
+
+
 def _normalize_indicator_entry(value: Any) -> Dict[str, Any]:
     if isinstance(value, dict):
-        params = value.get("params")
+        normalized = dict(value)
+        if "params" not in normalized and "kwargs" in normalized:
+            normalized["params"] = normalized.pop("kwargs")
+        params = normalized.get("params")
+        source_spec = json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
         if isinstance(params, dict):
-            raise ValueError("'params' must be a list of numbers, e.g., [14], not a dict.")
-        return dict(value)
+            normalized["params"] = _normalize_indicator_param_mapping(params, source_spec=source_spec)
+        elif isinstance(params, (list, tuple)):
+            normalized["params"] = [
+                _parse_indicator_numeric_value(
+                    item,
+                    raw_text=str(item),
+                    source_spec=source_spec,
+                )
+                for item in params
+            ]
+        elif params is not None:
+            raise ValueError(
+                "'params' must be a list of numeric values like [14] or a named numeric map like {\"length\": 14}."
+            )
+        return normalized
     if value is None:
         raise ValueError("Indicator entries cannot be null.")
     if not isinstance(value, str):
@@ -81,36 +142,45 @@ def _normalize_indicator_entry(value: Any) -> Dict[str, Any]:
 
     match = re.fullmatch(r"([A-Za-z0-9_]+)(?:\((.*)\))?", stripped)
     if not match:
-        raise ValueError(
-            "Invalid indicator format. Use bare names like 'rsi' or compact specs like 'sma(20)' and 'macd(12,26,9)'."
-        )
+        raise ValueError(f"Invalid indicator format. {_INDICATOR_FORMAT_HELP}")
 
     name = match.group(1)
     params_blob = match.group(2)
     if params_blob is None or not params_blob.strip():
         return {"name": name}
 
-    params_out: List[float] = []
-    for raw_part in params_blob.split(","):
+    positional: List[float] = []
+    named: Dict[str, float] = {}
+    for raw_part in _split_indicator_tokens(params_blob):
         part = raw_part.strip()
         if not part:
             continue
-        try:
-            parsed = json.loads(part)
-        except Exception:
-            try:
-                parsed = float(part)
-            except Exception as exc:
-                raise ValueError(
-                    f"Indicator params must be numeric. Invalid value {part!r} in {stripped!r}."
-                ) from exc
-        if isinstance(parsed, bool) or not isinstance(parsed, (int, float)):
-            raise ValueError(
-                f"Indicator params must be numeric. Invalid value {part!r} in {stripped!r}."
+        if "=" in part:
+            key, raw_value = part.split("=", 1)
+            key = key.strip()
+            if not key:
+                raise ValueError(f"Invalid named indicator param in {stripped!r}.")
+            named[key] = _parse_indicator_numeric_value(
+                raw_value,
+                raw_text=part,
+                source_spec=stripped,
             )
-        params_out.append(float(parsed))
+            continue
+        positional.append(
+            _parse_indicator_numeric_value(
+                part,
+                raw_text=part,
+                source_spec=stripped,
+            )
+        )
 
-    return {"name": name, "params": params_out}
+    if named and positional:
+        raise ValueError(
+            f"Indicator params cannot mix positional and named values in {stripped!r}. "
+            "Use either macd(12,26,9) or macd(fast=12,slow=26,signal=9)."
+        )
+
+    return {"name": name, "params": named or positional}
 
 
 def _normalize_indicator_specs(value: Any) -> Any:

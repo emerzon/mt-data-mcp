@@ -595,6 +595,13 @@ def _normalize_indicator_spec(indicators: Optional[List[IndicatorSpec]]) -> Opti
                 if isinstance(params, (list, tuple)) and len(params) > 0:
                     args_str = ",".join(str(_coerce_scalar(str(param))) for param in params)
                     parts.append(f"{name}({args_str})")
+                elif isinstance(params, dict) and len(params) > 0:
+                    args_str = ",".join(
+                        f"{str(key).strip()}={_coerce_scalar(str(param))}"
+                        for key, param in params.items()
+                        if str(key).strip()
+                    )
+                    parts.append(f"{name}({args_str})" if args_str else name)
                 else:
                     parts.append(name)
             else:

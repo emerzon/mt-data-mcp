@@ -2216,6 +2216,12 @@ class TestResolveParamKwargs:
         kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="forecast_tune_optuna")
         assert kwargs["help"] == "Optuna search space (JSON or k=v)."
 
+    def test_data_fetch_candles_indicators_help_mentions_named_and_underscore_syntax(self):
+        param = {"name": "indicators", "type": Optional[List[Dict[str, Any]]], "required": False, "default": None}
+        kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="data_fetch_candles")
+        assert "rsi_14" in kwargs["help"]
+        assert "rsi(length=14)" in kwargs["help"]
+
     def test_forecast_barrier_optimize_method_has_cli_choices(self):
         param = {"name": "method", "type": str, "required": False, "default": "auto"}
         kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="forecast_barrier_optimize")
@@ -2385,7 +2391,7 @@ class TestCreateCommandFunction:
             {"name": "macd", "params": [12.0, 26.0, 9.0]},
         ]
 
-    def test_indicator_params_dict_returns_friendly_error(self, capsys):
+    def test_indicator_params_dict_are_accepted(self):
         mock_fn = MagicMock(return_value={"ok": True})
         func_info = {
             "func": mock_fn,
@@ -2399,15 +2405,42 @@ class TestCreateCommandFunction:
         cmd_fn = create_command_function(func_info, cmd_name="data_fetch_candles")
         args = argparse.Namespace(
             symbol="EURUSD",
-            indicators='[{"name":"rsi","params":{"period":14}}]',
+            indicators='[{"name":"rsi","params":{"length":14}}]',
             indicators_params=None,
             json=False,
             verbose=False,
         )
         status = cmd_fn(args)
-        assert status == 1
-        assert "'params' must be a list of numbers" in capsys.readouterr().out
-        mock_fn.assert_not_called()
+        assert status == 0
+        request = mock_fn.call_args[1]["request"]
+        assert request.indicators == [{"name": "rsi", "params": {"length": 14.0}}]
+
+    def test_named_indicator_string_is_accepted(self):
+        mock_fn = MagicMock(return_value={"ok": True})
+        func_info = {
+            "func": mock_fn,
+            "request_model": DataFetchCandlesRequest,
+            "request_param_name": "request",
+            "params": [
+                {"name": "symbol", "type": str, "required": True, "default": None},
+                {"name": "indicators", "type": Optional[List[Dict[str, Any]]], "required": False, "default": None},
+            ],
+        }
+        cmd_fn = create_command_function(func_info, cmd_name="data_fetch_candles")
+        args = argparse.Namespace(
+            symbol="EURUSD",
+            indicators="rsi(length=14),macd(fast=12,slow=26,signal=9)",
+            indicators_params=None,
+            json=False,
+            verbose=False,
+        )
+        status = cmd_fn(args)
+        assert status == 0
+        request = mock_fn.call_args[1]["request"]
+        assert request.indicators == [
+            {"name": "rsi", "params": {"length": 14.0}},
+            {"name": "macd", "params": {"fast": 12.0, "slow": 26.0, "signal": 9.0}},
+        ]
 
     def test_indicator_param_comma_syntax_returns_friendly_error(self, capsys):
         mock_fn = MagicMock(return_value={"ok": True})

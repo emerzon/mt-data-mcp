@@ -364,6 +364,8 @@ Values above 70 often indicate overbought conditions.
         params = {p["name"]: p for p in docs["parameters"]}
         assert params["length"]["description"] == "Window length."
         assert params["scalar"]["description"] == "Optional scalar multiplier."
+        assert any('rsi_14' in example for example in indicator["usage_examples"])
+        assert any('rsi(length=14)' in example for example in indicator["usage_examples"])
 
     def test_indicators_describe_cleans_signature_and_preserves_multiline_docs(self, monkeypatch):
         from mtdata.core import indicators as core_indicators
@@ -562,6 +564,7 @@ Values below 30 often indicate oversold conditions.
 
         assert out["success"] is True
         assert out["indicator"]["name"] == "bbands"
+        assert any('bbands_20' in example for example in out["indicator"]["usage_examples"])
 
 
 # ===================================================================

@@ -212,8 +212,13 @@ def create_command_function(  # noqa: C901
         for item in errors:
             loc = ".".join(str(part) for part in item.get("loc", ()))
             msg = str(item.get("msg") or "Invalid value.")
-            if "indicators" in loc and "params" in loc and ("list" in msg.lower() or "valid list" in msg.lower()):
-                return "'params' must be a list of numbers, e.g., [14], not a dict."
+            if "indicators" in loc and "params" in loc and any(
+                marker in msg.lower() for marker in ("list", "dict", "dictionary", "mapping", "valid")
+            ):
+                return (
+                    "'params' must be a list of numeric values like [14] "
+                    'or a named numeric map like {"length": 14}.'
+                )
             if loc.endswith("simplify.method") and ("input should be" in msg.lower() or "literal" in msg.lower()):
                 choices = ", ".join(
                     f"{name} ({description})"
