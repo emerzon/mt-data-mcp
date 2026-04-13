@@ -392,6 +392,7 @@ def trade_account_info() -> dict:
             pass
 
         payload = {
+            "success": True,
             "balance": info.balance,
             "equity": info.equity,
             "profit": info.profit,

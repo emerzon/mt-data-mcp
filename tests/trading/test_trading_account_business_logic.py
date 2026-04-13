@@ -57,6 +57,7 @@ def test_trade_account_info_includes_execution_preflight_fields() -> None:
     if prev is not None:
         sys.modules["MetaTrader5"] = prev
 
+    assert out["success"] is True
     assert out["server"] == "Demo-Server"
     assert out["company"] == "Broker LLC"
     assert out["trade_mode"] == "demo"
@@ -93,6 +94,7 @@ def test_trade_account_info_rounds_margin_level_for_display() -> None:
     with patch.object(core_trading_account, "create_trading_gateway", return_value=gateway):
         out = raw()
 
+    assert out["success"] is True
     assert out["margin_level"] == 53231.43
 
 
@@ -146,6 +148,7 @@ def test_trade_account_info_logs_finish_event(caplog) -> None:
     ):
         out = raw()
 
+    assert out["success"] is True
     assert out["balance"] == 10000.0
     assert any(
         "event=finish operation=trade_account_info success=True" in record.message
