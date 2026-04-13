@@ -1430,6 +1430,30 @@ def _collect_support_resistance_warnings(
     return warnings
 
 
+def _annotate_strength_metrics(levels: List[Dict[str, Any]]) -> None:
+    if not levels:
+        return
+
+    score_values = [_as_finite_float(level.get("score")) for level in levels]
+    finite_scores = [score for score in score_values if score is not None]
+    if not finite_scores:
+        finite_scores = [0.0]
+    min_score = min(finite_scores)
+    max_score = max(finite_scores)
+    spread = max_score - min_score
+    count = len(levels)
+
+    for index, (level, score) in enumerate(zip(levels, score_values), start=1):
+        level["strength_rank"] = index
+        percentile = 1.0 if count == 1 else 1.0 - (float(index - 1) / float(count - 1))
+        if score is None or spread <= 1e-12:
+            normalized = 1.0
+        else:
+            normalized = (score - min_score) / spread
+        level["strength_percentile"] = float(round(max(0.0, min(1.0, percentile)), 4))
+        level["strength_score_normalized"] = float(round(max(0.0, min(1.0, normalized)), 4))
+
+
 def _build_merge_signature(level: Dict[str, Any], timeframe: str) -> Optional[Dict[str, Any]]:
     first_touch = _parse_output_time(level.get("first_touch"))
     last_touch = _parse_output_time(level.get("last_touch"))
@@ -1831,10 +1855,8 @@ def merge_support_resistance_results(  # noqa: C901
 
     support_candidates.sort(key=lambda level: (-float(level.get("score", 0.0)), -float(level.get("value", 0.0))))
     resistance_candidates.sort(key=lambda level: (-float(level.get("score", 0.0)), float(level.get("value", 0.0))))
-    for rank, level in enumerate(support_candidates, start=1):
-        level["strength_rank"] = rank
-    for rank, level in enumerate(resistance_candidates, start=1):
-        level["strength_rank"] = rank
+    _annotate_strength_metrics(support_candidates)
+    _annotate_strength_metrics(resistance_candidates)
 
     max_levels_value = max(1, int(max_levels))
     supports = support_candidates[:max_levels_value]
@@ -1919,7 +1941,24 @@ def compact_support_resistance_level(level: Any) -> Optional[Dict[str, Any]]:
     if not isinstance(level, dict):
         return None
     out: Dict[str, Any] = {}
-    for key in ("type", "value", "distance", "distance_pct", "touches", "episodes", "status", "score", "strength_rank"):
+    for key in (
+        "type",
+        "value",
+        "distance",
+        "distance_pct",
+        "touches",
+        "episodes",
+        "status",
+        "score",
+        "strength_rank",
+        "strength_percentile",
+        "strength_score_normalized",
+        "last_touch",
+        "zone_low",
+        "zone_high",
+        "zone_width",
+        "zone_width_atr",
+    ):
         value = level.get(key)
         if value is not None:
             out[str(key)] = value
@@ -2091,11 +2130,9 @@ def compute_support_resistance_levels(
     resistance_candidates = [dict(level) for level in formatted_levels if level.get("type") == "resistance"]
 
     support_candidates.sort(key=lambda level: (-float(level.get("score", 0.0)), -float(level.get("value", 0.0))))
-    for rank, level in enumerate(support_candidates, start=1):
-        level["strength_rank"] = rank
     resistance_candidates.sort(key=lambda level: (-float(level.get("score", 0.0)), float(level.get("value", 0.0))))
-    for rank, level in enumerate(resistance_candidates, start=1):
-        level["strength_rank"] = rank
+    _annotate_strength_metrics(support_candidates)
+    _annotate_strength_metrics(resistance_candidates)
 
     supports = support_candidates[:max_levels_value]
     resistances = resistance_candidates[:max_levels_value]

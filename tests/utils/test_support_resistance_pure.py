@@ -219,6 +219,10 @@ def test_compute_support_resistance_returns_ranked_levels_around_current_price()
     assert resistance["score_breakdown"]["total"] == resistance["score"]
     assert support["strength_rank"] == 1
     assert resistance["strength_rank"] == 1
+    assert support["strength_percentile"] == 1.0
+    assert resistance["strength_percentile"] == 1.0
+    assert support["strength_score_normalized"] == 1.0
+    assert resistance["strength_score_normalized"] == 1.0
 
 
 def test_compute_support_resistance_includes_fibonacci_levels_from_latest_relevant_swing():
@@ -282,6 +286,8 @@ def test_recent_stronger_support_scores_above_older_weaker_support():
     assert older["value"] < recent["value"]
     assert older["score"] < recent["score"]
     assert older["strength_rank"] > recent["strength_rank"]
+    assert older["strength_percentile"] < recent["strength_percentile"]
+    assert older["strength_score_normalized"] < recent["strength_score_normalized"]
     assert older["avg_pretest_adx"] < recent["avg_pretest_adx"]
 
 

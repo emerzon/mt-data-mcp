@@ -64,6 +64,11 @@ def test_support_resistance_tool_returns_weighted_levels():
     assert result["level_counts"] == {"support": 1, "resistance": 1, "total": 2}
     assert result["nearest"]["support"]["type"] == "support"
     assert result["nearest"]["resistance"]["type"] == "resistance"
+    assert "last_touch" in result["nearest"]["support"]
+    assert "zone_low" in result["nearest"]["support"]
+    assert "zone_high" in result["nearest"]["support"]
+    assert "strength_percentile" in result["nearest"]["support"]
+    assert "strength_score_normalized" in result["nearest"]["support"]
     assert result["fibonacci"]["swing"]["direction"] == "up"
     assert len(result["fibonacci"]["levels"]) == 7
     assert result["fibonacci"]["nearest"]["support"]["type"] == "support"
@@ -94,6 +99,8 @@ def test_support_resistance_tool_defaults_to_auto_mode():
     assert result["timeframes_analyzed"] == ["M15", "H1", "H4", "D1"]
     assert result["level_counts"] == {"support": 1, "resistance": 1, "total": 2}
     assert result["nearest"]["support"]["source_timeframes"] == ["M15", "H1", "H4", "D1"]
+    assert "last_touch" in result["nearest"]["support"]
+    assert "strength_percentile" in result["nearest"]["support"]
     assert result["fibonacci"]["mode"] == "auto"
     assert result["fibonacci"]["selected_timeframe"] == "D1"
     assert result["fibonacci"]["available_timeframes"] == ["M15", "H1", "H4", "D1"]
