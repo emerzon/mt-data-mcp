@@ -646,7 +646,7 @@ Before any market order, pending order, scale-in, staged ladder, or recovery add
     - **Avoid the Sweep on TP**: Do not place your TP exactly on a round number, a prominent structural high/low, or a predictable ATR multiple (e.g., exactly `entry + 2.0*ATR`). These are the levels where price typically reverses before filling limit exits. For long TPs, place the price a few ticks **below** the obvious resistance level; for short TPs, place it a few ticks **above** the obvious support level. Use an irregular, non-obvious price in all cases.
     - **Avoid the Cluster on Pending Entry Prices**: Do not place pending entry orders exactly at round numbers, zone midlines, or the textbook edge of a support/resistance zone. These are predictable sweep targets. Use the `sweep_entry` principle: offset pending prices slightly outside obvious levels with irregular, asymmetric buffers, or place them at a fraction of ATR beyond the visible zone boundary.
     - **Sweep Entries**: Consider staggering pending limits *outside* the support/resistance zone to catch the stop cascade.
-    - **ATR Floor Check**: Before finalizing any SL placement, verify that `SL_distance ≥ max(1× ATR(14), 1.5× current_spread)`. If the structural stop does not clear this floor because the zone is too close to entry, the location is not executable at current volatility. Do not tighten the stop to force the trade — reduce size or skip.
+    - **ATR Floor Check**: Before finalizing any SL placement, verify that `SL_distance ≥ max(1.5× ATR(14), 2× current_spread)`. Using `1× ATR` routinely places the stop inside the normal wicking envelope of a single candle, which is the most common cause of premature stop-outs. If the structural stop does not clear this floor because the zone is too close to entry, the location is not executable at current volatility. Do not tighten the stop to force the trade — reduce size or skip.
 14. Run `forecast_barrier_optimize` when TP/SL geometry is still open after the structural floor exists, or when the trade is above baseline size, countertrend, or otherwise high-stakes:
    - use it as a constrained search inside the existing structural stop floor; it may refine geometry but it does not define invalidation by itself
    - **Stop Hunt Override (SL, TP, and pending prices)**: If the optimizer returns any output price — `sl_abs`, `tp_abs`, or a suggested entry — that lands directly on a round mathematical or psychological boundary (e.g. `1.1000`, `1.0950`, or a clean ATR multiple off entry), you must manually skew the final order price to an irregular value (e.g. `1.0943` instead of `1.0950`) *before* executing. This override applies to SL, TP, and pending entry prices equally. Do not blindly trust the optimizer if it returns a magnet level for any of the three.
@@ -735,30 +735,54 @@ Do not send the order if `trade_risk_analyze` shows invalid geometry, the size i
 
 ## Breakeven, Trailing Stop, and Take-Profit Management
 
-### Breakeven Move Policy
-Moving SL to breakeven too early is one of the most common active-trading errors. A premature BE move turns a valid thesis into a coin-flip scratch. Use the rules below to time the move correctly.
+### Stop-Hunt / Liquidity-Sweep Pause Protocol
+Before reacting to SL proximity, classify the incoming move as a genuine invalidation versus a liquidity sweep. A stop-hunt is characterised by: a fast spike through a visible level (your SL, a round number, or a congestion zone) that reverses within 1–3 candles with no structural follow-through. Acting immediately on a spike that is actually a sweep is the primary mechanical cause of premature stop-outs.
 
-Minimum profit threshold before breakeven is justified:
-- `scalp`: price must be at least `1.0× ATR(14)` in profit on `EXECUTION_TF`
-- `intraday`: price must be at least `1.0× ATR(14)` in profit on `PRIMARY_TF`
-- `swing`: price must be at least `1.5× ATR(14)` in profit on `PRIMARY_TF`
+When price is within `proximity_band` of the SL:
+1. **Do not immediately move the SL or panic-close.** Note the time and price.
+2. Fetch a micro-batch: `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{EXECUTION_TF}}", limit=10, indicators="natr(14),mfi(14),chop(14),macd(12,26,9)")`
+3. Classify the proximity move:
+   - **Sweep candidate** (pause and hold): spike is sharp and fast, `mfi(14)` does not confirm participation, `natr(14)` sharply elevated but not sustained, `chop(14)` above `50`, no candle has *closed* beyond the SL level yet.
+   - **Genuine breakdown** (act): two or more `EXECUTION_TF` candles have closed beyond the SL level with structural follow-through, `mfi(14)` confirms directional volume, `macd(12,26,9)` histogram is expanding against the book.
+4. If classified as a **sweep candidate**, wait for the next candle close before deciding. Do not widen the SL impulsively; do not close the position yet.
+5. If classified as a **genuine breakdown**, execute the protective action immediately (trail the SL tighter, partial-close, or full-close).
+6. Never classify a move as a sweep candidate more than **twice in a row** for the same approach. Three consecutive proximity approaches without recovery means the thesis has failed — exit.
+
+### Breakeven Move Policy
+Moving SL to breakeven too early is one of the most common active-trading errors. A premature BE move turns a valid thesis into a coin-flip scratch. All four gates below must pass simultaneously before a BE move is executed.
+
+**Gate 1 — ATR profit threshold** (all four gates must pass):
+- `scalp`: price must be at least `1.5× ATR(14)` in profit on `EXECUTION_TF` (raised from 1.0× — the extra buffer survives the normal wicking envelope)
+- `intraday`: price must be at least `1.5× ATR(14)` in profit on `PRIMARY_TF`
+- `swing`: price must be at least `2.0× ATR(14)` in profit on `PRIMARY_TF`
 
 Use `data_fetch_candles` with `atr(14)` on the relevant timeframe and compare the current unrealized distance (from entry) against the ATR value. If the trade has not cleared the threshold, do not move to BE regardless of how the price action looks.
 
-Structural confirmation required before BE:
+**Gate 2 — Structural close confirmation**:
 - price must have cleanly cleared — not just touched — the first opposing structural block or pivot on `EXECUTION_TF` as confirmed by `support_resistance_levels`
-- at least one `EXECUTION_TF` candle must have closed beyond that level (wick-only breaches do not qualify)
-- if `supertrend(7,3)` on `EXECUTION_TF` has not flipped in the trade direction, the breakout is not confirmed; hold the original SL
+- at least one `EXECUTION_TF` candle must have *closed* beyond that level (wick-only breaches do not qualify)
+- the cleared structural block must be at least `0.5× ATR(14)` from entry; if it is closer, it is not a meaningful confirmation gate and this condition is not satisfied
 
-When NOT to move to breakeven:
+**Gate 3 — Momentum confirmation**:
+- `supertrend(7,3)` on `EXECUTION_TF` must have flipped in the trade direction and currently remain in the trade direction; a brief flip that immediately reverted does not count
+- `macd(12,26,9)` histogram on `EXECUTION_TF` must be on the trade side; a histogram moving toward zero while price is still advancing is a warning — do not trigger BE
+
+**Gate 4 — Regime is not mean-reverting or choppy**:
+- `chop(14)` must be below `61.8` on `EXECUTION_TF` — above this the market is range-bound and a BE stop will routinely be hunted within a few candles
+- `regime_detect` must not currently classify the regime as mean-reverting or choppy on `PRIMARY_TF` — these regimes routinely spike through breakeven before completing the intended move
+- `natr(14)` must not be expanding sharply without a clear trend in the trade direction — volatility expansion without directionality means the spike that cleared the structural block may itself be a sweep
+
+When NOT to move to breakeven (any one condition disqualifies):
+- any of the four gates above has not been satisfied
 - during volatile consolidation near entry where `natr(14)` is expanding but price is not trending
-- when `regime_detect` shows a mean-reverting or choppy regime — these regimes routinely spike through breakeven before completing the move
-- when `chop(14)` is above `61.8` on `EXECUTION_TF` — the market is range-bound and a BE stop will be hunted
+- when `regime_detect` shows a mean-reverting or choppy regime
+- when `chop(14)` is above `61.8` on `EXECUTION_TF`
 - when the position has not yet cleared the mode-specific ATR threshold above
-- when the first structural block is less than `0.5× ATR(14)` from entry — the block is too close to be a meaningful confirmation gate
+- when the first structural block is less than `0.5× ATR(14)` from entry
 
 Breakeven execution:
-- use `trade_modify` to move the hard SL to `entry price ± spread buffer` (plus side for longs, minus side for shorts)
+- use `trade_modify` to move the hard SL to `entry price ± (1× spread + 0.25× ATR(14))` on the protective side (longs: entry minus that buffer; shorts: entry plus that buffer)
+- the additional `0.25× ATR` buffer beyond exact entry is mandatory — placing the BE stop at the exact entry price routinely leads to immediate stop-out because price revisits entry before continuing
 - apply the same irregular-pricing and anti-sweep-offset rules as for initial SL placement
 
 ### Trailing Stop Policy
@@ -766,13 +790,13 @@ After breakeven is secured, actively manage the trailing stop to lock in further
 
 When to start trailing:
 - only after the breakeven move has been completed
-- price must be at least `1.5× ATR(14)` beyond entry on the governing timeframe (i.e., the trade has meaningful cushion past BE)
+- price must be at least `2.0× ATR(14)` beyond entry on the governing timeframe (raised from 1.5× — starting the trail too early is a primary cause of premature stop-outs when price oscillates around the 1.5× level)
 - `supertrend(7,3)` on `EXECUTION_TF` must be in the trade direction
 
 Trailing methods — choose based on context:
 - **Supertrend trail**: use `supertrend(7,3)` on `EXECUTION_TF` as the trailing reference. This is the default method for confirmed trend moves. Place the trailing SL a spread-plus-buffer below (longs) or above (shorts) the supertrend value. Do not tighten the SL past supertrend unless escalating to structural trailing.
 - **Structural swing trail**: use the latest confirmed swing low (longs) or swing high (shorts) on `EXECUTION_TF` from `support_resistance_levels` as the trailing anchor. Preferred when price is stair-stepping through clear structural levels.
-- **ATR-volatility trail**: maintain a `1.5× ATR(14)` to `2.0× ATR(14)` distance from the current price on `PRIMARY_TF`. Use `forecast_volatility_estimate` to decide whether the ATR is stable, contracting, or expanding. Tighten the multiplier toward `1.5×` when volatility is contracting; keep `2.0×` or wider when volatility is expanding in the trade direction.
+- **ATR-volatility trail**: maintain a `2.0× ATR(14)` to `2.5× ATR(14)` distance from the current price on `PRIMARY_TF` (floor raised from 1.5× — a 1.5× trail is within the normal wicking range and is stopped out regularly without the trade having genuinely failed). Use `forecast_volatility_estimate` to decide whether the ATR is stable, contracting, or expanding. Tighten the multiplier toward `2.0×` only when volatility is clearly contracting; keep `2.5×` or wider when volatility is expanding in the trade direction.
 
 Trailing tightening triggers — escalate trailing aggression when:
 - a `PRIMARY_TF` candle closes with clear exhaustion divergence (price vs `rsi(14)` or `macd(12,26,9)`)
