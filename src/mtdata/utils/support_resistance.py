@@ -32,6 +32,7 @@ _DEFAULT_BREAKOUT_PENALTY_ATR_MULT = 0.25
 _DEFAULT_ROLE_REVERSAL_BONUS = 0.65
 _DEFAULT_MTF_DEDUPE_FACTOR = 0.35
 _DEFAULT_MTF_CONFIRMATION_BONUS = 0.2
+_DEFAULT_STRUCTURE_GAP_WARNING_PCT = 0.12
 _FIBONACCI_RETRACEMENTS = (0.236, 0.382, 0.5, 0.618, 0.786)
 _FIBONACCI_EXTENSIONS = (1.272, 1.618)
 _FIBONACCI_LEVEL_DECIMALS = 6
@@ -123,6 +124,14 @@ def _weighted_average(items: List[tuple[float, float]]) -> Optional[float]:
     if total_weight <= 0.0:
         return None
     return total_value / total_weight
+
+
+def _as_finite_float(value: Any) -> Optional[float]:
+    try:
+        out = float(value)
+    except Exception:
+        return None
+    return out if math.isfinite(out) else None
 
 
 def _round_output_price(value: Any) -> Optional[float]:
@@ -966,6 +975,7 @@ def _build_fibonacci_level(
     value: float,
     current_price: Optional[float],
     kind: str,
+    projection: Optional[str] = None,
 ) -> Dict[str, Any]:
     level_value = float(value)
     out: Dict[str, Any] = {
@@ -974,6 +984,8 @@ def _build_fibonacci_level(
         "kind": str(kind),
         "value": _round_output_price(level_value) if _round_output_price(level_value) is not None else level_value,
     }
+    if projection:
+        out["projection"] = str(projection)
     if current_price is None or not math.isfinite(float(current_price)):
         return out
 
@@ -1015,6 +1027,137 @@ def _nearest_fibonacci_levels(
     if resistances:
         nearest["resistance"] = min(resistances, key=lambda level: float(level["value"]))
     return nearest
+
+
+def _extract_fibonacci_swing_bounds(swing: Dict[str, Any]) -> Optional[tuple[float, float]]:
+    anchor_low = swing.get("anchor_low") if isinstance(swing.get("anchor_low"), dict) else {}
+    anchor_high = swing.get("anchor_high") if isinstance(swing.get("anchor_high"), dict) else {}
+    low_value = _as_finite_float(anchor_low.get("value"))
+    high_value = _as_finite_float(anchor_high.get("value"))
+    if low_value is None or high_value is None:
+        start = swing.get("start") if isinstance(swing.get("start"), dict) else {}
+        end = swing.get("end") if isinstance(swing.get("end"), dict) else {}
+        start_value = _as_finite_float(start.get("value"))
+        end_value = _as_finite_float(end.get("value"))
+        if start_value is None or end_value is None:
+            return None
+        low_value = min(start_value, end_value)
+        high_value = max(start_value, end_value)
+    if high_value < low_value:
+        low_value, high_value = high_value, low_value
+    return (float(low_value), float(high_value))
+
+
+def _fibonacci_selection_reason(*, contains_current: bool) -> str:
+    return (
+        "most_recent_completed_swing_bracketing_current_price"
+        if contains_current
+        else "latest_completed_swing"
+    )
+
+
+def _copy_fibonacci_point(point: Dict[str, Any], *, allowed_keys: tuple[str, ...]) -> Dict[str, Any]:
+    out: Dict[str, Any] = {}
+    for key in allowed_keys:
+        value = point.get(key)
+        if value is not None:
+            out[key] = value
+    return out
+
+
+def _build_fibonacci_payload_from_swing(
+    *,
+    start: Dict[str, Any],
+    end: Dict[str, Any],
+    current_price: Optional[float],
+    timeframe: Optional[str],
+    selection_reason: str,
+) -> Optional[Dict[str, Any]]:
+    start_type = str(start.get("type") or "")
+    end_type = str(end.get("type") or "")
+    start_value = _as_finite_float(start.get("value"))
+    end_value = _as_finite_float(end.get("value"))
+    if start_value is None or end_value is None:
+        return None
+
+    low_value = min(start_value, end_value)
+    high_value = max(start_value, end_value)
+    range_value = high_value - low_value
+    if not math.isfinite(range_value) or range_value <= 0.0:
+        return None
+
+    direction = "up" if start_type == "support" and end_type == "resistance" else "down"
+    current_position = _current_price_position(
+        current_price=current_price,
+        low_value=low_value,
+        high_value=high_value,
+    )
+    contains_current = current_position == "within_swing"
+
+    retracements: List[Dict[str, Any]] = []
+    for ratio in _FIBONACCI_RETRACEMENTS:
+        if direction == "up":
+            fib_value = high_value - (float(ratio) * range_value)
+        else:
+            fib_value = low_value + (float(ratio) * range_value)
+        retracements.append(
+            _build_fibonacci_level(
+                ratio=float(ratio),
+                value=fib_value,
+                current_price=current_price,
+                kind="retracement",
+            )
+        )
+
+    extension_projections = ["upside" if direction == "up" else "downside"]
+    if current_position == "above_swing_high" and "upside" not in extension_projections:
+        extension_projections.append("upside")
+    elif current_position == "below_swing_low" and "downside" not in extension_projections:
+        extension_projections.append("downside")
+
+    extensions: List[Dict[str, Any]] = []
+    for projection in extension_projections:
+        for ratio in _FIBONACCI_EXTENSIONS:
+            extension_offset = (float(ratio) - 1.0) * range_value
+            fib_value = high_value + extension_offset if projection == "upside" else low_value - extension_offset
+            extensions.append(
+                _build_fibonacci_level(
+                    ratio=float(ratio),
+                    value=fib_value,
+                    current_price=current_price,
+                    kind="extension",
+                    projection=projection,
+                )
+            )
+
+    levels = sorted(retracements + extensions, key=lambda level: float(level["value"]))
+    nearest = _nearest_fibonacci_levels(levels, current_price=current_price)
+    low_anchor = start if start_value <= end_value else end
+    high_anchor = start if start_value >= end_value else end
+
+    return {
+        "mode": "single",
+        "timeframe": timeframe,
+        "selection_rule": _FIBONACCI_SWING_SELECTION_RULE,
+        "selection_reason": selection_reason,
+        "current_price_used": None
+        if current_price is None or not math.isfinite(float(current_price))
+        else float(round(float(current_price), _FIBONACCI_LEVEL_DECIMALS)),
+        "swing": {
+            "direction": direction,
+            "range": _round_output_price(range_value) if _round_output_price(range_value) is not None else range_value,
+            "contains_current_price": contains_current,
+            "current_price_position": current_position,
+            "start": _copy_fibonacci_point(start, allowed_keys=("type", "index", "time", "value")),
+            "end": _copy_fibonacci_point(end, allowed_keys=("type", "index", "time", "value")),
+            "anchor_low": _copy_fibonacci_point(low_anchor, allowed_keys=("time", "value")),
+            "anchor_high": _copy_fibonacci_point(high_anchor, allowed_keys=("time", "value")),
+        },
+        "retracements": retracements,
+        "extensions": extensions,
+        "levels": levels,
+        "nearest": nearest,
+    }
 
 
 def _compute_fibonacci_payload(
@@ -1071,54 +1214,7 @@ def _compute_fibonacci_payload(
         return None
 
     start, end = best_pair
-    start_type = str(start.get("type") or "")
-    end_type = str(end.get("type") or "")
-    start_value = float(start["value"])
-    end_value = float(end["value"])
-    low_value = min(start_value, end_value)
-    high_value = max(start_value, end_value)
-    range_value = high_value - low_value
-    if range_value <= 0.0 or not math.isfinite(range_value):
-        return None
-
-    direction = "up" if start_type == "support" and end_type == "resistance" else "down"
-    retracements: List[Dict[str, Any]] = []
-    for ratio in _FIBONACCI_RETRACEMENTS:
-        if direction == "up":
-            fib_value = high_value - (float(ratio) * range_value)
-        else:
-            fib_value = low_value + (float(ratio) * range_value)
-        retracements.append(
-            _build_fibonacci_level(
-                ratio=float(ratio),
-                value=fib_value,
-                current_price=current_price,
-                kind="retracement",
-            )
-        )
-
-    extensions: List[Dict[str, Any]] = []
-    for ratio in _FIBONACCI_EXTENSIONS:
-        extension_offset = (float(ratio) - 1.0) * range_value
-        fib_value = high_value + extension_offset if direction == "up" else low_value - extension_offset
-        extensions.append(
-            _build_fibonacci_level(
-                ratio=float(ratio),
-                value=fib_value,
-                current_price=current_price,
-                kind="extension",
-            )
-        )
-
-    levels = sorted(retracements + extensions, key=lambda level: float(level["value"]))
-    nearest = _nearest_fibonacci_levels(levels, current_price=current_price)
-    current_position = _current_price_position(
-        current_price=current_price,
-        low_value=low_value,
-        high_value=high_value,
-    )
-
-    def _swing_point_payload(point: Dict[str, Any]) -> Dict[str, Any]:
+    def _point_payload(point: Dict[str, Any]) -> Dict[str, Any]:
         point_index = int(point["index"])
         point_time = epochs[point_index] if 0 <= point_index < len(epochs) else None
         return {
@@ -1128,45 +1224,21 @@ def _compute_fibonacci_payload(
             "value": _round_output_price(point["value"]) if _round_output_price(point["value"]) is not None else float(point["value"]),
         }
 
-    def _anchor_payload(value: float, point: Dict[str, Any]) -> Dict[str, Any]:
-        point_index = int(point["index"])
-        point_time = epochs[point_index] if 0 <= point_index < len(epochs) else None
-        return {
-            "time": _format_time(point_time),
-            "value": _round_output_price(value) if _round_output_price(value) is not None else value,
-        }
-
-    low_anchor = start if start_value <= end_value else end
-    high_anchor = start if start_value >= end_value else end
-
-    return {
-        "mode": "single",
-        "timeframe": timeframe,
-        "selection_rule": _FIBONACCI_SWING_SELECTION_RULE,
-        "selection_reason": (
-            "most_recent_completed_swing_bracketing_current_price"
-            if best_contains_current
-            else "latest_completed_swing"
-        ),
-        "swing": {
-            "direction": direction,
-            "range": _round_output_price(range_value) if _round_output_price(range_value) is not None else range_value,
-            "contains_current_price": bool(best_contains_current),
-            "current_price_position": current_position,
-            "start": _swing_point_payload(start),
-            "end": _swing_point_payload(end),
-            "anchor_low": _anchor_payload(low_value, low_anchor),
-            "anchor_high": _anchor_payload(high_value, high_anchor),
-        },
-        "retracements": retracements,
-        "extensions": extensions,
-        "levels": levels,
-        "nearest": nearest,
-    }
+    return _build_fibonacci_payload_from_swing(
+        start=_point_payload(start),
+        end=_point_payload(end),
+        current_price=current_price,
+        timeframe=timeframe,
+        selection_reason=_fibonacci_selection_reason(contains_current=best_contains_current),
+    )
 
 
-def _select_auto_fibonacci_payload(results: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-    candidates: List[tuple[tuple[int, float, float], str, Dict[str, Any]]] = []
+def _select_auto_fibonacci_payload(
+    results: List[Dict[str, Any]],
+    *,
+    current_price: Optional[float],
+) -> Optional[Dict[str, Any]]:
+    candidates: List[tuple[tuple[int, float, float], str, Dict[str, Any], bool]] = []
     available_timeframes: List[str] = []
     for payload in results:
         timeframe = str(payload.get("timeframe") or "").upper()
@@ -1177,32 +1249,50 @@ def _select_auto_fibonacci_payload(results: List[Dict[str, Any]]) -> Optional[Di
         if not isinstance(fibonacci, dict):
             continue
         swing = fibonacci.get("swing") if isinstance(fibonacci.get("swing"), dict) else {}
-        contains_current = bool(swing.get("contains_current_price"))
+        bounds = _extract_fibonacci_swing_bounds(swing)
+        if bounds is not None and current_price is not None and math.isfinite(float(current_price)):
+            low_value, high_value = bounds
+            contains_current = low_value <= float(current_price) <= high_value
+        else:
+            contains_current = bool(swing.get("contains_current_price"))
         end_time = None
         end_payload = swing.get("end")
         if isinstance(end_payload, dict):
             end_time = _parse_output_time(end_payload.get("time"))
         weight = _timeframe_weight(timeframe)
         recency = float(end_time) if end_time is not None and math.isfinite(float(end_time)) else -1.0
-        candidates.append(((1 if contains_current else 0, float(weight), recency), timeframe, dict(fibonacci)))
+        candidates.append(((1 if contains_current else 0, float(weight), recency), timeframe, dict(fibonacci), contains_current))
 
     if not candidates:
         return None
 
     candidates.sort(key=lambda item: item[0], reverse=True)
-    _, selected_timeframe, selected_payload = candidates[0]
-    selected_payload["mode"] = "auto"
-    selected_payload["selected_timeframe"] = selected_timeframe
-    selected_payload["available_timeframes"] = sorted(set(available_timeframes), key=_timeframe_sort_key)
-    selected_payload["timeframe_selection_rule"] = _FIBONACCI_TIMEFRAME_SELECTION_RULE
-    return selected_payload
+    _, selected_timeframe, selected_payload, contains_current = candidates[0]
+    swing = selected_payload.get("swing") if isinstance(selected_payload.get("swing"), dict) else {}
+    start = swing.get("start") if isinstance(swing.get("start"), dict) else None
+    end = swing.get("end") if isinstance(swing.get("end"), dict) else None
+    rebuilt = None
+    if isinstance(start, dict) and isinstance(end, dict):
+        rebuilt = _build_fibonacci_payload_from_swing(
+            start=dict(start),
+            end=dict(end),
+            current_price=current_price,
+            timeframe=selected_timeframe,
+            selection_reason=_fibonacci_selection_reason(contains_current=contains_current),
+        )
+    selected_out = rebuilt if isinstance(rebuilt, dict) else dict(selected_payload)
+    selected_out["mode"] = "auto"
+    selected_out["selected_timeframe"] = selected_timeframe
+    selected_out["available_timeframes"] = sorted(set(available_timeframes), key=_timeframe_sort_key)
+    selected_out["timeframe_selection_rule"] = _FIBONACCI_TIMEFRAME_SELECTION_RULE
+    return selected_out
 
 
 def compact_fibonacci_level(level: Any) -> Optional[Dict[str, Any]]:
     if not isinstance(level, dict):
         return None
     out: Dict[str, Any] = {}
-    for key in ("label", "ratio", "kind", "type", "value", "distance", "distance_pct"):
+    for key in ("label", "ratio", "kind", "projection", "type", "value", "distance", "distance_pct"):
         value = level.get(key)
         if value is not None:
             out[str(key)] = value
@@ -1221,6 +1311,7 @@ def compact_fibonacci_payload(payload: Any) -> Any:
         "selection_rule",
         "selection_reason",
         "timeframe_selection_rule",
+        "current_price_used",
     ):
         value = payload.get(key)
         if value is not None:
@@ -1271,6 +1362,72 @@ def compact_fibonacci_payload(payload: Any) -> Any:
             out["levels"] = compact_levels
 
     return out or dict(payload)
+
+
+def _collect_support_resistance_warnings(
+    *,
+    fibonacci: Optional[Dict[str, Any]],
+    supports: List[Dict[str, Any]],
+    resistances: List[Dict[str, Any]],
+    current_price: Optional[float],
+) -> List[Dict[str, Any]]:
+    warnings: List[Dict[str, Any]] = []
+
+    swing = fibonacci.get("swing") if isinstance(fibonacci, dict) and isinstance(fibonacci.get("swing"), dict) else {}
+    current_position = str(swing.get("current_price_position") or "").strip()
+    nearest = fibonacci.get("nearest") if isinstance(fibonacci, dict) and isinstance(fibonacci.get("nearest"), dict) else {}
+    if current_position == "above_swing_high":
+        warnings.append(
+            {
+                "code": "fibonacci_price_above_swing_high",
+                "message": (
+                    "Current price is above the selected Fibonacci swing high; "
+                    "upside extension targets were added to avoid an exhausted grid."
+                ),
+                "selected_timeframe": None if not isinstance(fibonacci, dict) else fibonacci.get("selected_timeframe", fibonacci.get("timeframe")),
+                "nearest_resistance": nearest.get("resistance"),
+            }
+        )
+    elif current_position == "below_swing_low":
+        warnings.append(
+            {
+                "code": "fibonacci_price_below_swing_low",
+                "message": (
+                    "Current price is below the selected Fibonacci swing low; "
+                    "downside extension targets were added to avoid an exhausted grid."
+                ),
+                "selected_timeframe": None if not isinstance(fibonacci, dict) else fibonacci.get("selected_timeframe", fibonacci.get("timeframe")),
+                "nearest_support": nearest.get("support"),
+            }
+        )
+
+    price_value = _as_finite_float(current_price)
+    if price_value is None or abs(price_value) <= 1e-9:
+        return warnings
+
+    for side, levels in (("support", supports), ("resistance", resistances)):
+        if not levels:
+            continue
+        distance_pct = _as_finite_float(levels[0].get("distance_pct"))
+        if distance_pct is None:
+            continue
+        gap_pct = abs(distance_pct)
+        if gap_pct < _DEFAULT_STRUCTURE_GAP_WARNING_PCT:
+            continue
+        warnings.append(
+            {
+                "code": f"structural_gap_{side}",
+                "side": side,
+                "distance_pct": float(round(gap_pct, 6)),
+                "level_value": levels[0].get("value"),
+                "message": (
+                    f"Nearest {side} level is {gap_pct:.1%} away; "
+                    f"historical structure is sparse on the {side} side of the market."
+                ),
+            }
+        )
+
+    return warnings
 
 
 def _build_merge_signature(level: Dict[str, Any], timeframe: str) -> Optional[Dict[str, Any]]:
@@ -1700,7 +1857,13 @@ def merge_support_resistance_results(  # noqa: C901
         for payload in sorted(results, key=lambda item: _timeframe_sort_key(item.get("timeframe")))
         if str(payload.get("timeframe") or "").strip()
     ]
-    fibonacci = _select_auto_fibonacci_payload(results)
+    fibonacci = _select_auto_fibonacci_payload(results, current_price=current_price)
+    warnings = _collect_support_resistance_warnings(
+        fibonacci=fibonacci,
+        supports=supports,
+        resistances=resistances,
+        current_price=current_price,
+    )
 
     return {
         "success": True,
@@ -1745,6 +1908,7 @@ def merge_support_resistance_results(  # noqa: C901
             "end": max(end_values) if end_values else None,
         },
         "fibonacci": fibonacci,
+        "warnings": warnings,
         "supports": supports,
         "resistances": resistances,
         "levels": supports + resistances,
@@ -1945,6 +2109,12 @@ def compute_support_resistance_levels(
         current_price=current_price,
         timeframe=timeframe,
     )
+    warnings = _collect_support_resistance_warnings(
+        fibonacci=fibonacci,
+        supports=supports,
+        resistances=resistances,
+        current_price=current_price,
+    )
 
     return {
         "success": True,
@@ -1973,6 +2143,7 @@ def compute_support_resistance_levels(
             "end": _format_time(window_end),
         },
         "fibonacci": fibonacci,
+        "warnings": warnings,
         "supports": supports,
         "resistances": resistances,
         "levels": supports + resistances,

@@ -165,6 +165,25 @@ def _volatility_compression_frame() -> pd.DataFrame:
     )
 
 
+def _fibonacci_breakout_frame() -> pd.DataFrame:
+    closes = [100, 104, 108, 106, 102, 98, 101, 105, 103, 99, 112]
+    highs = [value + 1.0 for value in closes]
+    lows = [value - 1.0 for value in closes]
+    highs[2] = 110.0
+    lows[5] = 96.0
+    highs[7] = 107.0
+    lows[9] = 97.0
+    highs[10] = 113.0
+    return pd.DataFrame(
+        {
+            "high": highs,
+            "low": lows,
+            "close": closes,
+            "time": [1_700_400_000 + 3600 * i for i in range(len(closes))],
+        }
+    )
+
+
 def test_compute_support_resistance_returns_ranked_levels_around_current_price():
     result = compute_support_resistance_levels(
         _clustered_levels_frame(),
@@ -488,3 +507,73 @@ def test_merge_support_resistance_results_combines_multiple_timeframes():
     assert merged["fibonacci"]["available_timeframes"] == ["H1", "H4"]
     assert merged["fibonacci"]["swing"]["contains_current_price"] is True
     assert merged["fibonacci"]["nearest"]["support"]["type"] == "support"
+
+
+def test_fibonacci_adds_extension_targets_when_price_is_above_down_swing_high():
+    result = compute_support_resistance_levels(
+        _fibonacci_breakout_frame(),
+        symbol="EURUSD",
+        timeframe="H1",
+        limit=200,
+        tolerance_pct=0.01,
+        min_touches=1,
+        max_levels=4,
+        reaction_bars=2,
+    )
+
+    fibonacci = result["fibonacci"]
+    assert fibonacci["selection_reason"] == "latest_completed_swing"
+    assert fibonacci["current_price_used"] == 112.0
+    assert fibonacci["swing"]["direction"] == "down"
+    assert fibonacci["swing"]["contains_current_price"] is False
+    assert fibonacci["swing"]["current_price_position"] == "above_swing_high"
+    assert any(level.get("projection") == "upside" for level in fibonacci["extensions"])
+    assert fibonacci["nearest"]["resistance"]["type"] == "resistance"
+    assert fibonacci["nearest"]["resistance"]["value"] > result["current_price"]
+    assert any(warning.get("code") == "fibonacci_price_above_swing_high" for warning in result["warnings"])
+
+
+def test_merge_support_resistance_recomputes_fibonacci_against_merged_current_price():
+    h1 = compute_support_resistance_levels(
+        _clustered_levels_frame(),
+        symbol="EURUSD",
+        timeframe="H1",
+        limit=200,
+        tolerance_pct=0.005,
+        min_touches=1,
+        max_levels=4,
+        reaction_bars=4,
+    )
+    m15_frame = _clustered_levels_frame().copy()
+    m15_frame.loc[m15_frame.index[-1], "close"] = 111.5
+    m15_frame.loc[m15_frame.index[-1], "high"] = 111.7
+    m15 = compute_support_resistance_levels(
+        m15_frame,
+        symbol="EURUSD",
+        timeframe="M15",
+        limit=200,
+        tolerance_pct=0.005,
+        min_touches=1,
+        max_levels=4,
+        reaction_bars=4,
+    )
+
+    merged = merge_support_resistance_results(
+        [m15, h1],
+        symbol="EURUSD",
+        timeframe="auto",
+        limit=200,
+        tolerance_pct=0.005,
+        min_touches=1,
+        max_levels=4,
+        reaction_bars=4,
+    )
+
+    fibonacci = merged["fibonacci"]
+    assert merged["current_price"] == 111.5
+    assert fibonacci["selected_timeframe"] == "H1"
+    assert fibonacci["current_price_used"] == 111.5
+    assert fibonacci["swing"]["contains_current_price"] is False
+    assert fibonacci["swing"]["current_price_position"] == "above_swing_high"
+    assert fibonacci["nearest"]["resistance"]["value"] > merged["current_price"]
+    assert any(warning.get("code") == "fibonacci_price_above_swing_high" for warning in merged["warnings"])
