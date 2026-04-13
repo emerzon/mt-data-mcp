@@ -153,6 +153,8 @@ def test_support_resistance_tool_defaults_to_auto_mode():
     assert result["fibonacci"]["mode"] == "auto"
     assert result["fibonacci"]["selected_timeframe"] == "D1"
     assert result["fibonacci"]["available_timeframes"] == ["M15", "H1", "H4", "D1"]
+    assert result["fibonacci"]["selection_summary"]["timeframe_candidate_count"] == 4
+    assert result["fibonacci"]["timeframe_selection_candidates"][0]["selected"] is True
     assert "supports" not in result
     assert "resistances" not in result
 

@@ -269,6 +269,9 @@ def test_compute_support_resistance_includes_fibonacci_levels_from_latest_releva
     assert fibonacci["nearest"]["resistance"]["label"] == "50%"
     assert fibonacci["nearest"]["resistance"]["type"] == "resistance"
     assert fibonacci["nearest"]["resistance"]["value"] == pytest.approx(105.05)
+    assert fibonacci["selection_summary"]["candidate_count"] >= 1
+    assert fibonacci["selection_candidates"][0]["selected"] is True
+    assert fibonacci["selection_candidates"][0]["contains_current_price"] is True
 
 
 def test_recent_stronger_support_scores_above_older_weaker_support():
@@ -604,6 +607,9 @@ def test_merge_support_resistance_results_combines_multiple_timeframes():
     assert merged["fibonacci"]["available_timeframes"] == ["H1", "H4"]
     assert merged["fibonacci"]["swing"]["contains_current_price"] is True
     assert merged["fibonacci"]["nearest"]["support"]["type"] == "support"
+    assert merged["fibonacci"]["selection_summary"]["timeframe_candidate_count"] == 2
+    assert merged["fibonacci"]["timeframe_selection_candidates"][0]["selected"] is True
+    assert merged["fibonacci"]["timeframe_selection_candidates"][0]["timeframe"] == "H4"
 
 
 def test_fibonacci_adds_extension_targets_when_price_is_above_down_swing_high():

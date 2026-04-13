@@ -1256,6 +1256,7 @@ def _compute_fibonacci_payload(
     best_pair: Optional[tuple[Dict[str, Any], Dict[str, Any]]] = None
     best_key: Optional[tuple[int, float, float]] = None
     best_contains_current = False
+    selection_candidates: List[Dict[str, Any]] = []
     for index in range(1, len(swings)):
         start = swings[index - 1]
         end = swings[index]
@@ -1276,6 +1277,8 @@ def _compute_fibonacci_payload(
         range_value = high_value - low_value
         if not math.isfinite(range_value) or range_value <= 0.0:
             continue
+        start_index = int(start["index"])
+        start_epoch = epochs[start_index] if 0 <= start_index < len(epochs) else None
         contains_current = bool(
             current_price is not None
             and math.isfinite(float(current_price))
@@ -1284,6 +1287,28 @@ def _compute_fibonacci_payload(
         end_epoch = epochs[end_index] if 0 <= end_index < len(epochs) else None
         recency_value = float(end_epoch) if end_epoch is not None and math.isfinite(float(end_epoch)) else float(end_index)
         key = (1 if contains_current else 0, recency_value, range_value)
+        direction = "up" if start_type == "support" and end_type == "resistance" else "down"
+        selection_candidates.append(
+            {
+                "candidate_id": f"{start_index}:{end_index}:{direction}",
+                "contains_current_price": contains_current,
+                "direction": direction,
+                "range": _round_output_price(range_value) if _round_output_price(range_value) is not None else range_value,
+                "start": {
+                    "type": start_type,
+                    "time": _format_time(start_epoch),
+                    "value": _round_output_price(start_value) if _round_output_price(start_value) is not None else start_value,
+                },
+                "end": {
+                    "type": end_type,
+                    "time": _format_time(end_epoch),
+                    "value": _round_output_price(end_value) if _round_output_price(end_value) is not None else end_value,
+                },
+                "_selection_key": key,
+                "_recency": recency_value,
+                "_range_raw": range_value,
+            }
+        )
         if best_key is None or key > best_key:
             best_key = key
             best_pair = (dict(start), dict(end))
@@ -1303,13 +1328,57 @@ def _compute_fibonacci_payload(
             "value": _round_output_price(point["value"]) if _round_output_price(point["value"]) is not None else float(point["value"]),
         }
 
-    return _build_fibonacci_payload_from_swing(
+    payload = _build_fibonacci_payload_from_swing(
         start=_point_payload(start),
         end=_point_payload(end),
         current_price=current_price,
         timeframe=timeframe,
         selection_reason=_fibonacci_selection_reason(contains_current=best_contains_current),
     )
+    if not isinstance(payload, dict):
+        return payload
+
+    best_start_index = int(start["index"])
+    best_end_index = int(end["index"])
+    best_direction = str(payload.get("swing", {}).get("direction") or "")
+    best_recency = float(best_key[1]) if best_key is not None else float("-inf")
+    best_range = float(best_key[2]) if best_key is not None else float("-inf")
+    ranked_candidates = sorted(
+        selection_candidates,
+        key=lambda candidate: tuple(candidate.get("_selection_key", (0, -1.0, -1.0))),
+        reverse=True,
+    )
+    payload_candidates: List[Dict[str, Any]] = []
+    for rank, candidate in enumerate(ranked_candidates, start=1):
+        candidate_out = {
+            "rank": rank,
+            "candidate_id": candidate.get("candidate_id"),
+            "selected": bool(candidate.get("candidate_id") == f"{best_start_index}:{best_end_index}:{best_direction}"),
+            "contains_current_price": bool(candidate.get("contains_current_price")),
+            "direction": candidate.get("direction"),
+            "range": candidate.get("range"),
+            "start": dict(candidate.get("start") or {}),
+            "end": dict(candidate.get("end") or {}),
+        }
+        if not candidate_out["selected"]:
+            if bool(candidate.get("contains_current_price")) != best_contains_current:
+                rejected_reason = "does_not_bracket_current_price"
+            elif float(candidate.get("_recency", float("-inf"))) < best_recency:
+                rejected_reason = "older_than_selected_candidate"
+            elif float(candidate.get("_range_raw", float("-inf"))) < best_range:
+                rejected_reason = "smaller_than_selected_candidate"
+            else:
+                rejected_reason = "lower_selection_priority"
+            candidate_out["rejected_reason"] = rejected_reason
+        payload_candidates.append(candidate_out)
+
+    payload["selection_candidates"] = payload_candidates
+    payload["selection_summary"] = {
+        "candidate_count": len(payload_candidates),
+        "selected_candidate_id": f"{best_start_index}:{best_end_index}:{best_direction}",
+        "selection_basis": "contains_current_price_then_recency_then_range",
+    }
+    return payload
 
 def _select_auto_fibonacci_payload(
     results: List[Dict[str, Any]],
@@ -1318,6 +1387,7 @@ def _select_auto_fibonacci_payload(
 ) -> Optional[Dict[str, Any]]:
     candidates: List[tuple[tuple[int, float, float], str, Dict[str, Any], bool]] = []
     available_timeframes: List[str] = []
+    timeframe_candidates: List[Dict[str, Any]] = []
     for payload in results:
         timeframe = str(payload.get("timeframe") or "").upper()
         fibonacci = payload.get("fibonacci")
@@ -1339,13 +1409,23 @@ def _select_auto_fibonacci_payload(
             end_time = _parse_output_time(end_payload.get("time"))
         weight = _timeframe_weight(timeframe)
         recency = float(end_time) if end_time is not None and math.isfinite(float(end_time)) else -1.0
+        timeframe_candidates.append(
+            {
+                "timeframe": timeframe,
+                "contains_current_price": contains_current,
+                "timeframe_weight": float(weight),
+                "end_time": end_payload.get("time") if isinstance(end_payload, dict) else None,
+                "_selection_key": (1 if contains_current else 0, float(weight), recency),
+                "_recency": recency,
+            }
+        )
         candidates.append(((1 if contains_current else 0, float(weight), recency), timeframe, dict(fibonacci), contains_current))
 
     if not candidates:
         return None
 
     candidates.sort(key=lambda item: item[0], reverse=True)
-    _, selected_timeframe, selected_payload, contains_current = candidates[0]
+    selected_key, selected_timeframe, selected_payload, contains_current = candidates[0]
     swing = selected_payload.get("swing") if isinstance(selected_payload.get("swing"), dict) else {}
     start = swing.get("start") if isinstance(swing.get("start"), dict) else None
     end = swing.get("end") if isinstance(swing.get("end"), dict) else None
@@ -1363,6 +1443,43 @@ def _select_auto_fibonacci_payload(
     selected_out["selected_timeframe"] = selected_timeframe
     selected_out["available_timeframes"] = sorted(set(available_timeframes), key=_timeframe_sort_key)
     selected_out["timeframe_selection_rule"] = _FIBONACCI_TIMEFRAME_SELECTION_RULE
+    ranked_timeframes = sorted(
+        timeframe_candidates,
+        key=lambda candidate: tuple(candidate.get("_selection_key", (0, 0.0, -1.0))),
+        reverse=True,
+    )
+    timeframe_selection_candidates: List[Dict[str, Any]] = []
+    for rank, candidate in enumerate(ranked_timeframes, start=1):
+        candidate_out = {
+            "rank": rank,
+            "timeframe": candidate.get("timeframe"),
+            "selected": str(candidate.get("timeframe")) == selected_timeframe,
+            "contains_current_price": bool(candidate.get("contains_current_price")),
+            "timeframe_weight": candidate.get("timeframe_weight"),
+            "end_time": candidate.get("end_time"),
+        }
+        if not candidate_out["selected"]:
+            if bool(candidate.get("contains_current_price")) != contains_current:
+                rejected_reason = "timeframe_grid_does_not_bracket_current_price"
+            elif float(candidate.get("timeframe_weight", 0.0)) < float(selected_key[1]):
+                rejected_reason = "lower_timeframe_weight"
+            elif float(candidate.get("_recency", float("-inf"))) < float(selected_key[2]):
+                rejected_reason = "older_than_selected_timeframe"
+            else:
+                rejected_reason = "lower_selection_priority"
+            candidate_out["rejected_reason"] = rejected_reason
+        timeframe_selection_candidates.append(candidate_out)
+
+    selected_out["timeframe_selection_candidates"] = timeframe_selection_candidates
+    summary = selected_out.get("selection_summary") if isinstance(selected_out.get("selection_summary"), dict) else {}
+    summary.update(
+        {
+            "timeframe_candidate_count": len(timeframe_selection_candidates),
+            "selected_timeframe": selected_timeframe,
+            "timeframe_selection_basis": "contains_current_price_then_timeframe_weight_then_recency",
+        }
+    )
+    selected_out["selection_summary"] = summary
     return selected_out
 
 
@@ -1398,6 +1515,10 @@ def compact_fibonacci_payload(payload: Any) -> Any:
     available_timeframes = payload.get("available_timeframes")
     if isinstance(available_timeframes, list) and available_timeframes:
         out["available_timeframes"] = list(available_timeframes)
+
+    selection_summary = payload.get("selection_summary")
+    if isinstance(selection_summary, dict) and selection_summary:
+        out["selection_summary"] = dict(selection_summary)
 
     swing = payload.get("swing")
     if isinstance(swing, dict):
@@ -1438,6 +1559,19 @@ def compact_fibonacci_payload(payload: Any) -> Any:
         ]
         if compact_levels:
             out["levels"] = compact_levels
+
+    timeframe_selection_candidates = payload.get("timeframe_selection_candidates")
+    if isinstance(timeframe_selection_candidates, list) and timeframe_selection_candidates:
+        out["timeframe_selection_candidates"] = [
+            {
+                str(key): value
+                for key, value in dict(candidate).items()
+                if key in {"rank", "timeframe", "selected", "contains_current_price", "timeframe_weight", "end_time", "rejected_reason"}
+                and value is not None
+            }
+            for candidate in timeframe_selection_candidates
+            if isinstance(candidate, dict)
+        ]
 
     return out or dict(payload)
 
