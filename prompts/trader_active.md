@@ -285,7 +285,7 @@ Tier policy:
 - `forecast_generate` and `regime_detect` on `PRIMARY_TF`: once per active thesis or once per new `PRIMARY_TF` candle, unless a trigger forces an earlier refresh.
 - `support_resistance_levels`: once at boot, then on new `PRIMARY_TF` closes, major level interaction, or just before fresh risk is committed.
 - `temporal_analyze`: once per relevant session handoff or hour-bucket change.
-- `patterns_detect`: escalation only, or roughly once per hour to refresh baseline structural context if exposure is active. Rerun earlier if price makes sudden abnormal moves or breaks major levels. Do not rerun it every loop.
+- `patterns_detect`: escalation only. While exposure is active, rerun when a new `HIGHER_TF` candle closes (the earliest point a meaningful structural pattern could have completed) or when price makes a sudden abnormal move that breaks a mapped reaction-map level. Do not use a fixed clock cadence — use these structural triggers. Do not rerun it every loop.
 - If the last good answer from a heavier tool still governs the current decision and no trigger invalidated it, reuse it.
 
 ## Tool Routing Awareness
@@ -438,6 +438,7 @@ In `reaction_mode`:
 - prioritize protection, simplification, harvesting, canceling, repricing, or waiting
 - use `trade_session_context`, `news`, and `market_status` before heavier analytics
 - refresh `EXECUTION_TF` only when immediate management depends on fresh micro-structure
+- after the book is protected, one fast `regime_detect(symbol="{{SYMBOL}}", timeframe="{{PRIMARY_TF}}", method="hmm", output="compact")` is allowed as a classification step to determine whether the abnormal move is a regime break or temporary noise. This is a cheap classifier that directly answers the core `reaction_mode` question; it is not an escalation to full analytics.
 - do not call forecast or pattern tools unless the book is already protected and the decision still cannot be made
 
 Escalate to `full_recheck` when:
@@ -790,6 +791,11 @@ Mode-specific trailing cadence:
 - `scalp`: re-evaluate trailing SL on every `EXECUTION_TF` candle close
 - `intraday`: re-evaluate on every `EXECUTION_TF` candle close; structurally re-anchor on every new `PRIMARY_TF` candle close
 - `swing`: re-evaluate on every `PRIMARY_TF` candle close; only tighten intra-bar on `EXECUTION_TF` if a clear exhaustion or regime-shift signal fires
+
+Regime check during trailing:
+- On every `PRIMARY_TF` candle close while a position is being actively trailed, run `regime_detect(symbol="{{SYMBOL}}", timeframe="{{PRIMARY_TF}}", method="hmm", output="compact")`. This is the mandatory source for the trailing-tightening triggers above that reference `regime_detect`. Without this call, those triggers are never evaluated.
+- If `reliability.confidence` is below `0.50`, continue the current trailing method without adjustment.
+- This call is part of the trailing management cadence, not an escalation. Run it on `PRIMARY_TF` candle close regardless of the current loop tier.
 
 ### Take-Profit Adjustment Policy
 The initial TP is a hypothesis, not a contract. Actively adjust it as the trade develops.
