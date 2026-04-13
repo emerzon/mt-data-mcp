@@ -98,6 +98,33 @@ def test_support_resistance_tool_compact_exposes_coverage_gap_metadata_with_dist
     assert result["coverage_gaps"]["resistance"]["beyond_max_distance_filter"] is True
 
 
+def test_support_resistance_tool_compact_exposes_volume_metadata_when_enabled():
+    fn = _get_support_resistance_fn()
+    gateway = type("Gateway", (), {"ensure_connection": lambda self: None})()
+    frame = _frame().copy()
+    frame["tick_volume"] = [100.0] * len(frame)
+    frame.loc[2, "tick_volume"] = 40.0
+    frame.loc[12, "tick_volume"] = 420.0
+    frame["real_volume"] = 0.0
+    with patch("mtdata.core.pivot.get_mt5_gateway", return_value=gateway), \
+         patch("mtdata.core.pivot._fetch_history", return_value=frame):
+        result = fn(
+            "EURUSD",
+            timeframe="H1",
+            limit=200,
+            tolerance_pct=0.005,
+            min_touches=1,
+            max_levels=4,
+            volume_weighting="auto",
+            reaction_bars=4,
+        )
+
+    assert result["volume_weighting"] == "auto"
+    assert result["volume_source"] == "tick_volume"
+    assert result["nearest"]["support"]["avg_test_volume_ratio"] is not None
+    assert result["nearest"]["support"]["volume_source"] == "tick_volume"
+
+
 def test_support_resistance_tool_defaults_to_auto_mode():
     fn = _get_support_resistance_fn()
     gateway = type("Gateway", (), {"ensure_connection": lambda self: None})()

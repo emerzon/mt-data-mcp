@@ -16,6 +16,8 @@ _DEFAULT_REACTION_BARS = 6
 _DEFAULT_ADX_PERIOD = 14
 _DEFAULT_BOUNCE_WEIGHT = 0.8
 _DEFAULT_ADX_WEIGHT = 0.35
+_DEFAULT_VOLUME_WEIGHT = 0.25
+_DEFAULT_VOLUME_RATIO_CAP = 5.0
 _DEFAULT_SWING_REVERSAL_ATR = 1.3
 _DEFAULT_EPISODE_TOUCH_DECAY = 0.25
 _DEFAULT_ADAPTIVE_TOLERANCE_ATR_MULT = 0.25
@@ -102,6 +104,37 @@ def _to_numeric_array(frame: pd.DataFrame, column: str) -> np.ndarray:
         return np.array([], dtype=float)
     series = pd.to_numeric(frame[column], errors="coerce")
     return series.to_numpy(dtype=float, copy=False)
+
+
+def _normalize_volume_weighting(volume_weighting: Optional[str]) -> str:
+    raw = str(volume_weighting or "off").strip().lower()
+    if raw in {"", "off", "none", "false", "0"}:
+        return "off"
+    if raw == "auto":
+        return raw
+    raise ValueError("volume_weighting must be 'off' or 'auto'")
+
+
+def _resolve_volume_series(
+    frame: pd.DataFrame,
+    *,
+    volume_weighting: str,
+) -> tuple[Optional[np.ndarray], Optional[str], Optional[float]]:
+    mode = _normalize_volume_weighting(volume_weighting)
+    if mode == "off":
+        return None, None, None
+
+    for column in ("real_volume", "volume", "tick_volume"):
+        if column not in frame.columns:
+            continue
+        values = _to_numeric_array(frame, column)
+        finite = values[np.isfinite(values) & (values > 0.0)]
+        if finite.size == 0:
+            continue
+        baseline = float(np.nanmedian(finite))
+        if math.isfinite(baseline) and baseline > 0.0:
+            return values, column, baseline
+    return None, None, None
 
 
 def _last_finite(values: np.ndarray) -> Optional[float]:
@@ -279,6 +312,8 @@ def _build_test(
     lows: np.ndarray,
     atr: np.ndarray,
     adx: np.ndarray,
+    volume: Optional[np.ndarray],
+    volume_baseline: Optional[float],
     epochs: List[Optional[float]],
     reaction_bars: int,
     decay_half_life_bars: int,
@@ -318,7 +353,20 @@ def _build_test(
     retest_component = decay_weight
     bounce_component = decay_weight * _DEFAULT_BOUNCE_WEIGHT * math.log1p(bounce_atr)
     adx_component = decay_weight * _DEFAULT_ADX_WEIGHT * (min(pretest_adx, 60.0) / 25.0)
-    score = retest_component + bounce_component + adx_component
+    volume_ratio = None
+    volume_component = 0.0
+    if (
+        volume is not None
+        and volume_baseline is not None
+        and volume_baseline > 0.0
+        and 0 <= index < len(volume)
+    ):
+        volume_value = float(volume[index])
+        if math.isfinite(volume_value) and volume_value > 0.0:
+            volume_ratio = max(0.0, volume_value / float(volume_baseline))
+            volume_excess = max(0.0, min(volume_ratio, _DEFAULT_VOLUME_RATIO_CAP) - 1.0)
+            volume_component = decay_weight * _DEFAULT_VOLUME_WEIGHT * math.log1p(volume_excess)
+    score = retest_component + bounce_component + adx_component + volume_component
 
     return {
         "type": test_type,
@@ -333,6 +381,8 @@ def _build_test(
         "retest_component": float(retest_component),
         "bounce_component": float(bounce_component),
         "adx_component": float(adx_component),
+        "volume_ratio": None if volume_ratio is None else float(volume_ratio),
+        "volume_component": float(volume_component),
         "score": float(score),
     }
 
@@ -434,6 +484,8 @@ def _collect_tests(
     decay_half_life_bars: int,
     atr: Optional[np.ndarray] = None,
     adx: Optional[np.ndarray] = None,
+    volume: Optional[np.ndarray] = None,
+    volume_baseline: Optional[float] = None,
 ) -> List[Dict[str, Any]]:
     atr_values = atr
     adx_values = adx
@@ -451,6 +503,8 @@ def _collect_tests(
             lows=lows,
             atr=atr_values,
             adx=adx_values,
+            volume=volume,
+            volume_baseline=volume_baseline,
             epochs=epochs,
             reaction_bars=reaction_bars,
             decay_half_life_bars=decay_half_life_bars,
@@ -488,6 +542,7 @@ def _cluster_tests(tests: List[Dict[str, Any]], *, tolerance_pct: float) -> List
                     "retest_score": float(test["retest_component"]),
                     "bounce_score": float(test["bounce_component"]),
                     "adx_score": float(test["adx_component"]),
+                    "volume_score": float(test.get("volume_component", 0.0)),
                     "first_time": timestamp,
                     "last_time": timestamp,
                     "first_index": int(test["index"]),
@@ -502,9 +557,15 @@ def _cluster_tests(tests: List[Dict[str, Any]], *, tolerance_pct: float) -> List
                     "bounce_metric_sum": float(test["bounce_atr"]) * score,
                     "adx_metric_sum": float(test["pretest_adx"]) * score,
                     "metric_weight_sum": float(score),
+                    "volume_metric_sum": 0.0,
+                    "volume_metric_weight_sum": 0.0,
                     "tests": [dict(test)],
                 }
             )
+            volume_ratio = _as_finite_float(test.get("volume_ratio"))
+            if volume_ratio is not None:
+                clusters[-1]["volume_metric_sum"] = float(volume_ratio) * score
+                clusters[-1]["volume_metric_weight_sum"] = float(score)
             continue
 
         cluster = best_cluster
@@ -517,6 +578,7 @@ def _cluster_tests(tests: List[Dict[str, Any]], *, tolerance_pct: float) -> List
         cluster["retest_score"] = float(cluster["retest_score"]) + float(test["retest_component"])
         cluster["bounce_score"] = float(cluster["bounce_score"]) + float(test["bounce_component"])
         cluster["adx_score"] = float(cluster["adx_score"]) + float(test["adx_component"])
+        cluster["volume_score"] = float(cluster.get("volume_score", 0.0)) + float(test.get("volume_component", 0.0))
         cluster["first_index"] = min(int(cluster["first_index"]), int(test["index"]))
         cluster["last_index"] = max(int(cluster["last_index"]), int(test["index"]))
         cluster["support_tests"] = int(cluster["support_tests"]) + (1 if test["type"] == "support" else 0)
@@ -529,6 +591,10 @@ def _cluster_tests(tests: List[Dict[str, Any]], *, tolerance_pct: float) -> List
         cluster["bounce_metric_sum"] = float(cluster["bounce_metric_sum"]) + float(test["bounce_atr"]) * score
         cluster["adx_metric_sum"] = float(cluster["adx_metric_sum"]) + float(test["pretest_adx"]) * score
         cluster["metric_weight_sum"] = float(cluster["metric_weight_sum"]) + score
+        volume_ratio = _as_finite_float(test.get("volume_ratio"))
+        if volume_ratio is not None:
+            cluster["volume_metric_sum"] = float(cluster.get("volume_metric_sum", 0.0)) + float(volume_ratio) * score
+            cluster["volume_metric_weight_sum"] = float(cluster.get("volume_metric_weight_sum", 0.0)) + score
         cluster.setdefault("tests", []).append(dict(test))
 
         if timestamp is not None:
@@ -579,6 +645,7 @@ def _apply_episode_metrics(cluster: Dict[str, Any], *, episode_gap_bars: int) ->
     adjusted_retest = 0.0
     adjusted_bounce = 0.0
     adjusted_adx = 0.0
+    adjusted_volume = 0.0
     adjusted_base = 0.0
     episode_details: List[Dict[str, Any]] = []
     support_episodes = 0
@@ -594,17 +661,20 @@ def _apply_episode_metrics(cluster: Dict[str, Any], *, episode_gap_bars: int) ->
         episode_retest = 0.0
         episode_bounce = 0.0
         episode_adx = 0.0
+        episode_volume = 0.0
         for rank, test in enumerate(episode_tests):
             weight = 1.0 if rank == 0 else _DEFAULT_EPISODE_TOUCH_DECAY
             episode_score += float(test.get("score", 0.0)) * weight
             episode_retest += float(test.get("retest_component", 0.0)) * weight
             episode_bounce += float(test.get("bounce_component", 0.0)) * weight
             episode_adx += float(test.get("adx_component", 0.0)) * weight
+            episode_volume += float(test.get("volume_component", 0.0)) * weight
 
         adjusted_base += episode_score
         adjusted_retest += episode_retest
         adjusted_bounce += episode_bounce
         adjusted_adx += episode_adx
+        adjusted_volume += episode_volume
         episode_type = str(episode.get("type", ""))
         if episode_type == "support":
             support_episodes += 1
@@ -627,6 +697,7 @@ def _apply_episode_metrics(cluster: Dict[str, Any], *, episode_gap_bars: int) ->
     cluster["retest_score"] = float(adjusted_retest)
     cluster["bounce_score"] = float(adjusted_bounce)
     cluster["adx_score"] = float(adjusted_adx)
+    cluster["volume_score"] = float(adjusted_volume)
     cluster["score"] = float(adjusted_base)
 
 
@@ -865,11 +936,16 @@ def _format_level(cluster: Dict[str, Any], *, current_price: Optional[float], to
     if metric_weight_sum > 0.0:
         avg_bounce_atr = float(cluster["bounce_metric_sum"]) / metric_weight_sum
         avg_pretest_adx = float(cluster["adx_metric_sum"]) / metric_weight_sum
+    volume_metric_weight_sum = float(cluster.get("volume_metric_weight_sum", 0.0))
+    avg_test_volume_ratio = None
+    if volume_metric_weight_sum > 0.0:
+        avg_test_volume_ratio = float(cluster.get("volume_metric_sum", 0.0)) / volume_metric_weight_sum
 
     base_score = float(cluster.get("score_base", cluster.get("score", 0.0)))
     breakout_penalty = float(cluster.get("breakout_penalty", 0.0))
     role_reversal_bonus = float(cluster.get("role_reversal_bonus", 0.0))
     mtf_confirmation_bonus = float(cluster.get("mtf_confirmation_bonus", 0.0))
+    volume_score = float(cluster.get("volume_score", 0.0))
     total_score = max(0.0, base_score - breakout_penalty + role_reversal_bonus + mtf_confirmation_bonus)
     last_break_time = cluster.get("last_break_time")
 
@@ -899,6 +975,8 @@ def _format_level(cluster: Dict[str, Any], *, current_price: Optional[float], to
         },
         "avg_bounce_atr": None if avg_bounce_atr is None else float(round(avg_bounce_atr, 4)),
         "avg_pretest_adx": None if avg_pretest_adx is None else float(round(avg_pretest_adx, 4)),
+        "avg_test_volume_ratio": None if avg_test_volume_ratio is None else float(round(avg_test_volume_ratio, 4)),
+        "volume_source": cluster.get("volume_source"),
         "breakout_analysis": {
             "decisive_break_count": int(cluster.get("decisive_break_count", 0)),
             "avg_breach_atr": None
@@ -913,6 +991,7 @@ def _format_level(cluster: Dict[str, Any], *, current_price: Optional[float], to
             "retests": float(round(float(cluster["retest_score"]), 4)),
             "bounce": float(round(float(cluster["bounce_score"]), 4)),
             "adx": float(round(float(cluster["adx_score"]), 4)),
+            "volume": float(round(volume_score, 4)),
             "breakout_penalty": float(round(breakout_penalty, 4)),
             "role_reversal_bonus": float(round(role_reversal_bonus, 4)),
             "mtf_confirmation_bonus": float(round(mtf_confirmation_bonus, 4)),
@@ -1231,7 +1310,6 @@ def _compute_fibonacci_payload(
         timeframe=timeframe,
         selection_reason=_fibonacci_selection_reason(contains_current=best_contains_current),
     )
-
 
 def _select_auto_fibonacci_payload(
     results: List[Dict[str, Any]],
@@ -1601,6 +1679,7 @@ def merge_support_resistance_results(  # noqa: C901
     adx_period: int = _DEFAULT_ADX_PERIOD,
     decay_half_life_bars: Optional[int] = None,
     max_distance_pct: Optional[float] = None,
+    volume_weighting: str = "off",
 ) -> Dict[str, Any]:
     if not results:
         raise ValueError("No history available")
@@ -1611,9 +1690,16 @@ def merge_support_resistance_results(  # noqa: C901
     volatility_ratio_pairs: List[tuple[float, float]] = []
     current_atr_pairs: List[tuple[float, float]] = []
     baseline_atr_pairs: List[tuple[float, float]] = []
+    requested_volume_weighting = _normalize_volume_weighting(volume_weighting)
+    derived_volume_weighting = _normalize_volume_weighting(results[0].get("volume_weighting"))
+    volume_weighting_mode = derived_volume_weighting if derived_volume_weighting != "off" else requested_volume_weighting
+    volume_sources_seen: set[str] = set()
     for payload in results:
         tf = str(payload.get("timeframe") or "").upper()
         tf_weight = _timeframe_weight(tf)
+        volume_source = str(payload.get("volume_source") or "").strip()
+        if volume_source:
+            volume_sources_seen.add(volume_source)
         for key, bucket in (
             ("effective_tolerance_pct", adaptive_tolerance_pairs),
             ("effective_reaction_bars", adaptive_reaction_pairs),
@@ -1677,12 +1763,15 @@ def merge_support_resistance_results(  # noqa: C901
             episodes = max(1, int(level.get("episodes", touches)))
             avg_bounce = level.get("avg_bounce_atr")
             avg_adx = level.get("avg_pretest_adx")
+            avg_volume_ratio = level.get("avg_test_volume_ratio")
+            volume_source = str(level.get("volume_source") or "").strip() or None
             base_score = float(
                 breakdown.get(
                     "base",
                     float(breakdown.get("retests", 0.0))
                     + float(breakdown.get("bounce", 0.0))
-                    + float(breakdown.get("adx", 0.0)),
+                    + float(breakdown.get("adx", 0.0))
+                    + float(breakdown.get("volume", 0.0)),
                 )
             )
             breakout_penalty = float(breakdown.get("breakout_penalty", 0.0))
@@ -1708,6 +1797,7 @@ def merge_support_resistance_results(  # noqa: C901
                     "retest_score": float(breakdown.get("retests", raw_score)) * tf_weight,
                     "bounce_score": float(breakdown.get("bounce", 0.0)) * tf_weight,
                     "adx_score": float(breakdown.get("adx", 0.0)) * tf_weight,
+                    "volume_score": float(breakdown.get("volume", 0.0)) * tf_weight,
                     "breakout_penalty": float(breakout_penalty) * tf_weight,
                     "role_reversal_bonus": float(role_reversal_bonus) * tf_weight,
                     "mtf_confirmation_bonus": float(mtf_confirmation_bonus),
@@ -1724,6 +1814,9 @@ def merge_support_resistance_results(  # noqa: C901
                     "bounce_metric_sum": 0.0,
                     "adx_metric_sum": 0.0,
                     "metric_weight_sum": 0.0,
+                    "volume_metric_sum": 0.0,
+                    "volume_metric_weight_sum": 0.0,
+                    "volume_sources": {volume_source} if volume_source else set(),
                     "decisive_break_count": int(decisive_break_count),
                     "role_reversal_count": int(role_reversal_count),
                     "avg_breach_atr_sum": 0.0,
@@ -1748,6 +1841,9 @@ def merge_support_resistance_results(  # noqa: C901
                     cluster["adx_metric_sum"] = float(avg_adx) * float(weighted_score)
                     if cluster["metric_weight_sum"] <= 0.0:
                         cluster["metric_weight_sum"] += float(weighted_score)
+                if isinstance(avg_volume_ratio, (int, float)) and math.isfinite(float(avg_volume_ratio)):
+                    cluster["volume_metric_sum"] = float(avg_volume_ratio) * float(weighted_score)
+                    cluster["volume_metric_weight_sum"] = float(weighted_score)
                 if zone_width_atr is not None:
                     try:
                         z_width_atr = float(zone_width_atr)
@@ -1790,6 +1886,7 @@ def merge_support_resistance_results(  # noqa: C901
             cluster["retest_score"] = float(cluster["retest_score"]) + float(breakdown.get("retests", raw_score)) * tf_weight * contribution_scale
             cluster["bounce_score"] = float(cluster["bounce_score"]) + float(breakdown.get("bounce", 0.0)) * tf_weight * contribution_scale
             cluster["adx_score"] = float(cluster["adx_score"]) + float(breakdown.get("adx", 0.0)) * tf_weight * contribution_scale
+            cluster["volume_score"] = float(cluster.get("volume_score", 0.0)) + float(breakdown.get("volume", 0.0)) * tf_weight * contribution_scale
             cluster["breakout_penalty"] = float(cluster["breakout_penalty"]) + float(breakout_penalty) * tf_weight * contribution_scale
             cluster["role_reversal_bonus"] = float(cluster["role_reversal_bonus"]) + float(role_reversal_bonus) * tf_weight * contribution_scale
             cluster["mtf_confirmation_bonus"] = float(cluster.get("mtf_confirmation_bonus", 0.0)) + confirmation_bonus
@@ -1825,6 +1922,8 @@ def merge_support_resistance_results(  # noqa: C901
                 cluster["timeframe_episodes"][tf] = int(cluster["timeframe_episodes"].get(tf, 0)) + int(episodes)
                 cluster["timeframe_weights"][tf] = float(tf_weight)
                 cluster["timeframe_merge_modes"][tf] = "deduped" if is_same_event else "full"
+            if volume_source:
+                cluster.setdefault("volume_sources", set()).add(volume_source)
             if isinstance(avg_bounce, (int, float)) and math.isfinite(float(avg_bounce)):
                 cluster["bounce_metric_sum"] = float(cluster["bounce_metric_sum"]) + float(avg_bounce) * scaled_weighted_score
                 cluster["metric_weight_sum"] = float(cluster["metric_weight_sum"]) + scaled_weighted_score
@@ -1832,6 +1931,9 @@ def merge_support_resistance_results(  # noqa: C901
                 cluster["adx_metric_sum"] = float(cluster["adx_metric_sum"]) + float(avg_adx) * scaled_weighted_score
                 if not (isinstance(avg_bounce, (int, float)) and math.isfinite(float(avg_bounce))):
                     cluster["metric_weight_sum"] = float(cluster["metric_weight_sum"]) + scaled_weighted_score
+            if isinstance(avg_volume_ratio, (int, float)) and math.isfinite(float(avg_volume_ratio)):
+                cluster["volume_metric_sum"] = float(cluster.get("volume_metric_sum", 0.0)) + float(avg_volume_ratio) * scaled_weighted_score
+                cluster["volume_metric_weight_sum"] = float(cluster.get("volume_metric_weight_sum", 0.0)) + scaled_weighted_score
             if zone_width_atr is not None:
                 try:
                     z_width_atr = float(zone_width_atr)
@@ -1885,6 +1987,13 @@ def merge_support_resistance_results(  # noqa: C901
         breakout_weight = float(cluster.get("breakout_metric_weight_sum", 0.0))
         if breakout_weight > 0.0:
             cluster["avg_breach_atr"] = float(cluster["avg_breach_atr_sum"]) / breakout_weight
+        volume_weight = float(cluster.get("volume_metric_weight_sum", 0.0))
+        if volume_weight > 0.0:
+            cluster["avg_test_volume_ratio"] = float(cluster.get("volume_metric_sum", 0.0)) / volume_weight
+        volume_sources = sorted(cluster.get("volume_sources", set()))
+        if volume_sources:
+            cluster["volume_source"] = volume_sources[0] if len(volume_sources) == 1 else "multiple"
+            cluster["volume_sources"] = volume_sources
         cluster["score"] = max(
             0.0,
             float(cluster.get("score_base", 0.0))
@@ -1903,6 +2012,8 @@ def merge_support_resistance_results(  # noqa: C901
             "cross_timeframe_dedupe_count": int(cluster.get("cross_timeframe_dedupe_count", 0)),
             "deduped_timeframes": sorted(cluster.get("deduped_timeframes", set()), key=_timeframe_sort_key),
         }
+        if cluster.get("volume_sources"):
+            level["volume_sources"] = list(cluster["volume_sources"])
         level["timeframe_contributions"] = [
             {
                 "timeframe": tf,
@@ -1978,6 +2089,7 @@ def merge_support_resistance_results(  # noqa: C901
                 "volatility_ratio": payload.get("volatility_ratio"),
                 "current_atr_pct": payload.get("current_atr_pct"),
                 "baseline_atr_pct": payload.get("baseline_atr_pct"),
+                "volume_source": payload.get("volume_source"),
             }
             for payload in sorted(results, key=lambda item: _timeframe_sort_key(item.get("timeframe")))
         ],
@@ -1989,6 +2101,9 @@ def merge_support_resistance_results(  # noqa: C901
         "qualification_basis": "episodes",
         "max_levels": int(max_levels_value),
         "max_distance_pct": None if max_distance_value is None else float(max_distance_value),
+        "volume_weighting": volume_weighting_mode,
+        "volume_source": next(iter(volume_sources_seen)) if len(volume_sources_seen) == 1 else ("multiple" if volume_sources_seen else None),
+        "volume_sources": sorted(volume_sources_seen),
         "reaction_bars": int(max(1, int(reaction_bars))),
         "effective_reaction_bars": int(max(1, int(round(merge_reaction_value)))),
         "adx_period": int(max(2, int(adx_period))),
@@ -2032,10 +2147,15 @@ def compact_support_resistance_level(level: Any) -> Optional[Dict[str, Any]]:
         "zone_high",
         "zone_width",
         "zone_width_atr",
+        "avg_test_volume_ratio",
+        "volume_source",
     ):
         value = level.get(key)
         if value is not None:
             out[str(key)] = value
+    volume_sources = level.get("volume_sources")
+    if isinstance(volume_sources, list) and volume_sources:
+        out["volume_sources"] = list(volume_sources)
     source_timeframes = level.get("source_timeframes")
     if isinstance(source_timeframes, list) and source_timeframes:
         out["source_timeframes"] = list(source_timeframes)
@@ -2059,10 +2179,15 @@ def compact_support_resistance_payload(payload: Dict[str, Any]) -> Dict[str, Any
         "current_price",
         "timeframes_analyzed",
         "max_distance_pct",
+        "volume_weighting",
+        "volume_source",
     ):
         value = payload.get(key)
         if value is not None:
             out[str(key)] = value
+    volume_sources = payload.get("volume_sources")
+    if isinstance(volume_sources, list) and volume_sources:
+        out["volume_sources"] = list(volume_sources)
 
     window = payload.get("window")
     if isinstance(window, dict):
@@ -2136,6 +2261,7 @@ def compute_support_resistance_levels(
     adx_period: int = _DEFAULT_ADX_PERIOD,
     decay_half_life_bars: Optional[int] = None,
     max_distance_pct: Optional[float] = None,
+    volume_weighting: str = "off",
 ) -> Dict[str, Any]:
     if frame is None or getattr(frame, "empty", True):
         raise ValueError("No history available")
@@ -2149,6 +2275,7 @@ def compute_support_resistance_levels(
     tolerance_value = float(tolerance_pct)
     if tolerance_value < 0.0:
         raise ValueError("tolerance_pct must be non-negative")
+    volume_weighting_mode = _normalize_volume_weighting(volume_weighting)
     min_touches_value = max(1, int(min_touches))
     max_levels_value = max(1, int(max_levels))
     max_distance_value = _normalize_max_distance_pct(max_distance_pct)
@@ -2163,6 +2290,10 @@ def compute_support_resistance_levels(
     highs = _to_numeric_array(frame, "high")
     lows = _to_numeric_array(frame, "low")
     closes = _to_numeric_array(frame, "close")
+    volume_values, volume_source, volume_baseline = _resolve_volume_series(
+        frame,
+        volume_weighting=volume_weighting_mode,
+    )
     current_price = _last_finite(closes)
     atr, adx = _compute_atr_and_adx(highs, lows, closes, period=adx_period_value)
     adaptive_settings = _resolve_adaptive_settings(
@@ -2188,6 +2319,8 @@ def compute_support_resistance_levels(
         decay_half_life_bars=half_life_value,
         atr=atr,
         adx=adx,
+        volume=volume_values,
+        volume_baseline=volume_baseline,
     )
     clusters = _cluster_tests(tests, tolerance_pct=effective_tolerance_value)
     for cluster in clusters:
@@ -2212,7 +2345,11 @@ def compute_support_resistance_levels(
         )[:1]
 
     formatted_levels = [
-        _format_level(cluster, current_price=current_price, tolerance_pct=effective_tolerance_value)
+        _format_level(
+            {**cluster, "volume_source": volume_source},
+            current_price=current_price,
+            tolerance_pct=effective_tolerance_value,
+        )
         for cluster in usable_clusters
     ]
     support_candidates = [dict(level) for level in formatted_levels if level.get("type") == "support"]
@@ -2261,6 +2398,8 @@ def compute_support_resistance_levels(
         "qualification_basis": "episodes",
         "max_levels": int(max_levels_value),
         "max_distance_pct": None if max_distance_value is None else float(max_distance_value),
+        "volume_weighting": volume_weighting_mode,
+        "volume_source": volume_source,
         "reaction_bars": int(reaction_bars_value),
         "effective_reaction_bars": int(effective_reaction_bars),
         "adx_period": int(adx_period_value),

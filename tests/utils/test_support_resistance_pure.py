@@ -184,6 +184,15 @@ def _fibonacci_breakout_frame() -> pd.DataFrame:
     )
 
 
+def _volume_weighted_supports_frame() -> pd.DataFrame:
+    frame = _weighted_supports_frame().copy()
+    frame["tick_volume"] = [100.0] * len(frame)
+    frame.loc[2, "tick_volume"] = 40.0
+    frame.loc[16, "tick_volume"] = 420.0
+    frame["real_volume"] = 0.0
+    return frame
+
+
 def test_compute_support_resistance_returns_ranked_levels_around_current_price():
     result = compute_support_resistance_levels(
         _clustered_levels_frame(),
@@ -289,6 +298,65 @@ def test_recent_stronger_support_scores_above_older_weaker_support():
     assert older["strength_percentile"] < recent["strength_percentile"]
     assert older["strength_score_normalized"] < recent["strength_score_normalized"]
     assert older["avg_pretest_adx"] < recent["avg_pretest_adx"]
+
+
+def test_volume_weighting_uses_tick_volume_when_real_volume_is_unavailable():
+    without_volume = compute_support_resistance_levels(
+        _volume_weighted_supports_frame(),
+        symbol="EURUSD",
+        timeframe="H1",
+        limit=200,
+        tolerance_pct=0.001,
+        min_touches=1,
+        max_levels=4,
+        reaction_bars=4,
+        adx_period=5,
+        volume_weighting="off",
+    )
+    with_volume = compute_support_resistance_levels(
+        _volume_weighted_supports_frame(),
+        symbol="EURUSD",
+        timeframe="H1",
+        limit=200,
+        tolerance_pct=0.001,
+        min_touches=1,
+        max_levels=4,
+        reaction_bars=4,
+        adx_period=5,
+        volume_weighting="auto",
+    )
+
+    boosted_support = max(
+        with_volume["supports"],
+        key=lambda level: float(level.get("avg_test_volume_ratio") or 0.0),
+    )
+    baseline_support = next(level for level in without_volume["supports"] if level["value"] == boosted_support["value"])
+    assert with_volume["volume_weighting"] == "auto"
+    assert with_volume["volume_source"] == "tick_volume"
+    assert boosted_support["score"] > baseline_support["score"]
+    assert boosted_support["avg_test_volume_ratio"] is not None and boosted_support["avg_test_volume_ratio"] > 1.0
+    assert boosted_support["volume_source"] == "tick_volume"
+    assert boosted_support["score_breakdown"]["volume"] > 0.0
+
+
+def test_volume_weighting_prefers_real_volume_when_available():
+    frame = _clustered_levels_frame()
+    frame["real_volume"] = [100.0 + index for index in range(len(frame))]
+    frame["tick_volume"] = [300.0 + (2 * index) for index in range(len(frame))]
+
+    result = compute_support_resistance_levels(
+        frame,
+        symbol="EURUSD",
+        timeframe="H1",
+        limit=200,
+        tolerance_pct=0.005,
+        min_touches=1,
+        max_levels=4,
+        reaction_bars=4,
+        volume_weighting="auto",
+    )
+
+    assert result["volume_source"] == "real_volume"
 
 
 def test_no_extrema_returns_empty_levels():
