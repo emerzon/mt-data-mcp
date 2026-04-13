@@ -71,9 +71,59 @@ def test_support_resistance_tool_returns_weighted_levels():
     assert "strength_score_normalized" in result["nearest"]["support"]
     assert result["fibonacci"]["swing"]["direction"] == "up"
     assert len(result["fibonacci"]["levels"]) == 7
+    assert result["fibonacci"]["fib_grid_coverage"] == "both_sides"
     assert result["fibonacci"]["nearest"]["support"]["type"] == "support"
     assert "supports" not in result
     assert "resistances" not in result
+
+
+def test_support_resistance_tool_compact_preserves_zone_overlap_and_fib_grid_metadata():
+    fn = _get_support_resistance_fn()
+    gateway = type("Gateway", (), {"ensure_connection": lambda self: None})()
+    payload = {
+        "success": True,
+        "symbol": "USDJPY",
+        "timeframe": "H1",
+        "mode": "single",
+        "current_price": 159.4,
+        "supports": [{"type": "support", "value": 159.22, "zone_low": 158.891, "zone_high": 159.543}],
+        "resistances": [{"type": "resistance", "value": 159.69, "zone_low": 159.387, "zone_high": 159.933}],
+        "levels": [
+            {"type": "support", "value": 159.22, "zone_low": 158.891, "zone_high": 159.543},
+            {"type": "resistance", "value": 159.69, "zone_low": 159.387, "zone_high": 159.933},
+        ],
+        "fibonacci": {
+            "mode": "single",
+            "timeframe": "H1",
+            "fib_grid_coverage": "support_only",
+            "fib_grid_counts": {"support": 7, "resistance": 0, "total": 7},
+        },
+        "zone_overlap": {
+            "support_value": 159.22,
+            "resistance_value": 159.69,
+            "overlap_low": 159.387,
+            "overlap_high": 159.543,
+            "overlap_width": 0.156,
+            "current_price_in_overlap": True,
+        },
+        "warnings": [
+            {"code": "overlapping_nearest_zones"},
+            {"code": "fibonacci_grid_support_only"},
+        ],
+    }
+
+    with patch("mtdata.core.pivot.get_mt5_gateway", return_value=gateway), \
+         patch("mtdata.core.pivot.compute_support_resistance_payload", return_value=payload):
+        result = fn("USDJPY", timeframe="H1", detail="compact")
+
+    assert result["zone_overlap"]["current_price_in_overlap"] is True
+    assert result["zone_overlap"]["overlap_width"] == 0.156
+    assert result["fibonacci"]["fib_grid_coverage"] == "support_only"
+    assert result["fibonacci"]["fib_grid_counts"] == {"support": 7, "resistance": 0, "total": 7}
+    assert {warning["code"] for warning in result["warnings"]} == {
+        "overlapping_nearest_zones",
+        "fibonacci_grid_support_only",
+    }
 
 
 def test_support_resistance_tool_compact_exposes_coverage_gap_metadata_with_distance_filter():

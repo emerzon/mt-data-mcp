@@ -1108,6 +1108,25 @@ def _nearest_fibonacci_levels(
     return nearest
 
 
+def _summarize_fibonacci_grid(levels: List[Dict[str, Any]]) -> tuple[str, Dict[str, int]]:
+    counts = {"support": 0, "resistance": 0}
+    for level in levels:
+        if not isinstance(level, dict):
+            continue
+        level_type = str(level.get("type") or "").strip().lower()
+        if level_type in counts:
+            counts[level_type] += 1
+
+    counts["total"] = counts["support"] + counts["resistance"]
+    if counts["support"] and counts["resistance"]:
+        return "both_sides", counts
+    if counts["support"]:
+        return "support_only", counts
+    if counts["resistance"]:
+        return "resistance_only", counts
+    return "unclassified", counts
+
+
 def _extract_fibonacci_swing_bounds(swing: Dict[str, Any]) -> Optional[tuple[float, float]]:
     anchor_low = swing.get("anchor_low") if isinstance(swing.get("anchor_low"), dict) else {}
     anchor_high = swing.get("anchor_high") if isinstance(swing.get("anchor_high"), dict) else {}
@@ -1211,6 +1230,7 @@ def _build_fibonacci_payload_from_swing(
 
     levels = sorted(retracements + extensions, key=lambda level: float(level["value"]))
     nearest = _nearest_fibonacci_levels(levels, current_price=current_price)
+    fib_grid_coverage, fib_grid_counts = _summarize_fibonacci_grid(levels)
     low_anchor = start if start_value <= end_value else end
     high_anchor = start if start_value >= end_value else end
 
@@ -1236,6 +1256,8 @@ def _build_fibonacci_payload_from_swing(
         "extensions": extensions,
         "levels": levels,
         "nearest": nearest,
+        "fib_grid_coverage": fib_grid_coverage,
+        "fib_grid_counts": fib_grid_counts,
     }
 
 
@@ -1507,6 +1529,7 @@ def compact_fibonacci_payload(payload: Any) -> Any:
         "selection_reason",
         "timeframe_selection_rule",
         "current_price_used",
+        "fib_grid_coverage",
     ):
         value = payload.get(key)
         if value is not None:
@@ -1519,6 +1542,14 @@ def compact_fibonacci_payload(payload: Any) -> Any:
     selection_summary = payload.get("selection_summary")
     if isinstance(selection_summary, dict) and selection_summary:
         out["selection_summary"] = dict(selection_summary)
+
+    fib_grid_counts = payload.get("fib_grid_counts")
+    if isinstance(fib_grid_counts, dict) and fib_grid_counts:
+        out["fib_grid_counts"] = {
+            str(key): int(value)
+            for key, value in fib_grid_counts.items()
+            if key in {"support", "resistance", "total"} and value is not None
+        }
 
     swing = payload.get("swing")
     if isinstance(swing, dict):
@@ -1580,6 +1611,7 @@ def _collect_support_resistance_warnings(
     *,
     fibonacci: Optional[Dict[str, Any]],
     coverage_gaps: Optional[Dict[str, Dict[str, Any]]] = None,
+    zone_overlap: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
     warnings: List[Dict[str, Any]] = []
 
@@ -1608,6 +1640,51 @@ def _collect_support_resistance_warnings(
                 ),
                 "selected_timeframe": None if not isinstance(fibonacci, dict) else fibonacci.get("selected_timeframe", fibonacci.get("timeframe")),
                 "nearest_support": nearest.get("support"),
+            }
+        )
+
+    fib_grid_coverage = str(fibonacci.get("fib_grid_coverage") or "").strip() if isinstance(fibonacci, dict) else ""
+    if fib_grid_coverage == "support_only":
+        warnings.append(
+            {
+                "code": "fibonacci_grid_support_only",
+                "grid_coverage": fib_grid_coverage,
+                "message": (
+                    "All classified Fibonacci levels are below the current price; "
+                    "the selected grid currently offers support only."
+                ),
+                "selected_timeframe": None if not isinstance(fibonacci, dict) else fibonacci.get("selected_timeframe", fibonacci.get("timeframe")),
+            }
+        )
+    elif fib_grid_coverage == "resistance_only":
+        warnings.append(
+            {
+                "code": "fibonacci_grid_resistance_only",
+                "grid_coverage": fib_grid_coverage,
+                "message": (
+                    "All classified Fibonacci levels are above the current price; "
+                    "the selected grid currently offers resistance only."
+                ),
+                "selected_timeframe": None if not isinstance(fibonacci, dict) else fibonacci.get("selected_timeframe", fibonacci.get("timeframe")),
+            }
+        )
+
+    overlap_width = _as_finite_float((zone_overlap or {}).get("overlap_width"))
+    if isinstance(zone_overlap, dict) and overlap_width is not None and overlap_width > 0.0:
+        current_price_in_overlap = bool(zone_overlap.get("current_price_in_overlap"))
+        message = "Nearest support and resistance zones overlap."
+        if current_price_in_overlap:
+            message += " Current price sits inside both zones, so the range signal is diluted."
+        else:
+            message += " The market remains structurally compressed until price exits the overlap."
+        warnings.append(
+            {
+                "code": "overlapping_nearest_zones",
+                "overlap_low": zone_overlap.get("overlap_low"),
+                "overlap_high": zone_overlap.get("overlap_high"),
+                "overlap_width": float(round(overlap_width, 6)),
+                "current_price_in_overlap": current_price_in_overlap,
+                "message": message,
             }
         )
 
@@ -1712,6 +1789,45 @@ def _build_coverage_gaps(
             entry["beyond_max_distance_filter"] = bool(gap_pct > max_filter)
         out[side] = entry
     return out
+
+
+def _build_zone_overlap(
+    *,
+    support_level: Optional[Dict[str, Any]],
+    resistance_level: Optional[Dict[str, Any]],
+    current_price: Optional[float],
+) -> Optional[Dict[str, Any]]:
+    if not isinstance(support_level, dict) or not isinstance(resistance_level, dict):
+        return None
+
+    support_low = _as_finite_float(support_level.get("zone_low"))
+    support_high = _as_finite_float(support_level.get("zone_high"))
+    resistance_low = _as_finite_float(resistance_level.get("zone_low"))
+    resistance_high = _as_finite_float(resistance_level.get("zone_high"))
+    if None in (support_low, support_high, resistance_low, resistance_high):
+        return None
+
+    overlap_low = max(float(support_low), float(resistance_low))
+    overlap_high = min(float(support_high), float(resistance_high))
+    if overlap_high - overlap_low <= 1e-9:
+        return None
+
+    price_value = _as_finite_float(current_price)
+    current_price_in_overlap = bool(
+        price_value is not None and overlap_low <= float(price_value) <= overlap_high
+    )
+    return {
+        "support_value": support_level.get("value"),
+        "resistance_value": resistance_level.get("value"),
+        "support_zone_low": float(round(float(support_low), 6)),
+        "support_zone_high": float(round(float(support_high), 6)),
+        "resistance_zone_low": float(round(float(resistance_low), 6)),
+        "resistance_zone_high": float(round(float(resistance_high), 6)),
+        "overlap_low": float(round(overlap_low, 6)),
+        "overlap_high": float(round(overlap_high, 6)),
+        "overlap_width": float(round(overlap_high - overlap_low, 6)),
+        "current_price_in_overlap": current_price_in_overlap,
+    }
 
 
 def _filter_levels_by_distance(
@@ -2182,6 +2298,11 @@ def merge_support_resistance_results(  # noqa: C901
     resistances = resistance_candidates[:max_levels_value]
     supports.sort(key=lambda level: (-float(level.get("value", 0.0)), -float(level.get("score", 0.0))))
     resistances.sort(key=lambda level: (float(level.get("value", 0.0)), -float(level.get("score", 0.0))))
+    zone_overlap = _build_zone_overlap(
+        support_level=supports[0] if supports else None,
+        resistance_level=resistances[0] if resistances else None,
+        current_price=current_price,
+    )
 
     start_values = [
         str((payload.get("window") or {}).get("start") or "").strip()
@@ -2202,6 +2323,7 @@ def merge_support_resistance_results(  # noqa: C901
     warnings = _collect_support_resistance_warnings(
         fibonacci=fibonacci,
         coverage_gaps=coverage_gaps,
+        zone_overlap=zone_overlap,
     )
 
     return {
@@ -2253,6 +2375,7 @@ def merge_support_resistance_results(  # noqa: C901
         },
         "fibonacci": fibonacci,
         "coverage_gaps": coverage_gaps,
+        "zone_overlap": zone_overlap,
         "warnings": warnings,
         "supports": supports,
         "resistances": resistances,
@@ -2375,6 +2498,10 @@ def compact_support_resistance_payload(payload: Dict[str, Any]) -> Dict[str, Any
     coverage_gaps = payload.get("coverage_gaps")
     if isinstance(coverage_gaps, dict) and coverage_gaps:
         out["coverage_gaps"] = dict(coverage_gaps)
+
+    zone_overlap = payload.get("zone_overlap")
+    if isinstance(zone_overlap, dict) and zone_overlap:
+        out["zone_overlap"] = dict(zone_overlap)
 
     meta = payload.get("meta")
     if isinstance(meta, dict) and meta:
@@ -2505,6 +2632,11 @@ def compute_support_resistance_levels(
     resistances = resistance_candidates[:max_levels_value]
     supports.sort(key=lambda level: (-float(level.get("value", 0.0)), -float(level.get("score", 0.0))))
     resistances.sort(key=lambda level: (float(level.get("value", 0.0)), -float(level.get("score", 0.0))))
+    zone_overlap = _build_zone_overlap(
+        support_level=supports[0] if supports else None,
+        resistance_level=resistances[0] if resistances else None,
+        current_price=current_price,
+    )
     fibonacci = _compute_fibonacci_payload(
         highs=highs,
         lows=lows,
@@ -2516,6 +2648,7 @@ def compute_support_resistance_levels(
     warnings = _collect_support_resistance_warnings(
         fibonacci=fibonacci,
         coverage_gaps=coverage_gaps,
+        zone_overlap=zone_overlap,
     )
 
     return {
@@ -2549,6 +2682,7 @@ def compute_support_resistance_levels(
         },
         "fibonacci": fibonacci,
         "coverage_gaps": coverage_gaps,
+        "zone_overlap": zone_overlap,
         "warnings": warnings,
         "supports": supports,
         "resistances": resistances,

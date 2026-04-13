@@ -5,6 +5,7 @@ import pandas as pd
 import pytest
 
 from mtdata.utils.support_resistance import (
+    _build_zone_overlap,
     _resolve_adaptive_settings,
     compute_support_resistance_levels,
     merge_support_resistance_results,
@@ -234,6 +235,28 @@ def test_compute_support_resistance_returns_ranked_levels_around_current_price()
     assert resistance["strength_score_normalized"] == 1.0
 
 
+def test_build_zone_overlap_detects_intersecting_nearest_support_and_resistance_zones():
+    overlap = _build_zone_overlap(
+        support_level={
+            "value": 159.22,
+            "zone_low": 158.891,
+            "zone_high": 159.543,
+        },
+        resistance_level={
+            "value": 159.69,
+            "zone_low": 159.387,
+            "zone_high": 159.933,
+        },
+        current_price=159.4,
+    )
+
+    assert overlap is not None
+    assert overlap["overlap_low"] == pytest.approx(159.387)
+    assert overlap["overlap_high"] == pytest.approx(159.543)
+    assert overlap["overlap_width"] == pytest.approx(0.156)
+    assert overlap["current_price_in_overlap"] is True
+
+
 def test_compute_support_resistance_includes_fibonacci_levels_from_latest_relevant_swing():
     result = compute_support_resistance_levels(
         _clustered_levels_frame(),
@@ -269,6 +292,8 @@ def test_compute_support_resistance_includes_fibonacci_levels_from_latest_releva
     assert fibonacci["nearest"]["resistance"]["label"] == "50%"
     assert fibonacci["nearest"]["resistance"]["type"] == "resistance"
     assert fibonacci["nearest"]["resistance"]["value"] == pytest.approx(105.05)
+    assert fibonacci["fib_grid_coverage"] == "both_sides"
+    assert fibonacci["fib_grid_counts"] == {"support": 2, "resistance": 5, "total": 7}
     assert fibonacci["selection_summary"]["candidate_count"] >= 1
     assert fibonacci["selection_candidates"][0]["selected"] is True
     assert fibonacci["selection_candidates"][0]["contains_current_price"] is True
@@ -634,6 +659,31 @@ def test_fibonacci_adds_extension_targets_when_price_is_above_down_swing_high():
     assert fibonacci["nearest"]["resistance"]["type"] == "resistance"
     assert fibonacci["nearest"]["resistance"]["value"] > result["current_price"]
     assert any(warning.get("code") == "fibonacci_price_above_swing_high" for warning in result["warnings"])
+
+
+def test_fibonacci_flags_support_only_grid_when_price_is_above_all_levels():
+    frame = _fibonacci_breakout_frame().copy()
+    frame.loc[frame.index[-1], "close"] = 130.0
+    frame.loc[frame.index[-1], "high"] = 131.0
+    frame.loc[frame.index[-1], "low"] = 129.0
+
+    result = compute_support_resistance_levels(
+        frame,
+        symbol="EURUSD",
+        timeframe="H1",
+        limit=200,
+        tolerance_pct=0.01,
+        min_touches=1,
+        max_levels=4,
+        reaction_bars=2,
+    )
+
+    fibonacci = result["fibonacci"]
+    assert fibonacci["fib_grid_coverage"] == "support_only"
+    assert fibonacci["fib_grid_counts"]["support"] == len(fibonacci["levels"])
+    assert fibonacci["fib_grid_counts"]["resistance"] == 0
+    assert "resistance" not in fibonacci["nearest"]
+    assert any(warning.get("code") == "fibonacci_grid_support_only" for warning in result["warnings"])
 
 
 def test_merge_support_resistance_recomputes_fibonacci_against_merged_current_price():
