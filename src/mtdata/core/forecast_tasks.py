@@ -266,6 +266,7 @@ def forecast_models_list(
             for h in handles
         ]
         return {
+            "success": True,
             "count": len(items),
             "models": items,
         }

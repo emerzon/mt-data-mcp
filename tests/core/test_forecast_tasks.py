@@ -243,6 +243,7 @@ class TestForecastModelsList:
         with patch(_PATCH_STORE, return_value=mock_store):
             result = _unwrap(forecast_models_list)()
 
+        assert result["success"] is True
         assert result["count"] == 2
         assert result["models"][0]["model_id"] == "nhits/EURUSD_H1/a"
         assert result["models"][1]["method"] == "tft"
@@ -254,8 +255,11 @@ class TestForecastModelsList:
         mock_store.list_models.return_value = []
 
         with patch(_PATCH_STORE, return_value=mock_store):
-            _unwrap(forecast_models_list)(method="nhits")
+            result = _unwrap(forecast_models_list)(method="nhits")
 
+        assert result["success"] is True
+        assert result["count"] == 0
+        assert result["models"] == []
         mock_store.list_models.assert_called_once_with(method="nhits")
 
 
