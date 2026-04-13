@@ -14,6 +14,55 @@ from .patterns_support import (
 
 _ALL_MODE_TIMEFRAMES = ("M30", "H1", "H4", "D1", "W1")
 
+# Calendar-time budgets for pattern age/span (in seconds)
+_MAX_AGE_SECONDS = 180 * 86400   # 180 days — oldest a pattern end_date can be
+_MAX_SPAN_SECONDS = 90 * 86400   # 90 days — longest a single pattern can span
+
+# Hard bar-count bounds so intraday TFs don't get absurdly large limits
+_AGE_BAR_FLOOR, _AGE_BAR_CEIL = 30, 400
+_SPAN_BAR_FLOOR, _SPAN_BAR_CEIL = 15, 250
+
+
+def _timeframe_aware_age_limits(
+    timeframe: str, limit: int,
+) -> tuple[int, int]:
+    """Return (max_pattern_age_bars, max_pattern_span_bars) scaled to *timeframe*.
+
+    Converts calendar-time budgets to bar counts for the given timeframe,
+    clamped to reasonable bounds.  Falls back to bar-fraction logic when
+    the timeframe is unknown.
+    """
+    from ..utils.constants import TIMEFRAME_SECONDS
+
+    tf_secs = TIMEFRAME_SECONDS.get(timeframe.upper(), 0)
+    if tf_secs > 0:
+        age_bars = int(_MAX_AGE_SECONDS / tf_secs)
+        span_bars = int(_MAX_SPAN_SECONDS / tf_secs)
+        age_bars = max(_AGE_BAR_FLOOR, min(_AGE_BAR_CEIL, age_bars))
+        span_bars = max(_SPAN_BAR_FLOOR, min(_SPAN_BAR_CEIL, span_bars))
+    else:
+        # Fallback: use fraction-of-limit (old behaviour)
+        age_bars = max(100, limit // 3)
+        span_bars = max(60, min(150, int(limit * 0.5)))
+    return age_bars, span_bars
+
+
+# Maximum data window for "all" mode fetches (in seconds).
+# 1 year of data is more than enough for pattern detection on any TF.
+_ALL_MODE_MAX_FETCH_SECONDS = 365 * 86400
+_ALL_MODE_FETCH_FLOOR = 200  # never fetch fewer than 200 bars
+
+
+def _all_mode_fetch_limit(timeframe: str, user_limit: int) -> int:
+    """Cap *user_limit* so higher TFs don't fetch decades of data."""
+    from ..utils.constants import TIMEFRAME_SECONDS
+
+    tf_secs = TIMEFRAME_SECONDS.get(timeframe.upper(), 0)
+    if tf_secs <= 0:
+        return user_limit
+    max_bars = int(_ALL_MODE_MAX_FETCH_SECONDS / tf_secs)
+    return max(_ALL_MODE_FETCH_FLOOR, min(user_limit, max_bars))
+
 _CLASSIC_CONFIG_EXTRA_KEYS = {
     "ensemble_weights",
     "native_multiscale",
@@ -165,6 +214,14 @@ def run_patterns_detect(  # noqa: C901
         )
         if unknown_cfg:
             return {"error": f"Invalid config key(s): {sorted(unknown_cfg)}"}
+        # Apply timeframe-aware age/span defaults when user didn't set them
+        user_cfg = request.config if isinstance(request.config, dict) else {}
+        if "max_pattern_age_bars" not in user_cfg:
+            age_bars, _ = _timeframe_aware_age_limits(tf_single, request.limit)
+            cfg.max_pattern_age_bars = age_bars
+        if "max_pattern_span_bars" not in user_cfg:
+            _, span_bars = _timeframe_aware_age_limits(tf_single, request.limit)
+            cfg.max_pattern_span_bars = span_bars
         df, err = deps.fetch_pattern_data(
             request.symbol, tf_single, request.limit, request.denoise
         )
@@ -532,14 +589,8 @@ def run_patterns_detect(  # noqa: C901
         classic_cfg.stale_completion_recent_bars = (
             10  # More aggressive - patterns ending >10 bars ago = completed
         )
-        # Use 1/3 of the lookback limit as max pattern age for relevant results
-        # This ensures patterns are recent regardless of timeframe
-        classic_cfg.max_pattern_age_bars = max(100, request.limit // 3)
-        # Limit pattern span to prevent ancient long-running patterns (e.g., 3-year trend lines)
-        # Cap at 150 bars max to prevent multi-year patterns on weekly charts while
-        # still allowing reasonable patterns (150 bars on W1 = ~3 years, on D1 = ~6 months)
-        span_limit = min(150, int(request.limit * 0.5))
-        classic_cfg.max_pattern_span_bars = max(60, span_limit)
+        # Age/span limits are set per-timeframe in the loop below via
+        # _timeframe_aware_age_limits(), unless the user provided overrides.
         fractal_cfg.max_age_bars = max(100, request.limit // 3)
 
         classic_invalid: List[str] = []
@@ -580,12 +631,27 @@ def run_patterns_detect(  # noqa: C901
         effective_top_k = max(request.top_k, 3)
 
         for tf in timeframes:
+            # Scale fetch limit so higher TFs don't pull decades of data
+            tf_limit = _all_mode_fetch_limit(tf, request.limit)
+
+            # Apply timeframe-aware age/span defaults (only when user didn't set them)
+            user_cfg = request.config if isinstance(request.config, dict) else {}
+            if "max_pattern_age_bars" not in user_cfg:
+                age_bars, _ = _timeframe_aware_age_limits(tf, tf_limit)
+                classic_cfg.max_pattern_age_bars = age_bars
+            if "max_pattern_span_bars" not in user_cfg:
+                _, span_bars = _timeframe_aware_age_limits(tf, tf_limit)
+                classic_cfg.max_pattern_span_bars = span_bars
+            if "max_age_bars" not in user_cfg:
+                fractal_age, _ = _timeframe_aware_age_limits(tf, tf_limit)
+                fractal_cfg.max_age_bars = fractal_age
+
             # ── Candlestick ──
             try:
                 candle_result = deps.detect_candlestick_patterns(
                     symbol=request.symbol,
                     timeframe=tf,
-                    limit=request.limit,
+                    limit=tf_limit,
                     min_strength=request.min_strength,
                     min_gap=request.min_gap,
                     robust_only=request.robust_only,
@@ -610,7 +676,7 @@ def run_patterns_detect(  # noqa: C901
 
             # ── Shared data fetch for classic + elliott ──
             df, fetch_err = deps.fetch_pattern_data(
-                request.symbol, tf, request.limit, request.denoise
+                request.symbol, tf, tf_limit, request.denoise
             )
             if fetch_err:
                 err_msg = str(fetch_err.get("error", "data fetch failed"))
@@ -620,6 +686,7 @@ def run_patterns_detect(  # noqa: C901
                 continue
 
             # ── Classic (native engine) ──
+            n_bars = len(df)
             try:
                 patt_rows, eng_err = deps.run_classic_engine(
                     "native", request.symbol, df, classic_cfg, request.config
@@ -631,6 +698,7 @@ def run_patterns_detect(  # noqa: C901
                     for row in enriched:
                         if isinstance(row, dict):
                             row["timeframe"] = tf
+                            row["_data_length"] = n_bars
                             classic_patterns.append(row)
             except Exception as exc:
                 section_errors.setdefault("classic", {})[tf] = str(exc)
@@ -641,6 +709,7 @@ def run_patterns_detect(  # noqa: C901
                 for row in elliott_rows:
                     if isinstance(row, dict):
                         row["timeframe"] = tf
+                        row["_data_length"] = n_bars
                         elliott_patterns.append(row)
             except Exception as exc:
                 section_errors.setdefault("elliott", {})[tf] = str(exc)
@@ -652,6 +721,7 @@ def run_patterns_detect(  # noqa: C901
                     for row in fractal_rows:
                         if isinstance(row, dict):
                             row["timeframe"] = tf
+                            row["_data_length"] = n_bars
                             fractal_patterns.append(row)
                 except Exception as exc:
                     section_errors.setdefault("fractal", {})[tf] = str(exc)

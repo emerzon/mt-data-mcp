@@ -551,8 +551,11 @@ _W_RECENCY = 0.4
 def _bar_age_recency(row: Dict[str, Any], limit: int) -> float:
     """Compute a 0‑1 recency score from bar‑age.
 
-    ``end_index`` close to ``limit`` means the pattern is recent.
+    ``end_index`` close to the data length means the pattern is recent.
     Uses an exponential decay so the score drops quickly for older patterns.
+    When available, ``_data_length`` (set per-timeframe) is preferred over
+    the global *limit* so that patterns from shorter TF windows are scored
+    relative to their own data.
     """
     if "end_index" not in row:
         return 0.0
@@ -560,10 +563,11 @@ def _bar_age_recency(row: Dict[str, Any], limit: int) -> float:
         end_idx = int(row["end_index"])
     except (TypeError, ValueError):
         return 0.0
-    if limit <= 0:
+    effective_limit = int(row.get("_data_length", limit))
+    if effective_limit <= 0:
         return 0.0
-    bars_ago = max(limit - 1 - end_idx, 0)
-    half_life = max(limit * 0.20, 1.0)
+    bars_ago = max(effective_limit - 1 - end_idx, 0)
+    half_life = max(effective_limit * 0.20, 1.0)
     import math
     return math.exp(-0.693 * bars_ago / half_life)
 
@@ -955,7 +959,8 @@ def _apply_confidence_delta(row: Dict[str, Any], delta: float) -> None:
     if not np.isfinite(delta) or abs(float(delta)) <= 1e-12:
         return
     conf = _row_confidence_weight(row)
-    row["confidence"] = float(max(0.0, min(1.0, conf + float(delta))))
+    cap = 0.95 if str(row.get("status", "")).lower() == "forming" else 1.0
+    row["confidence"] = float(max(0.0, min(cap, conf + float(delta))))
 
 
 def _infer_market_regime(df: pd.DataFrame, config: Any) -> Optional[Dict[str, Any]]:

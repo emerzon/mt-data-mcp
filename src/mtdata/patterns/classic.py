@@ -285,6 +285,12 @@ def _postprocess_classic_results(
             r.details["calibrated_confidence"] = float(cal_conf)
         r.confidence = float(cal_conf)
 
+    # Cap forming pattern confidence — a pattern still forming cannot be 100% certain
+    _FORMING_CONFIDENCE_CAP = 0.95
+    for i, r in enumerate(results):
+        if r.status == "forming" and r.confidence > _FORMING_CONFIDENCE_CAP:
+            results[i] = replace(r, confidence=_FORMING_CONFIDENCE_CAP)
+
     min_conf = float(max(0.0, min(1.0, getattr(cfg, "min_confidence", 0.0))))
     if min_conf > 0.0:
         results = [r for r in results if float(r.confidence) >= min_conf]

@@ -177,6 +177,21 @@ def _fetch_pattern_data(
     if len(df) > int(limit):
         df = df.iloc[-int(limit):].copy()
 
+    # Freshness warning: flag when the most recent bar is unusually old.
+    # Uses a generous threshold (7 days) to tolerate weekend/holiday closures.
+    tf_secs = float(TIMEFRAME_SECONDS.get(timeframe, 0) or 0)
+    if tf_secs > 0 and len(df) > 0:
+        try:
+            last_epoch = float(df["time"].iloc[-1])
+            staleness = utc_now.timestamp() - last_epoch
+            if staleness > 7 * 86400:
+                warnings_out.append(
+                    f"Data may be stale for {symbol} {timeframe}: "
+                    f"latest bar is {staleness / 86400:.1f} days old."
+                )
+        except Exception:
+            pass
+
     warnings_out.extend(
         data_quality_warnings(
             df,
@@ -792,7 +807,7 @@ def _run_classic_engine_stock_pattern(
         d: Dict[str, Any] = {
             "name": name,
             "status": "forming",
-            "confidence": float(max(0.0, min(1.0, _infer_stock_pattern_confidence(res)))),
+            "confidence": float(max(0.0, min(0.95, _infer_stock_pattern_confidence(res)))),
             "start_index": int(s_idx),
             "end_index": int(e_idx),
             "start_date": _timestamp_to_label(start_ts),
