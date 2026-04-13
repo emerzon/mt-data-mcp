@@ -63,6 +63,7 @@ def compute_support_resistance_payload(
     reaction_bars: int,
     adx_period: int,
     decay_half_life_bars: Optional[int],
+    max_distance_pct: Optional[float],
 ) -> Dict[str, Any]:
     requested_timeframe, timeframes = _resolve_support_resistance_timeframes(timeframe)
     multi_timeframe = len(timeframes) > 1
@@ -85,6 +86,7 @@ def compute_support_resistance_payload(
                 reaction_bars=int(reaction_bars),
                 adx_period=int(adx_period),
                 decay_half_life_bars=None if decay_half_life_bars is None else int(decay_half_life_bars),
+                max_distance_pct=None if max_distance_pct is None else float(max_distance_pct),
             )
             if (result.get("levels") or []) or not multi_timeframe:
                 results.append(result)
@@ -112,6 +114,7 @@ def compute_support_resistance_payload(
         reaction_bars=int(reaction_bars),
         adx_period=int(adx_period),
         decay_half_life_bars=None if decay_half_life_bars is None else int(decay_half_life_bars),
+        max_distance_pct=None if max_distance_pct is None else float(max_distance_pct),
     )
 
 
@@ -401,6 +404,7 @@ def support_resistance_levels(
     tolerance_pct: float = 0.0015,
     min_touches: int = 2,
     max_levels: int = 4,
+    max_distance_pct: Optional[float] = None,
     reaction_bars: int = 6,
     adx_period: int = 14,
     decay_half_life_bars: Optional[int] = None,
@@ -429,6 +433,7 @@ def support_resistance_levels(
                 tolerance_pct=float(tolerance_pct),
                 min_touches=int(min_touches),
                 max_levels=int(max_levels),
+                max_distance_pct=None if max_distance_pct is None else float(max_distance_pct),
                 reaction_bars=int(reaction_bars),
                 adx_period=int(adx_period),
                 decay_half_life_bars=None if decay_half_life_bars is None else int(decay_half_life_bars),
@@ -450,6 +455,7 @@ def support_resistance_levels(
         tolerance_pct=tolerance_pct,
         min_touches=min_touches,
         max_levels=max_levels,
+        max_distance_pct=max_distance_pct,
         reaction_bars=reaction_bars,
         adx_period=adx_period,
         decay_half_life_bars=decay_half_life_bars,

@@ -1367,9 +1367,7 @@ def compact_fibonacci_payload(payload: Any) -> Any:
 def _collect_support_resistance_warnings(
     *,
     fibonacci: Optional[Dict[str, Any]],
-    supports: List[Dict[str, Any]],
-    resistances: List[Dict[str, Any]],
-    current_price: Optional[float],
+    coverage_gaps: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> List[Dict[str, Any]]:
     warnings: List[Dict[str, Any]] = []
 
@@ -1401,28 +1399,23 @@ def _collect_support_resistance_warnings(
             }
         )
 
-    price_value = _as_finite_float(current_price)
-    if price_value is None or abs(price_value) <= 1e-9:
-        return warnings
-
-    for side, levels in (("support", supports), ("resistance", resistances)):
-        if not levels:
+    for side, gap in (coverage_gaps or {}).items():
+        if not isinstance(gap, dict) or not bool(gap.get("is_structural_vacuum")):
             continue
-        distance_pct = _as_finite_float(levels[0].get("distance_pct"))
-        if distance_pct is None:
+        gap_pct = _as_finite_float(gap.get("distance_pct"))
+        if gap_pct is None:
             continue
-        gap_pct = abs(distance_pct)
-        if gap_pct < _DEFAULT_STRUCTURE_GAP_WARNING_PCT:
-            continue
+        beyond_filter = bool(gap.get("beyond_max_distance_filter"))
+        suffix = " It is also beyond the active max_distance_pct filter." if beyond_filter else ""
         warnings.append(
             {
                 "code": f"structural_gap_{side}",
                 "side": side,
                 "distance_pct": float(round(gap_pct, 6)),
-                "level_value": levels[0].get("value"),
+                "level_value": gap.get("level_value"),
                 "message": (
                     f"Nearest {side} level is {gap_pct:.1%} away; "
-                    f"historical structure is sparse on the {side} side of the market."
+                    f"historical structure is sparse on the {side} side of the market.{suffix}"
                 ),
             }
         )
@@ -1452,6 +1445,78 @@ def _annotate_strength_metrics(levels: List[Dict[str, Any]]) -> None:
             normalized = (score - min_score) / spread
         level["strength_percentile"] = float(round(max(0.0, min(1.0, percentile)), 4))
         level["strength_score_normalized"] = float(round(max(0.0, min(1.0, normalized)), 4))
+
+
+def _normalize_max_distance_pct(max_distance_pct: Optional[float]) -> Optional[float]:
+    if max_distance_pct is None:
+        return None
+    value = _as_finite_float(max_distance_pct)
+    if value is None or value < 0.0:
+        raise ValueError("max_distance_pct must be a finite non-negative number")
+    return float(value)
+
+
+def _nearest_level_by_distance(levels: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if not levels:
+        return None
+    ranked: List[tuple[float, Dict[str, Any]]] = []
+    for level in levels:
+        distance_pct = _as_finite_float(level.get("distance_pct"))
+        if distance_pct is None:
+            continue
+        ranked.append((abs(distance_pct), level))
+    if ranked:
+        ranked.sort(key=lambda item: (item[0], abs(_as_finite_float(item[1].get("distance")) or 0.0)))
+        return ranked[0][1]
+    return levels[0]
+
+
+def _build_coverage_gaps(
+    *,
+    support_levels: List[Dict[str, Any]],
+    resistance_levels: List[Dict[str, Any]],
+    max_distance_pct: Optional[float],
+) -> Dict[str, Dict[str, Any]]:
+    out: Dict[str, Dict[str, Any]] = {}
+    threshold = float(_DEFAULT_STRUCTURE_GAP_WARNING_PCT)
+    max_filter = _normalize_max_distance_pct(max_distance_pct)
+
+    for side, levels in (("support", support_levels), ("resistance", resistance_levels)):
+        nearest = _nearest_level_by_distance(levels)
+        if not isinstance(nearest, dict):
+            continue
+        distance_pct = _as_finite_float(nearest.get("distance_pct"))
+        if distance_pct is None:
+            continue
+        gap_pct = abs(distance_pct)
+        entry: Dict[str, Any] = {
+            "side": side,
+            "level_value": nearest.get("value"),
+            "distance_pct": float(round(gap_pct, 6)),
+            "threshold_pct": float(round(threshold, 6)),
+            "is_structural_vacuum": bool(gap_pct >= threshold),
+        }
+        if max_filter is not None:
+            entry["beyond_max_distance_filter"] = bool(gap_pct > max_filter)
+        out[side] = entry
+    return out
+
+
+def _filter_levels_by_distance(
+    levels: List[Dict[str, Any]],
+    *,
+    max_distance_pct: Optional[float],
+) -> List[Dict[str, Any]]:
+    threshold = _normalize_max_distance_pct(max_distance_pct)
+    if threshold is None:
+        return list(levels)
+
+    filtered: List[Dict[str, Any]] = []
+    for level in levels:
+        distance_pct = _as_finite_float(level.get("distance_pct"))
+        if distance_pct is None or abs(distance_pct) <= threshold:
+            filtered.append(level)
+    return filtered
 
 
 def _build_merge_signature(level: Dict[str, Any], timeframe: str) -> Optional[Dict[str, Any]]:
@@ -1535,9 +1600,11 @@ def merge_support_resistance_results(  # noqa: C901
     reaction_bars: int = _DEFAULT_REACTION_BARS,
     adx_period: int = _DEFAULT_ADX_PERIOD,
     decay_half_life_bars: Optional[int] = None,
+    max_distance_pct: Optional[float] = None,
 ) -> Dict[str, Any]:
     if not results:
         raise ValueError("No history available")
+    max_distance_value = _normalize_max_distance_pct(max_distance_pct)
 
     adaptive_tolerance_pairs: List[tuple[float, float]] = []
     adaptive_reaction_pairs: List[tuple[float, float]] = []
@@ -1857,6 +1924,13 @@ def merge_support_resistance_results(  # noqa: C901
     resistance_candidates.sort(key=lambda level: (-float(level.get("score", 0.0)), float(level.get("value", 0.0))))
     _annotate_strength_metrics(support_candidates)
     _annotate_strength_metrics(resistance_candidates)
+    coverage_gaps = _build_coverage_gaps(
+        support_levels=support_candidates,
+        resistance_levels=resistance_candidates,
+        max_distance_pct=max_distance_value,
+    )
+    support_candidates = _filter_levels_by_distance(support_candidates, max_distance_pct=max_distance_value)
+    resistance_candidates = _filter_levels_by_distance(resistance_candidates, max_distance_pct=max_distance_value)
 
     max_levels_value = max(1, int(max_levels))
     supports = support_candidates[:max_levels_value]
@@ -1882,9 +1956,7 @@ def merge_support_resistance_results(  # noqa: C901
     fibonacci = _select_auto_fibonacci_payload(results, current_price=current_price)
     warnings = _collect_support_resistance_warnings(
         fibonacci=fibonacci,
-        supports=supports,
-        resistances=resistances,
-        current_price=current_price,
+        coverage_gaps=coverage_gaps,
     )
 
     return {
@@ -1916,6 +1988,7 @@ def merge_support_resistance_results(  # noqa: C901
         "min_touches": int(max(1, int(min_touches))),
         "qualification_basis": "episodes",
         "max_levels": int(max_levels_value),
+        "max_distance_pct": None if max_distance_value is None else float(max_distance_value),
         "reaction_bars": int(max(1, int(reaction_bars))),
         "effective_reaction_bars": int(max(1, int(round(merge_reaction_value)))),
         "adx_period": int(max(2, int(adx_period))),
@@ -1930,6 +2003,7 @@ def merge_support_resistance_results(  # noqa: C901
             "end": max(end_values) if end_values else None,
         },
         "fibonacci": fibonacci,
+        "coverage_gaps": coverage_gaps,
         "warnings": warnings,
         "supports": supports,
         "resistances": resistances,
@@ -1976,7 +2050,16 @@ def compact_support_resistance_payload(payload: Dict[str, Any]) -> Dict[str, Any
         return payload
 
     out: Dict[str, Any] = {}
-    for key in ("success", "symbol", "timeframe", "mode", "method", "current_price", "timeframes_analyzed"):
+    for key in (
+        "success",
+        "symbol",
+        "timeframe",
+        "mode",
+        "method",
+        "current_price",
+        "timeframes_analyzed",
+        "max_distance_pct",
+    ):
         value = payload.get(key)
         if value is not None:
             out[str(key)] = value
@@ -2030,6 +2113,10 @@ def compact_support_resistance_payload(payload: Dict[str, Any]) -> Dict[str, Any
     if isinstance(warnings, list) and warnings:
         out["warnings"] = list(warnings)
 
+    coverage_gaps = payload.get("coverage_gaps")
+    if isinstance(coverage_gaps, dict) and coverage_gaps:
+        out["coverage_gaps"] = dict(coverage_gaps)
+
     meta = payload.get("meta")
     if isinstance(meta, dict) and meta:
         out["meta"] = dict(meta)
@@ -2048,6 +2135,7 @@ def compute_support_resistance_levels(
     reaction_bars: int = _DEFAULT_REACTION_BARS,
     adx_period: int = _DEFAULT_ADX_PERIOD,
     decay_half_life_bars: Optional[int] = None,
+    max_distance_pct: Optional[float] = None,
 ) -> Dict[str, Any]:
     if frame is None or getattr(frame, "empty", True):
         raise ValueError("No history available")
@@ -2063,6 +2151,7 @@ def compute_support_resistance_levels(
         raise ValueError("tolerance_pct must be non-negative")
     min_touches_value = max(1, int(min_touches))
     max_levels_value = max(1, int(max_levels))
+    max_distance_value = _normalize_max_distance_pct(max_distance_pct)
     reaction_bars_value = max(1, int(reaction_bars))
     adx_period_value = max(2, int(adx_period))
     half_life_value = (
@@ -2133,6 +2222,13 @@ def compute_support_resistance_levels(
     resistance_candidates.sort(key=lambda level: (-float(level.get("score", 0.0)), float(level.get("value", 0.0))))
     _annotate_strength_metrics(support_candidates)
     _annotate_strength_metrics(resistance_candidates)
+    coverage_gaps = _build_coverage_gaps(
+        support_levels=support_candidates,
+        resistance_levels=resistance_candidates,
+        max_distance_pct=max_distance_value,
+    )
+    support_candidates = _filter_levels_by_distance(support_candidates, max_distance_pct=max_distance_value)
+    resistance_candidates = _filter_levels_by_distance(resistance_candidates, max_distance_pct=max_distance_value)
 
     supports = support_candidates[:max_levels_value]
     resistances = resistance_candidates[:max_levels_value]
@@ -2148,9 +2244,7 @@ def compute_support_resistance_levels(
     )
     warnings = _collect_support_resistance_warnings(
         fibonacci=fibonacci,
-        supports=supports,
-        resistances=resistances,
-        current_price=current_price,
+        coverage_gaps=coverage_gaps,
     )
 
     return {
@@ -2166,6 +2260,7 @@ def compute_support_resistance_levels(
         "min_touches": int(min_touches_value),
         "qualification_basis": "episodes",
         "max_levels": int(max_levels_value),
+        "max_distance_pct": None if max_distance_value is None else float(max_distance_value),
         "reaction_bars": int(reaction_bars_value),
         "effective_reaction_bars": int(effective_reaction_bars),
         "adx_period": int(adx_period_value),
@@ -2180,6 +2275,7 @@ def compute_support_resistance_levels(
             "end": _format_time(window_end),
         },
         "fibonacci": fibonacci,
+        "coverage_gaps": coverage_gaps,
         "warnings": warnings,
         "supports": supports,
         "resistances": resistances,

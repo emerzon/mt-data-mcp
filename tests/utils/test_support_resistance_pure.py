@@ -318,6 +318,29 @@ def test_falls_back_to_best_cluster_when_touch_requirement_is_strict():
     assert len(result["levels"]) == 1
 
 
+def test_max_distance_filter_hides_far_levels_but_preserves_coverage_gap_metadata():
+    result = compute_support_resistance_levels(
+        _clustered_levels_frame(),
+        symbol="EURUSD",
+        timeframe="H1",
+        limit=200,
+        tolerance_pct=0.005,
+        min_touches=1,
+        max_levels=4,
+        max_distance_pct=0.04,
+        reaction_bars=4,
+    )
+
+    assert result["max_distance_pct"] == 0.04
+    assert result["levels"] == []
+    assert result["supports"] == []
+    assert result["resistances"] == []
+    assert result["coverage_gaps"]["support"]["distance_pct"] > 0.04
+    assert result["coverage_gaps"]["support"]["beyond_max_distance_filter"] is True
+    assert result["coverage_gaps"]["resistance"]["distance_pct"] > 0.04
+    assert result["coverage_gaps"]["resistance"]["beyond_max_distance_filter"] is True
+
+
 def test_atr_filtered_swing_detection_reduces_whipsaw_noise_levels():
     result = compute_support_resistance_levels(
         _noisy_trend_frame(),

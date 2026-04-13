@@ -76,6 +76,28 @@ def test_support_resistance_tool_returns_weighted_levels():
     assert "resistances" not in result
 
 
+def test_support_resistance_tool_compact_exposes_coverage_gap_metadata_with_distance_filter():
+    fn = _get_support_resistance_fn()
+    gateway = type("Gateway", (), {"ensure_connection": lambda self: None})()
+    with patch("mtdata.core.pivot.get_mt5_gateway", return_value=gateway), \
+         patch("mtdata.core.pivot._fetch_history", return_value=_frame()):
+        result = fn(
+            "EURUSD",
+            timeframe="H1",
+            limit=200,
+            tolerance_pct=0.005,
+            min_touches=1,
+            max_levels=4,
+            max_distance_pct=0.04,
+            reaction_bars=4,
+    )
+
+    assert result["max_distance_pct"] == 0.04
+    assert "levels" not in result
+    assert result["coverage_gaps"]["support"]["beyond_max_distance_filter"] is True
+    assert result["coverage_gaps"]["resistance"]["beyond_max_distance_filter"] is True
+
+
 def test_support_resistance_tool_defaults_to_auto_mode():
     fn = _get_support_resistance_fn()
     gateway = type("Gateway", (), {"ensure_connection": lambda self: None})()
