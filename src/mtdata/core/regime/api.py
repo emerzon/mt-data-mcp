@@ -592,11 +592,14 @@ def regime_detect(  # noqa: C901
                     "k_regimes": k_regimes,
                     "order": order,
                     "min_regime_bars": int(min_regime_bars_val),
+                    "relabeled": bool(canon_meta.get("relabeled", False)),
                     "smoothing_applied": bool(smoothing_meta.get("smoothing_applied", False)),
                     "transitions_before": int(smoothing_meta.get("transitions_before", 0)),
                     "transitions_after": int(smoothing_meta.get("transitions_after", 0)),
                 },
             }
+            if canon_meta.get("mapping"):
+                payload["params_used"]["label_mapping"] = canon_meta["mapping"]
             if converged is not None:
                 payload["params_used"]["converged"] = bool(converged)
                 if converged is False:
@@ -689,11 +692,14 @@ def regime_detect(  # noqa: C901
                     "n_states": int(n_states),
                     "fitted_n_states": int(len(mu)),
                     "min_regime_bars": int(min_regime_bars_val),
+                    "relabeled": bool(canon_meta.get("relabeled", False)),
                     "smoothing_applied": bool(smoothing_meta.get("smoothing_applied", False)),
                     "transitions_before": int(smoothing_meta.get("transitions_before", 0)),
                     "transitions_after": int(smoothing_meta.get("transitions_after", 0)),
                 },
             }
+            if canon_meta.get("mapping"):
+                payload["params_used"]["label_mapping"] = canon_meta["mapping"]
             # Add reliability info
             reliability = _hmm_reliability_from_gamma(gamma_for_payload)
             payload["reliability"] = reliability

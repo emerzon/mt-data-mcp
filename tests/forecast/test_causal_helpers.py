@@ -4,6 +4,7 @@ import pandas as pd
 import pytest
 
 from mtdata.core.causal import (
+    _TRANSFORM_LEGEND,
     _build_correlation_matrix,
     _build_correlation_summary,
     _format_summary,
@@ -112,6 +113,10 @@ class TestCorrelationHelpers:
         assert _normalize_cointegration_trend("constant") == "c"
         assert _normalize_cointegration_trend("none") == "n"
         assert _normalize_cointegration_trend("bad") is None
+
+    def test_pct_transform_legend_matches_pct_change_scale(self):
+        assert _TRANSFORM_LEGEND["pct"]["formula"] == "(close_t - close_t-1) / close_t-1"
+        assert "1% gain" in _TRANSFORM_LEGEND["pct"]["use_case"]
 
     def test_transform_cointegration_frame_supports_log_levels(self):
         df = pd.DataFrame({"A": [100.0, 101.0, 102.0], "B": [50.0, 0.0, 52.0]})

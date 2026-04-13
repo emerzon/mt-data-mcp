@@ -771,6 +771,48 @@ class TestRegimeDetectHMM:
     @patch(_FMT, side_effect=_time_fmt_stub)
     @patch(_DENOISE, return_value="close")
     @patch(_FETCH)
+    def test_hmm_preserves_label_mapping_after_canonicalization(
+        self, mock_fetch, mock_denoise, mock_fmt
+    ):
+        times = np.arange(12, dtype=float) * 3600 + 1_700_000_000
+        close = np.array(
+            [100.0, 101.0, 102.0, 103.0, 104.0, 105.0, 104.0, 103.0, 102.0, 101.0, 100.0, 99.0]
+        )
+        df = pd.DataFrame(
+            {
+                "time": times,
+                "open": close,
+                "high": close + 0.001,
+                "low": close - 0.001,
+                "close": close,
+                "tick_volume": np.ones(close.size),
+            }
+        )
+        mock_fetch.return_value = df
+
+        gamma = np.array(
+            [[0.99, 0.01]] * 5 + [[0.01, 0.99]] * 6,
+            dtype=float,
+        )
+        w = np.array([0.5, 0.5])
+        mu = np.array([0.001, -0.001])
+        sigma = np.array([0.003, 0.001])
+        with patch(
+            "mtdata.core.regime.api.fit_gaussian_mixture_1d",
+            return_value=(w, mu, sigma, gamma, None),
+            create=True,
+        ):
+            fn = _get_regime_detect()
+            res = fn("EURUSD", limit=12, method="hmm", output="full")
+
+        assert res["params_used"]["relabeled"] is True
+        assert res["params_used"]["label_mapping"] == {"1": 0, "0": 1}
+        assert res["regime_info"][0]["mean_return"] == pytest.approx(-0.001)
+        assert res["regime_info"][1]["mean_return"] == pytest.approx(0.001)
+
+    @patch(_FMT, side_effect=_time_fmt_stub)
+    @patch(_DENOISE, return_value="close")
+    @patch(_FETCH)
     def test_hmm_rejects_single_state_request(self, mock_fetch, mock_denoise, mock_fmt):
         df = _make_df(60)
         mock_fetch.return_value = df

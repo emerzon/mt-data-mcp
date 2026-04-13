@@ -75,6 +75,65 @@ _COINTEGRATION_TREND_ALIASES: Dict[str, str] = {
 }
 
 
+# Human-readable legends for output interpretation
+_TRANSFORM_LEGEND: Dict[str, Dict[str, str]] = {
+    "log_return": {
+        "description": "Logarithmic returns (continuously compounded)",
+        "formula": "ln(close_t / close_t-1)",
+        "use_case": "Stationary, time-additive returns; preferred for multi-horizon analysis",
+    },
+    "pct": {
+        "description": "Simple percentage change (unit fraction)",
+        "formula": "(close_t - close_t-1) / close_t-1",
+        "use_case": "Intuitive simple returns; 0.01 corresponds to a 1% gain",
+    },
+    "diff": {
+        "description": "First difference (absolute change)",
+        "formula": "close_t - close_t-1",
+        "use_case": "Removes trends for stationary analysis; preserves scale",
+    },
+    "level": {
+        "description": "Raw price levels (no transformation)",
+        "formula": "close_t",
+        "use_case": "Direct price analysis; required for cointegration tests",
+    },
+}
+
+_CORRELATION_METHOD_LEGEND: Dict[str, Dict[str, str]] = {
+    "pearson": {
+        "description": "Pearson linear correlation",
+        "measures": "Linear relationship strength and direction",
+        "range": "-1 (perfect negative) to +1 (perfect positive)",
+        "sensitive_to": "Outliers and non-linear relationships",
+    },
+    "spearman": {
+        "description": "Spearman rank correlation",
+        "measures": "Monotonic relationship (rank-based)",
+        "range": "-1 (perfect negative) to +1 (perfect positive)",
+        "sensitive_to": "Non-linear but monotonic relationships; robust to outliers",
+    },
+}
+
+_COINTEGRATION_TREND_LEGEND: Dict[str, Dict[str, str]] = {
+    "c": {
+        "description": "Constant only",
+        "interpretation": "Tests for cointegration with non-zero mean but no trend",
+    },
+    "ct": {
+        "description": "Constant and linear trend",
+        "interpretation": "Tests for cointegration allowing for deterministic linear trend",
+    },
+    "ctt": {
+        "description": "Constant and quadratic trend",
+        "interpretation": "Tests for cointegration allowing for curved deterministic trends",
+    },
+    "n": {
+        "description": "No deterministic terms",
+        "interpretation": "Tests for cointegration around zero (rarely appropriate for prices)",
+    },
+}
+
+
 def _causal_connection_error() -> Dict[str, Any] | None:
     return mt5_connection_error(
         get_mt5_gateway(
@@ -99,14 +158,16 @@ def _visible_group_members(
 ) -> List[str]:
     members: List[str] = []
     for sym in all_symbols or []:
-        if not getattr(sym, 'visible', True):
+        if not getattr(sym, "visible", True):
             continue
         if _extract_group_path_util(sym) == group_path:
             members.append(sym.name)
     return list(dict.fromkeys(members))
 
 
-def _expand_symbols_for_group(anchor: str, gateway: Any = None) -> tuple[List[str], str | None, str | None]:
+def _expand_symbols_for_group(
+    anchor: str, gateway: Any = None
+) -> tuple[List[str], str | None, str | None]:
     """Return visible group members for anchor along with the group path."""
     mt5_gateway = gateway or get_mt5_gateway(
         adapter=mt5,
@@ -124,11 +185,17 @@ def _expand_symbols_for_group(anchor: str, gateway: Any = None) -> tuple[List[st
         members.insert(0, anchor)
     deduped = list(dict.fromkeys(members))
     if len(deduped) < 2:
-        return deduped, f"Symbol group {group_path} has fewer than two visible instruments", group_path
+        return (
+            deduped,
+            f"Symbol group {group_path} has fewer than two visible instruments",
+            group_path,
+        )
     return deduped, None, group_path
 
 
-def _expand_symbols_for_group_path(query: str, gateway: Any = None) -> tuple[List[str], str | None, str | None]:
+def _expand_symbols_for_group_path(
+    query: str, gateway: Any = None
+) -> tuple[List[str], str | None, str | None]:
     """Return visible group members for an explicit MT5 group path query."""
     mt5_gateway = gateway or get_mt5_gateway(
         adapter=mt5,
@@ -147,7 +214,7 @@ def _expand_symbols_for_group_path(query: str, gateway: Any = None) -> tuple[Lis
         group_path = _extract_group_path_util(sym)
         if not group_path:
             continue
-        if not getattr(sym, 'visible', True):
+        if not getattr(sym, "visible", True):
             continue
         groups.setdefault(group_path, []).append(sym.name)
 
@@ -155,13 +222,19 @@ def _expand_symbols_for_group_path(query: str, gateway: Any = None) -> tuple[Lis
         return [], "No visible MT5 symbol groups are available.", None
 
     query_lower = group_query.lower()
-    exact_matches = [group_path for group_path in groups if group_path.lower() == query_lower]
+    exact_matches = [
+        group_path for group_path in groups if group_path.lower() == query_lower
+    ]
     matched_paths = exact_matches or [
         group_path for group_path in groups if query_lower in group_path.lower()
     ]
     matched_paths = list(dict.fromkeys(matched_paths))
     if not matched_paths:
-        return [], f"Group '{group_query}' was not found among visible MT5 symbol groups.", None
+        return (
+            [],
+            f"Group '{group_query}' was not found among visible MT5 symbol groups.",
+            None,
+        )
     if len(matched_paths) > 1:
         preview = ", ".join(sorted(matched_paths)[:5])
         suffix = ", ..." if len(matched_paths) > 5 else ""
@@ -177,12 +250,17 @@ def _expand_symbols_for_group_path(query: str, gateway: Any = None) -> tuple[Lis
     group_path = matched_paths[0]
     members = _visible_group_members(all_symbols, group_path)
     if len(members) < 2:
-        return members, f"Symbol group {group_path} has fewer than two visible instruments", group_path
+        return (
+            members,
+            f"Symbol group {group_path} has fewer than two visible instruments",
+            group_path,
+        )
     return members, None, group_path
 
 
-
-def _fetch_series(symbol: str, timeframe, count: int, retries: int = 3, pause: float = 0.25) -> Tuple[pd.Series, str | None]:
+def _fetch_series(
+    symbol: str, timeframe, count: int, retries: int = 3, pause: float = 0.25
+) -> Tuple[pd.Series, str | None]:
     """Fetch recent close prices for a symbol."""
     err = _ensure_symbol_ready(symbol)
     if err:
@@ -204,9 +282,14 @@ def _fetch_series(symbol: str, timeframe, count: int, retries: int = 3, pause: f
         df = df.sort_values("time")
         if len(df) > count:
             df = df.tail(count)
-        series = pd.Series(df["close"].to_numpy(dtype=float), index=pd.to_datetime(df["time"], unit="s"))
+        series = pd.Series(
+            df["close"].to_numpy(dtype=float),
+            index=pd.to_datetime(df["time"], unit="s"),
+        )
         return series, None
-    return pd.Series(dtype=float), f"Failed to fetch data for {symbol}" + (f" after {retries} retries" if retries > 1 else "")
+    return pd.Series(dtype=float), f"Failed to fetch data for {symbol}" + (
+        f" after {retries} retries" if retries > 1 else ""
+    )
 
 
 def _transform_frame(frame: pd.DataFrame, transform: str) -> pd.DataFrame:
@@ -321,7 +404,7 @@ def _rank_correlation_pairs(
     for idx, left in enumerate(symbols):
         if left not in frame.columns:
             continue
-        for right in symbols[idx + 1:]:
+        for right in symbols[idx + 1 :]:
             if right not in frame.columns:
                 continue
             subset_all = frame[[left, right]].dropna(how="any")
@@ -346,7 +429,11 @@ def _rank_correlation_pairs(
                     "overlap_rows": overlap_rows,
                     "window_truncated": bool(len(subset) < overlap_rows),
                     "relationship": (
-                        "positive" if corr_f > 0 else "negative" if corr_f < 0 else "flat"
+                        "positive"
+                        if corr_f > 0
+                        else "negative"
+                        if corr_f < 0
+                        else "flat"
                     ),
                 }
             )
@@ -367,8 +454,7 @@ def _build_correlation_matrix(
     rows: List[Dict[str, Any]],
 ) -> Dict[str, Dict[str, float | None]]:
     matrix: Dict[str, Dict[str, float | None]] = {
-        str(symbol): {str(other): None for other in symbols}
-        for symbol in symbols
+        str(symbol): {str(other): None for other in symbols} for symbol in symbols
     }
     for symbol in symbols:
         matrix[str(symbol)][str(symbol)] = 1.0
@@ -418,12 +504,18 @@ def _format_pair_overlap_details(
 ) -> List[str]:
     return [
         f"{pair_key}: {int(rows)} rows (minimum {int(minimum_required)} required)"
-        for pair_key, rows in sorted(pair_overlaps.items(), key=lambda kv: (kv[1], kv[0]))
+        for pair_key, rows in sorted(
+            pair_overlaps.items(), key=lambda kv: (kv[1], kv[0])
+        )
     ]
 
 
 def _critical_values_dict(values: Any) -> Dict[str, float | None]:
-    arr = np.asarray(values, dtype=float).reshape(-1) if values is not None else np.array([], dtype=float)
+    arr = (
+        np.asarray(values, dtype=float).reshape(-1)
+        if values is not None
+        else np.array([], dtype=float)
+    )
     labels = ("1%", "5%", "10%")
     return {
         label: (
@@ -548,7 +640,9 @@ def _evaluate_cointegration_pair(
             "spread_zscore": spread_zscore,
             "samples": int(len(subset)),
             "cointegrated": bool(float(p_value) < significance),
-            "relationship": "cointegrated" if float(p_value) < significance else "no_cointegration",
+            "relationship": "cointegrated"
+            if float(p_value) < significance
+            else "no_cointegration",
         }
         if best_row is None or float(row["p_value"]) < float(best_row["p_value"]):
             best_row = row
@@ -569,10 +663,18 @@ def _build_cointegration_summary(
     }
 
 
-def _format_summary(rows: List[Dict[str, object]], symbols: List[str], transform: str, alpha: float, group_hint: str | None = None) -> str:
+def _format_summary(
+    rows: List[Dict[str, object]],
+    symbols: List[str],
+    transform: str,
+    alpha: float,
+    group_hint: str | None = None,
+) -> str:
     if not rows:
         return "No valid pairings available for causal discovery."
-    rows_sorted = sorted(rows, key=lambda item: (item["p_value"], item["effect"], item["cause"]))
+    rows_sorted = sorted(
+        rows, key=lambda item: (item["p_value"], item["effect"], item["cause"])
+    )
     header = [
         f"Causal signal discovery (transform={transform}, alpha={alpha:.4f})",
         f"Symbols analysed: {', '.join(symbols)}",
@@ -589,8 +691,12 @@ def _format_summary(rows: List[Dict[str, object]], symbols: List[str], transform
             f"{row['effect']} <- {row['cause']} | {row['lag']} | {row['p_value']:.4f} | {row['samples']} | {conclusion}"
         )
     lines.append("")
-    lines.append("Lag refers to the history length of the cause series used in the best-performing test (ssr_ftest).")
-    lines.append("Displayed p-values use Bonferroni correction across tested lags for each pair.")
+    lines.append(
+        "Lag refers to the history length of the cause series used in the best-performing test (ssr_ftest)."
+    )
+    lines.append(
+        "Displayed p-values use Bonferroni correction across tested lags for each pair."
+    )
     lines.append("Results are pairwise and do not imply full causal graphs.")
     return "\n".join(lines)
 
@@ -624,18 +730,22 @@ def _format_overlap_details(
     parts: List[str] = []
     for symbol, count in symbol_rows.items():
         parts.append(f"{symbol}: {int(count)} rows")
-    parts.append(f"aligned: {int(aligned_rows)} (minimum {int(minimum_required)} required)")
+    parts.append(
+        f"aligned: {int(aligned_rows)} (minimum {int(minimum_required)} required)"
+    )
     return ", ".join(parts)
 
 
-def _pair_overlap_counts(series_map: Dict[str, pd.Series], symbols: List[str]) -> Dict[str, int]:
+def _pair_overlap_counts(
+    series_map: Dict[str, pd.Series], symbols: List[str]
+) -> Dict[str, int]:
     overlaps: Dict[str, int] = {}
     for i, left in enumerate(symbols):
         left_series = series_map.get(left)
         if not isinstance(left_series, pd.Series):
             continue
         left_idx = left_series.dropna().index
-        for right in symbols[i + 1:]:
+        for right in symbols[i + 1 :]:
             right_series = series_map.get(right)
             if not isinstance(right_series, pd.Series):
                 continue
@@ -660,15 +770,19 @@ def _build_overlap_frame(
     return pd.concat(aligned_map, axis=1, join="inner").tail(limit)
 
 
-def _pair_overlap_symbols(pair_key: str, symbols: List[str] | None = None) -> tuple[str, str]:
+def _pair_overlap_symbols(
+    pair_key: str, symbols: List[str] | None = None
+) -> tuple[str, str]:
     text = str(pair_key)
     if symbols:
-        ordered = sorted({str(symbol) for symbol in symbols if symbol}, key=len, reverse=True)
+        ordered = sorted(
+            {str(symbol) for symbol in symbols if symbol}, key=len, reverse=True
+        )
         for left in ordered:
             prefix = f"{left}-"
             if not text.startswith(prefix):
                 continue
-            right = text[len(prefix):]
+            right = text[len(prefix) :]
             if right in ordered:
                 return left, right
     left, _, right = text.partition("-")
@@ -682,7 +796,11 @@ def _select_prune_symbol(
     bottleneck_pair: str,
     preserve_symbol: str | None = None,
 ) -> str | None:
-    candidates = [symbol for symbol in _pair_overlap_symbols(bottleneck_pair, symbols) if symbol in symbols]
+    candidates = [
+        symbol
+        for symbol in _pair_overlap_symbols(bottleneck_pair, symbols)
+        if symbol in symbols
+    ]
     if len(candidates) < 2:
         return None
     if preserve_symbol in candidates and len(candidates) > 1:
@@ -725,7 +843,9 @@ def _prune_symbols_for_overlap(
         pair_overlaps = _pair_overlap_counts(series_map, active_symbols)
         if not pair_overlaps:
             break
-        bottleneck_pair, bottleneck_rows = min(pair_overlaps.items(), key=lambda kv: kv[1])
+        bottleneck_pair, bottleneck_rows = min(
+            pair_overlaps.items(), key=lambda kv: kv[1]
+        )
         drop_symbol = _select_prune_symbol(
             active_symbols,
             pair_overlaps,
@@ -824,6 +944,7 @@ def causal_discover_signals(  # noqa: C901
         transform: Preprocessing transform: "log_return", "pct", "diff", or "level".
         normalize: Z-score columns before testing to stabilise scale.
     """
+
     def _run() -> Dict[str, Any]:  # noqa: C901
         connection_error = _causal_connection_error()
         if connection_error is not None:
@@ -861,7 +982,9 @@ def causal_discover_signals(  # noqa: C901
                 meta=meta,
             )
         if len(symbol_list) == 1:
-            expanded, err, group_path = _expand_symbols_for_group(symbol_list[0], gateway=mt5_gateway)
+            expanded, err, group_path = _expand_symbols_for_group(
+                symbol_list[0], gateway=mt5_gateway
+            )
             if err:
                 return _causal_error(
                     err,
@@ -922,7 +1045,9 @@ def causal_discover_signals(  # noqa: C901
             details_out = []
             expanded_symbols = meta.get("symbols_expanded")
             if isinstance(expanded_symbols, list) and expanded_symbols:
-                details_out.append(f"Expanded group: {', '.join(str(sym) for sym in expanded_symbols)}")
+                details_out.append(
+                    f"Expanded group: {', '.join(str(sym) for sym in expanded_symbols)}"
+                )
             return _causal_error(
                 f"Requested symbol {requested_anchor} could not be fetched from its auto-expanded group.",
                 code="anchor_symbol_missing",
@@ -952,7 +1077,11 @@ def causal_discover_signals(  # noqa: C901
             meta["pair_overlaps"] = pair_overlaps
 
         frame = _build_overlap_frame(series_map, symbol_list, limit)
-        meta["symbols_used"] = list(frame.columns) if isinstance(frame, pd.DataFrame) else list(series_map.keys())
+        meta["symbols_used"] = (
+            list(frame.columns)
+            if isinstance(frame, pd.DataFrame)
+            else list(series_map.keys())
+        )
         min_required_samples = int(max_lag + 6)
         meta["minimum_samples_required"] = int(min_required_samples)
         meta["samples_aligned_raw"] = int(len(frame))
@@ -977,7 +1106,9 @@ def causal_discover_signals(  # noqa: C901
                 symbol_list = pruned_symbols
                 frame = pruned_frame
                 meta["overlap_pruning"] = overlap_pruning
-                meta["pruned_symbols"] = list(overlap_pruning.get("dropped_symbols") or [])
+                meta["pruned_symbols"] = list(
+                    overlap_pruning.get("dropped_symbols") or []
+                )
                 meta["symbols_used"] = list(symbol_list)
                 meta["samples_aligned_raw_after_pruning"] = int(len(frame))
                 pair_overlaps_after = _pair_overlap_counts(series_map, symbol_list)
@@ -1085,7 +1216,9 @@ def causal_discover_signals(  # noqa: C901
                 try:
                     with warnings.catch_warnings():
                         warnings.simplefilter("ignore", category=FutureWarning)
-                        tests = grangercausalitytests(subset[[effect, cause]], maxlag=max_lag)
+                        tests = grangercausalitytests(
+                            subset[[effect, cause]], maxlag=max_lag
+                        )
                 except Exception as ex:
                     if len(pair_failures) < 10:
                         pair_failures.append(
@@ -1127,16 +1260,20 @@ def causal_discover_signals(  # noqa: C901
                         "significant": bool(best_p < significance),
                     }
                 )
-        rows_sorted = sorted(rows, key=lambda item: (item["p_value"], item["effect"], item["cause"]))
-        meta.update({
-            "group_hint": group_hint,
-            "symbols_used": list(transformed.columns),
-            "samples_aligned": int(len(transformed)),
-            "pairs_attempted": int(pair_attempts),
-            "pairs_tested": int(pair_success),
-            "pairs_failed": int(max(pair_attempts - pair_success, 0)),
-            "p_value_correction": "bonferroni_across_lags",
-        })
+        rows_sorted = sorted(
+            rows, key=lambda item: (item["p_value"], item["effect"], item["cause"])
+        )
+        meta.update(
+            {
+                "group_hint": group_hint,
+                "symbols_used": list(transformed.columns),
+                "samples_aligned": int(len(transformed)),
+                "pairs_attempted": int(pair_attempts),
+                "pairs_tested": int(pair_success),
+                "pairs_failed": int(max(pair_attempts - pair_success, 0)),
+                "p_value_correction": "bonferroni_across_lags",
+            }
+        )
         if pair_failures:
             meta["pair_failures"] = pair_failures
             warnings_out.append(
@@ -1150,11 +1287,18 @@ def causal_discover_signals(  # noqa: C901
             "success": True,
             "data": data,
             "meta": meta,
+            "legends": {
+                "transform": _TRANSFORM_LEGEND,
+                "note_p_value": "Lower p-values indicate stronger evidence of causality. Values < significance threshold indicate significant Granger-causal relationship.",
+                "note_lag": "Optimal lag order (bars) at which past values of 'cause' best predict current 'effect'",
+            },
         }
         if warnings_out:
             out["warnings"] = warnings_out
         if not rows_sorted:
-            out["message"] = "No causal relationships detected (insufficient data or all tests failed)."
+            out["message"] = (
+                "No causal relationships detected (insufficient data or all tests failed)."
+            )
         return out
 
     return run_logged_operation(
@@ -1212,7 +1356,9 @@ def correlation_matrix(  # noqa: C901
         meta["symbols_input"] = list(symbol_list)
         if group is not None:
             meta["group_input"] = str(group)
-        requested_anchor = symbol_list[0] if group is None and len(symbol_list) == 1 else None
+        requested_anchor = (
+            symbol_list[0] if group is None and len(symbol_list) == 1 else None
+        )
         group_hint: str | None = None
         if group and symbol_list:
             return _causal_error(
@@ -1370,7 +1516,9 @@ def correlation_matrix(  # noqa: C901
 
         transformed = _transform_frame(frame, transform_value)
         transformed = transformed.dropna(axis=1, how="all")
-        symbols_used = [symbol for symbol in symbol_list if symbol in transformed.columns]
+        symbols_used = [
+            symbol for symbol in symbol_list if symbol in transformed.columns
+        ]
         transformed = transformed.reindex(columns=symbols_used)
         meta["group_hint"] = group_hint
         meta["symbols_used"] = list(symbols_used)
@@ -1399,7 +1547,9 @@ def correlation_matrix(  # noqa: C901
         )
         meta.update(
             {
-                "pairs_attempted": int(max(len(symbols_used) * (len(symbols_used) - 1) // 2, 0)),
+                "pairs_attempted": int(
+                    max(len(symbols_used) * (len(symbols_used) - 1) // 2, 0)
+                ),
                 "pairs_computed": int(len(rows)),
                 "pairs_skipped_min_overlap": int(skipped["min_overlap"]),
                 "pairs_skipped_nonfinite": int(skipped["nonfinite"]),
@@ -1413,7 +1563,8 @@ def correlation_matrix(  # noqa: C901
                 code="insufficient_overlap",
                 meta=meta,
                 warnings=warnings_out,
-                details=_format_pair_overlap_details(pair_overlaps, int(min_overlap)) or None,
+                details=_format_pair_overlap_details(pair_overlaps, int(min_overlap))
+                or None,
             )
 
         out: Dict[str, Any] = {
@@ -1425,6 +1576,18 @@ def correlation_matrix(  # noqa: C901
                 **_build_correlation_summary(rows),
             },
             "meta": meta,
+            "legends": {
+                "transform": _TRANSFORM_LEGEND,
+                "correlation_method": _CORRELATION_METHOD_LEGEND,
+                "relationship": {
+                    "positive": "Symbols tend to move in the same direction",
+                    "negative": "Symbols tend to move in opposite directions",
+                    "flat": "No consistent directional relationship (correlation near zero)",
+                    "strength_weak": "|correlation| < 0.3",
+                    "strength_moderate": "0.3 <= |correlation| < 0.7",
+                    "strength_strong": "|correlation| >= 0.7",
+                },
+            },
         }
         if warnings_out:
             out["warnings"] = warnings_out
@@ -1500,7 +1663,9 @@ def cointegration_test(  # noqa: C901
         meta["symbols_input"] = list(symbol_list)
         if group is not None:
             meta["group_input"] = str(group)
-        requested_anchor = symbol_list[0] if group is None and len(symbol_list) == 1 else None
+        requested_anchor = (
+            symbol_list[0] if group is None and len(symbol_list) == 1 else None
+        )
         group_hint: str | None = None
         if group and symbol_list:
             return _causal_error(
@@ -1665,7 +1830,9 @@ def cointegration_test(  # noqa: C901
 
         transformed = _transform_cointegration_frame(frame, transform_value)
         transformed = transformed.dropna(axis=1, how="all")
-        symbols_used = [symbol for symbol in symbol_list if symbol in transformed.columns]
+        symbols_used = [
+            symbol for symbol in symbol_list if symbol in transformed.columns
+        ]
         transformed = transformed.reindex(columns=symbols_used)
         meta["group_hint"] = group_hint
         meta["symbols_used"] = list(symbols_used)
@@ -1726,7 +1893,9 @@ def cointegration_test(  # noqa: C901
         )
         meta.update(
             {
-                "pairs_attempted": int(max(len(symbols_used) * (len(symbols_used) - 1) // 2, 0)),
+                "pairs_attempted": int(
+                    max(len(symbols_used) * (len(symbols_used) - 1) // 2, 0)
+                ),
                 "pairs_tested": int(len(rows)),
                 "pairs_failed": int(len(pair_failures)),
                 "pairs_skipped_min_overlap": int(pairs_skipped_min_overlap),
@@ -1742,10 +1911,16 @@ def cointegration_test(  # noqa: C901
         if not rows:
             error_code = "insufficient_overlap"
             error_message = "No symbol pairs had enough overlapping transformed samples to run cointegration tests."
-            details = _format_pair_overlap_details(pair_overlaps, int(min_overlap)) or None
-            if pair_failures and any(rows_count >= int(min_overlap) for rows_count in pair_overlaps.values()):
+            details = (
+                _format_pair_overlap_details(pair_overlaps, int(min_overlap)) or None
+            )
+            if pair_failures and any(
+                rows_count >= int(min_overlap) for rows_count in pair_overlaps.values()
+            ):
                 error_code = "test_failed"
-                error_message = "Cointegration tests failed for all eligible symbol pairs."
+                error_message = (
+                    "Cointegration tests failed for all eligible symbol pairs."
+                )
             return _causal_error(
                 error_message,
                 code=error_code,
@@ -1754,7 +1929,19 @@ def cointegration_test(  # noqa: C901
                 details=details,
             )
 
-        cointegrated_count = int(sum(1 for row in rows if bool(row.get("cointegrated"))))
+        cointegrated_count = int(
+            sum(1 for row in rows if bool(row.get("cointegrated")))
+        )
+        # Build transform legend for cointegration (uses different transforms)
+        cointegration_transform_legend = {
+            "level": _TRANSFORM_LEGEND["level"],
+            "log_level": {
+                "description": "Natural log of price levels",
+                "formula": "ln(close_t)",
+                "use_case": "Reduces scale effects while preserving cointegration relationships; common for price ratios",
+            },
+        }
+
         out: Dict[str, Any] = {
             "success": True,
             "data": {
@@ -1764,11 +1951,25 @@ def cointegration_test(  # noqa: C901
                 **_build_cointegration_summary(rows),
             },
             "meta": meta,
+            "legends": {
+                "transform": cointegration_transform_legend,
+                "trend": _COINTEGRATION_TREND_LEGEND,
+                "cointegration": {
+                    "description": "Long-term equilibrium relationship between non-stationary price series",
+                    "cointegrated_true": "Series share a common stochastic drift - deviations are mean-reverting",
+                    "cointegrated_false": "No statistically significant long-term relationship detected",
+                    "test_statistic": "Engle-Granger test statistic; more negative = stronger evidence of cointegration",
+                    "critical_values": "Thresholds at 1%, 5%, 10% significance levels; test statistic < critical value indicates cointegration",
+                },
+                "hedge_ratio": "Units of quote symbol needed to hedge one unit of base symbol in a pairs trade",
+            },
         }
         if warnings_out:
             out["warnings"] = warnings_out
         if cointegrated_count == 0:
-            out["message"] = "No statistically significant cointegrated pairs detected at the selected threshold."
+            out["message"] = (
+                "No statistically significant cointegrated pairs detected at the selected threshold."
+            )
         return out
 
     return run_logged_operation(
