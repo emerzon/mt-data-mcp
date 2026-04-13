@@ -55,7 +55,9 @@ class TestConsolidatePayload:
         result = _consolidate_payload(payload, "bocpd", "full", include_series=True)
         assert result["symbol"] == "EURUSD"
         assert result["success"] is True
-        assert "regimes" in result
+        assert "segments" in result
+        assert "current_segment" in result
+        assert "transition_summary" in result
 
     def test_compact_mode(self):
         payload = {
@@ -68,7 +70,8 @@ class TestConsolidatePayload:
             "cp_prob": [0.1, 0.1, 0.9],
         }
         result = _consolidate_payload(payload, "bocpd", "compact", include_series=True)
-        assert "regimes" in result
+        assert "segments" in result
+        assert "current_segment" in result
 
     def test_no_series_when_not_requested(self):
         payload = {
@@ -110,8 +113,12 @@ class TestConsolidatePayload:
 
         result = _consolidate_payload(payload, "bocpd", "full")
 
-        assert [segment["regime"] for segment in result["regimes"]] == [1, 0]
+        assert [segment["bias"] for segment in result["segments"]] == [
+            "bullish",
+            "bearish",
+        ]
         assert result["params_used"]["relabeled"] is True
+        assert result["params_used"]["label_mapping"] == {"0": 1, "1": 0}
 
     def test_all_invalid_states_are_dropped_from_consolidated_regimes(self):
         payload = {

@@ -1,0 +1,287 @@
+from __future__ import annotations
+
+from unittest.mock import patch
+
+import numpy as np
+import pandas as pd
+import pytest
+
+from mtdata.core import regime as regime_mod
+from mtdata.core.regime import _consolidate_payload
+from mtdata.core.regime import regime_detect
+from mtdata.core.regime.api import _build_all_method_comparison
+from mtdata.core.regime.payload import _build_regime_descriptions
+
+
+def _unwrap(fn):
+    while hasattr(fn, "__wrapped__"):
+        fn = fn.__wrapped__
+    return fn
+
+
+@pytest.fixture(autouse=True)
+def _skip_mt5_connection(monkeypatch):
+    monkeypatch.setattr(regime_mod, "ensure_mt5_connection_or_raise", lambda: None)
+
+
+def _downtrend_df(n: int = 120) -> pd.DataFrame:
+    t = np.arange(float(n))
+    close = np.linspace(100.0, 70.0, n)
+    return pd.DataFrame({"time": t, "close": close})
+
+
+def test_build_all_method_comparison_uses_semantic_signals() -> None:
+    comparison = _build_all_method_comparison(
+        {
+            "bocpd": {
+                "current_segment": {
+                    "status": "no_recent_change_detected",
+                    "started_at": "T1",
+                    "bars_since_change": 500,
+                    "transition_risk": "low",
+                },
+                "transition_summary": {
+                    "recent_change_points_count": 0,
+                    "recent_transition_activity": "none",
+                    "calibration_status": "calibrated",
+                },
+                "segment_context": {
+                    "bias": "bullish",
+                    "return_pct": 4.2,
+                    "volatility_pct": 1.1,
+                },
+            },
+            "hmm": {
+                "current_regime": {
+                    "regime_id": 1,
+                    "label": "positive_mod_vol",
+                    "confidence": 0.857,
+                },
+                "regime_info": {
+                    1: {
+                        "label": "positive_mod_vol",
+                        "mean_return": 0.000122,
+                        "mean_return_pct": 0.0122,
+                        "volatility": 0.00279,
+                        "volatility_pct": 0.279,
+                    }
+                },
+            },
+            "clustering": {
+                "current_regime": {
+                    "regime_id": 1,
+                    "label": "regime_bullish",
+                    "confidence": 1.0,
+                }
+            },
+            "garch": {
+                "current_regime": {
+                    "regime_id": 0,
+                    "label": "low_vol",
+                    "confidence": 1.0,
+                },
+                "regime_info": {
+                    0: {
+                        "label": "low_vol",
+                        "mean_return": 0.000105,
+                        "mean_return_pct": 0.0105,
+                        "volatility": 0.00367,
+                        "volatility_pct": 0.367,
+                    }
+                },
+            },
+            "rule_based": {
+                "regime": {
+                    "state": "ranging",
+                    "direction": "bullish",
+                    "trend_strength": 0.1497,
+                    "efficiency_ratio": 0.0009,
+                    "window_bars": 160,
+                    "window_move_pct": 1.25,
+                    "signal_source": "price",
+                }
+            },
+            "ensemble": {
+                "current_regime": {
+                    "regime_id": 1,
+                    "label": "negative_mod_vol",
+                    "confidence": 0.3524,
+                },
+                "regime_info": {
+                    1: {
+                        "label": "negative_mod_vol",
+                        "mean_return": -0.000415,
+                        "mean_return_pct": -0.0415,
+                        "volatility": 0.00386,
+                        "volatility_pct": 0.386,
+                    }
+                },
+            },
+        }
+    )
+
+    assert comparison["current_regimes"]["bocpd"]["status"] == "no_recent_change_detected"
+    assert comparison["current_regimes"]["bocpd"]["recent_transition_activity"] == "none"
+    assert comparison["current_regimes"]["bocpd"]["bias"] == "bullish"
+    assert comparison["current_regimes"]["hmm"]["regime_confidence"] == 0.857
+    assert comparison["current_regimes"]["garch"]["volatility"] == "low_vol"
+    assert comparison["current_regimes"]["rule_based"]["signal_source"] == "price"
+    assert "majority_state" not in comparison["agreement"]
+    assert comparison["agreement"]["direction"] == {
+        "majority": "bullish",
+        "agreement_pct": 75.0,
+        "methods_considered": ["hmm", "clustering", "rule_based", "ensemble"],
+    }
+    assert comparison["agreement"]["volatility"] == {
+        "majority": "moderate_vol",
+        "agreement_pct": 66.67,
+        "methods_considered": ["hmm", "garch", "ensemble"],
+    }
+
+
+def test_ensemble_labels_follow_mean_return_sign() -> None:
+    descriptions = _build_regime_descriptions(
+        {
+            "mean_return": [
+                -0.000725,
+                -0.000415,
+                0.000079,
+                0.000179,
+                0.000607,
+                0.00119,
+            ],
+            "volatility": [0.00435, 0.00386, 0.00466, 0.00614, 0.00469, 0.00593],
+        },
+        "ensemble",
+    )
+
+    assert descriptions[0]["label"].startswith("negative_")
+    assert descriptions[1]["label"].startswith("negative_")
+    assert descriptions[2]["label"].startswith("neutral_")
+    assert descriptions[3]["label"].startswith("positive_")
+    assert "bearish" not in descriptions[2]["label"]
+
+
+def test_wavelet_labels_include_frequency_character() -> None:
+    descriptions = _build_regime_descriptions(
+        {
+            "mean_return": [-0.00025, -0.00016, 0.00055],
+            "volatility": [0.0043, 0.00398, 0.00503],
+            "energy_profiles": {
+                "0": {
+                    "band_0_energy": 0.084377,
+                    "band_1_energy": 0.212702,
+                    "band_2_energy": 0.271006,
+                    "band_3_energy": 0.431915,
+                },
+                "1": {
+                    "band_0_energy": 0.081442,
+                    "band_1_energy": 0.114511,
+                    "band_2_energy": 0.196177,
+                    "band_3_energy": 0.60787,
+                },
+                "2": {
+                    "band_0_energy": 0.037996,
+                    "band_1_energy": 0.081256,
+                    "band_2_energy": 0.419504,
+                    "band_3_energy": 0.461244,
+                },
+            },
+        },
+        "wavelet",
+    )
+
+    assert descriptions[0]["label"] == "negative_mixed_freq_high_vol"
+    assert descriptions[1]["label"] == "negative_trend_dominant_high_vol"
+    assert descriptions[2]["label"] == "positive_trend_dominant_high_vol"
+
+
+def test_bocpd_consolidation_uses_segment_language() -> None:
+    out = _consolidate_payload(
+        {
+            "symbol": "X",
+            "timeframe": "H1",
+            "method": "bocpd",
+            "target": "return",
+            "times": ["T1", "T2", "T3", "T4"],
+            "cp_prob": [0.05, 0.9, 0.1, 0.08],
+            "change_points": [{"idx": 1, "time": "T2", "prob": 0.9}],
+            "_series_values": [0.01, 0.02, -0.01, -0.02],
+            "threshold": 0.5,
+            "reliability": {
+                "expected_false_alarm_rate": 0.02,
+                "recent_cp_density": 0.0,
+                "threshold_calibrated": True,
+            },
+            "summary": {
+                "lookback": 4,
+                "last_cp_prob": 0.08,
+                "change_points_count": 1,
+            },
+        },
+        "bocpd",
+        "compact",
+    )
+
+    assert "current_segment" in out
+    assert out["current_segment"]["status"] == "recent_change_detected"
+    assert out["transition_summary"]["recent_change_points_count"] == 1
+    assert out["transition_summary"]["calibration_status"] == "calibrated"
+    assert out["segment_context"]["source"] == "derived_from_return_series"
+    assert out["segments"][1]["transition_prob_at_start"] == 0.9
+    assert "current_regime" not in out
+    assert "regimes" not in out
+
+
+def test_consolidate_payload_uses_regime_confidence_name() -> None:
+    out = _consolidate_payload(
+        {
+            "symbol": "X",
+            "timeframe": "H1",
+            "method": "hmm",
+            "times": ["T1", "T2", "T3", "T4"],
+            "state": [0, 0, 1, 1],
+            "state_probabilities": [
+                [0.9, 0.1],
+                [0.8, 0.2],
+                [0.15, 0.85],
+                [0.2, 0.8],
+            ],
+        },
+        "hmm",
+        "compact",
+    )
+
+    current_regime = out["current_regime"]
+    assert current_regime["regime_confidence"] == 0.825
+    assert "confidence" not in current_regime
+
+
+def test_rule_based_uses_price_window_metrics_for_return_target() -> None:
+    raw = _unwrap(regime_detect)
+    history = _downtrend_df()
+    expected_segment = history["close"].to_numpy()[-60:]
+    expected_move_pct = round(
+        (expected_segment[-1] - expected_segment[0]) / expected_segment[0] * 100.0,
+        4,
+    )
+
+    with (
+        patch("mtdata.core.regime._fetch_history", return_value=history),
+        patch("mtdata.core.regime._resolve_denoise_base_col", return_value="close"),
+        patch("mtdata.core.regime._format_time_minimal", side_effect=lambda x: f"T{x}"),
+    ):
+        out = raw(
+            symbol="TEST",
+            timeframe="H1",
+            limit=len(history),
+            method="rule_based",
+            target="return",
+            params={"window_bars": 60},
+        )
+
+    regime = out["regime"]
+    assert regime["direction"] == "bearish"
+    assert regime["signal_source"] == "price"
+    assert regime["window_move_pct"] == expected_move_pct
+    assert out["params_used"]["signal_source"] == "price"

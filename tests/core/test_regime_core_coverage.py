@@ -3,6 +3,7 @@
 Covers lines 90-102, 175-178, 223-487 by mocking MT5, data_service, and
 regime utility calls.
 """
+
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -15,17 +16,20 @@ from mtdata.core import regime as regime_mod
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_df(n: int = 100):
     """Return a minimal DataFrame that _fetch_history would produce."""
     close = 1.1000 + np.cumsum(np.random.default_rng(42).normal(0, 0.0005, n))
-    return pd.DataFrame({
-        "time": np.arange(n, dtype=float) * 3600 + 1_700_000_000,
-        "open": close - 0.0001,
-        "high": close + 0.001,
-        "low": close - 0.001,
-        "close": close,
-        "tick_volume": np.ones(n),
-    })
+    return pd.DataFrame(
+        {
+            "time": np.arange(n, dtype=float) * 3600 + 1_700_000_000,
+            "open": close - 0.0001,
+            "high": close + 0.001,
+            "low": close - 0.001,
+            "close": close,
+            "tick_volume": np.ones(n),
+        }
+    )
 
 
 def _time_fmt_stub(epoch):
@@ -62,51 +66,63 @@ class TestConsolidatePayloadBOCPD:
         """Single change-point divides data into two segments."""
         times = ["T1", "T2", "T3", "T4"]
         payload = {
-            "symbol": "EURUSD", "timeframe": "H1", "method": "bocpd",
-            "target": "return", "success": True,
+            "symbol": "EURUSD",
+            "timeframe": "H1",
+            "method": "bocpd",
+            "target": "return",
+            "success": True,
             "times": times,
             "cp_prob": [0.1, 0.9, 0.1, 0.1],
             "change_points": [{"idx": 1}],
         }
         res = _consolidate_payload(payload, "bocpd", "full")
         assert res["success"] is True
-        assert "regimes" in res
-        assert len(res["regimes"]) == 2
-        # BOCPD segments should NOT have avg_conf
-        for seg in res["regimes"]:
-            assert "avg_conf" not in seg
-        assert "transition_conf" not in res["regimes"][0]
-        assert res["regimes"][1]["transition_conf"] == 0.9
+        assert "segments" in res
+        assert len(res["segments"]) == 2
+        assert "current_segment" in res
+        assert "transition_summary" in res
+        assert "avg_conf" not in res["segments"][0]
+        assert "transition_prob_at_start" not in res["segments"][0]
+        assert res["segments"][1]["transition_prob_at_start"] == 0.9
 
     def test_bocpd_no_change_points(self):
         payload = {
-            "symbol": "X", "timeframe": "H1", "method": "bocpd",
-            "times": ["T1", "T2", "T3"], "cp_prob": [0.0, 0.0, 0.0],
+            "symbol": "X",
+            "timeframe": "H1",
+            "method": "bocpd",
+            "times": ["T1", "T2", "T3"],
+            "cp_prob": [0.0, 0.0, 0.0],
             "change_points": [],
         }
         res = _consolidate_payload(payload, "bocpd", "full")
-        assert len(res["regimes"]) == 1
-        assert res["regimes"][0]["bars"] == 3
+        assert len(res["segments"]) == 1
+        assert res["segments"][0]["bars"] == 3
 
     def test_bocpd_multiple_change_points(self):
         times = [f"T{i}" for i in range(6)]
         payload = {
-            "symbol": "X", "timeframe": "H1", "method": "bocpd",
-            "times": times, "cp_prob": [0.0] * 6,
+            "symbol": "X",
+            "timeframe": "H1",
+            "method": "bocpd",
+            "times": times,
+            "cp_prob": [0.0] * 6,
             "change_points": [{"idx": 2}, {"idx": 4}],
         }
         res = _consolidate_payload(payload, "bocpd", "full")
-        assert len(res["regimes"]) == 3
+        assert len(res["segments"]) == 3
 
     def test_bocpd_cp_prob_not_list(self):
         """When cp_prob is missing, probs default to 0."""
         payload = {
-            "symbol": "X", "timeframe": "H1", "method": "bocpd",
-            "times": ["T1", "T2"], "cp_prob": None,
+            "symbol": "X",
+            "timeframe": "H1",
+            "method": "bocpd",
+            "times": ["T1", "T2"],
+            "cp_prob": None,
             "change_points": [],
         }
         res = _consolidate_payload(payload, "bocpd", "full")
-        assert len(res["regimes"]) == 1
+        assert len(res["segments"]) == 1
 
 
 class TestConsolidatePayloadHMM:
@@ -114,7 +130,9 @@ class TestConsolidatePayloadHMM:
 
     def test_hmm_two_states(self):
         payload = {
-            "symbol": "X", "timeframe": "H1", "method": "hmm",
+            "symbol": "X",
+            "timeframe": "H1",
+            "method": "hmm",
             "times": ["T1", "T2", "T3", "T4"],
             "state": [0, 0, 1, 1],
             "state_probabilities": [[0.9, 0.1], [0.8, 0.2], [0.2, 0.8], [0.1, 0.9]],
@@ -127,7 +145,9 @@ class TestConsolidatePayloadHMM:
 
     def test_hmm_single_state(self):
         payload = {
-            "symbol": "X", "timeframe": "H1", "method": "hmm",
+            "symbol": "X",
+            "timeframe": "H1",
+            "method": "hmm",
             "times": ["T1", "T2"],
             "state": [0, 0],
             "state_probabilities": [[0.95, 0.05], [0.9, 0.1]],
@@ -137,7 +157,9 @@ class TestConsolidatePayloadHMM:
 
     def test_ms_ar_consolidation(self):
         payload = {
-            "symbol": "X", "timeframe": "H1", "method": "ms_ar",
+            "symbol": "X",
+            "timeframe": "H1",
+            "method": "ms_ar",
             "times": ["T1", "T2", "T3"],
             "state": [0, 1, 1],
             "state_probabilities": [[0.8, 0.2], [0.3, 0.7], [0.2, 0.8]],
@@ -147,7 +169,9 @@ class TestConsolidatePayloadHMM:
 
     def test_clustering_consolidation(self):
         payload = {
-            "symbol": "X", "timeframe": "H1", "method": "clustering",
+            "symbol": "X",
+            "timeframe": "H1",
+            "method": "clustering",
             "times": ["T1", "T2", "T3"],
             "state": [2, 2, 1],
             "state_probabilities": [[0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 1.0, 0.0]],
@@ -157,17 +181,23 @@ class TestConsolidatePayloadHMM:
 
     def test_clustering_skips_undefined_states(self):
         payload = {
-            "symbol": "X", "timeframe": "H1", "method": "clustering",
+            "symbol": "X",
+            "timeframe": "H1",
+            "method": "clustering",
             "times": ["T1", "T2", "T3"],
             "state": [-1, 2, 2],
             "state_probabilities": [[0.0, 0.0, 0.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0]],
         }
         res = _consolidate_payload(payload, "clustering", "full")
-        assert res["regimes"] == [{"start": "T2", "end": "T3", "bars": 2, "regime": 2, "avg_conf": 1.0}]
+        assert res["regimes"] == [
+            {"start": "T2", "end": "T3", "bars": 2, "regime": 2, "avg_conf": 1.0}
+        ]
 
     def test_state_not_list_fallback(self):
         payload = {
-            "symbol": "X", "timeframe": "H1", "method": "hmm",
+            "symbol": "X",
+            "timeframe": "H1",
+            "method": "hmm",
             "times": ["T1", "T2"],
             "state": None,
         }
@@ -177,7 +207,9 @@ class TestConsolidatePayloadHMM:
 
     def test_state_length_mismatch(self):
         payload = {
-            "symbol": "X", "timeframe": "H1", "method": "hmm",
+            "symbol": "X",
+            "timeframe": "H1",
+            "method": "hmm",
             "times": ["T1", "T2", "T3"],
             "state": [0, 1],
         }
@@ -187,7 +219,9 @@ class TestConsolidatePayloadHMM:
     def test_state_probs_flat_list_fallback(self):
         """When state_probabilities is flat (not nested), fallback."""
         payload = {
-            "symbol": "X", "timeframe": "H1", "method": "hmm",
+            "symbol": "X",
+            "timeframe": "H1",
+            "method": "hmm",
             "times": ["T1", "T2"],
             "state": [0, 1],
             "state_probabilities": [0.9, 0.8],  # flat, not nested
@@ -200,7 +234,9 @@ class TestConsolidatePayloadHMM:
     def test_state_probs_vec_out_of_bounds(self):
         """state index exceeds prob vector length → None appended."""
         payload = {
-            "symbol": "X", "timeframe": "H1", "method": "hmm",
+            "symbol": "X",
+            "timeframe": "H1",
+            "method": "hmm",
             "times": ["T1", "T2"],
             "state": [0, 5],  # 5 is out of bounds
             "state_probabilities": [[0.9, 0.1], [0.4, 0.6]],
@@ -214,17 +250,24 @@ class TestConsolidateOutputModes:
 
     def test_full_with_include_series(self):
         payload = {
-            "symbol": "X", "timeframe": "H1", "method": "bocpd",
-            "times": ["T1", "T2"], "cp_prob": [0.0, 0.0],
-            "change_points": [], "state": [0, 0],
+            "symbol": "X",
+            "timeframe": "H1",
+            "method": "bocpd",
+            "times": ["T1", "T2"],
+            "cp_prob": [0.0, 0.0],
+            "change_points": [],
+            "state": [0, 0],
         }
         res = _consolidate_payload(payload, "bocpd", "full", include_series=True)
         assert "series" in res
 
     def test_full_without_include_series(self):
         payload = {
-            "symbol": "X", "timeframe": "H1", "method": "bocpd",
-            "times": ["T1", "T2"], "cp_prob": [0.0, 0.0],
+            "symbol": "X",
+            "timeframe": "H1",
+            "method": "bocpd",
+            "times": ["T1", "T2"],
+            "cp_prob": [0.0, 0.0],
             "change_points": [],
         }
         res = _consolidate_payload(payload, "bocpd", "full", include_series=False)
@@ -232,26 +275,50 @@ class TestConsolidateOutputModes:
 
     def test_compact_with_include_series(self):
         payload = {
-            "symbol": "X", "timeframe": "H1", "method": "bocpd",
-            "times": ["T1", "T2"], "cp_prob": [0.1, 0.2],
-            "change_points": [], "state": [0, 0],
+            "symbol": "X",
+            "timeframe": "H1",
+            "method": "bocpd",
+            "times": ["T1", "T2"],
+            "cp_prob": [0.1, 0.2],
+            "change_points": [],
+            "state": [0, 0],
         }
-        res = _consolidate_payload(payload, "bocpd", "compact", include_series=True)
-        assert "series" in res
+        # Series now only included in 'full' mode, not compact
+        res_compact = _consolidate_payload(
+            payload, "bocpd", "compact", include_series=True
+        )
+        assert (
+            "series" not in res_compact
+        )  # Compact excludes raw series even with include_series
 
-    def test_params_used_preserved(self):
+        res_full = _consolidate_payload(payload, "bocpd", "full", include_series=True)
+        assert "series" in res_full  # Full mode includes series when requested
+
+    def test_params_used_in_full_mode_only(self):
         payload = {
-            "symbol": "X", "timeframe": "H1", "method": "bocpd",
-            "times": ["T1"], "cp_prob": [0.0], "change_points": [],
+            "symbol": "X",
+            "timeframe": "H1",
+            "method": "bocpd",
+            "times": ["T1"],
+            "cp_prob": [0.0],
+            "change_points": [],
             "params_used": {"hazard_lambda": 100},
         }
-        res = _consolidate_payload(payload, "bocpd", "full")
-        assert res["params_used"] == {"hazard_lambda": 100}
+        # params_used only in full mode
+        res_compact = _consolidate_payload(payload, "bocpd", "compact")
+        assert "params_used" not in res_compact
+
+        res_full = _consolidate_payload(payload, "bocpd", "full")
+        assert res_full["params_used"] == {"hazard_lambda": 100}
 
     def test_summary_removed_from_consolidated_outputs(self):
         payload = {
-            "symbol": "X", "timeframe": "H1", "method": "bocpd",
-            "times": ["T1"], "cp_prob": [0.0], "change_points": [],
+            "symbol": "X",
+            "timeframe": "H1",
+            "method": "bocpd",
+            "times": ["T1"],
+            "cp_prob": [0.0],
+            "change_points": [],
             "summary": {"lookback": 10},
         }
         res = _consolidate_payload(payload, "bocpd", "full")
@@ -259,7 +326,6 @@ class TestConsolidateOutputModes:
 
 
 class TestConsolidateEdgeCases:
-
     def test_exception_in_consolidation(self):
         """Force an exception to hit lines 175-178.
 
@@ -280,7 +346,9 @@ class TestConsolidateEdgeCases:
     def test_probs_none_entries(self):
         """Prob list with None entries uses 0.0 fallback."""
         payload = {
-            "symbol": "X", "timeframe": "H1", "method": "hmm",
+            "symbol": "X",
+            "timeframe": "H1",
+            "method": "hmm",
             "times": ["T1", "T2", "T3"],
             "state": [0, 0, 1],
             "state_probabilities": [[0.9, 0.1], None, [0.3, 0.7]],
@@ -296,14 +364,20 @@ class TestConsolidateEdgeCases:
 
 
 class TestSummaryOnlyPayload:
-
     def test_full_payload(self):
         p = {
-            "symbol": "EURUSD", "timeframe": "H1", "method": "bocpd",
-            "target": "return", "success": True,
-            "summary": {"x": 1}, "params_used": {"y": 2}, "threshold": 0.5,
-            "reliability": {"confidence": 0.7}, "tuning_hint": "hint",
-            "times": [1, 2], "cp_prob": [0.1, 0.2],
+            "symbol": "EURUSD",
+            "timeframe": "H1",
+            "method": "bocpd",
+            "target": "return",
+            "success": True,
+            "summary": {"x": 1},
+            "params_used": {"y": 2},
+            "threshold": 0.5,
+            "reliability": {"confidence": 0.7},
+            "tuning_hint": "hint",
+            "times": [1, 2],
+            "cp_prob": [0.1, 0.2],
         }
         res = _summary_only_payload(p)
         assert res["symbol"] == "EURUSD"
@@ -334,6 +408,7 @@ def _skip_mt5_connection(monkeypatch):
 # decorator. The underlying function is stored by functools.wraps.
 def _get_regime_detect():
     from mtdata.core.regime import regime_detect
+
     fn = regime_detect
     while hasattr(fn, "__wrapped__"):
         fn = fn.__wrapped__
@@ -346,7 +421,6 @@ _FMT = "mtdata.core.regime._format_time_minimal"
 
 
 class TestRegimeDetectBOCPD:
-
     @patch(_FMT, side_effect=_time_fmt_stub)
     @patch(_DENOISE, return_value="close")
     @patch(_FETCH)
@@ -355,12 +429,23 @@ class TestRegimeDetectBOCPD:
         mock_fetch.return_value = _make_df(50)
         cp = np.zeros(49)
         cp[20] = 0.8
-        with patch("mtdata.utils.regime.bocpd_gaussian", return_value={"cp_prob": cp}), \
-             caplog.at_level("INFO", logger="mtdata.core.regime"):
+        with (
+            patch("mtdata.utils.regime.bocpd_gaussian", return_value={"cp_prob": cp}),
+            caplog.at_level("INFO", logger="mtdata.core.regime"),
+        ):
             fn = _get_regime_detect()
-            res = fn("EURUSD", timeframe="H1", limit=50, method="bocpd",
-                      target="return", threshold=0.5, output="full")
-        assert res.get("success") or "regimes" in res or "error" not in res or True
+            res = fn(
+                "EURUSD",
+                timeframe="H1",
+                limit=50,
+                method="bocpd",
+                target="return",
+                threshold=0.5,
+                output="full",
+            )
+        assert "segments" in res
+        assert "current_segment" in res
+        assert "transition_summary" in res
         assert any(
             "event=finish operation=regime_detect success=True" in record.message
             for record in caplog.records
@@ -385,8 +470,14 @@ class TestRegimeDetectBOCPD:
         cp[30] = 0.8
         with patch("mtdata.utils.regime.bocpd_gaussian", return_value={"cp_prob": cp}):
             fn = _get_regime_detect()
-            res = fn("EURUSD", limit=60, method="bocpd", output="summary",
-                      threshold=0.5, lookback=20)
+            res = fn(
+                "EURUSD",
+                limit=60,
+                method="bocpd",
+                output="summary",
+                threshold=0.5,
+                lookback=20,
+            )
         assert "summary" in res or "error" in res
 
     @patch(_FMT, side_effect=_time_fmt_stub)
@@ -399,9 +490,15 @@ class TestRegimeDetectBOCPD:
         cp[30] = 0.8
         with patch("mtdata.utils.regime.bocpd_gaussian", return_value={"cp_prob": cp}):
             fn = _get_regime_detect()
-            res = fn("EURUSD", limit=60, method="bocpd", output="compact",
-                      threshold=0.5, lookback=20)
-        assert "regimes" in res or "error" in res
+            res = fn(
+                "EURUSD",
+                limit=60,
+                method="bocpd",
+                output="compact",
+                threshold=0.5,
+                lookback=20,
+            )
+        assert "segments" in res or "error" in res
 
     @patch(_FMT, side_effect=_time_fmt_stub)
     @patch(_DENOISE, return_value="close")
@@ -424,14 +521,20 @@ class TestRegimeDetectBOCPD:
         cp = np.zeros(59)
         with patch("mtdata.utils.regime.bocpd_gaussian", return_value={"cp_prob": cp}):
             fn = _get_regime_detect()
-            res = fn("EURUSD", limit=60, method="bocpd",
-                      params={"hazard_lambda": 100, "max_run_length": 500})
+            res = fn(
+                "EURUSD",
+                limit=60,
+                method="bocpd",
+                params={"hazard_lambda": 100, "max_run_length": 500},
+            )
         assert isinstance(res, dict)
 
     @patch(_FMT, side_effect=_time_fmt_stub)
     @patch(_DENOISE, return_value="close")
     @patch(_FETCH)
-    def test_bocpd_return_target_keeps_times_aligned_after_nan_filter(self, mock_fetch, mock_denoise, mock_fmt):
+    def test_bocpd_return_target_keeps_times_aligned_after_nan_filter(
+        self, mock_fetch, mock_denoise, mock_fmt
+    ):
         df = _make_df(12)
         df.loc[3, "close"] = np.nan
         mock_fetch.return_value = df
@@ -441,7 +544,14 @@ class TestRegimeDetectBOCPD:
 
         with patch("mtdata.utils.regime.bocpd_gaussian", side_effect=_fake_bocpd):
             fn = _get_regime_detect()
-            res = fn("EURUSD", limit=12, method="bocpd", target="return", output="full", include_series=True)
+            res = fn(
+                "EURUSD",
+                limit=12,
+                method="bocpd",
+                target="return",
+                output="full",
+                include_series=True,
+            )
 
         assert res.get("success") is True
         expected_times = [
@@ -461,8 +571,9 @@ class TestRegimeDetectBOCPD:
         cp = np.zeros(49)
         with patch("mtdata.utils.regime.bocpd_gaussian", return_value={"cp_prob": cp}):
             fn = _get_regime_detect()
-            res = fn("EURUSD", limit=50, method="bocpd",
-                      output="full", include_series=True)
+            res = fn(
+                "EURUSD", limit=50, method="bocpd", output="full", include_series=True
+            )
         assert isinstance(res, dict)
 
     @patch(_FMT, side_effect=_time_fmt_stub)
@@ -475,13 +586,18 @@ class TestRegimeDetectBOCPD:
         cp[40] = 0.9
         with patch("mtdata.utils.regime.bocpd_gaussian", return_value={"cp_prob": cp}):
             fn = _get_regime_detect()
-            res = fn("EURUSD", limit=60, method="bocpd",
-                      output="compact", include_series=True, lookback=20)
+            res = fn(
+                "EURUSD",
+                limit=60,
+                method="bocpd",
+                output="compact",
+                include_series=True,
+                lookback=20,
+            )
         assert isinstance(res, dict)
 
 
 class TestRegimeDetectMSAR:
-
     @patch(_FMT, side_effect=_time_fmt_stub)
     @patch(_DENOISE, return_value="close")
     @patch(_FETCH)
@@ -496,8 +612,15 @@ class TestRegimeDetectMSAR:
         mock_mod.return_value = mock_mod
         mock_mod.fit.return_value = mock_res
 
-        with patch.dict("sys.modules", {"statsmodels.tsa.regime_switching.markov_regression": MagicMock()}):
-            with patch("statsmodels.tsa.regime_switching.markov_regression.MarkovRegression", mock_mod, create=True):
+        with patch.dict(
+            "sys.modules",
+            {"statsmodels.tsa.regime_switching.markov_regression": MagicMock()},
+        ):
+            with patch(
+                "statsmodels.tsa.regime_switching.markov_regression.MarkovRegression",
+                mock_mod,
+                create=True,
+            ):
                 fn = _get_regime_detect()
                 res = fn("EURUSD", limit=60, method="ms_ar", output="full")
         assert isinstance(res, dict)
@@ -509,7 +632,9 @@ class TestRegimeDetectMSAR:
         df = _make_df(50)
         mock_fetch.return_value = df
         fn = _get_regime_detect()
-        with patch.dict("sys.modules", {"statsmodels.tsa.regime_switching.markov_regression": None}):
+        with patch.dict(
+            "sys.modules", {"statsmodels.tsa.regime_switching.markov_regression": None}
+        ):
             # Import will fail → error
             res = fn("EURUSD", limit=50, method="ms_ar")
         assert "error" in res
@@ -528,8 +653,15 @@ class TestRegimeDetectMSAR:
         mock_mod.return_value = mock_mod
         mock_mod.fit.return_value = mock_res
 
-        with patch.dict("sys.modules", {"statsmodels.tsa.regime_switching.markov_regression": MagicMock()}):
-            with patch("statsmodels.tsa.regime_switching.markov_regression.MarkovRegression", mock_mod, create=True):
+        with patch.dict(
+            "sys.modules",
+            {"statsmodels.tsa.regime_switching.markov_regression": MagicMock()},
+        ):
+            with patch(
+                "statsmodels.tsa.regime_switching.markov_regression.MarkovRegression",
+                mock_mod,
+                create=True,
+            ):
                 fn = _get_regime_detect()
                 res = fn("EURUSD", limit=60, method="ms_ar", output="summary")
         assert isinstance(res, dict)
@@ -548,10 +680,19 @@ class TestRegimeDetectMSAR:
         mock_mod.return_value = mock_mod
         mock_mod.fit.return_value = mock_res
 
-        with patch.dict("sys.modules", {"statsmodels.tsa.regime_switching.markov_regression": MagicMock()}):
-            with patch("statsmodels.tsa.regime_switching.markov_regression.MarkovRegression", mock_mod, create=True):
+        with patch.dict(
+            "sys.modules",
+            {"statsmodels.tsa.regime_switching.markov_regression": MagicMock()},
+        ):
+            with patch(
+                "statsmodels.tsa.regime_switching.markov_regression.MarkovRegression",
+                mock_mod,
+                create=True,
+            ):
                 fn = _get_regime_detect()
-                res = fn("EURUSD", limit=60, method="ms_ar", output="compact", lookback=20)
+                res = fn(
+                    "EURUSD", limit=60, method="ms_ar", output="compact", lookback=20
+                )
         assert isinstance(res, dict)
 
     @patch(_FMT, side_effect=_time_fmt_stub)
@@ -564,8 +705,15 @@ class TestRegimeDetectMSAR:
         mock_mod.return_value = mock_mod
         mock_mod.fit.side_effect = RuntimeError("convergence failure")
 
-        with patch.dict("sys.modules", {"statsmodels.tsa.regime_switching.markov_regression": MagicMock()}):
-            with patch("statsmodels.tsa.regime_switching.markov_regression.MarkovRegression", mock_mod, create=True):
+        with patch.dict(
+            "sys.modules",
+            {"statsmodels.tsa.regime_switching.markov_regression": MagicMock()},
+        ):
+            with patch(
+                "statsmodels.tsa.regime_switching.markov_regression.MarkovRegression",
+                mock_mod,
+                create=True,
+            ):
                 fn = _get_regime_detect()
                 res = fn("EURUSD", limit=50, method="ms_ar")
         assert "error" in res
@@ -590,8 +738,15 @@ class TestRegimeDetectMSAR:
         mock_mod.return_value = mock_mod
         mock_mod.fit.return_value = mock_res
 
-        with patch.dict("sys.modules", {"statsmodels.tsa.regime_switching.markov_regression": MagicMock()}):
-            with patch("statsmodels.tsa.regime_switching.markov_regression.MarkovRegression", mock_mod, create=True):
+        with patch.dict(
+            "sys.modules",
+            {"statsmodels.tsa.regime_switching.markov_regression": MagicMock()},
+        ):
+            with patch(
+                "statsmodels.tsa.regime_switching.markov_regression.MarkovRegression",
+                mock_mod,
+                create=True,
+            ):
                 fn = _get_regime_detect()
                 res = fn("EURUSD", limit=60, method="ms_ar", output="full")
         assert isinstance(res, dict)
@@ -599,10 +754,14 @@ class TestRegimeDetectMSAR:
     @patch(_FMT, side_effect=_time_fmt_stub)
     @patch(_DENOISE, return_value="close")
     @patch(_FETCH)
-    def test_ms_ar_surfaces_non_convergence_and_applies_smoothing(self, mock_fetch, mock_denoise, mock_fmt):
+    def test_ms_ar_surfaces_non_convergence_and_applies_smoothing(
+        self, mock_fetch, mock_denoise, mock_fmt
+    ):
         df = _make_df(60)
         mock_fetch.return_value = df
-        probs = np.tile(np.array([[0.95, 0.05], [0.05, 0.95]], dtype=float), (30, 1))[:59]
+        probs = np.tile(np.array([[0.95, 0.05], [0.05, 0.95]], dtype=float), (30, 1))[
+            :59
+        ]
         mock_res = MagicMock()
         mock_res.smoothed_marginal_probabilities = probs
         mock_res.mle_retvals = {"converged": False}
@@ -610,12 +769,28 @@ class TestRegimeDetectMSAR:
         mock_mod.return_value = mock_mod
         mock_mod.fit.return_value = mock_res
 
-        with patch.dict("sys.modules", {"statsmodels.tsa.regime_switching.markov_regression": MagicMock()}):
-            with patch("statsmodels.tsa.regime_switching.markov_regression.MarkovRegression", mock_mod, create=True):
+        with patch.dict(
+            "sys.modules",
+            {"statsmodels.tsa.regime_switching.markov_regression": MagicMock()},
+        ):
+            with patch(
+                "statsmodels.tsa.regime_switching.markov_regression.MarkovRegression",
+                mock_mod,
+                create=True,
+            ):
                 fn = _get_regime_detect()
-                res = fn("EURUSD", limit=60, method="ms_ar", output="compact", lookback=20, min_regime_bars=2)
+                # Use full mode to check technical params
+                res = fn(
+                    "EURUSD",
+                    limit=60,
+                    method="ms_ar",
+                    output="full",
+                    lookback=20,
+                    min_regime_bars=2,
+                )
 
         assert isinstance(res, dict)
+        # params_used is only in full mode
         assert res.get("params_used", {}).get("converged") is False
         assert res.get("params_used", {}).get("min_regime_bars") == 2
         assert res.get("params_used", {}).get("smoothing_applied") is True
@@ -623,9 +798,30 @@ class TestRegimeDetectMSAR:
         assert "transitions_after" in res.get("params_used", {})
         assert any("did not converge" in str(w) for w in res.get("warnings", []))
 
+        # Compact mode should have trading-focused fields only
+        with patch.dict(
+            "sys.modules",
+            {"statsmodels.tsa.regime_switching.markov_regression": MagicMock()},
+        ):
+            with patch(
+                "statsmodels.tsa.regime_switching.markov_regression.MarkovRegression",
+                mock_mod,
+                create=True,
+            ):
+                res_compact = fn(
+                    "EURUSD",
+                    limit=60,
+                    method="ms_ar",
+                    output="compact",
+                    lookback=20,
+                    min_regime_bars=2,
+                )
+        assert "current_regime" in res_compact  # Trading-focused
+        assert "regimes" in res_compact
+        assert "params_used" not in res_compact  # Technical details in full only
+
 
 class TestRegimeDetectHMM:
-
     @patch(_FMT, side_effect=_time_fmt_stub)
     @patch(_DENOISE, return_value="close")
     @patch(_FETCH)
@@ -637,8 +833,11 @@ class TestRegimeDetectHMM:
         w = np.array([0.5, 0.5])
         mu = np.array([0.0, 0.001])
         sigma = np.array([0.001, 0.003])
-        with patch("mtdata.core.regime.fit_gaussian_mixture_1d",
-                    return_value=(w, mu, sigma, gamma, None), create=True):
+        with patch(
+            "mtdata.core.regime.fit_gaussian_mixture_1d",
+            return_value=(w, mu, sigma, gamma, None),
+            create=True,
+        ):
             fn = _get_regime_detect()
             res = fn("EURUSD", limit=60, method="hmm", output="full")
         assert isinstance(res, dict)
@@ -655,8 +854,11 @@ class TestRegimeDetectHMM:
         w = np.array([0.5, 0.5])
         mu = np.array([0.0, 0.001])
         sigma = np.array([0.001, 0.003])
-        with patch("mtdata.core.regime.fit_gaussian_mixture_1d",
-                    return_value=(w, mu, sigma, gamma, None), create=True):
+        with patch(
+            "mtdata.core.regime.fit_gaussian_mixture_1d",
+            return_value=(w, mu, sigma, gamma, None),
+            create=True,
+        ):
             fn = _get_regime_detect()
             res = fn("EURUSD", limit=60, method="hmm", output="summary")
         assert isinstance(res, dict)
@@ -672,8 +874,11 @@ class TestRegimeDetectHMM:
         w = np.array([0.5, 0.5])
         mu = np.array([0.0, 0.001])
         sigma = np.array([0.001, 0.003])
-        with patch("mtdata.core.regime.fit_gaussian_mixture_1d",
-                    return_value=(w, mu, sigma, gamma, None), create=True):
+        with patch(
+            "mtdata.core.regime.fit_gaussian_mixture_1d",
+            return_value=(w, mu, sigma, gamma, None),
+            create=True,
+        ):
             fn = _get_regime_detect()
             res = fn("EURUSD", limit=60, method="hmm", output="compact", lookback=20)
         assert isinstance(res, dict)
@@ -681,7 +886,9 @@ class TestRegimeDetectHMM:
     @patch(_FMT, side_effect=_time_fmt_stub)
     @patch(_DENOISE, return_value="close")
     @patch(_FETCH)
-    def test_hmm_min_regime_bars_smoothing_reduces_transitions(self, mock_fetch, mock_denoise, mock_fmt):
+    def test_hmm_min_regime_bars_smoothing_reduces_transitions(
+        self, mock_fetch, mock_denoise, mock_fmt
+    ):
         df = _make_df(30)
         mock_fetch.return_value = df
         # Alternating high-confidence assignments create many one-bar flickers.
@@ -692,14 +899,21 @@ class TestRegimeDetectHMM:
         w = np.array([0.5, 0.5])
         mu = np.array([0.0, 0.001])
         sigma = np.array([0.001, 0.003])
-        with patch("mtdata.core.regime.fit_gaussian_mixture_1d",
-                    return_value=(w, mu, sigma, gamma, None), create=True):
+        with patch(
+            "mtdata.core.regime.fit_gaussian_mixture_1d",
+            return_value=(w, mu, sigma, gamma, None),
+            create=True,
+        ):
             fn = _get_regime_detect()
-            res = fn("EURUSD", limit=30, method="hmm", output="summary", min_regime_bars=2)
+            res = fn(
+                "EURUSD", limit=30, method="hmm", output="summary", min_regime_bars=2
+            )
         assert isinstance(res, dict)
         summary = res.get("summary", {})
         assert res.get("params_used", {}).get("min_regime_bars") == 2
-        assert summary.get("transitions_before", 0) >= summary.get("transitions_after", 0)
+        assert summary.get("transitions_before", 0) >= summary.get(
+            "transitions_after", 0
+        )
         assert bool(summary.get("smoothing_applied")) is True
 
     @patch(_FMT, side_effect=_time_fmt_stub)
@@ -725,8 +939,11 @@ class TestRegimeDetectHMM:
         w = np.array([0.5, 0.5])
         mu = np.array([0.0, 0.001])
         sigma = np.array([0.001, 0.003])
-        with patch("mtdata.core.regime.fit_gaussian_mixture_1d",
-                    return_value=(w, mu, sigma, gamma, None), create=True):
+        with patch(
+            "mtdata.core.regime.fit_gaussian_mixture_1d",
+            return_value=(w, mu, sigma, gamma, None),
+            create=True,
+        ):
             fn = _get_regime_detect()
             res = fn("EURUSD", limit=50, method="hmm", output="full")
         assert isinstance(res, dict)
@@ -734,17 +951,29 @@ class TestRegimeDetectHMM:
     @patch(_FMT, side_effect=_time_fmt_stub)
     @patch(_DENOISE, return_value="close")
     @patch(_FETCH)
-    def test_hmm_pads_degenerate_gamma_to_requested_state_count(self, mock_fetch, mock_denoise, mock_fmt):
+    def test_hmm_pads_degenerate_gamma_to_requested_state_count(
+        self, mock_fetch, mock_denoise, mock_fmt
+    ):
         df = _make_df(50)
         mock_fetch.return_value = df
         gamma = np.ones((49, 1), dtype=float)
         w = np.array([1.0])
         mu = np.array([0.0])
         sigma = np.array([0.001])
-        with patch("mtdata.forecast.monte_carlo.fit_gaussian_mixture_1d",
-                    return_value=(w, mu, sigma, gamma, None), create=True):
+        with patch(
+            "mtdata.forecast.monte_carlo.fit_gaussian_mixture_1d",
+            return_value=(w, mu, sigma, gamma, None),
+            create=True,
+        ):
             fn = _get_regime_detect()
-            res = fn("EURUSD", limit=50, method="hmm", params={"n_states": 3}, output="full", include_series=True)
+            res = fn(
+                "EURUSD",
+                limit=50,
+                method="hmm",
+                params={"n_states": 3},
+                output="full",
+                include_series=True,
+            )
         assert isinstance(res, dict)
         assert len(res["series"]["state_probabilities"][0]) == 3
         assert res["series"]["state_probabilities"][0] == [1.0, 0.0, 0.0]
@@ -761,11 +990,15 @@ class TestRegimeDetectHMM:
         w = np.array([0.33, 0.33, 0.34])
         mu = np.array([0.0, 0.001, -0.001])
         sigma = np.array([0.001, 0.003, 0.002])
-        with patch("mtdata.core.regime.fit_gaussian_mixture_1d",
-                    return_value=(w, mu, sigma, gamma, None), create=True):
+        with patch(
+            "mtdata.core.regime.fit_gaussian_mixture_1d",
+            return_value=(w, mu, sigma, gamma, None),
+            create=True,
+        ):
             fn = _get_regime_detect()
-            res = fn("EURUSD", limit=60, method="hmm",
-                      params={"n_states": 3}, output="full")
+            res = fn(
+                "EURUSD", limit=60, method="hmm", params={"n_states": 3}, output="full"
+            )
         assert isinstance(res, dict)
 
     @patch(_FMT, side_effect=_time_fmt_stub)
@@ -776,7 +1009,20 @@ class TestRegimeDetectHMM:
     ):
         times = np.arange(12, dtype=float) * 3600 + 1_700_000_000
         close = np.array(
-            [100.0, 101.0, 102.0, 103.0, 104.0, 105.0, 104.0, 103.0, 102.0, 101.0, 100.0, 99.0]
+            [
+                100.0,
+                101.0,
+                102.0,
+                103.0,
+                104.0,
+                105.0,
+                104.0,
+                103.0,
+                102.0,
+                101.0,
+                100.0,
+                99.0,
+            ]
         )
         df = pd.DataFrame(
             {
@@ -816,15 +1062,18 @@ class TestRegimeDetectHMM:
     def test_hmm_rejects_single_state_request(self, mock_fetch, mock_denoise, mock_fmt):
         df = _make_df(60)
         mock_fetch.return_value = df
-        with patch("mtdata.forecast.monte_carlo.fit_gaussian_mixture_1d", create=True) as mock_fit:
+        with patch(
+            "mtdata.forecast.monte_carlo.fit_gaussian_mixture_1d", create=True
+        ) as mock_fit:
             fn = _get_regime_detect()
-            res = fn("EURUSD", limit=60, method="hmm", params={"n_states": 1}, output="full")
+            res = fn(
+                "EURUSD", limit=60, method="hmm", params={"n_states": 1}, output="full"
+            )
         assert res == {"error": "n_states must be >= 2 for hmm."}
         mock_fit.assert_not_called()
 
 
 class TestRegimeDetectClustering:
-
     @patch(_FMT, side_effect=_time_fmt_stub)
     @patch(_DENOISE, return_value="close")
     @patch(_FETCH)
@@ -832,18 +1081,30 @@ class TestRegimeDetectClustering:
         df = _make_df(80)
         mock_fetch.return_value = df
         n = 79  # return target → diff
-        features = pd.DataFrame({"f1": np.random.default_rng(0).random(n),
-                                  "f2": np.random.default_rng(1).random(n)})
+        features = pd.DataFrame(
+            {
+                "f1": np.random.default_rng(0).random(n),
+                "f2": np.random.default_rng(1).random(n),
+            }
+        )
         mock_extract = MagicMock(return_value=features)
-        with patch("mtdata.core.regime.extract_rolling_features", mock_extract, create=True), \
-             patch("mtdata.core.regime.StandardScaler", create=True) as mock_scaler_cls, \
-             patch("mtdata.core.regime.KMeans", create=True) as mock_kmeans_cls, \
-             patch("mtdata.core.regime.PCA", create=True) as mock_pca_cls:
+        with (
+            patch(
+                "mtdata.core.regime.extract_rolling_features", mock_extract, create=True
+            ),
+            patch("mtdata.core.regime.StandardScaler", create=True) as mock_scaler_cls,
+            patch("mtdata.core.regime.KMeans", create=True) as mock_kmeans_cls,
+            patch("mtdata.core.regime.PCA", create=True) as mock_pca_cls,
+        ):
             mock_scaler = MagicMock()
-            mock_scaler.fit_transform.return_value = np.random.default_rng(2).random((n, 2))
+            mock_scaler.fit_transform.return_value = np.random.default_rng(2).random(
+                (n, 2)
+            )
             mock_scaler_cls.return_value = mock_scaler
             mock_pca = MagicMock()
-            mock_pca.fit_transform.return_value = np.random.default_rng(3).random((n, 3))
+            mock_pca.fit_transform.return_value = np.random.default_rng(3).random(
+                (n, 3)
+            )
             mock_pca_cls.return_value = mock_pca
             mock_kmeans = MagicMock()
             mock_kmeans.fit_predict.return_value = np.array([i % 3 for i in range(n)])
@@ -856,29 +1117,45 @@ class TestRegimeDetectClustering:
     @patch(_FMT, side_effect=_time_fmt_stub)
     @patch(_DENOISE, return_value="close")
     @patch(_FETCH)
-    def test_clustering_price_target_warns_about_level_dependence(self, mock_fetch, mock_denoise, mock_fmt):
+    def test_clustering_price_target_warns_about_level_dependence(
+        self, mock_fetch, mock_denoise, mock_fmt
+    ):
         df = _make_df(80)
         mock_fetch.return_value = df
         n = 80  # price target keeps the original series length
-        features = pd.DataFrame({"f1": np.random.default_rng(0).random(n),
-                                  "f2": np.random.default_rng(1).random(n)})
+        features = pd.DataFrame(
+            {
+                "f1": np.random.default_rng(0).random(n),
+                "f2": np.random.default_rng(1).random(n),
+            }
+        )
         mock_extract = MagicMock(return_value=features)
-        with patch("mtdata.core.regime.extract_rolling_features", mock_extract, create=True), \
-             patch("mtdata.core.regime.StandardScaler", create=True) as mock_scaler_cls, \
-             patch("mtdata.core.regime.KMeans", create=True) as mock_kmeans_cls, \
-             patch("mtdata.core.regime.PCA", create=True) as mock_pca_cls:
+        with (
+            patch(
+                "mtdata.core.regime.extract_rolling_features", mock_extract, create=True
+            ),
+            patch("mtdata.core.regime.StandardScaler", create=True) as mock_scaler_cls,
+            patch("mtdata.core.regime.KMeans", create=True) as mock_kmeans_cls,
+            patch("mtdata.core.regime.PCA", create=True) as mock_pca_cls,
+        ):
             mock_scaler = MagicMock()
-            mock_scaler.fit_transform.return_value = np.random.default_rng(2).random((n, 2))
+            mock_scaler.fit_transform.return_value = np.random.default_rng(2).random(
+                (n, 2)
+            )
             mock_scaler_cls.return_value = mock_scaler
             mock_pca = MagicMock()
-            mock_pca.fit_transform.return_value = np.random.default_rng(3).random((n, 2))
+            mock_pca.fit_transform.return_value = np.random.default_rng(3).random(
+                (n, 2)
+            )
             mock_pca_cls.return_value = mock_pca
             mock_kmeans = MagicMock()
             mock_kmeans.fit_predict.return_value = np.array([i % 3 for i in range(n)])
             mock_kmeans_cls.return_value = mock_kmeans
 
             fn = _get_regime_detect()
-            res = fn("EURUSD", limit=80, method="clustering", target="price", output="full")
+            res = fn(
+                "EURUSD", limit=80, method="clustering", target="price", output="full"
+            )
         assert isinstance(res, dict)
         assert res["warnings"] == [
             "Clustering on price features may produce level-dependent regimes. Consider target='return'."
@@ -902,18 +1179,30 @@ class TestRegimeDetectClustering:
         df = _make_df(80)
         mock_fetch.return_value = df
         n = 79
-        features = pd.DataFrame({"f1": np.random.default_rng(0).random(n),
-                                  "f2": np.random.default_rng(1).random(n)})
+        features = pd.DataFrame(
+            {
+                "f1": np.random.default_rng(0).random(n),
+                "f2": np.random.default_rng(1).random(n),
+            }
+        )
         mock_extract = MagicMock(return_value=features)
-        with patch("mtdata.core.regime.extract_rolling_features", mock_extract, create=True), \
-             patch("mtdata.core.regime.StandardScaler", create=True) as mock_scaler_cls, \
-             patch("mtdata.core.regime.KMeans", create=True) as mock_kmeans_cls, \
-             patch("mtdata.core.regime.PCA", create=True) as mock_pca_cls:
+        with (
+            patch(
+                "mtdata.core.regime.extract_rolling_features", mock_extract, create=True
+            ),
+            patch("mtdata.core.regime.StandardScaler", create=True) as mock_scaler_cls,
+            patch("mtdata.core.regime.KMeans", create=True) as mock_kmeans_cls,
+            patch("mtdata.core.regime.PCA", create=True) as mock_pca_cls,
+        ):
             mock_scaler = MagicMock()
-            mock_scaler.fit_transform.return_value = np.random.default_rng(2).random((n, 2))
+            mock_scaler.fit_transform.return_value = np.random.default_rng(2).random(
+                (n, 2)
+            )
             mock_scaler_cls.return_value = mock_scaler
             mock_pca = MagicMock()
-            mock_pca.fit_transform.return_value = np.random.default_rng(3).random((n, 3))
+            mock_pca.fit_transform.return_value = np.random.default_rng(3).random(
+                (n, 3)
+            )
             mock_pca_cls.return_value = mock_pca
             mock_kmeans = MagicMock()
             mock_kmeans.fit_predict.return_value = np.array([i % 3 for i in range(n)])
@@ -930,25 +1219,39 @@ class TestRegimeDetectClustering:
         df = _make_df(80)
         mock_fetch.return_value = df
         n = 79
-        features = pd.DataFrame({"f1": np.random.default_rng(0).random(n),
-                                  "f2": np.random.default_rng(1).random(n)})
+        features = pd.DataFrame(
+            {
+                "f1": np.random.default_rng(0).random(n),
+                "f2": np.random.default_rng(1).random(n),
+            }
+        )
         mock_extract = MagicMock(return_value=features)
-        with patch("mtdata.core.regime.extract_rolling_features", mock_extract, create=True), \
-             patch("mtdata.core.regime.StandardScaler", create=True) as mock_scaler_cls, \
-             patch("mtdata.core.regime.KMeans", create=True) as mock_kmeans_cls, \
-             patch("mtdata.core.regime.PCA", create=True) as mock_pca_cls:
+        with (
+            patch(
+                "mtdata.core.regime.extract_rolling_features", mock_extract, create=True
+            ),
+            patch("mtdata.core.regime.StandardScaler", create=True) as mock_scaler_cls,
+            patch("mtdata.core.regime.KMeans", create=True) as mock_kmeans_cls,
+            patch("mtdata.core.regime.PCA", create=True) as mock_pca_cls,
+        ):
             mock_scaler = MagicMock()
-            mock_scaler.fit_transform.return_value = np.random.default_rng(2).random((n, 2))
+            mock_scaler.fit_transform.return_value = np.random.default_rng(2).random(
+                (n, 2)
+            )
             mock_scaler_cls.return_value = mock_scaler
             mock_pca = MagicMock()
-            mock_pca.fit_transform.return_value = np.random.default_rng(3).random((n, 3))
+            mock_pca.fit_transform.return_value = np.random.default_rng(3).random(
+                (n, 3)
+            )
             mock_pca_cls.return_value = mock_pca
             mock_kmeans = MagicMock()
             mock_kmeans.fit_predict.return_value = np.array([i % 3 for i in range(n)])
             mock_kmeans_cls.return_value = mock_kmeans
 
             fn = _get_regime_detect()
-            res = fn("EURUSD", limit=80, method="clustering", output="compact", lookback=30)
+            res = fn(
+                "EURUSD", limit=80, method="clustering", output="compact", lookback=30
+            )
         assert isinstance(res, dict)
 
     @patch(_FMT, side_effect=_time_fmt_stub)
@@ -958,7 +1261,9 @@ class TestRegimeDetectClustering:
         df = _make_df(50)
         mock_fetch.return_value = df
         empty_features = pd.DataFrame({"f1": [float("nan")] * 49})
-        with patch("mtdata.core.features.extract_rolling_features", return_value=empty_features):
+        with patch(
+            "mtdata.core.features.extract_rolling_features", return_value=empty_features
+        ):
             fn = _get_regime_detect()
             res = fn("EURUSD", limit=50, method="clustering")
         assert "error" in res
@@ -972,25 +1277,35 @@ class TestRegimeDetectClustering:
         n = 79
         features = pd.DataFrame({"f1": np.random.default_rng(0).random(n)})
         mock_extract = MagicMock(return_value=features)
-        with patch("mtdata.core.regime.extract_rolling_features", mock_extract, create=True), \
-             patch("mtdata.core.regime.StandardScaler", create=True) as mock_scaler_cls, \
-             patch("mtdata.core.regime.KMeans", create=True) as mock_kmeans_cls, \
-             patch("mtdata.core.regime.PCA", create=True):
+        with (
+            patch(
+                "mtdata.core.regime.extract_rolling_features", mock_extract, create=True
+            ),
+            patch("mtdata.core.regime.StandardScaler", create=True) as mock_scaler_cls,
+            patch("mtdata.core.regime.KMeans", create=True) as mock_kmeans_cls,
+            patch("mtdata.core.regime.PCA", create=True),
+        ):
             mock_scaler = MagicMock()
-            mock_scaler.fit_transform.return_value = np.random.default_rng(2).random((n, 1))
+            mock_scaler.fit_transform.return_value = np.random.default_rng(2).random(
+                (n, 1)
+            )
             mock_scaler_cls.return_value = mock_scaler
             mock_kmeans = MagicMock()
             mock_kmeans.fit_predict.return_value = np.array([i % 2 for i in range(n)])
             mock_kmeans_cls.return_value = mock_kmeans
 
             fn = _get_regime_detect()
-            res = fn("EURUSD", limit=80, method="clustering",
-                      params={"use_pca": False}, output="full")
+            res = fn(
+                "EURUSD",
+                limit=80,
+                method="clustering",
+                params={"use_pca": False},
+                output="full",
+            )
         assert isinstance(res, dict)
 
 
 class TestRegimeDetectEdgeCases:
-
     @patch(_FMT, side_effect=_time_fmt_stub)
     @patch(_DENOISE, return_value="close")
     @patch(_FETCH, side_effect=RuntimeError("connection lost"))
@@ -1008,18 +1323,26 @@ class TestRegimeDetectEdgeCases:
         cp = np.zeros(49)
         with patch("mtdata.utils.regime.bocpd_gaussian", return_value={"cp_prob": cp}):
             fn = _get_regime_detect()
-            res = fn("EURUSD", limit=50, method="bocpd",
-                      denoise={"method": "ema", "params": {"alpha": 0.2}})
+            res = fn(
+                "EURUSD",
+                limit=50,
+                method="bocpd",
+                denoise={"method": "ema", "params": {"alpha": 0.2}},
+            )
         assert isinstance(res, dict)
 
     @patch(_FMT, side_effect=_time_fmt_stub)
     @patch(_DENOISE, return_value="close")
     @patch(_FETCH)
-    def test_empty_after_finite_filter_returns_error(self, mock_fetch, mock_denoise, mock_fmt):
-        df = pd.DataFrame({
-            "time": np.arange(12, dtype=float) * 3600 + 1_700_000_000,
-            "close": [1.0] + [np.nan] * 11,
-        })
+    def test_empty_after_finite_filter_returns_error(
+        self, mock_fetch, mock_denoise, mock_fmt
+    ):
+        df = pd.DataFrame(
+            {
+                "time": np.arange(12, dtype=float) * 3600 + 1_700_000_000,
+                "close": [1.0] + [np.nan] * 11,
+            }
+        )
         mock_fetch.return_value = df
         fn = _get_regime_detect()
         res = fn("EURUSD", limit=12, method="bocpd", target="return")
