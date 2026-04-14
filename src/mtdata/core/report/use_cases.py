@@ -58,6 +58,18 @@ def _build_sections_status(sections: Dict[str, Any]) -> Dict[str, Any]:
     return {"summary": summary, "sections": statuses}
 
 
+def _prioritize_report_payload(report: Dict[str, Any]) -> Dict[str, Any]:
+    preferred_keys = ("success", "summary", "sections_status", "sections", "diagnostics")
+    ordered: Dict[str, Any] = {}
+    for key in preferred_keys:
+        if key in report:
+            ordered[key] = report[key]
+    for key, value in report.items():
+        if key not in ordered:
+            ordered[key] = value
+    return ordered
+
+
 def run_report_generate(  # noqa: C901
     request: ReportGenerateRequest,
     *,
@@ -430,6 +442,7 @@ def run_report_generate(  # noqa: C901
                 diagnostics = {}
             diagnostics["execution_time_ms"] = round((time.perf_counter() - started_at) * 1000.0, 3)
             rep["diagnostics"] = diagnostics
+            rep = _prioritize_report_payload(rep)
 
             if output_mode == "markdown":
                 return render_report(rep)

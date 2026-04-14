@@ -36,6 +36,11 @@ def render_enhanced_report(report: Dict[str, Any]) -> str:
 
     output_lines: List[str] = []
 
+    summary_block = _render_report_summary(report.get("summary"))
+    if summary_block:
+        output_lines.extend(summary_block)
+        output_lines.append("")
+
     status_block = _render_sections_status(report.get("sections_status"))
     if status_block:
         output_lines.extend(status_block)
@@ -69,6 +74,25 @@ def render_enhanced_report(report: Dict[str, Any]) -> str:
 
     rendered = "\n".join(line.rstrip() for line in output_lines).rstrip()
     return rendered + "\n" if rendered else ""
+
+
+def _render_report_summary(data: Any) -> List[str]:
+    if isinstance(data, list):
+        items = [str(item).strip() for item in data if str(item).strip()]
+        if not items:
+            return []
+        return ["## Summary", *[f"- {item}" for item in items]]
+    if isinstance(data, str):
+        text = data.strip()
+        if not text:
+            return []
+        return ["## Summary", text]
+    if isinstance(data, dict):
+        rows = [f"- {key}: {value}" for key, value in data.items() if str(value).strip()]
+        if not rows:
+            return []
+        return ["## Summary", *rows]
+    return []
 
 
 def _render_sections_status(data: Any) -> List[str]:

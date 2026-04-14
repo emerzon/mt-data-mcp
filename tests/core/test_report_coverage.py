@@ -490,6 +490,12 @@ class TestReportSummaryContext:
         res = self._run_report(sec)
         assert any("RSI=" in s for s in res.get("summary", []))
 
+    def test_summary_key_precedes_sections_in_payload(self):
+        sec = _make_full_sections()
+        res = self._run_report(sec)
+        keys = list(res.keys())
+        assert keys.index("summary") < keys.index("sections")
+
     def test_no_context(self):
         res = self._run_report({})
         assert "summary" in res

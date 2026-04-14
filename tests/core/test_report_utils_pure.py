@@ -864,6 +864,20 @@ class TestRenderEnhancedReport:
         assert "Forecast" in result
         assert "ets" in result
 
+    def test_summary_block_renders_before_section_status(self):
+        report = {
+            "summary": ["first takeaway", "second takeaway"],
+            "sections_status": {
+                "summary": {"ok": 1, "partial": 0, "error": 0},
+                "sections": {"forecast": "ok"},
+            },
+            "sections": {"forecast": {"method": "ets"}},
+        }
+        result = render_enhanced_report(report)
+        assert "## Summary" in result
+        assert result.index("## Summary") < result.index("## Section Status")
+        assert "- first takeaway" in result
+
     def test_generic_section_rendered(self):
         report = {"sections": {"custom_thing": {"key1": "val1"}}}
         result = render_enhanced_report(report)
