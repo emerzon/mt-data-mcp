@@ -765,6 +765,40 @@ class TestFormatResultForCli:
         assert "params_count" not in result
         assert "show_all_hint" in result
 
+    def test_toon_format_compacts_forecast_list_library_models_output(self):
+        result = _format_result_for_cli(
+            {
+                "library": "native",
+                "models": ["analog", "theta"],
+                "capabilities": [
+                    {
+                        "method": "analog",
+                        "available": True,
+                        "description": "Nearest-neighbor analog forecast using pattern matching.",
+                        "params": "name=window_size; type=int; description=Long serialized parameter spec.",
+                    },
+                    {
+                        "method": "theta",
+                        "available": True,
+                        "description": "Theta forecast.",
+                        "params": "name=alpha; type=float; description=Another long parameter spec.",
+                    },
+                ],
+                "usage": [
+                    "mtdata-cli forecast_generate SYMBOL --library native --method analog",
+                ],
+            },
+            fmt="toon",
+            verbose=False,
+            cmd_name="forecast_list_library_models",
+        )
+
+        assert "models[2]{model,available,description}" in result
+        assert "analog,true,Nearest-neighbor analog forecast using pattern matching." in result
+        assert "capabilities" not in result
+        assert "Long serialized parameter spec" not in result
+        assert "show_all_hint" in result
+
     def test_toon_format_compacts_support_resistance_output(self):
         result = _format_result_for_cli(
             {

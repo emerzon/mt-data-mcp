@@ -1185,6 +1185,89 @@ def _normalize_forecast_methods_payload(
     return out
 
 
+def _normalize_library_models_payload(
+    payload: Dict[str, Any],
+    *,
+    verbose: bool,
+    tool_name: str,
+) -> Optional[Dict[str, Any]]:
+    if tool_name != "forecast_list_library_models" or verbose:
+        return None
+
+    if "error" in payload and not _is_empty_value(payload.get("error")):
+        return {"error": payload.get("error")}
+
+    out: Dict[str, Any] = {}
+    library = payload.get("library")
+    if not _is_empty_value(library):
+        out["library"] = library
+
+    capabilities = payload.get("capabilities")
+    compact_rows: List[Dict[str, Any]] = []
+    if isinstance(capabilities, list):
+        dict_rows = [row for row in capabilities if isinstance(row, dict)]
+        if len(dict_rows) == len(capabilities):
+            for row in dict_rows:
+                model_name = row.get("display_name")
+                if _is_empty_value(model_name):
+                    model_name = row.get("method")
+                if _is_empty_value(model_name):
+                    model_name = row.get("adapter_method")
+                description = row.get("description")
+                if isinstance(description, str):
+                    description = description.splitlines()[0].strip()
+                compact = {
+                    "model": model_name,
+                    "available": row.get("available"),
+                    "description": description,
+                }
+                compact_rows.append(
+                    {
+                        key: value
+                        for key, value in compact.items()
+                        if not _is_empty_value(value)
+                    }
+                    or dict(row)
+                )
+
+    if not compact_rows:
+        models = payload.get("models")
+        if isinstance(models, list):
+            for item in models:
+                if isinstance(item, dict):
+                    compact = {
+                        "model": item.get("display_name") or item.get("method"),
+                        "description": item.get("description") or item.get("notes"),
+                    }
+                    compact_rows.append(
+                        {
+                            key: value
+                            for key, value in compact.items()
+                            if not _is_empty_value(value)
+                        }
+                        or dict(item)
+                    )
+                elif not _is_empty_value(item):
+                    compact_rows.append({"model": item})
+
+    if compact_rows:
+        out["models"] = compact_rows
+        out["total_models"] = len(compact_rows)
+
+    note = payload.get("note")
+    if not _is_empty_value(note):
+        out["note"] = note
+
+    usage = payload.get("usage")
+    if not _is_empty_value(usage):
+        out["usage"] = usage
+
+    if compact_rows and "capabilities" in payload:
+        out["show_all_hint"] = "Use --json for full capability metadata and params."
+
+    return out
+
+
 def _compact_support_resistance_level(
     value: Any,
     *,
@@ -1647,6 +1730,14 @@ def format_result_minimal(
             )
             if forecast_methods_norm is not None:
                 normalized = forecast_methods_norm
+
+            library_models_norm = _normalize_library_models_payload(
+                normalized,
+                verbose=verbose,
+                tool_name=resolved_tool_name,
+            )
+            if library_models_norm is not None:
+                normalized = library_models_norm
 
             support_resistance_norm = _normalize_support_resistance_payload(
                 normalized,
