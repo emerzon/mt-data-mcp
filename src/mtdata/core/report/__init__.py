@@ -60,14 +60,14 @@ def report_generate(
                 or style-specific ('scalping' | 'intraday' | 'swing' | 'position').
     - params: optional dict to tune steps/spacing, grids, and optionally override timeframe per template via 'timeframe' or methods via 'methods'.
     - denoise: pass-through to candle fetching (e.g., {method:'ema', params:{alpha:0.2}, columns:['close']}).  
-    - output: 'toon' (structured TOON) or 'markdown' (rendered report text).
+    - format: 'toon' (structured TOON) or 'markdown' (rendered report text).
     """
     return run_logged_operation(
         logger,
         operation="report_generate",
         symbol=request.symbol,
         template=request.template,
-        output=request.output,
+        format=request.format,
         func=lambda: _report_connection_error()
         or run_report_generate(
             request,

@@ -829,7 +829,7 @@ def run_forecast_barrier_optimize(
             objective=request.objective,
             return_grid=request.return_grid,
             top_k=request.top_k,
-            output=request.output,
+            format=request.format,
             viable_only=request.viable_only,
             concise=request.concise,
             grid_style=request.grid_style,

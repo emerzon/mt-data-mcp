@@ -970,7 +970,7 @@ for pair in EURUSD GBPUSD USDJPY AUDUSD NZDUSD USDCAD USDCHF; do
   mtdata-cli forecast_barrier_optimize \
     $pair --timeframe H1 --horizon 12 \
     --method auto --mode pct --grid-style volatility \
-    --objective edge --output summary --top_k 1
+    --objective edge --format summary --top_k 1
 done
 ```
 
@@ -1229,7 +1229,7 @@ done
 
 **Tips for speed**:
 1. Start with `mc_gbm` for screening
-2. Use `output=summary` to limit grid output
+2. Use `format=summary` to limit grid output
 3. Set `top_k` to limit evaluations
 4. Reduce `n_sims` for initial runs (1000), increase for final (5000+)
 
@@ -1303,4 +1303,3 @@ mtdata-cli forecast_barrier_prob \
 ---
 
 *Last updated: 2026-01-01*
-

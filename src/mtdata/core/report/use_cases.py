@@ -68,7 +68,7 @@ def run_report_generate(  # noqa: C901
     report_error_payload: Any,
     append_diagnostic_warning: Any,
 ) -> str | Dict[str, Any]:
-    output_mode = str(request.output or "toon").strip().lower()
+    output_mode = str(request.format or "toon").strip().lower()
     template_name = (request.template or "basic").lower().strip()
 
     def _run() -> str | Dict[str, Any]:  # noqa: C901
@@ -442,7 +442,7 @@ def run_report_generate(  # noqa: C901
                 exc=exc,
                 symbol=request.symbol,
                 template=template_name,
-                output=output_mode,
+                format=output_mode,
             )
             msg = f"Error generating report: {exc}"
             if output_mode == "markdown":
@@ -454,6 +454,6 @@ def run_report_generate(  # noqa: C901
         operation="report_generate",
         symbol=request.symbol,
         template=template_name,
-        output=output_mode,
+        format=output_mode,
         func=_run,
     )

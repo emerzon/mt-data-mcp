@@ -32,13 +32,13 @@ def template_advanced(
         symbol=symbol,
         timeframe=tf,
         limit=int(p.get('regime_limit', 1500)),
-        method='bocpd', threshold=float(p.get('cp_threshold', 0.6)), output='summary', lookback=int(p.get('regime_lookback', 300))
+        method='bocpd', threshold=float(p.get('cp_threshold', 0.6)), detail='summary', lookback=int(p.get('regime_lookback', 300))
     )
     hmm = _get_raw_result(regime_detect,
         symbol=symbol,
         timeframe=tf,
         limit=int(p.get('regime_limit', 1500)),
-        method='hmm', params={'n_states': int(p.get('hmm_states', 3))}, output='compact', lookback=int(p.get('regime_lookback', 300))
+        method='hmm', params={'n_states': int(p.get('hmm_states', 3))}, detail='compact', lookback=int(p.get('regime_lookback', 300))
     )
     base.setdefault('sections', {})['regime'] = {
         'bocpd': bocpd if 'error' in bocpd else {'summary': bocpd.get('summary')},

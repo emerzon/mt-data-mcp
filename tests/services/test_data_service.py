@@ -179,7 +179,7 @@ class TestDataService(unittest.TestCase):
             result = fetch_ticks(
                 symbol="EURUSD",
                 limit=20,
-                output="rows",
+                format="rows",
                 simplify={'mode': 'select', 'points': 5},
             )
 
@@ -219,7 +219,7 @@ class TestDataService(unittest.TestCase):
         ]
         mock_copy_ticks.return_value = ticks
 
-        result = fetch_ticks(symbol="EURUSD", limit=2, output="summary")
+        result = fetch_ticks(symbol="EURUSD", limit=2, format="summary")
 
         self.assertTrue(result.get("success"))
         self.assertEqual(result.get("count"), 2)
@@ -290,7 +290,7 @@ class TestDataService(unittest.TestCase):
         ]
         mock_copy_ticks.return_value = ticks
 
-        result = fetch_ticks(symbol="EURUSD", limit=3, output="summary")
+        result = fetch_ticks(symbol="EURUSD", limit=3, format="summary")
 
         self.assertTrue(result.get("success"))
         self.assertEqual(result.get("spread_change_pct_note"), "first spread was zero")
@@ -334,7 +334,7 @@ class TestDataService(unittest.TestCase):
         ]
         mock_copy_ticks.return_value = ticks
 
-        result = fetch_ticks(symbol="EURUSD", limit=3, output="summary")
+        result = fetch_ticks(symbol="EURUSD", limit=3, format="summary")
 
         self.assertTrue(result.get("success"))
         bid_stats = result.get("stats", {}).get("bid", {})

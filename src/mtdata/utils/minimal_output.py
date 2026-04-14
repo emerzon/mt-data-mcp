@@ -1203,7 +1203,7 @@ def _normalize_regime_all_payload(
 
     if "results" in payload or "params_used" in payload:
         out["show_all_hint"] = (
-            "Use --output summary for stats only, or --output full / --verbose for per-method details."
+            "Use --detail summary for stats only, or --detail full / --verbose for per-method details."
         )
 
     return out

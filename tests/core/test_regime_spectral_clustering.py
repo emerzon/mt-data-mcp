@@ -52,7 +52,7 @@ class TestSpectralClustering:
             limit=800,
             method="clustering",
             params={"algorithm": "spectral", "k_regimes": 2, "window_size": 20},
-            output="full",
+            detail="full",
             __cli_raw=True,
         )
         assert isinstance(res, dict), f"Expected dict, got {type(res)}"
@@ -69,7 +69,7 @@ class TestSpectralClustering:
             limit=800,
             method="clustering",
             params={"algorithm": "spectral", "k_regimes": 3},
-            output="full",
+            detail="full",
             __cli_raw=True,
         )
         assert isinstance(res, dict)
@@ -84,7 +84,7 @@ class TestSpectralClustering:
             limit=800,
             method="clustering",
             params={"algorithm": "spectral", "k_regimes": 2},
-            output="compact",
+            detail="compact",
             __cli_raw=True,
         )
         assert isinstance(res, dict)
@@ -97,7 +97,7 @@ class TestSpectralClustering:
             limit=800,
             method="clustering",
             params={"algorithm": "spectral", "affinity": "rbf", "k_regimes": 2},
-            output="full",
+            detail="full",
             __cli_raw=True,
         )
         assert isinstance(res, dict)
@@ -112,7 +112,7 @@ class TestSpectralClustering:
             limit=800,
             method="clustering",
             params={"k_regimes": 2, "window_size": 20},
-            output="full",
+            detail="full",
             __cli_raw=True,
         )
         assert isinstance(res, dict)

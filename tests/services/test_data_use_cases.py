@@ -1,5 +1,8 @@
 from types import SimpleNamespace
 
+import pytest
+from pydantic import ValidationError
+
 from mtdata.core import data as core_data
 from mtdata.core.data.requests import DataFetchCandlesRequest, DataFetchTicksRequest
 from mtdata.core.data.use_cases import run_data_fetch_candles, run_data_fetch_ticks
@@ -90,3 +93,8 @@ def test_data_fetch_candles_wrapper_and_use_case_emit_single_finish_event(monkey
         if "event=finish operation=data_fetch_candles success=True" in record.message
     ]
     assert len(finish_records) == 1
+
+
+def test_data_fetch_ticks_request_rejects_removed_output_field():
+    with pytest.raises(ValidationError, match="output was removed; use format"):
+        DataFetchTicksRequest(symbol="EURUSD", output="rows")

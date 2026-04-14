@@ -441,7 +441,7 @@ class TestRegimeDetectBOCPD:
                 method="bocpd",
                 target="return",
                 threshold=0.5,
-                output="full",
+                detail="full",
             )
         assert "segments" in res
         assert "current_segment" in res
@@ -474,7 +474,7 @@ class TestRegimeDetectBOCPD:
                 "EURUSD",
                 limit=60,
                 method="bocpd",
-                output="summary",
+                detail="summary",
                 threshold=0.5,
                 lookback=20,
             )
@@ -494,7 +494,7 @@ class TestRegimeDetectBOCPD:
                 "EURUSD",
                 limit=60,
                 method="bocpd",
-                output="compact",
+                detail="compact",
                 threshold=0.5,
                 lookback=20,
             )
@@ -509,7 +509,7 @@ class TestRegimeDetectBOCPD:
         cp = np.zeros(50)
         with patch("mtdata.utils.regime.bocpd_gaussian", return_value={"cp_prob": cp}):
             fn = _get_regime_detect()
-            res = fn("EURUSD", limit=50, method="bocpd", target="price", output="full")
+            res = fn("EURUSD", limit=50, method="bocpd", target="price", detail="full")
         assert "error" not in res or isinstance(res.get("error"), str)
 
     @patch(_FMT, side_effect=_time_fmt_stub)
@@ -549,7 +549,7 @@ class TestRegimeDetectBOCPD:
                 limit=12,
                 method="bocpd",
                 target="return",
-                output="full",
+                detail="full",
                 include_series=True,
             )
 
@@ -572,7 +572,7 @@ class TestRegimeDetectBOCPD:
         with patch("mtdata.utils.regime.bocpd_gaussian", return_value={"cp_prob": cp}):
             fn = _get_regime_detect()
             res = fn(
-                "EURUSD", limit=50, method="bocpd", output="full", include_series=True
+                "EURUSD", limit=50, method="bocpd", detail="full", include_series=True
             )
         assert isinstance(res, dict)
 
@@ -590,7 +590,7 @@ class TestRegimeDetectBOCPD:
                 "EURUSD",
                 limit=60,
                 method="bocpd",
-                output="compact",
+                detail="compact",
                 include_series=True,
                 lookback=20,
             )
@@ -622,7 +622,7 @@ class TestRegimeDetectMSAR:
                 create=True,
             ):
                 fn = _get_regime_detect()
-                res = fn("EURUSD", limit=60, method="ms_ar", output="full")
+                res = fn("EURUSD", limit=60, method="ms_ar", detail="full")
         assert isinstance(res, dict)
 
     @patch(_FMT, side_effect=_time_fmt_stub)
@@ -663,7 +663,7 @@ class TestRegimeDetectMSAR:
                 create=True,
             ):
                 fn = _get_regime_detect()
-                res = fn("EURUSD", limit=60, method="ms_ar", output="summary")
+                res = fn("EURUSD", limit=60, method="ms_ar", detail="summary")
         assert isinstance(res, dict)
 
     @patch(_FMT, side_effect=_time_fmt_stub)
@@ -691,7 +691,7 @@ class TestRegimeDetectMSAR:
             ):
                 fn = _get_regime_detect()
                 res = fn(
-                    "EURUSD", limit=60, method="ms_ar", output="compact", lookback=20
+                    "EURUSD", limit=60, method="ms_ar", detail="compact", lookback=20
                 )
         assert isinstance(res, dict)
 
@@ -748,7 +748,7 @@ class TestRegimeDetectMSAR:
                 create=True,
             ):
                 fn = _get_regime_detect()
-                res = fn("EURUSD", limit=60, method="ms_ar", output="full")
+                res = fn("EURUSD", limit=60, method="ms_ar", detail="full")
         assert isinstance(res, dict)
 
     @patch(_FMT, side_effect=_time_fmt_stub)
@@ -784,7 +784,7 @@ class TestRegimeDetectMSAR:
                     "EURUSD",
                     limit=60,
                     method="ms_ar",
-                    output="full",
+                    detail="full",
                     lookback=20,
                     min_regime_bars=2,
                 )
@@ -812,7 +812,7 @@ class TestRegimeDetectMSAR:
                     "EURUSD",
                     limit=60,
                     method="ms_ar",
-                    output="compact",
+                    detail="compact",
                     lookback=20,
                     min_regime_bars=2,
                 )
@@ -839,7 +839,7 @@ class TestRegimeDetectHMM:
             create=True,
         ):
             fn = _get_regime_detect()
-            res = fn("EURUSD", limit=60, method="hmm", output="full")
+            res = fn("EURUSD", limit=60, method="hmm", detail="full")
         assert isinstance(res, dict)
         assert "error" not in res or True  # allow graceful handling
 
@@ -860,7 +860,7 @@ class TestRegimeDetectHMM:
             create=True,
         ):
             fn = _get_regime_detect()
-            res = fn("EURUSD", limit=60, method="hmm", output="summary")
+            res = fn("EURUSD", limit=60, method="hmm", detail="summary")
         assert isinstance(res, dict)
 
     @patch(_FMT, side_effect=_time_fmt_stub)
@@ -880,7 +880,7 @@ class TestRegimeDetectHMM:
             create=True,
         ):
             fn = _get_regime_detect()
-            res = fn("EURUSD", limit=60, method="hmm", output="compact", lookback=20)
+            res = fn("EURUSD", limit=60, method="hmm", detail="compact", lookback=20)
         assert isinstance(res, dict)
 
     @patch(_FMT, side_effect=_time_fmt_stub)
@@ -906,7 +906,7 @@ class TestRegimeDetectHMM:
         ):
             fn = _get_regime_detect()
             res = fn(
-                "EURUSD", limit=30, method="hmm", output="summary", min_regime_bars=2
+                "EURUSD", limit=30, method="hmm", detail="summary", min_regime_bars=2
             )
         assert isinstance(res, dict)
         summary = res.get("summary", {})
@@ -945,7 +945,7 @@ class TestRegimeDetectHMM:
             create=True,
         ):
             fn = _get_regime_detect()
-            res = fn("EURUSD", limit=50, method="hmm", output="full")
+            res = fn("EURUSD", limit=50, method="hmm", detail="full")
         assert isinstance(res, dict)
 
     @patch(_FMT, side_effect=_time_fmt_stub)
@@ -971,7 +971,7 @@ class TestRegimeDetectHMM:
                 limit=50,
                 method="hmm",
                 params={"n_states": 3},
-                output="full",
+                detail="full",
                 include_series=True,
             )
         assert isinstance(res, dict)
@@ -997,7 +997,7 @@ class TestRegimeDetectHMM:
         ):
             fn = _get_regime_detect()
             res = fn(
-                "EURUSD", limit=60, method="hmm", params={"n_states": 3}, output="full"
+                "EURUSD", limit=60, method="hmm", params={"n_states": 3}, detail="full"
             )
         assert isinstance(res, dict)
 
@@ -1049,7 +1049,7 @@ class TestRegimeDetectHMM:
             create=True,
         ):
             fn = _get_regime_detect()
-            res = fn("EURUSD", limit=12, method="hmm", output="full")
+            res = fn("EURUSD", limit=12, method="hmm", detail="full")
 
         assert res["params_used"]["relabeled"] is True
         assert res["params_used"]["label_mapping"] == {"1": 0, "0": 1}
@@ -1067,7 +1067,7 @@ class TestRegimeDetectHMM:
         ) as mock_fit:
             fn = _get_regime_detect()
             res = fn(
-                "EURUSD", limit=60, method="hmm", params={"n_states": 1}, output="full"
+                "EURUSD", limit=60, method="hmm", params={"n_states": 1}, detail="full"
             )
         assert res == {"error": "n_states must be >= 2 for hmm."}
         mock_fit.assert_not_called()
@@ -1111,7 +1111,7 @@ class TestRegimeDetectClustering:
             mock_kmeans_cls.return_value = mock_kmeans
 
             fn = _get_regime_detect()
-            res = fn("EURUSD", limit=80, method="clustering", output="full")
+            res = fn("EURUSD", limit=80, method="clustering", detail="full")
         assert isinstance(res, dict)
 
     @patch(_FMT, side_effect=_time_fmt_stub)
@@ -1154,7 +1154,7 @@ class TestRegimeDetectClustering:
 
             fn = _get_regime_detect()
             res = fn(
-                "EURUSD", limit=80, method="clustering", target="price", output="full"
+                "EURUSD", limit=80, method="clustering", target="price", detail="full"
             )
         assert isinstance(res, dict)
         assert res["warnings"] == [
@@ -1209,7 +1209,7 @@ class TestRegimeDetectClustering:
             mock_kmeans_cls.return_value = mock_kmeans
 
             fn = _get_regime_detect()
-            res = fn("EURUSD", limit=80, method="clustering", output="summary")
+            res = fn("EURUSD", limit=80, method="clustering", detail="summary")
         assert isinstance(res, dict)
 
     @patch(_FMT, side_effect=_time_fmt_stub)
@@ -1250,7 +1250,7 @@ class TestRegimeDetectClustering:
 
             fn = _get_regime_detect()
             res = fn(
-                "EURUSD", limit=80, method="clustering", output="compact", lookback=30
+                "EURUSD", limit=80, method="clustering", detail="compact", lookback=30
             )
         assert isinstance(res, dict)
 
@@ -1300,7 +1300,7 @@ class TestRegimeDetectClustering:
                 limit=80,
                 method="clustering",
                 params={"use_pca": False},
-                output="full",
+                detail="full",
             )
         assert isinstance(res, dict)
 

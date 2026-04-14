@@ -97,7 +97,7 @@ def test_fetch_ticks_select_simplify_mode_no_nameerror(mock_copy_ticks: MagicMoc
     res = fetch_ticks(
         symbol="EURUSD",
         limit=10,
-        output="rows",
+        format="rows",
         simplify={"mode": "select", "points": 5},
     )
 
@@ -125,7 +125,7 @@ def test_fetch_ticks_summary_adds_precision_display_stats(mock_copy_ticks: Magic
         )
     mock_copy_ticks.return_value = ticks
 
-    res = fetch_ticks(symbol="BTCUSD", limit=5, output="summary")
+    res = fetch_ticks(symbol="BTCUSD", limit=5, format="summary")
 
     assert res.get("success") is True
     assert res.get("price_precision") == 2

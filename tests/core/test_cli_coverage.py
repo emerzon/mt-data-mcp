@@ -2107,7 +2107,7 @@ class TestBuildEpilog:
     def test_hides_labels_summary_only_shadow_flag_and_renders_literal_choices(self):
         def labels_triple_barrier(
             symbol: str,
-            output: Literal["full", "summary", "compact", "summary_only"] = "compact",
+            detail: Literal["full", "summary", "compact", "summary_only"] = "compact",
             summary_only: bool = False,
         ):
             """Label bars."""
@@ -2125,7 +2125,7 @@ class TestBuildEpilog:
         epilog = _build_epilog(functions)
 
         assert "--summary-only" not in epilog
-        assert "--output{full,summary,compact,summary_only}=[compact]" in epilog
+        assert "--detail{full,summary,compact,summary_only}=[compact]" in epilog
         assert "<Literal>" not in epilog
 
 
@@ -2392,12 +2392,12 @@ class TestAddDynamicArguments:
         compact_action = next(action for action in parser._actions if action.dest == "compact")
         assert "--require-dom" in compact_action.option_strings
 
-    def test_labels_triple_barrier_keeps_summary_only_output_alias_without_duplicate_flag(self):
+    def test_labels_triple_barrier_keeps_summary_only_detail_alias_without_duplicate_flag(self):
         parser = argparse.ArgumentParser()
         func_info = {
             "params": [
                 {
-                    "name": "output",
+                    "name": "detail",
                     "type": Literal["full", "summary", "compact", "summary_only"],
                     "required": False,
                     "default": "full",
@@ -2413,8 +2413,8 @@ class TestAddDynamicArguments:
 
         add_dynamic_arguments(parser, func_info, cmd_name="labels_triple_barrier")
 
-        output_action = next(action for action in parser._actions if action.dest == "output")
-        assert output_action.choices == ["full", "summary", "compact", "summary_only"]
+        detail_action = next(action for action in parser._actions if action.dest == "detail")
+        assert detail_action.choices == ["full", "summary", "compact", "summary_only"]
         assert not any(action.dest == "summary_only" for action in parser._actions)
 
     def test_partial_flag_prefix_is_rejected_when_abbrev_disabled(self, capsys):
@@ -2540,8 +2540,8 @@ class TestResolveParamKwargs:
         assert kwargs["metavar"] == "METHOD"
         assert "forecast_list_methods" in kwargs["help"]
 
-    def test_report_generate_output_help_is_command_specific(self):
-        param = {"name": "output", "type": Literal["toon", "markdown"], "required": False, "default": "toon"}
+    def test_report_generate_format_help_is_command_specific(self):
+        param = {"name": "format", "type": Literal["toon", "markdown"], "required": False, "default": "toon"}
         kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="report_generate")
         assert kwargs["help"] == "Output format: formatted text or markdown."
 
@@ -2590,18 +2590,18 @@ class TestApplyCliOutputModeDefaults:
 
         assert out.detail == "compact"
 
-    def test_defaults_output_to_summary_when_compact_is_unavailable(self):
-        args = argparse.Namespace(command="forecast_barrier_optimize", output="full", verbose=False)
+    def test_defaults_detail_to_summary_when_compact_is_unavailable(self):
+        args = argparse.Namespace(command="regime_detect", detail="full", verbose=False)
         func_info = {
             "params": [
-                {"name": "output", "type": Literal["full", "summary"], "required": False, "default": "full"},
+                {"name": "detail", "type": Literal["full", "summary"], "required": False, "default": "full"},
             ]
         }
-        functions = {"forecast_barrier_optimize": {"func": MagicMock(), "_cli_func_info": func_info, "meta": {}}}
+        functions = {"regime_detect": {"func": MagicMock(), "_cli_func_info": func_info, "meta": {}}}
 
-        out = _apply_cli_output_mode_defaults(args, ["forecast_barrier_optimize"], functions)
+        out = _apply_cli_output_mode_defaults(args, ["regime_detect"], functions)
 
-        assert out.output == "summary"
+        assert out.detail == "summary"
 
     def test_verbose_promotes_supported_modes_to_full(self):
         args = argparse.Namespace(command="indicators_list", detail="compact", verbose=True)

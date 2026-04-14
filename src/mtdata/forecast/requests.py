@@ -195,7 +195,7 @@ class ForecastBarrierOptimizeRequest(BaseModel):
     objective: str = "ev"
     return_grid: bool = True
     top_k: Optional[int] = None
-    output: str = "summary"
+    format: Literal["full", "summary"] = "summary"
     viable_only: bool = False
     concise: bool = False
     grid_style: str = "fixed"
@@ -230,6 +230,11 @@ class ForecastBarrierOptimizeRequest(BaseModel):
     power_effect_size: float = 0.05
     enable_sensitivity_analysis: bool = False
     sensitivity_params: Optional[List[str]] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_removed_output(cls, values: Any) -> Any:
+        return _reject_removed_field(values, field_name="output", replacement="format")
 
     @model_validator(mode="before")
     @classmethod

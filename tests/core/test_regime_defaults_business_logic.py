@@ -116,7 +116,7 @@ def test_bocpd_uses_crypto_sensitive_auto_hazard_default() -> None:
             method="bocpd",
             threshold=0.5,
             lookback=20,
-            output="full",  # params_used only in full mode
+            detail="full",  # params_used only in full mode
         )
 
     params_used = out.get("params_used", {})
@@ -165,7 +165,7 @@ def test_bocpd_hazard_lambda_param_override_is_preserved() -> None:
             params={"hazard_lambda": 140},
             threshold=0.5,
             lookback=20,
-            output="full",  # params_used only in full mode
+            detail="full",  # params_used only in full mode
         )
 
     assert capture["hazard_lambda"] == 140
@@ -201,7 +201,7 @@ def test_bocpd_cp_threshold_param_override_is_preserved() -> None:
             params={"cp_threshold": 0.2},
             threshold=0.5,
             lookback=20,
-            output="full",
+            detail="full",
         )
 
     assert abs(float(out["params_used"]["cp_threshold"]) - 0.2) < 1e-12
@@ -235,7 +235,7 @@ def test_bocpd_hazard_mode_auto_calibrated_sets_sources_and_diagnostics() -> Non
             params={"hazard_mode": "auto_calibrated"},
             threshold=0.5,
             lookback=20,
-            output="full",  # params_used only in full mode
+            detail="full",  # params_used only in full mode
         )
 
     params_used = out.get("params_used", {})
@@ -274,7 +274,7 @@ def test_bocpd_hazard_lambda_override_beats_auto_calibrated_mode() -> None:
             params={"hazard_mode": "auto_calibrated", "hazard_lambda": 111},
             threshold=0.5,
             lookback=20,
-            output="full",  # params_used only in full mode
+            detail="full",  # params_used only in full mode
         )
 
     params_used = out.get("params_used", {})
@@ -330,11 +330,11 @@ def test_regime_detect_default_min_regime_bars_is_dynamic() -> None:
         patch("mtdata.core.regime._resolve_denoise_base_col", return_value="close"),
     ):
         # M1 should get higher defaults
-        out_m1 = raw(symbol="TEST", timeframe="M1", method="hmm", output="full")
+        out_m1 = raw(symbol="TEST", timeframe="M1", method="hmm", detail="full")
         params_m1 = out_m1.get("params_used", {})
 
         # D1 should get lower defaults
-        out_d1 = raw(symbol="TEST", timeframe="D1", method="hmm", output="full")
+        out_d1 = raw(symbol="TEST", timeframe="D1", method="hmm", detail="full")
         params_d1 = out_d1.get("params_used", {})
 
         # M1 should have higher min_regime_bars than D1
@@ -368,7 +368,7 @@ def test_bocpd_zero_change_points_includes_tuning_hint() -> None:
             limit=80,
             method="bocpd",
             threshold=0.6,
-            output="summary",
+            detail="summary",
         )
 
     summary = out.get("summary", {})
@@ -407,7 +407,7 @@ def test_bocpd_filters_last_bar_spike_with_strict_confirmation() -> None:
             timeframe="H1",
             limit=220,
             method="bocpd",
-            output="summary",
+            detail="summary",
             params={"cp_confirm_bars": 2},
         )
 
@@ -444,7 +444,7 @@ def test_bocpd_walkforward_threshold_calibration_metadata_is_exposed() -> None:
         ),
     ):
         out = raw(
-            symbol="BTCUSD", timeframe="H1", limit=220, method="bocpd", output="summary"
+            symbol="BTCUSD", timeframe="H1", limit=220, method="bocpd", detail="summary"
         )
 
     cal = out.get("params_used", {}).get("cp_threshold_calibration", {})
@@ -474,7 +474,7 @@ def test_bocpd_summary_contains_reliability_fields() -> None:
         ),
     ):
         out = raw(
-            symbol="EURUSD", timeframe="H1", limit=220, method="bocpd", output="summary"
+            symbol="EURUSD", timeframe="H1", limit=220, method="bocpd", detail="summary"
         )
 
     summary = out.get("summary", {})
@@ -541,7 +541,7 @@ def test_bocpd_calibrated_threshold_does_not_overreject_at_edge_by_default() -> 
         ),
     ):
         out = raw(
-            symbol="EURUSD", timeframe="D1", limit=220, method="bocpd", output="summary"
+            symbol="EURUSD", timeframe="D1", limit=220, method="bocpd", detail="summary"
         )
 
     params_used = out.get("params_used", {})
@@ -606,7 +606,7 @@ def test_bocpd_default_cp_confirm_bars_is_live_mode_one() -> None:
         ),
     ):
         out = raw(
-            symbol="EURUSD", timeframe="D1", limit=220, method="bocpd", output="summary"
+            symbol="EURUSD", timeframe="D1", limit=220, method="bocpd", detail="summary"
         )
 
     cp_filter = out.get("params_used", {}).get("cp_filter", {})

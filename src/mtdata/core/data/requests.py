@@ -22,6 +22,12 @@ _INDICATOR_FORMAT_HELP = (
 )
 
 
+def _reject_removed_field(values: Any, *, field_name: str, replacement: str) -> Any:
+    if isinstance(values, dict) and field_name in values:
+        raise ValueError(f"{field_name} was removed; use {replacement}")
+    return values
+
+
 def _split_indicator_tokens(spec: str) -> List[str]:
     text = str(spec or "").strip()
     if not text:
@@ -302,7 +308,12 @@ class DataFetchTicksRequest(BaseModel):
     start: Optional[str] = None
     end: Optional[str] = None
     simplify: Optional[SimplifySpec] = None
-    output: Literal["summary", "stats", "rows"] = "summary"
+    format: Literal["summary", "stats", "rows"] = "summary"
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_removed_output(cls, values: Any) -> Any:
+        return _reject_removed_field(values, field_name="output", replacement="format")
 
     @field_validator("limit")
     @classmethod

@@ -50,7 +50,7 @@ def main(_mocked_fetch) -> int:
             limit=800,
             method="clustering",
             params={"window_size": 20, "k_regimes": 2},
-            output="full",
+            detail="full",
             __cli_raw=True,
         )
     except ImportError as ex:

@@ -175,14 +175,14 @@ Change-points (BOCPD):
 
 ```bash
 mtdata-cli regime_detect EURUSD --timeframe H1 --limit 1500 \
-  --method bocpd --threshold 0.6 --output summary --lookback 300 --json
+  --method bocpd --threshold 0.6 --detail summary --lookback 300 --json
 ```
 
 Regime labels (HMM):
 
 ```bash
 mtdata-cli regime_detect EURUSD --timeframe H1 --limit 1500 \
-  --method hmm --params "n_states=3" --output compact --lookback 300 --json
+  --method hmm --params "n_states=3" --detail compact --lookback 300 --json
 ```
 
 ---

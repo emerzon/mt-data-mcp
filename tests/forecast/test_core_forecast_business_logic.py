@@ -7,6 +7,7 @@ import sys
 from types import ModuleType, SimpleNamespace
 
 import pytest
+from pydantic import ValidationError
 
 from mtdata.core import forecast as cf
 from mtdata.forecast import use_cases as forecast_use_cases
@@ -358,8 +359,13 @@ def test_forecast_barrier_optimize_logs_finish_event(caplog, monkeypatch):
 
 def test_forecast_barrier_optimize_request_defaults_to_summary_output():
     request = ForecastBarrierOptimizeRequest(symbol="EURUSD")
-    assert request.output == "summary"
+    assert request.format == "summary"
     assert request.search_profile == "medium"
+
+
+def test_forecast_barrier_optimize_request_rejects_removed_output_field():
+    with pytest.raises(ValidationError, match="output was removed; use format"):
+        ForecastBarrierOptimizeRequest(symbol="EURUSD", output="summary")
 
 
 def test_forecast_barrier_optimize_request_accepts_legacy_vol_sl_extra():

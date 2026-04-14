@@ -1289,13 +1289,13 @@ def fetch_ticks(  # noqa: C901
     start: Optional[str] = None,
     end: Optional[str] = None,
     simplify: Optional[SimplifySpec] = None,
-    output: Literal["summary", "stats", "rows"] = "summary",
+    format: Literal["summary", "stats", "rows"] = "summary",
 ) -> Dict[str, Any]:
     """Fetch tick data and return either a summary (default) or raw rows.
 
     Parameters
     ----------
-    output : {"summary","stats","rows"}
+    format : {"summary","stats","rows"}
         - "summary" (default): compact descriptive statistics over the fetched
           ticks (bid/ask/mid/spread, plus last and volume; volume uses real volume when
           available, otherwise tick_volume).
@@ -1321,7 +1321,7 @@ def fetch_ticks(  # noqa: C901
                 price_digits = 0
 
             # Normalized params only
-            output_mode = str(output or "summary").lower().strip()
+            output_mode = str(format or "summary").lower().strip()
             if start:
                 from_date = _parse_start_datetime(start)
                 if not from_date:
@@ -1360,7 +1360,7 @@ def fetch_ticks(  # noqa: C901
             return {"error": "No tick data available"}
 
         if output_mode not in ("summary", "stats", "rows", "raw", "ticks"):
-            return {"error": f"Invalid output mode: {output}. Use 'summary', 'stats', or 'rows'."}
+            return {"error": f"Invalid format: {format}. Use 'summary', 'stats', or 'rows'."}
 
         def _tick_field(tick: Any, name: str) -> Any:
             return _tick_field_value(tick, name)

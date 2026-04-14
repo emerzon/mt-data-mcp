@@ -332,7 +332,7 @@ def _apply_cli_output_mode_defaults(args: Any, argv: List[str], functions: Dict[
         if not isinstance(param, dict):
             continue
         param_name = str(param.get("name") or "").strip()
-        if param_name not in {"detail", "output"}:
+        if param_name != "detail":
             continue
         if _argv_param_present_after_command(argv, command, param_name):
             continue
@@ -976,7 +976,7 @@ _COMMAND_USAGE_EXAMPLES: Dict[str, Tuple[str, Optional[str]]] = {
     ),
     "regime_detect": (
         f"{CLI_PROGRAM} regime_detect BTCUSD --timeframe H1 --method hmm",
-        f"{CLI_PROGRAM} regime_detect BTCUSD --timeframe H1 --method hmm --output full --verbose",
+        f"{CLI_PROGRAM} regime_detect BTCUSD --timeframe H1 --method hmm --detail full --verbose",
     ),
     "trade_risk_analyze": (
         f"{CLI_PROGRAM} trade_risk_analyze --symbol BTCUSD --direction long --desired-risk-pct 1 --proposed-entry 66317 --proposed-sl 65000",

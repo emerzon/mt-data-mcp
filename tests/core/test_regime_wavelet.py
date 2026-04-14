@@ -52,7 +52,7 @@ class TestWaveletRegime:
             limit=800,
             method="wavelet",
             params={"n_states": 3},
-            output="full",
+            detail="full",
             __cli_raw=True,
         )
         assert isinstance(res, dict)
@@ -67,7 +67,7 @@ class TestWaveletRegime:
             limit=800,
             method="wavelet",
             params={"n_states": 2},
-            output="full",
+            detail="full",
             __cli_raw=True,
         )
         assert isinstance(res, dict)
@@ -83,7 +83,7 @@ class TestWaveletRegime:
             limit=800,
             method="wavelet",
             params={"wavelet": "db4", "n_states": 3, "energy_window": 40},
-            output="full",
+            detail="full",
             __cli_raw=True,
         )
         assert isinstance(res, dict)
@@ -99,7 +99,7 @@ class TestWaveletRegime:
             limit=800,
             method="wavelet",
             params={"n_states": 2},
-            output="compact",
+            detail="compact",
             __cli_raw=True,
         )
         assert isinstance(res, dict)
@@ -112,7 +112,7 @@ class TestWaveletRegime:
             limit=800,
             method="wavelet",
             params={"n_states": 2},
-            output="summary",
+            detail="summary",
             __cli_raw=True,
         )
         assert isinstance(res, dict)
@@ -129,7 +129,7 @@ class TestWaveletRegime:
             limit=800,
             method="wavelet",
             params={"wavelet": "haar", "n_states": 2},
-            output="full",
+            detail="full",
             __cli_raw=True,
         )
         assert isinstance(res, dict)
@@ -144,7 +144,7 @@ class TestWaveletRegime:
             limit=800,
             method="wavelet",
             params={"n_states": 2},
-            output="full",
+            detail="full",
             include_series=True,
             __cli_raw=True,
         )
@@ -161,7 +161,7 @@ class TestWaveletRegime:
             limit=800,
             method="wavelet",
             params={"n_states": 3},
-            output="full",
+            detail="full",
             __cli_raw=True,
         )
         assert isinstance(res, dict)
@@ -189,7 +189,7 @@ class TestWaveletRegime:
             limit=30,
             method="wavelet",
             params={"n_states": 2, "energy_window": 30},
-            output="full",
+            detail="full",
             __cli_raw=True,
         )
         assert isinstance(res, dict)
@@ -205,7 +205,7 @@ class TestWaveletRegime:
             limit=800,
             method="wavelet",
             params={"wavelet": "totally_invalid_wavelet_xyz"},
-            output="full",
+            detail="full",
             __cli_raw=True,
         )
         assert isinstance(res, dict)

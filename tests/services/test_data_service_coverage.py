@@ -1605,7 +1605,7 @@ class TestFetchTicks(unittest.TestCase):
     @patch(_GUARD, _mock_symbol_guard)
     def test_basic_rows(self, mock_ctz, mock_info, mock_ticks):
         mock_ticks.return_value = _make_ticks(10)
-        result = fetch_ticks('EURUSD', limit=5, output='rows')
+        result = fetch_ticks('EURUSD', limit=5, format='rows')
         self.assertTrue(result.get('success'))
         self.assertEqual(result['count'], 5)
         self.assertEqual(result.get('timezone'), 'UTC')
@@ -1618,7 +1618,7 @@ class TestFetchTicks(unittest.TestCase):
     @patch(_GUARD, _mock_symbol_guard)
     def test_recent_ticks_expand_lookback_until_limit_is_met(self, mock_ctz, mock_info, mock_ticks):
         mock_ticks.side_effect = [_make_ticks(2), _make_ticks(10)]
-        result = fetch_ticks('EURUSD', limit=5, output='rows')
+        result = fetch_ticks('EURUSD', limit=5, format='rows')
 
         self.assertTrue(result.get('success'))
         self.assertEqual(result['count'], 5)
@@ -1630,7 +1630,7 @@ class TestFetchTicks(unittest.TestCase):
     @patch(_GUARD, _mock_symbol_guard)
     def test_summary_output(self, mock_ctz, mock_info, mock_ticks):
         mock_ticks.return_value = _make_ticks(20)
-        result = fetch_ticks('EURUSD', limit=10, output='summary')
+        result = fetch_ticks('EURUSD', limit=10, format='summary')
         self.assertTrue(result.get('success'))
         self.assertEqual(result['output'], 'summary')
         self.assertIn('stats', result)
@@ -1645,7 +1645,7 @@ class TestFetchTicks(unittest.TestCase):
     @patch(_GUARD, _mock_symbol_guard)
     def test_stats_output(self, mock_ctz, mock_info, mock_ticks):
         mock_ticks.return_value = _make_ticks(20)
-        result = fetch_ticks('EURUSD', limit=10, output='stats')
+        result = fetch_ticks('EURUSD', limit=10, format='stats')
         self.assertTrue(result.get('success'))
         self.assertEqual(result['output'], 'stats')
         bid_stats = result['stats']['bid']
@@ -1662,7 +1662,7 @@ class TestFetchTicks(unittest.TestCase):
     def test_summary_stats_structure(self, mock_ctz, mock_info, mock_ticks):
         ticks = _make_ticks(10)
         mock_ticks.return_value = ticks
-        result = fetch_ticks('EURUSD', limit=10, output='summary')
+        result = fetch_ticks('EURUSD', limit=10, format='summary')
         bid = result['stats']['bid']
         for key in ('first', 'last', 'low', 'high', 'mean', 'std', 'stderr', 'change', 'change_pct'):
             self.assertIn(key, bid)
@@ -1674,7 +1674,7 @@ class TestFetchTicks(unittest.TestCase):
     @patch(_GUARD, _mock_symbol_guard)
     def test_summary_duration_and_tick_rate(self, mock_ctz, mock_info, mock_ticks):
         mock_ticks.return_value = _make_ticks(10, step=2.0)
-        result = fetch_ticks('EURUSD', limit=10, output='summary')
+        result = fetch_ticks('EURUSD', limit=10, format='summary')
         self.assertGreater(result['duration_seconds'], 0)
         self.assertIsInstance(result['tick_rate_per_second'], float)
 
@@ -1688,7 +1688,7 @@ class TestFetchTicks(unittest.TestCase):
         for i, t in enumerate(ticks):
             t['last'] = 1.1 + i * 0.01
         mock_ticks.return_value = ticks
-        result = fetch_ticks('EURUSD', limit=5, output='rows')
+        result = fetch_ticks('EURUSD', limit=5, format='rows')
         self.assertTrue(result.get('success'))
 
     @patch(_TICKS_RANGE)
@@ -1700,7 +1700,7 @@ class TestFetchTicks(unittest.TestCase):
         for t in ticks:
             t['last'] = 0.0
         mock_ticks.return_value = ticks
-        result = fetch_ticks('EURUSD', limit=5, output='rows')
+        result = fetch_ticks('EURUSD', limit=5, format='rows')
         self.assertTrue(result.get('success'))
 
     @patch(_TICKS_RANGE)
@@ -1722,7 +1722,7 @@ class TestFetchTicks(unittest.TestCase):
         ]
         mock_ticks.return_value = ticks
 
-        result = fetch_ticks('EURUSD', limit=5, output='rows')
+        result = fetch_ticks('EURUSD', limit=5, format='rows')
 
         self.assertTrue(result.get('success'))
         self.assertEqual(result['count'], 5)
@@ -1735,7 +1735,7 @@ class TestFetchTicks(unittest.TestCase):
     @patch(_GUARD, _mock_symbol_guard)
     def test_start_only(self, mock_ctz, mock_info, mock_range):
         mock_range.return_value = _make_ticks(10)
-        result = fetch_ticks('EURUSD', limit=5, start='2025-01-01', output='rows')
+        result = fetch_ticks('EURUSD', limit=5, start='2025-01-01', format='rows')
         self.assertTrue(result.get('success'))
         self.assertEqual(result['count'], 5)
 
@@ -1745,7 +1745,7 @@ class TestFetchTicks(unittest.TestCase):
     @patch(_GUARD, _mock_symbol_guard)
     def test_start_and_end(self, mock_ctz, mock_info, mock_range):
         mock_range.return_value = _make_ticks(10)
-        result = fetch_ticks('EURUSD', limit=5, start='2025-01-01', end='2025-01-02', output='rows')
+        result = fetch_ticks('EURUSD', limit=5, start='2025-01-01', end='2025-01-02', format='rows')
         self.assertTrue(result.get('success'))
 
     # -- Error paths ---------------------------------------------------------
@@ -1781,9 +1781,9 @@ class TestFetchTicks(unittest.TestCase):
     @patch(_GUARD, _mock_symbol_guard)
     def test_invalid_output_mode(self, mock_ctz, mock_info, mock_ticks):
         mock_ticks.return_value = _make_ticks(5)
-        result = fetch_ticks('EURUSD', limit=5, output='BADMODE')
+        result = fetch_ticks('EURUSD', limit=5, format='BADMODE')
         self.assertIn('error', result)
-        self.assertIn('Invalid output mode', result['error'])
+        self.assertIn('Invalid format', result['error'])
 
     @patch(_TICKS_RANGE)
     @patch(_CACHED_INFO, return_value=MagicMock())
@@ -1807,7 +1807,7 @@ class TestFetchTicks(unittest.TestCase):
 
         mock_range.side_effect = [newer_ticks, older_ticks]
 
-        result = fetch_ticks('EURUSD', limit=5, start='ignored', output='rows')
+        result = fetch_ticks('EURUSD', limit=5, start='ignored', format='rows')
 
         self.assertTrue(result.get('success'))
         self.assertEqual(result['count'], 5)
@@ -1819,7 +1819,7 @@ class TestFetchTicks(unittest.TestCase):
     @patch(_RESOLVE_CTZ, return_value=None)
     @patch(_GUARD, _mock_symbol_guard)
     def test_start_after_end_is_rejected(self, mock_ctz, mock_info, mock_range):
-        result = fetch_ticks('EURUSD', limit=5, start='2025-01-02', end='2025-01-01', output='rows')
+        result = fetch_ticks('EURUSD', limit=5, start='2025-01-02', end='2025-01-01', format='rows')
 
         self.assertEqual(result['error'], 'start must be before or equal to end.')
         mock_range.assert_not_called()
@@ -1857,7 +1857,7 @@ class TestFetchTicks(unittest.TestCase):
         for i, t in enumerate(ticks):
             t['volume_real'] = float(100 + i * 10)
         mock_ticks.return_value = ticks
-        result = fetch_ticks('EURUSD', limit=20, output='summary')
+        result = fetch_ticks('EURUSD', limit=20, format='summary')
         self.assertTrue(result.get('success'))
         vol = result['stats']['volume']
         self.assertEqual(vol['kind'], 'real_volume')
@@ -1873,7 +1873,7 @@ class TestFetchTicks(unittest.TestCase):
         for i, t in enumerate(ticks):
             t['volume_real'] = float(100 + i * 10)
         mock_ticks.return_value = ticks
-        result = fetch_ticks('EURUSD', limit=20, output='stats')
+        result = fetch_ticks('EURUSD', limit=20, format='stats')
         vol = result['stats']['volume']
         self.assertIn('dist', vol)
 
@@ -1885,7 +1885,7 @@ class TestFetchTicks(unittest.TestCase):
         ticks = _make_ticks(10)
         # All volume_real == 0 → fallback to tick_volume
         mock_ticks.return_value = ticks
-        result = fetch_ticks('EURUSD', limit=10, output='summary')
+        result = fetch_ticks('EURUSD', limit=10, format='summary')
         vol = result['stats']['volume']
         self.assertEqual(vol['kind'], 'tick_volume')
 
@@ -1896,7 +1896,7 @@ class TestFetchTicks(unittest.TestCase):
     def test_detailed_tick_volume_stats(self, mock_ctz, mock_info, mock_ticks):
         ticks = _make_ticks(10)
         mock_ticks.return_value = ticks
-        result = fetch_ticks('EURUSD', limit=10, output='stats')
+        result = fetch_ticks('EURUSD', limit=10, format='stats')
         vol = result['stats']['volume']
         self.assertEqual(vol['kind'], 'tick_volume')
         self.assertIn('sum', vol)
@@ -1915,7 +1915,7 @@ class TestFetchTicks(unittest.TestCase):
         def passthrough(df, hdrs, spec):
             return df.iloc[:5].copy(), {'method': 'approximate', 'returned_rows': 5}
         mock_simp.side_effect = passthrough
-        result = fetch_ticks('EURUSD', limit=20, output='rows',
+        result = fetch_ticks('EURUSD', limit=20, format='rows',
                              simplify={'mode': 'approximate', 'points': 5})
         self.assertTrue(result.get('success'))
 
@@ -1926,7 +1926,7 @@ class TestFetchTicks(unittest.TestCase):
     def test_simplify_select_mode(self, mock_ctz, mock_info, mock_ticks):
         ticks = _make_ticks(20)
         mock_ticks.return_value = ticks
-        result = fetch_ticks('EURUSD', limit=20, output='rows',
+        result = fetch_ticks('EURUSD', limit=20, format='rows',
                              simplify={'mode': 'select', 'points': 5})
         self.assertTrue(result.get('success'))
         # Should have fewer rows than original
@@ -1939,7 +1939,7 @@ class TestFetchTicks(unittest.TestCase):
     def test_simplify_no_points_uses_default(self, mock_ctz, mock_info, mock_ticks):
         ticks = _make_ticks(20)
         mock_ticks.return_value = ticks
-        result = fetch_ticks('EURUSD', limit=20, output='rows',
+        result = fetch_ticks('EURUSD', limit=20, format='rows',
                              simplify={'mode': 'select'})
         self.assertTrue(result.get('success'))
 
@@ -2022,7 +2022,7 @@ class TestEdgeCases(unittest.TestCase):
     @patch(_GUARD, _mock_symbol_guard)
     def test_single_tick_summary(self, mock_ctz, mock_info, mock_ticks):
         mock_ticks.return_value = _make_ticks(1)
-        result = fetch_ticks('EURUSD', limit=1, output='summary')
+        result = fetch_ticks('EURUSD', limit=1, format='summary')
         self.assertTrue(result.get('success'))
         self.assertEqual(result['count'], 1)
 
@@ -2035,7 +2035,7 @@ class TestEdgeCases(unittest.TestCase):
         for i, t in enumerate(ticks):
             t['flags'] = i + 1  # nonzero flags
         mock_ticks.return_value = ticks
-        result = fetch_ticks('EURUSD', limit=5, output='rows')
+        result = fetch_ticks('EURUSD', limit=5, format='rows')
         self.assertTrue(result.get('success'))
 
     @patch(_TICKS_RANGE)
@@ -2048,7 +2048,7 @@ class TestEdgeCases(unittest.TestCase):
         for i, t in enumerate(ticks):
             t['volume_real'] = float(50 + i * 5)
         mock_ticks.return_value = ticks
-        result = fetch_ticks('EURUSD', limit=20, output='summary')
+        result = fetch_ticks('EURUSD', limit=20, format='summary')
         vol = result['stats']['volume']
         self.assertIn('cv', vol)
 
@@ -2061,7 +2061,7 @@ class TestEdgeCases(unittest.TestCase):
         for i, t in enumerate(ticks):
             t['volume_real'] = float(100 + i * 10)
         mock_ticks.return_value = ticks
-        result = fetch_ticks('EURUSD', limit=20, output='summary')
+        result = fetch_ticks('EURUSD', limit=20, format='summary')
         vol = result['stats']['volume']
         self.assertIn('top10_share', vol)
 
@@ -2074,7 +2074,7 @@ class TestEdgeCases(unittest.TestCase):
         for i, t in enumerate(ticks):
             t['volume_real'] = float(100 + i * 10)
         mock_ticks.return_value = ticks
-        result = fetch_ticks('EURUSD', limit=20, output='summary')
+        result = fetch_ticks('EURUSD', limit=20, format='summary')
         vol = result['stats']['volume']
         self.assertIn('half_ratio', vol)
 
@@ -2087,7 +2087,7 @@ class TestEdgeCases(unittest.TestCase):
         for i, t in enumerate(ticks):
             t['volume_real'] = float(100 + i * 10)
         mock_ticks.return_value = ticks
-        result = fetch_ticks('EURUSD', limit=20, output='summary')
+        result = fetch_ticks('EURUSD', limit=20, format='summary')
         vol = result['stats']['volume']
         self.assertIn('vwap_mid', vol)
 
@@ -2100,7 +2100,7 @@ class TestEdgeCases(unittest.TestCase):
         for i, t in enumerate(ticks):
             t['volume_real'] = float(100 + i * 10)
         mock_ticks.return_value = ticks
-        result = fetch_ticks('EURUSD', limit=20, output='summary')
+        result = fetch_ticks('EURUSD', limit=20, format='summary')
         vol = result['stats']['volume']
         self.assertIn('spike95_count', vol)
         self.assertIn('spike95_share', vol)
@@ -2116,7 +2116,7 @@ class TestEdgeCases(unittest.TestCase):
             t['bid'] = 1.1 + i * 0.001
             t['ask'] = 1.1002 + i * 0.001
         mock_ticks.return_value = ticks
-        result = fetch_ticks('EURUSD', limit=20, output='summary')
+        result = fetch_ticks('EURUSD', limit=20, format='summary')
         vol = result['stats']['volume']
         self.assertIn('corr_abs_mid_change', vol)
 

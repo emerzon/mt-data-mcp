@@ -641,7 +641,7 @@ def forecast_barrier_optimize(  # noqa: C901
     ] = 'ev',
     return_grid: bool = True,
     top_k: Optional[int] = None,
-    output: Literal['full','summary'] = 'summary',
+    format: Literal['full','summary'] = 'summary',
     viable_only: bool = False,
     concise: bool = False,
     grid_style: Literal['fixed','volatility','ratio','preset'] = 'fixed',
@@ -726,7 +726,7 @@ def forecast_barrier_optimize(  # noqa: C901
         mode_val = str(mode).lower()
         if mode_val not in {'pct', 'pips'}:
             return {"error": f"Invalid mode: {mode}. Use 'pct' or 'pips'."}
-        output_mode = str(output).strip().lower()
+        output_mode = str(format).strip().lower()
         if output_mode not in {'full', 'summary'}:
             output_mode = 'summary'
 
@@ -1182,7 +1182,7 @@ def forecast_barrier_optimize(  # noqa: C901
                     objective=objective_val,  # type: ignore[arg-type]
                     return_grid=False,
                     top_k=1,
-                    output='summary',  # type: ignore[arg-type]
+                    format='summary',  # type: ignore[arg-type]
                     viable_only=viable_only_val,
                     concise=concise_val,
                     grid_style=grid_style_val,  # type: ignore[arg-type]

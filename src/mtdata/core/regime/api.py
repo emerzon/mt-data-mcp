@@ -567,7 +567,7 @@ def regime_detect(  # noqa: C901
     params: Optional[Dict[str, Any]] = None,
     denoise: Optional[DenoiseSpec] = None,
     threshold: float = 0.5,
-    output: Literal["full", "summary", "compact"] = "compact",  # type: ignore
+    detail: Literal["full", "summary", "compact"] = "compact",  # type: ignore
     lookback: int = -1,  # -1 means use timeframe-based default
     include_series: bool = False,
     min_regime_bars: int = -1,  # -1 means use timeframe-based default
@@ -594,14 +594,14 @@ def regime_detect(  # noqa: C901
         `threshold_target_false_alarm_rate`,
         `cp_confirm_bars` (default `1`, live-oriented),
         `min_cp_distance_bars`, `cp_edge_multiplier`.
-    - include_series: If True, include raw time series data (probs, states) in output even if output='full'. Default False.
-    - lookback: Number of recent bars to include in summary/compact output. Default -1 uses timeframe-based defaults:
+    - include_series: If True, include raw time series data (probs, states) in output even if detail='full'. Default False.
+    - lookback: Number of recent bars to include in summary/compact detail. Default -1 uses timeframe-based defaults:
         M1: 3000, M5: 2000, M15: 1000, M30: 800, H1: 500, H2: 400, H4: 300, H6-H12: 200-150, D1: 200, W1: 100, MN1: 48
     - min_regime_bars: Merge short state runs (< this many bars) for state-based methods to reduce flicker.
         Default -1 uses timeframe-based defaults: M1: 30, M5: 12, M15-M30: 6-8, H1-H4: 3-4, D1+: 2
     - max_regimes: Maximum number of regime segments to show in compact mode (default 10).
         Most recent segments/regimes are shown. Full mode shows all available windows.
-    - output:
+    - detail:
         - 'compact' (default): Returns recent consolidated output. BOCPD uses
           `current_segment` / `segments`; state-based methods return
           `current_regime` / `regimes`.
@@ -667,7 +667,7 @@ def regime_detect(  # noqa: C901
         timeframe=timeframe,
         method=method,
         target=target,
-        output=output,
+        detail=detail,
         limit=limit,
     )
 
@@ -681,11 +681,12 @@ def regime_detect(  # noqa: C901
             timeframe=timeframe,
             method=method,
             target=target,
-            output=output,
+            detail=detail,
             limit=limit,
         )
         return result
 
+    output = str(detail).strip().lower()
     connection_error = _regime_connection_error()
     if connection_error is not None:
         return _finish(connection_error)
@@ -2241,7 +2242,7 @@ def regime_detect(  # noqa: C901
                         params=sub_params,
                         denoise=denoise,
                         threshold=threshold,
-                        output="full",
+                        detail="full",
                         lookback=lookback,
                         include_series=True,
                         min_regime_bars=min_regime_bars,
@@ -2487,7 +2488,7 @@ def regime_detect(  # noqa: C901
                         params=sub_params,
                         denoise=denoise,
                         threshold=threshold,
-                        output="compact",
+                        detail="compact",
                         lookback=lookback,
                         include_series=False,
                         min_regime_bars=min_regime_bars,
@@ -2534,7 +2535,7 @@ def regime_detect(  # noqa: C901
                     params=ens_params,
                     denoise=denoise,
                     threshold=threshold,
-                    output="compact",
+                    detail="compact",
                     lookback=lookback,
                     include_series=False,
                     min_regime_bars=min_regime_bars,

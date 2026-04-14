@@ -55,7 +55,7 @@ class TestEnsembleRegime:
             limit=800,
             method="ensemble",
             params={"n_states": 2},
-            output="full",
+            detail="full",
             __cli_raw=True,
         )
         assert isinstance(res, dict)
@@ -79,7 +79,7 @@ class TestEnsembleRegime:
             limit=800,
             method="ensemble",
             params={"n_states": 2, "methods": ["hmm", "clustering"], "voting": "soft"},
-            output="full",
+            detail="full",
             __cli_raw=True,
         )
         assert isinstance(res, dict)
@@ -93,7 +93,7 @@ class TestEnsembleRegime:
             limit=800,
             method="ensemble",
             params={"n_states": 2, "methods": ["hmm", "clustering"], "voting": "hard"},
-            output="full",
+            detail="full",
             __cli_raw=True,
         )
         assert isinstance(res, dict)
@@ -108,7 +108,7 @@ class TestEnsembleRegime:
             limit=800,
             method="ensemble",
             params={"n_states": 2, "methods": ["hmm", "clustering"]},
-            output="full",
+            detail="full",
             __cli_raw=True,
         )
         assert isinstance(res, dict)
@@ -123,7 +123,7 @@ class TestEnsembleRegime:
             limit=800,
             method="ensemble",
             params={"n_states": 2},
-            output="compact",
+            detail="compact",
             __cli_raw=True,
         )
         assert isinstance(res, dict)
@@ -136,7 +136,7 @@ class TestEnsembleRegime:
             limit=800,
             method="ensemble",
             params={"n_states": 2},
-            output="summary",
+            detail="summary",
             __cli_raw=True,
         )
         assert isinstance(res, dict)
@@ -152,7 +152,7 @@ class TestEnsembleRegime:
             limit=800,
             method="ensemble",
             params={"n_states": 2, "methods": ["hmm", "ensemble", "clustering"]},
-            output="full",
+            detail="full",
             __cli_raw=True,
         )
         assert isinstance(res, dict)
@@ -168,7 +168,7 @@ class TestEnsembleRegime:
             limit=800,
             method="ensemble",
             params={"n_states": 2, "methods": ["hmm", "wavelet"]},
-            output="full",
+            detail="full",
             __cli_raw=True,
         )
         assert isinstance(res, dict)
@@ -182,7 +182,7 @@ class TestEnsembleRegime:
             limit=800,
             method="ensemble",
             params={"n_states": 2, "methods": ["hmm"]},
-            output="full",
+            detail="full",
             __cli_raw=True,
         )
         assert isinstance(res, dict)
@@ -196,7 +196,7 @@ class TestEnsembleRegime:
             limit=800,
             method="ensemble",
             params={"n_states": 2, "methods": ["ensemble", "rule_based"]},
-            output="full",
+            detail="full",
             __cli_raw=True,
         )
         assert isinstance(res, dict)

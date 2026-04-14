@@ -167,7 +167,7 @@ def labels_triple_barrier(
     denoise: Optional[DenoiseSpec] = None,
     direction: Literal["long", "short"] = "long",  # type: ignore
     label_on: Literal["close", "high_low"] = "high_low",  # type: ignore
-    output: Literal["full", "summary", "compact", "summary_only"] = "compact",  # type: ignore
+    detail: Literal["full", "summary", "compact", "summary_only"] = "compact",  # type: ignore
     summary_only: bool = False,
     lookback: int = 300,
 ) -> Dict[str, Any]:
@@ -193,7 +193,7 @@ def labels_triple_barrier(
             direction_value, direction_error = _normalize_trade_direction(direction)
             if direction_error or direction_value is None:
                 return {"error": direction_error or "Invalid direction."}
-            output_mode = str(output).strip().lower()
+            output_mode = str(detail).strip().lower()
             if output_mode == "summary_only":
                 output_mode = "summary"
             if isinstance(summary_only, str):
@@ -210,7 +210,7 @@ def labels_triple_barrier(
                 output_mode = "summary"
             if output_mode not in {"full", "summary", "compact"}:
                 return {
-                    "error": "Invalid output mode. Use 'full', 'summary', 'compact', or summary_only=True."
+                    "error": "Invalid detail level. Use 'full', 'summary', 'compact', or summary_only=True."
                 }
             df = _fetch_history(
                 symbol, timeframe, int(max(limit, horizon + 50)), as_of=None
@@ -380,6 +380,6 @@ def labels_triple_barrier(
         timeframe=timeframe,
         direction=direction,
         horizon=horizon,
-        output=output,
+        detail=detail,
         func=_run,
     )

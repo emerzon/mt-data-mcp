@@ -8,6 +8,7 @@ from typing import Any, Dict, List
 from unittest.mock import MagicMock, patch
 
 import pytest
+from pydantic import ValidationError
 
 from mtdata.utils.mt5 import MT5ConnectionError
 
@@ -43,6 +44,13 @@ def _make_report(sections=None, error=None):
     if sections is not None:
         rep["sections"] = sections
     return rep
+
+
+def test_report_generate_request_rejects_removed_output_field():
+    from mtdata.core.report.requests import ReportGenerateRequest
+
+    with pytest.raises(ValidationError, match="output was removed; use format"):
+        ReportGenerateRequest(symbol="EURUSD", output="markdown")
 
 
 def test_run_report_generate_logs_finish_event(caplog):
@@ -192,7 +200,7 @@ class TestReportErrorHelpers:
 
 class TestReportTemplateDispatch:
 
-    def _run(self, template, output="toon", horizon=None, methods=None, timeframe=None):
+    def _run(self, template, format="toon", horizon=None, methods=None, timeframe=None):
         fn = _get_report_generate()
         rep = _make_report(sections=_make_full_sections())
 
@@ -237,7 +245,7 @@ class TestReportTemplateDispatch:
                  patch("mtdata.core.report_templates.template_intraday", mock_templates["intraday"], create=True), \
                  patch("mtdata.core.report_templates.template_swing", mock_templates["swing"], create=True), \
                  patch("mtdata.core.report_templates.template_position", mock_templates["position"], create=True):
-                res = fn("EURUSD", template=template, output=output,
+                res = fn("EURUSD", template=template, format=format,
                          horizon=horizon, methods=methods, timeframe=timeframe)
         return res
 
@@ -283,7 +291,7 @@ class TestReportUnknownTemplate:
              patch("mtdata.core.report_templates.template_intraday", mock_basic, create=True), \
              patch("mtdata.core.report_templates.template_swing", mock_basic, create=True), \
              patch("mtdata.core.report_templates.template_position", mock_basic, create=True):
-            res = fn("EURUSD", template="unknown_xyz", output="toon")
+            res = fn("EURUSD", template="unknown_xyz", format="toon")
         assert "error" in res
 
     def test_unknown_markdown(self):
@@ -296,7 +304,7 @@ class TestReportUnknownTemplate:
              patch("mtdata.core.report_templates.template_intraday", mock_basic, create=True), \
              patch("mtdata.core.report_templates.template_swing", mock_basic, create=True), \
              patch("mtdata.core.report_templates.template_position", mock_basic, create=True):
-            res = fn("EURUSD", template="unknown_xyz", output="markdown")
+            res = fn("EURUSD", template="unknown_xyz", format="markdown")
         assert isinstance(res, str)
         assert "error:" in res
 
@@ -311,13 +319,13 @@ class TestReportTemplateImportError:
     def test_import_error_toon(self):
         fn = _get_report_generate()
         with patch.dict("sys.modules", {"mtdata.core.report_templates": None}):
-            res = fn("EURUSD", template="basic", output="toon")
+            res = fn("EURUSD", template="basic", format="toon")
         assert "error" in res
 
     def test_import_error_markdown(self):
         fn = _get_report_generate()
         with patch.dict("sys.modules", {"mtdata.core.report_templates": None}):
-            res = fn("EURUSD", template="basic", output="markdown")
+            res = fn("EURUSD", template="basic", format="markdown")
         assert isinstance(res, str)
         assert "error:" in res
 
@@ -339,7 +347,7 @@ class TestReportBadTemplateReturn:
              patch("mtdata.core.report_templates.template_intraday", mock_basic, create=True), \
              patch("mtdata.core.report_templates.template_swing", mock_basic, create=True), \
              patch("mtdata.core.report_templates.template_position", mock_basic, create=True):
-            res = fn("EURUSD", template="basic", output="toon")
+            res = fn("EURUSD", template="basic", format="toon")
         assert "error" in res
 
     def test_non_dict_markdown(self):
@@ -351,7 +359,7 @@ class TestReportBadTemplateReturn:
              patch("mtdata.core.report_templates.template_intraday", mock_basic, create=True), \
              patch("mtdata.core.report_templates.template_swing", mock_basic, create=True), \
              patch("mtdata.core.report_templates.template_position", mock_basic, create=True):
-            res = fn("EURUSD", template="basic", output="markdown")
+            res = fn("EURUSD", template="basic", format="markdown")
         assert isinstance(res, str)
         assert "error:" in res
 
@@ -364,7 +372,7 @@ class TestReportBadTemplateReturn:
              patch("mtdata.core.report_templates.template_intraday", mock_basic, create=True), \
              patch("mtdata.core.report_templates.template_swing", mock_basic, create=True), \
              patch("mtdata.core.report_templates.template_position", mock_basic, create=True):
-            res = fn("EURUSD", template="basic", output="toon")
+            res = fn("EURUSD", template="basic", format="toon")
         assert "error" in res
 
     def test_error_in_report_markdown(self):
@@ -376,7 +384,7 @@ class TestReportBadTemplateReturn:
              patch("mtdata.core.report_templates.template_intraday", mock_basic, create=True), \
              patch("mtdata.core.report_templates.template_swing", mock_basic, create=True), \
              patch("mtdata.core.report_templates.template_position", mock_basic, create=True):
-            res = fn("EURUSD", template="basic", output="markdown")
+            res = fn("EURUSD", template="basic", format="markdown")
         assert isinstance(res, str)
         assert "error:" in res
 
@@ -452,7 +460,7 @@ class TestReportSummaryContext:
              patch("mtdata.core.report_templates.template_swing", mock_basic, create=True), \
              patch("mtdata.core.report_templates.template_position", mock_basic, create=True), \
              patch(_FMT_NUM, side_effect=str):
-            res = fn("EURUSD", template="basic", output="toon")
+            res = fn("EURUSD", template="basic", format="toon")
         return res
 
     def test_close_in_summary(self):
@@ -505,7 +513,7 @@ class TestReportSummaryPivot:
              patch("mtdata.core.report_templates.template_swing", mock_basic, create=True), \
              patch("mtdata.core.report_templates.template_position", mock_basic, create=True), \
              patch(_FMT_NUM, side_effect=str):
-            return fn("EURUSD", template="basic", output="toon")
+            return fn("EURUSD", template="basic", format="toon")
 
     def test_pivot_in_summary(self):
         sec = _make_full_sections()
@@ -553,7 +561,7 @@ class TestReportSummaryVolForecast:
              patch("mtdata.core.report_templates.template_swing", mock_basic, create=True), \
              patch("mtdata.core.report_templates.template_position", mock_basic, create=True), \
              patch(_FMT_NUM, side_effect=str):
-            return fn("EURUSD", template="basic", output="toon")
+            return fn("EURUSD", template="basic", format="toon")
 
     def test_vol_sigma(self):
         sec = _make_full_sections()
@@ -627,7 +635,7 @@ class TestReportSummaryBarriers:
              patch("mtdata.core.report_templates.template_swing", mock_basic, create=True), \
              patch("mtdata.core.report_templates.template_position", mock_basic, create=True), \
              patch(_FMT_NUM, side_effect=str):
-            return fn("EURUSD", template="basic", output="toon")
+            return fn("EURUSD", template="basic", format="toon")
 
     def test_long_short_barriers(self):
         sec = _make_full_sections()
@@ -683,7 +691,7 @@ class TestReportMarkdownOutput:
              patch("mtdata.core.report_templates.template_position", mock_basic, create=True), \
              patch(_FMT_NUM, side_effect=str), \
              patch(_RENDER, return_value="# Report\nContent"):
-            res = fn("EURUSD", template="basic", output="markdown")
+            res = fn("EURUSD", template="basic", format="markdown")
         assert isinstance(res, str)
         assert "Report" in res
 
@@ -704,7 +712,7 @@ class TestReportWarnings:
              patch("mtdata.core.report_templates.template_swing", _warn_template, create=True), \
              patch("mtdata.core.report_templates.template_position", _warn_template, create=True), \
              patch(_FMT_NUM, side_effect=str):
-            res = fn("EURUSD", template="basic", output="toon")
+            res = fn("EURUSD", template="basic", format="toon")
 
         assert isinstance(res, dict)
         assert "diagnostics" in res
@@ -727,7 +735,7 @@ class TestReportWarnings:
              patch("mtdata.core.report_templates.template_swing", mock_basic, create=True), \
              patch("mtdata.core.report_templates.template_position", mock_basic, create=True), \
              patch(_FMT_NUM, side_effect=str):
-            res = fn("EURUSD", template="basic", output="toon")
+            res = fn("EURUSD", template="basic", format="toon")
 
         assert any("forecast=sf_autoarima (flat)" in s for s in res.get("summary", []))
         assert "diagnostics" in res
@@ -745,7 +753,7 @@ class TestReportWarnings:
              patch("mtdata.core.report_templates.template_swing", mock_basic, create=True), \
              patch("mtdata.core.report_templates.template_position", mock_basic, create=True), \
              patch(_FMT_NUM, side_effect=str):
-            res = fn("EURUSD", template="basic", output="toon")
+            res = fn("EURUSD", template="basic", format="toon")
 
         assert isinstance(res, dict)
         assert "diagnostics" in res
@@ -763,7 +771,7 @@ class TestReportWarnings:
              patch("mtdata.core.report_templates.template_swing", mock_basic, create=True), \
              patch("mtdata.core.report_templates.template_position", mock_basic, create=True), \
              patch(_FMT_NUM, side_effect=str):
-            res = fn("EURUSD", template="basic", output="toon")
+            res = fn("EURUSD", template="basic", format="toon")
 
         assert res["sections_status"]["summary"]["ok"] >= 1
         assert res["sections_status"]["sections"]["forecast"] == "ok"
@@ -785,7 +793,7 @@ class TestReportWarnings:
              patch("mtdata.core.report_templates.template_swing", mock_basic, create=True), \
              patch("mtdata.core.report_templates.template_position", mock_basic, create=True), \
              patch(_FMT_NUM, side_effect=str):
-            res = fn("EURUSD", template="basic", output="toon")
+            res = fn("EURUSD", template="basic", format="toon")
 
         assert res["sections_status"]["sections"]["barriers"] == "partial"
         assert res["sections_status"]["summary"]["partial"] >= 1
@@ -803,13 +811,13 @@ class TestReportTopLevelException:
         fn = _get_report_generate()
         with patch.dict("sys.modules", {"mtdata.core.report_templates": None}):
             # Force a deeper exception
-            res = fn("EURUSD", template="basic", output="toon")
+            res = fn("EURUSD", template="basic", format="toon")
         assert isinstance(res, dict)
 
     def test_exception_markdown(self):
         fn = _get_report_generate()
         with patch.dict("sys.modules", {"mtdata.core.report_templates": None}):
-            res = fn("EURUSD", template="basic", output="markdown")
+            res = fn("EURUSD", template="basic", format="markdown")
         assert isinstance(res, str)
 
 

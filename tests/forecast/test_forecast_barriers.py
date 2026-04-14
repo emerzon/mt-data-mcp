@@ -70,8 +70,8 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
             [1.0, 1.002, 0.998, 1.006],
         ])
 
-    def test_forecast_barrier_optimize_signature_defaults_to_summary_output(self):
-        self.assertEqual(inspect.signature(forecast_barrier_optimize).parameters["output"].default, "summary")
+    def test_forecast_barrier_optimize_signature_defaults_to_summary_format(self):
+        self.assertEqual(inspect.signature(forecast_barrier_optimize).parameters["format"].default, "summary")
 
     def tearDown(self):
         self._stop_barrier_module_patchers()
@@ -570,7 +570,7 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
                     "n_seeds": 1,
                 },
                 return_grid=False,
-                output="summary",
+                format="summary",
             )
         self.assertTrue(result.get("success"))
         self.assertEqual(result.get("method"), "ensemble")
@@ -607,7 +607,7 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
                     "n_seeds": 1,
                 },
                 return_grid=False,
-                output="summary",
+                format="summary",
             )
         self.assertTrue(result.get("success"))
         self.assertEqual(self.mock_fetch_history_opt.call_count, 1)
@@ -631,7 +631,7 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
             sl_steps=1,
             params={"optimizer": "grid", "n_sims": 50, "n_seeds": 1, "use_live_price": False},
             return_grid=False,
-            output="summary",
+            format="summary",
         )
         self.assertEqual(
             result.get("error"),
@@ -675,7 +675,7 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
                     "n_seeds": 1,
                 },
                 return_grid=True,
-                output="summary",
+                format="summary",
             )
         self.assertTrue(result.get("success"))
         self.assertEqual(result.get("method"), "ensemble")
@@ -848,7 +848,7 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
                 sl_min=0.5, sl_max=1.0, sl_steps=2,
                 objective="edge",
                 refine=False,
-                output="summary",
+                format="summary",
                 top_k=2,
                 return_grid=True,
             )
@@ -877,7 +877,7 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
                 tp_min=0.2, tp_max=1.4, tp_steps=4,
                 sl_min=0.2, sl_max=1.4, sl_steps=4,
                 objective="edge",
-                output="full",
+                format="full",
                 return_grid=True,
             )
         self.assertTrue(result["success"])
@@ -1414,7 +1414,7 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
                 concise=True,
                 top_k=2,
                 return_grid=True,
-                output="full",
+                format="full",
             )
         self.assertTrue(result.get("success"))
         self.assertFalse(result.get("viable"))
@@ -1732,7 +1732,7 @@ class TestTier1TradingCosts(_BarrierModulePatchMixin, unittest.TestCase):
                     "n_seeds": 1,
                 },
                 return_grid=False,
-                output="summary",
+                format="summary",
             )
 
         self.assertTrue(result.get("success"))
@@ -1785,7 +1785,7 @@ class TestTier1TradingCosts(_BarrierModulePatchMixin, unittest.TestCase):
                     "n_seeds": 1,
                 },
                 return_grid=False,
-                output="summary",
+                format="summary",
             )
 
         self.assertTrue(result.get("success"))
@@ -1835,7 +1835,7 @@ class TestTier1TradingCosts(_BarrierModulePatchMixin, unittest.TestCase):
                     "min_barrier_multiplier": 0.0,
                 },
                 return_grid=True,
-                output="summary",
+                format="summary",
             )
         self.assertTrue(result.get("success"))
         self.assertEqual(result.get("method"), "ensemble")

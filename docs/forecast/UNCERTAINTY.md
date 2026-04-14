@@ -118,7 +118,7 @@ In `high_low` mode, if the same bar touches both barriers, the label is resolved
 
 ```bash
 mtdata-cli labels_triple_barrier EURUSD --timeframe H1 --horizon 12 \
-  --tp-pct 0.5 --sl-pct 0.3 --output compact --json
+  --tp-pct 0.5 --sl-pct 0.3 --detail compact --json
 ```
 
 **Parameters:**
@@ -205,4 +205,3 @@ mtdata-cli forecast_conformal_intervals EURUSD --method sf_autoarima --horizon 1
 - [FORECAST.md](../FORECAST.md) — Price forecasting
 - [BARRIER_FUNCTIONS.md](../BARRIER_FUNCTIONS.md) — TP/SL probability analysis
 - [GLOSSARY.md](../GLOSSARY.md) — Term definitions
-
