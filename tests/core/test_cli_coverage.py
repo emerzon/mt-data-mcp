@@ -573,6 +573,60 @@ class TestFormatResultForCli:
         assert "time_epoch: 1700000000" in result
         assert "time_display" not in result
 
+    def test_market_scan_toon_prunes_echoed_query_metadata(self):
+        result = _format_result_for_cli(
+            {
+                "success": True,
+                "count": 1,
+                "headers": ["symbol"],
+                "data": [["EURUSD"]],
+                "scope": "group",
+                "group": "Forex\\Majors",
+                "timeframe": "H1",
+                "lookback": 100,
+                "limit": 3,
+                "rank_by": "abs_price_change_pct",
+                "scanned_symbols": 6,
+                "evaluated_symbols": 6,
+                "matched_symbols": 6,
+                "filtered_out_symbols": 0,
+                "skipped_symbols": 0,
+                "query_latency_ms": 289.0,
+            },
+            fmt="toon",
+            verbose=False,
+            cmd_name="market_scan",
+        )
+
+        assert "success: true" in result
+        assert "count: 1" in result
+        assert "EURUSD" in result
+        assert "scope:" not in result
+        assert "query_latency_ms" not in result
+        assert "rank_by" not in result
+
+    def test_market_scan_json_keeps_metadata_for_scripts(self):
+        payload = json.loads(
+            _format_result_for_cli(
+                {
+                    "success": True,
+                    "count": 1,
+                    "headers": ["symbol"],
+                    "data": [["EURUSD"]],
+                    "scope": "group",
+                    "group": "Forex\\Majors",
+                    "query_latency_ms": 289.0,
+                },
+                fmt="json",
+                verbose=False,
+                cmd_name="market_scan",
+            )
+        )
+
+        assert payload["scope"] == "group"
+        assert payload["group"] == "Forex\\Majors"
+        assert payload["query_latency_ms"] == 289.0
+
     def test_trade_session_context_json_compacts_nested_sections(self):
         payload = json.loads(
             _format_result_for_cli(

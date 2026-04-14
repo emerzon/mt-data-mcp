@@ -451,6 +451,20 @@ def _normalize_symbols_describe_cli_payload(result: Any, *, verbose: bool) -> An
     return out
 
 
+def _normalize_market_scan_cli_payload(result: Any, *, verbose: bool) -> Any:
+    if not isinstance(result, dict) or verbose:
+        return result
+    if "error" in result:
+        return result
+
+    compact_out: Dict[str, Any] = {}
+    for key in ("success", "count", "headers", "data", "no_action", "message"):
+        value = result.get(key)
+        if not _is_empty_value(value):
+            compact_out[key] = value
+    return compact_out or result
+
+
 def _normalize_candle_cli_payload(result: Any, *, fmt: str) -> Any:
     if not isinstance(result, dict):
         return result
@@ -526,6 +540,8 @@ def _prepare_cli_payload(result: Any, *, fmt: str, verbose: bool, cmd_name: str)
         prepared = _normalize_trade_session_context_cli_payload(prepared, verbose=verbose)
     elif cmd_name == "symbols_describe":
         prepared = _normalize_symbols_describe_cli_payload(prepared, verbose=verbose)
+    elif cmd_name == "market_scan" and fmt == CLI_FORMAT_TOON:
+        prepared = _normalize_market_scan_cli_payload(prepared, verbose=verbose)
 
     if fmt == CLI_FORMAT_TOON and cmd_name == "mt5_news" and not verbose:
         return _render_mt5_news_cli_compact(prepared)
