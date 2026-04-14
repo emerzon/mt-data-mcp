@@ -1,4 +1,4 @@
-
+import inspect
 import logging
 import statistics
 from typing import Any, Dict, List, Optional
@@ -246,6 +246,106 @@ def _compact_wait_event_public_result(
     return out
 
 
+def _apply_legacy_wait_event_positional_args(
+    args: tuple[Any, ...],
+    *,
+    symbol: Optional[str],
+    instrument: Optional[str],
+    timeframe: TimeframeLiteral,
+    watch_tick_count_spike: bool,
+    watch_for: Optional[List[Dict[str, Any]]],
+    end_on: Optional[List[Dict[str, Any]]],
+    verbose: bool,
+) -> tuple[Any, ...]:
+    if not args:
+        return symbol, instrument, timeframe, watch_tick_count_spike, watch_for, end_on, verbose
+
+    legacy_names = (
+        "symbol",
+        "timeframe",
+        "watch_tick_count_spike",
+        "watch_for",
+        "end_on",
+        "verbose",
+    )
+    if len(args) > len(legacy_names):
+        raise TypeError(
+            f"wait_event() takes from 0 to {len(legacy_names)} positional arguments but {len(args)} were given"
+        )
+
+    duplicate_checks = (
+        ("symbol", len(args) >= 1 and symbol is not None),
+        ("timeframe", len(args) >= 2 and timeframe != "M1"),
+        ("watch_tick_count_spike", len(args) >= 3 and watch_tick_count_spike is not True),
+        ("watch_for", len(args) >= 4 and watch_for is not None),
+        ("end_on", len(args) >= 5 and end_on is not None),
+        ("verbose", len(args) >= 6 and verbose is not False),
+    )
+    for name, duplicated in duplicate_checks:
+        if duplicated:
+            raise TypeError(f"wait_event() got multiple values for argument '{name}'")
+
+    legacy_values = dict(zip(legacy_names, args))
+    return (
+        legacy_values.get("symbol", symbol),
+        instrument,
+        legacy_values.get("timeframe", timeframe),
+        legacy_values.get("watch_tick_count_spike", watch_tick_count_spike),
+        legacy_values.get("watch_for", watch_for),
+        legacy_values.get("end_on", end_on),
+        legacy_values.get("verbose", verbose),
+    )
+
+
+_WAIT_EVENT_PUBLIC_SIGNATURE = inspect.Signature(
+    parameters=[
+        inspect.Parameter(
+            "symbol",
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            default=None,
+            annotation=Optional[str],
+        ),
+        inspect.Parameter(
+            "instrument",
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            default=None,
+            annotation=Optional[str],
+        ),
+        inspect.Parameter(
+            "timeframe",
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            default="M1",
+            annotation=TimeframeLiteral,
+        ),
+        inspect.Parameter(
+            "watch_tick_count_spike",
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            default=True,
+            annotation=bool,
+        ),
+        inspect.Parameter(
+            "watch_for",
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            default=None,
+            annotation=Optional[List[Dict[str, Any]]],
+        ),
+        inspect.Parameter(
+            "end_on",
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            default=None,
+            annotation=Optional[List[Dict[str, Any]]],
+        ),
+        inspect.Parameter(
+            "verbose",
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            default=False,
+            annotation=bool,
+        ),
+    ],
+    return_annotation=Dict[str, Any],
+)
+
+
 @mcp.tool()
 def data_fetch_candles(
     request: DataFetchCandlesRequest,
@@ -370,6 +470,7 @@ def data_fetch_ticks(
 
 @mcp.tool()
 def wait_event(
+    *args: Any,
     symbol: Optional[str] = None,
     instrument: Optional[str] = None,
     timeframe: TimeframeLiteral = "M1",
@@ -398,6 +499,24 @@ def wait_event(
     Set `verbose=true` to include polling/timing details and the full criteria
     echo in the response.
     """
+    (
+        symbol,
+        instrument,
+        timeframe,
+        watch_tick_count_spike,
+        watch_for,
+        end_on,
+        verbose,
+    ) = _apply_legacy_wait_event_positional_args(
+        args,
+        symbol=symbol,
+        instrument=instrument,
+        timeframe=timeframe,
+        watch_tick_count_spike=watch_tick_count_spike,
+        watch_for=watch_for,
+        end_on=end_on,
+        verbose=verbose,
+    )
     symbol_value = str(symbol or "").strip()
     instrument_value = str(instrument or "").strip()
     resolved_symbol: Optional[str]
@@ -460,3 +579,9 @@ def wait_event(
         end_on_count=len(end_on or []),
         func=_run,
     )
+
+
+wait_event.__signature__ = _WAIT_EVENT_PUBLIC_SIGNATURE
+_raw_wait_event = getattr(wait_event, "__wrapped__", None)
+if callable(_raw_wait_event):
+    _raw_wait_event.__signature__ = _WAIT_EVENT_PUBLIC_SIGNATURE
