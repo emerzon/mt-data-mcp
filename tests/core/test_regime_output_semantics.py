@@ -8,6 +8,7 @@ import pytest
 
 from mtdata.core import regime as regime_mod
 from mtdata.core.regime import _consolidate_payload
+from mtdata.core.regime import api as regime_api
 from mtdata.core.regime import regime_detect
 from mtdata.core.regime.api import _build_all_method_comparison
 from mtdata.core.regime.payload import _build_regime_descriptions
@@ -137,6 +138,56 @@ def test_build_all_method_comparison_uses_semantic_signals() -> None:
         "agreement_pct": 66.67,
         "methods_considered": ["hmm", "garch", "ensemble"],
     }
+
+
+def test_regime_detect_all_respects_full_and_summary_detail(monkeypatch) -> None:
+    real = _unwrap(regime_api.regime_detect)
+    monkeypatch.setattr(regime_api, "_fetch_history", lambda *args, **kwargs: _downtrend_df(120))
+    monkeypatch.setattr(regime_api, "_regime_connection_error", lambda: None)
+    monkeypatch.setattr(
+        regime_api,
+        "_build_all_method_comparison",
+        lambda results: {"methods": sorted(results.keys())},
+    )
+
+    subcall_details: list[tuple[str, str, bool]] = []
+
+    def fake_recursive(*args, **kwargs):
+        method_name = str(kwargs.get("method") or "")
+        detail_name = str(kwargs.get("detail") or "")
+        include_series = bool(kwargs.get("include_series"))
+        subcall_details.append((method_name, detail_name, include_series))
+        result = {
+            "success": True,
+            "symbol": kwargs.get("symbol"),
+            "timeframe": kwargs.get("timeframe"),
+            "method": method_name,
+            "target": kwargs.get("target"),
+        }
+        if detail_name == "full":
+            result["detail_marker"] = f"{method_name}-full"
+            if include_series:
+                result["series"] = {"state": [0, 1, 1]}
+        return result
+
+    monkeypatch.setattr(regime_api, "regime_detect", fake_recursive)
+
+    full = real("EURUSD", method="all", detail="full", include_series=True)
+    assert full["detail"] == "full"
+    assert "results" in full
+    assert full["results"]["bocpd"]["detail_marker"] == "bocpd-full"
+    assert full["results"]["hmm"]["series"] == {"state": [0, 1, 1]}
+    assert subcall_details
+    assert all(detail == "full" for _, detail, _ in subcall_details)
+    assert all(include_series is True for _, _, include_series in subcall_details)
+
+    subcall_details.clear()
+    summary = real("EURUSD", method="all", detail="summary", include_series=True)
+    assert summary["detail"] == "summary"
+    assert "results" not in summary
+    assert subcall_details
+    assert all(detail == "compact" for _, detail, _ in subcall_details)
+    assert all(include_series is False for _, _, include_series in subcall_details)
 
 
 def test_ensemble_labels_follow_mean_return_sign() -> None:

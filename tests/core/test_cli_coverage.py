@@ -915,6 +915,7 @@ class TestFormatResultForCli:
                 "timeframe": "H1",
                 "method": "all",
                 "target": "return",
+                "detail": "compact",
                 "comparison": {
                     "current_regimes": {
                         "bocpd": {
@@ -957,11 +958,91 @@ class TestFormatResultForCli:
             cmd_name="regime_detect",
         )
 
+        assert "detail: compact" in result
         assert "current_regimes[2]" in result
         assert "agreement:" in result
         assert "methods_failed[1]: wavelet" in result
         assert "results" not in result
         assert "params_used" not in result
+        assert "show_all_hint" in result
+
+    def test_toon_format_shows_regime_all_results_in_full_detail(self):
+        result = _format_result_for_cli(
+            {
+                "success": True,
+                "symbol": "EURUSD",
+                "timeframe": "H1",
+                "method": "all",
+                "target": "return",
+                "detail": "full",
+                "comparison": {
+                    "current_regimes": {
+                        "bocpd": {
+                            "bias": "bullish",
+                            "status": "no_recent_change_detected",
+                        }
+                    }
+                },
+                "results": {
+                    "bocpd": {
+                        "current_segment": {"status": "no_recent_change_detected"},
+                        "segment_context": {"bias": "bullish"},
+                    },
+                    "hmm": {
+                        "current_regime": {
+                            "label": "positive_mod_vol",
+                            "confidence": 0.84,
+                        }
+                    },
+                },
+                "params_used": {
+                    "methods_attempted": ["bocpd", "hmm"],
+                    "methods_succeeded": ["bocpd", "hmm"],
+                    "methods_failed": [],
+                },
+            },
+            fmt="toon",
+            verbose=False,
+            cmd_name="regime_detect",
+        )
+
+        assert "detail: full" in result
+        assert "results:" in result
+        assert "current_segment.status: no_recent_change_detected" in result
+        assert "confidence: 0.84" in result
+        assert "show_all_hint" not in result
+
+    def test_toon_format_keeps_regime_all_summary_compact(self):
+        result = _format_result_for_cli(
+            {
+                "success": True,
+                "symbol": "EURUSD",
+                "timeframe": "H1",
+                "method": "all",
+                "target": "return",
+                "detail": "summary",
+                "comparison": {
+                    "current_regimes": {
+                        "bocpd": {
+                            "bias": "bullish",
+                            "status": "no_recent_change_detected",
+                        }
+                    }
+                },
+                "params_used": {
+                    "methods_attempted": ["bocpd", "hmm"],
+                    "methods_succeeded": ["bocpd"],
+                    "methods_failed": ["hmm"],
+                },
+            },
+            fmt="toon",
+            verbose=False,
+            cmd_name="regime_detect",
+        )
+
+        assert "detail: summary" in result
+        assert "comparison.current_regimes[1]{method,bias,summary}" in result
+        assert "results" not in result
         assert "show_all_hint" in result
 
     def test_toon_format_compacts_support_resistance_output(self):

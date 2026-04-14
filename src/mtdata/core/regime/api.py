@@ -655,9 +655,10 @@ def regime_detect(  # noqa: C901
           Labels are derived from observed return sign and volatility tiers so they stay aligned
           with regime statistics. 'ensemble_info' shows voting method and mean_agreement.
           Explicit n_states overrides auto-detection.
-        - 'all': Returns 'comparison' dict with current regime per method and semantic agreement
-          metrics on comparable direction/volatility signals, plus 'results' with full output
-          from each method. Best for method comparison.
+        - 'all': Returns a cross-method 'comparison' dict with semantic agreement metrics.
+          `detail='compact'` keeps the comparison view concise, `detail='summary'` omits the
+          per-method `results`, and `detail='full'` includes richer per-method outputs.
+          Best for method comparison.
     """
     started_at = time.perf_counter()
     log_operation_start(
@@ -2458,6 +2459,9 @@ def regime_detect(  # noqa: C901
 
         elif method == "all":
             # Run all methods and return individual results for comparison
+            detail_value = str(detail or "compact").strip().lower()
+            sub_detail = "full" if detail_value == "full" else "compact"
+            include_series_for_subcalls = bool(include_series) and sub_detail == "full"
             all_methods = [
                 "bocpd",
                 "hmm",
@@ -2488,9 +2492,9 @@ def regime_detect(  # noqa: C901
                         params=sub_params,
                         denoise=denoise,
                         threshold=threshold,
-                        detail="compact",
+                        detail=sub_detail,  # type: ignore[arg-type]
                         lookback=lookback,
-                        include_series=False,
+                        include_series=include_series_for_subcalls,
                         min_regime_bars=min_regime_bars,
                         __cli_raw=True,
                     )
@@ -2535,9 +2539,9 @@ def regime_detect(  # noqa: C901
                     params=ens_params,
                     denoise=denoise,
                     threshold=threshold,
-                    detail="compact",
+                    detail=sub_detail,  # type: ignore[arg-type]
                     lookback=lookback,
-                    include_series=False,
+                    include_series=include_series_for_subcalls,
                     min_regime_bars=min_regime_bars,
                     __cli_raw=True,
                 )
@@ -2564,14 +2568,16 @@ def regime_detect(  # noqa: C901
                 "timeframe": timeframe,
                 "method": method,
                 "target": target,
+                "detail": detail_value,
                 "comparison": comparison,
-                "results": results_by_method,
                 "params_used": {
                     "methods_attempted": all_methods,
                     "methods_succeeded": list(results_by_method.keys()),
                     "methods_failed": [e.split(":")[0] for e in all_errors],
                 },
             }
+            if detail_value != "summary":
+                payload["results"] = results_by_method
             if all_errors:
                 payload["warnings"] = [f"Method errors: {'; '.join(all_errors)}"]
 

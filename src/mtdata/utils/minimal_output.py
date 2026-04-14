@@ -1144,12 +1144,16 @@ def _normalize_regime_all_payload(
     if str(payload.get("method") or "").strip().lower() != "all":
         return None
 
+    detail_value = str(payload.get("detail") or "compact").strip().lower()
+    if detail_value == "full":
+        return None
+
     comparison_in = payload.get("comparison")
     if not isinstance(comparison_in, dict):
         return None
 
     out: Dict[str, Any] = {}
-    for key in ("success", "symbol", "timeframe", "method", "target"):
+    for key in ("success", "symbol", "timeframe", "method", "target", "detail"):
         value = payload.get(key)
         if not _is_empty_value(value):
             out[key] = value
@@ -1201,7 +1205,7 @@ def _normalize_regime_all_payload(
     if comparison_out:
         out["comparison"] = comparison_out
 
-    if "results" in payload or "params_used" in payload:
+    if detail_value != "full" and ("results" in payload or "params_used" in payload):
         out["show_all_hint"] = (
             "Use --detail summary for stats only, or --detail full / --verbose for per-method details."
         )
