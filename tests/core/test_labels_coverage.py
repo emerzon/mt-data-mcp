@@ -184,6 +184,27 @@ class TestLabelsTripleBarrier:
         assert result["success"] is True
         assert "summary" in result
         assert len(result["labels"]) <= 10
+        assert result["sample_size"] <= 10
+
+    @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
+    @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
+    @patch(f"{_LABELS_MOD}._fetch_history")
+    def test_output_compact_caps_recent_sample_but_keeps_summary_lookback(self, mock_hist, mock_den, mock_pip):
+        mock_hist.return_value = _make_df(80)
+        result = _get_raw_fn()(
+            "EURUSD",
+            tp_pct=0.5,
+            sl_pct=0.5,
+            horizon=5,
+            detail="compact",
+            lookback=25,
+        )
+
+        assert result["success"] is True
+        assert result["summary"]["lookback"] == 25
+        assert result["sample_size"] == 10
+        assert len(result["labels"]) == 10
+        assert "sample_note" in result
 
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
     @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")

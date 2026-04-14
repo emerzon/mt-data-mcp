@@ -48,7 +48,7 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("forecast_quantlib_barrier_price", "option_type"): "Option side: call or put.",
     ("forecast_tune_optuna", "search_space"): "Optuna search space (JSON or k=v).",
     ("indicators_list", "detail"): "Output detail: compact table or full rows with aliases and descriptions.",
-    ("labels_triple_barrier", "detail"): "Detail level: full, summary, compact, or summary_only (alias for summary).",
+    ("labels_triple_barrier", "detail"): "Detail level: full, summary, compact (summary plus recent sample), or summary_only (alias for summary).",
     ("market_depth_fetch", "compact"): "Fail if DOM is unavailable instead of falling back to a ticker snapshot. Alias: --require-dom.",
     ("report_generate", "format"): "Output format: formatted text or markdown.",
     ("trade_modify", "expiration"): "Pending order expiration time (dateparser string, UTC epoch seconds, or GTC token).",

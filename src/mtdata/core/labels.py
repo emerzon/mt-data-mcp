@@ -29,6 +29,7 @@ from .mt5_gateway import get_mt5_gateway
 from .schema import DenoiseSpec, TimeframeLiteral
 
 logger = logging.getLogger(__name__)
+_COMPACT_LABEL_SAMPLE_SIZE = 10
 
 
 def _first_true_offsets(mask: np.ndarray) -> np.ndarray:
@@ -361,12 +362,20 @@ def labels_triple_barrier(
                         out["skipped_entries"] = int(skipped_entries)
                     return out
                 payload["summary"] = summary
-                if n > 0:
-                    payload["entries"] = t_entry[-n:]
-                    payload["labels"] = lab_tail
-                    payload["holding_bars"] = hold_tail
-                    payload["tp_time"] = tp_times[-n:]
-                    payload["sl_time"] = sl_times[-n:]
+                sample_n = n
+                if output_mode == "compact":
+                    sample_n = min(n, _COMPACT_LABEL_SAMPLE_SIZE)
+                    payload["sample_size"] = int(sample_n)
+                    if sample_n < n:
+                        payload["sample_note"] = (
+                            f"entries, labels, and timing arrays show the most recent {sample_n} observations."
+                        )
+                if sample_n > 0:
+                    payload["entries"] = t_entry[-sample_n:]
+                    payload["labels"] = lab_tail[-sample_n:]
+                    payload["holding_bars"] = hold_tail[-sample_n:]
+                    payload["tp_time"] = tp_times[-sample_n:]
+                    payload["sl_time"] = sl_times[-sample_n:]
             return payload
         except MT5ConnectionError as exc:
             return {"error": str(exc)}
