@@ -1239,25 +1239,52 @@ def _normalize_forecast_methods_payload(
         if filters_out:
             out["filters"] = filters_out
 
+    detail_value = str(payload.get("detail") or "compact").strip().lower()
     methods = payload.get("methods")
     if isinstance(methods, list):
         dict_rows = [row for row in methods if isinstance(row, dict)]
         if len(dict_rows) == len(methods):
             compact_rows: List[Dict[str, Any]] = []
             for row in dict_rows:
-                compact = {
-                    key: row.get(key)
-                    for key in ("method", "category", "available")
-                    if key in row and not _is_empty_value(row.get(key))
-                }
+                if detail_value == "full":
+                    params_count = row.get("params_count")
+                    if _is_empty_value(params_count):
+                        params = row.get("params")
+                        if isinstance(params, list):
+                            params_count = len(params)
+                    description = str(row.get("description") or "").strip()
+                    compact = {
+                        key: value
+                        for key, value in {
+                            "method": row.get("method"),
+                            "library": row.get("namespace") or row.get("category"),
+                            "category": row.get("category"),
+                            "available": row.get("available"),
+                            "description": description.splitlines()[0].strip() if description else None,
+                            "params_count": params_count,
+                            "concept": row.get("concept"),
+                            "method_id": row.get("method_id"),
+                        }.items()
+                        if not _is_empty_value(value)
+                    }
+                else:
+                    compact = {
+                        key: row.get(key)
+                        for key in ("method", "category", "available")
+                        if key in row and not _is_empty_value(row.get(key))
+                    }
                 compact_rows.append(compact or dict(row))
             out["methods"] = compact_rows
         else:
             out["methods"] = methods
 
+    note = payload.get("note")
+    if detail_value == "full" and not _is_empty_value(note):
+        out["note"] = note
+
     hidden = payload.get("methods_hidden")
     try:
-        if hidden is not None and int(hidden) > 0:
+        if detail_value != "full" and hidden is not None and int(hidden) > 0:
             out["show_all_hint"] = "Use --detail full to see all methods."
     except Exception:
         pass

@@ -820,11 +820,19 @@ def _forecast_list_methods_impl(  # noqa: C901
                 row_out["source"] = capability.get("source", "registry")
                 enriched_full.append(row_out)
             filtered_full = [row for row in enriched_full if _method_matches(row)]
+            total_filtered = len(filtered_full)
             if limit_value is not None:
                 filtered_full = filtered_full[:limit_value]
+            available_count = int(sum(1 for row in filtered_full if bool(row.get("available"))))
             out_full = dict(data)
+            out_full["detail"] = "full"
             out_full["methods"] = filtered_full
-            out_full["total"] = len(filtered_full)
+            out_full["total"] = int(data.get("total") or len(enriched_full))
+            out_full["total_filtered"] = int(total_filtered)
+            out_full["available"] = available_count
+            out_full["unavailable"] = int(len(filtered_full) - available_count)
+            out_full["methods_shown"] = int(len(filtered_full))
+            out_full["methods_hidden"] = int(max(0, total_filtered - len(filtered_full)))
             out_full["filters"] = {
                 "search": search_value or None,
                 "limit": limit_value,

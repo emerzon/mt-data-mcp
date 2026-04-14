@@ -483,6 +483,11 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert compact["note"].endswith("Use --detail full to see all methods.")
 
     full = _unwrap(cf.forecast_list_methods)(detail="full")
+    assert full["detail"] == "full"
+    assert full["total"] == 2
+    assert full["total_filtered"] == 2
+    assert full["methods_shown"] == 2
+    assert full["methods_hidden"] == 0
     assert isinstance(full.get("methods"), list)
     assert "params" in full["methods"][0]
     assert "method_id" in full["methods"][0]

@@ -873,6 +873,52 @@ class TestFormatResultForCli:
         assert "params_count" not in result
         assert "show_all_hint" in result
 
+    def test_toon_format_keeps_richer_columns_for_full_forecast_methods_output(self):
+        result = _format_result_for_cli(
+            {
+                "detail": "full",
+                "total": 2,
+                "total_filtered": 2,
+                "available": 2,
+                "unavailable": 0,
+                "methods_shown": 2,
+                "methods_hidden": 0,
+                "filters": {"search": "theta"},
+                "methods": [
+                    {
+                        "method": "theta",
+                        "category": "native",
+                        "namespace": "native",
+                        "available": True,
+                        "description": "Classic theta forecast.",
+                        "params": [{"name": "window_size"}],
+                        "concept": "theta",
+                        "method_id": "native:theta",
+                    },
+                    {
+                        "method": "sf_theta",
+                        "category": "statsforecast",
+                        "namespace": "statsforecast",
+                        "available": True,
+                        "description": "StatsForecast theta.",
+                        "params": [],
+                        "concept": "theta",
+                        "method_id": "statsforecast:theta",
+                    },
+                ],
+                "note": "Methods include namespace/concept/method_id fields.",
+            },
+            fmt="toon",
+            verbose=False,
+            cmd_name="forecast_list_methods",
+        )
+
+        assert "methods[2]{method,library,category,available,description,params_count,concept,method_id}" in result
+        assert "Classic theta forecast." in result
+        assert "native:theta" in result
+        assert "statsforecast:theta" in result
+        assert "show_all_hint" not in result
+
     def test_toon_format_compacts_forecast_list_library_models_output(self):
         result = _format_result_for_cli(
             {
