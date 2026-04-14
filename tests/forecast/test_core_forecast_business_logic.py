@@ -588,6 +588,7 @@ def test_forecast_conformal_intervals_success_and_errors(monkeypatch):
     )
 
     assert out["ci_alpha"] == 0.1
+    assert out["ci_status"] == "available"
     assert out["conformal"]["ci_alpha"] == 0.1
     assert len(out["lower_price"]) == 2
     assert len(out["upper_price"]) == 2
@@ -670,6 +671,42 @@ def test_run_forecast_conformal_intervals_uses_finite_sample_quantile():
     assert result["conformal"]["per_step_q"] == [3.0]
     assert result["lower_price"] == [97.0]
     assert result["upper_price"] == [103.0]
+    assert result["ci_status"] == "available"
+
+
+def test_run_forecast_conformal_intervals_rewrites_interval_unavailable_guidance():
+    result = forecast_use_cases.run_forecast_conformal_intervals(
+        ForecastConformalIntervalsRequest(
+            symbol="EURUSD",
+            method="theta",
+            horizon=1,
+            steps=1,
+            spacing=1,
+        ),
+        backtest_impl=lambda **kwargs: {
+            "results": {
+                "theta": {
+                    "details": [
+                        {"forecast": [10.0], "actual": [9.0]},
+                    ]
+                }
+            }
+        },
+        forecast_impl=lambda **kwargs: {
+            "forecast_price": [100.0],
+            "ci_status": "unavailable",
+            "warnings": [
+                "Point forecast only for method 'theta'; confidence intervals are unavailable. "
+                "Use forecast_conformal_intervals for uncertainty bands.",
+                "native theta fallback used",
+            ],
+        },
+    )
+
+    assert result["ci_status"] == "available"
+    assert result["lower_price"] == [99.0]
+    assert result["upper_price"] == [101.0]
+    assert result["warnings"] == ["native theta fallback used"]
 
 
 def test_run_forecast_conformal_intervals_raises_typed_error_for_nested_error_payload():

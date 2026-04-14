@@ -35,6 +35,14 @@ from .requests import (
 logger = logging.getLogger(__name__)
 
 
+def _is_interval_unavailable_warning(value: Any) -> bool:
+    text = str(value)
+    return (
+        "forecast_conformal_intervals" in text
+        or "confidence intervals are unavailable" in text
+    )
+
+
 @lru_cache(maxsize=1)
 def _discover_sktime_forecasters() -> Dict[str, Tuple[str, str]]:
     """Return mapping of forecaster class name (lower) -> (class_name, dotted path)."""
@@ -258,9 +266,7 @@ def run_forecast_generate(
             if not isinstance(warnings_out, list):
                 warnings_out = []
             has_interval_warning = any(
-                "forecast_conformal_intervals" in str(item)
-                or "confidence intervals are unavailable" in str(item)
-                for item in warnings_out
+                _is_interval_unavailable_warning(item) for item in warnings_out
             )
             if warning not in warnings_out and not has_interval_warning:
                 warnings_out.append(warning)
@@ -477,6 +483,16 @@ def run_forecast_conformal_intervals(
         result["lower_price"] = [float(v) for v in lo.tolist()]
         result["upper_price"] = [float(v) for v in hi.tolist()]
         result["ci_alpha"] = float(request.ci_alpha)
+        result["ci_status"] = "available"
+        warnings_out = result.get("warnings")
+        if isinstance(warnings_out, list):
+            filtered_warnings = [
+                item for item in warnings_out if not _is_interval_unavailable_warning(item)
+            ]
+            if filtered_warnings:
+                result["warnings"] = filtered_warnings
+            else:
+                result.pop("warnings", None)
     except Exception as exc:
         log_operation_exception(
             logger,
