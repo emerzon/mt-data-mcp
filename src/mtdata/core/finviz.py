@@ -34,6 +34,7 @@ from .execution_logging import run_logged_operation
 logger = logging.getLogger(__name__)
 
 _PAIR_SUFFIXES = {"USD", "EUR", "GBP", "JPY", "AUD", "CAD", "CHF", "NZD"}
+_FINVIZ_SCREEN_FILTERS_EXAMPLE = '{"Exchange":"NASDAQ","Sector":"Technology"}'
 
 
 def _looks_like_non_equity_symbol(symbol: str) -> bool:
@@ -72,6 +73,15 @@ def _run_logged_tool(
         func=fn,
         **fields,
     )
+
+
+def _invalid_finviz_screen_filters_error(filters: Any) -> Dict[str, str]:
+    return {
+        "error": (
+            "Invalid filters JSON. Expected a JSON object like "
+            f"'{_FINVIZ_SCREEN_FILTERS_EXAMPLE}'. Got: {filters}"
+        )
+    }
 
 
 @mcp.tool()
@@ -323,7 +333,9 @@ def finviz_screen(
             try:
                 filters_dict = json.loads(filters)
             except (json.JSONDecodeError, TypeError):
-                return {"error": f"Invalid filters JSON: {filters}"}
+                return _invalid_finviz_screen_filters_error(filters)
+            if not isinstance(filters_dict, dict):
+                return _invalid_finviz_screen_filters_error(filters)
 
         return screen_stocks(filters=filters_dict, order=order, limit=limit, page=page, view=view)
 

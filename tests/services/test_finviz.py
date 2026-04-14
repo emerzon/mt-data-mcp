@@ -524,13 +524,25 @@ class TestFinvizTools:
 
     def test_finviz_screen_tool_invalid_json(self):
         """Test finviz_screen tool with invalid JSON."""
-        import json
-        
-        filters_str = "not valid json"
-        try:
-            json.loads(filters_str)
-            result = {"success": True}
-        except (json.JSONDecodeError, TypeError):
-            result = {"error": f"Invalid filters JSON: {filters_str}"}
-        
+        from mtdata.core.finviz import finviz_screen
+
+        def _run_direct(_logger, operation, func, **fields):
+            return func()
+
+        with patch("mtdata.core.finviz.run_logged_operation", side_effect=_run_direct):
+            result = finviz_screen.__wrapped__(filters="not valid json")
+
         assert "error" in result
+        assert "Expected a JSON object like" in result["error"]
+        assert "Exchange" in result["error"]
+
+    def test_finviz_screen_tool_rejects_non_object_json_filters(self):
+        from mtdata.core.finviz import finviz_screen
+
+        def _run_direct(_logger, operation, func, **fields):
+            return func()
+
+        with patch("mtdata.core.finviz.run_logged_operation", side_effect=_run_direct):
+            result = finviz_screen.__wrapped__(filters='["NASDAQ"]')
+
+        assert result["error"].startswith("Invalid filters JSON.")

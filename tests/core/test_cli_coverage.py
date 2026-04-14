@@ -2765,6 +2765,17 @@ class TestResolveParamKwargs:
         kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="report_generate")
         assert kwargs["help"] == "Output format: formatted text or markdown."
 
+    def test_finviz_screen_filters_help_is_command_specific(self):
+        param = {"name": "filters", "type": Optional[str], "required": False, "default": None}
+        kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="finviz_screen")
+        assert "NASDAQ" in kwargs["help"]
+        assert "Sector" in kwargs["help"]
+
+    def test_finviz_screen_order_help_is_command_specific(self):
+        param = {"name": "order", "type": Optional[str], "required": False, "default": None}
+        kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="finviz_screen")
+        assert kwargs["help"] == "Finviz sort key. Example: -marketcap for descending or price for ascending."
+
     def test_forecast_tune_optuna_search_space_help_is_command_specific(self):
         param = {"name": "search_space", "type": Dict[str, Any], "required": False, "default": None}
         kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="forecast_tune_optuna")
