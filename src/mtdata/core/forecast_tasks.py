@@ -213,7 +213,7 @@ def forecast_task_list(
     """
     def _execute() -> Dict[str, Any]:
         tm = _get_task_manager()
-        tasks = tm.list_tasks(status_filter=status_filter)
+        tasks = tm.list_tasks(status=status_filter)
         items: List[Dict[str, Any]] = []
         for t in tasks:
             item: Dict[str, Any] = {

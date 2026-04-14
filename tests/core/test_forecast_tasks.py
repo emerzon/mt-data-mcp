@@ -210,6 +210,7 @@ class TestForecastTaskList:
         assert result["tasks"][0]["task_id"] == "t1"
         assert result["tasks"][0]["progress_fraction"] == 0.1
         assert result["tasks"][1]["model_id"] == "nhits/EURUSD_H1/x"
+        mock_tm.list_tasks.assert_called_once_with(status=None)
 
     def test_empty_list(self):
         from src.mtdata.core.forecast_tasks import forecast_task_list
@@ -222,6 +223,18 @@ class TestForecastTaskList:
 
         assert result["count"] == 0
         assert result["tasks"] == []
+
+    def test_passes_status_filter_through(self):
+        from src.mtdata.core.forecast_tasks import forecast_task_list
+
+        mock_tm = MagicMock()
+        mock_tm.list_tasks.return_value = []
+
+        with patch(_PATCH_TM, return_value=mock_tm):
+            result = _unwrap(forecast_task_list)(status_filter="running")
+
+        assert result["count"] == 0
+        mock_tm.list_tasks.assert_called_once_with(status="running")
 
 
 # ---------------------------------------------------------------------------
