@@ -405,12 +405,15 @@ Every fresh loop starts in `fast_path`, not full re-analysis.
 `fast_path` required:
 1. `trade_session_context(symbol="{{SYMBOL}}")`
 2. `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{EXECUTION_TF}}", limit=15, indicators="macd(12,26,9),natr(14),chop(14),mfi(14)")` to act as a minimal tripwire (momentum, volatility, cycle state, and volume participation) before deciding whether to remain in `fast_path` or escalate. Keep this call light. Do not add `vwap`, `obv`, or `supertrend` here — they require 50–120+ bars to be meaningful and belong in `proximity_mode` or `full_recheck` reads.
+   - After receiving candle data, check `session_gaps` in the response. If any gap falls within the last `2× ATR_period` bars of the returned series (i.e., inside the indicator lookback window), flag that momentum and oscillator indicators (MACD, Supertrend) may be distorted at the gap boundary. For instruments with daily maintenance gaps (US500, US30, US100: 20:00–22:00 UTC daily), do not treat the first 2–3 bars immediately after a gap as confirming momentum signals — they are artificially influenced by the gap discontinuity.
+   - **For equity CFDs with 16–18h overnight gaps (e.g. TSLA.NAS, AAPL.NAS):** the standard 15-bar fast-path window will almost always span two separate sessions. **Use only bars after the most recent session gap boundary** for momentum and ATR decisions. If fewer than 8 current-session bars are available, escalate to `proximity_mode` and fetch `--limit 50` to get reliable current-session indicator readings. Do not use ATR or MACD values computed across an overnight gap — they are contaminated by the gap's price discontinuity.
 
 After `fast_path`:
 - compute effective exposure
 - classify state
 - check whether any previously tracked position disappeared
 - if a position disappeared, verify the closure with `trade_history`
+- **Stale pending check**: for each pending order, compute `|current_price - order_entry_price|`. If this gap exceeds `1× ATR(14)` on `PRIMARY_TF` in the fill direction (i.e., price has moved more than one full ATR away from the entry in the direction the order would need to retrace), flag the order as `stale_pending` and escalate to `proximity_mode` for a reprice or cancel decision. Do not let stale limits sit passively while price runs away.
 - if price is far from every mapped action zone, no order is near fill, no stop is threatened, and no event trigger fired, do not refresh candles or levels just to fill the loop
 - refresh `market_status()` and `news(symbol="{{SYMBOL}}")` only when stale or when trigger conditions fire
 
@@ -542,6 +545,8 @@ Priority:
 5. Forecast, volatility, uncertainty, and barrier quality
 6. Patterns
 7. Optional depth, options-implied, or extra news context
+- Run `temporal_analyze(symbol="{{SYMBOL}}", timeframe="{{PRIMARY_TF}}", group_by="hour")` to check session timing quality for the session-start read.
+   - After it returns, verify `groups` includes an entry for the current UTC hour. For equity CFDs that only trade exchange hours (e.g. TSLA.NAS, AAPL.NAS, SPY.NAS), the output covers only 6–8 hours/day. If no group matches the current hour, skip the win_rate timing filter — the instrument has no historical data for this hour and a missing result must not be treated as a block.
 
 ### Core Indicator Pack
 Default review pack:
@@ -559,7 +564,7 @@ Read it as a cluster:
 ### Optional Indicator Routing
 Do not add more indicators by default. Add them only when they directly improve the active decision.
 
-- `vwap`: preferred optional intraday value anchor for equities, futures, and other instruments with more reliable volume. Use it when entry quality, stretch versus session value, reclaim logic, or harvest timing depends on whether price is extended from fair value. For FX or other indicative-volume instruments, treat `vwap` only as soft context.
+- `vwap`: preferred optional intraday value anchor for equities and futures with verifiable exchange volume (e.g., individual stocks traded on NYSE/NASDAQ, CME futures contracts). Use it when entry quality, stretch versus session value, reclaim logic, or harvest timing depends on whether price is extended from fair value. **For FX, crypto CFDs (e.g. BTCUSD), and index CFDs (e.g. US500, US30), treat `vwap` as soft context only** — tick-volume is not a reliable proxy for real traded volume on these instruments, and VWAP built on tick-volume is not a meaningful fair-value anchor. Use VWAP on these instruments for directional lean confirmation only, not as a hard entry or exit level.
 - `donchian(20)`: preferred optional breakout and reclaim boundary tool. Use it when channel edges can improve the reaction map, pending-order placement, breakout confirmation, or reprice/cancel logic near range extremes.
 - `stoch(14,3,3)` or `willr(14)`: optional fast-timing aids for `scalp` or tight `proximity_mode` decisions when RSI is too slow for the intended timing. Do not add both by default, and do not let them override higher-timeframe structure.
 
@@ -597,7 +602,8 @@ Use `regime_detect` before new risk and before major scale-ins or recovery adds:
 - `method="bocpd", output="summary"` on `PRIMARY_TF` when looking for hard structural or macroeconomic breaks instead of oscillating states.
 - Avoid `method="ms_ar"` on higher timeframes as it is hyper-sensitive and produces excessive micro-regimes.
 - also check regime on `HIGHER_TF` when size is above baseline, the trade is countertrend, or a repair idea depends on mean reversion
-- **Interpretation Rule:** Always check `reliability.confidence` in the output. If confidence is below `0.50`, the math is undecided; do not make drastic strategy changes or force trades based solely on the current regime label.
+- **Interpretation Rule:** Always check `reliability.confidence` and `entropy_trend` in the output. If confidence is below `0.65` OR `entropy_trend` is `degrading`, treat the regime label as **low-reliability**: do not make drastic strategy changes based on it alone. Cross-check the label against ADX(14) and aroon from the candle data — if ADX > 30 or aroon_up/down shows a clear directional reading that contradicts the HMM label, prefer the raw indicator read. A confidence below `0.50` is a hard block on taking regime-dependent actions.
+- **HMM state-count and convergence check:** After `forecast_barrier_prob` returns, check `sim_meta.fitted_n_states`. If `fitted_n_states < requested_n_states` (e.g., 1 instead of 2), the simulation degraded to a single-state Gaussian random walk. Additionally check whether the CLI printed any convergence warning (e.g., "Model is not converging"). A non-converging HMM produces mathematically invalid probabilities even if it returns numeric output. In either case, note the limitation and re-run with `--method mc_gbm` as a fallback for a simpler but honest estimate.
 
 ### Forecast
 At session start:
@@ -629,7 +635,7 @@ Before any market order, pending order, scale-in, staged ladder, or recovery add
    `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{EXECUTION_TF}}", limit=120, indicators="ema(20),ema(50),rsi(14),macd(12,26,9),adx(14),chop(14),atr(14),natr(14),supertrend(7,3),mfi(14),obv")`
 4. If the trade is countertrend, above baseline size, structurally unclear, or a recovery idea is being considered, also refresh:
    `data_fetch_candles(symbol="{{SYMBOL}}", timeframe=HIGHER_TF, limit=180, indicators="ema(20),ema(50),rsi(14),macd(12,26,9),adx(14),chop(14),atr(14),mfi(14)")`
-5. Check weighted horizontal structure with `support_resistance_levels(symbol="{{SYMBOL}}")`.
+5. Check weighted horizontal structure with `support_resistance_levels(symbol="{{SYMBOL}}", detail="full")`. Use `--detail full` before finalizing SL placement so that `zone_low` and `zone_high` are available for the stop-hunt buffer calculation. Compact mode does not expose zone widths and cannot be used to verify that the SL clears the zone envelope.
 6. Check pivot levels with `pivot_compute_points` when intraday pivot zones could influence entry, stop, or harvest placement. Skip if pivots were already read this session and no new day has opened.
 7. Check regime with `regime_detect`.
 8. Run `patterns_detect(symbol="{{SYMBOL}}")` only if the structural or wave context is ambiguous and could invalidate the setup.
@@ -656,8 +662,11 @@ Before any market order, pending order, scale-in, staged ladder, or recovery add
    - set `viable_only=true`
    - do not allow `sl_min` below the spread-adjusted structural stop floor
    - if the optimizer cannot find a viable candidate without tightening below the structural floor or pushing TP into unrealistic clearance, skip the trade or reduce size only after geometry is accepted
-15. Run `forecast_barrier_prob` on the exact final geometry after quote-side translation, broker rounding, and buffers, using the same trading-cost assumptions as the planned order. 
-   - **Final Validation**: Ensure you pass the *final, irregular, anti-sweep offset price* you actually intend to send to the broker as the SL parameter here, not the raw level. This confirms your buffered placement remains mathematically viable.
+15. Run `forecast_barrier_prob` on the exact final TP/SL geometry:
+   - CLI: `forecast_barrier_prob <SYMBOL> --timeframe <PRIMARY_TF> --horizon <N> --direction long|short --tp-abs <price> --sl-abs <price>`
+   - The tool does not accept `--entry`, `--spread-pips`, or `--slippage-pips` args. Spread and slippage are not passed as CLI flags; the model fits from historical data. If you need to stress-test geometry under a different volatility assumption, use `--sigma <value>` to override the per-bar sigma.
+   - **Anchor warning:** `forecast_barrier_prob` always uses the live `last_price` as the simulation start, not the pending order entry price. For a pending order sitting below/above market, the headline `prob_tp_first` reflects the probability from *current price*, not from entry. Use `tp_hit_prob_by_t[N]` at `N = bars_until_expected_fill + horizon` to better approximate the probability from entry, or mentally adjust the TP/SL distances by the gap between current price and pending entry.
+   - **Final Validation**: Ensure the *final, irregular, anti-sweep offset price* you intend to send to the broker is used as `--sl-abs`, not the raw structural level.
 16. For equities or other optionable names near event risk, optionally run `forecast_options_chain` or `forecast_quantlib_heston_calibrate` when implied-vol context could change aggression.
 17. Run `trade_risk_analyze` on the exact proposed entry, stop, target, and desired risk percent, and pass `direction="long"` for longs or `direction="short"` for shorts.
 18. Convert the suggestion into `final_volume` by clamping to:
@@ -668,6 +677,7 @@ Before any market order, pending order, scale-in, staged ladder, or recovery add
 20. Classify volume confirmation as `supportive`, `contradictory`, `mixed`, or `unavailable` before approving new risk.
 21. Check spread efficiency against the proposed stop distance:
    - if current spread is greater than `25%` of the planned stop distance, do not use a market entry; prefer a pending limit or wait for spread compression
+   - **For CFD instruments (indices, crypto):** additionally compute `spread_cost = spread_points × tick_value × planned_volume` and compare against projected `reward_currency` from `trade_risk_analyze`. If `spread_cost > 5%` of `reward_currency`, the cost structure is too unfavourable for a market entry — prefer a limit order or reduce size.
 22. Check target clearance versus the nearest opposing support or resistance cluster.
 
 **Pre-Validated Zone Fire Path** (highest-priority quick path):
@@ -707,6 +717,15 @@ For any coordinated batch:
 
 Do not send the order if `trade_risk_analyze` shows invalid geometry, the size is invalid, or the book would exceed `{{MAX_TOTAL_LOTS}}`.
 
+**When `risk_compliance: exceeds_requested_risk` with reason `min_volume_constraint`:** the broker minimum lot forces a size above the per-trade risk cap. The agent must choose one of:
+- Widen the SL to the next valid structural level so that `volume_min` delivers risk at or below the cap
+- Widen the TP proportionally so EV remains positive at the forced size (only if the extended TP clears the next structural cluster)
+- Skip the trade entirely
+
+Do not place the order at the forced overshoot size.
+
+**When `risk_pct` at `volume_min` exceeds 3× the target risk (e.g. actual 3%+ when targeting 1%):** the instrument is structurally **underfundable** at this account size for the proposed geometry. Skip without further analysis and log as `underfunded`. Do not attempt to widen the SL enough to compensate — the stop required to bring per-lot risk below threshold will destroy the thesis geometry.
+
 ## Execution Rules
 - Prefer market orders when the thesis is live and price is already in an acceptable zone.
 - Prefer pending orders when location can improve, price is stretched, or a staged or grid plan is being used.
@@ -725,6 +744,7 @@ Do not send the order if `trade_risk_analyze` shows invalid geometry, the size i
 ## Managing Existing Exposure
 - Any live or pending `{{SYMBOL}}` exposure is under management, regardless of origin.
 - If a live trade lacks a sensible SL or TP, fix that before adding risk.
+- **Book quality check**: after reading `trade_risk_analyze` on existing positions, check `rr_ratio` for each live position. If any position's current gross R:R (remaining TP distance / remaining SL distance) has fallen below `0.8:1`, treat this as a book-quality alert — the position is now risk-weighted in the wrong direction. Either extend the TP to the next viable structural level using the TP extension procedure, or tighten the SL toward breakeven if the position is in sufficient profit. Do not let the book sit with a sub-0.8 R:R indefinitely.
 - **Breakeven, Trailing Stops, and TP Adjustment** are governed by the dedicated section below.
 - **Time Invalidation (Time Stops)**: If an expected momentum or directional impulse does not materialize within the mode-specific time-stop window after entry, the foundational thesis has decayed by time. Do not wait for the catastrophic hard SL to be touched. Scratch the trade near breakeven or exit at market proactively. **Note:** time-stop counting pauses during known low-liquidity windows (e.g., the pre-NY-open Asian overlap, post-London-close). Resume counting from the next active session candle.
   - `scalp` (`PRIMARY_TF=M15`): **8–10 candles** (~120–150 min). Scalp setups need a couple of hours in less liquid windows; count only active-session candles.
