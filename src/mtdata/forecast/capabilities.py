@@ -282,7 +282,37 @@ def resolve_capability_request(
     library_norm = str(library or "native").strip().lower() or "native"
     method_norm = str(method or "").strip()
     params_out = dict(params or {})
-    if not method_norm or ":" not in method_norm:
+    if not method_norm:
+        return library_norm, method_norm, params_out
+
+    if ":" not in method_norm:
+        if library_norm in {"statsforecast", "sktime", "mlforecast", "pretrained"}:
+            capabilities = [
+                row
+                for row in get_registered_capabilities()
+                if str(row.get("namespace") or "").strip().lower() == library_norm
+            ]
+            requested_method = method_norm.lower()
+            match = next(
+                (
+                    row
+                    for row in capabilities
+                    if str(row.get("method") or "").strip().lower() == requested_method
+                ),
+                None,
+            )
+            if isinstance(match, dict):
+                execution = match.get("execution") if isinstance(match.get("execution"), dict) else {}
+                resolved_library = str(execution.get("library") or library_norm)
+                resolved_method = str(
+                    execution.get("method") or match.get("adapter_method") or method_norm
+                )
+                selector_params = (
+                    execution.get("params") if isinstance(execution.get("params"), dict) else {}
+                )
+                merged_params = dict(params_out)
+                merged_params.update(selector_params)
+                return resolved_library, resolved_method, merged_params
         return library_norm, method_norm, params_out
 
     namespace = method_norm.split(":", 1)[0].strip().lower()

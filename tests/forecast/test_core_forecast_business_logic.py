@@ -152,12 +152,22 @@ def test_forecast_generate_routes_by_library_and_validates_inputs(monkeypatch):
     assert captured["method"] == "statsforecast"
     assert captured["params"]["model_name"] == "AutoARIMA"
 
+    out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="statsforecast", method="sf_autoarima", params={}))
+    assert out["ok"] is True
+    assert captured["method"] == "statsforecast"
+    assert captured["params"]["model_name"] == "AutoARIMA"
+
     out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="native", method="statsforecast:autoarima", params={}))
     assert out["ok"] is True
     assert captured["method"] == "statsforecast"
     assert captured["params"]["model_name"] == "AutoARIMA"
 
     out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="sktime", method="theta", params={}))
+    assert out["ok"] is True
+    assert captured["method"] == "sktime"
+    assert captured["params"]["estimator"] == "sktime.forecasting.theta.ThetaForecaster"
+
+    out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="sktime", method="skt_theta", params={}))
     assert out["ok"] is True
     assert captured["method"] == "sktime"
     assert captured["params"]["estimator"] == "sktime.forecasting.theta.ThetaForecaster"

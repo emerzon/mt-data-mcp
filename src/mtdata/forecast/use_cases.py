@@ -182,12 +182,14 @@ def run_forecast_generate(
 
     try:
         capability_requested = ":" in method
+        original_resolution = (lib, method, dict(params))
         lib, method, params = resolve_capability_request(
             library=lib,
             method=method,
             params=params,
             discover_sktime_forecasters=_discover_sktime_forecasters,
-        ) if capability_requested else (lib, method, params)
+        )
+        capability_requested = capability_requested or (lib, method, params) != original_resolution
         if capability_requested:
             if lib in ("", "native"):
                 resolved_method = method or "theta"
