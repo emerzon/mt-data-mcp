@@ -84,6 +84,25 @@ def _invalid_finviz_screen_filters_error(filters: Any) -> Dict[str, str]:
     }
 
 
+def _resolve_preferred_text_arg(
+    *,
+    preferred_name: str,
+    preferred_value: Optional[str],
+    legacy_name: str,
+    legacy_value: Optional[str],
+) -> tuple[Optional[str], Optional[Dict[str, str]]]:
+    preferred = str(preferred_value or "").strip() or None
+    legacy = str(legacy_value or "").strip() or None
+    if preferred and legacy and preferred != legacy:
+        return None, {
+            "error": (
+                f"Provide either {preferred_name} or {legacy_name}, "
+                "not both with different values."
+            )
+        }
+    return preferred or legacy, None
+
+
 @mcp.tool()
 def finviz_fundamentals(symbol: str) -> Dict[str, Any]:
     """
@@ -459,6 +478,8 @@ def finviz_futures() -> Dict[str, Any]:
 def finviz_calendar(
     calendar: str = "economic",
     impact: Optional[Literal["low", "medium", "high"]] = None,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
     params: Optional[str] = None,
@@ -475,10 +496,14 @@ def finviz_calendar(
         Calendar type: "economic", "earnings", or "dividends" (also accepts paths like "/calendar/economic").
     impact : str, optional
         Economic only: filter by impact level: "low", "medium", or "high".
+    start : str, optional
+        Preferred start date alias in ISO format: YYYY-MM-DD.
+    end : str, optional
+        Preferred end date alias in ISO format: YYYY-MM-DD.
     date_from : str, optional
-        ISO date "YYYY-MM-DD" (maps to Finviz query param `dateFrom`).
+        Legacy alias for `start`. Maps to the Finviz query param `dateFrom`.
     date_to : str, optional
-        ISO date "YYYY-MM-DD" (maps to Finviz query param `dateTo`).
+        Legacy alias for `end`. Maps to the Finviz query param `dateTo`.
     params : str, optional
         Optional query-string style parameters like `?dateFrom=2026-01-05&dateTo=2026-01-12`.
     query : str, optional
@@ -496,14 +521,31 @@ def finviz_calendar(
     fields = {
         "calendar": calendar,
         "impact": impact,
-        "date_from": date_from,
-        "date_to": date_to,
+        "start": start,
+        "end": end,
         "limit": limit,
         "page": page,
     }
 
     def _run() -> Dict[str, Any]:
-        nonlocal impact, date_from, date_to, limit, page
+        nonlocal impact, limit, page
+
+        start_value, start_error = _resolve_preferred_text_arg(
+            preferred_name="start",
+            preferred_value=start,
+            legacy_name="date_from",
+            legacy_value=date_from,
+        )
+        if start_error is not None:
+            return start_error
+        end_value, end_error = _resolve_preferred_text_arg(
+            preferred_name="end",
+            preferred_value=end,
+            legacy_name="date_to",
+            legacy_value=date_to,
+        )
+        if end_error is not None:
+            return end_error
 
         raw_q = params or query
         if raw_q:
@@ -511,8 +553,8 @@ def finviz_calendar(
             if q.startswith("?"):
                 q = q[1:]
             parsed = {k: (v[-1] if v else None) for k, v in parse_qs(q).items()}
-            date_from = date_from or parsed.get("dateFrom")
-            date_to = date_to or parsed.get("dateTo")
+            start_value = start_value or parsed.get("dateFrom")
+            end_value = end_value or parsed.get("dateTo")
             impact = impact or parsed.get("impact")  # type: ignore[assignment]
             if parsed.get("page"):
                 try:
@@ -532,11 +574,27 @@ def finviz_calendar(
             cal = cal.rstrip("/").split("/")[-1]
 
         if cal == "economic":
-            return get_economic_calendar(impact=impact, limit=limit, page=page, date_from=date_from, date_to=date_to)
+            return get_economic_calendar(
+                impact=impact,
+                limit=limit,
+                page=page,
+                date_from=start_value,
+                date_to=end_value,
+            )
         if cal == "earnings":
-            return get_earnings_calendar_api(limit=limit, page=page, date_from=date_from, date_to=date_to)
+            return get_earnings_calendar_api(
+                limit=limit,
+                page=page,
+                date_from=start_value,
+                date_to=end_value,
+            )
         if cal == "dividends":
-            return get_dividends_calendar_api(limit=limit, page=page, date_from=date_from, date_to=date_to)
+            return get_dividends_calendar_api(
+                limit=limit,
+                page=page,
+                date_from=start_value,
+                date_to=end_value,
+            )
         return {"error": f"Unsupported calendar '{calendar}'. Expected economic, earnings, or dividends."}
 
     return _run_logged_tool("finviz_calendar", fields, _run)

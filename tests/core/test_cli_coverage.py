@@ -2612,6 +2612,27 @@ class TestAddDynamicArguments:
             for action in parser._actions
         )
 
+    def test_finviz_calendar_prefers_start_end_and_hides_legacy_date_flags(self):
+        parser = argparse.ArgumentParser()
+        func_info = {
+            "params": [
+                {"name": "start", "type": str, "required": False, "default": None},
+                {"name": "end", "type": str, "required": False, "default": None},
+                {"name": "date_from", "type": str, "required": False, "default": None},
+                {"name": "date_to", "type": str, "required": False, "default": None},
+            ]
+        }
+
+        add_dynamic_arguments(parser, func_info, cmd_name="finviz_calendar")
+
+        args = parser.parse_args(["--start", "2026-01-05", "--end", "2026-01-12"])
+        assert args.start == "2026-01-05"
+        assert args.end == "2026-01-12"
+        assert not any(
+            action.dest in {"date_from", "date_to"} and action.help != argparse.SUPPRESS
+            for action in parser._actions
+        )
+
     def test_labels_triple_barrier_keeps_summary_only_detail_alias_without_duplicate_flag(self):
         parser = argparse.ArgumentParser()
         func_info = {
@@ -2775,6 +2796,16 @@ class TestResolveParamKwargs:
         param = {"name": "order", "type": Optional[str], "required": False, "default": None}
         kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="finviz_screen")
         assert kwargs["help"] == "Finviz sort key. Example: -marketcap for descending or price for ascending."
+
+    def test_finviz_calendar_start_help_is_command_specific(self):
+        param = {"name": "start", "type": Optional[str], "required": False, "default": None}
+        kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="finviz_calendar")
+        assert kwargs["help"].startswith("Start date")
+
+    def test_finviz_calendar_end_help_is_command_specific(self):
+        param = {"name": "end", "type": Optional[str], "required": False, "default": None}
+        kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="finviz_calendar")
+        assert kwargs["help"].startswith("End date")
 
     def test_forecast_tune_optuna_search_space_help_is_command_specific(self):
         param = {"name": "search_space", "type": Dict[str, Any], "required": False, "default": None}

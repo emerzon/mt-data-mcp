@@ -546,3 +546,40 @@ class TestFinvizTools:
             result = finviz_screen.__wrapped__(filters='["NASDAQ"]')
 
         assert result["error"].startswith("Invalid filters JSON.")
+
+    def test_finviz_calendar_prefers_start_end_aliases(self):
+        from mtdata.core.finviz import finviz_calendar
+
+        def _run_direct(_logger, operation, func, **fields):
+            return func()
+
+        with (
+            patch("mtdata.core.finviz.run_logged_operation", side_effect=_run_direct),
+            patch("mtdata.core.finviz.get_economic_calendar", return_value={"success": True}) as mock_calendar,
+        ):
+            result = finviz_calendar.__wrapped__(start="2026-01-05", end="2026-01-12")
+
+        assert result["success"] is True
+        mock_calendar.assert_called_once_with(
+            impact=None,
+            limit=100,
+            page=1,
+            date_from="2026-01-05",
+            date_to="2026-01-12",
+        )
+
+    def test_finviz_calendar_rejects_conflicting_start_and_date_from(self):
+        from mtdata.core.finviz import finviz_calendar
+
+        def _run_direct(_logger, operation, func, **fields):
+            return func()
+
+        with patch("mtdata.core.finviz.run_logged_operation", side_effect=_run_direct):
+            result = finviz_calendar.__wrapped__(
+                start="2026-01-05",
+                date_from="2026-01-06",
+            )
+
+        assert result == {
+            "error": "Provide either start or date_from, not both with different values."
+        }

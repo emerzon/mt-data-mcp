@@ -42,6 +42,8 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("data_fetch_candles", "indicators"): "Technical indicators. Use bare names like rsi, underscore forms like rsi_14, positional specs like sma(20) and macd(12,26,9), or named specs like rsi(length=14) and macd(fast=12,slow=26,signal=9). Use parentheses for params, not sma,20.",
     ("finviz_screen", "filters"): "Filter JSON object. Example: '{\"Exchange\":\"NASDAQ\",\"Sector\":\"Technology\"}'. Common keys include Exchange, Index, Sector, Industry, Country, Market Cap., P/E, Dividend Yield, RSI (14), Average Volume, and Price.",
     ("finviz_screen", "order"): "Finviz sort key. Example: -marketcap for descending or price for ascending.",
+    ("finviz_calendar", "start"): "Start date (YYYY-MM-DD). Preferred alias for the legacy date_from parameter.",
+    ("finviz_calendar", "end"): "End date (YYYY-MM-DD). Preferred alias for the legacy date_to parameter.",
     ("forecast_barrier_optimize", "method"): "Barrier simulation method: mc_gbm, mc_gbm_bb, hmm_mc, garch, bootstrap, heston, jump_diffusion, or auto.",
     ("forecast_quantlib_barrier_price", "option_type"): "Option side: call or put.",
     ("forecast_tune_optuna", "search_space"): "Optuna search space (JSON or k=v).",
@@ -130,6 +132,8 @@ def _split_visible_and_hidden_flags(*flags: str) -> tuple[tuple[str, ...], tuple
 def should_expose_cli_param(*, cmd_name: Optional[str], param_name: str) -> bool:
     """Return whether a function parameter should surface as a user CLI argument."""
     if str(cmd_name or "") == "labels_triple_barrier" and str(param_name or "") == "summary_only":
+        return False
+    if str(cmd_name or "") == "finviz_calendar" and str(param_name or "") in {"date_from", "date_to"}:
         return False
     if str(cmd_name or "") == "wait_event" and str(param_name or "") == "instrument":
         return False
