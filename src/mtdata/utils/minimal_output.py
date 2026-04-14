@@ -1133,6 +1133,82 @@ def _normalize_analysis_legends_payload(
     return out
 
 
+def _normalize_regime_all_payload(
+    payload: Dict[str, Any],
+    *,
+    verbose: bool,
+    tool_name: str,
+) -> Optional[Dict[str, Any]]:
+    if tool_name != "regime_detect" or verbose:
+        return None
+    if str(payload.get("method") or "").strip().lower() != "all":
+        return None
+
+    comparison_in = payload.get("comparison")
+    if not isinstance(comparison_in, dict):
+        return None
+
+    out: Dict[str, Any] = {}
+    for key in ("success", "symbol", "timeframe", "method", "target"):
+        value = payload.get(key)
+        if not _is_empty_value(value):
+            out[key] = value
+
+    comparison_out: Dict[str, Any] = {}
+    current_regimes_in = comparison_in.get("current_regimes")
+    if isinstance(current_regimes_in, dict):
+        rows: List[Dict[str, Any]] = []
+        for method_name, value in current_regimes_in.items():
+            if not isinstance(value, dict):
+                rows.append({"method": method_name, "value": value})
+                continue
+            compact = {"method": method_name}
+            for key in ("bias", "direction", "volatility"):
+                if key in value and not _is_empty_value(value.get(key)):
+                    compact[key] = value.get(key)
+            summary_value = value.get("status")
+            if _is_empty_value(summary_value):
+                summary_value = value.get("label")
+            if not _is_empty_value(summary_value):
+                compact["summary"] = summary_value
+            if "regime_confidence" in value and not _is_empty_value(value.get("regime_confidence")):
+                compact["regime_confidence"] = value.get("regime_confidence")
+            rows.append(compact)
+        if rows:
+            comparison_out["current_regimes"] = rows
+
+    agreement_in = comparison_in.get("agreement")
+    if isinstance(agreement_in, dict):
+        agreement_out: Dict[str, Any] = {}
+        for name, value in agreement_in.items():
+            if isinstance(value, dict):
+                compact = {
+                    key: value.get(key)
+                    for key in ("majority", "agreement_pct")
+                    if key in value and not _is_empty_value(value.get(key))
+                }
+                if compact:
+                    agreement_out[str(name)] = compact
+            elif not _is_empty_value(value):
+                agreement_out[str(name)] = value
+        if agreement_out:
+            comparison_out["agreement"] = agreement_out
+
+    methods_failed = comparison_in.get("methods_failed")
+    if isinstance(methods_failed, list) and methods_failed:
+        comparison_out["methods_failed"] = methods_failed
+
+    if comparison_out:
+        out["comparison"] = comparison_out
+
+    if "results" in payload or "params_used" in payload:
+        out["show_all_hint"] = (
+            "Use --output summary for stats only, or --output full / --verbose for per-method details."
+        )
+
+    return out
+
+
 def _normalize_forecast_methods_payload(
     payload: Dict[str, Any],
     *,
@@ -1722,6 +1798,14 @@ def format_result_minimal(
             )
             if analysis_legends_norm is not None:
                 normalized = analysis_legends_norm
+
+            regime_all_norm = _normalize_regime_all_payload(
+                normalized,
+                verbose=verbose,
+                tool_name=resolved_tool_name,
+            )
+            if regime_all_norm is not None:
+                normalized = regime_all_norm
 
             forecast_methods_norm = _normalize_forecast_methods_payload(
                 normalized,

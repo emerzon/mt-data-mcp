@@ -907,6 +907,63 @@ class TestFormatResultForCli:
         assert "Long serialized parameter spec" not in result
         assert "show_all_hint" in result
 
+    def test_toon_format_compacts_regime_all_output(self):
+        result = _format_result_for_cli(
+            {
+                "success": True,
+                "symbol": "EURUSD",
+                "timeframe": "H1",
+                "method": "all",
+                "target": "return",
+                "comparison": {
+                    "current_regimes": {
+                        "bocpd": {
+                            "bias": "bullish",
+                            "volatility": "moderate_vol",
+                            "status": "no_recent_change_detected",
+                            "regime_confidence": 0.82,
+                            "recent_transition_activity": "none",
+                        },
+                        "ensemble": {
+                            "bias": "bullish",
+                            "volatility": "moderate_vol",
+                            "label": "positive_mod_vol",
+                            "regime_confidence": 0.74,
+                        },
+                    },
+                    "agreement": {
+                        "direction": {
+                            "majority": "bullish",
+                            "agreement_pct": 75.0,
+                            "methods_considered": ["hmm", "clustering", "ensemble"],
+                        },
+                        "volatility": {
+                            "majority": "moderate_vol",
+                            "agreement_pct": 66.67,
+                            "methods_considered": ["garch", "ensemble"],
+                        },
+                    },
+                    "methods_failed": ["wavelet"],
+                },
+                "results": {
+                    "bocpd": {"segments": [{"start": "2025-01-01"}]},
+                },
+                "params_used": {
+                    "methods_attempted": ["bocpd", "ensemble", "wavelet"],
+                },
+            },
+            fmt="toon",
+            verbose=False,
+            cmd_name="regime_detect",
+        )
+
+        assert "current_regimes[2]" in result
+        assert "agreement:" in result
+        assert "methods_failed[1]: wavelet" in result
+        assert "results" not in result
+        assert "params_used" not in result
+        assert "show_all_hint" in result
+
     def test_toon_format_compacts_support_resistance_output(self):
         result = _format_result_for_cli(
             {
