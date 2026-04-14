@@ -299,6 +299,7 @@ def _normalize_market_ticker_cli_payload(result: Any, *, verbose: bool) -> Any:
 
     for field, digits in (
         ("spread_points", 4),
+        ("spread_pips", 4),
         ("spread_pct", 6),
         ("spread_usd", 6),
     ):

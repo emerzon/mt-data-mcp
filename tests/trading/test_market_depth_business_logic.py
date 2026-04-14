@@ -234,6 +234,7 @@ def test_market_ticker_returns_lightweight_spread_snapshot() -> None:
             point=0.01,
             trade_tick_size=0.01,
             trade_tick_value=1.0,
+            currency_profit="USD",
         )
         mt5.symbol_info_tick.return_value = tick
         out = _raw_market_ticker("BTCUSD")
@@ -244,6 +245,10 @@ def test_market_ticker_returns_lightweight_spread_snapshot() -> None:
     assert out["ask"] == 201.0
     assert out["spread"] == 1.0
     assert out["spread_points"] == 100.0
+    assert out["spread_pips"] == 100.0
+    assert out["spread_pct_display"] == "0.498753%"
+    assert out["pricing_basis"] == "per_1_lot_estimate"
+    assert out["spread_currency"] == "USD"
     assert "spread_display" not in out
     assert out["diagnostics"]["cache_used"] is False
     assert out["diagnostics"]["source"] == "mt5.symbol_info_tick"
@@ -267,6 +272,7 @@ def test_market_ticker_rounds_to_symbol_precision() -> None:
             point=0.00001,
             trade_tick_size=0.00001,
             trade_tick_value=1.0,
+            currency_profit="USD",
         )
         mt5.symbol_info_tick.return_value = tick
         out = _raw_market_ticker("EURUSD")
@@ -276,6 +282,7 @@ def test_market_ticker_rounds_to_symbol_precision() -> None:
     assert out["last"] == 1.17586
     assert out["spread"] == 0.00009
     assert out["spread_points"] == 9.0
+    assert out["spread_pips"] == 0.9
 
 
 def test_market_depth_returns_connection_error_payload() -> None:

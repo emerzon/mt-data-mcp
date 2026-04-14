@@ -545,7 +545,9 @@ class TestFormatResultForCli:
                     "time": 1700000000,
                     "time_display": "2023-11-14 22:13",
                     "spread_points": 8.999999999992347,
+                    "spread_pips": 0.8999999999992347,
                     "spread_pct": 0.007795818842487513,
+                    "spread_pct_display": "0.007796%",
                 },
                 fmt="json",
                 verbose=False,
@@ -554,7 +556,9 @@ class TestFormatResultForCli:
         )
         assert payload["time"] == "2023-11-14 22:13"
         assert payload["spread_points"] == 9.0
+        assert payload["spread_pips"] == 0.9
         assert payload["spread_pct"] == 0.007796
+        assert payload["spread_pct_display"] == "0.007796%"
         assert "time_display" not in payload
         assert "time_epoch" not in payload
 
