@@ -521,6 +521,11 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # n
             if not params:
                 sig = _get_runtime_signature(func)
                 for name, param in sig.parameters.items():
+                    if param.kind in (
+                        inspect.Parameter.VAR_POSITIONAL,
+                        inspect.Parameter.VAR_KEYWORD,
+                    ):
+                        continue
                     params.append(param.replace(annotation=cleaned.get(name)))
             params, cleaned = _augment_signature_with_global_verbose(params, cleaned)
             _wrapped.__annotations__ = cleaned

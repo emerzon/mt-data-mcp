@@ -818,6 +818,32 @@ class TestRecordingToolDecorator:
         finally:
             srv._ORIG_TOOL_DECORATOR = original
 
+    def test_skips_variadic_args_in_exposed_signature(self):
+        import mtdata.core.server as srv
+        from mtdata.core._mcp_tools import _TOOL_REGISTRY
+
+        original = srv._ORIG_TOOL_DECORATOR
+        try:
+            srv._ORIG_TOOL_DECORATOR = lambda *a, **k: (lambda fn: fn)
+            dec = srv._recording_tool_decorator()
+
+            def sample_tool(*args, foo: str = "x"):
+                return {"foo": foo, "arg_count": len(args)}
+
+            dec(sample_tool)
+            wrapped = _TOOL_REGISTRY["sample_tool"]
+            sig = inspect.signature(wrapped)
+
+            assert "args" not in sig.parameters
+            assert "foo" in sig.parameters
+            assert "verbose" in sig.parameters
+
+            result = wrapped("legacy", foo="y", __cli_raw=True)
+            assert result["foo"] == "y"
+            assert result["arg_count"] == 1
+        finally:
+            srv._ORIG_TOOL_DECORATOR = original
+
     def test_flattens_request_model_signature_for_mcp_and_keeps_nested_request_compat(self):
         import mtdata.core.server as srv
         from mtdata.core._mcp_tools import _TOOL_REGISTRY
@@ -871,6 +897,31 @@ class TestRecordingToolDecorator:
 
 
 class TestMcpToolSchemas:
+
+    def test_wait_event_list_tools_schema_omits_legacy_varargs(self):
+        from mcp import ClientSession
+        from mcp.client.stdio import StdioServerParameters, stdio_client
+
+        async def _run() -> dict:
+            server = StdioServerParameters(
+                command=sys.executable,
+                args=["-c", "from mtdata.core.server import main_stdio; main_stdio()"],
+            )
+            async with stdio_client(server) as streams:
+                async with ClientSession(*streams) as session:
+                    await session.initialize()
+                    tools = await session.list_tools()
+                    items = getattr(tools, "tools", tools)
+                    tool = next(t for t in items if getattr(t, "name", None) == "wait_event")
+                    return getattr(tool, "inputSchema", {}) or {}
+
+        schema = asyncio.run(_run())
+        props = schema.get("properties") or {}
+
+        assert "args" not in props
+        assert "args" not in set(schema.get("required") or [])
+        assert props["symbol"]["anyOf"][0]["type"] == "string"
+        assert props["timeframe"]["type"] == "string"
 
     def test_regime_detect_list_tools_schema_preserves_direct_annotations(self):
         from mcp import ClientSession
