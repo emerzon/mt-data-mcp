@@ -481,3 +481,37 @@ class TestSymbolsDescribe:
         assert "price_greeks_delta" not in sd
         assert "volumehigh" not in sd
         assert "session_buy_orders" not in sd
+
+    @patch(f"{_MT5}.symbol_info")
+    def test_rounds_price_like_fields_to_symbol_digits(self, mock_info):
+        info = MagicMock()
+        info.__dir__ = lambda self: [
+            "name",
+            "digits",
+            "bidlow",
+            "bidhigh",
+            "asklow",
+            "askhigh",
+            "session_open",
+            "session_close",
+        ]
+        info.name = "XAUUSD"
+        info.digits = 2
+        info.bidlow = 4744.295
+        info.bidhigh = 4778.004
+        info.asklow = 4744.305
+        info.askhigh = 4778.014
+        info.session_open = 4750.126
+        info.session_close = 4760.874
+        mock_info.return_value = info
+
+        fn = _get_symbols_describe()
+        res = fn("XAUUSD")
+        sd = res["symbol"]
+
+        assert sd["bidlow"] == 4744.3
+        assert sd["bidhigh"] == 4778.0
+        assert sd["asklow"] == 4744.31
+        assert sd["askhigh"] == 4778.01
+        assert sd["session_open"] == 4750.13
+        assert sd["session_close"] == 4760.87

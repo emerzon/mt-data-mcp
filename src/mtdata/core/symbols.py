@@ -23,6 +23,17 @@ from .mt5_gateway import get_mt5_gateway
 
 logger = logging.getLogger(__name__)
 
+_SYMBOL_DESCRIBE_PRICE_FIELDS = frozenset(
+    {
+        "bidlow",
+        "bidhigh",
+        "asklow",
+        "askhigh",
+        "session_open",
+        "session_close",
+    }
+)
+
 _SYMBOL_DESCRIBE_FIELDS: tuple[str, ...] = (
     "name",
     "description",
@@ -266,6 +277,9 @@ def symbols_describe(symbol: str) -> Dict[str, Any]:
                     except Exception:
                         symbol_data[attr] = value
                 else:
+                    if attr in _SYMBOL_DESCRIBE_PRICE_FIELDS:
+                        digits = max(0, int(getattr(symbol_info, "digits", 0) or 0))
+                        value = _market_scan_round(_market_scan_float(value), digits=digits)
                     symbol_data[attr] = value
 
                 spec = enum_specs.get(attr)

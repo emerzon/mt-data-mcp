@@ -250,6 +250,34 @@ def test_market_ticker_returns_lightweight_spread_snapshot() -> None:
     assert isinstance(out["diagnostics"]["query_latency_ms"], float)
 
 
+def test_market_ticker_rounds_to_symbol_precision() -> None:
+    tick = SimpleNamespace(
+        bid=1.17581,
+        ask=1.1758999999999235,
+        last=1.175856,
+        volume=5,
+        time=1700000000,
+    )
+    with patch("mtdata.core.market_depth.mt5") as mt5, patch(
+        "mtdata.core.market_depth._use_client_tz", return_value=False
+    ):
+        mt5.symbol_select.return_value = True
+        mt5.symbol_info.return_value = SimpleNamespace(
+            digits=5,
+            point=0.00001,
+            trade_tick_size=0.00001,
+            trade_tick_value=1.0,
+        )
+        mt5.symbol_info_tick.return_value = tick
+        out = _raw_market_ticker("EURUSD")
+
+    assert out["bid"] == 1.17581
+    assert out["ask"] == 1.1759
+    assert out["last"] == 1.17586
+    assert out["spread"] == 0.00009
+    assert out["spread_points"] == 9.0
+
+
 def test_market_depth_returns_connection_error_payload() -> None:
     with patch(
         "mtdata.core.market_depth.ensure_mt5_connection_or_raise",

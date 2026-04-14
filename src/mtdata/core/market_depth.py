@@ -24,6 +24,15 @@ logger = logging.getLogger(__name__)
 _MARKET_DEPTH_ENABLE_ENV = "MTDATA_ENABLE_MARKET_DEPTH_FETCH"
 
 
+def _round_market_ticker_value(value: Any, *, digits: int) -> Any:
+    if value is None:
+        return None
+    try:
+        return round(float(value), max(0, int(digits)))
+    except Exception:
+        return value
+
+
 def _market_depth_fetch_enabled() -> bool:
     raw = os.getenv(_MARKET_DEPTH_ENABLE_ENV)
     if raw is None:
@@ -339,13 +348,13 @@ def market_ticker(symbol: str) -> Dict[str, Any]:
                 "symbol": symbol,
                 "type": "ticker",
                 "price_precision": digits,
-                "bid": bid,
-                "ask": ask,
-                "last": last,
-                "spread": spread_abs,
-                "spread_points": spread_points,
-                "spread_pct": spread_pct,
-                "spread_usd": spread_usd,
+                "bid": _round_market_ticker_value(bid, digits=digits),
+                "ask": _round_market_ticker_value(ask, digits=digits),
+                "last": _round_market_ticker_value(last, digits=digits),
+                "spread": _round_market_ticker_value(spread_abs, digits=digits),
+                "spread_points": _round_market_ticker_value(spread_points, digits=4),
+                "spread_pct": _round_market_ticker_value(spread_pct, digits=6),
+                "spread_usd": _round_market_ticker_value(spread_usd, digits=6),
                 "time": tick_time,
             }
             if tick_time is not None:
