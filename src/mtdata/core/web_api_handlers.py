@@ -639,6 +639,8 @@ def get_support_resistance_response(
             tolerance_pct=float(tolerance_pct),
             min_touches=int(min_touches),
             max_levels=int(max_levels),
+            max_distance_pct=None,
+            volume_weighting="off",
             reaction_bars=6,
             adx_period=14,
             decay_half_life_bars=None,
