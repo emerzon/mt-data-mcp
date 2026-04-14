@@ -920,8 +920,60 @@ class TestMcpToolSchemas:
 
         assert "args" not in props
         assert "args" not in set(schema.get("required") or [])
-        assert props["symbol"]["anyOf"][0]["type"] == "string"
+        assert props["symbol"]["type"] == "string"
         assert props["timeframe"]["type"] == "string"
+
+    def test_prioritized_tools_list_tools_schemas_are_compact_and_aligned(self):
+        from mcp import ClientSession
+        from mcp.client.stdio import StdioServerParameters, stdio_client
+
+        async def _run() -> dict[str, tuple[str, dict]]:
+            server = StdioServerParameters(
+                command=sys.executable,
+                args=["-c", "from mtdata.core.server import main_stdio; main_stdio()"],
+            )
+            async with stdio_client(server) as streams:
+                async with ClientSession(*streams) as session:
+                    await session.initialize()
+                    tools = await session.list_tools()
+                    items = getattr(tools, "tools", tools)
+                    selected = {}
+                    for name in ("forecast_generate", "data_fetch_candles", "patterns_detect", "trade_place"):
+                        tool = next(t for t in items if getattr(t, "name", None) == name)
+                        selected[name] = (
+                            getattr(tool, "description", "") or "",
+                            getattr(tool, "inputSchema", {}) or {},
+                        )
+                    return selected
+
+        selected = asyncio.run(_run())
+
+        forecast_desc, forecast_schema = selected["forecast_generate"]
+        assert "\n" not in forecast_desc
+        assert "request" not in (forecast_schema.get("properties") or {})
+        assert "title" not in forecast_schema
+        assert "title" not in forecast_schema["properties"]["symbol"]
+        assert "default" not in forecast_schema["properties"]["lookback"]
+
+        candles_desc, candles_schema = selected["data_fetch_candles"]
+        assert "\n" not in candles_desc
+        assert "title" not in candles_schema["properties"]["symbol"]
+        assert "default" not in candles_schema["properties"]["start"]
+
+        patterns_desc, patterns_schema = selected["patterns_detect"]
+        assert "\n" not in patterns_desc
+        assert patterns_schema["properties"]["timeframe"]["type"] == "string"
+        assert "default" not in patterns_schema["properties"]["timeframe"]
+
+        trade_desc, trade_schema = selected["trade_place"]
+        assert "\n" not in trade_desc
+        assert set(trade_schema.get("required") or []) == {"symbol", "volume", "order_type"}
+        assert "default" not in trade_schema["properties"]["symbol"]
+        assert "null" not in {
+            option.get("type")
+            for option in trade_schema["properties"]["expiration"].get("anyOf", [])
+            if isinstance(option, dict)
+        }
 
     def test_regime_detect_list_tools_schema_preserves_direct_annotations(self):
         from mcp import ClientSession

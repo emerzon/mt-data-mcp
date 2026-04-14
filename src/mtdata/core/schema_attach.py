@@ -2,8 +2,12 @@
 Shared schema defs and dynamic attachment of JSON Schemas to MCP tools.
 Extracted from core.server to keep server thinner.
 """
+
+from __future__ import annotations
+
+import copy
 import logging
-from typing import Any, Callable, Dict
+from typing import Any, Callable, Dict, Iterable
 
 from .schema import (
     apply_param_hints as _apply_param_hints,
@@ -76,36 +80,45 @@ def _safe_schema_op(operation: str, func, default=None):
 def server_shared_defs(shared_enums: Dict[str, Any]) -> Dict[str, Any]:
     """Build server-level $defs based on provided enum lists (avoids circular imports)."""
     defs: Dict[str, Any] = {}
+
     def _build_defs() -> None:
         defs.update({
-            "OhlcvChar": {"type": "string", "enum": ["O","H","L","C","V"], "description": "OHLCV column code"},
+            "OhlcvChar": {"type": "string", "enum": ["O", "H", "L", "C", "V"], "description": "OHLCV column code"},
             "DenoiseMethod": {"type": "string", "enum": list(shared_enums.get("DENOISE_METHODS", []))},
             "SimplifyMode": {"type": "string", "enum": list(shared_enums.get("SIMPLIFY_MODES", []))},
             "SimplifyMethod": {"type": "string", "enum": list(shared_enums.get("SIMPLIFY_METHODS", []))},
-            "EncodeSchema": {"type": "string", "enum": ["envelope","delta"]},
+            "EncodeSchema": {"type": "string", "enum": ["envelope", "delta"]},
             "SymbolicSchema": {"type": "string", "enum": ["sax"]},
             "PivotMethod": {"type": "string", "enum": list(shared_enums.get("PIVOT_METHODS", []))},
             "ForecastMethod": {"type": "string", "enum": list(shared_enums.get("FORECAST_METHODS", []))},
-            "QuantitySpec": {"type": "string", "enum": ["price","return","volatility"]},
+            "QuantitySpec": {"type": "string", "enum": ["price", "return", "volatility"]},
             "VolatilityMethod": {"type": "string", "enum": [
-                "ewma","parkinson","gk","rs","yang_zhang","rolling_std",
-                "garch","egarch","gjr_garch",
-                "arima","sarima","ets","theta"
+                "ewma", "parkinson", "gk", "rs", "yang_zhang", "rolling_std",
+                "garch", "egarch", "gjr_garch",
+                "arima", "sarima", "ets", "theta",
             ]},
-            "WhenSpec": {"type": "string", "enum": ["pre_ti","post_ti"]},
-            "CausalitySpec": {"type": "string", "enum": ["causal","zero_phase"]},
-            "TargetSpec": {"type": "string", "enum": ["price","return"]},
+            "WhenSpec": {"type": "string", "enum": ["pre_ti", "post_ti"]},
+            "CausalitySpec": {"type": "string", "enum": ["causal", "zero_phase"]},
+            "TargetSpec": {"type": "string", "enum": ["price", "return"]},
         })
         if shared_enums.get("CATEGORY_CHOICES"):
             defs["IndicatorCategory"] = {"type": "string", "enum": list(shared_enums["CATEGORY_CHOICES"])}
         if shared_enums.get("INDICATOR_NAME_CHOICES"):
             defs["IndicatorName"] = {"type": "string", "enum": list(shared_enums["INDICATOR_NAME_CHOICES"])}
+
     _safe_schema_op("server_shared_defs", _build_defs)
     return defs
 
 
+def _schema_obj(schema: Dict[str, Any]) -> Dict[str, Any]:
+    params_obj = schema.get("parameters")
+    if isinstance(params_obj, dict):
+        return params_obj
+    return schema if isinstance(schema, dict) else {}
+
+
 def _schema_params(schema: Dict[str, Any]) -> tuple[Dict[str, Any], set[str]]:
-    params_obj = schema.get("parameters", {})
+    params_obj = _schema_obj(schema)
     if not isinstance(params_obj, dict):
         return {}, set()
     params = params_obj.get("properties", {})
@@ -158,10 +171,7 @@ def _patch_data_fetch_candles_schema(schema: Dict[str, Any]) -> None:
     params, required_params = _schema_params(schema)
     if "indicators" in params:
         indicator_options = [
-            {
-                "type": "string",
-                "description": "Compact indicator spec like 'rsi(14),ema(20),macd(12,26,9)'.",
-            },
+            {"type": "string"},
             {"type": "array", "items": {"$ref": "#/$defs/IndicatorSpec"}},
         ]
         if "indicators" not in required_params:
@@ -183,7 +193,7 @@ def _patch_forecast_barrier_prob_schema(schema: Dict[str, Any]) -> None:
     params["method"] = {
         "type": "string",
         "enum": list(_BARRIER_PROB_METHODS),
-        "description": "Barrier probability algorithm. Use a Monte Carlo engine, 'closed_form', or 'auto'.",
+        "description": "Barrier probability algorithm.",
     }
 
 
@@ -194,12 +204,12 @@ def _patch_forecast_barrier_optimize_schema(schema: Dict[str, Any]) -> None:
     params["method"] = {
         "type": "string",
         "enum": list(_BARRIER_OPTIMIZE_METHODS),
-        "description": "Barrier simulation method for optimization.",
+        "description": "Barrier simulation method.",
     }
 
 
 def _patch_trade_place_schema(schema: Dict[str, Any]) -> None:
-    params_obj = schema.get("parameters", {})
+    params_obj = _schema_obj(schema)
     if isinstance(params_obj, dict):
         params_obj["required"] = ["symbol", "volume", "order_type"]
     params, _required_params = _schema_params(schema)
@@ -215,16 +225,16 @@ def _patch_trade_place_schema(schema: Dict[str, Any]) -> None:
                     "enum": [0, 1, 2, 3, 4, 5],
                 },
             ],
-            "description": "Required. BUY/SELL (market by default; pending if price is provided), pending aliases, or MT5 numeric constants (0..5)."
+            "description": "BUY/SELL or pending aliases; MT5 constants 0..5 are also accepted.",
         }
     if "expiration" in params:
         params["expiration"] = {
             "anyOf": [
                 {"type": "string"},
                 {"type": "number"},
-                {"type": "null"}
+                {"type": "null"},
             ],
-            "description": "Dateparser input, UTC epoch seconds, or GTC token."
+            "description": "Dateparser input, UTC epoch seconds, or GTC token.",
         }
 
 
@@ -240,44 +250,250 @@ _TOOL_SCHEMA_PATCHERS: Dict[str, tuple[_SchemaPatcher, ...]] = {
 }
 
 
+def _iter_manager_tools(mcp: Any) -> Iterable[tuple[str, Any]]:
+    manager = getattr(mcp, "_tool_manager", None)
+    tools = getattr(manager, "_tools", None)
+    if isinstance(tools, dict):
+        return list(tools.items())
+    return []
+
+
+def _extract_callable(obj: Any) -> Any:
+    for attr in ("func", "function", "callable", "handler", "wrapped", "_func", "fn"):
+        try:
+            val = getattr(obj, attr)
+            if callable(val):
+                return val
+        except Exception:
+            continue
+    return obj if callable(obj) else None
+
+
+def _merge_shared_defs(schema: Dict[str, Any], shared_defs: Dict[str, Any]) -> None:
+    if "$defs" not in schema or not isinstance(schema.get("$defs"), dict):
+        schema["$defs"] = {}
+    schema["$defs"].update({k: v for k, v in shared_defs.items() if k not in schema["$defs"]})
+    schema["$defs"].update({k: v for k, v in _complex_defs().items() if k not in schema["$defs"]})
+
+
+def _summarize_description(text: str) -> str:
+    for line in str(text or "").splitlines():
+        compact = " ".join(line.split())
+        if compact:
+            return compact
+    return ""
+
+
+def _dedupe_union_options(options: list[Any]) -> list[Any]:
+    seen: set[str] = set()
+    deduped: list[Any] = []
+    for option in options:
+        key = repr(option)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(option)
+    option_types = {
+        opt.get("type")
+        for opt in deduped
+        if isinstance(opt, dict) and isinstance(opt.get("type"), str)
+    }
+    if "integer" in option_types and "number" in option_types:
+        deduped = [
+            opt
+            for opt in deduped
+            if not (isinstance(opt, dict) and opt.get("type") == "integer" and set(opt.keys()) == {"type"})
+        ]
+    return deduped
+
+
+def _strip_schema_noise(value: Any, *, drop_descriptions: bool) -> Any:
+    if isinstance(value, dict):
+        cleaned: Dict[str, Any] = {}
+        for key, item in value.items():
+            if key == "title":
+                continue
+            if key == "description" and drop_descriptions:
+                continue
+            if key == "default" and item is None:
+                continue
+            if key == "additionalProperties" and item is True:
+                continue
+            child = _strip_schema_noise(item, drop_descriptions=drop_descriptions)
+            if key in {"anyOf", "oneOf"} and isinstance(child, list):
+                child = _dedupe_union_options(child)
+            cleaned[key] = child
+        if isinstance(cleaned.get("required"), list) and not cleaned["required"]:
+            cleaned.pop("required", None)
+        return cleaned
+    if isinstance(value, list):
+        return [_strip_schema_noise(item, drop_descriptions=drop_descriptions) for item in value]
+    return value
+
+
+def _compact_optional_property_schema(schema: Dict[str, Any]) -> Dict[str, Any]:
+    updated = dict(schema)
+    for union_key in ("anyOf", "oneOf"):
+        options = updated.get(union_key)
+        if not isinstance(options, list):
+            continue
+        non_null = [
+            option
+            for option in options
+            if not (isinstance(option, dict) and option.get("type") == "null" and set(option.keys()) == {"type"})
+        ]
+        non_null = _dedupe_union_options(non_null)
+        if len(non_null) == len(options):
+            continue
+        if len(non_null) == 1:
+            collapsed = dict(non_null[0]) if isinstance(non_null[0], dict) else non_null[0]
+            if isinstance(collapsed, dict):
+                for key, value in updated.items():
+                    if key != union_key:
+                        collapsed.setdefault(key, value)
+            return collapsed if isinstance(collapsed, dict) else updated
+        updated[union_key] = non_null
+    return updated
+
+
+def _compact_schema_shape(schema: Dict[str, Any]) -> Dict[str, Any]:
+    compact = _strip_schema_noise(copy.deepcopy(schema), drop_descriptions=True)
+    params_obj = _schema_obj(compact)
+    props = params_obj.get("properties", {}) if isinstance(params_obj, dict) else {}
+    required = set(params_obj.get("required", [])) if isinstance(params_obj, dict) else set()
+    if isinstance(props, dict):
+        for name, prop in list(props.items()):
+            if isinstance(prop, dict) and name not in required:
+                props[name] = _compact_optional_property_schema(prop)
+    return compact
+
+
+def _collect_schema_refs(value: Any, refs: set[str], *, skip_defs: bool) -> None:
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if key == "$defs" and skip_defs:
+                continue
+            if key == "$ref" and isinstance(item, str) and item.startswith("#/$defs/"):
+                refs.add(item.rsplit("/", 1)[-1])
+                continue
+            _collect_schema_refs(item, refs, skip_defs=skip_defs)
+        return
+    if isinstance(value, list):
+        for item in value:
+            _collect_schema_refs(item, refs, skip_defs=skip_defs)
+
+
+def _prune_unused_defs(schema: Dict[str, Any]) -> Dict[str, Any]:
+    defs = schema.get("$defs")
+    if not isinstance(defs, dict):
+        return schema
+
+    used: set[str] = set()
+    _collect_schema_refs(schema, used, skip_defs=True)
+    pending = list(used)
+    while pending:
+        ref_name = pending.pop()
+        definition = defs.get(ref_name)
+        if not isinstance(definition, dict):
+            continue
+        nested: set[str] = set()
+        _collect_schema_refs(definition, nested, skip_defs=False)
+        for child in sorted(nested - used):
+            used.add(child)
+            pending.append(child)
+
+    if not used:
+        schema.pop("$defs", None)
+        return schema
+
+    schema["$defs"] = {name: defs[name] for name in defs if name in used}
+    return schema
+
+
+def _build_internal_schema(public_schema: Dict[str, Any]) -> Dict[str, Any]:
+    internal_schema: Dict[str, Any] = {
+        "parameters": copy.deepcopy({k: v for k, v in public_schema.items() if k != "$defs"})
+    }
+    if isinstance(public_schema.get("$defs"), dict):
+        internal_schema["$defs"] = copy.deepcopy(public_schema["$defs"])
+    _apply_param_hints(internal_schema)
+    return internal_schema
+
+
 def attach_schemas_to_tools(mcp: Any, shared_enums: Dict[str, Any]) -> None:
     """Attach enriched JSON Schemas to registered MCP tools on the given server."""
     try:
-        registry = get_mcp_registry(mcp)
-        if not registry:
+        registry = get_mcp_registry(mcp) or {}
+        manager_tools = dict(_iter_manager_tools(mcp))
+        if not registry and not manager_tools:
             return
+
         shared_defs = server_shared_defs(shared_enums)
-        for name, obj in list(registry.items()):
-            func = None
-            for attr in ("func", "function", "callable", "handler", "wrapped", "_func"):
-                try:
-                    val = getattr(obj, attr)
-                    if callable(val):
-                        func = val
-                        break
-                except Exception:
-                    continue
-            if func is None:
-                func = obj if callable(obj) else None
+        all_names = sorted(set(registry.keys()) | set(manager_tools.keys()))
+
+        for name in all_names:
+            obj = registry.get(name)
+            manager_tool = manager_tools.get(name)
+            func = _extract_callable(obj) or _extract_callable(manager_tool)
             if not callable(func):
                 continue
+
             info = _get_function_info(func)
-            schema = _build_minimal_schema(info)
-            schema = _enrich_schema_with_shared_defs(schema, info)
-            def _update_defs() -> None:
-                if "$defs" not in schema:
-                    schema["$defs"] = {}
-                schema["$defs"].update({k: v for k, v in shared_defs.items() if k not in schema["$defs"]})
-                schema["$defs"].update({k: v for k, v in _complex_defs().items() if k not in schema["$defs"]})
+            public_schema = getattr(manager_tool, "parameters", None)
+            if not isinstance(public_schema, dict) or not public_schema:
+                public_schema = _build_minimal_schema(info)
+                public_schema = _enrich_schema_with_shared_defs(public_schema, info)
+                public_schema = copy.deepcopy(_schema_obj(public_schema))
+            else:
+                public_schema = copy.deepcopy(public_schema)
 
-            _safe_schema_op(f"update_defs:{name}", _update_defs)
+            _safe_schema_op(
+                f"update_public_defs:{name}",
+                lambda: _merge_shared_defs(public_schema, shared_defs),
+            )
+            _safe_schema_op(
+                f"patch_public_params:{name}",
+                lambda: [patcher(public_schema) for patcher in _TOOL_SCHEMA_PATCHERS.get(name, ())],
+            )
 
-            def _patch_params() -> None:
-                for patcher in _TOOL_SCHEMA_PATCHERS.get(name, ()):
-                    patcher(schema)
-            _safe_schema_op(f"patch_params:{name}", _patch_params)
-            _apply_param_hints(schema)
-            _safe_schema_op(f"set_obj_schema:{name}", lambda: setattr(obj, "schema", schema))
-            _safe_schema_op(f"set_func_schema:{name}", lambda: setattr(func, "schema", schema))
+            public_schema = _compact_schema_shape(public_schema)
+            public_schema = _prune_unused_defs(public_schema)
+            internal_schema = _build_internal_schema(public_schema)
+
+            concise_description = _summarize_description(
+                str(getattr(manager_tool, "description", None) or info.get("doc") or "")
+            )
+
+            if manager_tool is not None:
+                _safe_schema_op(
+                    f"set_public_schema:{name}",
+                    lambda: setattr(manager_tool, "parameters", copy.deepcopy(public_schema)),
+                )
+                if concise_description:
+                    _safe_schema_op(
+                        f"set_public_description:{name}",
+                        lambda: setattr(manager_tool, "description", concise_description),
+                    )
+
+            if obj is not None:
+                _safe_schema_op(
+                    f"set_obj_schema:{name}",
+                    lambda: setattr(obj, "schema", copy.deepcopy(internal_schema)),
+                )
+                if concise_description:
+                    _safe_schema_op(
+                        f"set_obj_description:{name}",
+                        lambda: setattr(obj, "description", concise_description),
+                    )
+
+            _safe_schema_op(
+                f"set_func_schema:{name}",
+                lambda: setattr(func, "schema", copy.deepcopy(internal_schema)),
+            )
+            if concise_description:
+                _safe_schema_op(
+                    f"set_func_description:{name}",
+                    lambda: setattr(func, "description", concise_description),
+                )
     except Exception:
         pass

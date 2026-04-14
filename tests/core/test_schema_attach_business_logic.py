@@ -52,8 +52,8 @@ def test_attach_schemas_to_tools_patches_forecast_generate(monkeypatch) -> None:
     schema = tool_obj.schema
     params = schema["parameters"]["properties"]
     assert params["quantity"] == {"$ref": "#/$defs/QuantitySpec"}
-    assert params["denoise"] == {"anyOf": [{"$ref": "#/$defs/DenoiseSpec"}, {"type": "null"}]}
-    assert params["params"] == {"type": "object", "additionalProperties": True}
+    assert params["denoise"] == {"$ref": "#/$defs/DenoiseSpec"}
+    assert params["params"] == {"type": "object"}
     assert tool_func.schema == schema
     assert len(apply_calls) == 1
 
@@ -78,9 +78,9 @@ def test_attach_schemas_to_tools_patches_indicator_and_data_refs(monkeypatch) ->
     indicator_any_of = params["indicators"]["anyOf"]
     assert {"type": "array", "items": {"$ref": "#/$defs/IndicatorSpec"}} in indicator_any_of
     assert any(option.get("type") == "string" for option in indicator_any_of)
-    assert {"type": "null"} in indicator_any_of
-    assert params["denoise"] == {"anyOf": [{"$ref": "#/$defs/DenoiseSpec"}, {"type": "null"}]}
-    assert params["simplify"] == {"anyOf": [{"$ref": "#/$defs/SimplifySpec"}, {"type": "null"}]}
+    assert {"type": "null"} not in indicator_any_of
+    assert params["denoise"] == {"$ref": "#/$defs/DenoiseSpec"}
+    assert params["simplify"] == {"$ref": "#/$defs/SimplifySpec"}
 
     indicator_obj, _indicator_func, _apply_calls = _attach_tool_schema(
         monkeypatch,
@@ -159,5 +159,4 @@ def test_attach_schemas_to_tools_patches_trade_place(monkeypatch) -> None:
     assert params["expiration"]["anyOf"] == [
         {"type": "string"},
         {"type": "number"},
-        {"type": "null"},
     ]
