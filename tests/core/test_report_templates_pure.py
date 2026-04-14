@@ -831,6 +831,46 @@ class TestTemplateBasic:
     @patch(f"{_BASIC_MODULE}._get_raw_result")
     @patch(f"{_BASIC_MODULE}.now_utc_iso", return_value="2024-01-15T00:00:00Z")
     @patch(f"{_BASIC_MODULE}.parse_table_tail")
+    @patch(f"{_BASIC_MODULE}.pick_best_forecast_method", return_value=None)
+    @patch(f"{_BASIC_MODULE}.summarize_barrier_grid")
+    @patch(f"{_BASIC_MODULE}.attach_multi_timeframes")
+    def test_basic_backtest_spacing_is_clamped_to_horizon(
+        self, mock_mtf, mock_sum_bar, mock_pick, mock_tail,
+        mock_now, mock_raw,
+    ):
+        mock_tail.return_value = _mock_candle_data()["rows"][-10:]
+        mock_sum_bar.return_value = {"best": {}}
+        backtest_calls = []
+
+        def raw_side_effect(func, *args, **kwargs):
+            name = func.__name__ if hasattr(func, "__name__") else str(func)
+            if "candle" in name.lower() or "data_fetch" in name.lower():
+                return _mock_candle_data()
+            if "pivot" in name.lower():
+                return _mock_pivot_data()
+            if "volatility" in name.lower():
+                return _mock_vol_data()
+            if "backtest" in name.lower():
+                backtest_calls.append(kwargs)
+                return {"results": {}}
+            if "barrier" in name.lower():
+                return _mock_barrier_data()
+            if "pattern" in name.lower():
+                return _mock_patterns_data()
+            return {"data": "ok"}
+
+        mock_raw.side_effect = raw_side_effect
+
+        from mtdata.core.report_templates.basic import template_basic
+
+        _ = template_basic("EURUSD", 12, None, {})
+
+        assert backtest_calls[0]["steps"] == 25
+        assert backtest_calls[0]["spacing"] == 12
+
+    @patch(f"{_BASIC_MODULE}._get_raw_result")
+    @patch(f"{_BASIC_MODULE}.now_utc_iso", return_value="2024-01-15T00:00:00Z")
+    @patch(f"{_BASIC_MODULE}.parse_table_tail")
     @patch(f"{_BASIC_MODULE}.pick_best_forecast_method")
     @patch(f"{_BASIC_MODULE}.summarize_barrier_grid")
     @patch(f"{_BASIC_MODULE}.attach_multi_timeframes")
