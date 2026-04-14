@@ -2595,6 +2595,23 @@ class TestAddDynamicArguments:
         compact_action = next(action for action in parser._actions if action.dest == "compact")
         assert "--require-dom" in compact_action.option_strings
 
+    def test_wait_event_prefers_symbol_and_hides_instrument_alias(self):
+        parser = argparse.ArgumentParser()
+        func_info = {
+            "params": [
+                {"name": "symbol", "type": str, "required": False, "default": None},
+                {"name": "instrument", "type": str, "required": False, "default": None},
+            ]
+        }
+
+        add_dynamic_arguments(parser, func_info, cmd_name="wait_event")
+
+        assert parser.parse_args(["EURUSD"]).symbol == "EURUSD"
+        assert not any(
+            action.dest == "instrument" and action.help != argparse.SUPPRESS
+            for action in parser._actions
+        )
+
     def test_labels_triple_barrier_keeps_summary_only_detail_alias_without_duplicate_flag(self):
         parser = argparse.ArgumentParser()
         func_info = {

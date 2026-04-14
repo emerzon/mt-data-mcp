@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from unittest.mock import patch
 
 from mtdata.core.data.requests import WaitEventRequest
 
@@ -198,3 +199,39 @@ def test_wait_event_request_preserves_distinct_candle_close_boundaries() -> None
         ("candle_close", "M15"),
         ("candle_close", "M5"),
     ]
+
+
+def _raw_wait_event():
+    from mtdata.core.data import wait_event
+
+    return wait_event.__wrapped__
+
+
+@patch("mtdata.core.data.get_mt5_gateway", return_value=object())
+@patch("mtdata.core.data._compact_wait_event_public_result", side_effect=lambda result, **_: result)
+@patch("mtdata.core.data.run_wait_event", return_value={"success": True})
+def test_wait_event_prefers_public_symbol_name(mock_run_wait, _mock_compact, _mock_gateway) -> None:
+    result = _raw_wait_event()(symbol="EURUSD", watch_for=[])
+
+    assert result == {"success": True}
+    request = mock_run_wait.call_args.args[0]
+    assert request.symbol == "EURUSD"
+
+
+@patch("mtdata.core.data.get_mt5_gateway", return_value=object())
+@patch("mtdata.core.data._compact_wait_event_public_result", side_effect=lambda result, **_: result)
+@patch("mtdata.core.data.run_wait_event", return_value={"success": True})
+def test_wait_event_keeps_instrument_alias_for_compatibility(mock_run_wait, _mock_compact, _mock_gateway) -> None:
+    result = _raw_wait_event()(instrument="EURUSD", watch_for=[])
+
+    assert result == {"success": True}
+    request = mock_run_wait.call_args.args[0]
+    assert request.symbol == "EURUSD"
+
+
+def test_wait_event_rejects_conflicting_symbol_and_instrument() -> None:
+    result = _raw_wait_event()(symbol="EURUSD", instrument="GBPUSD", watch_for=[])
+
+    assert result == {
+        "error": "Provide either symbol or instrument, not both with different values."
+    }

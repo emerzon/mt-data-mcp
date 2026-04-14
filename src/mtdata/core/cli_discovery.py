@@ -18,6 +18,7 @@ _OPTIONAL_FIRST_POSITIONAL_PARAMS: set[tuple[str, str]] = {
     ("correlation_matrix", "symbols"),
     ("cointegration_test", "symbols"),
     ("market_scan", "symbols"),
+    ("wait_event", "symbol"),
 }
 
 _COMMAND_PARAM_CHOICE_OVERRIDES: Dict[tuple[str, str], list[str]] = {
@@ -48,6 +49,7 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("report_generate", "format"): "Output format: formatted text or markdown.",
     ("trade_modify", "expiration"): "Pending order expiration time (dateparser string, UTC epoch seconds, or GTC token).",
     ("trade_place", "expiration"): "Pending order expiration time (dateparser string, UTC epoch seconds, or GTC token).",
+    ("wait_event", "symbol"): "Trading symbol (e.g. EURUSD).",
 }
 
 _VOLATILITY_METHOD_LITERAL_MARKERS = {
@@ -126,6 +128,8 @@ def _split_visible_and_hidden_flags(*flags: str) -> tuple[tuple[str, ...], tuple
 def should_expose_cli_param(*, cmd_name: Optional[str], param_name: str) -> bool:
     """Return whether a function parameter should surface as a user CLI argument."""
     if str(cmd_name or "") == "labels_triple_barrier" and str(param_name or "") == "summary_only":
+        return False
+    if str(cmd_name or "") == "wait_event" and str(param_name or "") == "instrument":
         return False
     return True
 

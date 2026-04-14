@@ -370,14 +370,15 @@ def data_fetch_ticks(
 
 @mcp.tool()
 def wait_event(
-    instrument: str,
+    symbol: Optional[str] = None,
+    instrument: Optional[str] = None,
     timeframe: TimeframeLiteral = "M1",
     watch_tick_count_spike: bool = True,
     watch_for: Optional[List[Dict[str, Any]]] = None,
     end_on: Optional[List[Dict[str, Any]]] = None,
     verbose: bool = False,
 ) -> Dict[str, Any]:
-    """Wait for watch events on an instrument until the next timeframe boundary.
+    """Wait for watch events on a symbol until the next timeframe boundary.
 
     If `watch_for` is omitted, the public default watches the full event set:
     order/position lifecycle events, pending/stop proximity, volatility/activity
@@ -397,21 +398,35 @@ def wait_event(
     Set `verbose=true` to include polling/timing details and the full criteria
     echo in the response.
     """
-    request_kwargs: Dict[str, Any] = {
-        "symbol": instrument,
-        "timeframe": timeframe,
-    }
-    if end_on is not None:
-        request_kwargs["end_on"] = list(end_on)
+    symbol_value = str(symbol or "").strip()
+    instrument_value = str(instrument or "").strip()
+    resolved_symbol: Optional[str]
+    symbol_error: Optional[str] = None
+    if symbol_value and instrument_value and symbol_value != instrument_value:
+        resolved_symbol = None
+        symbol_error = "Provide either symbol or instrument, not both with different values."
+    else:
+        resolved_symbol = symbol_value or instrument_value or None
+        if resolved_symbol is None:
+            symbol_error = "A symbol is required."
 
     def _run() -> Dict[str, Any]:
+        if symbol_error is not None:
+            return {"error": symbol_error}
+        assert resolved_symbol is not None
         explicit_watch_for = watch_for is not None
         explicit_end_on = end_on is not None
+        request_kwargs: Dict[str, Any] = {
+            "symbol": resolved_symbol,
+            "timeframe": timeframe,
+        }
+        if end_on is not None:
+            request_kwargs["end_on"] = list(end_on)
         resolved_watch_for = (
             list(watch_for)
             if explicit_watch_for
             else _build_default_wait_event_watchers(
-                instrument=instrument,
+                instrument=resolved_symbol,
                 timeframe=timeframe,
                 watch_tick_count_spike=watch_tick_count_spike,
             )
@@ -436,7 +451,8 @@ def wait_event(
     return run_logged_operation(
         logger,
         operation="wait_event",
-        instrument=instrument,
+        symbol=resolved_symbol,
+        instrument_alias_used=bool(not symbol_value and instrument_value),
         timeframe=timeframe,
         watch_tick_count_spike=watch_tick_count_spike,
         verbose=verbose,
