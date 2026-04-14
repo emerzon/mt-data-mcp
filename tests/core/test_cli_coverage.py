@@ -573,6 +573,114 @@ class TestFormatResultForCli:
         assert "time_epoch: 1700000000" in result
         assert "time_display" not in result
 
+    def test_trade_session_context_json_compacts_nested_sections(self):
+        payload = json.loads(
+            _format_result_for_cli(
+                {
+                    "success": True,
+                    "symbol": "EURUSD",
+                    "state": "open_position",
+                    "account": {
+                        "success": True,
+                        "balance": 10000.0,
+                        "equity": 10010.0,
+                        "margin_level": 250.0,
+                        "terminal_connected": True,
+                        "execution_ready": True,
+                    },
+                    "open_positions": {
+                        "success": True,
+                        "kind": "open_positions",
+                        "count": 1,
+                        "items": [
+                            {
+                                "Ticket": 123456,
+                                "Time": "2023-11-14 22:13",
+                                "Type": "BUY",
+                                "Volume": 0.1,
+                                "Open Price": 1.1,
+                                "Current Price": 1.1004,
+                                "SL": 1.095,
+                                "TP": 1.11,
+                                "Profit": 4.2,
+                            }
+                        ],
+                    },
+                    "pending_orders": {
+                        "success": True,
+                        "kind": "pending_orders",
+                        "count": 0,
+                        "message": "No pending orders for EURUSD",
+                        "no_action": True,
+                    },
+                    "ticker": {
+                        "success": True,
+                        "symbol": "EURUSD",
+                        "time": 1700000000,
+                        "time_display": "2023-11-14 22:13",
+                        "bid": 1.1,
+                        "ask": 1.1002,
+                        "spread": 0.0002,
+                    },
+                },
+                fmt="json",
+                verbose=False,
+                cmd_name="trade_session_context",
+            )
+        )
+
+        assert payload["account"] == {
+            "balance": 10000.0,
+            "equity": 10010.0,
+            "margin_level": 250.0,
+        }
+        assert payload["ticker"]["time"] == "2023-11-14 22:13"
+        assert "time_display" not in payload["ticker"]
+        assert "time_epoch" not in payload["ticker"]
+        assert payload["open_positions"] == [
+            {
+                "ticket": 123456,
+                "time": "2023-11-14 22:13",
+                "type": "BUY",
+                "volume": 0.1,
+                "open_price": 1.1,
+                "current_price": 1.1004,
+                "sl": 1.095,
+                "tp": 1.11,
+                "profit": 4.2,
+            }
+        ]
+        assert "pending_orders" not in payload
+
+    def test_trade_session_context_verbose_toon_keeps_full_sections_and_ticker_epoch(self):
+        result = _format_result_for_cli(
+            {
+                "success": True,
+                "symbol": "EURUSD",
+                "state": "flat",
+                "open_positions": {
+                    "success": True,
+                    "kind": "open_positions",
+                    "count": 0,
+                    "message": "No open positions for EURUSD",
+                    "no_action": True,
+                },
+                "ticker": {
+                    "success": True,
+                    "time": 1700000000,
+                    "time_display": "2023-11-14 22:13",
+                },
+            },
+            fmt="toon",
+            verbose=True,
+            cmd_name="trade_session_context",
+        )
+
+        assert 'time: "2023-11-14 22:13"' in result
+        assert "time_epoch: 1700000000" in result
+        assert "open_positions:" in result
+        assert "message: No open positions for EURUSD" in result
+
     def test_symbols_describe_compact_view_hides_time_epoch(self):
         result = _format_result_for_cli(
             {

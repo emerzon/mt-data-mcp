@@ -313,6 +313,128 @@ def _normalize_market_ticker_cli_payload(result: Any, *, verbose: bool) -> Any:
     return out
 
 
+def _compact_trade_session_items(
+    section: Any,
+    *,
+    field_map: tuple[tuple[str, str], ...],
+) -> Optional[list[Dict[str, Any]]]:
+    if not isinstance(section, dict):
+        return None
+    items = section.get("items")
+    if not isinstance(items, list) or not items:
+        return None
+
+    rows: list[Dict[str, Any]] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        compact = {
+            out_key: item.get(in_key)
+            for out_key, in_key in field_map
+            if in_key in item and not _is_empty_value(item.get(in_key))
+        }
+        if compact:
+            rows.append(compact)
+    return rows or None
+
+
+def _normalize_trade_session_context_cli_payload(result: Any, *, verbose: bool) -> Any:
+    if not isinstance(result, dict):
+        return result
+
+    out = dict(result)
+    ticker_in = out.get("ticker")
+    if isinstance(ticker_in, dict):
+        ticker_norm = _normalize_market_ticker_cli_payload(ticker_in, verbose=verbose)
+        if verbose:
+            out["ticker"] = ticker_norm
+        else:
+            compact_ticker = {
+                key: ticker_norm.get(key)
+                for key in ("bid", "ask", "last", "spread", "spread_points", "spread_pct", "spread_usd", "time")
+                if key in ticker_norm and not _is_empty_value(ticker_norm.get(key))
+            }
+            if "error" in ticker_norm and not _is_empty_value(ticker_norm.get("error")):
+                compact_ticker = {"error": ticker_norm.get("error")}
+            if compact_ticker:
+                out["ticker"] = compact_ticker
+            else:
+                out.pop("ticker", None)
+
+    if verbose:
+        return out
+
+    compact_out: Dict[str, Any] = {}
+    for key in ("success", "symbol", "state"):
+        value = out.get(key)
+        if not _is_empty_value(value):
+            compact_out[key] = value
+
+    account_in = out.get("account")
+    if isinstance(account_in, dict):
+        if "error" in account_in and not _is_empty_value(account_in.get("error")):
+            compact_out["account"] = {"error": account_in.get("error")}
+        else:
+            account_out = {
+                key: account_in.get(key)
+                for key in ("balance", "equity", "margin_level")
+                if key in account_in and not _is_empty_value(account_in.get(key))
+            }
+            if account_in.get("execution_ready") is False:
+                account_out["execution_ready"] = False
+            if account_out:
+                compact_out["account"] = account_out
+
+    if "ticker" in out:
+        compact_out["ticker"] = out["ticker"]
+
+    open_positions_in = out.get("open_positions")
+    if isinstance(open_positions_in, dict):
+        if "error" in open_positions_in and not _is_empty_value(open_positions_in.get("error")):
+            compact_out["open_positions"] = {"error": open_positions_in.get("error")}
+        else:
+            compact_rows = _compact_trade_session_items(
+                open_positions_in,
+                field_map=(
+                    ("ticket", "Ticket"),
+                    ("time", "Time"),
+                    ("type", "Type"),
+                    ("volume", "Volume"),
+                    ("open_price", "Open Price"),
+                    ("current_price", "Current Price"),
+                    ("sl", "SL"),
+                    ("tp", "TP"),
+                    ("profit", "Profit"),
+                ),
+            )
+            if compact_rows:
+                compact_out["open_positions"] = compact_rows
+
+    pending_orders_in = out.get("pending_orders")
+    if isinstance(pending_orders_in, dict):
+        if "error" in pending_orders_in and not _is_empty_value(pending_orders_in.get("error")):
+            compact_out["pending_orders"] = {"error": pending_orders_in.get("error")}
+        else:
+            compact_rows = _compact_trade_session_items(
+                pending_orders_in,
+                field_map=(
+                    ("ticket", "Ticket"),
+                    ("time", "Time"),
+                    ("expiration", "Expiration"),
+                    ("type", "Type"),
+                    ("volume", "Volume"),
+                    ("open_price", "Open Price"),
+                    ("current_price", "Current Price"),
+                    ("sl", "SL"),
+                    ("tp", "TP"),
+                ),
+            )
+            if compact_rows:
+                compact_out["pending_orders"] = compact_rows
+
+    return compact_out
+
+
 def _normalize_symbols_describe_cli_payload(result: Any, *, verbose: bool) -> Any:
     if not isinstance(result, dict):
         return result
@@ -400,6 +522,8 @@ def _prepare_cli_payload(result: Any, *, fmt: str, verbose: bool, cmd_name: str)
     prepared = result
     if cmd_name == "market_ticker":
         prepared = _normalize_market_ticker_cli_payload(prepared, verbose=verbose)
+    elif cmd_name == "trade_session_context":
+        prepared = _normalize_trade_session_context_cli_payload(prepared, verbose=verbose)
     elif cmd_name == "symbols_describe":
         prepared = _normalize_symbols_describe_cli_payload(prepared, verbose=verbose)
 
