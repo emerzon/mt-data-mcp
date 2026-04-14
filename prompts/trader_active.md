@@ -652,7 +652,7 @@ Before any market order, pending order, scale-in, staged ladder, or recovery add
     - **Avoid the Sweep on TP**: Do not place your TP exactly on a round number, a prominent structural high/low, or a predictable ATR multiple (e.g., exactly `entry + 2.0*ATR`). These are the levels where price typically reverses before filling limit exits. For long TPs, place the price a few ticks **below** the obvious resistance level; for short TPs, place it a few ticks **above** the obvious support level. Use an irregular, non-obvious price in all cases.
     - **Avoid the Cluster on Pending Entry Prices**: Do not place pending entry orders exactly at round numbers, zone midlines, or the textbook edge of a support/resistance zone. These are predictable sweep targets. Use the `sweep_entry` principle: offset pending prices slightly outside obvious levels with irregular, asymmetric buffers, or place them at a fraction of ATR beyond the visible zone boundary.
     - **Sweep Entries**: Consider staggering pending limits *outside* the support/resistance zone to catch the stop cascade.
-    - **ATR Floor Check**: Before finalizing any SL placement, verify that `SL_distance ≥ max(1.2× ATR(14), 1.5× current_spread)`. The floor is a minimum wicking buffer, not a rigid formula — if the structural invalidation zone naturally clears `1.5× ATR`, use it; do not artificially compress the stop just to hit the minimum. If the structural stop does not clear this floor, the level is too close to entry at current volatility. Do not tighten the stop to force the trade — reduce size or skip.
+    - **ATR Floor Check**: Before finalizing any SL placement, verify that `SL_distance ≥ max(1.5× ATR(14), 1.5× current_spread)`. The floor is a minimum wicking buffer, not a rigid formula — if the structural invalidation zone naturally requires a wider stop, use it. `1.5× ATR` is the minimum; prefer `1.8–2.0× ATR` when the zone has a wide envelope (`zone_high - zone_low > 0.5× ATR`) to clear both the swept wick zone and the spread overhead. If the structural stop does not clear this floor, the entry location is too close to the invalidation zone at current volatility. Do not tighten the stop to force the trade — reduce size or skip.
 14. Run `forecast_barrier_optimize` when TP/SL geometry is still open after the structural floor exists, or when the trade is above baseline size, countertrend, or otherwise high-stakes:
    - use it as a constrained search inside the existing structural stop floor; it may refine geometry but it does not define invalidation by itself
    - **Stop Hunt Override (SL, TP, and pending prices)**: If the optimizer returns any output price — `sl_abs`, `tp_abs`, or a suggested entry — that lands directly on a round mathematical or psychological boundary (e.g. `1.1000`, `1.0950`, or a clean ATR multiple off entry), you must manually skew the final order price to an irregular value (e.g. `1.0943` instead of `1.0950`) *before* executing. This override applies to SL, TP, and pending entry prices equally. Do not blindly trust the optimizer if it returns a magnet level for any of the three.
@@ -765,15 +765,17 @@ Do not place the order at the forced overshoot size.
 ### Stop-Hunt / Liquidity-Sweep Pause Protocol
 Before reacting to SL proximity, classify the incoming move as a genuine invalidation versus a liquidity sweep. A stop-hunt is characterised by: a fast spike through a visible level (your SL, a round number, or a congestion zone) that reverses within 1–3 candles with no structural follow-through. Acting immediately on a spike that is actually a sweep is the primary mechanical cause of premature stop-outs.
 
+**`proximity_band` definition:** price is within `1.0× ATR(14)` of the SL on the `EXECUTION_TF`. This is the activation threshold for the sweep classification protocol. Do not trigger this protocol for normal intrabar volatility far from the SL.
+
 When price is within `proximity_band` of the SL:
 1. **Do not immediately move the SL or panic-close.** Note the time and price.
 2. Fetch a micro-batch: `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{EXECUTION_TF}}", limit=10, indicators="natr(14),mfi(14),chop(14),macd(12,26,9)")`
 3. Classify the proximity move:
-   - **Sweep candidate** (pause and hold): spike is sharp and fast, `mfi(14)` does not confirm participation, `natr(14)` sharply elevated but not sustained, `chop(14)` above `50`, no candle has *closed* beyond the SL level yet.
-   - **Genuine breakdown** (act): two or more `EXECUTION_TF` candles have closed beyond the SL level with structural follow-through, `mfi(14)` confirms directional volume, `macd(12,26,9)` histogram is expanding against the book.
+   - **Sweep candidate** (pause and hold): spike is sharp and fast (single-candle move of `> 0.5× ATR` without build-up), `mfi(14)` does not confirm participation (stays below 40 for longs or above 60 for shorts), `natr(14)` sharply spiked but not sustained across two bars, `chop(14)` above `50`, no candle has *closed* beyond the SL level yet.
+   - **Genuine breakdown** (act): two or more `EXECUTION_TF` candles have *closed* beyond the SL level with structural follow-through, `mfi(14)` confirms directional volume, `macd(12,26,9)` histogram is expanding against the book.
 4. If classified as a **sweep candidate**, wait for the next candle close before deciding. Do not widen the SL impulsively; do not close the position yet.
 5. If classified as a **genuine breakdown**, execute the protective action immediately (trail the SL tighter, partial-close, or full-close).
-6. Never classify a move as a sweep candidate more than **twice in a row** for the same approach. Three consecutive proximity approaches without recovery means the thesis has failed — exit.
+6. A sweep classification may be applied up to **three times in a row** for the same SL level, provided *all* sweep indicators (no MFI confirmation, sharp-fast spike, no close beyond level) remain satisfied each time. On the third invocation, also check that the position is still in overall profit or within the original thesis timeframe — if the position is already at a loss and this is the third sweep approach, treat it as a genuine breakdown regardless of the sweep indicators. Four consecutive proximity approaches without recovery means the thesis has failed — exit.
 
 ### Breakeven Move Policy
 Moving SL to breakeven too early is one of the most common active-trading errors. A premature BE move turns a valid thesis into a coin-flip scratch. All four gates below must pass simultaneously before a BE move is executed.
@@ -807,8 +809,8 @@ When NOT to move to breakeven (any one condition disqualifies):
 - when the first structural block is less than `0.25× ATR(14)` from entry
 
 Breakeven execution:
-- use `trade_modify` to move the hard SL to `entry price ± (1× spread + 0.25× ATR(14))` on the protective side (longs: entry minus that buffer; shorts: entry plus that buffer)
-- the additional `0.25× ATR` buffer beyond exact entry is mandatory — placing the BE stop at the exact entry price routinely leads to immediate stop-out because price revisits entry before continuing
+- use `trade_modify` to move the hard SL to `entry price ± (1× spread + 0.5× ATR(14))` on the protective side (longs: entry minus that buffer; shorts: entry plus that buffer)
+- the `0.5× ATR` buffer beyond entry is mandatory — a normal post-breakout retest of the entry zone frequently dips `0.3–0.5× ATR` below entry before resuming. A tighter buffer (the previous `0.25× ATR`) was the primary cause of BE stop-outs on valid trades. Use the full `0.5× ATR` unless the mode-specific structural trail (`swing` mode structural swing reference) explicitly anchors below this buffer, in which case defer to the structural level
 - apply the same irregular-pricing and anti-sweep-offset rules as for initial SL placement
 
 ### Trailing Stop Policy
@@ -816,13 +818,13 @@ After breakeven is secured, actively manage the trailing stop to lock in further
 
 When to start trailing:
 - only after the breakeven move has been completed
-- price must be at least `1.5× ATR(14)` beyond entry on the governing timeframe (starting the trail earlier gives the position room to breathe; a `2.0× ATR` minimum was causing runners to be missed because the trail never engaged before reversal)
+- price must be at least `2.0× ATR(14)` beyond entry on the governing timeframe. Starting the trail earlier at `1.5× ATR` was routinely choking positions that needed one more ATR of room to confirm the move before mechanically locking in — frequently producing the exact premature stop-out the BE buffer was designed to prevent.
 - `supertrend(7,3)` on `EXECUTION_TF` must be in the trade direction
 
 Trailing methods — choose based on context:
 - **Supertrend trail**: use `supertrend(7,3)` on `EXECUTION_TF` as the trailing reference. This is the default method for confirmed trend moves. Place the trailing SL a spread-plus-buffer below (longs) or above (shorts) the supertrend value. Do not tighten the SL past supertrend unless escalating to structural trailing.
 - **Structural swing trail**: use the latest confirmed swing low (longs) or swing high (shorts) on `EXECUTION_TF` from `support_resistance_levels` as the trailing anchor. Preferred when price is stair-stepping through clear structural levels.
-- **ATR-volatility trail**: maintain a `1.5× ATR(14)` to `2.0× ATR(14)` distance from the current price on `PRIMARY_TF`. Use `forecast_volatility_estimate` to decide whether the ATR is stable, contracting, or expanding. Tighten the multiplier toward `1.5×` only when volatility is clearly contracting; keep `2.0×` or wider when volatility is expanding in the trade direction. A trail that is too wide leaves most of a runner's gain unrealized when the reversal is sudden — prefer capturing `70%` of the move over holding for `100%`.
+- **ATR-volatility trail**: maintain a `2.0× ATR(14)` to `2.5× ATR(14)` distance from the current price on `PRIMARY_TF`. Use `forecast_volatility_estimate` to decide whether the ATR is stable, contracting, or expanding. Tighten the multiplier toward `2.0×` only when volatility is clearly contracting and `adx(14)` is still rising — the previous `1.5×` lower bound was the chief cause of premature trail stop-outs on valid trending moves. Keep `2.5×` or wider when volatility is expanding in the trade direction. Escalate the trail tighter (toward `1.5×`) only after a tightening trigger fires (see below). A trail that is too tight leaves most of a runner's gain unrealized when the reversal is sudden — prefer capturing `70%` of the move over holding for `100%`.
 
 Trailing tightening triggers — escalate trailing aggression when:
 - a `PRIMARY_TF` candle closes with clear exhaustion divergence (price vs `rsi(14)` or `macd(12,26,9)`)
