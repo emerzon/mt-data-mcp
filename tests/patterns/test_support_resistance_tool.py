@@ -116,6 +116,7 @@ def test_support_resistance_tool_compact_preserves_zone_overlap_and_fib_grid_met
          patch("mtdata.core.pivot.compute_support_resistance_payload", return_value=payload):
         result = fn("USDJPY", timeframe="H1", detail="compact")
 
+    assert result["detail"] == "compact"
     assert result["zone_overlap"]["current_price_in_overlap"] is True
     assert result["zone_overlap"]["overlap_width"] == 0.156
     assert result["fibonacci"]["fib_grid_coverage"] == "support_only"
@@ -225,6 +226,7 @@ def test_support_resistance_tool_full_detail_retains_support_and_resistance_list
             detail="full",
         )
 
+    assert result["detail"] == "full"
     assert len(result["supports"]) == 1
     assert len(result["resistances"]) == 1
     assert result["supports"][0]["type"] == "support"

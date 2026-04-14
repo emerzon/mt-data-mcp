@@ -1095,6 +1095,7 @@ class TestFormatResultForCli:
         result = _format_result_for_cli(
             {
                 "success": True,
+                "detail": "compact",
                 "symbol": "EURUSD",
                 "timeframe": "H1",
                 "mode": "auto",
@@ -1164,6 +1165,81 @@ class TestFormatResultForCli:
         assert "coverage_gaps" not in result
         assert "zone_overlap" not in result
         assert "show_all_hint" in result
+
+    def test_toon_format_surfaces_full_support_resistance_fields(self):
+        result = _format_result_for_cli(
+            {
+                "success": True,
+                "detail": "full",
+                "symbol": "EURUSD",
+                "timeframe": "H1",
+                "mode": "auto",
+                "method": "weighted_retests",
+                "current_price": 1.176,
+                "timeframes_analyzed": ["M15", "H1", "H4"],
+                "window": {"start": "2025-01-01", "end": "2025-01-02"},
+                "level_counts": {"support": 1, "resistance": 1, "total": 2},
+                "nearest": {
+                    "support": {
+                        "value": 1.174,
+                        "distance_pct": 0.0015,
+                        "touches": 6,
+                        "status": "role_reversed_support",
+                        "zone_high": 1.175,
+                    },
+                    "resistance": {
+                        "value": 1.177,
+                        "distance_pct": 0.0009,
+                        "touches": 3,
+                        "status": "resistance",
+                        "zone_high": 1.178,
+                    },
+                },
+                "levels": [
+                    {
+                        "type": "support",
+                        "value": 1.174,
+                        "distance_pct": 0.0015,
+                        "touches": 6,
+                        "status": "role_reversed_support",
+                        "zone_high": 1.175,
+                    },
+                    {
+                        "type": "resistance",
+                        "value": 1.177,
+                        "distance_pct": 0.0009,
+                        "touches": 3,
+                        "status": "resistance",
+                        "zone_high": 1.178,
+                    },
+                ],
+                "fibonacci": {
+                    "selected_timeframe": "D1",
+                    "selection_rule": "verbose-internals",
+                    "nearest": {
+                        "support": {"label": "127.2%", "value": 1.169, "distance_pct": -0.0059},
+                        "resistance": {"label": "23.6%", "value": 1.179, "distance_pct": 0.0022},
+                    },
+                    "levels": [
+                        {"label": "127.2%", "type": "support", "value": 1.169, "distance_pct": -0.0059},
+                        {"label": "23.6%", "type": "resistance", "value": 1.179, "distance_pct": 0.0022},
+                    ],
+                },
+                "coverage_gaps": {"support": {"threshold_pct": 0.12}},
+                "zone_overlap": {"has_overlap": False},
+                "qualification_basis": {"mode": "weighted_retests"},
+            },
+            fmt="toon",
+            verbose=False,
+            cmd_name="support_resistance_levels",
+        )
+
+        assert "detail: full" in result
+        assert "zone_high: 1.175" in result
+        assert "selection_rule: verbose-internals" in result
+        assert "coverage_gaps.support.threshold_pct: 0.12" in result
+        assert "qualification_basis.mode: weighted_retests" in result
+        assert "show_all_hint" not in result
 
     def test_toon_format_hides_trade_metadata_in_non_verbose_output(self):
         open_out = _format_result_for_cli(

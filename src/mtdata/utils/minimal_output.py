@@ -1402,6 +1402,10 @@ def _normalize_support_resistance_payload(
     if "error" in payload and not _is_empty_value(payload.get("error")):
         return {"error": payload.get("error")}
 
+    detail_value = str(payload.get("detail") or "compact").strip().lower()
+    if detail_value == "full":
+        return None
+
     out: Dict[str, Any] = {}
     for key in ("success", "symbol", "timeframe", "mode", "method", "current_price", "level_counts"):
         value = payload.get(key)

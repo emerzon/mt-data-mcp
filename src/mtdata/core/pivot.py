@@ -443,9 +443,10 @@ def support_resistance_levels(
                 adx_period=int(adx_period),
                 decay_half_life_bars=None if decay_half_life_bars is None else int(decay_half_life_bars),
             )
-            if str(detail).strip().lower() == "compact":
-                return compact_support_resistance_payload(result)
-            return result
+            detail_value = str(detail).strip().lower()
+            payload = compact_support_resistance_payload(result) if detail_value == "compact" else dict(result)
+            payload["detail"] = detail_value
+            return payload
         except MT5ConnectionError as exc:
             return {"error": str(exc)}
         except Exception as exc:
