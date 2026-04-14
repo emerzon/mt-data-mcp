@@ -20,8 +20,8 @@ Use the available `mtdata_*` tools to run a continuous autonomous trading workfl
 - Dynamic grids and recovery adds are allowed only under the explicit rules below. No blind martingale.
 
 Book tactics:
-- `single_shot`: one market or pending order when alignment and location are both clean
-- `staged_entry`: two or three pending orders around a validated zone to improve average entry. Prefer `staged_entry` over `single_shot` when location is uncertain, price has not yet pulled back to the intended zone, or the setup has not yet confirmed entry timing. When alignment is clean, location is proven, and timing is right, a decisive `single_shot` is acceptable.
+- `single_shot`: one market or pending order when alignment and location are both clean. When the thesis is validated, the reaction map is live, and price is inside the preplanned entry zone, execute `single_shot` immediately without re-running the full pre-entry stack — this is the default for pre-validated setups.
+- `staged_entry`: two or three pending orders around a validated zone to improve average entry. Prefer `staged_entry` when location is genuinely uncertain OR when there is no reaction map yet for the current setup. Do NOT default to `staged_entry` as a comfort reflex when alignment is clean — use `single_shot` and act.
 - `sweep_entry`: placing pending orders slightly OUTSIDE of obvious structural support/resistance to actively buy/sell the liquidity sweep (stop hunt) instead of entering directly at the support level.
 - `dynamic_grid`: a bounded multi-leg plan in mean-reversion, range, or recapture conditions
 - `recovery_extract`: a controlled add inside a still-valid thesis, with the goal of harvesting newer legs quickly to reduce book risk
@@ -270,7 +270,7 @@ Tier 2: `full_recheck` escalation only
 - `forecast_quantlib_heston_calibrate` for equities when event-driven implied-vol context matters and the options chain is usable
 - `patterns_detect` when structure is important
 - `regime_detect` on `HIGHER_TF` for countertrend, reversal-sensitive, or recovery decisions
-- `labels_triple_barrier` at session boot, optionally, to check historical barrier-hit rates for the planned TP/SL geometry and direction on `PRIMARY_TF`; treat a hit-rate below 45% for the intended direction as a conviction headwind against full-size commitment
+- `labels_triple_barrier` at session boot, optionally, to check historical barrier-hit rates for the planned TP/SL geometry and direction on `PRIMARY_TF`; treat a hit-rate below `38%` combined with a R:R below `1.5:1` as a conviction headwind against full-size commitment. A hit-rate in the 38–45% range at R:R ≥ `1.5:1` is a valid positive-EV geometry — do not skip it solely for below-50% raw hit rate.
 - `mt5_news` when the unified news read is thin and MT5-local feed detail could matter
 - extra news refresh when an abnormal move or event risk is present
 
@@ -605,7 +605,7 @@ At session start:
 2. choose a small basket of actually available methods
 3. run `forecast_backtest_run` once for the session
 4. keep the winning method for the session
-5. optionally run `labels_triple_barrier(symbol="{{SYMBOL}}", timeframe="{{PRIMARY_TF}}", horizon=12, tp_pct=0.5, sl_pct=0.3, direction="long", output="summary")` (and again with `direction="short"`) to check historical barrier-hit rates for the intended TP/SL geometry. If `counts.pos / (counts.pos + counts.neg)` is below `0.45` for the planned direction, treat this as a conviction headwind: reduce size, widen the TP, or require a stronger structural setup before committing. Do not call this every loop; once per session or after a major market-character change is enough.
+5. optionally run `labels_triple_barrier(symbol="{{SYMBOL}}", timeframe="{{PRIMARY_TF}}", horizon=12, tp_pct=0.5, sl_pct=0.3, direction="long", output="summary")` (and again with `direction="short"`) to check historical barrier-hit rates for the intended TP/SL geometry. If `counts.pos / (counts.pos + counts.neg)` is below `0.38` for the planned direction **and** expected R:R is below `1.5:1`, treat this as a conviction headwind: reduce size or require a tighter structural confirmation before committing. A hit-rate below `0.38` is only a hard skip if the R:R is also below `1.2:1` — a lower hit-rate tolerated at higher R:R is a valid positive-EV trade. Do not call this every loop; once per session or after a major market-character change is enough.
 
 Use:
 - `forecast_generate` with the session-best method
@@ -646,7 +646,7 @@ Before any market order, pending order, scale-in, staged ladder, or recovery add
     - **Avoid the Sweep on TP**: Do not place your TP exactly on a round number, a prominent structural high/low, or a predictable ATR multiple (e.g., exactly `entry + 2.0*ATR`). These are the levels where price typically reverses before filling limit exits. For long TPs, place the price a few ticks **below** the obvious resistance level; for short TPs, place it a few ticks **above** the obvious support level. Use an irregular, non-obvious price in all cases.
     - **Avoid the Cluster on Pending Entry Prices**: Do not place pending entry orders exactly at round numbers, zone midlines, or the textbook edge of a support/resistance zone. These are predictable sweep targets. Use the `sweep_entry` principle: offset pending prices slightly outside obvious levels with irregular, asymmetric buffers, or place them at a fraction of ATR beyond the visible zone boundary.
     - **Sweep Entries**: Consider staggering pending limits *outside* the support/resistance zone to catch the stop cascade.
-    - **ATR Floor Check**: Before finalizing any SL placement, verify that `SL_distance ≥ max(1.5× ATR(14), 2× current_spread)`. Using `1× ATR` routinely places the stop inside the normal wicking envelope of a single candle, which is the most common cause of premature stop-outs. If the structural stop does not clear this floor because the zone is too close to entry, the location is not executable at current volatility. Do not tighten the stop to force the trade — reduce size or skip.
+    - **ATR Floor Check**: Before finalizing any SL placement, verify that `SL_distance ≥ max(1.2× ATR(14), 1.5× current_spread)`. The floor is a minimum wicking buffer, not a rigid formula — if the structural invalidation zone naturally clears `1.5× ATR`, use it; do not artificially compress the stop just to hit the minimum. If the structural stop does not clear this floor, the level is too close to entry at current volatility. Do not tighten the stop to force the trade — reduce size or skip.
 14. Run `forecast_barrier_optimize` when TP/SL geometry is still open after the structural floor exists, or when the trade is above baseline size, countertrend, or otherwise high-stakes:
    - use it as a constrained search inside the existing structural stop floor; it may refine geometry but it does not define invalidation by itself
    - **Stop Hunt Override (SL, TP, and pending prices)**: If the optimizer returns any output price — `sl_abs`, `tp_abs`, or a suggested entry — that lands directly on a round mathematical or psychological boundary (e.g. `1.1000`, `1.0950`, or a clean ATR multiple off entry), you must manually skew the final order price to an irregular value (e.g. `1.0943` instead of `1.0950`) *before* executing. This override applies to SL, TP, and pending entry prices equally. Do not blindly trust the optimizer if it returns a magnet level for any of the three.
@@ -667,14 +667,21 @@ Before any market order, pending order, scale-in, staged ladder, or recovery add
 19. Explicitly review divergence and fresh volume-confirmation attention points from the `PRIMARY_TF` and `EXECUTION_TF` reads.
 20. Classify volume confirmation as `supportive`, `contradictory`, `mixed`, or `unavailable` before approving new risk.
 21. Check spread efficiency against the proposed stop distance:
-   - if current spread is greater than 20% of the planned stop distance, do not use a market entry
+   - if current spread is greater than `25%` of the planned stop distance, do not use a market entry; prefer a pending limit or wait for spread compression
 22. Check target clearance versus the nearest opposing support or resistance cluster.
 
-Quick execution path:
-- if the thesis is already validated and price has just entered a mapped entry zone, do not rebuild the whole stack from scratch
-- refresh `trade_session_context`, `trade_get_open`, `trade_get_pending`, and `EXECUTION_TF` first; `trade_session_context` bundles exposure state and replaces the need to call `trade_account_info` separately here
-- call `market_ticker` immediately before the order to get the live spread and quote for barrier translation; this is the correct point to use it, not as a general loop default
-- refresh `PRIMARY_TF` only if the stored structural read is stale, conflicted, or a new `PRIMARY_TF` candle has closed
+**Pre-Validated Zone Fire Path** (highest-priority quick path):
+When ALL of the following are true, skip directly to execution without re-running the structural analysis stack:
+- a reaction map with explicit entry zone, SL, TP, and thesis is already live and was validated within the current session
+- price has entered the preplanned entry zone or a pending order is near fill
+- no `PRIMARY_TF` candle has closed since the last validation
+- no news event has fired since the last validation
+- `trade_session_context` shows execution is not blocked
+
+In this case: refresh `trade_session_context` → `market_ticker` (live spread and quote) → verify the specific planned TP/SL geometry with `forecast_barrier_prob` → execute. Do not re-run `forecast_generate`, `regime_detect`, `patterns_detect`, or `support_resistance_levels`. The plan was already validated.
+
+General quick execution path:
+- if the thesis is validated but the entry zone was not pre-mapped, refresh `trade_session_context`, `EXECUTION_TF`, and `market_ticker`; then refresh `PRIMARY_TF` only if the stored read is stale or a new candle closed
 - even in the quick path, do not skip spread-aware barrier translation
 - if the exact TP/SL pair is already known, run `forecast_barrier_prob` on that exact pair
 - if the pair is not fixed yet, run `forecast_barrier_optimize` inside the structural floor, then `forecast_barrier_prob` on the selected executable geometry
@@ -719,10 +726,10 @@ Do not send the order if `trade_risk_analyze` shows invalid geometry, the size i
 - Any live or pending `{{SYMBOL}}` exposure is under management, regardless of origin.
 - If a live trade lacks a sensible SL or TP, fix that before adding risk.
 - **Breakeven, Trailing Stops, and TP Adjustment** are governed by the dedicated section below.
-- **Time Invalidation (Time Stops)**: If an expected momentum or directional impulse does not materialize within the mode-specific time-stop window after entry, the foundational thesis has decayed by time. Do not wait for the catastrophic hard SL to be touched. Scratch the trade near breakeven or exit at market proactively.
-  - `scalp` (`PRIMARY_TF=M15`): **5–6 candles** (~75–90 min). Scalp setups either trigger quickly or they don't.
-  - `intraday` (`PRIMARY_TF=H1`): **6–8 candles** (6–8 hr). A pullback continuation can take a few hours; anything beyond 8 H1 candles without thesis progress is stale.
-  - `swing` (`PRIMARY_TF=H4`): **8–12 candles** (32–48 hr). Swing theses need room to breathe, but 12 H4 candles without directional progress means the premise has expired.
+- **Time Invalidation (Time Stops)**: If an expected momentum or directional impulse does not materialize within the mode-specific time-stop window after entry, the foundational thesis has decayed by time. Do not wait for the catastrophic hard SL to be touched. Scratch the trade near breakeven or exit at market proactively. **Note:** time-stop counting pauses during known low-liquidity windows (e.g., the pre-NY-open Asian overlap, post-London-close). Resume counting from the next active session candle.
+  - `scalp` (`PRIMARY_TF=M15`): **8–10 candles** (~120–150 min). Scalp setups need a couple of hours in less liquid windows; count only active-session candles.
+  - `intraday` (`PRIMARY_TF=H1`): **8–10 candles** (8–10 hr). A pullback continuation can take several hours; anything beyond 10 H1 candles in an active session without thesis progress is stale.
+  - `swing` (`PRIMARY_TF=H4`): **10–16 candles** (40–64 hr). Swing theses across multiple sessions need room to breathe; 16 H4 candles without directional progress means the premise has expired.
 - **Scaling-Out (Partial Takes)**: Professional active trading requires securing basis. When a trade surges into the first major `support_resistance_levels` boundary or experiences a massive volatility (`natr`) spike in your favor, use `trade_close` specifying a partial `volume` (e.g., 50%) to secure the bag. Leave the remaining "runner" with a Trailing SL to capture outsized excursion.
 - If the thesis weakens materially, use `trade_modify`, partial `trade_close`, or full `trade_close`.
 - Do not treat the protective SL as permission to hold a broken thesis. If the setup degrades materially before the hard stop is touched, reduce or exit proactively.
@@ -751,10 +758,10 @@ When price is within `proximity_band` of the SL:
 ### Breakeven Move Policy
 Moving SL to breakeven too early is one of the most common active-trading errors. A premature BE move turns a valid thesis into a coin-flip scratch. All four gates below must pass simultaneously before a BE move is executed.
 
-**Gate 1 — ATR profit threshold** (all four gates must pass):
-- `scalp`: price must be at least `1.5× ATR(14)` in profit on `EXECUTION_TF` (raised from 1.0× — the extra buffer survives the normal wicking envelope)
-- `intraday`: price must be at least `1.5× ATR(14)` in profit on `PRIMARY_TF`
-- `swing`: price must be at least `2.0× ATR(14)` in profit on `PRIMARY_TF`
+**Gate 1 — ATR profit threshold** (all four gates must pass, but Gates 2–4 can be cleared by a score of 2/3 when Gate 1 is passed with margin — see below):
+- `scalp`: price must be at least `1.2× ATR(14)` in profit on `EXECUTION_TF`
+- `intraday`: price must be at least `1.2× ATR(14)` in profit on `PRIMARY_TF`
+- `swing`: price must be at least `1.5× ATR(14)` in profit on `PRIMARY_TF`
 
 Use `data_fetch_candles` with `atr(14)` on the relevant timeframe and compare the current unrealized distance (from entry) against the ATR value. If the trade has not cleared the threshold, do not move to BE regardless of how the price action looks.
 
@@ -768,17 +775,16 @@ Use `data_fetch_candles` with `atr(14)` on the relevant timeframe and compare th
 - `macd(12,26,9)` histogram on `EXECUTION_TF` must be on the trade side; a histogram moving toward zero while price is still advancing is a warning — do not trigger BE
 
 **Gate 4 — Regime is not mean-reverting or choppy**:
-- `chop(14)` must be below `61.8` on `EXECUTION_TF` — above this the market is range-bound and a BE stop will routinely be hunted within a few candles
-- `regime_detect` must not currently classify the regime as mean-reverting or choppy on `PRIMARY_TF` — these regimes routinely spike through breakeven before completing the intended move
-- `natr(14)` must not be expanding sharply without a clear trend in the trade direction — volatility expansion without directionality means the spike that cleared the structural block may itself be a sweep
+- `chop(14)` must be below `61.8` on `EXECUTION_TF` — above this the market is range-bound and the BE stop is at higher hunt risk. Exception: if this is a range-mean-reversion setup where above-61.8 chop is the expected environment, substitute Gate 4 with a requirement that price has tagged the near-boundary of the range (i.e., the TP is within one `ATR(14)` of the distant range wall)
+- `regime_detect` must not currently classify the regime as mean-reverting or choppy on `PRIMARY_TF` unless the trade is explicitly a mean-reversion play within a mapped range
+- `natr(14)` must not be expanding sharply without a clear trend in the trade direction — volatility expansion without directionality means the spike may itself be a sweep
 
 When NOT to move to breakeven (any one condition disqualifies):
-- any of the four gates above has not been satisfied
+- fewer than 2 of Gates 2–4 are satisfied (when Gate 1 is passed with margin — defined as `≥ 1.5×` the ATR threshold — a 2/3 score on Gates 2–4 is sufficient; when Gate 1 is passed at minimum threshold only, all four gates must pass)
 - during volatile consolidation near entry where `natr(14)` is expanding but price is not trending
-- when `regime_detect` shows a mean-reverting or choppy regime
-- when `chop(14)` is above `61.8` on `EXECUTION_TF`
+- when `regime_detect` shows a mean-reverting or choppy regime AND the trade is NOT a mapped range-mean-reversion play
 - when the position has not yet cleared the mode-specific ATR threshold above
-- when the first structural block is less than `0.5× ATR(14)` from entry
+- when the first structural block is less than `0.25× ATR(14)` from entry
 
 Breakeven execution:
 - use `trade_modify` to move the hard SL to `entry price ± (1× spread + 0.25× ATR(14))` on the protective side (longs: entry minus that buffer; shorts: entry plus that buffer)
@@ -790,19 +796,19 @@ After breakeven is secured, actively manage the trailing stop to lock in further
 
 When to start trailing:
 - only after the breakeven move has been completed
-- price must be at least `2.0× ATR(14)` beyond entry on the governing timeframe (raised from 1.5× — starting the trail too early is a primary cause of premature stop-outs when price oscillates around the 1.5× level)
+- price must be at least `1.5× ATR(14)` beyond entry on the governing timeframe (starting the trail earlier gives the position room to breathe; a `2.0× ATR` minimum was causing runners to be missed because the trail never engaged before reversal)
 - `supertrend(7,3)` on `EXECUTION_TF` must be in the trade direction
 
 Trailing methods — choose based on context:
 - **Supertrend trail**: use `supertrend(7,3)` on `EXECUTION_TF` as the trailing reference. This is the default method for confirmed trend moves. Place the trailing SL a spread-plus-buffer below (longs) or above (shorts) the supertrend value. Do not tighten the SL past supertrend unless escalating to structural trailing.
 - **Structural swing trail**: use the latest confirmed swing low (longs) or swing high (shorts) on `EXECUTION_TF` from `support_resistance_levels` as the trailing anchor. Preferred when price is stair-stepping through clear structural levels.
-- **ATR-volatility trail**: maintain a `2.0× ATR(14)` to `2.5× ATR(14)` distance from the current price on `PRIMARY_TF` (floor raised from 1.5× — a 1.5× trail is within the normal wicking range and is stopped out regularly without the trade having genuinely failed). Use `forecast_volatility_estimate` to decide whether the ATR is stable, contracting, or expanding. Tighten the multiplier toward `2.0×` only when volatility is clearly contracting; keep `2.5×` or wider when volatility is expanding in the trade direction.
+- **ATR-volatility trail**: maintain a `1.5× ATR(14)` to `2.0× ATR(14)` distance from the current price on `PRIMARY_TF`. Use `forecast_volatility_estimate` to decide whether the ATR is stable, contracting, or expanding. Tighten the multiplier toward `1.5×` only when volatility is clearly contracting; keep `2.0×` or wider when volatility is expanding in the trade direction. A trail that is too wide leaves most of a runner's gain unrealized when the reversal is sudden — prefer capturing `70%` of the move over holding for `100%`.
 
 Trailing tightening triggers — escalate trailing aggression when:
 - a `PRIMARY_TF` candle closes with clear exhaustion divergence (price vs `rsi(14)` or `macd(12,26,9)`)
 - `regime_detect` shows a fresh regime shift from trend to mean-reversion or from low-vol to high-vol
 - price enters the mapped harvest zone or approaches the first major opposing `support_resistance_levels` cluster
-- `forecast_barrier_prob` shows the remaining TP hit probability has dropped below `40%` from the current price — the original target is becoming unrealistic and the trailing SL should lock what is available
+- `forecast_barrier_prob` shows the remaining TP hit probability has dropped below `33%` from the current price AND the current unrealized profit is positive — the original target is becoming unrealistic and the trailing SL should lock what is available. Do not tighten the trail solely because raw probability is below `40%`; always weigh remaining EV (hit_rate × remaining_distance) against the locked gain before deciding.
 - `natr(14)` spikes sharply, signaling a volatility expansion that often precedes reversals
 
 Trailing loosening triggers — give the position more room when:
@@ -836,17 +842,17 @@ TP extension procedure:
 1. run `support_resistance_levels` to identify the next opposing structural zone
 2. run `forecast_barrier_optimize` from the current price with `direction`, current trailing SL distance as `sl_min`/`sl_max`, and an extended `tp_max` up to the next structural zone
 3. run `forecast_barrier_prob` on the proposed extended TP with the current trailing SL
-4. only extend if `forecast_barrier_prob` shows the new TP still has at least `40%` hit probability and the net EV remains positive
+4. only extend if the net EV of the new TP is positive: `(hit_probability × remaining_distance) - ((1 - hit_probability) × trailing_sl_distance) > 0`. A raw hit-probability floor of `35%` is sufficient provided the R:R extension supports net EV; do not refuse a valid extension solely because raw probability is below `40%`.
 5. use `trade_modify` to set the new TP, applying the same anti-sweep offset rules (a few ticks short of the structural level)
 
 When to reduce (decrease) the TP target:
 - momentum is fading: `rsi(14)` or `macd(12,26,9)` shows bearish divergence against the price move on `PRIMARY_TF`
 - `regime_detect` shows a shift from trend to mean-reversion or from low-vol to high-vol
 - a new opposing `support_resistance_levels` cluster has formed between entry and the original TP that was not present at entry time
-- `forecast_barrier_prob` re-evaluated from the current price shows TP hit probability has dropped below `35%`
-- `forecast_volatility_estimate` shows short-horizon volatility expanding sharply — the orderly move is breaking down
-- `temporal_analyze` indicates the session is entering a historically low-quality or mean-reverting hour bucket that undermines the continuation thesis
-- `labels_triple_barrier` re-run with the remaining distance as TP and the trailing SL distance as SL shows a hit-rate below `40%` for the intended direction — historical evidence no longer supports holding
+- `forecast_barrier_prob` re-evaluated from the current price shows TP hit probability has dropped below `28%` — at this point net EV is almost certainly negative
+- `forecast_volatility_estimate` shows short-horizon volatility expanding sharply AND price is losing directional momentum — the orderly move is breaking down
+- `temporal_analyze` indicates the session is entering a historically low-quality or mean-reverting hour bucket that undermines the continuation thesis AND the remaining distance to TP is more than `1× ATR` from current price
+- `labels_triple_barrier` re-run with the remaining distance as TP and the trailing SL distance as SL shows a hit-rate below `33%` for the intended direction AND the current trailing SL distance exceeds `0.7× remaining distance` — historical evidence no longer supports holding
 
 TP reduction procedure:
 1. identify the nearest realistic structural target from `support_resistance_levels` that is still in profit
@@ -857,7 +863,7 @@ TP reduction procedure:
 Combined partial-take and TP extension (the runner strategy):
 - after a partial close secures basis (see **Scaling-Out** above), the remaining runner position should have its TP re-evaluated using `forecast_barrier_optimize` from the current price
 - the runner's trailing SL should be managed by the trailing policy above, not left at the original hard stop
-- if the runner's new barrier probability is below `35%` for the extended TP, bring the TP to the next realistic structural level instead of hoping for an outsized move
+- if the runner's net EV is negative (i.e., `hit_prob × remaining_distance < (1-hit_prob) × trailing_sl_distance`) for the extended TP, bring the TP to the next realistic structural level; do not close the runner solely because raw hit probability is below `35%` if EV is still positive
 
 ## Verification and Post-Mortem
 After `trade_place`, `trade_modify`, or `trade_close`:
