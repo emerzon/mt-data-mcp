@@ -420,6 +420,7 @@ def strategy_backtest(  # noqa: C901
                 "bars_used": int(lookback),
                 "warmup_bars": int(signal_warmup),
                 "trade_count": int(len(trades)),
+                "num_trades": int(len(trades)),
                 "long_trades": long_trades,
                 "short_trades": short_trades,
                 "gross_return": float(gross_equity[-1] - 1.0),
@@ -439,7 +440,9 @@ def strategy_backtest(  # noqa: C901
             if detail_mode == "full":
                 result["trades"] = trades
             else:
-                result["trade_sample"] = trades[: min(10, len(trades))]
+                sampled_trades = trades[: min(10, len(trades))]
+                result["trades"] = sampled_trades
+                result["trade_sample"] = sampled_trades
         else:
             result["no_action"] = True
             result["message"] = "The strategy generated no trades on the requested history."

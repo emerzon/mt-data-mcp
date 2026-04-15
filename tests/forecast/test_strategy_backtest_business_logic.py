@@ -52,9 +52,36 @@ def test_strategy_backtest_sma_cross_generates_long_trade(monkeypatch):
 
     assert out["success"] is True
     assert out["summary"]["trade_count"] == 1
+    assert out["summary"]["num_trades"] == 1
     assert out["summary"]["long_trades"] == 1
     assert out["trades"][0]["direction"] == "long"
     assert out["summary"]["net_return"] > 0.0
+
+
+def test_strategy_backtest_compact_mode_keeps_stable_trades_key(monkeypatch):
+    monkeypatch.setattr(
+        forecast_backtest,
+        "_fetch_history",
+        lambda symbol, timeframe, need, as_of=None: _history_from_closes(
+            [1.0, 1.0, 1.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]
+        ),
+    )
+
+    out = forecast_backtest.strategy_backtest(
+        symbol="EURUSD",
+        timeframe="H1",
+        strategy="sma_cross",
+        lookback=8,
+        fast_period=2,
+        slow_period=3,
+        detail="compact",
+    )
+
+    assert out["success"] is True
+    assert out["summary"]["trade_count"] == 1
+    assert out["summary"]["num_trades"] == 1
+    assert out["trades"][0]["direction"] == "long"
+    assert out["trade_sample"] == out["trades"]
 
 
 def test_strategy_backtest_returns_no_action_on_flat_history(monkeypatch):
@@ -76,6 +103,7 @@ def test_strategy_backtest_returns_no_action_on_flat_history(monkeypatch):
     assert out["success"] is True
     assert out["no_action"] is True
     assert out["summary"]["trade_count"] == 0
+    assert out["summary"]["num_trades"] == 0
     assert out["message"] == "The strategy generated no trades on the requested history."
 
 
