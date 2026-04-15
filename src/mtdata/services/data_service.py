@@ -1177,11 +1177,17 @@ def fetch_candles(  # noqa: C901
         if not _use_ctz:
             timezone_meta_input["timezone"] = "UTC"
 
+        candles_returned = int(len(df))
+        candles_requested = int(candles)
+        candles_excluded = max(0, candles_requested - candles_returned)
+
         payload.update({
             "success": True,
             "symbol": symbol,
             "timeframe": timeframe,
-            "candles": len(df),
+            "candles": candles_returned,
+            "candles_requested": candles_requested,
+            "candles_excluded": candles_excluded,
             "last_candle_open": last_candle_open,
             "meta": {
                 "runtime": {
@@ -1197,7 +1203,7 @@ def fetch_candles(  # noqa: C901
                         "mode": query_mode,
                         "include_incomplete": bool(include_incomplete),
                         "latency_ms": query_latency_ms,
-                        "requested_bars": int(candles),
+                        "requested_bars": candles_requested,
                         "warmup_bars": int(warmup_bars),
                         "raw_bars_fetched": raw_bars_fetched,
                         "rows_after_target_trim": rows_after_target_trim,

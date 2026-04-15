@@ -499,6 +499,18 @@ def get_history_response(  # noqa: C901
     result_out = dict(result)
     result_out["data"] = rows
     result_out["candles"] = len(rows)
+    requested_value = result.get("candles_requested")
+    try:
+        candles_requested = int(requested_value)
+    except Exception:
+        candles_requested = int(len(rows))
+    result_out["candles_requested"] = candles_requested
+    excluded_value = result.get("candles_excluded")
+    try:
+        candles_excluded = int(excluded_value)
+    except Exception:
+        candles_excluded = max(0, candles_requested - int(len(rows)))
+    result_out["candles_excluded"] = max(0, candles_excluded)
     response = ensure_common_meta(
         result_out,
         tool_name="data_fetch_candles",

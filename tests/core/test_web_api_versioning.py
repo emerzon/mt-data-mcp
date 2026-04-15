@@ -59,6 +59,8 @@ def test_history_available_on_versioned_route() -> None:
         "data": payload["data"],
         "last_candle_open": False,
         "candles": 2,
+        "candles_requested": 2,
+        "candles_excluded": 0,
         "meta": {
             "tool": "data_fetch_candles",
             "runtime": {

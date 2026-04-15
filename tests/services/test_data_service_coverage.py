@@ -679,6 +679,8 @@ class TestFetchCandles(unittest.TestCase):
         result = fetch_candles('EURUSD', timeframe='H1', limit=5)
         self.assertTrue(result.get('success'))
         self.assertEqual(result['candles'], 5)
+        self.assertEqual(result['candles_requested'], 5)
+        self.assertEqual(result['candles_excluded'], 0)
         self.assertFalse(result['last_candle_open'])
         self.assertEqual(len(result['data']), 5)
 
@@ -694,6 +696,8 @@ class TestFetchCandles(unittest.TestCase):
         result = fetch_candles('EURUSD', timeframe='H1', limit=5, include_incomplete=True)
         self.assertTrue(result.get('success'))
         self.assertEqual(result['candles'], 5)
+        self.assertEqual(result['candles_requested'], 5)
+        self.assertEqual(result['candles_excluded'], 0)
         self.assertTrue(result['last_candle_open'])
         self.assertEqual(len(result['data']), 5)
 
@@ -715,6 +719,22 @@ class TestFetchCandles(unittest.TestCase):
         returned_times = [row['time'] for row in result.get('data', [])]
         self.assertNotIn(base_ts, returned_times)
         self.assertEqual(returned_times[-1], base_ts - 3600)
+        self.assertFalse(result['last_candle_open'])
+
+    @patch(_MT5_CONFIG)
+    @patch(_RATES_FROM)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=0)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_exposes_requested_and_excluded_counts_when_live_tail_is_trimmed(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_cfg):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        mock_from.return_value = _make_rates(5, step=3600)
+        result = fetch_candles('EURUSD', timeframe='H1', limit=5)
+        self.assertTrue(result.get('success'))
+        self.assertEqual(result['candles_requested'], 5)
+        self.assertEqual(result['candles'], 4)
+        self.assertEqual(result['candles_excluded'], 1)
         self.assertFalse(result['last_candle_open'])
 
     @patch(_MT5_CONFIG)
@@ -790,6 +810,8 @@ class TestFetchCandles(unittest.TestCase):
         mock_from.return_value = _make_rates(10, step=3600)
         result = fetch_candles('EURUSD', limit=5)
         self.assertTrue(result.get('success'))
+        self.assertEqual(result['candles_requested'], 5)
+        self.assertEqual(result['candles_excluded'], 0)
         diagnostics = result['meta']['diagnostics']
         query = diagnostics['query']
         self.assertEqual(query['requested_bars'], 5)
