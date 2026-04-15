@@ -2855,6 +2855,21 @@ class TestResolveParamKwargs:
         kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="finviz_screen")
         assert kwargs["help"] == "Finviz sort key. Example: -marketcap for descending or price for ascending."
 
+    def test_market_scan_limit_help_is_command_specific(self):
+        param = {"name": "limit", "type": Optional[int], "required": False, "default": 20}
+        kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="market_scan")
+        assert kwargs["help"] == "Max matching symbols to return."
+
+    def test_symbols_top_markets_limit_help_is_command_specific(self):
+        param = {"name": "limit", "type": Optional[int], "required": False, "default": 10}
+        kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="symbols_top_markets")
+        assert kwargs["help"] == "Max symbols to return for each ranking."
+
+    def test_finviz_news_limit_help_is_command_specific(self):
+        param = {"name": "limit", "type": int, "required": False, "default": 20}
+        kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="finviz_news")
+        assert kwargs["help"] == "Max news items to return on this page."
+
     def test_finviz_calendar_start_help_is_command_specific(self):
         param = {"name": "start", "type": Optional[str], "required": False, "default": None}
         kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="finviz_calendar")
