@@ -2891,6 +2891,24 @@ class TestResolveParamKwargs:
         assert "rsi_14" in kwargs["help"]
         assert "rsi(length=14)" in kwargs["help"]
 
+    def test_denoise_help_mentions_json_example(self):
+        param = {"name": "denoise", "type": Optional[Dict[str, Any]], "required": False, "default": None}
+        kwargs, _ = _resolve_param_kwargs(param, None)
+        assert "--denoise kalman" in kwargs["help"]
+        assert '"method":"kalman"' in kwargs["help"]
+
+    def test_params_help_mentions_json_and_key_value_examples(self):
+        param = {"name": "params", "type": Optional[Dict[str, Any]], "required": False, "default": None}
+        kwargs, _ = _resolve_param_kwargs(param, None)
+        assert "--params alpha=0.3,beta=0.1" in kwargs["help"]
+        assert '"alpha":0.3' in kwargs["help"]
+
+    def test_features_help_mentions_json_and_key_value_examples(self):
+        param = {"name": "features", "type": Optional[Dict[str, Any]], "required": False, "default": None}
+        kwargs, _ = _resolve_param_kwargs(param, None)
+        assert "--features lag=3,rolling=5" in kwargs["help"]
+        assert '"lag":3' in kwargs["help"]
+
     def test_forecast_barrier_optimize_method_has_cli_choices(self):
         param = {"name": "method", "type": str, "required": False, "default": "auto"}
         kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="forecast_barrier_optimize")
