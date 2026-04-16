@@ -43,6 +43,7 @@ Thumbs.db
 
 # Project-specific
 .claude/
+.opencode/
 
 .mtdata_cache/*
 lightning_logs/*
