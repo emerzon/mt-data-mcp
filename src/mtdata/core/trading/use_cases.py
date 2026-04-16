@@ -35,7 +35,9 @@ from .sizing import _resolve_risk_tick_value
 
 logger = logging.getLogger(__name__)
 _DEFAULT_TRADE_HISTORY_LOOKBACK_DAYS = 7
-_TRADE_HISTORY_RANGE_HINT = "Try narrowing the range with --minutes-back, --days, --start, or --end."
+_TRADE_HISTORY_RANGE_HINT = (
+    "Try narrowing the range with --minutes-back, --days, --start, or --end."
+)
 
 
 def _sl_tp_result_details(result: Dict[str, Any]) -> tuple[bool, str, bool]:
@@ -135,7 +137,9 @@ def _normalize_var_cvar_method(method: Any) -> tuple[Optional[str], Optional[str
     return None, "Invalid method. Valid options: historical, gaussian"
 
 
-def _normalize_var_cvar_transform(transform: Any) -> tuple[Optional[str], Optional[str]]:
+def _normalize_var_cvar_transform(
+    transform: Any,
+) -> tuple[Optional[str], Optional[str]]:
     transform_text = str(transform or "log_return").strip().lower()
     if transform_text in {"log_return", "log_returns", "log"}:
         return "log_return", None
@@ -153,35 +157,44 @@ def _normalize_var_cvar_transform(transform: Any) -> tuple[Optional[str], Option
     return None, "Invalid transform. Valid options: log_return, pct"
 
 
-def _normalize_var_cvar_confidence(confidence: Any) -> tuple[Optional[float], Optional[str]]:
+def _normalize_var_cvar_confidence(
+    confidence: Any,
+) -> tuple[Optional[float], Optional[str]]:
     try:
         confidence_value = float(confidence)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None, "confidence must be numeric"
     if not math.isfinite(confidence_value):
         return None, "confidence must be finite"
     if confidence_value > 1.0:
         confidence_value /= 100.0
     if confidence_value <= 0.0 or confidence_value >= 1.0:
-        return None, "confidence must be between 0 and 1, or between 0 and 100 as a percentage"
+        return (
+            None,
+            "confidence must be between 0 and 1, or between 0 and 100 as a percentage",
+        )
     return confidence_value, None
 
 
-def _historical_var_cvar_tail(pnl_values: List[float], confidence: float) -> tuple[float, float, float]:
+def _historical_var_cvar_tail(
+    pnl_values: List[float], confidence: float
+) -> tuple[float, float, float]:
     ordered = sorted(float(value) for value in pnl_values)
     if not ordered:
         return 0.0, 0.0, 0.0
     alpha = 1.0 - confidence
     index = max(0, min(len(ordered) - 1, int(math.floor(alpha * (len(ordered) - 1)))))
     threshold = float(ordered[index])
-    tail_values = [float(value) for value in ordered[:index + 1]]
+    tail_values = [float(value) for value in ordered[: index + 1]]
     tail_mean = float(sum(tail_values) / len(tail_values)) if tail_values else threshold
     var_value = max(0.0, -threshold)
     cvar_value = max(0.0, -tail_mean)
     return var_value, cvar_value, threshold
 
 
-def _gaussian_var_cvar_tail(pnl_values: List[float], confidence: float) -> tuple[float, float, float]:
+def _gaussian_var_cvar_tail(
+    pnl_values: List[float], confidence: float
+) -> tuple[float, float, float]:
     from scipy.stats import norm
 
     ordered = [float(value) for value in pnl_values]
@@ -192,7 +205,9 @@ def _gaussian_var_cvar_tail(pnl_values: List[float], confidence: float) -> tuple
         threshold = mean_pnl
         var_value = max(0.0, -threshold)
         return var_value, var_value, threshold
-    variance = sum((value - mean_pnl) ** 2 for value in ordered) / float(len(ordered) - 1)
+    variance = sum((value - mean_pnl) ** 2 for value in ordered) / float(
+        len(ordered) - 1
+    )
     std_pnl = math.sqrt(max(0.0, variance))
     if std_pnl <= 0.0:
         threshold = mean_pnl
@@ -232,7 +247,9 @@ def _extract_var_cvar_return_series(
     if "time" not in frame.columns or "close" not in frame.columns:
         return None, f"Candle history for {symbol} is missing time/close columns"
     close = pd_module.to_numeric(frame["close"], errors="coerce")
-    timestamps = pd_module.to_datetime(frame["time"], unit="s", utc=True, errors="coerce")
+    timestamps = pd_module.to_datetime(
+        frame["time"], unit="s", utc=True, errors="coerce"
+    )
     series = pd_module.Series(close.to_numpy(), index=timestamps, name=symbol)
     series = series[~series.index.isna()]
     series = series.replace([np_module.inf, -np_module.inf], np_module.nan).dropna()
@@ -399,17 +416,19 @@ def run_trade_place(  # noqa: C901
     ):
         missing.append("order_type")
     if missing:
-        return _finish({
-            "error": (
-                f"Missing required field(s): {', '.join(missing)}. "
-                "Required: symbol, volume, order_type."
-            ),
-            "required": ["symbol", "volume", "order_type"],
-            "hint": (
-                "Example: symbol='BTCUSD', volume=0.03, "
-                "order_type='BUY_LIMIT' (or ORDER_TYPE_BUY_LIMIT or 2)."
-            ),
-        })
+        return _finish(
+            {
+                "error": (
+                    f"Missing required field(s): {', '.join(missing)}. "
+                    "Required: symbol, volume, order_type."
+                ),
+                "required": ["symbol", "volume", "order_type"],
+                "hint": (
+                    "Example: symbol='BTCUSD', volume=0.03, "
+                    "order_type='BUY_LIMIT' (or ORDER_TYPE_BUY_LIMIT or 2)."
+                ),
+            }
+        )
 
     order_type_norm, order_type_error = normalize_order_type_input(request.order_type)
     if order_type_error:
@@ -418,16 +437,21 @@ def run_trade_place(  # noqa: C901
     market_side_types = {"BUY", "SELL"}
     supported_order_types = explicit_pending_types.union(market_side_types)
     if order_type_norm not in supported_order_types:
-        return _finish({
-            "error": (
-                f"Unsupported order_type '{request.order_type}'. "
-                "Use BUY/SELL or BUY_LIMIT/BUY_STOP/SELL_LIMIT/SELL_STOP."
-            )
-        }, order_type=order_type_norm)
+        return _finish(
+            {
+                "error": (
+                    f"Unsupported order_type '{request.order_type}'. "
+                    "Use BUY/SELL or BUY_LIMIT/BUY_STOP/SELL_LIMIT/SELL_STOP."
+                )
+            },
+            order_type=order_type_norm,
+        )
 
     price_provided = request.price not in (None, 0)
     try:
-        normalized_expiration, expiration_provided = normalize_pending_expiration(request.expiration)
+        normalized_expiration, expiration_provided = normalize_pending_expiration(
+            request.expiration
+        )
     except (TypeError, ValueError) as ex:
         return _finish({"error": str(ex)}, order_type=order_type_norm)
 
@@ -443,12 +467,16 @@ def run_trade_place(  # noqa: C901
         and expiration_provided
         and normalized_expiration is not None
     ):
-        return _finish({
-            "error": (
-                "expiration only applies to pending orders placed with a price. "
-                "For BUY/SELL market orders, omit expiration or provide price to place a pending order."
-            )
-        }, order_type=order_type_norm, pending=False)
+        return _finish(
+            {
+                "error": (
+                    "expiration only applies to pending orders placed with a price. "
+                    "For BUY/SELL market orders, omit expiration or provide price to place a pending order."
+                )
+            },
+            order_type=order_type_norm,
+            pending=False,
+        )
 
     is_pending = (
         order_type_norm in explicit_pending_types
@@ -473,18 +501,22 @@ def run_trade_place(  # noqa: C901
                         order_type=order_type_norm,
                         pending=is_pending,
                     )
-            return _finish({
-                "error": (
-                    "require_sl_tp=True requires both stop_loss and take_profit for market orders. "
-                    "Refusing to place an unprotected position."
-                ),
-                "require_sl_tp": True,
-                "missing": missing_protection,
-                "hint": (
-                    "Provide both --stop-loss and --take-profit, "
-                    "or explicitly set --require-sl-tp false."
-                ),
-            }, order_type=order_type_norm, pending=is_pending)
+            return _finish(
+                {
+                    "error": (
+                        "require_sl_tp=True requires both stop_loss and take_profit for market orders. "
+                        "Refusing to place an unprotected position."
+                    ),
+                    "require_sl_tp": True,
+                    "missing": missing_protection,
+                    "hint": (
+                        "Provide both --stop-loss and --take-profit, "
+                        "or explicitly set --require-sl-tp false."
+                    ),
+                },
+                order_type=order_type_norm,
+                pending=is_pending,
+            )
 
     if bool(request.dry_run):
         guardrail_preview = preview_trade_guardrails(
@@ -550,7 +582,9 @@ def run_trade_place(  # noqa: C901
             deviation=request.deviation,
         )
         if isinstance(result, dict):
-            sl_tp_requested, sl_tp_status, sl_tp_fallback_used = _sl_tp_result_details(result)
+            sl_tp_requested, sl_tp_status, sl_tp_fallback_used = _sl_tp_result_details(
+                result
+            )
             sl_tp_failed = sl_tp_status == "failed"
             if sl_tp_requested and sl_tp_failed:
                 warnings_out: List[str] = list(result.get("warnings") or [])
@@ -605,21 +639,24 @@ def run_trade_place(  # noqa: C901
                     result["auto_close_result"] = auto_close_result
 
                     auto_close_ok = False
-                    if isinstance(auto_close_result, dict) and "error" not in auto_close_result:
+                    if (
+                        isinstance(auto_close_result, dict)
+                        and "error" not in auto_close_result
+                    ):
                         if auto_close_result.get("retcode") is not None:
                             auto_close_ok = True
                         else:
                             try:
-                                auto_close_ok = int(auto_close_result.get("closed_count", 0)) > 0
+                                auto_close_ok = (
+                                    int(auto_close_result.get("closed_count", 0)) > 0
+                                )
                             except Exception:
                                 auto_close_ok = False
                     if auto_close_ok:
                         result["protection_status"] = "auto_closed_after_sl_tp_fail"
                     else:
                         warnings_out = list(result.get("warnings") or [])
-                        auto_close_warning = (
-                            "AUTO-CLOSE FAILED: position remains unprotected; close immediately."
-                        )
+                        auto_close_warning = "AUTO-CLOSE FAILED: position remains unprotected; close immediately."
                         if auto_close_warning not in warnings_out:
                             warnings_out.append(auto_close_warning)
                         result["warnings"] = warnings_out
@@ -630,7 +667,9 @@ def run_trade_place(  # noqa: C901
                 and sl_tp_failed
                 and "error" not in result
             ):
-                result["error"] = "Order was executed, but TP/SL protection could not be applied."
+                result["error"] = (
+                    "Order was executed, but TP/SL protection could not be applied."
+                )
                 result["require_sl_tp"] = bool(request.require_sl_tp)
                 result["protection_status"] = (
                     result.get("protection_status") or "unprotected_position"
@@ -649,17 +688,21 @@ def run_trade_place(  # noqa: C901
             order_type=order_type_norm,
             pending=is_pending,
         )
-    return _finish(place_pending_order(
-        symbol=symbol_norm,
-        volume=float(request.volume),
+    return _finish(
+        place_pending_order(
+            symbol=symbol_norm,
+            volume=float(request.volume),
+            order_type=order_type_norm,
+            price=request.price,
+            stop_loss=request.stop_loss,
+            take_profit=request.take_profit,
+            expiration=request.expiration,
+            comment=request.comment,
+            deviation=request.deviation,
+        ),
         order_type=order_type_norm,
-        price=request.price,
-        stop_loss=request.stop_loss,
-        take_profit=request.take_profit,
-        expiration=request.expiration,
-        comment=request.comment,
-        deviation=request.deviation,
-    ), order_type=order_type_norm, pending=is_pending)
+        pending=is_pending,
+    )
 
 
 def run_trade_modify(
@@ -707,13 +750,16 @@ def run_trade_modify(
             comment=request.comment,
         )
         if result.get("error") == f"Pending order {request.ticket} not found":
-            return _finish({
-                "error": (
-                    f"Pending order {request.ticket} not found. "
-                    "Note: price/expiration only apply to pending orders."
-                ),
-                "checked_scopes": ["pending_orders"],
-            }, pending=True)
+            return _finish(
+                {
+                    "error": (
+                        f"Pending order {request.ticket} not found. "
+                        "Note: price/expiration only apply to pending orders."
+                    ),
+                    "checked_scopes": ["pending_orders"],
+                },
+                pending=True,
+            )
         return _finish(result, pending=True)
 
     position_result = modify_position(
@@ -734,10 +780,13 @@ def run_trade_modify(
             comment=request.comment,
         )
         if pending_result.get("error") == f"Pending order {request.ticket} not found":
-            return _finish({
-                "error": f"Ticket {request.ticket} not found as position or pending order.",
-                "checked_scopes": ["positions", "pending_orders"],
-            }, pending=None)
+            return _finish(
+                {
+                    "error": f"Ticket {request.ticket} not found as position or pending order.",
+                    "checked_scopes": ["positions", "pending_orders"],
+                },
+                pending=None,
+            )
         return _finish(pending_result, pending=True)
     return _finish(position_result, pending=False)
 
@@ -793,42 +842,55 @@ def run_trade_close(  # noqa: C901
         return out
 
     if request.profit_only and request.loss_only:
-        return _finish({
-            "error": "profit_only and loss_only cannot both be true."
-        }, scope="positions")
+        return _finish(
+            {"error": "profit_only and loss_only cannot both be true."},
+            scope="positions",
+        )
 
     if request.volume is not None:
         if request.ticket is None:
-            return _finish({
-                "error": (
-                    "volume is only supported when closing a specific open position by ticket."
-                )
-            }, scope="positions")
+            return _finish(
+                {
+                    "error": (
+                        "volume is only supported when closing a specific open position by ticket."
+                    )
+                },
+                scope="positions",
+            )
         if request.profit_only or request.loss_only:
-            return _finish({
-                "error": (
-                    "volume cannot be combined with profit_only or loss_only. "
-                    "Use ticket for a specific partial close."
-                )
-            }, scope="positions")
+            return _finish(
+                {
+                    "error": (
+                        "volume cannot be combined with profit_only or loss_only. "
+                        "Use ticket for a specific partial close."
+                    )
+                },
+                scope="positions",
+            )
 
     if request.ticket is not None and request.close_all:
-        return _finish({
-            "error": (
-                "close_all cannot be combined with ticket. "
-                "Use ticket for a specific position or pending order, "
-                "or omit ticket and pass close_all=true for a bulk close."
-            )
-        }, scope="ticket")
+        return _finish(
+            {
+                "error": (
+                    "close_all cannot be combined with ticket. "
+                    "Use ticket for a specific position or pending order, "
+                    "or omit ticket and pass close_all=true for a bulk close."
+                )
+            },
+            scope="ticket",
+        )
 
     if request.ticket is None and not request.close_all:
-        return _finish({
-            "error": (
-                "Refusing bulk close without explicit confirmation. "
-                "Provide ticket for a specific position or pending order, "
-                "or pass close_all=true to close matching positions or pending orders."
-            )
-        }, scope="bulk_confirmation")
+        return _finish(
+            {
+                "error": (
+                    "Refusing bulk close without explicit confirmation. "
+                    "Provide ticket for a specific position or pending order, "
+                    "or pass close_all=true to close matching positions or pending orders."
+                )
+            },
+            scope="bulk_confirmation",
+        )
 
     if request.profit_only or request.loss_only:
         result = close_positions(
@@ -843,7 +905,10 @@ def run_trade_close(  # noqa: C901
         )
         if isinstance(result, dict):
             msg = str(result.get("message", "")).strip().lower()
-            if msg.startswith("no open positions") or msg == "no positions matched criteria":
+            if (
+                msg.startswith("no open positions")
+                or msg == "no positions matched criteria"
+            ):
                 return _finish(_with_no_action(result), scope="positions")
         return _finish(result, scope="positions")
 
@@ -863,13 +928,16 @@ def run_trade_close(  # noqa: C901
             and isinstance(position_result, dict)
             and position_result.get("error") == f"Position {request.ticket} not found"
         ):
-            return _finish({
-                "error": (
-                    f"Position {request.ticket} not found. "
-                    "Partial close volume only applies to open positions."
-                ),
-                "checked_scopes": ["positions"],
-            }, scope="positions")
+            return _finish(
+                {
+                    "error": (
+                        f"Position {request.ticket} not found. "
+                        "Partial close volume only applies to open positions."
+                    ),
+                    "checked_scopes": ["positions"],
+                },
+                scope="positions",
+            )
         if (
             isinstance(position_result, dict)
             and position_result.get("error") == f"Position {request.ticket} not found"
@@ -881,7 +949,8 @@ def run_trade_close(  # noqa: C901
             )
             if (
                 isinstance(pending_result, dict)
-                and pending_result.get("error") == f"Pending order {request.ticket} not found"
+                and pending_result.get("error")
+                == f"Pending order {request.ticket} not found"
             ):
                 history_result = None
                 if lookup_ticket_history is not None:
@@ -891,10 +960,13 @@ def run_trade_close(  # noqa: C901
                         history_result = None
                 if isinstance(history_result, dict) and history_result:
                     return _finish(history_result, scope="history")
-                return _finish({
-                    "error": f"Ticket {request.ticket} not found as position or pending order.",
-                    "checked_scopes": ["positions", "pending_orders"],
-                }, scope="ticket")
+                return _finish(
+                    {
+                        "error": f"Ticket {request.ticket} not found as position or pending order.",
+                        "checked_scopes": ["positions", "pending_orders"],
+                    },
+                    scope="ticket",
+                )
             return _finish(pending_result, scope="pending_orders")
         return _finish(position_result, scope="positions")
 
@@ -941,7 +1013,8 @@ def run_trade_close(  # noqa: C901
             pending_result = cancel_pending(comment=request.comment)
             if (
                 isinstance(pending_result, dict)
-                and str(pending_result.get("message", "")).strip().lower() == "no pending orders"
+                and str(pending_result.get("message", "")).strip().lower()
+                == "no pending orders"
             ):
                 return _finish(
                     _with_no_action(message="No open positions or pending orders"),
@@ -979,7 +1052,17 @@ def run_trade_history(  # noqa: C901
     )
 
     def _finish(result: Any) -> Any:
-        record_count = len(result) if isinstance(result, list) else None
+        record_count = None
+        if isinstance(result, list):
+            record_count = len(result)
+        elif isinstance(result, dict):
+            items = result.get("items")
+            if isinstance(items, list):
+                record_count = len(items)
+            else:
+                count_value = result.get("count")
+                if isinstance(count_value, int):
+                    record_count = count_value
         log_operation_finish(
             logger,
             operation="trade_history",
@@ -1000,11 +1083,19 @@ def run_trade_history(  # noqa: C901
     def _get_history():  # noqa: C901
         try:
             use_client_tz_value = use_client_tz()
-            fmt_time = format_time_minimal_local if use_client_tz_value else format_time_minimal
-            trigger_pattern = re.compile(r"\[(sl|tp)\s+([+-]?\d+(?:\.\d+)?)\]", re.IGNORECASE)
+            fmt_time = (
+                format_time_minimal_local
+                if use_client_tz_value
+                else format_time_minimal
+            )
+            trigger_pattern = re.compile(
+                r"\[(sl|tp)\s+([+-]?\d+(?:\.\d+)?)\]", re.IGNORECASE
+            )
             default_window_label: Optional[str] = None
 
-            def _normalize_time_col(df: "pd.DataFrame", col: str) -> Optional["pd.Series"]:
+            def _normalize_time_col(
+                df: "pd.DataFrame", col: str
+            ) -> Optional["pd.Series"]:
                 if col not in df.columns:
                     return None
                 utc, text = _epoch_series_to_utc_and_text(
@@ -1037,7 +1128,9 @@ def run_trade_history(  # noqa: C901
             )
             if order_ticket_error:
                 return {"error": order_ticket_error}
-            minutes_back_value, minutes_back_error = normalize_minutes_back(request.minutes_back)
+            minutes_back_value, minutes_back_error = normalize_minutes_back(
+                request.minutes_back
+            )
             if minutes_back_error:
                 return {"error": minutes_back_error}
 
@@ -1056,7 +1149,9 @@ def run_trade_history(  # noqa: C901
                     return {"error": "Invalid start time."}
             else:
                 from_dt = to_dt - timedelta(days=_DEFAULT_TRADE_HISTORY_LOOKBACK_DAYS)
-                default_window_label = f"the last {_DEFAULT_TRADE_HISTORY_LOOKBACK_DAYS} days"
+                default_window_label = (
+                    f"the last {_DEFAULT_TRADE_HISTORY_LOOKBACK_DAYS} days"
+                )
 
             if from_dt > to_dt:
                 return {"error": "start must be before end."}
@@ -1087,7 +1182,9 @@ def run_trade_history(  # noqa: C901
                 numeric = pd.to_numeric(raw, errors="coerce")
                 if numeric.notna().any():
                     df[f"{col}_code"] = numeric.astype("Int64")
-                df[col] = raw.apply(lambda v: decode_mt5_enum_label(gateway, v, prefix=prefix) or v)
+                df[col] = raw.apply(
+                    lambda v: decode_mt5_enum_label(gateway, v, prefix=prefix) or v
+                )
 
             def _reason_to_exit_trigger(reason: Any) -> Optional[str]:
                 txt = str(reason or "").strip().lower()
@@ -1133,7 +1230,9 @@ def run_trade_history(  # noqa: C901
                 for col in columns:
                     if col not in df_in.columns:
                         continue
-                    masks.append(pd.to_numeric(df_in[col], errors="coerce").eq(ticket_value))
+                    masks.append(
+                        pd.to_numeric(df_in[col], errors="coerce").eq(ticket_value)
+                    )
                 if not masks:
                     return df_in.iloc[0:0]
                 mask = masks[0]
@@ -1164,9 +1263,13 @@ def run_trade_history(  # noqa: C901
             def _history_fetch_error(kind_label: str, exc: Exception) -> Dict[str, str]:
                 detail = str(exc).strip()
                 if "exception set" in detail.lower():
-                    return {"error": f"Failed to fetch {kind_label} history from MT5. {_TRADE_HISTORY_RANGE_HINT}"}
+                    return {
+                        "error": f"Failed to fetch {kind_label} history from MT5. {_TRADE_HISTORY_RANGE_HINT}"
+                    }
                 if detail:
-                    return {"error": f"Failed to fetch {kind_label} history from MT5: {detail}"}
+                    return {
+                        "error": f"Failed to fetch {kind_label} history from MT5: {detail}"
+                    }
                 return {"error": f"Failed to fetch {kind_label} history from MT5."}
 
             def _empty_history_message(kind_label: str) -> Dict[str, str]:
@@ -1195,10 +1298,15 @@ def run_trade_history(  # noqa: C901
                 df = pd.DataFrame(list(rows), columns=rows[0]._asdict().keys())
                 if request.symbol and "symbol" in df.columns:
                     df = df.loc[
-                        df["symbol"].astype(str).str.upper() == str(request.symbol).upper()
+                        df["symbol"].astype(str).str.upper()
+                        == str(request.symbol).upper()
                     ]
-                df = _filter_by_ticket_columns(df, deal_ticket_value, columns=("ticket",))
-                df = _filter_by_ticket_columns(df, order_ticket_value, columns=("order",))
+                df = _filter_by_ticket_columns(
+                    df, deal_ticket_value, columns=("ticket",)
+                )
+                df = _filter_by_ticket_columns(
+                    df, order_ticket_value, columns=("order",)
+                )
                 df = _filter_by_ticket_columns(
                     df,
                     position_ticket_value,
@@ -1228,12 +1336,16 @@ def run_trade_history(  # noqa: C901
                         for col in triggers.columns:
                             df[col] = triggers[col]
                 for noise_col in ("time_msc", "external_id", "fee"):
-                    if noise_col in df.columns and _is_non_informative_series(df[noise_col]):
+                    if noise_col in df.columns and _is_non_informative_series(
+                        df[noise_col]
+                    ):
                         df = df.drop(columns=[noise_col])
             else:
                 try:
                     rows = (
-                        gateway.history_orders_get(from_dt, to_dt, symbol=request.symbol)
+                        gateway.history_orders_get(
+                            from_dt, to_dt, symbol=request.symbol
+                        )
                         if request.symbol
                         else gateway.history_orders_get(from_dt, to_dt)
                     )
@@ -1244,9 +1356,12 @@ def run_trade_history(  # noqa: C901
                 df = pd.DataFrame(list(rows), columns=rows[0]._asdict().keys())
                 if request.symbol and "symbol" in df.columns:
                     df = df.loc[
-                        df["symbol"].astype(str).str.upper() == str(request.symbol).upper()
+                        df["symbol"].astype(str).str.upper()
+                        == str(request.symbol).upper()
                     ]
-                df = _filter_by_ticket_columns(df, order_ticket_value, columns=("ticket",))
+                df = _filter_by_ticket_columns(
+                    df, order_ticket_value, columns=("ticket",)
+                )
                 df = _filter_by_ticket_columns(
                     df,
                     position_ticket_value,
@@ -1262,7 +1377,9 @@ def run_trade_history(  # noqa: C901
                     _decode_enum_column(df, col, prefix)
 
             df["__sort_utc"] = (
-                sort_src if sort_src is not None else pd.Series([float("nan")] * len(df))
+                sort_src
+                if sort_src is not None
+                else pd.Series([float("nan")] * len(df))
             )
 
             limit_value = normalize_limit(request.limit)
@@ -1275,7 +1392,9 @@ def run_trade_history(  # noqa: C901
                 df = df.drop(columns=["__sort_utc"])
 
             df = df.replace([float("inf"), float("-inf")], pd.NA)
-            records = df.astype(object).where(df.notna(), None).to_dict(orient="records")
+            records = (
+                df.astype(object).where(df.notna(), None).to_dict(orient="records")
+            )
             timezone_label = "UTC"
             if use_client_tz_value:
                 try:
@@ -1333,7 +1452,11 @@ def run_trade_risk_analyze(  # noqa: C901
 
             equity = float(account.equity)
             currency = account.currency
-            positions = gateway.positions_get(symbol=request.symbol) if request.symbol else gateway.positions_get()
+            positions = (
+                gateway.positions_get(symbol=request.symbol)
+                if request.symbol
+                else gateway.positions_get()
+            )
             if positions is None:
                 positions = []
 
@@ -1377,8 +1500,12 @@ def run_trade_risk_analyze(  # noqa: C901
                     volume = float(pos.volume)
 
                     contract_size = float(sym_info.trade_contract_size)
-                    tick_value = validation._safe_float_attr(sym_info, "trade_tick_value")
-                    tick_value_loss = validation._safe_float_attr(sym_info, "trade_tick_value_loss")
+                    tick_value = validation._safe_float_attr(
+                        sym_info, "trade_tick_value"
+                    )
+                    tick_value_loss = validation._safe_float_attr(
+                        sym_info, "trade_tick_value_loss"
+                    )
                     tick_size = validation._safe_float_attr(sym_info, "trade_tick_size")
                     risk_tick_value = _resolve_risk_tick_value(
                         tick_value=tick_value,
@@ -1386,7 +1513,9 @@ def run_trade_risk_analyze(  # noqa: C901
                     )
                     if not math.isfinite(tick_size) or tick_size <= 0:
                         tick_size = 0.0
-                    tick_value_valid = math.isfinite(risk_tick_value) and risk_tick_value > 0
+                    tick_value_valid = (
+                        math.isfinite(risk_tick_value) and risk_tick_value > 0
+                    )
                     if not math.isfinite(contract_size) or contract_size <= 0:
                         contract_size = 1.0
 
@@ -1398,7 +1527,9 @@ def run_trade_risk_analyze(  # noqa: C901
                     reward_currency = None
                     rr_ratio = None
                     risk_status = "undefined"
-                    position_type = validation._safe_int_attr(pos, "type", position_type_sell)
+                    position_type = validation._safe_int_attr(
+                        pos, "type", position_type_sell
+                    )
                     is_buy_position = int(position_type) == int(position_type_buy)
 
                     if sl_price and tick_size > 0 and tick_value_valid:
@@ -1408,7 +1539,9 @@ def run_trade_risk_analyze(  # noqa: C901
                             else (sl_price - entry_price) / tick_size
                         )
                         risk_currency = abs(risk_ticks * risk_tick_value * volume)
-                        risk_pct = (risk_currency / equity) * 100.0 if equity > 0 else 0.0
+                        risk_pct = (
+                            (risk_currency / equity) * 100.0 if equity > 0 else 0.0
+                        )
                         total_risk_currency += risk_currency
                         risk_status = "defined"
 
@@ -1444,11 +1577,15 @@ def run_trade_risk_analyze(  # noqa: C901
                             "entry": entry_price,
                             "sl": sl_price,
                             "tp": tp_price,
-                            "risk_currency": round(risk_currency, 2) if risk_currency else None,
+                            "risk_currency": round(risk_currency, 2)
+                            if risk_currency
+                            else None,
                             "risk_pct": round(risk_pct, 2) if risk_pct else None,
                             "risk_status": risk_status,
                             "notional_value": round(notional_value, 2),
-                            "reward_currency": round(reward_currency, 2) if reward_currency else None,
+                            "reward_currency": round(reward_currency, 2)
+                            if reward_currency
+                            else None,
                             "rr_ratio": round(rr_ratio, 2) if rr_ratio else None,
                         }
                     )
@@ -1463,7 +1600,9 @@ def run_trade_risk_analyze(  # noqa: C901
                     )
                     continue
 
-            total_risk_pct = (total_risk_currency / equity) * 100.0 if equity > 0 else 0.0
+            total_risk_pct = (
+                (total_risk_currency / equity) * 100.0 if equity > 0 else 0.0
+            )
             notional_exposure_pct = (
                 (total_notional_exposure / equity) * 100.0 if equity > 0 else 0.0
             )
@@ -1492,7 +1631,9 @@ def run_trade_risk_analyze(  # noqa: C901
                     "total_risk_pct": round(total_risk_pct, 2),
                     "positions_count": len(position_risks),
                     "positions_without_sl": positions_without_sl,
-                    "positions_with_risk_calculation_failures": len(risk_calculation_failures),
+                    "positions_with_risk_calculation_failures": len(
+                        risk_calculation_failures
+                    ),
                     "notional_exposure": round(total_notional_exposure, 2),
                     "notional_exposure_pct": round(notional_exposure_pct, 2),
                 },
@@ -1524,7 +1665,9 @@ def run_trade_risk_analyze(  # noqa: C901
 
                 contract_size = float(sym_info.trade_contract_size)
                 tick_value = validation._safe_float_attr(sym_info, "trade_tick_value")
-                tick_value_loss = validation._safe_float_attr(sym_info, "trade_tick_value_loss")
+                tick_value_loss = validation._safe_float_attr(
+                    sym_info, "trade_tick_value_loss"
+                )
                 tick_size = validation._safe_float_attr(sym_info, "trade_tick_size")
                 risk_tick_value = _resolve_risk_tick_value(
                     tick_value=tick_value,
@@ -1550,13 +1693,15 @@ def run_trade_risk_analyze(  # noqa: C901
                 if not math.isfinite(contract_size) or contract_size <= 0:
                     contract_size = 1.0
 
-                direction_norm, direction_error, direction_source = _resolve_trade_risk_direction(
-                    direction=request.direction,
-                    entry=float(request.proposed_entry),
-                    stop_loss=float(request.proposed_sl),
-                    take_profit=float(request.proposed_tp)
-                    if request.proposed_tp is not None
-                    else None,
+                direction_norm, direction_error, direction_source = (
+                    _resolve_trade_risk_direction(
+                        direction=request.direction,
+                        entry=float(request.proposed_entry),
+                        stop_loss=float(request.proposed_sl),
+                        take_profit=float(request.proposed_tp)
+                        if request.proposed_tp is not None
+                        else None,
+                    )
                 )
                 if direction_error or direction_norm is None:
                     result["position_sizing_error"] = (
@@ -1578,9 +1723,13 @@ def run_trade_risk_analyze(  # noqa: C901
 
                 risk_amount = equity * (request.desired_risk_pct / 100.0)
                 if direction_norm == "long":
-                    sl_distance_ticks = (request.proposed_entry - request.proposed_sl) / tick_size
+                    sl_distance_ticks = (
+                        request.proposed_entry - request.proposed_sl
+                    ) / tick_size
                 else:
-                    sl_distance_ticks = (request.proposed_sl - request.proposed_entry) / tick_size
+                    sl_distance_ticks = (
+                        request.proposed_sl - request.proposed_entry
+                    ) / tick_size
                 if sl_distance_ticks > 0:
                     raw_volume = risk_amount / (sl_distance_ticks * risk_tick_value)
                     if not math.isfinite(raw_volume) or raw_volume <= 0:
@@ -1618,18 +1767,28 @@ def run_trade_risk_analyze(  # noqa: C901
                         )
 
                     step_txt = f"{volume_step:.10f}".rstrip("0")
-                    step_decimals = len(step_txt.split(".")[1]) if "." in step_txt else 0
+                    step_decimals = (
+                        len(step_txt.split(".")[1]) if "." in step_txt else 0
+                    )
                     if step_decimals > 0:
-                        suggested_volume = float(f"{suggested_volume:.{step_decimals}f}")
+                        suggested_volume = float(
+                            f"{suggested_volume:.{step_decimals}f}"
+                        )
                     else:
                         suggested_volume = float(round(suggested_volume))
 
                     actual_risk = sl_distance_ticks * risk_tick_value * suggested_volume
                     actual_risk_pct = (actual_risk / equity) * 100.0
                     risk_pct_diff = actual_risk_pct - float(request.desired_risk_pct)
-                    risk_over_target = actual_risk_pct > (float(request.desired_risk_pct) + 1e-9)
-                    overshoot_pct = max(0.0, float(actual_risk_pct) - float(request.desired_risk_pct))
-                    overshoot_currency = max(0.0, float(actual_risk) - float(risk_amount))
+                    risk_over_target = actual_risk_pct > (
+                        float(request.desired_risk_pct) + 1e-9
+                    )
+                    overshoot_pct = max(
+                        0.0, float(actual_risk_pct) - float(request.desired_risk_pct)
+                    )
+                    overshoot_currency = max(
+                        0.0, float(actual_risk) - float(risk_amount)
+                    )
                     overshoot_reason = None
                     if risk_over_target:
                         if rounding_mode == "clamped_to_min_volume":
@@ -1655,7 +1814,9 @@ def run_trade_risk_analyze(  # noqa: C901
                             tp_distance_ticks = (
                                 request.proposed_entry - request.proposed_tp
                             ) / tick_size
-                        reward_currency = tp_distance_ticks * tick_value * suggested_volume
+                        reward_currency = (
+                            tp_distance_ticks * tick_value * suggested_volume
+                        )
                         if actual_risk > 0:
                             rr_ratio = reward_currency / actual_risk
 
@@ -1686,7 +1847,9 @@ def run_trade_risk_analyze(  # noqa: C901
                         "volume_min": min_volume,
                         "volume_max": max_volume,
                         "volume_rounding": rounding_mode,
-                        "reward_currency": round(reward_currency, 2) if reward_currency else None,
+                        "reward_currency": round(reward_currency, 2)
+                        if reward_currency
+                        else None,
                         "rr_ratio": round(rr_ratio, 2) if rr_ratio else None,
                         "sizing_notes": sizing_notes,
                     }
@@ -1707,7 +1870,9 @@ def run_trade_risk_analyze(  # noqa: C901
                             "overshoot_currency": round(overshoot_currency, 2),
                         }
                 else:
-                    result["position_sizing_error"] = "SL distance must be greater than 0"
+                    result["position_sizing_error"] = (
+                        "SL distance must be greater than 0"
+                    )
 
             return result
         except Exception as exc:
@@ -1754,7 +1919,9 @@ def run_trade_var_cvar_calculate(  # noqa: C901
 
     timeframe_value = str(request.timeframe or "").strip().upper()
     if timeframe_value not in TIMEFRAME_MAP:
-        return _finish({"error": invalid_timeframe_error(timeframe_value, TIMEFRAME_MAP)})
+        return _finish(
+            {"error": invalid_timeframe_error(timeframe_value, TIMEFRAME_MAP)}
+        )
 
     method_value, method_error = _normalize_var_cvar_method(request.method)
     if method_error or method_value is None:
@@ -1764,20 +1931,22 @@ def run_trade_var_cvar_calculate(  # noqa: C901
     if transform_error or transform_value is None:
         return _finish({"error": transform_error})
 
-    confidence_value, confidence_error = _normalize_var_cvar_confidence(request.confidence)
+    confidence_value, confidence_error = _normalize_var_cvar_confidence(
+        request.confidence
+    )
     if confidence_error or confidence_value is None:
         return _finish({"error": confidence_error})
 
     try:
         lookback = int(request.lookback)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return _finish({"error": "lookback must be an integer"})
     if lookback < 2:
         return _finish({"error": "lookback must be at least 2"})
 
     try:
         min_observations = int(request.min_observations)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return _finish({"error": "min_observations must be an integer"})
     if min_observations < 2:
         return _finish({"error": "min_observations must be at least 2"})
@@ -1797,7 +1966,11 @@ def run_trade_var_cvar_calculate(  # noqa: C901
             currency = currency_text
 
     try:
-        positions = gateway.positions_get(symbol=request.symbol) if request.symbol else gateway.positions_get()
+        positions = (
+            gateway.positions_get(symbol=request.symbol)
+            if request.symbol
+            else gateway.positions_get()
+        )
     except Exception as exc:
         return _finish({"error": str(exc)})
     if positions is None:
@@ -1861,28 +2034,53 @@ def run_trade_var_cvar_calculate(  # noqa: C901
     for position in positions:
         symbol = str(getattr(position, "symbol", "") or "").strip()
         if not symbol:
-            warnings.append({"ticket": getattr(position, "ticket", None), "warning": "Position has no symbol"})
+            warnings.append(
+                {
+                    "ticket": getattr(position, "ticket", None),
+                    "warning": "Position has no symbol",
+                }
+            )
             continue
         if symbol not in symbol_info_cache:
             symbol_info_cache[symbol] = gateway.symbol_info(symbol)
         symbol_info = symbol_info_cache[symbol]
         if symbol_info is None:
-            warnings.append({"ticket": getattr(position, "ticket", None), "symbol": symbol, "warning": "Symbol info unavailable"})
+            warnings.append(
+                {
+                    "ticket": getattr(position, "ticket", None),
+                    "symbol": symbol,
+                    "warning": "Symbol info unavailable",
+                }
+            )
             continue
 
         volume = validation._safe_float_attr(position, "volume", 0.0)
         if not math.isfinite(volume) or volume <= 0.0:
-            warnings.append({"ticket": getattr(position, "ticket", None), "symbol": symbol, "warning": "Position volume is invalid"})
+            warnings.append(
+                {
+                    "ticket": getattr(position, "ticket", None),
+                    "symbol": symbol,
+                    "warning": "Position volume is invalid",
+                }
+            )
             continue
 
-        contract_size = validation._safe_float_attr(symbol_info, "trade_contract_size", 1.0)
+        contract_size = validation._safe_float_attr(
+            symbol_info, "trade_contract_size", 1.0
+        )
         if not math.isfinite(contract_size) or contract_size <= 0.0:
             contract_size = 1.0
         mark_price = validation._safe_float_attr(position, "price_current", 0.0)
         if mark_price <= 0.0:
             mark_price = validation._safe_float_attr(position, "price_open", 0.0)
         if not math.isfinite(mark_price) or mark_price <= 0.0:
-            warnings.append({"ticket": getattr(position, "ticket", None), "symbol": symbol, "warning": "Position mark price is invalid"})
+            warnings.append(
+                {
+                    "ticket": getattr(position, "ticket", None),
+                    "symbol": symbol,
+                    "warning": "Position mark price is invalid",
+                }
+            )
             continue
 
         position_type = validation._safe_int_attr(position, "type", position_type_sell)
@@ -1899,7 +2097,9 @@ def run_trade_var_cvar_calculate(  # noqa: C901
                 "mark_price": round(float(mark_price), 6),
                 "contract_size": round(float(contract_size), 6),
                 "signed_notional": round(float(signed_notional), 2),
-                "unrealized_profit": round(validation._safe_float_attr(position, "profit", 0.0), 2),
+                "unrealized_profit": round(
+                    validation._safe_float_attr(position, "profit", 0.0), 2
+                ),
             }
         )
 
@@ -1917,7 +2117,9 @@ def run_trade_var_cvar_calculate(  # noqa: C901
         exposure["positions"] += 1
 
     if not position_exposures:
-        return _finish({"error": "No usable open positions available for VaR/CVaR calculation."})
+        return _finish(
+            {"error": "No usable open positions available for VaR/CVaR calculation."}
+        )
 
     return_series: Dict[str, Any] = {}
     for symbol in list(symbol_exposures.keys()):
@@ -1949,12 +2151,18 @@ def run_trade_var_cvar_calculate(  # noqa: C901
         return _finish(result)
 
     valid_symbols = set(return_series)
-    position_exposures = [item for item in position_exposures if item["symbol"] in valid_symbols]
+    position_exposures = [
+        item for item in position_exposures if item["symbol"] in valid_symbols
+    ]
     symbol_exposure_frame = {
-        symbol: data for symbol, data in symbol_exposures.items() if symbol in valid_symbols
+        symbol: data
+        for symbol, data in symbol_exposures.items()
+        if symbol in valid_symbols
     }
     if not position_exposures or not symbol_exposure_frame:
-        return _finish({"error": "No open positions remained after filtering unavailable history."})
+        return _finish(
+            {"error": "No open positions remained after filtering unavailable history."}
+        )
 
     aligned_returns = pd.concat(
         [return_series[symbol].rename(symbol) for symbol in symbol_exposure_frame],
@@ -1981,8 +2189,12 @@ def run_trade_var_cvar_calculate(  # noqa: C901
             for symbol, data in symbol_exposure_frame.items()
         }
     )
-    portfolio_pnl = aligned_returns[exposure_vector.index].mul(exposure_vector, axis=1).sum(axis=1)
-    pnl_values = [float(value) for value in portfolio_pnl.tolist() if math.isfinite(float(value))]
+    portfolio_pnl = (
+        aligned_returns[exposure_vector.index].mul(exposure_vector, axis=1).sum(axis=1)
+    )
+    pnl_values = [
+        float(value) for value in portfolio_pnl.tolist() if math.isfinite(float(value))
+    ]
     if len(pnl_values) < min_observations:
         return _finish(
             {
@@ -2002,11 +2214,17 @@ def run_trade_var_cvar_calculate(  # noqa: C901
     except Exception as exc:
         return _finish({"error": str(exc)})
 
-    total_abs_notional = float(sum(abs(float(item["signed_notional"])) for item in position_exposures))
-    net_exposure = float(sum(float(item["signed_notional"]) for item in position_exposures))
+    total_abs_notional = float(
+        sum(abs(float(item["signed_notional"])) for item in position_exposures)
+    )
+    net_exposure = float(
+        sum(float(item["signed_notional"]) for item in position_exposures)
+    )
     mean_pnl = float(sum(pnl_values) / len(pnl_values))
     if len(pnl_values) > 1:
-        variance = sum((value - mean_pnl) ** 2 for value in pnl_values) / float(len(pnl_values) - 1)
+        variance = sum((value - mean_pnl) ** 2 for value in pnl_values) / float(
+            len(pnl_values) - 1
+        )
         volatility_pnl = math.sqrt(max(0.0, variance))
     else:
         volatility_pnl = 0.0
@@ -2025,7 +2243,9 @@ def run_trade_var_cvar_calculate(  # noqa: C901
                 else 0.0,
             }
         )
-    symbol_rows.sort(key=lambda item: (-abs(float(item["signed_notional"])), item["symbol"]))
+    symbol_rows.sort(
+        key=lambda item: (-abs(float(item["signed_notional"])), item["symbol"])
+    )
 
     worst_bars = portfolio_pnl.nsmallest(min(5, len(portfolio_pnl)))
     worst_observations = [
@@ -2089,6 +2309,7 @@ def run_trade_get_open(
     comment_row_metadata: Any,
 ) -> List[Dict[str, Any]]:
     import pandas as pd
+
     result = run_logged_operation(
         logger,
         operation="trade_get_open",
@@ -2126,6 +2347,7 @@ def run_trade_get_pending(
     comment_row_metadata: Any,
 ) -> List[Dict[str, Any]]:
     import pandas as pd
+
     result = run_logged_operation(
         logger,
         operation="trade_get_pending",
@@ -2246,10 +2468,14 @@ def _apply_trade_query_limit(
     limit_value = normalize_limit(limit)
     if not limit_value or len(out_df) <= limit_value:
         return out_df
-    sorted_index = time_utc.sort_values(
-        kind="stable",
-        na_position="first",
-    ).tail(limit_value).index
+    sorted_index = (
+        time_utc.sort_values(
+            kind="stable",
+            na_position="first",
+        )
+        .tail(limit_value)
+        .index
+    )
     return out_df.loc[sorted_index].copy()
 
 
@@ -2262,7 +2488,11 @@ def _build_trade_get_open_output(
     **_kwargs: Any,
 ) -> Any:
     open_df = df.drop(
-        columns=[col for col in ("time_msc", "time_update", "time_update_msc") if col in df.columns]
+        columns=[
+            col
+            for col in ("time_msc", "time_update", "time_update_msc")
+            if col in df.columns
+        ]
     ).copy()
     if "type" in open_df.columns:
         mapped = open_df["type"].map(
@@ -2354,8 +2584,12 @@ def _build_trade_get_pending_output(
                 _mt5_int_const(gateway, "ORDER_TYPE_SELL_LIMIT", 3): "SELL_LIMIT",
                 _mt5_int_const(gateway, "ORDER_TYPE_BUY_STOP", 4): "BUY_STOP",
                 _mt5_int_const(gateway, "ORDER_TYPE_SELL_STOP", 5): "SELL_STOP",
-                _mt5_int_const(gateway, "ORDER_TYPE_BUY_STOP_LIMIT", 6): "BUY_STOP_LIMIT",
-                _mt5_int_const(gateway, "ORDER_TYPE_SELL_STOP_LIMIT", 7): "SELL_STOP_LIMIT",
+                _mt5_int_const(
+                    gateway, "ORDER_TYPE_BUY_STOP_LIMIT", 6
+                ): "BUY_STOP_LIMIT",
+                _mt5_int_const(
+                    gateway, "ORDER_TYPE_SELL_STOP_LIMIT", 7
+                ): "SELL_STOP_LIMIT",
             }
         )
         pending_df["type"] = mapped.fillna(pending_df["type"].astype(str))

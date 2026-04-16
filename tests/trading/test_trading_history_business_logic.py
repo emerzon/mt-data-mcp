@@ -24,7 +24,9 @@ def trade_history(**kwargs):
     request = kwargs.pop("request", None)
     if request is None:
         request = TradeHistoryRequest(**kwargs)
-    with patch("mtdata.core.trading.account.ensure_mt5_connection_or_raise", return_value=None):
+    with patch(
+        "mtdata.core.trading.account.ensure_mt5_connection_or_raise", return_value=None
+    ):
         if raw_output:
             return _unwrap(_trade_history_tool)(request=request)
         return _trade_history_tool(request=request, __cli_raw=False)
@@ -35,7 +37,9 @@ def trade_journal_analyze(**kwargs):
     request = kwargs.pop("request", None)
     if request is None:
         request = TradeJournalAnalyzeRequest(**kwargs)
-    with patch("mtdata.core.trading.account.ensure_mt5_connection_or_raise", return_value=None):
+    with patch(
+        "mtdata.core.trading.account.ensure_mt5_connection_or_raise", return_value=None
+    ):
         if raw_output:
             return _unwrap(_trade_journal_tool)(request=request)
         return _trade_journal_tool(request=request, __cli_raw=False)
@@ -51,16 +55,23 @@ def _install_mock_mt5() -> tuple[MagicMock, object]:
 def test_trade_history_deals_normalizes_time_to_utc_string() -> None:
     mt5, prev = _install_mock_mt5()
     Deal = namedtuple("Deal", ["ticket", "time", "symbol"])
-    mt5.history_deals_get.return_value = [Deal(ticket=1, time=1700000000, symbol="EURUSD")]
+    mt5.history_deals_get.return_value = [
+        Deal(ticket=1, time=1700000000, symbol="EURUSD")
+    ]
 
     with patch("mtdata.core.trading.account._use_client_tz", lambda: False):
         out = trade_history(history_kind="deals", __cli_raw=True)
     if prev is not None:
         sys.modules["MetaTrader5"] = prev
 
-    assert isinstance(out, list)
-    assert out[0]["time"] == _format_time_minimal(_mt5_epoch_to_utc(1700000000))
-    assert out[0]["timestamp_timezone"] == "UTC"
+    assert out["success"] is True
+    assert out["kind"] == "trade_history"
+    assert out["history_kind"] == "deals"
+    assert out["count"] == 1
+    assert out["items"][0]["time"] == _format_time_minimal(
+        _mt5_epoch_to_utc(1700000000)
+    )
+    assert out["items"][0]["timestamp_timezone"] == "UTC"
 
 
 def test_trade_history_orders_normalizes_setup_and_done_times() -> None:
@@ -75,10 +86,16 @@ def test_trade_history_orders_normalizes_setup_and_done_times() -> None:
     if prev is not None:
         sys.modules["MetaTrader5"] = prev
 
-    assert isinstance(out, list)
-    assert out[0]["time_setup"] == _format_time_minimal(_mt5_epoch_to_utc(1700000000))
-    assert out[0]["time_done"] == _format_time_minimal(_mt5_epoch_to_utc(1700003600))
-    assert out[0]["timestamp_timezone"] == "UTC"
+    assert out["success"] is True
+    assert out["history_kind"] == "orders"
+    assert out["count"] == 1
+    assert out["items"][0]["time_setup"] == _format_time_minimal(
+        _mt5_epoch_to_utc(1700000000)
+    )
+    assert out["items"][0]["time_done"] == _format_time_minimal(
+        _mt5_epoch_to_utc(1700003600)
+    )
+    assert out["items"][0]["timestamp_timezone"] == "UTC"
 
 
 def test_trade_history_filters_rows_by_symbol_even_if_mt5_returns_mixed_rows() -> None:
@@ -94,9 +111,10 @@ def test_trade_history_filters_rows_by_symbol_even_if_mt5_returns_mixed_rows() -
     if prev is not None:
         sys.modules["MetaTrader5"] = prev
 
-    assert isinstance(out, list)
-    assert len(out) == 1
-    assert out[0]["symbol"] == "BTCUSD"
+    assert out["success"] is True
+    assert out["scope"] == "symbol"
+    assert out["count"] == 1
+    assert out["items"][0]["symbol"] == "BTCUSD"
 
 
 def test_trade_history_deals_decodes_enum_codes_to_labels() -> None:
@@ -114,20 +132,22 @@ def test_trade_history_deals_decodes_enum_codes_to_labels() -> None:
     if prev is not None:
         sys.modules["MetaTrader5"] = prev
 
-    assert isinstance(out, list)
-    assert out[0]["type"] == "Buy"
-    assert out[0]["entry"] == "In"
-    assert out[0]["reason"] == "Client"
-    assert out[0]["type_code"] == 0
-    assert out[0]["entry_code"] == 0
-    assert out[0]["reason_code"] == 0
+    row = out["items"][0]
+    assert row["type"] == "Buy"
+    assert row["entry"] == "In"
+    assert row["reason"] == "Client"
+    assert row["type_code"] == 0
+    assert row["entry_code"] == 0
+    assert row["reason_code"] == 0
 
 
 def test_trade_history_deals_extracts_exit_trigger_from_comment() -> None:
     mt5, prev = _install_mock_mt5()
     mt5.DEAL_ENTRY_OUT = 1
     mt5.DEAL_REASON_SL = 4
-    Deal = namedtuple("Deal", ["ticket", "time", "symbol", "entry", "reason", "comment"])
+    Deal = namedtuple(
+        "Deal", ["ticket", "time", "symbol", "entry", "reason", "comment"]
+    )
     mt5.history_deals_get.return_value = [
         Deal(
             ticket=1,
@@ -144,17 +164,21 @@ def test_trade_history_deals_extracts_exit_trigger_from_comment() -> None:
     if prev is not None:
         sys.modules["MetaTrader5"] = prev
 
-    assert isinstance(out, list)
-    assert out[0]["exit_trigger"] == "SL"
-    assert out[0]["exit_trigger_price"] == 64654.92
-    assert out[0]["exit_trigger_source"] == "comment"
+    row = out["items"][0]
+    assert row["exit_trigger"] == "SL"
+    assert row["exit_trigger_price"] == 64654.92
+    assert row["exit_trigger_source"] == "comment"
 
 
-def test_trade_history_deals_extracts_exit_trigger_from_reason_when_comment_missing() -> None:
+def test_trade_history_deals_extracts_exit_trigger_from_reason_when_comment_missing() -> (
+    None
+):
     mt5, prev = _install_mock_mt5()
     mt5.DEAL_ENTRY_OUT = 1
     mt5.DEAL_REASON_TP = 5
-    Deal = namedtuple("Deal", ["ticket", "time", "symbol", "entry", "reason", "comment"])
+    Deal = namedtuple(
+        "Deal", ["ticket", "time", "symbol", "entry", "reason", "comment"]
+    )
     mt5.history_deals_get.return_value = [
         Deal(
             ticket=1,
@@ -171,10 +195,10 @@ def test_trade_history_deals_extracts_exit_trigger_from_reason_when_comment_miss
     if prev is not None:
         sys.modules["MetaTrader5"] = prev
 
-    assert isinstance(out, list)
-    assert out[0]["exit_trigger"] == "TP"
-    assert out[0]["exit_trigger_price"] is None
-    assert out[0]["exit_trigger_source"] == "reason"
+    row = out["items"][0]
+    assert row["exit_trigger"] == "TP"
+    assert row["exit_trigger_price"] is None
+    assert row["exit_trigger_source"] == "reason"
 
 
 def test_trade_history_deals_drops_non_informative_noise_columns() -> None:
@@ -215,8 +239,7 @@ def test_trade_history_deals_drops_non_informative_noise_columns() -> None:
     if prev is not None:
         sys.modules["MetaTrader5"] = prev
 
-    assert isinstance(out, list)
-    row = out[0]
+    row = out["items"][0]
     assert "time_msc" not in row
     assert "external_id" not in row
     assert "fee" not in row
@@ -260,8 +283,7 @@ def test_trade_history_deals_keeps_fee_when_non_zero() -> None:
     if prev is not None:
         sys.modules["MetaTrader5"] = prev
 
-    assert isinstance(out, list)
-    row = out[0]
+    row = out["items"][0]
     assert row["fee"] == 1.25
 
 
@@ -277,8 +299,7 @@ def test_trade_history_replaces_non_finite_values_with_none() -> None:
     if prev is not None:
         sys.modules["MetaTrader5"] = prev
 
-    assert isinstance(out, list)
-    assert out[0]["profit"] is None
+    assert out["items"][0]["profit"] is None
 
 
 def test_run_trade_history_logs_finish_event(caplog) -> None:
@@ -323,13 +344,15 @@ def test_trade_history_filters_deals_by_position_ticket() -> None:
     ]
 
     with patch("mtdata.core.trading.account._use_client_tz", lambda: False):
-        out = trade_history(history_kind="deals", symbol="BTCUSD", position_ticket=222, __cli_raw=True)
+        out = trade_history(
+            history_kind="deals", symbol="BTCUSD", position_ticket=222, __cli_raw=True
+        )
     if prev is not None:
         sys.modules["MetaTrader5"] = prev
 
-    assert isinstance(out, list)
-    assert len(out) == 1
-    assert out[0]["ticket"] == 2
+    assert out["scope"] == "ticket"
+    assert out["count"] == 1
+    assert out["items"][0]["ticket"] == 2
 
 
 def test_trade_history_without_range_uses_full_history_start() -> None:
@@ -344,7 +367,7 @@ def test_trade_history_without_range_uses_full_history_start() -> None:
     if prev is not None:
         sys.modules["MetaTrader5"] = prev
 
-    assert isinstance(out, list)
+    assert out["success"] is True
     from_dt, to_dt = mt5.history_deals_get.call_args.args[:2]
     assert abs((to_dt - from_dt).total_seconds() - (7 * 24 * 60 * 60)) < 1.0
     assert to_dt >= from_dt
@@ -390,10 +413,10 @@ def test_trade_history_surfaces_comment_limit_metadata() -> None:
     if prev is not None:
         sys.modules["MetaTrader5"] = prev
 
-    assert isinstance(out, list)
-    assert out[0]["comment_max_length"] == 31
-    assert out[0]["comment_visible_length"] == len("audit short")
-    assert out[0]["comment_may_be_truncated"] is False
+    row = out["items"][0]
+    assert row["comment_max_length"] == 31
+    assert row["comment_visible_length"] == len("audit short")
+    assert row["comment_may_be_truncated"] is False
 
 
 def test_trade_history_empty_deals_message_includes_orders_hint() -> None:
@@ -409,7 +432,9 @@ def test_trade_history_empty_deals_message_includes_orders_hint() -> None:
     assert "--history-kind orders" in out["message"]
 
 
-def test_trade_history_small_window_empty_orders_message_includes_propagation_note() -> None:
+def test_trade_history_small_window_empty_orders_message_includes_propagation_note() -> (
+    None
+):
     mt5, prev = _install_mock_mt5()
     mt5.history_orders_get.return_value = []
 
@@ -419,17 +444,48 @@ def test_trade_history_small_window_empty_orders_message_includes_propagation_no
         sys.modules["MetaTrader5"] = prev
 
     assert out["message"].startswith("No orders found")
-    assert "may take up to a few minutes to reflect very recent events" in out["message"]
+    assert (
+        "may take up to a few minutes to reflect very recent events" in out["message"]
+    )
 
 
 def test_trade_history_returns_connection_error_payload() -> None:
     with patch(
         "mtdata.core.trading.account.ensure_mt5_connection_or_raise",
-        side_effect=MT5ConnectionError("Failed to connect to MetaTrader5. Ensure MT5 terminal is running."),
+        side_effect=MT5ConnectionError(
+            "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."
+        ),
     ):
-        out = _unwrap(_trade_history_tool)(request=TradeHistoryRequest(history_kind="deals"))
+        out = _unwrap(_trade_history_tool)(
+            request=TradeHistoryRequest(history_kind="deals")
+        )
 
-    assert out["error"] == "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."
+    assert (
+        out["error"]
+        == "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."
+    )
+    assert out["success"] is False
+    assert out["kind"] == "trade_history"
+    assert out["count"] == 0
+    assert out["items"] == []
+
+
+def test_trade_history_empty_message_uses_enveloped_contract() -> None:
+    mt5, prev = _install_mock_mt5()
+    mt5.history_deals_get.return_value = []
+
+    with patch("mtdata.core.trading.account._use_client_tz", lambda: False):
+        out = trade_history(history_kind="deals", __cli_raw=True)
+    if prev is not None:
+        sys.modules["MetaTrader5"] = prev
+
+    assert out["success"] is True
+    assert out["kind"] == "trade_history"
+    assert out["history_kind"] == "deals"
+    assert out["count"] == 0
+    assert out["items"] == []
+    assert out["no_action"] is True
+    assert out["message"].startswith("No deals found")
 
 
 def test_trade_journal_analyze_summarizes_realized_exit_deals() -> None:
@@ -470,7 +526,14 @@ def test_trade_journal_analyze_summarizes_realized_exit_deals() -> None:
         },
     ]
 
-    with patch("mtdata.core.trading.account._run_trade_history_request", return_value=history_rows):
+    with patch(
+        "mtdata.core.trading.account._run_trade_history_request",
+        return_value={
+            "success": True,
+            "count": len(history_rows),
+            "items": history_rows,
+        },
+    ):
         out = trade_journal_analyze(__cli_raw=True)
 
     assert out["success"] is True
@@ -497,7 +560,14 @@ def test_trade_journal_analyze_returns_message_when_no_exit_deals_found() -> Non
         },
     ]
 
-    with patch("mtdata.core.trading.account._run_trade_history_request", return_value=history_rows):
+    with patch(
+        "mtdata.core.trading.account._run_trade_history_request",
+        return_value={
+            "success": True,
+            "count": len(history_rows),
+            "items": history_rows,
+        },
+    ):
         out = trade_journal_analyze(__cli_raw=True)
 
     assert out["success"] is True
@@ -506,7 +576,10 @@ def test_trade_journal_analyze_returns_message_when_no_exit_deals_found() -> Non
 
 
 def test_trade_journal_analyze_propagates_history_errors() -> None:
-    with patch("mtdata.core.trading.account._run_trade_history_request", return_value={"error": "boom"}):
+    with patch(
+        "mtdata.core.trading.account._run_trade_history_request",
+        return_value={"error": "boom"},
+    ):
         out = trade_journal_analyze(__cli_raw=True)
 
     assert out == {"error": "boom"}

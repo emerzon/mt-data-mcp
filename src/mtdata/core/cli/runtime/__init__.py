@@ -1,10 +1,12 @@
 """CLI runtime utilities."""
+
 import io
 import logging
 import os
 import sys
+import warnings
 from contextlib import contextmanager, redirect_stderr, redirect_stdout
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Iterator, List, Optional, cast
 
 
 def _debug_enabled() -> bool:
@@ -39,12 +41,27 @@ def _configure_cli_logging(*, verbose: bool) -> None:
     """Configure CLI logging."""
     try:
         mtdata_logger = logging.getLogger("mtdata")
-        mtdata_logger.setLevel(logging.INFO if verbose else logging.WARNING)
-        mtdata_logger.propagate = bool(verbose)
-        if not any(isinstance(handler, logging.NullHandler) for handler in mtdata_logger.handlers):
-            mtdata_logger.addHandler(logging.NullHandler())
+        if verbose:
+            mtdata_logger.setLevel(logging.INFO)
+            mtdata_logger.propagate = True
+        else:
+            mtdata_logger.setLevel(logging.WARNING)
+            mtdata_logger.propagate = False
+            if not any(
+                isinstance(handler, logging.NullHandler)
+                for handler in mtdata_logger.handlers
+            ):
+                mtdata_logger.addHandler(logging.NullHandler())
     except Exception:
         pass
+
+
+@contextmanager
+def _capture_runtime_warnings() -> Iterator[List[warnings.WarningMessage]]:
+    """Capture warnings raised during CLI execution."""
+    with warnings.catch_warnings(record=True) as warning_records:
+        warnings.simplefilter("always")
+        yield warning_records
 
 
 @contextmanager
@@ -92,7 +109,7 @@ def _suppress_cli_side_output(*, enabled: bool):
     }
     try:
         logging.disable(logging.CRITICAL)
-        with _temporary_environment(env_overrides):
+        with _temporary_environment(cast(Dict[str, Optional[str]], env_overrides)):
             with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
                 yield
     finally:
@@ -104,6 +121,7 @@ __all__ = [
     "_debug",
     "_argparse_color_enabled",
     "_configure_cli_logging",
+    "_capture_runtime_warnings",
     "_temporary_environment",
     "_suppress_cli_side_output",
 ]

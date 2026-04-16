@@ -11,8 +11,10 @@ import json
 import os
 import sys
 import types
+import warnings
 from typing import (
     Any,
+    cast,
     Dict,
     List,
     Literal,
@@ -88,9 +90,10 @@ from ..cli_runtime import (
 from ..cli_runtime import (
     parse_set_overrides as _parse_set_overrides_impl,
 )
-from ..config import load_environment
+from ...bootstrap.settings import load_environment
 from .runtime import (
     _argparse_color_enabled,
+    _capture_runtime_warnings,
     _configure_cli_logging,
     _debug,
     _debug_enabled,
@@ -108,6 +111,7 @@ _CLI_NAMESPACE_EXPORTS = (
     _temporary_environment,
 )
 
+
 def _is_typed_dict_type(value: Any) -> bool:
     try:
         if is_typeddict(value):
@@ -120,14 +124,59 @@ def _is_typed_dict_type(value: Any) -> bool:
         or getattr(value, "__optional_keys__", None) is not None
     )
 
-def _invoke_cli_tool_function(func: Any, *, args: Any, cmd_name: str, kwargs: Dict[str, Any]) -> Any:
-    del cmd_name
-    with _suppress_cli_side_output(enabled=bool(getattr(args, "json", False))):
-        return func(**kwargs)
 
-from ..schema import PARAM_HINTS as _PARAM_HINTS
-from ..schema import enrich_schema_with_shared_defs
-from ..schema import get_function_info as _schema_get_function_info
+def _invoke_cli_tool_function(
+    func: Any, *, args: Any, cmd_name: str, kwargs: Dict[str, Any]
+) -> Any:
+    del cmd_name
+    with _capture_runtime_warnings() as warning_records:
+        with _suppress_cli_side_output(enabled=True):
+            result = func(**kwargs)
+
+    warning_texts: List[str] = []
+    seen: set[str] = set()
+    for record in warning_records:
+        try:
+            text = warnings.formatwarning(
+                message=record.message,
+                category=record.category,
+                filename=record.filename,
+                lineno=record.lineno,
+                line=record.line,
+            ).strip()
+        except Exception:
+            text = str(getattr(record, "message", "")).strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        warning_texts.append(text)
+
+    if not warning_texts:
+        return result
+    if isinstance(result, dict):
+        out = dict(result)
+        combined: List[str] = []
+        existing = out.get("warnings")
+        if isinstance(existing, list):
+            for item in existing:
+                item_text = str(item).strip()
+                if item_text and item_text not in combined:
+                    combined.append(item_text)
+        elif isinstance(existing, str):
+            existing_text = existing.strip()
+            if existing_text:
+                combined.append(existing_text)
+        for item in warning_texts:
+            if item not in combined:
+                combined.append(item)
+        out["warnings"] = combined
+        return out
+    return {"success": True, "data": result, "warnings": warning_texts}
+
+
+from ...shared.schema import PARAM_HINTS as _PARAM_HINTS
+from ...shared.schema import enrich_schema_with_shared_defs
+from ...shared.schema import get_function_info as _schema_get_function_info
 from ..server_utils import get_mcp_registry
 from ..unified_params import add_global_args_to_parser
 
@@ -146,9 +195,17 @@ def _iter_request_model_params(model_type: type[BaseModel]) -> List[Dict[str, An
     if modern_fields:
         params: List[Dict[str, Any]] = []
         for name, field in fields.items():
-            required = bool(field.is_required()) if callable(getattr(field, "is_required", None)) else False
+            required = (
+                bool(field.is_required())
+                if callable(getattr(field, "is_required", None))
+                else False
+            )
             default = None if required else getattr(field, "default", None)
-            if getattr(default, "__class__", None).__name__ == "PydanticUndefinedType":
+            default_class = getattr(default, "__class__", None)
+            if (
+                default_class is not None
+                and getattr(default_class, "__name__", "") == "PydanticUndefinedType"
+            ):
                 default = None
             params.append(
                 {
@@ -165,7 +222,9 @@ def _iter_request_model_params(model_type: type[BaseModel]) -> List[Dict[str, An
             {
                 "name": name,
                 "required": bool(getattr(field, "required", False)),
-                "default": None if getattr(field, "required", False) else getattr(field, "default", None),
+                "default": None
+                if getattr(field, "required", False)
+                else getattr(field, "default", None),
                 "type": getattr(field, "outer_type_", Any) or Any,
             }
             for name, field in fields.items()
@@ -191,11 +250,19 @@ def _flatten_request_model_param(info: Dict[str, Any]) -> Dict[str, Any]:
 def _model_dump_compat(model: BaseModel) -> Dict[str, Any]:
     dump = getattr(model, "model_dump", None)
     if callable(dump):
-        return dump()
+        dumped = dump()
+        if isinstance(dumped, dict):
+            return dumped
+        try:
+            return cast(Dict[str, Any], dict(cast(Any, dumped)))
+        except Exception:
+            return {}
     return model.dict()
 
 
-def _argv_option_present_after_command(argv: List[str], command: str, option: str) -> bool:
+def _argv_option_present_after_command(
+    argv: List[str], command: str, option: str
+) -> bool:
     cmd_index = _find_command_index(argv, command)
     if cmd_index is None:
         return False
@@ -236,7 +303,9 @@ def _command_aliases(command: str) -> List[str]:
     return [alias] if alias != text else []
 
 
-def _normalize_cli_argv_aliases(argv: List[str], functions: Dict[str, ToolInfo]) -> List[str]:
+def _normalize_cli_argv_aliases(
+    argv: List[str], functions: Dict[str, ToolInfo]
+) -> List[str]:
     normalized = list(argv)
     alias_map: Dict[str, str] = {}
     for command in functions.keys():
@@ -263,7 +332,9 @@ def _apply_global_cli_overrides(args: Any, argv: List[str]) -> Any:
     command = command.replace("-", "_")
     args.command = command
     global_timeframe = getattr(args, "_global_timeframe", None)
-    if global_timeframe is not None and not _argv_option_present_after_command(argv, command, "--timeframe"):
+    if global_timeframe is not None and not _argv_option_present_after_command(
+        argv, command, "--timeframe"
+    ):
         args.timeframe = global_timeframe
     if command == "trade_history":
         history_days = getattr(args, "_trade_history_days", None)
@@ -278,12 +349,16 @@ def _apply_global_cli_overrides(args: Any, argv: List[str]) -> Any:
     return args
 
 
-def _argv_param_present_after_command(argv: List[str], command: str, param_name: str) -> bool:
+def _argv_param_present_after_command(
+    argv: List[str], command: str, param_name: str
+) -> bool:
     flags = (
         f"--{param_name.replace('_', '-')}",
         f"--{param_name}",
     )
-    return any(_argv_option_present_after_command(argv, command, flag) for flag in flags)
+    return any(
+        _argv_option_present_after_command(argv, command, flag) for flag in flags
+    )
 
 
 def _literal_choices_for_cli_param(param: Dict[str, Any]) -> Optional[List[str]]:
@@ -299,7 +374,11 @@ def _literal_choices_for_cli_param(param: Dict[str, Any]) -> Optional[List[str]]
 
 
 def _default_cli_compact_choice(choices: List[str], *, verbose: bool) -> Optional[str]:
-    by_lower = {str(choice).strip().lower(): str(choice) for choice in choices if str(choice).strip()}
+    by_lower = {
+        str(choice).strip().lower(): str(choice)
+        for choice in choices
+        if str(choice).strip()
+    }
     if "full" not in by_lower:
         return None
     if verbose:
@@ -311,7 +390,9 @@ def _default_cli_compact_choice(choices: List[str], *, verbose: bool) -> Optiona
     return None
 
 
-def _apply_cli_output_mode_defaults(args: Any, argv: List[str], functions: Dict[str, ToolInfo]) -> Any:
+def _apply_cli_output_mode_defaults(
+    args: Any, argv: List[str], functions: Dict[str, ToolInfo]
+) -> Any:
     command = getattr(args, "command", None)
     if not isinstance(command, str) or not command:
         return args
@@ -346,7 +427,9 @@ def _apply_cli_output_mode_defaults(args: Any, argv: List[str], functions: Dict[
     return args
 
 
-def _format_result_for_cli(result: Any, *, fmt: str, verbose: bool, cmd_name: str) -> str:
+def _format_result_for_cli(
+    result: Any, *, fmt: str, verbose: bool, cmd_name: str
+) -> str:
     fmt_s = _normalize_cli_formatter(fmt)
     prepared = _prepare_cli_payload(
         result,
@@ -357,7 +440,13 @@ def _format_result_for_cli(result: Any, *, fmt: str, verbose: bool, cmd_name: st
     if fmt_s == CLI_FORMAT_JSON:
         payload = {"text": prepared} if isinstance(prepared, str) else prepared
         payload = _sanitize_json_compat(payload)
-        return json.dumps(payload, ensure_ascii=False, indent=2, allow_nan=False, default=_json_default)
+        return json.dumps(
+            payload,
+            ensure_ascii=False,
+            indent=2,
+            allow_nan=False,
+            default=_json_default,
+        )
     if isinstance(prepared, str):
         return prepared
     simplify_numbers = not str(cmd_name or "").startswith("trade_")
@@ -399,16 +488,17 @@ def _write_cli_text(text: str, *, stream: Any = None) -> None:
     rendered = payload if payload.endswith("\n") else f"{payload}\n"
     if _should_force_utf8_stream(target):
         buffer = getattr(target, "buffer", None)
-        try:
-            buffer.write(rendered.encode("utf-8"))
-            if hasattr(target, "flush"):
-                try:
-                    target.flush()
-                except Exception:
-                    pass
-            return
-        except Exception:
-            pass
+        if buffer is not None and hasattr(buffer, "write"):
+            try:
+                buffer.write(rendered.encode("utf-8"))
+                if hasattr(target, "flush"):
+                    try:
+                        target.flush()
+                    except Exception:
+                        pass
+                return
+            except Exception:
+                pass
     try:
         target.write(rendered)
     except UnicodeEncodeError:
@@ -458,8 +548,15 @@ def _safe_argument_parser(*args: Any, **kwargs: Any) -> argparse.ArgumentParser:
     original_kwargs = dict(kwargs)
     try:
         signature = inspect.signature(argparse.ArgumentParser)
-        if not any(param.kind == inspect.Parameter.VAR_KEYWORD for param in signature.parameters.values()):
-            kwargs = {key: value for key, value in kwargs.items() if key in signature.parameters}
+        if not any(
+            param.kind == inspect.Parameter.VAR_KEYWORD
+            for param in signature.parameters.values()
+        ):
+            kwargs = {
+                key: value
+                for key, value in kwargs.items()
+                if key in signature.parameters
+            }
     except Exception:
         fallback = dict(original_kwargs)
         fallback.pop("suggest_on_error", None)
@@ -476,12 +573,21 @@ def _safe_argument_parser(*args: Any, **kwargs: Any) -> argparse.ArgumentParser:
         return argparse.ArgumentParser(*args, **fallback)
 
 
-def _safe_add_subparser(subparsers: Any, name: str, **kwargs: Any) -> argparse.ArgumentParser:
+def _safe_add_subparser(
+    subparsers: Any, name: str, **kwargs: Any
+) -> argparse.ArgumentParser:
     original_kwargs = dict(kwargs)
     try:
         signature = inspect.signature(subparsers.add_parser)
-        if not any(param.kind == inspect.Parameter.VAR_KEYWORD for param in signature.parameters.values()):
-            kwargs = {key: value for key, value in kwargs.items() if key in signature.parameters}
+        if not any(
+            param.kind == inspect.Parameter.VAR_KEYWORD
+            for param in signature.parameters.values()
+        ):
+            kwargs = {
+                key: value
+                for key, value in kwargs.items()
+                if key in signature.parameters
+            }
     except Exception:
         fallback = dict(original_kwargs)
         fallback.pop("suggest_on_error", None)
@@ -490,7 +596,10 @@ def _safe_add_subparser(subparsers: Any, name: str, **kwargs: Any) -> argparse.A
     try:
         parser_class = getattr(subparsers, "_parser_class", argparse.ArgumentParser)
         parser_signature = inspect.signature(parser_class)
-        if not any(param.kind == inspect.Parameter.VAR_KEYWORD for param in parser_signature.parameters.values()):
+        if not any(
+            param.kind == inspect.Parameter.VAR_KEYWORD
+            for param in parser_signature.parameters.values()
+        ):
             if "suggest_on_error" not in parser_signature.parameters:
                 kwargs.pop("suggest_on_error", None)
             if "color" not in parser_signature.parameters:
@@ -508,6 +617,7 @@ def _safe_add_subparser(subparsers: Any, name: str, **kwargs: Any) -> argparse.A
             raise
         return subparsers.add_parser(name, **fallback)
 
+
 def get_function_info(func):
     """Thin wrapper around schema.get_function_info that attaches the callable.
 
@@ -520,7 +630,10 @@ def get_function_info(func):
         flatten_request_model_param=_flatten_request_model_param,
     )
 
-def _apply_schema_overrides(tool: ToolInfo, func_info: Dict[str, Any]) -> Dict[str, Any]:
+
+def _apply_schema_overrides(
+    tool: ToolInfo, func_info: Dict[str, Any]
+) -> Dict[str, Any]:
     """Apply schema metadata to the introspected CLI param info."""
     return _apply_schema_overrides_impl(
         tool,
@@ -533,6 +646,7 @@ def _extract_function_from_tool_obj(tool_obj):
     """Best-effort extraction of the underlying function from an MCP tool object."""
     return _extract_function_from_tool_obj_impl(tool_obj)
 
+
 def _extract_metadata_from_tool_obj(tool_obj) -> Dict[str, Any]:
     """Attempt to extract description and parameter docs from an MCP tool object.
 
@@ -544,11 +658,18 @@ def _extract_metadata_from_tool_obj(tool_obj) -> Dict[str, Any]:
 
 
 def _is_union_origin(origin: Any) -> bool:
-    return origin in (Union, types.UnionType) or str(origin) in {"typing.Union", "<class 'typing.Union'>"}
+    return origin in (Union, types.UnionType) or str(origin) in {
+        "typing.Union",
+        "<class 'typing.Union'>",
+    }
 
 
 def _is_literal_origin(origin: Any) -> bool:
-    return origin is Literal or str(origin) in {"typing.Literal", "<class 'typing.Literal'>"}
+    return origin is Literal or str(origin) in {
+        "typing.Literal",
+        "<class 'typing.Literal'>",
+    }
+
 
 def discover_tools():
     """Discover MCP tools from the shared bootstrap registry.
@@ -567,6 +688,7 @@ def discover_tools():
         extract_function_from_tool_obj=_extract_function_from_tool_obj,
         extract_metadata_from_tool_obj=_extract_metadata_from_tool_obj,
     )
+
 
 def _resolve_param_kwargs(
     param: Dict[str, Any],
@@ -589,7 +711,13 @@ def _resolve_param_kwargs(
         get_args=get_args,
     )
 
-def add_dynamic_arguments(parser, param_info, param_docs: Optional[Dict[str, str]] = None, cmd_name: Optional[str] = None):
+
+def add_dynamic_arguments(
+    parser,
+    param_info,
+    param_docs: Optional[Dict[str, str]] = None,
+    cmd_name: Optional[str] = None,
+):
     """Add arguments to parser based on parameter info.
 
     Adds both hyphen and underscore long-option aliases and sets dest to the
@@ -603,6 +731,7 @@ def add_dynamic_arguments(parser, param_info, param_docs: Optional[Dict[str, str
         param_docs=param_docs,
         cmd_name=cmd_name,
     )
+
 
 def _parse_kv_string(s: str) -> Optional[Dict[str, Any]]:
     """Parse 'k=v,k2=v2' (commas or spaces) into a dict. Delegates to utils implementation."""
@@ -634,7 +763,9 @@ def _parse_set_overrides(items: Optional[List[str]]) -> Dict[str, Dict[str, Any]
     return _parse_set_overrides_impl(items, coerce_cli_scalar=_coerce_cli_scalar)
 
 
-def _merge_dict(dst: Optional[Dict[str, Any]], src: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+def _merge_dict(
+    dst: Optional[Dict[str, Any]], src: Optional[Dict[str, Any]]
+) -> Dict[str, Any]:
     return _merge_dict_impl(dst, src)
 
 
@@ -647,7 +778,7 @@ _FORECAST_TYPED_ARG_SPECS: Dict[str, Dict[str, Any]] = {
         "examples": [
             '--params "window_size=64 top_k=20"',
             '--params \'{"window_size":64,"top_k":20}\'',
-            '--params --set method.window_size=64 --set method.top_k=20',
+            "--params --set method.window_size=64 --set method.top_k=20",
         ],
     },
     "denoise": {
@@ -658,7 +789,7 @@ _FORECAST_TYPED_ARG_SPECS: Dict[str, Dict[str, Any]] = {
         "examples": [
             "--denoise ema",
             '--denoise \'{"method":"ema","params":{"span":10}}\'',
-            '--denoise --set denoise.method=ema',
+            "--denoise --set denoise.method=ema",
         ],
     },
     "features": {
@@ -669,7 +800,7 @@ _FORECAST_TYPED_ARG_SPECS: Dict[str, Dict[str, Any]] = {
         "examples": [
             '--features "include=open,high future_covariates=hour,dow"',
             '--features \'{"include":["open","high"],"future_covariates":["hour","dow"]}\'',
-            '--features --set features.include=open,high',
+            "--features --set features.include=open,high",
         ],
     },
     "dimred_params": {
@@ -679,8 +810,8 @@ _FORECAST_TYPED_ARG_SPECS: Dict[str, Dict[str, Any]] = {
         "help": "Dimred params as JSON or key=value pairs.",
         "examples": [
             '--dimred-params "n_components=4"',
-            '--dimred-params \'{"n_components":4}\'',
-            '--dimred-params --set dimred.n_components=4',
+            "--dimred-params '{\"n_components\":4}'",
+            "--dimred-params --set dimred.n_components=4",
         ],
     },
     "target_spec": {
@@ -691,7 +822,7 @@ _FORECAST_TYPED_ARG_SPECS: Dict[str, Dict[str, Any]] = {
         "examples": [
             '--target-spec "column=close transform=log"',
             '--target-spec \'{"column":"close","transform":"log"}\'',
-            '--target-spec --set target.column=close --set target.transform=log',
+            "--target-spec --set target.column=close --set target.transform=log",
         ],
     },
 }
@@ -723,9 +854,13 @@ def _forecast_generate_typed_value_epilog() -> str:
         spec = _FORECAST_TYPED_ARG_SPECS[key]
         lines.append(f"  {spec['flag']} {spec['metavar']}")
         for example in spec["examples"]:
-            lines.append(f"    Example: {CLI_PROGRAM} forecast_generate SYMBOL {example}")
+            lines.append(
+                f"    Example: {CLI_PROGRAM} forecast_generate SYMBOL {example}"
+            )
     lines.append("  --set SECTION.KEY=VALUE")
-    lines.append(f"    Example: {CLI_PROGRAM} forecast_generate SYMBOL --set method.window_size=64")
+    lines.append(
+        f"    Example: {CLI_PROGRAM} forecast_generate SYMBOL --set method.window_size=64"
+    )
     return "\n".join(lines)
 
 
@@ -746,11 +881,17 @@ def _resolve_forecast_typed_cli_value(
 
 
 def _add_forecast_generate_args(cmd_parser: argparse.ArgumentParser) -> None:
-    cmd_parser.description = "Generate forecasts with an optional preprocessing pipeline."
+    cmd_parser.description = (
+        "Generate forecasts with an optional preprocessing pipeline."
+    )
     cmd_parser.epilog = _forecast_generate_typed_value_epilog()
 
-    cmd_parser.add_argument("symbol", nargs="?", default=argparse.SUPPRESS, help="Trading symbol.")
-    cmd_parser.add_argument("--symbol", dest="symbol", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
+    cmd_parser.add_argument(
+        "symbol", nargs="?", default=argparse.SUPPRESS, help="Trading symbol."
+    )
+    cmd_parser.add_argument(
+        "--symbol", dest="symbol", default=argparse.SUPPRESS, help=argparse.SUPPRESS
+    )
 
     group_method = cmd_parser.add_argument_group("Method")
     group_method.add_argument(
@@ -780,10 +921,18 @@ def _add_forecast_generate_args(cmd_parser: argparse.ArgumentParser) -> None:
     )
 
     group_window = cmd_parser.add_argument_group("Window")
-    group_window.add_argument("--timeframe", type=str, default="H1", help="MT5 timeframe.")
-    group_window.add_argument("--horizon", type=int, default=12, help="Forecast horizon in bars.")
-    group_window.add_argument("--lookback", type=int, default=None, help="Historical bars to use.")
-    group_window.add_argument("--as-of", dest="as_of", type=str, default=None, help="Reference time override.")
+    group_window.add_argument(
+        "--timeframe", type=str, default="H1", help="MT5 timeframe."
+    )
+    group_window.add_argument(
+        "--horizon", type=int, default=12, help="Forecast horizon in bars."
+    )
+    group_window.add_argument(
+        "--lookback", type=int, default=None, help="Historical bars to use."
+    )
+    group_window.add_argument(
+        "--as-of", dest="as_of", type=str, default=None, help="Reference time override."
+    )
 
     group_target = cmd_parser.add_argument_group("Target")
     group_target.add_argument(
@@ -794,7 +943,13 @@ def _add_forecast_generate_args(cmd_parser: argparse.ArgumentParser) -> None:
     )
 
     group_uncertainty = cmd_parser.add_argument_group("Uncertainty")
-    group_uncertainty.add_argument("--ci-alpha", dest="ci_alpha", type=float, default=0.05, help="CI alpha (0.05 => 95%%).")
+    group_uncertainty.add_argument(
+        "--ci-alpha",
+        dest="ci_alpha",
+        type=float,
+        default=0.05,
+        help="CI alpha (0.05 => 95%%).",
+    )
 
     group_pipe = cmd_parser.add_argument_group("Pipeline")
     _add_forecast_typed_arg(
@@ -811,7 +966,13 @@ def _add_forecast_generate_args(cmd_parser: argparse.ArgumentParser) -> None:
         metavar=_FORECAST_TYPED_ARG_SPECS["features"]["metavar"],
         help_text=_FORECAST_TYPED_ARG_SPECS["features"]["help"],
     )
-    group_pipe.add_argument("--dimred-method", dest="dimred_method", type=str, default=None, help="Dimred method.")
+    group_pipe.add_argument(
+        "--dimred-method",
+        dest="dimred_method",
+        type=str,
+        default=None,
+        help="Dimred method.",
+    )
     _add_forecast_typed_arg(
         group_pipe,
         "--dimred-params",
@@ -838,7 +999,12 @@ def _add_forecast_generate_args(cmd_parser: argparse.ArgumentParser) -> None:
     )
 
     group_dbg = cmd_parser.add_argument_group("Debug")
-    group_dbg.add_argument("--verbose", action="store_true", default=False, help="Show detailed metadata in output.")
+    group_dbg.add_argument(
+        "--verbose",
+        action="store_true",
+        default=False,
+        help="Show detailed metadata in output.",
+    )
     group_dbg.add_argument(
         "--print-config",
         action="store_true",
@@ -847,7 +1013,9 @@ def _add_forecast_generate_args(cmd_parser: argparse.ArgumentParser) -> None:
     )
 
 
-def create_command_function(func_info, cmd_name: str = "", cmd_parser: Optional[argparse.ArgumentParser] = None):
+def create_command_function(
+    func_info, cmd_name: str = "", cmd_parser: Optional[argparse.ArgumentParser] = None
+):
     """Create a command function that calls the MCP function dynamically"""
     return _create_command_function_impl(
         func_info,
@@ -861,11 +1029,13 @@ def create_command_function(func_info, cmd_name: str = "", cmd_parser: Optional[
         invoke_tool_function=_invoke_cli_tool_function,
     )
 
+
 def _type_name(t):
     try:
         return t.__name__
     except Exception:
         return str(t)
+
 
 def _first_line(text: Optional[str]) -> str:
     if not text:
@@ -881,7 +1051,9 @@ def _should_expose_cli_param(*, cmd_name: str, param_name: str) -> bool:
     return _should_expose_cli_param_impl(cmd_name=cmd_name, param_name=param_name)
 
 
-def _format_epilog_param_usage(param: Dict[str, Any], *, cmd_name: str, index: int) -> Optional[str]:
+def _format_epilog_param_usage(
+    param: Dict[str, Any], *, cmd_name: str, index: int
+) -> Optional[str]:
     name = str(param.get("name") or "").strip()
     if not name or not _should_expose_cli_param(cmd_name=cmd_name, param_name=name):
         return None
@@ -908,22 +1080,24 @@ def _build_epilog(functions: Dict[str, ToolInfo]) -> str:
     lines = []
     lines.append("Commands and Arguments:")
     for cmd_name, tool in sorted(functions.items()):
-        func = tool['func']
-        func_info = tool.setdefault('_cli_func_info', get_function_info(func))
+        func = tool["func"]
+        func_info = tool.setdefault("_cli_func_info", get_function_info(func))
         _apply_schema_overrides(tool, func_info)
         arg_strs = []
-        for index, param in enumerate(func_info['params']):
+        for index, param in enumerate(func_info["params"]):
             rendered = _format_epilog_param_usage(param, cmd_name=cmd_name, index=index)
             if rendered:
                 arg_strs.append(rendered)
-        meta = tool.get('meta') or {}
-        desc = meta.get('description') or _first_line(func_info.get('doc'))
+        meta = tool.get("meta") or {}
+        desc = meta.get("description") or _first_line(func_info.get("doc"))
         lines.append(f"- {cmd_name}: {' '.join(arg_strs) if arg_strs else '(no args)'}")
         if desc:
             lines.append(f"  {desc}")
     lines.append("")
     lines.append("Tip: Use `--help <keyword>` to search commands and examples.")
-    lines.append("Aliases: commands also accept kebab-case spellings (e.g. market-ticker).")
+    lines.append(
+        "Aliases: commands also accept kebab-case spellings (e.g. market-ticker)."
+    )
     lines.append("Type Conventions:")
     lines.append("  - int: integer")
     lines.append("  - str: string")
@@ -931,38 +1105,45 @@ def _build_epilog(functions: Dict[str, ToolInfo]) -> str:
     lines.append("")
     lines.append("General Examples:")
     lines.append("  # Basic forecast with a native method")
-    lines.append(f"  {CLI_PROGRAM} forecast_generate EURUSD --library native --method theta --timeframe H1 --horizon 24")
+    lines.append(
+        f"  {CLI_PROGRAM} forecast_generate EURUSD --library native --method theta --timeframe H1 --horizon 24"
+    )
     lines.append("")
     lines.append("  # Foundation model (Chronos-2) with covariates")
-    lines.append(f"  {CLI_PROGRAM} forecast_generate BTCUSD --library pretrained --method chronos2 --timeframe H1 --horizon 12 \\")
-    lines.append("    --features \"include=open,high future_covariates=hour,dow,is_holiday\" \\")
+    lines.append(
+        f"  {CLI_PROGRAM} forecast_generate BTCUSD --library pretrained --method chronos2 --timeframe H1 --horizon 12 \\"
+    )
+    lines.append(
+        '    --features "include=open,high future_covariates=hour,dow,is_holiday" \\'
+    )
     lines.append("    --verbose")
     lines.append("")
     lines.append("  # Rolling backtest for accuracy check")
-    lines.append(f"  {CLI_PROGRAM} forecast_backtest_run EURUSD --timeframe H1 --methods theta,seasonal_naive \\")
+    lines.append(
+        f"  {CLI_PROGRAM} forecast_backtest_run EURUSD --timeframe H1 --methods theta,seasonal_naive \\"
+    )
     lines.append("    --steps 5 --horizon 12")
     return "\n".join(lines)
 
 
-
 _EXTENDED_HELP_EXAMPLE_HINTS: Dict[str, Any] = {
-    'symbol': 'EURUSD',
-    'timeframe': 'H1',
-    'method': 'nhits',
-    'library': 'native',
-    'methods': 'theta nhits',
-    'horizon': '8',
-    'lookback': '200',
-    'steps': '5',
-    'spacing': '20',
-    'quantity': 'return',
-    'ci_alpha': '0.1',
-    'params': '"max_epochs=20"',
-    'features': '"include=open,high future_covariates=hour,dow"',
-    'as_of': '2025-09-01T12:00:00Z',
-    'population': '16',
-    'generations': '5',
-    'seed': '42',
+    "symbol": "EURUSD",
+    "timeframe": "H1",
+    "method": "nhits",
+    "library": "native",
+    "methods": "theta nhits",
+    "horizon": "8",
+    "lookback": "200",
+    "steps": "5",
+    "spacing": "20",
+    "quantity": "return",
+    "ci_alpha": "0.1",
+    "params": '"max_epochs=20"',
+    "features": '"include=open,high future_covariates=hour,dow"',
+    "as_of": "2025-09-01T12:00:00Z",
+    "population": "16",
+    "generations": "5",
+    "seed": "42",
 }
 
 _COMMAND_USAGE_EXAMPLES: Dict[str, Tuple[str, Optional[str]]] = {
@@ -988,7 +1169,7 @@ _COMMAND_USAGE_EXAMPLES: Dict[str, Tuple[str, Optional[str]]] = {
     ),
     "trade_place": (
         f"{CLI_PROGRAM} trade_place BTCUSD --volume 0.01 --order-type SELL --stop-loss 68521 --take-profit 67071",
-        f"{CLI_PROGRAM} trade_place BTCUSD --volume 0.01 --order-type BUY --stop-loss 64500 --take-profit 67200 --comment \"swing long\"",
+        f'{CLI_PROGRAM} trade_place BTCUSD --volume 0.01 --order-type BUY --stop-loss 64500 --take-profit 67200 --comment "swing long"',
     ),
     "trade_close": (
         f"{CLI_PROGRAM} trade_close --ticket 123456789",
@@ -1017,7 +1198,7 @@ def _format_cli_literal(value: Any) -> Optional[str]:
     if value is None:
         return None
     if isinstance(value, bool):
-        return 'true' if value else 'false'
+        return "true" if value else "false"
     if isinstance(value, (int, float)):
         return str(value)
     if isinstance(value, str):
@@ -1039,8 +1220,8 @@ def _quote_cli_value(text: str) -> str:
 
 
 def _example_value(param: Dict[str, Any], *, prefer_default: bool) -> str:
-    name = param['name']
-    default_text = _format_cli_literal(param.get('default'))
+    name = param["name"]
+    default_text = _format_cli_literal(param.get("default"))
     if not prefer_default:
         hint = _EXTENDED_HELP_EXAMPLE_HINTS.get(name)
         if callable(hint):
@@ -1054,39 +1235,43 @@ def _example_value(param: Dict[str, Any], *, prefer_default: bool) -> str:
         return default_text
     if not prefer_default and default_text is not None:
         return default_text
-    ptype = param.get('type')
+    ptype = param.get("type")
     if ptype is int:
-        return '10'
+        return "10"
     if ptype is float:
-        return '0.1'
+        return "0.1"
     if ptype is bool:
-        return 'true'
+        return "true"
     if ptype in (list, tuple):
-        return 'a,b'
-    return f'<{name}>'
+        return "a,b"
+    return f"<{name}>"
 
 
-def _build_usage_examples(cmd_name: str, func_info: Dict[str, Any]) -> Tuple[str, Optional[str]]:
+def _build_usage_examples(
+    cmd_name: str, func_info: Dict[str, Any]
+) -> Tuple[str, Optional[str]]:
     override = _COMMAND_USAGE_EXAMPLES.get(cmd_name)
     if override:
         return override
     required_tokens: List[str] = []
     optional_tokens: List[str] = []
-    for index, param in enumerate(func_info['params']):
-        if param['required']:
+    for index, param in enumerate(func_info["params"]):
+        if param["required"]:
             value = _quote_cli_value(_example_value(param, prefer_default=True))
             if index == 0:
                 required_tokens.append(value)
             else:
-                required_tokens.append(f"--{param['name'].replace('_','-')} {value}")
+                required_tokens.append(f"--{param['name'].replace('_', '-')} {value}")
         else:
             value = _example_value(param, prefer_default=False)
-            default_text = _format_cli_literal(param.get('default'))
+            default_text = _format_cli_literal(param.get("default"))
             if value is None:
                 continue
             if default_text is not None and value == default_text:
                 continue
-            optional_tokens.append(f"--{param['name'].replace('_','-')} {_quote_cli_value(value)}")
+            optional_tokens.append(
+                f"--{param['name'].replace('_', '-')} {_quote_cli_value(value)}"
+            )
     base_parts = [cmd_name]
     base_parts.extend(required_tokens)
     base = CLI_PROGRAM + " " + " ".join(base_parts)
@@ -1097,26 +1282,32 @@ def _build_usage_examples(cmd_name: str, func_info: Dict[str, Any]) -> Tuple[str
     return base, advanced
 
 
-def _match_commands(functions: Dict[str, ToolInfo], query: str) -> List[Tuple[str, ToolInfo, Dict[str, Any]]]:
+def _match_commands(
+    functions: Dict[str, ToolInfo], query: str
+) -> List[Tuple[str, ToolInfo, Dict[str, Any]]]:
     tokens = [tok for tok in query.lower().split() if tok]
     if not tokens:
         return []
     matches: List[Tuple[str, ToolInfo, Dict[str, Any]]] = []
     for name, tool in sorted(functions.items()):
-        func = tool['func']
-        func_info = tool.setdefault('_cli_func_info', get_function_info(func))
+        func = tool["func"]
+        func_info = tool.setdefault("_cli_func_info", get_function_info(func))
         _apply_schema_overrides(tool, func_info)
-        meta = tool.get('meta') or {}
-        haystack = ' '.join([
-            name.lower(),
-            str(meta.get('description') or func_info.get('doc') or '').lower(),
-        ])
+        meta = tool.get("meta") or {}
+        haystack = " ".join(
+            [
+                name.lower(),
+                str(meta.get("description") or func_info.get("doc") or "").lower(),
+            ]
+        )
         if all(tok in haystack for tok in tokens):
             matches.append((name, tool, func_info))
     return matches
 
 
-def _suggest_commands(functions: Dict[str, ToolInfo], query: str, *, limit: int = 3) -> List[str]:
+def _suggest_commands(
+    functions: Dict[str, ToolInfo], query: str, *, limit: int = 3
+) -> List[str]:
     needle = str(query or "").strip().lower()
     if not needle:
         return []
@@ -1127,21 +1318,23 @@ def _suggest_commands(functions: Dict[str, ToolInfo], query: str, *, limit: int 
     }
     if not name_map:
         return []
-    matches = difflib.get_close_matches(needle, list(name_map.keys()), n=max(1, int(limit)), cutoff=0.45)
+    matches = difflib.get_close_matches(
+        needle, list(name_map.keys()), n=max(1, int(limit)), cutoff=0.45
+    )
     return [name_map[name] for name in matches]
 
 
 def _extract_help_query(argv: List[str]) -> Optional[str]:
-    for flag in ('--help', '-h'):
+    for flag in ("--help", "-h"):
         if flag in argv:
             idx = argv.index(flag)
             query_tokens: List[str] = []
-            for token in argv[idx + 1:]:
-                if token.startswith('-'):
+            for token in argv[idx + 1 :]:
+                if token.startswith("-"):
                     break
                 query_tokens.append(token)
             if query_tokens:
-                return ' '.join(query_tokens)
+                return " ".join(query_tokens)
     return None
 
 
@@ -1167,10 +1360,12 @@ def _print_extended_help(functions: Dict[str, ToolInfo], query: str) -> None:
     print(f"Extended help for query: {query}")
     print("")
     for name, tool, func_info in matches:
-        meta = tool.get('meta') or {}
-        summary = meta.get('description') or _first_line(func_info.get('doc'))
-        required = [p['name'] for p in func_info['params'] if p['required']]
-        optional = [_format_optional_param(p) for p in func_info['params'] if not p['required']]
+        meta = tool.get("meta") or {}
+        summary = meta.get("description") or _first_line(func_info.get("doc"))
+        required = [p["name"] for p in func_info["params"] if p["required"]]
+        optional = [
+            _format_optional_param(p) for p in func_info["params"] if not p["required"]
+        ]
         base_example, advanced_example = _build_usage_examples(name, func_info)
         print(name)
         if summary:
@@ -1180,14 +1375,22 @@ def _print_extended_help(functions: Dict[str, ToolInfo], query: str) -> None:
         if optional:
             print(f"  Optional: {', '.join(optional)}")
         if name == "trade_place":
-            print("  Safety: market orders default to require_sl_tp=true; add both stop_loss and take_profit or explicitly set --require-sl-tp false.")
-            print("  Recovery: set --auto-close-on-sl-tp-fail true to try to close a filled order if TP/SL attachment fails.")
-            print("  Preview: set --dry-run true to preview routing without sending an order to MT5.")
+            print(
+                "  Safety: market orders default to require_sl_tp=true; add both stop_loss and take_profit or explicitly set --require-sl-tp false."
+            )
+            print(
+                "  Recovery: set --auto-close-on-sl-tp-fail true to try to close a filled order if TP/SL attachment fails."
+            )
+            print(
+                "  Preview: set --dry-run true to preview routing without sending an order to MT5."
+            )
         print(f"  Example: {base_example}")
         if advanced_example and advanced_example != base_example:
             print(f"  Example+: {advanced_example}")
         print(f"  More: {CLI_PROGRAM} {name} --help")
         print("")
+
+
 def main():
     """Main CLI entry point with dynamic parameter discovery"""
     load_environment()
@@ -1223,16 +1426,18 @@ def main():
         help="Timeframe for market data (H1, M30, D1, etc.)",
     )
 
-    subparsers = parser.add_subparsers(dest='command', help='Available commands', metavar='<command>')
-    
+    subparsers = parser.add_subparsers(
+        dest="command", help="Available commands", metavar="<command>"
+    )
+
     # Dynamically create subparsers for each function, except forecast_generate
     forecast_tool = None
     forecast_tool_info = None
     for cmd_name, tool in sorted(functions.items()):
-        func = tool['func']
-        func_info = tool.setdefault('_cli_func_info', get_function_info(func))
+        func = tool["func"]
+        func_info = tool.setdefault("_cli_func_info", get_function_info(func))
         _apply_schema_overrides(tool, func_info)
-        meta = tool.get('meta') or {}
+        meta = tool.get("meta") or {}
         if cmd_name == "forecast_generate":
             forecast_tool = tool
             forecast_tool_info = func_info
@@ -1241,31 +1446,43 @@ def main():
         # Create subparser
         cmd_parser = _safe_add_subparser(
             subparsers,
-            cmd_name, 
-            help=((meta.get('description') or func_info['doc'].split('\n')[0] if func_info['doc'] else f"Execute {cmd_name}").replace('%', '%%')),
+            cmd_name,
+            help=(
+                (
+                    meta.get("description") or func_info["doc"].split("\n")[0]
+                    if func_info["doc"]
+                    else f"Execute {cmd_name}"
+                ).replace("%", "%%")
+            ),
             formatter_class=argparse.RawDescriptionHelpFormatter,
             allow_abbrev=False,
             suggest_on_error=True,
             color=_argparse_color_enabled(),
         )
-        
+
         # Add global parameters to each subparser, excluding any that conflict with function params
-        existing_param_names = [p['name'] for p in func_info['params']]
+        existing_param_names = [p["name"] for p in func_info["params"]]
         exclude_globals = list(existing_param_names)
-        if cmd_name == 'report_generate':
-            exclude_globals.append('timeframe')
+        if cmd_name == "report_generate":
+            exclude_globals.append("timeframe")
         # Finviz tools don't use MT5 timeframe
-        if cmd_name.startswith('finviz_'):
-            exclude_globals.append('timeframe')
+        if cmd_name.startswith("finviz_"):
+            exclude_globals.append("timeframe")
         if cmd_name in _TIMEFRAMELESS_GLOBAL_COMMANDS:
-            exclude_globals.append('timeframe')
-        add_global_args_to_parser(cmd_parser, exclude_params=exclude_globals, suppress_defaults=True)
-        
+            exclude_globals.append("timeframe")
+        add_global_args_to_parser(
+            cmd_parser, exclude_params=exclude_globals, suppress_defaults=True
+        )
+
         # Add dynamic arguments
-        add_dynamic_arguments(cmd_parser, func_info, meta.get('param_docs'), cmd_name=cmd_name)
-        
+        add_dynamic_arguments(
+            cmd_parser, func_info, meta.get("param_docs"), cmd_name=cmd_name
+        )
+
         # Set the command function
-        cmd_parser.set_defaults(func=create_command_function(func_info, cmd_name, cmd_parser=cmd_parser))
+        cmd_parser.set_defaults(
+            func=create_command_function(func_info, cmd_name, cmd_parser=cmd_parser)
+        )
 
     # Custom forecast_generate parser (grouped UX)
     if forecast_tool is not None:
@@ -1276,7 +1493,13 @@ def main():
         cmd_parser = _safe_add_subparser(
             subparsers,
             cmd_name,
-            help=((meta.get('description') or func_info['doc'].split('\n')[0] if func_info['doc'] else f"Execute {cmd_name}").replace('%', '%%')),
+            help=(
+                (
+                    meta.get("description") or func_info["doc"].split("\n")[0]
+                    if func_info["doc"]
+                    else f"Execute {cmd_name}"
+                ).replace("%", "%%")
+            ),
             formatter_class=argparse.RawDescriptionHelpFormatter,
             allow_abbrev=False,
             suggest_on_error=True,
@@ -1284,7 +1507,9 @@ def main():
         )
         # Add global parameters to each subparser, excluding any that conflict
         exclude_globals = ["symbol", "timeframe", "verbose"]  # handled manually
-        add_global_args_to_parser(cmd_parser, exclude_params=exclude_globals, suppress_defaults=True)
+        add_global_args_to_parser(
+            cmd_parser, exclude_params=exclude_globals, suppress_defaults=True
+        )
         _add_forecast_generate_args(cmd_parser)
 
         def _forecast_generate_cmd(args):
@@ -1333,7 +1558,11 @@ def main():
                 parser=cmd_parser,
             )
 
-            params = _parse_kv_string(params_raw) if isinstance(params_raw, str) else params_raw
+            params = (
+                _parse_kv_string(params_raw)
+                if isinstance(params_raw, str)
+                else params_raw
+            )
 
             denoise = None
             if isinstance(denoise_raw, dict):
@@ -1344,9 +1573,21 @@ def main():
                     parsed = _parse_kv_string(str(denoise_raw))
                     denoise = parsed if parsed is not None else denoise
 
-            features = _parse_kv_string(features_raw) if isinstance(features_raw, str) else features_raw
-            dimred_params = _parse_kv_string(dimred_params_raw) if isinstance(dimred_params_raw, str) else dimred_params_raw
-            target_spec = _parse_kv_string(target_spec_raw) if isinstance(target_spec_raw, str) else target_spec_raw
+            features = (
+                _parse_kv_string(features_raw)
+                if isinstance(features_raw, str)
+                else features_raw
+            )
+            dimred_params = (
+                _parse_kv_string(dimred_params_raw)
+                if isinstance(dimred_params_raw, str)
+                else dimred_params_raw
+            )
+            target_spec = (
+                _parse_kv_string(target_spec_raw)
+                if isinstance(target_spec_raw, str)
+                else target_spec_raw
+            )
 
             # --set overrides (sections: method/denoise/features/dimred/target)
             params = _merge_dict(params, overrides.get("method"))
@@ -1366,15 +1607,21 @@ def main():
                 params=params,
                 ci_alpha=args.ci_alpha,
                 quantity=args.quantity,
-                denoise=denoise or None,
+                denoise=cast(Any, denoise or None),
                 features=features or None,
                 dimred_method=args.dimred_method,
                 dimred_params=dimred_params or None,
                 target_spec=target_spec or None,
+                async_mode=False,
+                model_id=None,
             )
 
             if getattr(args, "print_config", False):
-                print(_format_result_minimal({"forecast_generate": _model_dump_compat(request)}, verbose=True))
+                print(
+                    _format_result_minimal(
+                        {"forecast_generate": _model_dump_compat(request)}, verbose=True
+                    )
+                )
                 return 0
 
             out = _invoke_cli_tool_function(
@@ -1387,7 +1634,7 @@ def main():
             return 1 if _result_has_tool_error(out) else 0
 
         cmd_parser.set_defaults(func=_forecast_generate_cmd)
-    
+
     # Parse arguments
     args = parser.parse_args(argv)
     args = _apply_global_cli_overrides(args, argv)
@@ -1398,7 +1645,7 @@ def main():
         return 1
 
     _configure_cli_logging(verbose=bool(getattr(args, "verbose", False)))
-    
+
     try:
         status = args.func(args)
         if isinstance(status, int):
@@ -1410,10 +1657,11 @@ def main():
     except Exception as e:
         if _debug_enabled():
             import traceback
+
             traceback.print_exc()
         print(f"Error: {e}", file=sys.stderr)
         return 1
 
+
 if __name__ == "__main__":
     sys.exit(main())
-

@@ -62,7 +62,9 @@ def _position_ticket_fields(position: Any) -> Dict[str, int]:
     return out
 
 
-def _resolved_position_ticket(position: Any, *, fallback: Optional[int] = None) -> Optional[int]:
+def _resolved_position_ticket(
+    position: Any, *, fallback: Optional[int] = None
+) -> Optional[int]:
     fields = _position_ticket_fields(position)
     for field in ("ticket", "identifier", "position_id", "position", "order", "deal"):
         ticket = fields.get(field)
@@ -80,7 +82,9 @@ def _pending_order_ticket_fields(order: Any) -> Dict[str, int]:
     return out
 
 
-def _resolved_pending_order_ticket(order: Any, *, fallback: Optional[int] = None) -> Optional[int]:
+def _resolved_pending_order_ticket(
+    order: Any, *, fallback: Optional[int] = None
+) -> Optional[int]:
     fields = _pending_order_ticket_fields(order)
     for field in ("ticket", "identifier", "position_id", "position", "order", "deal"):
         ticket = fields.get(field)
@@ -92,6 +96,9 @@ def _resolved_pending_order_ticket(order: Any, *, fallback: Optional[int] = None
 def _trade_read_scope(request: Any) -> str:
     if getattr(request, "ticket", None) is not None:
         return "ticket"
+    for field in ("position_ticket", "deal_ticket", "order_ticket"):
+        if getattr(request, field, None) is not None:
+            return "ticket"
     if getattr(request, "symbol", None) is not None:
         return "symbol"
     return "all"
@@ -120,6 +127,30 @@ def _normalize_trade_read_output(
     if limit is not None:
         out["limit"] = limit
 
+    if isinstance(rows, dict):
+        error_text = str(rows.get("error", "")).strip()
+        if error_text:
+            out["success"] = False
+            out["error"] = error_text
+            return out
+
+        items = rows.get("items")
+        if isinstance(items, list):
+            out["items"] = items
+            out["count"] = len(items)
+            if rows.get("no_action"):
+                out["no_action"] = True
+            message_text = str(rows.get("message", "")).strip()
+            if message_text:
+                out["message"] = message_text
+            return out
+
+        message_text = str(rows.get("message", "")).strip()
+        if message_text:
+            out["message"] = message_text
+            out["no_action"] = True
+            return out
+
     if isinstance(rows, list) and len(rows) == 1 and isinstance(rows[0], dict):
         first = rows[0]
         error_text = str(first.get("error", "")).strip()
@@ -143,6 +174,30 @@ def _normalize_trade_read_output(
     return out
 
 
+def normalize_trade_history_output(
+    rows: Any,
+    *,
+    request: Any,
+) -> Dict[str, Any]:
+    """Normalize trade history into the standard trade read envelope."""
+    out = _normalize_trade_read_output(rows, request=request, kind="trade_history")
+    history_kind = getattr(request, "history_kind", None)
+    if history_kind is not None:
+        out["history_kind"] = history_kind
+    for field in (
+        "start",
+        "end",
+        "minutes_back",
+        "position_ticket",
+        "deal_ticket",
+        "order_ticket",
+    ):
+        value = getattr(request, field, None)
+        if value is not None:
+            out[field] = value
+    return out
+
+
 def _select_position_candidate(
     rows: List[Any],
     *,
@@ -159,22 +214,32 @@ def _select_position_candidate(
     # Prefer positions matching known tickets when multiple are available
     if ticket_candidates and len(candidates) > 1:
         ticket_filtered = [
-            pos for pos in candidates
-            if any(v in ticket_candidates for v in _position_ticket_fields(pos).values())
+            pos
+            for pos in candidates
+            if any(
+                v in ticket_candidates for v in _position_ticket_fields(pos).values()
+            )
         ]
         if ticket_filtered:
             candidates = ticket_filtered
     if symbol:
         symbol_upper = str(symbol).upper()
-        symbol_filtered = [pos for pos in candidates if str(getattr(pos, "symbol", "")).upper() == symbol_upper]
+        symbol_filtered = [
+            pos
+            for pos in candidates
+            if str(getattr(pos, "symbol", "")).upper() == symbol_upper
+        ]
         if symbol_filtered:
             candidates = symbol_filtered
-    side_filtered = [pos for pos in candidates if _position_side_matches(pos, side, mt5)]
+    side_filtered = [
+        pos for pos in candidates if _position_side_matches(pos, side, mt5)
+    ]
     if side_filtered:
         candidates = side_filtered
     if magic is not None:
         magic_filtered = [
-            pos for pos in candidates
+            pos
+            for pos in candidates
             if validation._safe_int_ticket(getattr(pos, "magic", None)) == magic
         ]
         if magic_filtered:
@@ -183,7 +248,10 @@ def _select_position_candidate(
         volume_filtered: List[Any] = []
         for pos in candidates:
             try:
-                if abs(float(getattr(pos, "volume", float("nan"))) - float(volume)) <= 1e-9:
+                if (
+                    abs(float(getattr(pos, "volume", float("nan"))) - float(volume))
+                    <= 1e-9
+                ):
                     volume_filtered.append(pos)
             except Exception:
                 continue
@@ -203,7 +271,11 @@ def _select_pending_order_candidate(
     candidates = list(rows)
     if symbol:
         symbol_upper = str(symbol).upper()
-        symbol_filtered = [order for order in candidates if str(getattr(order, "symbol", "")).upper() == symbol_upper]
+        symbol_filtered = [
+            order
+            for order in candidates
+            if str(getattr(order, "symbol", "")).upper() == symbol_upper
+        ]
         if symbol_filtered:
             candidates = symbol_filtered
     candidates.sort(key=_order_sort_key, reverse=True)
@@ -242,18 +314,31 @@ def _resolve_open_position(
         )
         if picked is not None:
             resolved = _resolved_position_ticket(picked, fallback=candidate)
-            diag: Dict[str, Any] = {"method": "positions_get(ticket)", "candidate": candidate}
+            diag: Dict[str, Any] = {
+                "method": "positions_get(ticket)",
+                "candidate": candidate,
+            }
             if magic is not None:
                 diag["magic_filter"] = magic
             return picked, resolved, diag
 
     try:
-        rows_fallback = mt5.positions_get(symbol=symbol) if symbol else mt5.positions_get()
+        rows_fallback = (
+            mt5.positions_get(symbol=symbol) if symbol else mt5.positions_get()
+        )
     except Exception:
         rows_fallback = None
     rows_list = list(rows_fallback) if rows_fallback else []
     if not rows_list:
-        return None, None, {"method": "positions_get", "candidate_ids": candidate_ids, "matched": False}
+        return (
+            None,
+            None,
+            {
+                "method": "positions_get",
+                "candidate_ids": candidate_ids,
+                "matched": False,
+            },
+        )
 
     exact_matches: List[Tuple[Any, str, int]] = []
     if candidate_ids:
@@ -262,14 +347,20 @@ def _resolve_open_position(
                 if value in candidate_ids:
                     exact_matches.append((pos, field, value))
         if exact_matches:
-            exact_matches.sort(key=lambda item: _position_sort_key(item[0]), reverse=True)
+            exact_matches.sort(
+                key=lambda item: _position_sort_key(item[0]), reverse=True
+            )
             pos, field, matched_value = exact_matches[0]
             resolved = _resolved_position_ticket(pos, fallback=matched_value)
-            return pos, resolved, {
-                "method": "positions_get(fallback_exact)",
-                "matched_field": field,
-                "matched_value": matched_value,
-            }
+            return (
+                pos,
+                resolved,
+                {
+                    "method": "positions_get(fallback_exact)",
+                    "matched_field": field,
+                    "matched_value": matched_value,
+                },
+            )
 
     picked = _select_position_candidate(
         rows_list,
@@ -281,7 +372,15 @@ def _resolve_open_position(
         mt5=mt5,
     )
     if picked is None:
-        return None, None, {"method": "positions_get(fallback_heuristic)", "candidate_ids": candidate_ids, "matched": False}
+        return (
+            None,
+            None,
+            {
+                "method": "positions_get(fallback_heuristic)",
+                "candidate_ids": candidate_ids,
+                "matched": False,
+            },
+        )
     resolved = _resolved_position_ticket(picked)
     diag = {"method": "positions_get(fallback_heuristic)"}
     if magic is not None:
@@ -313,7 +412,11 @@ def _resolve_pending_order(
         picked = _select_pending_order_candidate(rows_list, symbol=symbol)
         if picked is not None:
             resolved = _resolved_pending_order_ticket(picked, fallback=candidate)
-            return picked, resolved, {"method": "orders_get(ticket)", "candidate": candidate}
+            return (
+                picked,
+                resolved,
+                {"method": "orders_get(ticket)", "candidate": candidate},
+            )
 
     try:
         rows_fallback = mt5.orders_get(symbol=symbol) if symbol else mt5.orders_get()
@@ -321,7 +424,11 @@ def _resolve_pending_order(
         rows_fallback = None
     rows_list = list(rows_fallback) if rows_fallback else []
     if not rows_list:
-        return None, None, {"method": "orders_get", "candidate_ids": candidate_ids, "matched": False}
+        return (
+            None,
+            None,
+            {"method": "orders_get", "candidate_ids": candidate_ids, "matched": False},
+        )
 
     exact_matches: List[Tuple[Any, str, int]] = []
     if candidate_ids:
@@ -333,15 +440,27 @@ def _resolve_pending_order(
             exact_matches.sort(key=lambda item: _order_sort_key(item[0]), reverse=True)
             order, field, matched_value = exact_matches[0]
             resolved = _resolved_pending_order_ticket(order, fallback=matched_value)
-            return order, resolved, {
-                "method": "orders_get(fallback_exact)",
-                "matched_field": field,
-                "matched_value": matched_value,
-            }
+            return (
+                order,
+                resolved,
+                {
+                    "method": "orders_get(fallback_exact)",
+                    "matched_field": field,
+                    "matched_value": matched_value,
+                },
+            )
 
     picked = _select_pending_order_candidate(rows_list, symbol=symbol)
     if picked is None:
-        return None, None, {"method": "orders_get(fallback_heuristic)", "candidate_ids": candidate_ids, "matched": False}
+        return (
+            None,
+            None,
+            {
+                "method": "orders_get(fallback_heuristic)",
+                "candidate_ids": candidate_ids,
+                "matched": False,
+            },
+        )
     resolved = _resolved_pending_order_ticket(picked)
     return picked, resolved, {"method": "orders_get(fallback_heuristic)"}
 

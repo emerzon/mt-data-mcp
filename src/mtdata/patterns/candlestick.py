@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 
 from ..core.patterns_support import (
+    _apply_confidence_delta,
     _config_bool,
     _config_float,
     _config_int,
@@ -39,9 +40,16 @@ class CandlestickRuntime:
     via ``candlestick_mod._runtime.ta = ...``.
     """
 
-    __slots__ = ("ta", "mt5", "TIMEFRAME_MAP",
-                 "_mt5_copy_rates_from", "_rates_to_df", "_symbol_ready_guard",
-                 "_lock", "_loaded")
+    __slots__ = (
+        "ta",
+        "mt5",
+        "TIMEFRAME_MAP",
+        "_mt5_copy_rates_from",
+        "_rates_to_df",
+        "_symbol_ready_guard",
+        "_lock",
+        "_loaded",
+    )
 
     def __init__(self) -> None:
         self.ta: Any = None
@@ -87,14 +95,20 @@ class CandlestickRuntime:
 
             if self.TIMEFRAME_MAP is None:
                 from ..shared.constants import TIMEFRAME_MAP as timeframe_map
+
                 self.TIMEFRAME_MAP = timeframe_map
 
-            if self._mt5_copy_rates_from is None or self._rates_to_df is None or self._symbol_ready_guard is None:
+            if (
+                self._mt5_copy_rates_from is None
+                or self._rates_to_df is None
+                or self._symbol_ready_guard is None
+            ):
                 from ..utils.mt5 import (
                     _mt5_copy_rates_from as copy_rates_from,
                     _rates_to_df as rates_to_df,
                     _symbol_ready_guard as symbol_ready_guard,
                 )
+
                 self._mt5_copy_rates_from = copy_rates_from
                 self._rates_to_df = rates_to_df
                 self._symbol_ready_guard = symbol_ready_guard
@@ -116,53 +130,70 @@ _CANDLESTICK_PATTERN_METHOD_CACHE: Optional[Tuple[str, ...]] = None
 _CANDLESTICK_PATTERN_METHOD_CACHE_KEY: Optional[str] = None
 _CANDLESTICK_PATTERN_METHOD_CACHE_LOCK = Lock()
 _ROBUST_CANDLESTICK_WHITELIST = {
-    'engulfing', 'harami', '3inside', '3outside', 'eveningstar', 'morningstar',
-    'darkcloudcover', 'piercing', 'inside', 'outside', 'hikkake'
+    "engulfing",
+    "harami",
+    "3inside",
+    "3outside",
+    "eveningstar",
+    "morningstar",
+    "darkcloudcover",
+    "piercing",
+    "inside",
+    "outside",
+    "hikkake",
 }
 _CANDLESTICK_PATTERN_BAR_SPANS = {
-    '2crows': 3,
-    'counterattack': 2,
-    'darkcloudcover': 2,
-    'engulfing': 2,
-    'harami': 2,
-    'haramicross': 2,
-    'hikkake': 3,
-    'hikkakemod': 3,
-    'inside': 2,
-    'outside': 2,
-    'piercing': 2,
-    'tasukigap': 2,
-    '3blackcrows': 3,
-    '3inside': 3,
-    '3outside': 3,
-    '3starsinsouth': 3,
-    '3whitesoldiers': 3,
-    'advanceblock': 3,
-    'deliberation': 3,
-    'eveningstar': 3,
-    'gapsidesidewhite': 3,
-    'identical3crows': 3,
-    'morningstar': 3,
-    'sticksandwich': 3,
-    'tristar': 3,
-    'unique3river': 3,
-    'xsidegap3methods': 3,
-    'breakaway': 5,
-    'ladderbottom': 5,
-    'mathold': 5,
-    'risefall3methods': 5,
+    "2crows": 3,
+    "counterattack": 2,
+    "darkcloudcover": 2,
+    "engulfing": 2,
+    "harami": 2,
+    "haramicross": 2,
+    "hikkake": 3,
+    "hikkakemod": 3,
+    "inside": 2,
+    "outside": 2,
+    "piercing": 2,
+    "tasukigap": 2,
+    "3blackcrows": 3,
+    "3inside": 3,
+    "3outside": 3,
+    "3starsinsouth": 3,
+    "3whitesoldiers": 3,
+    "advanceblock": 3,
+    "deliberation": 3,
+    "eveningstar": 3,
+    "gapsidesidewhite": 3,
+    "identical3crows": 3,
+    "morningstar": 3,
+    "sticksandwich": 3,
+    "tristar": 3,
+    "unique3river": 3,
+    "xsidegap3methods": 3,
+    "breakaway": 5,
+    "ladderbottom": 5,
+    "mathold": 5,
+    "risefall3methods": 5,
 }
 _DEPRIORITIZED_CANDLESTICK_PATTERNS = {
-    'shortline', 'longline', 'spinningtop', 'highwave',
-    'marubozu', 'closingmarubozu', 'doji', 'gravestonedoji', 'longleggeddoji', 'rickshawman'
+    "shortline",
+    "longline",
+    "spinningtop",
+    "highwave",
+    "marubozu",
+    "closingmarubozu",
+    "doji",
+    "gravestonedoji",
+    "longleggeddoji",
+    "rickshawman",
 }
 
 
 def _normalize_candlestick_name(pattern_name: str) -> str:
     nm = str(pattern_name).strip()
-    if nm.lower().startswith('cdl_'):
-        nm = nm[len('cdl_'):]
-    return nm.replace('_', '').replace(' ', '').lower()
+    if nm.lower().startswith("cdl_"):
+        nm = nm[len("cdl_") :]
+    return nm.replace("_", "").replace(" ", "").lower()
 
 
 def _parse_min_strength(min_strength: float) -> float:
@@ -212,11 +243,19 @@ def _candlestick_strength_score(
 
 
 def _candlestick_span_bars(pattern_name: str) -> int:
-    return int(_CANDLESTICK_PATTERN_BAR_SPANS.get(_normalize_candlestick_name(pattern_name), 1))
+    return int(
+        _CANDLESTICK_PATTERN_BAR_SPANS.get(_normalize_candlestick_name(pattern_name), 1)
+    )
 
 
 def _ensure_candlestick_runtime() -> None:
-    global ta, mt5, TIMEFRAME_MAP, _mt5_copy_rates_from, _rates_to_df, _symbol_ready_guard
+    global \
+        ta, \
+        mt5, \
+        TIMEFRAME_MAP, \
+        _mt5_copy_rates_from, \
+        _rates_to_df, \
+        _symbol_ready_guard
 
     if (
         ta is not None
@@ -247,7 +286,7 @@ def _ensure_candlestick_runtime() -> None:
 def _discover_candlestick_pattern_methods(ta_accessor: Any) -> Tuple[str, ...]:
     methods: List[str] = []
     for attr in dir(ta_accessor):
-        if not attr.startswith('cdl_'):
+        if not attr.startswith("cdl_"):
             continue
         func = getattr(ta_accessor, attr, None)
         if callable(func):
@@ -265,17 +304,28 @@ def _get_candlestick_pattern_methods(temp: pd.DataFrame) -> List[str]:
 
     cache_key = _candlestick_accessor_cache_key(temp.ta)
 
-    if _CANDLESTICK_PATTERN_METHOD_CACHE is not None and _CANDLESTICK_PATTERN_METHOD_CACHE_KEY == cache_key:
+    if (
+        _CANDLESTICK_PATTERN_METHOD_CACHE is not None
+        and _CANDLESTICK_PATTERN_METHOD_CACHE_KEY == cache_key
+    ):
         return list(_CANDLESTICK_PATTERN_METHOD_CACHE)
 
     with _CANDLESTICK_PATTERN_METHOD_CACHE_LOCK:
-        if _CANDLESTICK_PATTERN_METHOD_CACHE is not None and _CANDLESTICK_PATTERN_METHOD_CACHE_KEY == cache_key:
+        if (
+            _CANDLESTICK_PATTERN_METHOD_CACHE is not None
+            and _CANDLESTICK_PATTERN_METHOD_CACHE_KEY == cache_key
+        ):
             return list(_CANDLESTICK_PATTERN_METHOD_CACHE)
         try:
-            _CANDLESTICK_PATTERN_METHOD_CACHE = _discover_candlestick_pattern_methods(temp.ta)
+            _CANDLESTICK_PATTERN_METHOD_CACHE = _discover_candlestick_pattern_methods(
+                temp.ta
+            )
             _CANDLESTICK_PATTERN_METHOD_CACHE_KEY = cache_key
         except Exception:
-            logger.warning("Failed to enumerate candlestick pattern detectors from pandas_ta.", exc_info=True)
+            logger.warning(
+                "Failed to enumerate candlestick pattern detectors from pandas_ta.",
+                exc_info=True,
+            )
             _CANDLESTICK_PATTERN_METHOD_CACHE = None
             _CANDLESTICK_PATTERN_METHOD_CACHE_KEY = None
             return []
@@ -320,10 +370,15 @@ def _extract_candlestick_rows(
         return []
 
     base_names = np.asarray(
-        [col[len('cdl_'):] if col.lower().startswith('cdl_') else col for col in pattern_cols],
+        [
+            col[len("cdl_") :] if col.lower().startswith("cdl_") else col
+            for col in pattern_cols
+        ],
         dtype=object,
     )
-    normalized_names = np.asarray([_normalize_candlestick_name(name) for name in base_names], dtype=object)
+    normalized_names = np.asarray(
+        [_normalize_candlestick_name(name) for name in base_names], dtype=object
+    )
     try:
         values = (
             temp_tail.loc[:, pattern_cols]
@@ -342,27 +397,39 @@ def _extract_candlestick_rows(
         )
         span_bars = _candlestick_span_bars(str(name))
         span_bonus = min(0.10, 0.05 * max(0, span_bars - 1))
-        raw_bonus = np.clip((np.abs(values[:, col_idx]) - 100.0) / 100.0, 0.0, 1.0) * 0.20
-        strength_values[:, col_idx] = np.clip(base_strength + span_bonus + raw_bonus, 0.0, 1.0)
+        raw_bonus = (
+            np.clip((np.abs(values[:, col_idx]) - 100.0) / 100.0, 0.0, 1.0) * 0.20
+        )
+        strength_values[:, col_idx] = np.clip(
+            base_strength + span_bonus + raw_bonus, 0.0, 1.0
+        )
 
-    active_mask = np.isfinite(values) & (np.abs(values) > 0.0) & (strength_values >= float(threshold))
+    active_mask = (
+        np.isfinite(values)
+        & (np.abs(values) > 0.0)
+        & (strength_values >= float(threshold))
+    )
     if not bool(np.any(active_mask)):
         return []
 
     rows: List[List[Any]] = []
     gap = max(0, int(min_gap))
     k = max(1, int(top_k))
-    last_pick_idx = -10**9
-    non_dep_mask = np.asarray([str(name) not in deprioritize for name in normalized_names], dtype=bool)
+    last_pick_idx = -(10**9)
+    non_dep_mask = np.asarray(
+        [str(name) not in deprioritize for name in normalized_names], dtype=bool
+    )
 
-    if 'time' in df_tail.columns:
-        time_vals = df_tail['time'].astype(str).to_numpy(dtype=object, copy=False)
+    if "time" in df_tail.columns:
+        time_vals = df_tail["time"].astype(str).to_numpy(dtype=object, copy=False)
     else:
         time_vals = np.full(len(df_tail), "", dtype=object)
     close_vals: Optional[np.ndarray] = None
-    if include_metrics and 'close' in df_tail.columns:
+    if include_metrics and "close" in df_tail.columns:
         try:
-            close_vals = pd.to_numeric(df_tail['close'], errors="coerce").to_numpy(dtype=float, copy=False)
+            close_vals = pd.to_numeric(df_tail["close"], errors="coerce").to_numpy(
+                dtype=float, copy=False
+            )
         except Exception:
             close_vals = None
 
@@ -390,8 +457,8 @@ def _extract_candlestick_rows(
         for col_idx in chosen_idx.tolist():
             name = str(base_names[col_idx])
             value = float(values[i, col_idx])
-            label_core = name.replace('_', ' ').strip().upper()
-            dir_title = 'Bullish' if value > 0 else 'Bearish'
+            label_core = name.replace("_", " ").strip().upper()
+            dir_title = "Bullish" if value > 0 else "Bearish"
             if include_metrics:
                 span_bars = _candlestick_span_bars(name)
                 start_bar_idx = max(0, int(i - span_bars + 1))
@@ -404,7 +471,11 @@ def _extract_candlestick_rows(
                     raw_signal = int(round(value))
                 else:
                     raw_signal = float(value)
-                price = float(close_vals[i]) if close_vals is not None and np.isfinite(close_vals[i]) else None
+                price = (
+                    float(close_vals[i])
+                    if close_vals is not None and np.isfinite(close_vals[i])
+                    else None
+                )
                 rows.append(
                     [
                         end_time,
@@ -421,9 +492,29 @@ def _extract_candlestick_rows(
                     ]
                 )
             else:
-                rows.append([t_val, f"{dir_title} {label_core}" if label_core else dir_title])
+                rows.append(
+                    [t_val, f"{dir_title} {label_core}" if label_core else dir_title]
+                )
         last_pick_idx = i
     return rows
+
+
+def _row_meets_min_strength(row: Dict[str, Any], threshold: float) -> bool:
+    try:
+        confidence = float(row.get("confidence"))
+    except Exception:
+        return False
+    return np.isfinite(confidence) and confidence >= float(threshold)
+
+
+def _filter_rows_by_min_strength(rows: Any, threshold: float) -> List[Dict[str, Any]]:
+    if not isinstance(rows, list):
+        return []
+    return [
+        row
+        for row in rows
+        if isinstance(row, dict) and _row_meets_min_strength(row, threshold)
+    ]
 
 
 def _is_candlestick_allowed(
@@ -496,30 +587,32 @@ def detect_candlestick_patterns(  # noqa: C901
         symbol=symbol,
         timeframe_seconds=float(TIMEFRAME_SECONDS.get(timeframe, 0) or 0),
     )
-    epochs = [float(t) for t in df['time'].tolist()] if 'time' in df.columns else []
+    epochs = [float(t) for t in df["time"].tolist()] if "time" in df.columns else []
     _use_ctz = _use_client_tz()
     if _use_ctz:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            df['time'] = df['time'].apply(_format_time_minimal_local)
+            df["time"] = df["time"].apply(_format_time_minimal_local)
     else:
         time_fmt = _time_format_from_epochs(epochs) if epochs else "%Y-%m-%d %H:%M"
         time_fmt = _maybe_strip_year(time_fmt, epochs)
         time_fmt = _style_time_format(time_fmt)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            df['time'] = df['time'].apply(
-                lambda t: datetime.fromtimestamp(float(t), tz=timezone.utc).strftime(time_fmt)
+            df["time"] = df["time"].apply(
+                lambda t: datetime.fromtimestamp(float(t), tz=timezone.utc).strftime(
+                    time_fmt
+                )
             )
 
-    for col in ['open', 'high', 'low', 'close']:
+    for col in ["open", "high", "low", "close"]:
         if col not in df.columns:
             return {"error": f"Missing '{col}' data from rates"}
 
     try:
         temp = df.copy()
-        temp['__epoch'] = [float(e) for e in epochs]
-        temp.index = pd.to_datetime(temp['__epoch'], unit='s')
+        temp["__epoch"] = [float(e) for e in epochs]
+        temp.index = pd.to_datetime(temp["__epoch"], unit="s")
     except Exception:
         temp = df.copy()
 
@@ -530,7 +623,7 @@ def detect_candlestick_patterns(  # noqa: C901
     parsed_whitelist: Optional[set[str]] = None
     if whitelist and isinstance(whitelist, str):
         try:
-            parts = [p.strip() for p in whitelist.split(',') if p.strip()]
+            parts = [p.strip() for p in whitelist.split(",") if p.strip()]
             if parts:
                 parsed_whitelist = {_normalize_candlestick_name(p) for p in parts}
         except Exception:
@@ -553,10 +646,14 @@ def detect_candlestick_patterns(  # noqa: C901
                 warnings.simplefilter("ignore")
                 method(append=True)
         except Exception:
-            logger.warning("Candlestick pattern detector '%s' failed.", name, exc_info=True)
+            logger.warning(
+                "Candlestick pattern detector '%s' failed.", name, exc_info=True
+            )
             continue
 
-    pattern_cols = [c for c in temp.columns if c not in before_cols and c.lower().startswith('cdl_')]
+    pattern_cols = [
+        c for c in temp.columns if c not in before_cols and c.lower().startswith("cdl_")
+    ]
     if not pattern_cols:
         return {"error": "No candle patterns produced any outputs."}
 
@@ -609,16 +706,21 @@ def detect_candlestick_patterns(  # noqa: C901
     ]
     payload = _table_from_rows(headers, rows)
     _enrich_candlestick_payload(payload, df, config)
-    payload.update({
-        "success": True,
-        "symbol": symbol,
-        "timeframe": timeframe,
-        "candles": int(limit),
-        "mode": "candlestick",
-        "min_strength": float(thr),
-        "strength_scale": "semantic_pattern_conviction_v2",
-        "signal_scale": "pandas_ta_signal_x100",
-    })
+    filtered_rows = _filter_rows_by_min_strength(payload.get("data"), thr)
+    payload["data"] = filtered_rows
+    payload["count"] = len(filtered_rows)
+    payload.update(
+        {
+            "success": True,
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "candles": int(limit),
+            "mode": "candlestick",
+            "min_strength": float(thr),
+            "strength_scale": "semantic_pattern_conviction_v2",
+            "signal_scale": "pandas_ta_signal_x100",
+        }
+    )
     if warnings_out:
         payload["warnings"] = warnings_out
     if last_n_val is not None:
@@ -628,7 +730,9 @@ def detect_candlestick_patterns(  # noqa: C901
     return payload
 
 
-def _enrich_candlestick_payload(payload: Dict[str, Any], df: pd.DataFrame, config: Optional[Dict[str, Any]]) -> None:
+def _enrich_candlestick_payload(
+    payload: Dict[str, Any], df: pd.DataFrame, config: Optional[Dict[str, Any]]
+) -> None:
     rows = payload.get("data")
     if not isinstance(rows, list) or not isinstance(df, pd.DataFrame) or len(df) <= 0:
         return
@@ -649,7 +753,9 @@ def _attach_candlestick_volume_confirmation(
 ) -> None:
     payload: Dict[str, Any] = {
         "mode": "signal_window",
-        "status": "disabled" if not _config_bool(config, "use_volume_confirmation", True) else "unavailable",
+        "status": "disabled"
+        if not _config_bool(config, "use_volume_confirmation", True)
+        else "unavailable",
         "volume_source": volume_source,
     }
     if payload["status"] == "disabled":
@@ -665,7 +771,9 @@ def _attach_candlestick_volume_confirmation(
         row["volume_confirmation"] = payload
         return
     breakout_bars = _config_int(config, "volume_confirm_breakout_bars", 2, minimum=1)
-    lookback_bars = _config_int(config, "volume_confirm_lookback_bars", 20, minimum=breakout_bars + 1)
+    lookback_bars = _config_int(
+        config, "volume_confirm_lookback_bars", 20, minimum=breakout_bars + 1
+    )
     min_ratio = _config_float(config, "volume_confirm_min_ratio", 1.10, minimum=1.0)
     bonus = _config_float(config, "volume_confirm_bonus", 0.08, minimum=0.0)
     penalty = _config_float(config, "volume_confirm_penalty", 0.06, minimum=0.0)
@@ -704,7 +812,7 @@ def _attach_candlestick_volume_confirmation(
             payload["status"] = "neutral"
     if abs(confidence_delta) > 1e-12:
         payload["confidence_delta"] = _round_value(confidence_delta)
-        row["confidence"] = float(max(0.0, min(1.0, float(row.get("confidence", 0.0)) + confidence_delta)))
+        _apply_confidence_delta(row, confidence_delta)
     row["volume_confirmation"] = payload
 
 
@@ -714,7 +822,9 @@ def _attach_candlestick_regime_context(
     config: Optional[Dict[str, Any]],
 ) -> None:
     payload: Dict[str, Any] = {
-        "status": "disabled" if not _config_bool(config, "use_regime_context", True) else "unavailable",
+        "status": "disabled"
+        if not _config_bool(config, "use_regime_context", True)
+        else "unavailable",
     }
     if payload["status"] == "disabled":
         row["regime_context"] = payload
@@ -732,7 +842,10 @@ def _attach_candlestick_regime_context(
     bonus = _config_float(config, "regime_alignment_bonus", 0.05, minimum=0.0)
     penalty = _config_float(config, "regime_countertrend_penalty", 0.05, minimum=0.0)
     confidence_delta = 0.0
-    if payload.get("state") == "trending" and payload.get("direction") in {"bullish", "bearish"}:
+    if payload.get("state") == "trending" and payload.get("direction") in {
+        "bullish",
+        "bearish",
+    }:
         if bias == payload.get("direction"):
             payload["status"] = "aligned"
             payload["alignment"] = "aligned"
@@ -746,5 +859,5 @@ def _attach_candlestick_regime_context(
         payload["alignment"] = "neutral"
     if abs(confidence_delta) > 1e-12:
         payload["confidence_delta"] = _round_value(confidence_delta)
-        row["confidence"] = float(max(0.0, min(1.0, float(row.get("confidence", 0.0)) + confidence_delta)))
+        _apply_confidence_delta(row, confidence_delta)
     row["regime_context"] = payload

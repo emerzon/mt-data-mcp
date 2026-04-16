@@ -25,6 +25,7 @@ from ..config import mt5_config
 from ..execution_logging import run_logged_operation
 from . import comments, validation
 from .gateway import create_trading_gateway
+from .positions import normalize_trade_history_output
 from .requests import TradeHistoryRequest, TradeJournalAnalyzeRequest
 from .use_cases import run_trade_history
 
@@ -32,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 
 def _run_trade_history_request(request: TradeHistoryRequest) -> Any:
-    return run_trade_history(
+    result = run_trade_history(
         request,
         gateway=create_trading_gateway(
             include_trade_preflight=True,
@@ -51,6 +52,7 @@ def _run_trade_history_request(request: TradeHistoryRequest) -> Any:
         decode_mt5_enum_label=decode_mt5_enum_label,
         mt5_config=mt5_config,
     )
+    return normalize_trade_history_output(result, request=request)
 
 
 def _safe_trade_journal_float(value: Any) -> Optional[float]:
@@ -176,29 +178,34 @@ def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str,
             limit=request.limit,
         )
     )
-    if isinstance(history_result, dict):
-        if history_result.get("error"):
-            return history_result
-        message = history_result.get("message")
-        if isinstance(message, str) and message.strip():
-            return {
-                "success": True,
-                "summary": _trade_journal_metrics([]),
-                "breakdowns": {
-                    "by_symbol": [],
-                    "by_side": [],
-                    "by_exit_trigger": [],
-                },
-                "message": message,
-                "meta": {
-                    "history_rows": 0,
-                    "exit_deals": 0,
-                    "breakdown_limit": int(max(1, int(request.breakdown_limit))),
-                },
-            }
+    if not isinstance(history_result, dict):
+        return {"error": "Unexpected trade_history response shape."}
+    if history_result.get("error"):
+        return history_result
+
+    raw_rows = history_result.get("items")
+    if not isinstance(raw_rows, list):
         return {"error": "Unexpected trade_history response shape."}
 
-    rows = [row for row in history_result if isinstance(row, dict)]
+    message = history_result.get("message")
+    if isinstance(message, str) and message.strip() and not raw_rows:
+        return {
+            "success": True,
+            "summary": _trade_journal_metrics([]),
+            "breakdowns": {
+                "by_symbol": [],
+                "by_side": [],
+                "by_exit_trigger": [],
+            },
+            "message": message,
+            "meta": {
+                "history_rows": 0,
+                "exit_deals": 0,
+                "breakdown_limit": int(max(1, int(request.breakdown_limit))),
+            },
+        }
+
+    rows = [row for row in raw_rows if isinstance(row, dict)]
     analyzed_rows: List[Dict[str, Any]] = []
     for row in rows:
         symbol = str(row.get("symbol") or "").strip()
@@ -210,7 +217,9 @@ def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str,
         enriched = dict(row)
         enriched["symbol"] = symbol
         enriched["side"] = str(row.get("type") or "").strip() or "Unknown"
-        enriched["exit_trigger"] = str(row.get("exit_trigger") or "").strip() or "Unspecified"
+        enriched["exit_trigger"] = (
+            str(row.get("exit_trigger") or "").strip() or "Unspecified"
+        )
         enriched["net_pnl"] = net_pnl
         analyzed_rows.append(enriched)
 
@@ -288,9 +297,12 @@ def lookup_trade_ticket_history(ticket: Any) -> Optional[Dict[str, Any]]:
     lookback_minutes = 60 * 24 * 7
 
     def _latest_row(result: Any) -> Optional[Dict[str, Any]]:
-        if not isinstance(result, list) or not result:
+        if not isinstance(result, dict):
             return None
-        rows = [row for row in result if isinstance(row, dict)]
+        items = result.get("items")
+        if not isinstance(items, list) or not items:
+            return None
+        rows = [row for row in items if isinstance(row, dict)]
         return rows[-1] if rows else None
 
     def _time_label(row: Dict[str, Any], *keys: str) -> Optional[str]:
@@ -342,7 +354,9 @@ def lookup_trade_ticket_history(ticket: Any) -> Optional[Dict[str, Any]]:
         type_label = str(order_row.get("type") or "order").strip()
         state_label = str(order_row.get("state") or "completed").strip()
         time_label = _time_label(order_row, "time_done", "time_setup", "time")
-        message = f"Ticket {ticket_text} was a {type_label} order that was {state_label}"
+        message = (
+            f"Ticket {ticket_text} was a {type_label} order that was {state_label}"
+        )
         if symbol:
             message += f" on {symbol}"
         if time_label:
@@ -360,6 +374,7 @@ def lookup_trade_ticket_history(ticket: Any) -> Optional[Dict[str, Any]]:
 @mcp.tool()
 def trade_account_info() -> dict:
     """Get account information (balance, equity, profit, margin level, free margin, account type, leverage, currency)."""
+
     def _run() -> dict:
         mt5 = create_trading_gateway(
             include_trade_preflight=True,
@@ -428,7 +443,7 @@ def trade_account_info() -> dict:
 
 
 @mcp.tool()
-def trade_history(request: TradeHistoryRequest) -> List[Dict[str, Any]]:
+def trade_history(request: TradeHistoryRequest) -> Dict[str, Any]:
     """Get deal or order history as tabular data."""
     return run_logged_operation(
         logger,

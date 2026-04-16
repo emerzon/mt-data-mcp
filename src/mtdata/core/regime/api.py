@@ -96,7 +96,7 @@ _VOLATILITY_SIGNALS = frozenset(
 def _coerce_optional_float(value: Any) -> Optional[float]:
     try:
         out = float(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
     if not np.isfinite(out):
         return None
@@ -112,7 +112,7 @@ def _lookup_regime_info_entry(regime_info: Any, regime_id: Any) -> Dict[str, Any
         candidates.append(regime_id)
         try:
             candidates.append(int(regime_id))
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             pass
         candidates.append(str(regime_id))
 
@@ -195,7 +195,11 @@ def _summarize_current_regime_for_comparison(
                 segments = result.get("segments")
                 if not isinstance(segments, list) or not segments:
                     segments = result.get("regimes")
-                if isinstance(segments, list) and segments and isinstance(segments[-1], dict):
+                if (
+                    isinstance(segments, list)
+                    and segments
+                    and isinstance(segments[-1], dict)
+                ):
                     last = segments[-1]
                     current_segment = {
                         "started_at": last.get("started_at", last.get("start")),
@@ -2562,6 +2566,17 @@ def regime_detect(  # noqa: C901
             comparison = _build_all_method_comparison(results_by_method)
             comparison["methods_failed"] = [e.split(":")[0] for e in all_errors]
 
+            summary_payload: Optional[Dict[str, Any]] = None
+            if detail_value == "summary":
+                summary_payload = {
+                    "methods_attempted": int(len(all_methods)),
+                    "methods_succeeded": int(len(results_by_method)),
+                    "methods_failed": int(len(all_errors)),
+                }
+                agreement_summary = comparison.get("agreement")
+                if isinstance(agreement_summary, dict):
+                    summary_payload["agreement"] = agreement_summary
+
             payload = {
                 "success": True,
                 "symbol": symbol,
@@ -2576,6 +2591,8 @@ def regime_detect(  # noqa: C901
                     "methods_failed": [e.split(":")[0] for e in all_errors],
                 },
             }
+            if summary_payload is not None:
+                payload["summary"] = summary_payload
             if detail_value != "summary":
                 payload["results"] = results_by_method
             if all_errors:
