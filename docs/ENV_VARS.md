@@ -160,6 +160,55 @@ Configure the HuggingFace model used to rerank MT5 / external news by relevance.
 
 ---
 
+## Trade Guardrails
+
+Optional pre-trade controls that can block `trade_place` and risk-increasing pending-order modifications before MT5 submission.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MTDATA_TRADE_GUARDRAILS_ENABLED` | `false` | Master switch for guardrail evaluation. Guardrails also activate automatically when specific guardrail variables are configured. |
+| `MTDATA_TRADING_ENABLED` | `true` | Set to `0` / `false` to block all new trade placements via mtdata. |
+| `MTDATA_TRADE_ALLOWED_SYMBOLS` | — | Comma-separated allowlist of tradable symbols, e.g. `EURUSD,BTCUSD,XAUUSD`. When set, symbols outside the list are blocked. |
+| `MTDATA_TRADE_BLOCKED_SYMBOLS` | — | Comma-separated blocklist of symbols that mtdata must refuse. |
+| `MTDATA_TRADE_MAX_VOLUME` | — | Global max order volume cap. |
+| `MTDATA_TRADE_MAX_VOLUME_BY_SYMBOL` | — | Per-symbol max volume map. Format: `SYMBOL:VALUE,SYMBOL=VALUE`, e.g. `EURUSD:0.50,BTCUSD=0.03`. |
+| `MTDATA_TRADE_SAFETY_MAX_VOLUME` | — | Optional max-volume cap applied through the safety-policy layer. Usually `MTDATA_TRADE_MAX_VOLUME` is easier to reason about. |
+| `MTDATA_TRADE_SAFETY_REQUIRE_STOP_LOSS` | `false` | Require a stop-loss for guarded orders. Recommended when wallet-risk caps are enabled. |
+| `MTDATA_TRADE_SAFETY_MAX_DEVIATION` | — | Maximum allowed MT5 deviation/slippage value in points. |
+| `MTDATA_TRADE_SAFETY_REDUCE_ONLY` | `false` | Only allow orders that reduce existing exposure. |
+| `MTDATA_TRADE_MIN_MARGIN_LEVEL_PCT` | — | Block orders when account margin level is below this threshold. |
+| `MTDATA_TRADE_MAX_FLOATING_LOSS` | — | Block orders when current unrealized account loss exceeds this amount. |
+| `MTDATA_TRADE_MAX_TOTAL_EXPOSURE_LOTS` | — | Block orders when aggregate open exposure plus the new order would exceed this lot cap. |
+| `MTDATA_TRADE_MAX_RISK_PCT_OF_EQUITY` | — | Block orders when quantified portfolio risk after the new trade would exceed this percent of account equity. |
+| `MTDATA_TRADE_MAX_RISK_PCT_OF_BALANCE` | — | Same as above, measured against account balance. |
+| `MTDATA_TRADE_MAX_RISK_PCT_OF_FREE_MARGIN` | — | Same as above, measured against free margin. |
+
+Notes:
+
+- Wallet-risk caps require a quantifiable stop-loss and valid broker tick metadata.
+- Leave any variable unset to disable only that rule.
+- `trade_modify` guardrails apply only to pending-order changes that increase risk; close/reduce flows stay allowed.
+
+```ini
+# Example trade guardrail setup
+MTDATA_TRADE_GUARDRAILS_ENABLED=1
+MTDATA_TRADING_ENABLED=1
+MTDATA_TRADE_ALLOWED_SYMBOLS=EURUSD,BTCUSD,XAUUSD
+MTDATA_TRADE_BLOCKED_SYMBOLS=US30
+MTDATA_TRADE_MAX_VOLUME=1.0
+MTDATA_TRADE_MAX_VOLUME_BY_SYMBOL=EURUSD:0.50,BTCUSD:0.03,XAUUSD:0.10
+MTDATA_TRADE_SAFETY_REQUIRE_STOP_LOSS=1
+MTDATA_TRADE_SAFETY_MAX_DEVIATION=20
+MTDATA_TRADE_MIN_MARGIN_LEVEL_PCT=200
+MTDATA_TRADE_MAX_FLOATING_LOSS=1000
+MTDATA_TRADE_MAX_TOTAL_EXPOSURE_LOTS=2.0
+MTDATA_TRADE_MAX_RISK_PCT_OF_EQUITY=1.5
+MTDATA_TRADE_MAX_RISK_PCT_OF_BALANCE=1.25
+MTDATA_TRADE_MAX_RISK_PCT_OF_FREE_MARGIN=2.0
+```
+
+---
+
 ## CLI & Debug
 
 | Variable | Default | Description |

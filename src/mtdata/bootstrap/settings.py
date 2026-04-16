@@ -141,6 +141,166 @@ def _env_float(name: str, default: float) -> float:
         return float(default)
 
 
+def _env_optional_float(name: str) -> Optional[float]:
+    raw = os.getenv(name)
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    if not text:
+        return None
+    try:
+        value = float(text)
+    except (TypeError, ValueError):
+        _LOGGER.warning("Invalid %s=%r; ignoring configured float.", name, raw)
+        return None
+    if not value == value:
+        _LOGGER.warning("Invalid %s=%r; ignoring NaN float.", name, raw)
+        return None
+    return value
+
+
+def _env_csv(name: str) -> tuple[str, ...]:
+    raw = os.getenv(name)
+    if raw is None:
+        return ()
+    return tuple(part.strip() for part in str(raw).split(",") if part.strip())
+
+
+def _env_symbol_float_map(name: str) -> dict[str, float]:
+    raw = os.getenv(name)
+    if raw is None:
+        return {}
+    mapping: dict[str, float] = {}
+    for item in str(raw).split(","):
+        token = item.strip()
+        if not token:
+            continue
+        separator = ":" if ":" in token else "=" if "=" in token else None
+        if separator is None:
+            _LOGGER.warning(
+                "Invalid %s entry %r; expected SYMBOL:VALUE or SYMBOL=VALUE.",
+                name,
+                token,
+            )
+            continue
+        symbol_part, value_part = token.split(separator, 1)
+        symbol = symbol_part.strip().upper()
+        if not symbol:
+            _LOGGER.warning("Invalid %s entry %r; symbol is blank.", name, token)
+            continue
+        try:
+            value = float(value_part.strip())
+        except (TypeError, ValueError):
+            _LOGGER.warning("Invalid %s entry %r; volume cap must be numeric.", name, token)
+            continue
+        if value <= 0:
+            _LOGGER.warning("Invalid %s entry %r; volume cap must be positive.", name, token)
+            continue
+        mapping[symbol] = float(value)
+    return mapping
+
+
+class _GuardrailSection:
+    def model_dump(self) -> dict[str, object]:
+        return dict(self.__dict__)
+
+
+class TradeSafetyPolicyConfig(_GuardrailSection):
+    def __init__(self) -> None:
+        self.max_volume: Optional[float] = None
+        self.require_stop_loss = False
+        self.max_deviation: Optional[int] = None
+        self.reduce_only = False
+
+
+class AccountRiskLimitsConfig(_GuardrailSection):
+    def __init__(self) -> None:
+        self.min_margin_level_pct: Optional[float] = None
+        self.max_floating_loss: Optional[float] = None
+        self.max_total_exposure_lots: Optional[float] = None
+
+
+class WalletRiskLimitsConfig(_GuardrailSection):
+    def __init__(self) -> None:
+        self.max_risk_pct_of_equity: Optional[float] = None
+        self.max_risk_pct_of_balance: Optional[float] = None
+        self.max_risk_pct_of_free_margin: Optional[float] = None
+
+
+class TradeGuardrailsRuntimeConfig(_GuardrailSection):
+    """Mutable env-backed trade guardrail configuration."""
+
+    def __init__(self) -> None:
+        self.enabled = False
+        self.trading_enabled = True
+        self.allowed_symbols: list[str] = []
+        self.blocked_symbols: list[str] = []
+        self.max_volume: Optional[float] = None
+        self.max_volume_by_symbol: dict[str, float] = {}
+        self.safety_policy = TradeSafetyPolicyConfig()
+        self.account_risk_limits = AccountRiskLimitsConfig()
+        self.wallet_risk_limits = WalletRiskLimitsConfig()
+        self.reload_from_env()
+
+    def is_enabled(self) -> bool:
+        return bool(
+            self.enabled
+            or not self.trading_enabled
+            or self.allowed_symbols
+            or self.blocked_symbols
+            or self.max_volume is not None
+            or self.max_volume_by_symbol
+            or any(self.safety_policy.model_dump().values())
+            or any(self.account_risk_limits.model_dump().values())
+            or any(self.wallet_risk_limits.model_dump().values())
+        )
+
+    def reload_from_env(self) -> None:
+        self.enabled = _env_bool("MTDATA_TRADE_GUARDRAILS_ENABLED", default=False)
+        self.trading_enabled = _env_bool("MTDATA_TRADING_ENABLED", default=True)
+        self.allowed_symbols = [
+            symbol.upper() for symbol in _env_csv("MTDATA_TRADE_ALLOWED_SYMBOLS")
+        ]
+        self.blocked_symbols = [
+            symbol.upper() for symbol in _env_csv("MTDATA_TRADE_BLOCKED_SYMBOLS")
+        ]
+        self.max_volume = _env_optional_float("MTDATA_TRADE_MAX_VOLUME")
+        self.max_volume_by_symbol = _env_symbol_float_map("MTDATA_TRADE_MAX_VOLUME_BY_SYMBOL")
+
+        self.safety_policy.max_volume = _env_optional_float("MTDATA_TRADE_SAFETY_MAX_VOLUME")
+        self.safety_policy.require_stop_loss = _env_bool(
+            "MTDATA_TRADE_SAFETY_REQUIRE_STOP_LOSS",
+            default=False,
+        )
+        self.safety_policy.max_deviation = _env_optional_int(
+            "MTDATA_TRADE_SAFETY_MAX_DEVIATION"
+        )
+        self.safety_policy.reduce_only = _env_bool(
+            "MTDATA_TRADE_SAFETY_REDUCE_ONLY",
+            default=False,
+        )
+
+        self.account_risk_limits.min_margin_level_pct = _env_optional_float(
+            "MTDATA_TRADE_MIN_MARGIN_LEVEL_PCT"
+        )
+        self.account_risk_limits.max_floating_loss = _env_optional_float(
+            "MTDATA_TRADE_MAX_FLOATING_LOSS"
+        )
+        self.account_risk_limits.max_total_exposure_lots = _env_optional_float(
+            "MTDATA_TRADE_MAX_TOTAL_EXPOSURE_LOTS"
+        )
+
+        self.wallet_risk_limits.max_risk_pct_of_equity = _env_optional_float(
+            "MTDATA_TRADE_MAX_RISK_PCT_OF_EQUITY"
+        )
+        self.wallet_risk_limits.max_risk_pct_of_balance = _env_optional_float(
+            "MTDATA_TRADE_MAX_RISK_PCT_OF_BALANCE"
+        )
+        self.wallet_risk_limits.max_risk_pct_of_free_margin = _env_optional_float(
+            "MTDATA_TRADE_MAX_RISK_PCT_OF_FREE_MARGIN"
+        )
+
+
 def load_environment(*, force: bool = False) -> bool:
     """Load environment variables from `.env` once for application entrypoints."""
     global _ENV_LOADED
@@ -172,6 +332,12 @@ def load_environment(*, force: bool = False) -> bool:
             embeddings_obj.reload_from_env()
         except Exception as exc:
             _LOGGER.warning("Failed to reload news embeddings configuration from environment: %s", exc)
+    guardrails_obj = globals().get("trade_guardrails_config")
+    if guardrails_obj is not None:
+        try:
+            guardrails_obj.reload_from_env()
+        except Exception as exc:
+            _LOGGER.warning("Failed to reload trade guardrails configuration from environment: %s", exc)
     return loaded
 
 class MT5Config:
@@ -332,6 +498,8 @@ class NewsEmbeddingsConfig:
             os.getenv("MTDATA_NEWS_EMBEDDINGS_HF_TOKEN_ENV_VAR", "HF_TOKEN").strip() or "HF_TOKEN"
         )
 
+
 # Global configuration instance. Entry points call `load_environment()` explicitly.
 mt5_config = MT5Config(warn_if_timezone_missing=False)
 news_embeddings_config = NewsEmbeddingsConfig()
+trade_guardrails_config = TradeGuardrailsRuntimeConfig()

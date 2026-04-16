@@ -5,11 +5,12 @@ import math
 import time as _stdlib_time
 from typing import Any, Callable, Dict, List, Optional, TypedDict, Union
 
-from ..config import mt5_config
+from ..config import mt5_config, trade_guardrails_config
 from . import comments, common, time, validation
 from .execution import _modify_position
 from .gateway import MT5TradingGateway, create_trading_gateway, trading_connection_error
 from .positions import _resolve_open_position
+from .safety import evaluate_trade_guardrails
 from .time import ExpirationValue
 from .validation import MarketOrderTypeInput, OrderTypeInput
 
@@ -557,6 +558,42 @@ def _prepare_order_symbol_context(
     }, None
 
 
+def _evaluate_live_trade_guardrails(
+    mt5: Any,
+    *,
+    symbol: str,
+    volume: float,
+    stop_loss: Optional[float],
+    deviation: Optional[int],
+    side: str,
+    entry_price: float,
+    symbol_info: Any,
+) -> Optional[Dict[str, Any]]:
+    if not trade_guardrails_config.is_enabled():
+        return None
+    try:
+        account_info = mt5.account_info()
+    except Exception:
+        account_info = None
+    try:
+        positions = mt5.positions_get()
+    except Exception:
+        positions = None
+    return evaluate_trade_guardrails(
+        trade_guardrails_config,
+        symbol=symbol,
+        volume=volume,
+        stop_loss=stop_loss,
+        deviation=deviation,
+        side=side,
+        entry_price=entry_price,
+        account_info=account_info,
+        existing_positions=list(positions or []),
+        symbol_info=symbol_info,
+        symbol_info_resolver=mt5.symbol_info,
+    )
+
+
 def _build_order_comment_payload(
     comment: Optional[str],
     *,
@@ -788,6 +825,18 @@ def _place_market_order(  # noqa: C901
             )
             if live_protection_error is not None:
                 return live_protection_error
+            guardrail_block = _evaluate_live_trade_guardrails(
+                mt5,
+                symbol=symbol,
+                volume=volume_validated,
+                stop_loss=norm_sl,
+                deviation=deviation_validated,
+                side=side,
+                entry_price=price,
+                symbol_info=symbol_info,
+            )
+            if guardrail_block is not None:
+                return guardrail_block
             request_comment, comment_sanitization, comment_truncation = _build_order_comment_payload(
                 comment,
                 default="MCP order",
@@ -1013,6 +1062,18 @@ def _place_pending_order(
             )
             if pending_level_error is not None:
                 return pending_level_error
+            guardrail_block = _evaluate_live_trade_guardrails(
+                mt5,
+                symbol=symbol,
+                volume=volume_validated,
+                stop_loss=None if norm_sl is None else float(norm_sl),
+                deviation=deviation_validated,
+                side="BUY" if "BUY" in str(t) else "SELL",
+                entry_price=float(norm_price),
+                symbol_info=symbol_info,
+            )
+            if guardrail_block is not None:
+                return guardrail_block
 
             request_comment, comment_sanitization, comment_truncation = _build_order_comment_payload(
                 comment,

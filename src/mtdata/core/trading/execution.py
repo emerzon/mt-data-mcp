@@ -7,9 +7,11 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Union
 
 from ...utils.mt5 import _mt5_epoch_to_utc
+from ..config import trade_guardrails_config
 from . import comments, time, validation
 from .gateway import MT5TradingGateway, create_trading_gateway, trading_connection_error
 from .positions import _resolve_open_position, _resolve_pending_order
+from .safety import evaluate_trade_guardrails, pending_order_risk_increased
 from .time import ExpirationValue
 
 
@@ -470,6 +472,59 @@ def _modify_pending_order(
             )
             if pending_level_error is not None:
                 return pending_level_error
+
+            order_volume = (
+                validation._safe_float_attr(order, "volume_current")
+                or validation._safe_float_attr(order, "volume_initial")
+                or validation._safe_float_attr(order, "volume")
+            )
+            existing_entry_price = validation._safe_float_attr(order, "price_open")
+            candidate_stop_loss = None if request_sl == 0.0 else float(request_sl)
+            current_stop_loss = existing_sl
+            side = "BUY" if int(order_type_value) in {
+                validation._safe_int_attr(mt5, "ORDER_TYPE_BUY_LIMIT", 2),
+                validation._safe_int_attr(mt5, "ORDER_TYPE_BUY_STOP", 4),
+            } else "SELL"
+            if (
+                trade_guardrails_config.is_enabled()
+                and order_volume is not None
+                and pending_order_risk_increased(
+                    symbol_info=symbol_info,
+                    side=side,
+                    volume=float(order_volume),
+                    existing_entry_price=existing_entry_price,
+                    existing_stop_loss=current_stop_loss,
+                    candidate_entry_price=float(normalized_price),
+                    candidate_stop_loss=candidate_stop_loss,
+                )
+            ):
+                try:
+                    account_info = mt5.account_info()
+                except Exception:
+                    account_info = None
+                try:
+                    positions = mt5.positions_get()
+                except Exception:
+                    positions = None
+                guardrail_block = evaluate_trade_guardrails(
+                    trade_guardrails_config,
+                    symbol=order.symbol,
+                    volume=float(order_volume),
+                    stop_loss=candidate_stop_loss,
+                    deviation=None,
+                    side=side,
+                    entry_price=float(normalized_price),
+                    account_info=account_info,
+                    existing_positions=list(positions or []),
+                    symbol_info=symbol_info,
+                    symbol_info_resolver=mt5.symbol_info,
+                    enforce_symbol_rules=False,
+                )
+                if guardrail_block is not None:
+                    guardrail_block["pending_order_ticket"] = resolved_ticket
+                    guardrail_block["ticket_requested"] = ticket_id
+                    guardrail_block["ticket_resolution"] = ticket_resolution
+                    return guardrail_block
 
             request = {
                 "action": mt5.TRADE_ACTION_MODIFY,

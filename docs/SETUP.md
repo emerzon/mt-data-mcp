@@ -205,7 +205,15 @@ MT5_SERVER=your_broker_server
 MT5_TIME_OFFSET_MINUTES=120  # If server is UTC+2
 # OR
 MT5_SERVER_TZ=Europe/Athens  # Timezone name
+
+# Optional trade guardrails
+MTDATA_TRADE_GUARDRAILS_ENABLED=1
+MTDATA_TRADE_ALLOWED_SYMBOLS=EURUSD,BTCUSD,XAUUSD
+MTDATA_TRADE_MAX_VOLUME_BY_SYMBOL=EURUSD:0.50,BTCUSD:0.03
+MTDATA_TRADE_MAX_RISK_PCT_OF_EQUITY=1.5
 ```
+
+For the full guardrail surface, including blocklists, wallet-risk limits, and pending-order modification behavior, see [ENV_VARS.md](ENV_VARS.md#trade-guardrails).
 
 ### Timezone Configuration
 

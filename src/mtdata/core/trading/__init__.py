@@ -41,6 +41,8 @@ def trade_place(request: TradePlaceRequest) -> dict:
       Defaults to True for safer automation behavior.
     - auto_close_on_sl_tp_fail: if TP/SL application fails on a filled market order,
       attempt to immediately close the unprotected position.
+    - Environment guardrails can block orders before MT5 submission based on
+      configured symbol policies, volume caps, or wallet/account risk limits.
     """
     return run_logged_operation(
         logger,
@@ -63,7 +65,11 @@ def trade_place(request: TradePlaceRequest) -> dict:
 
 @mcp.tool()
 def trade_modify(request: TradeModifyRequest) -> dict:
-    """Modify an open position or pending order by ticket."""
+    """Modify an open position or pending order by ticket.
+
+    Risk-increasing pending-order changes can be blocked by configured trade
+    guardrails, while close/reduce flows remain allowed.
+    """
     return run_logged_operation(
         logger,
         operation="trade_modify",

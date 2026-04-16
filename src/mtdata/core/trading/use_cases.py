@@ -12,6 +12,7 @@ from ...shared.result import Err, Ok, Result, to_dict
 from ...shared.validators import invalid_timeframe_error
 from ...utils.barriers import normalize_trade_direction
 from ...utils.mt5 import MT5ConnectionError
+from ..config import trade_guardrails_config
 from ..execution_logging import (
     infer_result_success,
     log_operation_finish,
@@ -29,6 +30,7 @@ from .requests import (
     TradeRiskAnalyzeRequest,
     TradeVarCvarRequest,
 )
+from .safety import evaluate_trade_guardrails, preview_trade_guardrails
 from .sizing import _resolve_risk_tick_value
 
 logger = logging.getLogger(__name__)
@@ -48,6 +50,15 @@ def _sl_tp_result_details(result: Dict[str, Any]) -> tuple[bool, str, bool]:
     status = str(result.get("sl_tp_apply_status") or "").lower()
     fallback_used = bool(result.get("sl_tp_fallback_used"))
     return requested_bool, status, fallback_used
+
+
+def _guardrail_order_side(order_type: Optional[str]) -> Optional[str]:
+    text = str(order_type or "").strip().upper()
+    if text.startswith("BUY"):
+        return "BUY"
+    if text.startswith("SELL"):
+        return "SELL"
+    return None
 
 
 def _resolve_trade_risk_direction(
@@ -358,6 +369,14 @@ def run_trade_place(  # noqa: C901
             ],
             "require_sl_tp": bool(request.require_sl_tp),
             "auto_close_on_sl_tp_fail": bool(request.auto_close_on_sl_tp_fail),
+            "guardrails_preview": preview_trade_guardrails(
+                trade_guardrails_config,
+                symbol=symbol_norm,
+                volume=float(request.volume),
+                stop_loss=request.stop_loss,
+                deviation=request.deviation,
+                side=_guardrail_order_side(order_type),
+            ),
         }
         if pending:
             preview["requested_price"] = request.price
@@ -468,6 +487,28 @@ def run_trade_place(  # noqa: C901
             }, order_type=order_type_norm, pending=is_pending)
 
     if bool(request.dry_run):
+        guardrail_preview = preview_trade_guardrails(
+            trade_guardrails_config,
+            symbol=symbol_norm,
+            volume=float(request.volume),
+            stop_loss=request.stop_loss,
+            deviation=request.deviation,
+            side=_guardrail_order_side(order_type_norm),
+        )
+        if guardrail_preview.get("blocked"):
+            return _finish(
+                {
+                    "error": "Trade would be blocked by configured guardrails.",
+                    "guardrail_blocked": True,
+                    "dry_run": True,
+                    "no_action": True,
+                    "actionability": "blocked_by_guardrails",
+                    "guardrails_preview": guardrail_preview,
+                    "violations": list(guardrail_preview.get("violations") or []),
+                },
+                order_type=order_type_norm,
+                pending=is_pending,
+            )
         if is_pending and request.price is None:
             return _finish(
                 {"error": "price is required for pending orders."},
@@ -484,6 +525,19 @@ def run_trade_place(  # noqa: C901
             order_type=order_type_norm,
             pending=is_pending,
         )
+
+    static_guardrail = evaluate_trade_guardrails(
+        trade_guardrails_config,
+        symbol=symbol_norm,
+        volume=float(request.volume),
+        stop_loss=request.stop_loss,
+        deviation=request.deviation,
+        side=_guardrail_order_side(order_type_norm),
+        enforce_account_risk=False,
+        enforce_wallet_risk=False,
+    )
+    if static_guardrail is not None:
+        return _finish(static_guardrail, order_type=order_type_norm, pending=is_pending)
 
     if not is_pending:
         result = place_market_order(
