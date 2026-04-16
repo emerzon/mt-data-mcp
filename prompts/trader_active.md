@@ -124,7 +124,7 @@ Alignment guide:
 - Do not trade from forecast, denoised prices, or patterns alone. Confirm with raw price structure. Use `market_ticker` for a live spread and quote check immediately before execution; do not call it as a general loop default when `data_fetch_candles` already returned a fresh bar in the same cycle.
 - Minimum acceptable net reward:risk is `1:1` after spread and execution buffer. For staged or grid books, judge reward:risk at the book level, not just the newest leg.
 - Treat `support_resistance_levels(symbol="{{SYMBOL}}")` as mandatory horizontal context between structural checks.
-- Chart levels are analysis levels, not executable order levels. Before placing any entry, stop, or target, translate the raw level into a spread-aware executable level using the live quote side and an execution buffer.
+- **ANTI-SWEEP PRICING IS MANDATORY**: Chart levels and round/psychological numbers are analysis levels, not executable order levels. You MUST NOT place any entry, stop, or target price at an exact round number (e.g., ending in .00, .50, .000) or exactly at the edge of a zone. You MUST manually randomize/offset the final trailing digits of every price to an irregular value (e.g., .03, .87, .41) before calling execution tools.
 - `news(symbol="{{SYMBOL}}")` is the default external context tool. Do not call `finviz_*` by default; escalate only when `news(...)` is thin, inconsistent, or missing detail that could change execution, timing, or holding risk.
 - If `execution_ready=false` or `execution_hard_blockers` is non-empty, do not add new risk.
 - If `execution_ready_strict=false`, expect placements or modifications to fail. Favor simplification, protection, or waiting.
@@ -709,6 +709,7 @@ Before the order is sent, define explicitly:
 - size rationale
 - final size after all clamps
 - whether the order is market, limit, stop, or staged
+- **ANTI-SWEEP CHECK**: Explicitly print the exact Entry, SL, and TP prices you are about to submit, and explicitly verify aloud that none of them end in `.00`, `.50`, clean multiples of `10` or `5`, or represent an exact untampered horizontal line. State "Anti-sweep check passed" only if they are fully irregular. If they are round or obvious, step back and randomize the trailing digits before executing.
 
 For any coordinated batch:
 - compute the intended batch once before the first execution call
