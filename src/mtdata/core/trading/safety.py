@@ -60,7 +60,7 @@ def _safe_float_attr(obj: Any, name: str) -> Optional[float]:
             return None
         fv = float(val)
         return fv if math.isfinite(fv) else None
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
 
 
@@ -166,7 +166,7 @@ def _evaluate_safety_policy(
                 violations.append(
                     f"Volume {volume} exceeds safety limit of {policy.max_volume}."
                 )
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             pass
 
     if policy.require_stop_loss:
@@ -179,7 +179,7 @@ def _evaluate_safety_policy(
                 violations.append(
                     f"Deviation {deviation} exceeds safety limit of {policy.max_deviation}."
                 )
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             pass
 
     if policy.reduce_only and side is not None:
@@ -265,7 +265,9 @@ def _evaluate_symbol_guardrails(
         blocked = {_normalize_symbol(item) for item in config.blocked_symbols}
         allowed = {_normalize_symbol(item) for item in config.allowed_symbols}
         if normalized_symbol in blocked:
-            violations.append(f"Symbol {normalized_symbol} is blocked by guardrail policy.")
+            violations.append(
+                f"Symbol {normalized_symbol} is blocked by guardrail policy."
+            )
         elif allowed and normalized_symbol not in allowed:
             violations.append(
                 f"Symbol {normalized_symbol} is not in the configured allowlist."
@@ -275,9 +277,17 @@ def _evaluate_symbol_guardrails(
         limits = []
         if config.max_volume is not None:
             limits.append(("global", float(config.max_volume)))
-        symbol_limit = config.max_volume_by_symbol.get(normalized_symbol)
-        if symbol_limit is not None:
-            limits.append((normalized_symbol, float(symbol_limit)))
+
+        # If max_volume_by_symbol is configured, it acts as a whitelist
+        if config.max_volume_by_symbol:
+            symbol_limit = config.max_volume_by_symbol.get(normalized_symbol)
+            if symbol_limit is None:
+                violations.append(
+                    f"Symbol {normalized_symbol} is not in the configured max_volume_by_symbol allowlist."
+                )
+            else:
+                limits.append((normalized_symbol, float(symbol_limit)))
+
         for scope, cap in limits:
             if float(volume) > cap:
                 scope_label = (
@@ -454,11 +464,17 @@ def _evaluate_wallet_risk_limits(
     violations: List[str] = []
     normalized_side = _normalize_side(side)
     if account_info is None:
-        violations.append("Account information is required to enforce wallet risk guardrails.")
+        violations.append(
+            "Account information is required to enforce wallet risk guardrails."
+        )
     if symbol_info is None:
-        violations.append(f"Symbol metadata is required to enforce wallet risk for {symbol}.")
+        violations.append(
+            f"Symbol metadata is required to enforce wallet risk for {symbol}."
+        )
     if volume is None or not math.isfinite(float(volume)) or float(volume) <= 0:
-        violations.append("Volume must be finite and positive to enforce wallet risk guardrails.")
+        violations.append(
+            "Volume must be finite and positive to enforce wallet risk guardrails."
+        )
     if entry_price is None or not math.isfinite(float(entry_price)):
         violations.append("Entry price is required to enforce wallet risk guardrails.")
     if stop_loss is None or not math.isfinite(float(stop_loss)):
@@ -501,8 +517,16 @@ def _evaluate_wallet_risk_limits(
 
     total_after = float(existing_total_risk) + float(candidate_risk)
     thresholds = (
-        ("equity", _safe_float_attr(account_info, "equity"), limits.max_risk_pct_of_equity),
-        ("balance", _safe_float_attr(account_info, "balance"), limits.max_risk_pct_of_balance),
+        (
+            "equity",
+            _safe_float_attr(account_info, "equity"),
+            limits.max_risk_pct_of_equity,
+        ),
+        (
+            "balance",
+            _safe_float_attr(account_info, "balance"),
+            limits.max_risk_pct_of_balance,
+        ),
         (
             "free_margin",
             _safe_float_attr(account_info, "margin_free"),
@@ -662,7 +686,9 @@ def preview_trade_guardrails(
     return {
         "enabled": True,
         "blocked": static_result is not None,
-        "violations": list(static_result.get("violations") or []) if static_result else [],
+        "violations": list(static_result.get("violations") or [])
+        if static_result
+        else [],
         "rule": static_result.get("guardrail_rule") if static_result else None,
         "checks_not_performed": checks_not_performed,
     }
@@ -679,10 +705,18 @@ def pending_order_risk_increased(
     candidate_stop_loss: Optional[float],
 ) -> bool:
     """Return True when a pending-order modification increases downside risk."""
-    current_sl = _safe_float_attr(type("Obj", (), {"value": existing_stop_loss})(), "value")
-    next_sl = _safe_float_attr(type("Obj", (), {"value": candidate_stop_loss})(), "value")
-    current_entry = _safe_float_attr(type("Obj", (), {"value": existing_entry_price})(), "value")
-    next_entry = _safe_float_attr(type("Obj", (), {"value": candidate_entry_price})(), "value")
+    current_sl = _safe_float_attr(
+        type("Obj", (), {"value": existing_stop_loss})(), "value"
+    )
+    next_sl = _safe_float_attr(
+        type("Obj", (), {"value": candidate_stop_loss})(), "value"
+    )
+    current_entry = _safe_float_attr(
+        type("Obj", (), {"value": existing_entry_price})(), "value"
+    )
+    next_entry = _safe_float_attr(
+        type("Obj", (), {"value": candidate_entry_price})(), "value"
+    )
 
     if current_sl is None and next_sl is None:
         return False
@@ -699,7 +733,11 @@ def pending_order_risk_increased(
         side=side,
     )
     if next_risk is None:
-        return next_error in {"stop_loss_wrong_side", "tick_size_invalid", "tick_value_invalid"}
+        return next_error in {
+            "stop_loss_wrong_side",
+            "tick_size_invalid",
+            "tick_value_invalid",
+        }
 
     if current_sl is None or current_entry is None:
         return True
