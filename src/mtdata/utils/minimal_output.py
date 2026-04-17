@@ -1132,6 +1132,7 @@ def _normalize_market_ticker_payload(
         "last",
         "spread",
         "spread_points",
+        "spread_pips",
         "spread_pct",
         "spread_usd",
     ):
