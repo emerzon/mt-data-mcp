@@ -1364,9 +1364,14 @@ def _normalize_regime_all_payload(
         out["comparison"] = comparison_out
 
     if detail_value != "full" and ("results" in payload or "params_used" in payload):
-        out["show_all_hint"] = (
-            "Use --detail summary for stats only, or --detail full / --verbose for per-method details."
-        )
+        if detail_value == "summary":
+            out["show_all_hint"] = (
+                "Use --detail full / --verbose for per-method details."
+            )
+        else:
+            out["show_all_hint"] = (
+                "Use --detail summary for stats only, or --detail full / --verbose for per-method details."
+            )
 
     return out
 

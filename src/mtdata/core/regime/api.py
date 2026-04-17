@@ -2576,6 +2576,14 @@ def regime_detect(  # noqa: C901
                 agreement_summary = comparison.get("agreement")
                 if isinstance(agreement_summary, dict):
                     summary_payload["agreement"] = agreement_summary
+                # True summary mode: keep agreement + methods run/failed,
+                # drop the per-method regime rows and strip params_used to
+                # stay in sync with the single-method summary contract.
+                comparison = {
+                    "methods_run": comparison.get("methods_run"),
+                    "methods_failed": comparison.get("methods_failed"),
+                    "agreement": comparison.get("agreement"),
+                }
 
             payload = {
                 "success": True,
@@ -2585,12 +2593,13 @@ def regime_detect(  # noqa: C901
                 "target": target,
                 "detail": detail_value,
                 "comparison": comparison,
-                "params_used": {
+            }
+            if detail_value != "summary":
+                payload["params_used"] = {
                     "methods_attempted": all_methods,
                     "methods_succeeded": list(results_by_method.keys()),
                     "methods_failed": [e.split(":")[0] for e in all_errors],
-                },
-            }
+                }
             if summary_payload is not None:
                 payload["summary"] = summary_payload
             if detail_value != "summary":

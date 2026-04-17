@@ -185,6 +185,11 @@ def test_regime_detect_all_respects_full_and_summary_detail(monkeypatch) -> None
     summary = real("EURUSD", method="all", detail="summary", include_series=True)
     assert summary["detail"] == "summary"
     assert "results" not in summary
+    # Summary mode must not embed per-method regimes or params_used.
+    assert "params_used" not in summary
+    comparison = summary.get("comparison", {})
+    assert "current_regimes" not in comparison
+    assert "agreement" in comparison
     assert subcall_details
     assert all(detail == "compact" for _, detail, _ in subcall_details)
     assert all(include_series is False for _, _, include_series in subcall_details)
