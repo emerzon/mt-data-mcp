@@ -1,4 +1,5 @@
 """Pagination utilities for Finviz service."""
+import math
 from typing import Any, List, Optional, Tuple
 
 from .client import get_finviz_page_limit_max, get_finviz_screener_max_rows
@@ -12,6 +13,33 @@ def _coerce_positive_int(value: Any, *, default: int) -> int:
     except Exception:
         return int(default)
     return max(1, int(numeric))
+
+
+def _sanitize_finviz_cell(value: Any) -> Any:
+    """Coerce Finviz/pandas missing markers to ``None``.
+
+    pandas ``to_dict`` emits ``float('nan')`` for missing numerics and the
+    finvizfinance upstream often yields the literal string ``"nan"`` / ``"-"``
+    for fields it could not parse. Normalize all of these to ``None`` so CLI
+    and JSON consumers see a proper null instead of a programming artefact.
+    """
+    if value is None:
+        return None
+    if isinstance(value, float):
+        if math.isnan(value) or math.isinf(value):
+            return None
+        return value
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped == "" or stripped.lower() == "nan" or stripped == "-":
+            return None
+    return value
+
+
+def _sanitize_row(row: Any) -> Any:
+    if isinstance(row, dict):
+        return {key: _sanitize_finviz_cell(val) for key, val in row.items()}
+    return row
 
 
 def sanitize_pagination(
@@ -75,6 +103,8 @@ def paginate_finviz_records(
     else:
         rows = []
 
+    rows = [_sanitize_row(row) for row in rows]
+
     pages = 0 if total <= 0 else (total + safe_limit - 1) // safe_limit
     return rows, total, safe_limit, safe_page, pages
 
@@ -107,4 +137,5 @@ __all__ = [
     "compute_screener_fetch_limit",
     "paginate_finviz_records",
     "run_screener_view",
+    "_sanitize_finviz_cell",
 ]

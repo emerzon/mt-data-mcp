@@ -231,3 +231,25 @@ def test_finviz_http_get_uses_build_session(monkeypatch):
     assert calls["built"] == 1
     assert calls["get"] == ["https://example.test"]
     assert result == "ok"
+
+
+def test_finviz_paginate_coerces_nan_to_none():
+    import numpy as np
+
+    df = pd.DataFrame([
+        {'Owner': 'ALICE', 'Shares Total': 123, 'Value': 'nan'},
+        {'Owner': 'BOB', 'Shares Total': float('nan'), 'Value': '-'},
+        {'Owner': 'CARLA', 'Shares Total': np.nan, 'Value': '1000'},
+    ])
+
+    rows, total, _, _, _ = finviz_pagination.paginate_finviz_records(
+        df, limit=10, page=1, page_limit_max=50
+    )
+
+    assert total == 3
+    assert rows[0] == {'Owner': 'ALICE', 'Shares Total': 123, 'Value': None}
+    assert rows[1]['Shares Total'] is None
+    assert rows[1]['Value'] is None
+    assert rows[2]['Shares Total'] is None
+    assert rows[2]['Value'] == '1000'
+

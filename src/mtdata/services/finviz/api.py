@@ -37,6 +37,15 @@ def _compute_screener_fetch_limit(limit: int, page: int, max_rows: int) -> int:
     )
 
 
+def _sanitize_finviz_row(row: Any) -> Any:
+    """Coerce missing Finviz/pandas values in a row to ``None``."""
+    from .pagination import _sanitize_finviz_cell
+
+    if isinstance(row, dict):
+        return {key: _sanitize_finviz_cell(val) for key, val in row.items()}
+    return row
+
+
 def _paginate_finviz_records(
     items: Any,
     *,
@@ -256,7 +265,8 @@ def _fetch_finviz_market_performance_rows(
     df = market_client.performance()
     if df is None or df.empty:
         raise ValueError(empty_error)
-    return df.to_dict(orient="records")
+    records = df.to_dict(orient="records")
+    return [_sanitize_finviz_row(row) for row in records]
 
 
 def get_stock_fundamentals(symbol: str) -> Dict[str, Any]:
@@ -270,6 +280,7 @@ def get_stock_fundamentals(symbol: str) -> Dict[str, Any]:
         fundament = stock.ticker_fundament()
         if fundament is None:
             return {"error": f"No fundamental data found for {symbol}"}
+        fundament = _sanitize_finviz_row(fundament)
         return {
             "success": True,
             "symbol": symbol_norm,
@@ -379,6 +390,7 @@ def get_stock_ratings(symbol: str) -> Dict[str, Any]:
         if ratings_df is None or ratings_df.empty:
             return {"error": f"No ratings found for {symbol}"}
         ratings_list = ratings_df.to_dict(orient="records")
+        ratings_list = [_sanitize_finviz_row(row) for row in ratings_list]
         return {
             "success": True,
             "symbol": symbol_norm,
