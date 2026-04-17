@@ -686,6 +686,12 @@ def _normalize_forecast_payload(
         warnings_in = payload.get("warnings")
         if isinstance(warnings_in, list) and warnings_in:
             warnings_clean = [str(w).strip() for w in warnings_in if str(w).strip()]
+            if not verbose:
+                warnings_clean = [
+                    w
+                    for w in warnings_clean
+                    if "confidence intervals are unavailable" not in w
+                ]
             if warnings_clean:
                 out["warnings"] = warnings_clean
 
