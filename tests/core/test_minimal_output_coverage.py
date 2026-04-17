@@ -11,6 +11,7 @@ from mtdata.utils.minimal_output import (
     _is_empty_value,
     _is_scalar_value,
     _normalize_forecast_payload,
+    _normalize_market_status_payload,
     _normalize_market_ticker_payload,
     _normalize_trade_payload,
     _normalize_trade_table_payload,
@@ -690,6 +691,31 @@ class TestFormatResultMinimal:
         assert result["time_epoch"] == 1700000000
         assert "time_display" not in result
         assert result["meta"]["tool"] == "market_ticker"
+
+    def test_market_status_hides_upcoming_holidays_by_default(self):
+        payload = {
+            "success": True,
+            "markets": [],
+            "upcoming_holidays": [
+                {"date": "2026-04-10", "holiday": "Good Friday"},
+                {"date": "2026-04-13", "holiday": "Easter Monday"},
+            ],
+        }
+        compact = _normalize_market_status_payload(
+            payload, verbose=False, tool_name="market_status"
+        )
+        assert compact is not None
+        assert "upcoming_holidays" not in compact
+        assert compact["upcoming_holidays_count"] == 2
+        assert "show_all_hint" in compact
+        # Verbose mode leaves the payload untouched.
+        assert _normalize_market_status_payload(
+            payload, verbose=True, tool_name="market_status"
+        ) is None
+        # Other tools are not affected.
+        assert _normalize_market_status_payload(
+            payload, verbose=False, tool_name="market_ticker"
+        ) is None
 
     def test_verbose_forecast_sections_are_not_nested_under_meta(self):
         payload = {

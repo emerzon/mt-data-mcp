@@ -1575,6 +1575,30 @@ def _compact_support_resistance_level(
     return out or None
 
 
+def _normalize_market_status_payload(
+    payload: Dict[str, Any],
+    *,
+    verbose: bool,
+    tool_name: str,
+) -> Optional[Dict[str, Any]]:
+    """Hide the 14-day holiday list by default; keep a one-line count."""
+    if tool_name != "market_status" or verbose:
+        return None
+    if "upcoming_holidays" not in payload:
+        return None
+
+    out = dict(payload)
+    upcoming = out.pop("upcoming_holidays", None)
+    if isinstance(upcoming, list):
+        count = len(upcoming)
+    else:
+        count = 0
+    if count:
+        out["upcoming_holidays_count"] = count
+        out["show_all_hint"] = "Use --verbose for the upcoming_holidays list."
+    return out
+
+
 def _normalize_support_resistance_payload(
     payload: Dict[str, Any],
     *,
@@ -2119,6 +2143,14 @@ def format_result_minimal(
             )
             if support_resistance_norm is not None:
                 normalized = support_resistance_norm
+
+            market_status_norm = _normalize_market_status_payload(
+                normalized,
+                verbose=verbose,
+                tool_name=resolved_tool_name,
+            )
+            if market_status_norm is not None:
+                normalized = market_status_norm
         if isinstance(normalized, str):
             return normalized.strip()
         toon_text = _format_to_toon(normalized, simplify_numbers=simplify_numbers)
