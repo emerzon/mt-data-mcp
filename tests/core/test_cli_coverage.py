@@ -139,14 +139,22 @@ class TestConfigureCliLogging:
             logger.setLevel(previous)
             logger.propagate = previous_propagate
 
-    def test_verbose_cli_logging_restores_mtdata_info(self):
+    def test_verbose_cli_logging_restores_mtdata_info(self, monkeypatch):
+        # --verbose no longer enables INFO logging; operation logs should only
+        # stream when MTDATA_CLI_DEBUG is set. Validate both branches.
         logger = logging.getLogger("mtdata")
         previous = logger.level
         previous_propagate = logger.propagate
         try:
             logger.setLevel(logging.WARNING)
             logger.propagate = False
+            monkeypatch.delenv("MTDATA_CLI_DEBUG", raising=False)
             _configure_cli_logging(verbose=True)
+            assert logger.level == logging.WARNING
+            assert logger.propagate is False
+
+            monkeypatch.setenv("MTDATA_CLI_DEBUG", "1")
+            _configure_cli_logging(verbose=False)
             assert logger.level == logging.INFO
             assert logger.propagate is True
         finally:

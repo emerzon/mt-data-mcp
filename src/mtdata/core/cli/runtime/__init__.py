@@ -38,20 +38,26 @@ def _argparse_color_enabled() -> bool:
 
 
 def _configure_cli_logging(*, verbose: bool) -> None:
-    """Configure CLI logging."""
+    """Configure CLI logging.
+
+    `--verbose` is reserved for surfacing additional *result* detail in the
+    tool payload; it must not stream internal execution logs to stderr. Raw
+    INFO/DEBUG logging is only enabled when ``MTDATA_CLI_DEBUG`` is set.
+    """
+    del verbose  # intentionally ignored; see docstring
     try:
         mtdata_logger = logging.getLogger("mtdata")
-        if verbose:
+        if _debug_enabled():
             mtdata_logger.setLevel(logging.INFO)
             mtdata_logger.propagate = True
-        else:
-            mtdata_logger.setLevel(logging.WARNING)
-            mtdata_logger.propagate = False
-            if not any(
-                isinstance(handler, logging.NullHandler)
-                for handler in mtdata_logger.handlers
-            ):
-                mtdata_logger.addHandler(logging.NullHandler())
+            return
+        mtdata_logger.setLevel(logging.WARNING)
+        mtdata_logger.propagate = False
+        if not any(
+            isinstance(handler, logging.NullHandler)
+            for handler in mtdata_logger.handlers
+        ):
+            mtdata_logger.addHandler(logging.NullHandler())
     except Exception:
         pass
 
