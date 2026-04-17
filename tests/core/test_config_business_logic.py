@@ -200,6 +200,19 @@ def test_load_environment_logs_reload_failures(monkeypatch, caplog):
         "mt5_config",
         SimpleNamespace(reload_from_env=lambda **kwargs: (_ for _ in ()).throw(RuntimeError("reload exploded"))),
     )
+    # Keep the test hermetic: load_environment() also reloads other env-backed
+    # globals, and allowing the real runtime singletons to re-read the user's
+    # .env leaks local guardrails/settings into later tests.
+    monkeypatch.setattr(
+        cfg,
+        "trade_guardrails_config",
+        SimpleNamespace(reload_from_env=lambda: None),
+    )
+    monkeypatch.setattr(
+        cfg,
+        "news_embeddings_config",
+        SimpleNamespace(reload_from_env=lambda: None),
+    )
 
     with caplog.at_level("WARNING"):
         cfg.load_environment(force=True)

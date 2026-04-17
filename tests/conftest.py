@@ -5,6 +5,7 @@ sys.modules at import time.  Without cleanup the mocks leak into later
 test modules and cause spurious failures.
 """
 
+import copy
 import logging
 import os
 import sys
@@ -83,6 +84,7 @@ def _snapshot_mt5_config_state():
         "module": settings_mod,
         "config": config_obj,
         "news_embeddings_config": getattr(settings_mod, "news_embeddings_config", None),
+        "trade_guardrails_config": getattr(settings_mod, "trade_guardrails_config", None),
         "env_loaded": getattr(settings_mod, "_ENV_LOADED", None),
         "warned_server_tz": getattr(settings_mod, "_WARNED_SERVER_TZ", None),
         "state": {
@@ -105,6 +107,9 @@ def _snapshot_mt5_config_state():
             "cache_size": getattr(getattr(settings_mod, "news_embeddings_config", None), "cache_size", None),
             "hf_token_env_var": getattr(getattr(settings_mod, "news_embeddings_config", None), "hf_token_env_var", None),
         },
+        "trade_guardrails_state": copy.deepcopy(
+            getattr(getattr(settings_mod, "trade_guardrails_config", None), "model_dump", lambda: {})()
+        ),
     }
 
 
@@ -117,12 +122,18 @@ def _restore_mt5_config_state(snapshot) -> None:
     module.mt5_config = config_obj
     if snapshot.get("news_embeddings_config") is not None:
         module.news_embeddings_config = snapshot["news_embeddings_config"]
+    if snapshot.get("trade_guardrails_config") is not None:
+        module.trade_guardrails_config = snapshot["trade_guardrails_config"]
     for name, value in snapshot["state"].items():
         setattr(config_obj, name, value)
     news_embeddings_config = snapshot.get("news_embeddings_config")
     if news_embeddings_config is not None:
         for name, value in snapshot["news_embeddings_state"].items():
             setattr(news_embeddings_config, name, value)
+    trade_guardrails_config = snapshot.get("trade_guardrails_config")
+    if trade_guardrails_config is not None:
+        for name, value in snapshot["trade_guardrails_state"].items():
+            setattr(trade_guardrails_config, name, value)
     module._ENV_LOADED = snapshot["env_loaded"]
     module._WARNED_SERVER_TZ = snapshot["warned_server_tz"]
 

@@ -178,17 +178,22 @@ def confidence_interval_bootstrap(
     confidence: float = 0.95,
     seed: Optional[int] = None,
 ) -> Tuple[float, float]:
-    """Bootstrap confidence interval for binomial proportion.
-    
-    Non-parametric approach, useful for complex estimators.
-    
+    """Parametric Monte-Carlo confidence interval for a binomial proportion.
+
+    Resamples success counts from ``Binomial(n_trials, p_hat)`` rather than
+    from the observed outcome array, so this is a parametric MC interval (not
+    a true non-parametric bootstrap). Use :func:`confidence_interval_wilson`
+    or :func:`confidence_interval_agresti_coull` for analytically comparable
+    results with less noise. True non-parametric bootstrapping of path-level
+    outcomes lives in :func:`bootstrap_metric_uncertainty`.
+
     Args:
         successes: Number of successes
         n_trials: Total number of trials
         n_bootstrap: Number of bootstrap samples
         confidence: Confidence level (default 0.95)
         seed: Random seed for reproducibility
-        
+
     Returns:
         (lower_bound, upper_bound) tuple
     """

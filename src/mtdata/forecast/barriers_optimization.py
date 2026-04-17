@@ -367,10 +367,18 @@ def _evaluate_barrier_candidate(
         eval_paths, unresolved_mask, context=context,
     )
     ev_unresolved = prob_neutral * unresolved_mean_pnl
+    # Unresolved paths still entail a round-trip entry+exit at the horizon,
+    # so subtract full trading cost when costs are configured. Without this,
+    # EV (net) understates costs by prob_neutral * cost_per_trade.
+    ev_unresolved_net = (
+        prob_neutral * (unresolved_mean_pnl - context.ev_deduct_cost)
+        if context.has_trading_costs
+        else ev_unresolved
+    )
 
     ev_gross = effective_prob_win * reward - effective_prob_loss * risk + ev_unresolved
     ev_val = (
-        effective_prob_win * net_reward - effective_prob_loss * net_risk + ev_unresolved
+        effective_prob_win * net_reward - effective_prob_loss * net_risk + ev_unresolved_net
         if context.has_trading_costs
         else ev_gross
     )
@@ -934,6 +942,9 @@ def forecast_barrier_optimize(  # noqa: C901
             else:
                 min_prob_resolve_val = max(0.0, min(1.0, min_prob_resolve_val))
         elif objective_val in {'profit_factor', 'min_loss_prob'}:
+            # Only apply the safety floor when the user did not pass a value at
+            # all (None). An explicit min_prob_resolve=0.0 is respected as an
+            # intentional override.
             min_prob_resolve_val = DEGENERATE_OBJECTIVE_MIN_RESOLVE
 
         tp_min_val = float(params_dict.get('tp_min', tp_min))
@@ -1102,7 +1113,10 @@ def forecast_barrier_optimize(  # noqa: C901
             min_barrier_absolute = float(params_dict.get('min_barrier_pct', 0.0) or 0.0)
         else:
             min_barrier_absolute = float(params_dict.get('min_barrier_pips', 0.0) or 0.0)
-        min_barrier_distance = max(min_barrier_absolute, min_barrier_multiplier * cost_spread)
+        # Minimum barrier distance must exceed total round-trip cost (spread +
+        # slippage + commission), not just spread — otherwise setups that are
+        # structurally negative-EV after slippage/commission can slip through.
+        min_barrier_distance = max(min_barrier_absolute, min_barrier_multiplier * cost_per_trade)
         
         method_name = str(method).lower().strip()
         method_requested = method_name

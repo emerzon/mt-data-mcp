@@ -72,7 +72,15 @@ def resolve_barrier_prices(
     pip_size: Optional[float] = None,
     adjust_inverted: bool = True,
 ) -> Tuple[Optional[float], Optional[float]]:
-    """Resolve TP/SL barrier prices from absolute, percentage, or tick offsets."""
+    """Resolve TP/SL barrier prices from absolute, percentage, or tick offsets.
+
+    When ``adjust_inverted`` is True (default), any barrier that ends up on
+    the wrong side of ``price`` for the given direction (e.g. a TP below
+    entry on a long trade) is nudged by one tick to the correct side. This
+    applies to explicit ``tp_abs``/``sl_abs`` values too, so callers that
+    want strict rejection of mis-sided user-supplied levels should pass
+    ``adjust_inverted=False`` and validate via :func:`barrier_prices_are_valid`.
+    """
     price_val = _coerce_finite_float(price)
     if price_val is None:
         return None, None
@@ -85,7 +93,10 @@ def resolve_barrier_prices(
     p_sl = _coerce_finite_float(sl_pips)
 
     direction_norm, _ = normalize_trade_direction(direction)
-    dir_long = direction_norm == "long" if direction_norm is not None else str(direction).lower() == "long"
+    if direction_norm is None:
+        # Unknown direction: refuse to guess rather than silently treating as short.
+        return None, None
+    dir_long = direction_norm == "long"
 
     if tp_price is None:
         if r_tp is not None:
