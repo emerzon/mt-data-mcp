@@ -215,6 +215,18 @@ def _select_position_candidate(
 ) -> Optional[Any]:
     if not rows:
         return None
+    volume_tol = 1e-9
+    if volume is not None and symbol:
+        try:
+            symbol_info = mt5.symbol_info(str(symbol))
+        except Exception:
+            symbol_info = None
+        try:
+            volume_step = float(getattr(symbol_info, "volume_step", float("nan")))
+        except Exception:
+            volume_step = float("nan")
+        if math.isfinite(volume_step) and volume_step > 0.0:
+            volume_tol = max(volume_tol, volume_step / 2.0)
     candidates = list(rows)
     # Prefer positions matching known tickets when multiple are available
     if ticket_candidates and len(candidates) > 1:
@@ -253,9 +265,10 @@ def _select_position_candidate(
         volume_filtered: List[Any] = []
         for pos in candidates:
             try:
-                if (
-                    abs(float(getattr(pos, "volume", float("nan"))) - float(volume))
-                    <= 1e-9
+                if math.isclose(
+                    float(getattr(pos, "volume", float("nan"))),
+                    float(volume),
+                    abs_tol=volume_tol,
                 ):
                     volume_filtered.append(pos)
             except Exception:

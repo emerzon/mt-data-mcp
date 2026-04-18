@@ -220,6 +220,24 @@ def test_select_position_candidate_magic_disambiguates():
     assert picked.ticket == 300
 
 
+def test_select_position_candidate_uses_symbol_volume_step_tolerance():
+    positions_list = [
+        SimpleNamespace(ticket=100, symbol="XAUUSD", type=0, volume=0.3, magic=1000, time_update_msc=5000),
+    ]
+    mt5 = _HedgedFakeMt5(positions_list)
+    mt5.symbol_info = lambda _symbol: SimpleNamespace(volume_step=0.1)
+
+    picked = positions._select_position_candidate(
+        positions_list,
+        symbol="XAUUSD",
+        side="BUY",
+        volume=0.3000005,
+        mt5=mt5,
+    )
+
+    assert picked.ticket == 100
+
+
 def test_resolve_open_position_magic_filter_hedged():
     """_resolve_open_position uses magic to disambiguate hedged positions."""
     all_positions = [
