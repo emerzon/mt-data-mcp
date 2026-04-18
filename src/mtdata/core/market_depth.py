@@ -19,6 +19,7 @@ from ..utils.utils import (
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
 from .mt5_gateway import get_mt5_gateway
+from .output_contract import ensure_common_meta
 
 logger = logging.getLogger(__name__)
 _MARKET_DEPTH_ENABLE_ENV = "MTDATA_ENABLE_MARKET_DEPTH_FETCH"
@@ -332,6 +333,9 @@ def market_ticker(symbol: str) -> Dict[str, Any]:
     Parameters: symbol
     """
     def _run() -> Dict[str, Any]:
+        def _finalize(payload: Dict[str, Any]) -> Dict[str, Any]:
+            return ensure_common_meta(payload, tool_name="market_ticker")
+
         try:
             mt5_gateway = get_mt5_gateway(
                 adapter=mt5,
@@ -340,15 +344,17 @@ def market_ticker(symbol: str) -> Dict[str, Any]:
             mt5_gateway.ensure_connection()
             started = time.perf_counter()
             if not mt5_gateway.symbol_select(symbol, True):
-                return {"error": _describe_symbol_select_error(symbol, mt5_gateway.last_error())}
+                return _finalize(
+                    {"error": _describe_symbol_select_error(symbol, mt5_gateway.last_error())}
+                )
 
             symbol_info = mt5_gateway.symbol_info(symbol)
             if symbol_info is None:
-                return {"error": f"Symbol {symbol} not found"}
+                return _finalize({"error": f"Symbol {symbol} not found"})
 
             tick = mt5_gateway.symbol_info_tick(symbol)
             if tick is None:
-                return {"error": f"Failed to get tick data for {symbol}"}
+                return _finalize({"error": f"Failed to get tick data for {symbol}"})
 
             digits = max(0, int(getattr(symbol_info, "digits", 0) or 0))
             point = float(getattr(symbol_info, "point", 0.0) or 0.0)
@@ -425,11 +431,11 @@ def market_ticker(symbol: str) -> Dict[str, Any]:
             }
             if not _use_ctz:
                 out["timezone"] = "UTC"
-            return out
+            return _finalize(out)
         except MT5ConnectionError as exc:
-            return {"error": str(exc)}
+            return _finalize({"error": str(exc)})
         except Exception as exc:
-            return {"error": f"Error getting ticker snapshot: {str(exc)}"}
+            return _finalize({"error": f"Error getting ticker snapshot: {str(exc)}"})
 
     return run_logged_operation(
         logger,

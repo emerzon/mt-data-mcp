@@ -1,4 +1,7 @@
+from unittest.mock import patch
+
 from mtdata.core.output_contract import (
+    ensure_common_meta,
     normalize_output_detail,
     normalize_output_verbosity_detail,
     resolve_requested_output_verbosity,
@@ -25,3 +28,33 @@ def test_resolve_requested_output_verbosity_treats_summary_aliases_as_non_verbos
     assert resolve_requested_output_verbosity({"detail": " summary "}) is False
     assert resolve_requested_output_verbosity({"detail": " Summary_Only "}) is False
     assert resolve_requested_output_verbosity({"detail": " full "}) is True
+
+
+def test_ensure_common_meta_adds_tool_and_runtime_timezone() -> None:
+    timezone_meta = {"used": {"tz": "UTC"}}
+    with patch(
+        "mtdata.core.output_contract.build_runtime_timezone_meta",
+        return_value=timezone_meta,
+    ):
+        out = ensure_common_meta({"success": True}, tool_name="market_ticker")
+
+    assert out["meta"]["tool"] == "market_ticker"
+    assert out["meta"]["runtime"]["timezone"] == timezone_meta
+
+
+def test_ensure_common_meta_preserves_existing_tool_and_timezone() -> None:
+    existing_timezone = {"client": {"tz": "US/Central"}}
+    with patch("mtdata.core.output_contract.build_runtime_timezone_meta") as build_meta:
+        out = ensure_common_meta(
+            {
+                "meta": {
+                    "tool": "existing_tool",
+                    "runtime": {"timezone": existing_timezone},
+                }
+            },
+            tool_name="market_ticker",
+        )
+
+    build_meta.assert_not_called()
+    assert out["meta"]["tool"] == "existing_tool"
+    assert out["meta"]["runtime"]["timezone"] == existing_timezone
