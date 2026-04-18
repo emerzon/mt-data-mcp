@@ -4,7 +4,7 @@ import { getHistory, getTick } from '../../api/client'
 import { useChartOverlays, usePivotLevels, useSupportResistance } from '../../hooks/useForecast'
 import { loadJSON, saveJSON } from '../../lib/storage'
 import { toUtcSec } from '../../lib/time'
-import { tfSeconds } from '../../lib/timeframes'
+import { chartWorkspaceLivePollMs, tfSeconds } from '../../lib/timeframes'
 import type {
   AnchorMetrics,
   ChartOverlay,
@@ -37,6 +37,7 @@ export function useChartWorkspace() {
 
   const pivotState = usePivotLevels(symbol, timeframe)
   const srState = useSupportResistance(symbol, timeframe, QUERY_LIMIT)
+  const livePollMs = chartWorkspaceLivePollMs(timeframe)
 
   const { data: histDataResponse, refetch, isFetching } = useQuery({
     queryKey: ['hist', symbol, timeframe, QUERY_LIMIT, end, JSON.stringify(chartDenoise || {}), isLive],
@@ -56,14 +57,14 @@ export function useChartWorkspace() {
     queryKey: ['hist-live', symbol, timeframe],
     queryFn: ({ signal }) => getHistory({ symbol, timeframe, limit: 2, include_incomplete: true }, signal),
     enabled: isLive && !!symbol && !end,
-    refetchInterval: 2000,
+    refetchInterval: livePollMs,
   })
 
   const { data: tickData } = useQuery({
     queryKey: ['tick', symbol],
     queryFn: ({ signal }) => getTick(symbol, signal),
     enabled: !!symbol,
-    refetchInterval: 2000,
+    refetchInterval: livePollMs,
   })
 
   useEffect(() => {
