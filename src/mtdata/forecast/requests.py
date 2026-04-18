@@ -2,15 +2,25 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from ..shared.schema import DenoiseSpec, ForecastLibraryLiteral, TimeframeLiteral
+from ..utils.barriers import normalize_trade_direction
 
 
 def _reject_removed_field(values: Any, *, field_name: str, replacement: str) -> Any:
     if isinstance(values, dict) and field_name in values:
         raise ValueError(f"{field_name} was removed; use {replacement}")
     return values
+
+
+def _normalize_direction_alias(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    normalized, error = normalize_trade_direction(value)
+    if error is None and normalized is not None:
+        return normalized
+    return value
 
 
 class ForecastGenerateRequest(BaseModel):
@@ -176,6 +186,11 @@ class ForecastBarrierProbRequest(BaseModel):
     def _reject_removed_mc_method(cls, values: Any) -> Any:
         return _reject_removed_field(values, field_name="mc_method", replacement="method")
 
+    @field_validator("direction", mode="before")
+    @classmethod
+    def _normalize_direction(cls, value: Optional[str]) -> Optional[str]:
+        return _normalize_direction_alias(value)
+
 
 class ForecastBarrierOptimizeRequest(BaseModel):
     symbol: str
@@ -235,6 +250,11 @@ class ForecastBarrierOptimizeRequest(BaseModel):
     @classmethod
     def _reject_removed_output(cls, values: Any) -> Any:
         return _reject_removed_field(values, field_name="output", replacement="format")
+
+    @field_validator("direction", mode="before")
+    @classmethod
+    def _normalize_direction(cls, value: Optional[str]) -> Optional[str]:
+        return _normalize_direction_alias(value)
 
     @model_validator(mode="before")
     @classmethod

@@ -202,6 +202,12 @@ def test_trade_risk_analyze_accepts_explicit_short_direction() -> None:
     assert sizing["rr_ratio"] == 1.0
 
 
+def test_trade_risk_request_normalizes_known_direction_aliases_only() -> None:
+    assert TradeRiskAnalyzeRequest(direction="buy").direction == "long"
+    assert TradeRiskAnalyzeRequest(direction="DOWN").direction == "short"
+    assert TradeRiskAnalyzeRequest(direction="sideways").direction == "sideways"
+
+
 def test_trade_risk_analyze_uses_loss_tick_value_for_position_sizing() -> None:
     mt5 = MagicMock()
     mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")

@@ -139,6 +139,12 @@ def test_trade_history_filters_deals_by_side_alias() -> None:
     assert out["items"][0]["type"] == "Buy"
 
 
+def test_trade_history_request_normalizes_buy_sell_aliases() -> None:
+    assert TradeHistoryRequest(side="buy").side == "BUY"
+    assert TradeHistoryRequest(side="short").side == "SELL"
+    assert TradeHistoryRequest(side="weird").side == "weird"
+
+
 def test_trade_history_filters_orders_by_side_prefix() -> None:
     mt5, prev = _install_mock_mt5()
     mt5.ORDER_TYPE_BUY_LIMIT = 2
@@ -663,6 +669,10 @@ def test_trade_journal_analyze_forwards_side_filter() -> None:
     ):
         out = trade_journal_analyze(side="short", __cli_raw=True)
 
-    assert captured["request"].side == "short"
+    assert captured["request"].side == "SELL"
     assert out["success"] is True
     assert out["summary"]["closed_deals"] == 0
+
+
+def test_trade_journal_request_preserves_invalid_side_for_tool_level_error() -> None:
+    assert TradeJournalAnalyzeRequest(side="sideways").side == "sideways"

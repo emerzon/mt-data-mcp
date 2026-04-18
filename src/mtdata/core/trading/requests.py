@@ -2,10 +2,30 @@ from __future__ import annotations
 
 from typing import Literal, Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from .time import ExpirationValue
+from . import validation
 from .validation import OrderTypeInput
+
+
+def _normalize_trade_side_alias(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    normalized, error = validation._normalize_trade_side_filter(value)
+    if error is None and normalized is not None:
+        return normalized
+    return value
+
+
+def _normalize_trade_direction_alias(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value)
+    normalized = text.strip().lower()
+    if normalized in {"long", "short", "buy", "sell", "up", "down"}:
+        return "long" if normalized in {"long", "buy", "up"} else "short"
+    return value
 
 
 class TradePlaceRequest(BaseModel):
@@ -73,6 +93,11 @@ class TradeHistoryRequest(BaseModel):
     minutes_back: Optional[int] = None
     limit: Optional[int] = 200
 
+    @field_validator("side", mode="before")
+    @classmethod
+    def _normalize_side(cls, value: Optional[str]) -> Optional[str]:
+        return _normalize_trade_side_alias(value)
+
 
 class TradeJournalAnalyzeRequest(BaseModel):
     start: Optional[str] = None
@@ -88,6 +113,11 @@ class TradeJournalAnalyzeRequest(BaseModel):
     limit: Optional[int] = 200
     breakdown_limit: int = 10
 
+    @field_validator("side", mode="before")
+    @classmethod
+    def _normalize_side(cls, value: Optional[str]) -> Optional[str]:
+        return _normalize_trade_side_alias(value)
+
 
 class TradeRiskAnalyzeRequest(BaseModel):
     symbol: Optional[str] = None
@@ -96,6 +126,11 @@ class TradeRiskAnalyzeRequest(BaseModel):
     proposed_entry: Optional[float] = None
     proposed_sl: Optional[float] = None
     proposed_tp: Optional[float] = None
+
+    @field_validator("direction", mode="before")
+    @classmethod
+    def _normalize_direction(cls, value: Optional[str]) -> Optional[str]:
+        return _normalize_trade_direction_alias(value)
 
 
 class TradeVarCvarRequest(BaseModel):

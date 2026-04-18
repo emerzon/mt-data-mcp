@@ -395,6 +395,12 @@ def test_forecast_barrier_optimize_request_defaults_to_summary_output():
     assert request.search_profile == "medium"
 
 
+def test_forecast_barrier_requests_normalize_known_direction_aliases_only():
+    assert ForecastBarrierProbRequest(symbol="EURUSD", direction="buy").direction == "long"
+    assert ForecastBarrierOptimizeRequest(symbol="EURUSD", direction="DOWN").direction == "short"
+    assert ForecastBarrierProbRequest(symbol="EURUSD", direction="weird").direction == "weird"
+
+
 def test_forecast_barrier_optimize_request_rejects_removed_output_field():
     with pytest.raises(ValidationError, match="output was removed; use format"):
         ForecastBarrierOptimizeRequest(symbol="EURUSD", output="summary")
