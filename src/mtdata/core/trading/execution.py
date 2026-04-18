@@ -61,9 +61,15 @@ def _unexpected_operation_error(
 def _deal_history_sort_key(row: Any) -> float:
     for field in ("time_msc", "time", "time_update_msc", "time_update"):
         try:
-            value = float(getattr(row, field, 0.0) or 0.0)
-            if math.isfinite(value):
-                return value
+            raw_value = getattr(row, field, None)
+            if raw_value is None:
+                continue
+            value = float(raw_value)
+            if not math.isfinite(value) or value <= 0.0:
+                continue
+            if field.endswith("_msc"):
+                value /= 1000.0
+            return value
         except Exception:
             continue
     return 0.0

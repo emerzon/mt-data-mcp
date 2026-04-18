@@ -74,6 +74,7 @@ from mtdata.core.trading.comments import (
     _normalize_close_trade_comment,
     _normalize_trade_comment,
 )
+from mtdata.core.trading.execution import _deal_history_sort_key
 from mtdata.core.trading.requests import (
     TradeCloseRequest,
     TradeModifyRequest,
@@ -176,6 +177,15 @@ def _order_result(retcode=10009, deal=1, order=1, volume=0.01, price=1.1,
         retcode=retcode, deal=deal, order=order, volume=volume,
         price=price, bid=bid, ask=ask, comment=comment, request_id=request_id,
     )
+
+
+def test_deal_history_sort_key_normalizes_millisecond_timestamps():
+    earlier = SimpleNamespace(time_msc=1744876700000)
+    later = SimpleNamespace(time=1744876800)
+
+    assert _deal_history_sort_key(earlier) == 1744876700.0
+    assert _deal_history_sort_key(later) == 1744876800.0
+    assert max([earlier, later], key=_deal_history_sort_key) is later
 
 
 def _position(ticket=1, symbol="EURUSD", type_=0, volume=0.01,
