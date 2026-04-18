@@ -1764,6 +1764,26 @@ def _compact_forecast_ci(
     if alpha is not None:
         out["ci_alpha"] = alpha
 
+    if ci_status == "unavailable":
+        method = str(payload.get("method") or "").strip()
+        warnings_in = payload.get("warnings")
+        warnings_clean = (
+            [str(item).strip() for item in warnings_in if str(item).strip()]
+            if isinstance(warnings_in, list)
+            else []
+        )
+        if any("confidence intervals are unavailable" in item for item in warnings_clean):
+            if method:
+                out["hint"] = (
+                    f"{method} produces point forecasts only. "
+                    "Use forecast_conformal_intervals for uncertainty bands."
+                )
+            else:
+                out["hint"] = (
+                    "This method produces point forecasts only. "
+                    "Use forecast_conformal_intervals for uncertainty bands."
+                )
+
     return out
 
 

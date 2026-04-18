@@ -315,6 +315,7 @@ class TestNormalizeForecastPayload:
         payload = {
             "times": ["t1"],
             "forecast_price": [100.0],
+            "method": "theta",
             "ci_status": "unavailable",
             "ci_alpha": 0.05,
             "warnings": [
@@ -323,7 +324,11 @@ class TestNormalizeForecastPayload:
         }
         result = _normalize_forecast_payload(payload, verbose=False)
         assert "meta" not in result
-        assert result["ci"] == {"status": "unavailable", "ci_alpha": 0.05}
+        assert result["ci"] == {
+            "status": "unavailable",
+            "ci_alpha": 0.05,
+            "hint": "theta produces point forecasts only. Use forecast_conformal_intervals for uncertainty bands.",
+        }
         # CI unavailable is already conveyed structurally via ci.status, so
         # the warning text is only surfaced when the user opts into --verbose.
         assert "warnings" not in result
@@ -484,12 +489,17 @@ class TestCompactForecastCi:
 
     def test_compacts_unavailable_ci_to_status_and_ci_alpha(self):
         payload = {
+            "method": "theta",
             "ci_status": "unavailable",
             "ci_alpha": 0.1,
+            "warnings": [
+                "Point forecast only for method 'theta'; confidence intervals are unavailable."
+            ],
         }
         assert _compact_forecast_ci(payload, lower=[], upper=[]) == {
             "status": "unavailable",
             "ci_alpha": 0.1,
+            "hint": "theta produces point forecasts only. Use forecast_conformal_intervals for uncertainty bands.",
         }
 
 
