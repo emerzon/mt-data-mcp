@@ -1637,7 +1637,7 @@ def _estimate_classic_bars_to_completion(
         length = max(1, int(end_idx) - int(start_idx) + 1)
         name_text = str(name).lower()
         if all(
-            key in details
+            details.get(key) is not None
             for key in (
                 "top_slope",
                 "top_intercept",
@@ -1656,7 +1656,7 @@ def _estimate_classic_bars_to_completion(
             bars = int(max(0, int(round(t_star - (n_bars - 1)))))
             return int(min(max(0, bars), 3 * length))
         if all(
-            key in details
+            details.get(key) is not None
             for key in (
                 "upper_slope",
                 "upper_intercept",

@@ -644,6 +644,16 @@ class TestEstimateClassicBarsToCompletion:
         result = self._call("Bull Flag", {}, 0, 20, 100)
         assert result == 6
 
+    def test_flag_with_incomplete_trendline_details_falls_back_to_name_heuristic(self):
+        details = {
+            "upper_slope": -0.01,
+            "upper_intercept": 1.2,
+            "lower_slope": None,
+            "lower_intercept": 1.0,
+        }
+        result = self._call("Bull Flag", details, 0, 20, 100)
+        assert result == 6
+
     def test_unknown_pattern(self):
         result = self._call("Unknown Pattern", {}, 0, 20, 100)
         assert result is None
