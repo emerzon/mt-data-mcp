@@ -1429,9 +1429,11 @@ def run_trade_history(  # noqa: C901
                     message += f" for {side_value} side"
                 elif request.symbol:
                     message += f" for {request.symbol}"
-                if default_window_label:
+                if minutes_back_value is not None:
+                    message += f" in the last {int(minutes_back_value)} minute(s)"
+                elif default_window_label:
                     message += f" in {default_window_label}"
-                if kind_label == "deals":
+                if kind_label == "deals" and minutes_back_value is None:
                     message += ". For order creation/cancellation events, use --history-kind orders."
                 if minutes_back_value is not None and minutes_back_value < 30:
                     message += " Note: MT5 history may take up to a few minutes to reflect very recent events."
