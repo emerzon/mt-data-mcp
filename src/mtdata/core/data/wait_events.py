@@ -1501,7 +1501,7 @@ def _evaluate_price_enter_zone(spec: Dict[str, Any], market_data: Any) -> Option
     current_price = float(prices[-1][1])
     lower = float(spec["lower"])
     upper = float(spec["upper"])
-    if not _price_within_band(current_price, lower=lower, upper=upper):
+    if max(previous_price, current_price) < lower or min(previous_price, current_price) > upper:
         return None
     if _price_within_band(previous_price, lower=lower, upper=upper):
         return None

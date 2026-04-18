@@ -1583,6 +1583,40 @@ def test_run_wait_event_matches_price_enter_zone() -> None:
     assert result["matched_event"]["type"] == "price_enter_zone"
 
 
+def test_run_wait_event_matches_price_enter_zone_when_price_gaps_over_zone() -> None:
+    clock = FakeClock(datetime(2026, 3, 15, 12, 0, 0, tzinfo=timezone.utc))
+    base_epoch = int(clock.now_utc().timestamp()) - 2
+    ticks = [
+        {"time": base_epoch, "time_msc": base_epoch * 1000, "bid": 99.9, "ask": 100.1, "last": 100.0},
+        {"time": base_epoch + 1, "time_msc": (base_epoch + 1) * 1000, "bid": 100.9, "ask": 101.1, "last": 101.0},
+    ]
+    gateway = SequenceGateway(ticks_by_symbol={"EURUSD": ticks})
+
+    result = run_wait_event(
+        WaitEventRequest(
+            watch_for=[
+                {
+                    "type": "price_enter_zone",
+                    "symbol": "EURUSD",
+                    "lower": 100.4,
+                    "upper": 100.6,
+                    "price_source": "mid",
+                    "direction": "up",
+                }
+            ],
+            poll_interval_seconds=0.5,
+            max_wait_seconds=5.0,
+        ),
+        gateway=gateway,
+        sleep_impl=clock.sleep,
+        monotonic_impl=clock.monotonic,
+        now_utc_impl=clock.now_utc,
+    )
+
+    assert result["status"] == "matched"
+    assert result["matched_event"]["type"] == "price_enter_zone"
+
+
 def test_run_wait_event_matches_pending_near_fill() -> None:
     clock = FakeClock(datetime(2026, 3, 15, 12, 0, 0, tzinfo=timezone.utc))
     now_epoch = int(clock.now_utc().timestamp())
