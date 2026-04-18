@@ -14,28 +14,15 @@ Usage examples:
     --denoise ema --denoise-span 10 --plot-delta --out-dir tests/test_results --filename-base download.png
 
 Notes:
-  - The script works from repo root without installation. It augments sys.path to import src/mtdata/.
+  - Install the project in the active environment first: `pip install -e .`
   - Requires matplotlib; install via: pip install matplotlib
 """
 
 from __future__ import annotations
 
 import os
-import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-
-
-def _ensure_repo_paths():
-    root = Path(__file__).resolve().parents[1]  # repo root
-    src = root / "src"
-    for p in (root, src):
-        sp = str(p)
-        if sp not in sys.path:
-            sys.path.insert(0, sp)
-
-
-_ensure_repo_paths()
 
 import numpy as np
 
@@ -51,6 +38,28 @@ def _import_matplotlib():
             "matplotlib is required. Install with `pip install matplotlib` (inside your venv).\n"
             f"Import error: {ex}"
         )
+
+
+def _apply_matplotlib_style(plt) -> None:
+    for style_name in ("seaborn-v0_8", "seaborn"):
+        try:
+            plt.style.use(style_name)
+            return
+        except OSError:
+            continue
+    plt.style.use("default")
+
+
+def _import_mtdata_runtime():
+    try:
+        from mtdata.utils.mt5 import mt5_connection
+        from mtdata.forecast.backtest import forecast_backtest as forecast_backtest_impl
+    except Exception as ex:
+        raise SystemExit(
+            "mtdata must be installed in this environment. Run `pip install -e .` from the repo root.\n"
+            f"Import error: {ex}"
+        )
+    return mt5_connection, forecast_backtest_impl
 
 
 def _best_method_from_backtest(bt: Dict[str, Any]) -> Optional[str]:
@@ -102,19 +111,12 @@ def generate_backtest_plots(
     """Run a rolling backtest and emit summary PNGs."""
     # Defer heavy imports
     _, plt = _import_matplotlib()
-    try:
-        plt.style.use("seaborn-v0_8")
-    except Exception:
-        pass
+    _apply_matplotlib_style(plt)
 
     # Ensure MT5 session and call the raw implementation
-    from src.mtdata.utils.mt5 import mt5_connection
+    mt5_connection, _forecast_backtest_impl = _import_mtdata_runtime()
     if not mt5_connection._ensure_connection():
         return {"error": "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."}
-
-    from src.mtdata.forecast.backtest import (
-        forecast_backtest as _forecast_backtest_impl,
-    )
 
     bt = _forecast_backtest_impl(
         symbol=symbol,
