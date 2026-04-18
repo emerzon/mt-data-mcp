@@ -284,6 +284,28 @@ def test_run_forecast_backtest_derives_target_from_quantity():
     assert "target" not in captured
 
 
+def test_run_forecast_backtest_strips_per_anchor_details_in_compact_mode():
+    def fake_backtest_impl(**kwargs):
+        return {
+            "success": True,
+            "results": {
+                "theta": {
+                    "avg_mae": 1.0,
+                    "details": [{"anchor": "2026-01-01 00:00", "success": True}],
+                }
+            },
+        }
+
+    result = forecast_use_cases.run_forecast_backtest(
+        ForecastBacktestRequest(symbol="EURUSD", detail="compact"),
+        backtest_impl=fake_backtest_impl,
+    )
+
+    assert result["success"] is True
+    assert "details" not in result["results"]["theta"]
+    assert result["results"]["theta"]["details_count"] == 1
+
+
 def test_forecast_generate_converts_typed_forecast_errors(monkeypatch):
     raw = _unwrap(cf.forecast_generate)
 

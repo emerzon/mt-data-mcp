@@ -43,6 +43,27 @@ def _is_interval_unavailable_warning(value: Any) -> bool:
     )
 
 
+def _compact_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:
+    raw_results = result.get("results")
+    if not isinstance(raw_results, dict):
+        return result
+
+    compact_results: Dict[str, Any] = {}
+    for method_name, method_payload in raw_results.items():
+        if not isinstance(method_payload, dict):
+            compact_results[method_name] = method_payload
+            continue
+        method_out = dict(method_payload)
+        details = method_out.pop("details", None)
+        if isinstance(details, list):
+            method_out["details_count"] = len(details)
+        compact_results[method_name] = method_out
+
+    compact_out = dict(result)
+    compact_out["results"] = compact_results
+    return compact_out
+
+
 @lru_cache(maxsize=1)
 def _discover_sktime_forecasters() -> Dict[str, Tuple[str, str]]:
     """Return mapping of forecaster class name (lower) -> (class_name, dotted path)."""
@@ -343,6 +364,8 @@ def run_forecast_backtest(
         horizon=request.horizon,
         methods=len(request.methods or []),
     )
+    if str(request.detail or "compact").strip().lower() == "compact":
+        return _compact_backtest_result(result)
     return result
 
 
