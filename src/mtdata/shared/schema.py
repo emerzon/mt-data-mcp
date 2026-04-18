@@ -44,7 +44,10 @@ PARAM_HINTS = {
     "day_of_week": "Weekday filter (0-6 or Mon..Sun).",
     "month": "Month filter (1-12 or Jan..Dec).",
     "time_range": "Time-of-day filter 'HH:MM-HH:MM' (start inclusive, end exclusive; wraps midnight).",
-    "rank_by": "Ranking to compute for market scans: all, spread, volume, or price_change.",
+    "rank_by": (
+        "Ranking to compute for market scans: abs_price_change_pct, "
+        "price_change_pct, tick_volume, rsi, or spread_pct."
+    ),
     "return_mode": "Return calculation mode: pct or log.",
     "detail": "Detail level for this tool (compact/summary/full, when supported).",
     "format": "Output format or shape for this tool (for example toon/markdown or summary/stats/rows).",

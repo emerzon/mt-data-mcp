@@ -3221,6 +3221,19 @@ class TestResolveParamKwargs:
         kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="market_scan")
         assert kwargs["help"] == "Max matching symbols to return."
 
+    def test_market_scan_rank_by_help_lists_actual_options(self):
+        param = {
+            "name": "rank_by",
+            "type": Optional[str],
+            "required": False,
+            "default": "abs_price_change_pct",
+        }
+        kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="market_scan")
+        assert kwargs["help"] == (
+            "Ranking to compute for market scans: abs_price_change_pct, "
+            "price_change_pct, tick_volume, rsi, or spread_pct."
+        )
+
     def test_symbols_top_markets_limit_help_is_command_specific(self):
         param = {
             "name": "limit",
