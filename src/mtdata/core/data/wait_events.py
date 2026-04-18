@@ -1430,8 +1430,6 @@ def _evaluate_price_touch_level(spec: Dict[str, Any], market_data: Any) -> Optio
         return None
     if direction == "either" and not (upward_touch or downward_touch):
         return None
-    if not _price_within_band(current_price, lower=lower, upper=upper):
-        return None
     return {
         "type": spec["type"],
         "criteria": {

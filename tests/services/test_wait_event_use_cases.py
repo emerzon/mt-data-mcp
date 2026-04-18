@@ -1480,6 +1480,40 @@ def test_run_wait_event_matches_price_touch_level() -> None:
     assert result["matched_event"]["type"] == "price_touch_level"
 
 
+def test_run_wait_event_matches_price_touch_level_when_price_gaps_over_band() -> None:
+    clock = FakeClock(datetime(2026, 3, 15, 12, 0, 0, tzinfo=timezone.utc))
+    base_epoch = int(clock.now_utc().timestamp()) - 2
+    ticks = [
+        {"time": base_epoch, "time_msc": base_epoch * 1000, "bid": 99.95, "ask": 100.05, "last": 100.0},
+        {"time": base_epoch + 1, "time_msc": (base_epoch + 1) * 1000, "bid": 100.95, "ask": 101.05, "last": 101.0},
+    ]
+    gateway = SequenceGateway(ticks_by_symbol={"EURUSD": ticks})
+
+    result = run_wait_event(
+        WaitEventRequest(
+            watch_for=[
+                {
+                    "type": "price_touch_level",
+                    "symbol": "EURUSD",
+                    "level": 100.5,
+                    "price_source": "mid",
+                    "direction": "up",
+                    "tolerance": 0.05,
+                }
+            ],
+            poll_interval_seconds=0.5,
+            max_wait_seconds=5.0,
+        ),
+        gateway=gateway,
+        sleep_impl=clock.sleep,
+        monotonic_impl=clock.monotonic,
+        now_utc_impl=clock.now_utc,
+    )
+
+    assert result["status"] == "matched"
+    assert result["matched_event"]["type"] == "price_touch_level"
+
+
 def test_run_wait_event_matches_price_break_level() -> None:
     clock = FakeClock(datetime(2026, 3, 15, 12, 0, 0, tzinfo=timezone.utc))
     base_epoch = int(clock.now_utc().timestamp()) - 3
