@@ -65,6 +65,51 @@ def test_patterns_detect_returns_connection_error_payload(monkeypatch):
     assert isinstance(out.get("request_id"), str)
 
 
+def test_patterns_detect_public_default_is_compact_for_classic_mode(monkeypatch):
+    df = pd.DataFrame(
+        {
+            "time": [1.0, 2.0, 3.0, 4.0],
+            "open": [1.0, 1.1, 1.2, 1.3],
+            "high": [1.1, 1.2, 1.3, 1.4],
+            "low": [0.9, 1.0, 1.1, 1.2],
+            "close": [1.05, 1.15, 1.25, 1.35],
+            "tick_volume": [10, 11, 12, 13],
+        }
+    )
+
+    monkeypatch.setattr(core_patterns, "_patterns_connection_error", lambda: None)
+    monkeypatch.setattr(core_patterns, "_fetch_pattern_data", lambda *args, **kwargs: (df, None))
+    monkeypatch.setattr(
+        core_patterns,
+        "_select_classic_engines",
+        lambda engine, ensemble: (["native"], []),
+    )
+    monkeypatch.setattr(core_patterns, "_enrich_classic_patterns", lambda rows, *_: rows)
+    monkeypatch.setattr(
+        core_patterns,
+        "_run_classic_engine",
+        lambda *args, **kwargs: (
+            [
+                {
+                    "name": "Ascending Triangle",
+                    "status": "forming",
+                    "confidence": 0.81,
+                    "start_index": 0,
+                    "end_index": 3,
+                    "details": {"bias": "bullish"},
+                }
+            ],
+            None,
+        ),
+    )
+
+    out = patterns_detect(symbol="EURUSD", mode="classic", timeframe="H1")
+
+    assert out["n_patterns"] == 1
+    assert "recent_patterns" in out
+    assert "patterns" not in out
+
+
 def test_fit_lines_and_arrays_uses_cfg_for_robust_fit(monkeypatch):
     calls = []
 

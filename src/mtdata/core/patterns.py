@@ -372,7 +372,11 @@ def _build_pattern_response(
                     _format_time_minimal(float(v)) for v in __to_float_np(df.get('time')).tolist()
                 ]
 
-    if str(detail).lower().strip() == "compact":
+    detail_value = str(detail).lower().strip()
+    # Keep this helper's implicit default as full for direct callers that still
+    # rely on the legacy shape. The public patterns_detect contract defaults to
+    # compact via PatternsDetectRequest.
+    if detail_value == "compact":
         return _compact_patterns_payload(resp)
     return resp
 

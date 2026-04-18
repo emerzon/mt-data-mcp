@@ -1924,6 +1924,14 @@ class TestGetFunctionInfo:
         assert "symbol" in param_names
         assert "horizon" in param_names
 
+    def test_patterns_detect_request_model_exposes_compact_detail_default(self):
+        from mtdata.core.patterns import patterns_detect
+
+        info = get_function_info(patterns_detect)
+
+        detail_param = next(p for p in info["params"] if p["name"] == "detail")
+        assert detail_param["default"] == "compact"
+
 
 # ========================================================================
 # _apply_schema_overrides

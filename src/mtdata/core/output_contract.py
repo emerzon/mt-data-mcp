@@ -1,14 +1,15 @@
 from __future__ import annotations
 
-from typing import Any, Iterator, Optional
+from typing import Any, Iterator, Mapping, Optional
 
 from ..utils.utils import _UNPARSED_BOOL, _parse_bool_like
 from .runtime_metadata import build_runtime_timezone_meta
 
 _MISSING = object()
 _VERBOSE_ONLY_KEYS = frozenset({"meta", "diagnostics", "debug", "debug_info"})
+_DETAIL_COMPACT_ALIASES = {"summary": "compact", "summary_only": "compact"}
 _VERBOSE_DETAIL_LEVELS = frozenset({"full"})
-_COMPACT_DETAIL_LEVELS = frozenset({"compact", "summary", "summary_only"})
+_COMPACT_DETAIL_LEVELS = frozenset({"compact"})
 
 
 def _strip_verbose_only_fields(value: Any) -> Any:
@@ -52,6 +53,28 @@ def _coerce_optional_verbose_flag(value: Any) -> Optional[bool]:
     return bool(parsed)
 
 
+def normalize_output_detail(
+    value: Any,
+    *,
+    default: str = "compact",
+    aliases: Optional[Mapping[str, str]] = None,
+) -> str:
+    """Normalize detail-like values while preserving tool-specific legacy modes."""
+    normalized = str(default if value is None else value).strip().lower()
+    if not aliases:
+        return normalized
+    return str(aliases.get(normalized, normalized))
+
+
+def normalize_output_verbosity_detail(value: Any, *, default: str = "compact") -> str:
+    """Map legacy detail aliases onto the shared compact/full verbosity contract."""
+    return normalize_output_detail(
+        value,
+        default=default,
+        aliases=_DETAIL_COMPACT_ALIASES,
+    )
+
+
 def resolve_requested_output_verbosity(source: Any, *, default: bool = False) -> bool:
     """Resolve shared output verbosity from explicit and legacy detail controls."""
     saw_explicit_false = False
@@ -66,7 +89,7 @@ def resolve_requested_output_verbosity(source: Any, *, default: bool = False) ->
         detail_value = _read_verbosity_field(candidate, "detail")
         if detail_value is _MISSING or detail_value is None:
             continue
-        normalized = str(detail_value).strip().lower()
+        normalized = normalize_output_verbosity_detail(detail_value)
         if normalized in _VERBOSE_DETAIL_LEVELS:
             return True
         if normalized in _COMPACT_DETAIL_LEVELS:

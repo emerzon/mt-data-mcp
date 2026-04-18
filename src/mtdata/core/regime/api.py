@@ -22,6 +22,7 @@ from ..execution_logging import (
 )
 from ..features import extract_rolling_features
 from ..mt5_gateway import get_mt5_gateway, mt5_connection_error
+from ..output_contract import normalize_output_detail, normalize_output_verbosity_detail
 from ..schema import DenoiseSpec, TimeframeLiteral
 from .crypto import (
     _CRYPTO_SYMBOL_HINTS,
@@ -691,7 +692,8 @@ def regime_detect(  # noqa: C901
         )
         return result
 
-    output = str(detail).strip().lower()
+    output = normalize_output_detail(detail)
+    verbosity_output = normalize_output_verbosity_detail(detail)
     connection_error = _regime_connection_error()
     if connection_error is not None:
         return _finish(connection_error)
@@ -2463,8 +2465,8 @@ def regime_detect(  # noqa: C901
 
         elif method == "all":
             # Run all methods and return individual results for comparison
-            detail_value = str(detail or "compact").strip().lower()
-            sub_detail = "full" if detail_value == "full" else "compact"
+            detail_value = output
+            sub_detail = "full" if verbosity_output == "full" else "compact"
             include_series_for_subcalls = bool(include_series) and sub_detail == "full"
             all_methods = [
                 "bocpd",

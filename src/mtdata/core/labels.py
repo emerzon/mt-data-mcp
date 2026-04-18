@@ -26,6 +26,7 @@ from ..utils.utils import _format_time_minimal
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
 from .mt5_gateway import get_mt5_gateway
+from .output_contract import normalize_output_detail
 from .schema import DenoiseSpec, TimeframeLiteral
 
 logger = logging.getLogger(__name__)
@@ -194,9 +195,10 @@ def labels_triple_barrier(
             direction_value, direction_error = _normalize_trade_direction(direction)
             if direction_error or direction_value is None:
                 return {"error": direction_error or "Invalid direction."}
-            output_mode = str(detail).strip().lower()
-            if output_mode == "summary_only":
-                output_mode = "summary"
+            output_mode = normalize_output_detail(
+                detail,
+                aliases={"summary_only": "summary"},
+            )
             if isinstance(summary_only, str):
                 summary_only_flag = summary_only.strip().lower() in {
                     "1",
@@ -211,7 +213,7 @@ def labels_triple_barrier(
                 output_mode = "summary"
             if output_mode not in {"full", "summary", "compact"}:
                 return {
-                    "error": "Invalid detail level. Use 'full', 'summary', 'compact', or summary_only=True."
+                    "error": "Invalid detail level. Use 'compact', 'full', 'summary', or 'summary_only'."
                 }
             df = _fetch_history(
                 symbol, timeframe, int(max(limit, horizon + 50)), as_of=None
