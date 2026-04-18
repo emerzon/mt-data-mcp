@@ -1380,31 +1380,28 @@ def fetch_ticks(  # noqa: C901
         flags: List[int] = []
         volumes: List[float] = []
         volumes_real: List[float] = []
-        volume_field_exists = True
-        volume_real_field_exists = True
         for tick in ticks:
             _epochs.append(float(_tick_field(tick, "time")))
             bids.append(float(_tick_field(tick, "bid")))
             asks.append(float(_tick_field(tick, "ask")))
             lasts.append(float(_tick_field(tick, "last") or 0.0))
             flags.append(int(_tick_field(tick, "flags") or 0))
-            if volume_field_exists:
-                try:
-                    volumes.append(float(_tick_field(tick, "volume")))
-                except Exception:
-                    volumes = []
-                    volume_field_exists = False
-            if volume_real_field_exists:
-                try:
-                    volumes_real.append(float(_tick_field(tick, "volume_real")))
-                except Exception:
-                    volumes_real = []
-                    volume_real_field_exists = False
+            try:
+                volumes.append(float(_tick_field(tick, "volume")))
+            except (TypeError, ValueError):
+                volumes.append(float("nan"))
+            try:
+                volumes_real.append(float(_tick_field(tick, "volume_real")))
+            except (TypeError, ValueError):
+                volumes_real.append(float("nan"))
 
         has_last = len(set(lasts)) > 1 or any(v != 0 for v in lasts)
-        has_volume = volume_field_exists and (len(set(volumes)) > 1 or any(v != 0 for v in volumes))
+        finite_volumes = [v for v in volumes if math.isfinite(v)]
+        has_volume = bool(finite_volumes) and (
+            len(set(finite_volumes)) > 1 or any(v != 0.0 for v in finite_volumes)
+        )
         has_flags = len(set(flags)) > 1 or any(v != 0 for v in flags)
-        has_real_volume = volume_real_field_exists and any(math.isfinite(v) and v != 0.0 for v in volumes_real)
+        has_real_volume = any(math.isfinite(v) and v != 0.0 for v in volumes_real)
         
         # Build header dynamically (time, bid, ask are always included)
         headers = ["time", "bid", "ask"]

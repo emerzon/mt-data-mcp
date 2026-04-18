@@ -138,6 +138,36 @@ class TestDataService(unittest.TestCase):
         self.assertEqual(result.get('count'), 5)
 
     @patch('mtdata.services.data_service._mt5_copy_ticks_range')
+    @patch('mtdata.services.data_service._symbol_ready_guard', _mock_symbol_ready_guard)
+    def test_fetch_ticks_preserves_valid_volume_when_one_tick_is_bad(self, mock_copy_ticks):
+        base_ts = datetime.now(timezone.utc).timestamp()
+        mock_copy_ticks.return_value = [
+            {
+                'time': base_ts + offset,
+                'bid': 1.1 + offset * 0.0001,
+                'ask': 1.1001 + offset * 0.0001,
+                'last': 1.1 + offset * 0.0001,
+                'volume': volume,
+                'time_msc': (base_ts + offset) * 1000,
+                'flags': 0,
+                'volume_real': real_volume,
+            }
+            for offset, volume, real_volume in (
+                (0, 10.0, 1.0),
+                (1, 20.0, 2.0),
+                (2, 30.0, 3.0),
+                (3, None, None),
+            )
+        ]
+
+        result = fetch_ticks(symbol="EURUSD", limit=4, format="rows")
+
+        self.assertTrue(result.get("success"))
+        self.assertEqual(result.get("count"), 4)
+        self.assertEqual([row["volume"] for row in result["data"][:3]], [10.0, 20.0, 30.0])
+        self.assertTrue(math.isnan(result["data"][3]["volume"]))
+
+    @patch('mtdata.services.data_service._mt5_copy_ticks_range')
     @patch('mtdata.services.data_service._resolve_client_tz', return_value=None)
     @patch('mtdata.services.data_service._symbol_ready_guard', _mock_symbol_ready_guard)
     def test_fetch_ticks_select_simplify_reuses_cached_tick_fields(self, mock_ctz, mock_copy_ticks):
