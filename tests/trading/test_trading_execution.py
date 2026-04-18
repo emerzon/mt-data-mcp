@@ -79,7 +79,14 @@ def mock_mt5():
 
     with patch("src.mtdata.core.trading.orders.create_trading_gateway", side_effect=_build_gateway), patch(
         "src.mtdata.core.trading.execution.create_trading_gateway", side_effect=_build_gateway
-    ):
+    ), patch("src.mtdata.core.trading.orders.trade_guardrails_config") as mock_guard_config:
+        mock_guard_config.enabled = False
+        mock_guard_config.trading_enabled = True
+        mock_guard_config.max_volume_by_symbol = {}
+        mock_guard_config.allowed_symbols = []
+        mock_guard_config.blocked_symbols = []
+        mock_guard_config.max_volume = None
+        mock_guard_config.is_enabled.return_value = False
         yield mock_mt5
     if prev_mt5 is not None:
         sys.modules["MetaTrader5"] = prev_mt5
@@ -634,7 +641,12 @@ def test_place_market_order_accepts_injected_gateway():
     with patch(
         "src.mtdata.core.trading.orders._resolve_open_position",
         return_value=(MagicMock(sl=0.0, tp=0.0), 456, {}),
-    ):
+    ), patch("src.mtdata.core.trading.orders.trade_guardrails_config") as mock_guard_config:
+        mock_guard_config.enabled = False
+        mock_guard_config.trading_enabled = True
+        mock_guard_config.max_volume_by_symbol = {}
+        mock_guard_config.is_enabled.return_value = False
+        
         res = _place_market_order(
             symbol="EURUSD",
             volume=0.1,

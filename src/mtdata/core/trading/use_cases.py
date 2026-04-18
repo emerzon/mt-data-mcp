@@ -13,7 +13,7 @@ from ...shared.constants import TIMEFRAME_MAP
 from ...shared.result import Err, Ok, Result, to_dict
 from ...shared.validators import invalid_timeframe_error
 from ...utils.barriers import normalize_trade_direction
-from ...utils.mt5 import MT5ConnectionError
+from ...utils.mt5 import MT5ConnectionError, _normalize_times_in_struct
 from ..config import trade_guardrails_config
 from ..execution_logging import (
     infer_result_success,
@@ -2322,6 +2322,8 @@ def run_trade_var_cvar_calculate(  # noqa: C901
     for symbol in list(symbol_exposures.keys()):
         try:
             rates = gateway.copy_rates_from_pos(symbol, mt5_timeframe, 0, lookback)
+            if rates is not None:
+                rates = _normalize_times_in_struct(rates)
         except Exception as exc:
             history_failures.append({"symbol": symbol, "error": str(exc)})
             continue

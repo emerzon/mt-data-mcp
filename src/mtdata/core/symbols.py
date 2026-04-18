@@ -271,11 +271,15 @@ def symbols_describe(symbol: str) -> Dict[str, Any]:
                     continue
                 if attr == "time":
                     try:
+                        from ..utils.mt5 import _mt5_epoch_to_utc
+
                         epoch = float(value)
-                        symbol_data["time_epoch"] = epoch
-                        symbol_data["time"] = _format_time_minimal(epoch)
+                        utc_epoch = _mt5_epoch_to_utc(epoch)
+                        symbol_data["time_epoch"] = utc_epoch
+                        symbol_data["time"] = _format_time_minimal(utc_epoch)
                     except Exception:
-                        symbol_data[attr] = value
+                        symbol_data["time_epoch"] = value
+                        symbol_data["time"] = str(value)
                 else:
                     if attr in _SYMBOL_DESCRIBE_PRICE_FIELDS:
                         digits = max(0, int(getattr(symbol_info, "digits", 0) or 0))
