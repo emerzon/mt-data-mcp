@@ -53,6 +53,14 @@ def test_report_generate_request_rejects_removed_output_field():
         ReportGenerateRequest(symbol="EURUSD", output="markdown")
 
 
+def test_report_generate_request_accepts_structured_format_alias():
+    from mtdata.core.report.requests import ReportGenerateRequest
+
+    request = ReportGenerateRequest(symbol="EURUSD", format="structured")
+
+    assert request.format == "toon"
+
+
 def test_run_report_generate_logs_finish_event(caplog):
     from mtdata.core.report.requests import ReportGenerateRequest
     from mtdata.core.report.use_cases import run_report_generate
@@ -251,6 +259,10 @@ class TestReportTemplateDispatch:
 
     def test_basic_template_toon(self):
         res = self._run("basic")
+        assert isinstance(res, dict)
+
+    def test_basic_template_structured_alias(self):
+        res = self._run("basic", format="structured")
         assert isinstance(res, dict)
 
     def test_advanced_template(self):
