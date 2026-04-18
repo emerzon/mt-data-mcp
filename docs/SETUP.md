@@ -361,10 +361,14 @@ mtdata/
 ├── .env                # Local configuration (create this)
 ├── src/mtdata/
 │   ├── bootstrap/      # Runtime startup, settings, tool loading
-│   ├── core/           # Tool registry, server, CLI logic, all 57 MCP tools
-│   │   ├── cli/        # Dynamic CLI (argparse, formatting, parsing, runtime)
+│   ├── core/           # Tool registry, server, CLI logic, all MCP tool modules
+│   │   ├── cli/        # Dynamic CLI (argparse) + parsing/, runtime/ subpackages
+│   │   ├── data/       # `data_fetch_*` and `wait_event` tools
 │   │   ├── regime/     # Regime detection (HMM, BOCPD, MS-AR)
-│   │   └── report_templates/  # Report generation templates
+│   │   ├── report/     # `report_generate` runtime
+│   │   ├── report_templates/  # Per-style report templates
+│   │   ├── reports/    # Shared report helpers
+│   │   └── trading/    # `trade_*` tools and account / risk modules
 │   ├── forecast/       # Forecasting methods
 │   ├── patterns/       # Pattern detection
 │   ├── services/       # MT5 data access, Finviz, options data

@@ -144,6 +144,19 @@ Configure the HuggingFace model used to rerank MT5 / external news by relevance.
 
 ---
 
+## Async Training & Model Store
+
+Concurrency caps and on-disk cache used by `forecast_train` / `forecast_task_*` / `forecast_models_*` and the auto-training path inside `forecast_generate`.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MTDATA_TRAIN_WORKERS` | `4` | Maximum number of background training threads in the shared executor. |
+| `MTDATA_HEAVY_LIMIT` | `1` | Number of heavyweight (e.g. neural / foundation) training jobs allowed to run concurrently. Other jobs queue on the executor. |
+| `MTDATA_MODEL_STORE` | `~/.mtdata/models` | Root directory used by the model store. Trained models are keyed by `method/data_scope/params_hash`. |
+| `MTDATA_MODEL_TTL_DAYS` | `7` | Cached model expiry in days. Stale models are evicted on access. |
+
+---
+
 ## Market Depth
 
 | Variable | Default | Description |
@@ -265,6 +278,12 @@ A starter template with all sections. Uncomment and fill in what you need.
 # ── Forecasting / GPU ──────────────────────────────────
 # MTDATA_NF_ACCEL=cpu
 # CUDA_VISIBLE_DEVICES=0
+
+# ── Async Training & Model Store ───────────────────────
+# MTDATA_TRAIN_WORKERS=4
+# MTDATA_HEAVY_LIMIT=1
+# MTDATA_MODEL_STORE=~/.mtdata/models
+# MTDATA_MODEL_TTL_DAYS=7
 
 # ── Market Depth ───────────────────────────────────────
 # MTDATA_ENABLE_MARKET_DEPTH_FETCH=0

@@ -168,6 +168,18 @@ mtdata-cli data_fetch_candles EURUSD --start "2025-12-01" --end "2025-12-31"
 | `forecast_tune_genetic` | Optimize model parameters (genetic algorithm) |
 | `forecast_tune_optuna` | Optimize model parameters (Bayesian/Optuna) |
 
+### Async Training & Model Store
+| Command | Description |
+|---------|-------------|
+| `forecast_train` | Start a background training job for heavyweight methods (returns a `task_id`) |
+| `forecast_task_status` | Poll training progress for a `task_id` |
+| `forecast_task_cancel` | Cancel a running training task |
+| `forecast_task_list` | List active and recent training tasks |
+| `forecast_models_list` | List trained models cached on disk |
+| `forecast_models_delete` | Delete a stored model by `model_id` |
+
+Trained models are written under `~/.mtdata/models/` by default and re-used automatically by subsequent `forecast_generate` calls with the same method/symbol/timeframe/params. See [ENV_VARS.md](ENV_VARS.md#async-training--model-store) for the related environment variables.
+
 ### Risk Analysis
 | Command | Description |
 |---------|-------------|
@@ -192,6 +204,7 @@ mtdata-cli data_fetch_candles EURUSD --start "2025-12-01" --end "2025-12-31"
 | Command | Description |
 |---------|-------------|
 | `trade_account_info` | Get account info |
+| `trade_session_context` | Snapshot of broker/session/server-time context for downstream trading prompts |
 | `trade_place` | Place orders |
 | `trade_close` | Close positions |
 | `trade_modify` | Modify orders |
@@ -205,9 +218,7 @@ mtdata-cli data_fetch_candles EURUSD --start "2025-12-01" --end "2025-12-31"
 ### News
 | Command | Description |
 |---------|-------------|
-| `news` | Unified news feed from multiple sources |
-| `mt5_news` | News from MT5 terminal |
-| `mt5_news_categories` | List MT5 news categories |
+| `news` | Unified, ranked news feed (general + symbol-relevant + economic calendar). Pass `--symbol` to focus the feed on an instrument. |
 
 ### Reports
 | Command | Description |
