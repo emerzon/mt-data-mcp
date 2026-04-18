@@ -11,6 +11,7 @@ import holidays
 
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
+from .output_contract import resolve_output_detail
 
 logger = logging.getLogger(__name__)
 
@@ -431,10 +432,48 @@ def _get_upcoming_holidays(market_ids: List[str], days_ahead: int = 14) -> List[
     return upcoming
 
 
+def _summarize_upcoming_holiday(entry: Any) -> Any:
+    if not isinstance(entry, dict):
+        return entry
+
+    out: Dict[str, Any] = {}
+    for key in ("date", "holiday", "impact", "days_away", "markets_affected"):
+        if key in entry and entry.get(key) is not None:
+            out[key] = entry.get(key)
+    if entry.get("impact") == "early_close" and entry.get("early_close_time") is not None:
+        out["early_close_time"] = entry.get("early_close_time")
+    return out
+
+
+def normalize_market_status_output(
+    result: Dict[str, Any],
+    *,
+    verbose: Optional[bool] = None,
+    detail: Any = None,
+) -> Dict[str, Any]:
+    if not isinstance(result, dict):
+        return dict(result)
+
+    detail_mode = resolve_output_detail(detail=detail, verbose=verbose)
+    out = dict(result)
+    if detail_mode == "full":
+        return out
+
+    upcoming = out.pop("upcoming_holidays", None)
+    if isinstance(upcoming, list) and upcoming:
+        out["upcoming_holidays_count"] = len(upcoming)
+        out["upcoming_holidays_summary"] = [
+            _summarize_upcoming_holiday(entry) for entry in upcoming
+        ]
+        out["show_all_hint"] = "Use --detail full / --verbose for the upcoming_holidays list."
+    return out
+
+
 @mcp.tool()
 def market_status(
     region: Optional[Literal["us", "europe", "asia", "all"]] = "all",
     timezone_display: Optional[Literal["local", "utc", "auto"]] = "local",
+    detail: Literal["compact", "full"] = "compact",
 ) -> Dict[str, Any]:
     """Get trading status of major stock markets worldwide.
 
@@ -448,6 +487,9 @@ def market_status(
         Filter by region: "us", "europe", "asia", or "all" (default: "all")
     timezone_display : str, optional
         Time display format: "local" (market's local time), "utc", or "auto" (default: "local")
+    detail : {"compact", "full"}, optional
+        Response detail level. `compact` (default) summarizes upcoming holiday
+        information, while `full` preserves the complete holiday list.
 
     Returns
     -------
@@ -455,7 +497,9 @@ def market_status(
         Response containing:
         - `timestamp`: Current UTC timestamp
         - `day_of_week`: Current day name (e.g., "Tuesday")
-        - `upcoming_holidays`: List of holidays in next 14 days impacting markets:
+        - `upcoming_holidays_summary`: Compact holiday summary rows when
+          `detail='compact'`
+        - `upcoming_holidays`: Full holiday rows when `detail='full'`
             - `date`: Holiday date (ISO format)
             - `holiday`: Holiday name
             - `markets_affected`: List of market codes that will be closed
@@ -472,6 +516,8 @@ def market_status(
             - `next_open` / `next_close`: ISO timestamp of next event
             - `minutes_until`: Minutes until next status change
     """
+
+    detail_mode = resolve_output_detail(detail=detail)
 
     def _run() -> Dict[str, Any]:
         # Map regions to markets
@@ -530,7 +576,7 @@ def market_status(
         
         now_utc = datetime.now(timezone.utc)
         
-        return {
+        return normalize_market_status_output({
             "success": True,
             "timestamp": now_utc.isoformat(),
             "day_of_week": now_utc.strftime("%A"),
@@ -541,11 +587,12 @@ def market_status(
             "markets": results,
             "upcoming_holidays": upcoming_holidays if upcoming_holidays else None,
             "errors": errors if errors else None,
-        }
+        }, detail=detail_mode)
 
     return run_logged_operation(
         logger,
         operation="market_status",
         region=region,
+        detail=detail_mode,
         func=_run,
     )

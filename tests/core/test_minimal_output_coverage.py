@@ -713,8 +713,20 @@ class TestFormatResultMinimal:
             "success": True,
             "markets": [],
             "upcoming_holidays": [
-                {"date": "2026-04-10", "holiday": "Good Friday"},
-                {"date": "2026-04-13", "holiday": "Easter Monday"},
+                {
+                    "date": "2031-01-01",
+                    "holiday": "New Year's Day",
+                    "markets_affected": ["NYSE", "NASDAQ"],
+                    "impact": "closed",
+                    "days_away": 2,
+                },
+                {
+                    "date": "2031-01-20",
+                    "holiday": "Martin Luther King Jr. Day",
+                    "markets_affected": ["NYSE"],
+                    "impact": "closed",
+                    "days_away": 21,
+                },
             ],
         }
         compact = _normalize_market_status_payload(
@@ -723,7 +735,23 @@ class TestFormatResultMinimal:
         assert compact is not None
         assert "upcoming_holidays" not in compact
         assert compact["upcoming_holidays_count"] == 2
-        assert "show_all_hint" in compact
+        assert compact["upcoming_holidays_summary"] == [
+            {
+                "date": "2031-01-01",
+                "holiday": "New Year's Day",
+                "impact": "closed",
+                "days_away": 2,
+                "markets_affected": ["NYSE", "NASDAQ"],
+            },
+            {
+                "date": "2031-01-20",
+                "holiday": "Martin Luther King Jr. Day",
+                "impact": "closed",
+                "days_away": 21,
+                "markets_affected": ["NYSE"],
+            },
+        ]
+        assert compact["show_all_hint"] == "Use --detail full / --verbose for the upcoming_holidays list."
         # Verbose mode leaves the payload untouched.
         assert _normalize_market_status_payload(
             payload, verbose=True, tool_name="market_status"

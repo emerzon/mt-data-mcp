@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Literal, Optional
 
 from ..services.unified_news import fetch_unified_news
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
+from .output_contract import resolve_output_detail
 
 logger = logging.getLogger(__name__)
 
@@ -165,8 +166,17 @@ def _strip_news_compact_item_fields(value: Any, *, bucket_name: Optional[str] = 
     return out
 
 
-def normalize_news_output(result: Dict[str, Any], *, verbose: bool) -> Dict[str, Any]:
-    if verbose or not isinstance(result, dict):
+def normalize_news_output(
+    result: Dict[str, Any],
+    *,
+    verbose: Optional[bool] = None,
+    detail: Any = None,
+) -> Dict[str, Any]:
+    if not isinstance(result, dict):
+        return dict(result)
+
+    detail_mode = resolve_output_detail(detail=detail, verbose=verbose)
+    if detail_mode == "full":
         return dict(result)
 
     out: Dict[str, Any] = {}
@@ -187,7 +197,10 @@ def normalize_news_output(result: Dict[str, Any], *, verbose: bool) -> Dict[str,
 
 
 @mcp.tool()
-def news(symbol: Optional[str] = None) -> Dict[str, Any]:
+def news(
+    symbol: Optional[str] = None,
+    detail: Literal["compact", "full"] = "compact",
+) -> Dict[str, Any]:
     """
     Fetch important general news and, optionally, symbol-relevant news.
 
@@ -214,6 +227,10 @@ def news(symbol: Optional[str] = None) -> Dict[str, Any]:
     symbol : str, optional
         Instrument to contextualize the news for, such as `AAPL`, `EURUSD`, or
         `BTCUSD`.
+    detail : {"compact", "full"}, optional
+        Response detail level. `compact` (default) keeps the current concise
+        buckets, while `full` preserves the richer source, matching, and item
+        metadata payloads.
 
     Returns
     -------
@@ -229,12 +246,18 @@ def news(symbol: Optional[str] = None) -> Dict[str, Any]:
         - `matching`: summary of the relevance model
     """
 
+    detail_mode = resolve_output_detail(detail=detail)
+
     def _run() -> Dict[str, Any]:
-        return fetch_unified_news(symbol=symbol)
+        return normalize_news_output(
+            fetch_unified_news(symbol=symbol),
+            detail=detail_mode,
+        )
 
     return run_logged_operation(
         logger,
         operation="news",
         symbol=symbol,
+        detail=detail_mode,
         func=_run,
     )

@@ -1582,22 +1582,14 @@ def _normalize_market_status_payload(
     verbose: bool,
     tool_name: str,
 ) -> Optional[Dict[str, Any]]:
-    """Hide the 14-day holiday list by default; keep a one-line count."""
+    """Summarize holiday details for compact market-status output."""
     if tool_name != "market_status" or verbose:
         return None
-    if "upcoming_holidays" not in payload:
+    if "upcoming_holidays" not in payload and "upcoming_holidays_summary" not in payload:
         return None
+    from ..core.market_status import normalize_market_status_output
 
-    out = dict(payload)
-    upcoming = out.pop("upcoming_holidays", None)
-    if isinstance(upcoming, list):
-        count = len(upcoming)
-    else:
-        count = 0
-    if count:
-        out["upcoming_holidays_count"] = count
-        out["show_all_hint"] = "Use --verbose for the upcoming_holidays list."
-    return out
+    return normalize_market_status_output(payload, detail="compact")
 
 
 def _normalize_support_resistance_payload(

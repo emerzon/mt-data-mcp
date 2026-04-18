@@ -75,6 +75,21 @@ def normalize_output_verbosity_detail(value: Any, *, default: str = "compact") -
     )
 
 
+def resolve_output_detail(
+    *,
+    detail: Any = None,
+    verbose: Any = None,
+    default: str = "compact",
+) -> str:
+    """Resolve the shared compact/full detail mode from detail/verbose inputs."""
+    normalized = normalize_output_verbosity_detail(detail, default=default)
+    if normalized in _VERBOSE_DETAIL_LEVELS:
+        return "full"
+    if _coerce_optional_verbose_flag(verbose) is True:
+        return "full"
+    return "compact"
+
+
 def resolve_requested_output_verbosity(source: Any, *, default: bool = False) -> bool:
     """Resolve shared output verbosity from explicit and legacy detail controls."""
     saw_explicit_false = False

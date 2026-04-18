@@ -25,8 +25,9 @@ def test_news_tool_has_only_optional_symbol_parameter() -> None:
     raw = _unwrap(news)
     params = list(signature(raw).parameters.values())
 
-    assert [param.name for param in params] == ["symbol"]
+    assert [param.name for param in params] == ["symbol", "detail"]
     assert params[0].default is None
+    assert params[1].default == "compact"
 
 
 def test_news_tool_forwards_symbol(monkeypatch) -> None:
@@ -46,6 +47,41 @@ def test_news_tool_forwards_symbol(monkeypatch) -> None:
 
     assert result["success"] is True
     assert result["symbol"] == "EURUSD"
+
+
+def test_news_tool_compact_and_full_detail_contract(monkeypatch) -> None:
+    raw = _unwrap(news)
+
+    monkeypatch.setattr(
+        "mtdata.core.news.fetch_unified_news",
+        lambda symbol=None: {
+            "success": True,
+            "symbol": symbol,
+            "instrument": {"symbol": symbol},
+            "matching": {"embeddings": {"enabled": True}},
+            "general_news": [
+                {
+                    "title": "Fed preview",
+                    "provider": "finviz",
+                    "published_at": "2026-03-29T08:00:00Z",
+                    "metadata": {"relative_time": "9 days ago"},
+                }
+            ],
+            "related_news": [],
+            "impact_news": [],
+        },
+    )
+
+    compact = raw(symbol="EURUSD", detail="compact")
+    full = raw(symbol="EURUSD", detail="full")
+
+    assert "instrument" not in compact
+    assert "matching" not in compact
+    assert compact["general_news"] == [{"title": "Fed preview", "relative_time": "9 days ago"}]
+
+    assert full["instrument"] == {"symbol": "EURUSD"}
+    assert full["matching"] == {"embeddings": {"enabled": True}}
+    assert full["general_news"][0]["provider"] == "finviz"
 
 
 def test_news_output_hides_debug_fields_when_not_verbose() -> None:
