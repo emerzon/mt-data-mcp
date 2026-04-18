@@ -46,6 +46,7 @@ class TrainedModelHandle:
     params_hash: str
     created_at: float
     metadata: Dict[str, Any] = field(default_factory=dict)
+    store_metadata: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

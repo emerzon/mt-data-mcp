@@ -10,7 +10,7 @@ Provides tools for:
 """
 
 import logging
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -92,6 +92,7 @@ def _serialize_model_handle(handle: Any, *, detail: DetailLevel) -> Dict[str, An
     }
     if detail == "full":
         payload["metadata"] = dict(getattr(handle, "metadata", {}) or {})
+        payload["store_metadata"] = dict(getattr(handle, "store_metadata", {}) or {})
     return payload
 
 

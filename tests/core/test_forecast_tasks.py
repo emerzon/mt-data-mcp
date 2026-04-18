@@ -20,16 +20,15 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
-from src.mtdata.forecast.interface import (
-    TrainedModelHandle,
-    TrainingProgress,
-)
-
 from src.mtdata.core.forecast_tasks import (
     ForecastModelsDeleteRequest,
     ForecastTaskCancelRequest,
     ForecastTaskStatusRequest,
     ForecastTrainRequest,
+)
+from src.mtdata.forecast.interface import (
+    TrainedModelHandle,
+    TrainingProgress,
 )
 
 # ---------------------------------------------------------------------------
@@ -169,6 +168,11 @@ class TestForecastTaskStatus:
             params_hash="abc",
             created_at=1060.0,
             metadata={"epochs": 12},
+            store_metadata={
+                "metadata_version": 1,
+                "compatibility_version": 1,
+                "last_used": 1065.0,
+            },
         )
         mock_tm = MagicMock()
         mock_tm.get_status.return_value = _make_task(
@@ -194,6 +198,9 @@ class TestForecastTaskStatus:
         assert result["progress"]["eta_seconds"] == 30.0
         assert result["progress"]["message"] == "Halfway there"
         assert result["result"]["metadata"] == {"epochs": 12}
+        assert result["result"]["store_metadata"]["metadata_version"] == 1
+        assert result["result"]["store_metadata"]["compatibility_version"] == 1
+        assert result["result"]["store_metadata"]["last_used"] == 1065.0
         assert result["result"]["params_hash"] == "abc"
 
 
@@ -309,6 +316,11 @@ class TestForecastTaskList:
                     params_hash="x",
                     created_at=1000.0,
                     metadata={"epochs": 20},
+                    store_metadata={
+                        "metadata_version": 1,
+                        "compatibility_version": 1,
+                        "last_used": 1010.0,
+                    },
                 ),
             ),
         ]
@@ -322,6 +334,9 @@ class TestForecastTaskList:
         assert result["tasks"][0]["params_hash"] == "hash-123"
         assert result["tasks"][0]["progress"]["metrics"] == {"rmse": 0.3}
         assert result["tasks"][1]["result"]["metadata"] == {"epochs": 20}
+        assert result["tasks"][1]["result"]["store_metadata"]["metadata_version"] == 1
+        assert result["tasks"][1]["result"]["store_metadata"]["compatibility_version"] == 1
+        assert result["tasks"][1]["result"]["store_metadata"]["last_used"] == 1010.0
         assert result["tasks"][1]["result"]["model_id"] == "nhits/EURUSD_H1/x"
 
 
@@ -376,6 +391,11 @@ class TestForecastModelsList:
                 "a",
                 1000.0,
                 metadata={"epochs": 42},
+                store_metadata={
+                    "metadata_version": 1,
+                    "compatibility_version": 1,
+                    "last_used": 1012.0,
+                },
             ),
         ]
         mock_store = MagicMock()
@@ -386,6 +406,9 @@ class TestForecastModelsList:
 
         assert result["detail"] == "full"
         assert result["models"][0]["metadata"] == {"epochs": 42}
+        assert result["models"][0]["store_metadata"]["metadata_version"] == 1
+        assert result["models"][0]["store_metadata"]["compatibility_version"] == 1
+        assert result["models"][0]["store_metadata"]["last_used"] == 1012.0
 
 
 # ---------------------------------------------------------------------------

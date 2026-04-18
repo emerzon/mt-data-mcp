@@ -54,6 +54,8 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_ROOT = os.path.join(os.path.expanduser("~"), ".mtdata", "models")
 _DEFAULT_TTL_DAYS = 7.0
+_MODEL_STORE_METADATA_VERSION = 1
+_MODEL_STORE_COMPATIBILITY_VERSION = 1
 
 
 def _env_root() -> str:
@@ -121,6 +123,7 @@ class ModelStore:
 
             # Build handle
             now = time.time()
+            store_metadata = self._build_store_metadata(created_at=now, last_used=now)
             handle = TrainedModelHandle(
                 model_id=model_id,
                 method=method,
@@ -128,6 +131,7 @@ class ModelStore:
                 params_hash=params_hash,
                 created_at=now,
                 metadata=dict(metadata or {}),
+                store_metadata=store_metadata,
             )
 
             # Atomic write: metadata (includes last_used)
@@ -139,6 +143,7 @@ class ModelStore:
                 "created_at": handle.created_at,
                 "last_used": now,
                 "metadata": handle.metadata,
+                "store_metadata": handle.store_metadata,
             }
             meta_path = model_dir / "metadata.json"
             self._atomic_write_text(
@@ -225,7 +230,7 @@ class ModelStore:
             meta = self._read_raw_meta(
                 self._model_dir(handle.method, handle.data_scope, handle.params_hash)
             )
-            last_used = float(meta.get("last_used", handle.created_at)) if meta else handle.created_at
+            last_used = self._last_used_from_meta(meta, handle.created_at) if meta else handle.created_at
             if (now - last_used) > self._ttl:
                 if self.delete(handle.model_id):
                     removed += 1
@@ -242,8 +247,8 @@ class ModelStore:
         if meta is None:
             return None
 
-        created_at = float(meta.get("created_at", 0))
-        last_used = float(meta.get("last_used", created_at))
+        created_at = self._coerce_timestamp(meta.get("created_at"), 0.0)
+        last_used = self._last_used_from_meta(meta, created_at)
 
         if not skip_expiry and self._ttl > 0 and (time.time() - last_used) > self._ttl:
             self._remove_dir(model_dir)
@@ -255,8 +260,48 @@ class ModelStore:
             data_scope=meta.get("data_scope", ""),
             params_hash=meta.get("params_hash", model_dir.name),
             created_at=created_at,
-            metadata=meta.get("metadata", {}),
+            metadata=dict(meta.get("metadata", {}) or {}),
+            store_metadata=self._build_store_metadata(
+                created_at=created_at,
+                last_used=last_used,
+                store_metadata=meta.get("store_metadata"),
+            ),
         )
+
+    @staticmethod
+    def _coerce_timestamp(value: Any, fallback: float) -> float:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return fallback
+
+    def _last_used_from_meta(self, meta: Dict[str, Any], created_at: float) -> float:
+        store_metadata = meta.get("store_metadata")
+        store_last_used = (
+            store_metadata.get("last_used")
+            if isinstance(store_metadata, dict)
+            else None
+        )
+        return self._coerce_timestamp(
+            meta.get("last_used", store_last_used),
+            created_at,
+        )
+
+    @staticmethod
+    def _build_store_metadata(
+        *,
+        created_at: float,
+        last_used: Optional[float] = None,
+        store_metadata: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        payload = dict(store_metadata or {})
+        payload.setdefault("metadata_version", _MODEL_STORE_METADATA_VERSION)
+        payload.setdefault("compatibility_version", _MODEL_STORE_COMPATIBILITY_VERSION)
+        payload["last_used"] = ModelStore._coerce_timestamp(
+            last_used if last_used is not None else payload.get("last_used"),
+            created_at,
+        )
+        return payload
 
     @staticmethod
     def _read_raw_meta(model_dir: Path) -> Optional[Dict[str, Any]]:
@@ -274,7 +319,14 @@ class ModelStore:
         meta = self._read_raw_meta(model_dir)
         if meta is None:
             return
-        meta["last_used"] = time.time()
+        now = time.time()
+        meta["last_used"] = now
+        created_at = self._coerce_timestamp(meta.get("created_at"), now)
+        meta["store_metadata"] = self._build_store_metadata(
+            created_at=created_at,
+            last_used=now,
+            store_metadata=meta.get("store_metadata"),
+        )
         meta_path = model_dir / "metadata.json"
         try:
             self._atomic_write_text(

@@ -35,6 +35,9 @@ class TestModelStoreBasics(unittest.TestCase):
         self.assertEqual(handle.params_hash, "abc123")
         self.assertEqual(handle.model_id, "nhits/EURUSD_H1/abc123")
         self.assertEqual(handle.metadata["epochs"], 50)
+        self.assertEqual(handle.store_metadata["metadata_version"], 1)
+        self.assertEqual(handle.store_metadata["compatibility_version"], 1)
+        self.assertAlmostEqual(handle.store_metadata["last_used"], handle.created_at, delta=0.01)
         self.assertGreater(handle.created_at, 0)
 
     def test_load_bytes_roundtrip(self):
@@ -168,6 +171,27 @@ class TestModelStoreTTL(unittest.TestCase):
         with open(meta_path) as f:
             meta = json.load(f)
         self.assertAlmostEqual(meta["last_used"], time.time(), delta=2)
+        self.assertEqual(meta["store_metadata"]["metadata_version"], 1)
+        self.assertEqual(meta["store_metadata"]["compatibility_version"], 1)
+        self.assertAlmostEqual(meta["store_metadata"]["last_used"], meta["last_used"], delta=0.01)
+
+    def test_find_backfills_store_metadata_for_legacy_metadata(self):
+        self.store.save("m", "d", "p", b"data")
+        meta_path = self.store._model_dir("m", "d", "p") / "metadata.json"
+        with open(meta_path) as f:
+            meta = json.load(f)
+        legacy_last_used = time.time() - 0.2
+        meta["last_used"] = legacy_last_used
+        meta.pop("store_metadata", None)
+        with open(meta_path, "w") as f:
+            json.dump(meta, f)
+
+        handle = self.store.find("m", "d", "p")
+
+        self.assertIsNotNone(handle)
+        self.assertEqual(handle.store_metadata["metadata_version"], 1)
+        self.assertEqual(handle.store_metadata["compatibility_version"], 1)
+        self.assertAlmostEqual(handle.store_metadata["last_used"], legacy_last_used, delta=0.01)
 
     def test_cleanup_expired(self):
         self.store.save("m1", "d", "p1", b"d")
