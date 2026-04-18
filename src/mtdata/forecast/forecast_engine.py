@@ -506,6 +506,7 @@ def _try_predict_with_stored_model(
 ) -> Optional[Tuple[np.ndarray, Optional[np.ndarray], Dict[str, Any]]]:
     """Attempt to load a trained model and predict. Returns None if no model found."""
     try:
+        from .model_store import describe_store_metadata_compatibility
         from .model_store import model_store as _store
         handle = _store.find(method_l, data_scope, params_hash)
         if handle is None:
@@ -525,12 +526,33 @@ def _try_predict_with_stored_model(
         )
         metadata = res.metadata or {}
         metadata['params_used'] = res.params_used
-        metadata['model_info'] = {
+        model_info = {
             'model_id': handle.model_id,
             'trained_at': handle.created_at,
             'data_scope': handle.data_scope,
             'source': 'model_store',
         }
+        try:
+            compatibility = describe_store_metadata_compatibility(handle.store_metadata)
+        except Exception as compat_exc:
+            logger.debug(
+                "Model store compatibility inspection failed for %s: %s",
+                handle.model_id,
+                compat_exc,
+            )
+        else:
+            if compatibility.get("status") == "warning":
+                model_info["compatibility"] = compatibility
+                warnings = metadata.get("warnings")
+                if not isinstance(warnings, list):
+                    warnings = []
+                for warning_text in compatibility.get("warnings") or []:
+                    warning_text = str(warning_text).strip()
+                    if warning_text and warning_text not in warnings:
+                        warnings.append(warning_text)
+                if warnings:
+                    metadata["warnings"] = warnings
+        metadata['model_info'] = model_info
         return res.forecast, res.ci_values, metadata
     except Exception as exc:
         logger.debug("Model store predict failed for %s/%s: %s", method_l, data_scope, exc)

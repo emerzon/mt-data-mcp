@@ -190,6 +190,40 @@ class TestTryPredictWithStoredModel:
         assert metadata["model_info"]["model_id"] == "stub_trainable/EURUSD_H1/abc123"
         assert metadata["model_info"]["source"] == "model_store"
 
+    def test_surfaces_legacy_compatibility_warning_when_model_exists(self):
+        stub = _StubTrainable()
+        handle = TrainedModelHandle(
+            model_id="stub_trainable/EURUSD_H1/abc123",
+            method="stub_trainable",
+            data_scope="EURUSD_H1",
+            params_hash="abc123",
+            created_at=1000.0,
+            store_metadata={
+                "metadata_version": 1,
+                "compatibility_version": 1,
+                "last_used": 1000.0,
+                "_store_metadata_source": "legacy_backfill",
+                "_actual_metadata_version": None,
+                "_actual_compatibility_version": None,
+            },
+        )
+        mock_store = MagicMock()
+        mock_store.find.return_value = handle
+        mock_store.load_bytes.return_value = b"fake_artifact"
+
+        with patch(_PATCH_MODEL_STORE, mock_store):
+            result = fe._try_predict_with_stored_model(
+                stub, "stub_trainable", "EURUSD_H1", "abc123",
+                _sample_series(), 3, 24, {}, None, {},
+            )
+
+        assert result is not None
+        forecast_arr, ci, metadata = result
+        np.testing.assert_array_equal(forecast_arr, np.array([10.0, 11.0, 12.0]))
+        assert ci is not None
+        assert metadata["model_info"]["compatibility"]["status"] == "warning"
+        assert "predates persisted store_metadata" in metadata["warnings"][0]
+
     def test_returns_none_on_exception(self):
         stub = _StubTrainable()
         mock_store = MagicMock()
@@ -530,6 +564,50 @@ class TestForecastEngineAsyncRouting:
 
         assert out["success"] is True
         assert "forecast_price" in out
+
+    def test_reused_model_surfaces_drifted_compatibility_warning(self, monkeypatch):
+        self._setup_monkeypatch(monkeypatch)
+
+        stub = _StubTrainable(category="heavy")
+
+        class FakeReg:
+            @staticmethod
+            def get(name):
+                return stub
+
+        handle = TrainedModelHandle(
+            model_id="stub_trainable/EURUSD_H1/abc",
+            method="stub_trainable",
+            data_scope="EURUSD_H1",
+            params_hash="abc",
+            created_at=1000.0,
+            store_metadata={
+                "metadata_version": 2,
+                "compatibility_version": 3,
+                "last_used": 1000.0,
+            },
+        )
+        mock_store = MagicMock()
+        mock_store.find.return_value = handle
+        mock_store.load_bytes.return_value = b"artifact"
+
+        monkeypatch.setattr(fe, "ForecastRegistry", FakeReg)
+
+        with patch(_PATCH_MODEL_STORE, mock_store):
+            out = fe.forecast_engine(
+                symbol="EURUSD",
+                timeframe="H1",
+                method="stub_trainable",
+                horizon=3,
+                async_mode=False,
+                prefetched_df=_sample_df(50),
+            )
+
+        assert out["success"] is True
+        assert out["model_info"]["source"] == "model_store"
+        assert out["model_info"]["compatibility"]["status"] == "warning"
+        assert any("metadata_version=2" in warning for warning in out["warnings"])
+        assert any("compatibility_version=3" in warning for warning in out["warnings"])
 
 
 # ---------------------------------------------------------------------------
