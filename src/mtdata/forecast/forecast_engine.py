@@ -351,16 +351,14 @@ def _reconstruct_prices_from_target(
 
     reconstructed: List[float] = []
     anchors = history.astype(float).tolist()
-    nan_propagated = False
     for value in forecast_arr:
         anchor = anchors[-lag]
-        if nan_propagated or not (np.isfinite(anchor) and np.isfinite(value)):
-            nan_propagated = True
+        if not (np.isfinite(anchor) and np.isfinite(value)):
             price = float("nan")
         else:
             price = inverse_fn(anchor, float(value))
             if not np.isfinite(price):
-                nan_propagated = True
+                price = float("nan")
         anchors.append(price)
         reconstructed.append(price)
 

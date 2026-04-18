@@ -122,6 +122,19 @@ class TestReconstructPricesFromTarget:
         # step 1: anchor = history[-1] = 105, price = 105 * 1.05 = 110.25
         np.testing.assert_allclose(result, [110.0, 110.25], rtol=1e-6)
 
+    def test_lagged_reconstruction_recovers_when_nan_breaks_unrelated_branch(self):
+        history = np.array([100.0, 105.0])
+        result = _reconstruct_prices_from_target(
+            np.array([0.10, float("nan"), 0.05]),
+            history,
+            {"transform": "return(k=2)"},
+        )
+
+        assert result is not None
+        assert result[0] == pytest.approx(110.0)
+        assert np.isnan(result[1])
+        assert result[2] == pytest.approx(115.5)
+
     def test_inf_from_reconstruction_propagates_nan(self):
         """If a reconstruction step produces inf, subsequent steps get NaN."""
         history = np.array([100.0])
