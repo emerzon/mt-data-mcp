@@ -20,6 +20,8 @@ from .execution_logging import run_logged_operation
 
 logger = logging.getLogger(__name__)
 
+DetailLevel = Literal["compact", "full"]
+
 
 # ---------------------------------------------------------------------------
 # Request models
@@ -39,6 +41,10 @@ class ForecastTrainRequest(BaseModel):
 
 class ForecastTaskStatusRequest(BaseModel):
     task_id: str = Field(..., description="Task ID returned by forecast_train or auto-training.")
+    detail: DetailLevel = Field(
+        "compact",
+        description="Response detail level: 'compact' for summary fields or 'full' for expanded task details.",
+    )
 
 
 class ForecastTaskCancelRequest(BaseModel):
@@ -47,6 +53,110 @@ class ForecastTaskCancelRequest(BaseModel):
 
 class ForecastModelsDeleteRequest(BaseModel):
     model_id: str = Field(..., description="Model ID in format method/data_scope/params_hash.")
+
+
+# ---------------------------------------------------------------------------
+# Payload shaping helpers
+# ---------------------------------------------------------------------------
+
+def _detail_mode(value: Any) -> DetailLevel:
+    return "full" if str(value or "compact").strip().lower() == "full" else "compact"
+
+
+def _serialize_progress(progress: Any, *, detail: DetailLevel) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {
+        "step": progress.step,
+        "total_steps": progress.total_steps,
+        "fraction": progress.fraction,
+    }
+    if progress.loss is not None:
+        payload["loss"] = progress.loss
+    if detail == "full":
+        if progress.eta_seconds is not None:
+            payload["eta_seconds"] = progress.eta_seconds
+        if progress.message:
+            payload["message"] = progress.message
+        metrics = getattr(progress, "metrics", None)
+        if metrics is not None:
+            payload["metrics"] = metrics
+    return payload
+
+
+def _serialize_model_handle(handle: Any, *, detail: DetailLevel) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {
+        "model_id": handle.model_id,
+        "method": handle.method,
+        "data_scope": handle.data_scope,
+        "params_hash": handle.params_hash,
+        "created_at": handle.created_at,
+    }
+    if detail == "full":
+        payload["metadata"] = dict(getattr(handle, "metadata", {}) or {})
+    return payload
+
+
+def _task_status_payload(task: Any, *, detail: DetailLevel) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {
+        "detail": detail,
+        "task_id": task.task_id,
+        "method": task.method,
+        "data_scope": task.data_scope,
+        "status": task.status,
+        "created_at": task.created_at,
+        "started_at": task.started_at,
+        "completed_at": task.completed_at,
+    }
+
+    if task.progress is not None:
+        payload["progress"] = _serialize_progress(task.progress, detail=detail)
+
+    if task.status == "completed" and task.result is not None:
+        payload["model_id"] = task.result.model_id
+        payload["message"] = (
+            f"Training complete. Model stored as '{task.result.model_id}'. "
+            "Subsequent forecast_generate calls will use this model automatically."
+        )
+        if detail == "full":
+            payload["result"] = _serialize_model_handle(task.result, detail="full")
+
+    if task.status == "failed" and task.error:
+        payload["error"] = task.error
+
+    if detail == "full":
+        params_hash = getattr(task, "params_hash", None)
+        if params_hash:
+            payload["params_hash"] = params_hash
+
+    return payload
+
+
+def _task_list_item_payload(task: Any, *, detail: DetailLevel) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {
+        "task_id": task.task_id,
+        "method": task.method,
+        "data_scope": task.data_scope,
+        "status": task.status,
+        "created_at": task.created_at,
+    }
+    if task.progress is not None:
+        payload["progress_fraction"] = task.progress.fraction
+    if task.result is not None:
+        payload["model_id"] = task.result.model_id
+    if task.error:
+        payload["error"] = task.error
+
+    if detail == "full":
+        payload["started_at"] = task.started_at
+        payload["completed_at"] = task.completed_at
+        params_hash = getattr(task, "params_hash", None)
+        if params_hash:
+            payload["params_hash"] = params_hash
+        if task.progress is not None:
+            payload["progress"] = _serialize_progress(task.progress, detail="full")
+        if task.result is not None:
+            payload["result"] = _serialize_model_handle(task.result, detail="full")
+
+    return payload
 
 
 # ---------------------------------------------------------------------------
@@ -129,51 +239,26 @@ def forecast_train(request: ForecastTrainRequest) -> Dict[str, Any]:
 def forecast_task_status(request: ForecastTaskStatusRequest) -> Dict[str, Any]:
     """Get the current status and progress of a forecast training task.
 
-    Returns task status, progress (step/total/loss), and result on completion.
+    Returns task status, progress, and completion info.
+    Use ``detail='full'`` for expanded task/result metadata.
     """
     def _execute() -> Dict[str, Any]:
+        detail_mode = _detail_mode(request.detail)
         tm = _get_task_manager()
         task = tm.get_status(request.task_id)
         if task is None:
-            return {"error": f"Task '{request.task_id}' not found."}
-
-        resp: Dict[str, Any] = {
-            "task_id": task.task_id,
-            "method": task.method,
-            "data_scope": task.data_scope,
-            "status": task.status,
-            "created_at": task.created_at,
-            "started_at": task.started_at,
-            "completed_at": task.completed_at,
-        }
-
-        if task.progress is not None:
-            resp["progress"] = {
-                "step": task.progress.step,
-                "total_steps": task.progress.total_steps,
-                "fraction": task.progress.fraction,
-                "loss": task.progress.loss,
-                "eta_seconds": task.progress.eta_seconds,
-                "message": task.progress.message,
+            return {
+                "detail": detail_mode,
+                "error": f"Task '{request.task_id}' not found.",
             }
-
-        if task.status == "completed" and task.result is not None:
-            resp["model_id"] = task.result.model_id
-            resp["message"] = (
-                f"Training complete. Model stored as '{task.result.model_id}'. "
-                "Subsequent forecast_generate calls will use this model automatically."
-            )
-
-        if task.status == "failed" and task.error:
-            resp["error"] = task.error
-
-        return resp
+        return _task_status_payload(task, detail=detail_mode)
 
     return run_logged_operation(
         logger,
         operation="forecast_task_status",
         func=_execute,
         task_id=request.task_id,
+        detail=request.detail,
     )
 
 
@@ -206,31 +291,20 @@ def forecast_task_cancel(request: ForecastTaskCancelRequest) -> Dict[str, Any]:
 @mcp.tool()
 def forecast_task_list(
     status_filter: Optional[str] = None,
+    detail: DetailLevel = "compact",
 ) -> Dict[str, Any]:
     """List active and recent forecast training tasks.
 
     Optionally filter by status: pending, running, completed, failed, cancelled.
+    Use ``detail='full'`` for expanded progress and result payloads.
     """
     def _execute() -> Dict[str, Any]:
+        detail_mode = _detail_mode(detail)
         tm = _get_task_manager()
         tasks = tm.list_tasks(status=status_filter)
-        items: List[Dict[str, Any]] = []
-        for t in tasks:
-            item: Dict[str, Any] = {
-                "task_id": t.task_id,
-                "method": t.method,
-                "data_scope": t.data_scope,
-                "status": t.status,
-                "created_at": t.created_at,
-            }
-            if t.progress is not None:
-                item["progress_fraction"] = t.progress.fraction
-            if t.result is not None:
-                item["model_id"] = t.result.model_id
-            if t.error:
-                item["error"] = t.error
-            items.append(item)
+        items = [_task_list_item_payload(task, detail=detail_mode) for task in tasks]
         return {
+            "detail": detail_mode,
             "count": len(items),
             "tasks": items,
         }
@@ -240,33 +314,31 @@ def forecast_task_list(
         operation="forecast_task_list",
         func=_execute,
         status_filter=status_filter,
+        detail=detail,
     )
 
 
 @mcp.tool()
 def forecast_models_list(
     method: Optional[str] = None,
+    detail: DetailLevel = "compact",
 ) -> Dict[str, Any]:
     """List all stored trained forecast models.
 
     Optionally filter by method name (e.g. nhits, tft, mlforecast).
+    Use ``detail='full'`` to include stored model metadata.
     """
     def _execute() -> Dict[str, Any]:
+        detail_mode = _detail_mode(detail)
         store = _get_model_store()
         handles = store.list_models(method=method)
         items = [
-            {
-                "model_id": h.model_id,
-                "method": h.method,
-                "data_scope": h.data_scope,
-                "params_hash": h.params_hash,
-                "created_at": h.created_at,
-                "metadata": h.metadata,
-            }
+            _serialize_model_handle(h, detail=detail_mode)
             for h in handles
         ]
         return {
             "success": True,
+            "detail": detail_mode,
             "count": len(items),
             "models": items,
         }
@@ -276,6 +348,7 @@ def forecast_models_list(
         operation="forecast_models_list",
         func=_execute,
         method=method,
+        detail=detail,
     )
 
 
