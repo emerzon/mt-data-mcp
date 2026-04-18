@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from inspect import signature
 
-from mtdata.core.news import news
+from mtdata.core.news import news, normalize_news_output
 from mtdata.core.output_contract import apply_output_verbosity
 
 
@@ -11,6 +11,14 @@ def _unwrap(fn):
     while hasattr(fn, "__wrapped__"):
         fn = fn.__wrapped__
     return fn
+
+
+def _prepare_news_output(payload, *, verbose: bool):
+    return apply_output_verbosity(
+        normalize_news_output(payload, verbose=verbose),
+        verbose=verbose,
+        tool_name="news",
+    )
 
 
 def test_news_tool_has_only_optional_symbol_parameter() -> None:
@@ -86,7 +94,7 @@ def test_news_output_hides_debug_fields_when_not_verbose() -> None:
         "impact_news": [],
     }
 
-    result = apply_output_verbosity(payload, verbose=False, tool_name="news")
+    result = _prepare_news_output(payload, verbose=False)
 
     assert "instrument" not in result
     assert "sources_used" not in result
@@ -130,7 +138,7 @@ def test_news_output_keeps_debug_fields_when_verbose() -> None:
         "impact_news": [],
     }
 
-    result = apply_output_verbosity(payload, verbose=True, tool_name="news")
+    result = _prepare_news_output(payload, verbose=True)
 
     assert "instrument" in result
     assert "matching" in result
@@ -161,7 +169,7 @@ def test_news_output_derives_relative_time_from_published_at_when_needed() -> No
         "impact_news": [],
     }
 
-    result = apply_output_verbosity(payload, verbose=False, tool_name="news")
+    result = _prepare_news_output(payload, verbose=False)
 
     item = result["general_news"][0]
     assert item["title"] == "Fed preview"
@@ -193,7 +201,7 @@ def test_news_output_keeps_future_event_time_in_utc() -> None:
         "impact_news": [],
     }
 
-    result = apply_output_verbosity(payload, verbose=False, tool_name="news")
+    result = _prepare_news_output(payload, verbose=False)
 
     item = result["related_news"][0]
     assert item["title"] == "US CPI (USD)"
@@ -218,7 +226,7 @@ def test_news_output_compaction_is_idempotent() -> None:
         "impact_news": [{"title": "Oil jumps on war fears", "relative_time": "6 hours ago"}],
     }
 
-    result = apply_output_verbosity(payload, verbose=False, tool_name="news")
+    result = _prepare_news_output(payload, verbose=False)
 
     assert result == payload
 
@@ -249,7 +257,7 @@ def test_news_output_compacts_upcoming_events_bucket() -> None:
         "upcoming_count": 1,
     }
 
-    result = apply_output_verbosity(payload, verbose=False, tool_name="news")
+    result = _prepare_news_output(payload, verbose=False)
 
     assert "upcoming_count" not in result
     assert result["upcoming_events"] == [
@@ -288,7 +296,7 @@ def test_news_output_compacts_recent_events_bucket() -> None:
         "recent_count": 1,
     }
 
-    result = apply_output_verbosity(payload, verbose=False, tool_name="news")
+    result = _prepare_news_output(payload, verbose=False)
 
     assert "recent_count" not in result
     assert result["recent_events"] == [
@@ -298,3 +306,22 @@ def test_news_output_compacts_recent_events_bucket() -> None:
             "summary": "Actual: 3.2% | Expected: 3.1% | Prior: 3.0%",
         }
     ]
+
+
+def test_generic_output_contract_no_longer_special_cases_news() -> None:
+    payload = {
+        "success": True,
+        "source_details": {"finviz": {"selected_total": 1}},
+        "general_news": [
+            {
+                "title": "Fed preview",
+                "provider": "finviz",
+                "published_at": "2026-03-29T08:00:00Z",
+            }
+        ],
+    }
+
+    result = apply_output_verbosity(payload, verbose=False, tool_name="news")
+
+    assert "source_details" in result
+    assert result["general_news"][0]["provider"] == "finviz"

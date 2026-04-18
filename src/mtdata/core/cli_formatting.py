@@ -557,4 +557,8 @@ def _prepare_cli_payload(result: Any, *, fmt: str, verbose: bool, cmd_name: str)
 
 
 def _attach_cli_meta(result: Any, *, cmd_name: str, verbose: bool) -> Any:
+    if cmd_name == "news" and isinstance(result, dict):
+        from .news import normalize_news_output
+
+        result = normalize_news_output(result, verbose=verbose)
     return apply_output_verbosity(result, tool_name=cmd_name, verbose=verbose)

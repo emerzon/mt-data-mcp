@@ -482,6 +482,10 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # n
                 )
 
             if isinstance(out, dict):
+                if getattr(func, "__name__", "").strip().lower() == "news":
+                    from .news import normalize_news_output
+
+                    out = normalize_news_output(out, verbose=requested_verbose)
                 out = normalize_error_payload(
                     out,
                     default_code="tool_error",
