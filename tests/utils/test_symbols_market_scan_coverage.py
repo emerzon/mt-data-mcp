@@ -37,6 +37,12 @@ def _get_market_scan():
     return _call
 
 
+def _get_select_market_scan_symbols():
+    from mtdata.core.symbols import _select_market_scan_symbols
+
+    return _select_market_scan_symbols
+
+
 def _make_symbol(
     name: str,
     *,
@@ -220,8 +226,41 @@ class TestSymbolsTopMarkets:
         assert result["skipped_symbols"] == 1
         assert result["skipped_examples"][0]["symbol"] == "GBPUSD"
 
+    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols._mt5_copy_rates_from_pos", return_value=None)
+    @patch("mtdata.core.symbols.mt5.symbols_get")
+    def test_volume_skipped_examples_are_deterministic(self, mock_symbols_get, mock_rates, mock_group):
+        mock_symbols_get.return_value = [
+            _make_symbol("usdjpy"),
+            _make_symbol("EURUSD"),
+        ]
+
+        fn = _get_symbols_top_markets()
+        result = fn(rank_by="volume", timeframe="H1", limit=5)
+
+        assert result["success"] is True
+        assert [row["symbol"] for row in result["skipped_examples"]] == ["EURUSD", "usdjpy"]
+
 
 class TestMarketScan:
+    def test_explicit_symbol_selection_preserves_requested_order(self):
+        fn = _get_select_market_scan_symbols()
+
+        selected, meta, error = fn(
+            [
+                _make_symbol("EURUSD"),
+                _make_symbol("GBPUSD"),
+                _make_symbol("USDJPY"),
+            ],
+            symbols="USDJPY, eurusd, MISSING",
+            group=None,
+            universe="visible",
+        )
+
+        assert error is None
+        assert [symbol.name for symbol in selected] == ["USDJPY", "EURUSD"]
+        assert meta["missing_symbols"] == ["MISSING"]
+
     @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
     @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
     @patch("mtdata.core.symbols.mt5.symbol_info_tick")
@@ -330,3 +369,24 @@ class TestMarketScan:
 
         assert "error" in result
         assert "Ambiguous group" in result["error"]
+
+    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols.mt5.symbol_info_tick", return_value=None)
+    @patch("mtdata.core.symbols.mt5.symbols_get")
+    def test_market_scan_group_skipped_examples_are_deterministic(
+        self,
+        mock_symbols_get,
+        mock_tick,
+        mock_group,
+    ):
+        mock_symbols_get.return_value = [
+            _make_symbol("usdjpy", path="Forex\\Majors"),
+            _make_symbol("EURUSD", path="Forex\\Majors"),
+        ]
+
+        fn = _get_market_scan()
+        result = fn(group="Forex\\Majors", lookback=4)
+
+        assert result["success"] is True
+        assert result["scope"] == "group"
+        assert [row["symbol"] for row in result["skipped_examples"]] == ["EURUSD", "usdjpy"]

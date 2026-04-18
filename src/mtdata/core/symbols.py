@@ -23,6 +23,12 @@ from .mt5_gateway import get_mt5_gateway
 
 logger = logging.getLogger(__name__)
 
+
+def _case_insensitive_sort_key(value: Any) -> tuple[str, str]:
+    text = str(value or "").strip()
+    return text.casefold(), text
+
+
 _SYMBOL_DESCRIBE_PRICE_FIELDS = frozenset(
     {
         "bidlow",
@@ -152,6 +158,10 @@ def symbols_list(  # noqa: C901
             else:
                 matched_symbols = list(mt5_gateway.symbols_get() or [])
 
+            matched_symbols = sorted(
+                matched_symbols,
+                key=lambda symbol: _case_insensitive_sort_key(getattr(symbol, "name", "")),
+            )
             only_visible = not bool(search_term)
             symbol_list = []
             for symbol in matched_symbols:
@@ -213,7 +223,12 @@ def _list_symbol_groups(
             filtered_items = [(k, v) for (k, v) in filtered_items if q in (k or '').lower()]
 
         # Sort groups by count (most symbols first)
-        filtered_items.sort(key=lambda x: x[1]["count"], reverse=True)
+        filtered_items.sort(
+            key=lambda item: (
+                -item[1]["count"],
+                *_case_insensitive_sort_key(item[0]),
+            )
+        )
 
         # Apply limit
         limit_value = _normalize_limit(limit)
@@ -491,8 +506,11 @@ def _resolve_market_scan_group_path(
         return exact, None
 
     partial_matches = sorted(
-        value for value in groups.values()
-        if requested_lower in value.lower()
+        (
+            value for value in groups.values()
+            if requested_lower in value.lower()
+        ),
+        key=_case_insensitive_sort_key,
     )
     if len(partial_matches) == 1:
         return partial_matches[0], None
@@ -546,20 +564,26 @@ def _select_market_scan_symbols(
         resolved_group, group_error = _resolve_market_scan_group_path(tradable_symbols, group)
         if group_error or resolved_group is None:
             return [], {}, group_error
-        selected = [
-            symbol for symbol in tradable_symbols
-            if str(_extract_group_path_util(symbol) or "").strip() == resolved_group
-            and (universe == "all" or bool(getattr(symbol, "visible", False)))
-        ]
+        selected = sorted(
+            [
+                symbol for symbol in tradable_symbols
+                if str(_extract_group_path_util(symbol) or "").strip() == resolved_group
+                and (universe == "all" or bool(getattr(symbol, "visible", False)))
+            ],
+            key=lambda symbol: _case_insensitive_sort_key(getattr(symbol, "name", "")),
+        )
         return selected, {
             "scope": "group",
             "group": resolved_group,
         }, None
 
-    selected = [
-        symbol for symbol in tradable_symbols
-        if universe == "all" or bool(getattr(symbol, "visible", False))
-    ]
+    selected = sorted(
+        [
+            symbol for symbol in tradable_symbols
+            if universe == "all" or bool(getattr(symbol, "visible", False))
+        ],
+        key=lambda symbol: _case_insensitive_sort_key(getattr(symbol, "name", "")),
+    )
     return selected, {"scope": "universe"}, None
 
 
@@ -818,13 +842,14 @@ def symbols_top_markets(  # noqa: C901
                 return {"error": f"Failed to get symbols: {mt5_gateway.last_error()}"}
             all_symbols = list(raw_symbols)
 
-            selected_symbols = []
-            for symbol in all_symbols:
-                if not _market_scan_is_tradable(symbol):
-                    continue
-                if universe_value == "visible" and not bool(getattr(symbol, "visible", False)):
-                    continue
-                selected_symbols.append(symbol)
+            selected_symbols = sorted(
+                [
+                    symbol for symbol in all_symbols
+                    if _market_scan_is_tradable(symbol)
+                    and (universe_value == "all" or bool(getattr(symbol, "visible", False)))
+                ],
+                key=lambda symbol: _case_insensitive_sort_key(getattr(symbol, "name", "")),
+            )
 
             limit_value = _normalize_limit(limit) or 10
             started_at = time.perf_counter()

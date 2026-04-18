@@ -123,6 +123,20 @@ class TestSymbolsListSearch:
     @patch(_NORM_LIMIT, return_value=25)
     @patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r})
     @patch(f"{_MT5}.symbols_get")
+    def test_search_results_sorted_case_insensitively(self, mock_get, mock_tbl, mock_lim):
+        mock_get.return_value = [
+            _make_symbol("usdjpy", path="Forex\\Majors"),
+            _make_symbol("EURUSD", path="Forex\\Majors"),
+            _make_symbol("gbpusd", path="Forex\\Majors"),
+        ]
+        with patch(_GROUP_PATH, side_effect=lambda s: s.path):
+            fn = _get_symbols_list()
+            res = fn(search_term="USD", limit=25)
+        assert [row[0] for row in res["data"]] == ["EURUSD", "gbpusd", "usdjpy"]
+
+    @patch(_NORM_LIMIT, return_value=25)
+    @patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r})
+    @patch(f"{_MT5}.symbols_get")
     def test_search_matches_group(self, mock_get, mock_tbl, mock_lim):
         """When search matches few groups → use group search."""
         syms = [
@@ -310,6 +324,23 @@ class TestListSymbolGroups:
         mock_get.return_value = syms
         res = _list_symbol_groups(limit=1)
         assert len(res["data"]) == 1
+
+    @patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r})
+    @patch(_NORM_LIMIT, return_value=25)
+    @patch(_GROUP_PATH, side_effect=lambda s: s.path)
+    @patch(f"{_MT5}.symbols_get")
+    def test_sorts_by_count_then_group_name(self, mock_get, mock_gp, mock_lim, mock_tbl):
+        mock_get.return_value = [
+            _make_symbol("A1", path="Zulu"),
+            _make_symbol("A2", path="Zulu"),
+            _make_symbol("A3", path="Zulu"),
+            _make_symbol("B1", path="beta"),
+            _make_symbol("B2", path="beta"),
+            _make_symbol("C1", path="Alpha"),
+            _make_symbol("C2", path="Alpha"),
+        ]
+        res = _list_symbol_groups()
+        assert res["data"] == [["Zulu"], ["Alpha"], ["beta"]]
 
 
 # ---------------------------------------------------------------------------
