@@ -81,7 +81,7 @@ def test_strategy_backtest_compact_mode_keeps_stable_trades_key(monkeypatch):
     assert out["summary"]["trade_count"] == 1
     assert out["summary"]["num_trades"] == 1
     assert out["trades"][0]["direction"] == "long"
-    assert out["trade_sample"] == out["trades"]
+    assert "trade_sample" not in out
 
 
 def test_strategy_backtest_returns_no_action_on_flat_history(monkeypatch):

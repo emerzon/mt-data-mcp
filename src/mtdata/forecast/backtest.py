@@ -442,7 +442,6 @@ def strategy_backtest(  # noqa: C901
             else:
                 sampled_trades = trades[: min(10, len(trades))]
                 result["trades"] = sampled_trades
-                result["trade_sample"] = sampled_trades
         else:
             result["no_action"] = True
             result["message"] = "The strategy generated no trades on the requested history."
