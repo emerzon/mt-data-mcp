@@ -141,6 +141,21 @@ class ReplayHistoryGateway(SequenceGateway):
         return list(self.replay_deals)
 
 
+class TrackingHistoryWindowGateway(SequenceGateway):
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.history_order_calls = []
+        self.history_deal_calls = []
+
+    def history_orders_get(self, dt_from, dt_to, **kwargs):
+        self.history_order_calls.append((dt_from, dt_to))
+        return super().history_orders_get(dt_from, dt_to, **kwargs)
+
+    def history_deals_get(self, dt_from, dt_to, **kwargs):
+        self.history_deal_calls.append((dt_from, dt_to))
+        return super().history_deals_get(dt_from, dt_to, **kwargs)
+
+
 class DisconnectingGateway(SequenceGateway):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
@@ -684,6 +699,55 @@ def test_collect_new_account_history_rows_keeps_same_second_coarse_rows() -> Non
     assert isinstance(rows, list)
     assert len(rows) == 1
     assert rows[0]["ticket"] == 7001
+
+
+def test_collect_new_account_history_rows_advances_poll_cursor(monkeypatch) -> None:
+    monkeypatch.setattr(
+        wait_events_mod,
+        "_to_server_naive_dt",
+        lambda dt: wait_events_mod._normalize_utc_datetime(dt).replace(tzinfo=None),
+    )
+
+    started = datetime(2026, 3, 15, 12, 0, 0, 500000, tzinfo=timezone.utc)
+    state = {"cursor_from_utc": started}
+    calls = []
+
+    def fetch_impl(dt_from, dt_to):
+        calls.append((dt_from, dt_to))
+        return []
+
+    first_observed = started + timedelta(seconds=0.6)
+    second_observed = started + timedelta(seconds=1.2)
+
+    first_rows = wait_events_mod._collect_new_account_history_rows(
+        fetch_impl=fetch_impl,
+        started_at_utc=started,
+        observed_at_utc=first_observed,
+        state=state,
+        row_kind="order",
+        label="order history",
+    )
+    second_rows = wait_events_mod._collect_new_account_history_rows(
+        fetch_impl=fetch_impl,
+        started_at_utc=started,
+        observed_at_utc=second_observed,
+        state=state,
+        row_kind="order",
+        label="order history",
+    )
+
+    assert first_rows == []
+    assert second_rows == []
+    assert calls == [
+        (
+            datetime(2026, 3, 15, 12, 0, 0),
+            datetime(2026, 3, 15, 12, 0, 1, 100000),
+        ),
+        (
+            datetime(2026, 3, 15, 12, 0, 1),
+            datetime(2026, 3, 15, 12, 0, 1, 700000),
+        ),
+    ]
 
 
 def test_seed_account_history_keys_converts_window_to_server_naive(monkeypatch) -> None:
@@ -1867,6 +1931,57 @@ def test_run_wait_event_ignores_replayed_preexisting_order_history() -> None:
 
     assert result["status"] == "timeout"
     assert result["matched_event"] is None
+
+
+def test_run_wait_event_advances_history_poll_cursors_per_stream(monkeypatch) -> None:
+    monkeypatch.setattr(
+        wait_events_mod,
+        "_to_server_naive_dt",
+        lambda dt: wait_events_mod._normalize_utc_datetime(dt).replace(tzinfo=None),
+    )
+
+    clock = FakeClock(datetime(2026, 3, 15, 12, 0, 0, 500000, tzinfo=timezone.utc))
+    gateway = TrackingHistoryWindowGateway(
+        history_orders_seq=[[], [], [], []],
+        history_deals_seq=[[], [], [], []],
+    )
+
+    result = run_wait_event(
+        WaitEventRequest(
+            watch_for=[
+                {"type": "order_cancelled", "symbol": "EURUSD"},
+                {"type": "order_filled", "symbol": "EURUSD"},
+            ],
+            poll_interval_seconds=0.6,
+            max_wait_seconds=1.2,
+        ),
+        gateway=gateway,
+        sleep_impl=clock.sleep,
+        monotonic_impl=clock.monotonic,
+        now_utc_impl=clock.now_utc,
+    )
+
+    assert result["status"] == "timeout"
+    assert result["matched_event"] is None
+    assert gateway.history_order_calls == [
+        (
+            datetime(2026, 3, 15, 11, 59, 55, 500000),
+            datetime(2026, 3, 15, 12, 0, 0, 500000),
+        ),
+        (
+            datetime(2026, 3, 15, 12, 0, 0),
+            datetime(2026, 3, 15, 12, 0, 0, 500000),
+        ),
+        (
+            datetime(2026, 3, 15, 12, 0),
+            datetime(2026, 3, 15, 12, 0, 1, 100000),
+        ),
+        (
+            datetime(2026, 3, 15, 12, 0, 1),
+            datetime(2026, 3, 15, 12, 0, 1, 700000),
+        ),
+    ]
+    assert gateway.history_deal_calls == gateway.history_order_calls
 
 
 def test_run_wait_event_ignores_same_second_order_history_at_startup_watermark() -> None:

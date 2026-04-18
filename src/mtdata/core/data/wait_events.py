@@ -760,7 +760,11 @@ def _seed_account_history_state(
         row_watermark = _account_history_row_watermark(row, row_kind=row_kind)
         if row_watermark is not None and (watermark is None or row_watermark > watermark):
             watermark = row_watermark
-    return {"seen_keys": seen_keys, "watermark": watermark}
+    return {
+        "seen_keys": seen_keys,
+        "watermark": watermark,
+        "cursor_from_utc": _normalize_utc_datetime(started_at_utc),
+    }
 
 
 def _seed_account_history_keys(
@@ -913,10 +917,15 @@ def _collect_new_account_history_rows(
     row_kind: str,
     label: str,
 ) -> List[Any] | Dict[str, Any]:
+    cursor_from_utc = _normalize_optional_utc_datetime(state.get("cursor_from_utc")) or _normalize_utc_datetime(
+        started_at_utc
+    )
+    fetch_from_utc = _account_history_poll_from_utc(cursor_from_utc)
+    observed_at_utc = _normalize_utc_datetime(observed_at_utc)
     try:
         rows = _coerce_rows(
             fetch_impl(
-                _to_server_naive_dt(started_at_utc),
+                _to_server_naive_dt(fetch_from_utc),
                 _to_server_naive_dt(observed_at_utc),
             )
         )
@@ -925,7 +934,8 @@ def _collect_new_account_history_rows(
 
     seen_keys = state.setdefault("seen_keys", set())
     watermark = state.get("watermark")
-    started_at_millis = _datetime_epoch_millis(started_at_utc)
+    cursor_from_millis = _datetime_epoch_millis(cursor_from_utc)
+    fetch_from_millis = _datetime_epoch_millis(fetch_from_utc)
     fresh_rows: List[Any] = []
     for row in rows:
         row_key = _account_history_row_key(row, row_kind=row_kind)
@@ -933,10 +943,10 @@ def _collect_new_account_history_rows(
             continue
         row_time_millis = _row_event_time_millis(row)
         row_watermark = _account_history_row_watermark(row, row_kind=row_kind)
-        if row_time_millis is not None and row_time_millis < started_at_millis:
+        if row_time_millis is not None and row_time_millis < cursor_from_millis:
             coarse_same_second = (
                 not _row_has_millisecond_timestamp(row)
-                and row_time_millis >= (started_at_millis // 1000) * 1000
+                and row_time_millis >= fetch_from_millis
             )
             if coarse_same_second:
                 if (
@@ -962,6 +972,7 @@ def _collect_new_account_history_rows(
             watermark = row_watermark
         fresh_rows.append(row)
     state["watermark"] = watermark
+    state["cursor_from_utc"] = observed_at_utc
     return fresh_rows
 
 
@@ -3016,6 +3027,10 @@ def _first_int(*values: Optional[int]) -> Optional[int]:
 
 def _datetime_epoch_millis(value: datetime) -> int:
     return int(round(_normalize_utc_datetime(value).timestamp() * 1000.0))
+
+
+def _account_history_poll_from_utc(value: datetime) -> datetime:
+    return _normalize_utc_datetime(value).replace(microsecond=0)
 
 
 def _row_event_time_millis(row: Any) -> Optional[int]:
