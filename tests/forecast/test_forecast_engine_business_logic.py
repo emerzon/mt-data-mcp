@@ -121,6 +121,9 @@ def test_preprocessing_helpers_and_output_format():
     assert "upper_price" not in res
     assert res["digits"] == 5
     assert res["meta"] == 1
+    assert res["last_price"] == float(df["close"].iloc[-1])
+    assert res["last_price_close"] == float(df["close"].iloc[-1])
+    assert res["last_price_source"] == "close"
 
     with patch("mtdata.forecast.forecast_engine._use_client_tz", return_value=False):
         no_ci = fe._format_forecast_output(
@@ -149,6 +152,9 @@ def test_preprocessing_helpers_and_output_format():
     assert "forecast" not in no_ci
     assert "lower_price" not in no_ci
     assert "upper_price" not in no_ci
+    assert no_ci["last_price"] == float(df["close"].iloc[-1])
+    assert no_ci["last_price_close"] == float(df["close"].iloc[-1])
+    assert no_ci["last_price_source"] == "close"
 
 
 def test_prepare_ensemble_cv_uses_valid_rows_only(monkeypatch):

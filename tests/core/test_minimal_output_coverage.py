@@ -219,11 +219,17 @@ class TestNormalizeForecastPayload:
             "method": "arima",
             "horizon": 5,
             "timezone": "UTC",
+            "last_price": 101.25,
+            "last_price_close": 101.0,
+            "last_price_source": "live_tick_mid",
         }
         result = _normalize_forecast_payload(payload, verbose=True)
         assert "meta" in result
         assert result["meta"]["domain"]["symbol"] == "EURUSD"
         assert result["meta"]["domain"]["timezone"] == "UTC"
+        assert result["meta"]["domain"]["last_price"] == 101.25
+        assert result["meta"]["domain"]["last_price_close"] == 101.0
+        assert result["meta"]["domain"]["last_price_source"] == "live_tick_mid"
 
     def test_non_verbose_no_meta(self):
         payload = {

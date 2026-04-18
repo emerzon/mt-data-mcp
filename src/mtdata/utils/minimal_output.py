@@ -1801,6 +1801,9 @@ def _build_forecast_meta(payload: Dict[str, Any]) -> Dict[str, Any]:
         "horizon",
         "lookback_used",
         "forecast_trend",
+        "last_price",
+        "last_price_close",
+        "last_price_source",
     ):
         value = payload.get(key)
         if not _is_empty_value(value):

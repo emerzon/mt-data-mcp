@@ -723,6 +723,14 @@ def _format_forecast_output(
     fmt_time = _format_time_minimal_local if _use_client_tz() else _format_time_minimal
     forecast_times = [fmt_time(float(epoch)) for epoch in future_epochs]
     last_observation_time = fmt_time(float(last_epoch))
+    price_anchor_series = df["close"] if "close" in df.columns else df[base_col]
+    price_anchor_numeric = pd.to_numeric(price_anchor_series, errors="coerce")
+    finite_price_anchors = price_anchor_numeric[np.isfinite(price_anchor_numeric)]
+    last_price_close = (
+        float(finite_price_anchors.iloc[-1])
+        if len(finite_price_anchors) > 0
+        else None
+    )
 
     # Build base result
     forecast_start_epoch = float(future_epochs[0]) if future_epochs else None
@@ -745,6 +753,9 @@ def _format_forecast_output(
         "forecast_step_seconds": int(tf_secs),
         "forecast_epoch": future_epochs,
         "forecast_time": forecast_times,
+        "last_price": last_price_close,
+        "last_price_close": last_price_close,
+        "last_price_source": "close" if last_price_close is not None else None,
     }
 
     # Choose which arrays to expose
