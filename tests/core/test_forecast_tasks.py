@@ -198,9 +198,21 @@ class TestForecastTaskStatus:
         assert result["progress"]["eta_seconds"] == 30.0
         assert result["progress"]["message"] == "Halfway there"
         assert result["result"]["metadata"] == {"epochs": 12}
-        assert result["result"]["store_metadata"]["metadata_version"] == 1
-        assert result["result"]["store_metadata"]["compatibility_version"] == 1
-        assert result["result"]["store_metadata"]["last_used"] == 1065.0
+        assert result["result"]["store_metadata"] == {
+            "metadata_version": 1,
+            "compatibility_version": 1,
+            "last_used": 1065.0,
+        }
+        assert result["result"]["compatibility"]["status"] == "ok"
+        assert result["result"]["compatibility"]["warnings"] == []
+        assert result["result"]["compatibility"]["expected"] == {
+            "metadata_version": 1,
+            "compatibility_version": 1,
+        }
+        assert result["result"]["compatibility"]["actual"] == {
+            "metadata_version": 1,
+            "compatibility_version": 1,
+        }
         assert result["result"]["params_hash"] == "abc"
 
 
@@ -334,9 +346,12 @@ class TestForecastTaskList:
         assert result["tasks"][0]["params_hash"] == "hash-123"
         assert result["tasks"][0]["progress"]["metrics"] == {"rmse": 0.3}
         assert result["tasks"][1]["result"]["metadata"] == {"epochs": 20}
-        assert result["tasks"][1]["result"]["store_metadata"]["metadata_version"] == 1
-        assert result["tasks"][1]["result"]["store_metadata"]["compatibility_version"] == 1
-        assert result["tasks"][1]["result"]["store_metadata"]["last_used"] == 1010.0
+        assert result["tasks"][1]["result"]["store_metadata"] == {
+            "metadata_version": 1,
+            "compatibility_version": 1,
+            "last_used": 1010.0,
+        }
+        assert result["tasks"][1]["result"]["compatibility"]["status"] == "ok"
         assert result["tasks"][1]["result"]["model_id"] == "nhits/EURUSD_H1/x"
 
 
@@ -365,6 +380,7 @@ class TestForecastModelsList:
         assert result["models"][0]["model_id"] == "nhits/EURUSD_H1/a"
         assert result["models"][1]["method"] == "tft"
         assert "metadata" not in result["models"][0]
+        assert "compatibility" not in result["models"][0]
 
     def test_filter_by_method(self):
         from src.mtdata.core.forecast_tasks import forecast_models_list
@@ -406,9 +422,56 @@ class TestForecastModelsList:
 
         assert result["detail"] == "full"
         assert result["models"][0]["metadata"] == {"epochs": 42}
-        assert result["models"][0]["store_metadata"]["metadata_version"] == 1
-        assert result["models"][0]["store_metadata"]["compatibility_version"] == 1
-        assert result["models"][0]["store_metadata"]["last_used"] == 1012.0
+        assert result["models"][0]["store_metadata"] == {
+            "metadata_version": 1,
+            "compatibility_version": 1,
+            "last_used": 1012.0,
+        }
+        assert result["models"][0]["compatibility"]["status"] == "ok"
+        assert result["models"][0]["compatibility"]["warnings"] == []
+        assert result["models"][0]["compatibility"]["actual"] == {
+            "metadata_version": 1,
+            "compatibility_version": 1,
+        }
+
+    def test_full_detail_includes_legacy_compatibility_warning(self):
+        from src.mtdata.core.forecast_tasks import forecast_models_list
+
+        handles = [
+            TrainedModelHandle(
+                "nhits/EURUSD_H1/a",
+                "nhits",
+                "EURUSD_H1",
+                "a",
+                1000.0,
+                metadata={"epochs": 42},
+                store_metadata={
+                    "metadata_version": 1,
+                    "compatibility_version": 1,
+                    "last_used": 1012.0,
+                    "_store_metadata_source": "legacy_backfill",
+                    "_actual_metadata_version": None,
+                    "_actual_compatibility_version": None,
+                },
+            ),
+        ]
+        mock_store = MagicMock()
+        mock_store.list_models.return_value = handles
+
+        with patch(_PATCH_STORE, return_value=mock_store):
+            result = _unwrap(forecast_models_list)(detail="full")
+
+        assert result["models"][0]["store_metadata"] == {
+            "metadata_version": 1,
+            "compatibility_version": 1,
+            "last_used": 1012.0,
+        }
+        assert result["models"][0]["compatibility"]["status"] == "warning"
+        assert result["models"][0]["compatibility"]["actual"] == {
+            "metadata_version": None,
+            "compatibility_version": None,
+        }
+        assert "predates persisted store_metadata" in result["models"][0]["compatibility"]["warnings"][0]
 
 
 # ---------------------------------------------------------------------------

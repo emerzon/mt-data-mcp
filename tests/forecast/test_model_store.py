@@ -8,7 +8,10 @@ import time
 import unittest
 from pathlib import Path
 
-from mtdata.forecast.model_store import ModelStore
+from mtdata.forecast.model_store import (
+    ModelStore,
+    describe_store_metadata_compatibility,
+)
 
 
 class TestModelStoreBasics(unittest.TestCase):
@@ -207,6 +210,76 @@ class TestModelStoreTTL(unittest.TestCase):
         self.assertEqual(removed, 1)
         self.assertIsNone(self.store.find("m1", "d", "p1"))
         self.assertIsNotNone(self.store.find("m2", "d", "p2"))
+
+
+class TestModelStoreCompatibilityStatus(unittest.TestCase):
+    """Compatibility diagnostics stay warn-only and readable for legacy models."""
+
+    def setUp(self):
+        self._tmpdir = tempfile.mkdtemp(prefix="model_store_compat_")
+        self.store = ModelStore(root=self._tmpdir, ttl_seconds=3600)
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self._tmpdir, ignore_errors=True)
+
+    def test_describes_current_store_metadata_as_ok(self):
+        handle = self.store.save("m", "d", "p", b"data")
+
+        compatibility = describe_store_metadata_compatibility(handle.store_metadata)
+
+        self.assertEqual(compatibility["status"], "ok")
+        self.assertEqual(compatibility["warnings"], [])
+        self.assertEqual(
+            compatibility["expected"],
+            {"metadata_version": 1, "compatibility_version": 1},
+        )
+        self.assertEqual(
+            compatibility["actual"],
+            {"metadata_version": 1, "compatibility_version": 1},
+        )
+
+    def test_warns_when_store_metadata_is_missing_on_legacy_artifact(self):
+        self.store.save("m", "d", "p", b"data")
+        meta_path = self.store._model_dir("m", "d", "p") / "metadata.json"
+        with open(meta_path) as f:
+            meta = json.load(f)
+        meta.pop("store_metadata", None)
+        with open(meta_path, "w") as f:
+            json.dump(meta, f)
+
+        handle = self.store.find("m", "d", "p")
+        compatibility = describe_store_metadata_compatibility(handle.store_metadata)
+
+        self.assertEqual(compatibility["status"], "warning")
+        self.assertIsNone(compatibility["actual"]["metadata_version"])
+        self.assertIsNone(compatibility["actual"]["compatibility_version"])
+        self.assertIn("predates persisted store_metadata", compatibility["warnings"][0])
+        self.assertEqual(
+            compatibility["expected"],
+            {"metadata_version": 1, "compatibility_version": 1},
+        )
+
+    def test_warns_when_versions_drift_from_expected(self):
+        self.store.save("m", "d", "p", b"data")
+        meta_path = self.store._model_dir("m", "d", "p") / "metadata.json"
+        with open(meta_path) as f:
+            meta = json.load(f)
+        meta["store_metadata"]["metadata_version"] = 2
+        meta["store_metadata"]["compatibility_version"] = 3
+        with open(meta_path, "w") as f:
+            json.dump(meta, f)
+
+        handle = self.store.find("m", "d", "p")
+        compatibility = describe_store_metadata_compatibility(handle.store_metadata)
+
+        self.assertEqual(compatibility["status"], "warning")
+        self.assertEqual(
+            compatibility["actual"],
+            {"metadata_version": 2, "compatibility_version": 3},
+        )
+        self.assertIn("metadata_version=2", compatibility["warnings"][0])
+        self.assertIn("compatibility_version=3", compatibility["warnings"][1])
 
 
 class TestModelStoreAtomicWrite(unittest.TestCase):

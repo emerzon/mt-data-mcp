@@ -91,8 +91,15 @@ def _serialize_model_handle(handle: Any, *, detail: DetailLevel) -> Dict[str, An
         "created_at": handle.created_at,
     }
     if detail == "full":
+        from ..forecast.model_store import (
+            describe_store_metadata_compatibility,
+            sanitize_store_metadata,
+        )
+
+        store_metadata = dict(getattr(handle, "store_metadata", {}) or {})
         payload["metadata"] = dict(getattr(handle, "metadata", {}) or {})
-        payload["store_metadata"] = dict(getattr(handle, "store_metadata", {}) or {})
+        payload["store_metadata"] = sanitize_store_metadata(store_metadata)
+        payload["compatibility"] = describe_store_metadata_compatibility(store_metadata)
     return payload
 
 

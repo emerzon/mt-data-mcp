@@ -56,6 +56,14 @@ _DEFAULT_ROOT = os.path.join(os.path.expanduser("~"), ".mtdata", "models")
 _DEFAULT_TTL_DAYS = 7.0
 _MODEL_STORE_METADATA_VERSION = 1
 _MODEL_STORE_COMPATIBILITY_VERSION = 1
+_STORE_METADATA_SOURCE_KEY = "_store_metadata_source"
+_STORE_METADATA_ACTUAL_METADATA_VERSION_KEY = "_actual_metadata_version"
+_STORE_METADATA_ACTUAL_COMPATIBILITY_VERSION_KEY = "_actual_compatibility_version"
+_STORE_METADATA_INTERNAL_KEYS = frozenset({
+    _STORE_METADATA_SOURCE_KEY,
+    _STORE_METADATA_ACTUAL_METADATA_VERSION_KEY,
+    _STORE_METADATA_ACTUAL_COMPATIBILITY_VERSION_KEY,
+})
 
 
 def _env_root() -> str:
@@ -68,6 +76,74 @@ def _env_ttl_seconds() -> float:
     except (TypeError, ValueError):
         days = _DEFAULT_TTL_DAYS
     return max(0.0, days * 86400.0)
+
+
+def sanitize_store_metadata(store_metadata: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Return the public subset of store metadata for API payloads."""
+    return {
+        key: value
+        for key, value in dict(store_metadata or {}).items()
+        if key not in _STORE_METADATA_INTERNAL_KEYS
+    }
+
+
+def describe_store_metadata_compatibility(
+    store_metadata: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Classify store metadata compatibility without blocking model reuse."""
+    payload = dict(store_metadata or {})
+    expected = {
+        "metadata_version": _MODEL_STORE_METADATA_VERSION,
+        "compatibility_version": _MODEL_STORE_COMPATIBILITY_VERSION,
+    }
+    actual = {
+        "metadata_version": payload.get(
+            _STORE_METADATA_ACTUAL_METADATA_VERSION_KEY,
+            payload.get("metadata_version"),
+        ),
+        "compatibility_version": payload.get(
+            _STORE_METADATA_ACTUAL_COMPATIBILITY_VERSION_KEY,
+            payload.get("compatibility_version"),
+        ),
+    }
+    warnings: List[str] = []
+    source = payload.get(_STORE_METADATA_SOURCE_KEY, "persisted")
+
+    if source == "legacy_backfill":
+        warnings.append(
+            "Artifact predates persisted store_metadata; compatibility values were "
+            "inferred so the model remains readable.",
+        )
+    else:
+        if actual["metadata_version"] is None:
+            warnings.append(
+                f"store_metadata.metadata_version is missing; expected "
+                f"{expected['metadata_version']}.",
+            )
+        elif actual["metadata_version"] != expected["metadata_version"]:
+            warnings.append(
+                f"store_metadata.metadata_version={actual['metadata_version']} differs "
+                f"from expected {expected['metadata_version']}.",
+            )
+
+        if actual["compatibility_version"] is None:
+            warnings.append(
+                "store_metadata.compatibility_version is missing; expected "
+                f"{expected['compatibility_version']}.",
+            )
+        elif actual["compatibility_version"] != expected["compatibility_version"]:
+            warnings.append(
+                "store_metadata.compatibility_version="
+                f"{actual['compatibility_version']} differs from expected "
+                f"{expected['compatibility_version']}.",
+            )
+
+    return {
+        "status": "warning" if warnings else "ok",
+        "warnings": warnings,
+        "expected": expected,
+        "actual": actual,
+    }
 
 
 class ModelStore:
@@ -265,6 +341,7 @@ class ModelStore:
                 created_at=created_at,
                 last_used=last_used,
                 store_metadata=meta.get("store_metadata"),
+                include_diagnostics=True,
             ),
         )
 
@@ -293,14 +370,30 @@ class ModelStore:
         created_at: float,
         last_used: Optional[float] = None,
         store_metadata: Optional[Dict[str, Any]] = None,
+        include_diagnostics: bool = False,
     ) -> Dict[str, Any]:
-        payload = dict(store_metadata or {})
+        raw_store_metadata = store_metadata if isinstance(store_metadata, dict) else None
+        payload = dict(raw_store_metadata or {})
         payload.setdefault("metadata_version", _MODEL_STORE_METADATA_VERSION)
         payload.setdefault("compatibility_version", _MODEL_STORE_COMPATIBILITY_VERSION)
         payload["last_used"] = ModelStore._coerce_timestamp(
             last_used if last_used is not None else payload.get("last_used"),
             created_at,
         )
+        if include_diagnostics:
+            payload[_STORE_METADATA_SOURCE_KEY] = (
+                "persisted" if raw_store_metadata is not None else "legacy_backfill"
+            )
+            payload[_STORE_METADATA_ACTUAL_METADATA_VERSION_KEY] = (
+                raw_store_metadata.get("metadata_version")
+                if raw_store_metadata is not None
+                else None
+            )
+            payload[_STORE_METADATA_ACTUAL_COMPATIBILITY_VERSION_KEY] = (
+                raw_store_metadata.get("compatibility_version")
+                if raw_store_metadata is not None
+                else None
+            )
         return payload
 
     @staticmethod
