@@ -177,14 +177,21 @@ def _market_depth_fetch_impl(symbol: str, spread: bool = False, compact: bool = 
                 sell_orders = []
 
                 for level in depth:
+                    try:
+                        price = float(level["price"])
+                        volume = float(level["volume"])
+                        volume_real = float(level["volume_real"])
+                        level_type = int(level["type"])
+                    except (KeyError, TypeError, ValueError):
+                        continue
                     order_data = {
-                        "price": float(level["price"]),
-                        "price_display": _price_display(level["price"]),
-                        "volume": float(level["volume"]),
-                        "volume_real": float(level["volume_real"]),
+                        "price": price,
+                        "price_display": _price_display(price),
+                        "volume": volume,
+                        "volume_real": volume_real,
                     }
 
-                    if int(level["type"]) == 0:
+                    if level_type == 0:
                         buy_orders.append(order_data)
                     else:
                         sell_orders.append(order_data)
@@ -210,14 +217,25 @@ def _market_depth_fetch_impl(symbol: str, spread: bool = False, compact: bool = 
                     },
                 }
                 if spread and buy_orders and sell_orders:
-                    best_bid = max(float(row.get("price")) for row in buy_orders if row.get("price") is not None)
-                    best_ask = min(float(row.get("price")) for row in sell_orders if row.get("price") is not None)
-                    spread_metrics = _compute_spread_metrics(best_bid, best_ask)
-                    if spread_metrics is not None:
-                        out["data"]["best_bid"] = best_bid
-                        out["data"]["best_ask"] = best_ask
-                        out["data"].update(spread_metrics)
-                        out["capabilities"]["spread_overlay_applied"] = True
+                    valid_buy_prices = [
+                        float(row.get("price"))
+                        for row in buy_orders
+                        if row.get("price") is not None
+                    ]
+                    valid_sell_prices = [
+                        float(row.get("price"))
+                        for row in sell_orders
+                        if row.get("price") is not None
+                    ]
+                    if valid_buy_prices and valid_sell_prices:
+                        best_bid = max(valid_buy_prices)
+                        best_ask = min(valid_sell_prices)
+                        spread_metrics = _compute_spread_metrics(best_bid, best_ask)
+                        if spread_metrics is not None:
+                            out["data"]["best_bid"] = best_bid
+                            out["data"]["best_ask"] = best_ask
+                            out["data"].update(spread_metrics)
+                            out["capabilities"]["spread_overlay_applied"] = True
                 out["query_latency_ms"] = round((time.perf_counter() - started) * 1000.0, 3)
                 return out
 

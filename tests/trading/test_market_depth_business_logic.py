@@ -217,6 +217,28 @@ def test_market_depth_full_depth_includes_spread_metrics_when_requested() -> Non
     assert out["capabilities"]["spread_overlay_applied"] is True
 
 
+def test_market_depth_spread_overlay_skips_all_none_book_prices() -> None:
+    depth = [
+        {"price": None, "volume": 1.0, "volume_real": 1.0, "type": 0},
+        {"price": None, "volume": 2.0, "volume_real": 2.0, "type": 1},
+    ]
+    with patch("mtdata.core.market_depth.mt5") as mt5:
+        mt5.symbol_select.return_value = True
+        mt5.symbol_info.return_value = SimpleNamespace(
+            digits=2,
+            point=0.01,
+            trade_tick_size=0.01,
+            trade_tick_value=1.0,
+        )
+        mt5.market_book_get.return_value = depth
+        out = _raw_market_depth_fetch("BTCUSD", spread=True)
+
+    assert out["success"] is True
+    assert "best_bid" not in out["data"]
+    assert "best_ask" not in out["data"]
+    assert "spread_overlay_applied" not in out["capabilities"]
+
+
 def test_market_ticker_returns_lightweight_spread_snapshot() -> None:
     tick = SimpleNamespace(
         bid=200.0,
