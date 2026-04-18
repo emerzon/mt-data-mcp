@@ -815,6 +815,9 @@ def _forecast_list_methods_impl(  # noqa: C901
                     "execution",
                     {"library": row_out["namespace"], "method": row_out["adapter_method"]},
                 )
+                supports = capability.get("supports", row_out.get("supports"))
+                if isinstance(supports, dict) and isinstance(supports.get("ci"), bool):
+                    row_out["supports_ci"] = bool(supports.get("ci"))
                 row_out["display_name"] = capability.get("display_name", method_name)
                 row_out["aliases"] = capability.get("aliases", [])
                 row_out["source"] = capability.get("source", "registry")
@@ -839,7 +842,8 @@ def _forecast_list_methods_impl(  # noqa: C901
             }
             out_full["note"] = (
                 "Methods include namespace/concept/method_id fields to disambiguate similarly named implementations "
-                "(for example native:theta vs statsforecast:theta)."
+                "(for example native:theta vs statsforecast:theta). "
+                "`supports_ci` indicates whether the method reports built-in interval support."
             )
             return out_full
 

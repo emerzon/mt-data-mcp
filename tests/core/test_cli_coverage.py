@@ -1044,6 +1044,7 @@ class TestFormatResultForCli:
                         "available": True,
                         "description": "Classic theta forecast.",
                         "params": [{"name": "window_size"}],
+                        "supports_ci": True,
                         "concept": "theta",
                         "method_id": "native:theta",
                     },
@@ -1054,6 +1055,7 @@ class TestFormatResultForCli:
                         "available": True,
                         "description": "StatsForecast theta.",
                         "params": [],
+                        "supports_ci": True,
                         "concept": "theta",
                         "method_id": "statsforecast:theta",
                     },
@@ -1066,7 +1068,7 @@ class TestFormatResultForCli:
         )
 
         assert (
-            "methods[2]{method,library,category,available,description,params_count,concept,method_id}"
+            "methods[2]{method,library,category,available,description,params_count,supports_ci,concept,method_id}"
             in result
         )
         assert "Classic theta forecast." in result

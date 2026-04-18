@@ -493,6 +493,8 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert "method_id" in full["methods"][0]
     assert "execution" in full["methods"][0]
     assert "selector" in full["methods"][0]
+    assert full["methods"][0]["supports_ci"] is True
+    assert full["methods"][1]["supports_ci"] is False
     assert full["methods"][1]["execution"] == {"library": "native", "method": "mlf_rf"}
 
     monkeypatch.setattr(

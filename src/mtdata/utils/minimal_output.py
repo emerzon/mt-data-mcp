@@ -1447,6 +1447,7 @@ def _normalize_forecast_methods_payload(
                             if description
                             else None,
                             "params_count": params_count,
+                            "supports_ci": row.get("supports_ci"),
                             "concept": row.get("concept"),
                             "method_id": row.get("method_id"),
                         }.items()
