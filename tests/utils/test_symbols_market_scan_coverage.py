@@ -121,6 +121,7 @@ class TestSymbolsTopMarkets:
         assert result["timeframe_requested"] == "H1"
         assert result["timeframe_used"] is None
         assert [row["symbol"] for row in result["data"]] == ["EURUSD", "XAUUSD"]
+        assert all(row["pricing_basis"] == "per_1_lot_estimate" for row in result["data"])
 
     @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
     @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")

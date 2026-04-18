@@ -386,8 +386,10 @@ def _build_market_scan_spread_row(
     spread_points = (spread_abs / point) if point > 0 else None
     spread_pct = ((spread_abs / mid) * 100.0) if mid > 0 else None
     spread_usd = None
+    pricing_basis = "quote_only"
     if tick_size > 0 and tick_value > 0:
         spread_usd = (spread_abs / tick_size) * tick_value
+        pricing_basis = "per_1_lot_estimate"
 
     row = _market_scan_base_row(symbol)
     row.update(
@@ -398,6 +400,7 @@ def _build_market_scan_spread_row(
             "spread_points": _market_scan_round(spread_points, digits=4),
             "spread_pct": _market_scan_round(spread_pct, digits=6),
             "spread_usd": _market_scan_round(spread_usd, digits=6),
+            "pricing_basis": pricing_basis,
         }
     )
     return row, None
@@ -943,6 +946,7 @@ def symbols_top_markets(  # noqa: C901
                         "spread_points",
                         "spread_pct",
                         "spread_usd",
+                        "pricing_basis",
                     ],
                     spread_rows,
                 )
@@ -1013,6 +1017,7 @@ def symbols_top_markets(  # noqa: C901
                             "spread_points",
                             "spread_pct",
                             "spread_usd",
+                            "pricing_basis",
                         ],
                         spread_rows,
                     ),
