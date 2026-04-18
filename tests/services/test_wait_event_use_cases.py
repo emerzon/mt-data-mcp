@@ -1869,6 +1869,91 @@ def test_run_wait_event_ignores_replayed_preexisting_order_history() -> None:
     assert result["matched_event"] is None
 
 
+def test_run_wait_event_ignores_same_second_order_history_at_startup_watermark() -> None:
+    clock = FakeClock(datetime(2026, 3, 15, 12, 0, 0, 500000, tzinfo=timezone.utc))
+    gateway = SequenceGateway(
+        history_orders_seq=[
+            [
+                {
+                    "ticket": 7002,
+                    "symbol": "EURUSD",
+                    "state": 4,
+                    "type": "buy",
+                    "time_setup": int(clock.now_utc().timestamp()),
+                }
+            ],
+            [
+                {
+                    "ticket": 7001,
+                    "symbol": "EURUSD",
+                    "state": 4,
+                    "type": "buy",
+                    "time_setup": int(clock.now_utc().timestamp()),
+                }
+            ],
+        ]
+    )
+
+    result = run_wait_event(
+        WaitEventRequest(
+            watch_for=[{"type": "order_cancelled", "symbol": "EURUSD"}],
+            poll_interval_seconds=0.1,
+            max_wait_seconds=0.2,
+        ),
+        gateway=gateway,
+        sleep_impl=clock.sleep,
+        monotonic_impl=clock.monotonic,
+        now_utc_impl=clock.now_utc,
+    )
+
+    assert result["status"] == "timeout"
+    assert result["matched_event"] is None
+
+
+def test_run_wait_event_ignores_same_second_deal_history_at_startup_watermark() -> None:
+    clock = FakeClock(datetime(2026, 3, 15, 12, 0, 0, 500000, tzinfo=timezone.utc))
+    gateway = SequenceGateway(
+        positions_seq=[[], [], []],
+        history_deals_seq=[
+            [
+                {
+                    "ticket": 3002,
+                    "position_id": 9002,
+                    "symbol": "BTCUSD",
+                    "entry": 3,
+                    "type": "sell",
+                    "time": int(clock.now_utc().timestamp()),
+                }
+            ],
+            [
+                {
+                    "ticket": 3001,
+                    "position_id": 9001,
+                    "symbol": "BTCUSD",
+                    "entry": 3,
+                    "type": "sell",
+                    "time": int(clock.now_utc().timestamp()),
+                }
+            ],
+        ],
+    )
+
+    result = run_wait_event(
+        WaitEventRequest(
+            watch_for=[{"type": "position_closed", "symbol": "BTCUSD"}],
+            poll_interval_seconds=0.1,
+            max_wait_seconds=0.2,
+        ),
+        gateway=gateway,
+        sleep_impl=clock.sleep,
+        monotonic_impl=clock.monotonic,
+        now_utc_impl=clock.now_utc,
+    )
+
+    assert result["status"] == "timeout"
+    assert result["matched_event"] is None
+
+
 def test_run_wait_event_matches_position_closed_when_position_disappears() -> None:
     gateway = SequenceGateway(
         positions_seq=[

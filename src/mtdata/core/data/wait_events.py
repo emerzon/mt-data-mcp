@@ -714,7 +714,7 @@ def _build_account_history_state(
 ) -> Dict[str, Any]:
     state: Dict[str, Any] = {}
     if needs_history_deals:
-        seeded = _seed_account_history_keys(
+        seeded = _seed_account_history_state(
             fetch_impl=gateway.history_deals_get,
             started_at_utc=started_at_utc,
             row_kind="deal",
@@ -722,9 +722,9 @@ def _build_account_history_state(
         )
         if isinstance(seeded, dict) and "error" in seeded:
             return seeded
-        state["history_deals"] = {"seen_keys": seeded}
+        state["history_deals"] = seeded
     if needs_history_orders:
-        seeded = _seed_account_history_keys(
+        seeded = _seed_account_history_state(
             fetch_impl=gateway.history_orders_get,
             started_at_utc=started_at_utc,
             row_kind="order",
@@ -732,17 +732,17 @@ def _build_account_history_state(
         )
         if isinstance(seeded, dict) and "error" in seeded:
             return seeded
-        state["history_orders"] = {"seen_keys": seeded}
+        state["history_orders"] = seeded
     return state
 
 
-def _seed_account_history_keys(
+def _seed_account_history_state(
     *,
     fetch_impl: Any,
     started_at_utc: datetime,
     row_kind: str,
     label: str,
-) -> set[tuple[Any, ...]] | Dict[str, Any]:
+) -> Dict[str, Any]:
     seed_from_utc = started_at_utc - timedelta(seconds=_ACCOUNT_HISTORY_SEED_LOOKBACK_SECONDS)
     try:
         rows = fetch_impl(
@@ -752,11 +752,33 @@ def _seed_account_history_keys(
     except Exception as exc:
         return {"error": f"Failed to fetch {label}: {exc}"}
     seen_keys: set[tuple[Any, ...]] = set()
+    watermark: Optional[tuple[Any, ...]] = None
     for row in _coerce_rows(rows):
         row_key = _account_history_row_key(row, row_kind=row_kind)
         if row_key is not None:
             seen_keys.add(row_key)
-    return seen_keys
+        row_watermark = _account_history_row_watermark(row, row_kind=row_kind)
+        if row_watermark is not None and (watermark is None or row_watermark > watermark):
+            watermark = row_watermark
+    return {"seen_keys": seen_keys, "watermark": watermark}
+
+
+def _seed_account_history_keys(
+    *,
+    fetch_impl: Any,
+    started_at_utc: datetime,
+    row_kind: str,
+    label: str,
+) -> set[tuple[Any, ...]] | Dict[str, Any]:
+    seeded = _seed_account_history_state(
+        fetch_impl=fetch_impl,
+        started_at_utc=started_at_utc,
+        row_kind=row_kind,
+        label=label,
+    )
+    if isinstance(seeded, dict) and "error" in seeded:
+        return seeded
+    return set(seeded.get("seen_keys", set()))
 
 
 def _find_preexisting_match(
@@ -902,6 +924,7 @@ def _collect_new_account_history_rows(
         return {"error": f"Failed to fetch {label}: {exc}"}
 
     seen_keys = state.setdefault("seen_keys", set())
+    watermark = state.get("watermark")
     started_at_millis = _datetime_epoch_millis(started_at_utc)
     fresh_rows: List[Any] = []
     for row in rows:
@@ -909,22 +932,36 @@ def _collect_new_account_history_rows(
         if row_key is not None and row_key in seen_keys:
             continue
         row_time_millis = _row_event_time_millis(row)
+        row_watermark = _account_history_row_watermark(row, row_kind=row_kind)
         if row_time_millis is not None and row_time_millis < started_at_millis:
             coarse_same_second = (
                 not _row_has_millisecond_timestamp(row)
                 and row_time_millis >= (started_at_millis // 1000) * 1000
             )
             if coarse_same_second:
+                if (
+                    row_watermark is not None
+                    and watermark is not None
+                    and row_watermark <= watermark
+                ):
+                    if row_key is not None:
+                        seen_keys.add(row_key)
+                    continue
                 fresh_rows.append(row)
                 if row_key is not None:
                     seen_keys.add(row_key)
+                if row_watermark is not None and (watermark is None or row_watermark > watermark):
+                    watermark = row_watermark
                 continue
             if row_key is not None:
                 seen_keys.add(row_key)
             continue
         if row_key is not None:
             seen_keys.add(row_key)
+        if row_watermark is not None and (watermark is None or row_watermark > watermark):
+            watermark = row_watermark
         fresh_rows.append(row)
+    state["watermark"] = watermark
     return fresh_rows
 
 
@@ -3026,6 +3063,38 @@ def _account_history_row_key(row: Any, *, row_kind: str) -> Optional[tuple[Any, 
     if not any(value is not None for value in key[1:]):
         return None
     return key
+
+
+def _account_history_row_watermark(row: Any, *, row_kind: str) -> Optional[tuple[Any, ...]]:
+    ticket = _row_int(row, "ticket")
+    order_ticket = _first_int(
+        _row_int(row, "order"),
+        _row_int(row, "order_ticket"),
+    )
+    position_ticket = _first_int(
+        _row_int(row, "position_id"),
+        _row_int(row, "position"),
+        _row_int(row, "position_by_id"),
+    )
+    time_millis = _row_event_time_millis(row)
+    symbol = str(_row_value(row, "symbol") or "").upper().strip()
+    entry = _row_value(row, "entry")
+    state = _row_value(row, "state")
+    side = _row_value(row, "type")
+    watermark = (
+        -1 if time_millis is None else time_millis,
+        -1 if ticket is None else ticket,
+        -1 if order_ticket is None else order_ticket,
+        -1 if position_ticket is None else position_ticket,
+        symbol,
+        "" if entry is None else str(entry),
+        "" if state is None else str(state),
+        "" if side is None else str(side),
+        str(row_kind),
+    )
+    if watermark[:4] == (-1, -1, -1, -1) and not any(watermark[4:8]):
+        return None
+    return watermark
 
 
 def _row_has_millisecond_timestamp(row: Any) -> bool:
