@@ -43,6 +43,7 @@ _POSITION_STATE_EVENT_TYPES = {"position_opened", "position_closed", "stop_threa
 _ORDER_POSITION_EVENT_TYPES = _ORDER_STATE_EVENT_TYPES | _POSITION_STATE_EVENT_TYPES
 _HISTORY_DEAL_EVENT_TYPES = {"order_filled", "position_opened", "position_closed", "tp_hit", "sl_hit"}
 _HISTORY_ORDER_EVENT_TYPES = {"order_cancelled"}
+_WAIT_EVENT_IDENTITY_FIELDS = ("symbol", "ticket", "order_ticket", "position_ticket")
 _MARKET_EVENT_TYPES = {
     "price_change",
     "volume_spike",
@@ -593,6 +594,11 @@ def _run_candle_boundary_only(
     now_utc: datetime,
 ) -> Dict[str, Any]:
     preview = dict(boundary["preview"])
+    identity_payload = _wait_result_identity_payload(
+        request,
+        watch_for_payload=[],
+        matched_event=None,
+    )
     quote_payload = _wait_result_quote_payload(
         request=request,
         watch_for_payload=[],
@@ -617,6 +623,8 @@ def _run_candle_boundary_only(
             "timeframe": boundary["timeframe"],
             "buffer_seconds": boundary["buffer_seconds"],
         }
+        if identity_payload:
+            preview.update(identity_payload)
         if quote_payload:
             preview.update(quote_payload)
         return preview
@@ -637,6 +645,8 @@ def _run_candle_boundary_only(
         None if request.max_wait_seconds is None else float(request.max_wait_seconds)
     )
     payload["success"] = True
+    if identity_payload:
+        payload.update(identity_payload)
     started_at_value = _normalize_optional_utc_datetime(payload.get("started_at_utc"))
     if started_at_value is not None:
         payload["observed_at_utc"] = (
@@ -1745,6 +1755,7 @@ def _build_wait_result(
     quote_payload: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     elapsed_seconds = max(0.0, (observed_at_utc - started_at_utc).total_seconds())
+    matched_event = _with_wait_event_identity(matched_event)
     result = {
         "success": True,
         "status": status,
@@ -1768,9 +1779,68 @@ def _build_wait_result(
             "accept_preexisting": bool(request.accept_preexisting),
         },
     }
+    result.update(
+        _wait_result_identity_payload(
+            request,
+            watch_for_payload=watch_for_payload,
+            matched_event=matched_event,
+        )
+    )
     if quote_payload:
         result.update(quote_payload)
     return result
+
+
+def _wait_event_identity_payload(item: Any) -> Dict[str, Any]:
+    if not isinstance(item, dict):
+        return {}
+    observed = item.get("observed")
+    criteria = item.get("criteria")
+    identity: Dict[str, Any] = {}
+    for field_name in _WAIT_EVENT_IDENTITY_FIELDS:
+        value = item.get(field_name)
+        if value is None and isinstance(observed, dict):
+            value = observed.get(field_name)
+        if value is None and isinstance(criteria, dict):
+            value = criteria.get(field_name)
+        if field_name == "symbol":
+            value = str(value or "").upper().strip() or None
+        if value is not None:
+            identity[field_name] = value
+    return identity
+
+
+def _with_wait_event_identity(item: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if not isinstance(item, dict):
+        return item
+    identity = _wait_event_identity_payload(item)
+    if not identity:
+        return item
+    out = dict(item)
+    for field_name, value in identity.items():
+        out.setdefault(field_name, value)
+    return out
+
+
+def _wait_result_identity_payload(
+    request: WaitEventRequest,
+    *,
+    watch_for_payload: List[Dict[str, Any]],
+    matched_event: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    identity = _wait_event_identity_payload(matched_event)
+    symbol = identity.get("symbol") or _resolved_wait_result_symbol(
+        request,
+        watch_for_payload=watch_for_payload,
+    )
+    if symbol is not None:
+        identity["symbol"] = str(symbol).upper().strip()
+    for field_name in ("order_ticket", "position_ticket"):
+        if identity.get(field_name) is None:
+            value = getattr(request, field_name, None)
+            if value is not None:
+                identity[field_name] = value
+    return identity
 
 
 def _resolved_wait_result_symbol(

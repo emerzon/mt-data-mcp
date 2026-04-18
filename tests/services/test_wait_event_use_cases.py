@@ -266,8 +266,10 @@ def test_wait_event_tool_compacts_matched_event_by_default(monkeypatch) -> None:
             "status": "matched",
             "matched": True,
             "event": "price_touch_level",
+            "symbol": request.symbol,
             "matched_event": {
                 "type": "price_touch_level",
+                "symbol": request.symbol,
                 "criteria": {
                     "symbol": request.symbol,
                     "level": 100.0,
@@ -311,12 +313,14 @@ def test_wait_event_tool_compacts_matched_event_by_default(monkeypatch) -> None:
 
     assert result["matched_event"] == {
         "type": "price_touch_level",
+        "symbol": "BTCUSD",
         "observed": {
             "symbol": "BTCUSD",
             "current_price": 100.02,
             "distance": 0.02,
         },
     }
+    assert result["symbol"] == "BTCUSD"
     assert result["bid"] == 100.01
     assert result["ask"] == 100.03
     assert result["observed_at_utc"] == "2026-04-06T02:00:30+00:00"
@@ -325,6 +329,65 @@ def test_wait_event_tool_compacts_matched_event_by_default(monkeypatch) -> None:
     assert "criteria" not in result
     assert "started_at_utc" not in result
     assert "polls" not in result
+
+
+def test_wait_event_tool_preserves_shared_account_identity_fields(monkeypatch) -> None:
+    def _mock_run_wait_event(request, gateway):
+        return {
+            "success": True,
+            "status": "matched",
+            "matched": True,
+            "event": "order_created",
+            "symbol": request.symbol,
+            "ticket": 7001,
+            "order_ticket": 7001,
+            "matched_event": {
+                "type": "order_created",
+                "symbol": request.symbol,
+                "ticket": 7001,
+                "order_ticket": 7001,
+                "observed": {
+                    "symbol": request.symbol,
+                    "ticket": 7001,
+                    "order_ticket": 7001,
+                    "side": "buy",
+                },
+            },
+            "started_at_utc": "2026-04-06T02:00:29.017205+00:00",
+            "observed_at_utc": "2026-04-06T02:00:30+00:00",
+            "elapsed_seconds": 1.0,
+            "polls": 2,
+            "poll_interval_seconds": request.poll_interval_seconds,
+        }
+
+    monkeypatch.setattr(core_data, "run_wait_event", _mock_run_wait_event)
+    monkeypatch.setattr(core_data, "get_mt5_gateway", lambda ensure_connection_impl=None: object())
+
+    raw = getattr(core_data.wait_event, "__wrapped__", core_data.wait_event)
+    result = raw(
+        "EURUSD",
+        "M1",
+        True,
+        [{"type": "order_created", "symbol": "EURUSD"}],
+        None,
+        False,
+    )
+
+    assert result["symbol"] == "EURUSD"
+    assert result["ticket"] == 7001
+    assert result["order_ticket"] == 7001
+    assert result["matched_event"] == {
+        "type": "order_created",
+        "symbol": "EURUSD",
+        "ticket": 7001,
+        "order_ticket": 7001,
+        "observed": {
+            "symbol": "EURUSD",
+            "ticket": 7001,
+            "order_ticket": 7001,
+            "side": "buy",
+        },
+    }
 
 
 def test_support_resistance_watchers_use_compact_levels(monkeypatch) -> None:
@@ -470,7 +533,13 @@ def test_run_wait_event_matches_new_order() -> None:
     )
 
     assert result["status"] == "matched"
+    assert result["symbol"] == "EURUSD"
+    assert result["ticket"] == 123
+    assert result["order_ticket"] == 123
     assert result["matched_event"]["type"] == "order_created"
+    assert result["matched_event"]["symbol"] == "EURUSD"
+    assert result["matched_event"]["ticket"] == 123
+    assert result["matched_event"]["order_ticket"] == 123
     assert result["matched_event"]["observed"]["ticket"] == 123
     assert result["bid"] == 1.101
     assert result["ask"] == 1.1012
@@ -587,6 +656,7 @@ def test_run_wait_event_infers_candle_boundary_from_request_timeframe(monkeypatc
 
     assert result["status"] == "completed"
     assert result["event"] == "candle_close"
+    assert result["symbol"] == "EURUSD"
     assert result["boundary_event"]["type"] == "candle_close"
     assert result["boundary_event"]["timeframe"] == "M1"
 
@@ -1008,7 +1078,9 @@ def test_run_wait_event_still_matches_pre_boundary_market_event_after_oversleep(
     )
 
     assert result["status"] == "matched"
+    assert result["symbol"] == "EURUSD"
     assert result["matched_event"]["type"] == "price_touch_level"
+    assert result["matched_event"]["symbol"] == "EURUSD"
 
 
 def test_run_wait_event_stops_on_candle_boundary_when_no_watch_event(monkeypatch) -> None:
@@ -1820,7 +1892,12 @@ def test_run_wait_event_matches_position_closed_when_position_disappears() -> No
     )
 
     assert result["status"] == "matched"
+    assert result["symbol"] == "BTCUSD"
+    assert result["position_ticket"] == 9002
     assert result["matched_event"]["type"] == "position_closed"
+    assert result["matched_event"]["symbol"] == "BTCUSD"
+    assert result["matched_event"]["position_ticket"] == 9002
+    assert "ticket" not in result["matched_event"]
     assert result["matched_event"]["observed"]["ticket"] is None
     assert result["matched_event"]["observed"]["position_ticket"] == 9002
     assert result["matched_event"]["observed"]["inferred"] is True

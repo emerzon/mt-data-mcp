@@ -21,6 +21,7 @@ from .use_cases import (
     run_data_fetch_ticks,
     run_wait_event,
 )
+from .wait_events import _WAIT_EVENT_IDENTITY_FIELDS
 
 # Explicitly define what should be exported for '*' imports
 __all__ = ['data_fetch_candles', 'data_fetch_ticks', 'wait_event']
@@ -244,6 +245,10 @@ def _compact_wait_event_public_result(
         event_type = matched_event.get("type")
         if event_type is not None:
             compact_matched["type"] = event_type
+        for field_name in _WAIT_EVENT_IDENTITY_FIELDS:
+            value = matched_event.get(field_name)
+            if value is not None:
+                compact_matched[field_name] = value
         observed = matched_event.get("observed")
         if isinstance(observed, dict) and observed:
             compact_matched["observed"] = dict(observed)
