@@ -10,7 +10,7 @@ from pydantic import ValidationError
 from mtdata.core import data as core_data
 from mtdata.core.data import wait_events as wait_events_mod
 from mtdata.core.data.requests import WaitEventRequest
-from mtdata.core.data.use_cases import run_wait_event
+from mtdata.core.data.use_cases import _wait_event_needs_gateway, run_wait_event
 
 
 class FakeClock:
@@ -503,6 +503,12 @@ def test_wait_event_request_rejects_explicit_empty_watchers_without_boundary() -
         match="watch_for cannot be an explicit empty list unless end_on or timeframe is provided",
     ):
         WaitEventRequest(watch_for=[])
+
+
+def test_wait_event_gateway_check_treats_constructed_none_boundary_as_empty() -> None:
+    request = WaitEventRequest.model_construct(watch_for=[], end_on=None, timeframe="M1")
+
+    assert _wait_event_needs_gateway(request) is False
 
 
 def test_run_wait_event_uses_all_default_watchers_when_omitted() -> None:

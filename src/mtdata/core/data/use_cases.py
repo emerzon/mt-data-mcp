@@ -223,4 +223,4 @@ def _wait_event_needs_gateway(request: WaitEventRequest) -> bool:
         return True
     if request.watch_for:
         return True
-    return any(getattr(item, "type", None) != "candle_close" for item in request.end_on)
+    return any(getattr(item, "type", None) != "candle_close" for item in (request.end_on or ()))
