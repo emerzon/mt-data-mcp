@@ -603,6 +603,23 @@ class TestApplyDenoise:
         warnings = df.attrs.get("denoise_warnings", [])
         assert any("returned output identical to input" in w for w in warnings)
 
+    def test_constant_series_does_not_trigger_identity_warning(self):
+        df = pd.DataFrame({"close": np.ones(20)})
+
+        added = _apply_denoise(
+            df,
+            {
+                "method": "ema",
+                "columns": ["close"],
+                "params": {"span": 5},
+                "keep_original": True,
+            },
+        )
+
+        assert "close_dn" in added
+        warnings = df.attrs.get("denoise_warnings", [])
+        assert not any("returned output identical to input" in w for w in warnings)
+
 
 # ======================================================================
 # 4. _resolve_denoise_base_col

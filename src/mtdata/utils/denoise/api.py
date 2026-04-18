@@ -372,8 +372,26 @@ def _apply_denoise(
         try:
             orig_vals = df[col].to_numpy(dtype=float, na_value=np.nan)
             new_vals = y.to_numpy(dtype=float, na_value=np.nan)
-            if orig_vals.shape == new_vals.shape and np.allclose(
-                orig_vals, new_vals, equal_nan=True, rtol=0, atol=0,
+            finite_orig = orig_vals[np.isfinite(orig_vals)]
+            has_meaningful_variation = (
+                finite_orig.size > 1
+                and not np.allclose(
+                    finite_orig,
+                    finite_orig[0],
+                    rtol=0.0,
+                    atol=1e-12,
+                )
+            )
+            if (
+                has_meaningful_variation
+                and orig_vals.shape == new_vals.shape
+                and np.allclose(
+                    orig_vals,
+                    new_vals,
+                    equal_nan=True,
+                    rtol=1e-9,
+                    atol=1e-12,
+                )
             ):
                 _append_denoise_warning(
                     df,
