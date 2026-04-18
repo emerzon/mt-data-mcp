@@ -109,6 +109,7 @@ class TestLabelsTripleBarrier:
         mock_hist.return_value = _make_df(60)
         result = _get_raw_fn()("EURUSD", horizon=12)
         assert "error" in result
+        assert "forecast_barrier_optimize" in str(result["error"])
 
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
     @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")

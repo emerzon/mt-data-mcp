@@ -263,7 +263,11 @@ def labels_triple_barrier(
             )
             if sample_tp is None or sample_sl is None:
                 return {
-                    "error": "Provide barriers via tp_abs/sl_abs or tp_pct/sl_pct or tp_pips/sl_pips"
+                    "error": (
+                        "Provide barriers via tp_abs/sl_abs or tp_pct/sl_pct or "
+                        "tp_pips/sl_pips. If you need help choosing values, run "
+                        "forecast_barrier_optimize first."
+                    )
                 }
             if not _barrier_prices_are_valid(
                 price=sample_entry_price,
