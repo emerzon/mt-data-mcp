@@ -1628,8 +1628,8 @@ def run_trade_risk_analyze(  # noqa: C901
             if account is None:
                 return {"error": "Failed to get account info"}
 
-            equity = float(account.equity)
-            currency = account.currency
+            equity = validation._safe_float_attr(account, "equity", 0.0)
+            currency = getattr(account, "currency", None)
             positions = (
                 gateway.positions_get(symbol=request.symbol)
                 if request.symbol

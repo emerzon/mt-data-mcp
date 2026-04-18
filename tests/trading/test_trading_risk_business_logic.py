@@ -138,6 +138,19 @@ def test_trade_risk_analyze_marks_position_sizing_incomplete_without_required_in
     ]
 
 
+def test_trade_risk_analyze_handles_missing_account_fields() -> None:
+    mt5 = MagicMock()
+    mt5.account_info.return_value = SimpleNamespace()
+    mt5.positions_get.return_value = []
+
+    with _patched_mt5_module(mt5):
+        out = trade_risk_analyze(symbol="EURUSD")
+
+    assert out["success"] is True
+    assert out["account"]["equity"] == 0.0
+    assert out["account"]["currency"] is None
+
+
 def test_trade_risk_analyze_warns_when_min_volume_forces_overshoot() -> None:
     mt5 = MagicMock()
     mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
