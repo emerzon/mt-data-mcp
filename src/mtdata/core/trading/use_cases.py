@@ -1827,6 +1827,25 @@ def run_trade_risk_analyze(  # noqa: C901
                     "portfolio risk is incomplete."
                 )
 
+            position_sizing_missing = [
+                field_name
+                for field_name, value in (
+                    ("desired_risk_pct", request.desired_risk_pct),
+                    ("proposed_entry", request.proposed_entry),
+                    ("proposed_sl", request.proposed_sl),
+                )
+                if value is None
+            ]
+            if position_sizing_missing:
+                result["position_sizing"] = {
+                    "status": "incomplete",
+                    "message": (
+                        "Provide desired_risk_pct, proposed_entry, and proposed_sl "
+                        "to calculate position sizing."
+                    ),
+                    "missing": position_sizing_missing,
+                }
+
             if (
                 request.desired_risk_pct is not None
                 and request.proposed_entry is not None

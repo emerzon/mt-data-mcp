@@ -121,6 +121,23 @@ def test_trade_risk_analyze_rounds_down_to_step_to_avoid_overshoot() -> None:
     assert any("rounded down" in note.lower() for note in sizing["sizing_notes"])
 
 
+def test_trade_risk_analyze_marks_position_sizing_incomplete_without_required_inputs() -> None:
+    mt5 = MagicMock()
+    mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
+    mt5.positions_get.return_value = []
+
+    with _patched_mt5_module(mt5):
+        out = trade_risk_analyze(symbol="EURUSD")
+
+    assert out["success"] is True
+    assert out["position_sizing"]["status"] == "incomplete"
+    assert out["position_sizing"]["missing"] == [
+        "desired_risk_pct",
+        "proposed_entry",
+        "proposed_sl",
+    ]
+
+
 def test_trade_risk_analyze_warns_when_min_volume_forces_overshoot() -> None:
     mt5 = MagicMock()
     mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
