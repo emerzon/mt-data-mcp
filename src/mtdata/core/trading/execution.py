@@ -6,7 +6,7 @@ import traceback
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Union
 
-from ...utils.mt5 import _mt5_epoch_to_utc
+from ...utils.mt5 import _mt5_epoch_to_utc, _to_server_naive_dt
 from ..config import trade_guardrails_config
 from . import comments, time, validation
 from .gateway import MT5TradingGateway, create_trading_gateway, trading_connection_error
@@ -89,8 +89,8 @@ def _resolve_closed_deal_from_history(
         return None
     try:
         rows = mt5.history_deals_get(
-            closed_at_utc - timedelta(minutes=5),
-            closed_at_utc + timedelta(minutes=1),
+            _to_server_naive_dt(closed_at_utc - timedelta(minutes=5)),
+            _to_server_naive_dt(closed_at_utc + timedelta(minutes=1)),
         )
     except Exception:
         return None
