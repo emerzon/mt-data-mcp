@@ -27,6 +27,9 @@ def test_naive_and_drift_forecasts_return_expected_values():
     assert np.allclose(naive.forecast, [15.0, 15.0, 15.0])
     assert naive.params_used == {}
 
+    with pytest.raises(ValueError, match="requires at least 1 data point"):
+        cl.NaiveMethod().forecast(pd.Series(dtype=float), horizon=2, seasonality=0, params={})
+
     drift = cl.DriftMethod().forecast(series, horizon=3, seasonality=0, params={})
     assert np.allclose(drift.forecast, [17.5, 20.0, 22.5])
     assert drift.params_used == {"slope": 2.5}

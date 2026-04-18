@@ -38,6 +38,8 @@ class NaiveMethod(ClassicalMethod):
         exog_future: Optional[pd.DataFrame] = None,
         **kwargs
     ) -> ForecastResult:
+        if len(series) == 0:
+            raise ValueError("Naive forecast requires at least 1 data point")
         last_val = float(series.iloc[-1])
         f_vals = np.full(int(horizon), last_val, dtype=float)
         return ForecastResult(forecast=f_vals, params_used={})
