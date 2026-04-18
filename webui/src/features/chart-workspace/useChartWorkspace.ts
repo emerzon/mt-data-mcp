@@ -40,7 +40,7 @@ export function useChartWorkspace() {
 
   const { data: histDataResponse, refetch, isFetching } = useQuery({
     queryKey: ['hist', symbol, timeframe, QUERY_LIMIT, end, JSON.stringify(chartDenoise || {}), isLive],
-    queryFn: () =>
+    queryFn: ({ signal }) =>
       getHistory({
         symbol,
         timeframe,
@@ -48,20 +48,20 @@ export function useChartWorkspace() {
         end,
         denoise: chartDenoise,
         include_incomplete: isLive,
-      }),
+      }, signal),
     enabled: !!symbol,
   })
 
   const { data: liveDataResponse } = useQuery({
     queryKey: ['hist-live', symbol, timeframe],
-    queryFn: () => getHistory({ symbol, timeframe, limit: 2, include_incomplete: true }),
+    queryFn: ({ signal }) => getHistory({ symbol, timeframe, limit: 2, include_incomplete: true }, signal),
     enabled: isLive && !!symbol && !end,
     refetchInterval: 2000,
   })
 
   const { data: tickData } = useQuery({
     queryKey: ['tick', symbol],
-    queryFn: () => getTick(symbol),
+    queryFn: ({ signal }) => getTick(symbol, signal),
     enabled: !!symbol,
     refetchInterval: 2000,
   })

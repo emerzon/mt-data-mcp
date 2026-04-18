@@ -67,7 +67,7 @@ function SymbolDropdown({
   const ref = useDismissiblePanel(onClose)
   const { data: searchResults } = useQuery({
     queryKey: ['instruments', search],
-    queryFn: () => searchInstruments(search || undefined, 50),
+    queryFn: ({ signal }) => searchInstruments(search || undefined, 50, signal),
     enabled: !!search,
   })
 

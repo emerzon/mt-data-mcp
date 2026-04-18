@@ -54,9 +54,10 @@ export async function getTimeframes(): Promise<string[]> {
   return data.timeframes ?? []
 }
 
-export async function searchInstruments(search?: string, limit?: number): Promise<Instrument[]> {
+export async function searchInstruments(search?: string, limit?: number, signal?: AbortSignal): Promise<Instrument[]> {
   const { data } = await api.get<{ items: Instrument[] }>(apiPath('/instruments'), {
     params: { search, limit },
+    signal,
   })
   return data.items ?? []
 }
@@ -75,7 +76,7 @@ export type HistoryParams = {
   include_incomplete?: boolean
 }
 
-export async function getHistory(params: HistoryParams): Promise<HistoryResponse> {
+export async function getHistory(params: HistoryParams, signal?: AbortSignal): Promise<HistoryResponse> {
   const query: Record<string, unknown> = {
     symbol: params.symbol,
     timeframe: params.timeframe,
@@ -99,15 +100,15 @@ export async function getHistory(params: HistoryParams): Promise<HistoryResponse
     }
   }
 
-  const { data } = await api.get<HistoryResponse>(apiPath('/history'), { params: query })
+  const { data } = await api.get<HistoryResponse>(apiPath('/history'), { params: query, signal })
   return {
     ...data,
     data: data.data ?? [],
   }
 }
 
-export async function getTick(symbol: string): Promise<Tick> {
-  const { data } = await api.get<Tick>(apiPath('/tick'), { params: { symbol } })
+export async function getTick(symbol: string, signal?: AbortSignal): Promise<Tick> {
+  const { data } = await api.get<Tick>(apiPath('/tick'), { params: { symbol }, signal })
   return data
 }
 
