@@ -207,6 +207,35 @@ class TestFetchSeries:
         assert err is None
         assert len(series) == 50
 
+    @patch("mtdata.core.causal._mt5_copy_rates_from")
+    @patch("mtdata.core.causal._ensure_symbol_ready", return_value=None)
+    def test_deduplicates_duplicate_timestamps(self, mock_ensure, mock_copy):
+        data = np.array(
+            [
+                (1000, 1.1, 1.2, 1.0, 1.15, 100, 10, 0),
+                (1000, 1.15, 1.25, 1.05, 1.20, 200, 20, 0),
+                (2000, 1.2, 1.3, 1.1, 1.25, 300, 30, 0),
+            ],
+            dtype=[
+                ("time", "i8"),
+                ("open", "f8"),
+                ("high", "f8"),
+                ("low", "f8"),
+                ("close", "f8"),
+                ("tick_volume", "i8"),
+                ("spread", "i4"),
+                ("real_volume", "i8"),
+            ],
+        )
+        mock_copy.return_value = data
+
+        series, err = _fetch_series("EURUSD", None, 100)
+
+        assert err is None
+        assert len(series) == 2
+        assert not series.index.has_duplicates
+        assert series.iloc[0] == 1.20
+
 
 # ---------------------------------------------------------------------------
 # _format_summary (lines 117-139)

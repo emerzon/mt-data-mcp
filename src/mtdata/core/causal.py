@@ -288,6 +288,7 @@ def _fetch_series(
             df["close"].to_numpy(dtype=float),
             index=pd.to_datetime(df["time"], unit="s"),
         )
+        series = series[~series.index.duplicated(keep="last")]
         return series, None
     return pd.Series(dtype=float), f"Failed to fetch data for {symbol}" + (
         f" after {retries} retries" if retries > 1 else ""
