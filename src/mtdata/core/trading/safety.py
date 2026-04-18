@@ -64,6 +64,18 @@ def _safe_float_attr(obj: Any, name: str) -> Optional[float]:
         return None
 
 
+def _normalize_stop_loss_value(value: Optional[float]) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(numeric) or math.isclose(numeric, 0.0, abs_tol=1e-12):
+        return None
+    return numeric
+
+
 def _normalize_symbol(value: Any) -> str:
     return str(value or "").strip().upper()
 
@@ -316,10 +328,9 @@ def _estimate_order_risk_currency(
     stop_loss: Optional[float],
     side: str,
 ) -> tuple[Optional[float], Optional[str]]:
-    if stop_loss is None:
+    normalized_stop_loss = _normalize_stop_loss_value(stop_loss)
+    if normalized_stop_loss is None:
         return None, "stop_loss_missing"
-    if not math.isfinite(float(stop_loss)):
-        return None, "stop_loss_invalid"
 
     tick_size = _safe_float_attr(symbol_info, "trade_tick_size")
     tick_value = _safe_float_attr(symbol_info, "trade_tick_value")
@@ -335,9 +346,9 @@ def _estimate_order_risk_currency(
 
     normalized_side = _normalize_side(side)
     if normalized_side == "BUY":
-        risk_ticks = (float(entry_price) - float(stop_loss)) / tick_size
+        risk_ticks = (float(entry_price) - normalized_stop_loss) / tick_size
     else:
-        risk_ticks = (float(stop_loss) - float(entry_price)) / tick_size
+        risk_ticks = (normalized_stop_loss - float(entry_price)) / tick_size
     if not math.isfinite(risk_ticks) or risk_ticks <= 0:
         return None, "stop_loss_wrong_side"
 
@@ -705,12 +716,12 @@ def pending_order_risk_increased(
     candidate_stop_loss: Optional[float],
 ) -> bool:
     """Return True when a pending-order modification increases downside risk."""
-    current_sl = _safe_float_attr(
+    current_sl = _normalize_stop_loss_value(_safe_float_attr(
         type("Obj", (), {"value": existing_stop_loss})(), "value"
-    )
-    next_sl = _safe_float_attr(
+    ))
+    next_sl = _normalize_stop_loss_value(_safe_float_attr(
         type("Obj", (), {"value": candidate_stop_loss})(), "value"
-    )
+    ))
     current_entry = _safe_float_attr(
         type("Obj", (), {"value": existing_entry_price})(), "value"
     )

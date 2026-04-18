@@ -11,7 +11,9 @@ from mtdata.core.trading.requests import TradePlaceRequest
 from mtdata.core.trading.safety import (
     TradeGuardrailsConfig,
     WalletRiskLimits,
+    _estimate_order_risk_currency,
     evaluate_trade_guardrails,
+    pending_order_risk_increased,
     preview_trade_guardrails,
 )
 from mtdata.core.trading.use_cases import run_trade_place
@@ -89,6 +91,43 @@ def test_evaluate_trade_guardrails_blocks_wallet_risk_threshold():
     assert result is not None
     assert result["guardrail_blocked"] is True
     assert result["guardrail_rule"] == "wallet_risk"
+
+
+def test_estimate_order_risk_treats_zero_stop_loss_as_missing():
+    symbol_info = SimpleNamespace(
+        trade_tick_size=0.0001,
+        trade_tick_value=10.0,
+        trade_tick_value_loss=10.0,
+    )
+
+    risk, error = _estimate_order_risk_currency(
+        symbol_info=symbol_info,
+        volume=1.0,
+        entry_price=1.1000,
+        stop_loss=0.0,
+        side="BUY",
+    )
+
+    assert risk is None
+    assert error == "stop_loss_missing"
+
+
+def test_pending_order_risk_ignores_mt5_zero_stop_loss_sentinel():
+    symbol_info = SimpleNamespace(
+        trade_tick_size=0.0001,
+        trade_tick_value=10.0,
+        trade_tick_value_loss=10.0,
+    )
+
+    assert pending_order_risk_increased(
+        symbol_info=symbol_info,
+        side="BUY",
+        volume=1.0,
+        existing_entry_price=1.1000,
+        existing_stop_loss=0.0,
+        candidate_entry_price=1.1000,
+        candidate_stop_loss=None,
+    ) is False
 
 
 def test_run_trade_place_dry_run_reports_guardrail_block(restore_trade_guardrails):
