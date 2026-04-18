@@ -103,6 +103,42 @@ def _resolve_preferred_text_arg(
     return preferred or legacy, None
 
 
+def _clean_finviz_text_value(value: Any) -> Any:
+    if isinstance(value, str):
+        return value.strip()
+    return value
+
+
+def _normalize_finviz_news_item(item: Any) -> Any:
+    if not isinstance(item, dict):
+        return item
+
+    out: Dict[str, Any] = {}
+    for source_key, target_key in (
+        ("Title", "title"),
+        ("Source", "source"),
+        ("Date", "published_at"),
+        ("Link", "url"),
+    ):
+        if source_key not in item:
+            continue
+        value = _clean_finviz_text_value(item.get(source_key))
+        if value in (None, ""):
+            continue
+        out[target_key] = value
+    return out
+
+
+def _with_finviz_news_items_alias(result: Dict[str, Any]) -> Dict[str, Any]:
+    news_rows = result.get("news")
+    if not isinstance(news_rows, list) or "items" in result:
+        return result
+
+    out = dict(result)
+    out["items"] = [_normalize_finviz_news_item(item) for item in news_rows]
+    return out
+
+
 @mcp.tool()
 def finviz_fundamentals(symbol: str) -> Dict[str, Any]:
     """
@@ -187,7 +223,9 @@ def finviz_news(symbol: Optional[str] = None, limit: int = 20, page: int = 1) ->
     Returns
     -------
     dict
-        List of news items with title, link, date, source
+        Stock-specific calls preserve the legacy `news` rows and also expose a
+        normalized `items` alias with `title`, `source`, `published_at`, and
+        `url` fields for easier consumption.
     """
     fields = {"symbol": symbol, "limit": limit, "page": page}
 
@@ -197,7 +235,9 @@ def finviz_news(symbol: Optional[str] = None, limit: int = 20, page: int = 1) ->
             if error is not None:
                 return error
             assert symbol_norm is not None
-            return get_stock_news(symbol_norm, limit=limit, page=page)
+            return _with_finviz_news_items_alias(
+                get_stock_news(symbol_norm, limit=limit, page=page)
+            )
         return get_general_news(news_type="news", limit=limit, page=page)
 
     return _run_logged_tool("finviz_news", fields, _run)

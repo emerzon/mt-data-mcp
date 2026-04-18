@@ -41,6 +41,12 @@ _ORDER_TYPE_ALIASES = {
     "LONG": "BUY",
     "SHORT": "SELL",
 }
+_TRADE_SIDE_FILTER_ALIASES = {
+    "BUY": "BUY",
+    "SELL": "SELL",
+    "LONG": "BUY",
+    "SHORT": "SELL",
+}
 
 
 def _normalize_order_type_input(order_type: Any) -> Tuple[Optional[str], Optional[str]]:
@@ -98,6 +104,26 @@ def _normalize_order_type_input(order_type: Any) -> Tuple[Optional[str], Optiona
             "Use BUY/SELL or BUY_LIMIT/BUY_STOP/SELL_LIMIT/SELL_STOP."
         ),
     )
+
+
+def _normalize_trade_side_filter(side: Any) -> Tuple[Optional[str], Optional[str]]:
+    """Normalize read-only trade side filters into BUY/SELL semantics."""
+    if side is None:
+        return None, None
+    if isinstance(side, bool):
+        return None, "side must be BUY/SELL or LONG/SHORT."
+
+    text = str(side).strip()
+    if not text:
+        return None, None
+
+    normalized = text.upper().replace("-", "_").replace(" ", "_")
+    while "__" in normalized:
+        normalized = normalized.replace("__", "_")
+    mapped = _TRADE_SIDE_FILTER_ALIASES.get(normalized)
+    if mapped is not None:
+        return mapped, None
+    return None, "side must be BUY/SELL or LONG/SHORT."
 
 
 def _validate_volume(volume: Union[int, float], symbol_info: Any) -> Tuple[Optional[float], Optional[str]]:

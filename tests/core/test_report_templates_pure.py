@@ -479,9 +479,16 @@ class TestGetRawResult:
         result = _get_raw_result(fn, symbol="X")
         assert result == {"ok": "X"}
 
-    def test_string_result_parsed(self):
+    def test_string_result_rejected_without_legacy_opt_in(self):
         fn = MagicMock(return_value="symbol: TEST\nprice: 42\n")
         result = _get_raw_result(fn, symbol="X")
+        assert isinstance(result, dict)
+        assert result["error"] == "Expected structured tool result but received formatted text."
+        assert "symbol: TEST" in result["raw_output"]
+
+    def test_string_result_can_use_legacy_parser_when_explicitly_enabled(self):
+        fn = MagicMock(return_value="symbol: TEST\nprice: 42\n")
+        result = _get_raw_result(fn, symbol="X", allow_formatted_output=True)
         assert isinstance(result, dict)
         assert result.get("symbol") == "TEST"
 

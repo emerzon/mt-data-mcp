@@ -301,7 +301,7 @@ def forecast_list_methods(
 ) -> Dict[str, Any]:
     """List forecast methods and availability.
 
-    - detail='compact' (default): concise list suitable for terminal usage.
+    - detail='compact' (default): concise list with availability and `supports_ci` guidance.
     - detail='full': include full parameter docs and supports metadata.
     """
     return _run_forecast_operation(
@@ -884,6 +884,11 @@ def _forecast_list_methods_impl(  # noqa: C901
                 namespace = capability.get("namespace")
                 if isinstance(namespace, str) and namespace.strip():
                     row["namespace"] = namespace
+            supports = capability.get("supports", item.get("supports"))
+            if isinstance(supports, dict) and isinstance(supports.get("ci"), bool):
+                row["supports_ci"] = bool(supports.get("ci"))
+            elif isinstance(item.get("supports_ci"), bool):
+                row["supports_ci"] = bool(item.get("supports_ci"))
             params = item.get("params")
             if isinstance(params, list):
                 row["params_count"] = len(params)
@@ -932,7 +937,7 @@ def _forecast_list_methods_impl(  # noqa: C901
             "methods": selected_methods,
             "methods_shown": int(len(selected_methods)),
             "methods_hidden": int(max(0, len(compact_methods) - len(selected_methods))),
-            "note": "Compact view groups methods by category and shows a small representative subset. Use --detail full to see all methods.",
+            "note": "Compact view groups methods by category, includes `supports_ci` guidance, and shows a small representative subset. Use --detail full to see all methods.",
             "filters": {
                 "search": search_value or None,
                 "limit": limit_value,

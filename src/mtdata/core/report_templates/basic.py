@@ -30,8 +30,13 @@ _TREND_REGIME_LABELS = {
 }
 
 
-def _get_raw_result(func: Any, *args: Any, **kwargs: Any) -> Dict[str, Any]:
-    """Call function and return raw dict, handling both wrapped and unwrapped cases."""
+def _get_raw_result(
+    func: Any,
+    *args: Any,
+    allow_formatted_output: bool = False,
+    **kwargs: Any,
+) -> Dict[str, Any]:
+    """Call a tool and require a structured payload unless legacy parsing is explicitly enabled."""
     try:
         result = call_tool_sync_raw(func, *args, cli_raw=True, **kwargs)
         
@@ -39,10 +44,15 @@ def _get_raw_result(func: Any, *args: Any, **kwargs: Any) -> Dict[str, Any]:
         if isinstance(result, dict):
             return result
             
-        # If it returns a formatted string, parse what we can
+        # Report templates should consume structured payloads. Keep the string
+        # parser quarantined behind an explicit opt-in for legacy callers/tests.
         if isinstance(result, str):
-            # Try to parse key-value format or structured output
-            return _parse_formatted_output(result)
+            if allow_formatted_output:
+                return _parse_formatted_output(result)
+            return {
+                'error': 'Expected structured tool result but received formatted text.',
+                'raw_output': result[:200],
+            }
         
         return {'error': f'Unexpected result type: {type(result)}'}
         
@@ -51,7 +61,7 @@ def _get_raw_result(func: Any, *args: Any, **kwargs: Any) -> Dict[str, Any]:
 
 
 def _parse_formatted_output(output: str) -> Dict[str, Any]:
-    """Parse formatted string output back into structured data."""
+    """Legacy parser for quarantined formatted tool output."""
     try:
         lines = [line.rstrip() for line in output.split('\n')]  # Keep leading spaces
         result = {}

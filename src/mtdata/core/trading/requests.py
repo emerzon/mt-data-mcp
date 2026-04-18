@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal, Optional, Union
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .time import ExpirationValue
 from .validation import OrderTypeInput
@@ -21,6 +21,13 @@ class TradePlaceRequest(BaseModel):
     dry_run: bool = False
     require_sl_tp: bool = True
     auto_close_on_sl_tp_fail: bool = False
+    idempotency_key: Optional[str] = Field(
+        default=None,
+        description=(
+            "Optional in-process dedupe key. Reusing the same key with the same "
+            "payload replays the prior result instead of sending another order."
+        ),
+    )
 
 
 class TradeModifyRequest(BaseModel):
@@ -30,6 +37,13 @@ class TradeModifyRequest(BaseModel):
     take_profit: Optional[Union[int, float]] = None
     expiration: Optional[ExpirationValue] = None
     comment: Optional[str] = None
+    idempotency_key: Optional[str] = Field(
+        default=None,
+        description=(
+            "Optional in-process dedupe key. Reusing the same key with the same "
+            "payload replays the prior result instead of sending another modify request."
+        ),
+    )
 
 
 class TradeCloseRequest(BaseModel):
@@ -49,6 +63,10 @@ class TradeHistoryRequest(BaseModel):
     start: Optional[str] = None
     end: Optional[str] = None
     symbol: Optional[str] = None
+    side: Optional[str] = Field(
+        default=None,
+        description="Optional side filter. Accepts buy/sell or long/short.",
+    )
     position_ticket: Optional[Union[int, str]] = None
     deal_ticket: Optional[Union[int, str]] = None
     order_ticket: Optional[Union[int, str]] = None
@@ -60,6 +78,10 @@ class TradeJournalAnalyzeRequest(BaseModel):
     start: Optional[str] = None
     end: Optional[str] = None
     symbol: Optional[str] = None
+    side: Optional[str] = Field(
+        default=None,
+        description="Optional side filter. Accepts buy/sell or long/short.",
+    )
     position_ticket: Optional[Union[int, str]] = None
     deal_ticket: Optional[Union[int, str]] = None
     minutes_back: Optional[int] = None

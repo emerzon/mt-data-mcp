@@ -8,6 +8,7 @@ This module provides global parameters that work across all functions.
 import argparse
 from typing import Optional
 
+from ..shared.parameter_contracts import PARAMETER_HELP
 from .constants import DEFAULT_TIMEFRAME
 
 
@@ -24,7 +25,7 @@ def add_global_args_to_parser(
     # Timeframe
     if 'timeframe' not in exclude_params:
         timeframe_kwargs = {
-            "help": "Timeframe for market data (H1, M30, D1, etc.)",
+            "help": PARAMETER_HELP["timeframe"],
         }
         if suppress_defaults:
             timeframe_kwargs["default"] = argparse.SUPPRESS
@@ -39,7 +40,7 @@ def add_global_args_to_parser(
     if 'verbose' not in exclude_params:
         verbose_kwargs = {
             "action": "store_true",
-            "help": "Show detailed metadata in output",
+            "help": PARAMETER_HELP["verbose"],
         }
         if suppress_defaults:
             verbose_kwargs["default"] = argparse.SUPPRESS

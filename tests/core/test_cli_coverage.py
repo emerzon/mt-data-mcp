@@ -69,6 +69,7 @@ from mtdata.core.cli import (
     _parse_set_overrides,
     _print_extended_help,
     _quote_cli_value,
+    _render_cli_result,
     _resolve_param_kwargs,
     _safe_tz_name,
     _suggest_commands,
@@ -1001,12 +1002,14 @@ class TestFormatResultForCli:
                         "method": "theta",
                         "category": "native",
                         "available": True,
+                        "supports_ci": True,
                         "params_count": 1,
                     },
                     {
                         "method": "sf_theta",
                         "category": "statsforecast",
                         "available": True,
+                        "supports_ci": True,
                         "params_count": 0,
                     },
                 ],
@@ -1019,7 +1022,7 @@ class TestFormatResultForCli:
             cmd_name="forecast_list_methods",
         )
 
-        assert "methods[2]{method,category,available}" in result
+        assert "methods[2]{method,category,available,supports_ci}" in result
         assert "category_summary" not in result
         assert "categories" not in result
         assert "params_count" not in result
@@ -1612,6 +1615,22 @@ class TestWriteCliText:
         assert (
             b"".join(stream.buffer.parts).decode("utf-8") == "Lundi de Pâques 清明节\n"
         )
+
+
+# ========================================================================
+# _render_cli_result
+# ========================================================================
+
+
+class TestRenderCliResult:
+    def test_detail_full_uses_verbose_output_contract(self, capsys):
+        args = argparse.Namespace(detail="full", json=False, verbose=False)
+
+        _render_cli_result({"value": 1}, args=args, cmd_name="sample_tool")
+
+        out = capsys.readouterr().out
+        assert "meta:" in out
+        assert "tool: sample_tool" in out
 
 
 # ========================================================================
@@ -3533,6 +3552,36 @@ class TestCreateCommandFunction:
         assert call_kwargs["verbose"] is True
         assert call_kwargs["__cli_raw"] is True
 
+    def test_detail_full_is_forwarded_as_verbose_to_tool_wrapper(self, capsys):
+        mock_fn = MagicMock(return_value={"ok": True})
+        func_info = {
+            "func": mock_fn,
+            "params": [
+                {"name": "symbol", "type": str, "required": True, "default": None},
+                {
+                    "name": "detail",
+                    "type": Literal["compact", "full"],
+                    "required": False,
+                    "default": "compact",
+                },
+            ],
+        }
+        cmd_fn = create_command_function(func_info, cmd_name="test_cmd")
+        args = argparse.Namespace(
+            symbol="EURUSD",
+            detail="full",
+            json=False,
+            verbose=False,
+        )
+
+        cmd_fn(args)
+
+        call_kwargs = mock_fn.call_args[1]
+        assert call_kwargs["symbol"] == "EURUSD"
+        assert call_kwargs["detail"] == "full"
+        assert call_kwargs["verbose"] is True
+        assert call_kwargs["__cli_raw"] is True
+
     def test_indicator_compact_string_reconstructed(self, capsys):
         mock_fn = MagicMock(return_value={"ok": True})
         func_info = {
@@ -4615,6 +4664,34 @@ class TestMain:
         assert result == 0
         request = mock_fn.call_args[1]["request"]
         assert request.minutes_back == 60
+
+    @patch("mtdata.core.cli.discover_tools")
+    def test_trade_history_side_flag_populates_request(self, mock_discover):
+        mock_fn = MagicMock(return_value=[])
+        mock_fn.__module__ = "mtdata.core.server"
+        mock_fn.__name__ = "trade_history"
+        mock_fn.__doc__ = "Trade history."
+
+        def trade_history(request: TradeHistoryRequest):
+            """Trade history."""
+            pass
+
+        info = get_function_info(trade_history)
+        info["func"] = mock_fn
+
+        mock_discover.return_value = {
+            "trade_history": {
+                "func": mock_fn,
+                "meta": {"description": "Trade history"},
+                "_cli_func_info": info,
+            },
+        }
+        with patch("sys.argv", ["cli.py", "trade_history", "--side", "short"]):
+            result = main()
+        assert result == 0
+        request = mock_fn.call_args[1]["request"]
+        assert isinstance(request, TradeHistoryRequest)
+        assert request.side == "short"
 
     @patch("mtdata.core.cli.discover_tools")
     def test_command_exception_handled(self, mock_discover, capsys):

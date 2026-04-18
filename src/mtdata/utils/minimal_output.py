@@ -1456,7 +1456,7 @@ def _normalize_forecast_methods_payload(
                 else:
                     compact = {
                         key: row.get(key)
-                        for key in ("method", "category", "available")
+                        for key in ("method", "category", "available", "supports_ci")
                         if key in row and not _is_empty_value(row.get(key))
                     }
                 compact_rows.append(compact or dict(row))

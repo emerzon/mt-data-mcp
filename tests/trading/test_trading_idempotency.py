@@ -4,7 +4,6 @@ import time
 
 from src.mtdata.core.trading.idempotency import IdempotencyStore
 
-
 # ---------------------------------------------------------------------------
 # Basic behavior
 # ---------------------------------------------------------------------------
@@ -28,6 +27,14 @@ def test_record_and_check():
     assert dup["duplicate"] is True
     assert dup["idempotency_key"] == "key-1"
     assert dup["original_outcome"] == outcome
+
+
+def test_record_and_check_request_signature():
+    store = IdempotencyStore()
+    store.record("key-1", {"success": True}, request_signature="sig-1")
+    dup = store.check("key-1")
+    assert dup is not None
+    assert dup["request_signature"] == "sig-1"
 
 
 def test_record_none_key_is_noop():

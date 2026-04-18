@@ -433,16 +433,43 @@ def _extract_base_timeframe(report: Dict[str, Any]) -> Optional[str]:
     return base_tf
 
 
+def _collect_timeframe_section_entries(section: Any) -> Dict[str, Any]:
+    entries: Dict[str, Any] = {}
+    if not isinstance(section, dict):
+        return entries
+    for key, value in section.items():
+        tf_key = str(key).upper()
+        if not tf_key or tf_key.startswith("__"):
+            continue
+        entries[tf_key] = value
+    return entries
+
+
 def attach_multi_timeframes(report: Dict[str, Any], symbol: str, denoise: Optional[Dict[str, Any]], extra_timeframes: List[str], pivot_timeframes: Optional[List[str]] = None, *, _fetch_cache: Optional[Dict[Tuple[str, str], Optional[Dict[str, Any]]]] = None) -> None:
+    sections = report.setdefault('sections', {})
     contexts: Dict[str, Any] = {}
     trend_mtf: Dict[str, Any] = {}
     base_tf = _extract_base_timeframe(report)
+    existing_contexts = _collect_timeframe_section_entries(sections.get('contexts_multi'))
+    context_section = sections.get('context')
+    existing_trend_mtf = (
+        _collect_timeframe_section_entries(context_section.get('trend_mtf'))
+        if isinstance(context_section, dict)
+        else {}
+    )
 
     for tf in extra_timeframes or []:
         tf_str = str(tf).upper()
         if base_tf and tf_str == base_tf:
             continue
-        snap = context_for_tf(symbol, tf, denoise, limit=200, tail=30, _fetch_cache=_fetch_cache)
+        existing_context = existing_contexts.get(tf_str)
+        existing_trend = existing_trend_mtf.get(tf_str)
+        if existing_context is not None:
+            snap = existing_context
+            if isinstance(existing_trend, dict):
+                trend_mtf[str(tf)] = existing_trend.copy()
+        else:
+            snap = context_for_tf(symbol, tf, denoise, limit=200, tail=30, _fetch_cache=_fetch_cache)
         if snap:
             snap_for_contexts = snap
             if isinstance(snap, dict):
@@ -456,17 +483,16 @@ def attach_multi_timeframes(report: Dict[str, Any], symbol: str, denoise: Option
                 contexts[str(tf)] = snap_for_contexts
 
             # Extract trend compact data for MTF matrix
-            if isinstance(snap, dict):
+            if existing_context is None and isinstance(snap, dict):
                 trend_compact = snap.get('trend_compact')
                 if isinstance(trend_compact, dict):
                     trend_mtf[str(tf)] = trend_compact.copy()
 
     if contexts:
-        report.setdefault('sections', {})['contexts_multi'] = contexts
+        sections['contexts_multi'] = contexts
 
     # Attach compact trend info for the main context section
     if trend_mtf or contexts:
-        sections = report.setdefault('sections', {})
         if 'context' in sections and isinstance(sections['context'], dict):
             sections['context']['trend_mtf'] = trend_mtf
         else:
@@ -488,10 +514,16 @@ def attach_multi_timeframes(report: Dict[str, Any], symbol: str, denoise: Option
                 continue
             filtered_tfs.append(str(tfp))
         pivs: Dict[str, Any] = {}
+        existing_pivots = _collect_timeframe_section_entries(sections.get('pivot_multi'))
         if filtered_tfs:
             try:
                 from ..pivot import pivot_compute_points as _compute_pivot_points
                 for tfp in filtered_tfs:
+                    tfp_key = str(tfp).upper()
+                    existing_pivot = existing_pivots.get(tfp_key)
+                    if isinstance(existing_pivot, dict):
+                        pivs[str(tfp)] = dict(existing_pivot)
+                        continue
                     res = _compute_pivot_points(symbol=symbol, timeframe=tfp)
                     if isinstance(res, dict) and not res.get('error'):
                         pivs[str(tfp)] = {
@@ -507,7 +539,7 @@ def attach_multi_timeframes(report: Dict[str, Any], symbol: str, denoise: Option
         if pivs:
             if base_pivot_tf:
                 pivs['__base_timeframe__'] = base_pivot_tf
-            report.setdefault('sections', {})['pivot_multi'] = pivs
+            sections['pivot_multi'] = pivs
 
 
 def attach_report_timeframes(

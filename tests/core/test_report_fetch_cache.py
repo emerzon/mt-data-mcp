@@ -11,7 +11,6 @@ import pytest
 
 from mtdata.core.report.utils import attach_multi_timeframes, context_for_tf
 
-
 _ROWS = [
     {
         "close": 1.1050,
@@ -176,3 +175,97 @@ class TestAttachMultiTimeframesCacheThreading:
         assert len(fetched_tfs) == first_pass_count, (
             f"Expected {first_pass_count} fetches total, got {len(fetched_tfs)}: {fetched_tfs}"
         )
+
+    def test_reuses_existing_timeframes_and_pivots(self, monkeypatch):
+        fetched_tfs = []
+        fetched_pivots = []
+
+        def _tracking_fetch(**kwargs):
+            fetched_tfs.append(kwargs.get("timeframe"))
+            return {"data": list(_ROWS)}
+
+        def _tracking_pivot(*, symbol, timeframe):
+            fetched_pivots.append(timeframe)
+            return {
+                "levels": [{"level": "PP", "classic": 1.0}],
+                "methods": [{"method": "classic"}],
+                "period": "2025-01-01",
+                "calculation_basis": "completed_bar",
+                "timezone": "UTC",
+            }
+
+        monkeypatch.setattr("mtdata.core.data.data_fetch_candles", _tracking_fetch)
+        monkeypatch.setattr(
+            "mtdata.core.report_templates.basic._compute_compact_trend",
+            lambda _rows: {"bias": "fetched"},
+        )
+        monkeypatch.setattr("mtdata.core.pivot.pivot_compute_points", _tracking_pivot)
+
+        report = {
+            "meta": {"timeframe": "H1"},
+            "sections": {
+                "context": {
+                    "timeframe": "H1",
+                    "trend_mtf": {
+                        "M15": {"bias": "existing-m15"},
+                        "D1": {"bias": "existing-d1"},
+                    },
+                },
+                "pivot": {"timeframe": "D1"},
+                "contexts_multi": {
+                    "M15": {"close": 1.1, "ema20": 1.0},
+                    "H4": {"close": 1.2, "ema20": 1.1},
+                    "D1": {"close": 1.3, "ema20": 1.2},
+                },
+                "pivot_multi": {
+                    "H4": {"levels": [{"level": "PP", "classic": 2.0}]},
+                    "D1": {"levels": [{"level": "PP", "classic": 3.0}]},
+                    "__base_timeframe__": "D1",
+                },
+            },
+        }
+
+        attach_multi_timeframes(
+            report,
+            "EURUSD",
+            None,
+            extra_timeframes=["M1", "M15", "D1"],
+            pivot_timeframes=["D1", "W1"],
+        )
+
+        assert fetched_tfs == ["M1"]
+        assert fetched_pivots == ["W1"]
+        assert report["sections"]["contexts_multi"] == {
+            "M1": {
+                "close": 1.105,
+                "EMA_20": 1.104,
+                "EMA_50": 1.102,
+                "RSI_14": 55.0,
+                "MACD": 0.0005,
+                "rsi": 55.0,
+                "macd": 0.0005,
+                "macd_signal": 0.0003,
+                "ema20": 1.104,
+                "ema50": 1.102,
+                "ema200": 1.1,
+                "price": 1.105,
+            },
+            "M15": {"close": 1.1, "ema20": 1.0},
+            "D1": {"close": 1.3, "ema20": 1.2},
+        }
+        assert report["sections"]["context"]["trend_mtf"] == {
+            "M1": {"bias": "fetched"},
+            "M15": {"bias": "existing-m15"},
+            "D1": {"bias": "existing-d1"},
+        }
+        assert report["sections"]["pivot_multi"] == {
+            "W1": {
+                "levels": [{"level": "PP", "classic": 1.0}],
+                "methods": [{"method": "classic"}],
+                "period": "2025-01-01",
+                "timeframe": "W1",
+                "calculation_basis": "completed_bar",
+                "timezone": "UTC",
+            },
+            "__base_timeframe__": "D1",
+        }

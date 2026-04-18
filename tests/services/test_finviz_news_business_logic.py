@@ -54,6 +54,55 @@ def test_finviz_news_logs_finish_event_for_success(caplog) -> None:
     )
 
 
+def test_finviz_news_adds_normalized_items_alias_for_stock_results() -> None:
+    raw = _unwrap(finviz_news)
+
+    service_result = {
+        "success": True,
+        "symbol": "AAPL",
+        "count": 1,
+        "total": 1,
+        "page": 1,
+        "pages": 1,
+        "news": [
+            {
+                "Title": "  Apple launches new chips  ",
+                "Source": " Reuters ",
+                "Date": " 2026-04-18 ",
+                "Link": " https://example.test/apple ",
+            }
+        ],
+    }
+
+    with patch("mtdata.core.finviz.get_stock_news", return_value=service_result):
+        out = raw(symbol="AAPL", limit=5, page=1)
+
+    assert out["news"] == service_result["news"]
+    assert out["items"] == [
+        {
+            "title": "Apple launches new chips",
+            "source": "Reuters",
+            "published_at": "2026-04-18",
+            "url": "https://example.test/apple",
+        }
+    ]
+
+
+def test_finviz_news_without_symbol_keeps_general_news_shape() -> None:
+    raw = _unwrap(finviz_news)
+    service_result = {
+        "success": True,
+        "type": "news",
+        "count": 1,
+        "items": [{"Title": "Market wrap"}],
+    }
+
+    with patch("mtdata.core.finviz.get_general_news", return_value=service_result):
+        out = raw(symbol=None, limit=5, page=1)
+
+    assert out == service_result
+
+
 def test_finviz_news_helpers_are_registered_tools() -> None:
     assert hasattr(finviz_news, "__wrapped__")
     assert hasattr(finviz_market_news, "__wrapped__")

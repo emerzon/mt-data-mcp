@@ -787,6 +787,36 @@ class TestRecordingToolDecorator:
         finally:
             srv._ORIG_TOOL_DECORATOR = original
 
+    def test_wrapped_function_treats_detail_full_as_verbose(self):
+        import mtdata.core.server as srv
+        from mtdata.core._mcp_tools import _TOOL_REGISTRY
+
+        original = srv._ORIG_TOOL_DECORATOR
+        try:
+            srv._ORIG_TOOL_DECORATOR = lambda *a, **k: (lambda fn: fn)
+            dec = srv._recording_tool_decorator()
+
+            def sample_tool(detail: str = "compact"):
+                return {
+                    "value": 1,
+                    "meta": {"domain": {"symbol": "EURUSD"}},
+                    "diagnostics": {"source": "mt5"},
+                }
+
+            dec(sample_tool)
+            wrapped = _TOOL_REGISTRY["sample_tool"]
+
+            compact = wrapped(__cli_raw=True, detail="compact")
+            full = wrapped(__cli_raw=True, detail="full")
+
+            assert compact == {"value": 1}
+            assert full["value"] == 1
+            assert full["meta"]["tool"] == "sample_tool"
+            assert full["meta"]["domain"]["symbol"] == "EURUSD"
+            assert full["diagnostics"]["source"] == "mt5"
+        finally:
+            srv._ORIG_TOOL_DECORATOR = original
+
     def test_async_wrapped_timeout_returns_structured_error_payload(self):
         import asyncio
 

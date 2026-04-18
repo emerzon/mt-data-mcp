@@ -43,6 +43,9 @@ def trade_place(request: TradePlaceRequest) -> dict:
       attempt to immediately close the unprotected position.
     - Environment guardrails can block orders before MT5 submission based on
       configured symbol policies, volume caps, or wallet/account risk limits.
+    - idempotency_key: optional in-process dedupe key for retry-safe clients.
+      Reusing a key with the same payload replays the prior outcome instead of
+      sending another order; changed payloads require a new key.
     """
     return run_logged_operation(
         logger,
@@ -69,6 +72,8 @@ def trade_modify(request: TradeModifyRequest) -> dict:
 
     Risk-increasing pending-order changes can be blocked by configured trade
     guardrails, while close/reduce flows remain allowed.
+    Optional idempotency_key values suppress duplicate in-process retries for
+    the same payload.
     """
     return run_logged_operation(
         logger,

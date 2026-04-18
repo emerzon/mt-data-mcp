@@ -9,18 +9,23 @@ from __future__ import annotations
 
 import threading
 import time
-from typing import Any, Dict, Optional, Tuple
-
+from typing import Any, Dict, Optional
 
 _DEFAULT_TTL_SECONDS = 300.0  # 5 minutes
 
 
 class _IdempotencyEntry:
-    __slots__ = ("key", "outcome", "created_at")
+    __slots__ = ("key", "outcome", "request_signature", "created_at")
 
-    def __init__(self, key: str, outcome: Dict[str, Any]) -> None:
+    def __init__(
+        self,
+        key: str,
+        outcome: Dict[str, Any],
+        request_signature: Optional[str] = None,
+    ) -> None:
         self.key = key
         self.outcome = outcome
+        self.request_signature = request_signature
         self.created_at = time.monotonic()
 
 
@@ -47,14 +52,25 @@ class IdempotencyStore:
                 "duplicate": True,
                 "idempotency_key": key,
                 "original_outcome": entry.outcome,
+                "request_signature": entry.request_signature,
             }
 
-    def record(self, key: Optional[str], outcome: Dict[str, Any]) -> None:
+    def record(
+        self,
+        key: Optional[str],
+        outcome: Dict[str, Any],
+        *,
+        request_signature: Optional[str] = None,
+    ) -> None:
         """Record *outcome* for *key*.  No-op when key is ``None``."""
         if key is None:
             return
         with self._lock:
-            self._entries[key] = _IdempotencyEntry(key, outcome)
+            self._entries[key] = _IdempotencyEntry(
+                key,
+                outcome,
+                request_signature=request_signature,
+            )
             self._gc()
 
     def _gc(self) -> None:

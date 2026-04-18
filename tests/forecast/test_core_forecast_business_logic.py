@@ -437,6 +437,41 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
 
     monkeypatch.setattr(
         cf,
+        "_get_registered_forecast_capabilities",
+        lambda: [
+            {
+                "method": "theta",
+                "supports": {"ci": True},
+            },
+            {
+                "method": "mlf_rf",
+                "supports": {"ci": False},
+            },
+            {
+                "method": "sf_autoarima",
+                "namespace": "statsforecast",
+                "supports": {"ci": True},
+            },
+            {
+                "method": "sf_theta",
+                "namespace": "statsforecast",
+                "supports": {"ci": True},
+            },
+            {
+                "method": "sf_ets",
+                "namespace": "statsforecast",
+                "supports": {"ci": True},
+            },
+            {
+                "method": "sf_naive",
+                "namespace": "statsforecast",
+                "supports": {"ci": True},
+            },
+        ],
+    )
+
+    monkeypatch.setattr(
+        cf,
         "_get_forecast_methods_data",
         lambda: {
             "total": 2,
@@ -467,6 +502,8 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert compact["methods"][0]["method"] == "theta"
     assert "category_summary" in compact
     assert "params_count" in compact["methods"][0]
+    assert compact["methods"][0]["supports_ci"] is True
+    assert compact["methods"][1]["supports_ci"] is False
     assert "namespace" not in compact["methods"][0]
     assert "method_id" not in compact["methods"][0]
     assert "concept" not in compact["methods"][0]

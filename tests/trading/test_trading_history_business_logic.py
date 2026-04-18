@@ -117,6 +117,50 @@ def test_trade_history_filters_rows_by_symbol_even_if_mt5_returns_mixed_rows() -
     assert out["items"][0]["symbol"] == "BTCUSD"
 
 
+def test_trade_history_filters_deals_by_side_alias() -> None:
+    mt5, prev = _install_mock_mt5()
+    mt5.DEAL_TYPE_BUY = 0
+    mt5.DEAL_TYPE_SELL = 1
+    Deal = namedtuple("Deal", ["ticket", "time", "symbol", "type"])
+    mt5.history_deals_get.return_value = [
+        Deal(ticket=1, time=1700000000, symbol="EURUSD", type=0),
+        Deal(ticket=2, time=1700003600, symbol="EURUSD", type=1),
+    ]
+
+    with patch("mtdata.core.trading.account._use_client_tz", lambda: False):
+        out = trade_history(history_kind="deals", side="long", __cli_raw=True)
+    if prev is not None:
+        sys.modules["MetaTrader5"] = prev
+
+    assert out["success"] is True
+    assert out["side"] == "BUY"
+    assert out["count"] == 1
+    assert out["items"][0]["ticket"] == 1
+    assert out["items"][0]["type"] == "Buy"
+
+
+def test_trade_history_filters_orders_by_side_prefix() -> None:
+    mt5, prev = _install_mock_mt5()
+    mt5.ORDER_TYPE_BUY_LIMIT = 2
+    mt5.ORDER_TYPE_SELL_STOP = 5
+    Order = namedtuple("Order", ["ticket", "time_setup", "symbol", "type"])
+    mt5.history_orders_get.return_value = [
+        Order(ticket=11, time_setup=1700000000, symbol="EURUSD", type=2),
+        Order(ticket=12, time_setup=1700003600, symbol="EURUSD", type=5),
+    ]
+
+    with patch("mtdata.core.trading.account._use_client_tz", lambda: False):
+        out = trade_history(history_kind="orders", side="sell", __cli_raw=True)
+    if prev is not None:
+        sys.modules["MetaTrader5"] = prev
+
+    assert out["success"] is True
+    assert out["side"] == "SELL"
+    assert out["count"] == 1
+    assert out["items"][0]["ticket"] == 12
+    assert out["items"][0]["type"] == "Sell Stop"
+
+
 def test_trade_history_deals_decodes_enum_codes_to_labels() -> None:
     mt5, prev = _install_mock_mt5()
     mt5.DEAL_TYPE_BUY = 0
@@ -401,6 +445,14 @@ def test_trade_history_rejects_start_with_minutes_back() -> None:
     assert out["error"] == "Use either start or minutes_back, not both."
 
 
+def test_trade_history_rejects_invalid_side_filter() -> None:
+    out = trade_history(history_kind="deals", side="flat", __cli_raw=True)
+
+    assert out["success"] is False
+    assert out["error"] == "side must be BUY/SELL or LONG/SHORT."
+    assert out["side"] == "flat"
+
+
 def test_trade_history_surfaces_comment_limit_metadata() -> None:
     mt5, prev = _install_mock_mt5()
     Deal = namedtuple("Deal", ["ticket", "time", "symbol", "comment"])
@@ -583,3 +635,21 @@ def test_trade_journal_analyze_propagates_history_errors() -> None:
         out = trade_journal_analyze(__cli_raw=True)
 
     assert out == {"error": "boom"}
+
+
+def test_trade_journal_analyze_forwards_side_filter() -> None:
+    captured = {}
+
+    def _fake_history(request):
+        captured["request"] = request
+        return {"success": True, "count": 0, "items": [], "message": "No deals found"}
+
+    with patch(
+        "mtdata.core.trading.account._run_trade_history_request",
+        side_effect=_fake_history,
+    ):
+        out = trade_journal_analyze(side="short", __cli_raw=True)
+
+    assert captured["request"].side == "short"
+    assert out["success"] is True
+    assert out["summary"]["closed_deals"] == 0

@@ -18,7 +18,7 @@ from .error_envelope import (
     log_transport_exception,
     normalize_error_payload,
 )
-from .output_contract import apply_output_verbosity
+from .output_contract import apply_output_verbosity, resolve_requested_output_verbosity
 
 try:
     import annotationlib
@@ -346,22 +346,7 @@ def _callable_accepts_kwarg(func: Any, name: str) -> bool:
 
 
 def _extract_verbose_flag(kwargs: Dict[str, Any]) -> bool:
-    value = kwargs.get("verbose", inspect._empty)
-    if value is not inspect._empty:
-        parsed = _parse_bool_like(value, allow_none=False)
-        if parsed is not _UNPARSED_BOOL:
-            return bool(parsed)
-        return bool(value)
-
-    for candidate in kwargs.values():
-        if not isinstance(candidate, BaseModel):
-            continue
-        try:
-            verbose_value = candidate.verbose
-        except Exception:
-            continue
-        return bool(verbose_value)
-    return False
+    return resolve_requested_output_verbosity(kwargs)
 
 
 def _augment_signature_with_global_verbose(

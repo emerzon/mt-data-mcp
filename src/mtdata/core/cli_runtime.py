@@ -6,6 +6,7 @@ from pydantic import ValidationError
 from .data.requests import (
     _normalize_indicator_specs as _shared_normalize_indicator_specs,
 )
+from .output_contract import resolve_requested_output_verbosity
 
 
 def parse_kv_string(s: str, *, debug: Callable[[str], None]) -> Optional[Dict[str, Any]]:
@@ -323,13 +324,7 @@ def create_command_function(  # noqa: C901
                 )
                 return 1
 
-        cli_verbose = getattr(args, "verbose", False)
-        if isinstance(cli_verbose, str):
-            normalized_verbose = cli_verbose.strip().lower()
-            if normalized_verbose == "true":
-                cli_verbose = True
-            elif normalized_verbose == "false":
-                cli_verbose = False
+        cli_verbose = resolve_requested_output_verbosity(args)
         if bool(cli_verbose):
             kwargs["verbose"] = True
         kwargs["__cli_raw"] = True

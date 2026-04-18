@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import copy
+import json
 import logging
 import math
 import re
@@ -20,6 +22,7 @@ from ..execution_logging import (
     run_logged_operation,
 )
 from . import validation
+from .idempotency import IdempotencyStore
 from .requests import (
     TradeCloseRequest,
     TradeGetOpenRequest,
@@ -35,6 +38,7 @@ from .sizing import _resolve_risk_tick_value
 
 logger = logging.getLogger(__name__)
 _DEFAULT_TRADE_HISTORY_LOOKBACK_DAYS = 7
+_TRADE_IDEMPOTENCY_STORE = IdempotencyStore()
 _TRADE_HISTORY_RANGE_HINT = (
     "Try narrowing the range with --minutes-back, --days, --start, or --end."
 )
@@ -61,6 +65,78 @@ def _guardrail_order_side(order_type: Optional[str]) -> Optional[str]:
     if text.startswith("SELL"):
         return "SELL"
     return None
+
+
+def _normalize_idempotency_key(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    key = str(value).strip()
+    return key or None
+
+
+def _build_trade_request_signature(request: Any) -> Optional[str]:
+    if request is None:
+        return None
+    try:
+        payload = request.model_dump(mode="json")
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    payload.pop("idempotency_key", None)
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"))
+
+
+def _idempotency_duplicate_response(
+    *,
+    key: str,
+    original_outcome: Dict[str, Any],
+) -> Dict[str, Any]:
+    return {
+        "success": infer_result_success(original_outcome),
+        "duplicate": True,
+        "idempotency_key": key,
+        "message": "Duplicate request suppressed by idempotency key.",
+        "original_outcome": original_outcome,
+    }
+
+
+def _check_trade_idempotency(
+    *,
+    idempotency_store: Optional[IdempotencyStore],
+    key: Optional[str],
+    request_signature: Optional[str],
+) -> Optional[Dict[str, Any]]:
+    if idempotency_store is None or key is None:
+        return None
+    duplicate = idempotency_store.check(key)
+    if duplicate is None:
+        return None
+    original_outcome = duplicate.get("original_outcome")
+    if not isinstance(original_outcome, dict):
+        return {
+            "error": "Stored idempotency outcome is invalid; use a new idempotency_key.",
+            "idempotency_key": key,
+            "idempotency_conflict": True,
+        }
+    stored_signature = duplicate.get("request_signature")
+    if (
+        stored_signature is not None
+        and request_signature is not None
+        and stored_signature != request_signature
+    ):
+        return {
+            "error": (
+                "Idempotency key was already used for a different trade request. "
+                "Use a new idempotency_key when changing parameters."
+            ),
+            "idempotency_key": key,
+            "idempotency_conflict": True,
+        }
+    return _idempotency_duplicate_response(
+        key=key,
+        original_outcome=copy.deepcopy(original_outcome),
+    )
 
 
 def _resolve_trade_risk_direction(
@@ -314,10 +390,18 @@ def run_trade_place(  # noqa: C901
     place_pending_order: Any,
     close_positions: Any,
     safe_int_ticket: Any,
+    idempotency_store: Optional[IdempotencyStore] = _TRADE_IDEMPOTENCY_STORE,
 ) -> Dict[str, Any]:
     started_at = time.perf_counter()
     missing: List[str] = []
     symbol_norm = str(request.symbol).strip() if request.symbol is not None else ""
+    idempotency_key = _normalize_idempotency_key(getattr(request, "idempotency_key", None))
+    idempotency_signature = (
+        _build_trade_request_signature(request)
+        if idempotency_key is not None
+        else None
+    )
+    idempotency_consumed = False
     log_operation_start(
         logger,
         operation="trade_place",
@@ -331,6 +415,18 @@ def run_trade_place(  # noqa: C901
         order_type: Optional[str] = None,
         pending: Optional[bool] = None,
     ) -> Dict[str, Any]:
+        nonlocal idempotency_consumed
+        if (
+            not idempotency_consumed
+            and idempotency_store is not None
+            and idempotency_key is not None
+        ):
+            idempotency_store.record(
+                idempotency_key,
+                copy.deepcopy(result),
+                request_signature=idempotency_signature,
+            )
+            idempotency_consumed = True
         log_operation_finish(
             logger,
             operation="trade_place",
@@ -341,6 +437,15 @@ def run_trade_place(  # noqa: C901
             pending=pending,
         )
         return result
+
+    duplicate_result = _check_trade_idempotency(
+        idempotency_store=idempotency_store,
+        key=idempotency_key,
+        request_signature=idempotency_signature,
+    )
+    if duplicate_result is not None:
+        idempotency_consumed = True
+        return _finish(duplicate_result)
 
     def _dry_run_preview(
         *,
@@ -721,8 +826,16 @@ def run_trade_modify(
     normalize_pending_expiration: Any,
     modify_pending_order: Any,
     modify_position: Any,
+    idempotency_store: Optional[IdempotencyStore] = _TRADE_IDEMPOTENCY_STORE,
 ) -> Dict[str, Any]:
     started_at = time.perf_counter()
+    idempotency_key = _normalize_idempotency_key(getattr(request, "idempotency_key", None))
+    idempotency_signature = (
+        _build_trade_request_signature(request)
+        if idempotency_key is not None
+        else None
+    )
+    idempotency_consumed = False
     log_operation_start(
         logger,
         operation="trade_modify",
@@ -734,6 +847,18 @@ def run_trade_modify(
         *,
         pending: Optional[bool] = None,
     ) -> Dict[str, Any]:
+        nonlocal idempotency_consumed
+        if (
+            not idempotency_consumed
+            and idempotency_store is not None
+            and idempotency_key is not None
+        ):
+            idempotency_store.record(
+                idempotency_key,
+                copy.deepcopy(result),
+                request_signature=idempotency_signature,
+            )
+            idempotency_consumed = True
         log_operation_finish(
             logger,
             operation="trade_modify",
@@ -743,6 +868,15 @@ def run_trade_modify(
             pending=pending,
         )
         return result
+
+    duplicate_result = _check_trade_idempotency(
+        idempotency_store=idempotency_store,
+        key=idempotency_key,
+        request_signature=idempotency_signature,
+    )
+    if duplicate_result is not None:
+        idempotency_consumed = True
+        return _finish(duplicate_result)
 
     price_val = None if request.price in (None, 0) else request.price
     try:
@@ -1138,6 +1272,11 @@ def run_trade_history(  # noqa: C901
             )
             if order_ticket_error:
                 return {"error": order_ticket_error}
+            side_value, side_error = validation._normalize_trade_side_filter(
+                getattr(request, "side", None)
+            )
+            if side_error:
+                return {"error": side_error}
             minutes_back_value, minutes_back_error = normalize_minutes_back(
                 request.minutes_back
             )
@@ -1284,7 +1423,11 @@ def run_trade_history(  # noqa: C901
 
             def _empty_history_message(kind_label: str) -> Dict[str, str]:
                 message = f"No {kind_label} found"
-                if request.symbol:
+                if side_value and request.symbol:
+                    message += f" for {side_value} side on {request.symbol}"
+                elif side_value:
+                    message += f" for {side_value} side"
+                elif request.symbol:
                     message += f" for {request.symbol}"
                 if default_window_label:
                     message += f" in {default_window_label}"
@@ -1293,6 +1436,23 @@ def run_trade_history(  # noqa: C901
                 if minutes_back_value is not None and minutes_back_value < 30:
                     message += " Note: MT5 history may take up to a few minutes to reflect very recent events."
                 return {"message": message}
+
+            def _filter_by_side(df_in: "pd.DataFrame") -> "pd.DataFrame":
+                if side_value is None:
+                    return df_in
+                if "type" not in df_in.columns:
+                    return df_in.iloc[0:0]
+                type_text = (
+                    df_in["type"]
+                    .astype(str)
+                    .str.upper()
+                    .str.replace(r"[^A-Z0-9]+", "_", regex=True)
+                    .str.strip("_")
+                )
+                mask = type_text.eq(side_value) | type_text.str.startswith(
+                    f"{side_value}_"
+                )
+                return df_in.loc[mask]
 
             if kind == "deals":
                 try:
@@ -1327,6 +1487,9 @@ def run_trade_history(  # noqa: C901
                 sort_src = _normalize_time_col(df, "time")
                 for col, prefix in deal_enum_columns:
                     _decode_enum_column(df, col, prefix)
+                df = _filter_by_side(df)
+                if len(df) == 0:
+                    return _empty_history_message("deals")
                 if len(df) > 0:
                     triggers = df.apply(
                         lambda row: _extract_exit_trigger(
@@ -1385,6 +1548,9 @@ def run_trade_history(  # noqa: C901
                 _normalize_time_col(df, "time_done")
                 for col, prefix in order_enum_columns:
                     _decode_enum_column(df, col, prefix)
+                df = _filter_by_side(df)
+                if len(df) == 0:
+                    return _empty_history_message("orders")
 
             df["__sort_utc"] = (
                 sort_src

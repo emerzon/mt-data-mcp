@@ -14,13 +14,13 @@ import types
 import warnings
 from typing import (
     Any,
-    cast,
     Dict,
     List,
     Literal,
     Optional,
     Tuple,
     Union,
+    cast,
     get_args,
     get_origin,
     is_typeddict,
@@ -28,6 +28,7 @@ from typing import (
 
 from pydantic import BaseModel
 
+from ...bootstrap.settings import load_environment
 from ...bootstrap.tools import bootstrap_tools
 from ...forecast.requests import ForecastGenerateRequest
 from ...utils.minimal_output import format_result_minimal as _shared_minimal
@@ -90,7 +91,7 @@ from ..cli_runtime import (
 from ..cli_runtime import (
     parse_set_overrides as _parse_set_overrides_impl,
 )
-from ...bootstrap.settings import load_environment
+from ..output_contract import resolve_requested_output_verbosity
 from .runtime import (
     _argparse_color_enabled,
     _capture_runtime_warnings,
@@ -519,7 +520,7 @@ def _write_cli_text(text: str, *, stream: Any = None) -> None:
 
 
 def _render_cli_result(result: Any, *, args: Any, cmd_name: str) -> None:
-    verbose = bool(getattr(args, "verbose", False))
+    verbose = resolve_requested_output_verbosity(args)
     result = _attach_cli_meta(result, cmd_name=cmd_name, verbose=verbose)
     output = _format_result_for_cli(
         result,
@@ -887,7 +888,10 @@ def _add_forecast_generate_args(cmd_parser: argparse.ArgumentParser) -> None:
     cmd_parser.epilog = _forecast_generate_typed_value_epilog()
 
     cmd_parser.add_argument(
-        "symbol", nargs="?", default=argparse.SUPPRESS, help="Trading symbol."
+        "symbol",
+        nargs="?",
+        default=argparse.SUPPRESS,
+        help=_PARAM_HINTS["symbol"],
     )
     cmd_parser.add_argument(
         "--symbol", dest="symbol", default=argparse.SUPPRESS, help=argparse.SUPPRESS
@@ -922,7 +926,10 @@ def _add_forecast_generate_args(cmd_parser: argparse.ArgumentParser) -> None:
 
     group_window = cmd_parser.add_argument_group("Window")
     group_window.add_argument(
-        "--timeframe", type=str, default="H1", help="MT5 timeframe."
+        "--timeframe",
+        type=str,
+        default="H1",
+        help=_PARAM_HINTS["timeframe"],
     )
     group_window.add_argument(
         "--horizon", type=int, default=12, help="Forecast horizon in bars."
@@ -1003,7 +1010,7 @@ def _add_forecast_generate_args(cmd_parser: argparse.ArgumentParser) -> None:
         "--verbose",
         action="store_true",
         default=False,
-        help="Show detailed metadata in output.",
+        help=_PARAM_HINTS["verbose"],
     )
     group_dbg.add_argument(
         "--print-config",
@@ -1423,7 +1430,7 @@ def main():
         dest="_global_timeframe",
         default=argparse.SUPPRESS,
         metavar="TIMEFRAME",
-        help="Timeframe for market data (H1, M30, D1, etc.)",
+        help=_PARAM_HINTS["timeframe"],
     )
 
     subparsers = parser.add_subparsers(

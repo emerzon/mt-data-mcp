@@ -3,7 +3,7 @@ Forecast engine core logic and orchestration.
 """
 
 import logging
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -41,14 +41,13 @@ from .common import (
     fetch_history as _fetch_history,
 )
 from .ensemble_dispatch import (
-    append_failure as _append_ensemble_failure,
-)
-from .ensemble_dispatch import (
     build_dispatch_error as _build_ensemble_dispatch_error,
 )
-
 from .forecast_validation import format_invalid_method_error
 from .interface import ForecastCallContext
+
+if TYPE_CHECKING:
+    from .interface import ForecastMethod
 
 
 class _AsyncTrainingStarted(Exception):

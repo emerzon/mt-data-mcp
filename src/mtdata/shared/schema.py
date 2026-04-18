@@ -4,8 +4,8 @@ Shared JSON schema helpers for CLI/server tool inputs.
 Provides reusable $defs such as TimeframeSpec and helpers to apply them
 to per-tool parameter schemas.
 """
-import logging
 import inspect
+import logging
 import types
 from typing import (
     Any,
@@ -29,14 +29,13 @@ except Exception:  # pragma: no cover - Python 3.14+ should provide this
     annotationlib = None
 
 from .constants import TIMEFRAME_MAP
+from .parameter_contracts import PARAMETER_HELP
 
 _logger = logging.getLogger(__name__)
 
 PARAM_HINTS = {
+    **PARAMETER_HELP,
     "direction": "Trade direction (long/short).",
-    "symbol": "Trading symbol (e.g. EURUSD).",
-    "timeframe": "MT5 timeframe (e.g. H1/M30/D1).",
-    "verbose": "Include verbose metadata and diagnostics in the response. Defaults to false for lean output.",
     "limit": "Max rows/bars to return.",
     "start": "Start time (dateparser).",
     "end": "End time (dateparser).",

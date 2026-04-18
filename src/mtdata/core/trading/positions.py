@@ -187,6 +187,7 @@ def normalize_trade_history_output(
     for field in (
         "start",
         "end",
+        "side",
         "minutes_back",
         "position_ticket",
         "deal_ticket",
@@ -194,7 +195,11 @@ def normalize_trade_history_output(
     ):
         value = getattr(request, field, None)
         if value is not None:
-            out[field] = value
+            if field == "side":
+                normalized_side, _ = validation._normalize_trade_side_filter(value)
+                out[field] = normalized_side or value
+            else:
+                out[field] = value
     return out
 
 
