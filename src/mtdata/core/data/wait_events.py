@@ -671,7 +671,7 @@ def _watcher_requirements(watch_for: List[Dict[str, Any]]) -> Dict[str, Any]:
     needs_history_orders = False
     for item in watch_for:
         event_type = str(item["type"])
-        if event_type in _ORDER_STATE_EVENT_TYPES:
+        if event_type in _ORDER_STATE_EVENT_TYPES or event_type == "order_filled":
             needs_orders = True
         if event_type in _POSITION_STATE_EVENT_TYPES:
             needs_positions = True
@@ -876,6 +876,11 @@ def _collect_snapshot(
         if isinstance(rows, dict) and "error" in rows:
             return rows
         snapshot["history_deals"] = rows
+        _update_order_filled_snapshot_state(
+            snapshot=snapshot,
+            history_state=history_state,
+            gateway=gateway,
+        )
 
     if needs_history_orders:
         rows = _collect_new_account_history_rows(
@@ -976,6 +981,76 @@ def _collect_new_account_history_rows(
     return fresh_rows
 
 
+def _update_order_filled_snapshot_state(
+    *,
+    snapshot: Dict[str, Any],
+    history_state: Dict[str, Any],
+    gateway: Any,
+) -> None:
+    deals_state = history_state.setdefault("history_deals", {})
+    filled_volume_by_order_ticket = deals_state.setdefault(
+        "filled_volume_by_order_ticket",
+        {},
+    )
+    target_volume_by_order_ticket = deals_state.setdefault(
+        "target_volume_by_order_ticket",
+        {},
+    )
+    last_row_by_order_ticket = deals_state.setdefault(
+        "last_row_by_order_ticket",
+        {},
+    )
+    _remember_order_fill_targets(
+        target_volume_by_order_ticket,
+        snapshot.get("baseline", {}).get("orders", []),
+        filled_volume_by_order_ticket=filled_volume_by_order_ticket,
+    )
+    _remember_order_fill_targets(
+        target_volume_by_order_ticket,
+        snapshot.get("orders", []),
+        filled_volume_by_order_ticket=filled_volume_by_order_ticket,
+    )
+    for row in snapshot.get("history_deals", []):
+        if not _is_deal_entry_in(row, gateway=gateway):
+            continue
+        order_ticket = _account_order_ticket(row)
+        if order_ticket is None:
+            continue
+        last_row_by_order_ticket[order_ticket] = row
+        fill_volume = _order_fill_volume(row)
+        if fill_volume is None:
+            continue
+        filled_volume_by_order_ticket[order_ticket] = (
+            float(filled_volume_by_order_ticket.get(order_ticket) or 0.0) + fill_volume
+        )
+    snapshot["order_filled_state"] = {
+        "filled_volume_by_order_ticket": filled_volume_by_order_ticket,
+        "target_volume_by_order_ticket": target_volume_by_order_ticket,
+        "last_row_by_order_ticket": last_row_by_order_ticket,
+    }
+
+
+def _remember_order_fill_targets(
+    target_volume_by_order_ticket: Dict[int, float],
+    rows: List[Any],
+    *,
+    filled_volume_by_order_ticket: Dict[int, float],
+) -> None:
+    for row in rows:
+        order_ticket = _account_order_ticket(row)
+        if order_ticket is None:
+            continue
+        target_volume = _order_target_volume(
+            row,
+            filled_volume=_finite_number(filled_volume_by_order_ticket.get(order_ticket)) or 0.0,
+        )
+        if target_volume is None or target_volume <= 0.0:
+            continue
+        existing_volume = _finite_number(target_volume_by_order_ticket.get(order_ticket))
+        if existing_volume is None or target_volume > existing_volume:
+            target_volume_by_order_ticket[order_ticket] = target_volume
+
+
 def _build_market_state(
     *,
     gateway: Any,
@@ -1063,11 +1138,13 @@ def _evaluate_watch_events(  # noqa: C901
                 if _matches_account_filters(row, spec, gateway=gateway):
                     return _format_account_match(event_type, row, gateway=gateway)
         elif event_type == "order_filled":
-            for row in snapshot.get("history_deals", []):
-                if not _is_deal_entry_in(row, gateway=gateway):
-                    continue
-                if _matches_account_filters(row, spec, gateway=gateway):
-                    return _format_account_match(event_type, row, gateway=gateway)
+            match = _evaluate_order_filled_event(
+                spec,
+                snapshot,
+                gateway=gateway,
+            )
+            if match is not None:
+                return match
         elif event_type == "order_cancelled":
             for row in snapshot.get("history_orders", []):
                 if not _is_order_cancelled(row, gateway=gateway):
@@ -1147,6 +1224,48 @@ def _evaluate_watch_events(  # noqa: C901
             )
             if match is not None:
                 return match
+    return None
+
+
+def _evaluate_order_filled_event(
+    spec: Dict[str, Any],
+    snapshot: Dict[str, Any],
+    *,
+    gateway: Any,
+) -> Optional[Dict[str, Any]]:
+    fill_state = snapshot.get("order_filled_state") or {}
+    filled_volume_by_order_ticket = fill_state.get("filled_volume_by_order_ticket") or {}
+    target_volume_by_order_ticket = fill_state.get("target_volume_by_order_ticket") or {}
+    last_row_by_order_ticket = fill_state.get("last_row_by_order_ticket") or {}
+    candidate_order_tickets: List[int] = []
+    seen_tickets: set[int] = set()
+    for row in snapshot.get("history_deals", []):
+        if not _is_deal_entry_in(row, gateway=gateway):
+            continue
+        if not _matches_account_filters(row, spec, gateway=gateway):
+            continue
+        order_ticket = _account_order_ticket(row)
+        if order_ticket is None:
+            return _format_account_match("order_filled", row, gateway=gateway)
+        target_volume = _finite_number(target_volume_by_order_ticket.get(order_ticket))
+        filled_volume = _finite_number(filled_volume_by_order_ticket.get(order_ticket))
+        if target_volume is None or target_volume <= 0.0 or filled_volume is None:
+            return _format_account_match("order_filled", row, gateway=gateway)
+        if order_ticket not in seen_tickets:
+            seen_tickets.add(order_ticket)
+            candidate_order_tickets.append(order_ticket)
+    for order_ticket in candidate_order_tickets:
+        target_volume = _finite_number(target_volume_by_order_ticket.get(order_ticket))
+        filled_volume = _finite_number(filled_volume_by_order_ticket.get(order_ticket))
+        if (
+            target_volume is None
+            or filled_volume is None
+            or filled_volume + 1e-12 < target_volume
+        ):
+            continue
+        matched_row = last_row_by_order_ticket.get(order_ticket)
+        if matched_row is not None:
+            return _format_account_match("order_filled", matched_row, gateway=gateway)
     return None
 
 
@@ -3018,10 +3137,42 @@ def _row_int(row: Any, key: str) -> Optional[int]:
         return None
 
 
+def _row_float(row: Any, key: str) -> Optional[float]:
+    return _finite_number(_row_value(row, key))
+
+
 def _first_int(*values: Optional[int]) -> Optional[int]:
     for value in values:
         if value is not None:
             return int(value)
+    return None
+
+
+def _account_order_ticket(row: Any) -> Optional[int]:
+    return _first_int(
+        _row_int(row, "order"),
+        _row_int(row, "order_ticket"),
+        _row_int(row, "ticket"),
+    )
+
+
+def _order_fill_volume(row: Any) -> Optional[float]:
+    volume = _row_float(row, "volume")
+    if volume is None:
+        return None
+    return abs(volume)
+
+
+def _order_target_volume(row: Any, *, filled_volume: float) -> Optional[float]:
+    initial_volume = _row_float(row, "volume_initial")
+    if initial_volume is not None and initial_volume > 0.0:
+        return float(initial_volume)
+    current_volume = _row_float(row, "volume_current")
+    if current_volume is not None and current_volume > 0.0:
+        return float(current_volume + max(0.0, filled_volume))
+    volume = _row_float(row, "volume")
+    if volume is not None and volume > 0.0:
+        return float(volume)
     return None
 
 
