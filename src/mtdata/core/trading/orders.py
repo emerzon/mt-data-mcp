@@ -454,6 +454,14 @@ def _send_order_with_fill_mode_retry(
         validation._safe_int_attr(mt5, "TRADE_RETCODE_PRICE_CHANGED", 10020),
         validation._safe_int_attr(mt5, "TRADE_RETCODE_REQUOTE", 10004),
     }
+    terminal_retcode_failures = {
+        validation._safe_int_attr(mt5, "TRADE_RETCODE_REJECT", 10006),
+        validation._safe_int_attr(mt5, "TRADE_RETCODE_TRADE_DISABLED", 10017),
+        validation._safe_int_attr(mt5, "TRADE_RETCODE_MARKET_CLOSED", 10018),
+        validation._safe_int_attr(mt5, "TRADE_RETCODE_NO_MONEY", 10019),
+        validation._safe_int_attr(mt5, "TRADE_RETCODE_TOO_MANY_REQUESTS", 10024),
+        validation._safe_int_attr(mt5, "TRADE_RETCODE_INVALID_STOPS", 10016),
+    }
     for fill_mode in validation._candidate_fill_modes(mt5, symbol_info):
         attempt_request = dict(request)
         attempt_request["type_filling"] = int(fill_mode)
@@ -490,6 +498,8 @@ def _send_order_with_fill_mode_retry(
                 pass
 
             retcode = getattr(result, "retcode", None) if result is not None else None
+            if retcode in terminal_retcode_failures:
+                return result, comment_fallback, last_error, attempts, last_request
             should_retry_same_fill = (
                 retcode in price_changed_codes
                 and price_retry_count < max(0, int(max_price_retries))

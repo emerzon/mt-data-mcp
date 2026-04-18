@@ -782,6 +782,49 @@ def test_place_market_order_accepts_done_partial_without_retry(mock_mt5):
     assert mock_mt5.order_send.call_count == 1
 
 
+def test_place_market_order_does_not_retry_fill_modes_after_terminal_reject(mock_mt5):
+    mock_mt5.ORDER_FILLING_IOC = 1
+    mock_mt5.ORDER_FILLING_FOK = 0
+    mock_mt5.ORDER_FILLING_RETURN = 2
+    mock_mt5.TRADE_RETCODE_NO_MONEY = 10019
+    mock_mt5.ORDER_TIME_GTC = 0
+    mock_mt5.order_send.side_effect = [
+        MagicMock(
+            retcode=10019,
+            deal=0,
+            order=0,
+            volume=0.1,
+            price=1.05010,
+            bid=1.05000,
+            ask=1.05010,
+            comment="No money",
+            request_id=703,
+        ),
+        MagicMock(
+            retcode=10009,
+            deal=123,
+            order=456,
+            volume=0.1,
+            price=1.05010,
+            bid=1.05000,
+            ask=1.05010,
+            comment="",
+            request_id=704,
+        ),
+    ]
+
+    res = _place_market_order(
+        symbol="EURUSD",
+        volume=0.1,
+        order_type="BUY",
+    )
+
+    assert res["error"] == "Failed to send order"
+    assert res["retcode"] == 10019
+    assert len(res["fill_mode_attempts"]) == 1
+    assert mock_mt5.order_send.call_count == 1
+
+
 def test_place_market_order_prefers_symbol_fill_mode(mock_mt5):
     mock_mt5.ORDER_FILLING_IOC = 1
     mock_mt5.ORDER_FILLING_FOK = 0
