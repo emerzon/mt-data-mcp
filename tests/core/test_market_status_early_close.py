@@ -180,6 +180,52 @@ class TestEveEarlyClose:
         assert result["minutes_until"] == 360
 
 
+class TestNextOpenSkipsAndAllowsHolidaySessions:
+    def test_weekend_skips_full_holiday_monday(self, monkeypatch):
+        test_market = {
+            "name": "Test Exchange",
+            "country": "XX",
+            "timezone": "UTC",
+            "open": (9, 0),
+            "close": (16, 0),
+        }
+        monkeypatch.setitem(ms_mod._MARKETS, "TEST", test_market)
+        monkeypatch.setattr(
+            ms_mod.holidays, "country_holidays",
+            _fake_holidays_factory({date(2030, 6, 17): "Full Holiday"}),
+        )
+
+        now = datetime(2030, 6, 15, 10, 0, tzinfo=timezone.utc)  # Saturday
+        result = ms_mod._check_market_status("TEST", now)
+
+        assert result["status"] == "closed"
+        assert result["reason"] == "weekend"
+        assert result["next_open"] == "2030-06-18T09:00:00+00:00"
+
+    def test_after_hours_keeps_next_day_early_close_session(self, monkeypatch):
+        test_market = {
+            "name": "Test Exchange",
+            "country": "XX",
+            "timezone": "UTC",
+            "open": (9, 0),
+            "close": (16, 0),
+            "early_close": (13, 0),
+            "early_close_holidays": ["Half Day"],
+        }
+        monkeypatch.setitem(ms_mod._MARKETS, "TEST", test_market)
+        monkeypatch.setattr(
+            ms_mod.holidays, "country_holidays",
+            _fake_holidays_factory({date(2030, 12, 25): "Half Day"}),
+        )
+
+        now = datetime(2030, 12, 24, 17, 0, tzinfo=timezone.utc)
+        result = ms_mod._check_market_status("TEST", now)
+
+        assert result["status"] == "closed"
+        assert result["reason"] == "after_hours"
+        assert result["next_open"] == "2030-12-25T09:00:00+00:00"
+
+
 # ---- _get_upcoming_holidays: impact field ----
 
 class TestUpcomingHolidayImpact:

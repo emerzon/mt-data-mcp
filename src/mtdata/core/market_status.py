@@ -156,6 +156,61 @@ def _format_duration(minutes: int) -> str:
     return f"{hours}h {mins}min{'s' if mins != 1 else ''}"
 
 
+def _is_early_close_session(
+    market: Dict[str, Any],
+    country: str,
+    session_dt: datetime,
+) -> bool:
+    """Return whether *session_dt* should trade as an early-close session."""
+    is_holiday_result, holiday_name = _is_holiday(country, session_dt)
+
+    if is_holiday_result and holiday_name and market.get("early_close_holidays"):
+        for h_name in market["early_close_holidays"]:
+            if h_name.lower() in holiday_name.lower():
+                return True
+
+    if market.get("early_close_day_after"):
+        yesterday = session_dt - timedelta(days=1)
+        _, yesterday_holiday = _is_holiday(country, yesterday)
+        if yesterday_holiday:
+            for h_name in market["early_close_day_after"]:
+                if h_name.lower() in yesterday_holiday.lower():
+                    return True
+
+    if market.get("early_close_eves"):
+        tomorrow = session_dt + timedelta(days=1)
+        _, tomorrow_holiday = _is_holiday(country, tomorrow)
+        if tomorrow_holiday:
+            for eve_name in market["early_close_eves"]:
+                if eve_name.lower() in tomorrow_holiday.lower():
+                    return True
+
+    return False
+
+
+def _next_market_open_datetime(
+    market: Dict[str, Any],
+    country: str,
+    now_local: datetime,
+) -> datetime:
+    """Return the next tradable session open after *now_local*."""
+    next_open = now_local + timedelta(days=1)
+    while True:
+        if next_open.weekday() >= 5:
+            next_open += timedelta(days=1)
+            continue
+        is_holiday_result, _holiday_name = _is_holiday(country, next_open)
+        if is_holiday_result and not _is_early_close_session(market, country, next_open):
+            next_open += timedelta(days=1)
+            continue
+        return next_open.replace(
+            hour=market["open"][0],
+            minute=market["open"][1],
+            second=0,
+            microsecond=0,
+        )
+
+
 def _check_market_status(market_id: str, now_local: datetime) -> Dict[str, Any]:
     """Check status for a single market."""
     market = _MARKETS[market_id]
@@ -164,11 +219,7 @@ def _check_market_status(market_id: str, now_local: datetime) -> Dict[str, Any]:
     # Check weekend
     weekday = now_local.weekday()
     if weekday >= 5:  # Saturday or Sunday
-        days_until_monday = (7 - weekday) % 7
-        if days_until_monday == 0:
-            days_until_monday = 7
-        next_open = now_local + timedelta(days=days_until_monday)
-        next_open = next_open.replace(hour=market["open"][0], minute=market["open"][1], second=0, microsecond=0)
+        next_open = _next_market_open_datetime(market, country, now_local)
         minutes_until = int((next_open - _normalize_time(now_local)).total_seconds() // 60)
         return {
             "symbol": market_id,
@@ -186,41 +237,11 @@ def _check_market_status(market_id: str, now_local: datetime) -> Dict[str, Any]:
 
     # Determine early close BEFORE the holiday return so same-day
     # half-holidays are not treated as full closures.
-    is_early_close = False
-
-    # Same-day: today's holiday name matches early_close_holidays
-    if is_holiday_result and holiday_name and market.get("early_close_holidays"):
-        for h_name in market["early_close_holidays"]:
-            if h_name.lower() in holiday_name.lower():
-                is_early_close = True
-                break
-
-    # Day-after: yesterday was a holiday matching early_close_day_after
-    if not is_early_close and market.get("early_close_day_after"):
-        yesterday = now_local - timedelta(days=1)
-        _, yesterday_holiday = _is_holiday(country, yesterday)
-        if yesterday_holiday:
-            for h_name in market["early_close_day_after"]:
-                if h_name.lower() in yesterday_holiday.lower():
-                    is_early_close = True
-                    break
-
-    # Eve: tomorrow is a holiday matching early_close_eves
-    if not is_early_close and market.get("early_close_eves"):
-        tomorrow = now_local + timedelta(days=1)
-        _, tomorrow_holiday = _is_holiday(country, tomorrow)
-        if tomorrow_holiday:
-            for eve_name in market["early_close_eves"]:
-                if eve_name.lower() in tomorrow_holiday.lower():
-                    is_early_close = True
-                    break
+    is_early_close = _is_early_close_session(market, country, now_local)
 
     # Full holiday (not a half-day session) → closed
     if is_holiday_result and not is_early_close:
-        next_open = now_local + timedelta(days=1)
-        while next_open.weekday() >= 5 or _is_holiday(country, next_open)[0]:
-            next_open += timedelta(days=1)
-        next_open = next_open.replace(hour=market["open"][0], minute=market["open"][1], second=0, microsecond=0)
+        next_open = _next_market_open_datetime(market, country, now_local)
         minutes_until = int((next_open - _normalize_time(now_local)).total_seconds() // 60)
         return {
             "symbol": market_id,
@@ -288,10 +309,7 @@ def _check_market_status(market_id: str, now_local: datetime) -> Dict[str, Any]:
         }
     
     # Market closed for the day
-    next_open = now_local + timedelta(days=1)
-    while next_open.weekday() >= 5 or _is_holiday(country, next_open)[0]:
-        next_open += timedelta(days=1)
-    next_open = next_open.replace(hour=market["open"][0], minute=market["open"][1], second=0, microsecond=0)
+    next_open = _next_market_open_datetime(market, country, now_local)
     minutes_until = int((next_open - now_norm).total_seconds() // 60)
     
     return {
