@@ -137,6 +137,7 @@ def _extract_forecast_values(
     Common logic for finding prediction columns and extracting values.
     """
     pred_col = None
+    column_detection_error: Optional[Exception] = None
     try:
         columns = list(Yf.columns)
         pred_candidates = [c for c in columns if c not in _FORECAST_RESERVED_COLUMNS]
@@ -183,8 +184,8 @@ def _extract_forecast_values(
                 pred_col = numeric_candidates[0]
             elif allow_actual_fallback and not numeric_candidates and "y" in columns:
                 pred_col = "y"
-    except Exception:
-        pass
+    except Exception as exc:
+        column_detection_error = exc
     
     if pred_col is None:
         columns = []
@@ -193,11 +194,19 @@ def _extract_forecast_values(
         except Exception:
             columns = []
         if not allow_actual_fallback and "y" in columns:
-            raise RuntimeError(
+            error = RuntimeError(
                 f"{method_name} prediction columns not found; refusing to use actuals column 'y'. "
                 f"Available columns: {columns}"
             )
-        raise RuntimeError(f"{method_name} prediction columns not found. Available columns: {columns}")
+            if column_detection_error is not None:
+                raise error from column_detection_error
+            raise error
+        error = RuntimeError(
+            f"{method_name} prediction columns not found. Available columns: {columns}"
+        )
+        if column_detection_error is not None:
+            raise error from column_detection_error
+        raise error
     
     vals = np.asarray(Yf[pred_col].to_numpy(), dtype=float)
     return edge_pad_to_length(vals, int(fh))

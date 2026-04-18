@@ -201,6 +201,18 @@ class TestExtractForecastValues:
         with pytest.raises(RuntimeError, match="CustomMethod"):
             _extract_forecast_values(df, fh=1, method_name="CustomMethod")
 
+    def test_detection_failures_preserve_original_exception_as_cause(self):
+        class ExplodingForecastFrame:
+            columns = ["pred"]
+
+            def __getitem__(self, key):
+                raise KeyError(key)
+
+        with pytest.raises(RuntimeError, match="prediction columns not found") as exc_info:
+            _extract_forecast_values(ExplodingForecastFrame(), fh=1, method_name="CustomMethod")
+
+        assert isinstance(exc_info.value.__cause__, KeyError)
+
 
 # ===================================================================
 # 4. _create_training_dataframes
