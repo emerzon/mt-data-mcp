@@ -312,33 +312,83 @@ def _to_server_naive_dt(dt: datetime) -> datetime:
 
 
 def _normalize_times_in_struct(arr: Any):
+    """Convert all time fields in a structured array to UTC."""
     try:
         if arr is None:
             return arr
-        names = getattr(getattr(arr, 'dtype', None), 'names', None)
-        if not names or 'time' not in names:
+        names = getattr(getattr(arr, "dtype", None), "names", None)
+        if not names:
             return arr
+
+        # Identify all fields that look like timestamps
+        time_fields = [
+            n
+            for n in names
+            if n
+            in (
+                "time",
+                "time_msc",
+                "time_setup",
+                "time_setup_msc",
+                "time_done",
+                "time_done_msc",
+                "time_update",
+                "time_update_msc",
+                "time_expiration",
+                "expiration",
+            )
+        ]
+        if not time_fields:
+            return arr
+
         out = arr
-        flags = getattr(arr, 'flags', None)
-        if flags is not None and not bool(getattr(flags, 'writeable', True)):
+        flags = getattr(arr, "flags", None)
+        if flags is not None and not bool(getattr(flags, "writeable", True)):
             out = arr.copy()
+
+        # Optimization: if using default function and no TZ (static offset),
+        # use vector subtraction.
         if _mt5_epoch_to_utc is _DEFAULT_MT5_EPOCH_TO_UTC:
             tz = mt5_config.get_server_tz()
             if tz is None:
                 offset_seconds = int(mt5_config.get_time_offset_seconds())
                 if offset_seconds:
-                    out["time"] = out["time"] - float(offset_seconds)
+                    for field in time_fields:
+                        try:
+                            shift = (
+                                float(offset_seconds) * 1000.0
+                                if field.endswith("_msc")
+                                else float(offset_seconds)
+                            )
+                            out[field] = out[field] - shift
+                        except Exception as exc:
+                            logger.warning(
+                                "Failed to normalize MT5 timestamp field %s with static offset; leaving raw values unchanged: %s",
+                                field,
+                                exc,
+                            )
+                            continue
                 return out
+
+        # Fallback to per-element conversion (handles DST correctly)
         for i in range(len(out)):
-            try:
-                out[i]['time'] = _mt5_epoch_to_utc(float(out[i]['time']))
-            except Exception as exc:
-                logger.warning(
-                    "Failed to normalize MT5 timestamp at index %s; leaving raw value unchanged: %s",
-                    i,
-                    exc,
-                )
-                continue
+            for field in time_fields:
+                try:
+                    val = float(out[i][field])
+                    if val <= 0:
+                        continue
+                    if field.endswith("_msc"):
+                        out[i][field] = _mt5_epoch_to_utc(val / 1000.0) * 1000.0
+                    else:
+                        out[i][field] = _mt5_epoch_to_utc(val)
+                except Exception as exc:
+                    logger.warning(
+                        "Failed to normalize MT5 timestamp at index %s field %s; leaving raw value unchanged: %s",
+                        i,
+                        field,
+                        exc,
+                    )
+                    continue
         return out
     except Exception as exc:
         logger.warning(
@@ -346,6 +396,72 @@ def _normalize_times_in_struct(arr: Any):
             exc,
         )
         return arr
+
+
+def _normalize_object_times(obj: Any) -> Any:
+    """Normalize timestamp attributes on an MT5 object to UTC.
+    Returns a copy (SimpleNamespace) if the original was likely immutable.
+    """
+    if obj is None:
+        return None
+
+    # Common MT5 timestamp attributes
+    time_attrs = (
+        "time",
+        "time_msc",
+        "time_setup",
+        "time_setup_msc",
+        "time_done",
+        "time_done_msc",
+        "time_update",
+        "time_update_msc",
+    )
+
+    # Check if any attributes exist
+    has_any = False
+    for attr in time_attrs:
+        if hasattr(obj, attr):
+            has_any = True
+            break
+    if not has_any:
+        return obj
+
+    # MT5 library objects are often read-only.
+    # We'll convert to a SimpleNamespace for safe modification.
+    from types import SimpleNamespace
+
+    try:
+        # Try to use _asdict() if it's a namedtuple-like object
+        if hasattr(obj, "_asdict"):
+            data = obj._asdict()
+        else:
+            data = {
+                attr: getattr(obj, attr)
+                for attr in dir(obj)
+                if not attr.startswith("_") and not callable(getattr(obj, attr))
+            }
+
+        modified = False
+        for attr in time_attrs:
+            if attr in data and data[attr]:
+                try:
+                    val = float(data[attr])
+                    if val > 0:
+                        if attr.endswith("_msc"):
+                            data[attr] = _mt5_epoch_to_utc(val / 1000.0) * 1000.0
+                        else:
+                            data[attr] = _mt5_epoch_to_utc(val)
+                        modified = True
+                except Exception:
+                    continue
+
+        if not modified:
+            return obj
+
+        return SimpleNamespace(**data)
+    except Exception as exc:
+        logger.debug("Failed to normalize object timestamps: %s", exc)
+        return obj
 
 
 # ---------------------------------------------------------------------------
