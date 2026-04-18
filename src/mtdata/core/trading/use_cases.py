@@ -528,15 +528,25 @@ def run_trade_place(  # noqa: C901
             side=_guardrail_order_side(order_type_norm),
         )
         if guardrail_preview.get("blocked"):
+            violations = list(guardrail_preview.get("violations") or [])
+            guardrail_rule = str(guardrail_preview.get("rule") or "").strip()
+            error_message = "Trade would be blocked by configured guardrails."
+            if violations:
+                prefix = (
+                    f"Trade blocked by guardrails ({guardrail_rule})"
+                    if guardrail_rule
+                    else "Trade blocked by guardrails"
+                )
+                error_message = f"{prefix}: {violations[0]}"
             return _finish(
                 {
-                    "error": "Trade would be blocked by configured guardrails.",
+                    "error": error_message,
                     "guardrail_blocked": True,
                     "dry_run": True,
                     "no_action": True,
                     "actionability": "blocked_by_guardrails",
                     "guardrails_preview": guardrail_preview,
-                    "violations": list(guardrail_preview.get("violations") or []),
+                    "violations": violations,
                 },
                 order_type=order_type_norm,
                 pending=is_pending,

@@ -156,6 +156,9 @@ def test_run_trade_place_dry_run_reports_guardrail_block(restore_trade_guardrail
     assert result["guardrail_blocked"] is True
     assert result["dry_run"] is True
     assert result["actionability"] == "blocked_by_guardrails"
+    assert result["guardrails_preview"]["rule"] == "symbol_policy"
+    assert "symbol_policy" in result["error"]
+    assert "Symbol BTCUSD is blocked by guardrail policy." in result["error"]
     place_market_order.assert_not_called()
     place_pending_order.assert_not_called()
 
