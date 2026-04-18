@@ -52,15 +52,21 @@ def _build_default_wait_event_watchers(
     ]
     if watch_tick_count_spike:
         watch_for.append({"type": "tick_count_spike", "symbol": instrument})
-    watch_for.extend(_support_resistance_watchers(instrument=instrument))
+    watch_for.extend(
+        _support_resistance_watchers(instrument=instrument, timeframe=timeframe)
+    )
     watch_for.extend(_pivot_zone_watchers(instrument=instrument, timeframe=timeframe))
     return _dedupe_wait_event_watchers(watch_for)
 
 
-def _support_resistance_watchers(*, instrument: str) -> List[Dict[str, Any]]:
+def _support_resistance_watchers(
+    *,
+    instrument: str,
+    timeframe: TimeframeLiteral,
+) -> List[Dict[str, Any]]:
     try:
         raw_tool = getattr(support_resistance_levels, "__wrapped__", support_resistance_levels)
-        payload = raw_tool(symbol=instrument, timeframe="auto", detail="compact")
+        payload = raw_tool(symbol=instrument, timeframe=timeframe, detail="compact")
     except Exception:
         return []
     if not isinstance(payload, dict) or payload.get("error"):

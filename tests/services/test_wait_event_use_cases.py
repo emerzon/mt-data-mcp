@@ -328,19 +328,31 @@ def test_wait_event_tool_compacts_matched_event_by_default(monkeypatch) -> None:
 
 
 def test_support_resistance_watchers_use_compact_levels(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
     monkeypatch.setattr(
         core_data,
         "support_resistance_levels",
-        lambda symbol, timeframe="auto", detail="compact": {
-            "success": True,
-            "levels": [
-                {"type": "support", "value": 99.5},
-                {"type": "resistance", "value": 101.0},
-            ],
-        },
+        lambda symbol, timeframe="auto", detail="compact": (
+            captured.update({
+                "symbol": symbol,
+                "timeframe": timeframe,
+                "detail": detail,
+            })
+            or {
+                "success": True,
+                "levels": [
+                    {"type": "support", "value": 99.5},
+                    {"type": "resistance", "value": 101.0},
+                ],
+            }
+        ),
     )
 
-    watchers = core_data._support_resistance_watchers(instrument="BTCUSD")
+    watchers = core_data._support_resistance_watchers(
+        instrument="BTCUSD",
+        timeframe="M15",
+    )
 
     assert watchers == [
         {"type": "price_touch_level", "symbol": "BTCUSD", "level": 99.5, "direction": "either"},
@@ -348,6 +360,7 @@ def test_support_resistance_watchers_use_compact_levels(monkeypatch) -> None:
         {"type": "price_touch_level", "symbol": "BTCUSD", "level": 101.0, "direction": "either"},
         {"type": "price_break_level", "symbol": "BTCUSD", "level": 101.0, "direction": "up"},
     ]
+    assert captured == {"symbol": "BTCUSD", "timeframe": "M15", "detail": "compact"}
 
 
 def test_support_resistance_watchers_ignore_non_finite_levels(monkeypatch) -> None:
@@ -363,7 +376,10 @@ def test_support_resistance_watchers_ignore_non_finite_levels(monkeypatch) -> No
         },
     )
 
-    watchers = core_data._support_resistance_watchers(instrument="BTCUSD")
+    watchers = core_data._support_resistance_watchers(
+        instrument="BTCUSD",
+        timeframe="H1",
+    )
 
     assert watchers == [
         {"type": "price_touch_level", "symbol": "BTCUSD", "level": 101.0, "direction": "either"},
