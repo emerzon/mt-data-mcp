@@ -660,6 +660,35 @@ class TestToolRegistries:
         r2["__test__"] = True
         assert "__test__" not in _TOOL_REGISTRY
 
+    def test_registry_views_stay_aligned_across_function_and_object_projections(self):
+        import mtdata.core._mcp_tools as tools
+
+        key = "__test_registry_projection__"
+        func = lambda: None
+        tool_obj = object()
+        prior_func = tools._TOOL_REGISTRY.pop(key, None)
+        prior_obj = tools._TOOL_OBJECT_REGISTRY.pop(key, None)
+        try:
+            tools._TOOL_REGISTRY[key] = func
+            tools._TOOL_OBJECT_REGISTRY[key] = tool_obj
+
+            assert tools.get_tool_functions()[key] is func
+            assert tools.get_tool_registry()[key] is tool_obj
+
+            tools._TOOL_REGISTRY.pop(key, None)
+            assert key not in tools.get_tool_functions()
+            assert tools.get_tool_registry()[key] is tool_obj
+
+            tools._TOOL_OBJECT_REGISTRY.pop(key, None)
+            assert key not in tools.get_tool_registry()
+        finally:
+            tools._TOOL_REGISTRY.pop(key, None)
+            tools._TOOL_OBJECT_REGISTRY.pop(key, None)
+            if prior_func is not None:
+                tools._TOOL_REGISTRY[key] = prior_func
+            if prior_obj is not None:
+                tools._TOOL_OBJECT_REGISTRY[key] = prior_obj
+
 
 # ── _recording_tool_decorator ─────────────────────────────────────────────
 

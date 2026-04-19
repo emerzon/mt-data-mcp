@@ -7,6 +7,7 @@ import inspect
 import logging
 import math
 import types
+from dataclasses import dataclass
 from functools import wraps as _wraps
 from typing import Any, Dict, List, Union, cast, get_args, get_origin
 
@@ -18,7 +19,7 @@ from .error_envelope import (
     log_transport_exception,
     normalize_error_payload,
 )
-from .output_contract import apply_output_verbosity, resolve_requested_output_verbosity
+from .output_contract import apply_output_verbosity, resolve_output_contract
 
 try:
     import annotationlib
@@ -26,9 +27,138 @@ except Exception:  # pragma: no cover - Python 3.14+ should provide this
     annotationlib = None
 
 _ORIG_TOOL_DECORATOR: Any = None
-_TOOL_REGISTRY: Dict[str, Any] = {}
-_TOOL_OBJECT_REGISTRY: Dict[str, Any] = {}
 _ANNOTATION_VALUE_FORMAT = getattr(getattr(annotationlib, "Format", None), "VALUE", None)
+_REGISTRY_UNSET = object()
+
+
+@dataclass
+class _ToolRegistration:
+    function: Any = _REGISTRY_UNSET
+    tool_object: Any = _REGISTRY_UNSET
+
+
+_TOOL_METADATA_REGISTRY: Dict[str, _ToolRegistration] = {}
+
+
+def _project_tool_registry(field: str) -> Dict[str, Any]:
+    projected: Dict[str, Any] = {}
+    for name, entry in _TOOL_METADATA_REGISTRY.items():
+        value = getattr(entry, field, _REGISTRY_UNSET)
+        if value is not _REGISTRY_UNSET:
+            projected[name] = value
+    return projected
+
+
+def _replace_dict_contents(target: Dict[str, Any], data: Dict[str, Any]) -> None:
+    dict.clear(target)
+    dict.update(target, data)
+
+
+def _sync_tool_registry_views() -> None:
+    _replace_dict_contents(_TOOL_REGISTRY, _project_tool_registry("function"))
+    _replace_dict_contents(_TOOL_OBJECT_REGISTRY, _project_tool_registry("tool_object"))
+
+
+def _upsert_tool_registration(
+    name: Any,
+    *,
+    function: Any = _REGISTRY_UNSET,
+    tool_object: Any = _REGISTRY_UNSET,
+) -> None:
+    key = str(name)
+    entry = _TOOL_METADATA_REGISTRY.get(key)
+    if entry is None:
+        entry = _ToolRegistration()
+        _TOOL_METADATA_REGISTRY[key] = entry
+    if function is not _REGISTRY_UNSET:
+        entry.function = function
+    if tool_object is not _REGISTRY_UNSET:
+        entry.tool_object = tool_object
+    _sync_tool_registry_views()
+
+
+def _remove_tool_registration_field(name: Any, field: str, default: Any = _REGISTRY_UNSET) -> Any:
+    key = str(name)
+    entry = _TOOL_METADATA_REGISTRY.get(key)
+    if entry is None:
+        if default is _REGISTRY_UNSET:
+            raise KeyError(key)
+        return default
+
+    value = getattr(entry, field, _REGISTRY_UNSET)
+    if value is _REGISTRY_UNSET:
+        if default is _REGISTRY_UNSET:
+            raise KeyError(key)
+        return default
+
+    setattr(entry, field, _REGISTRY_UNSET)
+    if entry.function is _REGISTRY_UNSET and entry.tool_object is _REGISTRY_UNSET:
+        _TOOL_METADATA_REGISTRY.pop(key, None)
+    _sync_tool_registry_views()
+    return value
+
+
+def _clear_tool_registration_field(field: str) -> None:
+    if not _TOOL_METADATA_REGISTRY:
+        _sync_tool_registry_views()
+        return
+
+    for key, entry in list(_TOOL_METADATA_REGISTRY.items()):
+        setattr(entry, field, _REGISTRY_UNSET)
+        if entry.function is _REGISTRY_UNSET and entry.tool_object is _REGISTRY_UNSET:
+            _TOOL_METADATA_REGISTRY.pop(key, None)
+    _sync_tool_registry_views()
+
+
+class _ToolRegistryView(dict):
+    def __init__(self, field: str) -> None:
+        super().__init__()
+        self._field = field
+
+    def __setitem__(self, key: Any, value: Any) -> None:
+        _upsert_tool_registration(key, **{self._field: value})
+
+    def __delitem__(self, key: Any) -> None:
+        _remove_tool_registration_field(key, self._field)
+
+    def pop(self, key: Any, default: Any = _REGISTRY_UNSET) -> Any:
+        return _remove_tool_registration_field(key, self._field, default)
+
+    def clear(self) -> None:
+        _clear_tool_registration_field(self._field)
+
+    def setdefault(self, key: Any, default: Any = None) -> Any:
+        existing = dict.get(self, key, _REGISTRY_UNSET)
+        if existing is not _REGISTRY_UNSET:
+            return existing
+        _upsert_tool_registration(key, **{self._field: default})
+        return default
+
+    def update(self, *args: Any, **kwargs: Any) -> None:
+        merged = dict(*args, **kwargs)
+        if not merged:
+            return
+        for key, value in merged.items():
+            entry = _TOOL_METADATA_REGISTRY.get(str(key))
+            if entry is None:
+                entry = _ToolRegistration()
+                _TOOL_METADATA_REGISTRY[str(key)] = entry
+            setattr(entry, self._field, value)
+        _sync_tool_registry_views()
+
+    def popitem(self) -> tuple[Any, Any]:
+        key, value = dict.popitem(self)
+        entry = _TOOL_METADATA_REGISTRY.get(str(key))
+        if entry is not None:
+            setattr(entry, self._field, _REGISTRY_UNSET)
+            if entry.function is _REGISTRY_UNSET and entry.tool_object is _REGISTRY_UNSET:
+                _TOOL_METADATA_REGISTRY.pop(str(key), None)
+        _sync_tool_registry_views()
+        return key, value
+
+
+_TOOL_REGISTRY: Dict[str, Any] = _ToolRegistryView("function")
+_TOOL_OBJECT_REGISTRY: Dict[str, Any] = _ToolRegistryView("tool_object")
 
 
 def _get_runtime_signature(obj: Any) -> inspect.Signature:
@@ -346,7 +476,7 @@ def _callable_accepts_kwarg(func: Any, name: str) -> bool:
 
 
 def _extract_verbose_flag(kwargs: Dict[str, Any]) -> bool:
-    return resolve_requested_output_verbosity(kwargs)
+    return resolve_output_contract(kwargs).verbose
 
 
 def _augment_signature_with_global_verbose(
@@ -373,7 +503,7 @@ def _augment_signature_with_global_verbose(
 def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # noqa: C901
     if _ORIG_TOOL_DECORATOR is None:
         def _noop(func):
-            _TOOL_REGISTRY[getattr(func, "__name__", "tool")] = func
+            _upsert_tool_registration(getattr(func, "__name__", "tool"), function=func)
             return func
 
         return _noop
@@ -423,10 +553,12 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # n
         def _wrapped(*a, **kw):
             raw_output = kw.pop("__cli_raw", False)
             requested_verbose = False
+            contract_state = resolve_output_contract({})
 
             try:
                 _coerce_kwargs_for_callable(func, kw)
-                requested_verbose = _extract_verbose_flag(kw)
+                contract_state = resolve_output_contract(kw)
+                requested_verbose = contract_state.verbose
                 if "verbose" in kw and not _callable_accepts_kwarg(func, "verbose"):
                     kw.pop("verbose", None)
                 try:
@@ -470,17 +602,21 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # n
                 if getattr(func, "__name__", "").strip().lower() == "news":
                     from .news import normalize_news_output
 
-                    out = normalize_news_output(out, verbose=requested_verbose)
+                    out = normalize_news_output(
+                        out,
+                        detail=contract_state.detail,
+                        verbose=contract_state.transport_verbose,
+                    )
                 out = normalize_error_payload(
                     out,
                     default_code="tool_error",
                     operation=getattr(func, "__name__", "tool"),
                 )
-                out = apply_output_verbosity(
-                    out,
-                    tool_name=getattr(func, "__name__", "tool"),
-                    verbose=requested_verbose,
-                )
+            out = apply_output_verbosity(
+                out,
+                tool_name=getattr(func, "__name__", "tool"),
+                verbose=requested_verbose,
+            )
 
             if raw_output:
                 return out
@@ -566,11 +702,7 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # n
         except Exception:
             pass
         if name:
-            _TOOL_REGISTRY[str(name)] = _wrapped
-            try:
-                _TOOL_OBJECT_REGISTRY[str(name)] = res
-            except Exception:
-                pass
+            _upsert_tool_registration(name, function=_wrapped, tool_object=res)
         return _wrapped
 
     return _wrap
@@ -595,10 +727,11 @@ def install_tool_registry(mcp_obj: Any) -> None:
 
 
 def get_tool_registry() -> Dict[str, Any]:
-    if _TOOL_OBJECT_REGISTRY:
-        return dict(_TOOL_OBJECT_REGISTRY)
-    return dict(_TOOL_REGISTRY)
+    tool_objects = _project_tool_registry("tool_object")
+    if tool_objects:
+        return tool_objects
+    return _project_tool_registry("function")
 
 
 def get_tool_functions() -> Dict[str, Any]:
-    return dict(_TOOL_REGISTRY)
+    return _project_tool_registry("function")
