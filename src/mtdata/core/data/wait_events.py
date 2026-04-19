@@ -1269,6 +1269,8 @@ def _evaluate_order_filled_event(
         if not _matches_account_filters(row, spec, gateway=gateway):
             continue
         order_ticket = _account_order_ticket(row)
+        # If MT5 does not expose a durable order identifier for this fill, keep the
+        # historical immediate-match fallback instead of inventing partial-fill semantics.
         if order_ticket is None:
             return _format_order_filled_match(
                 row,
@@ -1278,6 +1280,8 @@ def _evaluate_order_filled_event(
             )
         target_volume = _finite_number(target_volume_by_order_ticket.get(order_ticket))
         filled_volume = _finite_number(filled_volume_by_order_ticket.get(order_ticket))
+        # Known target volume means "order_filled" now represents the cumulative fill
+        # reaching the full requested size, so earlier partials must not match yet.
         if target_volume is None or target_volume <= 0.0 or filled_volume is None:
             return _format_order_filled_match(
                 row,

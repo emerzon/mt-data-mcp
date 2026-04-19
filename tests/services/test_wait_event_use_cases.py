@@ -844,6 +844,59 @@ def test_run_wait_event_order_filled_falls_back_when_order_volume_is_unknown() -
     assert result["matched_event"]["observed"]["remaining_volume"] is None
 
 
+def test_evaluate_order_filled_event_uses_ticket_field_when_order_identifier_is_missing() -> None:
+    gateway = SequenceGateway()
+    row = {
+        "ticket": 7001,
+        "symbol": "EURUSD",
+        "entry": gateway.DEAL_ENTRY_IN,
+        "type": "buy",
+        "volume": 0.25,
+        "time": 1700000001,
+    }
+
+    result = wait_events_mod._evaluate_order_filled_event(
+        {"type": "order_filled", "symbol": "EURUSD", "order_ticket": 7001},
+        {"history_deals": [row], "order_filled_state": {}},
+        gateway=gateway,
+    )
+
+    assert result is not None
+    assert result["type"] == "order_filled"
+    assert "order_ticket" not in result
+    assert result["observed"]["order_ticket"] == 7001
+    assert result["observed"]["filled_volume"] == 0.25
+    assert result["observed"]["target_volume"] is None
+
+
+def test_evaluate_order_filled_event_waits_for_cumulative_target_before_matching() -> None:
+    gateway = SequenceGateway()
+    row = {
+        "ticket": 3001,
+        "order": 7001,
+        "symbol": "EURUSD",
+        "entry": gateway.DEAL_ENTRY_IN,
+        "type": "buy",
+        "volume": 0.4,
+        "time": 1700000001,
+    }
+
+    result = wait_events_mod._evaluate_order_filled_event(
+        {"type": "order_filled", "symbol": "EURUSD", "order_ticket": 7001},
+        {
+            "history_deals": [row],
+            "order_filled_state": {
+                "filled_volume_by_order_ticket": {7001: 0.4},
+                "target_volume_by_order_ticket": {7001: 1.0},
+                "last_row_by_order_ticket": {7001: row},
+            },
+        },
+        gateway=gateway,
+    )
+
+    assert result is None
+
+
 def test_wait_event_request_rejects_explicit_empty_watchers_without_boundary() -> None:
     with pytest.raises(
         ValidationError,
