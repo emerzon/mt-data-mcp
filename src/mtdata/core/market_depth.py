@@ -453,12 +453,18 @@ def market_ticker(
                     age_seconds = max(0.0, float(time.time()) - float(tick_time))
                 except Exception:
                     age_seconds = None
-            out["diagnostics"] = {
+            diagnostics = {
                 "source": "mt5.symbol_info_tick",
                 "cache_used": False,
                 "data_freshness_seconds": age_seconds,
                 "query_latency_ms": round((time.perf_counter() - started) * 1000.0, 3),
             }
+            out["diagnostics"] = dict(diagnostics)
+            meta = out.get("meta")
+            if not isinstance(meta, dict):
+                meta = {}
+            meta["diagnostics"] = dict(diagnostics)
+            out["meta"] = meta
             if not _use_ctz:
                 out["timezone"] = "UTC"
             if detail_mode == "compact":

@@ -2003,6 +2003,35 @@ class TestAttachCliMeta:
         assert out["meta"]["tool"] == "market_ticker"
         assert out["diagnostics"]["source"] == "mt5.symbol_info_tick"
 
+    def test_verbose_market_ticker_reads_meta_diagnostics_first(self):
+        r = {
+            "time": 1700000000,
+            "bid": 200.0,
+            "ask": 201.0,
+            "spread": 1.0,
+            "spread_points": 100.0,
+            "spread_usd": 100.0,
+            "meta": {
+                "diagnostics": {
+                    "source": "meta.source",
+                    "cache_used": True,
+                    "query_latency_ms": 8.5,
+                    "data_freshness_seconds": 0.7,
+                }
+            },
+            "diagnostics": {
+                "source": "legacy.source",
+                "cache_used": False,
+                "query_latency_ms": 7.5,
+                "data_freshness_seconds": 1.2,
+            },
+        }
+        out = _attach_cli_meta(r, cmd_name="market_ticker", verbose=True)
+
+        assert out["meta"]["tool"] == "market_ticker"
+        assert out["diagnostics"]["source"] == "meta.source"
+        assert out["diagnostics"]["cache_used"] is True
+
 
 # ========================================================================
 # get_function_info

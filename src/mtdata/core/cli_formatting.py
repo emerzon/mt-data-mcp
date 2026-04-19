@@ -188,7 +188,10 @@ def _build_market_ticker_cli_verbose_meta(result: Any) -> Dict[str, Any]:
     if not isinstance(result, dict):
         return {}
     out: Dict[str, Any] = {}
-    diagnostics = result.get("diagnostics")
+    meta = result.get("meta")
+    diagnostics = meta.get("diagnostics") if isinstance(meta, dict) else None
+    if not isinstance(diagnostics, dict):
+        diagnostics = result.get("diagnostics")
     if isinstance(diagnostics, dict):
         for key in ("source", "cache_used", "query_latency_ms", "data_freshness_seconds"):
             if key in diagnostics:
@@ -569,4 +572,11 @@ def _attach_cli_meta(result: Any, *, cmd_name: str, verbose: bool) -> Any:
         from .news import normalize_news_output
 
         result = normalize_news_output(result, verbose=verbose)
+    elif cmd_name == "market_ticker" and isinstance(result, dict):
+        meta = result.get("meta")
+        diagnostics = meta.get("diagnostics") if isinstance(meta, dict) else None
+        if isinstance(diagnostics, dict):
+            normalized = dict(result)
+            normalized["diagnostics"] = dict(diagnostics)
+            result = normalized
     return apply_output_verbosity(result, tool_name=cmd_name, verbose=verbose)
