@@ -210,7 +210,7 @@ class AnalogMethod(ForecastMethod):
         source_timeframe: str,
         target_timeframe: str,
     ) -> Optional[pd.DataFrame]:
-        from ...core.constants import TIMEFRAME_SECONDS
+        from ...shared.constants import TIMEFRAME_SECONDS
 
         if history_df is None or history_df.empty or "time" not in history_df.columns or "close" not in history_df.columns:
             return None
@@ -964,7 +964,7 @@ class AnalogMethod(ForecastMethod):
             quality_gate=dict(quality_gate_state),
         )
 
-        from ...core.constants import TIMEFRAME_SECONDS
+        from ...shared.constants import TIMEFRAME_SECONDS
 
         p_sec = TIMEFRAME_SECONDS.get(primary_tf)
         if p_sec is None:

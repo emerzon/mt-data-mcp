@@ -14,10 +14,10 @@ try:
 except Exception:
     MinMaxLTTBDownsampler = None
 
-# Import defaults from core.constants to avoid duplication.
+# Import defaults from shared.constants to avoid duplication.
 # Use a lazy import to prevent circular imports during initialization.
 def _get_simplify_defaults() -> Tuple[float, int, int]:
-    """Lazy-load simplify defaults from core.constants to avoid circular imports."""
+    """Lazy-load simplify defaults from shared.constants to avoid circular imports."""
     try:
         from ..shared.constants import (
             SIMPLIFY_DEFAULT_MAX_POINTS,
@@ -26,7 +26,7 @@ def _get_simplify_defaults() -> Tuple[float, int, int]:
         )
         return (SIMPLIFY_DEFAULT_RATIO, SIMPLIFY_DEFAULT_MIN_POINTS, SIMPLIFY_DEFAULT_MAX_POINTS)
     except ImportError:
-        # Fallback if core.constants is not available (e.g., during isolated testing)
+        # Fallback if shared.constants is not available (e.g., during isolated testing)
         return (0.25, 100, 500)
 
 

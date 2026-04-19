@@ -32,7 +32,7 @@ def _timeframe_aware_age_limits(
     clamped to reasonable bounds.  Falls back to bar-fraction logic when
     the timeframe is unknown.
     """
-    from ..utils.constants import TIMEFRAME_SECONDS
+    from ..shared.constants import TIMEFRAME_SECONDS
 
     tf_secs = TIMEFRAME_SECONDS.get(timeframe.upper(), 0)
     if tf_secs > 0:
@@ -55,7 +55,7 @@ _ALL_MODE_FETCH_FLOOR = 200  # never fetch fewer than 200 bars
 
 def _all_mode_fetch_limit(timeframe: str, user_limit: int) -> int:
     """Cap *user_limit* so higher TFs don't fetch decades of data."""
-    from ..utils.constants import TIMEFRAME_SECONDS
+    from ..shared.constants import TIMEFRAME_SECONDS
 
     tf_secs = TIMEFRAME_SECONDS.get(timeframe.upper(), 0)
     if tf_secs <= 0:
