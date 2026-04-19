@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import math
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from ...utils.mt5 import (
     MT5ConnectionError,
@@ -23,6 +23,11 @@ from ...utils.utils import (
 from .._mcp_instance import mcp
 from ..config import mt5_config
 from ..execution_logging import run_logged_operation
+from ..output_contract import (
+    ensure_common_meta,
+    normalize_output_detail,
+    resolve_output_contract,
+)
 from . import comments, validation
 from .gateway import create_trading_gateway
 from .positions import normalize_trade_history_output
@@ -30,6 +35,26 @@ from .requests import TradeHistoryRequest, TradeJournalAnalyzeRequest
 from .use_cases import run_trade_history
 
 logger = logging.getLogger(__name__)
+
+_TRADE_ACCOUNT_SUMMARY_KEYS = (
+    "success",
+    "balance",
+    "equity",
+    "profit",
+    "margin",
+    "margin_free",
+    "margin_level",
+    "margin_level_note",
+    "currency",
+    "leverage",
+)
+_TRADE_ACCOUNT_BASIC_KEYS = _TRADE_ACCOUNT_SUMMARY_KEYS + (
+    "trade_allowed",
+    "trade_expert",
+    "server",
+    "company",
+    "trade_mode",
+)
 
 
 def _run_trade_history_request(request: TradeHistoryRequest) -> Any:
@@ -372,11 +397,47 @@ def lookup_trade_ticket_history(ticket: Any) -> Optional[Dict[str, Any]]:
     return None
 
 
+def _trade_account_payload_for_mode(payload: Dict[str, Any], *, mode: str) -> Dict[str, Any]:
+    if mode == "summary":
+        keys = _TRADE_ACCOUNT_SUMMARY_KEYS
+    elif mode == "basic":
+        keys = _TRADE_ACCOUNT_BASIC_KEYS
+    else:
+        return dict(payload)
+    return {key: payload.get(key) for key in keys if key in payload}
+
+
 @mcp.tool()
-def trade_account_info() -> dict:
-    """Get account information (balance, equity, profit, margin level, free margin, account type, leverage, currency)."""
+def trade_account_info(
+    detail: Literal["summary", "compact", "basic", "full"] = "full",  # type: ignore
+    verbose: bool = False,
+) -> dict:
+    """Get account information with summary, basic, or full account output modes.
+
+    Use `detail="summary"`/`"compact"` for routine balance and margin checks,
+    `detail="basic"` for account identity/configuration fields, and
+    `detail="full"` for the existing execution-readiness diagnostics.
+    """
 
     def _run() -> dict:
+        requested_mode = normalize_output_detail(
+            detail,
+            default="full",
+            aliases={"summary_only": "summary"},
+        )
+        if requested_mode not in {"summary", "compact", "basic", "full"}:
+            return {
+                "error": "Invalid detail level. Use 'summary', 'compact', 'basic', or 'full'."
+            }
+        contract = resolve_output_contract(
+            detail="compact" if requested_mode in {"summary", "compact"} else "full",
+            verbose=verbose,
+            default_detail="full",
+        )
+        output_mode = "summary" if contract.shape_detail == "compact" else requested_mode
+        if output_mode == "compact":
+            output_mode = "summary"
+
         mt5 = create_trading_gateway(
             include_trade_preflight=True,
             adapter=mt5_adapter,
@@ -434,11 +495,17 @@ def trade_account_info() -> dict:
         }
         if margin_level_note:
             payload["margin_level_note"] = margin_level_note
-        return payload
+        payload = _trade_account_payload_for_mode(payload, mode=output_mode)
+        return ensure_common_meta(
+            payload,
+            tool_name="trade_account_info",
+            mt5_config=mt5_config,
+        )
 
     return run_logged_operation(
         logger,
         operation="trade_account_info",
+        detail=detail,
         func=_run,
     )
 
