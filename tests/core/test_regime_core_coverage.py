@@ -4,6 +4,7 @@ Covers lines 90-102, 175-178, 223-487 by mocking MT5, data_service, and
 regime utility calls.
 """
 
+import builtins
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -638,6 +639,31 @@ class TestRegimeDetectMSAR:
             # Import will fail → error
             res = fn("EURUSD", limit=50, method="ms_ar")
         assert "error" in res
+        assert res["error_code"] == "dependency_missing"
+        assert res["details"] == {"method": "ms_ar", "requires": ["statsmodels"]}
+
+    @patch(_FMT, side_effect=_time_fmt_stub)
+    @patch(_DENOISE, return_value="close")
+    @patch(_FETCH)
+    def test_ms_ar_non_import_error_is_not_masked_as_missing_dependency(
+        self, mock_fetch, mock_denoise, mock_fmt
+    ):
+        df = _make_df(50)
+        mock_fetch.return_value = df
+        fn = _get_regime_detect()
+        real_import = builtins.__import__
+
+        def _raising_import(name, globals=None, locals=None, fromlist=(), level=0):
+            if name == "statsmodels.tsa.regime_switching.markov_regression":
+                raise RuntimeError("broken statsmodels import hook")
+            return real_import(name, globals, locals, fromlist, level)
+
+        with patch("builtins.__import__", side_effect=_raising_import):
+            res = fn("EURUSD", limit=50, method="ms_ar")
+
+        assert "error" in res
+        assert "broken statsmodels import hook" in res["error"]
+        assert "MarkovRegression not available" not in res["error"]
 
     @patch(_FMT, side_effect=_time_fmt_stub)
     @patch(_DENOISE, return_value="close")

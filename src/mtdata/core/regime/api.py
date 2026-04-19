@@ -1058,10 +1058,12 @@ def regime_detect(  # noqa: C901
                 from statsmodels.tsa.regime_switching.markov_regression import (
                     MarkovRegression,  # type: ignore
                 )
-            except Exception:
+            except ImportError:
                 return _finish(
                     {
-                        "error": "statsmodels MarkovRegression not available. Install statsmodels."
+                        "error": "statsmodels MarkovRegression not available. Install statsmodels.",
+                        "error_code": "dependency_missing",
+                        "details": {"method": "ms_ar", "requires": ["statsmodels"]},
                     }
                 )
             k_regimes, _ = _coerce_param(p, "k_regimes", default=2, cast=int)
