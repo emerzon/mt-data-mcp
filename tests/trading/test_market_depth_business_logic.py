@@ -17,8 +17,8 @@ def _raw_market_depth_fetch(symbol: str, spread: bool = False, compact: bool = F
     return raw(symbol, spread=spread, compact=compact)
 
 
-def _raw_market_ticker(symbol: str):
-    return market_ticker.__wrapped__(symbol)
+def _raw_market_ticker(symbol: str, *, detail: str = "full"):
+    return market_ticker.__wrapped__(symbol, detail=detail)
 
 
 @pytest.fixture(autouse=True)
@@ -275,6 +275,72 @@ def test_market_ticker_returns_lightweight_spread_snapshot() -> None:
     assert out["diagnostics"]["cache_used"] is False
     assert out["diagnostics"]["source"] == "mt5.symbol_info_tick"
     assert isinstance(out["diagnostics"]["query_latency_ms"], float)
+
+
+def test_market_ticker_compact_detail_omits_verbose_fields() -> None:
+    tick = SimpleNamespace(
+        bid=200.0,
+        ask=201.0,
+        last=200.5,
+        volume=5,
+        time=1700000000,
+    )
+    with patch("mtdata.core.market_depth.mt5") as mt5, patch(
+        "mtdata.core.market_depth._use_client_tz", return_value=False
+    ):
+        mt5.symbol_select.return_value = True
+        mt5.symbol_info.return_value = SimpleNamespace(
+            digits=2,
+            point=0.01,
+            trade_tick_size=0.01,
+            trade_tick_value=1.0,
+            currency_profit="USD",
+        )
+        mt5.symbol_info_tick.return_value = tick
+        out = _raw_market_ticker("BTCUSD", detail="compact")
+
+    assert out["success"] is True
+    assert out["type"] == "ticker"
+    assert out["bid"] == 200.0
+    assert out["ask"] == 201.0
+    assert out["spread"] == 1.0
+    assert out["spread_points"] == 100.0
+    assert out["spread_pips"] == 100.0
+    assert out["spread_pct_display"] == "0.498753%"
+    assert out["time_display"] == "2023-11-14 22:13"
+    assert "last" not in out
+    assert "spread_usd" not in out
+    assert "pricing_basis" not in out
+    assert "diagnostics" not in out
+    assert out["meta"]["tool"] == "market_ticker"
+
+
+def test_market_ticker_full_detail_preserves_verbose_fields() -> None:
+    tick = SimpleNamespace(
+        bid=200.0,
+        ask=201.0,
+        last=200.5,
+        volume=5,
+        time=1700000000,
+    )
+    with patch("mtdata.core.market_depth.mt5") as mt5, patch(
+        "mtdata.core.market_depth._use_client_tz", return_value=False
+    ):
+        mt5.symbol_select.return_value = True
+        mt5.symbol_info.return_value = SimpleNamespace(
+            digits=2,
+            point=0.01,
+            trade_tick_size=0.01,
+            trade_tick_value=1.0,
+            currency_profit="USD",
+        )
+        mt5.symbol_info_tick.return_value = tick
+        out = _raw_market_ticker("BTCUSD", detail="full")
+
+    assert out["last"] == 200.5
+    assert out["spread_usd"] == 100.0
+    assert out["pricing_basis"] == "per_1_lot_estimate"
+    assert out["diagnostics"]["source"] == "mt5.symbol_info_tick"
 
 
 def test_market_ticker_includes_shared_meta_without_dropping_timezone_alias() -> None:

@@ -3,7 +3,7 @@ import logging
 import math
 import os
 import time
-from typing import Any, Dict
+from typing import Any, Dict, Literal
 
 from ..utils.mt5 import (
     MT5ConnectionError,
@@ -19,7 +19,7 @@ from ..utils.utils import (
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
 from .mt5_gateway import get_mt5_gateway
-from .output_contract import ensure_common_meta
+from .output_contract import ensure_common_meta, resolve_output_detail
 
 logger = logging.getLogger(__name__)
 _MARKET_DEPTH_ENABLE_ENV = "MTDATA_ENABLE_MARKET_DEPTH_FETCH"
@@ -52,6 +52,30 @@ def _market_depth_fetch_enabled() -> bool:
     if raw is None:
         return False
     return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _compact_market_ticker_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    out: Dict[str, Any] = {}
+    for key in (
+        "success",
+        "symbol",
+        "type",
+        "price_precision",
+        "bid",
+        "ask",
+        "spread",
+        "spread_points",
+        "spread_pips",
+        "spread_pct",
+        "spread_pct_display",
+        "time",
+        "time_display",
+        "timezone",
+    ):
+        value = payload.get(key)
+        if value is not None:
+            out[key] = value
+    return out
 
 
 def _format_mt5_error_text(error: Any) -> str:
@@ -327,11 +351,17 @@ else:
 
 
 @mcp.tool()
-def market_ticker(symbol: str) -> Dict[str, Any]:
+def market_ticker(
+    symbol: str,
+    detail: Literal["compact", "full"] = "full",
+) -> Dict[str, Any]:
     """Return a lightweight ticker snapshot with bid/ask/spread for `symbol`.
 
     Parameters: symbol
+    Use `detail="compact"` to keep only the most operational bid/ask/spread fields.
     """
+    detail_mode = resolve_output_detail(detail=detail, default="full")
+
     def _run() -> Dict[str, Any]:
         def _finalize(payload: Dict[str, Any]) -> Dict[str, Any]:
             return ensure_common_meta(payload, tool_name="market_ticker")
@@ -431,6 +461,8 @@ def market_ticker(symbol: str) -> Dict[str, Any]:
             }
             if not _use_ctz:
                 out["timezone"] = "UTC"
+            if detail_mode == "compact":
+                out = _compact_market_ticker_payload(out)
             return _finalize(out)
         except MT5ConnectionError as exc:
             return _finalize({"error": str(exc)})
@@ -441,5 +473,6 @@ def market_ticker(symbol: str) -> Dict[str, Any]:
         logger,
         operation="market_ticker",
         symbol=symbol,
+        detail=detail_mode,
         func=_run,
     )
