@@ -3,6 +3,7 @@ from unittest.mock import patch
 from mtdata.core.output_contract import (
     ensure_common_meta,
     normalize_output_detail,
+    resolve_output_contract,
     normalize_output_verbosity_detail,
     resolve_requested_output_verbosity,
 )
@@ -28,6 +29,27 @@ def test_resolve_requested_output_verbosity_treats_summary_aliases_as_non_verbos
     assert resolve_requested_output_verbosity({"detail": " summary "}) is False
     assert resolve_requested_output_verbosity({"detail": " Summary_Only "}) is False
     assert resolve_requested_output_verbosity({"detail": " full "}) is True
+
+
+def test_resolve_output_contract_separates_shape_from_transport_verbosity() -> None:
+    state = resolve_output_contract({"detail": "full"})
+
+    assert state.detail == "full"
+    assert state.shape_detail == "full"
+    assert state.verbose is True
+    assert state.transport_verbose is False
+
+
+def test_resolve_output_contract_preserves_tool_specific_detail_aliases() -> None:
+    state = resolve_output_contract(
+        {"detail": " summary_only ", "verbose": True},
+        aliases={"summary_only": "summary"},
+    )
+
+    assert state.detail == "summary"
+    assert state.shape_detail == "full"
+    assert state.verbose is True
+    assert state.transport_verbose is True
 
 
 def test_ensure_common_meta_adds_tool_and_runtime_timezone() -> None:

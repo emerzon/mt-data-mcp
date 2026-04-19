@@ -20,7 +20,7 @@ from ._mcp_instance import mcp
 from .constants import DEFAULT_ROW_LIMIT, GROUP_SEARCH_THRESHOLD, TIMEFRAME_MAP
 from .execution_logging import run_logged_operation
 from .mt5_gateway import get_mt5_gateway
-from .output_contract import resolve_output_detail
+from .output_contract import resolve_output_contract, resolve_output_detail
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +84,85 @@ _SYMBOL_DESCRIBE_FIELDS: tuple[str, ...] = (
     "time",
     "select",
 )
+
+_SYMBOL_DESCRIBE_COMPACT_DIRECT_FIELDS: tuple[str, ...] = (
+    "name",
+    "description",
+    "path",
+    "bank",
+    "currency_base",
+    "currency_profit",
+    "currency_margin",
+    "digits",
+    "point",
+    "bidlow",
+    "bidhigh",
+    "asklow",
+    "askhigh",
+    "price_change",
+    "session_open",
+    "session_close",
+    "trade_contract_size",
+    "trade_tick_size",
+    "trade_tick_value",
+    "trade_stops_level",
+    "trade_freeze_level",
+    "volume_min",
+    "volume_max",
+    "volume_step",
+    "volume_limit",
+    "swap_long",
+    "swap_short",
+    "swap_rollover3days",
+    "spread_float",
+    "ticks_bookdepth",
+    "time",
+    "select",
+)
+_SYMBOL_DESCRIBE_COMPACT_ENUM_FIELDS: tuple[str, ...] = (
+    "trade_mode",
+    "trade_exemode",
+    "trade_calc_mode",
+    "order_mode",
+    "expiration_mode",
+    "filling_mode",
+    "swap_mode",
+)
+
+
+def _copy_symbol_describe_field(
+    out: Dict[str, Any],
+    source: Dict[str, Any],
+    field: str,
+) -> bool:
+    if field not in source:
+        return False
+    value = source.get(field)
+    if value is None:
+        return False
+    if isinstance(value, str) and value == "":
+        return False
+    if isinstance(value, list) and not value:
+        return False
+    out[field] = value
+    return True
+
+
+def _compact_symbol_describe_payload(symbol_data: Dict[str, Any]) -> Dict[str, Any]:
+    compact: Dict[str, Any] = {}
+    for field in _SYMBOL_DESCRIBE_COMPACT_DIRECT_FIELDS:
+        _copy_symbol_describe_field(compact, symbol_data, field)
+
+    for field in _SYMBOL_DESCRIBE_COMPACT_ENUM_FIELDS:
+        if _copy_symbol_describe_field(compact, symbol_data, f"{field}_label"):
+            continue
+        if _copy_symbol_describe_field(compact, symbol_data, f"{field}_labels"):
+            continue
+        _copy_symbol_describe_field(compact, symbol_data, field)
+
+    if "time_epoch" in symbol_data:
+        compact["time_epoch"] = symbol_data["time_epoch"]
+    return compact
 
 
 @mcp.tool()
@@ -244,13 +323,22 @@ def _list_symbol_groups(
         return {"error": f"Error getting symbol groups: {str(e)}"}
 
 @mcp.tool()
-def symbols_describe(symbol: str) -> Dict[str, Any]:
+def symbols_describe(
+    symbol: str,
+    detail: Literal["compact", "full"] = "full",
+    verbose: bool = False,
+) -> Dict[str, Any]:
     """Return symbol information as JSON for `symbol`.
        Parameters: symbol
        Includes information such as Symbol Description, Swap Values, Tick Size/Value, etc.
     """
     def _run() -> Dict[str, Any]:
         try:
+            contract = resolve_output_contract(
+                detail=detail,
+                verbose=verbose,
+                default_detail="full",
+            )
             mt5_gateway = get_mt5_gateway(
                 adapter=mt5,
                 ensure_connection_impl=ensure_mt5_connection_or_raise,
@@ -291,10 +379,12 @@ def symbols_describe(symbol: str) -> Dict[str, Any]:
 
                         epoch = float(value)
                         utc_epoch = _mt5_epoch_to_utc(epoch)
-                        symbol_data["time_epoch"] = utc_epoch
+                        if contract.transport_verbose:
+                            symbol_data["time_epoch"] = utc_epoch
                         symbol_data["time"] = _format_time_minimal(utc_epoch)
                     except Exception:
-                        symbol_data["time_epoch"] = value
+                        if contract.transport_verbose:
+                            symbol_data["time_epoch"] = value
                         symbol_data["time"] = str(value)
                 else:
                     if attr in _SYMBOL_DESCRIBE_PRICE_FIELDS:
@@ -325,6 +415,9 @@ def symbols_describe(symbol: str) -> Dict[str, Any]:
                     if label:
                         symbol_data[f"{attr}_label"] = label
 
+            if contract.shape_detail == "compact":
+                symbol_data = _compact_symbol_describe_payload(symbol_data)
+
             return {
                 "success": True,
                 "symbol": symbol_data,
@@ -338,6 +431,7 @@ def symbols_describe(symbol: str) -> Dict[str, Any]:
         logger,
         operation="symbols_describe",
         symbol=symbol,
+        detail=detail,
         func=_run,
     )
 

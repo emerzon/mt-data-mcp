@@ -471,11 +471,25 @@ class TestSymbolsDescribe:
         res = fn("EURUSD")
         sd = res["symbol"]
 
-        assert sd.get("time_epoch") == 1700000000.0
         assert isinstance(sd.get("time"), str)
         assert ":" in sd.get("time")
+        assert "time_epoch" not in sd
         assert "n_fields" not in sd
         assert "n_sequence_fields" not in sd
+
+    @patch(f"{_MT5}.symbol_info")
+    def test_verbose_describe_adds_time_epoch(self, mock_info):
+        info = MagicMock()
+        info.__dir__ = lambda self: ["name", "time"]
+        info.name = "EURUSD"
+        info.time = 1700000000
+        mock_info.return_value = info
+
+        fn = _get_symbols_describe()
+        res = fn("EURUSD", verbose=True)
+
+        assert res["symbol"]["time_epoch"] == 1700000000.0
+        assert isinstance(res["symbol"]["time"], str)
 
     @patch(f"{_MT5}.symbol_info", side_effect=RuntimeError("fail"))
     def test_exception(self, mock_info):
@@ -546,3 +560,46 @@ class TestSymbolsDescribe:
         assert sd["askhigh"] == 4778.01
         assert sd["session_open"] == 4750.13
         assert sd["session_close"] == 4760.87
+
+    @patch(f"{_MT5}.symbol_info")
+    def test_compact_detail_prefers_human_readable_labels(self, mock_info):
+        info = MagicMock()
+        info.__dir__ = lambda self: [
+            "name",
+            "description",
+            "digits",
+            "trade_mode",
+            "order_mode",
+            "trade_tick_value",
+            "trade_tick_value_profit",
+            "time",
+        ]
+        info.name = "EURUSD"
+        info.description = "Euro vs Dollar"
+        info.digits = 5
+        info.trade_mode = 2
+        info.order_mode = 3
+        info.trade_tick_value = 1.25
+        info.trade_tick_value_profit = 1.3
+        info.time = 1700000000
+        mock_info.return_value = info
+
+        import mtdata.core.symbols as symbols_mod
+
+        symbols_mod.mt5.SYMBOL_TRADE_MODE_LONGONLY = 2
+        symbols_mod.mt5.SYMBOL_ORDER_MARKET = 1
+        symbols_mod.mt5.SYMBOL_ORDER_LIMIT = 2
+
+        fn = _get_symbols_describe()
+        res = fn("EURUSD", detail="compact")
+        sd = res["symbol"]
+
+        assert sd["name"] == "EURUSD"
+        assert sd["trade_mode_label"] == "Longonly"
+        assert "Market" in sd["order_mode_label"]
+        assert "Limit" in sd["order_mode_label"]
+        assert sd["trade_tick_value"] == 1.25
+        assert "trade_mode" not in sd
+        assert "order_mode" not in sd
+        assert "trade_tick_value_profit" not in sd
+        assert "time_epoch" not in sd

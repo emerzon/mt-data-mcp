@@ -91,7 +91,7 @@ from ..cli_runtime import (
 from ..cli_runtime import (
     parse_set_overrides as _parse_set_overrides_impl,
 )
-from ..output_contract import resolve_requested_output_verbosity
+from ..output_contract import resolve_output_contract
 from .runtime import (
     _argparse_color_enabled,
     _capture_runtime_warnings,
@@ -374,7 +374,15 @@ def _literal_choices_for_cli_param(param: Dict[str, Any]) -> Optional[List[str]]
     return choices or None
 
 
-def _default_cli_compact_choice(choices: List[str], *, verbose: bool) -> Optional[str]:
+_CLI_DETAIL_DEFAULT_PRESERVE_COMMANDS = frozenset({"symbols_describe"})
+
+
+def _default_cli_compact_choice(
+    choices: List[str],
+    *,
+    verbose: bool,
+    cmd_name: Optional[str] = None,
+) -> Optional[str]:
     by_lower = {
         str(choice).strip().lower(): str(choice)
         for choice in choices
@@ -384,6 +392,8 @@ def _default_cli_compact_choice(choices: List[str], *, verbose: bool) -> Optiona
         return None
     if verbose:
         return by_lower["full"]
+    if str(cmd_name or "").strip() in _CLI_DETAIL_DEFAULT_PRESERVE_COMMANDS:
+        return None
     if "compact" in by_lower:
         return by_lower["compact"]
     if "summary" in by_lower:
@@ -421,7 +431,11 @@ def _apply_cli_output_mode_defaults(
         choices = _literal_choices_for_cli_param(param)
         if not choices:
             continue
-        selected = _default_cli_compact_choice(choices, verbose=verbose)
+        selected = _default_cli_compact_choice(
+            choices,
+            verbose=verbose,
+            cmd_name=command,
+        )
         if selected is None:
             continue
         setattr(args, param_name, selected)
@@ -520,7 +534,7 @@ def _write_cli_text(text: str, *, stream: Any = None) -> None:
 
 
 def _render_cli_result(result: Any, *, args: Any, cmd_name: str) -> None:
-    verbose = resolve_requested_output_verbosity(args)
+    verbose = resolve_output_contract(args).verbose
     result = _attach_cli_meta(result, cmd_name=cmd_name, verbose=verbose)
     output = _format_result_for_cli(
         result,

@@ -1489,6 +1489,102 @@ class TestFormatResultForCli:
         assert "qualification_basis.mode: weighted_retests" in result
         assert "show_all_hint" not in result
 
+    def test_toon_format_preserves_standard_support_resistance_fields(self):
+        result = _format_result_for_cli(
+            {
+                "success": True,
+                "detail": "standard",
+                "symbol": "EURUSD",
+                "timeframe": "H1",
+                "mode": "auto",
+                "method": "weighted_retests",
+                "current_price": 1.176,
+                "level_counts": {"support": 1, "resistance": 1, "total": 2},
+                "nearest": {
+                    "support": {
+                        "type": "support",
+                        "value": 1.174,
+                        "distance_pct": 0.0015,
+                        "touches": 6,
+                        "status": "role_reversed_support",
+                        "zone_high": 1.175,
+                    },
+                    "resistance": {
+                        "type": "resistance",
+                        "value": 1.177,
+                        "distance_pct": 0.0009,
+                        "touches": 3,
+                        "status": "resistance",
+                        "zone_high": 1.178,
+                    },
+                },
+                "supports": [
+                    {
+                        "type": "support",
+                        "value": 1.174,
+                        "distance_pct": 0.0015,
+                        "touches": 6,
+                        "status": "role_reversed_support",
+                        "zone_high": 1.175,
+                    }
+                ],
+                "resistances": [
+                    {
+                        "type": "resistance",
+                        "value": 1.177,
+                        "distance_pct": 0.0009,
+                        "touches": 3,
+                        "status": "resistance",
+                        "zone_high": 1.178,
+                    }
+                ],
+                "levels": [
+                    {
+                        "type": "support",
+                        "value": 1.174,
+                        "distance_pct": 0.0015,
+                        "touches": 6,
+                        "status": "role_reversed_support",
+                        "zone_high": 1.175,
+                    },
+                    {
+                        "type": "resistance",
+                        "value": 1.177,
+                        "distance_pct": 0.0009,
+                        "touches": 3,
+                        "status": "resistance",
+                        "zone_high": 1.178,
+                    },
+                ],
+                "fibonacci": {
+                    "timeframe": "D1",
+                    "nearest": {
+                        "support": {
+                            "label": "127.2%",
+                            "value": 1.169,
+                            "distance_pct": -0.0059,
+                        },
+                        "resistance": {
+                            "label": "23.6%",
+                            "value": 1.179,
+                            "distance_pct": 0.0022,
+                        },
+                    },
+                },
+                "coverage_gaps": {"support": {"threshold_pct": 0.12}},
+            },
+            fmt="toon",
+            verbose=False,
+            cmd_name="support_resistance_levels",
+        )
+
+        assert "detail: standard" in result
+        assert "supports[1]" in result
+        assert "resistances[1]" in result
+        assert "zone_high: 1.175" in result
+        assert "coverage_gaps.support.threshold_pct: 0.12" in result
+        assert "show_all_hint" not in result
+
     def test_toon_format_hides_trade_metadata_in_non_verbose_output(self):
         open_out = _format_result_for_cli(
             [
@@ -3477,6 +3573,30 @@ class TestApplyCliOutputModeDefaults:
 
         assert out.detail == "summary"
 
+    def test_preserves_symbols_describe_full_default_when_user_does_not_specify_mode(self):
+        args = argparse.Namespace(command="symbols_describe", detail="full", verbose=False)
+        func_info = {
+            "params": [
+                {
+                    "name": "detail",
+                    "type": Literal["compact", "full"],
+                    "required": False,
+                    "default": "full",
+                },
+            ]
+        }
+        functions = {
+            "symbols_describe": {
+                "func": MagicMock(),
+                "_cli_func_info": func_info,
+                "meta": {},
+            }
+        }
+
+        out = _apply_cli_output_mode_defaults(args, ["symbols_describe"], functions)
+
+        assert out.detail == "full"
+
     def test_verbose_promotes_supported_modes_to_full(self):
         args = argparse.Namespace(
             command="indicators_list", detail="compact", verbose=True
@@ -3609,7 +3729,7 @@ class TestCreateCommandFunction:
         assert call_kwargs["verbose"] is True
         assert call_kwargs["__cli_raw"] is True
 
-    def test_detail_full_is_forwarded_as_verbose_to_tool_wrapper(self, capsys):
+    def test_detail_full_is_not_forwarded_as_transport_verbose_to_tool_wrapper(self, capsys):
         mock_fn = MagicMock(return_value={"ok": True})
         func_info = {
             "func": mock_fn,
@@ -3636,7 +3756,7 @@ class TestCreateCommandFunction:
         call_kwargs = mock_fn.call_args[1]
         assert call_kwargs["symbol"] == "EURUSD"
         assert call_kwargs["detail"] == "full"
-        assert call_kwargs["verbose"] is True
+        assert "verbose" not in call_kwargs
         assert call_kwargs["__cli_raw"] is True
 
     def test_indicator_compact_string_reconstructed(self, capsys):
