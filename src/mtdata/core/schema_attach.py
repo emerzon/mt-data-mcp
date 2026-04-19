@@ -283,6 +283,27 @@ def _patch_trade_place_schema(schema: Dict[str, Any]) -> None:
         }
 
 
+def _patch_wait_event_schema(schema: Dict[str, Any]) -> None:
+    from .data.requests import WaitEventRequest
+
+    params, _required_params = _schema_params(schema)
+    wait_event_schema = WaitEventRequest.model_json_schema()
+    wait_event_props = wait_event_schema.get("properties")
+    if not isinstance(wait_event_props, dict):
+        return
+
+    for field_name in ("watch_for", "end_on"):
+        field_schema = wait_event_props.get(field_name)
+        if isinstance(field_schema, dict):
+            params[field_name] = copy.deepcopy(field_schema)
+
+    defs = wait_event_schema.get("$defs")
+    if isinstance(defs, dict):
+        schema_defs = schema.setdefault("$defs", {})
+        if isinstance(schema_defs, dict):
+            schema_defs.update(copy.deepcopy(defs))
+
+
 _TOOL_SCHEMA_PATCHERS: Dict[str, tuple[_SchemaPatcher, ...]] = {
     "forecast_generate": (_patch_forecast_generate_schema,),
     "indicators_list": (_patch_indicators_list_schema,),
@@ -293,6 +314,7 @@ _TOOL_SCHEMA_PATCHERS: Dict[str, tuple[_SchemaPatcher, ...]] = {
     "labels_triple_barrier": (_patch_labels_triple_barrier_schema,),
     "forecast_barrier_optimize": (_patch_forecast_barrier_optimize_schema,),
     "trade_place": (_patch_trade_place_schema,),
+    "wait_event": (_patch_wait_event_schema,),
 }
 
 

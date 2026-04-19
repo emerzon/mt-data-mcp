@@ -180,6 +180,44 @@ def test_attach_schemas_to_tools_adds_barrier_unit_exclusivity(monkeypatch) -> N
         assert actual_pairs == expected_pairs
 
 
+def test_attach_schemas_to_tools_patches_wait_event_with_discriminated_watch_specs(monkeypatch) -> None:
+    tool_obj, _tool_func, _apply_calls = _attach_tool_schema(
+        monkeypatch,
+        "wait_event",
+        {
+            "parameters": {
+                "properties": {
+                    "symbol": {"type": "string"},
+                    "instrument": {"type": "string"},
+                    "timeframe": {"type": "string"},
+                    "watch_tick_count_spike": {"type": "boolean"},
+                    "watch_for": {"type": "array", "items": {"type": "object"}},
+                    "end_on": {"type": "array", "items": {"type": "object"}},
+                    "verbose": {"type": "boolean"},
+                },
+                "required": [],
+            }
+        },
+    )
+
+    params = tool_obj.schema["parameters"]["properties"]
+    watch_for = params["watch_for"]
+    end_on = params["end_on"]
+    watch_items = watch_for["items"]
+    price_break_level = tool_obj.schema["$defs"]["PriceBreakLevelEventSpec"]
+
+    assert watch_for["type"] == "array"
+    assert watch_items["discriminator"]["propertyName"] == "type"
+    assert "#/$defs/PriceBreakLevelEventSpec" in watch_items["discriminator"]["mapping"].values()
+    assert any(
+        option.get("$ref") == "#/$defs/PriceBreakLevelEventSpec"
+        for option in watch_items["oneOf"]
+        if isinstance(option, dict)
+    )
+    assert end_on["items"] == {"$ref": "#/$defs/CandleCloseEventSpec"}
+    assert "level" in price_break_level["required"]
+
+
 def test_attach_schemas_to_tools_patches_trade_place(monkeypatch) -> None:
     tool_obj, _tool_func, _apply_calls = _attach_tool_schema(
         monkeypatch,

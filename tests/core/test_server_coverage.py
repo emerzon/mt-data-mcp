@@ -976,11 +976,18 @@ class TestMcpToolSchemas:
 
         schema = asyncio.run(_run())
         props = schema.get("properties") or {}
+        watch_for = props["watch_for"]
+        end_on = props["end_on"]
+        watch_items = watch_for["items"]
 
         assert "args" not in props
         assert "args" not in set(schema.get("required") or [])
         assert props["symbol"]["type"] == "string"
         assert props["timeframe"]["type"] == "string"
+        assert watch_for["type"] == "array"
+        assert watch_items["discriminator"]["propertyName"] == "type"
+        assert "price_break_level" in watch_items["discriminator"]["mapping"]
+        assert end_on["items"] == {"$ref": "#/$defs/CandleCloseEventSpec"}
 
     def test_prioritized_tools_list_tools_schemas_are_compact_and_aligned(self):
         from mcp import ClientSession
