@@ -756,6 +756,31 @@ class TestReportMarkdownOutput:
         assert "Multi-Timeframe Context" in rendered
         assert "outside policy window, 1800s" in rendered
 
+    def test_render_enhanced_report_surfaces_freshness_context_error(self):
+        from mtdata.core.report import render_enhanced_report
+
+        report = _make_report(
+            sections={
+                "context": {
+                    "error": "No candle data available for context section.",
+                    "freshness": {
+                        "last_bar_epoch": 1736899200.0,
+                        "expected_end_epoch": 1736902800.0,
+                        "freshness_cutoff_epoch": 1736888400.0,
+                        "data_freshness_seconds": 3600.0,
+                        "last_bar_within_policy_window": False,
+                    },
+                },
+            }
+        )
+
+        rendered = render_enhanced_report(report)
+
+        assert "error: No candle data available for context section." in rendered
+        assert "Candle freshness" in rendered
+        assert "outside policy window, 3600s" in rendered
+        assert "Freshness basis" in rendered
+
 
 class TestReportWarnings:
 

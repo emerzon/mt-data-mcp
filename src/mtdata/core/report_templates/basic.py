@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional
 from ...utils.utils import _safe_float
 from ..report.utils import (
     attach_multi_timeframes,
-    extract_candle_freshness_diagnostics,
+    attach_candle_freshness_diagnostics,
     now_utc_iso,
     parse_table_tail,
     pick_best_forecast_method,
@@ -489,9 +489,8 @@ def template_basic(  # noqa: C901
     )
     
     if 'error' in ctx:
-        report['sections']['context'] = {'error': ctx['error']}
+        report['sections']['context'] = attach_candle_freshness_diagnostics({'error': ctx['error']}, ctx)
     else:
-        freshness = extract_candle_freshness_diagnostics(ctx)
         # Extract a tail window of candle rows
         tail_n = int(p.get('context_tail', 40))
         tail_rows = parse_table_tail(ctx, tail=tail_n)
@@ -505,7 +504,10 @@ def template_basic(  # noqa: C901
                 tail_rows = []
 
         if not tail_rows:
-            report['sections']['context'] = {'error': 'No candle data available for context section.'}
+            report['sections']['context'] = attach_candle_freshness_diagnostics(
+                {'error': 'No candle data available for context section.'},
+                ctx,
+            )
         else:
             last = tail_rows[-1] if tail_rows else {}
             compact = _compute_compact_trend(tail_rows)
@@ -515,12 +517,10 @@ def template_basic(  # noqa: C901
                 'last_snapshot': last,
                 'notes': 'Indicators included: EMA(20), EMA(50), RSI(14), MACD(12,26,9).',
             }
-            if freshness:
-                ctx_obj['freshness'] = freshness
             if compact:
                 ctx_obj['trend_compact'] = compact
                 ctx_obj['trend_compact_legend'] = dict(_TREND_COMPACT_LEGEND)
-            report['sections']['context'] = ctx_obj
+            report['sections']['context'] = attach_candle_freshness_diagnostics(ctx_obj, ctx)
 
     # Pivots (D1)
     from ..pivot import pivot_compute_points

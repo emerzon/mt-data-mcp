@@ -157,7 +157,6 @@ def _render_context_section(data: Any) -> List[str]:
 
     if data.get("error"):
         lines.append(f"error: {data.get('error')}")
-        return lines
 
     metrics: List[List[str | None]] = []
     tf_ref = data.get("timeframe")

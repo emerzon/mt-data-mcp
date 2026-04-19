@@ -820,6 +820,95 @@ class TestTemplateBasic:
 
     @patch(f"{_BASIC_MODULE}._get_raw_result")
     @patch(f"{_BASIC_MODULE}.now_utc_iso", return_value="2024-01-15T00:00:00Z")
+    @patch(f"{_BASIC_MODULE}.pick_best_forecast_method", return_value=None)
+    @patch(f"{_BASIC_MODULE}.summarize_barrier_grid", return_value={"best": {}})
+    @patch(f"{_BASIC_MODULE}.attach_multi_timeframes")
+    def test_basic_context_error_preserves_freshness(
+        self, mock_mtf, mock_sum_bar, mock_pick, mock_now, mock_raw,
+    ):
+        base_freshness = {
+            "last_bar_epoch": 1736899200.0,
+            "expected_end_epoch": 1736902800.0,
+            "freshness_cutoff_epoch": 1736888400.0,
+            "data_freshness_seconds": 3600.0,
+            "last_bar_within_policy_window": False,
+        }
+
+        def raw_side_effect(func, *args, **kwargs):
+            name = func.__name__ if hasattr(func, '__name__') else str(func)
+            if "candle" in name.lower() or "data_fetch" in name.lower():
+                return {
+                    "error": "MT5 not connected",
+                    "meta": {"diagnostics": {"freshness": dict(base_freshness)}},
+                }
+            if "pivot" in name.lower():
+                return _mock_pivot_data()
+            if "volatility" in name.lower():
+                return _mock_vol_data()
+            if "backtest" in name.lower():
+                return {"results": {}}
+            if "barrier" in name.lower():
+                return {"error": "barrier failed"}
+            if "pattern" in name.lower():
+                return {"error": "patterns failed"}
+            return {"data": "ok"}
+
+        mock_raw.side_effect = raw_side_effect
+
+        from mtdata.core.report_templates.basic import template_basic
+
+        report = template_basic("EURUSD", 12, None, {})
+
+        assert report["sections"]["context"]["error"] == "MT5 not connected"
+        assert report["sections"]["context"]["freshness"] == base_freshness
+
+    @patch(f"{_BASIC_MODULE}._get_raw_result")
+    @patch(f"{_BASIC_MODULE}.now_utc_iso", return_value="2024-01-15T00:00:00Z")
+    @patch(f"{_BASIC_MODULE}.parse_table_tail", return_value=[])
+    @patch(f"{_BASIC_MODULE}.pick_best_forecast_method", return_value=None)
+    @patch(f"{_BASIC_MODULE}.summarize_barrier_grid", return_value={"best": {}})
+    @patch(f"{_BASIC_MODULE}.attach_multi_timeframes")
+    def test_basic_context_fallback_preserves_freshness(
+        self, mock_mtf, mock_sum_bar, mock_pick, mock_tail, mock_now, mock_raw,
+    ):
+        base_freshness = {
+            "last_bar_epoch": 1736899200.0,
+            "expected_end_epoch": 1736902800.0,
+            "freshness_cutoff_epoch": 1736888400.0,
+            "data_freshness_seconds": 3600.0,
+            "last_bar_within_policy_window": False,
+        }
+
+        def raw_side_effect(func, *args, **kwargs):
+            name = func.__name__ if hasattr(func, '__name__') else str(func)
+            if "candle" in name.lower() or "data_fetch" in name.lower():
+                return {
+                    "data": [],
+                    "meta": {"diagnostics": {"freshness": dict(base_freshness)}},
+                }
+            if "pivot" in name.lower():
+                return _mock_pivot_data()
+            if "volatility" in name.lower():
+                return _mock_vol_data()
+            if "backtest" in name.lower():
+                return {"results": {}}
+            if "barrier" in name.lower():
+                return {"error": "barrier failed"}
+            if "pattern" in name.lower():
+                return {"error": "patterns failed"}
+            return {"data": "ok"}
+
+        mock_raw.side_effect = raw_side_effect
+
+        from mtdata.core.report_templates.basic import template_basic
+
+        report = template_basic("EURUSD", 12, None, {})
+
+        assert report["sections"]["context"]["error"] == "No candle data available for context section."
+        assert report["sections"]["context"]["freshness"] == base_freshness
+
+    @patch(f"{_BASIC_MODULE}._get_raw_result")
+    @patch(f"{_BASIC_MODULE}.now_utc_iso", return_value="2024-01-15T00:00:00Z")
     @patch(f"{_BASIC_MODULE}.parse_table_tail", return_value=[])
     @patch(f"{_BASIC_MODULE}.pick_best_forecast_method", return_value=None)
     @patch(f"{_BASIC_MODULE}.summarize_barrier_grid")

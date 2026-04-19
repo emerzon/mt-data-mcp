@@ -90,6 +90,20 @@ def extract_candle_freshness_diagnostics(data: Any) -> Optional[Dict[str, Any]]:
         return None
 
 
+def attach_candle_freshness_diagnostics(payload: Dict[str, Any], data: Any) -> Dict[str, Any]:
+    try:
+        out = dict(payload) if isinstance(payload, dict) else {}
+        freshness = out.get('freshness')
+        if isinstance(freshness, dict) and freshness:
+            return out
+        extracted = extract_candle_freshness_diagnostics(data)
+        if extracted:
+            out['freshness'] = extracted
+        return out
+    except Exception:
+        return dict(payload) if isinstance(payload, dict) else {}
+
+
 def pick_best_forecast_method(
     bt: Dict[str, Any],
     rmse_tolerance: float = 0.05,
