@@ -1605,7 +1605,7 @@ def _normalize_support_resistance_payload(
         return {"error": payload.get("error")}
 
     detail_value = str(payload.get("detail") or "compact").strip().lower()
-    if detail_value == "full":
+    if detail_value in {"standard", "full"}:
         return None
 
     out: Dict[str, Any] = {}
