@@ -76,16 +76,17 @@ def extract_candle_freshness_diagnostics(data: Any) -> Optional[Dict[str, Any]]:
     try:
         if not isinstance(data, dict):
             return None
-        meta = data.get('meta')
-        if not isinstance(meta, dict):
-            return None
-        diagnostics = meta.get('diagnostics')
-        if not isinstance(diagnostics, dict):
-            return None
-        freshness = diagnostics.get('freshness')
-        if not isinstance(freshness, dict) or not freshness:
-            return None
-        return dict(freshness)
+        for container_key in ('meta', 'details'):
+            container = data.get(container_key)
+            if not isinstance(container, dict):
+                continue
+            diagnostics = container.get('diagnostics')
+            if not isinstance(diagnostics, dict):
+                continue
+            freshness = diagnostics.get('freshness')
+            if isinstance(freshness, dict) and freshness:
+                return dict(freshness)
+        return None
     except Exception:
         return None
 

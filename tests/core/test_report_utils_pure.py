@@ -41,8 +41,10 @@ from mtdata.core.report.utils import (
     _render_volatility_har_section,
     _render_volatility_section,
     apply_market_gates,
+    attach_candle_freshness_diagnostics,
     attach_multi_timeframes,
     context_for_tf,
+    extract_candle_freshness_diagnostics,
     format_number,
     market_snapshot,
     merge_params,
@@ -159,6 +161,53 @@ class TestParseTableTail:
     def test_tail_none(self):
         result = parse_table_tail([{"a": "1"}], tail=None)
         assert len(result) == 1
+
+
+# ---------------------------------------------------------------------------
+# 2a. candle freshness diagnostics
+# ---------------------------------------------------------------------------
+class TestCandleFreshnessDiagnostics:
+    def test_extracts_from_meta(self):
+        freshness = {"data_freshness_seconds": 3600.0}
+        result = extract_candle_freshness_diagnostics(
+            {"meta": {"diagnostics": {"freshness": freshness}}}
+        )
+        assert result == freshness
+        assert result is not freshness
+
+    def test_extracts_from_stale_error_details(self):
+        freshness = {"data_freshness_seconds": 7200.0}
+        result = extract_candle_freshness_diagnostics(
+            {
+                "error": "Data remained stale",
+                "details": {"diagnostics": {"freshness": freshness}},
+            }
+        )
+        assert result == freshness
+        assert result is not freshness
+
+    def test_meta_takes_priority_over_details(self):
+        result = extract_candle_freshness_diagnostics(
+            {
+                "meta": {"diagnostics": {"freshness": {"source": "meta"}}},
+                "details": {"diagnostics": {"freshness": {"source": "details"}}},
+            }
+        )
+        assert result == {"source": "meta"}
+
+    def test_attach_uses_stale_error_details(self):
+        freshness = {"last_bar_within_policy_window": False}
+        attached = attach_candle_freshness_diagnostics(
+            {"error": "Data remained stale"},
+            {
+                "error": "Data remained stale",
+                "details": {"diagnostics": {"freshness": freshness}},
+            },
+        )
+        assert attached == {
+            "error": "Data remained stale",
+            "freshness": freshness,
+        }
 
 
 # ---------------------------------------------------------------------------

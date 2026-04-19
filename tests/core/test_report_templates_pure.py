@@ -823,7 +823,7 @@ class TestTemplateBasic:
     @patch(f"{_BASIC_MODULE}.pick_best_forecast_method", return_value=None)
     @patch(f"{_BASIC_MODULE}.summarize_barrier_grid", return_value={"best": {}})
     @patch(f"{_BASIC_MODULE}.attach_multi_timeframes")
-    def test_basic_context_error_preserves_freshness(
+    def test_basic_context_error_preserves_freshness_from_details(
         self, mock_mtf, mock_sum_bar, mock_pick, mock_now, mock_raw,
     ):
         base_freshness = {
@@ -839,7 +839,7 @@ class TestTemplateBasic:
             if "candle" in name.lower() or "data_fetch" in name.lower():
                 return {
                     "error": "MT5 not connected",
-                    "meta": {"diagnostics": {"freshness": dict(base_freshness)}},
+                    "details": {"diagnostics": {"freshness": dict(base_freshness)}},
                 }
             if "pivot" in name.lower():
                 return _mock_pivot_data()
