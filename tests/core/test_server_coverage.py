@@ -1031,6 +1031,7 @@ class TestMcpToolSchemas:
         assert props["method"]["enum"] == [
             "bocpd",
             "hmm",
+            "gmm",
             "ms_ar",
             "clustering",
             "garch",

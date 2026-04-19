@@ -886,6 +886,28 @@ class TestRegimeDetectHMM:
     @patch(_FMT, side_effect=_time_fmt_stub)
     @patch(_DENOISE, return_value="close")
     @patch(_FETCH)
+    def test_gmm_alias_routes_to_hmm_path(self, mock_fetch, mock_denoise, mock_fmt):
+        df = _make_df(60)
+        mock_fetch.return_value = df
+        gamma = np.random.default_rng(20).random((59, 2))
+        gamma = gamma / gamma.sum(axis=1, keepdims=True)
+        w = np.array([0.5, 0.5])
+        mu = np.array([0.0, 0.001])
+        sigma = np.array([0.001, 0.003])
+        with patch(
+            "mtdata.core.regime.fit_gaussian_mixture_1d",
+            return_value=(w, mu, sigma, gamma, None),
+            create=True,
+        ):
+            fn = _get_regime_detect()
+            res = fn("EURUSD", limit=60, method="gmm", detail="full")
+        assert isinstance(res, dict)
+        assert res.get("method") == "hmm"
+        assert "regime_params" in res
+
+    @patch(_FMT, side_effect=_time_fmt_stub)
+    @patch(_DENOISE, return_value="close")
+    @patch(_FETCH)
     def test_hmm_min_regime_bars_smoothing_reduces_transitions(
         self, mock_fetch, mock_denoise, mock_fmt
     ):

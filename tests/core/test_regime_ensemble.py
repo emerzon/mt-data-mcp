@@ -86,6 +86,20 @@ class TestEnsembleRegime:
         assert res.get("success") or not res.get("error")
         assert res.get("params_used", {}).get("voting") == "soft"
 
+    def test_ensemble_accepts_gmm_alias_in_methods(self, _mock):
+        res = regime_detect(
+            symbol="TEST",
+            timeframe="H1",
+            limit=800,
+            method="ensemble",
+            params={"n_states": 2, "methods": ["gmm", "clustering"], "voting": "soft"},
+            detail="full",
+            __cli_raw=True,
+        )
+        assert isinstance(res, dict)
+        assert res.get("success") or not res.get("error")
+        assert res.get("params_used", {}).get("methods") == ["hmm", "clustering"]
+
     def test_ensemble_hard_voting(self, _mock):
         res = regime_detect(
             symbol="TEST",

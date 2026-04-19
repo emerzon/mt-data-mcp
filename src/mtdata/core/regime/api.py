@@ -176,6 +176,13 @@ def _normalize_volatility_signal(
     return "very_high_vol"
 
 
+def _normalize_regime_method_name(method: Any) -> str:
+    text = str(method or "").strip().lower()
+    if text == "gmm":
+        return "hmm"
+    return text
+
+
 def _summarize_current_regime_for_comparison(
     method: str,
     result: Any,
@@ -560,6 +567,7 @@ def regime_detect(  # noqa: C901
     method: Literal[
         "bocpd",
         "hmm",
+        "gmm",
         "ms_ar",
         "clustering",
         "garch",
@@ -581,7 +589,7 @@ def regime_detect(  # noqa: C901
     """Detect regimes and/or change-points over the last `limit` bars.
 
     - method: Default is 'all' (runs all methods and returns individual results for comparison).
-      Also available: 'bocpd' (Bayesian online change-point; Gaussian), 'hmm' (Gaussian mixture/HMM-lite),
+      Also available: 'bocpd' (Bayesian online change-point; Gaussian), 'hmm' / 'gmm' (Gaussian mixture/HMM-lite),
       'ms_ar' (Markov-switching AR), 'clustering' (rolling-feature clustering via tsfresh + KMeans/Spectral),
       'garch' (GARCH-based volatility regimes), 'rule_based' (trend/ranging/transition classification),
       'wavelet' (multi-resolution wavelet energy regime detection via PyWavelets),
@@ -665,13 +673,15 @@ def regime_detect(  # noqa: C901
           per-method `results`, and `detail='full'` includes richer per-method outputs.
           Best for method comparison.
     """
+    requested_method = str(method).strip().lower()
+    method = _normalize_regime_method_name(requested_method)
     started_at = time.perf_counter()
     log_operation_start(
         logger,
         operation="regime_detect",
         symbol=symbol,
         timeframe=timeframe,
-        method=method,
+        method=requested_method,
         target=target,
         detail=detail,
         limit=limit,
@@ -685,7 +695,7 @@ def regime_detect(  # noqa: C901
             success=infer_result_success(result),
             symbol=symbol,
             timeframe=timeframe,
-            method=method,
+            method=requested_method,
             target=target,
             detail=detail,
             limit=limit,
@@ -2184,9 +2194,13 @@ def regime_detect(  # noqa: C901
             sub_methods_raw = p.get("methods", default_sub)
             if isinstance(sub_methods_raw, str):
                 sub_methods_raw = [m.strip() for m in sub_methods_raw.split(",")]
-            sub_methods = [
-                m for m in sub_methods_raw if m not in ("ensemble", "all", "rule_based")
-            ]
+            sub_methods: List[str] = []
+            for candidate in sub_methods_raw:
+                normalized = _normalize_regime_method_name(candidate)
+                if normalized in ("ensemble", "all", "rule_based"):
+                    continue
+                if normalized not in sub_methods:
+                    sub_methods.append(normalized)
             if not sub_methods:
                 return _finish({"error": "No valid sub-methods for ensemble."})
 
