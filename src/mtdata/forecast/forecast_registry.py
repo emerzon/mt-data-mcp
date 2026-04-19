@@ -102,12 +102,7 @@ def _find_method_definition(
     return None
 
 
-def get_forecast_methods_data() -> Dict[str, Any]:
-    """Return metadata about available forecast methods and their requirements.
-
-    This is derived from ForecastRegistry to avoid drift.
-    """
-    _ensure_registry_loaded()
+def _build_forecast_methods_snapshot() -> Tuple[List[Dict[str, Any]], Dict[str, List[str]]]:
     methods: List[Dict[str, Any]] = []
     categories: Dict[str, List[str]] = {}
 
@@ -141,13 +136,34 @@ def get_forecast_methods_data() -> Dict[str, Any]:
             "supports": supports,
         }
         methods.append(entry)
-
         categories.setdefault(cat, []).append(method)
+
+    return methods, categories
+
+
+def get_forecast_methods_data() -> Dict[str, Any]:
+    """Return metadata about available forecast methods and their requirements.
+
+    This is derived from ForecastRegistry to avoid drift.
+    """
+    _ensure_registry_loaded()
+    methods, categories = _build_forecast_methods_snapshot()
 
     return {
         "methods": methods,
         "total": len(methods),
         "categories": categories,
+    }
+
+
+def get_forecast_method_availability_snapshot() -> Dict[str, bool]:
+    """Return method availability derived from the registry-backed method snapshot."""
+    _ensure_registry_loaded()
+    methods, _ = _build_forecast_methods_snapshot()
+    return {
+        str(method_def.get("method")): bool(method_def.get("available"))
+        for method_def in methods
+        if isinstance(method_def, dict) and method_def.get("method")
     }
 
 
@@ -293,6 +309,7 @@ def _ensemble_metadata() -> Dict[str, Any]:
 # Availability flags that can be imported by other modules
 __all__ = [
     'get_forecast_methods_data',
+    'get_forecast_method_availability_snapshot',
     '_SM_ETS_AVAILABLE',
     '_SM_SARIMAX_AVAILABLE',
     '_NF_AVAILABLE',

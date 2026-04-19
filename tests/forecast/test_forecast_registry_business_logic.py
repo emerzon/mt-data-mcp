@@ -210,3 +210,25 @@ def test_find_method_definition_returns_match_and_none():
 
     assert fr._find_method_definition("theta", method_data) == {"method": "theta", "available": True}
     assert fr._find_method_definition("missing", method_data) is None
+
+
+def test_get_forecast_method_availability_snapshot_reuses_shared_snapshot_builder(monkeypatch):
+    monkeypatch.setattr(fr, "_ensure_registry_loaded", lambda: None)
+    monkeypatch.setattr(
+        fr,
+        "_build_forecast_methods_snapshot",
+        lambda: (
+            [
+                {"method": "theta", "available": True},
+                {"method": "timesfm", "available": False},
+                {"method": "", "available": True},
+                "invalid",
+            ],
+            {"classic": ["theta"]},
+        ),
+    )
+
+    assert fr.get_forecast_method_availability_snapshot() == {
+        "theta": True,
+        "timesfm": False,
+    }

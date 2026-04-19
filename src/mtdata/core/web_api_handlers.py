@@ -9,6 +9,9 @@ from typing import Any, Callable, Dict, List, NoReturn, Optional
 from fastapi import HTTPException
 
 from ..forecast.exceptions import ForecastError
+from ..forecast.forecast_registry import (
+    get_forecast_method_availability_snapshot,
+)
 from ..utils.mt5 import MT5ConnectionError
 from ..utils.support_resistance import compact_support_resistance_payload
 from ..utils.utils import _UNPARSED_BOOL, _parse_bool_like
@@ -210,30 +213,19 @@ def get_methods_response(*, get_methods_impl: Callable[[], Any]) -> Dict[str, An
     data = get_methods_impl()
     if not isinstance(data, dict) or data.get("methods") is None:
         return {"methods": []}
+    methods = data.get("methods")
+    if not isinstance(methods, list):
+        return {"methods": []}
     try:
-        import importlib.util as _importlib_util
-
-        def _has(module_name: str) -> bool:
-            try:
-                return _importlib_util.find_spec(module_name) is not None
-            except Exception:
-                return False
-
-        for method in data["methods"]:
-            name = method.get("method")
-            if name == "timesfm":
-                ok = _has("timesfm")
-                if ok:
-                    ok = _has("timesfm.timesfm_2p5_torch") or _has("timesfm.timesfm_2p5") or ok
-                method["available"] = bool(ok)
-            elif name in ("chronos_bolt", "chronos2"):
-                ok = _has("chronos")
-                method["available"] = bool(ok)
-            elif name == "lag_llama":
-                ok = _has("lag_llama")
-                method["available"] = bool(ok)
+        availability = get_forecast_method_availability_snapshot()
     except Exception:
-        pass
+        availability = {}
+    for method in methods:
+        if not isinstance(method, dict):
+            continue
+        name = str(method.get("method") or "").strip()
+        if name in availability:
+            method["available"] = availability[name]
     return data
 
 

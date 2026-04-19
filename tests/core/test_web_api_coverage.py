@@ -322,40 +322,31 @@ class TestGetMethods:
             res = web_api.get_methods()
         assert res == {"methods": []}
 
-    def test_dynamic_check_timesfm(self):
-        data = {"methods": [{"method": "timesfm", "available": False, "requires": ["timesfm"]}]}
-        with patch("mtdata.core.web_api._get_methods_impl", return_value=data):
-            import importlib.util
-            with patch.object(importlib.util, "find_spec", return_value=MagicMock()):
-                res = web_api.get_methods()
-        assert res["methods"][0]["available"] is True
-        assert res["methods"][0]["requires"] == ["timesfm"]
+    def test_uses_shared_registry_availability_snapshot(self):
+        data = {
+            "methods": [
+                {"method": "timesfm", "available": False, "requires": ["timesfm"]},
+                {"method": "theta", "available": True, "requires": []},
+            ]
+        }
+        with patch("mtdata.core.web_api._get_methods_impl", return_value=data), patch(
+            "mtdata.core.web_api_handlers.get_forecast_method_availability_snapshot",
+            return_value={"timesfm": True, "theta": False},
+        ):
+            res = web_api.get_methods()
+        assert res["methods"] == [
+            {"method": "timesfm", "available": True, "requires": ["timesfm"]},
+            {"method": "theta", "available": False, "requires": []},
+        ]
 
-    def test_dynamic_check_chronos(self):
-        data = {"methods": [{"method": "chronos_bolt", "available": False, "requires": ["chronos"]}]}
-        with patch("mtdata.core.web_api._get_methods_impl", return_value=data):
-            import importlib.util
-            with patch.object(importlib.util, "find_spec", return_value=MagicMock()):
-                res = web_api.get_methods()
+    def test_keeps_original_availability_when_snapshot_has_no_override(self):
+        data = {"methods": [{"method": "custom", "available": True, "requires": []}]}
+        with patch("mtdata.core.web_api._get_methods_impl", return_value=data), patch(
+            "mtdata.core.web_api_handlers.get_forecast_method_availability_snapshot",
+            return_value={"timesfm": False},
+        ):
+            res = web_api.get_methods()
         assert res["methods"][0]["available"] is True
-        assert res["methods"][0]["requires"] == ["chronos"]
-
-    def test_dynamic_check_lag_llama(self):
-        data = {"methods": [{"method": "lag_llama", "available": False, "requires": ["lag_llama"]}]}
-        with patch("mtdata.core.web_api._get_methods_impl", return_value=data):
-            import importlib.util
-            with patch.object(importlib.util, "find_spec", return_value=MagicMock()):
-                res = web_api.get_methods()
-        assert res["methods"][0]["available"] is True
-        assert res["methods"][0]["requires"] == ["lag_llama"]
-
-    def test_dynamic_check_timesfm_not_installed(self):
-        data = {"methods": [{"method": "timesfm", "available": False, "requires": ["timesfm"]}]}
-        with patch("mtdata.core.web_api._get_methods_impl", return_value=data):
-            import importlib.util
-            with patch.object(importlib.util, "find_spec", return_value=None):
-                res = web_api.get_methods()
-        assert res["methods"][0]["available"] is False
 
 
 # ===========================================================================
@@ -1358,22 +1349,24 @@ class TestInstrumentSearchEdgeCases:
         assert res["items"][0]["name"] == "EURUSD"
 
 
-class TestMethodsDynamicCheckEdgeCases:
-    def test_chronos2_check(self):
+class TestMethodsAvailabilityEdgeCases:
+    def test_chronos2_uses_snapshot_override(self):
         data = {"methods": [{"method": "chronos2", "available": False, "requires": ["chronos"]}]}
-        with patch("mtdata.core.web_api._get_methods_impl", return_value=data):
-            import importlib.util
-            with patch.object(importlib.util, "find_spec", return_value=MagicMock()):
-                res = web_api.get_methods()
+        with patch("mtdata.core.web_api._get_methods_impl", return_value=data), patch(
+            "mtdata.core.web_api_handlers.get_forecast_method_availability_snapshot",
+            return_value={"chronos2": True},
+        ):
+            res = web_api.get_methods()
         assert res["methods"][0]["available"] is True
         assert res["methods"][0]["requires"] == ["chronos"]
 
-    def test_dynamic_check_exception_passes(self):
-        """Exception during dynamic check is swallowed."""
+    def test_snapshot_exception_passes(self):
+        """Exceptions while reading the shared snapshot are swallowed."""
         data = {"methods": [{"method": "timesfm", "available": False}]}
-        with patch("mtdata.core.web_api._get_methods_impl", return_value=data):
-            import importlib.util
-            with patch.object(importlib.util, "find_spec", side_effect=RuntimeError("boom")):
-                res = web_api.get_methods()
+        with patch("mtdata.core.web_api._get_methods_impl", return_value=data), patch(
+            "mtdata.core.web_api_handlers.get_forecast_method_availability_snapshot",
+            side_effect=RuntimeError("boom"),
+        ):
+            res = web_api.get_methods()
         assert "methods" in res
 
