@@ -29,12 +29,28 @@ from ..services.finviz import (
     screen_stocks,
 )
 from ._mcp_instance import mcp
+from .error_envelope import build_error_payload
 from .execution_logging import run_logged_operation
 
 logger = logging.getLogger(__name__)
 
 _PAIR_SUFFIXES = {"USD", "EUR", "GBP", "JPY", "AUD", "CAD", "CHF", "NZD"}
 _FINVIZ_SCREEN_FILTERS_EXAMPLE = '{"Exchange":"NASDAQ","Sector":"Technology"}'
+
+
+def _finviz_error_payload(
+    message: Any,
+    *,
+    code: str,
+    operation: str,
+    details: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    return build_error_payload(
+        message,
+        code=code,
+        operation=operation,
+        details=details,
+    )
 
 
 def _looks_like_non_equity_symbol(symbol: str) -> bool:
@@ -51,14 +67,22 @@ def _looks_like_non_equity_symbol(symbol: str) -> bool:
 def _normalize_equity_symbol(symbol: str, *, tool_name: str) -> tuple[Optional[str], Optional[Dict[str, Any]]]:
     symbol_norm = str(symbol or "").strip().upper()
     if not symbol_norm:
-        return None, {"error": f"{tool_name} requires a symbol."}
+        return None, _finviz_error_payload(
+            f"{tool_name} requires a symbol.",
+            code="finviz_symbol_required",
+            operation=tool_name,
+            details={"tool": tool_name},
+        )
     if _looks_like_non_equity_symbol(symbol_norm):
-        return None, {
-            "error": (
+        return None, _finviz_error_payload(
+            (
                 f"{symbol_norm} is not a Finviz-supported equity ticker. "
                 f"{tool_name} only supports US equities."
-            )
-        }
+            ),
+            code="finviz_unsupported_symbol",
+            operation=tool_name,
+            details={"symbol": symbol_norm, "tool": tool_name},
+        )
     return symbol_norm, None
 
 
@@ -75,13 +99,16 @@ def _run_logged_tool(
     )
 
 
-def _invalid_finviz_screen_filters_error(filters: Any) -> Dict[str, str]:
-    return {
-        "error": (
+def _invalid_finviz_screen_filters_error(filters: Any) -> Dict[str, Any]:
+    return _finviz_error_payload(
+        (
             "Invalid filters JSON. Expected a JSON object like "
             f"'{_FINVIZ_SCREEN_FILTERS_EXAMPLE}'. Got: {filters}"
-        )
-    }
+        ),
+        code="finviz_screen_filters_invalid",
+        operation="finviz_screen",
+        details={"received_type": type(filters).__name__},
+    )
 
 
 def _resolve_preferred_text_arg(
@@ -90,16 +117,22 @@ def _resolve_preferred_text_arg(
     preferred_value: Optional[str],
     legacy_name: str,
     legacy_value: Optional[str],
-) -> tuple[Optional[str], Optional[Dict[str, str]]]:
+) -> tuple[Optional[str], Optional[Dict[str, Any]]]:
     preferred = str(preferred_value or "").strip() or None
     legacy = str(legacy_value or "").strip() or None
     if preferred and legacy and preferred != legacy:
-        return None, {
-            "error": (
+        return None, _finviz_error_payload(
+            (
                 f"Provide either {preferred_name} or {legacy_name}, "
                 "not both with different values."
-            )
-        }
+            ),
+            code="finviz_conflicting_text_args",
+            operation="finviz_calendar",
+            details={
+                "preferred_name": preferred_name,
+                "legacy_name": legacy_name,
+            },
+        )
     return preferred or legacy, None
 
 

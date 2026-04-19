@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, Optional
 
 from ..utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise, mt5_adapter
+from .error_envelope import build_error_payload
 from .execution_logging import (
     log_operation_exception,
     log_operation_finish,
@@ -112,5 +113,9 @@ def mt5_connection_error(
         mt5_gateway = gateway if gateway is not None else get_default_mt5_gateway()
         mt5_gateway.ensure_connection()
     except MT5ConnectionError as exc:
-        return {"error": str(exc)}
+        return build_error_payload(
+            str(exc),
+            code="mt5_connection_error",
+            operation="mt5_ensure_connection",
+        )
     return None

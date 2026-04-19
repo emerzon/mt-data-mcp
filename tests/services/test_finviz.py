@@ -460,6 +460,14 @@ class TestFinvizTools:
             "BTCUSD is not a Finviz-supported equity ticker. "
             "finviz_fundamentals only supports US equities."
         )
+        assert result["success"] is False
+        assert result["error_code"] == "finviz_unsupported_symbol"
+        assert result["operation"] == "finviz_fundamentals"
+        assert result["details"] == {
+            "symbol": "BTCUSD",
+            "tool": "finviz_fundamentals",
+        }
+        assert isinstance(result.get("request_id"), str)
 
     @patch("mtdata.core.finviz.get_stock_description")
     def test_finviz_description_normalizes_equity_symbols(self, mock_get_description):
@@ -484,6 +492,26 @@ class TestFinvizTools:
             "BTCUSD is not a Finviz-supported equity ticker. "
             "finviz_news only supports US equities."
         )
+        assert result["success"] is False
+        assert result["error_code"] == "finviz_unsupported_symbol"
+        assert result["operation"] == "finviz_news"
+        assert result["details"] == {"symbol": "BTCUSD", "tool": "finviz_news"}
+        assert isinstance(result.get("request_id"), str)
+
+    @patch("mtdata.core.finviz.get_stock_fundamentals")
+    def test_finviz_fundamentals_requires_symbol(self, mock_get_fundamentals):
+        from mtdata.core.finviz import finviz_fundamentals
+
+        raw = getattr(finviz_fundamentals, "__wrapped__", finviz_fundamentals)
+        result = raw("")
+
+        mock_get_fundamentals.assert_not_called()
+        assert result["success"] is False
+        assert result["error"] == "finviz_fundamentals requires a symbol."
+        assert result["error_code"] == "finviz_symbol_required"
+        assert result["operation"] == "finviz_fundamentals"
+        assert result["details"] == {"tool": "finviz_fundamentals"}
+        assert isinstance(result.get("request_id"), str)
 
     @patch('mtdata.services.finviz.get_stock_fundamentals')
     def test_finviz_fundamentals_tool(self, mock_get_fundamentals):
@@ -535,6 +563,11 @@ class TestFinvizTools:
         assert "error" in result
         assert "Expected a JSON object like" in result["error"]
         assert "Exchange" in result["error"]
+        assert result["success"] is False
+        assert result["error_code"] == "finviz_screen_filters_invalid"
+        assert result["operation"] == "finviz_screen"
+        assert result["details"] == {"received_type": "str"}
+        assert isinstance(result.get("request_id"), str)
 
     def test_finviz_screen_tool_rejects_non_object_json_filters(self):
         from mtdata.core.finviz import finviz_screen
@@ -546,6 +579,9 @@ class TestFinvizTools:
             result = finviz_screen.__wrapped__(filters='["NASDAQ"]')
 
         assert result["error"].startswith("Invalid filters JSON.")
+        assert result["success"] is False
+        assert result["error_code"] == "finviz_screen_filters_invalid"
+        assert result["details"] == {"received_type": "str"}
 
     def test_finviz_calendar_prefers_start_end_aliases(self):
         from mtdata.core.finviz import finviz_calendar
@@ -580,6 +616,12 @@ class TestFinvizTools:
                 date_from="2026-01-06",
             )
 
-        assert result == {
-            "error": "Provide either start or date_from, not both with different values."
+        assert result["success"] is False
+        assert result["error"] == "Provide either start or date_from, not both with different values."
+        assert result["error_code"] == "finviz_conflicting_text_args"
+        assert result["operation"] == "finviz_calendar"
+        assert result["details"] == {
+            "preferred_name": "start",
+            "legacy_name": "date_from",
         }
+        assert isinstance(result.get("request_id"), str)

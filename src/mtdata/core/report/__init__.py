@@ -3,6 +3,7 @@ from typing import Any, Dict, Union
 
 from ...utils.mt5 import ensure_mt5_connection_or_raise
 from .._mcp_instance import mcp
+from ..error_envelope import build_error_payload
 from ..execution_logging import run_logged_operation
 from ..mt5_gateway import get_mt5_gateway, mt5_connection_error
 from .requests import ReportGenerateRequest
@@ -24,7 +25,11 @@ def _report_error_text(message: Any) -> str:
 
 
 def _report_error_payload(message: Any) -> Dict[str, Any]:
-    return {"error": _normalize_report_error_message(message)}
+    return build_error_payload(
+        _normalize_report_error_message(message),
+        code="report_generation_error",
+        operation="report_generate",
+    )
 
 def _report_connection_error() -> Dict[str, Any] | None:
     return mt5_connection_error(

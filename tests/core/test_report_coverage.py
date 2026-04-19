@@ -103,7 +103,11 @@ def test_report_generate_returns_connection_error_payload(monkeypatch):
 
     out = raw(request=report_mod.ReportGenerateRequest(symbol="EURUSD"))
 
-    assert out == {"error": "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."}
+    assert out["success"] is False
+    assert out["error"] == "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."
+    assert out["error_code"] == "mt5_connection_error"
+    assert out["operation"] == "mt5_ensure_connection"
+    assert isinstance(out.get("request_id"), str)
 
 
 def test_report_generate_logs_finish_event(monkeypatch, caplog):
@@ -195,10 +199,17 @@ class TestReportErrorHelpers:
         assert _report_error_text("   ") == "error: Unknown error.\n"
 
     def test_error_payload_normal(self):
-        assert _report_error_payload("oops") == {"error": "oops"}
+        result = _report_error_payload("oops")
+        assert result["success"] is False
+        assert result["error"] == "oops"
+        assert result["error_code"] == "report_generation_error"
+        assert result["operation"] == "report_generate"
+        assert isinstance(result.get("request_id"), str)
 
     def test_error_payload_empty(self):
-        assert _report_error_payload("") == {"error": "Unknown error."}
+        result = _report_error_payload("")
+        assert result["error"] == "Unknown error."
+        assert result["error_code"] == "report_generation_error"
 
 
 # ---------------------------------------------------------------------------

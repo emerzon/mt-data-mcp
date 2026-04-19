@@ -24,6 +24,7 @@ from ..utils.barriers import (
 from ..utils.mt5 import ensure_mt5_connection_or_raise
 from ..utils.utils import parse_kv_or_json as _parse_kv_or_json
 from ._mcp_instance import mcp
+from .error_envelope import build_error_payload
 from .execution_logging import run_logged_operation
 from .mt5_gateway import get_mt5_gateway, mt5_connection_error
 
@@ -168,6 +169,14 @@ def _forecast_connection_error() -> Optional[Dict[str, Any]]:
     )
 
 
+def _forecast_error_payload(message: Any, *, operation: str) -> Dict[str, Any]:
+    return build_error_payload(
+        message,
+        code=f"{operation}_error",
+        operation=operation,
+    )
+
+
 def _run_forecast_operation(
     operation: str,
     *,
@@ -186,11 +195,14 @@ def _run_forecast_operation(
             return func()
         except ForecastError as exc:
             if catch_forecast_error:
-                return {"error": str(exc)}
+                return _forecast_error_payload(exc, operation=operation)
             raise
         except Exception as exc:
             if generic_error_prefix is not None:
-                return {"error": f"{generic_error_prefix}{exc}"}
+                return _forecast_error_payload(
+                    f"{generic_error_prefix}{exc}",
+                    operation=operation,
+                )
             raise
 
     return run_logged_operation(
