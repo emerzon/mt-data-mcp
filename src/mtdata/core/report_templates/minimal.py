@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Iterable, Optional
 
-from ..report.utils import now_utc_iso, parse_table_tail
+from ..report.utils import now_utc_iso, parse_table_tail, resolve_report_context_indicators
 from ..schema import DenoiseSpec
 from .basic import _TREND_COMPACT_LEGEND, _compute_compact_trend, _get_raw_result
 
@@ -64,7 +64,10 @@ def template_minimal(
         "sections": {},
     }
 
-    indicators = "ema(20),ema(50),rsi(14),macd(12,26,9)"
+    indicators = resolve_report_context_indicators(
+        p,
+        default="ema(20),ema(50),rsi(14),macd(12,26,9)",
+    )
     from ..data import data_fetch_candles
 
     ctx = _get_raw_result(

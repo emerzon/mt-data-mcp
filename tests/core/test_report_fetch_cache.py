@@ -97,6 +97,38 @@ class TestContextForTfCache:
         assert call_count == 2
         assert len(cache) == 2
 
+    def test_different_indicator_sets_use_distinct_cache_entries(self, monkeypatch):
+        requested_indicators = []
+
+        def _tracking_fetch(**kwargs):
+            requested_indicators.append(kwargs.get("indicators"))
+            return {"data": list(_ROWS)}
+
+        monkeypatch.setattr("mtdata.core.data.data_fetch_candles", _tracking_fetch)
+        monkeypatch.setattr(
+            "mtdata.core.report_templates.basic._compute_compact_trend",
+            lambda _rows: None,
+        )
+
+        cache = {}
+        context_for_tf(
+            "EURUSD",
+            "H1",
+            None,
+            indicators="ema(20),rsi(14)",
+            _fetch_cache=cache,
+        )
+        context_for_tf(
+            "EURUSD",
+            "H1",
+            None,
+            indicators="ema(50),rsi(14)",
+            _fetch_cache=cache,
+        )
+
+        assert requested_indicators == ["ema(20),rsi(14)", "ema(50),rsi(14)"]
+        assert len(cache) == 2
+
     def test_failed_fetch_cached_as_none(self, monkeypatch):
         """Error result should be cached so we don't retry."""
         call_count = 0
@@ -115,8 +147,8 @@ class TestContextForTfCache:
         assert call_count == 1
         assert r1 is None
         assert r2 is None
-        assert ("EURUSD", "H1") in cache
-        assert cache[("EURUSD", "H1")] is None
+        assert len(cache) == 1
+        assert next(iter(cache.values())) is None
 
     def test_no_cache_allows_repeated_fetches(self, monkeypatch):
         """Without _fetch_cache, each call fetches independently."""
@@ -175,6 +207,31 @@ class TestAttachMultiTimeframesCacheThreading:
         assert len(fetched_tfs) == first_pass_count, (
             f"Expected {first_pass_count} fetches total, got {len(fetched_tfs)}: {fetched_tfs}"
         )
+
+    def test_threads_context_indicators_to_fetches(self, monkeypatch):
+        requested_indicators = []
+
+        def _tracking_fetch(**kwargs):
+            requested_indicators.append(kwargs.get("indicators"))
+            return {"data": list(_ROWS)}
+
+        monkeypatch.setattr("mtdata.core.data.data_fetch_candles", _tracking_fetch)
+        monkeypatch.setattr(
+            "mtdata.core.report_templates.basic._compute_compact_trend",
+            lambda _rows: None,
+        )
+
+        report = {"sections": {"context": {"timeframe": "H1"}}, "meta": {"timeframe": "H1"}}
+
+        attach_multi_timeframes(
+            report,
+            "EURUSD",
+            None,
+            extra_timeframes=["M15", "H4"],
+            context_indicators="ema(20),rsi(14)",
+        )
+
+        assert requested_indicators == ["ema(20),rsi(14)", "ema(20),rsi(14)"]
 
     def test_reuses_existing_timeframes_and_pivots(self, monkeypatch):
         fetched_tfs = []

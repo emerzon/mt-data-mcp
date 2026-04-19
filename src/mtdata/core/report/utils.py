@@ -380,19 +380,47 @@ def apply_market_gates(section: Dict[str, Any], params: Dict[str, Any]) -> Dict[
     return gate
 
 
-def context_for_tf(symbol: str, timeframe: str, denoise: Optional[Dict[str, Any]], limit: int = 200, tail: int = 30, *, _fetch_cache: Optional[Dict[Tuple[str, str], Optional[Dict[str, Any]]]] = None) -> Optional[Dict[str, Any]]:
-    cache_key = (symbol.upper(), timeframe.upper())
+DEFAULT_REPORT_CONTEXT_INDICATORS = "ema(20),ema(50),ema(200),rsi(14),macd(12,26,9)"
+
+
+def resolve_report_context_indicators(
+    params: Optional[Dict[str, Any]],
+    *,
+    default: str = DEFAULT_REPORT_CONTEXT_INDICATORS,
+) -> str:
+    if isinstance(params, dict):
+        indicators = str(params.get('context_indicators') or '').strip()
+        if indicators:
+            return indicators
+    return default
+
+
+def _report_context_cache_key(indicators: str) -> str:
+    return ''.join(str(indicators or '').casefold().split())
+
+
+def context_for_tf(
+    symbol: str,
+    timeframe: str,
+    denoise: Optional[Dict[str, Any]],
+    limit: int = 200,
+    tail: int = 30,
+    *,
+    indicators: Optional[str] = None,
+    _fetch_cache: Optional[Dict[Tuple[str, str, str], Optional[Dict[str, Any]]]] = None,
+) -> Optional[Dict[str, Any]]:
+    indicator_spec = str(indicators or '').strip() or DEFAULT_REPORT_CONTEXT_INDICATORS
+    cache_key = (symbol.upper(), timeframe.upper(), _report_context_cache_key(indicator_spec))
     if _fetch_cache is not None and cache_key in _fetch_cache:
         return _fetch_cache[cache_key]
     try:
         from ..data import data_fetch_candles as _fetch_candles
-        indicators = "ema(20),ema(50),ema(200),rsi(14),macd(12,26,9)"
         res = call_tool_sync_raw(
             _fetch_candles,
             symbol=symbol,
             timeframe=timeframe,
             limit=int(limit),
-            indicators=indicators,
+            indicators=indicator_spec,
             denoise=denoise,
             cli_raw=True,
         )
@@ -491,7 +519,16 @@ def _collect_timeframe_section_entries(section: Any) -> Dict[str, Any]:
     return entries
 
 
-def attach_multi_timeframes(report: Dict[str, Any], symbol: str, denoise: Optional[Dict[str, Any]], extra_timeframes: List[str], pivot_timeframes: Optional[List[str]] = None, *, _fetch_cache: Optional[Dict[Tuple[str, str], Optional[Dict[str, Any]]]] = None) -> None:
+def attach_multi_timeframes(
+    report: Dict[str, Any],
+    symbol: str,
+    denoise: Optional[Dict[str, Any]],
+    extra_timeframes: List[str],
+    pivot_timeframes: Optional[List[str]] = None,
+    *,
+    context_indicators: Optional[str] = None,
+    _fetch_cache: Optional[Dict[Tuple[str, str, str], Optional[Dict[str, Any]]]] = None,
+) -> None:
     sections = report.setdefault('sections', {})
     contexts: Dict[str, Any] = {}
     trend_mtf: Dict[str, Any] = {}
@@ -515,7 +552,15 @@ def attach_multi_timeframes(report: Dict[str, Any], symbol: str, denoise: Option
             if isinstance(existing_trend, dict):
                 trend_mtf[str(tf)] = existing_trend.copy()
         else:
-            snap = context_for_tf(symbol, tf, denoise, limit=200, tail=30, _fetch_cache=_fetch_cache)
+            snap = context_for_tf(
+                symbol,
+                tf,
+                denoise,
+                limit=200,
+                tail=30,
+                indicators=context_indicators,
+                _fetch_cache=_fetch_cache,
+            )
         if snap:
             snap_for_contexts = snap
             if isinstance(snap, dict):

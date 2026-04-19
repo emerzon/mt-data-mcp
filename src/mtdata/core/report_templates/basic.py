@@ -8,6 +8,7 @@ from ..report.utils import (
     now_utc_iso,
     parse_table_tail,
     pick_best_forecast_method,
+    resolve_report_context_indicators,
     summarize_barrier_grid,
 )
 from ..schema import DenoiseSpec
@@ -476,7 +477,10 @@ def template_basic(  # noqa: C901
     _fetch_cache: Dict = {}
 
     # Context
-    indicators = "ema(20),ema(50),rsi(14),macd(12,26,9)"
+    indicators = resolve_report_context_indicators(
+        p,
+        default="ema(20),ema(50),rsi(14),macd(12,26,9)",
+    )
     from ..data import data_fetch_candles
     
     ctx = _get_raw_result(data_fetch_candles,
@@ -515,7 +519,7 @@ def template_basic(  # noqa: C901
                 'symbol': symbol,
                 'timeframe': tf,
                 'last_snapshot': last,
-                'notes': 'Indicators included: EMA(20), EMA(50), RSI(14), MACD(12,26,9).',
+                'notes': f'Indicators included: {indicators}.',
             }
             if compact:
                 ctx_obj['trend_compact'] = compact
@@ -541,7 +545,15 @@ def template_basic(  # noqa: C901
         }
         # Attach multi-timeframe context and pivots for MTF alignment (lightweight)
         try:
-            attach_multi_timeframes(report, symbol, denoise, extra_timeframes=['M15','H1','H4','D1'], pivot_timeframes=['H4','D1'], _fetch_cache=_fetch_cache)
+            attach_multi_timeframes(
+                report,
+                symbol,
+                denoise,
+                extra_timeframes=['M15','H1','H4','D1'],
+                pivot_timeframes=['H4','D1'],
+                context_indicators=indicators,
+                _fetch_cache=_fetch_cache,
+            )
         except Exception:
             pass
 
@@ -557,7 +569,15 @@ def template_basic(  # noqa: C901
             for tf_i in tf_list:
                 if base_tf and tf_i.upper() == base_tf:
                     continue
-                snap = context_for_tf(symbol, tf_i, denoise, limit=200, tail=30, _fetch_cache=_fetch_cache)
+                snap = context_for_tf(
+                    symbol,
+                    tf_i,
+                    denoise,
+                    limit=200,
+                    tail=30,
+                    indicators=indicators,
+                    _fetch_cache=_fetch_cache,
+                )
                 if snap and any(v is not None for v in snap.values()):
                     ctxs[tf_i] = snap
             if ctxs:
