@@ -1519,12 +1519,21 @@ def correlation_matrix(  # noqa: C901
                 warnings=warnings_out,
             )
 
-        transformed = _transform_frame(frame, transform_value)
-        transformed = transformed.dropna(axis=1, how="all")
-        symbols_used = [
-            symbol for symbol in symbol_list if symbol in transformed.columns
-        ]
-        transformed = transformed.reindex(columns=symbols_used)
+        try:
+            transformed = _transform_frame(frame, transform_value)
+            transformed = transformed.dropna(axis=1, how="all")
+            symbols_used = [
+                symbol for symbol in symbol_list if symbol in transformed.columns
+            ]
+            transformed = transformed.reindex(columns=symbols_used)
+        except (TypeError, ValueError) as exc:
+            return _causal_error(
+                "Correlation preprocessing failed. Ensure fetched series contain numeric price data with unique symbol columns.",
+                code="invalid_input",
+                meta=meta,
+                warnings=warnings_out,
+                details=[str(exc)],
+            )
         meta["group_hint"] = group_hint
         meta["symbols_used"] = list(symbols_used)
 

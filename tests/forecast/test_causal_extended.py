@@ -634,6 +634,27 @@ class TestCorrelationMatrix:
 
     @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
     @patch("mtdata.core.causal._fetch_series")
+    def test_preprocessing_failure_returns_structured_error(self, mock_fetch):
+        idx = pd.date_range("2024-01-01", periods=3, freq="h")
+        series_map = {
+            "A": pd.Series(["x", "y", "z"], index=idx),
+            "B": pd.Series([1.0, 2.0, 3.0], index=idx),
+        }
+
+        def _fetch_side_effect(symbol, timeframe, count):
+            return series_map[symbol], None
+
+        mock_fetch.side_effect = _fetch_side_effect
+
+        result = self._unwrapped()("A,B")
+
+        assert result["success"] is False
+        assert result["error_code"] == "invalid_input"
+        assert "Correlation preprocessing failed." in result["error"]
+        assert "could not convert string to float" in " ".join(result.get("details", []))
+
+    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal._fetch_series")
     def test_success_returns_matrix_and_ranked_pairs(self, mock_fetch, caplog):
         idx = pd.date_range("2024-01-01", periods=80, freq="h")
         rets = np.linspace(-0.01, 0.015, 80)
