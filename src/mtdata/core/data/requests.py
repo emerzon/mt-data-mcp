@@ -13,6 +13,7 @@ from pydantic import (
     model_validator,
 )
 
+from ..output_contract import normalize_output_detail
 from ..schema import DenoiseSpec, IndicatorSpec, SimplifySpec, TimeframeLiteral
 
 _INDICATOR_FORMAT_HELP = (
@@ -20,6 +21,10 @@ _INDICATOR_FORMAT_HELP = (
     "compact specs like 'sma(20)' and 'macd(12,26,9)', or named specs like "
     "'rsi(length=14)' and 'macd(fast=12,slow=26,signal=9)'."
 )
+_TICKS_FORMAT_ALIASES = {
+    "compact": "summary",
+    "full": "stats",
+}
 
 
 def _reject_removed_field(values: Any, *, field_name: str, replacement: str) -> Any:
@@ -309,12 +314,21 @@ class DataFetchTicksRequest(BaseModel):
     start: Optional[str] = None
     end: Optional[str] = None
     simplify: Optional[SimplifySpec] = None
-    format: Literal["summary", "stats", "rows"] = "summary"
+    format: Literal["summary", "stats", "rows", "compact", "full"] = "summary"
 
     @model_validator(mode="before")
     @classmethod
     def _reject_removed_output(cls, values: Any) -> Any:
         return _reject_removed_field(values, field_name="output", replacement="format")
+
+    @field_validator("format", mode="before")
+    @classmethod
+    def _normalize_format(cls, value: Any) -> Any:
+        return normalize_output_detail(
+            value,
+            default="summary",
+            aliases=_TICKS_FORMAT_ALIASES,
+        )
 
     @field_validator("limit")
     @classmethod

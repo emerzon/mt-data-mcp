@@ -465,6 +465,9 @@ def data_fetch_ticks(
     over the fetched ticks (bid/ask/mid/spread, plus last and volume; volume uses real
     volume when available, otherwise tick_volume).
 
+    Shared output-contract aliases are also accepted: `format="compact"`
+    maps to `summary`, and `format="full"` maps to `stats`.
+
     Use `format="stats"` for a more detailed stats payload.
     Use `format="rows"` to return raw tick rows as structured data.
     `simplify` only applies to row output.

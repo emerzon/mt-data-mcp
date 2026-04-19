@@ -168,6 +168,64 @@ class TestDataService(unittest.TestCase):
         self.assertTrue(math.isnan(result["data"][3]["volume"]))
 
     @patch('mtdata.services.data_service._mt5_copy_ticks_range')
+    @patch('mtdata.services.data_service._symbol_ready_guard', _mock_symbol_ready_guard)
+    def test_fetch_ticks_rows_skip_dataframe_stats_path(self, mock_copy_ticks):
+        mock_copy_ticks.return_value = [
+            {
+                'time': 1704067200.0 + i,
+                'bid': 1.1 + i * 0.0001,
+                'ask': 1.1001 + i * 0.0001,
+                'last': 1.1 + i * 0.0001,
+                'volume': 1.0,
+                'time_msc': (1704067200.0 + i) * 1000,
+                'flags': 0,
+                'volume_real': 0.0,
+            }
+            for i in range(5)
+        ]
+
+        with patch(
+            'mtdata.services.data_service.pd.DataFrame',
+            side_effect=AssertionError('rows output should not build tick DataFrames'),
+        ):
+            result = fetch_ticks(symbol='EURUSD', limit=5, format='rows')
+
+        self.assertTrue(result.get('success'))
+        self.assertEqual(result.get('count'), 5)
+
+    @patch('mtdata.services.data_service._mt5_copy_ticks_range')
+    @patch('mtdata.services.data_service._symbol_ready_guard', _mock_symbol_ready_guard)
+    def test_fetch_ticks_summary_and_stats_still_use_dataframe_analytics(self, mock_copy_ticks):
+        import pandas as pd
+
+        ticks = [
+            {
+                'time': 1704067200.0 + i,
+                'bid': 1.1 + i * 0.0001,
+                'ask': 1.1001 + i * 0.0001,
+                'last': 1.1 + i * 0.0001,
+                'volume': 1.0,
+                'time_msc': (1704067200.0 + i) * 1000,
+                'flags': 0,
+                'volume_real': 0.0,
+            }
+            for i in range(5)
+        ]
+
+        for output_mode in ('summary', 'stats'):
+            mock_copy_ticks.return_value = ticks
+            with self.subTest(output_mode=output_mode), patch(
+                'mtdata.services.data_service.pd.DataFrame',
+                wraps=pd.DataFrame,
+            ) as mock_dataframe:
+                result = fetch_ticks(symbol='EURUSD', limit=5, format=output_mode)
+
+            self.assertTrue(result.get('success'))
+            self.assertIn('stats', result)
+            self.assertGreater(mock_dataframe.call_count, 0)
+            self.assertEqual(result.get('output'), output_mode)
+
+    @patch('mtdata.services.data_service._mt5_copy_ticks_range')
     @patch('mtdata.services.data_service._resolve_client_tz', return_value=None)
     @patch('mtdata.services.data_service._symbol_ready_guard', _mock_symbol_ready_guard)
     def test_fetch_ticks_select_simplify_reuses_cached_tick_fields(self, mock_ctz, mock_copy_ticks):

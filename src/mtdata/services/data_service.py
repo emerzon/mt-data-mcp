@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Literal, Optional, Tuple
 import pandas as pd
 
 from ..bootstrap.settings import mt5_config
+from ..core.output_contract import normalize_output_detail
 from ..core.runtime_metadata import build_runtime_timezone_meta
 from ..shared.constants import (
     DEFAULT_ROW_LIMIT,
@@ -1354,19 +1355,21 @@ def fetch_ticks(  # noqa: C901
     start: Optional[str] = None,
     end: Optional[str] = None,
     simplify: Optional[SimplifySpec] = None,
-    format: Literal["summary", "stats", "rows"] = "summary",
+    format: Literal["summary", "stats", "rows", "compact", "full"] = "summary",
 ) -> Dict[str, Any]:
     """Fetch tick data and return either a summary (default) or raw rows.
 
     Parameters
     ----------
-    format : {"summary","stats","rows"}
+    format : {"summary","stats","rows","compact","full"}
         - "summary" (default): compact descriptive statistics over the fetched
           ticks (bid/ask/mid/spread, plus last and volume; volume uses real volume when
           available, otherwise tick_volume).
         - "stats": more detailed stats (includes extra distribution moments and
           quantiles).
         - "rows": return tick rows as structured data.
+        - "compact": shared output-contract alias for "summary".
+        - "full": shared output-contract alias for "stats".
     """
     try:
         effective_limit = int(limit)
@@ -1386,7 +1389,16 @@ def fetch_ticks(  # noqa: C901
                 price_digits = 0
 
             # Normalized params only
-            output_mode = str(format or "summary").lower().strip()
+            output_mode = normalize_output_detail(
+                format,
+                default="summary",
+                aliases={
+                    "compact": "summary",
+                    "full": "stats",
+                    "raw": "rows",
+                    "ticks": "rows",
+                },
+            )
             if start:
                 from_date = _parse_start_datetime(start)
                 if not from_date:
@@ -1424,11 +1436,18 @@ def fetch_ticks(  # noqa: C901
         if len(ticks) == 0:
             return {"error": "No tick data available"}
 
-        if output_mode not in ("summary", "stats", "rows", "raw", "ticks"):
-            return {"error": f"Invalid format: {format}. Use 'summary', 'stats', or 'rows'."}
+        if output_mode not in ("summary", "stats", "rows"):
+            return {
+                "error": (
+                    f"Invalid format: {format}. "
+                    "Use 'summary', 'stats', 'rows', 'compact', or 'full'."
+                )
+            }
 
         def _tick_field(tick: Any, name: str) -> Any:
             return _tick_field_value(tick, name)
+
+        needs_stats = output_mode in ("summary", "stats")
 
         # Extract shared tick columns once so summary/stats, simplification,
         # and row rendering can all reuse the same values.
@@ -1449,10 +1468,11 @@ def fetch_ticks(  # noqa: C901
                 volumes.append(float(_tick_field(tick, "volume")))
             except (TypeError, ValueError):
                 volumes.append(float("nan"))
-            try:
-                volumes_real.append(float(_tick_field(tick, "volume_real")))
-            except (TypeError, ValueError):
-                volumes_real.append(float("nan"))
+            if needs_stats:
+                try:
+                    volumes_real.append(float(_tick_field(tick, "volume_real")))
+                except (TypeError, ValueError):
+                    volumes_real.append(float("nan"))
 
         has_last = len(set(lasts)) > 1 or any(v != 0 for v in lasts)
         finite_volumes = [v for v in volumes if math.isfinite(v)]
@@ -1460,7 +1480,7 @@ def fetch_ticks(  # noqa: C901
             len(set(finite_volumes)) > 1 or any(v != 0.0 for v in finite_volumes)
         )
         has_flags = len(set(flags)) > 1 or any(v != 0 for v in flags)
-        has_real_volume = any(math.isfinite(v) and v != 0.0 for v in volumes_real)
+        has_real_volume = needs_stats and any(math.isfinite(v) and v != 0.0 for v in volumes_real)
         
         # Build header dynamically (time, bid, ask are always included)
         headers = ["time", "bid", "ask"]
@@ -1470,36 +1490,48 @@ def fetch_ticks(  # noqa: C901
             headers.append("volume")
         if has_flags:
             headers.append("flags")
-        
-        # Build data rows with matching columns and escape properly
-        # Choose a consistent time format for all rows (strip year if constant)
+
+        # Choose a consistent time format for all rows (strip year if constant).
         # Low-level tick fetch helpers already normalize MT5 times to UTC.
         client_tz = _resolve_client_tz()
         _use_ctz = client_tz is not None
+        fmt: Optional[str] = None
         if not _use_ctz:
             fmt = _time_format_from_epochs(_epochs)
             fmt = _maybe_strip_year(fmt, _epochs)
             fmt = _style_time_format(fmt)
-        df_ticks = pd.DataFrame({
-            "__epoch": _epochs,
-            "bid": bids,
-            "ask": asks,
-        })
-        if has_last:
-            df_ticks["last"] = lasts
-        if has_volume:
-            df_ticks["volume"] = volumes
-        if has_flags:
-            df_ticks["flags"] = flags
-        # Add display time column
-        if _use_ctz:
-            df_ticks["time"] = [
-                _format_time_minimal_local(e) for e in _epochs
-            ]
-        else:
-            df_ticks["time"] = [
-                datetime.fromtimestamp(e, tz=dt_timezone.utc).strftime(fmt) for e in _epochs
-            ]
+
+        def _format_tick_time(epoch: float) -> str:
+            if _use_ctz:
+                return _format_time_minimal_local(epoch)
+            return datetime.fromtimestamp(epoch, tz=dt_timezone.utc).strftime(fmt)
+
+        original_count = len(ticks)
+        simplify_eff = _normalize_simplify_spec(simplify, limit=limit, fallback_rows=original_count)
+        simplify_present = (simplify_eff is not None) or (simplify is not None)
+        simplify_used = simplify_eff if simplify_eff is not None else simplify
+        simplify_mode = (
+            str((simplify_used or {}).get("mode", SIMPLIFY_DEFAULT_MODE)).lower().strip()
+            if simplify_present
+            else SIMPLIFY_DEFAULT_MODE
+        )
+
+        df_ticks: Optional[pd.DataFrame] = None
+        if output_mode in ("summary", "stats") or (
+            simplify_present and simplify_mode in ("approximate", "resample")
+        ):
+            df_ticks = pd.DataFrame({
+                "__epoch": _epochs,
+                "bid": bids,
+                "ask": asks,
+            })
+            if has_last:
+                df_ticks["last"] = lasts
+            if has_volume:
+                df_ticks["volume"] = volumes
+            if has_flags:
+                df_ticks["flags"] = flags
+            df_ticks["time"] = [_format_tick_time(e) for e in _epochs]
 
         if output_mode in ("summary", "stats"):
             detailed_stats = output_mode == "stats"
@@ -1706,12 +1738,7 @@ def fetch_ticks(  # noqa: C901
             return out
 
         # If simplify mode requests approximation or resampling, use shared path
-        original_count = len(df_ticks)
-        simplify_eff = _normalize_simplify_spec(simplify, limit=limit, fallback_rows=original_count)
-        simplify_present = (simplify_eff is not None) or (simplify is not None)
-        simplify_used = simplify_eff if simplify_eff is not None else simplify
-        _mode = str((simplify_used or {}).get('mode', SIMPLIFY_DEFAULT_MODE)).lower().strip() if simplify_present else SIMPLIFY_DEFAULT_MODE
-        if simplify_present and _mode in ('approximate', 'resample'):
+        if simplify_present and simplify_mode in ('approximate', 'resample'):
             df_out, simplify_meta = _simplify_dataframe_rows_ext(df_ticks, headers, simplify_used)
             rows = _format_numeric_rows_from_df(df_out, headers, stringify=False)
             payload = _table_from_rows(headers, rows)
@@ -1729,7 +1756,6 @@ def fetch_ticks(  # noqa: C901
                 payload["simplify"] = meta
             return payload
         # Optional simplification based on a chosen y-series
-        original_count = len(ticks)
         select_indices = list(range(original_count))
         _simp_method_used: Optional[str] = None
         _simp_params_meta: Optional[Dict[str, Any]] = None
@@ -1814,10 +1840,7 @@ def fetch_ticks(  # noqa: C901
 
         rows = []
         for i in select_indices:
-            if _use_ctz:
-                time_str = _format_time_minimal_local(_epochs[i])
-            else:
-                time_str = datetime.fromtimestamp(_epochs[i], tz=dt_timezone.utc).strftime(fmt)
+            time_str = _format_tick_time(_epochs[i])
             values = [time_str, bids[i], asks[i]]
             if has_last:
                 values.append(lasts[i])

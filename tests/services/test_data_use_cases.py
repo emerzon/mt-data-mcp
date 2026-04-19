@@ -61,7 +61,11 @@ def test_run_data_fetch_ticks_logs_connection_error(caplog):
             fetch_ticks_impl=lambda **kwargs: {"ticks": []},
         )
 
-    assert result == {"error": "no mt5"}
+    assert result["error"] == "no mt5"
+    assert result["success"] is False
+    assert result["error_code"] == "mt5_connection_error"
+    assert result["operation"] == "mt5_ensure_connection"
+    assert isinstance(result.get("request_id"), str)
     assert any(
         "event=finish operation=data_fetch_ticks success=False" in record.message
         for record in caplog.records
@@ -121,3 +125,19 @@ def test_data_fetch_candles_wrapper_and_use_case_emit_single_finish_event(monkey
 def test_data_fetch_ticks_request_rejects_removed_output_field():
     with pytest.raises(ValidationError, match="output was removed; use format"):
         DataFetchTicksRequest(symbol="EURUSD", output="rows")
+
+
+@pytest.mark.parametrize(
+    ("raw_format", "expected_format"),
+    [
+        ("compact", "summary"),
+        ("full", "stats"),
+    ],
+)
+def test_data_fetch_ticks_request_normalizes_shared_output_aliases(
+    raw_format: str,
+    expected_format: str,
+):
+    request = DataFetchTicksRequest(symbol="EURUSD", format=raw_format)
+
+    assert request.format == expected_format

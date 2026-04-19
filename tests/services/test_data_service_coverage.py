@@ -1748,6 +1748,17 @@ class TestFetchTicks(unittest.TestCase):
     @patch(_CACHED_INFO, return_value=MagicMock())
     @patch(_RESOLVE_CTZ, return_value=None)
     @patch(_GUARD, _mock_symbol_guard)
+    def test_compact_output_alias_maps_to_summary(self, mock_ctz, mock_info, mock_ticks):
+        mock_ticks.return_value = _make_ticks(20)
+        result = fetch_ticks('EURUSD', limit=10, format='compact')
+        self.assertTrue(result.get('success'))
+        self.assertEqual(result['output'], 'summary')
+        self.assertIn('stats', result)
+
+    @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
     def test_stats_output(self, mock_ctz, mock_info, mock_ticks):
         mock_ticks.return_value = _make_ticks(20)
         result = fetch_ticks('EURUSD', limit=10, format='stats')
@@ -1759,6 +1770,17 @@ class TestFetchTicks(unittest.TestCase):
         self.assertIn('skew', bid_stats)
         self.assertIn('q25', bid_stats)
         self.assertIn('q75', bid_stats)
+
+    @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_full_output_alias_maps_to_stats(self, mock_ctz, mock_info, mock_ticks):
+        mock_ticks.return_value = _make_ticks(20)
+        result = fetch_ticks('EURUSD', limit=10, format='full')
+        self.assertTrue(result.get('success'))
+        self.assertEqual(result['output'], 'stats')
+        self.assertIn('median', result['stats']['bid'])
 
     @patch(_TICKS_RANGE)
     @patch(_CACHED_INFO, return_value=MagicMock())
@@ -1889,6 +1911,8 @@ class TestFetchTicks(unittest.TestCase):
         result = fetch_ticks('EURUSD', limit=5, format='BADMODE')
         self.assertIn('error', result)
         self.assertIn('Invalid format', result['error'])
+        self.assertIn('compact', result['error'])
+        self.assertIn('full', result['error'])
 
     @patch(_TICKS_RANGE)
     @patch(_CACHED_INFO, return_value=MagicMock())
