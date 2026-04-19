@@ -54,6 +54,26 @@ def _position_side_matches(position: Any, side: Optional[str], mt5: Any) -> bool
     return validation._resolve_position_side(position, mt5) == side
 
 
+def _position_matches_required_filters(
+    position: Any,
+    *,
+    symbol: Optional[str],
+    side: Optional[str],
+    mt5: Any,
+) -> bool:
+    if symbol is not None:
+        position_symbol = str(getattr(position, "symbol", "")).upper()
+        if position_symbol != str(symbol).upper():
+            return False
+    if side in {"BUY", "SELL"}:
+        raw_type = getattr(position, "type", None)
+        if isinstance(raw_type, (int, float, str)) and not isinstance(raw_type, bool):
+            resolved_side = validation._resolve_position_side(position, mt5)
+            if resolved_side is not None and resolved_side != side:
+                return False
+    return True
+
+
 def _position_ticket_fields(position: Any) -> Dict[str, int]:
     out: Dict[str, int] = {}
     for field in ("ticket", "identifier", "position_id", "position", "order", "deal"):
@@ -261,20 +281,18 @@ def _select_position_candidate(
         ]
         if ticket_filtered:
             candidates = ticket_filtered
-    if symbol:
-        symbol_upper = str(symbol).upper()
-        symbol_filtered = [
-            pos
-            for pos in candidates
-            if str(getattr(pos, "symbol", "")).upper() == symbol_upper
-        ]
-        if symbol_filtered:
-            candidates = symbol_filtered
-    side_filtered = [
-        pos for pos in candidates if _position_side_matches(pos, side, mt5)
+    required_filtered = [
+        pos
+        for pos in candidates
+        if _position_matches_required_filters(
+            pos,
+            symbol=symbol,
+            side=side,
+            mt5=mt5,
+        )
     ]
-    if side_filtered:
-        candidates = side_filtered
+    if symbol is not None or side in {"BUY", "SELL"}:
+        candidates = required_filtered
     if magic is not None:
         magic_filtered = [
             pos
@@ -386,6 +404,16 @@ def _resolve_open_position(
             for field, value in _position_ticket_fields(pos).items():
                 if value in candidate_ids:
                     exact_matches.append((pos, field, value))
+        exact_matches = [
+            (pos, field, value)
+            for pos, field, value in exact_matches
+            if _position_matches_required_filters(
+                pos,
+                symbol=symbol,
+                side=side,
+                mt5=mt5,
+            )
+        ]
         if exact_matches:
             exact_matches.sort(
                 key=lambda item: _position_sort_key(item[0]), reverse=True

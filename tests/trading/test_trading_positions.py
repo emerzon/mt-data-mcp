@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 from mtdata.core.trading import positions
 
@@ -99,6 +100,35 @@ def test_resolve_open_position_respects_side_filter_when_mt5_constants_are_missi
     assert info["method"] == "positions_get(fallback_heuristic)"
 
 
+def test_resolve_open_position_rejects_wrong_side_when_no_candidates_match():
+    rows = [
+        SimpleNamespace(
+            ticket=200,
+            identifier=200,
+            position_id=None,
+            position=None,
+            order=None,
+            deal=None,
+            symbol="EURUSD",
+            type=1,
+            volume=0.1,
+            time_update_msc=2000,
+        ),
+    ]
+
+    pos, resolved_ticket, info = positions._resolve_open_position(
+        _FakeMt5(fallback_rows=rows),
+        symbol="EURUSD",
+        side="BUY",
+        volume=0.1,
+    )
+
+    assert pos is None
+    assert resolved_ticket is None
+    assert info["method"] == "positions_get(fallback_heuristic)"
+    assert info["matched"] is False
+
+
 def test_resolve_open_position_uses_candidate_ticket_when_direct_lookup_ticket_is_invalid():
     mt5 = _FakeMt5(
         ticket_rows=[
@@ -161,6 +191,63 @@ def test_resolve_open_position_uses_exact_match_value_when_ticket_field_is_inval
     assert resolved_ticket == 789
     assert info["method"] == "positions_get(fallback_exact)"
     assert info["matched_field"] == "identifier"
+
+
+def test_resolve_open_position_rejects_exact_match_with_symbol_mismatch():
+    mt5 = _FakeMt5(
+        ticket_rows=[],
+        fallback_rows=[
+            SimpleNamespace(
+                ticket=789,
+                identifier=789,
+                position_id=None,
+                position=None,
+                order=None,
+                deal=None,
+                symbol="GBPUSD",
+                type=0,
+                volume=0.1,
+                time_update_msc=1000,
+            )
+        ],
+    )
+
+    pos, resolved_ticket, info = positions._resolve_open_position(
+        mt5,
+        ticket_candidates=[789],
+        symbol="EURUSD",
+        side="BUY",
+        volume=0.1,
+    )
+
+    assert pos is None
+    assert resolved_ticket is None
+    assert info["method"] == "positions_get(fallback_heuristic)"
+    assert info["matched"] is False
+
+
+def test_resolve_open_position_keeps_candidate_when_side_is_untyped():
+    pos, resolved_ticket, info = positions._resolve_open_position(
+        _FakeMt5(
+            ticket_rows=[
+                MagicMock(
+                    symbol="EURUSD",
+                    volume=0.1,
+                    sl=0.0,
+                    tp=0.0,
+                    time_update_msc=1000,
+                )
+            ]
+        ),
+        ticket_candidates=[456],
+        symbol="EURUSD",
+        side="BUY",
+        volume=0.1,
+    )
+
+    assert pos is not None
+    assert resolved_ticket == 456
+    assert info["method"] == "positions_get(ticket)"
 
 
 def test_resolve_open_position_uses_other_ticket_like_fields_in_heuristic_path():
