@@ -244,6 +244,17 @@ def _normalize_wait_event_price_direction(value: Any) -> Any:
     return _WAIT_EVENT_PRICE_DIRECTION_ALIASES.get(text, text)
 
 
+def _normalize_wait_event_account_side(value: Any) -> Any:
+    if value is None:
+        return None
+    text = str(value).strip().lower()
+    if text in {"long", "short"}:
+        return "buy" if text == "long" else "sell"
+    if text not in {"buy", "sell"}:
+        raise ValueError("side must be 'buy' or 'sell'.")
+    return text
+
+
 def _validate_positive_float(value: float, name: str) -> float:
     value_f = float(value)
     if value_f <= 0:
@@ -385,14 +396,7 @@ class _WaitAccountEventBase(BaseModel):
     @field_validator("side", mode="before")
     @classmethod
     def _normalize_side(cls, value: Optional[str]) -> Optional[str]:
-        if value is None:
-            return None
-        text = str(value).strip().lower()
-        if text in {"long", "short"}:
-            return "buy" if text == "long" else "sell"
-        if text not in {"buy", "sell"}:
-            raise ValueError("side must be 'buy' or 'sell'.")
-        return text
+        return _normalize_wait_event_account_side(value)
 
 class CandleCloseEventSpec(BaseModel):
     type: Literal["candle_close"] = "candle_close"
@@ -764,15 +768,10 @@ class WaitEventRequest(BaseModel):
     def _validate_max_wait_seconds(cls, value: Optional[float]) -> Optional[float]:
         return _validate_non_negative(value, "max_wait_seconds")
 
-    @field_validator("side")
+    @field_validator("side", mode="before")
     @classmethod
     def _normalize_side(cls, value: Optional[str]) -> Optional[str]:
-        if value is None:
-            return None
-        text = str(value).strip().lower()
-        if text not in {"buy", "sell"}:
-            raise ValueError("side must be 'buy' or 'sell'.")
-        return text
+        return _normalize_wait_event_account_side(value)
 
     @model_validator(mode="after")
     def _validate_explicit_empty_watchers(self) -> "WaitEventRequest":

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import pytest
 from unittest.mock import patch
 
+from mtdata.core.data import wait_events
 from mtdata.core.data.requests import WaitEventRequest
 
 
@@ -166,6 +168,26 @@ def test_wait_event_request_normalizes_account_side_aliases() -> None:
     )
 
     assert [item.side for item in request.watch_for] == ["buy", "sell"]
+
+
+def test_wait_event_request_normalizes_request_level_side_aliases() -> None:
+    request = WaitEventRequest.model_validate(
+        {
+            "symbol": "EURUSD",
+            "side": "long",
+            "watch_for": [
+                {"type": "position_opened"},
+            ],
+        }
+    )
+
+    compiled = wait_events._compile_request(
+        request,
+        started_at_utc=datetime(2026, 4, 5, tzinfo=timezone.utc),
+    )
+
+    assert request.side == "buy"
+    assert [item["side"] for item in compiled["watch_for"]] == ["buy"]
 
 
 def test_wait_event_request_deduplicates_identical_candle_close_events() -> None:
