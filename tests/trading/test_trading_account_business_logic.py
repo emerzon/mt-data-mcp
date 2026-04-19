@@ -456,6 +456,120 @@ def test_run_trade_get_pending_limit_prefers_latest_valid_timestamps() -> None:
     assert [row["Time"] for row in out] == ["t200", "t300"]
 
 
+def test_run_trade_get_open_supports_snake_case_columns() -> None:
+    Position = namedtuple(
+        "Position",
+        [
+            "ticket",
+            "symbol",
+            "time",
+            "type",
+            "volume",
+            "price_open",
+            "sl",
+            "tp",
+            "price_current",
+            "swap",
+            "profit",
+            "comment",
+            "magic",
+        ],
+    )
+    rows = [
+        Position(21, "EURUSD", 1700000100, 0, 0.1, 1.1, 1.0, 1.2, 1.15, 0.0, 2.5, "note", 7),
+    ]
+    gateway = SimpleNamespace(
+        ensure_connection=lambda: None,
+        positions_get=lambda ticket=None, symbol=None: rows,
+        POSITION_TYPE_BUY=0,
+        POSITION_TYPE_SELL=1,
+    )
+
+    out = run_trade_get_open(
+        TradeGetOpenRequest(column_style="snake_case"),
+        gateway=gateway,
+        use_client_tz=lambda: False,
+        format_time_minimal=lambda ts: f"t{int(ts)}",
+        format_time_minimal_local=lambda ts: f"lt{int(ts)}",
+        mt5_epoch_to_utc=lambda ts: ts,
+        normalize_limit=lambda value: value,
+        comment_row_metadata=lambda comment: {
+            "comment_visible_length": len(comment or ""),
+            "comment_max_length": 31,
+            "comment_may_be_truncated": False,
+        },
+    )
+
+    assert out[0]["ticket"] == 21
+    assert out[0]["time"] == "t1700000100"
+    assert out[0]["type"] == "BUY"
+    assert out[0]["price_open"] == 1.1
+    assert out[0]["price_current"] == 1.15
+    assert out[0]["comment"] == "note"
+    assert out[0]["magic"] == 7
+    assert "Ticket" not in out[0]
+
+
+def test_run_trade_get_pending_supports_snake_case_columns() -> None:
+    Order = namedtuple(
+        "Order",
+        [
+            "ticket",
+            "symbol",
+            "time_setup",
+            "time_expiration",
+            "type",
+            "volume",
+            "price_open",
+            "sl",
+            "tp",
+            "price_current",
+            "comment",
+            "magic",
+        ],
+    )
+    rows = [
+        Order(31, "EURUSD", 1700000200, 0, 2, 0.1, 1.1, 1.0, 1.2, 1.15, "pending", 9),
+    ]
+    gateway = SimpleNamespace(
+        ensure_connection=lambda: None,
+        orders_get=lambda ticket=None, symbol=None: rows,
+        ORDER_TYPE_BUY=0,
+        ORDER_TYPE_SELL=1,
+        ORDER_TYPE_BUY_LIMIT=2,
+        ORDER_TYPE_SELL_LIMIT=3,
+        ORDER_TYPE_BUY_STOP=4,
+        ORDER_TYPE_SELL_STOP=5,
+        ORDER_TYPE_BUY_STOP_LIMIT=6,
+        ORDER_TYPE_SELL_STOP_LIMIT=7,
+    )
+
+    out = run_trade_get_pending(
+        TradeGetPendingRequest(column_style="snake_case"),
+        gateway=gateway,
+        use_client_tz=lambda: False,
+        format_time_minimal=lambda ts: f"t{int(ts)}",
+        format_time_minimal_local=lambda ts: f"lt{int(ts)}",
+        mt5_epoch_to_utc=lambda ts: ts,
+        normalize_limit=lambda value: value,
+        comment_row_metadata=lambda comment: {
+            "comment_visible_length": len(comment or ""),
+            "comment_max_length": 31,
+            "comment_may_be_truncated": False,
+        },
+    )
+
+    assert out[0]["ticket"] == 31
+    assert out[0]["time"] == "t1700000200"
+    assert out[0]["expiration"] == "GTC"
+    assert out[0]["type"] == "BUY_LIMIT"
+    assert out[0]["price_open"] == 1.1
+    assert out[0]["price_current"] == 1.15
+    assert out[0]["comment"] == "pending"
+    assert out[0]["magic"] == 9
+    assert "Ticket" not in out[0]
+
+
 def test_run_trade_get_open_falls_back_to_time_column() -> None:
     Position = namedtuple(
         "Position",

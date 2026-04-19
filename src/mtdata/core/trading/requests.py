@@ -161,6 +161,13 @@ class TradeGetOpenRequest(BaseModel):
             "while preserving the standard read envelope."
         ),
     )
+    column_style: Literal["humanized", "snake_case"] = Field(
+        default="humanized",
+        description=(
+            "Trading table column naming style. Use humanized for the legacy "
+            "title-cased headers or snake_case for MT5-style field names."
+        ),
+    )
 
 
 class TradeGetPendingRequest(BaseModel):
@@ -172,6 +179,13 @@ class TradeGetPendingRequest(BaseModel):
         description=(
             "Response detail level. Use compact to omit echoed request metadata "
             "while preserving the standard read envelope."
+        ),
+    )
+    column_style: Literal["humanized", "snake_case"] = Field(
+        default="humanized",
+        description=(
+            "Trading table column naming style. Use humanized for the legacy "
+            "title-cased headers or snake_case for MT5-style field names."
         ),
     )
 
