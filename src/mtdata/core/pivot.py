@@ -146,28 +146,30 @@ def pivot_compute_points(  # noqa: C901
             with _symbol_ready_guard(symbol) as (err, _info_before):
                 if err:
                     return {"error": err}
+                system_now_dt = datetime.now(timezone.utc)
+                system_now_ts = system_now_dt.timestamp()
+                server_now_dt = system_now_dt
+                server_now_ts = system_now_ts
                 _tick = mt5.symbol_info_tick(symbol)
                 if _tick is not None and getattr(_tick, "time", None):
-                    t_utc = _mt5_epoch_to_utc(float(_tick.time))
-                    server_now_dt = datetime.fromtimestamp(t_utc, tz=timezone.utc)
-                    server_now_ts = t_utc
-                else:
-                    server_now_dt = datetime.now(timezone.utc)
-                    server_now_ts = server_now_dt.timestamp()
+                    t_utc = float(_mt5_epoch_to_utc(float(_tick.time)))
+                    freshness_limit = float(max(tf_secs, 300))
+                    if abs(system_now_ts - t_utc) <= freshness_limit:
+                        server_now_ts = t_utc
+                        server_now_dt = datetime.fromtimestamp(server_now_ts, tz=timezone.utc)
                 rates = _mt5_copy_rates_from(symbol, mt5_tf, server_now_dt, 5)
 
             if rates is None or len(rates) == 0:
                 return {"error": f"Failed to get rates for {symbol}: {mt5.last_error()}"}
 
             now_ts = server_now_ts
-            if len(rates) >= 2:
+            latest = rates[-1]
+            if (float(latest["time"]) + tf_secs) <= now_ts:
+                src = latest
+            elif len(rates) >= 2:
                 src = rates[-2]
             else:
-                only = rates[-1]
-                if (float(only["time"]) + tf_secs) <= now_ts:
-                    src = only
-                else:
-                    return {"error": "No completed bars available to compute pivot points"}
+                return {"error": "No completed bars available to compute pivot points"}
 
             def _has_field(row, name: str) -> bool:
                 try:

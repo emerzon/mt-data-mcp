@@ -4,6 +4,7 @@ Covers lines 25-273 by mocking MT5 calls and _symbol_ready_guard.
 """
 import math
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from typing import Any, Dict
 from unittest.mock import MagicMock, PropertyMock, patch
 
@@ -170,6 +171,7 @@ class TestPivotSingleBar:
     def _run(self, rate, now_ts, tf_secs=86400):
         fn = _get_pivot_fn()
         info = _make_symbol_info()
+        current_dt = datetime.fromtimestamp(now_ts, tz=timezone.utc)
 
         @contextmanager
         def _guard(symbol):
@@ -183,7 +185,10 @@ class TestPivotSingleBar:
              patch(_EPOCH, side_effect=lambda x: float(x)), \
              patch(_COPY_RATES, return_value=rates), \
              patch(_USE_CTZ, return_value=False), \
-             patch(_FMT, side_effect=lambda x: f"T{int(x)}"):
+             patch(_FMT, side_effect=lambda x: f"T{int(x)}"), \
+             patch("mtdata.core.pivot.datetime") as mock_datetime:
+            mock_datetime.now.return_value = current_dt
+            mock_datetime.fromtimestamp.side_effect = lambda *args, **kwargs: datetime.fromtimestamp(*args, **kwargs)
             return fn("EURUSD", timeframe="D1")
 
     def test_completed_single_bar(self):
@@ -201,11 +206,12 @@ class TestPivotSingleBar:
 
 
 class TestPivotHappyPath:
-    """Full happy-path test with two bars (rates[-2] used as source)."""
+    """Full happy-path tests around completed-bar source selection."""
 
     def _run(self, rates_list, digits=5, use_ctz=False):
         fn = _get_pivot_fn()
         info = _make_symbol_info(digits=digits)
+        current_dt = datetime.fromtimestamp(1_700_000_000.0, tz=timezone.utc)
 
         @contextmanager
         def _guard(symbol):
@@ -220,7 +226,10 @@ class TestPivotHappyPath:
              patch(_COPY_RATES, return_value=rates), \
              patch(_USE_CTZ, return_value=use_ctz), \
              patch(_FMT, side_effect=lambda x: f"T{int(x)}"), \
-             patch(_FMT_LOCAL, side_effect=lambda x: f"L{int(x)}"):
+             patch(_FMT_LOCAL, side_effect=lambda x: f"L{int(x)}"), \
+             patch("mtdata.core.pivot.datetime") as mock_datetime:
+            mock_datetime.now.return_value = current_dt
+            mock_datetime.fromtimestamp.side_effect = lambda *args, **kwargs: datetime.fromtimestamp(*args, **kwargs)
             return fn("EURUSD", timeframe="D1")
 
     def test_classic_levels(self):
@@ -278,9 +287,24 @@ class TestPivotHappyPath:
         assert "start" in res["period"]
         assert "end" in res["period"]
 
+    def test_uses_latest_closed_bar_when_fetch_has_no_live_tail(self):
+        earlier = _make_rate(open_=1.1000, high=1.1050, low=1.0950, close=1.1020, time_=100.0)
+        latest = _make_rate(open_=1.2000, high=1.2500, low=1.1500, close=1.2200, time_=200.0)
+
+        res = self._run([earlier, latest], use_ctz=False)
+
+        assert res["success"] is True
+        assert res["period"]["start"] == "T200"
+        pp_row = next(row for row in res["levels"] if row["level"] == "PP")
+        assert pp_row["classic"] == pytest.approx(round((1.2500 + 1.1500 + 1.2200) / 3.0, 5))
+
     def test_period_field_uses_already_normalized_bar_time(self):
         src_time = 1_704_067_200.0
-        r = [_make_rate(time_=src_time), _make_rate(time_=src_time + 86_400.0)]
+        r = [
+            _make_rate(time_=src_time),
+            _make_rate(time_=src_time + 86_400.0),
+            _make_rate(time_=src_time + 172_800.0),
+        ]
         fn = _get_pivot_fn()
         info = _make_symbol_info()
 
@@ -291,16 +315,46 @@ class TestPivotHappyPath:
         with patch(_TF_MAP_PATCH, {"D1": 1}), \
              patch(_TF_SECS_PATCH, {"D1": 86400}), \
              patch(_GUARD, _guard), \
-             patch(f"{_MT5}.symbol_info_tick", return_value=_make_tick(src_time + 172_800.0)), \
+             patch(f"{_MT5}.symbol_info_tick", return_value=_make_tick(src_time + 180_001.0)), \
              patch(_EPOCH, side_effect=lambda x: float(x) - 7200.0), \
              patch(_COPY_RATES, return_value=np.array(r)), \
              patch(_USE_CTZ, return_value=False), \
-             patch(_FMT, side_effect=lambda x: f"T{int(x)}"):
+             patch(_FMT, side_effect=lambda x: f"T{int(x)}"), \
+             patch("mtdata.core.pivot.datetime") as mock_datetime:
+            mock_datetime.now.return_value = datetime.fromtimestamp(src_time + 172_801.0, tz=timezone.utc)
+            mock_datetime.fromtimestamp.side_effect = lambda *args, **kwargs: datetime.fromtimestamp(*args, **kwargs)
             res = fn("EURUSD", timeframe="D1")
 
         assert res["success"] is True
-        assert res["period"]["start"] == f"T{int(src_time)}"
-        assert res["period"]["end"] == f"T{int(src_time + 86400.0)}"
+        assert res["period"]["start"] == f"T{int(src_time + 86400.0)}"
+        assert res["period"]["end"] == f"T{int(src_time + 172800.0)}"
+
+    def test_stale_tick_uses_current_time_for_completion_check(self):
+        src_time = 1_704_067_200.0
+        r = [_make_rate(time_=src_time), _make_rate(time_=src_time + 86_400.0)]
+        fn = _get_pivot_fn()
+        info = _make_symbol_info()
+        current_dt = datetime.fromtimestamp(src_time + (7 * 86_400.0), tz=timezone.utc)
+
+        @contextmanager
+        def _guard(symbol):
+            yield None, info
+
+        with patch(_TF_MAP_PATCH, {"D1": 1}), \
+             patch(_TF_SECS_PATCH, {"D1": 86400}), \
+             patch(_GUARD, _guard), \
+             patch(f"{_MT5}.symbol_info_tick", return_value=_make_tick(src_time + 60.0)), \
+             patch(_EPOCH, side_effect=lambda x: float(x)), \
+             patch(_COPY_RATES, return_value=np.array(r)), \
+             patch(_USE_CTZ, return_value=False), \
+             patch(_FMT, side_effect=lambda x: f"T{int(x)}"), \
+             patch("mtdata.core.pivot.datetime") as mock_datetime:
+            mock_datetime.now.return_value = current_dt
+            mock_datetime.fromtimestamp.side_effect = lambda *args, **kwargs: datetime.fromtimestamp(*args, **kwargs)
+            res = fn("EURUSD", timeframe="D1")
+
+        assert res["success"] is True
+        assert res["period"]["start"] == f"T{int(src_time + 86400.0)}"
 
     def test_calculation_basis_context(self):
         r = [_make_rate(time_=100.0), _make_rate(time_=200.0)]
@@ -323,10 +377,15 @@ class TestPivotMethods:
 
     def _levels(self, H, L, C, O):
         """Run pivot and return levels_by_method dict."""
-        r = [_make_rate(open_=O, high=H, low=L, close=C, time_=100.0),
-             _make_rate(time_=200.0)]
+        first_time = 1_700_000_000.0
+        second_time = first_time + 86_400.0
+        r = [
+            _make_rate(open_=O, high=H, low=L, close=C, time_=first_time),
+            _make_rate(time_=second_time),
+        ]
         fn = _get_pivot_fn()
         info = _make_symbol_info(digits=10)
+        current_dt = datetime.fromtimestamp(second_time + 1.0, tz=timezone.utc)
 
         @contextmanager
         def _guard(symbol):
@@ -335,11 +394,14 @@ class TestPivotMethods:
         with patch(_TF_MAP_PATCH, {"D1": 1}), \
              patch(_TF_SECS_PATCH, {"D1": 86400}), \
              patch(_GUARD, _guard), \
-             patch(f"{_MT5}.symbol_info_tick", return_value=_make_tick()), \
+             patch(f"{_MT5}.symbol_info_tick", return_value=_make_tick(second_time + 1.0)), \
              patch(_EPOCH, side_effect=lambda x: float(x)), \
              patch(_COPY_RATES, return_value=np.array(r)), \
              patch(_USE_CTZ, return_value=False), \
-             patch(_FMT, side_effect=lambda x: f"T{int(x)}"):
+             patch(_FMT, side_effect=lambda x: f"T{int(x)}"), \
+             patch("mtdata.core.pivot.datetime") as mock_datetime:
+            mock_datetime.now.return_value = current_dt
+            mock_datetime.fromtimestamp.side_effect = lambda *args, **kwargs: datetime.fromtimestamp(*args, **kwargs)
             res = fn("EURUSD", timeframe="D1")
         # Convert levels list into a dict: method -> {level -> value}
         by_method: Dict[str, Dict[str, Any]] = {}
@@ -409,22 +471,28 @@ class TestPivotNanPrices:
     def test_nan_high(self):
         fn = _get_pivot_fn()
         info = _make_symbol_info()
-        rate = {"low": 1.09, "close": 1.10, "open": 1.10, "time": 100.0}
+        first_time = 1_700_000_000.0
+        second_time = first_time + 86_400.0
+        rate = {"low": 1.09, "close": 1.10, "open": 1.10, "time": first_time}
         # Missing 'high' → NaN
+        current_dt = datetime.fromtimestamp(second_time + 1.0, tz=timezone.utc)
 
         @contextmanager
         def _guard(symbol):
             yield None, info
 
-        rates = [rate, _make_rate(time_=200.0)]
+        rates = [rate, _make_rate(time_=second_time)]
         with patch(_TF_MAP_PATCH, {"D1": 1}), \
              patch(_TF_SECS_PATCH, {"D1": 86400}), \
              patch(_GUARD, _guard), \
-             patch(f"{_MT5}.symbol_info_tick", return_value=_make_tick()), \
+             patch(f"{_MT5}.symbol_info_tick", return_value=_make_tick(second_time + 1.0)), \
              patch(_EPOCH, side_effect=lambda x: float(x)), \
              patch(_COPY_RATES, return_value=np.array(rates)), \
              patch(_USE_CTZ, return_value=False), \
-             patch(_FMT, side_effect=lambda x: str(x)):
+             patch(_FMT, side_effect=lambda x: str(x)), \
+             patch("mtdata.core.pivot.datetime") as mock_datetime:
+            mock_datetime.now.return_value = current_dt
+            mock_datetime.fromtimestamp.side_effect = lambda *args, **kwargs: datetime.fromtimestamp(*args, **kwargs)
             res = fn("EURUSD", timeframe="D1")
         # Should error because H is NaN
         assert "error" in res
