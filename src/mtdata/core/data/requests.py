@@ -382,12 +382,14 @@ class _WaitAccountEventBase(BaseModel):
     def _validate_position_ticket(cls, value: Optional[int]) -> Optional[int]:
         return _validate_optional_ticket(value, "position_ticket")
 
-    @field_validator("side")
+    @field_validator("side", mode="before")
     @classmethod
     def _normalize_side(cls, value: Optional[str]) -> Optional[str]:
         if value is None:
             return None
         text = str(value).strip().lower()
+        if text in {"long", "short"}:
+            return "buy" if text == "long" else "sell"
         if text not in {"buy", "sell"}:
             raise ValueError("side must be 'buy' or 'sell'.")
         return text

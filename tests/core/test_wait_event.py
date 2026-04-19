@@ -154,6 +154,20 @@ def test_wait_event_request_normalizes_price_direction_aliases() -> None:
     assert [item.direction for item in request.watch_for] == ["up", "down", "up"]
 
 
+def test_wait_event_request_normalizes_account_side_aliases() -> None:
+    request = WaitEventRequest.model_validate(
+        {
+            "symbol": "EURUSD",
+            "watch_for": [
+                {"type": "position_opened", "symbol": "EURUSD", "side": "long"},
+                {"type": "position_closed", "symbol": "EURUSD", "side": "short"},
+            ],
+        }
+    )
+
+    assert [item.side for item in request.watch_for] == ["buy", "sell"]
+
+
 def test_wait_event_request_deduplicates_identical_candle_close_events() -> None:
     request = WaitEventRequest.model_validate(
         {
