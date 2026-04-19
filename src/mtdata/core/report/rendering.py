@@ -117,6 +117,39 @@ def _render_sections_status(data: Any) -> List[str]:
     return lines
 
 
+def _freshness_status_text(freshness: Dict[str, Any]) -> str | None:
+    if not isinstance(freshness, dict):
+        return None
+    parts: List[str] = []
+    within = freshness.get("last_bar_within_policy_window")
+    if within is True:
+        parts.append("within policy window")
+    elif within is False:
+        parts.append("outside policy window")
+    age = _format_decimal(freshness.get("data_freshness_seconds"), 1)
+    if age is not None:
+        parts.append(f"{age}s")
+    return ", ".join(parts) if parts else None
+
+
+def _freshness_basis_text(freshness: Dict[str, Any]) -> str | None:
+    if not isinstance(freshness, dict):
+        return None
+    parts: List[str] = []
+    for label, key in (
+        ("last", "last_bar_epoch"),
+        ("expected", "expected_end_epoch"),
+        ("cutoff", "freshness_cutoff_epoch"),
+    ):
+        value = freshness.get(key)
+        text = _format_decimal(value, 0)
+        if text is None and value is not None:
+            text = str(value)
+        if text is not None:
+            parts.append(f"{label}={text}")
+    return ", ".join(parts) if parts else None
+
+
 def _render_context_section(data: Any) -> List[str]:
     if not isinstance(data, dict):
         return []
@@ -191,6 +224,14 @@ def _render_context_section(data: Any) -> List[str]:
                     f"{bars_high if bars_high is not None else 'n/a'} / {bars_low if bars_low is not None else 'n/a'}",
                 ]
             )
+    freshness = data.get("freshness") if isinstance(data.get("freshness"), dict) else None
+    if freshness:
+        status_text = _freshness_status_text(freshness)
+        if status_text:
+            metrics.append(["Candle freshness", status_text])
+        basis_text = _freshness_basis_text(freshness)
+        if basis_text:
+            metrics.append(["Freshness basis", basis_text])
     if metrics:
         lines.extend(_format_table(["Metric", "Value"], metrics, name="metrics"))
     note = str(data.get("notes", "")).strip()
@@ -220,6 +261,11 @@ def _render_contexts_multi_section(data: Any) -> List[str]:
         ema50_val = snap.get("ema50") or _get_indicator_value(snap, "EMA_50")
         ema200_val = snap.get("ema200") or _get_indicator_value(snap, "EMA_200")
         rsi_val = snap.get("rsi") or _get_indicator_value(snap, "RSI_14")
+        freshness_text = (
+            _freshness_status_text(snap.get("freshness"))
+            if isinstance(snap.get("freshness"), dict)
+            else None
+        )
         rows.append(
             [
                 str(tf),
@@ -230,6 +276,7 @@ def _render_contexts_multi_section(data: Any) -> List[str]:
                 _format_decimal(rsi_val, 2),
                 _format_signed(slope_val),
                 str(int(atr_bps)) if atr_bps is not None else None,
+                freshness_text,
             ]
         )
     rows = [row for row in rows if any(cell not in (None, "n/a") for cell in row[1:])]
@@ -238,7 +285,7 @@ def _render_contexts_multi_section(data: Any) -> List[str]:
     lines = ["## Multi-Timeframe Context"]
     lines.extend(
         _format_table(
-            ["TF", "Close", "EMA20", "EMA50", "EMA200", "RSI", "Slope(5)", "ATR bps"],
+            ["TF", "Close", "EMA20", "EMA50", "EMA200", "RSI", "Slope(5)", "ATR bps", "Freshness"],
             rows,
             name="timeframes",
         )

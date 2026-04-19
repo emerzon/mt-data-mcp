@@ -72,6 +72,24 @@ def parse_table_tail(data: Any, tail: int = 1) -> List[Dict[str, Any]]:
         return []
 
 
+def extract_candle_freshness_diagnostics(data: Any) -> Optional[Dict[str, Any]]:
+    try:
+        if not isinstance(data, dict):
+            return None
+        meta = data.get('meta')
+        if not isinstance(meta, dict):
+            return None
+        diagnostics = meta.get('diagnostics')
+        if not isinstance(diagnostics, dict):
+            return None
+        freshness = diagnostics.get('freshness')
+        if not isinstance(freshness, dict) or not freshness:
+            return None
+        return dict(freshness)
+    except Exception:
+        return None
+
+
 def pick_best_forecast_method(
     bt: Dict[str, Any],
     rmse_tolerance: float = 0.05,
@@ -368,6 +386,7 @@ def context_for_tf(symbol: str, timeframe: str, denoise: Optional[Dict[str, Any]
             if _fetch_cache is not None:
                 _fetch_cache[cache_key] = None
             return None
+        freshness = extract_candle_freshness_diagnostics(res)
         rows = parse_table_tail(res, tail=int(tail))
 
         if not rows:
@@ -403,6 +422,8 @@ def context_for_tf(symbol: str, timeframe: str, denoise: Optional[Dict[str, Any]
             out['ema50'] = _get_indicator_value(last_row, 'EMA_50')
             out['ema200'] = _get_indicator_value(last_row, 'EMA_200')
             out['price'] = last_row.get('close')
+        if freshness:
+            out['freshness'] = freshness
 
         if _fetch_cache is not None:
             _fetch_cache[cache_key] = out

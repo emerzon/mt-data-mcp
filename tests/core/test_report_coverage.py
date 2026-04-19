@@ -713,6 +713,49 @@ class TestReportMarkdownOutput:
         assert isinstance(res, str)
         assert "Report" in res
 
+    def test_render_enhanced_report_surfaces_freshness_context(self):
+        from mtdata.core.report import render_enhanced_report
+
+        report = _make_report(
+            sections={
+                "context": {
+                    "timeframe": "H1",
+                    "last_snapshot": {
+                        "close": 1.1020,
+                        "EMA_20": 1.1010,
+                        "EMA_50": 1.1000,
+                        "RSI_14": 55.5,
+                    },
+                    "freshness": {
+                        "last_bar_epoch": 1736899200.0,
+                        "expected_end_epoch": 1736902800.0,
+                        "freshness_cutoff_epoch": 1736888400.0,
+                        "data_freshness_seconds": 3600.0,
+                        "last_bar_within_policy_window": True,
+                    },
+                },
+                "contexts_multi": {
+                    "M15": {
+                        "close": 1.1015,
+                        "ema20": 1.1010,
+                        "freshness": {
+                            "data_freshness_seconds": 1800.0,
+                            "last_bar_within_policy_window": False,
+                        },
+                    },
+                },
+            }
+        )
+
+        rendered = render_enhanced_report(report)
+
+        assert "Candle freshness" in rendered
+        assert "within policy window, 3600s" in rendered
+        assert "Freshness basis" in rendered
+        assert "last=1736899200, expected=1736902800, cutoff=1736888400" in rendered
+        assert "Multi-Timeframe Context" in rendered
+        assert "outside policy window, 1800s" in rendered
+
 
 class TestReportWarnings:
 

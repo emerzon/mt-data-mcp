@@ -756,6 +756,70 @@ class TestTemplateBasic:
 
     @patch(f"{_BASIC_MODULE}._get_raw_result")
     @patch(f"{_BASIC_MODULE}.now_utc_iso", return_value="2024-01-15T00:00:00Z")
+    @patch(f"{_BASIC_MODULE}._compute_compact_trend", return_value={"s": [12], "v": 45, "q": 60})
+    @patch(f"{_BASIC_MODULE}.pick_best_forecast_method", return_value=None)
+    @patch(f"{_BASIC_MODULE}.summarize_barrier_grid", return_value={"best": {}})
+    def test_basic_context_snapshots_passthrough_freshness(
+        self, mock_sum_bar, mock_pick, mock_compact, mock_now, mock_raw, monkeypatch,
+    ):
+        candle_rows = _mock_candle_data()["rows"]
+        base_freshness = {
+            "last_bar_epoch": 1736899200.0,
+            "expected_end_epoch": 1736902800.0,
+            "freshness_cutoff_epoch": 1736888400.0,
+            "data_freshness_seconds": 3600.0,
+            "last_bar_within_policy_window": True,
+        }
+        mtf_freshness = {
+            "last_bar_epoch": 1736895600.0,
+            "expected_end_epoch": 1736899200.0,
+            "freshness_cutoff_epoch": 1736884800.0,
+            "data_freshness_seconds": 1800.0,
+            "last_bar_within_policy_window": False,
+        }
+
+        def raw_side_effect(func, *args, **kwargs):
+            name = func.__name__ if hasattr(func, "__name__") else str(func)
+            if "simplify" in kwargs and "limit" in kwargs:
+                return {"data": candle_rows, "meta": {"diagnostics": {"freshness": dict(base_freshness)}}}
+            if "pivot" in name.lower():
+                return _mock_pivot_data()
+            if "volatility" in name.lower():
+                return _mock_vol_data()
+            if "backtest" in name.lower():
+                return {"results": {}}
+            if "barrier" in name.lower():
+                return {"success": True}
+            if "pattern" in name.lower():
+                return _mock_patterns_data()
+            return {"data": "ok"}
+
+        def _mtf_fetch(**kwargs):
+            return {"data": candle_rows[-30:], "meta": {"diagnostics": {"freshness": dict(mtf_freshness)}}}
+
+        def _pivot_fetch(*, symbol, timeframe):
+            return {
+                "levels": [{"level": "PP", "classic": 1.234}],
+                "methods": [{"method": "classic"}],
+                "period": {"start": "2024-01-01", "end": "2024-01-02"},
+                "calculation_basis": "completed_bar",
+                "timezone": "UTC",
+            }
+
+        mock_raw.side_effect = raw_side_effect
+        monkeypatch.setattr("mtdata.core.data.data_fetch_candles", _mtf_fetch)
+        monkeypatch.setattr("mtdata.core.pivot.pivot_compute_points", _pivot_fetch)
+
+        from mtdata.core.report_templates.basic import template_basic
+
+        report = template_basic("EURUSD", 12, None, {})
+
+        assert report["sections"]["context"]["freshness"] == base_freshness
+        assert report["sections"]["contexts_multi"]["M15"]["freshness"] == mtf_freshness
+        assert report["sections"]["contexts_multi"]["H4"]["freshness"] == mtf_freshness
+
+    @patch(f"{_BASIC_MODULE}._get_raw_result")
+    @patch(f"{_BASIC_MODULE}.now_utc_iso", return_value="2024-01-15T00:00:00Z")
     @patch(f"{_BASIC_MODULE}.parse_table_tail", return_value=[])
     @patch(f"{_BASIC_MODULE}.pick_best_forecast_method", return_value=None)
     @patch(f"{_BASIC_MODULE}.summarize_barrier_grid")
