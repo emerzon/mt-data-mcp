@@ -668,6 +668,72 @@ def test_run_wait_event_accumulates_partial_order_fills_until_target_volume() ->
     assert result["matched_event"]["order_ticket"] == 7001
     assert result["matched_event"]["observed"]["ticket"] == 3002
     assert result["matched_event"]["observed"]["order_ticket"] == 7001
+    assert result["matched_event"]["observed"]["filled_volume"] == 1.0
+    assert result["matched_event"]["observed"]["target_volume"] == 1.0
+    assert result["matched_event"]["observed"]["remaining_volume"] == 0.0
+
+
+def test_run_wait_event_order_filled_payload_uses_cumulative_target_for_new_order() -> None:
+    started = datetime(2026, 3, 15, 12, 0, 0, tzinfo=timezone.utc)
+    gateway = SequenceGateway(
+        orders_seq=[
+            [],
+            [
+                {
+                    "ticket": 7001,
+                    "symbol": "EURUSD",
+                    "type": "buy_limit",
+                    "volume_current": 0.6,
+                }
+            ],
+            [],
+        ],
+        history_deals_seq=[
+            [],
+            [
+                {
+                    "ticket": 3001,
+                    "order": 7001,
+                    "symbol": "EURUSD",
+                    "entry": 0,
+                    "type": "buy",
+                    "volume": 0.4,
+                    "time": int(started.timestamp()) + 1,
+                }
+            ],
+            [
+                {
+                    "ticket": 3002,
+                    "order": 7001,
+                    "symbol": "EURUSD",
+                    "entry": 0,
+                    "type": "buy",
+                    "volume": 0.6,
+                    "time": int(started.timestamp()) + 2,
+                }
+            ],
+        ],
+    )
+    clock = FakeClock(started)
+
+    result = run_wait_event(
+        WaitEventRequest(
+            watch_for=[{"type": "order_filled", "symbol": "EURUSD", "order_ticket": 7001}],
+            poll_interval_seconds=1.0,
+            max_wait_seconds=5.0,
+        ),
+        gateway=gateway,
+        sleep_impl=clock.sleep,
+        monotonic_impl=clock.monotonic,
+        now_utc_impl=clock.now_utc,
+    )
+
+    assert result["status"] == "matched"
+    assert result["polls"] == 2
+    assert result["matched_event"]["observed"]["ticket"] == 3002
+    assert result["matched_event"]["observed"]["filled_volume"] == 1.0
+    assert result["matched_event"]["observed"]["target_volume"] == 1.0
+    assert result["matched_event"]["observed"]["remaining_volume"] == 0.0
 
 
 def test_run_wait_event_order_filled_falls_back_when_order_volume_is_unknown() -> None:
@@ -707,6 +773,9 @@ def test_run_wait_event_order_filled_falls_back_when_order_volume_is_unknown() -
     assert result["polls"] == 1
     assert result["matched_event"]["type"] == "order_filled"
     assert result["matched_event"]["observed"]["ticket"] == 3001
+    assert result["matched_event"]["observed"]["filled_volume"] == 0.4
+    assert result["matched_event"]["observed"]["target_volume"] is None
+    assert result["matched_event"]["observed"]["remaining_volume"] is None
 
 
 def test_wait_event_request_rejects_explicit_empty_watchers_without_boundary() -> None:

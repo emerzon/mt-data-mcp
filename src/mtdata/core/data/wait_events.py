@@ -1023,6 +1023,11 @@ def _update_order_filled_snapshot_state(
         filled_volume_by_order_ticket[order_ticket] = (
             float(filled_volume_by_order_ticket.get(order_ticket) or 0.0) + fill_volume
         )
+    _remember_order_fill_targets(
+        target_volume_by_order_ticket,
+        snapshot.get("orders", []),
+        filled_volume_by_order_ticket=filled_volume_by_order_ticket,
+    )
     snapshot["order_filled_state"] = {
         "filled_volume_by_order_ticket": filled_volume_by_order_ticket,
         "target_volume_by_order_ticket": target_volume_by_order_ticket,
@@ -1246,11 +1251,21 @@ def _evaluate_order_filled_event(
             continue
         order_ticket = _account_order_ticket(row)
         if order_ticket is None:
-            return _format_account_match("order_filled", row, gateway=gateway)
+            return _format_order_filled_match(
+                row,
+                gateway=gateway,
+                filled_volume_by_order_ticket=filled_volume_by_order_ticket,
+                target_volume_by_order_ticket=target_volume_by_order_ticket,
+            )
         target_volume = _finite_number(target_volume_by_order_ticket.get(order_ticket))
         filled_volume = _finite_number(filled_volume_by_order_ticket.get(order_ticket))
         if target_volume is None or target_volume <= 0.0 or filled_volume is None:
-            return _format_account_match("order_filled", row, gateway=gateway)
+            return _format_order_filled_match(
+                row,
+                gateway=gateway,
+                filled_volume_by_order_ticket=filled_volume_by_order_ticket,
+                target_volume_by_order_ticket=target_volume_by_order_ticket,
+            )
         if order_ticket not in seen_tickets:
             seen_tickets.add(order_ticket)
             candidate_order_tickets.append(order_ticket)
@@ -1265,8 +1280,44 @@ def _evaluate_order_filled_event(
             continue
         matched_row = last_row_by_order_ticket.get(order_ticket)
         if matched_row is not None:
-            return _format_account_match("order_filled", matched_row, gateway=gateway)
+            return _format_order_filled_match(
+                matched_row,
+                gateway=gateway,
+                filled_volume_by_order_ticket=filled_volume_by_order_ticket,
+                target_volume_by_order_ticket=target_volume_by_order_ticket,
+            )
     return None
+
+
+def _format_order_filled_match(
+    row: Any,
+    *,
+    gateway: Any,
+    filled_volume_by_order_ticket: Dict[int, float],
+    target_volume_by_order_ticket: Dict[int, float],
+) -> Dict[str, Any]:
+    match = _format_account_match("order_filled", row, gateway=gateway)
+    observed = dict(match.get("observed") or {})
+    order_ticket = _account_order_ticket(row)
+    filled_volume = None
+    target_volume = None
+    if order_ticket is not None:
+        filled_volume = _finite_number(filled_volume_by_order_ticket.get(order_ticket))
+        target_volume = _finite_number(target_volume_by_order_ticket.get(order_ticket))
+    if filled_volume is None:
+        filled_volume = _order_fill_volume(row)
+    remaining_volume = None
+    if target_volume is not None and target_volume > 0.0 and filled_volume is not None:
+        remaining_volume = max(0.0, float(target_volume) - float(filled_volume))
+    observed["filled_volume"] = None if filled_volume is None else float(filled_volume)
+    observed["target_volume"] = (
+        None if target_volume is None or target_volume <= 0.0 else float(target_volume)
+    )
+    observed["remaining_volume"] = (
+        None if remaining_volume is None else float(remaining_volume)
+    )
+    match["observed"] = observed
+    return match
 
 
 def _first_crossed_boundary(
