@@ -189,12 +189,45 @@ def _patch_data_fetch_ticks_schema(schema: Dict[str, Any]) -> None:
 def _patch_forecast_barrier_prob_schema(schema: Dict[str, Any]) -> None:
     params, _required_params = _schema_params(schema)
     if "method" not in params:
+        params_obj = _schema_obj(schema)
+    else:
+        params["method"] = {
+            "type": "string",
+            "enum": list(_BARRIER_PROB_METHODS),
+            "description": "Barrier probability algorithm.",
+        }
+        params_obj = _schema_obj(schema)
+    _add_barrier_unit_family_exclusivity_schema(params_obj)
+
+
+def _add_barrier_unit_family_exclusivity_schema(params_obj: Dict[str, Any]) -> None:
+    if not isinstance(params_obj, dict):
         return
-    params["method"] = {
-        "type": "string",
-        "enum": list(_BARRIER_PROB_METHODS),
-        "description": "Barrier probability algorithm.",
-    }
+    properties = params_obj.get("properties")
+    if not isinstance(properties, dict):
+        return
+    all_of = params_obj.setdefault("allOf", [])
+    if not isinstance(all_of, list):
+        return
+
+    existing = {repr(clause) for clause in all_of}
+    for fields in (
+        ("tp_abs", "tp_pct", "tp_pips"),
+        ("sl_abs", "sl_pct", "sl_pips"),
+    ):
+        present_fields = [field for field in fields if field in properties]
+        for idx, first in enumerate(present_fields):
+            for second in present_fields[idx + 1:]:
+                clause = {"not": {"required": [first, second]}}
+                key = repr(clause)
+                if key in existing:
+                    continue
+                all_of.append(clause)
+                existing.add(key)
+
+
+def _patch_labels_triple_barrier_schema(schema: Dict[str, Any]) -> None:
+    _add_barrier_unit_family_exclusivity_schema(_schema_obj(schema))
 
 
 def _patch_forecast_barrier_optimize_schema(schema: Dict[str, Any]) -> None:
@@ -245,6 +278,7 @@ _TOOL_SCHEMA_PATCHERS: Dict[str, tuple[_SchemaPatcher, ...]] = {
     "data_fetch_candles": (_patch_data_fetch_candles_schema,),
     "data_fetch_ticks": (_patch_data_fetch_ticks_schema,),
     "forecast_barrier_prob": (_patch_forecast_barrier_prob_schema,),
+    "labels_triple_barrier": (_patch_labels_triple_barrier_schema,),
     "forecast_barrier_optimize": (_patch_forecast_barrier_optimize_schema,),
     "trade_place": (_patch_trade_place_schema,),
 }

@@ -134,6 +134,46 @@ def test_attach_schemas_to_tools_patches_barrier_method_enums(monkeypatch) -> No
     assert "auto" in opt_method["enum"]
 
 
+def test_attach_schemas_to_tools_adds_barrier_unit_exclusivity(monkeypatch) -> None:
+    expected_pairs = {
+        ("tp_abs", "tp_pct"),
+        ("tp_abs", "tp_pips"),
+        ("tp_pct", "tp_pips"),
+        ("sl_abs", "sl_pct"),
+        ("sl_abs", "sl_pips"),
+        ("sl_pct", "sl_pips"),
+    }
+
+    for tool_name in ("forecast_barrier_prob", "labels_triple_barrier"):
+        tool_obj, _tool_func, _apply_calls = _attach_tool_schema(
+            monkeypatch,
+            tool_name,
+            {
+                "parameters": {
+                    "properties": {
+                        "tp_abs": {"type": "number"},
+                        "sl_abs": {"type": "number"},
+                        "tp_pct": {"type": "number"},
+                        "sl_pct": {"type": "number"},
+                        "tp_pips": {"type": "number"},
+                        "sl_pips": {"type": "number"},
+                    },
+                    "required": [],
+                }
+            },
+        )
+
+        all_of = tool_obj.schema["parameters"]["allOf"]
+        actual_pairs = {
+            tuple(clause["not"]["required"])
+            for clause in all_of
+            if isinstance(clause, dict)
+            and isinstance(clause.get("not"), dict)
+            and isinstance(clause["not"].get("required"), list)
+        }
+        assert actual_pairs == expected_pairs
+
+
 def test_attach_schemas_to_tools_patches_trade_place(monkeypatch) -> None:
     tool_obj, _tool_func, _apply_calls = _attach_tool_schema(
         monkeypatch,
