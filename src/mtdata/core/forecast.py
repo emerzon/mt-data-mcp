@@ -42,6 +42,10 @@ def _forecast_use_cases_module():
     return import_module("mtdata.forecast.use_cases")
 
 
+def _forecast_methods_module():
+    return import_module("mtdata.forecast.forecast_methods")
+
+
 def _forecast_volatility_module():
     return import_module("mtdata.forecast.volatility")
 
@@ -78,6 +82,13 @@ def _forecast_volatility_impl(**kwargs):
 
 def _get_forecast_methods_data():
     return _forecast_module().get_forecast_methods_data()
+
+
+def _get_forecast_methods_snapshot():
+    return _forecast_methods_module().get_forecast_methods_snapshot(
+        method_data=_get_forecast_methods_data(),
+        capabilities=_get_registered_forecast_capabilities(),
+    )
 
 
 @lru_cache(maxsize=1)
@@ -748,13 +759,10 @@ def _forecast_list_methods_impl(  # noqa: C901
     search: Optional[str] = None,
 ) -> Dict[str, Any]:
     try:
-        data = _get_forecast_methods_data()
-        capabilities = _get_registered_forecast_capabilities()
-        capability_by_method = {
-            str(row.get("method")): row
-            for row in capabilities
-            if isinstance(row, dict) and row.get("method")
-        }
+        snapshot = _get_forecast_methods_snapshot()
+        data = snapshot.get("data") if isinstance(snapshot, dict) else {}
+        if not isinstance(data, dict):
+            data = {}
         detail_value = str(detail or "compact").strip().lower()
         search_value = str(search or "").strip().lower()
         limit_value: Optional[int] = None
@@ -767,15 +775,9 @@ def _forecast_list_methods_impl(  # noqa: C901
                 return {"error": f"Invalid limit: {limit_value}. Must be >= 1."}
 
         categories_raw = data.get("categories") if isinstance(data.get("categories"), dict) else {}
-        method_to_category: Dict[str, str] = {}
-        if isinstance(categories_raw, dict):
-            for cat_name, names in categories_raw.items():
-                if not isinstance(names, list):
-                    continue
-                for name in names:
-                    if name is None:
-                        continue
-                    method_to_category[str(name)] = str(cat_name)
+        method_to_category = snapshot.get("method_to_category") if isinstance(snapshot, dict) else {}
+        if not isinstance(method_to_category, dict):
+            method_to_category = {}
 
         def _method_matches(item: Dict[str, Any]) -> bool:
             if not search_value:
@@ -787,36 +789,16 @@ def _forecast_list_methods_impl(  # noqa: C901
             return search_value in haystack
 
         if detail_value == "full":
-            methods_full = data.get("methods")
+            if not bool(snapshot.get("methods_valid")):
+                return data
+            methods_full = snapshot.get("methods")
             if not isinstance(methods_full, list):
                 return data
-            enriched_full: List[Dict[str, Any]] = []
-            for row in methods_full:
-                if not isinstance(row, dict):
-                    continue
-                method_name = str(row.get("method") or "")
-                category = method_to_category.get(method_name, "other")
-                row_out = dict(row)
-                row_out["category"] = category
-                capability = capability_by_method.get(method_name, {})
-                row_out["namespace"] = capability.get("namespace", "native")
-                row_out["concept"] = capability.get("concept", method_name)
-                row_out["method_id"] = capability.get("capability_id", f"native:{method_name}")
-                row_out["capability_id"] = capability.get("capability_id", row_out["method_id"])
-                row_out["adapter_method"] = capability.get("adapter_method", method_name)
-                row_out["selector"] = capability.get("selector", {"mode": "method"})
-                row_out["execution"] = capability.get(
-                    "execution",
-                    {"library": row_out["namespace"], "method": row_out["adapter_method"]},
-                )
-                supports = capability.get("supports", row_out.get("supports"))
-                if isinstance(supports, dict) and isinstance(supports.get("ci"), bool):
-                    row_out["supports_ci"] = bool(supports.get("ci"))
-                row_out["display_name"] = capability.get("display_name", method_name)
-                row_out["aliases"] = capability.get("aliases", [])
-                row_out["source"] = capability.get("source", "registry")
-                enriched_full.append(row_out)
-            filtered_full = [row for row in enriched_full if _method_matches(row)]
+            filtered_full = [
+                dict(row)
+                for row in methods_full
+                if isinstance(row, dict) and _method_matches(row)
+            ]
             total_filtered = len(filtered_full)
             if limit_value is not None:
                 filtered_full = filtered_full[:limit_value]
@@ -824,7 +806,7 @@ def _forecast_list_methods_impl(  # noqa: C901
             out_full = dict(data)
             out_full["detail"] = "full"
             out_full["methods"] = filtered_full
-            out_full["total"] = int(data.get("total") or len(enriched_full))
+            out_full["total"] = int(data.get("total") or len(methods_full))
             out_full["total_filtered"] = int(total_filtered)
             out_full["available"] = available_count
             out_full["unavailable"] = int(len(filtered_full) - available_count)
@@ -841,10 +823,10 @@ def _forecast_list_methods_impl(  # noqa: C901
             )
             return out_full
 
-        methods = data.get("methods")
-        if not isinstance(methods, list):
+        if not bool(snapshot.get("methods_valid")):
             return data
-        if any(not isinstance(item, dict) for item in methods):
+        methods = snapshot.get("methods")
+        if not isinstance(methods, list):
             return data
 
         compact_methods: List[Dict[str, Any]] = []
@@ -871,14 +853,13 @@ def _forecast_list_methods_impl(  # noqa: C901
             desc = str(item.get("description") or "").strip()
             if desc:
                 row["description"] = desc.splitlines()[0].strip()
-            cat = method_to_category.get(method_name)
-            row["category"] = cat or "other"
-            capability = capability_by_method.get(method_name, {})
+            cat = item.get("category") or method_to_category.get(method_name)
+            row["category"] = str(cat or "other")
             if row["category"] in {"statsforecast", "sktime", "mlforecast", "pretrained"}:
-                namespace = capability.get("namespace")
+                namespace = item.get("namespace")
                 if isinstance(namespace, str) and namespace.strip():
                     row["namespace"] = namespace
-            supports = capability.get("supports", item.get("supports"))
+            supports = item.get("supports")
             if isinstance(supports, dict) and isinstance(supports.get("ci"), bool):
                 row["supports_ci"] = bool(supports.get("ci"))
             elif isinstance(item.get("supports_ci"), bool):

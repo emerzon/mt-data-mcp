@@ -598,6 +598,51 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert "Error listing forecast methods" in _unwrap(cf.forecast_list_methods)()["error"]
 
 
+def test_forecast_list_methods_uses_shared_snapshot(monkeypatch):
+    monkeypatch.setattr(
+        cf,
+        "_get_forecast_methods_snapshot",
+        lambda: {
+            "data": {
+                "total": 1,
+                "categories": {"statsforecast": ["sf_theta"]},
+                "methods": [{"method": "sf_theta", "available": True}],
+            },
+            "method_to_category": {"sf_theta": "statsforecast"},
+            "methods_valid": True,
+            "methods": [
+                {
+                    "method": "sf_theta",
+                    "available": True,
+                    "category": "statsforecast",
+                    "namespace": "statsforecast",
+                    "description": "StatsForecast theta.",
+                    "params": [{"name": "window"}],
+                    "supports": {"ci": True},
+                    "method_id": "statsforecast:theta",
+                    "capability_id": "statsforecast:theta",
+                    "adapter_method": "statsforecast",
+                    "selector": {"mode": "class_name", "key": "model_name", "value": "Theta"},
+                    "execution": {
+                        "library": "statsforecast",
+                        "method": "statsforecast",
+                        "params": {"model_name": "Theta"},
+                    },
+                }
+            ],
+        },
+    )
+
+    compact = _unwrap(cf.forecast_list_methods)()
+    full = _unwrap(cf.forecast_list_methods)(detail="full")
+
+    assert compact["methods"][0]["namespace"] == "statsforecast"
+    assert compact["methods"][0]["supports_ci"] is True
+    assert full["methods"][0]["method_id"] == "statsforecast:theta"
+    assert full["methods"][0]["selector"]["key"] == "model_name"
+    assert full["methods"][0]["execution"]["method"] == "statsforecast"
+
+
 def test_forecast_list_library_models_derives_pretrained_models_from_capabilities(monkeypatch):
     raw_list_models = _unwrap(cf.forecast_list_library_models)
     pretrained_caps = [
