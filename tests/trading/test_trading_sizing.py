@@ -164,3 +164,21 @@ def test_volume_step_rounding():
     # Volume should be a multiple of 0.1
     remainder = round(vol % 0.1, 10)
     assert remainder == 0.0 or remainder == 0.1
+
+
+def test_exact_step_volume_is_not_rounded_down_by_float_artifact():
+    vol, meta = compute_risk_based_volume(**_base_params(
+        equity=1000.0,
+        risk_pct=0.3,
+        entry_price=100.0,
+        stop_loss_price=90.0,
+        tick_value=1.0,
+        tick_size=1.0,
+        volume_min=0.1,
+        volume_max=10.0,
+        volume_step=0.1,
+    ))
+    assert vol == 0.3
+    assert meta["suggested_volume"] == 0.3
+    assert meta["raw_volume"] == 0.3
+    assert meta["risk_over_target"] is False

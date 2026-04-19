@@ -15,7 +15,18 @@ def _floor_volume_steps(raw: float, step: float) -> int:
     """Floor to nearest volume step count."""
     if step <= 0 or not math.isfinite(raw):
         return 0
-    return int(math.floor(raw / step))
+    step_ratio = raw / step
+    step_count = math.floor(step_ratio)
+    if step_count < 0:
+        return 0
+
+    remainder_to_next_step = float(step_count + 1) - float(step_ratio)
+    if remainder_to_next_step > 0.0:
+        snap_tolerance = math.ulp(step_ratio) * 8.0
+        if remainder_to_next_step <= snap_tolerance:
+            step_count += 1
+
+    return int(step_count)
 
 
 def _resolve_risk_tick_value(
