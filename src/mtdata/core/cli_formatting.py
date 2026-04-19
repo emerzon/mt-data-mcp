@@ -390,6 +390,10 @@ def _normalize_trade_session_context_cli_payload(result: Any, *, verbose: bool) 
         compact_out["ticker"] = out["ticker"]
 
     open_positions_in = out.get("open_positions")
+    if isinstance(open_positions_in, list):
+        compact_rows = [row for row in open_positions_in if isinstance(row, dict) and row]
+        if compact_rows:
+            compact_out["open_positions"] = compact_rows
     if isinstance(open_positions_in, dict):
         if "error" in open_positions_in and not _is_empty_value(open_positions_in.get("error")):
             compact_out["open_positions"] = {"error": open_positions_in.get("error")}
@@ -412,6 +416,10 @@ def _normalize_trade_session_context_cli_payload(result: Any, *, verbose: bool) 
                 compact_out["open_positions"] = compact_rows
 
     pending_orders_in = out.get("pending_orders")
+    if isinstance(pending_orders_in, list):
+        compact_rows = [row for row in pending_orders_in if isinstance(row, dict) and row]
+        if compact_rows:
+            compact_out["pending_orders"] = compact_rows
     if isinstance(pending_orders_in, dict):
         if "error" in pending_orders_in and not _is_empty_value(pending_orders_in.get("error")):
             compact_out["pending_orders"] = {"error": pending_orders_in.get("error")}

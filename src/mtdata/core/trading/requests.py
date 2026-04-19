@@ -153,3 +153,8 @@ class TradeGetPendingRequest(BaseModel):
     symbol: Optional[str] = None
     ticket: Optional[Union[int, str]] = None
     limit: Optional[int] = 200
+
+
+class TradeSessionContextRequest(BaseModel):
+    symbol: str
+    detail: Literal["compact", "full"] = "compact"

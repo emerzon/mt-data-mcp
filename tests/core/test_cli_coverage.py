@@ -808,6 +808,55 @@ class TestFormatResultForCli:
         assert "open_positions:" in result
         assert "message: No open positions for EURUSD" in result
 
+    def test_trade_session_context_json_keeps_already_compact_nested_sections(self):
+        payload = json.loads(
+            _format_result_for_cli(
+                {
+                    "success": True,
+                    "symbol": "EURUSD",
+                    "state": "pending_only",
+                    "account": {
+                        "balance": 10000.0,
+                        "equity": 10010.0,
+                        "margin_level": 250.0,
+                    },
+                    "open_positions": [
+                        {
+                            "ticket": 123456,
+                            "time": "2023-11-14 22:13",
+                            "type": "BUY",
+                            "volume": 0.1,
+                        }
+                    ],
+                    "ticker": {
+                        "success": True,
+                        "bid": 1.1,
+                        "ask": 1.1002,
+                        "time": 1700000000,
+                        "time_display": "2023-11-14 22:13",
+                    },
+                },
+                fmt="json",
+                verbose=False,
+                cmd_name="trade_session_context",
+            )
+        )
+
+        assert payload["account"] == {
+            "balance": 10000.0,
+            "equity": 10010.0,
+            "margin_level": 250.0,
+        }
+        assert payload["open_positions"] == [
+            {
+                "ticket": 123456,
+                "time": "2023-11-14 22:13",
+                "type": "BUY",
+                "volume": 0.1,
+            }
+        ]
+        assert payload["ticker"]["time"] == "2023-11-14 22:13"
+
     def test_symbols_describe_compact_view_hides_time_epoch(self):
         result = _format_result_for_cli(
             {
