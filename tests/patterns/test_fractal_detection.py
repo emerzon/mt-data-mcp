@@ -57,10 +57,12 @@ def test_detect_fractal_patterns_keeps_unbroken_levels_forming():
 
     assert bearish.status == "forming"
     assert bearish.details["level_state"] == "active"
+    assert bearish.details["lifecycle_state"] == "active"
     assert "breakout_direction" not in bearish.details
 
     assert bullish.status == "forming"
     assert bullish.details["level_state"] == "active"
+    assert bullish.details["lifecycle_state"] == "active"
     assert "breakout_direction" not in bullish.details
 
 
@@ -81,3 +83,34 @@ def test_detect_fractal_patterns_supports_high_low_breakout_basis():
     assert close_bearish.status == "forming"
     assert high_low_bearish.status == "completed"
     assert high_low_bearish.details["breakout_direction"] == "bullish"
+
+
+def test_detect_fractal_patterns_marks_old_active_levels_stale_by_default():
+    results = detect_fractal_patterns(
+        _fractal_active_frame(),
+        FractalDetectorConfig(max_age_bars=2),
+    )
+
+    assert [result.direction for result in results] == ["bullish"]
+    assert results[0].details["lifecycle_state"] == "active"
+
+
+def test_detect_fractal_patterns_can_include_stale_active_levels():
+    results = detect_fractal_patterns(
+        _fractal_active_frame(),
+        FractalDetectorConfig(max_age_bars=2, include_stale_levels=True),
+    )
+
+    by_direction = {result.direction: result for result in results}
+    assert by_direction["bearish"].details["lifecycle_state"] == "stale"
+    assert by_direction["bullish"].details["lifecycle_state"] == "active"
+
+
+def test_detect_fractal_patterns_keeps_broken_levels_visible_when_old():
+    results = detect_fractal_patterns(
+        _fractal_breakout_frame(),
+        FractalDetectorConfig(max_age_bars=1),
+    )
+
+    assert sorted(result.direction for result in results) == ["bearish", "bullish"]
+    assert {result.details["lifecycle_state"] for result in results} == {"broken"}

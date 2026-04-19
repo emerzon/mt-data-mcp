@@ -17,7 +17,8 @@ class FractalDetectorConfig:
     breakout_basis: str = "close"
     min_prominence_pct: float = 0.0
     confidence_prominence_cap_pct: float = 1.0
-    max_age_bars: int = 300  # maximum age (bars from current) for active fractal levels; older levels are filtered out
+    max_age_bars: int = 300  # active levels older than this become stale and are filtered by default
+    include_stale_levels: bool = False
 
 
 @dataclass
@@ -234,6 +235,52 @@ def _build_fractal_result(
     )
 
 
+def _resolve_fractal_lifecycle_state(
+    result: FractalPatternResult,
+    *,
+    max_age_bars: int,
+    n_bars: int,
+) -> str:
+    details = result.details if isinstance(result.details, dict) else {}
+    level_state = str(details.get("level_state") or "").strip().lower()
+    if level_state not in {"active", "broken"}:
+        level_state = "broken" if str(result.status).strip().lower() == "completed" else "active"
+    if level_state == "broken" or int(max_age_bars) <= 0:
+        return level_state
+
+    try:
+        confirmation_index = int(details.get("confirmation_index", result.end_index))
+    except Exception:
+        confirmation_index = int(result.end_index)
+    cutoff_index = int(n_bars) - int(max_age_bars)
+    if confirmation_index < cutoff_index:
+        return "stale"
+    return "active"
+
+
+def _apply_fractal_lifecycle_filter(
+    results: List[FractalPatternResult],
+    *,
+    cfg: FractalDetectorConfig,
+    n_bars: int,
+) -> List[FractalPatternResult]:
+    max_age = int(getattr(cfg, "max_age_bars", 500))
+    include_stale = bool(getattr(cfg, "include_stale_levels", False))
+    filtered: List[FractalPatternResult] = []
+    for result in results:
+        if not isinstance(result.details, dict):
+            result.details = {}
+        lifecycle_state = _resolve_fractal_lifecycle_state(
+            result,
+            max_age_bars=max_age,
+            n_bars=n_bars,
+        )
+        result.details["lifecycle_state"] = lifecycle_state
+        if lifecycle_state != "stale" or include_stale:
+            filtered.append(result)
+    return filtered
+
+
 def detect_fractal_patterns(
     df: pd.DataFrame,
     cfg: Optional[FractalDetectorConfig] = None,
@@ -356,11 +403,7 @@ def detect_fractal_patterns(
                     )
                 )
 
-    # Filter out old active fractal levels based on max_age_bars
-    max_age = int(getattr(cfg, "max_age_bars", 500))
-    if max_age > 0:
-        cutoff_index = n_bars - max_age
-        results = [r for r in results if r.end_index >= cutoff_index]
+    results = _apply_fractal_lifecycle_filter(results, cfg=cfg, n_bars=n_bars)
 
     results.sort(
         key=lambda item: (int(item.end_index), float(item.confidence)), reverse=True

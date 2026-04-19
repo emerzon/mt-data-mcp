@@ -60,8 +60,8 @@ def test_patterns_detect_returns_connection_error_payload(monkeypatch):
         == "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."
     )
     assert out["success"] is False
-    assert out["error_code"] == "tool_error"
-    assert out["operation"] == "patterns_detect"
+    assert out["error_code"] == "mt5_connection_error"
+    assert out["operation"] == "mt5_ensure_connection"
     assert isinstance(out.get("request_id"), str)
 
 
@@ -481,6 +481,67 @@ def test_detect_candlestick_patterns_top_k_uses_semantic_strength(monkeypatch):
     assert res["success"] is True
     assert res["data"][0]["pattern"] == "Bullish ENGULFING"
     assert res["data"][0]["confidence"] == pytest.approx(0.95)
+
+
+def test_detect_candlestick_patterns_dedupes_redundant_same_window_hits(monkeypatch):
+    class _FakeFrame(pd.DataFrame):
+        @property
+        def _constructor(self):
+            return _FakeFrame
+
+        @property
+        def ta(self):
+            frame = self
+
+            class _Accessor:
+                def cdl_outside(self, append=True):
+                    _ = append
+                    frame["cdl_outside"] = [0.0, 100.0]
+
+                def cdl_engulfing(self, append=True):
+                    _ = append
+                    frame["cdl_engulfing"] = [0.0, 100.0]
+
+            return _Accessor()
+
+    monkeypatch.setattr(candlestick_mod, "_ensure_candlestick_runtime", lambda: None)
+    monkeypatch.setattr(candlestick_mod, "TIMEFRAME_MAP", {"H1": 1})
+    monkeypatch.setattr(candlestick_mod, "_symbol_ready_guard", _always_ready_guard)
+    monkeypatch.setattr(
+        candlestick_mod, "_mt5_copy_rates_from", lambda *_a, **_k: [object(), object()]
+    )
+    monkeypatch.setattr(
+        candlestick_mod,
+        "_get_candlestick_pattern_methods",
+        lambda _temp: ["cdl_outside", "cdl_engulfing"],
+    )
+
+    def _fake_rates_to_df(_rates):
+        return _FakeFrame(
+            {
+                "time": [1_700_000_000.0, 1_700_003_600.0],
+                "open": [100.0, 101.0],
+                "high": [101.0, 102.0],
+                "low": [99.0, 100.0],
+                "close": [100.5, 101.5],
+            }
+        )
+
+    monkeypatch.setattr(candlestick_mod, "_rates_to_df", _fake_rates_to_df)
+
+    res = candlestick_mod.detect_candlestick_patterns(
+        symbol="EURUSD",
+        timeframe="H1",
+        limit=10,
+        min_strength=0.95,
+        min_gap=0,
+        robust_only=False,
+        whitelist=None,
+        top_k=2,
+    )
+
+    assert res["success"] is True
+    assert [row["pattern"] for row in res["data"]] == ["Bullish ENGULFING"]
 
 
 def test_detect_candlestick_patterns_drops_still_forming_last_bar(monkeypatch):
