@@ -57,21 +57,68 @@ def _concept_for_method(method_name: str, namespace: str) -> str:
     return method_norm
 
 
+def _resolve_method_capability_attr(raw_value: Any, method_name: str) -> Any:
+    if isinstance(raw_value, dict):
+        if method_name in raw_value:
+            return raw_value[method_name]
+        method_name_lower = method_name.lower()
+        for key in (method_name_lower, "*", "default"):
+            if key in raw_value:
+                return raw_value[key]
+        return None
+    return raw_value
+
+
 def _get_method_class_attrs(method_name: str) -> Dict[str, Any]:
     try:
         cls = ForecastRegistry.get_class(method_name)
     except Exception:
         return {}
     attrs = {
-        "execution_library": getattr(cls, "CAPABILITY_EXECUTION_LIBRARY", None),
-        "adapter_method": getattr(cls, "CAPABILITY_ADAPTER_METHOD", None),
-        "selector_key": getattr(cls, "CAPABILITY_SELECTOR_KEY", None),
-        "selector_mode": getattr(cls, "CAPABILITY_SELECTOR_MODE", None),
-        "selector_value": getattr(cls, "CAPABILITY_SELECTOR_VALUE", None),
-        "concept": getattr(cls, "CAPABILITY_CONCEPT", None),
-        "display_name": getattr(cls, "CAPABILITY_DISPLAY_NAME", None),
-        "aliases": getattr(cls, "CAPABILITY_ALIASES", ()) or (),
-        "notes": getattr(cls, "CAPABILITY_NOTES", None),
+        "execution_library": _resolve_method_capability_attr(
+            getattr(cls, "CAPABILITY_EXECUTION_LIBRARY", None),
+            method_name,
+        ),
+        "adapter_method": _resolve_method_capability_attr(
+            getattr(cls, "CAPABILITY_ADAPTER_METHOD", None),
+            method_name,
+        ),
+        "selector_key": _resolve_method_capability_attr(
+            getattr(cls, "CAPABILITY_SELECTOR_KEY", None),
+            method_name,
+        ),
+        "selector_mode": _resolve_method_capability_attr(
+            getattr(cls, "CAPABILITY_SELECTOR_MODE", None),
+            method_name,
+        ),
+        "selector_value": _resolve_method_capability_attr(
+            getattr(cls, "CAPABILITY_SELECTOR_VALUE", None),
+            method_name,
+        ),
+        "concept": _resolve_method_capability_attr(
+            getattr(cls, "CAPABILITY_CONCEPT", None),
+            method_name,
+        ),
+        "display_name": _resolve_method_capability_attr(
+            getattr(cls, "CAPABILITY_DISPLAY_NAME", None),
+            method_name,
+        ),
+        "aliases": _resolve_method_capability_attr(
+            getattr(cls, "CAPABILITY_ALIASES", ()) or (),
+            method_name,
+        ),
+        "requires": _resolve_method_capability_attr(
+            getattr(cls, "CAPABILITY_REQUIRES", None),
+            method_name,
+        ),
+        "params": _resolve_method_capability_attr(
+            getattr(cls, "CAPABILITY_PARAMS", None),
+            method_name,
+        ),
+        "notes": _resolve_method_capability_attr(
+            getattr(cls, "CAPABILITY_NOTES", None),
+            method_name,
+        ),
     }
     return attrs
 
@@ -91,6 +138,12 @@ def _registered_descriptor(method_name: str, row: Dict[str, Any], category: str)
     selector_mode = str(attrs.get("selector_mode") or ("method" if adapter_method == method_name else "parameter"))
     selector_value = attrs.get("selector_value")
     display_name = str(attrs.get("display_name") or selector_value or method_name)
+    requires = attrs.get("requires")
+    if requires is None:
+        requires = row.get("requires") or []
+    params = attrs.get("params")
+    if params is None:
+        params = row.get("params") or []
     capability_id = f"{namespace}:{concept}"
     return ForecastCapabilityDescriptor(
         capability_id=capability_id,
@@ -103,9 +156,9 @@ def _registered_descriptor(method_name: str, row: Dict[str, Any], category: str)
         category=category or str(row.get("category") or "unknown"),
         description=str(row.get("description") or ""),
         available=bool(row.get("available", True)),
-        requires=tuple(str(req) for req in (row.get("requires") or []) if str(req).strip()),
+        requires=tuple(str(req) for req in requires if str(req).strip()),
         supports=dict(row.get("supports") or {}),
-        params=tuple(dict(param) for param in (row.get("params") or []) if isinstance(param, dict)),
+        params=tuple(dict(param) for param in params if isinstance(param, dict)),
         aliases=tuple(str(alias) for alias in attrs.get("aliases", ()) if str(alias).strip()),
         selector_key=str(selector_key) if selector_key else None,
         selector_value=str(selector_value) if selector_value is not None else None,
@@ -222,7 +275,13 @@ def _sktime_capabilities(
 
 def _pretrained_capabilities() -> List[Dict[str, Any]]:
     rows = [row for row in get_registered_capabilities() if str(row.get("namespace")) == "pretrained"]
-    return sorted(rows, key=lambda row: str(row.get("method")))
+    return sorted(
+        rows,
+        key=lambda row: (
+            str(row.get("display_name") or row.get("method")),
+            str(row.get("method")),
+        ),
+    )
 
 
 def _native_capabilities() -> List[Dict[str, Any]]:

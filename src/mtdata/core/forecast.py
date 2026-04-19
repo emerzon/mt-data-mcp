@@ -702,30 +702,24 @@ def _forecast_list_library_models_impl(
         }
 
     if lib == "pretrained":
+        models = []
+        for row in capabilities:
+            model_row = {
+                "method": str(row.get("method")),
+                "requires": list(row.get("requires") or []),
+                "params": [
+                    dict(param)
+                    for param in (row.get("params") or [])
+                    if isinstance(param, dict)
+                ],
+            }
+            notes = row.get("notes")
+            if notes:
+                model_row["notes"] = str(notes)
+            models.append(model_row)
         return {
             "library": lib,
-            "models": [
-                {
-                    "method": "chronos2",
-                    "requires": ["chronos-forecasting>=2.0.0", "torch"],
-                    "notes": "Hugging Face model id via params.model_name (default: amazon/chronos-bolt-base for compatibility).",
-                },
-                {
-                    "method": "chronos_bolt",
-                    "requires": ["chronos-forecasting>=2.0.0", "torch"],
-                    "notes": "Same adapter as chronos2; different default naming.",
-                },
-                {
-                    "method": "timesfm",
-                    "requires": ["timesfm", "torch"],
-                    "notes": "Uses timesfm 2.x (GitHub) API; runs without downloading external weights.",
-                },
-                {
-                    "method": "lag_llama",
-                    "requires": ["lag-llama", "gluonts", "torch"],
-                    "notes": "Manual/nonstandard setup only; not part of the project's supported Python 3.14 environment, but still documented for completeness.",
-                },
-            ],
+            "models": models,
             "capabilities": capabilities,
             "usage": [
                 "mtdata-cli forecast_generate SYMBOL --library pretrained --method chronos2",

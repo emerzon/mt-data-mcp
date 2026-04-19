@@ -598,6 +598,38 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert "Error listing forecast methods" in _unwrap(cf.forecast_list_methods)()["error"]
 
 
+def test_forecast_list_library_models_derives_pretrained_models_from_capabilities(monkeypatch):
+    raw_list_models = _unwrap(cf.forecast_list_library_models)
+    pretrained_caps = [
+        {
+            "method": "custom_pretrained",
+            "requires": ["pkg-a", "pkg-b"],
+            "params": [{"name": "model_name", "type": "str"}],
+            "notes": "registry-backed note",
+        }
+    ]
+
+    def fake_get_library_capabilities(library, **kwargs):
+        if library == "pretrained":
+            return pretrained_caps
+        return []
+
+    monkeypatch.setattr(cf, "_get_library_forecast_capabilities", fake_get_library_capabilities)
+
+    out = raw_list_models("pretrained")
+
+    assert out["library"] == "pretrained"
+    assert out["capabilities"] == pretrained_caps
+    assert out["models"] == [
+        {
+            "method": "custom_pretrained",
+            "requires": ["pkg-a", "pkg-b"],
+            "params": [{"name": "model_name", "type": "str"}],
+            "notes": "registry-backed note",
+        }
+    ]
+
+
 def test_forecast_list_methods_does_not_require_mt5_connection(monkeypatch):
     def fail_connection():
         raise MT5ConnectionError("should not be called")

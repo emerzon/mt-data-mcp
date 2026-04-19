@@ -72,6 +72,14 @@ def _resolve_chronos_device_map(requested: Any, torch_module: Any) -> str:
 @ForecastRegistry.register("chronos_bolt")
 @ForecastRegistry.register("chronos2")
 class ChronosBoltMethod(PretrainedMethod):
+    CAPABILITY_REQUIRES = {
+        "chronos2": ("chronos-forecasting>=2.0.0", "torch"),
+        "chronos_bolt": ("chronos-forecasting>=2.0.0", "torch"),
+    }
+    CAPABILITY_NOTES = {
+        "chronos2": "Hugging Face model id via params.model_name (default: amazon/chronos-bolt-base for compatibility).",
+        "chronos_bolt": "Same adapter as chronos2; different default naming.",
+    }
     PARAMS: List[Dict[str, Any]] = [
         {"name": "model_name", "type": "str", "description": "Hugging Face model id."},
         {"name": "context_length", "type": "int|null", "description": "Context window length."},
@@ -322,6 +330,8 @@ class ChronosBoltMethod(PretrainedMethod):
 
 @ForecastRegistry.register("timesfm")
 class TimesFMMethod(PretrainedMethod):
+    CAPABILITY_REQUIRES = ("timesfm", "torch")
+    CAPABILITY_NOTES = "Uses timesfm 2.x (GitHub) API; runs without downloading external weights."
     PARAMS: List[Dict[str, Any]] = [
         {"name": "device", "type": "str|null", "description": "Compute device (cpu/cuda)."},
         {"name": "model_class", "type": "str|null", "description": "TimesFM torch class name override."},
@@ -567,6 +577,11 @@ class TimesFMMethod(PretrainedMethod):
 
 @ForecastRegistry.register("lag_llama")
 class LagLlamaMethod(PretrainedMethod):
+    CAPABILITY_REQUIRES = ("lag-llama", "gluonts", "torch")
+    CAPABILITY_NOTES = (
+        "Manual/nonstandard setup only; not part of the project's supported Python 3.14 "
+        "environment, but still documented for completeness."
+    )
     PARAMS: List[Dict[str, Any]] = [
         {"name": "ckpt_path", "type": "str|null", "description": "Checkpoint path."},
         {"name": "hf_repo", "type": "str|null", "description": "HF repo id (if auto-download)."},

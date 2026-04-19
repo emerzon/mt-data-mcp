@@ -48,3 +48,18 @@ def test_library_capabilities_use_standardized_schema_for_dynamic_models(monkeyp
     )
     assert sktime_caps[0]["execution"]["method"] == "sktime"
     assert sktime_caps[0]["selector"]["value"] == "sktime.forecasting.theta.ThetaForecaster"
+
+
+def test_pretrained_capabilities_include_registry_backed_read_surface_metadata():
+    rows = caps.get_library_capabilities("pretrained")
+
+    assert [str(row.get("method")) for row in rows] == sorted(str(row.get("method")) for row in rows)
+
+    by_method = {str(row.get("method")): row for row in rows}
+    assert by_method["chronos2"]["requires"] == ["chronos-forecasting>=2.0.0", "torch"]
+    assert by_method["chronos2"]["params"][0]["name"] == "model_name"
+    assert "amazon/chronos-bolt-base" in by_method["chronos2"]["notes"]
+    assert by_method["chronos_bolt"]["notes"] == "Same adapter as chronos2; different default naming."
+    assert by_method["timesfm"]["requires"] == ["timesfm", "torch"]
+    assert "GitHub" in by_method["timesfm"]["notes"]
+    assert by_method["lag_llama"]["requires"] == ["lag-llama", "gluonts", "torch"]
