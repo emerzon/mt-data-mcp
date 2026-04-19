@@ -54,6 +54,7 @@ from mtdata.core.report.utils import (
     render_enhanced_report,
     summarize_barrier_grid,
 )
+from mtdata.utils.formatting import format_number as util_format_number
 
 
 # ---------------------------------------------------------------------------
@@ -603,6 +604,9 @@ class TestExtractBaseTimeframe:
 # 12. format_number
 # ---------------------------------------------------------------------------
 class TestFormatNumber:
+    def test_uses_shared_utils_formatter(self):
+        assert format_number is util_format_number
+
     def test_none(self):
         assert format_number(None) == "null"
 
