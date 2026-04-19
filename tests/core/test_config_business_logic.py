@@ -1,5 +1,6 @@
-from datetime import timedelta, tzinfo
+from datetime import datetime, timedelta, timezone, tzinfo
 from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 from mtdata.core import config as cfg
 
@@ -108,6 +109,27 @@ def test_get_time_offset_seconds_uses_server_timezone_when_offset_zero(monkeypat
 
     assert conf.get_time_offset_seconds() == 7200
     assert conf.get_server_tz() is not None
+
+
+def test_get_time_offset_seconds_uses_historical_offset_for_requested_instant(monkeypatch):
+    monkeypatch.setenv("MT5_TIME_OFFSET_MINUTES", "0")
+    monkeypatch.setenv("MT5_SERVER_TZ", "Europe/Athens")
+    monkeypatch.setattr(
+        cfg,
+        "pytz",
+        SimpleNamespace(timezone=lambda name: ZoneInfo(name)),
+    )
+    monkeypatch.setattr(cfg, "_WARNED_SERVER_TZ", False)
+
+    conf = cfg.MT5Config()
+
+    winter = datetime(2024, 1, 15, 12, 0, tzinfo=timezone.utc)
+    summer = datetime(2024, 7, 15, 12, 0, tzinfo=timezone.utc)
+    naive_summer = datetime(2024, 7, 15, 12, 0)
+
+    assert conf.get_time_offset_seconds(at_time=winter) == 7200
+    assert conf.get_time_offset_seconds(at_time=summer) == 10800
+    assert conf.get_time_offset_seconds(at_time=naive_summer) == 10800
 
 
 def test_mt5_config_handles_invalid_offset_and_bad_timezone(monkeypatch):

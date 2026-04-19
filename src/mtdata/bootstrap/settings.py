@@ -3,7 +3,7 @@
 import logging
 import os
 import warnings
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 try:
@@ -417,12 +417,16 @@ class MT5Config:
         """Check if all credentials are available"""
         return self.get_login() is not None and bool(self.password) and bool(self.server)
 
-    def get_time_offset_seconds(self) -> int:
+    def get_time_offset_seconds(self, at_time: Optional[datetime] = None) -> int:
         """Return configured MT5 server time offset relative to UTC in seconds.
 
         Positive value means MT5 server time is ahead of UTC (UTC+X).
         All MT5 timestamps read from the terminal should be adjusted by subtracting this offset
         to normalize into UTC epochs.
+
+        When ``at_time`` is provided and ``MT5_SERVER_TZ`` is configured, resolve the
+        offset for that specific instant so historical DST transitions are respected.
+        Naive datetimes are interpreted as UTC instants.
         """
         # 1. Prefer explicit offset in minutes (if set)
         if self.time_offset_minutes != 0:
@@ -439,8 +443,14 @@ class MT5Config:
         if self.server_tz_name and pytz:
             try:
                 tz = pytz.timezone(self.server_tz_name)
-                # Calculate current offset (aware of DST)
-                return int(datetime.now(tz).utcoffset().total_seconds())
+                reference_time = at_time
+                if reference_time is None:
+                    reference_time = datetime.now(timezone.utc)
+                elif reference_time.tzinfo is None or reference_time.utcoffset() is None:
+                    reference_time = reference_time.replace(tzinfo=timezone.utc)
+                else:
+                    reference_time = reference_time.astimezone(timezone.utc)
+                return int(reference_time.astimezone(tz).utcoffset().total_seconds())
             except Exception:
                 pass
                 
