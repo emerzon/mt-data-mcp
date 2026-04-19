@@ -34,6 +34,23 @@ _HAS_TIMESFM = _importlib_util.find_spec('timesfm') is not None
 _HAS_LAG_LLAMA = _importlib_util.find_spec('lag_llama') is not None
 
 
+def _stringify_exception_chain(error: BaseException) -> str:
+    parts: List[str] = []
+    seen: set[int] = set()
+    current: BaseException | None = error
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        text = str(current).strip()
+        parts.append(text or current.__class__.__name__)
+        next_error = current.__cause__
+        if next_error is None and not current.__suppress_context__:
+            next_error = current.__context__
+        current = next_error
+    if not parts:
+        return error.__class__.__name__
+    return " | caused by: ".join(parts)
+
+
 def _resolve_chronos_device_map(requested: Any, torch_module: Any) -> str:
     """Resolve a stable device map for Chronos pipelines.
 
@@ -558,7 +575,7 @@ class TimesFMMethod(PretrainedMethod):
                  
             return ForecastResult(forecast=f_vals, params_used=params_used, metadata={"quantiles": fq})
         except Exception as ex:
-            raise RuntimeError(f"timesfm error: {ex}")
+            raise RuntimeError(f"timesfm error: {ex}") from ex
         finally:
             _mdl = None
             _cfg = None
@@ -627,7 +644,10 @@ class LagLlamaMethod(PretrainedMethod):
                 p['hf_repo'] = repo_id
                 p['hf_filename'] = filename
             except Exception as ex:
-                raise RuntimeError(f"lag_llama requires params.ckpt_path or the ability to auto-download via huggingface_hub. Tried default repo but failed: {ex}")
+                raise RuntimeError(
+                    "lag_llama requires params.ckpt_path or the ability to auto-download via "
+                    f"huggingface_hub. Tried default repo but failed: {ex}"
+                ) from ex
 
         ctx_len = int(p.get('context_length', 32) or 32)
         num_samples = int(p.get('num_samples', 100) or 100)
@@ -651,7 +671,7 @@ class LagLlamaMethod(PretrainedMethod):
             from gluonts.evaluation import make_evaluation_predictions  # type: ignore
             from lag_llama.gluon.estimator import LagLlamaEstimator  # type: ignore
         except Exception as ex:
-            raise RuntimeError(f"lag_llama dependencies missing: {ex}")
+            raise RuntimeError(f"lag_llama dependencies missing: {ex}") from ex
 
         # PyTorch 2.6+ defaults torch.load(..., weights_only=True) which blocks unpickling
         # of custom classes used by GluonTS (e.g., StudentTOutput).
@@ -693,7 +713,7 @@ class LagLlamaMethod(PretrainedMethod):
             ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
             est_args = ckpt.get('hyper_parameters', {}).get('model_kwargs', {})
         except Exception as ex:
-            raise RuntimeError(f"failed to load Lag-Llama checkpoint: {ex}")
+            raise RuntimeError(f"failed to load Lag-Llama checkpoint: {ex}") from ex
 
         # Optional rope scaling when context exceeds training
         rope_scaling = None
@@ -775,7 +795,7 @@ class LagLlamaMethod(PretrainedMethod):
                     fq[str(qf)] = [float(v) for v in q_arr[:horizon].tolist()]
 
         except Exception as ex:
-            raise RuntimeError(f"lag_llama inference error: {ex}")
+            raise RuntimeError(f"lag_llama inference error: {ex}") from ex
 
         params_used = {
             'ckpt_path': str(ckpt_path),
@@ -804,7 +824,7 @@ def forecast_chronos_bolt(
         res = ForecastRegistry.get("chronos_bolt").forecast(pd.Series(series), fh, 0, params)
         return res.forecast, res.metadata.get("quantiles"), res.params_used, None
     except Exception as e:
-        return None, None, {}, str(e)
+        return None, None, {}, _stringify_exception_chain(e)
 
 def forecast_timesfm(
     *,
@@ -819,7 +839,7 @@ def forecast_timesfm(
         res = ForecastRegistry.get("timesfm").forecast(pd.Series(series), fh, 0, params)
         return res.forecast, res.metadata.get("quantiles"), res.params_used, None
     except Exception as e:
-        return None, None, {}, str(e)
+        return None, None, {}, _stringify_exception_chain(e)
 
 def forecast_lag_llama(
     *,
@@ -834,5 +854,5 @@ def forecast_lag_llama(
         res = ForecastRegistry.get("lag_llama").forecast(pd.Series(series), fh, 0, params)
         return res.forecast, res.metadata.get("quantiles"), res.params_used, None
     except Exception as e:
-        return None, None, {}, str(e)
+        return None, None, {}, _stringify_exception_chain(e)
 

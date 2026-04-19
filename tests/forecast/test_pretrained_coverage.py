@@ -175,12 +175,14 @@ for name, mod in _NON_TORCH_STUBS.items():
 
 # Now import the module under test
 from mtdata.forecast.interface import ForecastResult
+import mtdata.forecast.methods.pretrained as pretrained_module
 from mtdata.forecast.methods.pretrained import (
     ChronosBoltMethod,
     LagLlamaMethod,
     PretrainedMethod,
     TimesFMMethod,
     _resolve_chronos_device_map,
+    _stringify_exception_chain,
     forecast_chronos_bolt,
     forecast_lag_llama,
     forecast_timesfm,
@@ -788,3 +790,62 @@ class TestBackwardCompatWrappers:
     def test_forecast_lag_llama_success(self):
         f_vals, fq, pu, err = forecast_lag_llama(series=np.random.rand(100), fh=10, params={"ckpt_path": "/tmp/fake.ckpt"}, n=100)
         assert f_vals is not None or err is not None
+
+    def test_forecast_timesfm_error_includes_cause_chain(self, monkeypatch):
+        class _FakeMethod:
+            def forecast(self, *args, **kwargs):
+                try:
+                    raise ValueError("inner boom")
+                except ValueError as ex:
+                    raise RuntimeError("outer boom") from ex
+
+        monkeypatch.setattr(pretrained_module, "_HAS_TIMESFM", True)
+        monkeypatch.setattr(pretrained_module.ForecastRegistry, "get", lambda name: _FakeMethod())
+
+        f_vals, fq, pu, err = forecast_timesfm(series=np.random.rand(20), fh=3, params={}, n=20)
+
+        assert f_vals is None
+        assert fq is None
+        assert pu == {}
+        assert err == "outer boom | caused by: inner boom"
+
+
+@pytest.mark.usefixtures("_with_torch_stubs")
+class TestPretrainedErrorContext:
+    def test_timesfm_forecast_preserves_root_cause(self, monkeypatch):
+        def _boom(self, inputs, horizon):
+            raise ValueError("predict failed")
+
+        monkeypatch.setattr(_FakeTimesFMTorch, "forecast", _boom)
+
+        method = TimesFMMethod()
+        with pytest.raises(RuntimeError, match="timesfm error: predict failed") as exc_info:
+            method.forecast(_series(50), 5, 0, {})
+
+        assert isinstance(exc_info.value.__cause__, ValueError)
+        assert str(exc_info.value.__cause__) == "predict failed"
+
+    def test_lag_llama_forecast_preserves_root_cause(self):
+        original = sys.modules["gluonts.evaluation"].make_evaluation_predictions
+        sys.modules["gluonts.evaluation"].make_evaluation_predictions = MagicMock(
+            side_effect=ValueError("predict failed")
+        )
+        try:
+            method = LagLlamaMethod()
+            with pytest.raises(RuntimeError, match="lag_llama inference error: predict failed") as exc_info:
+                method.forecast(_series(50), 5, 0, {"ckpt_path": "/tmp/fake.ckpt"})
+        finally:
+            sys.modules["gluonts.evaluation"].make_evaluation_predictions = original
+
+        assert isinstance(exc_info.value.__cause__, ValueError)
+        assert str(exc_info.value.__cause__) == "predict failed"
+
+
+def test_stringify_exception_chain_joins_nested_causes():
+    try:
+        try:
+            raise ValueError("root cause")
+        except ValueError as inner:
+            raise RuntimeError("outer cause") from inner
+    except RuntimeError as ex:
+        assert _stringify_exception_chain(ex) == "outer cause | caused by: root cause"
