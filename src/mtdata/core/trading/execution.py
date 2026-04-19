@@ -985,13 +985,18 @@ def _close_positions(  # noqa: C901
                     continue
                 position = fresh_positions[0]
 
+                symbol_info = None
+                try:
+                    symbol_info = mt5.symbol_info(position.symbol)
+                except Exception:
+                    symbol_info = None
+
                 # Volume validation for partial closes
                 requested_volume = None
                 position_volume_before = None
                 remaining_volume_estimate = None
                 position_volume_before = validation._safe_float_attr(position, "volume") or None
                 if volume is not None:
-                    symbol_info = mt5.symbol_info(position.symbol)
                     if symbol_info is None:
                         results.append({
                             "ticket": position.ticket,
@@ -1049,7 +1054,7 @@ def _close_positions(  # noqa: C901
                             })
                             continue
 
-                fill_modes = validation._candidate_fill_modes(mt5)
+                fill_modes = validation._candidate_fill_modes(mt5, symbol_info)
                 close_result = _execute_single_close(
                     mt5,
                     position,

@@ -1426,6 +1426,26 @@ def test_close_positions_retries_without_comment_when_result_retcode_rejects_com
     assert "comment" not in final_req
 
 
+def test_close_positions_prefers_symbol_fill_mode(mock_mt5):
+    mock_mt5.ORDER_FILLING_IOC = 1
+    mock_mt5.ORDER_FILLING_FOK = 0
+    mock_mt5.ORDER_FILLING_RETURN = 2
+    mock_mt5.SYMBOL_FILLING_FOK = 1
+    mock_mt5.SYMBOL_FILLING_IOC = 2
+    mock_mt5.SYMBOL_FILLING_RETURN = 4
+    mock_mt5.ORDER_TIME_GTC = 0
+    mock_mt5.symbol_info.return_value.filling_mode = mock_mt5.SYMBOL_FILLING_FOK
+    mock_mt5.positions_get.return_value = [
+        SimpleNamespace(ticket=123, symbol="EURUSD", volume=0.1, type=0, profit=10.0, magic=67890)
+    ]
+
+    res = _close_positions(symbol="EURUSD")
+
+    assert res["closed_count"] == 1
+    first_req = mock_mt5.order_send.call_args.args[0]
+    assert first_req["type_filling"] == mock_mt5.ORDER_FILLING_FOK
+
+
 def test_close_positions_retries_default_fill_mode_when_fok_constant_missing(mock_mt5):
     mock_mt5.ORDER_FILLING_IOC = 1
     mock_mt5.ORDER_FILLING_FOK = None
