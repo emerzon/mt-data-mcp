@@ -20,6 +20,7 @@ from ..utils.barriers import (
 from ..utils.barriers import (
     resolve_barrier_prices as _resolve_barrier_prices,
 )
+from ..utils.barriers import validate_barrier_unit_family_exclusivity
 from ..utils.denoise import _resolve_denoise_base_col
 from ..utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise
 from ..utils.utils import _format_time_minimal
@@ -215,6 +216,18 @@ def labels_triple_barrier(
                 return {
                     "error": "Invalid detail level. Use 'compact', 'full', 'summary', or 'summary_only'."
                 }
+            barrier_values = {
+                "tp_abs": tp_abs,
+                "sl_abs": sl_abs,
+                "tp_pct": tp_pct,
+                "sl_pct": sl_pct,
+                "tp_pips": tp_pips,
+                "sl_pips": sl_pips,
+            }
+            try:
+                validate_barrier_unit_family_exclusivity(barrier_values)
+            except ValueError as exc:
+                return {"error": str(exc)}
             df = _fetch_history(
                 symbol, timeframe, int(max(limit, horizon + 50)), as_of=None
             )
@@ -233,16 +246,7 @@ def labels_triple_barrier(
             pip_size = _get_pip_size(symbol)
 
             N = len(closes)
-            barrier_kwargs = _build_barrier_kwargs_from(
-                {
-                    "tp_abs": tp_abs,
-                    "sl_abs": sl_abs,
-                    "tp_pct": tp_pct,
-                    "sl_pct": sl_pct,
-                    "tp_pips": tp_pips,
-                    "sl_pips": sl_pips,
-                }
-            )
+            barrier_kwargs = _build_barrier_kwargs_from(barrier_values)
             max_entry_index = N - int(horizon)
             sample_entry_price = next(
                 (

@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from ..shared.schema import DenoiseSpec, ForecastLibraryLiteral, TimeframeLiteral
-from ..utils.barriers import normalize_trade_direction
+from ..utils.barriers import normalize_trade_direction, validate_barrier_unit_family_exclusivity
 
 
 def _reject_removed_field(values: Any, *, field_name: str, replacement: str) -> Any:
@@ -194,6 +194,11 @@ class ForecastBarrierProbRequest(BaseModel):
     @classmethod
     def _reject_removed_mc_method(cls, values: Any) -> Any:
         return _reject_removed_field(values, field_name="mc_method", replacement="method")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _validate_barrier_unit_families(cls, values: Any) -> Any:
+        return validate_barrier_unit_family_exclusivity(values)
 
     @field_validator("direction", mode="before")
     @classmethod

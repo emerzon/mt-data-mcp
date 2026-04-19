@@ -5,6 +5,20 @@ from .mt5 import get_symbol_info_cached
 from .utils import _coerce_finite_float
 
 
+def validate_barrier_unit_family_exclusivity(values: Any) -> Any:
+    """Reject ambiguous TP/SL inputs when a side mixes unit families."""
+    if not isinstance(values, dict):
+        return values
+    for label, fields in (
+        ("take-profit", ("tp_abs", "tp_pct", "tp_pips")),
+        ("stop-loss", ("sl_abs", "sl_pct", "sl_pips")),
+    ):
+        provided = [field for field in fields if values.get(field) is not None]
+        if len(provided) > 1:
+            raise ValueError(f"Provide only one {label} unit family: {', '.join(fields)}")
+    return values
+
+
 def normalize_trade_direction(direction: Any) -> Tuple[Optional[Literal["long", "short"]], Optional[str]]:
     """Normalize trade direction aliases into canonical long/short values."""
     text = str(direction or "").strip().lower()
