@@ -1124,7 +1124,7 @@ def fetch_candles(  # noqa: C901
                         end_datetime,
                         include_incomplete=include_incomplete,
                         retry=True,
-                        sanity_check=False,
+                        sanity_check=not bool(allow_stale),
                     )
                     retry_applied = rates_retry is not None and len(rates_retry) > 0
                     warmup_retry_meta = {

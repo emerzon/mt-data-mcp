@@ -1519,6 +1519,62 @@ class TestFetchCandles(unittest.TestCase):
         self.assertTrue(any('Indicator warmup retry failed: retry boom' in str(w) for w in result.get('warnings', [])))
         self.assertEqual(mock_rebuild.call_count, 1)
 
+    @patch(_MT5_CONFIG)
+    @patch(_PARSE_START)
+    @patch(f'{_DS}.FETCH_RETRY_DELAY', 0)
+    @patch(f'{_DS}.FETCH_RETRY_ATTEMPTS', 1)
+    @patch(_APPLY_TI)
+    @patch(_RATES_FROM)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=14)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_nan_warmup_retry_preserves_freshness_policy(
+        self,
+        mock_warmup,
+        mock_ctz,
+        mock_info,
+        mock_from,
+        mock_ti,
+        mock_parse,
+        mock_cfg,
+    ):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        to_date = datetime(2025, 1, 2, tzinfo=_UTC)
+        mock_parse.return_value = to_date
+        fresh_rates = _make_rates(30, base_ts=to_date.timestamp(), step=60 * 60)
+        stale_rates = _make_rates(60, base_ts=to_date.timestamp() - (10 * 60 * 60), step=60 * 60)
+        mock_from.side_effect = [fresh_rates, stale_rates]
+
+        call_count = [0]
+
+        def add_col(df, spec):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                df['rsi_14'] = float('nan')
+            else:
+                df['rsi_14'] = 50.0
+            return ['rsi_14']
+
+        mock_ti.side_effect = add_col
+
+        result = fetch_candles(
+            'EURUSD',
+            limit=5,
+            end='2025-01-02',
+            indicators=[{'name': 'rsi', 'params': [14]}],
+            time_as_epoch=True,
+        )
+
+        self.assertTrue(result.get('success'))
+        self.assertEqual(mock_from.call_count, 2)
+        self.assertEqual(mock_ti.call_count, 1)
+        self.assertEqual(float(result['data'][-1]['time']), float(fresh_rates[-1]['time']))
+        warmup_retry = result['meta']['diagnostics']['query']['warmup_retry']
+        self.assertFalse(warmup_retry['applied'])
+        self.assertIn('remained stale after 1 attempt(s)', warmup_retry['error'])
+        self.assertTrue(any('Indicator warmup retry failed:' in str(w) for w in result.get('warnings', [])))
+
     # -- Simplify ------------------------------------------------------------
 
     @patch(_MT5_CONFIG)
