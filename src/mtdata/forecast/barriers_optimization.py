@@ -619,6 +619,84 @@ def _select_barrier_candidate_views(
     }
 
 
+_BARRIER_CONCISE_DROP_KEYS = frozenset(
+    {
+        "compute_profile",
+        "selection_warnings",
+        "ev_edge_conflict",
+        "ev_edge_conflict_reason",
+        "caution",
+        "confidence_warning",
+        "low_confidence",
+        "min_sims_recommended",
+        "statistical_robustness",
+        "optuna",
+        "pareto_front",
+        "pareto_count",
+        "ensemble",
+        "diagnostics",
+    }
+)
+
+
+def _resolved_barrier_output_mode(*, output_mode: str, concise_val: bool) -> str:
+    if concise_val:
+        return "concise"
+    return "full" if output_mode == "full" else "summary"
+
+
+def _finalize_barrier_output(
+    out: Dict[str, Any],
+    *,
+    output_mode: str,
+    concise_val: bool,
+    viable_only_val: bool,
+    ranked_candidates: Optional[List[Dict[str, Any]]] = None,
+    viable_candidates: Optional[List[Dict[str, Any]]] = None,
+    candidates: Optional[List[Dict[str, Any]]] = None,
+    grid_out: Optional[List[Dict[str, Any]]] = None,
+    return_grid: bool = False,
+    top_k_val: Optional[int] = None,
+    selection_diagnostics: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    resolved_mode = _resolved_barrier_output_mode(
+        output_mode=output_mode,
+        concise_val=concise_val,
+    )
+    out["output_mode"] = resolved_mode
+    if viable_only_val:
+        out["viable_only"] = True
+    if concise_val:
+        out["concise"] = True
+
+    if resolved_mode == "full":
+        diagnostics_payload: Dict[str, Any] = {
+            "candidate_counts": {
+                "ranked_total": len(ranked_candidates or []),
+                "viable_total": len(viable_candidates or []),
+                "returned_total": len(candidates or []),
+                "results_total": len(out.get("results") or []),
+                "grid_total": len(grid_out or []),
+            },
+            "view": {
+                "return_grid_requested": bool(return_grid),
+                "grid_returned": grid_out is not None,
+                "top_k": top_k_val,
+                "viable_only": bool(viable_only_val),
+                "concise": bool(concise_val),
+            },
+        }
+        if selection_diagnostics:
+            diagnostics_payload["selection"] = dict(selection_diagnostics)
+        out["diagnostics"] = diagnostics_payload
+        return out
+
+    if resolved_mode == "concise":
+        for key in _BARRIER_CONCISE_DROP_KEYS:
+            out.pop(key, None)
+    return out
+
+
 def forecast_barrier_optimize(  # noqa: C901
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
@@ -1561,7 +1639,19 @@ def forecast_barrier_optimize(  # noqa: C901
             )
             out.update(actionability_payload)
             out["no_action"] = not bool(actionability_payload.get("trade_gate_passed"))
-            return out
+            return _finalize_barrier_output(
+                out,
+                output_mode=output_mode,
+                concise_val=concise_val,
+                viable_only_val=viable_only_val,
+                ranked_candidates=ranked_candidates,
+                viable_candidates=viable_candidates,
+                candidates=candidates,
+                grid_out=grid_out,
+                return_grid=return_grid,
+                top_k_val=top_k_val,
+                selection_diagnostics=diagnostics,
+            )
 
         if method_name == 'auto':
             method_name, auto_reason = _auto_barrier_method(
@@ -2575,10 +2665,6 @@ def forecast_barrier_optimize(  # noqa: C901
                 out["auto_reason"] = auto_reason
         if bb_enabled:
             out["bridge_correction"] = True
-        if viable_only_val:
-            out["viable_only"] = True
-        if concise_val:
-            out["concise"] = True
         if has_trading_costs:
             out["trading_costs"] = {
                 "cost_per_trade": _safe_float(cost_per_trade),
@@ -2589,7 +2675,19 @@ def forecast_barrier_optimize(  # noqa: C901
                 "slippage_pips": _safe_float(slippage_pips_val) if slippage_pips_val else None,
                 "slippage_pct": _safe_float(slippage_pct_val) if slippage_pct_val else None,
             }
-        return out
+        return _finalize_barrier_output(
+            out,
+            output_mode=output_mode,
+            concise_val=concise_val,
+            viable_only_val=viable_only_val,
+            ranked_candidates=ranked_candidates,
+            viable_candidates=viable_candidates,
+            candidates=candidates,
+            grid_out=grid_out,
+            return_grid=return_grid,
+            top_k_val=top_k_val,
+            selection_diagnostics=diagnostics,
+        )
 
     except (KeyError, AttributeError, IndexError):
         raise

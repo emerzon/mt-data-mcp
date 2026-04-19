@@ -466,8 +466,9 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
         self.assertTrue(result.get("fast_defaults"))
         self.assertTrue(result.get("viable_only"))
         self.assertTrue(result.get("concise"))
-        profile = result.get("compute_profile", {})
-        self.assertEqual(profile.get("n_sims"), 1200)
+        self.assertEqual(result.get("output_mode"), "concise")
+        self.assertNotIn("compute_profile", result)
+        self.assertNotIn("diagnostics", result)
 
     def test_forecast_barrier_optimize_search_profile_long(self):
         self._set_flat_history(1.0)
@@ -857,6 +858,9 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
         self.assertTrue(grid)
         self.assertEqual(len(grid), 2)
         self.assertEqual(result["best"], grid[0])
+        self.assertEqual(result.get("output_mode"), "summary")
+        self.assertNotIn("diagnostics", result)
+        self.assertIn("compute_profile", result)
 
     def test_forecast_barrier_optimize_keeps_compact_results_with_full_grid(self):
         self._set_flat_history(1.0)
@@ -885,6 +889,10 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
         self.assertEqual(result["results_total"], len(result["grid"]))
         self.assertLessEqual(len(result["results"]), 10)
         self.assertGreaterEqual(len(result["grid"]), len(result["results"]))
+        self.assertEqual(result.get("output_mode"), "full")
+        self.assertIn("diagnostics", result)
+        self.assertEqual(result["diagnostics"]["candidate_counts"]["returned_total"], result["results_total"])
+        self.assertEqual(result["diagnostics"]["candidate_counts"]["grid_total"], len(result["grid"]))
 
     def test_forecast_barrier_optimize_volatility_grid(self):
         self._set_flat_history(1.0)
@@ -1422,6 +1430,7 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
         self.assertTrue(result.get("no_action"))
         self.assertTrue(result.get("viable_only"))
         self.assertTrue(result.get("concise"))
+        self.assertEqual(result.get("output_mode"), "concise")
         self.assertEqual(result.get("results_total"), 0)
         self.assertEqual(result.get("viable_results_total"), 0)
         self.assertEqual(len(result.get("results", [])), 0)
@@ -1430,6 +1439,8 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
         self.assertEqual(result.get("actionability"), "blocked")
         self.assertFalse(result.get("trade_gate_passed"))
         self.assertIn("status_non_viable", result.get("actionability_flags", []))
+        self.assertNotIn("compute_profile", result)
+        self.assertNotIn("diagnostics", result)
 
     def test_forecast_barrier_optimize_marks_low_confidence_viable_result_for_review(self):
         self._set_flat_history(1.0)
