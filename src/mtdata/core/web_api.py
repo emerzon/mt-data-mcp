@@ -5,7 +5,7 @@ from __future__ import annotations
 import hmac
 import logging
 from importlib.util import find_spec as _find_spec
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Literal, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -53,6 +53,9 @@ from .web_api_handlers import (
     get_methods_response as _get_methods_response,
 )
 from .web_api_handlers import (
+    get_models_response as _get_models_response,
+)
+from .web_api_handlers import (
     get_pivots_response as _get_pivots_response,
 )
 from .web_api_handlers import (
@@ -76,6 +79,7 @@ from .web_api_handlers import (
 from .web_api_handlers import (
     post_forecast_volatility_response as _post_forecast_volatility_response,
 )
+from .forecast_tasks import forecast_models_list as _forecast_models_list_tool
 from .web_api_models import BacktestBody, ForecastPriceBody, ForecastVolBody
 from .web_api_runtime import create_web_api_app, mount_webui, run_webapi
 
@@ -173,6 +177,10 @@ def _call_tool_raw(func: Any) -> Any:
     return unwrap_tool_callable(func)
 
 
+def _get_models_impl(*, method: Optional[str] = None, detail: str = "compact") -> Any:
+    return _call_tool_raw(_forecast_models_list_tool)(method=method, detail=detail)
+
+
 def _web_api_gateway():
     return get_web_api_mt5_gateway(
         adapter=mt5,
@@ -198,6 +206,18 @@ def get_instruments(search: Optional[str] = Query(None), limit: Optional[int] = 
 @api_router.get("/methods")
 def get_methods() -> Dict[str, Any]:
     return _get_methods_response(get_methods_impl=_get_methods_impl)
+
+
+@api_router.get("/models")
+def get_models(
+    method: Optional[str] = Query(None),
+    detail: Literal["compact", "full"] = Query("compact"),
+) -> Dict[str, Any]:
+    return _get_models_response(
+        get_models_impl=_get_models_impl,
+        method=method,
+        detail=detail,
+    )
 
 
 @api_router.get("/volatility/methods")

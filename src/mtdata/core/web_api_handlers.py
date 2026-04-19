@@ -220,6 +220,21 @@ def get_methods_response(*, get_methods_impl: Callable[[], Any]) -> Dict[str, An
         return data
 
 
+def get_models_response(
+    *,
+    get_models_impl: Callable[..., Any],
+    method: Optional[str],
+    detail: str,
+) -> Dict[str, Any]:
+    data = get_models_impl(method=method, detail=detail)
+    if not isinstance(data, dict):
+        return {"success": True, "detail": detail, "count": 0, "models": []}
+    models = data.get("models")
+    if not isinstance(models, list):
+        return {"success": True, "detail": detail, "count": 0, "models": []}
+    return data
+
+
 def get_vol_methods_response(*, get_vol_methods: Callable[[], Any]) -> Dict[str, Any]:
     data = get_vol_methods()
     if not isinstance(data, dict):

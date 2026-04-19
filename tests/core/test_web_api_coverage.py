@@ -379,6 +379,53 @@ class TestGetMethods:
 
 
 # ===========================================================================
+# GET /api/models
+# ===========================================================================
+
+class TestGetModels:
+    def test_returns_models_with_compact_detail_by_default(self):
+        data = {
+            "success": True,
+            "detail": "compact",
+            "count": 1,
+            "models": [{"model_id": "nhits/EURUSD_H1/a", "method": "nhits"}],
+        }
+        with patch("mtdata.core.web_api._get_models_impl", return_value=data):
+            resp = _client.get("/api/models")
+        assert resp.status_code == 200
+        assert resp.json() == data
+
+    def test_passes_method_and_detail_to_models_impl(self):
+        data = {
+            "success": True,
+            "detail": "full",
+            "count": 1,
+            "models": [
+                {
+                    "model_id": "nhits/EURUSD_H1/a",
+                    "method": "nhits",
+                    "metadata": {"epochs": 42},
+                }
+            ],
+        }
+        with patch("mtdata.core.web_api._get_models_impl", return_value=data) as mock_models:
+            resp = _client.get("/api/models", params={"method": "nhits", "detail": "full"})
+        assert resp.status_code == 200
+        assert resp.json() == data
+        mock_models.assert_called_once_with(method="nhits", detail="full")
+
+    def test_returns_empty_payload_on_invalid_models_result(self):
+        with patch("mtdata.core.web_api._get_models_impl", return_value=None):
+            resp = _client.get("/api/models", params={"detail": "full"})
+        assert resp.status_code == 200
+        assert resp.json() == {"success": True, "detail": "full", "count": 0, "models": []}
+
+    def test_rejects_invalid_detail_query(self):
+        resp = _client.get("/api/models", params={"detail": "verbose"})
+        assert resp.status_code == 422
+
+
+# ===========================================================================
 # GET /api/volatility/methods
 # ===========================================================================
 
