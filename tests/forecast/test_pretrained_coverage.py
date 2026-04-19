@@ -183,9 +183,6 @@ from mtdata.forecast.methods.pretrained import (
     TimesFMMethod,
     _resolve_chronos_device_map,
     _stringify_exception_chain,
-    forecast_chronos_bolt,
-    forecast_lag_llama,
-    forecast_timesfm,
 )
 
 # ---------------------------------------------------------------------------
@@ -763,51 +760,13 @@ class TestLagLlamaMethod:
         assert "quantiles" in res.params_used
 
 
-# ===========================================================================
-# Backward-compatibility wrapper functions
-# ===========================================================================
-
-@pytest.mark.usefixtures("_with_torch_stubs")
-class TestBackwardCompatWrappers:
-    def test_forecast_chronos_bolt_success(self):
-        f_vals, fq, pu, err = forecast_chronos_bolt(series=np.random.rand(100), fh=10, params={}, n=100)
-        assert err is None or f_vals is not None  # may succeed
-
-    def test_forecast_chronos_bolt_error(self):
-        """Errors returned as string, not raised."""
-        saved = sys.modules.get("chronos")
-        sys.modules["chronos"] = None
-        try:
-            f_vals, fq, pu, err = forecast_chronos_bolt(series=np.random.rand(50), fh=5, params={}, n=50)
-            assert err is not None or f_vals is not None
-        finally:
-            sys.modules["chronos"] = saved
-
-    def test_forecast_timesfm_success(self):
-        f_vals, fq, pu, err = forecast_timesfm(series=np.random.rand(100), fh=10, params={}, n=100)
-        assert f_vals is not None or err is not None
-
-    def test_forecast_lag_llama_success(self):
-        f_vals, fq, pu, err = forecast_lag_llama(series=np.random.rand(100), fh=10, params={"ckpt_path": "/tmp/fake.ckpt"}, n=100)
-        assert f_vals is not None or err is not None
-
-    def test_forecast_timesfm_error_includes_cause_chain(self, monkeypatch):
-        class _FakeMethod:
-            def forecast(self, *args, **kwargs):
-                try:
-                    raise ValueError("inner boom")
-                except ValueError as ex:
-                    raise RuntimeError("outer boom") from ex
-
-        monkeypatch.setattr(pretrained_module, "_HAS_TIMESFM", True)
-        monkeypatch.setattr(pretrained_module.ForecastRegistry, "get", lambda name: _FakeMethod())
-
-        f_vals, fq, pu, err = forecast_timesfm(series=np.random.rand(20), fh=3, params={}, n=20)
-
-        assert f_vals is None
-        assert fq is None
-        assert pu == {}
-        assert err == "outer boom | caused by: inner boom"
+@pytest.mark.parametrize(
+    "name",
+    ["forecast_chronos_bolt", "forecast_timesfm", "forecast_lag_llama"],
+)
+def test_pretrained_wrapper_functions_removed(name):
+    with pytest.raises(AttributeError):
+        getattr(pretrained_module, name)
 
 
 @pytest.mark.usefixtures("_with_torch_stubs")

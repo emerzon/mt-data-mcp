@@ -4,7 +4,7 @@ import importlib
 import inspect
 import sys
 import warnings
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -345,48 +345,3 @@ class GenericMLForecastMethod(MLForecastMethod):
 
         return model_cls(**model_params)
 
-# Backward compatibility wrappers
-def forecast_mlf_rf(
-    *,
-    series: np.ndarray,
-    fh: int,
-    timeframe: str,
-    lags: Optional[list] = None,
-    rolling_agg: Optional[str] = None,
-    exog_used: Optional[np.ndarray] = None,
-    exog_future: Optional[np.ndarray] = None,
-    future_times: Optional[list] = None,
-) -> Tuple[np.ndarray, Dict[str, Any]]:
-    forecaster = ForecastRegistry.get("mlf_rf")
-    s_pd = pd.Series(series)
-    params = {'lags': lags, 'rolling_agg': rolling_agg}
-    result = forecaster.forecast(s_pd, fh, 0, params, exog_used=exog_used, exog_future=exog_future)
-    return result.forecast, result.params_used
-
-def forecast_mlf_lightgbm(
-    *,
-    series: np.ndarray,
-    fh: int,
-    timeframe: str,
-    lags: Optional[list] = None,
-    rolling_agg: Optional[str] = None,
-    n_estimators: int = 200,
-    learning_rate: float = 0.05,
-    num_leaves: int = 31,
-    max_depth: int = -1,
-    exog_used: Optional[np.ndarray] = None,
-    exog_future: Optional[np.ndarray] = None,
-    future_times: Optional[list] = None,
-) -> Tuple[np.ndarray, Dict[str, Any]]:
-    forecaster = ForecastRegistry.get("mlf_lightgbm")
-    s_pd = pd.Series(series)
-    params = {
-        'lags': lags, 
-        'rolling_agg': rolling_agg,
-        'n_estimators': n_estimators,
-        'learning_rate': learning_rate,
-        'num_leaves': num_leaves,
-        'max_depth': max_depth
-    }
-    result = forecaster.forecast(s_pd, fh, 0, params, exog_used=exog_used, exog_future=exog_future)
-    return result.forecast, result.params_used

@@ -8,7 +8,6 @@ import pandas as pd
 import pytest
 
 from mtdata.forecast import common as common_mod
-from mtdata.forecast.interface import ForecastResult
 from mtdata.forecast.methods import mlforecast as mlm
 
 
@@ -284,76 +283,10 @@ def test_generic_mlforecast_model_import_validation_and_param_filtering(monkeypa
     assert model.b == 6
 
 
-def test_mlforecast_legacy_wrappers_route_to_registry(monkeypatch):
-    calls = []
-
-    class FakeMethod:
-        def __init__(self, name):
-            self._name = name
-
-        def forecast(self, series, horizon, seasonality, params, **kwargs):
-            calls.append(
-                {
-                    "name": self._name,
-                    "series_type": type(series).__name__,
-                    "horizon": horizon,
-                    "seasonality": seasonality,
-                    "params": params,
-                    "kwargs": kwargs,
-                }
-            )
-            return ForecastResult(forecast=np.array([5.0, 6.0], dtype=float), params_used={"method": self._name})
-
-    class FakeRegistry:
-        @staticmethod
-        def get(name):
-            return FakeMethod(name)
-
-    monkeypatch.setattr(mlm, "ForecastRegistry", FakeRegistry)
-    exog_used = np.array([[1.0], [2.0]], dtype=float)
-    exog_future = np.array([[3.0], [4.0]], dtype=float)
-
-    rf_f, rf_params = mlm.forecast_mlf_rf(
-        series=np.array([1.0, 2.0, 3.0], dtype=float),
-        fh=2,
-        timeframe="H1",
-        lags=[1, 2],
-        rolling_agg="mean",
-        exog_used=exog_used,
-        exog_future=exog_future,
-    )
-    lgbm_f, lgbm_params = mlm.forecast_mlf_lightgbm(
-        series=np.array([1.0, 2.0, 3.0], dtype=float),
-        fh=2,
-        timeframe="H1",
-        lags=[3],
-        rolling_agg="std",
-        n_estimators=10,
-        learning_rate=0.1,
-        num_leaves=11,
-        max_depth=4,
-        exog_used=exog_used,
-        exog_future=exog_future,
-    )
-
-    assert np.allclose(rf_f, [5.0, 6.0])
-    assert rf_params == {"method": "mlf_rf"}
-    assert np.allclose(lgbm_f, [5.0, 6.0])
-    assert lgbm_params == {"method": "mlf_lightgbm"}
-
-    assert [c["name"] for c in calls] == ["mlf_rf", "mlf_lightgbm"]
-    assert all(c["series_type"] == "Series" for c in calls)
-    assert calls[0]["params"] == {"lags": [1, 2], "rolling_agg": "mean"}
-    assert calls[1]["params"] == {
-        "lags": [3],
-        "rolling_agg": "std",
-        "n_estimators": 10,
-        "learning_rate": 0.1,
-        "num_leaves": 11,
-        "max_depth": 4,
-    }
-    assert np.array_equal(calls[0]["kwargs"]["exog_used"], exog_used)
-    assert np.array_equal(calls[1]["kwargs"]["exog_future"], exog_future)
+@pytest.mark.parametrize("name", ["forecast_mlf_rf", "forecast_mlf_lightgbm"])
+def test_mlforecast_legacy_wrappers_removed(name):
+    with pytest.raises(AttributeError):
+        getattr(mlm, name)
 
 
 def test_mlforecast_public_params_do_not_advertise_rolling_agg():

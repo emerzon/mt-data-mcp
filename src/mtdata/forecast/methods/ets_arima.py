@@ -420,10 +420,8 @@ class ARIMAMethod(ETSArimaMethod):
         if exog_future_arr is None:
             exog_future_arr = params.get('exog_future')
         
-        # If exog_future was passed as explicit arg, use it (it might be DataFrame)
-        # The interface defines exog_future as Optional[pd.DataFrame]
-        # But legacy wrapper passes numpy array.
-        # We need to handle both.
+        # The interface defines exog_future as Optional[pd.DataFrame], but some
+        # call sites still pass numpy arrays, so handle both.
         
         exog_u = exog_used
         exog_f = exog_future_arr if exog_future_arr is not None else exog_future
@@ -526,51 +524,4 @@ class SARIMAMethod(ARIMAMethod):
         return self._forecast_sarimax(series, horizon, seasonality, params, seasonal=True, exog_future=exog_future, **kwargs)
 
 
-# Backward compatibility wrappers
-def forecast_ses(series: np.ndarray, fh: int, alpha: Optional[float] = None) -> Tuple[np.ndarray, Dict[str, Any], Optional[np.ndarray]]:
-    res = ForecastRegistry.get("ses").forecast(pd.Series(series), fh, 0, {"alpha": alpha})
-    # Note: original returned fitted values as 3rd element. New interface doesn't strictly require it but we can add to metadata if needed.
-    # For now, returning None for fitted to match signature
-    return res.forecast, res.params_used, None
-
-def forecast_holt(series: np.ndarray, fh: int, damped: bool = True) -> Tuple[np.ndarray, Dict[str, Any], Optional[np.ndarray]]:
-    res = ForecastRegistry.get("holt").forecast(pd.Series(series), fh, 0, {"damped": damped})
-    return res.forecast, res.params_used, None
-
-def forecast_holt_winters(series: np.ndarray, fh: int, m: int, seasonal: str = 'add') -> Tuple[np.ndarray, Dict[str, Any], Optional[np.ndarray]]:
-    method_name = "holt_winters_add" if seasonal == 'add' else "holt_winters_mul"
-    res = ForecastRegistry.get(method_name).forecast(pd.Series(series), fh, m, {"damped": False}) # Original wrapper didn't expose damped param?
-    return res.forecast, res.params_used, None
-
-def forecast_sarimax(
-    series: np.ndarray,
-    fh: int,
-    order: Tuple[int, int, int],
-    seasonal_order: Tuple[int, int, int, int] = (0, 0, 0, 0),
-    trend: str = 'c',
-    exog_used: Optional[np.ndarray] = None,
-    exog_future: Optional[np.ndarray] = None,
-    ci_alpha: Optional[float] = 0.05,
-) -> Tuple[np.ndarray, Dict[str, Any], Optional[Tuple[np.ndarray, np.ndarray]]]:
-    
-    # Determine if it's ARIMA or SARIMA based on seasonal_order
-    method_name = "sarima" if sum(seasonal_order) > 0 else "arima"
-    
-    params = {
-        "order": order,
-        "seasonal_order": seasonal_order,
-        "trend": trend,
-        "alpha": ci_alpha
-    }
-    
-    res = ForecastRegistry.get(method_name).forecast(
-        pd.Series(series), 
-        fh, 
-        seasonal_order[3] if len(seasonal_order) > 3 else 0, 
-        params, 
-        exog_used=exog_used, 
-        exog_future=exog_future
-    )
-    
-    return res.forecast, res.params_used, res.ci_values
 

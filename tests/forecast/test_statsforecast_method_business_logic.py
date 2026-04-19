@@ -113,3 +113,8 @@ def test_generic_statsforecast_get_model_wraps_constructor_type_errors(monkeypat
 
     with pytest.raises(ValueError, match="Invalid parameters for StatsForecast model NeedsArg"):
         method._get_model(1, {"model_name": "NeedsArg"})
+
+
+def test_statsforecast_legacy_wrapper_removed():
+    with pytest.raises(AttributeError):
+        getattr(sfm, "forecast_statsforecast")

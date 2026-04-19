@@ -4,7 +4,6 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from mtdata.forecast.interface import ForecastResult
 from mtdata.forecast.methods import classical as cl
 
 
@@ -103,77 +102,16 @@ def test_fourier_ols_default_and_custom_params():
         method.forecast(pd.Series([10.0, 11.0, np.nan, 13.0]), horizon=2, seasonality=2, params={})
 
 
-def test_classical_legacy_wrappers_route_to_registry(monkeypatch):
-    calls = []
-
-    class FakeMethod:
-        def __init__(self, name):
-            self.name = name
-
-        def forecast(self, series, horizon, seasonality, params, **kwargs):
-            calls.append(
-                {
-                    "name": self.name,
-                    "series_type": type(series).__name__,
-                    "horizon": horizon,
-                    "seasonality": seasonality,
-                    "params": params,
-                }
-            )
-            return ForecastResult(forecast=np.array([99.0], dtype=float), params_used={"method": self.name})
-
-    class FakeRegistry:
-        @staticmethod
-        def get(name):
-            return FakeMethod(name)
-
-    monkeypatch.setattr(cl, "ForecastRegistry", FakeRegistry)
-
-    naive_f, naive_p = cl.forecast_naive(np.array([1.0, 2.0]), fh=1)
-    drift_f, drift_p = cl.forecast_drift(np.array([1.0, 2.0]), fh=1, n=5)
-    seas_f, seas_p = cl.forecast_seasonal_naive(np.array([1.0, 2.0]), fh=1, m=12)
-    theta_f, theta_p = cl.forecast_theta(np.array([1.0, 2.0]), fh=1, alpha=0.4)
-    fou_f, fou_p = cl.forecast_fourier_ols(np.array([1.0, 2.0]), fh=1, m=12, K=2, trend=False)
-
-    assert np.allclose(naive_f, [99.0])
-    assert naive_p == {"method": "naive"}
-    assert np.allclose(drift_f, [99.0])
-    assert drift_p == {"method": "drift"}
-    assert np.allclose(seas_f, [99.0])
-    assert seas_p == {"method": "seasonal_naive"}
-    assert np.allclose(theta_f, [99.0])
-    assert theta_p == {"method": "theta"}
-    assert np.allclose(fou_f, [99.0])
-    assert fou_p == {"method": "fourier_ols"}
-
-    assert [c["name"] for c in calls] == [
-        "naive",
-        "drift",
-        "seasonal_naive",
-        "theta",
-        "fourier_ols",
-    ]
-    assert all(c["series_type"] == "Series" for c in calls)
-    assert calls[0]["params"] == {}
-    assert calls[1]["params"] == {}
-    assert calls[2]["seasonality"] == 12
-    assert calls[3]["params"] == {"alpha": 0.4}
-    assert calls[4]["params"] == {"terms": 2, "trend": False}
-
-
-def test_classical_legacy_wrappers_preserve_missing_params_used(monkeypatch):
-    class FakeMethod:
-        def forecast(self, series, horizon, seasonality, params, **kwargs):
-            return ForecastResult(forecast=np.array([42.0], dtype=float), params_used=None)
-
-    class FakeRegistry:
-        @staticmethod
-        def get(name):
-            return FakeMethod()
-
-    monkeypatch.setattr(cl, "ForecastRegistry", FakeRegistry)
-
-    forecast, params_used = cl.forecast_naive(np.array([1.0, 2.0]), fh=1)
-
-    assert np.allclose(forecast, [42.0])
-    assert params_used is None
+@pytest.mark.parametrize(
+    "name",
+    [
+        "forecast_naive",
+        "forecast_drift",
+        "forecast_seasonal_naive",
+        "forecast_theta",
+        "forecast_fourier_ols",
+    ],
+)
+def test_classical_legacy_wrappers_removed(name):
+    with pytest.raises(AttributeError):
+        getattr(cl, name)

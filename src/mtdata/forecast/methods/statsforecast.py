@@ -500,32 +500,3 @@ def _register_statsforecast_aliases() -> None:
 
 
 _register_statsforecast_aliases()
-
-# Backward compatibility wrapper
-def forecast_statsforecast(
-    *,
-    method: str,
-    series: np.ndarray,
-    fh: int,
-    timeframe: str,
-    m_eff: int,
-    exog_used: Optional[np.ndarray] = None,
-    exog_future: Optional[np.ndarray] = None,
-    future_times: Optional[list] = None,
-) -> Tuple[np.ndarray, Dict[str, Any]]:
-    """Legacy wrapper for StatsForecast methods."""
-    forecaster = ForecastRegistry.get(method)
-    # Convert numpy series to pandas Series for the interface
-    # (Though our implementation converts it back to numpy for _create_training_dataframes, 
-    # the interface expects pd.Series)
-    s_pd = pd.Series(series)
-    
-    result = forecaster.forecast(
-        series=s_pd,
-        horizon=fh,
-        seasonality=m_eff,
-        params={},
-        exog_used=exog_used,
-        exog_future=exog_future
-    )
-    return result.forecast, result.params_used
