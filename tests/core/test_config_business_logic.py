@@ -1,3 +1,4 @@
+import sys
 from datetime import datetime, timedelta, timezone, tzinfo
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
@@ -243,3 +244,37 @@ def test_load_environment_logs_reload_failures(monkeypatch, caplog):
         "Failed to reload MT5 configuration from environment: reload exploded" in record.message
         for record in caplog.records
     )
+
+
+def test_load_environment_force_reload_overrides_dotenv(monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(cfg, "_ENV_LOADED", False)
+    monkeypatch.setitem(
+        sys.modules,
+        "dotenv",
+        SimpleNamespace(
+            find_dotenv=lambda: ".env",
+            load_dotenv=lambda path=None, override=False: calls.append((path, override)) or True,
+        ),
+    )
+    monkeypatch.setattr(
+        cfg,
+        "mt5_config",
+        SimpleNamespace(reload_from_env=lambda **kwargs: None),
+    )
+    monkeypatch.setattr(
+        cfg,
+        "trade_guardrails_config",
+        SimpleNamespace(reload_from_env=lambda: None),
+    )
+    monkeypatch.setattr(
+        cfg,
+        "news_embeddings_config",
+        SimpleNamespace(reload_from_env=lambda: None),
+    )
+
+    loaded = cfg.load_environment(force=True)
+
+    assert loaded is True
+    assert calls == [(".env", True)]

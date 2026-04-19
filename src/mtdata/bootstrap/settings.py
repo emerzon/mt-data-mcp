@@ -313,9 +313,9 @@ def load_environment(*, force: bool = False) -> bool:
 
         env_path = find_dotenv()
         if env_path:
-            loaded = bool(load_dotenv(env_path))
+            loaded = bool(load_dotenv(env_path, override=force))
         else:
-            loaded = bool(load_dotenv())
+            loaded = bool(load_dotenv(override=force))
     except Exception:
         loaded = False
 
