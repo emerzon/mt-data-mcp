@@ -1475,6 +1475,19 @@ class TestPatternsDetect:
         assert result == {"error": "Invalid config key(s): ['min_prominance_pct']"}
         mock_fetch.assert_not_called()
 
+    @patch("mtdata.core.patterns._fetch_pattern_data")
+    def test_classic_invalid_input_window_returns_error_before_fetch(self, mock_fetch):
+        result = _call_patterns_detect(
+            symbol="EURUSD",
+            mode="classic",
+            timeframe="H1",
+            config={"max_bars": 0},
+        )
+        assert result == {
+            "error": "Invalid classic config: max_bars must be positive, got 0"
+        }
+        mock_fetch.assert_not_called()
+
     @patch("mtdata.core.patterns._run_classic_engine")
     @patch("mtdata.core.patterns._fetch_pattern_data")
     def test_classic_mode_allows_engine_extra_config_keys(self, mock_fetch, mock_engine):
@@ -1910,6 +1923,34 @@ class TestPatternsDetectAllMode:
         assert result["success"] is True
         assert result["fractal"]["patterns"] == []
         assert result["errors"]["fractal"]["H1"] == "Invalid config key(s): ['right_bars']"
+
+    @patch("mtdata.core.patterns._format_elliott_patterns")
+    @patch("mtdata.core.patterns._run_classic_engine")
+    @patch("mtdata.core.patterns._fetch_pattern_data")
+    @patch("mtdata.core.patterns._detect_candlestick_patterns")
+    def test_all_mode_reports_fatal_classic_config_before_engine(
+        self, mock_candle, mock_fetch, mock_engine, mock_elliott
+    ):
+        df = _make_ohlcv_df(200)
+        mock_candle.return_value = {
+            "data": [{"pattern": "Doji", "direction": "neutral", "confidence": 0.8}],
+        }
+        mock_fetch.return_value = (df, None)
+        mock_elliott.return_value = []
+
+        result = _call_patterns_detect(
+            symbol="EURUSD",
+            mode="all",
+            timeframe="H1",
+            config={"max_bars": 0},
+        )
+
+        assert result["success"] is True
+        assert result["classic"]["patterns"] == []
+        assert result["errors"]["classic"]["H1"] == (
+            "Invalid classic config: max_bars must be positive, got 0"
+        )
+        mock_engine.assert_not_called()
 
     @patch("mtdata.core.patterns._format_elliott_patterns")
     @patch("mtdata.core.patterns._run_classic_engine")

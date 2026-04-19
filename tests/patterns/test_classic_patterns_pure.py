@@ -9,7 +9,10 @@ from mtdata.patterns.classic import (
     _postprocess_classic_results,
     detect_classic_patterns,
 )
-from mtdata.patterns.classic_impl.config import validate_classic_detector_config
+from mtdata.patterns.classic_impl.config import (
+    fatal_classic_detector_config_errors,
+    validate_classic_detector_config,
+)
 from mtdata.patterns.classic_impl.continuation import detect_flags_pennants
 from mtdata.patterns.classic_impl.shapes import detect_rectangles
 from mtdata.patterns.classic_impl.utils import _find_recent_breakout
@@ -219,6 +222,14 @@ class TestClassicDetectorConfig:
         cfg = ClassicDetectorConfig(touch_weight=-0.5)
         warnings = validate_classic_detector_config(cfg)
         assert any("touch_weight" in w for w in warnings)
+
+    def test_invalid_input_window_is_fatal(self):
+        cfg = ClassicDetectorConfig(max_bars=0, min_input_bars=100)
+        errors = fatal_classic_detector_config_errors(cfg)
+        assert errors == [
+            "max_bars must be positive, got 0",
+            "min_input_bars (100) exceeds max_bars (0)",
+        ]
 
 
 class TestClassicPatternResult:

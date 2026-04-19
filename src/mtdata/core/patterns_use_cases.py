@@ -152,6 +152,7 @@ class PatternsDetectDeps:
     detect_candlestick_patterns: Any
     elliott_timeframe_suggestion: Any
     resolve_elliott_scan_timeframes: Any
+    validate_classic_config_errors: Any
     validate_fractal_config: Any
     summarize_fractal_context: Any
     format_time_minimal: Any
@@ -214,6 +215,9 @@ def run_patterns_detect(  # noqa: C901
         )
         if unknown_cfg:
             return {"error": f"Invalid config key(s): {sorted(unknown_cfg)}"}
+        config_errors = deps.validate_classic_config_errors(cfg)
+        if config_errors:
+            return {"error": f"Invalid classic config: {config_errors[0]}"}
         # Apply timeframe-aware age/span defaults when user didn't set them
         user_cfg = request.config if isinstance(request.config, dict) else {}
         if "max_pattern_age_bars" not in user_cfg:
@@ -614,6 +618,13 @@ def run_patterns_detect(  # noqa: C901
             msg = f"Invalid config key(s): {fractal_unapplied_keys}"
             section_errors["fractal"] = {tf: msg for tf in timeframes}
 
+        classic_config_errors = deps.validate_classic_config_errors(classic_cfg)
+        classic_config_error_msg: Optional[str] = None
+        if classic_config_errors:
+            classic_config_error_msg = (
+                f"Invalid classic config: {classic_config_errors[0]}"
+            )
+
         fractal_config_errors = deps.validate_fractal_config(fractal_cfg)
         if fractal_config_errors:
             msg = f"Invalid fractal config: {fractal_config_errors[0]}"
@@ -687,21 +698,24 @@ def run_patterns_detect(  # noqa: C901
 
             # ── Classic (native engine) ──
             n_bars = len(df)
-            try:
-                patt_rows, eng_err = deps.run_classic_engine(
-                    "native", request.symbol, df, classic_cfg, request.config
-                )
-                if eng_err:
-                    section_errors.setdefault("classic", {})[tf] = eng_err
-                if patt_rows:
-                    enriched = deps.enrich_classic_patterns(patt_rows, df, classic_cfg)
-                    for row in enriched:
-                        if isinstance(row, dict):
-                            row["timeframe"] = tf
-                            row["_data_length"] = n_bars
-                            classic_patterns.append(row)
-            except Exception as exc:
-                section_errors.setdefault("classic", {})[tf] = str(exc)
+            if classic_config_error_msg:
+                section_errors.setdefault("classic", {})[tf] = classic_config_error_msg
+            else:
+                try:
+                    patt_rows, eng_err = deps.run_classic_engine(
+                        "native", request.symbol, df, classic_cfg, request.config
+                    )
+                    if eng_err:
+                        section_errors.setdefault("classic", {})[tf] = eng_err
+                    if patt_rows:
+                        enriched = deps.enrich_classic_patterns(patt_rows, df, classic_cfg)
+                        for row in enriched:
+                            if isinstance(row, dict):
+                                row["timeframe"] = tf
+                                row["_data_length"] = n_bars
+                                classic_patterns.append(row)
+                except Exception as exc:
+                    section_errors.setdefault("classic", {})[tf] = str(exc)
 
             # ── Elliott ──
             try:

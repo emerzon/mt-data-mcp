@@ -12,6 +12,9 @@ from ..patterns.candlestick import (
 )
 from ..patterns.classic import ClassicDetectorConfig as _ClassicCfg
 from ..patterns.classic import detect_classic_patterns as _detect_classic_patterns
+from ..patterns.classic_impl.config import (
+    fatal_classic_detector_config_errors as _fatal_classic_detector_config_errors,
+)
 from ..patterns.common import data_quality_warnings, should_drop_last_live_bar
 from ..patterns.elliott import ElliottWaveConfig as _ElliottCfg
 from ..patterns.elliott import detect_elliott_waves as _detect_elliott_waves
@@ -293,6 +296,7 @@ def _patterns_detect_deps() -> PatternsDetectDeps:
         detect_candlestick_patterns=_detect_candlestick_patterns,
         elliott_timeframe_suggestion=_elliott_timeframe_suggestion,
         resolve_elliott_scan_timeframes=_resolve_elliott_scan_timeframes,
+        validate_classic_config_errors=_fatal_classic_detector_config_errors,
         validate_fractal_config=_validate_fractal_detector_config,
         summarize_fractal_context=_summarize_fractal_context,
         format_time_minimal=_format_time_minimal,

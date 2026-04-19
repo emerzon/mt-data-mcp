@@ -213,6 +213,29 @@ import logging as _logging
 _logger = _logging.getLogger(__name__)
 
 
+def fatal_classic_detector_config_errors(
+    cfg: ClassicDetectorConfig,
+) -> list[str]:
+    """Return only the classic config issues that should hard-fail requests.
+
+    These are the invariants that make the detector's basic input window
+    invalid rather than merely tuning-sensitive.
+    """
+    errors: list[str] = []
+
+    for attr in ("max_bars", "min_input_bars"):
+        val = getattr(cfg, attr, None)
+        if isinstance(val, (int, float)) and val <= 0:
+            errors.append(f"{attr} must be positive, got {val}")
+
+    if cfg.min_input_bars > cfg.max_bars:
+        errors.append(
+            f"min_input_bars ({cfg.min_input_bars}) exceeds max_bars ({cfg.max_bars})"
+        )
+
+    return errors
+
+
 def validate_classic_detector_config(
     cfg: ClassicDetectorConfig,
 ) -> list[str]:
