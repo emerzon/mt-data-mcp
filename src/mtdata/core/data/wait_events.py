@@ -3428,6 +3428,12 @@ def _row_within_live_state_cutoff(row: Any, *, cutoff_utc: Optional[datetime]) -
 
 def _row_time_iso(row: Any) -> Optional[str]:
     for key in ("time", "time_done", "time_setup", "time_update"):
+        value_millis = _row_int(row, f"{key}_msc")
+        if value_millis is not None:
+            return datetime.fromtimestamp(
+                _mt5_millis_to_utc(value_millis) / 1000.0,
+                tz=timezone.utc,
+            ).isoformat()
         value = _row_value(row, key)
         if value is None:
             continue

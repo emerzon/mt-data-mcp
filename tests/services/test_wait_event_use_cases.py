@@ -1148,6 +1148,23 @@ def test_normalize_tick_rows_keeps_epoch_and_time_msc_on_same_utc_basis(monkeypa
     ]
 
 
+def test_format_account_match_uses_millisecond_timestamp_fields(monkeypatch) -> None:
+    monkeypatch.setattr(wait_events_mod, "_mt5_epoch_to_utc", lambda value: float(value) - 7200.0)
+
+    match = wait_events_mod._format_account_match(
+        "order_created",
+        {
+            "ticket": 7001,
+            "symbol": "EURUSD",
+            "type": "buy",
+            "time_setup_msc": 7_201_500,
+        },
+        gateway=SequenceGateway(),
+    )
+
+    assert match["observed"]["time_utc"] == "1970-01-01T00:00:01.500000+00:00"
+
+
 def test_merge_market_ticks_dedupes_rows_with_missing_volume_fields() -> None:
     existing = wait_events_mod._normalize_tick_rows(
         [
