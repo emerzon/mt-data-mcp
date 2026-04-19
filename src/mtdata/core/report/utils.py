@@ -397,17 +397,27 @@ def context_for_tf(symbol: str, timeframe: str, denoise: Optional[Dict[str, Any]
             cli_raw=True,
         )
 
-        if not isinstance(res, dict) or res.get('error'):
+        if not isinstance(res, dict):
             if _fetch_cache is not None:
                 _fetch_cache[cache_key] = None
             return None
+        if res.get('error'):
+            error_out = attach_candle_freshness_diagnostics(
+                {'error': res.get('error')},
+                res,
+            )
+            cached_error = error_out if isinstance(error_out.get('freshness'), dict) else None
+            if _fetch_cache is not None:
+                _fetch_cache[cache_key] = cached_error
+            return cached_error
         freshness = extract_candle_freshness_diagnostics(res)
         rows = parse_table_tail(res, tail=int(tail))
 
         if not rows:
+            empty_out = {'freshness': freshness} if freshness else None
             if _fetch_cache is not None:
-                _fetch_cache[cache_key] = None
-            return None
+                _fetch_cache[cache_key] = empty_out
+            return empty_out
         last = rows[-1]
         out = {
             'close': last.get('close'),

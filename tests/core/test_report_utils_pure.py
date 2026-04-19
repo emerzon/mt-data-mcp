@@ -1102,6 +1102,32 @@ class TestAttachMultiTimeframes:
         trend_mtf = report["sections"]["context"]["trend_mtf"]["H1"]
         assert trend_mtf == {"s": [10], "v": 120, "q": 5}
 
+    def test_attach_multi_timeframes_keeps_freshness_only_error_snapshots(self, monkeypatch):
+        freshness = {
+            "data_freshness_seconds": 7200.0,
+            "last_bar_within_policy_window": False,
+        }
+
+        monkeypatch.setattr(
+            "mtdata.core.data.data_fetch_candles",
+            lambda **kwargs: {
+                "error": "Data remained stale",
+                "details": {"diagnostics": {"freshness": dict(freshness)}},
+            },
+        )
+        monkeypatch.setattr(
+            "mtdata.core.report.utils._extract_base_timeframe",
+            lambda report: None,
+        )
+
+        report = {"sections": {"context": {}}}
+        attach_multi_timeframes(report, "EURUSD", None, extra_timeframes=["H1"], pivot_timeframes=None)
+
+        assert report["sections"]["contexts_multi"]["H1"] == {
+            "error": "Data remained stale",
+            "freshness": freshness,
+        }
+
 
 class TestContextForTf:
     def test_uses_unwrapped_tool_when_wrapper_is_async(self, monkeypatch):
@@ -1138,6 +1164,27 @@ class TestContextForTf:
         assert result["RSI_14"] == 57.0
         assert result["MACD"] == 0.12
         assert result["trend_compact"] == {"s": [12], "v": 45, "q": 60}
+
+    def test_preserves_freshness_on_error_payload(self, monkeypatch):
+        freshness = {
+            "data_freshness_seconds": 7200.0,
+            "last_bar_within_policy_window": False,
+        }
+
+        monkeypatch.setattr(
+            "mtdata.core.data.data_fetch_candles",
+            lambda **kwargs: {
+                "error": "Data remained stale",
+                "details": {"diagnostics": {"freshness": dict(freshness)}},
+            },
+        )
+
+        result = context_for_tf("EURUSD", "H1", None, limit=20, tail=1)
+
+        assert result == {
+            "error": "Data remained stale",
+            "freshness": freshness,
+        }
 
 
 # ---------------------------------------------------------------------------
