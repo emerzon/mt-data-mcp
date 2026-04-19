@@ -35,6 +35,14 @@ _COMMAND_PARAM_CHOICE_OVERRIDES: Dict[tuple[str, str], list[str]] = {
         "jump_diffusion",
         "auto",
     ],
+    (
+        "labels_triple_barrier",
+        "detail",
+    ): [
+        "full",
+        "summary",
+        "compact",
+    ],
 }
 
 
@@ -83,6 +91,22 @@ _FORECAST_METHOD_LITERAL_MARKERS = {
     "arima",
     "chronos2",
     "statsforecast",
+}
+
+
+def _normalize_cli_choice_value(value: Any) -> str:
+    return str(value or "").strip().lower()
+
+
+def _normalize_labels_detail_cli_value(value: Any) -> str:
+    normalized = _normalize_cli_choice_value(value)
+    if normalized == "summary_only":
+        return "summary"
+    return normalized
+
+
+_COMMAND_PARAM_VALUE_NORMALIZERS: Dict[tuple[str, str], Callable[[Any], str]] = {
+    ("labels_triple_barrier", "detail"): _normalize_labels_detail_cli_value,
 }
 
 
@@ -419,10 +443,14 @@ def resolve_param_kwargs(
     if not param["required"] and not (param["type"] is bool and param["default"] is None):
         kwargs["default"] = param["default"]
 
-    choice_override = _COMMAND_PARAM_CHOICE_OVERRIDES.get((str(cmd_name or ""), str(param["name"])))
+    choice_override_key = (str(cmd_name or ""), str(param["name"]))
+    choice_override = _COMMAND_PARAM_CHOICE_OVERRIDES.get(choice_override_key)
     if choice_override:
         kwargs["choices"] = list(choice_override)
-        kwargs["type"] = lambda value: str(value or "").strip().lower()
+        kwargs["type"] = _COMMAND_PARAM_VALUE_NORMALIZERS.get(
+            choice_override_key,
+            _normalize_cli_choice_value,
+        )
 
     if (str(cmd_name or ""), str(param["name"])) == ("indicators_list", "category"):
         kwargs["type"] = lambda value: str(value or "").strip().lower()

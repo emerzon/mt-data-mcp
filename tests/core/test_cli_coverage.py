@@ -2825,7 +2825,7 @@ class TestBuildEpilog:
         assert "my_func" in epilog
         assert "Commands and Arguments" in epilog
 
-    def test_hides_labels_summary_only_shadow_flag_and_renders_literal_choices(self):
+    def test_hides_labels_summary_only_shadow_flag_and_renders_canonical_literal_choices(self):
         def labels_triple_barrier(
             symbol: str,
             detail: Literal["full", "summary", "compact", "summary_only"] = "compact",
@@ -2846,7 +2846,7 @@ class TestBuildEpilog:
         epilog = _build_epilog(functions)
 
         assert "--summary-only" not in epilog
-        assert "--detail{full,summary,compact,summary_only}=[compact]" in epilog
+        assert "--detail{full,summary,compact}=[compact]" in epilog
         assert "<Literal>" not in epilog
 
 
@@ -3225,8 +3225,11 @@ class TestAddDynamicArguments:
         detail_action = next(
             action for action in parser._actions if action.dest == "detail"
         )
-        assert detail_action.choices == ["full", "summary", "compact", "summary_only"]
+        assert detail_action.choices == ["full", "summary", "compact"]
         assert not any(action.dest == "summary_only" for action in parser._actions)
+
+        args = parser.parse_args(["--detail", "summary_only"])
+        assert args.detail == "summary"
 
     def test_partial_flag_prefix_is_rejected_when_abbrev_disabled(self, capsys):
         parser = argparse.ArgumentParser(allow_abbrev=False)

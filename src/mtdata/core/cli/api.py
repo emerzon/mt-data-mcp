@@ -36,6 +36,7 @@ from .._mcp_instance import mcp
 from .._mcp_tools import _get_pydantic_model_fields
 from .._mcp_tools import get_tool_registry as get_registered_tools
 from ..cli_discovery import (
+    _COMMAND_PARAM_CHOICE_OVERRIDES,
     add_dynamic_arguments as _add_dynamic_arguments_impl,
 )
 from ..cli_discovery import (
@@ -362,7 +363,16 @@ def _argv_param_present_after_command(
     )
 
 
-def _literal_choices_for_cli_param(param: Dict[str, Any]) -> Optional[List[str]]:
+def _literal_choices_for_cli_param(
+    param: Dict[str, Any],
+    *,
+    cmd_name: Optional[str] = None,
+) -> Optional[List[str]]:
+    choice_override = _COMMAND_PARAM_CHOICE_OVERRIDES.get(
+        (str(cmd_name or ""), str(param.get("name") or "")),
+    )
+    if choice_override:
+        return list(choice_override)
     try:
         ptype = param.get("type")
         base_type, origin = _unwrap_optional_type(ptype)
@@ -428,7 +438,7 @@ def _apply_cli_output_mode_defaults(
             continue
         if _argv_param_present_after_command(argv, command, param_name):
             continue
-        choices = _literal_choices_for_cli_param(param)
+        choices = _literal_choices_for_cli_param(param, cmd_name=command)
         if not choices:
             continue
         selected = _default_cli_compact_choice(
@@ -1078,7 +1088,7 @@ def _format_epilog_param_usage(
     name = str(param.get("name") or "").strip()
     if not name or not _should_expose_cli_param(cmd_name=cmd_name, param_name=name):
         return None
-    choices = _literal_choices_for_cli_param(param)
+    choices = _literal_choices_for_cli_param(param, cmd_name=cmd_name)
     if choices:
         type_token = "{" + ",".join(choices) + "}"
     else:
