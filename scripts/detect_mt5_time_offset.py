@@ -4,6 +4,7 @@ import argparse
 import os
 import sys
 import time
+from dataclasses import dataclass
 from statistics import median
 from typing import Optional
 
@@ -40,17 +41,50 @@ def _initialize_mt5() -> bool:
     return bool(mt5.initialize())
 
 
-def _get_tick_epoch_seconds(symbol: str) -> Optional[int]:
+@dataclass(frozen=True)
+class TickSample:
+    observed_at: float
+    tick_time: float
+
+    @property
+    def delta_sec(self) -> float:
+        return self.tick_time - self.observed_at
+
+
+def _extract_tick_epoch_seconds(tick: object) -> Optional[float]:
+    if tick is None:
+        return None
+    for attr_name, scale in (("time_msc", 1000.0), ("time", 1.0)):
+        raw_value = getattr(tick, attr_name, None)
+        if raw_value is None:
+            continue
+        try:
+            value = float(raw_value) / scale
+        except Exception:
+            continue
+        if value > 0:
+            return value
+    return None
+
+
+def _get_tick_epoch_seconds(symbol: str) -> Optional[float]:
     import MetaTrader5 as mt5  # type: ignore
 
     tick = mt5.symbol_info_tick(symbol)
-    if tick is None:
-        return None
-    try:
-        value = int(tick.time)
-    except Exception:
-        return None
-    return value if value > 0 else None
+    return _extract_tick_epoch_seconds(tick)
+
+
+def _reconcile_tick_samples(
+    samples: list[TickSample], *, freshness_slack_sec: float
+) -> tuple[list[TickSample], bool]:
+    if not samples:
+        return [], False
+
+    live_progress = any(curr.tick_time > prev.tick_time for prev, curr in zip(samples, samples[1:]))
+    freshest_delta = max(sample.delta_sec for sample in samples)
+    slack = max(0.0, float(freshness_slack_sec))
+    reconciled = [sample for sample in samples if freshest_delta - sample.delta_sec <= slack]
+    return reconciled, live_progress
 
 
 def main() -> int:
@@ -86,19 +120,17 @@ def main() -> int:
     samples = max(3, int(args.samples))
     sleep_s = max(0.0, float(args.sleep))
 
-    deltas_sec: list[float] = []
-    last_tick: Optional[int] = None
+    tick_samples: list[TickSample] = []
     for _ in range(samples):
         now = time.time()
         tick_time = _get_tick_epoch_seconds(symbol)
         if tick_time is not None:
-            last_tick = tick_time
-            deltas_sec.append(float(tick_time) - float(now))
+            tick_samples.append(TickSample(observed_at=float(now), tick_time=float(tick_time)))
         time.sleep(sleep_s)
 
     mt5.shutdown()
 
-    if not deltas_sec or last_tick is None:
+    if not tick_samples:
         print(
             f"ERROR: No tick data received for symbol '{symbol}'.\n"
             "- Ensure the symbol exists for your broker and is visible in Market Watch.\n"
@@ -107,13 +139,35 @@ def main() -> int:
         )
         return 2
 
-    delta = float(median(deltas_sec))
+    freshness_slack_sec = max(2.0, sleep_s * 3.0)
+    reconciled_samples, live_progress = _reconcile_tick_samples(
+        tick_samples, freshness_slack_sec=freshness_slack_sec
+    )
+    if not live_progress:
+        print(
+            f"ERROR: No advancing tick timestamps were observed for symbol '{symbol}'.\n"
+            "- The sampled feed may be stale or inactive.\n"
+            "- Try a more active symbol, increase --samples, or rerun during active market hours.",
+            file=sys.stderr,
+        )
+        return 2
+
+    delta = float(median(sample.delta_sec for sample in reconciled_samples))
     offset_minutes = int(round(delta / 60.0))
 
-    adjusted_tick = float(last_tick) - float(offset_minutes * 60)
+    freshest_sample = max(reconciled_samples, key=lambda sample: sample.delta_sec)
+    adjusted_tick = float(freshest_sample.tick_time) - float(offset_minutes * 60)
     age_sec = float(time.time()) - adjusted_tick
+    discarded_samples = len(tick_samples) - len(reconciled_samples)
 
     print(f"Symbol: {symbol}")
+    if discarded_samples:
+        print(
+            f"Reconciled using {len(reconciled_samples)} freshest sample(s); "
+            f"discarded {discarded_samples} older/noisy sample(s)."
+        )
+    else:
+        print(f"Reconciled using {len(reconciled_samples)} live sample(s).")
     print(f"Median(tick_time - local_time): {delta:.1f} seconds")
     print(f"Recommended MT5_TIME_OFFSET_MINUTES={offset_minutes}")
     if abs(age_sec) > 60.0:
