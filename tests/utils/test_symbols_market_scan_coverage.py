@@ -124,9 +124,22 @@ class TestSymbolsTopMarkets:
         assert result["universe"] == "visible"
         assert result["scanned_symbols"] == 2
         assert result["evaluated_symbols"] == 2
+        assert result["detail"] == "full"
         assert result["timeframe_requested"] == "H1"
         assert result["timeframe_used"] is None
         assert [row["symbol"] for row in result["data"]] == ["EURUSD", "XAUUSD"]
+        assert list(result["data"][0].keys()) == [
+            "symbol",
+            "group",
+            "description",
+            "bid",
+            "ask",
+            "spread",
+            "spread_points",
+            "spread_pct",
+            "spread_usd",
+            "pricing_basis",
+        ]
         assert all(row["pricing_basis"] == "per_1_lot_estimate" for row in result["data"])
 
     @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
@@ -154,11 +167,116 @@ class TestSymbolsTopMarkets:
         assert result["results"]["lowest_spread"]["data"][0]["symbol"] == "EURUSD"
         assert result["results"]["highest_volume"]["data"][0]["symbol"] == "EURUSD"
         assert result["results"]["highest_price_change"]["data"][0]["symbol"] == "GBPUSD"
+        assert result["detail"] == "full"
         assert result["timeframe_requested"] == "H1"
         assert result["timeframe_used"] == "H1"
         assert result["scan_stats"]["spread"]["evaluated_symbols"] == 2
         assert result["scan_stats"]["volume"]["evaluated_symbols"] == 2
         assert result["scan_stats"]["price_change"]["evaluated_symbols"] == 2
+
+    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols.mt5.symbol_info_tick")
+    @patch("mtdata.core.symbols.mt5.symbols_get")
+    def test_spread_detail_compact_returns_ranking_focused_rows(
+        self,
+        mock_symbols_get,
+        mock_tick,
+        mock_group,
+    ):
+        mock_symbols_get.return_value = [
+            _make_symbol("EURUSD", description="Euro"),
+            _make_symbol(
+                "XAUUSD",
+                description="Gold",
+                point=0.01,
+                trade_tick_size=0.01,
+                trade_tick_value=1.0,
+            ),
+        ]
+        mock_tick.side_effect = lambda symbol: {
+            "EURUSD": _make_tick(bid=1.1000, ask=1.1001),
+            "XAUUSD": _make_tick(bid=2000.0, ask=2002.0),
+        }[symbol]
+
+        fn = _get_symbols_top_markets()
+        result = fn(rank_by="spread", limit=5, detail="compact")
+
+        assert result["success"] is True
+        assert result["detail"] == "compact"
+        assert list(result["data"][0].keys()) == [
+            "symbol",
+            "group",
+            "spread_pct",
+            "spread_points",
+        ]
+        assert "description" not in result["data"][0]
+        assert "pricing_basis" not in result["data"][0]
+
+    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
+    @patch("mtdata.core.symbols.mt5.symbol_info_tick")
+    @patch("mtdata.core.symbols.mt5.symbols_get")
+    def test_all_detail_compact_applies_compact_rows_to_each_leaderboard(
+        self,
+        mock_symbols_get,
+        mock_tick,
+        mock_rates,
+        mock_group,
+    ):
+        mock_symbols_get.return_value = [
+            _make_symbol("EURUSD", description="Euro"),
+            _make_symbol("GBPUSD", description="Pound"),
+        ]
+        mock_tick.side_effect = lambda symbol: {
+            "EURUSD": _make_tick(bid=1.1000, ask=1.1001),
+            "GBPUSD": _make_tick(bid=1.3000, ask=1.3004),
+        }[symbol]
+        mock_rates.side_effect = lambda symbol, timeframe, start_pos, count: {
+            "EURUSD": [
+                {
+                    "time": 1700000000.0,
+                    "open": 1.1000,
+                    "close": 1.1010,
+                    "tick_volume": 100,
+                    "real_volume": 0,
+                }
+            ],
+            "GBPUSD": [
+                {
+                    "time": 1700000000.0,
+                    "open": 1.3000,
+                    "close": 1.3300,
+                    "tick_volume": 50,
+                    "real_volume": 0,
+                }
+            ],
+        }[symbol]
+
+        fn = _get_symbols_top_markets()
+        result = fn(rank_by="all", limit=5, timeframe="H1", detail="compact")
+
+        assert result["success"] is True
+        assert result["detail"] == "compact"
+        assert list(result["results"]["lowest_spread"]["data"][0].keys()) == [
+            "symbol",
+            "group",
+            "spread_pct",
+            "spread_points",
+        ]
+        assert list(result["results"]["highest_volume"]["data"][0].keys()) == [
+            "symbol",
+            "group",
+            "timeframe",
+            "tick_volume",
+            "price_change_pct",
+        ]
+        assert list(result["results"]["highest_price_change"]["data"][0].keys()) == [
+            "symbol",
+            "group",
+            "timeframe",
+            "price_change_pct",
+            "tick_volume",
+        ]
 
     def test_invalid_rank_by_returns_error(self):
         fn = _get_symbols_top_markets()

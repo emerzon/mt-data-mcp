@@ -20,6 +20,7 @@ from ._mcp_instance import mcp
 from .constants import DEFAULT_ROW_LIMIT, GROUP_SEARCH_THRESHOLD, TIMEFRAME_MAP
 from .execution_logging import run_logged_operation
 from .mt5_gateway import get_mt5_gateway
+from .output_contract import resolve_output_detail
 
 logger = logging.getLogger(__name__)
 
@@ -469,6 +470,54 @@ def _market_scan_table(headers: List[str], rows: List[Dict[str, Any]]) -> Dict[s
     return _table_from_rows(headers, ordered_rows)
 
 
+def _top_markets_headers(metric: str, *, detail_mode: str) -> List[str]:
+    full_headers = {
+        "spread": [
+            "symbol",
+            "group",
+            "description",
+            "bid",
+            "ask",
+            "spread",
+            "spread_points",
+            "spread_pct",
+            "spread_usd",
+            "pricing_basis",
+        ],
+        "volume": [
+            "symbol",
+            "group",
+            "description",
+            "timeframe",
+            "bar_time",
+            "tick_volume",
+            "real_volume",
+            "open",
+            "close",
+            "price_change_pct",
+        ],
+        "price_change": [
+            "symbol",
+            "group",
+            "description",
+            "timeframe",
+            "bar_time",
+            "open",
+            "close",
+            "price_change_pct",
+            "tick_volume",
+            "real_volume",
+        ],
+    }
+    compact_headers = {
+        "spread": ["symbol", "group", "spread_pct", "spread_points"],
+        "volume": ["symbol", "group", "timeframe", "tick_volume", "price_change_pct"],
+        "price_change": ["symbol", "group", "timeframe", "price_change_pct", "tick_volume"],
+    }
+    header_map = compact_headers if detail_mode == "compact" else full_headers
+    return list(header_map[metric])
+
+
 def _parse_market_scan_symbols(symbols: Optional[str]) -> List[str]:
     text = str(symbols or "").replace(";", ",").replace("\n", ",")
     parsed: List[str] = []
@@ -804,6 +853,7 @@ def symbols_top_markets(  # noqa: C901
     limit: Optional[int] = 10,
     universe: Literal["visible", "all"] = "visible",  # type: ignore
     timeframe: TimeframeLiteral = "H1",
+    detail: Literal["compact", "full"] = "full",
 ) -> Dict[str, Any]:
     """Scan MT5 symbols and rank the top markets by spread, recent volume, or recent price change.
 
@@ -811,7 +861,11 @@ def symbols_top_markets(  # noqa: C901
     include hidden tradable symbols too; that mode is slower because MT5 may need to
     activate quotes for instruments that are not already visible. Volume and
     price-change rankings use the most recent completed bar on `timeframe`.
+    Use `detail="compact"` to return leaner leaderboard rows while preserving the
+    current full row shape by default.
     """
+
+    detail_mode = resolve_output_detail(detail=detail, default="full")
 
     def _run() -> Dict[str, Any]:  # noqa: C901
         try:
@@ -956,6 +1010,7 @@ def symbols_top_markets(  # noqa: C901
                 "rank_by": rank_by_value,
                 "limit": limit_value,
                 "universe": universe_value,
+                "detail": detail_mode,
                 "timeframe": timeframe_value if needs_bar_data else None,
                 "timeframe_requested": timeframe_value,
                 "timeframe_used": timeframe_value if needs_bar_data else None,
@@ -965,18 +1020,7 @@ def symbols_top_markets(  # noqa: C901
 
             if rank_by_value == "spread":
                 out = _market_scan_table(
-                    [
-                        "symbol",
-                        "group",
-                        "description",
-                        "bid",
-                        "ask",
-                        "spread",
-                        "spread_points",
-                        "spread_pct",
-                        "spread_usd",
-                        "pricing_basis",
-                    ],
+                    _top_markets_headers("spread", detail_mode=detail_mode),
                     spread_rows,
                 )
                 out.update(scan_meta)
@@ -988,18 +1032,7 @@ def symbols_top_markets(  # noqa: C901
 
             if rank_by_value == "volume":
                 out = _market_scan_table(
-                    [
-                        "symbol",
-                        "group",
-                        "description",
-                        "timeframe",
-                        "bar_time",
-                        "tick_volume",
-                        "real_volume",
-                        "open",
-                        "close",
-                        "price_change_pct",
-                    ],
+                    _top_markets_headers("volume", detail_mode=detail_mode),
                     volume_rows,
                 )
                 out.update(scan_meta)
@@ -1011,18 +1044,7 @@ def symbols_top_markets(  # noqa: C901
 
             if rank_by_value == "price_change":
                 out = _market_scan_table(
-                    [
-                        "symbol",
-                        "group",
-                        "description",
-                        "timeframe",
-                        "bar_time",
-                        "open",
-                        "close",
-                        "price_change_pct",
-                        "tick_volume",
-                        "real_volume",
-                    ],
+                    _top_markets_headers("price_change", detail_mode=detail_mode),
                     price_change_rows,
                 )
                 out.update(scan_meta)
@@ -1036,48 +1058,15 @@ def symbols_top_markets(  # noqa: C901
                 **scan_meta,
                 "results": {
                     "lowest_spread": _market_scan_table(
-                        [
-                            "symbol",
-                            "group",
-                            "description",
-                            "bid",
-                            "ask",
-                            "spread",
-                            "spread_points",
-                            "spread_pct",
-                            "spread_usd",
-                            "pricing_basis",
-                        ],
+                        _top_markets_headers("spread", detail_mode=detail_mode),
                         spread_rows,
                     ),
                     "highest_volume": _market_scan_table(
-                        [
-                            "symbol",
-                            "group",
-                            "description",
-                            "timeframe",
-                            "bar_time",
-                            "tick_volume",
-                            "real_volume",
-                            "open",
-                            "close",
-                            "price_change_pct",
-                        ],
+                        _top_markets_headers("volume", detail_mode=detail_mode),
                         volume_rows,
                     ),
                     "highest_price_change": _market_scan_table(
-                        [
-                            "symbol",
-                            "group",
-                            "description",
-                            "timeframe",
-                            "bar_time",
-                            "open",
-                            "close",
-                            "price_change_pct",
-                            "tick_volume",
-                            "real_volume",
-                        ],
+                        _top_markets_headers("price_change", detail_mode=detail_mode),
                         price_change_rows,
                     ),
                 },
@@ -1111,6 +1100,7 @@ def symbols_top_markets(  # noqa: C901
         limit=limit,
         universe=universe,
         timeframe=timeframe,
+        detail=detail_mode,
         func=_run,
     )
 
