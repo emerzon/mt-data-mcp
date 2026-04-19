@@ -677,7 +677,10 @@ def _watcher_requirements(watch_for: List[Dict[str, Any]]) -> Dict[str, Any]:
             needs_positions = True
         if event_type in _HISTORY_DEAL_EVENT_TYPES:
             needs_history_deals = True
-        if event_type in _HISTORY_ORDER_EVENT_TYPES or event_type == "order_created":
+        if event_type in _HISTORY_ORDER_EVENT_TYPES or event_type in {
+            "order_created",
+            "order_filled",
+        }:
             needs_history_orders = True
         if event_type in _MARKET_EVENT_TYPES:
             market_specs.append(item)
@@ -876,11 +879,6 @@ def _collect_snapshot(
         if isinstance(rows, dict) and "error" in rows:
             return rows
         snapshot["history_deals"] = rows
-        _update_order_filled_snapshot_state(
-            snapshot=snapshot,
-            history_state=history_state,
-            gateway=gateway,
-        )
 
     if needs_history_orders:
         rows = _collect_new_account_history_rows(
@@ -894,6 +892,13 @@ def _collect_snapshot(
         if isinstance(rows, dict) and "error" in rows:
             return rows
         snapshot["history_orders"] = rows
+
+    if needs_history_deals:
+        _update_order_filled_snapshot_state(
+            snapshot=snapshot,
+            history_state=history_state,
+            gateway=gateway,
+        )
 
     if market_specs:
         refreshed = _refresh_market_state(
@@ -1026,6 +1031,11 @@ def _update_order_filled_snapshot_state(
     _remember_order_fill_targets(
         target_volume_by_order_ticket,
         snapshot.get("orders", []),
+        filled_volume_by_order_ticket=filled_volume_by_order_ticket,
+    )
+    _remember_order_fill_targets(
+        target_volume_by_order_ticket,
+        snapshot.get("history_orders", []),
         filled_volume_by_order_ticket=filled_volume_by_order_ticket,
     )
     snapshot["order_filled_state"] = {
