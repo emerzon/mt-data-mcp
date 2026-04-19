@@ -164,12 +164,18 @@ def test_attach_schemas_to_tools_adds_barrier_unit_exclusivity(monkeypatch) -> N
         )
 
         all_of = tool_obj.schema["parameters"]["allOf"]
-        actual_pairs = {
-            tuple(clause["not"]["required"])
+        exclusivity_clauses = [
+            clause
             for clause in all_of
             if isinstance(clause, dict)
             and isinstance(clause.get("not"), dict)
-            and isinstance(clause["not"].get("required"), list)
+            and isinstance(clause["not"].get("anyOf"), list)
+        ]
+        assert len(exclusivity_clauses) == 1
+        actual_pairs = {
+            tuple(option["required"])
+            for option in exclusivity_clauses[0]["not"]["anyOf"]
+            if isinstance(option, dict) and isinstance(option.get("required"), list)
         }
         assert actual_pairs == expected_pairs
 

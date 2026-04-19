@@ -210,7 +210,7 @@ def _add_barrier_unit_family_exclusivity_schema(params_obj: Dict[str, Any]) -> N
     if not isinstance(all_of, list):
         return
 
-    existing = {repr(clause) for clause in all_of}
+    pairs: list[list[str]] = []
     for fields in (
         ("tp_abs", "tp_pct", "tp_pips"),
         ("sl_abs", "sl_pct", "sl_pips"),
@@ -218,12 +218,24 @@ def _add_barrier_unit_family_exclusivity_schema(params_obj: Dict[str, Any]) -> N
         present_fields = [field for field in fields if field in properties]
         for idx, first in enumerate(present_fields):
             for second in present_fields[idx + 1:]:
-                clause = {"not": {"required": [first, second]}}
-                key = repr(clause)
-                if key in existing:
-                    continue
-                all_of.append(clause)
-                existing.add(key)
+                pairs.append([first, second])
+    if not pairs:
+        return
+
+    clause = {"not": {"anyOf": [{"required": pair} for pair in pairs]}}
+    filtered_all_of = [
+        existing_clause
+        for existing_clause in all_of
+        if existing_clause != clause
+        and not (
+            isinstance(existing_clause, dict)
+            and isinstance(existing_clause.get("not"), dict)
+            and isinstance(existing_clause["not"].get("required"), list)
+            and existing_clause["not"]["required"] in pairs
+        )
+    ]
+    filtered_all_of.append(clause)
+    params_obj["allOf"] = filtered_all_of
 
 
 def _patch_labels_triple_barrier_schema(schema: Dict[str, Any]) -> None:
