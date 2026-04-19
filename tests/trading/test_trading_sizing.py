@@ -35,6 +35,9 @@ def test_basic_long_sizing():
     assert vol > 0
     assert meta["suggested_volume"] == vol
     assert "error" not in meta
+    assert meta["requested_risk_pct"] == 1.0
+    assert meta["risk_over_target"] is False
+    assert meta["risk_compliance"] == "within_requested_risk"
 
 
 def test_basic_short_sizing():
@@ -77,14 +80,26 @@ def test_uses_loss_tick_value_when_available():
 
 def test_clamp_to_min_volume():
     vol, meta = compute_risk_based_volume(**_base_params(
-        equity=100.0,  # Very small account
-        risk_pct=0.01,  # Tiny risk
-        volume_min=0.01,
+        equity=1000.0,
+        risk_pct=0.1,
+        entry_price=100.0,
+        stop_loss_price=80.0,
+        tick_value=1.0,
+        tick_size=1.0,
+        volume_min=0.1,
+        volume_max=10.0,
+        volume_step=0.1,
     ))
     assert vol is not None
-    assert vol >= 0.01
-    if meta["volume_rounding"] == "clamped_to_min_volume":
-        assert any("minimum" in n.lower() for n in meta["notes"])
+    assert vol == 0.1
+    assert meta["volume_rounding"] == "clamped_to_min_volume"
+    assert meta["risk_over_target"] is True
+    assert meta["risk_compliance"] == "exceeds_requested_risk"
+    assert meta["risk_over_target_reason"] == "min_volume_constraint"
+    assert meta["risk_overshoot_pct"] > 0.0
+    assert meta["risk_overshoot_currency"] > 0.0
+    assert any("minimum" in n.lower() for n in meta["notes"])
+    assert any("exceeds the requested level" in n.lower() for n in meta["notes"])
 
 
 def test_clamp_to_max_volume():

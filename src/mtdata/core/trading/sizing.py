@@ -119,6 +119,24 @@ def compute_risk_based_volume(
 
     actual_risk = sl_distance_ticks * risk_tick_value * suggested
     actual_risk_pct = (actual_risk / equity) * 100.0
+    requested_risk_pct = float(risk_pct)
+    risk_pct_diff = actual_risk_pct - requested_risk_pct
+    risk_over_target = actual_risk_pct > (requested_risk_pct + 1e-9)
+    overshoot_pct = max(0.0, actual_risk_pct - requested_risk_pct)
+    overshoot_currency = max(0.0, actual_risk - risk_amount)
+    risk_over_target_reason = None
+    if risk_over_target:
+        if rounding_mode == "clamped_to_min_volume":
+            risk_over_target_reason = "min_volume_constraint"
+        elif rounding_mode == "clamped_to_max_volume":
+            risk_over_target_reason = "max_volume_constraint"
+        elif rounding_mode == "rounded_down_to_step":
+            risk_over_target_reason = "step_rounding_precision"
+        else:
+            risk_over_target_reason = "broker_volume_constraints"
+        notes.append(
+            "Actual risk still exceeds the requested level after broker volume constraints."
+        )
 
     return suggested, {
         "suggested_volume": suggested,
@@ -126,6 +144,17 @@ def compute_risk_based_volume(
         "risk_amount": round(risk_amount, 2),
         "actual_risk": round(actual_risk, 2),
         "actual_risk_pct": round(actual_risk_pct, 4),
+        "requested_risk_pct": requested_risk_pct,
+        "risk_pct_diff": round(risk_pct_diff, 4),
+        "risk_over_target": risk_over_target,
+        "risk_compliance": (
+            "exceeds_requested_risk"
+            if risk_over_target
+            else "within_requested_risk"
+        ),
+        "risk_overshoot_pct": round(overshoot_pct, 4),
+        "risk_overshoot_currency": round(overshoot_currency, 2),
+        "risk_over_target_reason": risk_over_target_reason,
         "sl_distance_ticks": round(sl_distance_ticks, 4),
         "risk_tick_value": round(risk_tick_value, 8),
         "volume_rounding": rounding_mode,
