@@ -1223,6 +1223,18 @@ def test_market_tick_retention_error_reports_clear_cap_failure(monkeypatch) -> N
     assert "memory cap" in error["error"]
     assert "EURUSD" in error["error"]
     assert "5 retained ticks > 4" in error["error"]
+    assert error["error_code"] == "WAIT_EVENT_TICK_RETENTION_CAP"
+    assert error["diagnostics"]["retention_guardrail"] == {
+        "symbol": "EURUSD",
+        "retained_tick_count": 5,
+        "retention_cap_ticks": 4,
+        "required_history_seconds": 60.0,
+        "required_tick_count": 1,
+        "retained_tick_floor": 1 + wait_events_mod._MARKET_BUFFER_EXTRA_TICKS,
+        "buffer_extra_ticks": wait_events_mod._MARKET_BUFFER_EXTRA_TICKS,
+        "first_retained_epoch": 0.0,
+        "last_retained_epoch": 4.0,
+    }
 
 
 def test_run_wait_event_returns_error_when_tick_retention_cap_is_exceeded(monkeypatch) -> None:
@@ -1271,6 +1283,12 @@ def test_run_wait_event_returns_error_when_tick_retention_cap_is_exceeded(monkey
     assert "tick retention" in result["error"]
     assert "EURUSD" in result["error"]
     assert "5 retained ticks > 4" in result["error"]
+    assert result["error_code"] == "WAIT_EVENT_TICK_RETENTION_CAP"
+    assert result["diagnostics"]["retention_guardrail"]["symbol"] == "EURUSD"
+    assert result["diagnostics"]["retention_guardrail"]["retained_tick_count"] == 5
+    assert result["diagnostics"]["retention_guardrail"]["retention_cap_ticks"] == 4
+    assert result["diagnostics"]["retention_guardrail"]["first_retained_epoch"] == float(base_epoch)
+    assert result["diagnostics"]["retention_guardrail"]["last_retained_epoch"] == float(base_epoch + 4)
 
 
 def test_run_wait_event_uses_timeframe_as_boundary_when_watchers_are_inferred(monkeypatch) -> None:

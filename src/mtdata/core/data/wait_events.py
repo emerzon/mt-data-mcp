@@ -2562,20 +2562,55 @@ def _market_tick_retention_error(
     retained_tick_count = len(ticks)
     if retained_tick_count <= _MARKET_TICK_RETENTION_MAX_TICKS:
         return None
-    keep_seconds = max(float(spec.get("required_history_seconds") or 0.0) for spec in specs)
-    keep_ticks = max(int(spec.get("required_tick_count") or 0) for spec in specs) + _MARKET_BUFFER_EXTRA_TICKS
-    retained_for: List[str] = []
-    if keep_seconds > 0.0:
-        retained_for.append(f"{keep_seconds:.1f}s history")
-    if keep_ticks > 0:
-        retained_for.append(f"{keep_ticks} retained ticks minimum")
-    retained_for_text = ", ".join(retained_for) if retained_for else "current wait-event requirements"
+    failure = _market_tick_retention_failure(
+        symbol=symbol,
+        ticks=ticks,
+        specs=specs,
+        retained_tick_count=retained_tick_count,
+    )
     return {
         "error": (
             f"Wait-event tick retention for {symbol} exceeded the memory cap while waiting for events "
             f"({retained_tick_count} retained ticks > {_MARKET_TICK_RETENTION_MAX_TICKS}; "
-            f"keeping {retained_for_text})."
-        )
+            f"keeping {failure['retained_for_text']})."
+        ),
+        "error_code": "WAIT_EVENT_TICK_RETENTION_CAP",
+        "diagnostics": {
+            "retention_guardrail": failure["diagnostics"],
+        },
+    }
+
+
+def _market_tick_retention_failure(
+    *,
+    symbol: str,
+    ticks: List[Dict[str, Any]],
+    specs: List[Dict[str, Any]],
+    retained_tick_count: int,
+) -> Dict[str, Any]:
+    required_history_seconds = max(float(spec.get("required_history_seconds") or 0.0) for spec in specs)
+    required_tick_count = max(int(spec.get("required_tick_count") or 0) for spec in specs)
+    retained_tick_floor = required_tick_count + _MARKET_BUFFER_EXTRA_TICKS
+    retained_for: List[str] = []
+    if required_history_seconds > 0.0:
+        retained_for.append(f"{required_history_seconds:.1f}s history")
+    if retained_tick_floor > 0:
+        retained_for.append(f"{retained_tick_floor} retained ticks minimum")
+    diagnostics: Dict[str, Any] = {
+        "symbol": symbol,
+        "retained_tick_count": retained_tick_count,
+        "retention_cap_ticks": _MARKET_TICK_RETENTION_MAX_TICKS,
+        "required_history_seconds": required_history_seconds,
+        "required_tick_count": required_tick_count,
+        "retained_tick_floor": retained_tick_floor,
+        "buffer_extra_ticks": _MARKET_BUFFER_EXTRA_TICKS,
+    }
+    if ticks:
+        diagnostics["first_retained_epoch"] = float(ticks[0]["epoch"])
+        diagnostics["last_retained_epoch"] = float(ticks[-1]["epoch"])
+    return {
+        "retained_for_text": ", ".join(retained_for) if retained_for else "current wait-event requirements",
+        "diagnostics": diagnostics,
     }
 
 
