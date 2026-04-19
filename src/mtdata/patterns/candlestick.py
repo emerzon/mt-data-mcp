@@ -187,6 +187,16 @@ _DEPRIORITIZED_CANDLESTICK_PATTERNS = {
     "longleggeddoji",
     "rickshawman",
 }
+_CANDLESTICK_REDUNDANCY_SUPPRESSORS = {
+    "doji": frozenset(
+        {"dragonflydoji", "gravestonedoji", "longleggeddoji", "rickshawman"}
+    ),
+    "inside": frozenset({"harami", "haramicross"}),
+    "outside": frozenset({"engulfing"}),
+    "harami": frozenset({"haramicross"}),
+    "hikkake": frozenset({"hikkakemod"}),
+    "marubozu": frozenset({"closingmarubozu"}),
+}
 
 
 def _normalize_candlestick_name(pattern_name: str) -> str:
@@ -351,6 +361,40 @@ def _filter_candlestick_pattern_methods(
     ]
 
 
+def _dedupe_redundant_candlestick_hits(
+    hit_idx: np.ndarray,
+    *,
+    values_row: np.ndarray,
+    normalized_names: np.ndarray,
+    span_values: np.ndarray,
+    end_index: int,
+) -> np.ndarray:
+    if hit_idx.size < 2:
+        return hit_idx
+
+    hit_start_idx = np.asarray(
+        [max(0, int(end_index - span_values[idx] + 1)) for idx in hit_idx], dtype=int
+    )
+    hit_direction = np.sign(values_row[hit_idx]).astype(int, copy=False)
+    hit_names = normalized_names[hit_idx]
+    keep_mask = np.ones(hit_idx.size, dtype=bool)
+
+    for pos, name in enumerate(hit_names.tolist()):
+        suppressors = _CANDLESTICK_REDUNDANCY_SUPPRESSORS.get(str(name))
+        if not suppressors:
+            continue
+        same_window = hit_start_idx == hit_start_idx[pos]
+        same_direction = hit_direction == hit_direction[pos]
+        more_specific = np.asarray(
+            [str(other_name) in suppressors for other_name in hit_names.tolist()],
+            dtype=bool,
+        )
+        if bool(np.any(same_window & same_direction & more_specific)):
+            keep_mask[pos] = False
+
+    return hit_idx[keep_mask]
+
+
 def _extract_candlestick_rows(
     df_tail: pd.DataFrame,
     temp_tail: pd.DataFrame,
@@ -389,13 +433,16 @@ def _extract_candlestick_rows(
         values = temp_tail.loc[:, pattern_cols].to_numpy(dtype=float, copy=True)
 
     strength_values = np.zeros_like(values, dtype=float)
+    span_values = np.asarray(
+        [_candlestick_span_bars(str(name)) for name in base_names.tolist()], dtype=int
+    )
     for col_idx, name in enumerate(base_names.tolist()):
         base_strength = _candlestick_base_strength(
             str(name),
             robust_set=robust_set,
             deprioritize=deprioritize,
         )
-        span_bars = _candlestick_span_bars(str(name))
+        span_bars = int(span_values[col_idx])
         span_bonus = min(0.10, 0.05 * max(0, span_bars - 1))
         raw_bonus = (
             np.clip((np.abs(values[:, col_idx]) - 100.0) / 100.0, 0.0, 1.0) * 0.20
@@ -443,6 +490,15 @@ def _extract_candlestick_rows(
         hit_idx = np.flatnonzero(active_mask[i])
         if hit_idx.size == 0:
             continue
+        hit_idx = _dedupe_redundant_candlestick_hits(
+            hit_idx,
+            values_row=values[i],
+            normalized_names=normalized_names,
+            span_values=span_values,
+            end_index=i,
+        )
+        if hit_idx.size == 0:
+            continue
         pool_idx = hit_idx[non_dep_mask[hit_idx]]
         if pool_idx.size == 0:
             pool_idx = hit_idx
@@ -460,7 +516,7 @@ def _extract_candlestick_rows(
             label_core = name.replace("_", " ").strip().upper()
             dir_title = "Bullish" if value > 0 else "Bearish"
             if include_metrics:
-                span_bars = _candlestick_span_bars(name)
+                span_bars = int(span_values[col_idx])
                 start_bar_idx = max(0, int(i - span_bars + 1))
                 start_time = str(time_vals[start_bar_idx])
                 end_time = str(time_vals[i])

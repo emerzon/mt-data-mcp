@@ -221,6 +221,83 @@ class TestExtractCandlestickRows:
 
         assert rows == [["T1", "Bullish ENGULFING"]]
 
+    def test_dedupes_inside_family_to_more_specific_haramicross(self):
+        df_tail = pd.DataFrame({"time": ["T0", "T1"]})
+        temp_tail = pd.DataFrame(
+            {
+                "cdl_inside": [0.0, 100.0],
+                "cdl_harami": [0.0, 100.0],
+                "cdl_haramicross": [0.0, 100.0],
+            }
+        )
+
+        rows = _extract_candlestick_rows(
+            df_tail,
+            temp_tail,
+            ["cdl_inside", "cdl_harami", "cdl_haramicross"],
+            threshold=0.80,
+            robust_only=False,
+            robust_set={"inside", "harami"},
+            whitelist_set=None,
+            min_gap=0,
+            top_k=3,
+            deprioritize=set(),
+        )
+
+        assert rows == [["T1", "Bullish HARAMICROSS"]]
+
+    def test_dedupes_outside_family_to_engulfing(self):
+        df_tail = pd.DataFrame({"time": ["T0", "T1"]})
+        temp_tail = pd.DataFrame(
+            {
+                "cdl_outside": [0.0, 100.0],
+                "cdl_engulfing": [0.0, 100.0],
+            }
+        )
+
+        rows = _extract_candlestick_rows(
+            df_tail,
+            temp_tail,
+            ["cdl_outside", "cdl_engulfing"],
+            threshold=0.95,
+            robust_only=False,
+            robust_set={"outside", "engulfing"},
+            whitelist_set=None,
+            min_gap=0,
+            top_k=2,
+            deprioritize=set(),
+        )
+
+        assert rows == [["T1", "Bullish ENGULFING"]]
+
+    def test_keeps_unrelated_same_bar_patterns(self):
+        df_tail = pd.DataFrame({"time": ["T0", "T1"]})
+        temp_tail = pd.DataFrame(
+            {
+                "cdl_hammer": [0.0, 100.0],
+                "cdl_alpha": [0.0, 100.0],
+            }
+        )
+
+        rows = _extract_candlestick_rows(
+            df_tail,
+            temp_tail,
+            ["cdl_hammer", "cdl_alpha"],
+            threshold=0.75,
+            robust_only=False,
+            robust_set=set(),
+            whitelist_set=None,
+            min_gap=0,
+            top_k=2,
+            deprioritize=set(),
+        )
+
+        assert len(rows) == 2
+        assert {tuple(row) for row in rows} == {
+            ("T1", "Bullish HAMMER"),
+            ("T1", "Bullish ALPHA"),
+        }
+
 
 class TestCandlestickSpanBars:
     def test_defaults_to_single_bar(self):
