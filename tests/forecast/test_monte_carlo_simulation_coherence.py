@@ -52,6 +52,21 @@ class TestMonteCarloSimulationCoherence(unittest.TestCase):
         self.assertIn("mu", result.params_used)
         self.assertIn("sigma", result.params_used)
 
+    def test_monte_carlo_registry_return_target_uses_sample_sigma(self) -> None:
+        rets = np.array([0.01, 0.04, -0.02, 0.03, 0.00, 0.02], dtype=float)
+        method = ForecastRegistry.get("mc_gbm")
+
+        result = method.forecast(
+            series=pd.Series(rets),
+            horizon=4,
+            seasonality=1,
+            params={"n_sims": 25, "seed": 3, "quantity": "return"},
+        )
+
+        expected_sigma = float(np.std(rets, ddof=1) + 1e-12)
+        self.assertEqual(result.params_used["target"], "return")
+        self.assertAlmostEqual(result.params_used["sigma"], expected_sigma)
+
     def test_monte_carlo_registry_method_routes_overrides_through_shared_simulator(self) -> None:
         series = np.linspace(100.0, 120.0, 200)
         fake_sim = {

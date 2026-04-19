@@ -120,7 +120,7 @@ class MonteCarloGBMMethod(ForecastMethod):
         # Return-series target: simulate Gaussian log-returns directly.
         rets = x
         mu = float(params.get("mu", float(np.mean(rets))))
-        sigma = float(params.get("sigma", float(np.std(rets) + 1e-12)))
+        sigma = float(params.get("sigma", float(np.std(rets, ddof=1) + 1e-12)))
         rng = np.random.RandomState(seed)
         ret_paths = rng.normal(loc=mu, scale=max(sigma, 1e-12), size=(n_sims, fh))
         point = np.median(ret_paths, axis=0)
