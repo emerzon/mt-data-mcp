@@ -207,7 +207,20 @@ def get_instruments_response(
     return {"items": items}
 
 
-def get_methods_response(*, get_methods_impl: Callable[[], Any]) -> Dict[str, Any]:
+def _compact_forecast_method_definition(method_def: Dict[str, Any]) -> Dict[str, Any]:
+    out: Dict[str, Any] = {}
+    for key in ("method", "available", "requires", "category", "description", "supports_ci"):
+        value = method_def.get(key)
+        if value is not None:
+            out[key] = value
+    return out
+
+
+def get_methods_response(
+    *,
+    get_methods_impl: Callable[[], Any],
+    detail: str = "full",
+) -> Dict[str, Any]:
     data = get_methods_impl()
     if not isinstance(data, dict) or data.get("methods") is None:
         return {"methods": []}
@@ -215,9 +228,22 @@ def get_methods_response(*, get_methods_impl: Callable[[], Any]) -> Dict[str, An
     if not isinstance(methods, list):
         return {"methods": []}
     try:
-        return get_forecast_methods_payload(method_data=data)
+        payload = get_forecast_methods_payload(method_data=data)
     except Exception:
         return data
+    if str(detail or "full").strip().lower() != "compact":
+        return payload
+    methods_payload = payload.get("methods")
+    if not isinstance(methods_payload, list):
+        return {"methods": []}
+    out = dict(payload)
+    out["methods"] = [
+        _compact_forecast_method_definition(method_def)
+        for method_def in methods_payload
+        if isinstance(method_def, dict)
+    ]
+    out["detail"] = "compact"
+    return out
 
 
 def get_models_response(

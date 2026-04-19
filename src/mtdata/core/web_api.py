@@ -204,8 +204,10 @@ def get_instruments(search: Optional[str] = Query(None), limit: Optional[int] = 
 
 
 @api_router.get("/methods")
-def get_methods() -> Dict[str, Any]:
-    return _get_methods_response(get_methods_impl=_get_methods_impl)
+def get_methods(
+    detail: Literal["compact", "full"] = Query("full"),
+) -> Dict[str, Any]:
+    return _get_methods_response(get_methods_impl=_get_methods_impl, detail=detail)
 
 
 @api_router.get("/models")

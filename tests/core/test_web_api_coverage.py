@@ -377,6 +377,69 @@ class TestGetMethods:
             res = web_api.get_methods()
         assert res == data
 
+    def test_compact_detail_filters_snapshot_metadata(self):
+        data = {"methods": [{"method": "theta", "available": True, "requires": []}]}
+        with patch("mtdata.core.web_api._get_methods_impl", return_value=data), patch(
+            "mtdata.core.web_api_handlers.get_forecast_methods_payload",
+            return_value={
+                "methods": [
+                    {
+                        "method": "theta",
+                        "available": True,
+                        "requires": [],
+                        "category": "statistical",
+                        "description": "Theta method",
+                        "supports_ci": True,
+                        "namespace": "native",
+                        "method_id": "native:theta",
+                        "aliases": ["theta_method"],
+                        "params": [{"name": "season_length"}],
+                    }
+                ]
+            },
+        ):
+            resp = _client.get("/api/methods", params={"detail": "compact"})
+        assert resp.status_code == 200
+        assert resp.json() == {
+            "detail": "compact",
+            "methods": [
+                {
+                    "method": "theta",
+                    "available": True,
+                    "requires": [],
+                    "category": "statistical",
+                    "description": "Theta method",
+                    "supports_ci": True,
+                }
+            ],
+        }
+
+    def test_full_detail_keeps_enriched_snapshot_metadata(self):
+        data = {"methods": [{"method": "theta", "available": True, "requires": []}]}
+        enriched = {
+            "methods": [
+                {
+                    "method": "theta",
+                    "available": True,
+                    "requires": [],
+                    "namespace": "native",
+                    "method_id": "native:theta",
+                    "capability_id": "forecast:theta",
+                }
+            ]
+        }
+        with patch("mtdata.core.web_api._get_methods_impl", return_value=data), patch(
+            "mtdata.core.web_api_handlers.get_forecast_methods_payload",
+            return_value=enriched,
+        ):
+            resp = _client.get("/api/methods", params={"detail": "full"})
+        assert resp.status_code == 200
+        assert resp.json() == enriched
+
+    def test_rejects_invalid_methods_detail_query(self):
+        resp = _client.get("/api/methods", params={"detail": "verbose"})
+        assert resp.status_code == 422
+
 
 # ===========================================================================
 # GET /api/models
