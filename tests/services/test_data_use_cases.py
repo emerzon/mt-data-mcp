@@ -26,6 +26,29 @@ def test_run_data_fetch_candles_logs_finish_event(caplog):
     )
 
 
+def test_run_data_fetch_candles_passes_allow_stale_to_service():
+    captured = {}
+    request = DataFetchCandlesRequest(
+        symbol="EURUSD",
+        timeframe="H1",
+        limit=10,
+        allow_stale=True,
+    )
+
+    def _fetch(**kwargs):
+        captured["kwargs"] = kwargs
+        return {"success": True}
+
+    result = run_data_fetch_candles(
+        request,
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_candles_impl=_fetch,
+    )
+
+    assert result["success"] is True
+    assert captured["kwargs"]["allow_stale"] is True
+
+
 def test_run_data_fetch_ticks_logs_connection_error(caplog):
     request = DataFetchTicksRequest(symbol="EURUSD", limit=5)
 

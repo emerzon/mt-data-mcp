@@ -130,6 +130,7 @@ def _run_data_fetch_candles_impl(
         denoise=request.denoise,
         simplify=request.simplify,
         include_incomplete=request.include_incomplete,
+        allow_stale=request.allow_stale,
     )
 
 

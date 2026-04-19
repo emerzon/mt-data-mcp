@@ -1100,6 +1100,38 @@ class TestFetchCandles(unittest.TestCase):
             },
         )
 
+    @patch(_MT5_CONFIG)
+    @patch(_PARSE_START)
+    @patch(_RATES_FROM)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=0)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_allow_stale_returns_latest_available_rates(
+        self,
+        mock_warmup,
+        mock_ctz,
+        mock_info,
+        mock_from,
+        mock_parse,
+        mock_cfg,
+    ):
+        to_date = datetime(2025, 1, 2, tzinfo=_UTC)
+        mock_parse.return_value = to_date
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        mock_from.return_value = _make_rates(5, base_ts=to_date.timestamp() - (10 * 60 * 60), step=60 * 60)
+
+        result = fetch_candles(
+            'EURUSD',
+            limit=5,
+            end='2025-01-02',
+            allow_stale=True,
+        )
+
+        self.assertTrue(result['success'])
+        self.assertEqual(result['candles'], 5)
+        self.assertNotIn('error', result)
+
     # -- Indicators ----------------------------------------------------------
 
     @patch(_MT5_CONFIG)

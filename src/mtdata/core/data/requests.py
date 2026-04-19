@@ -295,6 +295,7 @@ class DataFetchCandlesRequest(BaseModel):
     denoise: Optional[DenoiseSpec] = None
     simplify: Optional[SimplifySpec] = None
     include_incomplete: bool = False
+    allow_stale: bool = False
 
     @field_validator("limit")
     @classmethod

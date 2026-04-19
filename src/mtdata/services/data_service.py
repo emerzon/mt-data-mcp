@@ -987,6 +987,7 @@ def fetch_candles(  # noqa: C901
     time_as_epoch: bool = False,
     *,
     include_incomplete: bool = False,
+    allow_stale: bool = False,
 ) -> Dict[str, Any]:
     """Return historical candles as tabular data."""
     try:
@@ -1040,7 +1041,7 @@ def fetch_candles(  # noqa: C901
                 end_datetime,
                 include_incomplete=include_incomplete,
                 retry=True,
-                sanity_check=True,
+                sanity_check=not bool(allow_stale),
                 diagnostics=rate_fetch_diagnostics,
             )
             freshness_diagnostics = rate_fetch_diagnostics.get("freshness")
