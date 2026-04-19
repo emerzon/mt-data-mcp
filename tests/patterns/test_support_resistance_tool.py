@@ -176,6 +176,34 @@ def test_support_resistance_tool_compact_exposes_volume_metadata_when_enabled():
     assert result["nearest"]["support"]["volume_source"] == "tick_volume"
 
 
+def test_support_resistance_tool_standard_detail_keeps_actionable_lists_without_full_diagnostics():
+    fn = _get_support_resistance_fn()
+    gateway = type("Gateway", (), {"ensure_connection": lambda self: None})()
+    with patch("mtdata.core.pivot.get_mt5_gateway", return_value=gateway), \
+         patch("mtdata.core.pivot._fetch_history", return_value=_frame()):
+        result = fn(
+            "EURUSD",
+            timeframe="H1",
+            limit=200,
+            tolerance_pct=0.005,
+            min_touches=2,
+            max_levels=3,
+            reaction_bars=4,
+            detail="standard",
+        )
+
+    assert result["detail"] == "standard"
+    assert len(result["supports"]) == 1
+    assert len(result["resistances"]) == 1
+    assert len(result["levels"]) == 2
+    assert result["supports"][0]["type"] == "support"
+    assert result["resistances"][0]["type"] == "resistance"
+    assert result["nearest"]["support"]["type"] == "support"
+    assert "score_breakdown" not in result["supports"][0]
+    assert "source_tests" not in result["supports"][0]
+    assert result["fibonacci"]["nearest"]["support"]["type"] == "support"
+
+
 def test_support_resistance_tool_defaults_to_auto_mode():
     fn = _get_support_resistance_fn()
     gateway = type("Gateway", (), {"ensure_connection": lambda self: None})()

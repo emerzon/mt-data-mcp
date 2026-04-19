@@ -2422,6 +2422,16 @@ def compact_support_resistance_level(level: Any) -> Optional[Dict[str, Any]]:
     return out or None
 
 
+def _compact_support_resistance_levels(levels: Any) -> List[Dict[str, Any]]:
+    if not isinstance(levels, list):
+        return []
+    return [
+        compacted
+        for compacted in (compact_support_resistance_level(level) for level in levels)
+        if compacted
+    ]
+
+
 def compact_support_resistance_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(payload, dict):
         return payload
@@ -2477,14 +2487,9 @@ def compact_support_resistance_payload(payload: Dict[str, Any]) -> Dict[str, Any
         out["nearest"] = nearest
 
     levels = payload.get("levels")
-    if isinstance(levels, list):
-        compact_levels = [
-            compacted
-            for compacted in (compact_support_resistance_level(level) for level in levels)
-            if compacted
-        ]
-        if compact_levels:
-            out["levels"] = compact_levels
+    compact_levels = _compact_support_resistance_levels(levels)
+    if compact_levels:
+        out["levels"] = compact_levels
 
     fibonacci = payload.get("fibonacci")
     compact_fibonacci = compact_fibonacci_payload(fibonacci)
@@ -2506,6 +2511,23 @@ def compact_support_resistance_payload(payload: Dict[str, Any]) -> Dict[str, Any
     meta = payload.get("meta")
     if isinstance(meta, dict) and meta:
         out["meta"] = dict(meta)
+    return out or dict(payload)
+
+
+def standard_support_resistance_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(payload, dict):
+        return payload
+
+    out = compact_support_resistance_payload(payload)
+
+    supports = _compact_support_resistance_levels(payload.get("supports"))
+    if supports:
+        out["supports"] = supports
+
+    resistances = _compact_support_resistance_levels(payload.get("resistances"))
+    if resistances:
+        out["resistances"] = resistances
+
     return out or dict(payload)
 
 

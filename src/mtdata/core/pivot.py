@@ -22,6 +22,7 @@ from ..utils.support_resistance import (
     compute_support_resistance_levels,
     get_auto_support_resistance_timeframes,
     merge_support_resistance_results,
+    standard_support_resistance_payload,
 )
 from ..utils.utils import (
     _format_time_minimal,
@@ -412,11 +413,14 @@ def support_resistance_levels(
     reaction_bars: int = 6,
     adx_period: int = 14,
     decay_half_life_bars: Optional[int] = None,
-    detail: Literal["compact", "full"] = "compact",
+    detail: Literal["compact", "standard", "full"] = "compact",
 ) -> Dict[str, Any]:
     """Detect support/resistance plus Fibonacci swing levels around the current price from historical structure.
 
     `timeframe="auto"` (default) merges levels from M15, H1, H4, and D1.
+    Use `detail="compact"` for the nearest-level summary, `detail="standard"`
+    for compact actionable supports/resistances/levels, and `detail="full"`
+    for the raw diagnostic payload.
 
     Score combines:
     - repeated tests of a level
@@ -444,7 +448,15 @@ def support_resistance_levels(
                 decay_half_life_bars=None if decay_half_life_bars is None else int(decay_half_life_bars),
             )
             detail_value = str(detail).strip().lower()
-            payload = compact_support_resistance_payload(result) if detail_value == "compact" else dict(result)
+            if detail_value in {"summary", "summary_only"}:
+                detail_value = "compact"
+            if detail_value == "compact":
+                payload = compact_support_resistance_payload(result)
+            elif detail_value == "standard":
+                payload = standard_support_resistance_payload(result)
+            else:
+                detail_value = "full"
+                payload = dict(result)
             payload["detail"] = detail_value
             return payload
         except MT5ConnectionError as exc:
