@@ -154,24 +154,20 @@ def _idempotency_duplicate_response(
     }
 
 
-def _check_trade_idempotency(
+def _begin_trade_idempotency(
     *,
     idempotency_store: Optional[IdempotencyStore],
     key: Optional[str],
     request_signature: Optional[str],
-) -> Optional[Dict[str, Any]]:
+) -> tuple[Optional[Dict[str, Any]], bool]:
     if idempotency_store is None or key is None:
-        return None
-    duplicate = idempotency_store.check(key)
+        return None, False
+    duplicate = idempotency_store.reserve(
+        key,
+        request_signature=request_signature,
+    )
     if duplicate is None:
-        return None
-    original_outcome = duplicate.get("original_outcome")
-    if not isinstance(original_outcome, dict):
-        return {
-            "error": "Stored idempotency outcome is invalid; use a new idempotency_key.",
-            "idempotency_key": key,
-            "idempotency_conflict": True,
-        }
+        return None, True
     stored_signature = duplicate.get("request_signature")
     if (
         stored_signature is not None
@@ -185,11 +181,18 @@ def _check_trade_idempotency(
             ),
             "idempotency_key": key,
             "idempotency_conflict": True,
-        }
+        }, False
+    original_outcome = duplicate.get("original_outcome")
+    if not isinstance(original_outcome, dict):
+        return {
+            "error": "Stored idempotency outcome is invalid; use a new idempotency_key.",
+            "idempotency_key": key,
+            "idempotency_conflict": True,
+        }, False
     return _idempotency_duplicate_response(
         key=key,
         original_outcome=copy.deepcopy(original_outcome),
-    )
+    ), False
 
 
 def _resolve_trade_risk_direction(
@@ -491,7 +494,7 @@ def run_trade_place(  # noqa: C901
         )
         return result
 
-    duplicate_result = _check_trade_idempotency(
+    duplicate_result, idempotency_reserved = _begin_trade_idempotency(
         idempotency_store=idempotency_store,
         key=idempotency_key,
         request_signature=idempotency_signature,
@@ -500,378 +503,390 @@ def run_trade_place(  # noqa: C901
         idempotency_consumed = True
         return _finish(duplicate_result)
 
-    def _dry_run_preview(
-        *,
-        order_type: str,
-        pending: bool,
-        normalized_expiration: Any,
-        expiration_provided: bool,
-    ) -> Dict[str, Any]:
-        preview_detail = _resolve_trade_place_preview_detail(request)
-        validation_scope = "request_routing_only"
-        validation_not_performed = [
-            "broker_acceptance",
-            "live_price_distance_rules",
-            "margin_and_funds",
-            "fillability",
-            "sl_tp_attachment",
-        ]
-        preview: Dict[str, Any] = {
-            "success": True,
-            "dry_run": True,
-            "no_action": True,
-            "symbol": symbol_norm,
-            "order_type": order_type,
-            "pending": pending,
-            "action": "place_pending_order" if pending else "place_market_order",
-            "volume": float(request.volume),
-            "message": "Dry run only. No order was sent to MT5.",
-            "validation_scope": validation_scope,
-            "validation_passed": True,
-            "trade_gate_passed": False,
-            "actionability": "preview_only",
-            "actionability_reason": (
-                "Dry run did not execute MT5 or broker-side validation. "
-                "Use this preview for request routing only."
-            ),
-            "preview_scope_summary": "Routing and local request checks only.",
-            "validation_not_performed": list(validation_not_performed),
-            "warnings": [
-                "Dry run only. Routing and local safety checks passed; MT5/broker validation was not executed.",
-                (
-                    "Not validated in dry run: broker acceptance, live price-distance rules, "
-                    "margin/funds, fillability, and SL/TP attachment."
+    try:
+        def _dry_run_preview(
+            *,
+            order_type: str,
+            pending: bool,
+            normalized_expiration: Any,
+            expiration_provided: bool,
+        ) -> Dict[str, Any]:
+            preview_detail = _resolve_trade_place_preview_detail(request)
+            validation_scope = "request_routing_only"
+            validation_not_performed = [
+                "broker_acceptance",
+                "live_price_distance_rules",
+                "margin_and_funds",
+                "fillability",
+                "sl_tp_attachment",
+            ]
+            preview: Dict[str, Any] = {
+                "success": True,
+                "dry_run": True,
+                "no_action": True,
+                "symbol": symbol_norm,
+                "order_type": order_type,
+                "pending": pending,
+                "action": "place_pending_order" if pending else "place_market_order",
+                "volume": float(request.volume),
+                "message": "Dry run only. No order was sent to MT5.",
+                "validation_scope": validation_scope,
+                "validation_passed": True,
+                "trade_gate_passed": False,
+                "actionability": "preview_only",
+                "actionability_reason": (
+                    "Dry run did not execute MT5 or broker-side validation. "
+                    "Use this preview for request routing only."
                 ),
-            ],
-            "require_sl_tp": bool(request.require_sl_tp),
-            "auto_close_on_sl_tp_fail": bool(request.auto_close_on_sl_tp_fail),
-            "guardrails_preview": preview_trade_guardrails(
+                "preview_scope_summary": "Routing and local request checks only.",
+                "validation_not_performed": list(validation_not_performed),
+                "warnings": [
+                    "Dry run only. Routing and local safety checks passed; MT5/broker validation was not executed.",
+                    (
+                        "Not validated in dry run: broker acceptance, live price-distance rules, "
+                        "margin/funds, fillability, and SL/TP attachment."
+                    ),
+                ],
+                "require_sl_tp": bool(request.require_sl_tp),
+                "auto_close_on_sl_tp_fail": bool(request.auto_close_on_sl_tp_fail),
+                "guardrails_preview": preview_trade_guardrails(
+                    trade_guardrails_config,
+                    symbol=symbol_norm,
+                    volume=float(request.volume),
+                    stop_loss=request.stop_loss,
+                    deviation=request.deviation,
+                    side=_guardrail_order_side(order_type),
+                ),
+            }
+            if pending:
+                preview["requested_price"] = request.price
+            if request.stop_loss not in (None, 0):
+                preview["requested_sl"] = request.stop_loss
+            if request.take_profit not in (None, 0):
+                preview["requested_tp"] = request.take_profit
+            if expiration_provided:
+                preview["expiration"] = request.expiration
+                if normalized_expiration is not None:
+                    preview["expiration_normalized"] = normalized_expiration
+            return _shape_trade_place_preview(preview, detail=preview_detail)
+
+        if not symbol_norm:
+            missing.append("symbol")
+        if request.volume is None:
+            missing.append("volume")
+        if request.order_type is None or (
+            isinstance(request.order_type, str) and not request.order_type.strip()
+        ):
+            missing.append("order_type")
+        if missing:
+            return _finish(
+                {
+                    "error": (
+                        f"Missing required field(s): {', '.join(missing)}. "
+                        "Required: symbol, volume, order_type."
+                    ),
+                    "required": ["symbol", "volume", "order_type"],
+                    "hint": (
+                        "Example: symbol='BTCUSD', volume=0.03, "
+                        "order_type='BUY_LIMIT' (or ORDER_TYPE_BUY_LIMIT or 2)."
+                    ),
+                }
+            )
+
+        order_type_norm, order_type_error = normalize_order_type_input(request.order_type)
+        if order_type_error:
+            return _finish({"error": order_type_error}, order_type=order_type_norm)
+        explicit_pending_types = {"BUY_LIMIT", "BUY_STOP", "SELL_LIMIT", "SELL_STOP"}
+        market_side_types = {"BUY", "SELL"}
+        supported_order_types = explicit_pending_types.union(market_side_types)
+        if order_type_norm not in supported_order_types:
+            return _finish(
+                {
+                    "error": (
+                        f"Unsupported order_type '{request.order_type}'. "
+                        "Use BUY/SELL or BUY_LIMIT/BUY_STOP/SELL_LIMIT/SELL_STOP."
+                    )
+                },
+                order_type=order_type_norm,
+            )
+
+        price_provided = request.price not in (None, 0)
+        try:
+            normalized_expiration, expiration_provided = normalize_pending_expiration(
+                request.expiration
+            )
+        except (TypeError, ValueError) as ex:
+            return _finish({"error": str(ex)}, order_type=order_type_norm)
+
+        ignore_market_gtc_expiration = (
+            order_type_norm in market_side_types
+            and not price_provided
+            and expiration_provided
+            and normalized_expiration is None
+        )
+        if (
+            order_type_norm in market_side_types
+            and not price_provided
+            and expiration_provided
+            and normalized_expiration is not None
+        ):
+            return _finish(
+                {
+                    "error": (
+                        "expiration only applies to pending orders placed with a price. "
+                        "For BUY/SELL market orders, omit expiration or provide price to place a pending order."
+                    )
+                },
+                order_type=order_type_norm,
+                pending=False,
+            )
+
+        is_pending = (
+            order_type_norm in explicit_pending_types
+            or price_provided
+            or (expiration_provided and not ignore_market_gtc_expiration)
+        )
+        if bool(request.require_sl_tp) and not is_pending:
+            missing_protection: List[str] = []
+            if request.stop_loss in (None, 0):
+                missing_protection.append("stop_loss")
+            if request.take_profit in (None, 0):
+                missing_protection.append("take_profit")
+            if missing_protection:
+                if not bool(request.dry_run):
+                    prevalidation_error = prevalidate_trade_place_market_input(
+                        symbol_norm,
+                        request.volume,
+                    )
+                    if prevalidation_error is not None:
+                        return _finish(
+                            prevalidation_error,
+                            order_type=order_type_norm,
+                            pending=is_pending,
+                        )
+                return _finish(
+                    {
+                        "error": (
+                            "require_sl_tp=True requires both stop_loss and take_profit for market orders. "
+                            "Refusing to place an unprotected position."
+                        ),
+                        "require_sl_tp": True,
+                        "missing": missing_protection,
+                        "hint": (
+                            "Provide both --stop-loss and --take-profit, "
+                            "or explicitly set --require-sl-tp false."
+                        ),
+                    },
+                    order_type=order_type_norm,
+                    pending=is_pending,
+                )
+
+        if bool(request.dry_run):
+            guardrail_preview = preview_trade_guardrails(
                 trade_guardrails_config,
                 symbol=symbol_norm,
                 volume=float(request.volume),
                 stop_loss=request.stop_loss,
                 deviation=request.deviation,
-                side=_guardrail_order_side(order_type),
-            ),
-        }
-        if pending:
-            preview["requested_price"] = request.price
-        if request.stop_loss not in (None, 0):
-            preview["requested_sl"] = request.stop_loss
-        if request.take_profit not in (None, 0):
-            preview["requested_tp"] = request.take_profit
-        if expiration_provided:
-            preview["expiration"] = request.expiration
-            if normalized_expiration is not None:
-                preview["expiration_normalized"] = normalized_expiration
-        return _shape_trade_place_preview(preview, detail=preview_detail)
-
-    if not symbol_norm:
-        missing.append("symbol")
-    if request.volume is None:
-        missing.append("volume")
-    if request.order_type is None or (
-        isinstance(request.order_type, str) and not request.order_type.strip()
-    ):
-        missing.append("order_type")
-    if missing:
-        return _finish(
-            {
-                "error": (
-                    f"Missing required field(s): {', '.join(missing)}. "
-                    "Required: symbol, volume, order_type."
-                ),
-                "required": ["symbol", "volume", "order_type"],
-                "hint": (
-                    "Example: symbol='BTCUSD', volume=0.03, "
-                    "order_type='BUY_LIMIT' (or ORDER_TYPE_BUY_LIMIT or 2)."
-                ),
-            }
-        )
-
-    order_type_norm, order_type_error = normalize_order_type_input(request.order_type)
-    if order_type_error:
-        return _finish({"error": order_type_error}, order_type=order_type_norm)
-    explicit_pending_types = {"BUY_LIMIT", "BUY_STOP", "SELL_LIMIT", "SELL_STOP"}
-    market_side_types = {"BUY", "SELL"}
-    supported_order_types = explicit_pending_types.union(market_side_types)
-    if order_type_norm not in supported_order_types:
-        return _finish(
-            {
-                "error": (
-                    f"Unsupported order_type '{request.order_type}'. "
-                    "Use BUY/SELL or BUY_LIMIT/BUY_STOP/SELL_LIMIT/SELL_STOP."
-                )
-            },
-            order_type=order_type_norm,
-        )
-
-    price_provided = request.price not in (None, 0)
-    try:
-        normalized_expiration, expiration_provided = normalize_pending_expiration(
-            request.expiration
-        )
-    except (TypeError, ValueError) as ex:
-        return _finish({"error": str(ex)}, order_type=order_type_norm)
-
-    ignore_market_gtc_expiration = (
-        order_type_norm in market_side_types
-        and not price_provided
-        and expiration_provided
-        and normalized_expiration is None
-    )
-    if (
-        order_type_norm in market_side_types
-        and not price_provided
-        and expiration_provided
-        and normalized_expiration is not None
-    ):
-        return _finish(
-            {
-                "error": (
-                    "expiration only applies to pending orders placed with a price. "
-                    "For BUY/SELL market orders, omit expiration or provide price to place a pending order."
-                )
-            },
-            order_type=order_type_norm,
-            pending=False,
-        )
-
-    is_pending = (
-        order_type_norm in explicit_pending_types
-        or price_provided
-        or (expiration_provided and not ignore_market_gtc_expiration)
-    )
-    if bool(request.require_sl_tp) and not is_pending:
-        missing_protection: List[str] = []
-        if request.stop_loss in (None, 0):
-            missing_protection.append("stop_loss")
-        if request.take_profit in (None, 0):
-            missing_protection.append("take_profit")
-        if missing_protection:
-            if not bool(request.dry_run):
-                prevalidation_error = prevalidate_trade_place_market_input(
-                    symbol_norm,
-                    request.volume,
-                )
-                if prevalidation_error is not None:
-                    return _finish(
-                        prevalidation_error,
-                        order_type=order_type_norm,
-                        pending=is_pending,
+                side=_guardrail_order_side(order_type_norm),
+            )
+            if guardrail_preview.get("blocked"):
+                violations = list(guardrail_preview.get("violations") or [])
+                guardrail_rule = str(guardrail_preview.get("rule") or "").strip()
+                error_message = "Trade would be blocked by configured guardrails."
+                if violations:
+                    prefix = (
+                        f"Trade blocked by guardrails ({guardrail_rule})"
+                        if guardrail_rule
+                        else "Trade blocked by guardrails"
                     )
+                    error_message = f"{prefix}: {violations[0]}"
+                return _finish(
+                    {
+                        "error": error_message,
+                        "guardrail_blocked": True,
+                        "dry_run": True,
+                        "no_action": True,
+                        "actionability": "blocked_by_guardrails",
+                        "guardrails_preview": guardrail_preview,
+                        "violations": violations,
+                    },
+                    order_type=order_type_norm,
+                    pending=is_pending,
+                )
+            if is_pending and request.price is None:
+                return _finish(
+                    {"error": "price is required for pending orders."},
+                    order_type=order_type_norm,
+                    pending=is_pending,
+                )
             return _finish(
-                {
-                    "error": (
-                        "require_sl_tp=True requires both stop_loss and take_profit for market orders. "
-                        "Refusing to place an unprotected position."
-                    ),
-                    "require_sl_tp": True,
-                    "missing": missing_protection,
-                    "hint": (
-                        "Provide both --stop-loss and --take-profit, "
-                        "or explicitly set --require-sl-tp false."
-                    ),
-                },
+                _dry_run_preview(
+                    order_type=order_type_norm,
+                    pending=is_pending,
+                    normalized_expiration=normalized_expiration,
+                    expiration_provided=expiration_provided,
+                ),
                 order_type=order_type_norm,
                 pending=is_pending,
             )
 
-    if bool(request.dry_run):
-        guardrail_preview = preview_trade_guardrails(
+        static_guardrail = evaluate_trade_guardrails(
             trade_guardrails_config,
             symbol=symbol_norm,
             volume=float(request.volume),
             stop_loss=request.stop_loss,
             deviation=request.deviation,
             side=_guardrail_order_side(order_type_norm),
+            enforce_account_risk=False,
+            enforce_wallet_risk=False,
         )
-        if guardrail_preview.get("blocked"):
-            violations = list(guardrail_preview.get("violations") or [])
-            guardrail_rule = str(guardrail_preview.get("rule") or "").strip()
-            error_message = "Trade would be blocked by configured guardrails."
-            if violations:
-                prefix = (
-                    f"Trade blocked by guardrails ({guardrail_rule})"
-                    if guardrail_rule
-                    else "Trade blocked by guardrails"
-                )
-                error_message = f"{prefix}: {violations[0]}"
-            return _finish(
-                {
-                    "error": error_message,
-                    "guardrail_blocked": True,
-                    "dry_run": True,
-                    "no_action": True,
-                    "actionability": "blocked_by_guardrails",
-                    "guardrails_preview": guardrail_preview,
-                    "violations": violations,
-                },
+        if static_guardrail is not None:
+            return _finish(static_guardrail, order_type=order_type_norm, pending=is_pending)
+
+        if not is_pending:
+            result = place_market_order(
+                symbol=symbol_norm,
+                volume=float(request.volume),
                 order_type=order_type_norm,
-                pending=is_pending,
+                stop_loss=request.stop_loss,
+                take_profit=request.take_profit,
+                comment=request.comment,
+                deviation=request.deviation,
             )
-        if is_pending and request.price is None:
+            if isinstance(result, dict):
+                sl_tp_requested, sl_tp_status, sl_tp_fallback_used = _sl_tp_result_details(
+                    result
+                )
+                sl_tp_failed = sl_tp_status == "failed"
+                if sl_tp_requested and sl_tp_failed:
+                    warnings_out: List[str] = list(result.get("warnings") or [])
+                    pos_ticket = result.get("position_ticket")
+                    candidate_tickets = [
+                        ticket
+                        for ticket in list(result.get("position_ticket_candidates") or [])
+                        if ticket is not None
+                    ]
+                    if pos_ticket is not None:
+                        critical = (
+                            "CRITICAL: Order executed without applied TP/SL protection. "
+                            f"Run trade_modify {pos_ticket} now, or close the position."
+                        )
+                    elif candidate_tickets:
+                        candidate_list = ", ".join(str(v) for v in candidate_tickets)
+                        critical = (
+                            "CRITICAL: Order executed without applied TP/SL protection. "
+                            f"Try trade_modify {candidate_tickets[0]} now "
+                            f"(candidate tickets: {candidate_list}). "
+                            "If that fails, run trade_get_open to confirm the live position ticket, "
+                            "or close the position."
+                        )
+                    else:
+                        critical = (
+                            "CRITICAL: Order executed without applied TP/SL protection. "
+                            "Run trade_get_open to find the live position ticket, then trade_modify it now, "
+                            "or close the position."
+                        )
+                    if critical not in warnings_out:
+                        warnings_out.append(critical)
+                    if warnings_out:
+                        result["warnings"] = warnings_out
+                    if bool(request.auto_close_on_sl_tp_fail):
+                        close_ticket = safe_int_ticket(pos_ticket)
+                        if close_ticket is None:
+                            for candidate_ticket in candidate_tickets:
+                                close_ticket = safe_int_ticket(candidate_ticket)
+                                if close_ticket is not None:
+                                    break
+                        if close_ticket is None:
+                            auto_close_result: Dict[str, Any] = {
+                                "error": "Auto-close skipped: position_ticket unavailable."
+                            }
+                        else:
+                            auto_close_result = close_positions(
+                                ticket=close_ticket,
+                                comment="AUTO-CLOSE: TP/SL apply failed",
+                                deviation=request.deviation,
+                            )
+                        result["auto_close_on_sl_tp_fail"] = True
+                        result["auto_close_result"] = auto_close_result
+
+                        auto_close_ok = False
+                        if (
+                            isinstance(auto_close_result, dict)
+                            and "error" not in auto_close_result
+                        ):
+                            if auto_close_result.get("retcode") is not None:
+                                auto_close_ok = True
+                            else:
+                                try:
+                                    auto_close_ok = (
+                                        int(auto_close_result.get("closed_count", 0)) > 0
+                                    )
+                                except Exception:
+                                    auto_close_ok = False
+                        if auto_close_ok:
+                            result["protection_status"] = "auto_closed_after_sl_tp_fail"
+                        else:
+                            warnings_out = list(result.get("warnings") or [])
+                            auto_close_warning = "AUTO-CLOSE FAILED: position remains unprotected; close immediately."
+                            if auto_close_warning not in warnings_out:
+                                warnings_out.append(auto_close_warning)
+                            result["warnings"] = warnings_out
+
+                if (
+                    bool(request.require_sl_tp)
+                    and sl_tp_requested
+                    and sl_tp_failed
+                    and "error" not in result
+                ):
+                    result["error"] = (
+                        "Order was executed, but TP/SL protection could not be applied."
+                    )
+                    result["require_sl_tp"] = bool(request.require_sl_tp)
+                    result["protection_status"] = (
+                        result.get("protection_status") or "unprotected_position"
+                    )
+                elif (
+                    sl_tp_requested
+                    and sl_tp_status == "applied"
+                    and sl_tp_fallback_used
+                    and "protection_status" not in result
+                ):
+                    result["protection_status"] = "protected_after_fallback"
+            return _finish(result, order_type=order_type_norm, pending=is_pending)
+        if request.price is None:
             return _finish(
                 {"error": "price is required for pending orders."},
                 order_type=order_type_norm,
                 pending=is_pending,
             )
         return _finish(
-            _dry_run_preview(
+            place_pending_order(
+                symbol=symbol_norm,
+                volume=float(request.volume),
                 order_type=order_type_norm,
-                pending=is_pending,
-                normalized_expiration=normalized_expiration,
-                expiration_provided=expiration_provided,
+                price=request.price,
+                stop_loss=request.stop_loss,
+                take_profit=request.take_profit,
+                expiration=request.expiration,
+                comment=request.comment,
+                deviation=request.deviation,
             ),
             order_type=order_type_norm,
             pending=is_pending,
         )
-
-    static_guardrail = evaluate_trade_guardrails(
-        trade_guardrails_config,
-        symbol=symbol_norm,
-        volume=float(request.volume),
-        stop_loss=request.stop_loss,
-        deviation=request.deviation,
-        side=_guardrail_order_side(order_type_norm),
-        enforce_account_risk=False,
-        enforce_wallet_risk=False,
-    )
-    if static_guardrail is not None:
-        return _finish(static_guardrail, order_type=order_type_norm, pending=is_pending)
-
-    if not is_pending:
-        result = place_market_order(
-            symbol=symbol_norm,
-            volume=float(request.volume),
-            order_type=order_type_norm,
-            stop_loss=request.stop_loss,
-            take_profit=request.take_profit,
-            comment=request.comment,
-            deviation=request.deviation,
-        )
-        if isinstance(result, dict):
-            sl_tp_requested, sl_tp_status, sl_tp_fallback_used = _sl_tp_result_details(
-                result
+    finally:
+        if (
+            idempotency_reserved
+            and not idempotency_consumed
+            and idempotency_store is not None
+            and idempotency_key is not None
+        ):
+            idempotency_store.release(
+                idempotency_key,
+                request_signature=idempotency_signature,
             )
-            sl_tp_failed = sl_tp_status == "failed"
-            if sl_tp_requested and sl_tp_failed:
-                warnings_out: List[str] = list(result.get("warnings") or [])
-                pos_ticket = result.get("position_ticket")
-                candidate_tickets = [
-                    ticket
-                    for ticket in list(result.get("position_ticket_candidates") or [])
-                    if ticket is not None
-                ]
-                if pos_ticket is not None:
-                    critical = (
-                        "CRITICAL: Order executed without applied TP/SL protection. "
-                        f"Run trade_modify {pos_ticket} now, or close the position."
-                    )
-                elif candidate_tickets:
-                    candidate_list = ", ".join(str(v) for v in candidate_tickets)
-                    critical = (
-                        "CRITICAL: Order executed without applied TP/SL protection. "
-                        f"Try trade_modify {candidate_tickets[0]} now "
-                        f"(candidate tickets: {candidate_list}). "
-                        "If that fails, run trade_get_open to confirm the live position ticket, "
-                        "or close the position."
-                    )
-                else:
-                    critical = (
-                        "CRITICAL: Order executed without applied TP/SL protection. "
-                        "Run trade_get_open to find the live position ticket, then trade_modify it now, "
-                        "or close the position."
-                    )
-                if critical not in warnings_out:
-                    warnings_out.append(critical)
-                if warnings_out:
-                    result["warnings"] = warnings_out
-                if bool(request.auto_close_on_sl_tp_fail):
-                    close_ticket = safe_int_ticket(pos_ticket)
-                    if close_ticket is None:
-                        for candidate_ticket in candidate_tickets:
-                            close_ticket = safe_int_ticket(candidate_ticket)
-                            if close_ticket is not None:
-                                break
-                    if close_ticket is None:
-                        auto_close_result: Dict[str, Any] = {
-                            "error": "Auto-close skipped: position_ticket unavailable."
-                        }
-                    else:
-                        auto_close_result = close_positions(
-                            ticket=close_ticket,
-                            comment="AUTO-CLOSE: TP/SL apply failed",
-                            deviation=request.deviation,
-                        )
-                    result["auto_close_on_sl_tp_fail"] = True
-                    result["auto_close_result"] = auto_close_result
-
-                    auto_close_ok = False
-                    if (
-                        isinstance(auto_close_result, dict)
-                        and "error" not in auto_close_result
-                    ):
-                        if auto_close_result.get("retcode") is not None:
-                            auto_close_ok = True
-                        else:
-                            try:
-                                auto_close_ok = (
-                                    int(auto_close_result.get("closed_count", 0)) > 0
-                                )
-                            except Exception:
-                                auto_close_ok = False
-                    if auto_close_ok:
-                        result["protection_status"] = "auto_closed_after_sl_tp_fail"
-                    else:
-                        warnings_out = list(result.get("warnings") or [])
-                        auto_close_warning = "AUTO-CLOSE FAILED: position remains unprotected; close immediately."
-                        if auto_close_warning not in warnings_out:
-                            warnings_out.append(auto_close_warning)
-                        result["warnings"] = warnings_out
-
-            if (
-                bool(request.require_sl_tp)
-                and sl_tp_requested
-                and sl_tp_failed
-                and "error" not in result
-            ):
-                result["error"] = (
-                    "Order was executed, but TP/SL protection could not be applied."
-                )
-                result["require_sl_tp"] = bool(request.require_sl_tp)
-                result["protection_status"] = (
-                    result.get("protection_status") or "unprotected_position"
-                )
-            elif (
-                sl_tp_requested
-                and sl_tp_status == "applied"
-                and sl_tp_fallback_used
-                and "protection_status" not in result
-            ):
-                result["protection_status"] = "protected_after_fallback"
-        return _finish(result, order_type=order_type_norm, pending=is_pending)
-    if request.price is None:
-        return _finish(
-            {"error": "price is required for pending orders."},
-            order_type=order_type_norm,
-            pending=is_pending,
-        )
-    return _finish(
-        place_pending_order(
-            symbol=symbol_norm,
-            volume=float(request.volume),
-            order_type=order_type_norm,
-            price=request.price,
-            stop_loss=request.stop_loss,
-            take_profit=request.take_profit,
-            expiration=request.expiration,
-            comment=request.comment,
-            deviation=request.deviation,
-        ),
-        order_type=order_type_norm,
-        pending=is_pending,
-    )
 
 
 def run_trade_modify(
@@ -923,7 +938,7 @@ def run_trade_modify(
         )
         return result
 
-    duplicate_result = _check_trade_idempotency(
+    duplicate_result, idempotency_reserved = _begin_trade_idempotency(
         idempotency_store=idempotency_store,
         key=idempotency_key,
         request_signature=idempotency_signature,
@@ -932,61 +947,73 @@ def run_trade_modify(
         idempotency_consumed = True
         return _finish(duplicate_result)
 
-    price_val = None if request.price in (None, 0) else request.price
     try:
-        _, expiration_specified = normalize_pending_expiration(request.expiration)
-    except (TypeError, ValueError) as ex:
-        return _finish({"error": str(ex)})
+        price_val = None if request.price in (None, 0) else request.price
+        try:
+            _, expiration_specified = normalize_pending_expiration(request.expiration)
+        except (TypeError, ValueError) as ex:
+            return _finish({"error": str(ex)})
 
-    if price_val is not None or expiration_specified:
-        result = modify_pending_order(
+        if price_val is not None or expiration_specified:
+            result = modify_pending_order(
+                ticket=request.ticket,
+                price=price_val,
+                stop_loss=request.stop_loss,
+                take_profit=request.take_profit,
+                expiration=request.expiration,
+                comment=request.comment,
+            )
+            if result.get("error") == f"Pending order {request.ticket} not found":
+                return _finish(
+                    {
+                        "error": (
+                            f"Pending order {request.ticket} not found. "
+                            "Note: price/expiration only apply to pending orders."
+                        ),
+                        "checked_scopes": ["pending_orders"],
+                    },
+                    pending=True,
+                )
+            return _finish(result, pending=True)
+
+        position_result = modify_position(
             ticket=request.ticket,
-            price=price_val,
             stop_loss=request.stop_loss,
             take_profit=request.take_profit,
-            expiration=request.expiration,
             comment=request.comment,
         )
-        if result.get("error") == f"Pending order {request.ticket} not found":
-            return _finish(
-                {
-                    "error": (
-                        f"Pending order {request.ticket} not found. "
-                        "Note: price/expiration only apply to pending orders."
-                    ),
-                    "checked_scopes": ["pending_orders"],
-                },
-                pending=True,
+        if position_result.get("success"):
+            return _finish(position_result, pending=False)
+        if position_result.get("error") == f"Position {request.ticket} not found":
+            pending_result = modify_pending_order(
+                ticket=request.ticket,
+                price=None,
+                stop_loss=request.stop_loss,
+                take_profit=request.take_profit,
+                expiration=None,
+                comment=request.comment,
             )
-        return _finish(result, pending=True)
-
-    position_result = modify_position(
-        ticket=request.ticket,
-        stop_loss=request.stop_loss,
-        take_profit=request.take_profit,
-        comment=request.comment,
-    )
-    if position_result.get("success"):
+            if pending_result.get("error") == f"Pending order {request.ticket} not found":
+                return _finish(
+                    {
+                        "error": f"Ticket {request.ticket} not found as position or pending order.",
+                        "checked_scopes": ["positions", "pending_orders"],
+                    },
+                    pending=None,
+                )
+            return _finish(pending_result, pending=True)
         return _finish(position_result, pending=False)
-    if position_result.get("error") == f"Position {request.ticket} not found":
-        pending_result = modify_pending_order(
-            ticket=request.ticket,
-            price=None,
-            stop_loss=request.stop_loss,
-            take_profit=request.take_profit,
-            expiration=None,
-            comment=request.comment,
-        )
-        if pending_result.get("error") == f"Pending order {request.ticket} not found":
-            return _finish(
-                {
-                    "error": f"Ticket {request.ticket} not found as position or pending order.",
-                    "checked_scopes": ["positions", "pending_orders"],
-                },
-                pending=None,
+    finally:
+        if (
+            idempotency_reserved
+            and not idempotency_consumed
+            and idempotency_store is not None
+            and idempotency_key is not None
+        ):
+            idempotency_store.release(
+                idempotency_key,
+                request_signature=idempotency_signature,
             )
-        return _finish(pending_result, pending=True)
-    return _finish(position_result, pending=False)
 
 
 def run_trade_close(  # noqa: C901

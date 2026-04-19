@@ -1,5 +1,6 @@
 """Tests for order idempotency store."""
 
+import threading
 import time
 
 from src.mtdata.core.trading.idempotency import IdempotencyStore
@@ -93,3 +94,31 @@ def test_gc_on_record():
     assert len(store) == 1
     assert store.check("old") is None
     assert store.check("new") is not None
+
+
+def test_reserve_waits_for_inflight_request_and_replays_outcome():
+    store = IdempotencyStore()
+    assert store.reserve("key-1", request_signature="sig-1") is None
+
+    duplicate = {}
+
+    def _reserve_again() -> None:
+        duplicate.update(store.reserve("key-1", request_signature="sig-1") or {})
+
+    thread = threading.Thread(target=_reserve_again)
+    thread.start()
+    time.sleep(0.05)
+    store.record("key-1", {"success": True}, request_signature="sig-1")
+    thread.join(timeout=1.0)
+
+    assert duplicate["original_outcome"] == {"success": True}
+
+
+def test_release_clears_inflight_reservation():
+    store = IdempotencyStore()
+    assert store.reserve("key-1", request_signature="sig-1") is None
+
+    store.release("key-1", request_signature="sig-1")
+
+    assert store.check("key-1") is None
+    assert store.reserve("key-1", request_signature="sig-1") is None
