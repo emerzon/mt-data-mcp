@@ -394,7 +394,7 @@ class TestSimulateBootstrapMc:
         result = simulate_bootstrap_mc(self._prices(), horizon=5, n_sims=10, seed=1, block_size=5)
         assert int(result["block_size"]) == 5
 
-    def test_short_bootstrap_generator_backfills_from_real_samples(self, monkeypatch):
+    def test_short_bootstrap_generator_raises_instead_of_tiling(self, monkeypatch):
         class _ShortBootstrap:
             def __init__(self, block_size, rets, seed=None):
                 self._rets = np.asarray(rets, dtype=float)
@@ -405,10 +405,8 @@ class TestSimulateBootstrapMc:
 
         monkeypatch.setattr("mtdata.forecast.monte_carlo._load_circular_block_bootstrap", lambda: _ShortBootstrap)
 
-        result = simulate_bootstrap_mc(self._prices(), horizon=4, n_sims=5, seed=7, block_size=3)
-
-        assert result["return_paths"].shape == (5, 4)
-        assert not np.allclose(result["return_paths"][2:], 0.0)
+        with pytest.raises(RuntimeError, match="undersized path"):
+            simulate_bootstrap_mc(self._prices(), horizon=4, n_sims=5, seed=7, block_size=3)
 
     def test_too_few(self):
         with pytest.raises(ValueError):

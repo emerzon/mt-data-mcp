@@ -728,8 +728,11 @@ def simulate_bootstrap_mc(
             break
         sample = np.asarray(boot[0][0], dtype=float).reshape(-1)
         if sample.size < horizon_i:
-            reps = int(np.ceil(horizon_i / max(1, sample.size)))
-            sample = np.tile(sample, reps)
+            raise RuntimeError(
+                "Bootstrap simulator returned an undersized path "
+                f"({sample.size} < {horizon_i}); refusing to tile returns "
+                "without an explicit continuation policy."
+            )
         sampled_paths.append(sample[:horizon_i].astype(float, copy=False))
     if not sampled_paths:
         raise RuntimeError("Bootstrap simulation produced no return paths")
