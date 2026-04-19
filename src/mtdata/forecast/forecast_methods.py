@@ -152,6 +152,28 @@ def get_forecast_methods_snapshot(
     }
 
 
+def get_forecast_methods_payload(
+    *,
+    method_data: Optional[Dict[str, Any]] = None,
+    capabilities: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    """Return method data with shared snapshot-backed method rows."""
+    snapshot = get_forecast_methods_snapshot(
+        method_data=method_data,
+        capabilities=capabilities,
+    )
+    data = snapshot.get("data")
+    if not isinstance(data, dict):
+        return {"methods": []}
+    if not snapshot.get("methods_valid"):
+        return dict(data)
+
+    payload = dict(data)
+    methods = snapshot.get("methods")
+    payload["methods"] = list(methods) if isinstance(methods, list) else []
+    return payload
+
+
 def get_forecast_method_names() -> tuple[str, ...]:
     """Return forecast method names from the current registry-derived catalog."""
     methods = get_forecast_methods_snapshot().get("methods", [])

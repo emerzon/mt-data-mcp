@@ -322,7 +322,7 @@ class TestGetMethods:
             res = web_api.get_methods()
         assert res == {"methods": []}
 
-    def test_uses_shared_registry_availability_snapshot(self):
+    def test_uses_shared_snapshot_backed_methods_payload(self):
         data = {
             "methods": [
                 {"method": "timesfm", "available": False, "requires": ["timesfm"]},
@@ -330,23 +330,52 @@ class TestGetMethods:
             ]
         }
         with patch("mtdata.core.web_api._get_methods_impl", return_value=data), patch(
-            "mtdata.core.web_api_handlers.get_forecast_method_availability_snapshot",
-            return_value={"timesfm": True, "theta": False},
+            "mtdata.core.web_api_handlers.get_forecast_methods_payload",
+            return_value={
+                "methods": [
+                    {
+                        "method": "timesfm",
+                        "available": True,
+                        "requires": ["timesfm"],
+                        "namespace": "pretrained",
+                        "method_id": "pretrained:timesfm",
+                    },
+                    {
+                        "method": "theta",
+                        "available": False,
+                        "requires": [],
+                        "namespace": "native",
+                        "method_id": "native:theta",
+                    },
+                ]
+            },
         ):
             res = web_api.get_methods()
         assert res["methods"] == [
-            {"method": "timesfm", "available": True, "requires": ["timesfm"]},
-            {"method": "theta", "available": False, "requires": []},
+            {
+                "method": "timesfm",
+                "available": True,
+                "requires": ["timesfm"],
+                "namespace": "pretrained",
+                "method_id": "pretrained:timesfm",
+            },
+            {
+                "method": "theta",
+                "available": False,
+                "requires": [],
+                "namespace": "native",
+                "method_id": "native:theta",
+            },
         ]
 
-    def test_keeps_original_availability_when_snapshot_has_no_override(self):
+    def test_snapshot_exception_keeps_original_methods(self):
         data = {"methods": [{"method": "custom", "available": True, "requires": []}]}
         with patch("mtdata.core.web_api._get_methods_impl", return_value=data), patch(
-            "mtdata.core.web_api_handlers.get_forecast_method_availability_snapshot",
-            return_value={"timesfm": False},
+            "mtdata.core.web_api_handlers.get_forecast_methods_payload",
+            side_effect=RuntimeError("boom"),
         ):
             res = web_api.get_methods()
-        assert res["methods"][0]["available"] is True
+        assert res == data
 
 
 # ===========================================================================
@@ -1350,23 +1379,33 @@ class TestInstrumentSearchEdgeCases:
 
 
 class TestMethodsAvailabilityEdgeCases:
-    def test_chronos2_uses_snapshot_override(self):
+    def test_chronos2_uses_snapshot_payload(self):
         data = {"methods": [{"method": "chronos2", "available": False, "requires": ["chronos"]}]}
         with patch("mtdata.core.web_api._get_methods_impl", return_value=data), patch(
-            "mtdata.core.web_api_handlers.get_forecast_method_availability_snapshot",
-            return_value={"chronos2": True},
+            "mtdata.core.web_api_handlers.get_forecast_methods_payload",
+            return_value={
+                "methods": [
+                    {
+                        "method": "chronos2",
+                        "available": True,
+                        "requires": ["chronos"],
+                        "namespace": "pretrained",
+                    }
+                ]
+            },
         ):
             res = web_api.get_methods()
         assert res["methods"][0]["available"] is True
         assert res["methods"][0]["requires"] == ["chronos"]
+        assert res["methods"][0]["namespace"] == "pretrained"
 
     def test_snapshot_exception_passes(self):
         """Exceptions while reading the shared snapshot are swallowed."""
         data = {"methods": [{"method": "timesfm", "available": False}]}
         with patch("mtdata.core.web_api._get_methods_impl", return_value=data), patch(
-            "mtdata.core.web_api_handlers.get_forecast_method_availability_snapshot",
+            "mtdata.core.web_api_handlers.get_forecast_methods_payload",
             side_effect=RuntimeError("boom"),
         ):
             res = web_api.get_methods()
-        assert "methods" in res
+        assert res == data
 

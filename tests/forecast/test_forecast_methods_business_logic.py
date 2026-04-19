@@ -164,3 +164,49 @@ def test_forecast_methods_snapshot_enriches_rows_with_capabilities(monkeypatch):
     assert sf_theta["namespace"] == "statsforecast"
     assert sf_theta["execution"]["method"] == "statsforecast"
     assert sf_theta["selector"]["key"] == "model_name"
+
+
+def test_get_forecast_methods_payload_reuses_shared_snapshot_rows():
+    methods_data = {
+        "total": 1,
+        "categories": {"statsforecast": ["sf_theta"]},
+        "methods": [
+            {
+                "method": "sf_theta",
+                "available": False,
+                "description": "StatsForecast theta.",
+                "requires": ["statsforecast"],
+                "supports": {"price": True, "return": True, "volatility": False, "ci": False},
+                "params": [],
+            }
+        ],
+    }
+    capabilities = [
+        {
+            "method": "sf_theta",
+            "namespace": "statsforecast",
+            "concept": "theta",
+            "capability_id": "statsforecast:theta",
+            "adapter_method": "statsforecast",
+            "selector": {"mode": "class_name", "key": "model_name", "value": "Theta"},
+            "execution": {
+                "library": "statsforecast",
+                "method": "statsforecast",
+                "params": {"model_name": "Theta"},
+            },
+            "display_name": "Theta",
+            "supports": {"price": True, "return": True, "volatility": False, "ci": True},
+        }
+    ]
+
+    payload = fm.get_forecast_methods_payload(
+        method_data=methods_data,
+        capabilities=capabilities,
+    )
+
+    assert payload["total"] == 1
+    assert payload["categories"] == {"statsforecast": ["sf_theta"]}
+    assert payload["methods"][0]["method"] == "sf_theta"
+    assert payload["methods"][0]["namespace"] == "statsforecast"
+    assert payload["methods"][0]["method_id"] == "statsforecast:theta"
+    assert payload["methods"][0]["supports_ci"] is True

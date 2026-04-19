@@ -9,9 +9,7 @@ from typing import Any, Callable, Dict, List, NoReturn, Optional
 from fastapi import HTTPException
 
 from ..forecast.exceptions import ForecastError
-from ..forecast.forecast_registry import (
-    get_forecast_method_availability_snapshot,
-)
+from ..forecast.forecast_methods import get_forecast_methods_payload
 from ..utils.mt5 import MT5ConnectionError
 from ..utils.support_resistance import compact_support_resistance_payload
 from ..utils.utils import _UNPARSED_BOOL, _parse_bool_like
@@ -217,16 +215,9 @@ def get_methods_response(*, get_methods_impl: Callable[[], Any]) -> Dict[str, An
     if not isinstance(methods, list):
         return {"methods": []}
     try:
-        availability = get_forecast_method_availability_snapshot()
+        return get_forecast_methods_payload(method_data=data)
     except Exception:
-        availability = {}
-    for method in methods:
-        if not isinstance(method, dict):
-            continue
-        name = str(method.get("method") or "").strip()
-        if name in availability:
-            method["available"] = availability[name]
-    return data
+        return data
 
 
 def get_vol_methods_response(*, get_vol_methods: Callable[[], Any]) -> Dict[str, Any]:
