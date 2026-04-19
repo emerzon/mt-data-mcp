@@ -1166,6 +1166,49 @@ def test_modify_position_preserves_existing_magic(mock_mt5):
     assert req["magic"] == 98765
 
 
+def test_modify_position_treats_exact_matching_protection_as_no_change(mock_mt5):
+    mock_mt5.TRADE_ACTION_SLTP = 6
+    mock_mt5.TRADE_RETCODE_NO_CHANGES = 10025
+    position = SimpleNamespace(symbol="EURUSD", sl=1.04000, tp=1.06000, type=0, magic=98765)
+
+    with patch(
+        "src.mtdata.core.trading.execution._resolve_open_position",
+        return_value=(position, 456, {}),
+    ):
+        res = _modify_position(
+            ticket=456,
+            stop_loss=1.04000,
+            take_profit=1.06000,
+        )
+
+    assert res.get("success") is True
+    assert res.get("no_change") is True
+    assert res.get("retcode") == 10025
+    mock_mt5.order_send.assert_not_called()
+
+
+def test_modify_position_applies_one_point_protection_change(mock_mt5):
+    mock_mt5.TRADE_ACTION_SLTP = 6
+    position = SimpleNamespace(symbol="EURUSD", sl=1.04000, tp=1.06000, type=0, magic=98765)
+
+    with patch(
+        "src.mtdata.core.trading.execution._resolve_open_position",
+        return_value=(position, 456, {}),
+    ):
+        res = _modify_position(
+            ticket=456,
+            stop_loss=1.04001,
+            take_profit=1.06000,
+        )
+
+    assert res.get("success") is True
+    assert res.get("no_change") is not True
+    req = mock_mt5.order_send.call_args[0][0]
+    assert req["position"] == 456
+    assert math.isclose(req["sl"], 1.04001)
+    assert math.isclose(req["tp"], 1.06000)
+
+
 def test_modify_position_retries_without_comment_when_comment_is_invalid(mock_mt5):
     mock_mt5.TRADE_ACTION_SLTP = 6
     position = SimpleNamespace(symbol="EURUSD", sl=1.03000, tp=1.05000, type=0, magic=98765)

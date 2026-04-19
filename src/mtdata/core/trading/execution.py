@@ -37,6 +37,12 @@ def _protection_levels_match(lhs: Optional[float], rhs: Optional[float], *, tol:
     return math.isclose(float(lhs), float(rhs), abs_tol=tol)
 
 
+def _protection_level_tolerance(*, point: float) -> float:
+    if math.isfinite(point) and point > 0.0:
+        return point * 0.1
+    return 1e-9
+
+
 def _unexpected_operation_error(
     operation: str,
     exc: Exception,
@@ -218,7 +224,7 @@ def _modify_position(
                 else None
             )
 
-            price_tol = point if math.isfinite(point) and point > 0.0 else 1e-9
+            price_tol = _protection_level_tolerance(point=point)
             current_sl = _normalize_protection_level(existing_sl, tol=price_tol)
             current_tp = _normalize_protection_level(existing_tp, tol=price_tol)
             desired_sl = _normalize_protection_level(norm_sl, tol=price_tol)
