@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 from mtdata.core.trading import trade_history as _trade_history_tool
 from mtdata.core.trading.account import trade_journal_analyze as _trade_journal_tool
+from mtdata.core.trading.positions import normalize_trade_history_output
 from mtdata.core.trading.requests import TradeHistoryRequest, TradeJournalAnalyzeRequest
 from mtdata.core.trading.use_cases import run_trade_history
 from mtdata.utils.mt5 import MT5ConnectionError, _mt5_epoch_to_utc
@@ -539,6 +540,30 @@ def test_trade_history_returns_connection_error_payload() -> None:
     assert out["kind"] == "trade_history"
     assert out["count"] == 0
     assert out["items"] == []
+
+
+def test_normalize_trade_history_output_preserves_upstream_error_metadata() -> None:
+    request = TradeHistoryRequest(history_kind="deals", symbol="EURUSD")
+
+    out = normalize_trade_history_output(
+        {
+            "error": "history lookup failed",
+            "error_code": "trade_history_lookup_failed",
+            "request_id": "broker-123",
+            "details": {"range": "7d"},
+            "checked_scopes": ["history"],
+        },
+        request=request,
+    )
+
+    assert out["success"] is False
+    assert out["error"] == "history lookup failed"
+    assert out["error_code"] == "trade_history_lookup_failed"
+    assert out["request_id"] == "broker-123"
+    assert out["details"] == {"range": "7d"}
+    assert out["checked_scopes"] == ["history"]
+    assert out["kind"] == "trade_history"
+    assert out["scope"] == "symbol"
 
 
 def test_trade_history_empty_message_uses_enveloped_contract() -> None:

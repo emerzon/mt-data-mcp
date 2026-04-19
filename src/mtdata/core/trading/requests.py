@@ -39,6 +39,13 @@ class TradePlaceRequest(BaseModel):
     comment: Optional[str] = None
     deviation: int = 20
     dry_run: bool = False
+    detail: Literal["preview", "basic", "full", "compact", "summary"] = Field(
+        default="basic",
+        description=(
+            "Dry-run preview detail level. Use preview/basic/full; compact/summary "
+            "aliases map to preview."
+        ),
+    )
     require_sl_tp: bool = True
     auto_close_on_sl_tp_fail: bool = False
     idempotency_key: Optional[str] = Field(
@@ -147,12 +154,26 @@ class TradeGetOpenRequest(BaseModel):
     symbol: Optional[str] = None
     ticket: Optional[Union[int, str]] = None
     limit: Optional[int] = 200
+    detail: Literal["compact", "full"] = Field(
+        default="full",
+        description=(
+            "Response detail level. Use compact to omit echoed request metadata "
+            "while preserving the standard read envelope."
+        ),
+    )
 
 
 class TradeGetPendingRequest(BaseModel):
     symbol: Optional[str] = None
     ticket: Optional[Union[int, str]] = None
     limit: Optional[int] = 200
+    detail: Literal["compact", "full"] = Field(
+        default="full",
+        description=(
+            "Response detail level. Use compact to omit echoed request metadata "
+            "while preserving the standard read envelope."
+        ),
+    )
 
 
 class TradeSessionContextRequest(BaseModel):

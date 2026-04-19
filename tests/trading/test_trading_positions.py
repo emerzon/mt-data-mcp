@@ -25,6 +25,33 @@ def test_position_side_matches_uses_numeric_defaults_when_mt5_constants_are_miss
     assert positions._position_side_matches(SimpleNamespace(type=1), "SELL", mt5) is True
 
 
+def test_normalize_trade_read_output_keeps_request_echoes_by_default():
+    out = positions._normalize_trade_read_output(
+        [{"ticket": 1, "symbol": "EURUSD"}],
+        request=SimpleNamespace(symbol="EURUSD", limit=5),
+        kind="open_positions",
+    )
+
+    assert out["symbol"] == "EURUSD"
+    assert out["limit"] == 5
+    assert out["scope"] == "symbol"
+    assert out["count"] == 1
+
+
+def test_normalize_trade_read_output_compact_omits_request_echoes():
+    out = positions._normalize_trade_read_output(
+        [{"ticket": 1, "symbol": "EURUSD"}],
+        request=SimpleNamespace(symbol="EURUSD", ticket=1, limit=5, detail="compact"),
+        kind="open_positions",
+    )
+
+    assert out["scope"] == "ticket"
+    assert out["count"] == 1
+    assert "symbol" not in out
+    assert "ticket" not in out
+    assert "limit" not in out
+
+
 def test_resolve_open_position_respects_side_filter_when_mt5_constants_are_missing():
     class _NoConstantsMt5:
         def __init__(self, rows):

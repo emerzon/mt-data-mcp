@@ -15,6 +15,7 @@ from ...utils.utils import (
 )
 from .._mcp_instance import mcp
 from ..execution_logging import run_logged_operation
+from ..output_contract import resolve_output_contract
 from . import comments, validation
 from .gateway import create_trading_gateway
 from .requests import TradeGetOpenRequest, TradeGetPendingRequest
@@ -104,6 +105,24 @@ def _trade_read_scope(request: Any) -> str:
     return "all"
 
 
+def _preserve_trade_error_metadata(out: Dict[str, Any], source: Dict[str, Any]) -> None:
+    for key, value in source.items():
+        if key in {"error", "items", "success"}:
+            continue
+        if value is None:
+            continue
+        if isinstance(value, str) and not value.strip():
+            continue
+        if key in out:
+            continue
+        out[key] = value
+
+
+def _include_trade_read_request_metadata(request: Any) -> bool:
+    contract = resolve_output_contract(request, default_detail="full")
+    return contract.shape_detail == "full"
+
+
 def _normalize_trade_read_output(
     rows: Any,
     *,
@@ -117,21 +136,23 @@ def _normalize_trade_read_output(
         "count": 0,
         "items": [],
     }
-    symbol = getattr(request, "symbol", None)
-    ticket = getattr(request, "ticket", None)
-    limit = getattr(request, "limit", None)
-    if symbol is not None:
-        out["symbol"] = symbol
-    if ticket is not None:
-        out["ticket"] = ticket
-    if limit is not None:
-        out["limit"] = limit
+    if _include_trade_read_request_metadata(request):
+        symbol = getattr(request, "symbol", None)
+        ticket = getattr(request, "ticket", None)
+        limit = getattr(request, "limit", None)
+        if symbol is not None:
+            out["symbol"] = symbol
+        if ticket is not None:
+            out["ticket"] = ticket
+        if limit is not None:
+            out["limit"] = limit
 
     if isinstance(rows, dict):
         error_text = str(rows.get("error", "")).strip()
         if error_text:
             out["success"] = False
             out["error"] = error_text
+            _preserve_trade_error_metadata(out, rows)
             return out
 
         items = rows.get("items")
@@ -157,6 +178,7 @@ def _normalize_trade_read_output(
         if error_text:
             out["success"] = False
             out["error"] = error_text
+            _preserve_trade_error_metadata(out, first)
             return out
         message_text = str(first.get("message", "")).strip()
         if message_text:
@@ -487,7 +509,7 @@ def _resolve_pending_order(
 def trade_get_open(
     request: TradeGetOpenRequest,
 ) -> Dict[str, Any]:
-    """Get open positions."""
+    """Get open positions. Use detail="compact" to omit echoed request metadata."""
     return run_logged_operation(
         logger,
         operation="trade_get_open",
@@ -514,7 +536,7 @@ def trade_get_open(
 def trade_get_pending(
     request: TradeGetPendingRequest,
 ) -> Dict[str, Any]:
-    """Get pending orders (open orders)."""
+    """Get pending orders. Use detail="compact" to omit echoed request metadata."""
     return run_logged_operation(
         logger,
         operation="trade_get_pending",

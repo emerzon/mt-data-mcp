@@ -148,6 +148,27 @@ class TestMergedTools(unittest.TestCase):
         self.assertEqual(row.get("Comment Length"), len("audit short"))
         self.assertFalse(row.get("Comment May Be Truncated"))
 
+    def test_trading_open_compact_detail_omits_echoed_request_metadata(self):
+        Pos = namedtuple("Pos", ["ticket", "time", "time_msc", "time_update", "time_update_msc", "type", "symbol"])
+        self.mt5.positions_get.return_value = [
+            Pos(
+                ticket=1,
+                time=1700000000,
+                time_msc=1700000000000,
+                time_update=1700000001,
+                time_update_msc=1700000001000,
+                type=0,
+                symbol="EURUSD",
+            )
+        ]
+
+        res = get_open(symbol="EURUSD", limit=5, detail="compact", __cli_raw=True)
+        self.assertIsInstance(res, dict)
+        self.assertEqual(res.get("kind"), "open_positions")
+        self.assertEqual(res.get("scope"), "symbol")
+        self.assertNotIn("symbol", res)
+        self.assertNotIn("limit", res)
+
     def test_trading_open_get_pending(self):
         self.mt5.orders_get.return_value = None
 
@@ -195,6 +216,26 @@ class TestMergedTools(unittest.TestCase):
         self.assertIsNone(row.get("time_setup_msc"))
         self.assertIsNone(row.get("direction"))
         self.assertIsNone(row.get("type_code"))
+
+    def test_trading_pending_compact_detail_omits_echoed_request_metadata(self):
+        Order = namedtuple("Order", ["ticket", "time_setup", "time_setup_msc", "time_expiration", "type", "symbol"])
+        self.mt5.orders_get.return_value = [
+            Order(
+                ticket=1,
+                time_setup=1700000000,
+                time_setup_msc=1700000000000,
+                time_expiration=1700003600,
+                type=3,
+                symbol="EURUSD",
+            )
+        ]
+
+        res = get_pending(symbol="EURUSD", limit=5, detail="compact", __cli_raw=True)
+        self.assertIsInstance(res, dict)
+        self.assertEqual(res.get("kind"), "pending_orders")
+        self.assertEqual(res.get("scope"), "symbol")
+        self.assertNotIn("symbol", res)
+        self.assertNotIn("limit", res)
 
     def test_patterns_detect(self):
         # Mock symbol info

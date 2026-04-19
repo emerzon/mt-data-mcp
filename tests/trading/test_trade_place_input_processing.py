@@ -193,11 +193,38 @@ def test_trade_place_dry_run_market_preview_skips_order_send() -> None:
     assert out.get("no_action") is True
     assert out.get("pending") is False
     assert out.get("action") == "place_market_order"
-    assert out.get("trade_gate_passed") is False
     assert out.get("actionability") == "preview_only"
-    assert out.get("validation_scope") == "request_routing_only"
+    assert out.get("preview_scope_summary") == "Routing and local request checks only."
     assert "fillability" in (out.get("validation_not_performed") or [])
+    assert "warnings" in out
+    assert "validation_scope" not in out
+    assert "trade_gate_passed" not in out
     assert out.get("message") == "Dry run only. No order was sent to MT5."
+    mock_market.assert_not_called()
+
+
+def test_trade_place_dry_run_preview_detail_omits_safety_lists() -> None:
+    with patch("mtdata.core.trading._place_market_order") as mock_market:
+        out = trade_place(
+            symbol="BTCUSD",
+            volume=0.03,
+            order_type="BUY",
+            stop_loss=64000,
+            take_profit=68000,
+            dry_run=True,
+            detail="preview",
+            __cli_raw=True,
+        )
+
+    assert out.get("success") is True
+    assert out.get("dry_run") is True
+    assert out.get("actionability") == "preview_only"
+    assert out.get("preview_scope_summary") == "Routing and local request checks only."
+    assert "warnings" not in out
+    assert "validation_not_performed" not in out
+    assert "guardrails_preview" not in out
+    assert "validation_scope" not in out
+    assert "trade_gate_passed" not in out
     mock_market.assert_not_called()
 
 
@@ -218,8 +245,10 @@ def test_trade_place_dry_run_pending_preview_skips_order_send() -> None:
     assert out.get("no_action") is True
     assert out.get("pending") is True
     assert out.get("action") == "place_pending_order"
-    assert out.get("trade_gate_passed") is False
     assert out.get("actionability") == "preview_only"
+    assert out.get("preview_scope_summary") == "Routing and local request checks only."
+    assert "warnings" in out
+    assert "trade_gate_passed" not in out
     assert out.get("requested_price") == 64500
     assert out.get("expiration") == "GTC"
     mock_pending.assert_not_called()

@@ -21,6 +21,7 @@ from ..execution_logging import (
     log_operation_start,
     run_logged_operation,
 )
+from ..output_contract import resolve_output_contract
 from . import validation
 from .idempotency import IdempotencyStore
 from .requests import (
@@ -42,6 +43,58 @@ _TRADE_IDEMPOTENCY_STORE = IdempotencyStore()
 _TRADE_HISTORY_RANGE_HINT = (
     "Try narrowing the range with --minutes-back, --days, --start, or --end."
 )
+_TRADE_PLACE_PREVIEW_KEYS = (
+    "success",
+    "dry_run",
+    "no_action",
+    "symbol",
+    "order_type",
+    "pending",
+    "action",
+    "volume",
+    "message",
+    "actionability",
+    "preview_scope_summary",
+    "require_sl_tp",
+    "auto_close_on_sl_tp_fail",
+    "requested_price",
+    "requested_sl",
+    "requested_tp",
+    "expiration",
+    "expiration_normalized",
+)
+_TRADE_PLACE_BASIC_KEYS = _TRADE_PLACE_PREVIEW_KEYS + (
+    "actionability_reason",
+    "validation_not_performed",
+    "warnings",
+    "guardrails_preview",
+)
+
+
+def _resolve_trade_place_preview_detail(request: TradePlaceRequest) -> str:
+    contract = resolve_output_contract(
+        request,
+        detail=request.detail,
+        default_detail="basic",
+        aliases={
+            "compact": "preview",
+            "summary": "preview",
+        },
+    )
+    if contract.shape_detail == "full":
+        return "full"
+    if contract.detail == "preview":
+        return "preview"
+    return "basic"
+
+
+def _shape_trade_place_preview(
+    payload: Dict[str, Any], *, detail: str
+) -> Dict[str, Any]:
+    if detail == "full":
+        return dict(payload)
+    keys = _TRADE_PLACE_BASIC_KEYS if detail == "basic" else _TRADE_PLACE_PREVIEW_KEYS
+    return {key: payload[key] for key in keys if key in payload}
 
 
 def _sl_tp_result_details(result: Dict[str, Any]) -> tuple[bool, str, bool]:
@@ -454,6 +507,7 @@ def run_trade_place(  # noqa: C901
         normalized_expiration: Any,
         expiration_provided: bool,
     ) -> Dict[str, Any]:
+        preview_detail = _resolve_trade_place_preview_detail(request)
         validation_scope = "request_routing_only"
         validation_not_performed = [
             "broker_acceptance",
@@ -510,7 +564,7 @@ def run_trade_place(  # noqa: C901
             preview["expiration"] = request.expiration
             if normalized_expiration is not None:
                 preview["expiration_normalized"] = normalized_expiration
-        return preview
+        return _shape_trade_place_preview(preview, detail=preview_detail)
 
     if not symbol_norm:
         missing.append("symbol")
