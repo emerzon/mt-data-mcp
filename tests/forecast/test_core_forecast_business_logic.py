@@ -772,6 +772,21 @@ def test_forecast_conformal_intervals_success_and_errors(monkeypatch):
     assert raw(request=ForecastConformalIntervalsRequest(symbol="EURUSD", method="theta", horizon=2))["error"] == "engine exploded"
 
 
+def test_forecast_conformal_intervals_request_defaults_and_spacing_validation():
+    request = ForecastConformalIntervalsRequest(symbol="EURUSD")
+
+    assert request.horizon == 12
+    assert request.spacing == 20
+
+    with pytest.raises(ValidationError, match="spacing must be greater than or equal to horizon when steps > 1"):
+        ForecastConformalIntervalsRequest(
+            symbol="EURUSD",
+            horizon=12,
+            steps=2,
+            spacing=10,
+        )
+
+
 def test_run_forecast_conformal_intervals_routes_method_params_consistently():
     captured = {}
 

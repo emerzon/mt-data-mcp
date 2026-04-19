@@ -108,10 +108,19 @@ class ForecastConformalIntervalsRequest(BaseModel):
     method: str = "theta"
     horizon: int = Field(12, ge=1)
     steps: int = Field(25, ge=1)
-    spacing: int = Field(10, ge=1)
+    spacing: int = Field(20, ge=1)
     ci_alpha: float = Field(0.1, gt=0.0, lt=1.0)
     denoise: Optional[DenoiseSpec] = None
     params: Optional[Dict[str, Any]] = None
+
+    @model_validator(mode="after")
+    def _validate_spacing(self) -> "ForecastConformalIntervalsRequest":
+        if self.steps > 1 and self.spacing < self.horizon:
+            raise ValueError(
+                "spacing must be greater than or equal to horizon when steps > 1 "
+                f"(got spacing={self.spacing}, horizon={self.horizon})"
+            )
+        return self
 
 
 class ForecastTuneGeneticRequest(BaseModel):
