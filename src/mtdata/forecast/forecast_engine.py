@@ -805,6 +805,7 @@ def _format_forecast_output(
 
         if ci_values is not None and len(ci_values) == 2:  # [lower, upper]
             result["ci_status"] = "available"
+            result["ci_available"] = True
             lower_vals = [float(v) for v in ci_values[0]]
             upper_vals = [float(v) for v in ci_values[1]]
             if quantity == 'return':
@@ -839,6 +840,7 @@ def _format_forecast_output(
             warnings.append(warning_text)
             result["warnings"] = warnings
             result["ci_status"] = "unavailable"
+            result["ci_available"] = False
 
     # Add metadata
     result.update({

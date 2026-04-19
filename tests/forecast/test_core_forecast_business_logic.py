@@ -754,6 +754,7 @@ def test_forecast_conformal_intervals_success_and_errors(monkeypatch):
 
     assert out["ci_alpha"] == 0.1
     assert out["ci_status"] == "available"
+    assert out["ci_available"] is True
     assert out["conformal"]["ci_alpha"] == 0.1
     assert len(out["lower_price"]) == 2
     assert len(out["upper_price"]) == 2
@@ -884,6 +885,7 @@ def test_run_forecast_conformal_intervals_rewrites_interval_unavailable_guidance
     )
 
     assert result["ci_status"] == "available"
+    assert result["ci_available"] is True
     assert result["lower_price"] == [99.0]
     assert result["upper_price"] == [101.0]
     assert result["warnings"] == ["native theta fallback used"]

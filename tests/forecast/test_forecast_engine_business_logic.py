@@ -111,8 +111,8 @@ def test_preprocessing_helpers_and_output_format():
     assert "forecast" not in res
     assert res["ci_alpha"] == 0.1
     assert res["ci_status"] == "available"
+    assert res["ci_available"] is True
     assert "ci_requested" not in res
-    assert "ci_available" not in res
     assert "ci_alpha_requested" not in res
     assert "ci_unavailable" not in res
     assert res["lower_return"] == [0.0, 0.01, -0.02]
@@ -141,9 +141,9 @@ def test_preprocessing_helpers_and_output_format():
         )
     assert no_ci["ci_status"] == "unavailable"
     assert no_ci["ci_alpha"] == 0.05
+    assert no_ci["ci_available"] is False
     assert "ci_unavailable" not in no_ci
     assert "ci_requested" not in no_ci
-    assert "ci_available" not in no_ci
     assert "ci_alpha_requested" not in no_ci
     assert "warnings" in no_ci
     assert "Point forecast only" in no_ci["warnings"][0]
@@ -809,9 +809,9 @@ def test_forecast_engine_warns_when_ci_requested_but_method_has_no_intervals(mon
     assert out["success"] is True
     assert out["ci_status"] == "unavailable"
     assert out["ci_alpha"] == 0.1
+    assert out["ci_available"] is False
     assert "ci_unavailable" not in out
     assert "ci_requested" not in out
-    assert "ci_available" not in out
     assert "ci_alpha_requested" not in out
     assert "warnings" in out
     assert "Point forecast only" in out["warnings"][0]

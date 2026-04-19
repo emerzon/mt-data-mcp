@@ -509,6 +509,7 @@ def run_forecast_conformal_intervals(
         result["upper_price"] = [float(v) for v in hi.tolist()]
         result["ci_alpha"] = float(request.ci_alpha)
         result["ci_status"] = "available"
+        result["ci_available"] = True
         warnings_out = result.get("warnings")
         if isinstance(warnings_out, list):
             filtered_warnings = [
