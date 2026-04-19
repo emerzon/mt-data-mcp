@@ -294,7 +294,11 @@ class TestCausalDiscoverSignals:
 
         result = self._unwrapped()("EURUSD,GBPUSD")
 
-        assert result == {"error": "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."}
+        assert result["error"] == "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."
+        assert result["success"] is False
+        assert result["error_code"] == "mt5_connection_error"
+        assert result["operation"] == "mt5_ensure_connection"
+        assert isinstance(result.get("request_id"), str)
 
     def test_empty_symbols(self):
         result = self._unwrapped()("")

@@ -80,9 +80,11 @@ def test_regime_detect_returns_connection_error_payload(monkeypatch) -> None:
 
     out = raw(symbol="EURUSD", timeframe="H1", limit=80, method="bocpd")
 
-    assert out == {
-        "error": "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."
-    }
+    assert out["error"] == "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."
+    assert out["success"] is False
+    assert out["error_code"] == "mt5_connection_error"
+    assert out["operation"] == "mt5_ensure_connection"
+    assert isinstance(out.get("request_id"), str)
 
 
 def test_bocpd_uses_crypto_sensitive_auto_hazard_default() -> None:

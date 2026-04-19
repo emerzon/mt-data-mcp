@@ -551,23 +551,31 @@ class TestReportErrorText:
 class TestReportErrorPayload:
     def test_normal_message(self):
         result = _report_error_payload("fail")
-        assert result == {"error": "fail"}
+        assert result["success"] is False
+        assert result["error"] == "fail"
+        assert result["error_code"] == "report_generation_error"
+        assert result["operation"] == "report_generate"
+        assert isinstance(result.get("request_id"), str)
 
     def test_empty_message(self):
         result = _report_error_payload("")
-        assert result == {"error": "Unknown error."}
+        assert result["error"] == "Unknown error."
+        assert result["error_code"] == "report_generation_error"
 
     def test_whitespace_only(self):
         result = _report_error_payload("   ")
-        assert result == {"error": "Unknown error."}
+        assert result["error"] == "Unknown error."
+        assert result["error_code"] == "report_generation_error"
 
     def test_strips_whitespace(self):
         result = _report_error_payload("  oops  ")
-        assert result == {"error": "oops"}
+        assert result["error"] == "oops"
+        assert result["error_code"] == "report_generation_error"
 
     def test_non_string(self):
         result = _report_error_payload(Exception("err"))
         assert result["error"] == "err"
+        assert result["error_code"] == "report_generation_error"
 
 
 # ===== template_basic (mocked) ==============================================
