@@ -2317,28 +2317,33 @@ def _is_order_cancelled(row: Any, *, gateway: Any) -> bool:
 def _is_exit_trigger(row: Any, *, gateway: Any, trigger: str) -> bool:
     trigger_txt = str(trigger or "").strip().lower()
     comment = str(_row_value(row, "comment") or "").lower()
-    reason = str(_row_value(row, "reason") or "").lower()
-    if trigger_txt == "tp":
-        if _matches_exit_trigger_text(comment, trigger="tp") or _matches_exit_trigger_text(reason, trigger="tp"):
-            return True
-        return _row_enum_matches(
-            row,
-            "reason",
-            text_patterns=("deal_reason_tp", "take profit", "tp"),
-            numeric_constants=("DEAL_REASON_TP",),
-            gateway=gateway,
-        )
-    if trigger_txt == "sl":
-        if _matches_exit_trigger_text(comment, trigger="sl") or _matches_exit_trigger_text(reason, trigger="sl"):
-            return True
-        return _row_enum_matches(
-            row,
-            "reason",
-            text_patterns=("deal_reason_sl", "stop loss", "sl"),
-            numeric_constants=("DEAL_REASON_SL",),
-            gateway=gateway,
-        )
+    reason_trigger = _resolve_exit_trigger_reason(row, gateway=gateway)
+    if reason_trigger is not None:
+        return reason_trigger == trigger_txt
+    if trigger_txt in {"tp", "sl"}:
+        return _matches_exit_trigger_text(comment, trigger=trigger_txt)
     return False
+
+
+def _resolve_exit_trigger_reason(row: Any, *, gateway: Any) -> Optional[str]:
+    reason_text = str(_row_value(row, "reason") or "").lower()
+    if _row_enum_matches(
+        row,
+        "reason",
+        text_patterns=("deal_reason_tp", "take profit"),
+        numeric_constants=("DEAL_REASON_TP",),
+        gateway=gateway,
+    ) or _matches_exit_trigger_text(reason_text, trigger="tp"):
+        return "tp"
+    if _row_enum_matches(
+        row,
+        "reason",
+        text_patterns=("deal_reason_sl", "stop loss"),
+        numeric_constants=("DEAL_REASON_SL",),
+        gateway=gateway,
+    ) or _matches_exit_trigger_text(reason_text, trigger="sl"):
+        return "sl"
+    return None
 
 
 def _row_enum_matches(

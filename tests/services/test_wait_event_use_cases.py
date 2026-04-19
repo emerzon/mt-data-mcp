@@ -2447,6 +2447,33 @@ def test_exit_trigger_text_matching_accepts_explicit_tp_markers() -> None:
     assert wait_events_mod._is_exit_trigger(row, gateway=gateway, trigger="tp") is True
 
 
+def test_exit_trigger_matches_numeric_reason_constants() -> None:
+    gateway = SequenceGateway()
+
+    assert wait_events_mod._is_exit_trigger(
+        {"comment": "", "reason": gateway.DEAL_REASON_TP},
+        gateway=gateway,
+        trigger="tp",
+    ) is True
+    assert wait_events_mod._is_exit_trigger(
+        {"comment": "", "reason": gateway.DEAL_REASON_SL},
+        gateway=gateway,
+        trigger="sl",
+    ) is True
+
+
+def test_exit_trigger_prefers_broker_reason_over_conflicting_comment_text() -> None:
+    gateway = SequenceGateway()
+
+    tp_row = {"comment": "stop loss hit", "reason": gateway.DEAL_REASON_TP}
+    sl_row = {"comment": "take profit hit", "reason": gateway.DEAL_REASON_SL}
+
+    assert wait_events_mod._is_exit_trigger(tp_row, gateway=gateway, trigger="tp") is True
+    assert wait_events_mod._is_exit_trigger(tp_row, gateway=gateway, trigger="sl") is False
+    assert wait_events_mod._is_exit_trigger(sl_row, gateway=gateway, trigger="sl") is True
+    assert wait_events_mod._is_exit_trigger(sl_row, gateway=gateway, trigger="tp") is False
+
+
 def test_run_wait_event_returns_connection_error_when_gateway_disconnects_mid_loop() -> None:
     gateway = DisconnectingGateway(
         positions_seq=[[]],
