@@ -202,6 +202,41 @@ def _drop_incomplete_tail_df(
     return df, False
 
 
+def _build_candle_freshness_diagnostics(
+    *,
+    last_bar_epoch: Any,
+    expected_end_epoch: Any,
+    freshness_cutoff_epoch: Any,
+) -> Dict[str, Any]:
+    def _coerce_epoch(value: Any) -> Optional[float]:
+        try:
+            epoch = float(value)
+        except Exception:
+            return None
+        if not math.isfinite(epoch):
+            return None
+        return epoch
+
+    last_epoch = _coerce_epoch(last_bar_epoch)
+    expected_epoch = _coerce_epoch(expected_end_epoch)
+    cutoff_epoch = _coerce_epoch(freshness_cutoff_epoch)
+    data_freshness_seconds: Optional[float] = None
+    last_bar_within_policy_window: Optional[bool] = None
+
+    if last_epoch is not None and expected_epoch is not None:
+        data_freshness_seconds = float(expected_epoch - last_epoch)
+    if last_epoch is not None and cutoff_epoch is not None:
+        last_bar_within_policy_window = bool(last_epoch >= cutoff_epoch)
+
+    return {
+        "last_bar_epoch": last_epoch,
+        "expected_end_epoch": expected_epoch,
+        "freshness_cutoff_epoch": cutoff_epoch,
+        "data_freshness_seconds": data_freshness_seconds,
+        "last_bar_within_policy_window": last_bar_within_policy_window,
+    }
+
+
 def _fetch_rates_with_warmup(
     symbol: str,
     mt5_timeframe: int,
@@ -214,9 +249,12 @@ def _fetch_rates_with_warmup(
     include_incomplete: bool = False,
     retry: bool = True,
     sanity_check: bool = True,
+    diagnostics: Optional[Dict[str, Any]] = None,
 ):
     """Fetch MT5 rates with optional warmup, retry, and end-bar sanity checks."""
     extra_bars = 0 if include_incomplete else 1
+    if diagnostics is not None:
+        diagnostics.pop("freshness", None)
     auto_shift_seconds = _resolve_live_rate_auto_shift_seconds(
         symbol=symbol,
         timeframe=timeframe,
@@ -288,7 +326,14 @@ def _fetch_rates_with_warmup(
                 break
             last_t = rates[-1]["time"]
             freshness_cutoff = expected_end_ts - seconds_per_bar * (SANITY_BARS_TOLERANCE + extra_bars)
-            if last_t >= freshness_cutoff:
+            freshness_meta = _build_candle_freshness_diagnostics(
+                last_bar_epoch=last_t,
+                expected_end_epoch=expected_end_ts,
+                freshness_cutoff_epoch=freshness_cutoff,
+            )
+            if diagnostics is not None:
+                diagnostics["freshness"] = freshness_meta
+            if bool(freshness_meta.get("last_bar_within_policy_window")):
                 stale_last_t = None
                 break
             stale_last_t = float(last_t)
@@ -982,6 +1027,8 @@ def fetch_candles(  # noqa: C901
                     )
                 }
             warmup_bars = _estimate_warmup_bars_util(ti_spec)
+            rate_fetch_diagnostics: Dict[str, Any] = {}
+            freshness_diagnostics: Optional[Dict[str, Any]] = None
 
             rates, rates_error = _fetch_rates_with_warmup(
                 symbol,
@@ -994,9 +1041,18 @@ def fetch_candles(  # noqa: C901
                 include_incomplete=include_incomplete,
                 retry=True,
                 sanity_check=True,
+                diagnostics=rate_fetch_diagnostics,
             )
+            freshness_diagnostics = rate_fetch_diagnostics.get("freshness")
             if rates_error:
-                return {"error": rates_error}
+                error_payload: Dict[str, Any] = {"error": rates_error}
+                if isinstance(freshness_diagnostics, dict):
+                    error_payload["details"] = {
+                        "diagnostics": {
+                            "freshness": dict(freshness_diagnostics),
+                        },
+                    }
+                return error_payload
         # visibility handled by _symbol_ready_guard
         
         if rates is None:
@@ -1222,6 +1278,8 @@ def fetch_candles(  # noqa: C901
                 },
             },
         })
+        if isinstance(freshness_diagnostics, dict):
+            payload["meta"]["diagnostics"]["freshness"] = dict(freshness_diagnostics)
         if session_gap_warning:
             payload["meta"]["diagnostics"]["session_gaps"]["warning"] = session_gap_warning
         if not _use_ctz:

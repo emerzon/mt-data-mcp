@@ -381,14 +381,29 @@ class TestFetchRatesWithWarmup(unittest.TestCase):
         """Stale bars should fail instead of being returned after retry exhaustion."""
         stale_rates = _make_rates(5, base_ts=60 * 60 * 5, step=60 * 60)
         mock_from.return_value = stale_rates
-        with patch(f'{_DS}.FETCH_RETRY_ATTEMPTS', 2), patch(f'{_DS}.FETCH_RETRY_DELAY', 0):
+        diagnostics = {}
+        with (
+            patch(f'{_DS}.FETCH_RETRY_ATTEMPTS', 2),
+            patch(f'{_DS}.FETCH_RETRY_DELAY', 0),
+            patch(f'{_DS}._utc_epoch_seconds', return_value=12 * 60 * 60),
+        ):
             result, err = _fetch_rates_with_warmup(
                 'EURUSD', 16385, 'H1', 5, 0, None, None,
-                retry=True, sanity_check=True,
+                retry=True, sanity_check=True, diagnostics=diagnostics,
             )
         self.assertIsNone(result)
         self.assertIn('remained stale after 2 attempt(s)', err)
         self.assertEqual(mock_from.call_count, 2)
+        self.assertEqual(
+            diagnostics['freshness'],
+            {
+                'last_bar_epoch': float(stale_rates[-1]['time']),
+                'expected_end_epoch': float(12 * 60 * 60),
+                'freshness_cutoff_epoch': float((12 * 60 * 60) - (4 * 60 * 60)),
+                'data_freshness_seconds': float((12 * 60 * 60) - stale_rates[-1]['time']),
+                'last_bar_within_policy_window': False,
+            },
+        )
 
     @patch(_RATES_FROM)
     @patch(_PARSE_START)
@@ -399,16 +414,27 @@ class TestFetchRatesWithWarmup(unittest.TestCase):
         stale_rates = _make_rates(5, base_ts=to_date.timestamp() - (10 * 60 * 60), step=60 * 60)
         fresh_rates = _make_rates(5, base_ts=to_date.timestamp(), step=60 * 60)
         mock_from.side_effect = [stale_rates, fresh_rates]
+        diagnostics = {}
 
         with patch(f'{_DS}.FETCH_RETRY_ATTEMPTS', 2), patch(f'{_DS}.FETCH_RETRY_DELAY', 0):
             result, err = _fetch_rates_with_warmup(
                 'EURUSD', 16385, 'H1', 5, 0, None, '2025-01-02',
-                retry=True, sanity_check=True,
+                retry=True, sanity_check=True, diagnostics=diagnostics,
             )
 
         self.assertIsNone(err)
         self.assertEqual(result, fresh_rates)
         self.assertEqual(mock_from.call_count, 2)
+        self.assertEqual(
+            diagnostics['freshness'],
+            {
+                'last_bar_epoch': float(fresh_rates[-1]['time']),
+                'expected_end_epoch': float(to_date.timestamp()),
+                'freshness_cutoff_epoch': float(to_date.timestamp() - (4 * 60 * 60)),
+                'data_freshness_seconds': 0.0,
+                'last_bar_within_policy_window': True,
+            },
+        )
 
 
 # ============================================================================
@@ -819,6 +845,18 @@ class TestFetchCandles(unittest.TestCase):
         self.assertEqual(result['candles'], 5)
         self.assertIn('latency_ms', query)
         self.assertIn('warmup_retry', query)
+        freshness = diagnostics['freshness']
+        self.assertEqual(
+            set(freshness.keys()),
+            {
+                'last_bar_epoch',
+                'expected_end_epoch',
+                'freshness_cutoff_epoch',
+                'data_freshness_seconds',
+                'last_bar_within_policy_window',
+            },
+        )
+        self.assertTrue(freshness['last_bar_within_policy_window'])
         self.assertEqual(diagnostics['indicators']['requested'], False)
         self.assertEqual(diagnostics['session_gaps']['expected_bar_seconds'], 3600.0)
 
@@ -1036,18 +1074,31 @@ class TestFetchCandles(unittest.TestCase):
         self.assertIn('No data', result['error'])
 
     @patch(_MT5_CONFIG)
+    @patch(_PARSE_START)
     @patch(_RATES_FROM)
     @patch(_CACHED_INFO, return_value=MagicMock())
     @patch(_RESOLVE_CTZ, return_value=None)
     @patch(_ESTIMATE_WARMUP, return_value=0)
     @patch(_GUARD, _mock_symbol_guard)
-    def test_stale_rates_are_rejected(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_cfg):
+    def test_stale_rates_are_rejected(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_parse, mock_cfg):
+        to_date = datetime(2025, 1, 2, tzinfo=_UTC)
+        mock_parse.return_value = to_date
         mock_cfg.get_time_offset_seconds.return_value = 0
-        mock_from.return_value = _make_rates(5, base_ts=60 * 60 * 5, step=60 * 60)
+        mock_from.return_value = _make_rates(5, base_ts=to_date.timestamp() - (10 * 60 * 60), step=60 * 60)
         with patch(f'{_DS}.FETCH_RETRY_ATTEMPTS', 2), patch(f'{_DS}.FETCH_RETRY_DELAY', 0):
-            result = fetch_candles('EURUSD', limit=5)
+            result = fetch_candles('EURUSD', limit=5, end='2025-01-02')
         self.assertIn('error', result)
         self.assertIn('remained stale after 2 attempt(s)', result['error'])
+        self.assertEqual(
+            result['details']['diagnostics']['freshness'],
+            {
+                'last_bar_epoch': float(to_date.timestamp() - (10 * 60 * 60)),
+                'expected_end_epoch': float(to_date.timestamp()),
+                'freshness_cutoff_epoch': float(to_date.timestamp() - (4 * 60 * 60)),
+                'data_freshness_seconds': float(10 * 60 * 60),
+                'last_bar_within_policy_window': False,
+            },
+        )
 
     # -- Indicators ----------------------------------------------------------
 
