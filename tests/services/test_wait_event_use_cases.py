@@ -1210,6 +1210,69 @@ def test_trim_market_ticks_still_honors_keep_tick_floor(monkeypatch) -> None:
     assert [tick["epoch"] for tick in trimmed] == [float(base_epoch + idx) for idx in range(5, 10)]
 
 
+def test_market_tick_retention_error_reports_clear_cap_failure(monkeypatch) -> None:
+    monkeypatch.setattr(wait_events_mod, "_MARKET_TICK_RETENTION_MAX_TICKS", 4)
+
+    error = wait_events_mod._market_tick_retention_error(
+        symbol="EURUSD",
+        ticks=[{"epoch": float(idx)} for idx in range(5)],
+        specs=[{"required_history_seconds": 60.0, "required_tick_count": 1}],
+    )
+
+    assert error is not None
+    assert "memory cap" in error["error"]
+    assert "EURUSD" in error["error"]
+    assert "5 retained ticks > 4" in error["error"]
+
+
+def test_run_wait_event_returns_error_when_tick_retention_cap_is_exceeded(monkeypatch) -> None:
+    monkeypatch.setattr(wait_events_mod, "_MARKET_TICK_RETENTION_MAX_TICKS", 4)
+
+    started = datetime(2026, 3, 15, 12, 0, 0, tzinfo=timezone.utc)
+    base_epoch = int(started.timestamp()) - 3
+    ticks = []
+    for idx in range(5):
+        epoch = base_epoch + idx
+        mid = 100.0 + idx * 0.01
+        ticks.append(
+            {
+                "time": epoch,
+                "time_msc": epoch * 1000,
+                "bid": mid - 0.0005,
+                "ask": mid + 0.0005,
+                "last": mid,
+            }
+        )
+    gateway = SequenceGateway(ticks_by_symbol={"EURUSD": ticks})
+    clock = FakeClock(started)
+
+    result = run_wait_event(
+        WaitEventRequest(
+            watch_for=[
+                {
+                    "type": "price_touch_level",
+                    "symbol": "EURUSD",
+                    "level": 200.0,
+                    "price_source": "mid",
+                    "direction": "up",
+                    "tolerance": 0.01,
+                }
+            ],
+            poll_interval_seconds=1.0,
+            max_wait_seconds=5.0,
+        ),
+        gateway=gateway,
+        sleep_impl=clock.sleep,
+        monotonic_impl=clock.monotonic,
+        now_utc_impl=clock.now_utc,
+    )
+
+    assert "error" in result
+    assert "tick retention" in result["error"]
+    assert "EURUSD" in result["error"]
+    assert "5 retained ticks > 4" in result["error"]
+
+
 def test_run_wait_event_uses_timeframe_as_boundary_when_watchers_are_inferred(monkeypatch) -> None:
     monkeypatch.setattr(
         "mtdata.core.data.wait_events._next_candle_wait_payload",

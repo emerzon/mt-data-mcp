@@ -37,6 +37,7 @@ _MARKET_BOOTSTRAP_MIN_SECONDS = 60.0
 _MARKET_BOOTSTRAP_MAX_SECONDS = 14400.0
 _MARKET_ESTIMATED_SECONDS_PER_TICK = 2.0
 _MARKET_BUFFER_EXTRA_TICKS = 32
+_MARKET_TICK_RETENTION_MAX_TICKS = 100_000
 _ACCOUNT_HISTORY_SEED_LOOKBACK_SECONDS = 5.0
 _ORDER_STATE_EVENT_TYPES = {"order_created", "pending_near_fill"}
 _POSITION_STATE_EVENT_TYPES = {"position_opened", "position_closed", "stop_threat"}
@@ -1113,12 +1114,20 @@ def _refresh_market_state(
         )
         if isinstance(ticks_or_error, dict) and "error" in ticks_or_error:
             return ticks_or_error
+        symbol_specs = [item for item in market_specs if item["symbol"] == symbol]
         trimmed = _merge_market_ticks(
             state.get("ticks", []),
             ticks_or_error,
-            specs=[item for item in market_specs if item["symbol"] == symbol],
+            specs=symbol_specs,
             observed_at_utc=observed_at_utc,
         )
+        retention_error = _market_tick_retention_error(
+            symbol=symbol,
+            ticks=trimmed,
+            specs=symbol_specs,
+        )
+        if retention_error is not None:
+            return retention_error
         state["ticks"] = trimmed
         state["last_epoch"] = float(trimmed[-1]["epoch"]) if trimmed else last_epoch
     return market_state
@@ -1938,6 +1947,13 @@ def _bootstrap_market_ticks(
         specs=specs,
         observed_at_utc=observed_at_utc,
     )
+    retention_error = _market_tick_retention_error(
+        symbol=symbol,
+        ticks=trimmed,
+        specs=specs,
+    )
+    if retention_error is not None:
+        return retention_error
     last_epoch = float(trimmed[-1]["epoch"]) if trimmed else observed_at_utc.timestamp()
     return {"ticks": trimmed, "last_epoch": last_epoch}
 
@@ -2535,6 +2551,32 @@ def _trim_market_ticks(
     if keep_ticks > 0:
         start_idx = min(start_idx, max(0, len(ticks) - keep_ticks))
     return ticks[start_idx:]
+
+
+def _market_tick_retention_error(
+    *,
+    symbol: str,
+    ticks: List[Dict[str, Any]],
+    specs: List[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    retained_tick_count = len(ticks)
+    if retained_tick_count <= _MARKET_TICK_RETENTION_MAX_TICKS:
+        return None
+    keep_seconds = max(float(spec.get("required_history_seconds") or 0.0) for spec in specs)
+    keep_ticks = max(int(spec.get("required_tick_count") or 0) for spec in specs) + _MARKET_BUFFER_EXTRA_TICKS
+    retained_for: List[str] = []
+    if keep_seconds > 0.0:
+        retained_for.append(f"{keep_seconds:.1f}s history")
+    if keep_ticks > 0:
+        retained_for.append(f"{keep_ticks} retained ticks minimum")
+    retained_for_text = ", ".join(retained_for) if retained_for else "current wait-event requirements"
+    return {
+        "error": (
+            f"Wait-event tick retention for {symbol} exceeded the memory cap while waiting for events "
+            f"({retained_tick_count} retained ticks > {_MARKET_TICK_RETENTION_MAX_TICKS}; "
+            f"keeping {retained_for_text})."
+        )
+    }
 
 
 def _market_price_points(ticks: List[Dict[str, Any]], *, source: str) -> List[tuple[float, float]]:
