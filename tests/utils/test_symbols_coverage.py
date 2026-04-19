@@ -123,6 +123,16 @@ class TestSymbolsListSearch:
     @patch(_NORM_LIMIT, return_value=25)
     @patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r})
     @patch(f"{_MT5}.symbols_get")
+    def test_search_trims_padded_symbol_query(self, mock_get, mock_tbl, mock_lim):
+        mock_get.return_value = self._setup_syms()
+        with patch(_GROUP_PATH, side_effect=lambda s: s.path):
+            fn = _get_symbols_list()
+            res = fn(search_term="  EUR  ", limit=25)
+        assert [row[0] for row in res["data"]] == ["EURUSD"]
+
+    @patch(_NORM_LIMIT, return_value=25)
+    @patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r})
+    @patch(f"{_MT5}.symbols_get")
     def test_search_results_sorted_case_insensitively(self, mock_get, mock_tbl, mock_lim):
         mock_get.return_value = [
             _make_symbol("usdjpy", path="Forex\\Majors"),
@@ -227,6 +237,20 @@ class TestSymbolsListSearch:
             res = fn(search_term="EUR", limit=25)
         # When searching, only_visible is False → hidden included
         assert "data" in res
+
+    @patch(_NORM_LIMIT, return_value=25)
+    @patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r})
+    @patch(f"{_MT5}.symbols_get")
+    def test_whitespace_only_search_behaves_like_no_search(self, mock_get, mock_tbl, mock_lim):
+        syms = [
+            _make_symbol("EURUSD", visible=True),
+            _make_symbol("HIDDEN", visible=False),
+        ]
+        mock_get.return_value = syms
+        with patch(_GROUP_PATH, side_effect=lambda s: s.path):
+            fn = _get_symbols_list()
+            res = fn(search_term="   ", limit=25)
+        assert [row[0] for row in res["data"]] == ["EURUSD"]
 
 
 class TestSymbolsListModes:

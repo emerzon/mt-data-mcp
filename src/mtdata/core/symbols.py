@@ -30,6 +30,13 @@ def _case_insensitive_sort_key(value: Any) -> tuple[str, str]:
     return text.casefold(), text
 
 
+def _normalize_symbol_search_term(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
 _SYMBOL_DESCRIBE_PRICE_FIELDS = frozenset(
     {
         "bidlow",
@@ -172,6 +179,8 @@ def symbols_list(  # noqa: C901
     list_mode: Literal["symbols", "groups"] = "symbols",  # type: ignore
 ) -> Dict[str, Any]:
     """List symbols or symbol groups."""
+    normalized_search_term = _normalize_symbol_search_term(search_term)
+
     def _run() -> Dict[str, Any]:
         try:
             mt5_gateway = get_mt5_gateway(
@@ -183,12 +192,16 @@ def symbols_list(  # noqa: C901
             if mode not in ("symbols", "groups"):
                 return {"error": "list_mode must be 'symbols' or 'groups'."}
             if mode == "groups":
-                return _list_symbol_groups(search_term=search_term, limit=limit, mt5_gateway=mt5_gateway)
+                return _list_symbol_groups(
+                    search_term=normalized_search_term,
+                    limit=limit,
+                    mt5_gateway=mt5_gateway,
+                )
 
             matched_symbols = []
 
-            if search_term:
-                search_upper = search_term.upper()
+            if normalized_search_term:
+                search_upper = normalized_search_term.upper()
 
                 all_symbols = mt5_gateway.symbols_get()
                 if all_symbols is None:
@@ -242,7 +255,7 @@ def symbols_list(  # noqa: C901
                 matched_symbols,
                 key=lambda symbol: _case_insensitive_sort_key(getattr(symbol, "name", "")),
             )
-            only_visible = not bool(search_term)
+            only_visible = not bool(normalized_search_term)
             symbol_list = []
             for symbol in matched_symbols:
                 if only_visible and not symbol.visible:
@@ -266,7 +279,7 @@ def symbols_list(  # noqa: C901
     return run_logged_operation(
         logger,
         operation="symbols_list",
-        search_term=search_term,
+        search_term=normalized_search_term,
         limit=limit,
         list_mode=list_mode,
         func=_run,
