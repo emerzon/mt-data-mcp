@@ -1,4 +1,5 @@
 import math
+from copy import deepcopy
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
 import numpy as np
@@ -23,6 +24,18 @@ from .common import (
 from .exceptions import ForecastError, raise_if_error_result
 from .forecast import forecast
 from .volatility import forecast_volatility
+
+
+def _attach_request_metadata(
+    result: Dict[str, Any],
+    *,
+    request: Dict[str, Any],
+    resolved_request: Dict[str, Any],
+) -> Dict[str, Any]:
+    out = dict(result)
+    out["request"] = deepcopy(request)
+    out["resolved_request"] = deepcopy(resolved_request)
+    return out
 
 
 def _get_forecast_methods_data_safe() -> Dict[str, Any]:
@@ -243,6 +256,21 @@ def strategy_backtest(  # noqa: C901
     slippage_bps: float = 0.0,
 ) -> Dict[str, Any]:
     try:
+        request_payload = {
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "strategy": strategy,
+            "lookback": lookback,
+            "detail": detail,
+            "position_mode": position_mode,
+            "fast_period": fast_period,
+            "slow_period": slow_period,
+            "rsi_length": rsi_length,
+            "oversold": oversold,
+            "overbought": overbought,
+            "max_hold_bars": max_hold_bars,
+            "slippage_bps": slippage_bps,
+        }
         strategy_value = str(strategy or "sma_cross").strip().lower()
         if strategy_value not in {"sma_cross", "ema_cross", "rsi_reversion"}:
             return {"error": "strategy must be one of: sma_cross, ema_cross, rsi_reversion"}
@@ -445,7 +473,25 @@ def strategy_backtest(  # noqa: C901
         else:
             result["no_action"] = True
             result["message"] = "The strategy generated no trades on the requested history."
-        return result
+        return _attach_request_metadata(
+            result,
+            request=request_payload,
+            resolved_request={
+                "symbol": symbol,
+                "timeframe": timeframe,
+                "strategy": strategy_value,
+                "lookback": int(lookback),
+                "detail": detail_mode,
+                "position_mode": position_mode_value,
+                "fast_period": int(fast_period),
+                "slow_period": int(slow_period),
+                "rsi_length": int(rsi_length),
+                "oversold": float(oversold),
+                "overbought": float(overbought),
+                "max_hold_bars": int(max_hold_bars) if max_hold_bars is not None else None,
+                "slippage_bps": float(slippage_bps),
+            },
+        )
     except Exception as e:
         return {"error": f"Error in strategy_backtest: {str(e)}"}
 
@@ -481,6 +527,25 @@ def forecast_backtest(  # noqa: C901
     - For each method, runs our `forecast` as-of that anchor and reports MAE/RMSE/directional accuracy.
     """
     try:
+        request_payload = {
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "horizon": horizon,
+            "steps": steps,
+            "spacing": spacing,
+            "methods": methods,
+            "params_per_method": params_per_method,
+            "quantity": quantity,
+            "denoise": denoise,
+            "anchors": anchors,
+            "params": params,
+            "features": features,
+            "dimred_method": dimred_method,
+            "dimred_params": dimred_params,
+            "slippage_bps": slippage_bps,
+            "trade_threshold": trade_threshold,
+            "detail": detail,
+        }
         __stage = 'start'
         detail_mode = str(detail or "compact").strip().lower()
         if detail_mode not in ("compact", "full"):
@@ -836,13 +901,35 @@ def forecast_backtest(  # noqa: C901
                     "slippage_bps": float(slippage_bps),
                 }
 
-        return {
-            "success": True,
-            "slippage_bps": float(slippage_bps),
-            "trade_threshold": float(trade_threshold or 0.0),
-            "detail": detail_mode,
-            "results": results,
-        }
+        return _attach_request_metadata(
+            {
+                "success": True,
+                "slippage_bps": float(slippage_bps),
+                "trade_threshold": float(trade_threshold or 0.0),
+                "detail": detail_mode,
+                "results": results,
+            },
+            request=request_payload,
+            resolved_request={
+                "symbol": symbol,
+                "timeframe": timeframe,
+                "horizon": int(horizon),
+                "steps": int(steps),
+                "spacing": int(spacing),
+                "methods": list(methods or []),
+                "params_per_method": dict(params_map),
+                "quantity": quantity,
+                "denoise": _dn_used,
+                "anchors": list(anchors) if isinstance(anchors, (list, tuple)) else anchors,
+                "params": dict(params) if isinstance(params, dict) else params,
+                "features": dict(features) if isinstance(features, dict) else features,
+                "dimred_method": dimred_method,
+                "dimred_params": dict(dimred_params) if isinstance(dimred_params, dict) else dimred_params,
+                "slippage_bps": float(slippage_bps),
+                "trade_threshold": float(trade_threshold or 0.0),
+                "detail": detail_mode,
+            },
+        )
     except Exception as e:
         return {"error": f"Error in forecast_backtest: {str(e)}"}
 

@@ -207,3 +207,35 @@ def test_backtest_full_detail_includes_series_arrays() -> None:
     assert res["detail"] == "full"
     assert isinstance(detail["forecast"], list)
     assert isinstance(detail["actual"], list)
+
+
+def test_backtest_exposes_request_metadata_blocks() -> None:
+    times = np.arange(1700000000, 1700000000 + 70 * 3600, 3600, dtype=float)
+    close = np.linspace(100.0, 120.0, 70, dtype=float)
+    df = pd.DataFrame({"time": times, "close": close})
+
+    idx = 60
+    anchor = _format_time_minimal(float(times[idx]))
+    with patch("mtdata.forecast.backtest._fetch_history", return_value=df), patch(
+        "mtdata.forecast.backtest.forecast",
+        return_value={"forecast_price": [110.0, 111.0, 112.0]},
+    ):
+        res = forecast_backtest(
+            symbol="EURUSD",
+            timeframe="H1",
+            horizon="3",  # type: ignore[arg-type]
+            methods="naive drift",  # type: ignore[arg-type]
+            anchors=[anchor],
+            detail="FULL",  # type: ignore[arg-type]
+            slippage_bps=2.5,
+            trade_threshold=0.01,
+        )
+
+    assert res["request"]["detail"] == "FULL"
+    assert res["request"]["methods"] == "naive drift"
+    assert res["request"]["slippage_bps"] == 2.5
+    assert res["resolved_request"]["detail"] == "full"
+    assert res["resolved_request"]["methods"] == ["naive", "drift"]
+    assert res["resolved_request"]["horizon"] == 3
+    assert res["resolved_request"]["slippage_bps"] == 2.5
+    assert res["resolved_request"]["trade_threshold"] == 0.01

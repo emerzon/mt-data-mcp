@@ -84,6 +84,38 @@ def test_strategy_backtest_compact_mode_keeps_stable_trades_key(monkeypatch):
     assert "trade_sample" not in out
 
 
+def test_strategy_backtest_exposes_request_metadata_blocks(monkeypatch):
+    monkeypatch.setattr(
+        forecast_backtest,
+        "_fetch_history",
+        lambda symbol, timeframe, need, as_of=None: _history_from_closes(
+            [1.0, 1.0, 1.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]
+        ),
+    )
+
+    out = forecast_backtest.strategy_backtest(
+        symbol="EURUSD",
+        timeframe="H1",
+        strategy="SMA_CROSS",  # type: ignore[arg-type]
+        lookback="8",  # type: ignore[arg-type]
+        fast_period="2",  # type: ignore[arg-type]
+        slow_period="3",  # type: ignore[arg-type]
+        detail="FULL",  # type: ignore[arg-type]
+        position_mode="LONG_SHORT",  # type: ignore[arg-type]
+        slippage_bps=1.5,
+    )
+
+    assert out["request"]["detail"] == "FULL"
+    assert out["request"]["strategy"] == "SMA_CROSS"
+    assert out["request"]["slippage_bps"] == 1.5
+    assert out["resolved_request"]["detail"] == "full"
+    assert out["resolved_request"]["strategy"] == "sma_cross"
+    assert out["resolved_request"]["position_mode"] == "long_short"
+    assert out["resolved_request"]["lookback"] == 8
+    assert out["resolved_request"]["slippage_bps"] == 1.5
+    assert out["parameters"]["slippage_bps"] == 1.5
+
+
 def test_strategy_backtest_returns_no_action_on_flat_history(monkeypatch):
     monkeypatch.setattr(
         forecast_backtest,

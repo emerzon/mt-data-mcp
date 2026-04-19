@@ -288,6 +288,8 @@ def test_run_forecast_backtest_strips_per_anchor_details_in_compact_mode():
     def fake_backtest_impl(**kwargs):
         return {
             "success": True,
+            "request": {"detail": "compact"},
+            "resolved_request": {"detail": "compact", "methods": ["theta"]},
             "results": {
                 "theta": {
                     "avg_mae": 1.0,
@@ -302,6 +304,8 @@ def test_run_forecast_backtest_strips_per_anchor_details_in_compact_mode():
     )
 
     assert result["success"] is True
+    assert result["request"]["detail"] == "compact"
+    assert result["resolved_request"]["methods"] == ["theta"]
     assert "details" not in result["results"]["theta"]
     assert result["results"]["theta"]["details_count"] == 1
 
@@ -313,7 +317,11 @@ def test_forecast_generate_converts_typed_forecast_errors(monkeypatch):
 
     out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="native", method="theta"))
 
+    assert out["success"] is False
     assert out["error"] == "engine exploded"
+    assert out["error_code"] == "forecast_generate_error"
+    assert out["operation"] == "forecast_generate"
+    assert isinstance(out.get("request_id"), str)
 
 
 def test_forecast_generate_logs_finish_event(caplog, monkeypatch):
@@ -358,7 +366,11 @@ def test_forecast_generate_returns_connection_error_payload(monkeypatch):
 
     out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="native", method="theta"))
 
-    assert out == {"error": "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."}
+    assert out["success"] is False
+    assert out["error"] == "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."
+    assert out["error_code"] == "mt5_connection_error"
+    assert out["operation"] == "mt5_ensure_connection"
+    assert isinstance(out.get("request_id"), str)
 
 
 def test_forecast_tune_genetic_logs_finish_event(caplog, monkeypatch):
@@ -770,7 +782,12 @@ def test_forecast_conformal_intervals_success_and_errors(monkeypatch):
 
     monkeypatch.setattr(cf, "_forecast_backtest_impl", lambda **kwargs: {"results": {"theta": {"details": [{}]}}})
     monkeypatch.setattr(cf, "_forecast_impl", lambda **kwargs: (_ for _ in ()).throw(ForecastError("engine exploded")))
-    assert raw(request=ForecastConformalIntervalsRequest(symbol="EURUSD", method="theta", horizon=2))["error"] == "engine exploded"
+    out = raw(request=ForecastConformalIntervalsRequest(symbol="EURUSD", method="theta", horizon=2))
+    assert out["success"] is False
+    assert out["error"] == "engine exploded"
+    assert out["error_code"] == "forecast_conformal_intervals_error"
+    assert out["operation"] == "forecast_conformal_intervals"
+    assert isinstance(out.get("request_id"), str)
 
 
 def test_forecast_conformal_intervals_request_defaults_and_spacing_validation():
@@ -1290,4 +1307,8 @@ def test_forecast_barrier_optimize_returns_connection_error_payload(monkeypatch)
 
     out = raw_opt(request=ForecastBarrierOptimizeRequest(symbol="EURUSD"))
 
-    assert out == {"error": "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."}
+    assert out["success"] is False
+    assert out["error"] == "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."
+    assert out["error_code"] == "mt5_connection_error"
+    assert out["operation"] == "mt5_ensure_connection"
+    assert isinstance(out.get("request_id"), str)
