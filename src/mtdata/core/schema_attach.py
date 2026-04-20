@@ -189,57 +189,19 @@ def _patch_data_fetch_ticks_schema(schema: Dict[str, Any]) -> None:
 def _patch_forecast_barrier_prob_schema(schema: Dict[str, Any]) -> None:
     params, _required_params = _schema_params(schema)
     if "method" not in params:
-        params_obj = _schema_obj(schema)
-    else:
-        params["method"] = {
-            "type": "string",
-            "enum": list(_BARRIER_PROB_METHODS),
-            "description": "Barrier probability algorithm.",
-        }
-        params_obj = _schema_obj(schema)
-    _add_barrier_unit_family_exclusivity_schema(params_obj)
-
-
-def _add_barrier_unit_family_exclusivity_schema(params_obj: Dict[str, Any]) -> None:
-    if not isinstance(params_obj, dict):
         return
-    properties = params_obj.get("properties")
-    if not isinstance(properties, dict):
-        return
-    all_of = params_obj.setdefault("allOf", [])
-    if not isinstance(all_of, list):
-        return
-
-    pairs: list[list[str]] = []
-    for fields in (
-        ("tp_abs", "tp_pct", "tp_pips"),
-        ("sl_abs", "sl_pct", "sl_pips"),
-    ):
-        present_fields = [field for field in fields if field in properties]
-        for idx, first in enumerate(present_fields):
-            for second in present_fields[idx + 1:]:
-                pairs.append([first, second])
-    if not pairs:
-        return
-
-    clause = {"not": {"anyOf": [{"required": pair} for pair in pairs]}}
-    filtered_all_of = [
-        existing_clause
-        for existing_clause in all_of
-        if existing_clause != clause
-        and not (
-            isinstance(existing_clause, dict)
-            and isinstance(existing_clause.get("not"), dict)
-            and isinstance(existing_clause["not"].get("required"), list)
-            and existing_clause["not"]["required"] in pairs
-        )
-    ]
-    filtered_all_of.append(clause)
-    params_obj["allOf"] = filtered_all_of
+    params["method"] = {
+        "type": "string",
+        "enum": list(_BARRIER_PROB_METHODS),
+        "description": "Barrier probability algorithm.",
+    }
 
 
 def _patch_labels_triple_barrier_schema(schema: Dict[str, Any]) -> None:
-    _add_barrier_unit_family_exclusivity_schema(_schema_obj(schema))
+    # TP/SL unit-family exclusivity is already enforced by runtime validation.
+    # The MCP/OpenAI tool-schema subset rejects top-level allOf/anyOf/not
+    # combinators on input objects, so keep this attached schema flat.
+    return
 
 
 def _patch_forecast_barrier_optimize_schema(schema: Dict[str, Any]) -> None:

@@ -13,7 +13,7 @@ from ...shared.constants import TIMEFRAME_MAP
 from ...shared.result import Err, Ok, Result, to_dict
 from ...shared.validators import invalid_timeframe_error
 from ...utils.barriers import normalize_trade_direction
-from ...utils.mt5 import MT5ConnectionError, _normalize_times_in_struct
+from ...utils.mt5 import MT5ConnectionError, _normalize_times_in_struct, _to_server_naive_dt
 from ..config import trade_guardrails_config
 from ..execution_logging import (
     infer_result_success,
@@ -1386,6 +1386,10 @@ def run_trade_history(  # noqa: C901
             if from_dt > to_dt:
                 return {"error": "start must be before end."}
 
+            # MT5 history queries expect broker/server-local naive datetimes.
+            history_from_dt = _to_server_naive_dt(from_dt)
+            history_to_dt = _to_server_naive_dt(to_dt)
+
             kind = str(request.history_kind or "deals").strip().lower()
             if kind not in ("deals", "orders"):
                 return {"error": "history_kind must be 'deals' or 'orders'."}
@@ -1540,9 +1544,11 @@ def run_trade_history(  # noqa: C901
             if kind == "deals":
                 try:
                     rows = (
-                        gateway.history_deals_get(from_dt, to_dt, symbol=request.symbol)
+                        gateway.history_deals_get(
+                            history_from_dt, history_to_dt, symbol=request.symbol
+                        )
                         if request.symbol
-                        else gateway.history_deals_get(from_dt, to_dt)
+                        else gateway.history_deals_get(history_from_dt, history_to_dt)
                     )
                 except Exception as exc:
                     return _history_fetch_error("deal", exc)
@@ -1600,10 +1606,10 @@ def run_trade_history(  # noqa: C901
                 try:
                     rows = (
                         gateway.history_orders_get(
-                            from_dt, to_dt, symbol=request.symbol
+                            history_from_dt, history_to_dt, symbol=request.symbol
                         )
                         if request.symbol
-                        else gateway.history_orders_get(from_dt, to_dt)
+                        else gateway.history_orders_get(history_from_dt, history_to_dt)
                     )
                 except Exception as exc:
                     return _history_fetch_error("order", exc)

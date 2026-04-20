@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 from collections import namedtuple
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -519,6 +520,52 @@ def test_trade_history_minutes_back_empty_deals_message_mentions_window_not_orde
 
     assert "in the last 60 minute(s)" in out["message"]
     assert "--history-kind orders" not in out["message"]
+
+
+def test_trade_history_converts_minutes_back_window_to_server_time_before_fetch() -> None:
+    captured: dict[str, object] = {}
+    parsed_end = datetime(2026, 3, 1, 11, 0, 0)
+
+    def history_deals_get(from_dt, to_dt, symbol=None):
+        captured["from_dt"] = from_dt
+        captured["to_dt"] = to_dt
+        captured["symbol"] = symbol
+        return []
+
+    gateway = SimpleNamespace(
+        ensure_connection=lambda: None,
+        history_deals_get=history_deals_get,
+    )
+
+    with patch(
+        "mtdata.core.trading.use_cases._to_server_naive_dt",
+        side_effect=lambda dt: dt + timedelta(hours=2),
+    ):
+        out = run_trade_history(
+            TradeHistoryRequest(
+                history_kind="deals",
+                symbol="BTCUSD",
+                end="2026-03-01 11:00",
+                minutes_back=60,
+            ),
+            gateway=gateway,
+            use_client_tz=lambda: False,
+            format_time_minimal=lambda ts: f"t{int(ts)}",
+            format_time_minimal_local=lambda ts: f"lt{int(ts)}",
+            mt5_epoch_to_utc=lambda ts: ts,
+            parse_start_datetime=lambda value: parsed_end if value == "2026-03-01 11:00" else None,
+            normalize_limit=lambda value: value,
+            comment_row_metadata=lambda comment: {},
+            normalize_ticket_filter=lambda value, name: (None, None),
+            normalize_minutes_back=lambda value: (value, None),
+            decode_mt5_enum_label=lambda gateway, value, prefix=None: None,
+            mt5_config=SimpleNamespace(get_client_tz=lambda: "UTC"),
+        )
+
+    assert captured["from_dt"] == datetime(2026, 3, 1, 12, 0, 0)
+    assert captured["to_dt"] == datetime(2026, 3, 1, 13, 0, 0)
+    assert captured["symbol"] == "BTCUSD"
+    assert out["message"] == "No deals found for BTCUSD in the last 60 minute(s)"
 
 
 def test_trade_history_returns_connection_error_payload() -> None:

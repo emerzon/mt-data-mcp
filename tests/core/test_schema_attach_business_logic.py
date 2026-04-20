@@ -134,22 +134,14 @@ def test_attach_schemas_to_tools_patches_barrier_method_enums(monkeypatch) -> No
     assert "auto" in opt_method["enum"]
 
 
-def test_attach_schemas_to_tools_adds_barrier_unit_exclusivity(monkeypatch) -> None:
-    expected_pairs = {
-        ("tp_abs", "tp_pct"),
-        ("tp_abs", "tp_pips"),
-        ("tp_pct", "tp_pips"),
-        ("sl_abs", "sl_pct"),
-        ("sl_abs", "sl_pips"),
-        ("sl_pct", "sl_pips"),
-    }
-
+def test_attach_schemas_to_tools_keeps_barrier_inputs_flat(monkeypatch) -> None:
     for tool_name in ("forecast_barrier_prob", "labels_triple_barrier"):
         tool_obj, _tool_func, _apply_calls = _attach_tool_schema(
             monkeypatch,
             tool_name,
             {
                 "parameters": {
+                    "type": "object",
                     "properties": {
                         "tp_abs": {"type": "number"},
                         "sl_abs": {"type": "number"},
@@ -163,21 +155,10 @@ def test_attach_schemas_to_tools_adds_barrier_unit_exclusivity(monkeypatch) -> N
             },
         )
 
-        all_of = tool_obj.schema["parameters"]["allOf"]
-        exclusivity_clauses = [
-            clause
-            for clause in all_of
-            if isinstance(clause, dict)
-            and isinstance(clause.get("not"), dict)
-            and isinstance(clause["not"].get("anyOf"), list)
-        ]
-        assert len(exclusivity_clauses) == 1
-        actual_pairs = {
-            tuple(option["required"])
-            for option in exclusivity_clauses[0]["not"]["anyOf"]
-            if isinstance(option, dict) and isinstance(option.get("required"), list)
-        }
-        assert actual_pairs == expected_pairs
+        params_obj = tool_obj.schema["parameters"]
+        assert params_obj["type"] == "object"
+        for key in ("allOf", "anyOf", "oneOf", "not", "enum"):
+            assert key not in params_obj
 
 
 def test_attach_schemas_to_tools_patches_wait_event_with_discriminated_watch_specs(monkeypatch) -> None:
