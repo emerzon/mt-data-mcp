@@ -1329,8 +1329,15 @@ def correlation_matrix(  # noqa: C901
 ) -> Dict[str, Any]:
     """Calculate pairwise symbol correlations from MT5 price history.
 
+    When a single symbol is provided, the tool automatically expands to include
+    all related symbols from its MT5 group (e.g., EURUSD → EURUSD, GBPUSD, 
+    USDCHF, USDJPY, USDCAD, AUDUSD). This enables correlation analysis across
+    related pairs. To analyze correlations for specific symbols only, provide
+    multiple symbols explicitly or use the `group` parameter.
+
     Args:
-        symbols: Comma-separated MT5 symbols; provide one symbol to auto-expand its group.
+        symbols: Comma-separated MT5 symbols; a single symbol auto-expands to
+            its entire MT5 group (e.g. "EURUSD" → all Forex majors).
             Optional when using `group`.
         group: Explicit MT5 group path (for example "Forex\\Majors"). Mutually
             exclusive with `symbols`.
@@ -1634,8 +1641,15 @@ def cointegration_test(  # noqa: C901
 ) -> Dict[str, Any]:
     """Run pairwise Engle-Granger cointegration tests on MT5 symbols.
 
+    When a single symbol is provided, the tool automatically expands to include
+    all related symbols from its MT5 group (e.g., EURUSD → EURUSD, GBPUSD, 
+    USDCHF, USDJPY, USDCAD, AUDUSD). This enables cointegration analysis across
+    related pairs. To test cointegration for specific symbols only, provide
+    multiple symbols explicitly or use the `group` parameter.
+
     Args:
-        symbols: Comma-separated MT5 symbols; provide one symbol to auto-expand its group.
+        symbols: Comma-separated MT5 symbols; a single symbol auto-expands to
+            its entire MT5 group (e.g. "EURUSD" → all Forex majors).
             Optional when using `group`.
         group: Explicit MT5 group path (for example "Forex\\Majors"). Mutually
             exclusive with `symbols`.
