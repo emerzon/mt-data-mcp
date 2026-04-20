@@ -95,45 +95,26 @@ _SYMBOL_DESCRIBE_FIELDS: tuple[str, ...] = (
 _SYMBOL_DESCRIBE_COMPACT_DIRECT_FIELDS: tuple[str, ...] = (
     "name",
     "description",
-    "path",
-    "bank",
     "currency_base",
     "currency_profit",
-    "currency_margin",
     "digits",
     "point",
     "bidlow",
     "bidhigh",
     "asklow",
     "askhigh",
-    "price_change",
-    "session_open",
-    "session_close",
     "trade_contract_size",
     "trade_tick_size",
     "trade_tick_value",
-    "trade_stops_level",
-    "trade_freeze_level",
     "volume_min",
     "volume_max",
     "volume_step",
-    "volume_limit",
-    "swap_long",
-    "swap_short",
-    "swap_rollover3days",
     "spread_float",
-    "ticks_bookdepth",
     "time",
-    "select",
 )
 _SYMBOL_DESCRIBE_COMPACT_ENUM_FIELDS: tuple[str, ...] = (
     "trade_mode",
-    "trade_exemode",
-    "trade_calc_mode",
     "order_mode",
-    "expiration_mode",
-    "filling_mode",
-    "swap_mode",
 )
 
 
@@ -342,8 +323,22 @@ def symbols_describe(
     verbose: bool = False,
 ) -> Dict[str, Any]:
     """Return symbol information as JSON for `symbol`.
-       Parameters: symbol
-       Includes information such as Symbol Description, Swap Values, Tick Size/Value, etc.
+    
+    Parameters:
+    -----------
+    symbol : str
+        Trading symbol (e.g., "EURUSD")
+    detail : str, optional (default="full")
+        Output verbosity level:
+        - "compact": Essential fields only (name, bid/ask, volume limits, contract size, tick size/value)
+        - "full": Complete metadata including all trading modes, swap details, and session times
+    verbose : bool, optional (default=False)
+        Include time_epoch field for timestamps
+    
+    Returns:
+    --------
+    dict
+        Symbol information with requested detail level
     """
     def _run() -> Dict[str, Any]:
         try:
