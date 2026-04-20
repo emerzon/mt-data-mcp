@@ -127,12 +127,23 @@ class TradeJournalAnalyzeRequest(BaseModel):
 
 
 class TradeRiskAnalyzeRequest(BaseModel):
+    model_config = {"populate_by_name": True}
+
     symbol: Optional[str] = None
     desired_risk_pct: Optional[float] = None
     direction: Optional[str] = None
-    proposed_entry: Optional[float] = None
-    proposed_sl: Optional[float] = None
-    proposed_tp: Optional[float] = None
+    proposed_entry: Optional[float] = Field(
+        default=None,
+        validation_alias="entry",
+    )
+    proposed_sl: Optional[float] = Field(
+        default=None,
+        validation_alias="stop_loss",
+    )
+    proposed_tp: Optional[float] = Field(
+        default=None,
+        validation_alias="take_profit",
+    )
 
     @field_validator("direction", mode="before")
     @classmethod

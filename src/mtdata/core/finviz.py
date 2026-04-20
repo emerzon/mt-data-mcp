@@ -7,7 +7,7 @@ Note: Data is delayed 15-20 minutes; US stocks only.
 
 import json
 import logging
-from typing import Any, Callable, Dict, Literal, Optional
+from typing import Any, Callable, Dict, Literal, Optional, Union
 from urllib.parse import parse_qs
 
 from ..services.finviz import (
@@ -102,8 +102,9 @@ def _run_logged_tool(
 def _invalid_finviz_screen_filters_error(filters: Any) -> Dict[str, Any]:
     return _finviz_error_payload(
         (
-            "Invalid filters format. Provide filters as a JSON object with filter names as keys "
-            "and filter values as values. Example: '{\"Exchange\": \"NASDAQ\", \"Sector\": \"Technology\"}'. "
+            "Invalid filters format. Provide filters as a JSON object (dict) or JSON string with filter names as keys "
+            "and filter values as values. Example: {'Exchange': 'NASDAQ', 'Sector': 'Technology'} or "
+            "'{\"Exchange\": \"NASDAQ\", \"Sector\": \"Technology\"}'. "
             f"Got: {filters}"
         ),
         code="finviz_screen_filters_invalid",
@@ -376,7 +377,7 @@ def finviz_peers(symbol: str) -> Dict[str, Any]:
 
 @mcp.tool()
 def finviz_screen(
-    filters: Optional[str] = None,
+    filters: Optional[Union[str, Dict[str, Any]]] = None,
     order: Optional[str] = None,
     limit: int = 50,
     page: int = 1,
@@ -387,11 +388,14 @@ def finviz_screen(
     
     Parameters
     ----------
-    filters : str, optional
-        JSON string of filter dict with filter names as keys and filter values as values.
-        Use the exact filter names and values shown on finviz.com screener.
+    filters : str or dict, optional
+        Filter criteria as a JSON string or dict. Filter names should be keys 
+        with filter values as values. Use the exact filter names and values shown 
+        on finviz.com screener.
         
-        Example: '{"Exchange": "NASDAQ", "Sector": "Technology"}'
+        Can be provided as:
+        - JSON string: '{"Exchange": "NASDAQ", "Sector": "Technology"}'
+        - Dict object: {"Exchange": "NASDAQ", "Sector": "Technology"}
         
         Common filter names: Exchange, Index, Sector, Industry, Country, Market Cap.,
         P/E, Forward P/E, PEG, P/S, P/B, Price/Cash, Price/Free Cash Flow,
@@ -424,14 +428,17 @@ def finviz_screen(
     
     Examples
     --------
-    Screen for tech stocks on NASDAQ:
+    Screen for tech stocks on NASDAQ (using dict):
+    >>> finviz_screen(filters={"Exchange": "NASDAQ", "Sector": "Technology"})
+    
+    Screen for tech stocks on NASDAQ (using JSON string):
     >>> finviz_screen(filters='{"Exchange": "NASDAQ", "Sector": "Technology"}')
     
     Screen for undervalued large caps:
-    >>> finviz_screen(filters='{"Market Cap.": "Large ($10bln to $200bln)", "P/E": "Under 15"}')
+    >>> finviz_screen(filters={"Market Cap.": "Large ($10bln to $200bln)", "P/E": "Under 15"})
     
     Screen for high dividend stocks with specific view:
-    >>> finviz_screen(filters='{"Dividend Yield": "Over 5%"}', view="valuation")
+    >>> finviz_screen(filters={"Dividend Yield": "Over 5%"}, view="valuation")
     
     Notes
     -----
@@ -444,11 +451,19 @@ def finviz_screen(
     def _run() -> Dict[str, Any]:
         filters_dict = None
         if filters:
-            try:
-                filters_dict = json.loads(filters)
-            except (json.JSONDecodeError, TypeError):
-                return _invalid_finviz_screen_filters_error(filters)
-            if not isinstance(filters_dict, dict):
+            # If filters is already a dict, use it directly
+            if isinstance(filters, dict):
+                filters_dict = filters
+            # If filters is a string, try to parse it as JSON
+            elif isinstance(filters, str):
+                try:
+                    filters_dict = json.loads(filters)
+                except (json.JSONDecodeError, TypeError):
+                    return _invalid_finviz_screen_filters_error(filters)
+                # Verify parsed JSON is a dict
+                if not isinstance(filters_dict, dict):
+                    return _invalid_finviz_screen_filters_error(filters)
+            else:
                 return _invalid_finviz_screen_filters_error(filters)
 
         return screen_stocks(filters=filters_dict, order=order, limit=limit, page=page, view=view)

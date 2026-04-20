@@ -17,17 +17,44 @@ _FINVIZ_HTTP_TIMEOUT = get_finviz_http_timeout()
 _FINVIZ_SCREENER_MAX_ROWS = get_finviz_screener_max_rows()
 _FINVIZ_PAGE_LIMIT_MAX = get_finviz_page_limit_max()
 
+# Non-equity suffixes (forex pairs)
+_PAIR_SUFFIXES = {"USD", "EUR", "GBP", "JPY", "AUD", "CAD", "CHF", "NZD"}
 
-def _sanitize_error_message(exc: Exception) -> str:
+
+def _looks_like_non_equity_symbol(symbol: str) -> bool:
+    """Check if a symbol looks like a forex pair or other non-equity instrument."""
+    s = str(symbol or "").strip().upper()
+    if not s:
+        return False
+    if "/" in s or ":" in s:
+        return True
+    if len(s) == 6 and s[:3].isalpha() and s[3:].isalpha() and s[3:] in _PAIR_SUFFIXES:
+        return True
+    return False
+
+
+def _sanitize_error_message(exc: Exception, *, symbol: str | None = None) -> str:
     """Sanitize exception messages to hide internal implementation details.
     
     Strips HTTP URLs, internal parameter structures, and replaces with
     user-friendly error messages.
+    
+    Parameters
+    ----------
+    exc : Exception
+        The exception to sanitize
+    symbol : str, optional
+        The symbol that was being requested (used for more specific error messages)
     """
     error_str = str(exc)
     
     # Check for HTTP error patterns and replace with user-friendly message
     if "404" in error_str and "Client Error" in error_str:
+        if symbol and _looks_like_non_equity_symbol(symbol.upper()):
+            return (
+                f"{str(symbol).upper()} is not a Finviz-supported symbol. "
+                "finviz_news only covers US equities."
+            )
         return "Symbol not found. Please check the ticker symbol and try again."
     if "403" in error_str or "Forbidden" in error_str:
         return "Access denied. Finviz data is temporarily unavailable."
@@ -312,7 +339,7 @@ def get_stock_fundamentals(symbol: str) -> Dict[str, Any]:
         }
     except Exception as e:
         logger.exception(f"Error fetching fundamentals for {symbol}")
-        return {"error": _sanitize_error_message(e)}
+        return {"error": _sanitize_error_message(e, symbol=symbol)}
 
 
 def get_stock_description(symbol: str) -> Dict[str, Any]:
@@ -329,7 +356,7 @@ def get_stock_description(symbol: str) -> Dict[str, Any]:
         }
     except Exception as e:
         logger.exception(f"Error fetching description for {symbol}")
-        return {"error": _sanitize_error_message(e)}
+        return {"error": _sanitize_error_message(e, symbol=symbol)}
 
 
 def get_stock_news(symbol: str, limit: int = 20, page: int = 1) -> Dict[str, Any]:
@@ -359,16 +386,8 @@ def get_stock_news(symbol: str, limit: int = 20, page: int = 1) -> Dict[str, Any
             "news": news_list,
         }
     except Exception as e:
-        message = str(e)
-        if "404" in message or "quote.ashx?t=" in message:
-            return {
-                "error": (
-                    f"{str(symbol).upper()} is not a Finviz-supported symbol. "
-                    "finviz_news only covers US equities."
-                )
-            }
-        logger.warning("Error fetching news for %s: %s", symbol, message)
-        return {"error": f"Failed to fetch news: {message}"}
+        logger.warning("Error fetching news for %s: %s", symbol, str(e))
+        return {"error": _sanitize_error_message(e, symbol=symbol)}
 
 
 def get_stock_insider_trades(symbol: str, limit: int = 20, page: int = 1) -> Dict[str, Any]:
@@ -399,7 +418,7 @@ def get_stock_insider_trades(symbol: str, limit: int = 20, page: int = 1) -> Dic
         }
     except Exception as e:
         logger.exception(f"Error fetching insider trades for {symbol}")
-        return {"error": f"Failed to fetch insider trades: {str(e)}"}
+        return {"error": _sanitize_error_message(e, symbol=symbol)}
 
 
 def get_stock_ratings(symbol: str) -> Dict[str, Any]:
@@ -423,7 +442,7 @@ def get_stock_ratings(symbol: str) -> Dict[str, Any]:
         }
     except Exception as e:
         logger.exception(f"Error fetching ratings for {symbol}")
-        return {"error": f"Failed to fetch ratings: {str(e)}"}
+        return {"error": _sanitize_error_message(e, symbol=symbol)}
 
 
 def get_stock_peers(symbol: str) -> Dict[str, Any]:
@@ -440,7 +459,7 @@ def get_stock_peers(symbol: str) -> Dict[str, Any]:
         }
     except Exception as e:
         logger.exception(f"Error fetching peers for {symbol}")
-        return {"error": f"Failed to fetch peers: {str(e)}"}
+        return {"error": _sanitize_error_message(e, symbol=symbol)}
 
 
 def screen_stocks(
@@ -534,7 +553,7 @@ def screen_stocks(
         }
     except Exception as e:
         logger.warning("Error running stock screener: %s", e)
-        return {"error": f"Failed to run screener: {str(e)}"}
+        return {"error": _sanitize_error_message(e)}
 
 
 def get_general_news(news_type: str = "news", limit: int = 20, page: int = 1) -> Dict[str, Any]:
@@ -586,7 +605,7 @@ def get_general_news(news_type: str = "news", limit: int = 20, page: int = 1) ->
         }
     except Exception as e:
         logger.exception("Error fetching general news")
-        return {"error": f"Failed to fetch news: {str(e)}"}
+        return {"error": _sanitize_error_message(e)}
 
 
 def get_insider_activity(option: str = "latest", limit: int = 50, page: int = 1) -> Dict[str, Any]:
@@ -629,7 +648,7 @@ def get_insider_activity(option: str = "latest", limit: int = 50, page: int = 1)
         }
     except Exception as e:
         logger.exception("Error fetching insider activity")
-        return {"error": f"Failed to fetch insider activity: {str(e)}"}
+        return {"error": _sanitize_error_message(e)}
 
 
 def get_forex_performance() -> Dict[str, Any]:
@@ -648,7 +667,7 @@ def get_forex_performance() -> Dict[str, Any]:
         }
     except Exception as e:
         logger.exception("Error fetching forex performance")
-        return {"error": f"Failed to fetch forex performance: {str(e)}"}
+        return {"error": _sanitize_error_message(e)}
 
 
 def get_crypto_performance() -> Dict[str, Any]:
@@ -686,7 +705,7 @@ def get_crypto_performance() -> Dict[str, Any]:
         return out
     except Exception as e:
         logger.exception("Error fetching crypto performance")
-        return {"error": f"Failed to fetch crypto performance: {str(e)}"}
+        return {"error": _sanitize_error_message(e)}
 
 
 def get_futures_performance() -> Dict[str, Any]:
@@ -705,7 +724,7 @@ def get_futures_performance() -> Dict[str, Any]:
         }
     except Exception as e:
         logger.exception("Error fetching futures performance")
-        return {"error": f"Failed to fetch futures performance: {str(e)}"}
+        return {"error": _sanitize_error_message(e)}
 
 
 def get_earnings_calendar(
@@ -764,7 +783,7 @@ def get_earnings_calendar(
         return {"error": str(e)}
     except Exception as e:
         logger.exception("Error fetching earnings calendar")
-        return {"error": f"Failed to fetch earnings calendar: {str(e)}"}
+        return {"error": _sanitize_error_message(e)}
 
 
 def get_economic_calendar(
@@ -833,7 +852,7 @@ def get_economic_calendar(
         return {"error": str(e)}
     except Exception as e:
         logger.exception("Error fetching economic calendar")
-        return {"error": f"Failed to fetch economic calendar: {str(e)}"}
+        return {"error": _sanitize_error_message(e)}
 
 
 def get_earnings_calendar_api(
@@ -873,7 +892,7 @@ def get_earnings_calendar_api(
         return {"error": str(e)}
     except Exception as e:
         logger.exception("Error fetching earnings calendar (API)")
-        return {"error": f"Failed to fetch earnings calendar: {str(e)}"}
+        return {"error": _sanitize_error_message(e)}
 
 
 def get_dividends_calendar_api(
@@ -913,7 +932,7 @@ def get_dividends_calendar_api(
         return {"error": str(e)}
     except Exception as e:
         logger.exception("Error fetching dividends calendar (API)")
-        return {"error": f"Failed to fetch dividends calendar: {str(e)}"}
+        return {"error": _sanitize_error_message(e)}
 
 
 def _parse_iso_date_input(value: str, *, field_name: str) -> datetime.date:
