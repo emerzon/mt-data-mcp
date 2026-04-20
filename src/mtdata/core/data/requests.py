@@ -313,6 +313,13 @@ class DataFetchCandlesRequest(BaseModel):
     include_incomplete: bool = False
     allow_stale: bool = False
 
+    @field_validator("symbol")
+    @classmethod
+    def _validate_symbol(cls, value: str) -> str:
+        if not value or not str(value).strip():
+            raise ValueError("Symbol is required and cannot be empty")
+        return str(value).strip().upper()
+
     @field_validator("limit")
     @classmethod
     def _validate_limit(cls, value: int) -> int:
@@ -326,6 +333,13 @@ class DataFetchTicksRequest(BaseModel):
     end: Optional[str] = None
     simplify: Optional[SimplifySpec] = None
     format: Literal["summary", "stats", "rows", "compact", "full"] = "summary"
+
+    @field_validator("symbol")
+    @classmethod
+    def _validate_symbol(cls, value: str) -> str:
+        if not value or not str(value).strip():
+            raise ValueError("Symbol is required and cannot be empty")
+        return str(value).strip().upper()
 
     @model_validator(mode="before")
     @classmethod
