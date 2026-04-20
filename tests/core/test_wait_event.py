@@ -237,6 +237,59 @@ def test_wait_event_request_preserves_distinct_candle_close_boundaries() -> None
     ]
 
 
+@patch("mtdata.core.data.get_mt5_gateway", return_value=object())
+@patch("mtdata.core.data._compact_wait_event_public_result", side_effect=lambda result, **_: result)
+@patch("mtdata.core.data.run_wait_event", return_value={"success": True})
+@patch(
+    "mtdata.core.data._build_default_wait_event_watchers",
+    return_value=[
+        {"type": "price_touch_level", "symbol": "BTCUSD", "level": 100000.0},
+        {"type": "price_break_level", "symbol": "BTCUSD", "level": 100500.0},
+        {"type": "price_enter_zone", "symbol": "BTCUSD", "lower": 99500.0, "upper": 100500.0},
+        {"type": "pending_near_fill", "symbol": "BTCUSD"},
+        {"type": "stop_threat", "symbol": "BTCUSD"},
+    ],
+)
+def test_wait_event_accepts_symbolic_watch_for_shorthand(
+    _mock_defaults,
+    mock_run_wait,
+    _mock_compact,
+    _mock_gateway,
+) -> None:
+    result = _raw_wait_event()(
+        symbol="BTCUSD",
+        timeframe="M15",
+        watch_for=[
+            "price_touch_level",
+            "price_break_level",
+            "price_enter_zone",
+            "pending_near_fill",
+            "stop_threat",
+        ],
+    )
+
+    assert result == {"success": True}
+    request = mock_run_wait.call_args.args[0]
+    assert [item.type for item in request.watch_for] == [
+        "price_touch_level",
+        "price_break_level",
+        "price_enter_zone",
+        "pending_near_fill",
+        "stop_threat",
+    ]
+
+
+def test_expand_public_wait_event_watchers_rejects_unknown_shorthand() -> None:
+    from mtdata.core.data import _expand_public_wait_event_watchers
+
+    with pytest.raises(ValueError, match="Unsupported wait_event watch_for shorthand"):
+        _expand_public_wait_event_watchers(
+            ["unknown_event"],
+            instrument="BTCUSD",
+            timeframe="M15",
+        )
+
+
 def _raw_wait_event():
     from mtdata.core.data import wait_event
 

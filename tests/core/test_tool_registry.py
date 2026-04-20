@@ -75,6 +75,10 @@ EXPECTED_TOOL_NAMES = frozenset(
     }
 )
 
+_MCP_TOP_LEVEL_FORBIDDEN_SCHEMA_KEYS = frozenset(
+    {"oneOf", "anyOf", "allOf", "enum", "not"}
+)
+
 
 def test_tool_count_matches_snapshot():
     bootstrap_tools()
@@ -84,3 +88,31 @@ def test_tool_count_matches_snapshot():
     assert not missing, f"Tools disappeared: {sorted(missing)}"
     assert not extra, f"New tools not in snapshot (update EXPECTED_TOOL_NAMES): {sorted(extra)}"
     assert len(registered) == len(EXPECTED_TOOL_NAMES)
+
+
+def test_tool_public_schemas_match_mcp_top_level_subset():
+    bootstrap_tools()
+    tool_map = getattr(getattr(mcp, "_tool_manager", None), "_tools", None)
+    assert isinstance(tool_map, dict) and tool_map
+
+    issues: list[str] = []
+    for name, tool in sorted(tool_map.items()):
+        parameters = getattr(tool, "parameters", None)
+        if not isinstance(parameters, dict):
+            issues.append(f"{name}: parameters is {type(parameters).__name__}")
+            continue
+
+        if parameters.get("type") != "object":
+            issues.append(
+                f"{name}: top-level type is {parameters.get('type')!r}, expected 'object'"
+            )
+
+        forbidden_keys = sorted(
+            key for key in _MCP_TOP_LEVEL_FORBIDDEN_SCHEMA_KEYS if key in parameters
+        )
+        if forbidden_keys:
+            issues.append(
+                f"{name}: forbidden top-level schema keys present: {forbidden_keys}"
+            )
+
+    assert not issues, "Invalid MCP tool schemas:\n" + "\n".join(issues)

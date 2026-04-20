@@ -185,16 +185,20 @@ def test_attach_schemas_to_tools_patches_wait_event_with_discriminated_watch_spe
     watch_for = params["watch_for"]
     end_on = params["end_on"]
     watch_items = watch_for["items"]
+    watch_object_items = watch_items["anyOf"][0]
+    watch_string_items = watch_items["anyOf"][1]
     price_break_level = tool_obj.schema["$defs"]["PriceBreakLevelEventSpec"]
 
     assert watch_for["type"] == "array"
-    assert watch_items["discriminator"]["propertyName"] == "type"
-    assert "#/$defs/PriceBreakLevelEventSpec" in watch_items["discriminator"]["mapping"].values()
+    assert watch_object_items["discriminator"]["propertyName"] == "type"
+    assert "#/$defs/PriceBreakLevelEventSpec" in watch_object_items["discriminator"]["mapping"].values()
     assert any(
         option.get("$ref") == "#/$defs/PriceBreakLevelEventSpec"
-        for option in watch_items["oneOf"]
+        for option in watch_object_items["oneOf"]
         if isinstance(option, dict)
     )
+    assert watch_string_items["type"] == "string"
+    assert "price_break_level" in watch_string_items["enum"]
     assert end_on["items"] == {"$ref": "#/$defs/CandleCloseEventSpec"}
     assert "level" in price_break_level["required"]
 
