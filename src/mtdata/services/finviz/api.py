@@ -1041,7 +1041,19 @@ def _fetch_finviz_calendar_paged(
         raise TypeError("Unexpected response type from Finviz API: {t}".format(t=type(data).__name__))
     if "items" not in data or not isinstance(data.get("items"), list):
         raise TypeError("Unexpected payload shape from Finviz API (missing items list)")
+    
+    items = data.get("items") or []
+    data["items"] = [_clean_calendar_item(item) for item in items]
     return data
+
+
+def _clean_calendar_item(item: Dict[str, Any]) -> Dict[str, Any]:
+    """Remove redundant/internal fields from calendar items."""
+    if not isinstance(item, dict):
+        return item
+    cleaned = dict(item)
+    cleaned.pop("boxoverData", None)
+    return cleaned
 
 
 def _normalize_finviz_economic_calendar_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
