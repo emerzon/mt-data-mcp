@@ -305,7 +305,7 @@ def _build_selection_diagnostics(row: Optional[Dict[str, Any]], cost_per_trade: 
             ev_edge_conflict = True
             ev_edge_conflict_reason = "ev and edge_vs_breakeven have opposite signs"
             warnings_out.append(
-                "CAUTION: EV and break-even-adjusted edge disagree; inspect win probability, "
+                "EV and break-even-adjusted edge disagree; inspect win probability, "
                 "reward/risk, and unresolved-path share before trading."
             )
 
@@ -315,7 +315,7 @@ def _build_selection_diagnostics(row: Optional[Dict[str, Any]], cost_per_trade: 
             "positive EV is dominated by unresolved paths with near-zero loss probability"
         )
         warnings_out.append(
-            "CAUTION: SL barrier was not reached in most simulations while the observed loss rate "
+            "SL barrier was not reached in most simulations while the observed loss rate "
             "was near zero. Positive EV may reflect horizon boundary effects, not trading edge."
         )
         caution = (
