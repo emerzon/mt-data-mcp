@@ -18,6 +18,30 @@ _FINVIZ_SCREENER_MAX_ROWS = get_finviz_screener_max_rows()
 _FINVIZ_PAGE_LIMIT_MAX = get_finviz_page_limit_max()
 
 
+def _sanitize_error_message(exc: Exception) -> str:
+    """Sanitize exception messages to hide internal implementation details.
+    
+    Strips HTTP URLs, internal parameter structures, and replaces with
+    user-friendly error messages.
+    """
+    error_str = str(exc)
+    
+    # Check for HTTP error patterns and replace with user-friendly message
+    if "404" in error_str and "Client Error" in error_str:
+        return "Symbol not found. Please check the ticker symbol and try again."
+    if "403" in error_str or "Forbidden" in error_str:
+        return "Access denied. Finviz data is temporarily unavailable."
+    if "500" in error_str or "Server Error" in error_str:
+        return "Finviz service error. Please try again later."
+    if "timeout" in error_str.lower():
+        return "Request timed out. Please try again."
+    if "connection" in error_str.lower():
+        return "Connection error. Please check your internet connection."
+    
+    # For other errors, return a generic message instead of full exception
+    return "Unable to fetch data from Finviz. Please try again later."
+
+
 def _sanitize_pagination(limit: int, page: int) -> tuple[int, int]:
     """Clamp pagination inputs to sane bounds."""
     from .pagination import sanitize_pagination
@@ -288,7 +312,7 @@ def get_stock_fundamentals(symbol: str) -> Dict[str, Any]:
         }
     except Exception as e:
         logger.exception(f"Error fetching fundamentals for {symbol}")
-        return {"error": f"Failed to fetch fundamentals: {str(e)}"}
+        return {"error": _sanitize_error_message(e)}
 
 
 def get_stock_description(symbol: str) -> Dict[str, Any]:
@@ -305,7 +329,7 @@ def get_stock_description(symbol: str) -> Dict[str, Any]:
         }
     except Exception as e:
         logger.exception(f"Error fetching description for {symbol}")
-        return {"error": f"Failed to fetch description: {str(e)}"}
+        return {"error": _sanitize_error_message(e)}
 
 
 def get_stock_news(symbol: str, limit: int = 20, page: int = 1) -> Dict[str, Any]:
