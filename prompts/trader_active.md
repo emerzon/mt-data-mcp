@@ -158,6 +158,7 @@ Hard caps:
 - no geometric doubling
 - each added leg must have a distinct price purpose and volatility-aware spacing
 - if the next leg would push the book near `{{MAX_TOTAL_LOTS}}`, default to reduction or wait instead of further layering
+- **Grid Alignment Rule — No SL Overlap Across Legs**: Before committing any multi-leg ladder (staged entry, dynamic grid, or recovery add), explicitly check that **no leg's entry price falls inside the hard-SL band of any other leg**. Compute the SL band for each leg as `[SL_price, entry_price]` (for longs) or `[entry_price, SL_price]` (for shorts). If a new entry price lands anywhere inside the SL band of an existing or co-planned leg, the ladder is misaligned. Resolve by widening spacing until the entry is strictly outside every other leg's SL band, or cancel excess legs. A ladder where leg B's entry sits at or below leg A's SL means a single adverse move that stops out leg A will also reach leg B's entry — converting a staged plan into a runaway loss escalation. Do not allow this configuration.
 
 Grid usage rules:
 - Prefer grids in choppy, range, reclaim, or controlled pullback conditions, not during clean trend acceleration against the book.
@@ -710,6 +711,7 @@ Before the order is sent, define explicitly:
 - final size after all clamps
 - whether the order is market, limit, stop, or staged
 - **ANTI-SWEEP CHECK**: Explicitly print the exact Entry, SL, and TP prices you are about to submit, and explicitly verify aloud that none of them end in `.00`, `.50`, clean multiples of `10` or `5`, or represent an exact untampered horizontal line. State "Anti-sweep check passed" only if they are fully irregular. If they are round or obvious, step back and randomize the trailing digits before executing.
+- **GRID ALIGNMENT CHECK** (staged, grid, and recovery batches only): Before the batch executes, list every planned leg's `[entry, SL]` range. For each pair of legs, verify that no leg's entry falls inside another leg's SL band (longs: `SL_price ≤ entry_i ≤ entry_j` where `entry_i < entry_j`; shorts: `entry_j ≤ entry_i ≤ SL_price` where `entry_i > entry_j`). State "Grid alignment check passed" only if all legs are strictly outside each other's SL bands. If any entry violates this, widen the spacing before executing. Do not place the batch until alignment is confirmed.
 
 For any coordinated batch:
 - compute the intended batch once before the first execution call

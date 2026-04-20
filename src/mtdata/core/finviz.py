@@ -102,8 +102,9 @@ def _run_logged_tool(
 def _invalid_finviz_screen_filters_error(filters: Any) -> Dict[str, Any]:
     return _finviz_error_payload(
         (
-            "Invalid filters JSON. Expected a JSON object like "
-            f"'{_FINVIZ_SCREEN_FILTERS_EXAMPLE}'. Got: {filters}"
+            "Invalid filters format. Provide filters as a JSON object with filter names as keys "
+            "and filter values as values. Example: '{\"Exchange\": \"NASDAQ\", \"Sector\": \"Technology\"}'. "
+            f"Got: {filters}"
         ),
         code="finviz_screen_filters_invalid",
         operation="finviz_screen",
@@ -387,11 +388,26 @@ def finviz_screen(
     Parameters
     ----------
     filters : str, optional
-        JSON string of filter dict, e.g. '{"Exchange": "NASDAQ", "Sector": "Technology"}'
-        Common filters: Exchange, Index, Sector, Industry, Country, Market Cap.,
-        P/E, Forward P/E, PEG, P/S, P/B, Dividend Yield, EPS growth this year,
-        Return on Equity, Current Ratio, Analyst Recom., RSI (14), 
-        50-Day Simple Moving Average, Average Volume, Price, Beta
+        JSON string of filter dict with filter names as keys and filter values as values.
+        Use the exact filter names and values shown on finviz.com screener.
+        
+        Example: '{"Exchange": "NASDAQ", "Sector": "Technology"}'
+        
+        Common filter names: Exchange, Index, Sector, Industry, Country, Market Cap.,
+        P/E, Forward P/E, PEG, P/S, P/B, Price/Cash, Price/Free Cash Flow,
+        EPS growth this year, EPS growth next year, Sales growth past 5 years,
+        EPS growth past 5 years, Dividend Yield, Return on Assets, Return on Equity,
+        Return on Investment, Current Ratio, Quick Ratio, LT Debt/Equity, Debt/Equity,
+        Gross Margin, Operating Margin, Net Profit Margin, Payout Ratio,
+        Insider Ownership, Insider Transactions, Institutional Ownership,
+        Institutional Transactions, Float Short, Analyst Recom., Option/Short,
+        Earnings Date, Performance, Performance 2, Volatility, RSI (14),
+        Gap, 20-Day Simple Moving Average, 50-Day Simple Moving Average,
+        200-Day Simple Moving Average, Change, Change from Open, 20-Day High/Low,
+        50-Day High/Low, 52-Week High/Low, Pattern, Candlestick, Beta,
+        Average True Range, Average Volume, Relative Volume, Current Volume,
+        Price, Target Price, IPO Date, Shares Outstanding, Float
+        
     order : str, optional
         Sort order, e.g. "-marketcap" (descending), "price" (ascending)
     limit : int
@@ -414,8 +430,14 @@ def finviz_screen(
     Screen for undervalued large caps:
     >>> finviz_screen(filters='{"Market Cap.": "Large ($10bln to $200bln)", "P/E": "Under 15"}')
     
-    Screen for high dividend stocks:
+    Screen for high dividend stocks with specific view:
     >>> finviz_screen(filters='{"Dividend Yield": "Over 5%"}', view="valuation")
+    
+    Notes
+    -----
+    - Filter names must exactly match those used on the Finviz screener website
+    - Filter values must match the available options for each filter
+    - Visit finviz.com/screener.ashx to see available filters and their values
     """
     fields = {"limit": limit, "page": page, "view": view, "order": order}
 

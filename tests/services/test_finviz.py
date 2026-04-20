@@ -561,8 +561,11 @@ class TestFinvizTools:
             result = finviz_screen.__wrapped__(filters="not valid json")
 
         assert "error" in result
-        assert "Expected a JSON object like" in result["error"]
-        assert "Exchange" in result["error"]
+        # Verify improved error message
+        assert "Invalid filters format" in result["error"]
+        assert "JSON object" in result["error"]
+        assert "filter names as keys" in result["error"]
+        assert "Sector" in result["error"]  # Should include example
         assert result["success"] is False
         assert result["error_code"] == "finviz_screen_filters_invalid"
         assert result["operation"] == "finviz_screen"
@@ -578,7 +581,7 @@ class TestFinvizTools:
         with patch("mtdata.core.finviz.run_logged_operation", side_effect=_run_direct):
             result = finviz_screen.__wrapped__(filters='["NASDAQ"]')
 
-        assert result["error"].startswith("Invalid filters JSON.")
+        assert result["error"].startswith("Invalid filters format.")
         assert result["success"] is False
         assert result["error_code"] == "finviz_screen_filters_invalid"
         assert result["details"] == {"received_type": "str"}

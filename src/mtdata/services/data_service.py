@@ -53,6 +53,7 @@ from ..utils.indicators import (
 # Imports from utils
 from ..utils.mt5 import (
     _mt5_copy_rates_from,
+    _mt5_copy_rates_from_pos,
     _mt5_copy_rates_range,
     _mt5_copy_ticks_range,
     _mt5_epoch_to_utc,
@@ -114,6 +115,63 @@ def _describe_rate_fetch_error(symbol: str, *, info_before: Any = None) -> str:
     if info_before is None:
         return f"Symbol '{symbol}' was not found or is not available in MT5."
     return f"Failed to get rates for {symbol}: {error_text}"
+
+
+def _build_no_data_error_with_context(
+    symbol: str,
+    timeframe: TimeframeLiteral,
+    mt5_timeframe: int,
+    start_datetime: Optional[str],
+    end_datetime: Optional[str],
+) -> Dict[str, Any]:
+    """Build a detailed error message when no data is available for the requested range.
+    
+    Returns a dict with 'error' key and optional 'details' with context.
+    """
+    error_msg = "No data available"
+    details: Dict[str, Any] = {}
+    
+    # Add requested range to context if provided
+    if start_datetime or end_datetime:
+        details["requested_range"] = {
+            k: v for k, v in [("start", start_datetime), ("end", end_datetime)]
+            if v is not None
+        }
+    
+    # Try to get first and last available bars for this timeframe to suggest range
+    try:
+        first_bar = _mt5_copy_rates_from_pos(symbol, mt5_timeframe, 0, 1)
+        last_bar = _mt5_copy_rates_from_pos(symbol, mt5_timeframe, -1, 1)
+        
+        if first_bar is not None and len(first_bar) > 0 and last_bar is not None and len(last_bar) > 0:
+            first_time = datetime.fromtimestamp(first_bar[0]['time'], tz=dt_timezone.utc)
+            last_time = datetime.fromtimestamp(last_bar[0]['time'], tz=dt_timezone.utc)
+            
+            details["available_range"] = {
+                "earliest": _format_time_minimal(first_bar[0]['time']),
+                "latest": _format_time_minimal(last_bar[0]['time']),
+            }
+            
+            # Provide a suggestion based on the mismatch
+            if start_datetime:
+                try:
+                    req_start, _ = _parse_fetch_datetime_arg(start_datetime)
+                    if req_start and req_start > last_time:
+                        error_msg = f"No data available - requested start date is after latest available data ({_format_time_minimal(last_bar[0]['time'])})"
+                        details["suggestion"] = f"Use start='{_format_time_minimal(last_bar[0]['time'])}' or earlier"
+                    elif req_start and req_start < first_time:
+                        error_msg = f"No data available - requested date range is before earliest available data ({_format_time_minimal(first_bar[0]['time'])})"
+                        details["suggestion"] = f"Use start='{_format_time_minimal(first_bar[0]['time'])}' or later"
+                except Exception:
+                    pass
+    except Exception:
+        # Silently ignore any errors when trying to get available range
+        pass
+    
+    result: Dict[str, Any] = {"error": error_msg}
+    if details:
+        result["details"] = details
+    return result
 
 
 def _indicator_param_syntax_error(ti_spec: Optional[str]) -> Optional[str]:
@@ -1062,7 +1120,9 @@ def fetch_candles(  # noqa: C901
 
         # Generate tabular format with dynamic column filtering
         if len(rates) == 0:
-            return {"error": "No data available"}
+            return _build_no_data_error_with_context(
+                symbol, timeframe, mt5_timeframe, start_datetime, end_datetime
+            )
         raw_bars_fetched = int(len(rates))
         live_bar_reference_epoch = _resolve_live_bar_reference_epoch(symbol, timeframe)
         if not include_incomplete:
@@ -1072,7 +1132,9 @@ def fetch_candles(  # noqa: C901
                 current_time_epoch=live_bar_reference_epoch,
             )
         if len(rates) == 0:
-            return {"error": "No data available"}
+            return _build_no_data_error_with_context(
+                symbol, timeframe, mt5_timeframe, start_datetime, end_datetime
+            )
         headers = _build_candle_headers(rates, ohlcv)
         
         # Construct DataFrame to support indicators and consistent output

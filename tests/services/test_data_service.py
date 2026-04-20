@@ -65,6 +65,40 @@ class TestDataService(unittest.TestCase):
         self.assertIsInstance(data[0]['open'], (int, float))
         self.assertIsInstance(data[0]['close'], (int, float))
 
+    @patch('mtdata.services.data_service._mt5_copy_rates_from_pos')
+    @patch('mtdata.services.data_service._mt5_copy_rates_from')
+    @patch('mtdata.services.data_service._symbol_ready_guard', _mock_symbol_ready_guard)
+    def test_fetch_candles_no_data_includes_context(self, mock_copy_rates, mock_copy_rates_from_pos):
+        # Simulate no data available
+        mock_copy_rates.return_value = []
+        
+        # Mock available range info (first and last bar)
+        now = datetime.now(timezone.utc)
+        first_bar_time = now - timedelta(days=5)
+        last_bar_time = now - timedelta(hours=1)
+        
+        mock_copy_rates_from_pos.side_effect = [
+            # First bar (pos=0)
+            [{'time': first_bar_time.timestamp(), 'open': 1.1, 'high': 1.2, 'low': 1.0, 'close': 1.15}],
+            # Last bar (pos=-1)
+            [{'time': last_bar_time.timestamp(), 'open': 1.1, 'high': 1.2, 'low': 1.0, 'close': 1.15}],
+        ]
+        
+        # Request with specific date range that has no data
+        result = fetch_candles(
+            symbol="EURUSD", 
+            limit=5, 
+            start="2026-04-20 20:00",
+            end="2026-04-20 22:00"
+        )
+        
+        # Verify the error includes context
+        self.assertIn('error', result)
+        self.assertIn('details', result)
+        self.assertIn('requested_range', result['details'])
+        self.assertIn('available_range', result['details'])
+        self.assertEqual(result['details']['requested_range']['start'], "2026-04-20 20:00")
+
     @patch('mtdata.services.data_service._mt5_copy_rates_from')
     @patch('mtdata.services.data_service._symbol_ready_guard', _mock_symbol_ready_guard)
     def test_fetch_candles_time_as_epoch(self, mock_copy_rates):
