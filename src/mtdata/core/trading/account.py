@@ -267,13 +267,18 @@ def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str,
             },
         }
 
+    # Filter trades by P&L sign: wins have positive P&L, losses have negative P&L
+    wins = [row for row in analyzed_rows if float(row.get("net_pnl") or 0.0) > 0.0]
+    losses = [row for row in analyzed_rows if float(row.get("net_pnl") or 0.0) < 0.0]
+    
+    # Sort wins descending (best wins first), losses ascending (worst losses first)
     ranked_best = sorted(
-        analyzed_rows,
+        wins,
         key=lambda row: float(row.get("net_pnl") or 0.0),
         reverse=True,
     )
     ranked_worst = sorted(
-        analyzed_rows,
+        losses,
         key=lambda row: float(row.get("net_pnl") or 0.0),
     )
     return {

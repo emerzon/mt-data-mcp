@@ -690,6 +690,84 @@ def test_trade_journal_analyze_summarizes_realized_exit_deals() -> None:
     assert out["worst_trades"][0]["ticket"] == 3
 
 
+def test_trade_journal_analyze_filters_best_worst_by_pnl_sign() -> None:
+    """Verify that best_trades only contains wins and worst_trades only contains losses.
+    
+    This test validates the fix for the logic error where best_trades and worst_trades
+    were mixed together, just sorted differently.
+    """
+    history_rows = [
+        {
+            "ticket": 1,
+            "symbol": "EURUSD",
+            "entry": "Out",
+            "type": "Buy",
+            "profit": 0.82,
+            "commission": 0.0,
+            "swap": 0.0,
+            "exit_trigger": "TP",
+            "time": "2026-01-01 10:00",
+        },
+        {
+            "ticket": 2,
+            "symbol": "USDJPY",
+            "entry": "Out",
+            "type": "Buy",
+            "profit": 0.04,
+            "commission": 0.0,
+            "swap": 0.0,
+            "exit_trigger": "TP",
+            "time": "2026-01-01 11:00",
+        },
+        {
+            "ticket": 3,
+            "symbol": "EURUSD",
+            "entry": "Out",
+            "type": "Sell",
+            "profit": -0.23,
+            "commission": 0.0,
+            "swap": 0.0,
+            "exit_trigger": "SL",
+            "time": "2026-01-01 12:00",
+        },
+    ]
+
+    with patch(
+        "mtdata.core.trading.account._run_trade_history_request",
+        return_value={
+            "success": True,
+            "count": len(history_rows),
+            "items": history_rows,
+        },
+    ):
+        out = trade_journal_analyze(__cli_raw=True)
+
+    # Verify metrics are correct
+    assert out["summary"]["wins"] == 2
+    assert out["summary"]["losses"] == 1
+    assert out["summary"]["win_rate"] == 2 / 3
+    assert out["summary"]["best_trade"] == 0.82
+    assert out["summary"]["worst_trade"] == -0.23
+
+    # Verify best_trades only contains winners (positive P&L)
+    assert len(out["best_trades"]) == 2
+    for trade in out["best_trades"]:
+        assert trade["net_pnl"] > 0, f"best_trades should only contain wins, but found ticket {trade['ticket']} with net_pnl {trade['net_pnl']}"
+
+    # Verify worst_trades only contains losers (negative P&L)
+    assert len(out["worst_trades"]) == 1
+    for trade in out["worst_trades"]:
+        assert trade["net_pnl"] < 0, f"worst_trades should only contain losses, but found ticket {trade['ticket']} with net_pnl {trade['net_pnl']}"
+
+    # Verify specific tickets in correct lists
+    best_tickets = {trade["ticket"] for trade in out["best_trades"]}
+    worst_tickets = {trade["ticket"] for trade in out["worst_trades"]}
+    
+    assert 1 in best_tickets  # EURUSD +0.82
+    assert 2 in best_tickets  # USDJPY +0.04
+    assert 3 in worst_tickets  # EURUSD -0.23
+
+
 def test_trade_journal_analyze_returns_message_when_no_exit_deals_found() -> None:
     history_rows = [
         {
