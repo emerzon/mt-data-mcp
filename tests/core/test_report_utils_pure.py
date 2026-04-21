@@ -1001,13 +1001,13 @@ class TestRenderContextSection:
     def test_with_trend_compact(self):
         data = {
             "trend_compact": {
-                "s": [100, 200, 300],
-                "r": [80, 90, 95],
-                "v": 150,
-                "q": 60,
-                "g": 1,
-                "h": 5,
-                "l": 10,
+                "slope_atr_scores": [100, 200, 300],
+                "fit_r2_pcts": [80, 90, 95],
+                "volatility_bps": 150,
+                "squeeze_percentile": 60,
+                "regime_code": 1,
+                "bars_since_swing_high": 5,
+                "bars_since_swing_low": 10,
             }
         }
         lines = _render_context_section(data)
@@ -1046,7 +1046,7 @@ class TestRenderContextsMultiSection:
         data = {
             "D1": {
                 "close": 100.0,
-                "trend_compact": {"s": [50], "v": 200},
+                "trend_compact": {"slope_atr_scores": [50], "volatility_bps": 200},
             }
         }
         lines = _render_contexts_multi_section(data)
@@ -1059,8 +1059,8 @@ class TestAttachMultiTimeframes:
         snap = {
             "close": 100.0,
             "ema20": 99.5,
-            "trend_compact": {"s": [10], "v": 120, "q": 5},
-            "trend_compact_legend": {"s": "slope"},
+            "trend_compact": {"slope_atr_scores": [10], "volatility_bps": 120, "squeeze_percentile": 5},
+            "trend_compact_legend": {"slope_atr_scores": "slope"},
             "trend_compact_explained": {"slope_5": 0.1},
         }
 
@@ -1088,7 +1088,7 @@ class TestAttachMultiTimeframes:
             "close": 100.0,
             "ema20": 99.5,
             "rsi": 55.0,
-            "trend_compact": {"s": [10], "v": 120, "q": 5},
+            "trend_compact": {"slope_atr_scores": [10], "volatility_bps": 120, "squeeze_percentile": 5},
         }
 
         monkeypatch.setattr(
@@ -1104,7 +1104,7 @@ class TestAttachMultiTimeframes:
         attach_multi_timeframes(report, "EURUSD", None, extra_timeframes=["H1"], pivot_timeframes=None)
 
         trend_mtf = report["sections"]["context"]["trend_mtf"]["H1"]
-        assert trend_mtf == {"s": [10], "v": 120, "q": 5}
+        assert trend_mtf == {"slope_atr_scores": [10], "volatility_bps": 120, "squeeze_percentile": 5}
 
     def test_attach_multi_timeframes_keeps_freshness_only_error_snapshots(self, monkeypatch):
         freshness = {
@@ -1157,7 +1157,7 @@ class TestContextForTf:
         monkeypatch.setattr("mtdata.core.data.data_fetch_candles", _wrapped_fetch)
         monkeypatch.setattr(
             "mtdata.core.report_templates.basic._compute_compact_trend",
-            lambda _rows: {"s": [12], "v": 45, "q": 60},
+            lambda _rows: {"slope_atr_scores": [12], "volatility_bps": 45, "squeeze_percentile": 60},
         )
 
         result = context_for_tf("EURUSD", "H1", None, limit=20, tail=1)
@@ -1167,7 +1167,7 @@ class TestContextForTf:
         assert result["EMA_50"] == 99.5
         assert result["RSI_14"] == 57.0
         assert result["MACD"] == 0.12
-        assert result["trend_compact"] == {"s": [12], "v": 45, "q": 60}
+        assert result["trend_compact"] == {"slope_atr_scores": [12], "volatility_bps": 45, "squeeze_percentile": 60}
 
     def test_preserves_freshness_on_error_payload(self, monkeypatch):
         freshness = {

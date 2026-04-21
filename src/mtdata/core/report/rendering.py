@@ -196,26 +196,26 @@ def _render_context_section(data: Any) -> List[str]:
             metrics.append(["RSI(14)", _format_decimal(rsi, 2)])
     trend = data.get("trend_compact") if isinstance(data.get("trend_compact"), dict) else None
     if trend:
-        slopes = trend.get("s") or []
+        slopes = trend.get("slope_atr_scores") or []
         if slopes:
             slope_vals = ", ".join(_format_signed(s / 100.0) for s in slopes[:3])
             metrics.append(["Slope (ATR adj 5/20/60)", slope_vals])
-        r2_vals = trend.get("r") or []
+        r2_vals = trend.get("fit_r2_pcts") or []
         if r2_vals:
             r2_fmt = ", ".join(f"{max(0, min(100, int(r)))}%" for r in r2_vals[:3])
             metrics.append(["Fit quality (R^2 5/20/60)", r2_fmt])
-        atr_bps = trend.get("v")
+        atr_bps = trend.get("volatility_bps")
         if atr_bps is not None:
             metrics.append(["ATR as bps", str(int(atr_bps))])
-        squeeze = trend.get("q")
+        squeeze = trend.get("squeeze_percentile")
         if squeeze is not None:
             metrics.append(["Squeeze percentile", f"{int(squeeze)}%"])
         regime_map = {0: "neutral", 1: "uptrend", 2: "downtrend", 3: "breakout up", 4: "breakout down"}
-        regime = trend.get("g")
+        regime = trend.get("regime_code")
         if regime in regime_map:
             metrics.append(["Regime signal", regime_map[int(regime)]])
-        bars_high = trend.get("h")
-        bars_low = trend.get("l")
+        bars_high = trend.get("bars_since_swing_high")
+        bars_low = trend.get("bars_since_swing_low")
         if bars_high is not None or bars_low is not None:
             metrics.append(
                 [
@@ -251,10 +251,10 @@ def _render_contexts_multi_section(data: Any) -> List[str]:
         slope_val = None
         atr_bps = None
         if trend:
-            slopes = trend.get("s") or []
+            slopes = trend.get("slope_atr_scores") or []
             if slopes:
                 slope_val = slopes[0] / 100.0 if slopes[0] is not None else None
-            atr_bps = trend.get("v")
+            atr_bps = trend.get("volatility_bps")
         close_val = snap.get("close")
         ema20_val = snap.get("ema20") or _get_indicator_value(snap, "EMA_20")
         ema50_val = snap.get("ema50") or _get_indicator_value(snap, "EMA_50")

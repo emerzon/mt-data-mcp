@@ -758,13 +758,13 @@ class TestTemplateBasic:
         ctx = report["sections"].get("context", {})
         assert isinstance(ctx.get("trend_compact"), dict)
         assert isinstance(ctx.get("trend_compact_legend"), dict)
-        assert "s" in ctx["trend_compact_legend"]
+        assert "slope_atr_scores" in ctx["trend_compact_legend"]
         assert "trend_compact_explained" not in ctx
         assert "sparkline_close" not in ctx
 
     @patch(f"{_BASIC_MODULE}._get_raw_result")
     @patch(f"{_BASIC_MODULE}.now_utc_iso", return_value="2024-01-15T00:00:00Z")
-    @patch(f"{_BASIC_MODULE}._compute_compact_trend", return_value={"s": [12], "v": 45, "q": 60})
+    @patch(f"{_BASIC_MODULE}._compute_compact_trend", return_value={"slope_atr_scores": [12], "volatility_bps": 45, "squeeze_percentile": 60})
     @patch(f"{_BASIC_MODULE}.pick_best_forecast_method", return_value=None)
     @patch(f"{_BASIC_MODULE}.summarize_barrier_grid", return_value={"best": {}})
     def test_basic_context_snapshots_passthrough_freshness(

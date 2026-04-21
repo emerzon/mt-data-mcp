@@ -575,7 +575,7 @@ def regime_detect(  # noqa: C901
         "wavelet",
         "ensemble",
         "all",
-    ] = "all",  # type: ignore
+    ] = "rule_based",  # type: ignore
     target: Literal["return", "price"] = "return",  # type: ignore
     params: Optional[Dict[str, Any]] = None,
     denoise: Optional[DenoiseSpec] = None,
@@ -588,12 +588,12 @@ def regime_detect(  # noqa: C901
 ) -> Dict[str, Any]:
     """Detect regimes and/or change-points over the last `limit` bars.
 
-    - method: Default is 'all' (runs all methods and returns individual results for comparison).
-      Also available: 'bocpd' (Bayesian online change-point; Gaussian), 'hmm' / 'gmm' (Gaussian mixture/HMM-lite),
+    - method: Default is 'rule_based' (fast trend/ranging/transition classification).
+      Other options: 'bocpd' (Bayesian online change-point; Gaussian), 'hmm' / 'gmm' (Gaussian mixture/HMM-lite),
       'ms_ar' (Markov-switching AR), 'clustering' (rolling-feature clustering via tsfresh + KMeans/Spectral),
-      'garch' (GARCH-based volatility regimes), 'rule_based' (trend/ranging/transition classification),
+      'garch' (GARCH-based volatility regimes),
       'wavelet' (multi-resolution wavelet energy regime detection via PyWavelets),
-      'ensemble' (consensus across multiple methods).
+      'ensemble' (consensus across multiple methods), 'all' (runs all methods for comparison, may be slow).
     - params (clustering): optional `algorithm` = 'kmeans' (default) | 'spectral' (sklearn SpectralClustering).
       Optional `affinity` for spectral (default 'nearest_neighbors').
     - params (wavelet): optional `wavelet` (default 'db4'), `level` (auto), `n_states` (default 3),

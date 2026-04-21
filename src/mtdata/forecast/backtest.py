@@ -30,11 +30,16 @@ def _attach_request_metadata(
     result: Dict[str, Any],
     *,
     request: Dict[str, Any],
-    resolved_request: Dict[str, Any],
+    resolved_request: Optional[Dict[str, Any]] = None,
+    detail: Literal["compact", "full"] = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     out = dict(result)
-    out["request"] = deepcopy(request)
-    out["resolved_request"] = deepcopy(resolved_request)
+    # Only include request metadata in full detail mode
+    if detail == "full":
+        out["request"] = deepcopy(request)
+        # Only include resolved_request if it differs from request
+        if resolved_request is not None and resolved_request != request:
+            out["resolved_request"] = deepcopy(resolved_request)
     return out
 
 
@@ -491,6 +496,7 @@ def strategy_backtest(  # noqa: C901
                 "max_hold_bars": int(max_hold_bars) if max_hold_bars is not None else None,
                 "slippage_bps": float(slippage_bps),
             },
+            detail=detail_mode,
         )
     except Exception as e:
         return {"error": f"Error in strategy_backtest: {str(e)}"}
@@ -929,6 +935,7 @@ def forecast_backtest(  # noqa: C901
                 "trade_threshold": float(trade_threshold or 0.0),
                 "detail": detail_mode,
             },
+            detail=detail_mode,
         )
     except Exception as e:
         return {"error": f"Error in forecast_backtest: {str(e)}"}

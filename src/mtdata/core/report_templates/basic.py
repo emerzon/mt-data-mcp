@@ -15,13 +15,13 @@ from ..schema import DenoiseSpec
 from ..tool_calling import call_tool_sync_raw
 
 _TREND_COMPACT_LEGEND: Dict[str, str] = {
-    "s": "ATR-adjusted slope score (x100) for windows [5, 20, 60] bars.",
-    "r": "Linear fit quality (R^2 percent) for windows [5, 20, 60] bars.",
-    "v": "ATR as basis points of price (volatility proxy).",
-    "q": "Bollinger bandwidth percentile (squeeze percentile).",
-    "g": "Regime code: 0=neutral, 1=uptrend, 2=downtrend, 3=breakout_up, 4=breakout_down.",
-    "h": "Bars since most recent swing high (within lookback window).",
-    "l": "Bars since most recent swing low (within lookback window).",
+    "slope_atr_scores": "ATR-adjusted slope score (x100) for windows [5, 20, 60] bars.",
+    "fit_r2_pcts": "Linear fit quality (R^2 percent) for windows [5, 20, 60] bars.",
+    "volatility_bps": "ATR as basis points of price (volatility proxy).",
+    "squeeze_percentile": "Bollinger bandwidth percentile (squeeze percentile).",
+    "regime_code": "Regime code: 0=neutral, 1=uptrend, 2=downtrend, 3=breakout_up, 4=breakout_down.",
+    "bars_since_swing_high": "Bars since most recent swing high (within lookback window).",
+    "bars_since_swing_low": "Bars since most recent swing low (within lookback window).",
 }
 _TREND_REGIME_LABELS = {
     0: "neutral",
@@ -392,13 +392,13 @@ def _compute_compact_trend(rows: List[Dict[str, Any]]) -> Optional[Dict[str, Any
     v = int(round(((atr / last_price) * 10000.0) if last_price > 0 and atr > 0 else 0.0))
 
     return {
-        's': s_vals,   # slopes ATRu*100
-        'r': r_vals,   # R2%
-        'v': v,        # ATR% of price
-        'q': int(q),   # squeeze percentile
-        'g': int(g),   # regime code
-        'h': int(h_idx),
-        'l': int(l_idx),
+        'slope_atr_scores': s_vals,   # slopes ATRu*100
+        'fit_r2_pcts': r_vals,   # R2%
+        'volatility_bps': v,        # ATR% of price
+        'squeeze_percentile': int(q),   # squeeze percentile
+        'regime_code': int(g),   # regime code
+        'bars_since_swing_high': int(h_idx),
+        'bars_since_swing_low': int(l_idx),
     }
 
 
@@ -406,20 +406,20 @@ def _explain_compact_trend(compact: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(compact, dict):
         return {}
     out: Dict[str, Any] = {}
-    s = compact.get("s")
-    r = compact.get("r")
+    s = compact.get("slope_atr_scores")
+    r = compact.get("fit_r2_pcts")
     if isinstance(s, list):
         out["slope_atr_score_5_20_60"] = [int(v) for v in s[:3] if isinstance(v, (int, float))]
     if isinstance(r, list):
         out["fit_r2_pct_5_20_60"] = [int(v) for v in r[:3] if isinstance(v, (int, float))]
-    for key in ("v", "q", "h", "l"):
+    for key in ("volatility_bps", "squeeze_percentile", "bars_since_swing_high", "bars_since_swing_low"):
         val = compact.get(key)
         if isinstance(val, (int, float)):
             out[key] = int(val)
-    g_val = compact.get("g")
+    g_val = compact.get("regime_code")
     if isinstance(g_val, (int, float)):
         g_i = int(g_val)
-        out["g"] = g_i
+        out["regime_code"] = g_i
         out["regime_label"] = _TREND_REGIME_LABELS.get(g_i, "neutral")
     return out
 
