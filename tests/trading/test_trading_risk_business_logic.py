@@ -138,6 +138,28 @@ def test_trade_risk_analyze_marks_position_sizing_incomplete_without_required_in
     ]
 
 
+def test_trade_risk_analyze_returns_error_when_partial_position_sizing_params() -> None:
+    """When any position sizing param is provided, all must be provided."""
+    mt5 = MagicMock()
+    mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
+    mt5.positions_get.return_value = []
+
+    with _patched_mt5_module(mt5):
+        out = trade_risk_analyze(
+            symbol="EURUSD",
+            desired_risk_pct=2.0,  # Only risk pct provided
+        )
+
+    assert out["success"] is False
+    assert out["error_code"] == "INCOMPLETE_POSITION_SIZING_PARAMS"
+    assert out["provided"] == ["desired_risk_pct"]
+    assert set(out["missing"]) == {"proposed_entry", "proposed_sl"}
+    assert "guidance" in out
+    assert "desired_risk_pct" in out["guidance"]
+    assert "proposed_entry" in out["guidance"]
+    assert "proposed_sl" in out["guidance"]
+
+
 def test_trade_risk_analyze_handles_missing_account_fields() -> None:
     mt5 = MagicMock()
     mt5.account_info.return_value = SimpleNamespace()
