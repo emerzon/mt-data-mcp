@@ -361,9 +361,83 @@ def _build_pattern_response(
                 f"{_elliott_timeframe_suggestion(timeframe)} "
                 "You can also increase lookback or focus on a clearer trending segment."
             )
+    
+    # Add data freshness metadata for high timeframes with ancient patterns
+    # For MN1 (monthly) and W1 (weekly), check if patterns are very old
+    tf_upper = str(timeframe).upper()
+    if tf_upper in ("MN1", "W1") and filtered:
+        oldest_pattern_time = None
+        newest_pattern_time = None
+        
+        # Extract pattern times from all detected patterns
+        for pattern in filtered:
+            try:
+                if "end_date" in pattern:
+                    # Pattern end_date is a string like "2011-08-31 21:00"
+                    end_date_str = str(pattern.get("end_date", ""))
+                    if end_date_str and oldest_pattern_time is None:
+                        oldest_pattern_time = end_date_str
+                        newest_pattern_time = end_date_str
+                    elif end_date_str:
+                        # Keep track of oldest and newest
+                        if end_date_str < oldest_pattern_time:
+                            oldest_pattern_time = end_date_str
+                        if end_date_str > newest_pattern_time:
+                            newest_pattern_time = end_date_str
+                elif "time" in pattern:
+                    time_val = pattern.get("time")
+                    if time_val and oldest_pattern_time is None:
+                        oldest_pattern_time = str(time_val)
+                        newest_pattern_time = str(time_val)
+                    elif time_val:
+                        time_str = str(time_val)
+                        if time_str < oldest_pattern_time:
+                            oldest_pattern_time = time_str
+                        if time_str > newest_pattern_time:
+                            newest_pattern_time = time_str
+            except Exception:
+                continue
+        
+        # Add data freshness info if we found pattern times
+        if oldest_pattern_time and newest_pattern_time:
+            resp["data_freshness"] = {
+                "oldest_pattern": oldest_pattern_time,
+                "newest_pattern": newest_pattern_time,
+            }
+            
+            # Calculate years spanned
+            try:
+                # Try to extract years from date strings (format: "YYYY-MM-DD HH:MM")
+                oldest_year = int(oldest_pattern_time.split("-")[0]) if oldest_pattern_time else None
+                newest_year = int(newest_pattern_time.split("-")[0]) if newest_pattern_time else None
+                if oldest_year and newest_year:
+                    years_spanned = newest_year - oldest_year
+                    if years_spanned >= 10:
+                        resp["data_freshness"]["years_spanned"] = years_spanned
+                        # Add warning if patterns are very old or span many years
+                        if not "warnings" in resp:
+                            resp["warnings"] = []
+                        if isinstance(resp["warnings"], list):
+                            warning_msg = (
+                                f"Caution: Monthly timeframe patterns span {years_spanned}+ years "
+                                f"(from {oldest_year} to {newest_year}). "
+                                "Older patterns may not reflect current market structure. "
+                                "Consider using W1 or D1 for more recent patterns, or increase "
+                                "the limit to see more recent bars."
+                            )
+                            resp["warnings"].append(warning_msg)
+            except Exception:
+                pass
+    
     warnings_out = df.attrs.get("warnings")
     if isinstance(warnings_out, list) and warnings_out:
-        resp["warnings"] = [str(w) for w in warnings_out if str(w)]
+        if "warnings" not in resp:
+            resp["warnings"] = []
+        if isinstance(resp["warnings"], list):
+            for w in warnings_out:
+                w_str = str(w) if w else None
+                if w_str:
+                    resp["warnings"].append(w_str)
     
     # Include series data if requested
     if include_series:

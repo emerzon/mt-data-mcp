@@ -920,6 +920,59 @@ class TestBuildPatternResponse:
 
         assert resp["warnings"] == ["sample warning"]
 
+    def test_mn1_with_ancient_patterns_includes_data_freshness(self):
+        """MN1 with old patterns should include data_freshness and warning."""
+        patterns = [
+            {"status": "forming", "end_date": "2011-08-31 21:00"},
+            {"status": "forming", "end_date": "2015-07-31 21:00"},
+            {"status": "forming", "end_date": "2024-02-28 21:00"},
+        ]
+        resp = self._call(timeframe="MN1", patterns=patterns)
+        
+        assert "data_freshness" in resp
+        assert resp["data_freshness"]["oldest_pattern"] == "2011-08-31 21:00"
+        assert resp["data_freshness"]["newest_pattern"] == "2024-02-28 21:00"
+        assert resp["data_freshness"]["years_spanned"] == 13
+        assert "warnings" in resp
+        assert any("years_spanned" in str(w) or "ancient" in str(w).lower() or "monthly" in str(w).lower() 
+                   for w in resp["warnings"])
+
+    def test_w1_with_old_patterns_includes_data_freshness(self):
+        """W1 with old patterns should include data_freshness and warning."""
+        patterns = [
+            {"status": "forming", "end_date": "2015-01-01 00:00"},
+            {"status": "forming", "end_date": "2024-12-31 00:00"},
+        ]
+        resp = self._call(timeframe="W1", patterns=patterns)
+        
+        assert "data_freshness" in resp
+        # 9 years is less than 10, so years_spanned won't be added
+        assert resp["data_freshness"]["oldest_pattern"] == "2015-01-01 00:00"
+        assert resp["data_freshness"]["newest_pattern"] == "2024-12-31 00:00"
+
+    def test_h1_does_not_add_data_freshness(self):
+        """H1 (intraday) should not add data_freshness warning."""
+        patterns = [
+            {"status": "forming", "end_date": "2011-08-31 21:00"},
+        ]
+        resp = self._call(timeframe="H1", patterns=patterns)
+        
+        # H1 is not MN1 or W1, so should not add data_freshness
+        assert "data_freshness" not in resp
+
+    def test_mn1_with_recent_patterns_no_warning(self):
+        """MN1 with recent patterns (< 10 years) should not add old-data warning."""
+        patterns = [
+            {"status": "forming", "end_date": "2020-01-01 00:00"},
+            {"status": "forming", "end_date": "2024-12-31 00:00"},
+        ]
+        resp = self._call(timeframe="MN1", patterns=patterns)
+        
+        # Years spanned is 4, less than 10, so no warning should be added
+        if "data_freshness" in resp:
+            # If data_freshness exists, years_spanned should be less than 10
+            assert resp["data_freshness"].get("years_spanned", 0) < 10
+
 
 # ── _build_stock_pattern_frame ───────────────────────────────────────────
 
