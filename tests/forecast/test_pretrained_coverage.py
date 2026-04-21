@@ -74,6 +74,7 @@ class _FakePipeline:
         return _FakeTensor(np.random.rand(1, prediction_length))
 
 _chronos.ChronosBoltPipeline = _FakePipeline
+_chronos.Chronos2Pipeline = _FakePipeline
 _chronos.ChronosPipeline = _FakePipeline
 
 # --- timesfm stub ----------------------------------------------------------
@@ -374,10 +375,10 @@ class TestChronosBoltMethod:
         assert "chronos-bolt-base" in res.params_used["model_name"]
         assert res.params_used.get("pipeline") == "ChronosBoltPipeline"
 
-    def test_chronos2_default_model_name_prefers_t5(self):
+    def test_chronos2_default_model_name_uses_chronos2(self):
         res = self.method.forecast(_series(), horizon=5, seasonality=1, params={"method_name": "chronos2"})
-        assert res.params_used["model_name"] == "amazon/chronos-t5-small"
-        assert res.params_used.get("pipeline") == "ChronosPipeline"
+        assert res.params_used["model_name"] == "amazon/chronos-2"
+        assert res.params_used.get("pipeline") == "Chronos2Pipeline"
 
     def test_prepare_forecast_call_injects_method_name(self):
         context = types.SimpleNamespace(method="chronos2")
@@ -393,6 +394,7 @@ class TestChronosBoltMethod:
 
         saved = getattr(_chronos, "Chronos2Pipeline", None)
         _chronos.Chronos2Pipeline = _BrokenChronos2Pipeline
+        pretrained_module.model_cache.clear()
         try:
             with pytest.raises(RuntimeError, match="failed to initialize any compatible Chronos pipeline"):
                 self.method.forecast(_series(), horizon=5, seasonality=1, params={"model_name": "amazon/chronos-2", "method_name": "chronos2"})
@@ -405,8 +407,8 @@ class TestChronosBoltMethod:
 
 def test_resolve_chronos_model_defaults_uses_t5_for_chronos2():
     model_name, order = _resolve_chronos_model_defaults("chronos2", {})
-    assert model_name == "amazon/chronos-t5-small"
-    assert order == ("ChronosPipeline",)
+    assert model_name == "amazon/chronos-2"
+    assert order == ("Chronos2Pipeline",)
 
 
 def test_resolve_chronos_model_defaults_uses_bolt_for_chronos_bolt():
@@ -439,7 +441,7 @@ def test_load_chronos_pipeline_serializes_concurrent_init(monkeypatch):
             results.append(
                 _load_chronos_pipeline(
                     [("ChronosPipeline", _BlockingPipeline)],
-                    "amazon/chronos-t5-small",
+                    "amazon/chronos-2",
                     "cuda:0",
                 )
             )

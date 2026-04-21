@@ -92,8 +92,7 @@ def _resolve_chronos_model_defaults(method_name: str, params: Dict[str, Any]) ->
     if requested:
         model_name = requested
     elif str(method_name).strip().lower() == "chronos2":
-        # Prefer the broadly compatible T5 Chronos checkpoint for the generic chronos2 surface.
-        model_name = "amazon/chronos-t5-small"
+        model_name = "amazon/chronos-2"
     else:
         model_name = "amazon/chronos-bolt-base"
 
@@ -158,7 +157,7 @@ class ChronosBoltMethod(PretrainedMethod):
         "chronos_bolt": ("chronos-forecasting>=2.0.0", "torch"),
     }
     CAPABILITY_NOTES = {
-        "chronos2": "Hugging Face model id via params.model_name (default: amazon/chronos-t5-small for broad compatibility; set device_map explicitly for stable CPU/CUDA routing).",
+        "chronos2": "Hugging Face model id via params.model_name (default: amazon/chronos-2; set device_map explicitly for stable CPU/CUDA routing).",
         "chronos_bolt": "Uses Bolt-family checkpoints (default: amazon/chronos-bolt-base); set device_map explicitly for stable CPU/CUDA routing.",
     }
     PARAMS: List[Dict[str, Any]] = [
