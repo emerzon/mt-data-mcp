@@ -3,6 +3,7 @@ Forecast engine core logic and orchestration.
 """
 
 import logging
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Tuple
 
 import numpy as np
@@ -104,6 +105,18 @@ _ENSEMBLE_BASE_METHODS = (
 
 logger = logging.getLogger(__name__)
 _normalize_weights = _normalize_weights_impl
+
+
+@dataclass(frozen=True)
+class TrainingExecutionContext:
+    method_l: str
+    data_scope: str
+    target_series: pd.Series
+    horizon: int
+    seasonality: int
+    method_params: Dict[str, Any]
+    timeframe: str
+    exog_used: Optional[np.ndarray]
 
 
 def _ensemble_dispatch_method_impl(
@@ -431,6 +444,84 @@ def _prepare_feature_context(
     return X, future_exog, feat_info
 
 
+def build_training_context(
+    symbol: str,
+    timeframe: TimeframeLiteral = "H1",
+    method: ForecastMethodLiteral = "theta",
+    horizon: int = 12,
+    lookback: Optional[int] = None,
+    as_of: Optional[str] = None,
+    params: Optional[Dict[str, Any]] = None,
+    quantity: Literal["price", "return", "volatility"] = "price",
+    denoise: Optional[DenoiseSpec] = None,
+    features: Optional[Dict[str, Any]] = None,
+    dimred_method: Optional[str] = None,
+    dimred_params: Optional[Dict[str, Any]] = None,
+    target_spec: Optional[Dict[str, Any]] = None,
+    exog_used: Optional[np.ndarray] = None,
+    exog_future: Optional[np.ndarray] = None,
+    prefetched_df: Optional[pd.DataFrame] = None,
+    prefetched_base_col: Optional[str] = None,
+    prefetched_denoise_spec: Optional[Any] = None,
+) -> TrainingExecutionContext:
+    method_l = str(method).lower().strip()
+    quantity_l = str(quantity).lower().strip()
+    if timeframe not in TIMEFRAME_MAP:
+        raise ValueError(invalid_timeframe_error(timeframe, TIMEFRAME_MAP))
+    tf_secs = TIMEFRAME_SECONDS.get(timeframe)
+    if not tf_secs:
+        raise ValueError(unsupported_timeframe_seconds_error(timeframe))
+    available_methods = _get_available_methods()
+    if method_l not in available_methods:
+        raise ValueError(format_invalid_method_error(method, list(available_methods)))
+    if quantity_l == "volatility" or method_l.startswith("vol_"):
+        raise ValueError("Use forecast_volatility for volatility models")
+
+    p = _parse_kv_or_json(params)
+    seasonality = int(p.get("seasonality")) if p.get("seasonality") is not None else default_seasonality(timeframe)
+    need = _calculate_lookback_bars(method_l, int(horizon), lookback, seasonality, timeframe, params=p)
+    df, base_col, _ = _resolve_history_context(
+        symbol=symbol,
+        timeframe=timeframe,
+        need=need,
+        as_of=as_of,
+        prefetched_df=prefetched_df,
+        prefetched_base_col=prefetched_base_col,
+        prefetched_denoise_spec=prefetched_denoise_spec,
+        denoise=denoise,
+    )
+    target_series, _, base_col, _ = _prepare_target_series_context(
+        df=df,
+        quantity_l=quantity_l,
+        base_col=base_col,
+        features=features,
+        target_spec=target_spec,
+    )
+    if len(target_series) < 3:
+        raise ValueError(f"Not enough valid data points in column '{base_col}'")
+    X, _, _ = _prepare_feature_context(
+        df=df,
+        features=features,
+        exog_used=exog_used,
+        exog_future=exog_future,
+        tf_secs=int(tf_secs),
+        horizon=int(horizon),
+        target_series=target_series,
+        dimred_method=dimred_method,
+        dimred_params=dimred_params,
+    )
+    return TrainingExecutionContext(
+        method_l=method_l,
+        data_scope=f"{symbol}_{timeframe}",
+        target_series=target_series,
+        horizon=int(horizon),
+        seasonality=int(seasonality),
+        method_params=dict(p),
+        timeframe=str(timeframe),
+        exog_used=X,
+    )
+
+
 def _build_engine_diagnostics(
     *,
     df: pd.DataFrame,
@@ -595,7 +686,7 @@ def _submit_async_training(
     }.get(category, "varies")
 
     return {
-        "status": "training_started" if is_new else "training_in_progress",
+        "status": "pending" if is_new else "running",
         "task_id": task_id,
         "method": method_l,
         "data_scope": data_scope,
@@ -673,9 +764,11 @@ def _run_registered_forecast_method(
     if getattr(forecaster, 'supports_training', False):
         data_scope = f"{symbol}_{timeframe}"
         has_exog = X is not None
+        training_params = dict(method_params)
+        training_params["quantity"] = quantity_l
         params_hash = model_id or _compute_model_key(
             forecaster, method_l, horizon, seasonality,
-            method_params, str(timeframe), has_exog,
+            training_params, str(timeframe), has_exog,
         )
 
         stored_result = _try_predict_with_stored_model(
@@ -686,8 +779,8 @@ def _run_registered_forecast_method(
         if stored_result is not None:
             return stored_result
 
-        # No stored model — async route for heavy/moderate methods
-        if async_mode and getattr(forecaster, 'training_category', 'instant') in ("heavy", "moderate"):
+        # No stored model — async route for any trainable method when requested
+        if async_mode:
             async_resp = _submit_async_training(
                 forecaster, method_l, target_series,
                 horizon, seasonality, method_params,

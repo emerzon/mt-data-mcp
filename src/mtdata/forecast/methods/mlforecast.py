@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 import pandas as pd
 
-from ..interface import ForecastMethod, ForecastResult, TrainResult
+from ..interface import CancelToken, ForecastMethod, ForecastResult, ProgressReporter, TrainResult
 from ..registry import ForecastRegistry
 
 _GENERIC_MLFORECAST_ALLOWED_MODELS = {
@@ -73,6 +73,14 @@ class MLForecastMethod(ForecastMethod):
     def training_category(self):
         return "fast"
 
+    @property
+    def train_supports_cancel(self) -> bool:
+        return True
+
+    @property
+    def train_supports_progress(self) -> bool:
+        return True
+
     def train(
         self,
         series: pd.Series,
@@ -81,6 +89,7 @@ class MLForecastMethod(ForecastMethod):
         params: Dict[str, Any],
         *,
         progress_callback=None,
+        cancel_token: Optional[CancelToken] = None,
         exog=None,
         **kwargs,
     ) -> TrainResult:
@@ -93,6 +102,10 @@ class MLForecastMethod(ForecastMethod):
         p = dict(params or {})
         exog_used = exog if exog is not None else p.get("exog_used")
         exog_future_arr = p.get("exog_future")
+        reporter = ProgressReporter(progress_callback, total_steps=3)
+        reporter.stage(0, "Preparing mlforecast training data", force=True)
+        if cancel_token is not None:
+            cancel_token.raise_if_cancelled()
 
         Y_df, X_df, _ = _create_training_dataframes(series.values, horizon, exog_used, exog_future_arr)
 
@@ -104,6 +117,9 @@ class MLForecastMethod(ForecastMethod):
             lags = list(range(1, max_lag + 1))
 
         mlf = MLForecast(models=[model], freq=1, lags=lags)
+        reporter.stage(1, "Fitting mlforecast model", force=True)
+        if cancel_token is not None:
+            cancel_token.raise_if_cancelled()
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             if X_df is not None:
@@ -112,6 +128,7 @@ class MLForecastMethod(ForecastMethod):
                 mlf.fit(Y_df)
 
         artifact_bytes = self.serialize_artifact(mlf)
+        reporter.stage(3, "Training complete", force=True)
         return TrainResult(
             artifact_bytes=artifact_bytes,
             params_used={"lags": lags},

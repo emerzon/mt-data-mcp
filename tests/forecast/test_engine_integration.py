@@ -276,7 +276,7 @@ class TestSubmitAsyncTraining:
                 "EURUSD_H1", "hash123", "H1", None,
             )
 
-        assert resp["status"] == "training_started"
+        assert resp["status"] == "pending"
         assert resp["task_id"] == "task-uuid-1"
         assert resp["method"] == "nhits"
         assert resp["data_scope"] == "EURUSD_H1"
@@ -293,7 +293,7 @@ class TestSubmitAsyncTraining:
                 "GBPUSD_M15", "hash456", "M15", None,
             )
 
-        assert resp["status"] == "training_in_progress"
+        assert resp["status"] == "running"
 
 
 # ---------------------------------------------------------------------------
@@ -303,7 +303,7 @@ class TestSubmitAsyncTraining:
 class TestAsyncTrainingStarted:
 
     def test_carries_response_dict(self):
-        resp = {"task_id": "abc", "status": "training_started"}
+        resp = {"task_id": "abc", "status": "pending"}
         exc = fe._AsyncTrainingStarted(resp)
         assert exc.response is resp
         assert "async training started" in str(exc)
@@ -433,10 +433,10 @@ class TestRunRegisteredForecastMethodIntegration:
                 )
 
         assert exc_info.value.response["task_id"] == "task-999"
-        assert exc_info.value.response["status"] == "training_started"
+        assert exc_info.value.response["status"] == "pending"
 
-    def test_async_mode_fast_method_runs_sync(self):
-        """Fast method with async_mode=True → still runs synchronously (not heavy/moderate)."""
+    def test_async_mode_fast_method_also_submits_background_training(self):
+        """Fast method with async_mode=True now also uses background training."""
         stub = _StubTrainable(category="fast")
 
         class FakeReg:
@@ -447,15 +447,19 @@ class TestRunRegisteredForecastMethodIntegration:
         mock_store = MagicMock()
         mock_store.find.return_value = None
 
-        with patch.object(fe, "ForecastRegistry", FakeReg), \
-             patch(_PATCH_MODEL_STORE, mock_store):
-            result = fe._run_registered_forecast_method(
-                **_common_call_kwargs(async_mode=True),
-            )
+        mock_tm = MagicMock()
+        mock_tm.submit.return_value = ("task-fast", True)
 
-        forecast_arr, ci, metadata = result
-        # Should fall through to sync forecast() since category is "fast"
-        assert metadata.get("src") == "forecast"
+        with patch.object(fe, "ForecastRegistry", FakeReg), \
+             patch(_PATCH_MODEL_STORE, mock_store), \
+             patch(_PATCH_GET_TM, return_value=mock_tm):
+            with pytest.raises(fe._AsyncTrainingStarted) as exc_info:
+                fe._run_registered_forecast_method(
+                    **_common_call_kwargs(async_mode=True),
+                )
+
+        assert exc_info.value.response["task_id"] == "task-fast"
+        assert exc_info.value.response["status"] == "pending"
 
     def test_model_id_overrides_computed_hash(self):
         """When model_id is given, it is used as params_hash for store lookup."""
@@ -533,7 +537,7 @@ class TestForecastEngineAsyncRouting:
                 prefetched_df=_sample_df(50),
             )
 
-        assert out["status"] == "training_started"
+        assert out["status"] == "pending"
         assert out["task_id"] == "task-top-level"
 
     def test_sync_fallback_when_no_model(self, monkeypatch):

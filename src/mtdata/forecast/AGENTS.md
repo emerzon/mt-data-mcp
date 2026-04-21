@@ -1,6 +1,6 @@
 # forecast/ — Forecasting Engine
 
-Price forecasting pipeline: preprocessing → method selection → execution → post-processing. 34 files across `forecast/` and `forecast/methods/`.
+Price forecasting pipeline: preprocessing → method selection → execution → post-processing. 35 files across `forecast/` and `forecast/methods/`.
 
 ## FILE MAP
 
@@ -49,6 +49,8 @@ Price forecasting pipeline: preprocessing → method selection → execution →
 |------|---------|
 | `common.py` | Time normalization utilities (**DO NOT re-normalize**) |
 | `exceptions.py` | Forecast-specific exceptions |
+| `job_store.py` | Durable SQLite-backed training task registry (`MTDATA_FORECAST_JOBS_DB`) |
+| `task_manager.py` | Durable training runtime: light thread workers, heavy subprocess workers, cancellation, sweeper |
 | `target_builder.py` | Forecast target construction |
 
 ### methods/ — Model Implementations
@@ -79,3 +81,4 @@ Price forecasting pipeline: preprocessing → method selection → execution →
 - **Never** re-normalize already-normalized time data — see `common.py` comment.
 - **Never** import all methods eagerly — some have heavy deps (torch, QuantLib). Use lazy imports.
 - Methods in `forecast-foundation` group require GPU-capable torch — guard with try/except on import.
+- Prefer `forecast_train` + `forecast_task_wait`/`forecast_task_status` for explicit model training; trainable methods now run through the durable task runtime rather than ad-hoc sync execution.

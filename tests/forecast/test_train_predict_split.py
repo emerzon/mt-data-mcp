@@ -240,15 +240,15 @@ class TestTrainingFingerprint(unittest.TestCase):
         self.assertFalse(fp["has_exog"])
         self.assertIn("lr", fp["params"])
 
-    def test_prediction_only_keys_excluded(self):
+    def test_only_ci_alpha_and_as_of_excluded(self):
         m = _TrainableDummy()
         fp = m.training_fingerprint(
             horizon=10, seasonality=1,
             params={"lr": 0.01, "ci_alpha": 0.05, "quantity": "price", "as_of": "2024-01-01"},
         )
         self.assertNotIn("ci_alpha", fp["params"])
-        self.assertNotIn("quantity", fp["params"])
         self.assertNotIn("as_of", fp["params"])
+        self.assertEqual(fp["params"]["quantity"], "price")
         self.assertIn("lr", fp["params"])
 
     def test_fingerprint_deterministic(self):

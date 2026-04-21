@@ -1,3 +1,4 @@
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Literal, Optional, Tuple
@@ -34,6 +35,82 @@ class TrainingProgress:
 
 TrainingCategory = Literal["instant", "fast", "moderate", "heavy"]
 ProgressCallback = Callable[[TrainingProgress], None]
+
+
+class TrainingCancelledError(RuntimeError):
+    """Raised when a background training job is cancelled cooperatively."""
+
+
+class CancelToken:
+    """Simple cooperative cancellation token for long-running training."""
+
+    def __init__(self, checker: Callable[[], bool]) -> None:
+        self._checker = checker
+
+    @property
+    def cancelled(self) -> bool:
+        return bool(self._checker())
+
+    def raise_if_cancelled(self) -> None:
+        if self.cancelled:
+            raise TrainingCancelledError("Training cancelled")
+
+
+class ProgressReporter:
+    """Throttled helper for emitting monotonic training progress updates."""
+
+    def __init__(
+        self,
+        callback: Optional[ProgressCallback],
+        *,
+        total_steps: int,
+        throttle_seconds: float = 1.0,
+    ) -> None:
+        self._callback = callback
+        self._total_steps = max(1, int(total_steps))
+        self._throttle_seconds = max(0.0, float(throttle_seconds))
+        self._started_at = time.monotonic()
+        self._last_emit_at = 0.0
+        self._last_step = -1
+
+    def emit(
+        self,
+        step: int,
+        *,
+        loss: Optional[float] = None,
+        metrics: Optional[Dict[str, float]] = None,
+        message: Optional[str] = None,
+        force: bool = False,
+    ) -> None:
+        if self._callback is None:
+            return
+        now = time.monotonic()
+        clamped_step = min(self._total_steps, max(0, int(step)))
+        if (
+            not force
+            and clamped_step <= self._last_step
+            and (now - self._last_emit_at) < self._throttle_seconds
+        ):
+            return
+        elapsed = max(0.0, now - self._started_at)
+        eta_seconds: Optional[float] = None
+        if clamped_step > 0 and clamped_step < self._total_steps and elapsed > 0:
+            rate = elapsed / clamped_step
+            eta_seconds = max(0.0, rate * (self._total_steps - clamped_step))
+        progress = TrainingProgress(
+            step=clamped_step,
+            total_steps=self._total_steps,
+            loss=loss,
+            metrics=dict(metrics) if isinstance(metrics, dict) else None,
+            eta_seconds=eta_seconds,
+            message=message,
+        )
+        self._callback(progress)
+        self._last_emit_at = now
+        self._last_step = clamped_step
+
+    def stage(self, step: int, message: str, *, force: bool = False) -> None:
+        self.emit(step, message=message, force=force)
 
 
 @dataclass
@@ -229,6 +306,16 @@ class ForecastMethod(ABC):
         return False
 
     @property
+    def train_supports_cancel(self) -> bool:
+        """Whether ``train()`` checks a cooperative cancellation token."""
+        return False
+
+    @property
+    def train_supports_progress(self) -> bool:
+        """Whether ``train()`` emits meaningful progress updates."""
+        return False
+
+    @property
     def training_category(self) -> TrainingCategory:
         """Hint for task routing: 'instant', 'fast', 'moderate', or 'heavy'."""
         return "instant"
@@ -241,6 +328,7 @@ class ForecastMethod(ABC):
         params: Dict[str, Any],
         *,
         progress_callback: Optional[ProgressCallback] = None,
+        cancel_token: Optional[CancelToken] = None,
         exog: Optional[np.ndarray] = None,
         **kwargs: Any,
     ) -> TrainResult:
@@ -309,7 +397,7 @@ class ForecastMethod(ABC):
         parameters that affect the trained artifact.
         """
         _PREDICTION_ONLY_KEYS = frozenset({
-            "ci_alpha", "quantity", "as_of",
+            "ci_alpha", "as_of",
         })
         filtered_params = {
             k: v for k, v in sorted((params or {}).items())

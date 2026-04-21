@@ -39,6 +39,7 @@ EXPECTED_TOOL_NAMES = frozenset(
         "forecast_task_cancel",
         "forecast_task_list",
         "forecast_task_status",
+        "forecast_task_wait",
         "forecast_train",
         "forecast_tune_genetic",
         "forecast_tune_optuna",

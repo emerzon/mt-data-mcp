@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 
 from ..common import build_ci_diagnostics as _build_ci_diagnostics
-from ..interface import ForecastMethod, ForecastResult, TrainResult
+from ..interface import CancelToken, ForecastMethod, ForecastResult, ProgressReporter, TrainResult
 from ..registry import ForecastRegistry
 
 try:
@@ -50,6 +50,14 @@ class SktimeMethod(ForecastMethod):
     def training_category(self):
         return "fast"
 
+    @property
+    def train_supports_cancel(self) -> bool:
+        return True
+
+    @property
+    def train_supports_progress(self) -> bool:
+        return True
+
     def train(
         self,
         series: pd.Series,
@@ -58,11 +66,16 @@ class SktimeMethod(ForecastMethod):
         params: Dict[str, Any],
         *,
         progress_callback=None,
+        cancel_token: Optional[CancelToken] = None,
         exog=None,
         **kwargs,
     ) -> TrainResult:
         if not _HAS_SKTIME:
             raise RuntimeError(_SKTIME_IMPORT_ERROR)
+        reporter = ProgressReporter(progress_callback, total_steps=3)
+        reporter.stage(0, "Preparing sktime training data", force=True)
+        if cancel_token is not None:
+            cancel_token.raise_if_cancelled()
 
         y = series.copy()
         if not isinstance(y.index, pd.RangeIndex) and getattr(y.index, "freq", None) is None:
@@ -74,6 +87,9 @@ class SktimeMethod(ForecastMethod):
             y = y.reset_index(drop=True)
 
         estimator = self._get_estimator(seasonality, params)
+        reporter.stage(1, "Fitting sktime estimator", force=True)
+        if cancel_token is not None:
+            cancel_token.raise_if_cancelled()
 
         X = exog if exog is not None else params.get('exog_used')
         if isinstance(X, np.ndarray):
@@ -87,6 +103,7 @@ class SktimeMethod(ForecastMethod):
                 estimator.fit(y)
 
         artifact_bytes = self.serialize_artifact(estimator)
+        reporter.stage(3, "Training complete", force=True)
         return TrainResult(
             artifact_bytes=artifact_bytes,
             params_used={"seasonality": seasonality, **params},

@@ -3,6 +3,7 @@
 Provides tools for:
 - Starting explicit training jobs (``forecast_train``)
 - Polling task progress (``forecast_task_status``)
+- Waiting on task completion (``forecast_task_wait``)
 - Cancelling running tasks (``forecast_task_cancel``)
 - Listing active tasks (``forecast_task_list``)
 - Listing stored trained models (``forecast_models_list``)
@@ -49,6 +50,15 @@ class ForecastTaskStatusRequest(BaseModel):
 
 class ForecastTaskCancelRequest(BaseModel):
     task_id: str = Field(..., description="Task ID to cancel.")
+
+
+class ForecastTaskWaitRequest(BaseModel):
+    task_id: str = Field(..., description="Task ID returned by forecast_train or forecast_generate async mode.")
+    timeout_seconds: float = Field(30.0, ge=0.0, le=300.0)
+    detail: DetailLevel = Field(
+        "compact",
+        description="Response detail level: 'compact' for summary fields or 'full' for expanded task details.",
+    )
 
 
 class ForecastModelsDeleteRequest(BaseModel):
@@ -113,7 +123,12 @@ def _task_status_payload(task: Any, *, detail: DetailLevel) -> Dict[str, Any]:
         "created_at": task.created_at,
         "started_at": task.started_at,
         "completed_at": task.completed_at,
+        "heartbeat_at": getattr(task, "heartbeat_at", None),
+        "cancel_requested": bool(getattr(task, "cancel_requested", False)),
     }
+    pid = getattr(task, "pid", None)
+    if pid is not None:
+        payload["pid"] = pid
 
     if task.progress is not None:
         payload["progress"] = _serialize_progress(task.progress, detail=detail)
@@ -145,7 +160,12 @@ def _task_list_item_payload(task: Any, *, detail: DetailLevel) -> Dict[str, Any]
         "data_scope": task.data_scope,
         "status": task.status,
         "created_at": task.created_at,
+        "heartbeat_at": getattr(task, "heartbeat_at", None),
+        "cancel_requested": bool(getattr(task, "cancel_requested", False)),
     }
+    pid = getattr(task, "pid", None)
+    if pid is not None:
+        payload["pid"] = pid
     if task.progress is not None:
         payload["progress_fraction"] = task.progress.fraction
     if task.result is not None:
@@ -192,46 +212,36 @@ def _get_registry():
 
 @mcp.tool()
 def forecast_train(request: ForecastTrainRequest) -> Dict[str, Any]:
-    """Start an explicit background training job for a forecast method.
-
-    Returns a task_id that can be polled with ``forecast_task_status``.
-    Once training completes, the trained model is stored and used automatically
-    by subsequent ``forecast_generate`` calls with the same method+symbol+timeframe+params.
-    """
+    """Start an explicit background training job for a trainable forecast method."""
     def _execute() -> Dict[str, Any]:
-        from ..forecast.forecast_engine import forecast_engine
         from ..utils.mt5 import ensure_mt5_connection_or_raise
 
         ensure_mt5_connection_or_raise()
 
-        result = forecast_engine(
+        tm = _get_task_manager()
+        task_id, _ = tm.submit_forecast_request(
             symbol=request.symbol,
             timeframe=request.timeframe,
-            method=request.method,
+            method_name=request.method,
             horizon=request.horizon,
             lookback=request.lookback,
             params=request.params,
             quantity=request.quantity,
-            async_mode=True,
         )
-
-        # If the method supports async training, the engine returns a task dict
-        if isinstance(result, dict) and result.get("status") in (
-            "training_started",
-            "training_in_progress",
-        ):
-            return result
-
-        # Otherwise the method ran synchronously (fast method) — return success
-        return {
-            "status": "completed_sync",
-            "method": request.method,
-            "message": (
-                f"Method '{request.method}' ran synchronously (fast method). "
-                "No background task needed."
-            ),
-            "result": result,
-        }
+        task = tm.get_status(task_id)
+        if task is None:
+            return {
+                "task_id": task_id,
+                "status": "pending",
+                "method": request.method,
+                "data_scope": f"{request.symbol}_{request.timeframe}",
+            }
+        payload = _task_status_payload(task, detail="compact")
+        payload["message"] = (
+            "Training task queued. Poll forecast_task_status or use forecast_task_wait "
+            "to observe completion."
+        )
+        return payload
 
     return run_logged_operation(
         logger,
@@ -275,24 +285,48 @@ def forecast_task_cancel(request: ForecastTaskCancelRequest) -> Dict[str, Any]:
     """Cancel a running forecast training task."""
     def _execute() -> Dict[str, Any]:
         tm = _get_task_manager()
-        cancelled = tm.cancel(request.task_id)
-        if cancelled:
-            return {
-                "task_id": request.task_id,
-                "status": "cancelled",
-                "message": "Task cancellation requested.",
-            }
-        return {
-            "task_id": request.task_id,
-            "status": "not_cancelled",
-            "message": "Task could not be cancelled (may have already completed or not found).",
-        }
+        result = tm.cancel(request.task_id)
+        if result["cancel_requested"]:
+            result["message"] = (
+                "Task cancellation requested."
+                if not result["terminated"]
+                else "Task cancellation requested and worker terminated."
+            )
+        else:
+            result["message"] = "Task could not be cancelled."
+        return result
 
     return run_logged_operation(
         logger,
         operation="forecast_task_cancel",
         func=_execute,
         task_id=request.task_id,
+    )
+
+
+@mcp.tool()
+def forecast_task_wait(request: ForecastTaskWaitRequest) -> Dict[str, Any]:
+    """Wait for a forecast training task to complete or timeout."""
+    def _execute() -> Dict[str, Any]:
+        detail_mode = _detail_mode(request.detail)
+        tm = _get_task_manager()
+        task = tm.wait_for_status(request.task_id, timeout_seconds=request.timeout_seconds)
+        if task is None:
+            return {
+                "detail": detail_mode,
+                "error": f"Task '{request.task_id}' not found.",
+            }
+        payload = _task_status_payload(task, detail=detail_mode)
+        payload["wait_timeout_seconds"] = request.timeout_seconds
+        return payload
+
+    return run_logged_operation(
+        logger,
+        operation="forecast_task_wait",
+        func=_execute,
+        task_id=request.task_id,
+        timeout_seconds=request.timeout_seconds,
+        detail=request.detail,
     )
 
 

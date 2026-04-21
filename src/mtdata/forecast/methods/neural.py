@@ -17,8 +17,10 @@ from ..common import (
     nf_predict_from_fitted,
 )
 from ..interface import (
+    CancelToken,
     ForecastMethod,
     ForecastResult,
+    ProgressReporter,
     ProgressCallback,
     TrainingProgress,
     TrainResult,
@@ -178,6 +180,14 @@ class NeuralForecastMethod(ForecastMethod):
     def training_category(self):
         return "heavy"
 
+    @property
+    def train_supports_cancel(self) -> bool:
+        return True
+
+    @property
+    def train_supports_progress(self) -> bool:
+        return True
+
     def train(
         self,
         series: pd.Series,
@@ -186,6 +196,7 @@ class NeuralForecastMethod(ForecastMethod):
         params: Dict[str, Any],
         *,
         progress_callback: Optional[ProgressCallback] = None,
+        cancel_token: Optional[CancelToken] = None,
         exog: Optional[np.ndarray] = None,
         **kwargs: Any,
     ) -> TrainResult:
@@ -199,6 +210,10 @@ class NeuralForecastMethod(ForecastMethod):
 
         exog_used = exog if exog is not None else p.get("exog_used")
         exog_future_arr = p.get("exog_future")
+        reporter = ProgressReporter(progress_callback, total_steps=3)
+        reporter.stage(0, f"Preparing {self.name} training data", force=True)
+        if cancel_token is not None:
+            cancel_token.raise_if_cancelled()
 
         input_size, steps, batch_size, lr = _neural_resolve_hyperparams(
             p, n, int(horizon), int(seasonality or 0),
@@ -208,10 +223,9 @@ class NeuralForecastMethod(ForecastMethod):
 
         Y_df, _, _ = _create_training_dataframes(x, int(horizon), exog_used, exog_future_arr)
 
-        if progress_callback:
-            progress_callback(TrainingProgress(
-                step=0, total_steps=steps, message=f"Starting {self.name} training",
-            ))
+        reporter.stage(1, f"Fitting {self.name} model", force=True)
+        if cancel_token is not None:
+            cancel_token.raise_if_cancelled()
 
         accel = _nf_resolve_accelerator()
         model_kwargs = nf_build_model_kwargs(
@@ -234,10 +248,7 @@ class NeuralForecastMethod(ForecastMethod):
                     exog_used=exog_used,
                 )
 
-        if progress_callback:
-            progress_callback(TrainingProgress(
-                step=steps, total_steps=steps, message="Training complete",
-            ))
+        reporter.stage(3, "Training complete", force=True)
 
         artifact_bytes = self.serialize_artifact(nf)
         params_used = {
