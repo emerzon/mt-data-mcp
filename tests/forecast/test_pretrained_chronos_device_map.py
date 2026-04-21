@@ -41,9 +41,14 @@ def test_resolve_chronos_device_map_auto_pins_multi_gpu_to_cuda0() -> None:
     assert _resolve_chronos_device_map("auto", torch) == "cuda:0"
 
 
-def test_resolve_chronos_device_map_auto_keeps_single_gpu_auto() -> None:
+def test_resolve_chronos_device_map_auto_uses_cuda0_for_single_gpu() -> None:
     torch = _FakeTorch(available=True, count=1)
-    assert _resolve_chronos_device_map("auto", torch) == "auto"
+    assert _resolve_chronos_device_map("auto", torch) == "cuda:0"
+
+
+def test_resolve_chronos_device_map_auto_uses_cpu_without_cuda() -> None:
+    torch = _FakeTorch(available=False, count=0)
+    assert _resolve_chronos_device_map("auto", torch) == "cpu"
 
 
 def test_resolve_chronos_device_map_preserves_explicit_values() -> None:

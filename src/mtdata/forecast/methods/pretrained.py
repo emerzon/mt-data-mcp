@@ -79,11 +79,35 @@ def _resolve_chronos_device_map(requested: Any, torch_module: Any) -> str:
             count_fn = getattr(cuda, "device_count", None)
             if callable(count_fn):
                 n = int(count_fn())
-                if n > 1:
+                if n >= 1:
                     return "cuda:0"
     except Exception:
         pass
-    return "auto"
+    return "cpu"
+
+
+def _resolve_chronos_model_defaults(method_name: str, params: Dict[str, Any]) -> Tuple[str, Tuple[str, ...]]:
+    requested = str((params or {}).get("model_name") or "").strip()
+    if requested:
+        model_name = requested
+    elif str(method_name).strip().lower() == "chronos2":
+        # Prefer the broadly compatible T5 Chronos checkpoint for the generic chronos2 surface.
+        model_name = "amazon/chronos-t5-small"
+    else:
+        model_name = "amazon/chronos-bolt-base"
+
+    model_name_l = model_name.lower()
+    if "chronos-bolt" in model_name_l:
+        family = "bolt"
+        pipeline_order = ("ChronosBoltPipeline",)
+    elif "chronos-2" in model_name_l:
+        family = "chronos2"
+        pipeline_order = ("Chronos2Pipeline",)
+    else:
+        family = "t5"
+        pipeline_order = ("ChronosPipeline",)
+
+    return model_name, pipeline_order
 
 
 @ForecastRegistry.register("chronos_bolt")
@@ -94,8 +118,8 @@ class ChronosBoltMethod(PretrainedMethod):
         "chronos_bolt": ("chronos-forecasting>=2.0.0", "torch"),
     }
     CAPABILITY_NOTES = {
-        "chronos2": "Hugging Face model id via params.model_name (default: amazon/chronos-bolt-base for compatibility).",
-        "chronos_bolt": "Same adapter as chronos2; different default naming.",
+        "chronos2": "Hugging Face model id via params.model_name (default: amazon/chronos-t5-small for broad compatibility; set device_map explicitly for stable CPU/CUDA routing).",
+        "chronos_bolt": "Uses Bolt-family checkpoints (default: amazon/chronos-bolt-base); set device_map explicitly for stable CPU/CUDA routing.",
     }
     PARAMS: List[Dict[str, Any]] = [
         {"name": "model_name", "type": "str", "description": "Hugging Face model id."},
@@ -112,6 +136,17 @@ class ChronosBoltMethod(PretrainedMethod):
     def required_packages(self) -> List[str]:
         return ["chronos", "torch"]
 
+    def prepare_forecast_call(
+        self,
+        params: Dict[str, Any],
+        call_kwargs: Dict[str, Any],
+        context: Any,
+    ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        out_params = dict(params or {})
+        if "method_name" not in out_params:
+            out_params["method_name"] = str(getattr(context, "method", "") or self.name)
+        return out_params, call_kwargs
+
     def forecast(  # noqa: C901
         self, 
         series: pd.Series, 
@@ -122,10 +157,8 @@ class ChronosBoltMethod(PretrainedMethod):
         **kwargs
     ) -> ForecastResult:
         p = params or {}
-        # NOTE: The upstream HF model `amazon/chronos-2` may require a newer `chronos`
-        # package API than some environments have; default to a widely compatible
-        # Bolt checkpoint unless the caller explicitly overrides it.
-        model_name = str(p.get('model_name') or 'amazon/chronos-bolt-base')
+        method_name = str(kwargs.get("method_name") or p.get("method_name") or self.name).strip().lower() or self.name
+        model_name, pipeline_order = _resolve_chronos_model_defaults(method_name, p)
         ctx_len = int(p.get('context_length', 0) or 0)
         device_map = p.get('device_map', None)
         quantiles = process_quantile_levels(p.get('quantiles'))
@@ -144,12 +177,6 @@ class ChronosBoltMethod(PretrainedMethod):
         _torch = modules['torch']
         _chronos = modules['chronos']
         effective_device_map = _resolve_chronos_device_map(device_map, _torch)
-        model_name_l = model_name.lower()
-        pipeline_order = (
-            ("Chronos2Pipeline", "ChronosBoltPipeline", "ChronosPipeline")
-            if "chronos-2" in model_name_l
-            else ("ChronosBoltPipeline", "ChronosPipeline", "Chronos2Pipeline")
-        )
         pipeline_candidates: List[Tuple[str, Any]] = []
         for attr in pipeline_order:
             if hasattr(_chronos, attr):
@@ -157,7 +184,7 @@ class ChronosBoltMethod(PretrainedMethod):
         if not pipeline_candidates:
             raise RuntimeError(
                 "chronos installed but no supported pipeline found "
-                "(expected one of Chronos2Pipeline/ChronosBoltPipeline/ChronosPipeline)."
+                f"(expected one of {', '.join(pipeline_order)})."
             )
 
         pipe = None
@@ -196,12 +223,6 @@ class ChronosBoltMethod(PretrainedMethod):
                             # Convert to tensor (1, time, n_feat)
                             known_covariates = _torch.tensor(full_exog, dtype=_torch.float32).unsqueeze(0)
                             
-                            # Handle device placement if explicit
-                            if effective_device_map and effective_device_map not in ('auto', 'cpu'):
-                                try:
-                                    known_covariates = known_covariates.to(effective_device_map)
-                                except Exception:
-                                    pass
                 except Exception:
                     # Fallback: ignore covariates on error
                     pass
@@ -230,13 +251,8 @@ class ChronosBoltMethod(PretrainedMethod):
                     ) from init_err
                 raise RuntimeError("chronos2 error: failed to initialize a supported Chronos pipeline.")
             
-            # Convert context to tensor. Chronos pipelines expect (batch, time) -> (1, L).
+            # Keep inputs on CPU; Chronos handles its own device placement internally.
             ctx_tensor = _torch.tensor(context, dtype=_torch.float32).unsqueeze(0)
-            if effective_device_map and effective_device_map not in ('auto', 'cpu'):
-                try:
-                    ctx_tensor = ctx_tensor.to(effective_device_map)
-                except Exception:
-                    pass
 
             fq: Dict[str, List[float]] = {}
             f_vals: Optional[np.ndarray] = None

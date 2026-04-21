@@ -181,6 +181,7 @@ from mtdata.forecast.methods.pretrained import (
     LagLlamaMethod,
     PretrainedMethod,
     TimesFMMethod,
+    _resolve_chronos_model_defaults,
     _resolve_chronos_device_map,
     _stringify_exception_chain,
 )
@@ -258,7 +259,7 @@ class TestResolveChronosDeviceMap:
         torch_mod = MagicMock()
         torch_mod.cuda.is_available.return_value = True
         torch_mod.cuda.device_count.return_value = 1
-        assert _resolve_chronos_device_map("auto", torch_mod) == "auto"
+        assert _resolve_chronos_device_map("auto", torch_mod) == "cuda:0"
 
     def test_auto_multi_gpu(self):
         torch_mod = MagicMock()
@@ -269,7 +270,7 @@ class TestResolveChronosDeviceMap:
     def test_auto_no_cuda(self):
         torch_mod = MagicMock()
         torch_mod.cuda.is_available.return_value = False
-        assert _resolve_chronos_device_map("auto", torch_mod) == "auto"
+        assert _resolve_chronos_device_map("auto", torch_mod) == "cpu"
 
     def test_none_cuda_exception(self):
         torch_mod = MagicMock()
@@ -367,9 +368,20 @@ class TestChronosBoltMethod:
         assert res.forecast is not None
 
     def test_default_model_name(self):
-        res = self.method.forecast(_series(), horizon=5, seasonality=1, params={})
+        res = self.method.forecast(_series(), horizon=5, seasonality=1, params={"method_name": "chronos_bolt"})
         assert "chronos-bolt-base" in res.params_used["model_name"]
-        assert res.params_used.get("pipeline") in {"ChronosBoltPipeline", "ChronosPipeline", "Chronos2Pipeline"}
+        assert res.params_used.get("pipeline") == "ChronosBoltPipeline"
+
+    def test_chronos2_default_model_name_prefers_t5(self):
+        res = self.method.forecast(_series(), horizon=5, seasonality=1, params={"method_name": "chronos2"})
+        assert res.params_used["model_name"] == "amazon/chronos-t5-small"
+        assert res.params_used.get("pipeline") == "ChronosPipeline"
+
+    def test_prepare_forecast_call_injects_method_name(self):
+        context = types.SimpleNamespace(method="chronos2")
+        params, kwargs = self.method.prepare_forecast_call({}, {}, context)
+        assert params["method_name"] == "chronos2"
+        assert kwargs == {}
 
     def test_falls_back_when_chronos2_pipeline_init_fails(self):
         class _BrokenChronos2Pipeline:
@@ -380,14 +392,25 @@ class TestChronosBoltMethod:
         saved = getattr(_chronos, "Chronos2Pipeline", None)
         _chronos.Chronos2Pipeline = _BrokenChronos2Pipeline
         try:
-            res = self.method.forecast(_series(), horizon=5, seasonality=1, params={"model_name": "amazon/chronos-2"})
-            assert res.forecast is not None
-            assert res.params_used.get("pipeline") in {"ChronosBoltPipeline", "ChronosPipeline"}
+            with pytest.raises(RuntimeError, match="failed to initialize any compatible Chronos pipeline"):
+                self.method.forecast(_series(), horizon=5, seasonality=1, params={"model_name": "amazon/chronos-2", "method_name": "chronos2"})
         finally:
             if saved is None:
                 delattr(_chronos, "Chronos2Pipeline")
             else:
                 _chronos.Chronos2Pipeline = saved
+
+
+def test_resolve_chronos_model_defaults_uses_t5_for_chronos2():
+    model_name, order = _resolve_chronos_model_defaults("chronos2", {})
+    assert model_name == "amazon/chronos-t5-small"
+    assert order == ("ChronosPipeline",)
+
+
+def test_resolve_chronos_model_defaults_uses_bolt_for_chronos_bolt():
+    model_name, order = _resolve_chronos_model_defaults("chronos_bolt", {})
+    assert model_name == "amazon/chronos-bolt-base"
+    assert order == ("ChronosBoltPipeline",)
 
     def test_predict_quantiles_fallback_to_predict(self):
         """When predict_quantiles returns None, falls back to predict."""
