@@ -51,7 +51,6 @@ def test_strategy_backtest_sma_cross_generates_long_trade(monkeypatch):
     )
 
     assert out["success"] is True
-    assert out["summary"]["trade_count"] == 1
     assert out["summary"]["num_trades"] == 1
     assert out["summary"]["long_trades"] == 1
     assert out["trades"][0]["direction"] == "long"
@@ -78,7 +77,6 @@ def test_strategy_backtest_compact_mode_excludes_trades(monkeypatch):
     )
 
     assert out["success"] is True
-    assert out["summary"]["trade_count"] == 1
     assert out["summary"]["num_trades"] == 1
     assert "trades" not in out, "compact mode should not include trades array"
     assert "trade_sample" not in out
@@ -134,7 +132,6 @@ def test_strategy_backtest_returns_no_action_on_flat_history(monkeypatch):
 
     assert out["success"] is True
     assert out["no_action"] is True
-    assert out["summary"]["trade_count"] == 0
     assert out["summary"]["num_trades"] == 0
     assert out["message"] == "The strategy generated no trades on the requested history."
 

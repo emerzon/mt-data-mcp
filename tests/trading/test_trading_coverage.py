@@ -855,9 +855,9 @@ class TestTradeClose:
     def test_symbol_close_requires_close_all_confirmation(self, mock_close, mock_cancel):
         out = _unwrap_mcp(trade_close(symbol="EURUSD"))
         if isinstance(out, dict):
-            assert "refusing bulk close without explicit confirmation" in str(out.get("error", "")).lower()
+            assert "bulk close requires explicit confirmation" in str(out.get("error", "")).lower()
         else:
-            assert "refusing bulk close without explicit confirmation" in out.lower()
+            assert "bulk close requires explicit confirmation" in out.lower()
         mock_close.assert_not_called()
         mock_cancel.assert_not_called()
 
@@ -866,9 +866,9 @@ class TestTradeClose:
     def test_global_close_requires_close_all_confirmation(self, mock_close, mock_cancel):
         out = _unwrap_mcp(trade_close())
         if isinstance(out, dict):
-            assert "refusing bulk close without explicit confirmation" in str(out.get("error", "")).lower()
+            assert "bulk close requires explicit confirmation" in str(out.get("error", "")).lower()
         else:
-            assert "refusing bulk close without explicit confirmation" in out.lower()
+            assert "bulk close requires explicit confirmation" in out.lower()
         mock_close.assert_not_called()
         mock_cancel.assert_not_called()
 

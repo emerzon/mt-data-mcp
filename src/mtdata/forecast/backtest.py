@@ -137,9 +137,7 @@ def _compute_performance_metrics(
         "sharpe_ratio": _finite_or_none(sharpe),
         "max_drawdown": max_drawdown,
         "calmar_ratio": _finite_or_none(calmar),
-        "cumulative_return": cumulative_return,
         "annual_return": _finite_or_none(annual_return),
-        "num_trades": float(arr.size),
         "trades_per_year": trades_per_year,
         "slippage_bps": float(slippage_bps),
     })
@@ -452,7 +450,6 @@ def strategy_backtest(  # noqa: C901
             "summary": {
                 "bars_used": int(lookback),
                 "warmup_bars": int(signal_warmup),
-                "trade_count": int(len(trades)),
                 "num_trades": int(len(trades)),
                 "long_trades": long_trades,
                 "short_trades": short_trades,
@@ -472,6 +469,130 @@ def strategy_backtest(  # noqa: C901
         if trades:
             if detail_mode == "full":
                 result["trades"] = trades
+                # Add enriched detail for full mode: equity curve, drawdowns, monthly breakdown, trade distribution
+                
+                # Build equity curve with timestamps
+                equity_curve = []
+                cumulative_net = 1.0
+                trade_exit_times = {}
+                for i, trade in enumerate(trades):
+                    exit_time_str = str(trade.get("exit_time") or "")
+                    if exit_time_str:
+                        try:
+                            exit_idx = next(j for j, ts in enumerate(times) if _format_time_minimal(float(ts)) == exit_time_str)
+                            trade_exit_times[exit_idx] = i
+                        except Exception:
+                            pass
+                
+                for idx in sorted(trade_exit_times.keys()):
+                    trade_idx = trade_exit_times[idx]
+                    trade_net_return = float(trades[trade_idx].get("return_net") or 0.0)
+                    cumulative_net *= (1.0 + trade_net_return)
+                    equity_curve.append({
+                        "time": _format_time_minimal(float(times[idx])),
+                        "equity": cumulative_net,
+                    })
+                
+                if equity_curve:
+                    result["equity_curve"] = equity_curve
+                
+                # Calculate drawdown periods
+                drawdown_periods = []
+                if equity_curve and len(equity_curve) > 1:
+                    peak_equity = 1.0
+                    peak_time = None
+                    for point in equity_curve:
+                        if point["equity"] > peak_equity:
+                            peak_equity = point["equity"]
+                            peak_time = point["time"]
+                    
+                    current_peak = 1.0
+                    current_peak_time = equity_curve[0]["time"] if equity_curve else None
+                    for point in equity_curve:
+                        if point["equity"] > current_peak:
+                            current_peak = point["equity"]
+                            current_peak_time = point["time"]
+                        else:
+                            dd_depth = (point["equity"] - current_peak) / max(current_peak, 1e-10)
+                            if dd_depth < -0.0001:  # Only report material drawdowns
+                                drawdown_periods.append({
+                                    "start": current_peak_time,
+                                    "end": point["time"],
+                                    "depth": dd_depth,
+                                })
+                
+                if drawdown_periods:
+                    result["drawdown_periods"] = drawdown_periods
+                
+                # Monthly breakdown
+                monthly_stats = {}
+                for trade in trades:
+                    exit_time_str = str(trade.get("exit_time") or "")
+                    if exit_time_str and len(exit_time_str) >= 7:
+                        month_key = exit_time_str[:7]  # "2026-03" format
+                        if month_key not in monthly_stats:
+                            monthly_stats[month_key] = {
+                                "trades": 0,
+                                "winning": 0,
+                                "losing": 0,
+                                "returns": [],
+                            }
+                        monthly_stats[month_key]["trades"] += 1
+                        ret = float(trade.get("return_net") or 0.0)
+                        monthly_stats[month_key]["returns"].append(ret)
+                        if ret > 0:
+                            monthly_stats[month_key]["winning"] += 1
+                        elif ret < 0:
+                            monthly_stats[month_key]["losing"] += 1
+                
+                monthly_breakdown = []
+                for month_key in sorted(monthly_stats.keys()):
+                    stats = monthly_stats[month_key]
+                    month_return = float(np.prod([1.0 + r for r in stats["returns"]]) - 1.0) if stats["returns"] else 0.0
+                    monthly_breakdown.append({
+                        "month": month_key,
+                        "return": month_return,
+                        "trades": stats["trades"],
+                        "winning": stats["winning"],
+                        "losing": stats["losing"],
+                    })
+                
+                if monthly_breakdown:
+                    result["monthly_breakdown"] = monthly_breakdown
+                
+                # Trade distribution statistics
+                if trades:
+                    winning_trades = [t for t in trades if float(t.get("return_net") or 0.0) > 0.0]
+                    losing_trades = [t for t in trades if float(t.get("return_net") or 0.0) < 0.0]
+                    breakeven_trades = [t for t in trades if float(t.get("return_net") or 0.0) == 0.0]
+                    
+                    trade_distribution = {}
+                    
+                    if winning_trades:
+                        winning_returns = [float(t.get("return_net") or 0.0) for t in winning_trades]
+                        trade_distribution["winning"] = {
+                            "count": len(winning_trades),
+                            "avg_return": float(np.mean(winning_returns)),
+                            "max": float(np.max(winning_returns)),
+                            "min": float(np.min(winning_returns)),
+                        }
+                    
+                    if losing_trades:
+                        losing_returns = [float(t.get("return_net") or 0.0) for t in losing_trades]
+                        trade_distribution["losing"] = {
+                            "count": len(losing_trades),
+                            "avg_return": float(np.mean(losing_returns)),
+                            "max": float(np.max(losing_returns)),
+                            "min": float(np.min(losing_returns)),
+                        }
+                    
+                    if breakeven_trades:
+                        trade_distribution["breakeven"] = {
+                            "count": len(breakeven_trades),
+                        }
+                    
+                    if trade_distribution:
+                        result["trade_distribution"] = trade_distribution
         else:
             result["no_action"] = True
             result["message"] = "The strategy generated no trades on the requested history."
