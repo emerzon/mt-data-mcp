@@ -1113,11 +1113,14 @@ def run_trade_close(  # noqa: C901
     if request.ticket is None and not request.close_all:
         return _finish(
             {
-                "error": (
-                    "Refusing bulk close without explicit confirmation. "
-                    "Provide ticket for a specific position or pending order, "
-                    "or pass close_all=true to close matching positions or pending orders."
-                )
+                "error": "Bulk close requires explicit confirmation.",
+                "error_code": "CONFIRMATION_REQUIRED",
+                "suggestion": "Review matching positions before closing (irreversible action).",
+                "alternatives": [
+                    "Use ticket=<ticket_number> to close a specific position",
+                    "First use trade_get_open to view matching positions",
+                    "Then pass close_all=true to proceed with bulk close",
+                ],
             },
             scope="bulk_confirmation",
         )

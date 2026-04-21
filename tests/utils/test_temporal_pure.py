@@ -571,7 +571,6 @@ class TestTemporalAnalyze:
             r = _raw_temporal_analyze(symbol="EURUSD", timeframe="H1", limit=1000, group_by="hour")
 
         assert r.get("success") is True
-        assert [group["group_key"] for group in r["groups"]] == [0, 1, 2]
         assert [group["group"] for group in r["groups"]] == ["00:00", "01:00", "02:00"]
 
     @_apply_analyze_patches
@@ -625,18 +624,18 @@ class TestTemporalAnalyze:
         rates = _make_rates(n=24, start_epoch=1704067200, interval=3600)
         r = self._call(mock_fetch, rates=rates, group_by="hour", time_range="09:00-17:00")
         assert r.get("success") is True
-        group_keys = [g["group_key"] for g in r["groups"]]
-        assert group_keys == [9, 10, 11, 12, 13, 14, 15, 16]
-        assert 17 not in group_keys
+        group_strs = [g["group"] for g in r["groups"]]
+        assert group_strs == ["09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00"]
+        assert "17:00" not in group_strs
 
     @_apply_analyze_patches
     def test_filter_time_range_wraps_midnight_excludes_exact_end_time(self, mock_fetch, *_):
         rates = _make_rates(n=24, start_epoch=1704067200, interval=3600)
         r = self._call(mock_fetch, rates=rates, group_by="hour", time_range="22:00-02:00")
         assert r.get("success") is True
-        group_keys = [g["group_key"] for g in r["groups"]]
-        assert group_keys == [0, 1, 22, 23]
-        assert 2 not in group_keys
+        group_strs = [g["group"] for g in r["groups"]]
+        assert group_strs == ["00:00", "01:00", "22:00", "23:00"]
+        assert "02:00" not in group_strs
 
     @_apply_analyze_patches
     def test_return_mode_log(self, mock_fetch, *_):
@@ -744,7 +743,7 @@ class TestTemporalAnalyze:
     def test_group_keys_are_ints(self, mock_fetch, *_):
         r = self._call(mock_fetch, group_by="dow")
         for g in r.get("groups", []):
-            assert isinstance(g["group_key"], int)
+            assert isinstance(g["group"], str)
 
     @_apply_analyze_patches
     def test_filter_narrows_results(self, mock_fetch, *_):

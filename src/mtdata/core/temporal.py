@@ -496,7 +496,6 @@ def temporal_analyze(  # noqa: C901
                 for key, grp in df.groupby("__group", sort=True):
                     row = _stats_for_group(grp, volume_col)
                     row["group"] = _DOW_LABELS[int(key)] if 0 <= int(key) <= 6 else str(key)
-                    row["group_key"] = int(key)
                     groups_out.append(row)
             elif group_norm == "month":
                 df["__group"] = df["__dt"].dt.month
@@ -504,14 +503,12 @@ def temporal_analyze(  # noqa: C901
                     label = _MONTH_LABELS[int(key) - 1] if 1 <= int(key) <= 12 else str(key)
                     row = _stats_for_group(grp, volume_col)
                     row["group"] = label
-                    row["group_key"] = int(key)
                     groups_out.append(row)
             elif group_norm == "hour":
                 df["__group"] = df["__dt"].dt.hour
                 for key, grp in df.groupby("__group", sort=True):
                     row = _stats_for_group(grp, volume_col)
                     row["group"] = f"{int(key):02d}:00"
-                    row["group_key"] = int(key)
                     groups_out.append(row)
 
             start_epoch = float(df["__epoch"].iloc[0])
