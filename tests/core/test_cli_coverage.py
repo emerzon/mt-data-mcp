@@ -2889,7 +2889,6 @@ class TestAddForecastGenerateArgs:
                 "0.1",
                 "--denoise",
                 "wavelet",
-                "--verbose",
                 "--print-config",
             ]
         )
@@ -2900,7 +2899,6 @@ class TestAddForecastGenerateArgs:
         assert args.lookback == 200
         assert args.quantity == "return"
         assert args.ci_alpha == 0.1
-        assert args.verbose is True
         assert args.print_config is True
 
     def test_symbol_flag_alias(self):
@@ -3629,7 +3627,7 @@ class TestApplyCliOutputModeDefaults:
 
         assert out.detail == "full"
 
-    def test_verbose_promotes_supported_modes_to_full(self):
+    def test_legacy_verbose_flag_no_longer_promotes_supported_modes_to_full(self):
         args = argparse.Namespace(
             command="indicators_list", detail="compact", verbose=True
         )
@@ -3655,7 +3653,7 @@ class TestApplyCliOutputModeDefaults:
             args, ["indicators_list", "--verbose"], functions
         )
 
-        assert out.detail == "full"
+        assert out.detail == "compact"
 
     def test_explicit_mode_is_respected(self):
         args = argparse.Namespace(
@@ -3743,22 +3741,29 @@ class TestCreateCommandFunction:
         assert request.params == {"sp": 24}
         assert call_kwargs["__cli_raw"] is True
 
-    def test_verbose_flag_is_forwarded_to_tool_wrapper(self, capsys):
+    def test_detail_full_is_forwarded_without_injecting_verbose(self, capsys):
         mock_fn = MagicMock(return_value={"ok": True})
         func_info = {
             "func": mock_fn,
             "params": [
                 {"name": "symbol", "type": str, "required": True, "default": None},
+                {
+                    "name": "detail",
+                    "type": Literal["compact", "full"],
+                    "required": False,
+                    "default": "compact",
+                },
             ],
         }
         cmd_fn = create_command_function(func_info, cmd_name="test_cmd")
-        args = argparse.Namespace(symbol="EURUSD", json=False, verbose=True)
+        args = argparse.Namespace(symbol="EURUSD", detail="full", json=False, verbose=False)
 
         cmd_fn(args)
 
         call_kwargs = mock_fn.call_args[1]
         assert call_kwargs["symbol"] == "EURUSD"
-        assert call_kwargs["verbose"] is True
+        assert call_kwargs["detail"] == "full"
+        assert "verbose" not in call_kwargs
         assert call_kwargs["__cli_raw"] is True
 
     def test_detail_full_is_not_forwarded_as_transport_verbose_to_tool_wrapper(self, capsys):
@@ -5256,7 +5261,7 @@ class TestForecastGenerateIntegration:
         assert request.denoise == {"method": "wavelet"}
 
     @patch("mtdata.core.cli.discover_tools")
-    def test_forecast_generate_dict_result_verbose(self, mock_discover, capsys):
+    def test_forecast_generate_rejects_removed_verbose_flag(self, mock_discover, capsys):
         mock_fn = MagicMock(return_value={"forecast": [1.0, 2.0, 3.0]})
         mock_fn.__module__ = "mtdata.core.server"
         mock_fn.__name__ = "forecast_generate"
@@ -5269,8 +5274,8 @@ class TestForecastGenerateIntegration:
             },
         }
         with patch("sys.argv", ["cli.py", "forecast_generate", "EURUSD", "--verbose"]):
-            result = main()
-        assert result == 0
+            with pytest.raises(SystemExit, match="2"):
+                main()
 
     @patch("mtdata.core.cli.discover_tools")
     def test_forecast_generate_omits_redundant_ci_block_when_bounds_rendered(

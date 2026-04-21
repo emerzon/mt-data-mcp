@@ -135,6 +135,48 @@ _COINTEGRATION_TREND_LEGEND: Dict[str, Dict[str, str]] = {
     },
 }
 
+_CAUSAL_DISCOVER_REQUEST_KEYS = frozenset(
+    {
+        "symbols_input",
+        "symbols_expanded",
+        "timeframe",
+        "limit",
+        "max_lag",
+        "significance",
+        "transform",
+        "normalize",
+    }
+)
+
+_CORRELATION_REQUEST_KEYS = frozenset(
+    {
+        "symbols_input",
+        "symbols_expanded",
+        "group_input",
+        "group_resolved",
+        "timeframe",
+        "limit",
+        "method",
+        "transform",
+        "min_overlap",
+    }
+)
+
+_COINTEGRATION_REQUEST_KEYS = frozenset(
+    {
+        "symbols_input",
+        "symbols_expanded",
+        "group_input",
+        "group_resolved",
+        "timeframe",
+        "limit",
+        "transform",
+        "trend",
+        "significance",
+        "min_overlap",
+    }
+)
+
 
 def _causal_connection_error() -> Dict[str, Any] | None:
     return mt5_connection_error(
@@ -716,12 +758,51 @@ def _causal_error(
         "success": False,
         "error": str(message),
         "error_code": str(code),
-        "meta": meta,
+        "meta": _causal_contract_meta(meta),
     }
     if warnings:
         out["warnings"] = warnings
     if details:
         out["details"] = details
+    return out
+
+
+def _causal_contract_meta(
+    meta: Dict[str, Any],
+    *,
+    legends: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    meta_in = dict(meta or {})
+    tool_name = str(meta_in.pop("_tool", "") or "").strip()
+    request_keys_raw = meta_in.pop("_request_keys", ())
+    request_keys = {
+        str(key)
+        for key in (
+            request_keys_raw
+            if isinstance(request_keys_raw, (set, frozenset, list, tuple))
+            else ()
+        )
+    }
+
+    request: Dict[str, Any] = {}
+    stats: Dict[str, Any] = {}
+    for key, value in meta_in.items():
+        if value is None:
+            continue
+        if key in request_keys:
+            request[key] = value
+        else:
+            stats[key] = value
+
+    out: Dict[str, Any] = {
+        "tool": tool_name,
+        "request": request,
+        "runtime": {},
+    }
+    if stats:
+        out["stats"] = stats
+    if legends:
+        out["legends"] = legends
     return out
 
 
@@ -949,14 +1030,9 @@ def causal_discover_signals(  # noqa: C901
     """
 
     def _run() -> Dict[str, Any]:  # noqa: C901
-        connection_error = _causal_connection_error()
-        if connection_error is not None:
-            return connection_error
-        mt5_gateway = get_mt5_gateway(
-            adapter=mt5,
-            ensure_connection_impl=ensure_mt5_connection_or_raise,
-        )
         meta: Dict[str, Any] = {
+            "_tool": "causal_discover_signals",
+            "_request_keys": _CAUSAL_DISCOVER_REQUEST_KEYS,
             "timeframe": str(timeframe),
             "limit": int(limit),
             "max_lag": int(max_lag),
@@ -964,6 +1040,17 @@ def causal_discover_signals(  # noqa: C901
             "transform": str(transform),
             "normalize": bool(normalize),
         }
+        connection_error = _causal_connection_error()
+        if connection_error is not None:
+            return _causal_error(
+                str(connection_error.get("error") or "Failed to connect to MetaTrader5."),
+                code=str(connection_error.get("error_code") or "mt5_connection_error"),
+                meta=meta,
+            )
+        mt5_gateway = get_mt5_gateway(
+            adapter=mt5,
+            ensure_connection_impl=ensure_mt5_connection_or_raise,
+        )
 
         try:
             from statsmodels.tsa.stattools import grangercausalitytests
@@ -1285,18 +1372,25 @@ def causal_discover_signals(  # noqa: C901
                 f"{max(pair_attempts - pair_success, 0)} pairwise Granger tests failed; see meta['pair_failures']."
             )
         data: Dict[str, Any] = {
-            "links": rows_sorted,
-            "count_links": int(len(rows_sorted)),
+            "items": rows_sorted,
         }
         out: Dict[str, Any] = {
             "success": True,
             "data": data,
-            "meta": meta,
-            "legends": {
-                "transform": _TRANSFORM_LEGEND,
-                "note_p_value": "Lower p-values indicate stronger evidence of causality. Values < significance threshold indicate significant Granger-causal relationship.",
-                "note_lag": "Optimal lag order (bars) at which past values of 'cause' best predict current 'effect'",
+            "summary": {
+                "counts": {
+                    "links": int(len(rows_sorted)),
+                }
             },
+            "meta": _causal_contract_meta(
+                meta,
+                legends={
+                    "transform": _TRANSFORM_LEGEND,
+                    "note_p_value": "Lower p-values indicate stronger evidence of causality. Values < significance threshold indicate significant Granger-causal relationship.",
+                    "note_lag": "Optimal lag order (bars) at which past values of 'cause' best predict current 'effect'",
+                    "note_p_value_correction": "Displayed p-values use Bonferroni correction across tested lags for each pair.",
+                },
+            ),
         }
         if warnings_out:
             out["warnings"] = warnings_out
@@ -1349,20 +1443,26 @@ def correlation_matrix(  # noqa: C901
     """
 
     def _run() -> Dict[str, Any]:  # noqa: C901
-        connection_error = _causal_connection_error()
-        if connection_error is not None:
-            return connection_error
-        mt5_gateway = get_mt5_gateway(
-            adapter=mt5,
-            ensure_connection_impl=ensure_mt5_connection_or_raise,
-        )
         meta: Dict[str, Any] = {
+            "_tool": "correlation_matrix",
+            "_request_keys": _CORRELATION_REQUEST_KEYS,
             "timeframe": str(timeframe),
             "limit": int(limit),
             "method": str(method),
             "transform": str(transform),
             "min_overlap": int(min_overlap),
         }
+        connection_error = _causal_connection_error()
+        if connection_error is not None:
+            return _causal_error(
+                str(connection_error.get("error") or "Failed to connect to MetaTrader5."),
+                code=str(connection_error.get("error_code") or "mt5_connection_error"),
+                meta=meta,
+            )
+        mt5_gateway = get_mt5_gateway(
+            adapter=mt5,
+            ensure_connection_impl=ensure_mt5_connection_or_raise,
+        )
 
         symbol_list = _parse_symbols(str(symbols or ""))
         meta["symbols_input"] = list(symbol_list)
@@ -1592,23 +1692,29 @@ def correlation_matrix(  # noqa: C901
             "success": True,
             "data": {
                 "matrix": _build_correlation_matrix(symbols_used, rows),
-                "pairs": rows,
-                "count_pairs": int(len(rows)),
-                **_build_correlation_summary(rows),
+                "items": rows,
             },
-            "meta": meta,
-            "legends": {
-                "transform": _TRANSFORM_LEGEND,
-                "correlation_method": _CORRELATION_METHOD_LEGEND,
-                "relationship": {
-                    "positive": "Symbols tend to move in the same direction",
-                    "negative": "Symbols tend to move in opposite directions",
-                    "flat": "No consistent directional relationship (correlation near zero)",
-                    "strength_weak": "|correlation| < 0.3",
-                    "strength_moderate": "0.3 <= |correlation| < 0.7",
-                    "strength_strong": "|correlation| >= 0.7",
+            "summary": {
+                "counts": {
+                    "pairs": int(len(rows)),
                 },
+                "highlights": _build_correlation_summary(rows),
             },
+            "meta": _causal_contract_meta(
+                meta,
+                legends={
+                    "transform": _TRANSFORM_LEGEND,
+                    "correlation_method": _CORRELATION_METHOD_LEGEND,
+                    "relationship": {
+                        "positive": "Symbols tend to move in the same direction",
+                        "negative": "Symbols tend to move in opposite directions",
+                        "flat": "No consistent directional relationship (correlation near zero)",
+                        "strength_weak": "|correlation| < 0.3",
+                        "strength_moderate": "0.3 <= |correlation| < 0.7",
+                        "strength_strong": "|correlation| >= 0.7",
+                    },
+                },
+            ),
         }
         if warnings_out:
             out["warnings"] = warnings_out
@@ -1662,14 +1768,9 @@ def cointegration_test(  # noqa: C901
     """
 
     def _run() -> Dict[str, Any]:  # noqa: C901
-        connection_error = _causal_connection_error()
-        if connection_error is not None:
-            return connection_error
-        mt5_gateway = get_mt5_gateway(
-            adapter=mt5,
-            ensure_connection_impl=ensure_mt5_connection_or_raise,
-        )
         meta: Dict[str, Any] = {
+            "_tool": "cointegration_test",
+            "_request_keys": _COINTEGRATION_REQUEST_KEYS,
             "timeframe": str(timeframe),
             "limit": int(limit),
             "transform": str(transform),
@@ -1677,6 +1778,17 @@ def cointegration_test(  # noqa: C901
             "significance": float(significance),
             "min_overlap": int(min_overlap),
         }
+        connection_error = _causal_connection_error()
+        if connection_error is not None:
+            return _causal_error(
+                str(connection_error.get("error") or "Failed to connect to MetaTrader5."),
+                code=str(connection_error.get("error_code") or "mt5_connection_error"),
+                meta=meta,
+            )
+        mt5_gateway = get_mt5_gateway(
+            adapter=mt5,
+            ensure_connection_impl=ensure_mt5_connection_or_raise,
+        )
 
         try:
             from statsmodels.tsa.stattools import coint
@@ -1973,24 +2085,30 @@ def cointegration_test(  # noqa: C901
         out: Dict[str, Any] = {
             "success": True,
             "data": {
-                "pairs": rows,
-                "count_pairs": int(len(rows)),
-                "count_cointegrated": cointegrated_count,
-                **_build_cointegration_summary(rows),
+                "items": rows,
             },
-            "meta": meta,
-            "legends": {
-                "transform": cointegration_transform_legend,
-                "trend": _COINTEGRATION_TREND_LEGEND,
-                "cointegration": {
-                    "description": "Long-term equilibrium relationship between non-stationary price series",
-                    "cointegrated_true": "Series share a common stochastic drift - deviations are mean-reverting",
-                    "cointegrated_false": "No statistically significant long-term relationship detected",
-                    "test_statistic": "Engle-Granger test statistic; more negative = stronger evidence of cointegration",
-                    "critical_values": "Thresholds at 1%, 5%, 10% significance levels; test statistic < critical value indicates cointegration",
+            "summary": {
+                "counts": {
+                    "pairs": int(len(rows)),
+                    "cointegrated": cointegrated_count,
                 },
-                "hedge_ratio": "Units of quote symbol needed to hedge one unit of base symbol in a pairs trade",
+                "highlights": _build_cointegration_summary(rows),
             },
+            "meta": _causal_contract_meta(
+                meta,
+                legends={
+                    "transform": cointegration_transform_legend,
+                    "trend": _COINTEGRATION_TREND_LEGEND,
+                    "cointegration": {
+                        "description": "Long-term equilibrium relationship between non-stationary price series",
+                        "cointegrated_true": "Series share a common stochastic drift - deviations are mean-reverting",
+                        "cointegrated_false": "No statistically significant long-term relationship detected",
+                        "test_statistic": "Engle-Granger test statistic; more negative = stronger evidence of cointegration",
+                        "critical_values": "Thresholds at 1%, 5%, 10% significance levels; test statistic < critical value indicates cointegration",
+                    },
+                    "hedge_ratio": "Units of quote symbol needed to hedge one unit of base symbol in a pairs trade",
+                },
+            ),
         }
         if warnings_out:
             out["warnings"] = warnings_out

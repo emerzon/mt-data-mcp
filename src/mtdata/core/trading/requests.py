@@ -103,6 +103,7 @@ class TradeCloseRequest(BaseModel):
 
 class TradeHistoryRequest(BaseModel):
     history_kind: Literal["deals", "orders"] = "deals"
+    detail: Literal["compact", "full"] = "compact"
     start: Optional[str] = None
     end: Optional[str] = None
     symbol: Optional[str] = None

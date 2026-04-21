@@ -475,31 +475,6 @@ def _callable_accepts_kwarg(func: Any, name: str) -> bool:
     return any(param.kind == inspect.Parameter.VAR_KEYWORD for param in sig.parameters.values())
 
 
-def _extract_verbose_flag(kwargs: Dict[str, Any]) -> bool:
-    return resolve_output_contract(kwargs).verbose
-
-
-def _augment_signature_with_global_verbose(
-    params: List[inspect.Parameter],
-    annotations: Dict[str, Any],
-) -> tuple[List[inspect.Parameter], Dict[str, Any]]:
-    if any(param.name == "verbose" for param in params):
-        return params, annotations
-
-    out_params = list(params)
-    out_params.append(
-        inspect.Parameter(
-            "verbose",
-            kind=inspect.Parameter.KEYWORD_ONLY,
-            default=False,
-            annotation=bool,
-        )
-    )
-    out_annotations = dict(annotations)
-    out_annotations["verbose"] = bool
-    return out_params, out_annotations
-
-
 def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # noqa: C901
     if _ORIG_TOOL_DECORATOR is None:
         def _noop(func):
@@ -552,15 +527,11 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # n
         @_wraps(func)
         def _wrapped(*a, **kw):
             raw_output = kw.pop("__cli_raw", False)
-            requested_verbose = False
             contract_state = resolve_output_contract({})
 
             try:
                 _coerce_kwargs_for_callable(func, kw)
                 contract_state = resolve_output_contract(kw)
-                requested_verbose = contract_state.verbose
-                if "verbose" in kw and not _callable_accepts_kwarg(func, "verbose"):
-                    kw.pop("verbose", None)
                 try:
                     if "denoise" in kw:
                         from ..utils.denoise import (
@@ -605,7 +576,6 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # n
                     out = normalize_news_output(
                         out,
                         detail=contract_state.detail,
-                        verbose=contract_state.transport_verbose,
                     )
                 out = normalize_error_payload(
                     out,
@@ -615,7 +585,7 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # n
             out = apply_output_verbosity(
                 out,
                 tool_name=getattr(func, "__name__", "tool"),
-                verbose=requested_verbose,
+                detail=contract_state.shape_detail,
             )
 
             if raw_output:
@@ -632,7 +602,7 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # n
                 simplify_numbers = not str(fname).startswith("trade_")
                 return _fmt_min(
                     out,
-                    verbose=requested_verbose,
+                    verbose=contract_state.verbose,
                     simplify_numbers=simplify_numbers,
                     tool_name=fname,
                 )
@@ -652,7 +622,6 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # n
                     ):
                         continue
                     params.append(param.replace(annotation=cleaned.get(name)))
-            params, cleaned = _augment_signature_with_global_verbose(params, cleaned)
             _wrapped.__annotations__ = cleaned
             return_ann = cleaned.get("return", inspect._empty)
             _wrapped.__signature__ = inspect.Signature(parameters=params, return_annotation=return_ann)

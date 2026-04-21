@@ -297,8 +297,9 @@ class TestCausalDiscoverSignals:
         assert result["error"] == "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."
         assert result["success"] is False
         assert result["error_code"] == "mt5_connection_error"
-        assert result["operation"] == "mt5_ensure_connection"
-        assert isinstance(result.get("request_id"), str)
+        assert result["meta"]["tool"] == "causal_discover_signals"
+        assert result["meta"]["request"]["timeframe"] == "H1"
+        assert result["meta"]["runtime"] == {}
 
     def test_empty_symbols(self):
         result = self._unwrapped()("")
@@ -346,12 +347,12 @@ class TestCausalDiscoverSignals:
         assert "aligned: 0" in details_text
         assert "minimum 11 required" in details_text
 
-        meta = result.get("meta", {})
-        assert meta.get("symbol_rows", {}).get("BTCUSD") == 50
-        assert meta.get("symbol_rows", {}).get("ETHUSD") == 50
-        assert meta.get("samples_aligned_raw") == 0
-        assert meta.get("minimum_samples_required") == 11
-        assert meta.get("pair_overlaps", {}).get("BTCUSD-ETHUSD") == 0
+        stats = result.get("meta", {}).get("stats", {})
+        assert stats.get("symbol_rows", {}).get("BTCUSD") == 50
+        assert stats.get("symbol_rows", {}).get("ETHUSD") == 50
+        assert stats.get("samples_aligned_raw") == 0
+        assert stats.get("minimum_samples_required") == 11
+        assert stats.get("pair_overlaps", {}).get("BTCUSD-ETHUSD") == 0
 
     @patch("statsmodels.tsa.stattools.grangercausalitytests")
     @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
@@ -377,8 +378,8 @@ class TestCausalDiscoverSignals:
 
         result = self._unwrapped()("EURUSD,GBPUSD,USDJPY", max_lag=2, transform="diff", normalize=False)
         assert result["success"] is True
-        meta = result.get("meta", {})
-        detail = meta.get("alignment_detail", {})
+        stats = result.get("meta", {}).get("stats", {})
+        detail = stats.get("alignment_detail", {})
         assert isinstance(detail, dict)
         pair_overlaps = detail.get("pair_overlaps", {})
         assert pair_overlaps.get("EURUSD-GBPUSD") == 100
@@ -411,10 +412,11 @@ class TestCausalDiscoverSignals:
         result = self._unwrapped()("EURUSD,GBPUSD,USDJPY", max_lag=2, transform="diff", normalize=False)
 
         assert result["success"] is True
-        assert result["meta"]["symbols_used"] == ["EURUSD", "GBPUSD"]
-        assert result["meta"]["pruned_symbols"] == ["USDJPY"]
-        assert result["meta"]["samples_aligned_raw_after_pruning"] == 80
-        assert "pair_overlaps_after_pruning" in result["meta"]
+        stats = result["meta"]["stats"]
+        assert stats["symbols_used"] == ["EURUSD", "GBPUSD"]
+        assert stats["pruned_symbols"] == ["USDJPY"]
+        assert stats["samples_aligned_raw_after_pruning"] == 80
+        assert "pair_overlaps_after_pruning" in stats
         warnings_out = result.get("warnings", [])
         assert any("Dropped USDJPY due to insufficient overlap" in warning for warning in warnings_out)
 
@@ -439,8 +441,8 @@ class TestCausalDiscoverSignals:
 
         assert result["success"] is False
         assert result["error_code"] == "insufficient_overlap"
-        assert result["meta"]["symbols_input"] == ["BTCUSD"]
-        assert result["meta"]["symbols_expanded"] == ["BTCUSD", "ETHUSD", "LTCUSD"]
+        assert result["meta"]["request"]["symbols_input"] == ["BTCUSD"]
+        assert result["meta"]["request"]["symbols_expanded"] == ["BTCUSD", "ETHUSD", "LTCUSD"]
 
     @patch("mtdata.core.causal._expand_symbols_for_group", return_value=(["BTCUSD", "ETHUSD"], None, "Crypto"))
     @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
@@ -508,12 +510,16 @@ class TestCausalDiscoverSignals:
 
         assert result["success"] is True
         assert "data" in result
+        assert "summary" in result
         assert "meta" in result
-        assert result["data"]["count_links"] >= 1
-        assert isinstance(result["data"]["links"], list)
+        assert result["summary"]["counts"]["links"] >= 1
+        assert isinstance(result["data"]["items"], list)
+        assert "links" not in result["data"]
         assert "summary_text" not in result["data"]
-        assert result["meta"]["pairs_tested"] >= 1
-        assert result["meta"]["p_value_correction"] == "bonferroni_across_lags"
+        assert result["meta"]["stats"]["pairs_tested"] >= 1
+        assert result["meta"]["stats"]["p_value_correction"] == "bonferroni_across_lags"
+        assert result["meta"]["tool"] == "causal_discover_signals"
+        assert "legends" in result["meta"]
         assert not any("verbose" in str(w.message).lower() for w in records)
         assert mock_granger.call_args.kwargs.get("verbose") is False
         assert any(
@@ -572,7 +578,7 @@ class TestCausalDiscoverSignals:
         result = self._unwrapped()("A,B", max_lag=2, transform="diff", normalize=False)
 
         assert result["success"] is True
-        link = result["data"]["links"][0]
+        link = result["data"]["items"][0]
         assert link["lag"] == 1
         assert link["p_value_raw"] == pytest.approx(0.02)
         assert link["lag_tests_run"] == 2
@@ -599,8 +605,8 @@ class TestCausalDiscoverSignals:
         result = self._unwrapped()("A,B", max_lag=2, transform="diff", normalize=False)
 
         assert result["success"] is True
-        assert result["meta"]["pairs_failed"] >= 1
-        assert result["meta"]["pair_failures"][0]["error_type"] == "RuntimeError"
+        assert result["meta"]["stats"]["pairs_failed"] >= 1
+        assert result["meta"]["stats"]["pair_failures"][0]["error_type"] == "RuntimeError"
         assert "warnings" in result
 
 
@@ -683,14 +689,15 @@ class TestCorrelationMatrix:
 
         assert result["success"] is True
         data = result["data"]
-        assert data["count_pairs"] == 3
+        assert result["summary"]["counts"]["pairs"] == 3
         assert data["matrix"]["A"]["A"] == pytest.approx(1.0)
         assert data["matrix"]["A"]["B"] > 0.95
         assert data["matrix"]["A"]["C"] < -0.95
-        assert data["pairs"][0]["abs_correlation"] >= data["pairs"][1]["abs_correlation"]
-        assert data["strongest_positive"]
-        assert data["strongest_negative"]
-        assert result["meta"]["pairs_computed"] == 3
+        assert data["items"][0]["abs_correlation"] >= data["items"][1]["abs_correlation"]
+        assert result["summary"]["highlights"]["strongest_positive"]
+        assert result["summary"]["highlights"]["strongest_negative"]
+        assert "pairs" not in data
+        assert result["meta"]["stats"]["pairs_computed"] == 3
         assert any(
             "event=finish operation=correlation_matrix success=True" in record.message
             for record in caplog.records
@@ -716,13 +723,13 @@ class TestCorrelationMatrix:
         result = self._unwrapped()("A,B,C", min_overlap=20)
 
         assert result["success"] is True
-        assert result["data"]["count_pairs"] == 1
+        assert result["summary"]["counts"]["pairs"] == 1
         assert result["data"]["matrix"]["A"]["B"] is not None
         assert result["data"]["matrix"]["A"]["C"] is None
         assert result["data"]["matrix"]["B"]["C"] is None
-        assert result["meta"]["pairs_computed"] == 1
-        assert result["meta"]["pair_overlaps"]["A-C"] == 0
-        assert result["meta"]["pair_overlaps"]["B-C"] == 0
+        assert result["meta"]["stats"]["pairs_computed"] == 1
+        assert result["meta"]["stats"]["pair_overlaps"]["A-C"] == 0
+        assert result["meta"]["stats"]["pair_overlaps"]["B-C"] == 0
 
     @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
     @patch("mtdata.core.causal._fetch_series")
@@ -744,8 +751,8 @@ class TestCorrelationMatrix:
         result = self._unwrapped()("A,B,C")
 
         assert result["success"] is True
-        assert result["data"]["count_pairs"] == 1
-        assert result["meta"]["symbols_used"] == ["A", "B"]
+        assert result["summary"]["counts"]["pairs"] == 1
+        assert result["meta"]["stats"]["symbols_used"] == ["A", "B"]
         assert "warnings" in result
         assert any("Failed to fetch data for C" in warning for warning in result["warnings"])
 
@@ -768,10 +775,10 @@ class TestCorrelationMatrix:
         result = self._unwrapped()(group="Forex\\Majors", min_overlap=20)
 
         assert result["success"] is True
-        assert result["meta"]["group_input"] == "Forex\\Majors"
-        assert result["meta"]["group_resolved"] == "Forex\\Majors"
-        assert result["meta"]["symbols_expanded"] == ["EURUSD", "GBPUSD"]
-        assert result["data"]["count_pairs"] == 1
+        assert result["meta"]["request"]["group_input"] == "Forex\\Majors"
+        assert result["meta"]["request"]["group_resolved"] == "Forex\\Majors"
+        assert result["meta"]["request"]["symbols_expanded"] == ["EURUSD", "GBPUSD"]
+        assert result["summary"]["counts"]["pairs"] == 1
 
     @patch("mtdata.core.causal._expand_symbols_for_group_path", return_value=([], "Group 'Forex' matched multiple visible MT5 symbol groups: Forex\\Majors, Forex\\Minors", None))
     def test_group_argument_surfaces_resolution_error(self, _mock_expand):
@@ -822,7 +829,7 @@ class TestCorrelationMatrix:
         assert result["success"] is False
         assert result["error_code"] == "insufficient_overlap"
         assert "A-B: 0 rows (minimum 30 required)" in " ".join(result.get("details", []))
-        assert result["meta"]["pair_overlaps"]["A-B"] == 0
+        assert result["meta"]["stats"]["pair_overlaps"]["A-B"] == 0
 
 
 class TestCointegrationTest:
@@ -870,10 +877,10 @@ class TestCointegrationTest:
         result = self._unwrapped()(group="Forex\\Majors", min_overlap=40)
 
         assert result["success"] is True
-        assert result["meta"]["group_resolved"] == "Forex\\Majors"
-        assert result["data"]["count_pairs"] == 1
-        assert result["data"]["count_cointegrated"] == 1
-        pair = result["data"]["pairs"][0]
+        assert result["meta"]["request"]["group_resolved"] == "Forex\\Majors"
+        assert result["summary"]["counts"]["pairs"] == 1
+        assert result["summary"]["counts"]["cointegrated"] == 1
+        pair = result["data"]["items"][0]
         assert pair["cointegrated"] is True
         assert pair["p_value"] == pytest.approx(0.01)
         assert pair["critical_values"]["5%"] == pytest.approx(-3.3)
@@ -900,5 +907,5 @@ class TestCointegrationTest:
         assert result["success"] is False
         assert result["error_code"] == "test_failed"
         assert "Cointegration tests failed" in result["error"]
-        assert result["meta"]["pairs_failed"] >= 1
+        assert result["meta"]["stats"]["pairs_failed"] >= 1
         assert "warnings" in result

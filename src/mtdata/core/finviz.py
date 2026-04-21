@@ -99,6 +99,43 @@ def _run_logged_tool(
     )
 
 
+def _build_tool_contract_meta(
+    *,
+    tool: str,
+    request: Dict[str, Any],
+    stats: Optional[Dict[str, Any]] = None,
+    pagination: Optional[Dict[str, Any]] = None,
+    legends: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    out: Dict[str, Any] = {
+        "tool": tool,
+        "request": {
+            key: value for key, value in request.items() if value is not None
+        },
+        "runtime": {},
+    }
+    if stats:
+        out["stats"] = {
+            key: value for key, value in stats.items() if value is not None
+        }
+    if pagination:
+        out["pagination"] = {
+            key: value for key, value in pagination.items() if value is not None
+        }
+    if legends:
+        out["legends"] = legends
+    return out
+
+
+def _finviz_earnings_error_code(message: str) -> str:
+    text = str(message or "")
+    if "Invalid period" in text:
+        return "finviz_earnings_invalid_period"
+    if "No earnings calendar data available" in text:
+        return "finviz_earnings_no_data"
+    return "finviz_earnings_failed"
+
+
 def _invalid_finviz_screen_filters_error(filters: Any) -> Dict[str, Any]:
     return _finviz_error_payload(
         (
@@ -736,8 +773,65 @@ def finviz_earnings(
     dict
         Earnings calendar data
     """
+    def _run() -> Dict[str, Any]:
+        request = {
+            "period": period,
+            "limit": limit,
+            "page": page,
+        }
+        result = get_earnings_calendar(period=period, limit=limit, page=page)
+        if not isinstance(result, dict):
+            return {
+                "success": False,
+                "error": "Unexpected earnings calendar response.",
+                "error_code": "finviz_earnings_failed",
+                "meta": _build_tool_contract_meta(
+                    tool="finviz_earnings",
+                    request=request,
+                ),
+            }
+        if result.get("error"):
+            return {
+                "success": False,
+                "error": str(result.get("error")),
+                "error_code": _finviz_earnings_error_code(str(result.get("error"))),
+                "meta": _build_tool_contract_meta(
+                    tool="finviz_earnings",
+                    request=request,
+                ),
+            }
+
+        items = result.get("earnings")
+        if not isinstance(items, list):
+            items = []
+        pagination = {
+            "page": result.get("page"),
+            "total": result.get("total"),
+            "pages": result.get("pages"),
+        }
+        stats = {
+            "truncated": result.get("truncated"),
+        }
+        return {
+            "success": True,
+            "data": {
+                "items": items,
+            },
+            "summary": {
+                "counts": {
+                    "items": int(result.get("count") or len(items)),
+                }
+            },
+            "meta": _build_tool_contract_meta(
+                tool="finviz_earnings",
+                request=request,
+                stats=stats,
+                pagination=pagination,
+            ),
+        }
+
     return _run_logged_tool(
         "finviz_earnings",
         {"period": period, "limit": limit, "page": page},
-        lambda: get_earnings_calendar(period=period, limit=limit, page=page),
+        _run,
     )

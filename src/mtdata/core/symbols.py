@@ -387,11 +387,11 @@ def symbols_describe(
 
                         epoch = float(value)
                         utc_epoch = _mt5_epoch_to_utc(epoch)
-                        if contract.transport_verbose:
+                        if verbose:
                             symbol_data["time_epoch"] = utc_epoch
                         symbol_data["time"] = _format_time_minimal(utc_epoch)
                     except Exception:
-                        if contract.transport_verbose:
+                        if verbose:
                             symbol_data["time_epoch"] = value
                         symbol_data["time"] = str(value)
                 else:
@@ -570,6 +570,58 @@ def _build_market_scan_bar_row(
 def _market_scan_table(headers: List[str], rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     ordered_rows = [[row.get(header) for header in headers] for row in rows]
     return _table_from_rows(headers, ordered_rows)
+
+
+def _market_scan_contract_table(
+    headers: List[str],
+    rows: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    return {
+        "columns": [str(header) for header in headers],
+        "rows": [dict(row) for row in rows],
+        "row_count": int(len(rows)),
+    }
+
+
+def _market_scan_contract_meta(
+    *,
+    request: Dict[str, Any],
+    stats: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    out: Dict[str, Any] = {
+        "tool": "market_scan",
+        "request": {
+            key: value for key, value in request.items() if value is not None
+        },
+        "runtime": {},
+    }
+    if stats:
+        out["stats"] = {
+            key: value for key, value in stats.items() if value is not None
+        }
+    return out
+
+
+def _market_scan_error(
+    message: str,
+    *,
+    code: str,
+    request: Dict[str, Any],
+    stats: Optional[Dict[str, Any]] = None,
+    details: Any = None,
+    warnings: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    out: Dict[str, Any] = {
+        "success": False,
+        "error": str(message),
+        "error_code": str(code),
+        "meta": _market_scan_contract_meta(request=request, stats=stats),
+    }
+    if details not in (None, [], {}):
+        out["details"] = details
+    if warnings:
+        out["warnings"] = warnings
+    return out
 
 
 def _top_markets_headers(metric: str, *, detail_mode: str) -> List[str]:
@@ -1229,43 +1281,110 @@ def market_scan(  # noqa: C901
     """Scan MT5 symbols with explicit price, spread, volume, RSI, and SMA filters."""
 
     def _run() -> Dict[str, Any]:  # noqa: C901
+        request: Dict[str, Any] = {
+            "symbols": symbols,
+            "group": group,
+            "limit": limit,
+            "universe": universe,
+            "timeframe": timeframe,
+            "lookback": lookback,
+            "rank_by": rank_by,
+            "filters": {
+                key: value
+                for key, value in {
+                    "min_price_change_pct": min_price_change_pct,
+                    "max_price_change_pct": max_price_change_pct,
+                    "max_spread_pct": max_spread_pct,
+                    "min_tick_volume": min_tick_volume,
+                    "rsi_below": rsi_below,
+                    "rsi_above": rsi_above,
+                    "price_vs_sma": price_vs_sma,
+                    "rsi_length": rsi_length,
+                    "sma_period": sma_period,
+                }.items()
+                if value is not None
+            },
+        }
         try:
             universe_value = str(universe or "visible").strip().lower()
+            request["universe"] = universe_value
             if universe_value not in {"visible", "all"}:
-                return {"error": "universe must be 'visible' or 'all'."}
+                return _market_scan_error(
+                    "universe must be 'visible' or 'all'.",
+                    code="invalid_input",
+                    request=request,
+                )
 
             timeframe_value = str(timeframe or "H1").strip().upper()
+            request["timeframe"] = timeframe_value
             if timeframe_value not in TIMEFRAME_MAP:
-                return {"error": invalid_timeframe_error(timeframe_value, TIMEFRAME_MAP)}
+                return _market_scan_error(
+                    invalid_timeframe_error(timeframe_value, TIMEFRAME_MAP),
+                    code="invalid_timeframe",
+                    request=request,
+                )
             mt5_timeframe = TIMEFRAME_MAP[timeframe_value]
 
             rank_by_value = str(rank_by or "abs_price_change_pct").strip().lower()
+            request["rank_by"] = rank_by_value
             if rank_by_value not in {"abs_price_change_pct", "price_change_pct", "tick_volume", "rsi", "spread_pct"}:
-                return {
-                    "error": (
+                return _market_scan_error(
+                    (
                         "rank_by must be one of: abs_price_change_pct, "
                         "price_change_pct, tick_volume, rsi, spread_pct."
-                    )
-                }
+                    ),
+                    code="invalid_input",
+                    request=request,
+                )
 
             price_vs_sma_value = None
             if price_vs_sma is not None:
                 price_vs_sma_value = str(price_vs_sma).strip().lower()
+                request["filters"] = {
+                    **dict(request.get("filters", {})),
+                    "price_vs_sma": price_vs_sma_value,
+                }
                 if price_vs_sma_value not in {"above", "below"}:
-                    return {"error": "price_vs_sma must be 'above' or 'below'."}
+                    return _market_scan_error(
+                        "price_vs_sma must be 'above' or 'below'.",
+                        code="invalid_input",
+                        request=request,
+                    )
 
             try:
                 lookback_value = int(lookback)
                 rsi_length_value = int(rsi_length)
                 sma_period_value = int(sma_period)
             except Exception:
-                return {"error": "lookback, rsi_length, and sma_period must be integers."}
+                return _market_scan_error(
+                    "lookback, rsi_length, and sma_period must be integers.",
+                    code="invalid_input",
+                    request=request,
+                )
+            request["lookback"] = lookback_value
+            request["filters"] = {
+                **dict(request.get("filters", {})),
+                "rsi_length": rsi_length_value,
+                "sma_period": sma_period_value,
+            }
             if lookback_value < 2:
-                return {"error": "lookback must be at least 2."}
+                return _market_scan_error(
+                    "lookback must be at least 2.",
+                    code="invalid_input",
+                    request=request,
+                )
             if rsi_length_value < 1:
-                return {"error": "rsi_length must be at least 1."}
+                return _market_scan_error(
+                    "rsi_length must be at least 1.",
+                    code="invalid_input",
+                    request=request,
+                )
             if sma_period_value < 1:
-                return {"error": "sma_period must be at least 1."}
+                return _market_scan_error(
+                    "sma_period must be at least 1.",
+                    code="invalid_input",
+                    request=request,
+                )
 
             required_lookback = 2
             if rank_by_value == "rsi" or rsi_above is not None or rsi_below is not None:
@@ -1273,12 +1392,14 @@ def market_scan(  # noqa: C901
             if price_vs_sma_value is not None:
                 required_lookback = max(required_lookback, sma_period_value)
             if lookback_value < required_lookback:
-                return {
-                    "error": (
+                return _market_scan_error(
+                    (
                         f"lookback={lookback_value} is too small for the requested filters; "
                         f"need at least {required_lookback} bars."
-                    )
-                }
+                    ),
+                    code="invalid_input",
+                    request=request,
+                )
 
             mt5_gateway = get_mt5_gateway(
                 adapter=mt5,
@@ -1288,7 +1409,11 @@ def market_scan(  # noqa: C901
 
             raw_symbols = mt5_gateway.symbols_get()
             if raw_symbols is None:
-                return {"error": f"Failed to get symbols: {mt5_gateway.last_error()}"}
+                return _market_scan_error(
+                    f"Failed to get symbols: {mt5_gateway.last_error()}",
+                    code="data_fetch_failed",
+                    request=request,
+                )
             all_symbols = list(raw_symbols)
 
             selected_symbols, selection_meta, selection_error = _select_market_scan_symbols(
@@ -1298,9 +1423,21 @@ def market_scan(  # noqa: C901
                 universe=universe_value,
             )
             if selection_error:
-                return {"error": selection_error}
+                return _market_scan_error(
+                    selection_error,
+                    code="symbol_group_error" if group else "invalid_input",
+                    request=request,
+                )
 
             limit_value = _normalize_limit(limit) or 20
+            request["limit"] = limit_value
+            request["scope"] = selection_meta.get("scope")
+            if selection_meta.get("group") is not None:
+                request["group"] = selection_meta.get("group")
+            if selection_meta.get("requested_symbols") is not None:
+                request["requested_symbols"] = selection_meta.get("requested_symbols")
+            if selection_meta.get("missing_symbols") is not None:
+                request["missing_symbols"] = selection_meta.get("missing_symbols")
             started_at = time.perf_counter()
             matched_rows: List[Dict[str, Any]] = []
             skipped_examples: List[Dict[str, str]] = []
@@ -1406,55 +1543,66 @@ def market_scan(  # noqa: C901
                 "sma_value",
                 "sma_distance_pct",
             ]
-            out = _market_scan_table(headers, limited_rows)
-            out.update(
-                {
-                    "success": True,
-                    "scope": selection_meta.get("scope"),
-                    "group": selection_meta.get("group"),
-                    "requested_symbols": selection_meta.get("requested_symbols"),
-                    "missing_symbols": selection_meta.get("missing_symbols"),
-                    "universe": universe_value,
-                    "timeframe": timeframe_value,
-                    "lookback": lookback_value,
-                    "limit": limit_value,
-                    "rank_by": rank_by_value,
-                    "scanned_symbols": len(selected_symbols),
-                    "evaluated_symbols": evaluated_symbols,
-                    "matched_symbols": total_matches,
-                    "filtered_out_symbols": max(0, evaluated_symbols - total_matches),
-                    "skipped_symbols": skipped_symbols,
-                    "skipped_examples": skipped_examples,
-                    "query_latency_ms": round((time.perf_counter() - started_at) * 1000.0, 3),
-                    "filters": {
-                        key: value
-                        for key, value in {
-                            "min_price_change_pct": min_price_change_pct,
-                            "max_price_change_pct": max_price_change_pct,
-                            "max_spread_pct": max_spread_pct,
-                            "min_tick_volume": min_tick_volume,
-                            "rsi_below": rsi_below,
-                            "rsi_above": rsi_above,
-                            "price_vs_sma": price_vs_sma_value,
-                            "rsi_length": rsi_length_value
-                            if (rsi_above is not None or rsi_below is not None or rank_by_value == "rsi")
-                            else None,
-                            "sma_period": sma_period_value
-                            if price_vs_sma_value is not None
-                            else None,
-                        }.items()
-                        if value is not None
-                    },
-                }
-            )
+            request["filters"] = {
+                key: value
+                for key, value in {
+                    "min_price_change_pct": min_price_change_pct,
+                    "max_price_change_pct": max_price_change_pct,
+                    "max_spread_pct": max_spread_pct,
+                    "min_tick_volume": min_tick_volume,
+                    "rsi_below": rsi_below,
+                    "rsi_above": rsi_above,
+                    "price_vs_sma": price_vs_sma_value,
+                    "rsi_length": rsi_length_value
+                    if (rsi_above is not None or rsi_below is not None or rank_by_value == "rsi")
+                    else None,
+                    "sma_period": sma_period_value
+                    if price_vs_sma_value is not None
+                    else None,
+                }.items()
+                if value is not None
+            }
+            stats = {
+                "scanned_symbols": len(selected_symbols),
+                "evaluated_symbols": evaluated_symbols,
+                "matched_symbols": total_matches,
+                "filtered_out_symbols": max(0, evaluated_symbols - total_matches),
+                "skipped_symbols": skipped_symbols,
+                "skipped_examples": skipped_examples,
+                "query_latency_ms": round((time.perf_counter() - started_at) * 1000.0, 3),
+            }
+            out: Dict[str, Any] = {
+                "success": True,
+                "data": {
+                    "table": _market_scan_contract_table(headers, limited_rows),
+                },
+                "summary": {
+                    "counts": {
+                        "scanned_symbols": int(stats["scanned_symbols"]),
+                        "evaluated_symbols": int(stats["evaluated_symbols"]),
+                        "matched_symbols": int(stats["matched_symbols"]),
+                        "filtered_out_symbols": int(stats["filtered_out_symbols"]),
+                        "skipped_symbols": int(stats["skipped_symbols"]),
+                    }
+                },
+                "meta": _market_scan_contract_meta(request=request, stats=stats),
+            }
             if total_matches == 0:
-                out["no_action"] = True
+                out["summary"]["empty"] = True
                 out["message"] = "No symbols matched the requested market scan filters."
             return out
         except MT5ConnectionError as exc:
-            return {"error": str(exc)}
+            return _market_scan_error(
+                str(exc),
+                code="mt5_connection_error",
+                request=request,
+            )
         except Exception as exc:
-            return {"error": f"Error running market scan: {str(exc)}"}
+            return _market_scan_error(
+                f"Error running market scan: {str(exc)}",
+                code="market_scan_failed",
+                request=request,
+            )
 
     return run_logged_operation(
         logger,

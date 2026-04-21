@@ -36,19 +36,6 @@ def add_global_args_to_parser(
             **timeframe_kwargs,
         )
     
-    # Verbose flag
-    if 'verbose' not in exclude_params:
-        verbose_kwargs = {
-            "action": "store_true",
-            "help": PARAMETER_HELP["verbose"],
-        }
-        if suppress_defaults:
-            verbose_kwargs["default"] = argparse.SUPPRESS
-        parser.add_argument(
-            '--verbose',
-            **verbose_kwargs,
-        )
-
     # Output format: formatted text by default, JSON when explicitly requested.
     if 'json' not in exclude_params:
         json_kwargs = {

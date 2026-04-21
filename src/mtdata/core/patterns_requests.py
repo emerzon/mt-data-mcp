@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Literal, Optional
 
 from pydantic import BaseModel
 
@@ -11,7 +11,7 @@ class PatternsDetectRequest(BaseModel):
     symbol: str
     timeframe: Optional[TimeframeLiteral] = None
     mode: str = "all"
-    detail: str = "compact"
+    detail: Literal["compact", "full"] = "compact"
     limit: int = 1000
     min_strength: float = 0.90
     min_gap: int = 3

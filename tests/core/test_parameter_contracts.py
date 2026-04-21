@@ -30,7 +30,7 @@ def test_cli_parsers_reuse_shared_help_text() -> None:
     parser = argparse.ArgumentParser()
     add_global_args_to_parser(parser)
     assert parser._option_string_actions["--timeframe"].help == PARAMETER_HELP["timeframe"]
-    assert parser._option_string_actions["--verbose"].help == PARAMETER_HELP["verbose"]
+    assert "--verbose" not in parser._option_string_actions
 
     forecast_parser = argparse.ArgumentParser()
     _add_forecast_generate_args(forecast_parser)
@@ -41,4 +41,4 @@ def test_cli_parsers_reuse_shared_help_text() -> None:
     )
     assert symbol_action.help == PARAMETER_HELP["symbol"]
     assert forecast_parser._option_string_actions["--timeframe"].help == PARAMETER_HELP["timeframe"]
-    assert forecast_parser._option_string_actions["--verbose"].help == PARAMETER_HELP["verbose"]
+    assert "--verbose" not in forecast_parser._option_string_actions

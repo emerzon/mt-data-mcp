@@ -130,7 +130,7 @@ def test_trade_history_filters_deals_by_side_alias() -> None:
     ]
 
     with patch("mtdata.core.trading.account._use_client_tz", lambda: False):
-        out = trade_history(history_kind="deals", side="long", __cli_raw=True)
+        out = trade_history(history_kind="deals", side="long", detail="full", __cli_raw=True)
     if prev is not None:
         sys.modules["MetaTrader5"] = prev
 
@@ -145,6 +145,7 @@ def test_trade_history_request_normalizes_buy_sell_aliases() -> None:
     assert TradeHistoryRequest(side="buy").side == "BUY"
     assert TradeHistoryRequest(side="short").side == "SELL"
     assert TradeHistoryRequest(side="weird").side == "weird"
+    assert TradeHistoryRequest().detail == "compact"
 
 
 def test_trade_history_filters_orders_by_side_prefix() -> None:
@@ -158,7 +159,7 @@ def test_trade_history_filters_orders_by_side_prefix() -> None:
     ]
 
     with patch("mtdata.core.trading.account._use_client_tz", lambda: False):
-        out = trade_history(history_kind="orders", side="sell", __cli_raw=True)
+        out = trade_history(history_kind="orders", side="sell", detail="full", __cli_raw=True)
     if prev is not None:
         sys.modules["MetaTrader5"] = prev
 
@@ -454,7 +455,7 @@ def test_trade_history_rejects_start_with_minutes_back() -> None:
 
 
 def test_trade_history_rejects_invalid_side_filter() -> None:
-    out = trade_history(history_kind="deals", side="flat", __cli_raw=True)
+    out = trade_history(history_kind="deals", side="flat", detail="full", __cli_raw=True)
 
     assert out["success"] is False
     assert out["error"] == "side must be BUY/SELL or LONG/SHORT."
@@ -611,6 +612,26 @@ def test_normalize_trade_history_output_preserves_upstream_error_metadata() -> N
     assert out["checked_scopes"] == ["history"]
     assert out["kind"] == "trade_history"
     assert out["scope"] == "symbol"
+
+
+def test_trade_history_compact_detail_omits_echoed_filters() -> None:
+    out = normalize_trade_history_output(
+        [{"ticket": 1, "symbol": "EURUSD"}],
+        request=TradeHistoryRequest(
+            history_kind="deals",
+            detail="compact",
+            symbol="EURUSD",
+            side="buy",
+            limit=5,
+        ),
+    )
+
+    assert out["history_kind"] == "deals"
+    assert out["scope"] == "symbol"
+    assert out["count"] == 1
+    assert "symbol" not in out
+    assert "side" not in out
+    assert "limit" not in out
 
 
 def test_trade_history_empty_message_uses_enveloped_contract() -> None:

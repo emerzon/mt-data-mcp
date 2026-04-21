@@ -8,32 +8,25 @@ from .runtime_metadata import build_runtime_timezone_meta
 
 _MISSING = object()
 _VERBOSE_ONLY_KEYS = frozenset({"meta", "diagnostics", "debug", "debug_info"})
-_DETAIL_COMPACT_ALIASES = {"summary": "compact", "summary_only": "compact"}
-_VERBOSE_DETAIL_LEVELS = frozenset({"full"})
-_COMPACT_DETAIL_LEVELS = frozenset({"compact"})
 
 
 @dataclass(frozen=True)
 class OutputContractState:
-    """Resolved shared output contract state.
-
-    detail:
-        Normalized requested detail value, preserving tool-specific aliases when
-        the caller provides them via ``aliases``.
-    shape_detail:
-        Shared compact/full shape resolved from detail plus explicit transport
-        verbosity.
-    verbose:
-        Legacy compatibility verbosity that still treats ``detail=full`` as a
-        verbose request for existing wrappers.
-    transport_verbose:
-        Explicit transport verbosity resolved from verbose/concise only.
-    """
+    """Resolved shared output contract state."""
 
     detail: str
-    shape_detail: str
-    verbose: bool
-    transport_verbose: bool
+
+    @property
+    def shape_detail(self) -> str:
+        return "full" if str(self.detail).strip().lower() == "full" else "compact"
+
+    @property
+    def verbose(self) -> bool:
+        return self.shape_detail == "full"
+
+    @property
+    def transport_verbose(self) -> bool:
+        return self.shape_detail == "full"
 
 
 def _strip_verbose_only_fields(value: Any) -> Any:
@@ -56,7 +49,7 @@ def _iter_verbosity_sources(source: Any) -> Iterator[Any]:
     if not isinstance(source, dict):
         return
     for candidate in source.values():
-        if any(hasattr(candidate, field) for field in ("verbose", "detail", "concise")):
+        if any(hasattr(candidate, field) for field in ("verbose", "detail")):
             yield candidate
 
 
@@ -85,6 +78,11 @@ def _resolve_requested_detail_value(source: Any, *, detail: Any = _MISSING) -> A
         if detail_value is _MISSING or detail_value is None:
             continue
         return detail_value
+    for candidate in _iter_verbosity_sources(source):
+        verbose_value = _coerce_optional_verbose_flag(_read_verbosity_field(candidate, "verbose"))
+        if verbose_value is None:
+            continue
+        return "full" if verbose_value else "compact"
     return None
 
 
@@ -93,15 +91,12 @@ def _iter_contract_sources(
     *,
     detail: Any = _MISSING,
     verbose: Any = _MISSING,
-    concise: Any = _MISSING,
 ) -> tuple[Any, ...]:
     explicit: dict[str, Any] = {}
     if detail is not _MISSING:
         explicit["detail"] = detail
     if verbose is not _MISSING:
         explicit["verbose"] = verbose
-    if concise is not _MISSING:
-        explicit["concise"] = concise
 
     candidates: list[Any] = []
     if explicit:
@@ -124,113 +119,18 @@ def normalize_output_detail(
 
 
 def normalize_output_verbosity_detail(value: Any, *, default: str = "compact") -> str:
-    """Map legacy detail aliases onto the shared compact/full verbosity contract."""
-    return normalize_output_detail(
-        value,
-        default=default,
-        aliases=_DETAIL_COMPACT_ALIASES,
-    )
-
-
-def _resolve_output_detail_value(
-    *,
-    detail: Any = None,
-    verbose: Any = None,
-    default: str = "compact",
-) -> str:
-    normalized = normalize_output_verbosity_detail(detail, default=default)
-    if normalized in _VERBOSE_DETAIL_LEVELS:
-        return "full"
-    if _coerce_optional_verbose_flag(verbose) is True:
-        return "full"
-    return "compact"
+    """Resolve the shared compact/full verbosity contract."""
+    normalized = normalize_output_detail(value, default=default)
+    return "full" if normalized == "full" else "compact"
 
 
 def resolve_output_detail(
     *,
     detail: Any = None,
-    verbose: Any = None,
     default: str = "compact",
 ) -> str:
-    """Resolve the shared compact/full detail mode from detail/verbose inputs."""
-    return _resolve_output_detail_value(detail=detail, verbose=verbose, default=default)
-
-
-def _resolve_transport_output_verbosity(
-    source: Any,
-    *,
-    verbose: Any = _MISSING,
-    concise: Any = _MISSING,
-    default: bool = False,
-) -> bool:
-    saw_explicit_false = False
-    for candidate in _iter_contract_sources(
-        source,
-        verbose=verbose,
-        concise=concise,
-    ):
-        verbose_value = _coerce_optional_verbose_flag(_read_verbosity_field(candidate, "verbose"))
-        if verbose_value is True:
-            return True
-        if verbose_value is False:
-            saw_explicit_false = True
-
-    for candidate in _iter_contract_sources(
-        source,
-        verbose=verbose,
-        concise=concise,
-    ):
-        concise_value = _coerce_optional_verbose_flag(_read_verbosity_field(candidate, "concise"))
-        if concise_value is True:
-            return False
-
-    if saw_explicit_false:
-        return False
-
-    return bool(default)
-
-
-def _resolve_requested_output_verbosity_value(
-    source: Any,
-    *,
-    detail: Any = _MISSING,
-    verbose: Any = _MISSING,
-    concise: Any = _MISSING,
-    default: bool = False,
-) -> bool:
-    saw_explicit_false = False
-    candidates = _iter_contract_sources(
-        source,
-        detail=detail,
-        verbose=verbose,
-        concise=concise,
-    )
-    for candidate in candidates:
-        verbose_value = _coerce_optional_verbose_flag(_read_verbosity_field(candidate, "verbose"))
-        if verbose_value is True:
-            return True
-        if verbose_value is False:
-            saw_explicit_false = True
-
-    for candidate in candidates:
-        detail_value = _read_verbosity_field(candidate, "detail")
-        if detail_value is _MISSING or detail_value is None:
-            continue
-        normalized = normalize_output_verbosity_detail(detail_value)
-        if normalized in _VERBOSE_DETAIL_LEVELS:
-            return True
-        if normalized in _COMPACT_DETAIL_LEVELS:
-            return False
-
-    for candidate in candidates:
-        concise_value = _coerce_optional_verbose_flag(_read_verbosity_field(candidate, "concise"))
-        if concise_value is True:
-            return False
-
-    if saw_explicit_false:
-        return False
-
-    return bool(default)
+    """Resolve the shared compact/full detail mode."""
+    return normalize_output_verbosity_detail(detail, default=default)
 
 
 def resolve_output_contract(
@@ -238,44 +138,29 @@ def resolve_output_contract(
     *,
     detail: Any = _MISSING,
     verbose: Any = _MISSING,
-    concise: Any = _MISSING,
     default_detail: str = "compact",
-    default_verbose: bool = False,
     aliases: Optional[Mapping[str, str]] = None,
 ) -> OutputContractState:
-    """Resolve shared detail and verbosity state without dropping legacy helpers."""
-    requested_detail_value = _resolve_requested_detail_value(source, detail=detail)
-    explicit_transport_verbose = _resolve_transport_output_verbosity(
-        source,
-        verbose=verbose,
-        concise=concise,
-        default=default_verbose,
-    )
+    """Resolve shared detail state."""
+    if detail is not _MISSING:
+        requested_detail_value = _resolve_requested_detail_value(source, detail=detail)
+    elif verbose is not _MISSING:
+        verbose_value = _coerce_optional_verbose_flag(verbose)
+        requested_detail_value = "full" if verbose_value is True else "compact"
+    else:
+        requested_detail_value = _resolve_requested_detail_value(source)
     return OutputContractState(
         detail=normalize_output_detail(
             requested_detail_value,
             default=default_detail,
             aliases=aliases,
         ),
-        shape_detail=_resolve_output_detail_value(
-            detail=requested_detail_value,
-            verbose=explicit_transport_verbose,
-            default=default_detail,
-        ),
-        verbose=_resolve_requested_output_verbosity_value(
-            source,
-            detail=detail,
-            verbose=verbose,
-            concise=concise,
-            default=default_verbose,
-        ),
-        transport_verbose=explicit_transport_verbose,
     )
 
 
 def resolve_requested_output_verbosity(source: Any, *, default: bool = False) -> bool:
-    """Resolve shared output verbosity from explicit and legacy detail controls."""
-    return _resolve_requested_output_verbosity_value(source, default=default)
+    """Resolve whether the shared output contract should keep full detail."""
+    return resolve_output_contract(source, default_detail="full" if default else "compact").verbose
 
 
 def ensure_common_meta(
@@ -318,18 +203,18 @@ def ensure_common_meta(
 def apply_output_verbosity(
     result: Any,
     *,
-    verbose: bool = False,
+    detail: str = "compact",
     tool_name: Optional[str] = None,
     mt5_config: Any = None,
 ) -> Any:
-    """Normalize shared verbose-only output sections across transports."""
+    """Normalize shared detail-only output sections across transports."""
     if not isinstance(result, dict):
         return result
 
     out = dict(result)
     out.pop("cli_meta", None)
 
-    if not verbose:
+    if resolve_output_detail(detail=detail) != "full":
         return _strip_verbose_only_fields(out)
 
     return ensure_common_meta(

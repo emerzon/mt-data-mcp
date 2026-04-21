@@ -19,37 +19,37 @@ def test_normalize_output_detail_preserves_summary_mode_aliases() -> None:
     )
 
 
-def test_normalize_output_verbosity_detail_compacts_legacy_summary_aliases() -> None:
+def test_normalize_output_verbosity_detail_is_strict_compact_or_full() -> None:
     assert normalize_output_verbosity_detail(" summary ") == "compact"
     assert normalize_output_verbosity_detail(" Summary_Only ") == "compact"
     assert normalize_output_verbosity_detail(" FULL ") == "full"
 
 
-def test_resolve_requested_output_verbosity_treats_summary_aliases_as_non_verbose() -> None:
+def test_resolve_requested_output_verbosity_tracks_full_detail_only() -> None:
     assert resolve_requested_output_verbosity({"detail": " summary "}) is False
     assert resolve_requested_output_verbosity({"detail": " Summary_Only "}) is False
     assert resolve_requested_output_verbosity({"detail": " full "}) is True
 
 
-def test_resolve_output_contract_separates_shape_from_transport_verbosity() -> None:
+def test_resolve_output_contract_maps_full_detail_to_full_state() -> None:
     state = resolve_output_contract({"detail": "full"})
 
     assert state.detail == "full"
     assert state.shape_detail == "full"
     assert state.verbose is True
-    assert state.transport_verbose is False
+    assert state.transport_verbose is True
 
 
 def test_resolve_output_contract_preserves_tool_specific_detail_aliases() -> None:
     state = resolve_output_contract(
-        {"detail": " summary_only ", "verbose": True},
+        {"detail": " summary_only "},
         aliases={"summary_only": "summary"},
     )
 
     assert state.detail == "summary"
-    assert state.shape_detail == "full"
-    assert state.verbose is True
-    assert state.transport_verbose is True
+    assert state.shape_detail == "compact"
+    assert state.verbose is False
+    assert state.transport_verbose is False
 
 
 def test_ensure_common_meta_adds_tool_and_runtime_timezone() -> None:

@@ -448,13 +448,12 @@ def _summarize_upcoming_holiday(entry: Any) -> Any:
 def normalize_market_status_output(
     result: Dict[str, Any],
     *,
-    verbose: Optional[bool] = None,
     detail: Any = None,
 ) -> Dict[str, Any]:
     if not isinstance(result, dict):
         return dict(result)
 
-    detail_mode = resolve_output_detail(detail=detail, verbose=verbose)
+    detail_mode = resolve_output_detail(detail=detail)
     out = dict(result)
     if detail_mode == "full":
         return out
@@ -465,7 +464,7 @@ def normalize_market_status_output(
         out["upcoming_holidays_summary"] = [
             _summarize_upcoming_holiday(entry) for entry in upcoming
         ]
-        out["show_all_hint"] = "Use --detail full / --verbose for the upcoming_holidays list."
+        out["show_all_hint"] = "Use --detail full for the full upcoming_holidays list."
     return out
 
 

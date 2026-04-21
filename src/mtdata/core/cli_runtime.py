@@ -324,9 +324,6 @@ def create_command_function(  # noqa: C901
                 )
                 return 1
 
-        output_contract = resolve_output_contract(args)
-        if bool(output_contract.transport_verbose):
-            kwargs["verbose"] = True
         kwargs["__cli_raw"] = True
         if invoke_tool_function is not None:
             result = invoke_tool_function(

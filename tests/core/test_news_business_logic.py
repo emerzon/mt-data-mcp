@@ -13,10 +13,10 @@ def _unwrap(fn):
     return fn
 
 
-def _prepare_news_output(payload, *, verbose: bool):
+def _prepare_news_output(payload, *, detail: str):
     return apply_output_verbosity(
-        normalize_news_output(payload, verbose=verbose),
-        verbose=verbose,
+        normalize_news_output(payload, detail=detail),
+        detail=detail,
         tool_name="news",
     )
 
@@ -130,7 +130,7 @@ def test_news_output_hides_debug_fields_when_not_verbose() -> None:
         "impact_news": [],
     }
 
-    result = _prepare_news_output(payload, verbose=False)
+    result = _prepare_news_output(payload, detail="compact")
 
     assert "instrument" not in result
     assert "sources_used" not in result
@@ -174,7 +174,7 @@ def test_news_output_keeps_debug_fields_when_verbose() -> None:
         "impact_news": [],
     }
 
-    result = _prepare_news_output(payload, verbose=True)
+    result = _prepare_news_output(payload, detail="full")
 
     assert "instrument" in result
     assert "matching" in result
@@ -205,7 +205,7 @@ def test_news_output_derives_relative_time_from_published_at_when_needed() -> No
         "impact_news": [],
     }
 
-    result = _prepare_news_output(payload, verbose=False)
+    result = _prepare_news_output(payload, detail="compact")
 
     item = result["general_news"][0]
     assert item["title"] == "Fed preview"
@@ -237,7 +237,7 @@ def test_news_output_keeps_future_event_time_in_utc() -> None:
         "impact_news": [],
     }
 
-    result = _prepare_news_output(payload, verbose=False)
+    result = _prepare_news_output(payload, detail="compact")
 
     item = result["related_news"][0]
     assert item["title"] == "US CPI (USD)"
@@ -262,7 +262,7 @@ def test_news_output_compaction_is_idempotent() -> None:
         "impact_news": [{"title": "Oil jumps on war fears", "relative_time": "6 hours ago"}],
     }
 
-    result = _prepare_news_output(payload, verbose=False)
+    result = _prepare_news_output(payload, detail="compact")
 
     assert result == payload
 
@@ -293,7 +293,7 @@ def test_news_output_compacts_upcoming_events_bucket() -> None:
         "upcoming_count": 1,
     }
 
-    result = _prepare_news_output(payload, verbose=False)
+    result = _prepare_news_output(payload, detail="compact")
 
     assert "upcoming_count" not in result
     assert result["upcoming_events"] == [
@@ -332,7 +332,7 @@ def test_news_output_compacts_recent_events_bucket() -> None:
         "recent_count": 1,
     }
 
-    result = _prepare_news_output(payload, verbose=False)
+    result = _prepare_news_output(payload, detail="compact")
 
     assert "recent_count" not in result
     assert result["recent_events"] == [
@@ -357,7 +357,7 @@ def test_generic_output_contract_no_longer_special_cases_news() -> None:
         ],
     }
 
-    result = apply_output_verbosity(payload, verbose=False, tool_name="news")
+    result = apply_output_verbosity(payload, detail="compact", tool_name="news")
 
     assert "source_details" in result
     assert result["general_news"][0]["provider"] == "finviz"

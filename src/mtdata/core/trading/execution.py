@@ -163,6 +163,7 @@ def _modify_position(
                 mt5,
                 ticket_candidates=[ticket_id],
                 require_exact_ticket_match=True,
+                allow_alternate_ticket_match=True,
             )
             if position is None or resolved_ticket is None:
                 out = {"error": f"Position {ticket} not found", "checked_scopes": ["positions"]}

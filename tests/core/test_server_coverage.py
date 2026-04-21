@@ -783,7 +783,7 @@ class TestRecordingToolDecorator:
         finally:
             srv._ORIG_TOOL_DECORATOR = original
 
-    def test_wrapped_function_hides_meta_by_default_and_keeps_it_when_verbose(self):
+    def test_wrapped_function_hides_meta_by_default_and_keeps_it_when_detail_is_compact(self):
         import mtdata.core.server as srv
         from mtdata.core._mcp_tools import _TOOL_REGISTRY
 
@@ -792,7 +792,7 @@ class TestRecordingToolDecorator:
             srv._ORIG_TOOL_DECORATOR = lambda *a, **k: (lambda fn: fn)
             dec = srv._recording_tool_decorator()
 
-            def sample_tool():
+            def sample_tool(detail: str = "compact"):
                 return {
                     "value": 1,
                     "meta": {"domain": {"symbol": "EURUSD"}},
@@ -803,16 +803,17 @@ class TestRecordingToolDecorator:
             wrapped = _TOOL_REGISTRY["sample_tool"]
             sig = inspect.signature(wrapped)
 
-            assert "verbose" in sig.parameters
+            assert "detail" in sig.parameters
+            assert "verbose" not in sig.parameters
 
-            compact = wrapped(__cli_raw=True)
-            verbose = wrapped(__cli_raw=True, verbose=True)
+            compact = wrapped(__cli_raw=True, detail="compact")
+            full = wrapped(__cli_raw=True, detail="full")
 
             assert compact == {"value": 1}
-            assert verbose["value"] == 1
-            assert verbose["meta"]["tool"] == "sample_tool"
-            assert verbose["meta"]["domain"]["symbol"] == "EURUSD"
-            assert verbose["diagnostics"]["source"] == "mt5"
+            assert full["value"] == 1
+            assert full["meta"]["tool"] == "sample_tool"
+            assert full["meta"]["domain"]["symbol"] == "EURUSD"
+            assert full["diagnostics"]["source"] == "mt5"
         finally:
             srv._ORIG_TOOL_DECORATOR = original
 
@@ -834,7 +835,10 @@ class TestRecordingToolDecorator:
 
             dec(sample_tool)
             wrapped = _TOOL_REGISTRY["sample_tool"]
+            sig = inspect.signature(wrapped)
 
+            assert "detail" in sig.parameters
+            assert "verbose" not in sig.parameters
             compact = wrapped(__cli_raw=True, detail="compact")
             full = wrapped(__cli_raw=True, detail="full")
 
@@ -895,7 +899,7 @@ class TestRecordingToolDecorator:
 
             assert "args" not in sig.parameters
             assert "foo" in sig.parameters
-            assert "verbose" in sig.parameters
+            assert "verbose" not in sig.parameters
 
             result = wrapped("legacy", foo="y", __cli_raw=True)
             assert result["foo"] == "y"
@@ -930,7 +934,7 @@ class TestRecordingToolDecorator:
             assert "symbol" in sig.parameters
             assert "timeframe" in sig.parameters
             assert "poll_interval_seconds" in sig.parameters
-            assert "verbose" in sig.parameters
+            assert "verbose" not in sig.parameters
 
             flat_result = wrapped(
                 __cli_raw=True,

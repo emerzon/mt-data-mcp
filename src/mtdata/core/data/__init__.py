@@ -468,6 +468,10 @@ def data_fetch_candles(
     
     timeframe : str, optional (default="H1")
         Candle timeframe: "M1", "M5", "M15", "M30", "H1", "H4", "D1", "W1", "MN1"
+
+    detail : {"compact", "full"}, optional
+        Response detail level. `compact` (default) strips runtime diagnostics,
+        while `full` preserves the existing `meta` diagnostics block.
     
     limit : int, optional (default=200)
         Maximum number of candles to return
@@ -533,6 +537,7 @@ def data_fetch_candles(
         operation="data_fetch_candles",
         symbol=request.symbol,
         timeframe=request.timeframe,
+        detail=request.detail,
         limit=request.limit,
         func=lambda: run_data_fetch_candles(
             request,

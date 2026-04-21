@@ -751,7 +751,7 @@ class TestFormatResultMinimal:
                 "markets_affected": ["NYSE"],
             },
         ]
-        assert compact["show_all_hint"] == "Use --detail full / --verbose for the upcoming_holidays list."
+        assert compact["show_all_hint"] == "Use --detail full for the full upcoming_holidays list."
         # Verbose mode leaves the payload untouched.
         assert _normalize_market_status_payload(
             payload, verbose=True, tool_name="market_status"

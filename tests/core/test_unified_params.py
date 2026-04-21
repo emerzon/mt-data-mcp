@@ -13,12 +13,6 @@ class TestAddGlobalArgsToParser:
         args = parser.parse_args([])
         assert hasattr(args, 'timeframe')
 
-    def test_adds_verbose(self):
-        parser = argparse.ArgumentParser()
-        add_global_args_to_parser(parser)
-        args = parser.parse_args([])
-        assert args.verbose is False
-
     def test_adds_json(self):
         parser = argparse.ArgumentParser()
         add_global_args_to_parser(parser)
@@ -37,12 +31,6 @@ class TestAddGlobalArgsToParser:
         args = parser.parse_args([])
         assert not hasattr(args, 'timeframe')
 
-    def test_exclude_verbose(self):
-        parser = argparse.ArgumentParser()
-        add_global_args_to_parser(parser, exclude_params=['verbose'])
-        args = parser.parse_args([])
-        assert not hasattr(args, 'verbose')
-
     def test_exclude_json(self):
         parser = argparse.ArgumentParser()
         add_global_args_to_parser(parser, exclude_params=['json'])
@@ -54,5 +42,4 @@ class TestAddGlobalArgsToParser:
         add_global_args_to_parser(parser, suppress_defaults=True)
         args = parser.parse_args([])
         assert not hasattr(args, 'timeframe')
-        assert not hasattr(args, 'verbose')
         assert not hasattr(args, 'json')

@@ -146,6 +146,70 @@ class TestDataService(unittest.TestCase):
             [row["time"] for row in result.get("data", [])],
             [rates[0]["time"], rates[1]["time"]],
         )
+
+    @patch('mtdata.services.data_service._mt5_copy_rates_from')
+    @patch('mtdata.services.data_service._symbol_ready_guard', _mock_symbol_ready_guard)
+    def test_fetch_candles_post_ti_denoise_keeps_descriptive_column_names(self, mock_copy_rates):
+        now = datetime.now(timezone.utc)
+        mock_copy_rates.return_value = [
+            {
+                'time': (now - timedelta(hours=10 - i)).timestamp(),
+                'open': 1.10 + i * 0.0001,
+                'high': 1.20 + i * 0.0001,
+                'low': 1.00 + i * 0.0001,
+                'close': 1.15 + i * 0.0001,
+                'tick_volume': 100 + i,
+                'real_volume': 0,
+                'spread': 1,
+            }
+            for i in range(10)
+        ]
+
+        from mtdata.services import data_service as data_service_mod
+
+        captured_headers = []
+        actual_formatter = data_service_mod._format_numeric_rows_from_df
+
+        def capture_formatter(df, headers, *, stringify=True):
+            captured_headers[:] = list(headers)
+            return actual_formatter(df, headers, stringify=stringify)
+
+        def looks_numeric_label(value):
+            try:
+                float(str(value).strip())
+            except Exception:
+                return False
+            return True
+
+        with patch(
+            'mtdata.services.data_service._format_numeric_rows_from_df',
+            side_effect=capture_formatter,
+        ):
+            result = fetch_candles(
+                symbol="EURUSD",
+                timeframe="H1",
+                limit=5,
+                denoise={
+                    "method": "ema",
+                    "when": "post_ti",
+                    "keep_original": True,
+                    "columns": ["close"],
+                    "params": {"span": 3},
+                },
+            )
+
+        self.assertTrue(result.get("success"))
+        self.assertIn("close_dn", captured_headers)
+        self.assertFalse(any(looks_numeric_label(header) for header in captured_headers))
+
+        data = result.get("data") or []
+        self.assertTrue(data)
+        row_keys = list(data[0].keys())
+        self.assertIn("close_dn", row_keys)
+        self.assertFalse(any(looks_numeric_label(key) for key in row_keys))
+        self.assertTrue(
+            any(app.get("added_columns") == ["close_dn"] for app in result.get("denoise", {}).get("applications", []))
+        )
         
     @patch('mtdata.services.data_service._mt5_copy_ticks_range')
     @patch('mtdata.services.data_service._mt5_epoch_to_utc', side_effect=AssertionError("unexpected extra UTC conversion"))

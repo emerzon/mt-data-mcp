@@ -390,7 +390,6 @@ _CLI_DETAIL_DEFAULT_PRESERVE_COMMANDS = frozenset({"symbols_describe"})
 def _default_cli_compact_choice(
     choices: List[str],
     *,
-    verbose: bool,
     cmd_name: Optional[str] = None,
 ) -> Optional[str]:
     by_lower = {
@@ -400,8 +399,6 @@ def _default_cli_compact_choice(
     }
     if "full" not in by_lower:
         return None
-    if verbose:
-        return by_lower["full"]
     if str(cmd_name or "").strip() in _CLI_DETAIL_DEFAULT_PRESERVE_COMMANDS:
         return None
     if "compact" in by_lower:
@@ -428,8 +425,6 @@ def _apply_cli_output_mode_defaults(
 
     func_info = tool.setdefault("_cli_func_info", get_function_info(func))
     _apply_schema_overrides(tool, func_info)
-    verbose = bool(getattr(args, "verbose", False))
-
     for param in func_info.get("params") or []:
         if not isinstance(param, dict):
             continue
@@ -443,7 +438,6 @@ def _apply_cli_output_mode_defaults(
             continue
         selected = _default_cli_compact_choice(
             choices,
-            verbose=verbose,
             cmd_name=command,
         )
         if selected is None:
@@ -1031,12 +1025,6 @@ def _add_forecast_generate_args(cmd_parser: argparse.ArgumentParser) -> None:
 
     group_dbg = cmd_parser.add_argument_group("Debug")
     group_dbg.add_argument(
-        "--verbose",
-        action="store_true",
-        default=False,
-        help=_PARAM_HINTS["verbose"],
-    )
-    group_dbg.add_argument(
         "--print-config",
         action="store_true",
         default=False,
@@ -1147,7 +1135,7 @@ def _build_epilog(functions: Dict[str, ToolInfo]) -> str:
     lines.append(
         '    --features "include=open,high future_covariates=hour,dow,is_holiday" \\'
     )
-    lines.append("    --verbose")
+    lines.append("    --json")
     lines.append("")
     lines.append("  # Rolling backtest for accuracy check")
     lines.append(
@@ -1188,7 +1176,7 @@ _COMMAND_USAGE_EXAMPLES: Dict[str, Tuple[str, Optional[str]]] = {
     ),
     "regime_detect": (
         f"{CLI_PROGRAM} regime_detect BTCUSD --timeframe H1 --method hmm",
-        f"{CLI_PROGRAM} regime_detect BTCUSD --timeframe H1 --method hmm --detail full --verbose",
+        f"{CLI_PROGRAM} regime_detect BTCUSD --timeframe H1 --method hmm --detail full",
     ),
     "trade_risk_analyze": (
         f"{CLI_PROGRAM} trade_risk_analyze --symbol BTCUSD --direction long --desired-risk-pct 1 --proposed-entry 66317 --proposed-sl 65000",
@@ -1235,9 +1223,17 @@ def _format_cli_literal(value: Any) -> Optional[str]:
     if isinstance(value, str):
         return value
     try:
-        return json.dumps(value, allow_nan=False, default=_json_default)
+        dumped = json.dumps(value, allow_nan=False, default=_json_default)
     except Exception:
         return str(value)
+    if dumped.startswith('"') and dumped.endswith('"'):
+        try:
+            unquoted = json.loads(dumped)
+        except Exception:
+            return dumped
+        if isinstance(unquoted, str):
+            return unquoted
+    return dumped
 
 
 def _quote_cli_value(text: str) -> str:
@@ -1537,7 +1533,7 @@ def main():
             color=_argparse_color_enabled(),
         )
         # Add global parameters to each subparser, excluding any that conflict
-        exclude_globals = ["symbol", "timeframe", "verbose"]  # handled manually
+        exclude_globals = ["symbol", "timeframe"]
         add_global_args_to_parser(
             cmd_parser, exclude_params=exclude_globals, suppress_defaults=True
         )
@@ -1675,7 +1671,7 @@ def main():
         parser.print_help()
         return 1
 
-    _configure_cli_logging(verbose=bool(getattr(args, "verbose", False)))
+    _configure_cli_logging(verbose=resolve_output_contract(args).verbose)
 
     try:
         status = args.func(args)

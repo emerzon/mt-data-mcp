@@ -60,13 +60,14 @@ Structured output for programmatic use:
 mtdata-cli symbols_list --limit 5 --json
 ```
 
-### Verbose
-Include additional metadata:
+### Full Detail
+For commands that expose a `--detail` flag, request the richer contract:
 ```bash
-mtdata-cli forecast_generate EURUSD --horizon 12 --verbose
+mtdata-cli market_status --detail full
 ```
 
-Tip: with `--json`, `--verbose` also adds `cli_meta` (including timezone hints) to many tool results.
+Use `compact` (default) for lean output and `full` when you need runtime
+metadata, diagnostics, or echoed request context.
 
 ---
 

@@ -48,7 +48,7 @@ PARAM_HINTS = {
         "price_change_pct, tick_volume, rsi, or spread_pct."
     ),
     "return_mode": "Return calculation mode: pct or log.",
-    "detail": "Detail level for this tool (compact/summary/full, when supported).",
+    "detail": "Detail level for this tool (compact/full, when supported).",
     "format": "Output format or shape for this tool (for example toon/markdown or summary/stats/rows).",
     "ohlcv": "OHLCV column selector (e.g. 'close', 'high,low').",
     "indicators": "Indicators as compact specs like 'rsi_14', 'rsi(length=14)', 'macd(12,26,9)', or 'macd(fast=12,slow=26,signal=9)', or JSON like '[{\"name\":\"rsi\",\"params\":{\"length\":14}}]'. Bare names such as 'rsi' are also accepted.",

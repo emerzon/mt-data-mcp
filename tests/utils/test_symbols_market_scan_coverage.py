@@ -409,11 +409,17 @@ class TestMarketScan:
         )
 
         assert result["success"] is True
-        assert result["matched_symbols"] == 1
-        assert result["filtered_out_symbols"] == 1
-        assert result["data"][0]["symbol"] == "EURUSD"
-        assert result["data"][0]["rsi"] == 100.0
-        assert result["data"][0]["sma_value"] == 5.0
+        assert result["summary"]["counts"]["matched_symbols"] == 1
+        assert result["summary"]["counts"]["filtered_out_symbols"] == 1
+        assert result["data"]["table"]["columns"][0] == "symbol"
+        assert result["data"]["table"]["row_count"] == 1
+        assert result["data"]["table"]["rows"][0]["symbol"] == "EURUSD"
+        assert result["data"]["table"]["rows"][0]["rsi"] == 100.0
+        assert result["data"]["table"]["rows"][0]["sma_value"] == 5.0
+        assert result["meta"]["request"]["timeframe"] == "H1"
+        assert result["meta"]["request"]["rank_by"] == "abs_price_change_pct"
+        assert result["meta"]["stats"]["matched_symbols"] == 1
+        assert "matched_symbols" not in result
 
     @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
     @patch("mtdata.core.symbols._symbol_ready_guard", side_effect=_ready_guard_ok)
@@ -446,9 +452,10 @@ class TestMarketScan:
         result = fn(group="Forex\\Majors", universe="all", lookback=4, min_tick_volume=50)
 
         assert result["success"] is True
-        assert result["scope"] == "group"
-        assert result["scanned_symbols"] == 2
-        assert result["matched_symbols"] == 2
+        assert result["meta"]["request"]["scope"] == "group"
+        assert result["summary"]["counts"]["scanned_symbols"] == 2
+        assert result["summary"]["counts"]["matched_symbols"] == 2
+        assert result["meta"]["stats"]["scanned_symbols"] == 2
         mock_ready_guard.assert_called_once_with("USDJPY", info_before=hidden_symbol)
 
     @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
@@ -470,9 +477,10 @@ class TestMarketScan:
         result = fn(lookback=4, min_price_change_pct=50.0)
 
         assert result["success"] is True
-        assert result["no_action"] is True
-        assert result["matched_symbols"] == 0
+        assert result["summary"]["empty"] is True
+        assert result["summary"]["counts"]["matched_symbols"] == 0
         assert result["message"] == "No symbols matched the requested market scan filters."
+        assert "no_action" not in result
 
     @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
     @patch("mtdata.core.symbols.mt5.symbols_get")
@@ -485,8 +493,10 @@ class TestMarketScan:
         fn = _get_market_scan()
         result = fn(group="Forex")
 
-        assert "error" in result
+        assert result["success"] is False
         assert "Ambiguous group" in result["error"]
+        assert result["error_code"] == "symbol_group_error"
+        assert result["meta"]["tool"] == "market_scan"
 
     @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
     @patch("mtdata.core.symbols.mt5.symbol_info_tick", return_value=None)
@@ -506,5 +516,5 @@ class TestMarketScan:
         result = fn(group="Forex\\Majors", lookback=4)
 
         assert result["success"] is True
-        assert result["scope"] == "group"
-        assert [row["symbol"] for row in result["skipped_examples"]] == ["EURUSD", "usdjpy"]
+        assert result["meta"]["request"]["scope"] == "group"
+        assert [row["symbol"] for row in result["meta"]["stats"]["skipped_examples"]] == ["EURUSD", "usdjpy"]

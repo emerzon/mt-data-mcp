@@ -568,10 +568,11 @@ def _prepare_cli_payload(result: Any, *, fmt: str, verbose: bool, cmd_name: str)
 
 
 def _attach_cli_meta(result: Any, *, cmd_name: str, verbose: bool) -> Any:
+    detail = "full" if verbose else "compact"
     if cmd_name == "news" and isinstance(result, dict):
         from .news import normalize_news_output
 
-        result = normalize_news_output(result, verbose=verbose)
+        result = normalize_news_output(result, detail=detail)
     elif cmd_name == "market_ticker" and isinstance(result, dict):
         meta = result.get("meta")
         diagnostics = meta.get("diagnostics") if isinstance(meta, dict) else None
@@ -579,4 +580,4 @@ def _attach_cli_meta(result: Any, *, cmd_name: str, verbose: bool) -> Any:
             normalized = dict(result)
             normalized["diagnostics"] = dict(diagnostics)
             result = normalized
-    return apply_output_verbosity(result, tool_name=cmd_name, verbose=verbose)
+    return apply_output_verbosity(result, tool_name=cmd_name, detail=detail)

@@ -223,25 +223,28 @@ def normalize_trade_history_output(
 ) -> Dict[str, Any]:
     """Normalize trade history into the standard trade read envelope."""
     out = _normalize_trade_read_output(rows, request=request, kind="trade_history")
-    history_kind = getattr(request, "history_kind", None)
-    if history_kind is not None:
-        out["history_kind"] = history_kind
-    for field in (
-        "start",
-        "end",
-        "side",
-        "minutes_back",
-        "position_ticket",
-        "deal_ticket",
-        "order_ticket",
-    ):
-        value = getattr(request, field, None)
-        if value is not None:
-            if field == "side":
-                normalized_side, _ = validation._normalize_trade_side_filter(value)
-                out[field] = normalized_side or value
-            else:
-                out[field] = value
+    if _include_trade_read_request_metadata(request):
+        history_kind = getattr(request, "history_kind", None)
+        if history_kind is not None:
+            out["history_kind"] = history_kind
+        for field in (
+            "start",
+            "end",
+            "side",
+            "minutes_back",
+            "position_ticket",
+            "deal_ticket",
+            "order_ticket",
+        ):
+            value = getattr(request, field, None)
+            if value is not None:
+                if field == "side":
+                    normalized_side, _ = validation._normalize_trade_side_filter(value)
+                    out[field] = normalized_side or value
+                else:
+                    out[field] = value
+    elif getattr(request, "history_kind", None) is not None:
+        out["history_kind"] = getattr(request, "history_kind")
     return out
 
 
@@ -349,6 +352,7 @@ def _resolve_open_position(
     volume: Optional[float] = None,
     magic: Optional[int] = None,
     require_exact_ticket_match: bool = False,
+    allow_alternate_ticket_match: bool = False,
 ) -> Tuple[Optional[Any], Optional[int], Dict[str, Any]]:
     """Resolve an open position robustly across ticket/identifier mismatches."""
     candidate_ids: List[int] = []
@@ -412,7 +416,11 @@ def _resolve_open_position(
     if candidate_ids:
         for pos in rows_list:
             for field, value in _position_ticket_fields(pos).items():
-                if require_exact_ticket_match and field != "ticket":
+                if (
+                    require_exact_ticket_match
+                    and not allow_alternate_ticket_match
+                    and field != "ticket"
+                ):
                     continue
                 if value in candidate_ids:
                     exact_matches.append((pos, field, value))

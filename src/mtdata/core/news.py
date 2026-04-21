@@ -169,13 +169,12 @@ def _strip_news_compact_item_fields(value: Any, *, bucket_name: Optional[str] = 
 def normalize_news_output(
     result: Dict[str, Any],
     *,
-    verbose: Optional[bool] = None,
     detail: Any = None,
 ) -> Dict[str, Any]:
     if not isinstance(result, dict):
         return dict(result)
 
-    detail_mode = resolve_output_detail(detail=detail, verbose=verbose)
+    detail_mode = resolve_output_detail(detail=detail)
     if detail_mode == "full":
         return dict(result)
 

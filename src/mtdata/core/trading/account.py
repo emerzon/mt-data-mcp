@@ -517,11 +517,17 @@ def trade_account_info(
 
 @mcp.tool()
 def trade_history(request: TradeHistoryRequest) -> Dict[str, Any]:
-    """Get deal or order history as tabular data."""
+    """Get deal or order history as tabular data.
+
+    Use `detail="compact"` (default) to suppress echoed request filters while
+    keeping the standard trade-history envelope. Use `detail="full"` to retain
+    the request echo fields.
+    """
     return run_logged_operation(
         logger,
         operation="trade_history",
         history_kind=request.history_kind,
+        detail=request.detail,
         symbol=request.symbol,
         limit=request.limit,
         func=lambda: _run_trade_history_request(request),

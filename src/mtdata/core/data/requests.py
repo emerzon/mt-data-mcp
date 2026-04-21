@@ -303,6 +303,7 @@ IndicatorSpecsInput = Annotated[
 class DataFetchCandlesRequest(BaseModel):
     symbol: str
     timeframe: TimeframeLiteral = "H1"
+    detail: Literal["compact", "full"] = "compact"
     limit: int = 200
     start: Optional[str] = None
     end: Optional[str] = None

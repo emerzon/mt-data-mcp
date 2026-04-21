@@ -122,6 +122,38 @@ def test_data_fetch_candles_wrapper_and_use_case_emit_single_finish_event(monkey
     assert len(finish_records) == 1
 
 
+def test_data_fetch_candles_request_defaults_to_compact_detail():
+    request = DataFetchCandlesRequest(symbol="EURUSD")
+
+    assert request.detail == "compact"
+
+
+def test_data_fetch_candles_wrapper_respects_detail_contract(monkeypatch):
+    monkeypatch.setattr(
+        core_data,
+        "run_data_fetch_candles",
+        lambda request, gateway, fetch_candles_impl: {
+            "success": True,
+            "symbol": request.symbol,
+            "data": [],
+            "meta": {"diagnostics": {"query": {"requested_bars": request.limit}}},
+        },
+    )
+
+    compact = core_data.data_fetch_candles(
+        request=DataFetchCandlesRequest(symbol="EURUSD", detail="compact"),
+        __cli_raw=True,
+    )
+    full = core_data.data_fetch_candles(
+        request=DataFetchCandlesRequest(symbol="EURUSD", detail="full"),
+        __cli_raw=True,
+    )
+
+    assert "meta" not in compact
+    assert full["meta"]["tool"] == "data_fetch_candles"
+    assert full["meta"]["diagnostics"]["query"]["requested_bars"] == 200
+
+
 def test_data_fetch_ticks_request_rejects_removed_output_field():
     with pytest.raises(ValidationError, match="output was removed; use format"):
         DataFetchTicksRequest(symbol="EURUSD", output="rows")
