@@ -145,6 +145,8 @@ class ForecastCallContext:
     target_series: pd.Series
     exog_used: Optional[np.ndarray]
     future_exog: Optional[np.ndarray]
+    features: Optional[Dict[str, Any]] = None
+    feature_info: Optional[Dict[str, Any]] = None
 
 class ForecastMethod(ABC):
     """Abstract base class for all forecasting methods."""

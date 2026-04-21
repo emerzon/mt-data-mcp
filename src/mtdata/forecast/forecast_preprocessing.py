@@ -621,6 +621,9 @@ def prepare_features(
             else:
                 exog_future_arr = np.hstack([exog_future_arr, cal_future])
 
+    feat_info["include_columns"] = list(include_cols)
+    feat_info["indicator_columns"] = list(ti_cols)
+    feat_info["calendar_columns"] = list(cal_cols)
     feat_info["selected_columns"] = selected_feature_names + cal_cols
     feat_info["n_features"] = int(exog_train_arr.shape[1]) if exog_train_arr is not None else 0
     return exog_train_arr, exog_future_arr, feat_info

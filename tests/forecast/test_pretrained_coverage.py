@@ -63,6 +63,40 @@ class _FakePipeline:
     def from_pretrained(cls, model_name, device_map=None):
         return cls()
 
+    def predict_df(
+        self,
+        df,
+        future_df=None,
+        prediction_length=10,
+        quantile_levels=None,
+        id_column="item_id",
+        timestamp_column="timestamp",
+        target="target",
+        validate_inputs=True,
+        **kwargs,
+    ):
+        h = int(prediction_length)
+        targets = [target] if isinstance(target, str) else list(target)
+        q_levels = [float(q) for q in (quantile_levels or [0.5])]
+        if future_df is not None and timestamp_column in future_df.columns:
+            ts_vals = list(future_df[timestamp_column])
+        else:
+            ts_vals = list(range(h))
+        rows = []
+        for tgt in targets:
+            for idx in range(h):
+                row = {
+                    id_column: "series_0",
+                    timestamp_column: ts_vals[idx] if idx < len(ts_vals) else idx,
+                    "target_name": str(tgt),
+                    "predictions": float(idx + 1),
+                }
+                for q in q_levels:
+                    row[str(q)] = float(idx + 1 + q)
+                    row[f"{q:g}"] = float(idx + 1 + q)
+                rows.append(row)
+        return pd.DataFrame(rows)
+
     def predict_quantiles(self, ctx, prediction_length=10, quantile_levels=None, **kw):
         h = prediction_length
         n_q = len(quantile_levels) if quantile_levels else 1
@@ -183,7 +217,14 @@ from mtdata.forecast.methods.pretrained import (
     LagLlamaMethod,
     PretrainedMethod,
     TimesFMMethod,
+    _extract_chronos2_predict_df_output,
+    _build_chronos_inputs,
+    _ensure_chronos2_history_df,
+    _is_chronos2_pipeline,
     _load_chronos_pipeline,
+    _resolve_chronos2_multivariate_columns,
+    _unwrap_chronos_predict,
+    _unwrap_chronos_quantiles,
     _resolve_chronos_model_defaults,
     _resolve_chronos_device_map,
     _stringify_exception_chain,
@@ -415,6 +456,100 @@ def test_resolve_chronos_model_defaults_uses_bolt_for_chronos_bolt():
     model_name, order = _resolve_chronos_model_defaults("chronos_bolt", {})
     assert model_name == "amazon/chronos-bolt-base"
     assert order == ("ChronosBoltPipeline",)
+
+
+def test_is_chronos2_pipeline_matches_name_or_model() -> None:
+    assert _is_chronos2_pipeline("Chronos2Pipeline", "anything") is True
+    assert _is_chronos2_pipeline(None, "amazon/chronos-2") is True
+    assert _is_chronos2_pipeline("ChronosPipeline", "amazon/chronos-t5-small") is False
+
+
+@pytest.mark.usefixtures("_with_torch_stubs")
+def test_build_chronos_inputs_uses_list_for_chronos2() -> None:
+    built = _build_chronos_inputs(np.array([1.0, 2.0, 3.0]), None, "Chronos2Pipeline", "amazon/chronos-2", _torch)
+    assert isinstance(built, list)
+    assert len(built) == 1
+
+
+@pytest.mark.usefixtures("_with_torch_stubs")
+def test_build_chronos_inputs_keeps_tensor_for_legacy_chronos() -> None:
+    built = _build_chronos_inputs(np.array([1.0, 2.0, 3.0]), None, "ChronosPipeline", "amazon/chronos-t5-small", _torch)
+    assert isinstance(built, _FakeTensor)
+
+
+@pytest.mark.usefixtures("_with_torch_stubs")
+def test_unwrap_chronos2_quantiles_accepts_list_outputs() -> None:
+    q_np, mean_np = _unwrap_chronos_quantiles(
+        [_FakeTensor(np.ones((1, 5, 2)))],
+        [_FakeTensor(np.arange(5, dtype=float).reshape(1, 5))],
+        model_name="amazon/chronos-2",
+        pipe_name="Chronos2Pipeline",
+    )
+    assert q_np.shape == (5, 2)
+    assert mean_np.shape == (5,)
+
+
+@pytest.mark.usefixtures("_with_torch_stubs")
+def test_unwrap_chronos2_predict_accepts_list_outputs() -> None:
+    f_np = _unwrap_chronos_predict(
+        [_FakeTensor(np.arange(5, dtype=float).reshape(1, 5))],
+        model_name="amazon/chronos-2",
+        pipe_name="Chronos2Pipeline",
+    )
+    assert f_np.shape == (5,)
+
+
+def test_resolve_chronos2_multivariate_columns_uses_include_and_tis_when_enabled() -> None:
+    history = pd.DataFrame(
+        {
+            "time": [1.0, 2.0, 3.0, 4.0],
+            "close": [10.0, 11.0, 12.0, 13.0],
+            "open": [9.0, 10.0, 11.0, 12.0],
+            "rsi_14": [50.0, 51.0, 52.0, 53.0],
+        }
+    )
+    cols = _resolve_chronos2_multivariate_columns(
+        history,
+        "close",
+        {"chronos2_multivariate": True},
+        {"include_columns": ["open"], "indicator_columns": ["rsi_14"]},
+    )
+    assert cols == ["close", "open", "rsi_14"]
+
+
+def test_resolve_chronos2_multivariate_columns_defaults_to_base_when_disabled() -> None:
+    history = pd.DataFrame({"time": [1.0, 2.0, 3.0], "close": [1.0, 2.0, 3.0], "open": [1.0, 2.0, 3.0]})
+    cols = _resolve_chronos2_multivariate_columns(
+        history,
+        "close",
+        {},
+        {"include_columns": ["open"], "indicator_columns": []},
+    )
+    assert cols == ["close"]
+
+
+def test_ensure_chronos2_history_df_injects_missing_base_column() -> None:
+    history = pd.DataFrame({"time": [1.0, 2.0, 3.0], "close": [10.0, 11.0, 12.0]})
+    series = pd.Series([0.1, 0.2, 0.3], index=history.index, name="__log_return")
+    frame = _ensure_chronos2_history_df(history, series=series, base_col="__log_return", timeframe="H1")
+    assert "__log_return" in frame.columns
+    assert frame["__log_return"].tolist() == [0.1, 0.2, 0.3]
+
+
+def test_extract_chronos2_predict_df_output_returns_primary_and_multivariate_metadata() -> None:
+    pred_df = pd.DataFrame(
+        {
+            "item_id": ["series_0"] * 4,
+            "timestamp": [1, 2, 1, 2],
+            "target_name": ["close", "close", "rsi_14", "rsi_14"],
+            "predictions": [10.0, 11.0, 50.0, 51.0],
+            "0.5": [10.5, 11.5, 50.5, 51.5],
+        }
+    )
+    f_vals, fq, meta = _extract_chronos2_predict_df_output(pred_df, primary_target="close", quantile_levels=[0.5])
+    assert f_vals.tolist() == [10.0, 11.0]
+    assert fq == {"0.5": [10.5, 11.5]}
+    assert meta["multivariate_forecasts"]["rsi_14"]["forecast"] == [50.0, 51.0]
 
 
 @pytest.mark.usefixtures("_with_torch_stubs")

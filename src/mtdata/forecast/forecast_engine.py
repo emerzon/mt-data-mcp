@@ -625,6 +625,8 @@ def _run_registered_forecast_method(
     denoise_spec_used: Optional[Any],
     X: Optional[np.ndarray],
     future_exog: Optional[np.ndarray],
+    features: Optional[Dict[str, Any]] = None,
+    feature_info: Optional[Dict[str, Any]] = None,
     async_mode: bool = False,
     model_id: Optional[str] = None,
 ) -> Tuple[np.ndarray, Optional[np.ndarray], Dict[str, Any]]:
@@ -656,6 +658,8 @@ def _run_registered_forecast_method(
         target_series=target_series,
         exog_used=X,
         future_exog=future_exog,
+        features=dict(features) if isinstance(features, dict) else None,
+        feature_info=dict(feature_info) if isinstance(feature_info, dict) else None,
     )
     prepare_call = getattr(forecaster, "prepare_forecast_call", None)
     if callable(prepare_call):
@@ -1046,6 +1050,8 @@ def forecast_engine(  # noqa: C901
                 denoise_spec_used=dn_spec_used,
                 X=X,
                 future_exog=future_exog,
+                features=features,
+                feature_info=feature_info,
                 async_mode=async_mode,
                 model_id=model_id,
             )

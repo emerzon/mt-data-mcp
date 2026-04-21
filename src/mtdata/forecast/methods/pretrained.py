@@ -149,6 +149,393 @@ def _load_chronos_pipeline(
     return pipe, pipe_name
 
 
+def _is_chronos2_pipeline(pipe_name: Optional[str], model_name: str) -> bool:
+    return str(pipe_name or "").strip() == "Chronos2Pipeline" or "chronos-2" in str(model_name).lower()
+
+
+def _truthy(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _coerce_feature_tokens(value: Any) -> List[str]:
+    if isinstance(value, str):
+        return [tok.strip() for tok in value.replace(",", " ").split() if tok.strip()]
+    if isinstance(value, (list, tuple)):
+        return [str(tok).strip() for tok in value if str(tok).strip()]
+    return []
+
+
+def _resolve_chronos2_multivariate_columns(
+    history_df: Optional[pd.DataFrame],
+    base_col: str,
+    features_cfg: Optional[Dict[str, Any]],
+    feature_info: Optional[Dict[str, Any]],
+) -> List[str]:
+    if history_df is None or history_df.empty:
+        return [str(base_col or "close")]
+
+    selected: List[str] = []
+    base_name = str(base_col or "close").strip() or "close"
+    selected.append(base_name)
+
+    fcfg = dict(features_cfg or {}) if isinstance(features_cfg, dict) else {}
+    finfo = dict(feature_info or {}) if isinstance(feature_info, dict) else {}
+    explicit_targets = _coerce_feature_tokens(
+        fcfg.get("chronos2_targets")
+        or fcfg.get("multivariate_targets")
+        or fcfg.get("target_columns")
+    )
+    enabled = bool(explicit_targets) or _truthy(fcfg.get("chronos2_multivariate")) or str(fcfg.get("chronos2_mode") or "").strip().lower() in {"multivariate", "multivar", "joint_targets"}
+    if not enabled:
+        return [col for col in selected if col in history_df.columns]
+
+    if explicit_targets:
+        for col in explicit_targets:
+            if col not in selected:
+                selected.append(col)
+    else:
+        for col in list(finfo.get("include_columns") or []):
+            if col not in selected:
+                selected.append(str(col))
+        for col in list(finfo.get("indicator_columns") or []):
+            if col not in selected:
+                selected.append(str(col))
+
+    valid: List[str] = []
+    for col in selected:
+        if col not in history_df.columns:
+            continue
+        try:
+            series = pd.to_numeric(history_df[col], errors="coerce")
+        except Exception:
+            continue
+        if series.notna().sum() < 3:
+            continue
+        valid.append(str(col))
+    return valid or [base_name]
+
+
+def _build_chronos2_covariate_frames(
+    exog_hist: Any,
+    exog_fut: Any,
+    context_len: int,
+    *,
+    feature_info: Optional[Dict[str, Any]] = None,
+    exclude_columns: Optional[List[str]] = None,
+) -> Tuple[Optional[pd.DataFrame], Optional[pd.DataFrame]]:
+    if exog_hist is None:
+        return None, None
+    try:
+        hist_arr = np.asarray(exog_hist, dtype=float)
+    except Exception:
+        return None, None
+    fut_arr = None
+    if exog_fut is not None:
+        try:
+            fut_arr = np.asarray(exog_fut, dtype=float)
+        except Exception:
+            fut_arr = None
+
+    if hist_arr.ndim == 1:
+        hist_arr = hist_arr.reshape(-1, 1)
+    if fut_arr is not None and fut_arr.ndim == 1:
+        fut_arr = fut_arr.reshape(-1, 1)
+    if hist_arr.ndim != 2:
+        return None, None
+    if hist_arr.shape[0] < int(context_len):
+        return None, None
+
+    hist_slice = hist_arr[-int(context_len):, :]
+    feature_names = []
+    if isinstance(feature_info, dict):
+        feature_names = [str(col) for col in list(feature_info.get("selected_columns") or [])]
+    if len(feature_names) != int(hist_slice.shape[1]):
+        feature_names = [f"covariate_{idx}" for idx in range(int(hist_slice.shape[1]))]
+
+    excluded = {str(col) for col in list(exclude_columns or [])}
+    keep_idx = [idx for idx, col in enumerate(feature_names) if str(col) not in excluded]
+    if not keep_idx:
+        return None, None
+
+    kept_cols = [feature_names[idx] for idx in keep_idx]
+    hist_df = pd.DataFrame(hist_slice[:, keep_idx], columns=kept_cols)
+    fut_df: Optional[pd.DataFrame] = None
+    if fut_arr is not None and fut_arr.ndim == 2 and fut_arr.shape[1] == hist_slice.shape[1]:
+        fut_df = pd.DataFrame(fut_arr[:, keep_idx], columns=kept_cols)
+    return hist_df, fut_df
+
+
+def _timeframe_seconds_hint(timeframe: Optional[str]) -> int:
+    token = str(timeframe or "").strip().upper()
+    if token.startswith("MN"):
+        try:
+            return int(token[2:] or 1) * 30 * 24 * 3600
+        except Exception:
+            return 30 * 24 * 3600
+    if token.startswith("W"):
+        try:
+            return int(token[1:] or 1) * 7 * 24 * 3600
+        except Exception:
+            return 7 * 24 * 3600
+    if token.startswith("D"):
+        try:
+            return int(token[1:] or 1) * 24 * 3600
+        except Exception:
+            return 24 * 3600
+    if token.startswith("H"):
+        try:
+            return int(token[1:] or 1) * 3600
+        except Exception:
+            return 3600
+    if token.startswith("M"):
+        try:
+            return int(token[1:] or 1) * 60
+        except Exception:
+            return 60
+    return 3600
+
+
+def _ensure_chronos2_history_df(
+    history_df: Optional[pd.DataFrame],
+    *,
+    series: pd.Series,
+    base_col: str,
+    timeframe: Optional[str],
+) -> pd.DataFrame:
+    base_name = str(base_col or series.name or "target").strip() or "target"
+    if isinstance(history_df, pd.DataFrame) and not history_df.empty and "time" in history_df.columns:
+        frame = history_df.copy()
+        if base_name not in frame.columns:
+            frame[base_name] = np.nan
+            try:
+                frame.loc[series.index, base_name] = pd.to_numeric(series, errors="coerce").astype(float).to_numpy()
+            except Exception:
+                vals = pd.to_numeric(series, errors="coerce").astype(float).to_numpy()
+                frame.iloc[-len(vals):, frame.columns.get_loc(base_name)] = vals
+        return frame
+
+    values = pd.to_numeric(series, errors="coerce").astype(float).to_numpy()
+    step_seconds = _timeframe_seconds_hint(timeframe)
+    epochs = np.arange(len(values), dtype=float) * float(step_seconds)
+    return pd.DataFrame({
+        "time": epochs,
+        base_name: values,
+    })
+
+
+def _build_chronos2_df_inputs(
+    *,
+    history_df: pd.DataFrame,
+    base_col: str,
+    multivariate_cols: List[str],
+    covariate_history: Optional[pd.DataFrame],
+    covariate_future: Optional[pd.DataFrame],
+    horizon: int,
+) -> Tuple[pd.DataFrame, Optional[pd.DataFrame], List[str]]:
+    if history_df.empty or "time" not in history_df.columns:
+        raise RuntimeError("chronos2 error: history_df with time column is required for Chronos-2 inputs")
+
+    frame = history_df.copy().reset_index(drop=True)
+    target_columns: List[str] = []
+    start_idx = 0
+    for col in multivariate_cols:
+        if col not in frame.columns:
+            continue
+        numeric = pd.to_numeric(frame[col], errors="coerce").astype(float)
+        if numeric.notna().sum() < 3:
+            continue
+        first_valid = numeric.first_valid_index()
+        if first_valid is not None:
+            start_idx = max(start_idx, int(first_valid))
+        target_columns.append(str(col))
+
+    if base_col not in target_columns and base_col in frame.columns:
+        target_columns.insert(0, str(base_col))
+    if not target_columns:
+        raise RuntimeError("chronos2 error: no valid multivariate target columns available")
+
+    frame = frame.iloc[start_idx:].copy().reset_index(drop=True)
+    for col in target_columns:
+        frame[col] = pd.to_numeric(frame[col], errors="coerce").astype(float).ffill().bfill()
+
+    if covariate_history is not None and not covariate_history.empty:
+        covariate_history = covariate_history.iloc[start_idx:].copy().reset_index(drop=True)
+        for col in covariate_history.columns:
+            covariate_history[col] = pd.to_numeric(covariate_history[col], errors="coerce").astype(float).ffill().bfill()
+
+    timestamps = pd.to_datetime(frame["time"].astype(float).to_numpy(), unit="s", utc=True)
+    context_df = pd.DataFrame({
+        "item_id": np.repeat("series_0", len(frame)),
+        "timestamp": timestamps,
+    })
+    for col in multivariate_cols:
+        if col not in frame.columns:
+            continue
+        values = pd.to_numeric(frame[col], errors="coerce").astype(float)
+        context_df[str(col)] = values.to_numpy()
+
+    if base_col in frame.columns:
+        context_df[str(base_col)] = pd.to_numeric(frame[base_col], errors="coerce").astype(float).to_numpy()
+
+    future_df: Optional[pd.DataFrame] = None
+    if covariate_history is not None and covariate_future is not None and not covariate_history.empty:
+        for col in covariate_history.columns:
+            context_df[str(col)] = pd.to_numeric(covariate_history[col], errors="coerce").astype(float).to_numpy()
+
+        if len(timestamps) >= 2:
+            delta = timestamps[-1] - timestamps[-2]
+        else:
+            delta = pd.Timedelta(hours=1)
+        future_times = [timestamps[-1] + delta * (idx + 1) for idx in range(int(horizon))]
+        future_df = pd.DataFrame({
+            "item_id": np.repeat("series_0", int(horizon)),
+            "timestamp": future_times,
+        })
+        for col in covariate_future.columns:
+            future_df[str(col)] = pd.to_numeric(covariate_future[col], errors="coerce").astype(float).to_numpy()
+
+    return context_df, future_df, target_columns
+
+
+def _extract_chronos2_predict_df_output(
+    pred_df: pd.DataFrame,
+    *,
+    primary_target: str,
+    quantile_levels: List[float],
+) -> Tuple[np.ndarray, Dict[str, List[float]], Dict[str, Any]]:
+    if pred_df.empty or "target_name" not in pred_df.columns or "predictions" not in pred_df.columns:
+        raise RuntimeError("chronos2 error: predict_df returned an unexpected dataframe")
+
+    frame = pred_df.copy()
+    frame["target_name"] = frame["target_name"].astype(str)
+    try:
+        frame = frame.sort_values(["target_name", "timestamp"])  # type: ignore[arg-type]
+    except Exception:
+        frame = frame.sort_values(["target_name"])
+
+    target_names = list(dict.fromkeys(frame["target_name"].tolist()))
+    primary = str(primary_target) if str(primary_target) in target_names else str(target_names[0])
+    metadata: Dict[str, Any] = {}
+    if len(target_names) > 1:
+        metadata["multivariate_forecasts"] = {}
+
+    def _extract_rows(target_name: str) -> Tuple[np.ndarray, Dict[str, List[float]]]:
+        rows = frame[frame["target_name"] == str(target_name)]
+        fc = pd.to_numeric(rows["predictions"], errors="coerce").astype(float).to_numpy()
+        qd: Dict[str, List[float]] = {}
+        for q in quantile_levels:
+            key = f"{float(q):g}"
+            col_name = str(q)
+            if col_name not in rows.columns:
+                alt = f"{float(q):g}"
+                col_name = alt if alt in rows.columns else col_name
+            if col_name in rows.columns:
+                qd[key] = pd.to_numeric(rows[col_name], errors="coerce").astype(float).tolist()
+        return fc, qd
+
+    f_vals, fq = _extract_rows(primary)
+    for target_name in target_names:
+        if target_name == primary:
+            continue
+        fc_other, qd_other = _extract_rows(target_name)
+        metadata.setdefault("multivariate_forecasts", {})[target_name] = {
+            "forecast": [float(v) for v in fc_other.tolist()],
+            "quantiles": qd_other,
+        }
+    return f_vals, fq, metadata
+
+
+def _build_chronos_inputs(
+    context: np.ndarray,
+    known_covariates: Optional[Any],
+    pipe_name: Optional[str],
+    model_name: str,
+    torch_module: Any,
+    future_covariates: Optional[pd.DataFrame] = None,
+) -> Any:
+    if _is_chronos2_pipeline(pipe_name, model_name):
+        target = torch_module.tensor(context, dtype=torch_module.float32)
+        if known_covariates is None:
+            return [target]
+
+        covariates_dict: Dict[str, Any] = {}
+        try:
+            if isinstance(known_covariates, pd.DataFrame):
+                cov_arr = known_covariates.to_numpy(dtype=float)
+                cov_cols = [str(col) for col in known_covariates.columns]
+            else:
+                cov_arr = np.asarray(known_covariates, dtype=float)
+                cov_cols = [f"covariate_{idx}" for idx in range(int(cov_arr.shape[1]))] if cov_arr.ndim == 2 else []
+            if cov_arr.ndim == 3 and cov_arr.shape[0] == 1:
+                cov_arr = cov_arr[0]
+            if cov_arr.ndim == 2:
+                for idx, col in enumerate(cov_cols):
+                    covariates_dict[str(col)] = torch_module.tensor(cov_arr[:, idx], dtype=torch_module.float32)
+        except Exception:
+            covariates_dict = {}
+
+        item: Dict[str, Any] = {"target": target}
+        if covariates_dict:
+            item["past_covariates"] = covariates_dict
+            if isinstance(future_covariates, pd.DataFrame) and not future_covariates.empty:
+                future_dict: Dict[str, Any] = {}
+                for col in list(future_covariates.columns):
+                    if str(col) in covariates_dict:
+                        future_dict[str(col)] = torch_module.tensor(
+                            pd.to_numeric(future_covariates[col], errors="coerce").astype(float).to_numpy(),
+                            dtype=torch_module.float32,
+                        )
+                if future_dict:
+                    item["future_covariates"] = future_dict
+        return [item]
+
+    # Keep legacy Chronos/T5 inputs on CPU; Chronos handles device placement internally.
+    return torch_module.tensor(context, dtype=torch_module.float32).unsqueeze(0)
+
+
+def _unwrap_chronos_quantiles(quantiles_tensor: Any, mean_tensor: Any, *, model_name: str, pipe_name: Optional[str]) -> Tuple[np.ndarray, np.ndarray]:
+    if _is_chronos2_pipeline(pipe_name, model_name):
+        if isinstance(quantiles_tensor, list):
+            quantiles_tensor = quantiles_tensor[0] if quantiles_tensor else None
+        if isinstance(mean_tensor, list):
+            mean_tensor = mean_tensor[0] if mean_tensor else None
+        if quantiles_tensor is None or mean_tensor is None:
+            raise RuntimeError("chronos2 error: no quantile forecast produced")
+
+        qf_np = np.asarray(quantiles_tensor.detach().cpu().numpy(), dtype=float)
+        mean_np = np.asarray(mean_tensor.detach().cpu().numpy(), dtype=float)
+        if qf_np.ndim == 3 and qf_np.shape[0] == 1:
+            qf_np = qf_np[0]
+        if mean_np.ndim == 2 and mean_np.shape[0] == 1:
+            mean_np = mean_np[0]
+        return qf_np, mean_np
+
+    qf_np = np.asarray(quantiles_tensor.detach().cpu().numpy(), dtype=float)
+    mean_np = np.asarray(mean_tensor.detach().cpu().numpy(), dtype=float)
+    return qf_np, mean_np
+
+
+def _unwrap_chronos_predict(mean_tensor: Any, *, model_name: str, pipe_name: Optional[str]) -> np.ndarray:
+    if _is_chronos2_pipeline(pipe_name, model_name):
+        if isinstance(mean_tensor, list):
+            mean_tensor = mean_tensor[0] if mean_tensor else None
+        if mean_tensor is None:
+            raise RuntimeError("chronos2 error: no point forecast produced")
+        f_np = np.asarray(mean_tensor.detach().cpu().numpy(), dtype=float)
+        if f_np.ndim == 2 and f_np.shape[0] == 1:
+            f_np = f_np[0]
+        if f_np.ndim == 3 and f_np.shape[0] == 1:
+            # Chronos-2 predict() returns quantile forecasts; use median if present.
+            f_np = f_np[0]
+        return f_np
+
+    return np.asarray(mean_tensor.detach().cpu().numpy(), dtype=float)
+
+
 @ForecastRegistry.register("chronos_bolt")
 @ForecastRegistry.register("chronos2")
 class ChronosBoltMethod(PretrainedMethod):
@@ -184,6 +571,14 @@ class ChronosBoltMethod(PretrainedMethod):
         out_params = dict(params or {})
         if "method_name" not in out_params:
             out_params["method_name"] = str(getattr(context, "method", "") or self.name)
+        if isinstance(getattr(context, "history_df", None), pd.DataFrame):
+            call_kwargs.setdefault("history_df", context.history_df.copy())
+        if getattr(context, "base_col", None) is not None:
+            call_kwargs.setdefault("history_base_col", str(context.base_col))
+        if getattr(context, "features", None) is not None:
+            call_kwargs.setdefault("features", dict(context.features))
+        if getattr(context, "feature_info", None) is not None:
+            call_kwargs.setdefault("feature_info", dict(context.feature_info))
         return out_params, call_kwargs
 
     def forecast(  # noqa: C901
@@ -229,6 +624,7 @@ class ChronosBoltMethod(PretrainedMethod):
         pipe = None
         pipe_name = None
         known_covariates = None
+        future_covariates = None
         ctx_tensor = None
         quantiles_tensor = None
         mean_tensor = None
@@ -245,23 +641,40 @@ class ChronosBoltMethod(PretrainedMethod):
             if exog_fut is None:
                 exog_fut = p.get('exog_future')
 
+            history_df = kwargs.get('history_df')
+            history_base_col = str(kwargs.get('history_base_col') or p.get('base_col') or series.name or 'close').strip() or 'close'
+            features_cfg = kwargs.get('features') if isinstance(kwargs.get('features'), dict) else None
+            feature_info = kwargs.get('feature_info') if isinstance(kwargs.get('feature_info'), dict) else None
+
+            history_frame = _ensure_chronos2_history_df(
+                history_df if isinstance(history_df, pd.DataFrame) else None,
+                series=series,
+                base_col=history_base_col,
+                timeframe=kwargs.get('timeframe') or p.get('timeframe'),
+            )
+
+            multivariate_cols = _resolve_chronos2_multivariate_columns(
+                history_frame,
+                history_base_col,
+                features_cfg,
+                feature_info,
+            )
+            covariate_history = None
+            covariate_future = None
+
             if exog_hist is not None and exog_fut is not None:
                 try:
-                    # Ensure arrays
-                    hist_arr = np.asarray(exog_hist, dtype=float)
-                    fut_arr = np.asarray(exog_fut, dtype=float)
-                    
-                    # Match context length (take last len(context) rows of history)
-                    if len(hist_arr) >= len(context):
-                        hist_slice = hist_arr[-len(context):]
-                        
-                        # Concatenate history + future
-                        if hist_slice.shape[1] == fut_arr.shape[1]:
-                            full_exog = np.vstack([hist_slice, fut_arr])
-                            
-                            # Convert to tensor (1, time, n_feat)
-                            known_covariates = _torch.tensor(full_exog, dtype=_torch.float32).unsqueeze(0)
-                            
+                    covariate_history, covariate_future = _build_chronos2_covariate_frames(
+                        exog_hist,
+                        exog_fut,
+                        len(context),
+                        feature_info=feature_info,
+                        exclude_columns=multivariate_cols,
+                    )
+                    if covariate_history is not None and covariate_future is not None:
+                        full_exog = np.vstack([covariate_history.to_numpy(dtype=float), covariate_future.to_numpy(dtype=float)])
+                        known_covariates = _torch.tensor(full_exog, dtype=_torch.float32).unsqueeze(0)
+                        future_covariates = covariate_future
                 except Exception:
                     # Fallback: ignore covariates on error
                     pass
@@ -272,79 +685,126 @@ class ChronosBoltMethod(PretrainedMethod):
                 effective_device_map,
             )
             
-            # Keep inputs on CPU; Chronos handles its own device placement internally.
-            ctx_tensor = _torch.tensor(context, dtype=_torch.float32).unsqueeze(0)
-
-            fq: Dict[str, List[float]] = {}
-            f_vals: Optional[np.ndarray] = None
-
-            predict_kwargs: Dict[str, Any] = {}
-            if known_covariates is not None:
-                predict_kwargs["known_covariates"] = known_covariates
-
-            if hasattr(pipe, "predict_quantiles"):
-                try:
-                    quantiles_tensor, mean_tensor = pipe.predict_quantiles(
-                        ctx_tensor,
-                        prediction_length=int(horizon),
-                        quantile_levels=[float(q) for q in q_levels],
-                        **predict_kwargs,
-                    )
-                except TypeError:
-                    quantiles_tensor, mean_tensor = pipe.predict_quantiles(
-                        ctx_tensor,
-                        prediction_length=int(horizon),
-                        quantile_levels=[float(q) for q in q_levels],
-                    )
-
-            if quantiles_tensor is None or mean_tensor is None:
-                # Fallback to point prediction only
-                try:
-                    mean_tensor = pipe.predict(ctx_tensor, prediction_length=int(horizon))
-                except Exception as e:
-                    raise RuntimeError(f"Chronos predict failed: {e}")
-
-            if quantiles_tensor is not None:
-                q_np = np.asarray([float(q) for q in q_levels], dtype=float).reshape(-1)
-                qf_np = np.asarray(quantiles_tensor.detach().cpu().numpy(), dtype=float)
-
-                if qf_np.ndim == 3:
-                    qf_np = qf_np[0]
-                elif qf_np.ndim == 2 and qf_np.shape[0] == 1:
-                    qf_np = qf_np[0]
-
-                q_axis = None
-                if qf_np.ndim == 2:
-                    if qf_np.shape[0] == q_np.size:
-                        q_axis = 0
-                    elif qf_np.shape[1] == q_np.size:
-                        q_axis = 1
-                if q_axis is None:
-                    raise RuntimeError(f"chronos2 error: unexpected quantile forecast shape {tuple(qf_np.shape)}")
-
-                for idx, q in enumerate(q_np.tolist()):
-                    if q_axis == 0:
-                        fq[f"{float(q):g}"] = [float(v) for v in qf_np[idx, :].tolist()]
-                    else:
-                        fq[f"{float(q):g}"] = [float(v) for v in qf_np[:, idx].tolist()]
-
-                # Point forecast: prefer explicit mean/median output if provided
-                mean_np = np.asarray(mean_tensor.detach().cpu().numpy(), dtype=float)
-                if mean_np.ndim == 2:
-                    mean_np = mean_np[0]
-                f_vals = adjust_forecast_length(mean_np, int(horizon), "chronos2")
+            if _is_chronos2_pipeline(pipe_name, model_name):
+                context_df, future_df, target_columns = _build_chronos2_df_inputs(
+                    history_df=history_frame,
+                    base_col=history_base_col,
+                    multivariate_cols=multivariate_cols,
+                    covariate_history=covariate_history,
+                    covariate_future=covariate_future,
+                    horizon=int(horizon),
+                )
+                pred_df = pipe.predict_df(
+                    context_df,
+                    future_df=future_df,
+                    prediction_length=int(horizon),
+                    quantile_levels=[float(q) for q in q_levels],
+                    id_column="item_id",
+                    timestamp_column="timestamp",
+                    target=target_columns if len(target_columns) > 1 else target_columns[0],
+                    validate_inputs=False,
+                )
+                f_vals, fq, extra_meta = _extract_chronos2_predict_df_output(
+                    pred_df,
+                    primary_target=history_base_col,
+                    quantile_levels=[float(q) for q in q_levels],
+                )
+                metadata = {"quantiles": fq}
+                metadata.update(extra_meta)
             else:
-                # mean_tensor from predict(); accept either (H,) or (B, H)
-                f_np = np.asarray(mean_tensor.detach().cpu().numpy(), dtype=float)
-                if f_np.ndim == 2:
-                    f_np = f_np[0]
-                f_vals = adjust_forecast_length(f_np, int(horizon), "chronos2")
+                future_df = None
+                target_columns = [history_base_col]
+                ctx_tensor = _build_chronos_inputs(
+                    context,
+                    known_covariates,
+                    pipe_name,
+                    model_name,
+                    _torch,
+                    future_covariates=future_covariates,
+                )
+                metadata = {"quantiles": {}}
+
+            fq: Dict[str, List[float]] = dict(metadata.get("quantiles") or {})
+            f_vals: Optional[np.ndarray] = np.asarray(f_vals, dtype=float) if _is_chronos2_pipeline(pipe_name, model_name) and f_vals is not None else None
+
+            if not _is_chronos2_pipeline(pipe_name, model_name):
+                predict_kwargs: Dict[str, Any] = {}
+                if known_covariates is not None:
+                    predict_kwargs["known_covariates"] = known_covariates
+
+                if hasattr(pipe, "predict_quantiles"):
+                    try:
+                        quantiles_tensor, mean_tensor = pipe.predict_quantiles(
+                            ctx_tensor,
+                            prediction_length=int(horizon),
+                            quantile_levels=[float(q) for q in q_levels],
+                            **predict_kwargs,
+                        )
+                    except TypeError:
+                        quantiles_tensor, mean_tensor = pipe.predict_quantiles(
+                            ctx_tensor,
+                            prediction_length=int(horizon),
+                            quantile_levels=[float(q) for q in q_levels],
+                        )
+
+                if quantiles_tensor is None or mean_tensor is None:
+                    # Fallback to point prediction only
+                    try:
+                        mean_tensor = pipe.predict(ctx_tensor, prediction_length=int(horizon))
+                    except Exception as e:
+                        raise RuntimeError(f"Chronos predict failed: {e}")
+
+                if quantiles_tensor is not None:
+                    q_np = np.asarray([float(q) for q in q_levels], dtype=float).reshape(-1)
+                    qf_np, mean_np = _unwrap_chronos_quantiles(
+                        quantiles_tensor,
+                        mean_tensor,
+                        model_name=model_name,
+                        pipe_name=pipe_name,
+                    )
+
+                    if qf_np.ndim == 3:
+                        qf_np = qf_np[0]
+                    elif qf_np.ndim == 2 and qf_np.shape[0] == 1:
+                        qf_np = qf_np[0]
+
+                    q_axis = None
+                    if qf_np.ndim == 2:
+                        if qf_np.shape[0] == q_np.size:
+                            q_axis = 0
+                        elif qf_np.shape[1] == q_np.size:
+                            q_axis = 1
+                    if q_axis is None:
+                        raise RuntimeError(f"chronos2 error: unexpected quantile forecast shape {tuple(qf_np.shape)}")
+
+                    for idx, q in enumerate(q_np.tolist()):
+                        if q_axis == 0:
+                            fq[f"{float(q):g}"] = [float(v) for v in qf_np[idx, :].tolist()]
+                        else:
+                            fq[f"{float(q):g}"] = [float(v) for v in qf_np[:, idx].tolist()]
+
+                    # Point forecast: prefer explicit mean/median output if provided
+                    if mean_np.ndim == 2:
+                        mean_np = mean_np[0]
+                    f_vals = adjust_forecast_length(mean_np, int(horizon), "chronos2")
+                else:
+                    # mean_tensor from predict(); accept either (H,) or (B, H)
+                    f_np = _unwrap_chronos_predict(
+                        mean_tensor,
+                        model_name=model_name,
+                        pipe_name=pipe_name,
+                    )
+                    if f_np.ndim == 2:
+                        f_np = f_np[0]
+                    f_vals = adjust_forecast_length(f_np, int(horizon), "chronos2")
 
             params_used = build_params_used(
                 {'model_name': model_name, 'device_map': effective_device_map, 'pipeline': pipe_name},
                 quantiles_dict=fq,
                 context_length=ctx_len if ctx_len else n
             )
+            if _is_chronos2_pipeline(pipe_name, model_name):
+                params_used['multivariate_targets'] = list(target_columns)
             
             if known_covariates is not None:
                 params_used['covariates_used'] = True
@@ -353,7 +813,7 @@ class ChronosBoltMethod(PretrainedMethod):
             if f_vals is None:
                 raise RuntimeError("chronos2 error: no point forecast produced")
                 
-            return ForecastResult(forecast=f_vals, params_used=params_used, metadata={"quantiles": fq})
+            return ForecastResult(forecast=f_vals, params_used=params_used, metadata=metadata)
             
         except Exception as ex:
             raise RuntimeError(f"chronos2 error ({type(ex).__name__}): {ex!r}") from ex
