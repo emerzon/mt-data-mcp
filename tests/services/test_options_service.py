@@ -3,6 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import pytest
 import requests
 
 from mtdata.services import options_service as osvc
@@ -237,3 +238,61 @@ def test_get_yahoo_session_delegates_to_builder(monkeypatch):
     assert first is second
     assert calls["built"] == 1
     assert isinstance(first, FakeSession)
+
+
+def test_fetch_yahoo_options_payload_sanitizes_401_errors(monkeypatch):
+    """Verify that 401 errors don't expose API URLs to users."""
+    response = MagicMock()
+    response.status_code = 401
+    response.headers = {}
+
+    # Create an HTTPError that mimics what requests raises with full URL
+    http_error = requests.exceptions.HTTPError(
+        "401 Client Error: Unauthorized for url: https://query2.finance.yahoo.com/v7/finance/options/AAPL"
+    )
+    response.raise_for_status.side_effect = http_error
+    response.close = lambda: None
+
+    session = MagicMock()
+    session.get.return_value = response
+
+    monkeypatch.setattr(osvc, "_get_yahoo_session", lambda: session)
+    monkeypatch.setattr(osvc, "_throttle_yahoo_request", lambda: None)
+
+    with pytest.raises(ValueError) as exc_info:
+        osvc._fetch_yahoo_options_payload("AAPL")
+
+    error_msg = str(exc_info.value)
+    # Verify the error message is sanitized (no URL exposed)
+    assert "query2.finance.yahoo.com" not in error_msg
+    # Verify the error explains what happened
+    assert "401" in error_msg or "Unauthorized" in error_msg
+    # Verify the error is helpful
+    assert "Authentication error" in error_msg
+
+
+def test_get_options_expirations_handles_401_gracefully(monkeypatch):
+    """Verify that 401 errors are handled gracefully in get_options_expirations."""
+    response = MagicMock()
+    response.status_code = 401
+    response.headers = {}
+    http_error = requests.exceptions.HTTPError(
+        "401 Client Error: Unauthorized for url: https://query2.finance.yahoo.com/v7/finance/options/AAPL"
+    )
+    response.raise_for_status.side_effect = http_error
+    response.close = lambda: None
+
+    session = MagicMock()
+    session.get.return_value = response
+
+    monkeypatch.setattr(osvc, "_get_yahoo_session", lambda: session)
+    monkeypatch.setattr(osvc, "_throttle_yahoo_request", lambda: None)
+
+    result = osvc.get_options_expirations("AAPL")
+
+    # Verify error is returned (not raised)
+    assert "error" in result
+    # Verify no URL is exposed
+    assert "query2.finance.yahoo.com" not in result["error"]
+    # Verify it mentions 401/auth
+    assert "401" in result["error"] or "Unauthorized" in result["error"]

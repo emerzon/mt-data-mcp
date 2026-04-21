@@ -145,7 +145,17 @@ def _fetch_yahoo_options_payload(symbol: str, expiry_epoch: Optional[int] = None
     url = _YAHOO_OPTIONS_URL.format(symbol=str(symbol).upper().strip())
     response = _yahoo_http_get(url, params=params, headers=dict(_YAHOO_HEADERS))
     try:
-        response.raise_for_status()
+        try:
+            response.raise_for_status()
+        except requests.exceptions.HTTPError as http_err:
+            # Sanitize 401 errors to avoid exposing API URLs to users
+            if response.status_code == 401:
+                raise ValueError(
+                    "Authentication error: Yahoo Finance API returned 401 Unauthorized. "
+                    "This may be temporary or require API key configuration."
+                )
+            # For other HTTP errors, re-raise as-is
+            raise
         data = response.json()
     finally:
         response.close()

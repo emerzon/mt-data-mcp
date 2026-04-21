@@ -29,12 +29,20 @@ def _normalize_trade_direction_alias(value: Optional[str]) -> Optional[str]:
 
 
 class TradePlaceRequest(BaseModel):
+    model_config = {"populate_by_name": True}
+
     symbol: Optional[str] = None
     volume: Optional[float] = None
     order_type: Optional[OrderTypeInput] = None
     price: Optional[Union[int, float]] = None
-    stop_loss: Optional[Union[int, float]] = None
-    take_profit: Optional[Union[int, float]] = None
+    stop_loss: Optional[Union[int, float]] = Field(
+        default=None,
+        validation_alias="sl",
+    )
+    take_profit: Optional[Union[int, float]] = Field(
+        default=None,
+        validation_alias="tp",
+    )
     expiration: Optional[ExpirationValue] = None
     comment: Optional[str] = None
     deviation: int = 20
@@ -58,10 +66,18 @@ class TradePlaceRequest(BaseModel):
 
 
 class TradeModifyRequest(BaseModel):
+    model_config = {"populate_by_name": True}
+
     ticket: Union[int, str]
     price: Optional[Union[int, float]] = None
-    stop_loss: Optional[Union[int, float]] = None
-    take_profit: Optional[Union[int, float]] = None
+    stop_loss: Optional[Union[int, float]] = Field(
+        default=None,
+        validation_alias="sl",
+    )
+    take_profit: Optional[Union[int, float]] = Field(
+        default=None,
+        validation_alias="tp",
+    )
     expiration: Optional[ExpirationValue] = None
     comment: Optional[str] = None
     idempotency_key: Optional[str] = Field(
