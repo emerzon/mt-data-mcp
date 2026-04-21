@@ -598,6 +598,22 @@ def run_trade_place(  # noqa: C901
                 }
             )
 
+        # Validate volume is positive
+        try:
+            vol_float = float(request.volume)
+        except (TypeError, ValueError):
+            return _finish({"error": "volume must be numeric"})
+        if not math.isfinite(vol_float):
+            return _finish({"error": "volume must be finite"})
+        if vol_float <= 0:
+            return _finish(
+                {
+                    "error": "volume must be positive",
+                    "volume_received": vol_float,
+                    "volume_hint": "volume must be greater than 0",
+                }
+            )
+
         order_type_norm, order_type_error = normalize_order_type_input(request.order_type)
         if order_type_error:
             return _finish({"error": order_type_error}, order_type=order_type_norm)
