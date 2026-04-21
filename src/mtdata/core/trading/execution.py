@@ -162,9 +162,13 @@ def _modify_position(
             position, resolved_ticket, ticket_resolution = _resolve_open_position(
                 mt5,
                 ticket_candidates=[ticket_id],
+                require_exact_ticket_match=True,
             )
             if position is None or resolved_ticket is None:
-                return {"error": f"Position {ticket} not found", "checked_scopes": ["positions"]}
+                out = {"error": f"Position {ticket} not found", "checked_scopes": ["positions"]}
+                if isinstance(ticket_resolution, dict):
+                    out["ticket_resolution"] = ticket_resolution
+                return out
 
             symbol_info = mt5.symbol_info(position.symbol)
             if symbol_info is None:
@@ -416,9 +420,13 @@ def _modify_pending_order(
             order, resolved_ticket, ticket_resolution = _resolve_pending_order(
                 mt5,
                 ticket_candidates=[ticket_id],
+                require_exact_ticket_match=True,
             )
             if order is None:
-                return {"error": f"Pending order {ticket} not found", "checked_scopes": ["pending_orders"]}
+                out = {"error": f"Pending order {ticket} not found", "checked_scopes": ["pending_orders"]}
+                if isinstance(ticket_resolution, dict):
+                    out["ticket_resolution"] = ticket_resolution
+                return out
             normalized_expiration, expiration_specified = time._normalize_pending_expiration(expiration)
             symbol_info = mt5.symbol_info(order.symbol)
             if symbol_info is None:
@@ -921,14 +929,22 @@ def _close_positions(  # noqa: C901
                 return {"error": "profit_only and loss_only cannot both be true."}
 
             # 1. Fetch positions based on criteria
+            requested_ticket = None
+            resolved_ticket = None
+            ticket_resolution = None
             if ticket is not None:
                 t_int = int(ticket)
-                position, _, _ = _resolve_open_position(
+                requested_ticket = t_int
+                position, resolved_ticket, ticket_resolution = _resolve_open_position(
                     mt5,
                     ticket_candidates=[t_int],
+                    require_exact_ticket_match=True,
                 )
                 if position is None:
-                    return {"error": f"Position {ticket} not found", "checked_scopes": ["positions"]}
+                    out = {"error": f"Position {ticket} not found", "checked_scopes": ["positions"]}
+                    if isinstance(ticket_resolution, dict):
+                        out["ticket_resolution"] = ticket_resolution
+                    return out
                 positions = [position]
             elif symbol is not None:
                 positions = mt5.positions_get(symbol=symbol)
@@ -1071,6 +1087,12 @@ def _close_positions(  # noqa: C901
                     comment=comment,
                     fill_modes=fill_modes,
                 )
+                if requested_ticket is not None and isinstance(close_result, dict):
+                    close_result.setdefault("ticket_requested", requested_ticket)
+                    if resolved_ticket is not None:
+                        close_result.setdefault("ticket_resolved", resolved_ticket)
+                    if isinstance(ticket_resolution, dict):
+                        close_result.setdefault("ticket_resolution", ticket_resolution)
                 results.append(close_result)
 
                 # Track consecutive failures for abort policy
@@ -1149,12 +1171,17 @@ def _cancel_pending(
             # 1. Fetch orders based on criteria
             if ticket is not None:
                 t_int = int(ticket)
-                order, _, _ = _resolve_pending_order(
+                requested_ticket = t_int
+                order, resolved_ticket, ticket_resolution = _resolve_pending_order(
                     mt5,
                     ticket_candidates=[t_int],
+                    require_exact_ticket_match=True,
                 )
                 if order is None:
-                    return {"error": f"Pending order {ticket} not found", "checked_scopes": ["pending_orders"]}
+                    out = {"error": f"Pending order {ticket} not found", "checked_scopes": ["pending_orders"]}
+                    if isinstance(ticket_resolution, dict):
+                        out["ticket_resolution"] = ticket_resolution
+                    return out
                 orders = [order]
             elif symbol is not None:
                 orders = mt5.orders_get(symbol=symbol)
@@ -1201,6 +1228,12 @@ def _cancel_pending(
                     }
                     if isinstance(comment_fallback, dict):
                         result_entry["comment_fallback"] = comment_fallback
+                    if ticket is not None:
+                        result_entry.setdefault("ticket_requested", requested_ticket)
+                        if resolved_ticket is not None:
+                            result_entry.setdefault("ticket_resolved", resolved_ticket)
+                        if isinstance(ticket_resolution, dict):
+                            result_entry.setdefault("ticket_resolution", ticket_resolution)
                     results.append(result_entry)
 
             # If only one order was targeted by ticket, return single result

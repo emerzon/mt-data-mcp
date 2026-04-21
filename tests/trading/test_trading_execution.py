@@ -1617,7 +1617,7 @@ def test_close_positions_preserves_partial_results_when_later_position_raises(mo
     assert res["results"][1]["error"] == "tick feed exploded"
 
 
-def test_close_positions_resolves_ticket_via_fallback_ticket_fields(mock_mt5):
+def test_close_positions_ticket_requires_exact_live_ticket_match(mock_mt5):
     mock_mt5.ORDER_FILLING_IOC = 1
     mock_mt5.ORDER_FILLING_FOK = 0
     mock_mt5.ORDER_FILLING_RETURN = 2
@@ -1643,10 +1643,10 @@ def test_close_positions_resolves_ticket_via_fallback_ticket_fields(mock_mt5):
 
     res = _close_positions(ticket=123)
 
-    assert "error" not in res
-    assert res["ticket"] == 999
-    req = mock_mt5.order_send.call_args[0][0]
-    assert req["position"] == 999
+    assert res["error"] == "Position 123 not found"
+    assert res["checked_scopes"] == ["positions"]
+    assert res["ticket_resolution"]["exact_ticket_required"] is True
+    mock_mt5.order_send.assert_not_called()
 
 
 def test_close_positions_fetches_tick_once_before_fill_mode_retries(mock_mt5):
@@ -2062,7 +2062,7 @@ def test_cancel_pending_counts_done_partial_as_success(mock_mt5):
     assert res["cancelled_count"] == 1
 
 
-def test_cancel_pending_resolves_ticket_via_fallback_ticket_fields(mock_mt5):
+def test_cancel_pending_ticket_requires_exact_live_ticket_match(mock_mt5):
     mock_mt5.TRADE_ACTION_REMOVE = 8
     order = SimpleNamespace(ticket=999, position=123, symbol="EURUSD", magic=54321)
 
@@ -2075,10 +2075,10 @@ def test_cancel_pending_resolves_ticket_via_fallback_ticket_fields(mock_mt5):
 
     res = _cancel_pending(ticket=123)
 
-    assert "error" not in res
-    assert res["ticket"] == 999
-    req = mock_mt5.order_send.call_args[0][0]
-    assert req["order"] == 999
+    assert res["error"] == "Pending order 123 not found"
+    assert res["checked_scopes"] == ["pending_orders"]
+    assert res["ticket_resolution"]["exact_ticket_required"] is True
+    mock_mt5.order_send.assert_not_called()
 
 
 def test_cancel_pending_preserves_existing_magic(mock_mt5):

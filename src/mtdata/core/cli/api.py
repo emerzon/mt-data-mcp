@@ -1235,7 +1235,7 @@ def _format_cli_literal(value: Any) -> Optional[str]:
     if isinstance(value, str):
         return value
     try:
-        return json.dumps(value)
+        return json.dumps(value, allow_nan=False, default=_json_default)
     except Exception:
         return str(value)
 

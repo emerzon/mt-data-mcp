@@ -1633,6 +1633,11 @@ class NewsAggregator:
         context = _classify_instrument(symbol_norm) if symbol_norm else None
         embedding_service = get_news_embedding_service()
         selected_sources = {name: src for name, src in self._sources.items() if src.is_available()}
+        
+        # When a symbol is specified, reduce general news to avoid drowning symbol-relevant news in noise
+        general_bucket_size = bucket_size
+        if context is not None:
+            general_bucket_size = 5
         if not selected_sources:
             return {
                 "success": False,
@@ -1791,7 +1796,7 @@ class NewsAggregator:
                 if item.dedupe_key() not in impact_keys
             ]
 
-        general_news = _sort_news_for_display(general_pool[:bucket_size])
+        general_news = _sort_news_for_display(general_pool[:general_bucket_size])
         related_news = _sort_news_for_display(related_news)
         impact_news = _sort_news_for_display(impact_news)
         recent_events = _sort_news_for_display(recent_events)

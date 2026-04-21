@@ -54,14 +54,29 @@ _ALL_MODE_FETCH_FLOOR = 200  # never fetch fewer than 200 bars
 
 
 def _all_mode_fetch_limit(timeframe: str, user_limit: int) -> int:
-    """Cap *user_limit* so higher TFs don't fetch decades of data."""
+    """Cap *user_limit* so higher TFs don't fetch decades of data.
+    
+    For very high timeframes (W1, MN1), use a smaller floor to avoid
+    fetching ancient data. E.g., MN1 should fetch ~12-24 months, not 16+ years.
+    """
     from ..shared.constants import TIMEFRAME_SECONDS
 
     tf_secs = TIMEFRAME_SECONDS.get(timeframe.upper(), 0)
     if tf_secs <= 0:
         return user_limit
     max_bars = int(_ALL_MODE_MAX_FETCH_SECONDS / tf_secs)
-    return max(_ALL_MODE_FETCH_FLOOR, min(user_limit, max_bars))
+    
+    # For very high timeframes, use a smaller floor to avoid ancient data.
+    # W1: ~52 bars/year, MN1: ~12 bars/year.
+    # D1 would be ~365 bars/year, which is still manageable with floor=200.
+    # But W1+ should use floor=30 to keep results recent (2-3 years, not 4+ years).
+    tf_upper = timeframe.upper()
+    if tf_upper in ("W1", "MN1"):
+        fetch_floor = 30
+    else:
+        fetch_floor = _ALL_MODE_FETCH_FLOOR
+    
+    return max(fetch_floor, min(user_limit, max_bars))
 
 _CLASSIC_CONFIG_EXTRA_KEYS = {
     "ensemble_weights",

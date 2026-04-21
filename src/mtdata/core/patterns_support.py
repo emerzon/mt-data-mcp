@@ -762,7 +762,15 @@ def _trim_section_rows(
 
 
 def _compact_all_mode_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Compact the all-mode response into a clean sectioned summary."""
+    """Compact the all-mode response for trader-focused quick analysis.
+    
+    Emphasizes highlights while keeping backward-compatible section structure.
+    - Highlights: Top actionable patterns (ranked by relevance)
+    - Section details: Trimmed pattern arrays (only top patterns, key fields only)
+    - Bias: Keep original signal_bias format for compatibility
+    
+    Pattern arrays are trimmed to top 3 patterns per section to reduce output size.
+    """
     if not isinstance(payload, dict) or payload.get("error"):
         return payload
 
@@ -773,7 +781,7 @@ def _compact_all_mode_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "timeframes": payload.get("timeframes"),
     }
 
-    # Top-level highlights — the trader's quick-read
+    # Top-level highlights — the trader's quick-read (most important)
     highlights = payload.get("highlights")
     if highlights:
         compact["highlights"] = highlights
@@ -788,7 +796,7 @@ def _compact_all_mode_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     else:
         compact["candlestick"] = {"by_timeframe": {}}
 
-    # Classic + Elliott + Fractal: trimmed pattern lists (no raw counts — list is self-evident)
+    # Classic + Elliott + Fractal: trimmed pattern lists (top 3 per section, key fields only)
     for section_name, keys in (
         ("classic", _ALL_COMPACT_CLASSIC_KEYS),
         ("elliott", _ALL_COMPACT_ELLIOTT_KEYS),
@@ -796,7 +804,8 @@ def _compact_all_mode_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     ):
         section = payload.get(section_name, {})
         rows = section.get("patterns", [])
-        trimmed = _trim_section_rows(rows, keys) if rows else []
+        # Trim to top 3 patterns by relevance/confidence
+        trimmed = _trim_section_rows(rows, keys, limit=3) if rows else []
         result: Dict[str, Any] = {
             "patterns": trimmed,
         }

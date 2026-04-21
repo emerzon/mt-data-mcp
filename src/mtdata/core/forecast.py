@@ -24,6 +24,7 @@ from ..utils.barriers import (
 from ..utils.mt5 import ensure_mt5_connection_or_raise
 from ..utils.utils import parse_kv_or_json as _parse_kv_or_json
 from ._mcp_instance import mcp
+from .cli_formatting import _sanitize_json_compat
 from .error_envelope import build_error_payload
 from .execution_logging import run_logged_operation
 from .mt5_gateway import get_mt5_gateway, mt5_connection_error
@@ -264,7 +265,7 @@ def forecast_backtest_run(request: ForecastBacktestRequest) -> Dict[str, Any]:
             backtest_impl=_forecast_backtest_impl,
         )
 
-    return _run_forecast_operation(
+    result = _run_forecast_operation(
         "forecast_backtest_run",
         symbol=request.symbol,
         timeframe=request.timeframe,
@@ -273,6 +274,7 @@ def forecast_backtest_run(request: ForecastBacktestRequest) -> Dict[str, Any]:
         require_connection=True,
         func=_execute,
     )
+    return _sanitize_json_compat(result)
 
 
 @mcp.tool()
@@ -284,7 +286,7 @@ def strategy_backtest(request: StrategyBacktestRequest) -> Dict[str, Any]:
             strategy_backtest_impl=_strategy_backtest_impl,
         )
 
-    return _run_forecast_operation(
+    result = _run_forecast_operation(
         "strategy_backtest",
         symbol=request.symbol,
         timeframe=request.timeframe,
@@ -292,6 +294,7 @@ def strategy_backtest(request: StrategyBacktestRequest) -> Dict[str, Any]:
         require_connection=True,
         func=_execute,
     )
+    return _sanitize_json_compat(result)
 
 
 @mcp.tool()

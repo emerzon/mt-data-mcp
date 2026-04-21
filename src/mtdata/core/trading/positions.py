@@ -348,6 +348,7 @@ def _resolve_open_position(
     side: Optional[str] = None,
     volume: Optional[float] = None,
     magic: Optional[int] = None,
+    require_exact_ticket_match: bool = False,
 ) -> Tuple[Optional[Any], Optional[int], Dict[str, Any]]:
     """Resolve an open position robustly across ticket/identifier mismatches."""
     candidate_ids: List[int] = []
@@ -371,13 +372,22 @@ def _resolve_open_position(
             mt5=mt5,
         )
         if picked is not None:
-            resolved = _resolved_position_ticket(picked, fallback=candidate)
+            direct_ticket = validation._safe_int_ticket(getattr(picked, "ticket", None))
+            if require_exact_ticket_match and direct_ticket != candidate:
+                continue
+            resolved = (
+                direct_ticket
+                if require_exact_ticket_match
+                else _resolved_position_ticket(picked, fallback=candidate)
+            )
             diag: Dict[str, Any] = {
                 "method": "positions_get(ticket)",
                 "candidate": candidate,
             }
             if magic is not None:
                 diag["magic_filter"] = magic
+            if require_exact_ticket_match:
+                diag["exact_ticket_required"] = True
             return picked, resolved, diag
 
     try:
@@ -402,6 +412,8 @@ def _resolve_open_position(
     if candidate_ids:
         for pos in rows_list:
             for field, value in _position_ticket_fields(pos).items():
+                if require_exact_ticket_match and field != "ticket":
+                    continue
                 if value in candidate_ids:
                     exact_matches.append((pos, field, value))
         exact_matches = [
@@ -427,8 +439,21 @@ def _resolve_open_position(
                     "method": "positions_get(fallback_exact)",
                     "matched_field": field,
                     "matched_value": matched_value,
+                    "exact_ticket_required": require_exact_ticket_match,
                 },
             )
+
+    if candidate_ids and require_exact_ticket_match:
+        return (
+            None,
+            None,
+            {
+                "method": "positions_get(fallback_heuristic)",
+                "candidate_ids": candidate_ids,
+                "matched": False,
+                "exact_ticket_required": True,
+            },
+        )
 
     picked = _select_position_candidate(
         rows_list,
@@ -463,6 +488,7 @@ def _resolve_pending_order(
     *,
     ticket_candidates: Optional[List[int]] = None,
     symbol: Optional[str] = None,
+    require_exact_ticket_match: bool = False,
 ) -> Tuple[Optional[Any], Optional[int], Dict[str, Any]]:
     """Resolve a pending order robustly across ticket/identifier mismatches."""
     candidate_ids: List[int] = []
@@ -479,11 +505,22 @@ def _resolve_pending_order(
         rows_list = list(rows) if rows else []
         picked = _select_pending_order_candidate(rows_list, symbol=symbol)
         if picked is not None:
-            resolved = _resolved_pending_order_ticket(picked, fallback=candidate)
+            direct_ticket = validation._safe_int_ticket(getattr(picked, "ticket", None))
+            if require_exact_ticket_match and direct_ticket != candidate:
+                continue
+            resolved = (
+                direct_ticket
+                if require_exact_ticket_match
+                else _resolved_pending_order_ticket(picked, fallback=candidate)
+            )
             return (
                 picked,
                 resolved,
-                {"method": "orders_get(ticket)", "candidate": candidate},
+                {
+                    "method": "orders_get(ticket)",
+                    "candidate": candidate,
+                    "exact_ticket_required": require_exact_ticket_match,
+                },
             )
 
     try:
@@ -502,6 +539,8 @@ def _resolve_pending_order(
     if candidate_ids:
         for order in rows_list:
             for field, value in _pending_order_ticket_fields(order).items():
+                if require_exact_ticket_match and field != "ticket":
+                    continue
                 if value in candidate_ids:
                     exact_matches.append((order, field, value))
         if exact_matches:
@@ -515,8 +554,21 @@ def _resolve_pending_order(
                     "method": "orders_get(fallback_exact)",
                     "matched_field": field,
                     "matched_value": matched_value,
+                    "exact_ticket_required": require_exact_ticket_match,
                 },
             )
+
+    if candidate_ids and require_exact_ticket_match:
+        return (
+            None,
+            None,
+            {
+                "method": "orders_get(fallback_heuristic)",
+                "candidate_ids": candidate_ids,
+                "matched": False,
+                "exact_ticket_required": True,
+            },
+        )
 
     picked = _select_pending_order_candidate(rows_list, symbol=symbol)
     if picked is None:
