@@ -284,26 +284,26 @@ class TestComputeCompactTrend:
         rows = _make_rows(30)
         result = _compute_compact_trend(rows)
         assert result is not None
-        assert result['v'] >= 0
+        assert result['volatility_bps'] >= 0
 
     def test_squeeze_percentile_range(self):
         rows = _make_rows(80)
         result = _compute_compact_trend(rows)
         assert result is not None
-        assert 0 <= result['q'] <= 100
+        assert 0 <= result['squeeze_percentile'] <= 100
 
     def test_regime_code_range(self):
         rows = _make_rows(30)
         result = _compute_compact_trend(rows)
         assert result is not None
-        assert result['g'] in (0, 1, 2, 3, 4)
+        assert result['regime_code'] in (0, 1, 2, 3, 4)
 
     def test_h_l_non_negative(self):
         rows = _make_rows(30)
         result = _compute_compact_trend(rows)
         assert result is not None
-        assert result['h'] >= 0
-        assert result['l'] >= 0
+        assert result['bars_since_swing_high'] >= 0
+        assert result['bars_since_swing_low'] >= 0
 
     def test_none_close_handled(self):
         rows = [{"close": None, "high": 101, "low": 99, "tick_volume": 100} for _ in range(10)]
@@ -319,7 +319,7 @@ class TestComputeCompactTrend:
         rows = _make_rows(200, base=50, step=0.01)
         result = _compute_compact_trend(rows)
         assert result is not None
-        assert len(result['s']) == 3
+        assert len(result['slope_atr_scores']) == 3
 
     def test_flat_market_regime_zero(self):
         # Flat market: all same close
@@ -328,7 +328,7 @@ class TestComputeCompactTrend:
         result = _compute_compact_trend(rows)
         assert result is not None
         # Flat market should have regime 0 (range)
-        assert result['g'] == 0
+        assert result['regime_code'] == 0
 
 
 # ===== _parse_value ==========================================================
