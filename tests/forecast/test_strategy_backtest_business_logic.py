@@ -58,7 +58,7 @@ def test_strategy_backtest_sma_cross_generates_long_trade(monkeypatch):
     assert out["summary"]["net_return"] > 0.0
 
 
-def test_strategy_backtest_compact_mode_keeps_stable_trades_key(monkeypatch):
+def test_strategy_backtest_compact_mode_excludes_trades(monkeypatch):
     monkeypatch.setattr(
         forecast_backtest,
         "_fetch_history",
@@ -80,7 +80,7 @@ def test_strategy_backtest_compact_mode_keeps_stable_trades_key(monkeypatch):
     assert out["success"] is True
     assert out["summary"]["trade_count"] == 1
     assert out["summary"]["num_trades"] == 1
-    assert out["trades"][0]["direction"] == "long"
+    assert "trades" not in out, "compact mode should not include trades array"
     assert "trade_sample" not in out
 
 

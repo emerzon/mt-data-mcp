@@ -1931,14 +1931,44 @@ def run_trade_risk_analyze(  # noqa: C901
                 if value is None
             ]
             if position_sizing_missing:
-                result["position_sizing"] = {
-                    "status": "incomplete",
-                    "message": (
-                        "Provide desired_risk_pct, proposed_entry, and proposed_sl "
-                        "to calculate position sizing."
-                    ),
-                    "missing": position_sizing_missing,
-                }
+                # If any position sizing param was provided but not all, return an error
+                position_sizing_provided = [
+                    field_name
+                    for field_name, value in (
+                        ("desired_risk_pct", request.desired_risk_pct),
+                        ("proposed_entry", request.proposed_entry),
+                        ("proposed_sl", request.proposed_sl),
+                    )
+                    if value is not None
+                ]
+                
+                if position_sizing_provided:
+                    # User started providing position sizing params, so fail clearly
+                    return {
+                        "success": False,
+                        "error_code": "INCOMPLETE_POSITION_SIZING_PARAMS",
+                        "error": (
+                            "Position sizing requires all three parameters: "
+                            "desired_risk_pct, proposed_entry, and proposed_sl"
+                        ),
+                        "provided": position_sizing_provided,
+                        "missing": position_sizing_missing,
+                        "guidance": {
+                            "desired_risk_pct": "Risk as percentage of account equity (e.g., 2 for 2%)",
+                            "proposed_entry": "Expected entry price for the new trade",
+                            "proposed_sl": "Stop-loss price (must be on correct side of entry based on direction)",
+                        }
+                    }
+                else:
+                    # No params provided, just mark as incomplete
+                    result["position_sizing"] = {
+                        "status": "incomplete",
+                        "message": (
+                            "Provide desired_risk_pct, proposed_entry, and proposed_sl "
+                            "to calculate position sizing."
+                        ),
+                        "missing": position_sizing_missing,
+                    }
 
             if (
                 request.desired_risk_pct is not None

@@ -14,6 +14,14 @@ from .requests import TradeGetOpenRequest, TradeGetPendingRequest, TradeSessionC
 logger = logging.getLogger(__name__)
 
 
+def _strip_nested_envelope(section: Any) -> Any:
+    """Remove redundant envelope fields (success, meta) from nested sections."""
+    if not isinstance(section, dict):
+        return section
+    # Keep all data fields, remove redundant envelope fields
+    return {k: v for k, v in section.items() if k not in ("success", "meta")}
+
+
 def _compact_trade_session_items(
     section: Any,
     *,
@@ -179,6 +187,12 @@ def trade_session_context(request: TradeSessionContextRequest) -> Dict[str, Any]
         }
         if request.detail == "compact":
             payload = _compact_trade_session_context_payload(payload)
+        else:
+            # For full detail, strip redundant envelope fields from nested sections
+            payload["account"] = _strip_nested_envelope(payload["account"])
+            payload["open_positions"] = _strip_nested_envelope(payload["open_positions"])
+            payload["pending_orders"] = _strip_nested_envelope(payload["pending_orders"])
+            payload["ticker"] = _strip_nested_envelope(payload["ticker"])
         return ensure_common_meta(payload, tool_name="trade_session_context")
 
     return run_logged_operation(

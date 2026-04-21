@@ -10,6 +10,61 @@ from .registry import ForecastRegistry
 
 _PRETRAINED_METHODS = {"chronos2", "chronos_bolt", "timesfm", "lag_llama"}
 
+# Meaningful descriptions for StatsForecast models
+_STATSFORECAST_MODEL_DESCRIPTIONS = {
+    "ADIDA": "Aggregate-Disaggregate Intermittent Demand Approach - aggregates sporadic data for stable forecasting then disaggregates results",
+    "ARCH": "Autoregressive Conditional Heteroskedasticity - models time-varying volatility for financial time series",
+    "ARIMA": "Autoregressive Integrated Moving Average - classical statistical model for univariate time series with trend and autocorrelation",
+    "AutoARIMA": "Automatically selects optimal ARIMA parameters (p,d,q) using information criteria - fast Numba-accelerated implementation",
+    "AutoCES": "Automatic Complex Exponential Smoothing - automatically selects CES parameters for capturing complex seasonal patterns",
+    "AutoETS": "Automatic Error-Trend-Seasonality - tests all valid ETS combinations and selects best model via information criteria",
+    "AutoMFLES": "Automatic Multi-Seasonal Holt-Winters - handles multiple seasonal patterns with automatic parameter selection",
+    "AutoRegressive": "Vanilla autoregressive model using OLS - predicts based on past values with automatically selected lag",
+    "AutoTBATS": "Automatic TBATS - Trigonometric seasonality, Box-Cox transformation, ARMA errors for complex seasonal patterns",
+    "AutoTheta": "Theta method with automatic parameter optimization - decomposes series into trend and noise components",
+    "ConstantModel": "Baseline model - forecasts constant value (mean or median of training data)",
+    "CrostonClassic": "Croston's method for intermittent demand - separately models demand sizes and intervals between occurrences",
+    "CrostonOptimized": "Optimized Croston's method - improved variant using optimized smoothing parameters for sparse demand",
+    "CrostonSBA": "Croston with Syntetos-Boylan Adjustment - variant addressing bias in original Croston's method",
+    "DynamicOptimizedTheta": "Theta method with dynamic optimization - combines trend and noise with optimized coefficients per timestamp",
+    "DynamicTheta": "Dynamic Theta method - Theta decomposition with time-varying parameters for evolving patterns",
+    "ETS": "Error-Trend-Seasonality exponential smoothing family - covers all additive/multiplicative combinations of components",
+    "GARCH": "Generalized Autoregressive Conditional Heteroskedasticity - advanced volatility model for financial data",
+    "HistoricAverage": "Historical average baseline - forecasts using average of historical values in sliding windows",
+    "Holt": "Holt's linear trend method - exponential smoothing with level and trend but no seasonality",
+    "HoltWinters": "Holt-Winters exponential smoothing - handles level, trend, and seasonality (additive or multiplicative)",
+    "IMAPA": "Integer-valued Multiplicative Auto-Regressive Processes for Adaptation - designed for count data",
+    "MFLES": "Multi-Seasonal Holt-Winters - handles data with multiple seasonal patterns at different frequencies",
+    "MSTL": "Multiple Seasonal-Trend decomposition using Loess - decomposes series into multiple seasonal and trend components",
+    "NaNModel": "Placeholder model - returns NaN for all forecasts (useful for testing/debugging)",
+    "Naive": "Naive forecast baseline - forecasts using last observed value (random walk assumption)",
+    "OptimizedTheta": "Theta method with optimized parameters - classical Theta with smoothing parameters optimized via grid search",
+    "RandomWalkWithDrift": "Random walk with drift - extends naive by adding estimated trend component",
+    "SeasonalExponentialSmoothing": "Seasonal exponential smoothing - exponential smoothing with multiplicative seasonality",
+    "SeasonalExponentialSmoothingOptimized": "Seasonal exponential smoothing with optimized parameters - improved variant with automatic parameter tuning",
+    "SeasonalNaive": "Seasonal naive baseline - uses value from same season in previous year",
+    "SeasonalWindowAverage": "Seasonal window average - averages past seasonal observations within a sliding window",
+    "SimpleExponentialSmoothing": "Simple exponential smoothing (SES) - exponential smoothing for non-seasonal data with constant level",
+    "SimpleExponentialSmoothingOptimized": "Simple exponential smoothing with optimized alpha - SES with automatic smoothing parameter selection",
+    "SklearnModel": "Sklearn regressor wrapper - uses any scikit-learn regressor as forecasting model via lagged features",
+    "TBATS": "Trigonometric seasonality, Box-Cox transformation, ARMA errors, Trend, Seasonal - handles complex seasonal patterns",
+    "TSB": "Temporal Sparsity and Box-Cox transform - designed for intermittent demand with sparse, irregular occurrences",
+    "Theta": "Classical Theta method - decomposes series into trend using Theta coefficient for decomposition",
+    "WindowAverage": "Window average baseline - forecasts using average of recent observations",
+    "ZeroModel": "Zero forecast baseline - forecasts zero for all predictions (useful for testing)",
+}
+
+
+def _get_statsforecast_model_description(model_name: str) -> str:
+    """Get meaningful description for a StatsForecast model.
+    
+    Falls back to generic format if model not in predefined descriptions.
+    """
+    return _STATSFORECAST_MODEL_DESCRIPTIONS.get(
+        model_name,
+        f"StatsForecast model {model_name}."
+    )
+
 
 def _method_categories(method_data: Dict[str, Any]) -> Dict[str, str]:
     categories_raw = method_data.get("categories") if isinstance(method_data, dict) else None
@@ -221,7 +276,7 @@ def _statsforecast_capabilities() -> List[Dict[str, Any]]:
             concept=_normalize_concept(attr),
             display_name=attr,
             category="statsforecast",
-            description=f"StatsForecast model {attr}.",
+            description=_get_statsforecast_model_description(attr),
             available=True,
             supports={"price": True, "return": True, "volatility": True, "ci": True},
             selector_key="model_name",

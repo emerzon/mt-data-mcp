@@ -137,8 +137,15 @@ def test_trade_session_context_full_detail_keeps_nested_full_payloads() -> None:
         out = _raw_trade_session_context("EURUSD", detail="full")
 
     assert out["state"] == "pending_only"
-    assert out["ticker"]["meta"]["tool"] == "market_ticker"
+    # With the fix, nested success and meta are stripped
+    assert "success" not in out["ticker"]
+    assert "meta" not in out["ticker"]
+    assert out["ticker"]["bid"] == 1.1  # data is preserved
     assert out["account"]["balance"] == 10000.0
+    assert "success" not in out["account"]
+    assert "meta" not in out["account"]
     assert out["pending_orders"]["count"] == 1
+    assert "success" not in out["pending_orders"]
+    assert "meta" not in out["pending_orders"]
     assert out["meta"]["tool"] == "trade_session_context"
     assert out["meta"]["runtime"]["timezone"] == timezone_meta
