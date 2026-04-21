@@ -253,22 +253,22 @@ class TestComputeCompactTrend:
         rows = _make_rows(30)
         result = _compute_compact_trend(rows)
         assert result is not None
-        for key in ('s', 'r', 'v', 'q', 'g', 'h', 'l'):
+        for key in ('slope_atr_scores', 'fit_r2_pcts', 'volatility_bps', 'squeeze_percentile', 'regime_code', 'bars_since_swing_high', 'bars_since_swing_low'):
             assert key in result
 
     def test_slopes_list_length(self):
         rows = _make_rows(60)
         result = _compute_compact_trend(rows)
         assert result is not None
-        assert len(result['s']) == 3  # windows [5, 20, 60]
-        assert len(result['r']) == 3
+        assert len(result['slope_atr_scores']) == 3  # windows [5, 20, 60]
+        assert len(result['fit_r2_pcts']) == 3
 
     def test_uptrend_positive_slopes(self):
         rows = _make_rows(30, base=100, step=0.5)
         result = _compute_compact_trend(rows)
         assert result is not None
         # Short-term slope should be positive for uptrend
-        assert result['s'][0] > 0
+        assert result['slope_atr_scores'][0] > 0
 
     def test_downtrend_negative_slopes(self):
         rows = [
@@ -278,7 +278,7 @@ class TestComputeCompactTrend:
         ]
         result = _compute_compact_trend(rows)
         assert result is not None
-        assert result['s'][0] < 0
+        assert result['slope_atr_scores'][0] < 0
 
     def test_volatility_positive(self):
         rows = _make_rows(30)
