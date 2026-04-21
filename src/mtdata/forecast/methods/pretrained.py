@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 
 from ..interface import ForecastMethod, ForecastResult
+from ..model_cache import model_cache
 from ..registry import ForecastRegistry
 from .pretrained_helpers import (
     adjust_forecast_length,
@@ -108,6 +109,45 @@ def _resolve_chronos_model_defaults(method_name: str, params: Dict[str, Any]) ->
         pipeline_order = ("ChronosPipeline",)
 
     return model_name, pipeline_order
+
+
+def _load_chronos_pipeline(
+    pipeline_candidates: List[Tuple[str, Any]],
+    model_name: str,
+    effective_device_map: str,
+) -> Tuple[Any, str]:
+    cache_key = (
+        f"chronos::{model_name}::{effective_device_map}::"
+        f"{','.join(name for name, _ in pipeline_candidates)}"
+    )
+
+    def _loader() -> Tuple[Any, str]:
+        init_err: Optional[Exception] = None
+        for candidate_name, pipeline_cls in pipeline_candidates:
+            try:
+                try:
+                    pipe = pipeline_cls.from_pretrained(model_name, device_map=effective_device_map)
+                except TypeError:
+                    pipe = pipeline_cls.from_pretrained(model_name)
+                return pipe, candidate_name
+            except AttributeError as ex:
+                # Some chronos builds expose Chronos2Pipeline but fail due missing internal classes.
+                init_err = ex
+                continue
+            except Exception as ex:
+                init_err = ex
+                break
+
+        if init_err is not None:
+            raise RuntimeError(
+                "chronos2 error: failed to initialize any compatible Chronos pipeline. "
+                f"Last error: {init_err!r}"
+            ) from init_err
+        raise RuntimeError("chronos2 error: failed to initialize a supported Chronos pipeline.")
+
+    cached, _meta = model_cache.get_or_load(cache_key, _loader)
+    pipe, pipe_name = cached
+    return pipe, pipe_name
 
 
 @ForecastRegistry.register("chronos_bolt")
@@ -227,29 +267,11 @@ class ChronosBoltMethod(PretrainedMethod):
                     # Fallback: ignore covariates on error
                     pass
 
-            init_err: Optional[Exception] = None
-            for candidate_name, pipeline_cls in pipeline_candidates:
-                try:
-                    try:
-                        pipe = pipeline_cls.from_pretrained(model_name, device_map=effective_device_map)
-                    except TypeError:
-                        pipe = pipeline_cls.from_pretrained(model_name)
-                    pipe_name = candidate_name
-                    break
-                except AttributeError as ex:
-                    # Some chronos builds expose Chronos2Pipeline but fail due missing internal classes.
-                    init_err = ex
-                    continue
-                except Exception as ex:
-                    init_err = ex
-                    break
-            if pipe is None:
-                if init_err is not None:
-                    raise RuntimeError(
-                        "chronos2 error: failed to initialize any compatible Chronos pipeline. "
-                        f"Last error: {init_err!r}"
-                    ) from init_err
-                raise RuntimeError("chronos2 error: failed to initialize a supported Chronos pipeline.")
+            pipe, pipe_name = _load_chronos_pipeline(
+                pipeline_candidates,
+                model_name,
+                effective_device_map,
+            )
             
             # Keep inputs on CPU; Chronos handles its own device placement internally.
             ctx_tensor = _torch.tensor(context, dtype=_torch.float32).unsqueeze(0)
@@ -337,12 +359,7 @@ class ChronosBoltMethod(PretrainedMethod):
         except Exception as ex:
             raise RuntimeError(f"chronos2 error ({type(ex).__name__}): {ex!r}") from ex
         finally:
-            # Best-effort cleanup for long-running servers using large pretrained models.
-            try:
-                if pipe is not None and hasattr(pipe, "to"):
-                    pipe.to("cpu")
-            except Exception:
-                pass
+            # Cached pipelines may be shared across requests; only drop local refs here.
             pipe = None
             known_covariates = None
             ctx_tensor = None

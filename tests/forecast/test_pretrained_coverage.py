@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import sys
+import threading
 import types
 from unittest.mock import MagicMock, PropertyMock, patch
 
@@ -181,6 +182,7 @@ from mtdata.forecast.methods.pretrained import (
     LagLlamaMethod,
     PretrainedMethod,
     TimesFMMethod,
+    _load_chronos_pipeline,
     _resolve_chronos_model_defaults,
     _resolve_chronos_device_map,
     _stringify_exception_chain,
@@ -411,6 +413,54 @@ def test_resolve_chronos_model_defaults_uses_bolt_for_chronos_bolt():
     model_name, order = _resolve_chronos_model_defaults("chronos_bolt", {})
     assert model_name == "amazon/chronos-bolt-base"
     assert order == ("ChronosBoltPipeline",)
+
+
+@pytest.mark.usefixtures("_with_torch_stubs")
+def test_load_chronos_pipeline_serializes_concurrent_init(monkeypatch):
+    pretrained_module.model_cache.clear()
+
+    call_count = [0]
+    started = threading.Event()
+    release = threading.Event()
+
+    class _BlockingPipeline(_FakePipeline):
+        @classmethod
+        def from_pretrained(cls, model_name, device_map=None):
+            call_count[0] += 1
+            started.set()
+            release.wait(timeout=2)
+            return cls()
+
+    results = []
+    errors = []
+
+    def _worker():
+        try:
+            results.append(
+                _load_chronos_pipeline(
+                    [("ChronosPipeline", _BlockingPipeline)],
+                    "amazon/chronos-t5-small",
+                    "cuda:0",
+                )
+            )
+        except Exception as exc:
+            errors.append(exc)
+
+    t1 = threading.Thread(target=_worker)
+    t2 = threading.Thread(target=_worker)
+    t1.start()
+    assert started.wait(timeout=2)
+    t2.start()
+    release.set()
+    t1.join(timeout=2)
+    t2.join(timeout=2)
+
+    assert not errors
+    assert len(results) == 2
+    assert call_count[0] == 1
+    assert results[0][1] == "ChronosPipeline"
+    assert results[1][1] == "ChronosPipeline"
+    assert results[0][0] is results[1][0]
 
     def test_predict_quantiles_fallback_to_predict(self):
         """When predict_quantiles returns None, falls back to predict."""
