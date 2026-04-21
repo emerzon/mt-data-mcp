@@ -37,6 +37,7 @@ _BASE_EXCLUDE_COLUMNS = {
     "high",
     "low",
     "close",
+    "spread",
     "volume",
     "tick_volume",
     "real_volume",
@@ -198,7 +199,10 @@ def _add_technical_indicators(
     df.attrs.pop(_TECHNICAL_INDICATOR_WARNING_ATTR, None)
     try:
         specs = parse_ti_specs(str(ind_specs)) if isinstance(ind_specs, str) else ind_specs
-        apply_ta_indicators(df, specs, default_when="pre_ti")
+        try:
+            apply_ta_indicators(df, ind_specs if isinstance(ind_specs, str) else specs)
+        except TypeError:
+            apply_ta_indicators(df, specs)
     except Exception as ex:
         df.attrs[_TECHNICAL_INDICATOR_WARNING_ATTR] = (
             f"Technical indicator request could not be applied: {ex}"
@@ -243,9 +247,7 @@ def _apply_features_and_target_spec(
                     ti_cols = _apply_ti_on_copy(ti_spec)
                 except TypeError:
                     try:
-                        ti_cols = _apply_ti_on_copy(ti_list, default_when="pre_ti")
-                    except TypeError:
-                        ti_cols = []
+                        ti_cols = _apply_ti_on_copy(ti_list)
                     except Exception:
                         ti_cols = []
                 except Exception:

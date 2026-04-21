@@ -135,6 +135,10 @@ class TestCollectIndicatorColumns:
         df = pd.DataFrame({"close": [1], "open": [2], "__x": [3], "rsi_14": [4]})
         assert _collect_indicator_columns(df) == ["rsi_14"]
 
+    def test_excludes_raw_spread_column(self):
+        df = pd.DataFrame({"close": [1], "spread": [2], "rsi_14": [4]})
+        assert _collect_indicator_columns(df) == ["rsi_14"]
+
     def test_non_numeric_column_skipped(self):
         """Lines 174-175: dtype check exception path."""
         df = pd.DataFrame({"my_ind": ["a", "b"]})

@@ -81,7 +81,10 @@ def build_target_series(
     if ts_inds:
         try:
             specs = _parse_ti_specs_util(str(ts_inds)) if isinstance(ts_inds, str) else ts_inds
-            _apply_ta_indicators_util(df, specs, default_when='pre_ti')
+            try:
+                _apply_ta_indicators_util(df, str(ts_inds) if isinstance(ts_inds, str) else ts_inds)
+            except TypeError:
+                _apply_ta_indicators_util(df, specs)
         except Exception as exc:
             logger.warning("Failed to apply target_spec indicators %r: %s", ts_inds, exc)
             raise ValueError(f"Failed to apply target_spec indicators: {exc}") from exc
