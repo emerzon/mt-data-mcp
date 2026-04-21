@@ -558,18 +558,38 @@ def market_status(
         
         results.sort(key=_sort_key)
         
-        # Build summary messages
-        open_count = sum(1 for m in results if m["status"] == "open")
-        closed_count = len(results) - open_count
+        # Build summary messages with status breakdown
+        status_counts = {
+            "open": sum(1 for m in results if m["status"] == "open"),
+            "pre_market": sum(1 for m in results if m["status"] == "pre_market"),
+            "lunch_break": sum(1 for m in results if m["status"] == "lunch_break"),
+            "closed": sum(1 for m in results if m["status"] == "closed"),
+        }
         
         summary_messages = []
-        if open_count > 0:
+        
+        # Add open markets (always list them if any)
+        if status_counts["open"] > 0:
             open_markets = [m["symbol"] for m in results if m["status"] == "open"]
-            summary_messages.append(f"{open_count} market{'s' if open_count != 1 else ''} open: {', '.join(open_markets)}")
-        if closed_count > 0:
+            summary_messages.append(f"{status_counts['open']} market{'s' if status_counts['open'] != 1 else ''} open: {', '.join(open_markets)}")
+        
+        # Add pre-market markets (always list if any)
+        if status_counts["pre_market"] > 0:
+            pre_markets = [m["symbol"] for m in results if m["status"] == "pre_market"]
+            summary_messages.append(f"{status_counts['pre_market']} pre-market: {', '.join(pre_markets)}")
+        
+        # Add lunch break markets (always list if any)
+        if status_counts["lunch_break"] > 0:
+            lunch_markets = [m["symbol"] for m in results if m["status"] == "lunch_break"]
+            summary_messages.append(f"{status_counts['lunch_break']} lunch break: {', '.join(lunch_markets)}")
+        
+        # Add closed markets (list if <= 3, otherwise just count)
+        if status_counts["closed"] > 0:
             closed_markets = [m["symbol"] for m in results if m["status"] == "closed"]
-            if closed_count <= 3:
-                summary_messages.append(f"{closed_count} closed: {', '.join(closed_markets)}")
+            if status_counts["closed"] <= 3:
+                summary_messages.append(f"{status_counts['closed']} closed: {', '.join(closed_markets)}")
+            else:
+                summary_messages.append(f"{status_counts['closed']} closed")
         
         # Get upcoming holidays impacting these markets
         upcoming_holidays = _get_upcoming_holidays(markets_to_check)
@@ -581,9 +601,11 @@ def market_status(
             "timestamp": now_utc.isoformat(),
             "day_of_week": now_utc.strftime("%A"),
             "region": region or "all",
-            "summary": "; ".join(summary_messages) if summary_messages else "No markets available",
-            "markets_open": open_count,
-            "markets_closed": closed_count,
+            "summary": "; ".join(summary_messages) if summary_messages else "No market data available",
+            "markets_open": status_counts["open"],
+            "markets_closed": status_counts["closed"],
+            "markets_pre_market": status_counts["pre_market"],
+            "markets_lunch_break": status_counts["lunch_break"],
             "markets": results,
             "upcoming_holidays": upcoming_holidays if upcoming_holidays else None,
             "errors": errors if errors else None,

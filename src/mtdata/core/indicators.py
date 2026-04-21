@@ -116,6 +116,29 @@ def _extract_interpretation(sections: Dict[str, List[str]]) -> Optional[str]:
     return _join_doc_lines(overview) or None
 
 
+def _extract_short_description(description: Optional[str]) -> Optional[str]:
+    """Extract first line or first sentence from description for compact display."""
+    if not description:
+        return None
+    text = str(description or "").strip()
+    if not text:
+        return None
+    # Get first line
+    lines = text.split('\n')
+    first_line = lines[0].strip()
+    if not first_line:
+        return None
+    # Truncate to reasonable length for compact display (around 80 chars)
+    if len(first_line) > 80:
+        # Try to break at a word boundary
+        truncated = first_line[:77]
+        last_space = truncated.rfind(' ')
+        if last_space > 40:  # Only break if we have at least 40 chars
+            return truncated[:last_space].strip() + "..."
+        return truncated.strip() + "..."
+    return first_line
+
+
 def _format_indicator_example_number(value: Any) -> Optional[str]:
     if isinstance(value, bool) or value is None:
         return None
@@ -278,8 +301,15 @@ def indicators_list(
                 ]
                 result = _table_from_rows(["name", "category", "aliases", "description"], rows)
             else:
-                rows = [[it.get('name',''), it.get('category','')] for it in items]
-                result = _table_from_rows(["name", "category"], rows)
+                rows = [
+                    [
+                        it.get('name',''),
+                        it.get('category',''),
+                        _extract_short_description(it.get('description', '')),
+                    ]
+                    for it in items
+                ]
+                result = _table_from_rows(["name", "category", "description"], rows)
             result["detail"] = detail_mode
             if total_matches > len(items):
                 result["total_count"] = total_matches
