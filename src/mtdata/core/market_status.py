@@ -497,6 +497,11 @@ def market_status(
         Response containing:
         - `timestamp`: Current UTC timestamp
         - `day_of_week`: Current day name (e.g., "Tuesday")
+        - `summary`: Human-readable summary of market statuses (e.g., "1 market open: NYSE; 3 pre-market: LSE, XETRA, EURONEXT; 5 closed")
+        - `markets_open`: Count of markets currently open
+        - `markets_pre_market`: Count of markets in pre-market
+        - `markets_lunch_break`: Count of markets in lunch break
+        - `markets_closed`: Count of markets currently closed
         - `upcoming_holidays_summary`: Compact holiday summary rows when
           `detail='compact'`
         - `upcoming_holidays`: Full holiday rows when `detail='full'`
