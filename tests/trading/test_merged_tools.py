@@ -339,5 +339,39 @@ class TestMergedTools(unittest.TestCase):
         trade_close(request=TradeCloseRequest(close_all=True), __cli_raw=True)
         self.mt5.orders_get.assert_called_with()
 
+    def test_trade_get_open_rejects_invalid_symbol(self):
+        # Setup mock to simulate symbol_select failure
+        # We need to reset all settings before configuring for invalid symbol
+        self.mt5.reset_mock()
+        self.mt5.symbol_select.return_value = False
+        self.mt5.last_error.return_value = "Symbol INVALID not found"
+        # Ensure other methods exist but aren't called
+        self.mt5.symbol_info.return_value = None
+        self.mt5.positions_get.return_value = None
+
+        # Test with invalid symbol
+        res = get_open(symbol="INVALID", __cli_raw=True)
+        self.assertIsInstance(res, dict)
+        self.assertFalse(res.get("success"), f"Expected success=False but got: {res}")
+        self.assertIn("error", res, f"Expected error field in: {res}")
+        self.assertIn("INVALID", res.get("error", ""))
+
+    def test_trade_get_pending_rejects_invalid_symbol(self):
+        # Setup mock to simulate symbol_select failure
+        # We need to reset all settings before configuring for invalid symbol
+        self.mt5.reset_mock()
+        self.mt5.symbol_select.return_value = False
+        self.mt5.last_error.return_value = "Symbol INVALID not found"
+        # Ensure other methods exist but aren't called
+        self.mt5.symbol_info.return_value = None
+        self.mt5.orders_get.return_value = None
+
+        # Test with invalid symbol
+        res = get_pending(symbol="INVALID", __cli_raw=True)
+        self.assertIsInstance(res, dict)
+        self.assertFalse(res.get("success"), f"Expected success=False but got: {res}")
+        self.assertIn("error", res, f"Expected error field in: {res}")
+        self.assertIn("INVALID", res.get("error", ""))
+
 if __name__ == '__main__':
     unittest.main()

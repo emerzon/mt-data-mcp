@@ -13,7 +13,12 @@ from ...shared.constants import TIMEFRAME_MAP
 from ...shared.result import Err, Ok, Result, to_dict
 from ...shared.validators import invalid_timeframe_error
 from ...utils.barriers import normalize_trade_direction
-from ...utils.mt5 import MT5ConnectionError, _normalize_times_in_struct, _to_server_naive_dt
+from ...utils.mt5 import (
+    MT5ConnectionError,
+    _ensure_symbol_ready,
+    _normalize_times_in_struct,
+    _to_server_naive_dt,
+)
 from ..config import trade_guardrails_config
 from ..execution_logging import (
     infer_result_success,
@@ -2687,6 +2692,10 @@ def _fetch_trade_query_rows(
         if rows is None or len(rows) == 0:
             return None, [{"message": no_ticket_message(request.ticket)}]
     elif request.symbol is not None:
+        # Validate symbol before querying
+        symbol_error = _ensure_symbol_ready(request.symbol)
+        if symbol_error:
+            return None, [{"error": symbol_error}]
         rows = fetch_rows(symbol=request.symbol)
         if rows is None or len(rows) == 0:
             return None, [{"message": no_symbol_message(request.symbol)}]
