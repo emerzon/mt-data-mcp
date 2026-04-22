@@ -180,23 +180,26 @@ def _extract_description(cls: Any, fallback: str) -> str:
 
 @lru_cache(maxsize=1)
 def _check_chronos_runtime_support() -> Tuple[bool, List[str]]:
-    """Verify Chronos exposes APIs required by our adapters."""
+    """Verify Chronos exposes the public pipeline APIs required by our adapters."""
     reqs: List[str] = []
     try:
         chronos_mod = _importlib.import_module("chronos")
     except Exception:
         return False, ["chronos-forecasting"]
 
-    if not any(hasattr(chronos_mod, attr) for attr in ("Chronos2Pipeline", "ChronosBoltPipeline", "ChronosPipeline")):
-        reqs.append("chronos pipeline API")
+    top_level_pipelines = ("Chronos2Pipeline", "ChronosBoltPipeline", "ChronosPipeline")
+    if any(hasattr(chronos_mod, attr) for attr in top_level_pipelines):
+        return True, reqs
 
-    # Some incompatible chronos versions import but fail at runtime due missing internals.
+    # Newer Chronos-2 builds may expose the pipeline only from chronos.chronos2.
     try:
         chronos2_mod = _importlib.import_module("chronos.chronos2")
-        if not hasattr(chronos2_mod, "ChronosBoltModelForForecasting"):
-            reqs.append("chronos-forecasting>=2.0.0")
     except Exception:
-        reqs.append("chronos-forecasting>=2.0.0")
+        reqs.append("chronos pipeline API")
+        return False, reqs
+
+    if not hasattr(chronos2_mod, "Chronos2Pipeline"):
+        reqs.append("chronos pipeline API")
 
     return len(reqs) == 0, reqs
 

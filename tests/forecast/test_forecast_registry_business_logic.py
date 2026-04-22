@@ -3,6 +3,23 @@ import pytest
 from mtdata.forecast import forecast_registry as fr
 
 
+def test_check_chronos_runtime_support_accepts_public_pipeline_api(monkeypatch):
+    fr._check_chronos_runtime_support.cache_clear()
+
+    def fake_import(name):
+        if name == "chronos":
+            return type("ChronosModule", (), {"Chronos2Pipeline": object()})()
+        raise AssertionError(f"unexpected import: {name}")
+
+    monkeypatch.setattr(fr._importlib, "import_module", fake_import)
+
+    available, reqs = fr._check_chronos_runtime_support()
+
+    assert available is True
+    assert reqs == []
+    fr._check_chronos_runtime_support.cache_clear()
+
+
 def test_check_requirements_marks_mlf_rf_unavailable_and_normalizes_sklearn(monkeypatch):
     checked_names = []
 
