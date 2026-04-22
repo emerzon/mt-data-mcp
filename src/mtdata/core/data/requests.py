@@ -4,14 +4,7 @@ import json
 import re
 from typing import Annotated, Any, Dict, List, Literal, Optional, Union
 
-from pydantic import (
-    AfterValidator,
-    BaseModel,
-    BeforeValidator,
-    Field,
-    field_validator,
-    model_validator,
-)
+from pydantic import AfterValidator, BaseModel, BeforeValidator, Field, field_validator, model_validator
 
 from ..output_contract import normalize_output_detail
 from ..schema import DenoiseSpec, IndicatorSpec, SimplifySpec, TimeframeLiteral
@@ -229,30 +222,22 @@ def _validate_non_negative(value: Optional[float], name: str) -> Optional[float]
     return value_f
 
 
-_WAIT_EVENT_PRICE_DIRECTION_ALIASES = {
-    "above": "up",
-    "below": "down",
-}
-
-
-def _normalize_wait_event_price_direction(value: Any) -> Any:
+def _reject_wait_event_price_direction_alias(value: Any) -> Any:
     if value is None:
         return value
     text = str(value).strip().lower()
-    if not text:
-        return value
-    return _WAIT_EVENT_PRICE_DIRECTION_ALIASES.get(text, text)
+    if text in {"above", "below"}:
+        raise ValueError("direction aliases 'above'/'below' were removed; use 'up'/'down'.")
+    return value
 
 
-def _normalize_wait_event_account_side(value: Any) -> Any:
+def _reject_wait_event_account_side_alias(value: Any) -> Any:
     if value is None:
         return None
     text = str(value).strip().lower()
     if text in {"long", "short"}:
-        return "buy" if text == "long" else "sell"
-    if text not in {"buy", "sell"}:
-        raise ValueError("side must be 'buy' or 'sell'.")
-    return text
+        raise ValueError("side aliases 'long'/'short' were removed; use 'buy'/'sell'.")
+    return value
 
 
 def _validate_positive_float(value: float, name: str) -> float:
@@ -410,8 +395,8 @@ class _WaitAccountEventBase(BaseModel):
 
     @field_validator("side", mode="before")
     @classmethod
-    def _normalize_side(cls, value: Optional[str]) -> Optional[str]:
-        return _normalize_wait_event_account_side(value)
+    def _reject_legacy_side_aliases(cls, value: Optional[str]) -> Optional[str]:
+        return _reject_wait_event_account_side_alias(value)
 
 class CandleCloseEventSpec(BaseModel):
     type: Literal["candle_close"] = "candle_close"
@@ -562,8 +547,8 @@ class PriceTouchLevelEventSpec(BaseModel):
 
     @field_validator("direction", mode="before")
     @classmethod
-    def _normalize_direction(cls, value: Any) -> Any:
-        return _normalize_wait_event_price_direction(value)
+    def _reject_legacy_direction_aliases(cls, value: Any) -> Any:
+        return _reject_wait_event_price_direction_alias(value)
 
     @field_validator("tolerance")
     @classmethod
@@ -583,8 +568,8 @@ class PriceBreakLevelEventSpec(BaseModel):
 
     @field_validator("direction", mode="before")
     @classmethod
-    def _normalize_direction(cls, value: Any) -> Any:
-        return _normalize_wait_event_price_direction(value)
+    def _reject_legacy_direction_aliases(cls, value: Any) -> Any:
+        return _reject_wait_event_price_direction_alias(value)
 
     @field_validator("tolerance")
     @classmethod
@@ -610,8 +595,8 @@ class PriceEnterZoneEventSpec(BaseModel):
 
     @field_validator("direction", mode="before")
     @classmethod
-    def _normalize_direction(cls, value: Any) -> Any:
-        return _normalize_wait_event_price_direction(value)
+    def _reject_legacy_direction_aliases(cls, value: Any) -> Any:
+        return _reject_wait_event_price_direction_alias(value)
 
     @model_validator(mode="after")
     def _validate_bounds(self) -> "PriceEnterZoneEventSpec":
@@ -644,70 +629,45 @@ class StopThreatEventSpec(_WaitAccountEventBase):
         return 0.0 if validated is None else float(validated)
 
 
-_WAIT_EVENT_TYPE_ALIASES = {
+_REMOVED_WAIT_EVENT_TYPE_ALIASES = {
     "price_level_touch": "price_touch_level",
 }
 
 
-def _normalize_wait_event_spec_item(value: Any) -> Any:
-    if not isinstance(value, dict):
+def _reject_legacy_wait_event_bucket(value: Any, *, field_name: str) -> Any:
+    if not isinstance(value, list):
         return value
-    normalized = dict(value)
-    event_type = str(normalized.get("type") or "").strip()
-    if event_type in _WAIT_EVENT_TYPE_ALIASES:
-        normalized["type"] = _WAIT_EVENT_TYPE_ALIASES[event_type]
-    return normalized
+
+    for item in value:
+        if isinstance(item, str):
+            if field_name == "watch_for":
+                raise ValueError(
+                    "watch_for string shorthand was removed; pass full event objects."
+                )
+            raise ValueError(f"{field_name} only accepts event objects.")
+        if not isinstance(item, dict):
+            continue
+
+        event_type = str(item.get("type") or "").strip()
+        replacement = _REMOVED_WAIT_EVENT_TYPE_ALIASES.get(event_type)
+        if replacement is not None:
+            raise ValueError(f"{event_type} was removed; use {replacement}.")
+        if field_name == "watch_for" and event_type == "candle_close":
+            raise ValueError("watch_for no longer accepts candle_close; use end_on.")
+        if field_name == "end_on" and event_type and event_type != "candle_close":
+            raise ValueError("end_on only accepts candle_close events.")
 
 
-def _is_candle_close_wait_event(value: Any) -> bool:
-    return isinstance(value, dict) and str(value.get("type") or "").strip() == "candle_close"
-
-
-def _canonicalize_candle_close_wait_event(value: Any) -> Any:
-    if not _is_candle_close_wait_event(value):
-        return value
-    return CandleCloseEventSpec.model_validate(value).model_dump(exclude_none=True)
-
-
-def _normalize_wait_event_request_payload(value: Any) -> Any:
+def _reject_legacy_wait_event_request_payload(value: Any) -> Any:
     if not isinstance(value, dict):
         return value
 
     data = dict(value)
-    watch_for_input = data.get("watch_for")
-    end_on_input = data.get("end_on")
+    if "instrument" in data:
+        raise ValueError("instrument was removed; use symbol")
 
-    if not isinstance(watch_for_input, list) and not isinstance(end_on_input, list):
-        return data
-
-    watch_for_out: List[Any] = []
-    end_on_out: List[Any] = []
-
-    def append_unique_boundary_event(item: Any) -> None:
-        canonical_item = _canonicalize_candle_close_wait_event(item)
-        if canonical_item not in end_on_out:
-            end_on_out.append(canonical_item)
-
-    if isinstance(watch_for_input, list):
-        for item in watch_for_input:
-            normalized = _normalize_wait_event_spec_item(item)
-            if _is_candle_close_wait_event(normalized):
-                append_unique_boundary_event(normalized)
-            else:
-                watch_for_out.append(normalized)
-
-    if isinstance(end_on_input, list):
-        for item in end_on_input:
-            normalized = _normalize_wait_event_spec_item(item)
-            if _is_candle_close_wait_event(normalized):
-                append_unique_boundary_event(normalized)
-            else:
-                watch_for_out.append(normalized)
-
-    if isinstance(watch_for_input, list) or watch_for_out:
-        data["watch_for"] = watch_for_out
-    if isinstance(end_on_input, list) or end_on_out:
-        data["end_on"] = end_on_out
+    _reject_legacy_wait_event_bucket(data.get("watch_for"), field_name="watch_for")
+    _reject_legacy_wait_event_bucket(data.get("end_on"), field_name="end_on")
     return data
 
 
@@ -752,8 +712,8 @@ class WaitEventRequest(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def _normalize_legacy_event_names(cls, value: Any) -> Any:
-        return _normalize_wait_event_request_payload(value)
+    def _reject_legacy_inputs(cls, value: Any) -> Any:
+        return _reject_legacy_wait_event_request_payload(value)
 
     @field_validator("order_ticket")
     @classmethod
@@ -785,8 +745,8 @@ class WaitEventRequest(BaseModel):
 
     @field_validator("side", mode="before")
     @classmethod
-    def _normalize_side(cls, value: Optional[str]) -> Optional[str]:
-        return _normalize_wait_event_account_side(value)
+    def _reject_legacy_side_aliases(cls, value: Optional[str]) -> Optional[str]:
+        return _reject_wait_event_account_side_alias(value)
 
     @model_validator(mode="after")
     def _validate_explicit_empty_watchers(self) -> "WaitEventRequest":

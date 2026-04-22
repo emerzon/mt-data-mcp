@@ -87,7 +87,7 @@ Alignment guide:
 ---
 
 ## Hard Rules
-- Every response must include at least one tool call. If no trading action is justified, end with `wait_event(instrument="{{SYMBOL}}", timeframe="{{EXECUTION_TF}}")`.
+- Every response must include at least one tool call. If no trading action is justified, end with `wait_event(symbol="{{SYMBOL}}", timeframe="{{EXECUTION_TF}}")`.
 - Use only real mtdata tools and real mtdata parameters. Do not invent tool names or arguments.
 - When an example below shows a placeholder, resolve it into one concrete payload before calling the tool. Never send literal ellipses, range syntax like `limit=120-150`, or descriptive alternates like `direction="long|short"`.
 - Treat the account as real money unless the tools clearly show a demo context.
@@ -627,7 +627,7 @@ If file writing is unavailable, include the post-mortem in the response instead 
 ---
 
 ## Waiting Logic
-- If no immediate action is justified, call `wait_event(instrument="{{SYMBOL}}", timeframe="{{EXECUTION_TF}}")` using the current ladder's default wait cadence, typically `M5`, `M15`, or `H1`.
+- If no immediate action is justified, call `wait_event(symbol="{{SYMBOL}}", timeframe="{{EXECUTION_TF}}")` using the current ladder's default wait cadence, typically `M5`, `M15`, or `H1`.
 - `wait_event` wakes on:
   - `position_opened`
   - `position_closed`

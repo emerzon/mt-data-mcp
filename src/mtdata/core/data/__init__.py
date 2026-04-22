@@ -1,7 +1,6 @@
-import inspect
 import logging
 import statistics
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 from ...services.data_service import fetch_candles, fetch_ticks
 from ...utils.mt5 import ensure_mt5_connection_or_raise
@@ -28,132 +27,46 @@ __all__ = ['data_fetch_candles', 'data_fetch_ticks', 'wait_event']
 
 logger = logging.getLogger(__name__)
 
-WaitEventPublicWatchSpec = Union[str, Dict[str, Any]]
-
-_WAIT_EVENT_PUBLIC_TYPE_ALIASES = {
-    "price_level_touch": "price_touch_level",
-}
-
-_WAIT_EVENT_PUBLIC_WATCH_TYPES = frozenset(
-    {
-        "order_created",
-        "order_filled",
-        "order_cancelled",
-        "position_opened",
-        "position_closed",
-        "tp_hit",
-        "sl_hit",
-        "price_change",
-        "volume_spike",
-        "tick_count_spike",
-        "spread_spike",
-        "tick_count_drought",
-        "range_expansion",
-        "price_touch_level",
-        "price_break_level",
-        "price_enter_zone",
-        "pending_near_fill",
-        "stop_threat",
-    }
-)
-
-
-def _normalize_public_wait_event_type(value: Any) -> str:
-    text = str(value or "").strip()
-    if not text:
-        return ""
-    return _WAIT_EVENT_PUBLIC_TYPE_ALIASES.get(text, text)
+WaitEventPublicWatchSpec = Dict[str, Any]
 
 
 def _build_default_wait_event_watchers(
     *,
-    instrument: str,
+    symbol: str,
     timeframe: TimeframeLiteral,
     watch_tick_count_spike: bool,
 ) -> List[Dict[str, Any]]:
     watch_for: List[Dict[str, Any]] = [
-        {"type": "order_created", "symbol": instrument},
-        {"type": "order_filled", "symbol": instrument},
-        {"type": "order_cancelled", "symbol": instrument},
-        {"type": "position_opened", "symbol": instrument},
-        {"type": "position_closed", "symbol": instrument},
-        {"type": "tp_hit", "symbol": instrument},
-        {"type": "sl_hit", "symbol": instrument},
-        {"type": "pending_near_fill", "symbol": instrument},
-        {"type": "stop_threat", "symbol": instrument},
-        {"type": "price_change", "symbol": instrument},
-        {"type": "volume_spike", "symbol": instrument},
-        {"type": "spread_spike", "symbol": instrument},
-        {"type": "tick_count_drought", "symbol": instrument},
-        {"type": "range_expansion", "symbol": instrument},
+        {"type": "order_created", "symbol": symbol},
+        {"type": "order_filled", "symbol": symbol},
+        {"type": "order_cancelled", "symbol": symbol},
+        {"type": "position_opened", "symbol": symbol},
+        {"type": "position_closed", "symbol": symbol},
+        {"type": "tp_hit", "symbol": symbol},
+        {"type": "sl_hit", "symbol": symbol},
+        {"type": "pending_near_fill", "symbol": symbol},
+        {"type": "stop_threat", "symbol": symbol},
+        {"type": "price_change", "symbol": symbol},
+        {"type": "volume_spike", "symbol": symbol},
+        {"type": "spread_spike", "symbol": symbol},
+        {"type": "tick_count_drought", "symbol": symbol},
+        {"type": "range_expansion", "symbol": symbol},
     ]
     if watch_tick_count_spike:
-        watch_for.append({"type": "tick_count_spike", "symbol": instrument})
-    watch_for.extend(
-        _support_resistance_watchers(instrument=instrument, timeframe=timeframe)
-    )
-    watch_for.extend(_pivot_zone_watchers(instrument=instrument, timeframe=timeframe))
+        watch_for.append({"type": "tick_count_spike", "symbol": symbol})
+    watch_for.extend(_support_resistance_watchers(symbol=symbol, timeframe=timeframe))
+    watch_for.extend(_pivot_zone_watchers(symbol=symbol, timeframe=timeframe))
     return _dedupe_wait_event_watchers(watch_for)
-
-
-def _expand_public_wait_event_watchers(
-    watch_for: Optional[List[WaitEventPublicWatchSpec]],
-    *,
-    instrument: str,
-    timeframe: TimeframeLiteral,
-) -> Optional[List[Any]]:
-    if watch_for is None:
-        return None
-    if not any(isinstance(item, str) for item in watch_for):
-        return list(watch_for)
-
-    default_watchers = _build_default_wait_event_watchers(
-        instrument=instrument,
-        timeframe=timeframe,
-        watch_tick_count_spike=True,
-    )
-    watchers_by_type: Dict[str, List[Dict[str, Any]]] = {}
-    for item in default_watchers:
-        event_type = _normalize_public_wait_event_type(item.get("type"))
-        if not event_type:
-            continue
-        watchers_by_type.setdefault(event_type, []).append(dict(item))
-
-    resolved: List[Any] = []
-    for item in watch_for:
-        if not isinstance(item, str):
-            resolved.append(item)
-            continue
-
-        event_type = _normalize_public_wait_event_type(item)
-        if event_type not in _WAIT_EVENT_PUBLIC_WATCH_TYPES:
-            supported = ", ".join(sorted(_WAIT_EVENT_PUBLIC_WATCH_TYPES))
-            raise ValueError(
-                f"Unsupported wait_event watch_for shorthand {item!r}. "
-                f"Use one of: {supported}, or pass a full event object."
-            )
-
-        matches = watchers_by_type.get(event_type, [])
-        if not matches:
-            raise ValueError(
-                f"Could not resolve default wait_event watchers for {event_type!r}. "
-                "Pass a full event object with explicit parameters instead."
-            )
-        resolved.extend(dict(match) for match in matches)
-
-    if all(isinstance(item, dict) for item in resolved):
-        return _dedupe_wait_event_watchers([dict(item) for item in resolved])
-    return resolved
 
 
 def _support_resistance_watchers(
     *,
-    instrument: str,
+    symbol: str,
     timeframe: TimeframeLiteral,
 ) -> List[Dict[str, Any]]:
     try:
         raw_tool = getattr(support_resistance_levels, "__wrapped__", support_resistance_levels)
-        payload = raw_tool(symbol=instrument, timeframe=timeframe, detail="compact")
+        payload = raw_tool(symbol=symbol, timeframe=timeframe, detail="compact")
     except Exception:
         return []
     if not isinstance(payload, dict) or payload.get("error"):
@@ -177,7 +90,7 @@ def _support_resistance_watchers(
         watch_for.append(
             {
                 "type": "price_touch_level",
-                "symbol": instrument,
+                "symbol": symbol,
                 "level": level_value,
                 "direction": "either",
             }
@@ -185,7 +98,7 @@ def _support_resistance_watchers(
         watch_for.append(
             {
                 "type": "price_break_level",
-                "symbol": instrument,
+                "symbol": symbol,
                 "level": level_value,
                 "direction": direction,
             }
@@ -193,10 +106,10 @@ def _support_resistance_watchers(
     return watch_for
 
 
-def _pivot_zone_watchers(*, instrument: str, timeframe: TimeframeLiteral) -> List[Dict[str, Any]]:
+def _pivot_zone_watchers(*, symbol: str, timeframe: TimeframeLiteral) -> List[Dict[str, Any]]:
     try:
         raw_tool = getattr(pivot_compute_points, "__wrapped__", pivot_compute_points)
-        payload = raw_tool(symbol=instrument, timeframe=_default_wait_event_pivot_timeframe(timeframe))
+        payload = raw_tool(symbol=symbol, timeframe=_default_wait_event_pivot_timeframe(timeframe))
     except Exception:
         return []
     if not isinstance(payload, dict) or payload.get("error"):
@@ -213,7 +126,7 @@ def _pivot_zone_watchers(*, instrument: str, timeframe: TimeframeLiteral) -> Lis
         watch_for.append(
             {
                 "type": "price_enter_zone",
-                "symbol": instrument,
+                "symbol": symbol,
                 "lower": lower,
                 "upper": upper,
                 "direction": "either",
@@ -341,106 +254,6 @@ def _compact_wait_event_public_result(
         out["matched_event"] = compact_matched or None
 
     return out
-
-
-def _apply_legacy_wait_event_positional_args(
-    args: tuple[Any, ...],
-    *,
-    symbol: Optional[str],
-    instrument: Optional[str],
-    timeframe: TimeframeLiteral,
-    watch_tick_count_spike: bool,
-    watch_for: Optional[List[WaitEventPublicWatchSpec]],
-    end_on: Optional[List[Dict[str, Any]]],
-    verbose: bool,
-) -> tuple[Any, ...]:
-    if not args:
-        return symbol, instrument, timeframe, watch_tick_count_spike, watch_for, end_on, verbose
-
-    legacy_names = (
-        "symbol",
-        "timeframe",
-        "watch_tick_count_spike",
-        "watch_for",
-        "end_on",
-        "verbose",
-    )
-    if len(args) > len(legacy_names):
-        raise TypeError(
-            f"wait_event() takes from 0 to {len(legacy_names)} positional arguments but {len(args)} were given"
-        )
-
-    duplicate_checks = (
-        ("symbol", len(args) >= 1 and symbol is not None),
-        ("timeframe", len(args) >= 2 and timeframe != "M1"),
-        ("watch_tick_count_spike", len(args) >= 3 and watch_tick_count_spike is not True),
-        ("watch_for", len(args) >= 4 and watch_for is not None),
-        ("end_on", len(args) >= 5 and end_on is not None),
-        ("verbose", len(args) >= 6 and verbose is not False),
-    )
-    for name, duplicated in duplicate_checks:
-        if duplicated:
-            raise TypeError(f"wait_event() got multiple values for argument '{name}'")
-
-    legacy_values = dict(zip(legacy_names, args))
-    return (
-        legacy_values.get("symbol", symbol),
-        instrument,
-        legacy_values.get("timeframe", timeframe),
-        legacy_values.get("watch_tick_count_spike", watch_tick_count_spike),
-        legacy_values.get("watch_for", watch_for),
-        legacy_values.get("end_on", end_on),
-        legacy_values.get("verbose", verbose),
-    )
-
-
-_WAIT_EVENT_PUBLIC_SIGNATURE = inspect.Signature(
-    parameters=[
-        inspect.Parameter(
-            "symbol",
-            inspect.Parameter.POSITIONAL_OR_KEYWORD,
-            default=None,
-            annotation=Optional[str],
-        ),
-        inspect.Parameter(
-            "instrument",
-            inspect.Parameter.POSITIONAL_OR_KEYWORD,
-            default=None,
-            annotation=Optional[str],
-        ),
-        inspect.Parameter(
-            "timeframe",
-            inspect.Parameter.POSITIONAL_OR_KEYWORD,
-            default="M1",
-            annotation=TimeframeLiteral,
-        ),
-        inspect.Parameter(
-            "watch_tick_count_spike",
-            inspect.Parameter.POSITIONAL_OR_KEYWORD,
-            default=True,
-            annotation=bool,
-        ),
-        inspect.Parameter(
-            "watch_for",
-            inspect.Parameter.POSITIONAL_OR_KEYWORD,
-            default=None,
-            annotation=Optional[List[WaitEventPublicWatchSpec]],
-        ),
-        inspect.Parameter(
-            "end_on",
-            inspect.Parameter.POSITIONAL_OR_KEYWORD,
-            default=None,
-            annotation=Optional[List[Dict[str, Any]]],
-        ),
-        inspect.Parameter(
-            "verbose",
-            inspect.Parameter.POSITIONAL_OR_KEYWORD,
-            default=False,
-            annotation=bool,
-        ),
-    ],
-    return_annotation=Dict[str, Any],
-)
 
 
 @mcp.tool()
@@ -579,9 +392,7 @@ def data_fetch_ticks(
 
 @mcp.tool()
 def wait_event(
-    *args: Any,
     symbol: Optional[str] = None,
-    instrument: Optional[str] = None,
     timeframe: TimeframeLiteral = "M1",
     watch_tick_count_spike: bool = True,
     watch_for: Optional[List[WaitEventPublicWatchSpec]] = None,
@@ -598,13 +409,13 @@ def wait_event(
     to adjacent daily pivot bands for intraday waits and same-timeframe pivots
     for daily-or-higher waits.
 
-    Boundary waits belong in `end_on` as `{"type": "candle_close", ...}`.
-    `watch_for` is for market/account events, and the canonical price-level
-    event name is `price_touch_level`.
+    `symbol` is required when `watch_for` is omitted and the tool is inferring
+    its default watcher set. For boundary-only waits, pass `watch_for=[]` and
+    rely on `timeframe` or explicit `end_on` candle-close events.
 
-    For compatibility, `watch_for` may also be a list of event-name strings
-    such as `"order_created"` or `"price_touch_level"`; these expand into the
-    corresponding built-in public watcher defaults for the current symbol.
+    Boundary waits belong in `end_on` as `{"type": "candle_close", ...}`.
+    `watch_for` is for market/account events and only accepts explicit event
+    objects; `end_on` only accepts `candle_close` events.
 
     Advanced callers can pass explicit `watch_for` and `end_on` event specs to
     use the richer wait-event engine directly. When explicit `watch_for` is
@@ -612,57 +423,28 @@ def wait_event(
     Set `verbose=true` to include polling/timing details and the full criteria
     echo in the response.
     """
-    (
-        symbol,
-        instrument,
-        timeframe,
-        watch_tick_count_spike,
-        watch_for,
-        end_on,
-        verbose,
-    ) = _apply_legacy_wait_event_positional_args(
-        args,
-        symbol=symbol,
-        instrument=instrument,
-        timeframe=timeframe,
-        watch_tick_count_spike=watch_tick_count_spike,
-        watch_for=watch_for,
-        end_on=end_on,
-        verbose=verbose,
-    )
-    symbol_value = str(symbol or "").strip()
-    instrument_value = str(instrument or "").strip()
-    resolved_symbol: Optional[str]
+    symbol_value = str(symbol or "").strip() or None
+    explicit_watch_for = watch_for is not None
+    explicit_end_on = end_on is not None
     symbol_error: Optional[str] = None
-    if symbol_value and instrument_value and symbol_value != instrument_value:
-        resolved_symbol = None
-        symbol_error = "Provide either symbol or instrument, not both with different values."
-    else:
-        resolved_symbol = symbol_value or instrument_value or None
-        if resolved_symbol is None:
-            symbol_error = "A symbol is required."
+    if symbol_value is None and not explicit_watch_for:
+        symbol_error = "symbol is required when watch_for is omitted."
 
     def _run() -> Dict[str, Any]:
         if symbol_error is not None:
             return {"error": symbol_error}
-        assert resolved_symbol is not None
-        explicit_watch_for = watch_for is not None
-        explicit_end_on = end_on is not None
         request_kwargs: Dict[str, Any] = {
-            "symbol": resolved_symbol,
             "timeframe": timeframe,
         }
+        if symbol_value is not None:
+            request_kwargs["symbol"] = symbol_value
         if end_on is not None:
             request_kwargs["end_on"] = list(end_on)
         resolved_watch_for = (
-            _expand_public_wait_event_watchers(
-                watch_for,
-                instrument=resolved_symbol,
-                timeframe=timeframe,
-            )
+            list(watch_for)
             if explicit_watch_for
             else _build_default_wait_event_watchers(
-                instrument=resolved_symbol,
+                symbol=symbol_value,
                 timeframe=timeframe,
                 watch_tick_count_spike=watch_tick_count_spike,
             )
@@ -687,18 +469,11 @@ def wait_event(
     return run_logged_operation(
         logger,
         operation="wait_event",
-        symbol=resolved_symbol,
-        instrument_alias_used=bool(not symbol_value and instrument_value),
+        symbol=symbol_value,
         timeframe=timeframe,
         watch_tick_count_spike=watch_tick_count_spike,
         verbose=verbose,
-        explicit_watch_for=watch_for is not None,
+        explicit_watch_for=explicit_watch_for,
         end_on_count=len(end_on or []),
         func=_run,
     )
-
-
-wait_event.__signature__ = _WAIT_EVENT_PUBLIC_SIGNATURE
-_raw_wait_event = getattr(wait_event, "__wrapped__", None)
-if callable(_raw_wait_event):
-    _raw_wait_event.__signature__ = _WAIT_EVENT_PUBLIC_SIGNATURE

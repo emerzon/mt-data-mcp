@@ -210,20 +210,19 @@ def test_wait_event_tool_exposes_minimal_public_contract(monkeypatch) -> None:
     monkeypatch.setattr(
         core_data,
         "_build_default_wait_event_watchers",
-        lambda instrument, timeframe, watch_tick_count_spike: [
-            {"type": "position_opened", "symbol": instrument},
-            {"type": "tick_count_spike", "symbol": instrument},
-            {"type": "price_touch_level", "symbol": instrument, "level": 100.0},
+        lambda symbol, timeframe, watch_tick_count_spike: [
+            {"type": "position_opened", "symbol": symbol},
+            {"type": "tick_count_spike", "symbol": symbol},
+            {"type": "price_touch_level", "symbol": symbol, "level": 100.0},
         ] if watch_tick_count_spike else [
-            {"type": "position_opened", "symbol": instrument},
-            {"type": "price_touch_level", "symbol": instrument, "level": 100.0},
+            {"type": "position_opened", "symbol": symbol},
+            {"type": "price_touch_level", "symbol": symbol, "level": 100.0},
         ],
     )
 
     sig = inspect.signature(core_data.wait_event)
     assert tuple(sig.parameters.keys()) == (
         "symbol",
-        "instrument",
         "timeframe",
         "watch_tick_count_spike",
         "watch_for",
@@ -232,7 +231,7 @@ def test_wait_event_tool_exposes_minimal_public_contract(monkeypatch) -> None:
     )
 
     raw = getattr(core_data.wait_event, "__wrapped__", core_data.wait_event)
-    result = raw("BTCUSD", "M1")
+    result = raw(symbol="BTCUSD", timeframe="M1")
 
     assert result["success"] is True
     assert result["symbol"] == "BTCUSD"
@@ -253,16 +252,16 @@ def test_wait_event_tool_exposes_minimal_public_contract(monkeypatch) -> None:
     assert "poll_interval_seconds" not in result
     assert "max_wait_seconds" not in result
 
-    without_tick_count = raw("BTCUSD", "M1", False)
+    without_tick_count = raw(symbol="BTCUSD", timeframe="M1", watch_tick_count_spike=False)
     assert "criteria" not in without_tick_count
 
     explicit = raw(
-        "BTCUSD",
-        "M1",
-        True,
-        [{"type": "price_touch_level", "symbol": "BTCUSD", "level": 100.0}],
-        [{"type": "candle_close", "timeframe": "M5"}],
-        True,
+        symbol="BTCUSD",
+        timeframe="M1",
+        watch_tick_count_spike=True,
+        watch_for=[{"type": "price_touch_level", "symbol": "BTCUSD", "level": 100.0}],
+        end_on=[{"type": "candle_close", "timeframe": "M5"}],
+        verbose=True,
     )
     assert [item.type for item in explicit["criteria"]["watch_for"]] == ["price_touch_level"]
     assert [item.type for item in explicit["criteria"]["end_on"]] == ["candle_close"]
@@ -318,12 +317,12 @@ def test_wait_event_tool_compacts_matched_event_by_default(monkeypatch) -> None:
 
     raw = getattr(core_data.wait_event, "__wrapped__", core_data.wait_event)
     result = raw(
-        "BTCUSD",
-        "M1",
-        True,
-        [{"type": "price_touch_level", "symbol": "BTCUSD", "level": 100.0}],
-        None,
-        False,
+        symbol="BTCUSD",
+        timeframe="M1",
+        watch_tick_count_spike=True,
+        watch_for=[{"type": "price_touch_level", "symbol": "BTCUSD", "level": 100.0}],
+        end_on=None,
+        verbose=False,
     )
 
     assert result["matched_event"] == {
@@ -380,12 +379,12 @@ def test_wait_event_tool_preserves_shared_account_identity_fields(monkeypatch) -
 
     raw = getattr(core_data.wait_event, "__wrapped__", core_data.wait_event)
     result = raw(
-        "EURUSD",
-        "M1",
-        True,
-        [{"type": "order_created", "symbol": "EURUSD"}],
-        None,
-        False,
+        symbol="EURUSD",
+        timeframe="M1",
+        watch_tick_count_spike=True,
+        watch_for=[{"type": "order_created", "symbol": "EURUSD"}],
+        end_on=None,
+        verbose=False,
     )
 
     assert result["symbol"] == "EURUSD"
@@ -428,7 +427,7 @@ def test_support_resistance_watchers_use_compact_levels(monkeypatch) -> None:
     )
 
     watchers = core_data._support_resistance_watchers(
-        instrument="BTCUSD",
+        symbol="BTCUSD",
         timeframe="M15",
     )
 
@@ -455,7 +454,7 @@ def test_support_resistance_watchers_ignore_non_finite_levels(monkeypatch) -> No
     )
 
     watchers = core_data._support_resistance_watchers(
-        instrument="BTCUSD",
+        symbol="BTCUSD",
         timeframe="H1",
     )
 
@@ -479,7 +478,7 @@ def test_pivot_zone_watchers_use_adjacent_pivot_bands(monkeypatch) -> None:
         },
     )
 
-    watchers = core_data._pivot_zone_watchers(instrument="BTCUSD", timeframe="M15")
+    watchers = core_data._pivot_zone_watchers(symbol="BTCUSD", timeframe="M15")
 
     assert watchers == [
         {"type": "price_enter_zone", "symbol": "BTCUSD", "lower": 99.0, "upper": 100.0, "direction": "either"},

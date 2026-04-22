@@ -120,117 +120,86 @@ def test_wait_event_request_parses_market_event_specs() -> None:
     assert request.end_on[0].type == "candle_close"
 
 
-def test_wait_event_request_normalizes_legacy_event_names() -> None:
-    request = WaitEventRequest.model_validate(
-        {
-            "symbol": "EURUSD",
-            "watch_for": [
-                {"type": "candle_close", "timeframe": "M15"},
-                {"type": "price_level_touch", "level": 1.1454, "tolerance": 0.0002},
-            ],
-        }
-    )
-
-    assert [item.type for item in request.watch_for] == ["price_touch_level"]
-    assert [item.type for item in request.end_on] == ["candle_close"]
-    assert request.end_on[0].timeframe == "M15"
+def test_wait_event_request_rejects_legacy_event_names() -> None:
+    with pytest.raises(ValueError, match="price_level_touch was removed; use price_touch_level"):
+        WaitEventRequest.model_validate(
+            {
+                "symbol": "EURUSD",
+                "watch_for": [
+                    {"type": "price_level_touch", "level": 1.1454, "tolerance": 0.0002},
+                ],
+            }
+        )
 
 
-def test_wait_event_request_normalizes_price_direction_aliases() -> None:
-    request = WaitEventRequest.model_validate(
-        {
-            "symbol": "EURUSD",
-            "watch_for": [
-                {"type": "price_touch_level", "level": 1.1454, "direction": "above"},
-                {"type": "price_break_level", "level": 1.1460, "direction": "below"},
-                {
-                    "type": "price_enter_zone",
-                    "lower": 1.1440,
-                    "upper": 1.1460,
-                    "direction": "above",
-                },
-            ],
-        }
-    )
-
-    assert [item.direction for item in request.watch_for] == ["up", "down", "up"]
+def test_wait_event_request_rejects_price_direction_aliases() -> None:
+    with pytest.raises(ValueError, match="direction aliases 'above'/'below' were removed"):
+        WaitEventRequest.model_validate(
+            {
+                "symbol": "EURUSD",
+                "watch_for": [
+                    {"type": "price_touch_level", "level": 1.1454, "direction": "above"},
+                ],
+            }
+        )
 
 
-def test_wait_event_request_normalizes_account_side_aliases() -> None:
-    request = WaitEventRequest.model_validate(
-        {
-            "symbol": "EURUSD",
-            "watch_for": [
-                {"type": "position_opened", "symbol": "EURUSD", "side": "long"},
-                {"type": "position_closed", "symbol": "EURUSD", "side": "short"},
-            ],
-        }
-    )
-
-    assert [item.side for item in request.watch_for] == ["buy", "sell"]
+def test_wait_event_request_rejects_account_side_aliases() -> None:
+    with pytest.raises(ValueError, match="side aliases 'long'/'short' were removed"):
+        WaitEventRequest.model_validate(
+            {
+                "symbol": "EURUSD",
+                "watch_for": [
+                    {"type": "position_opened", "symbol": "EURUSD", "side": "long"},
+                ],
+            }
+        )
 
 
-def test_wait_event_request_normalizes_request_level_side_aliases() -> None:
-    request = WaitEventRequest.model_validate(
-        {
-            "symbol": "EURUSD",
-            "side": "long",
-            "watch_for": [
-                {"type": "position_opened"},
-            ],
-        }
-    )
-
-    compiled = wait_events._compile_request(
-        request,
-        started_at_utc=datetime(2026, 4, 5, tzinfo=timezone.utc),
-    )
-
-    assert request.side == "buy"
-    assert [item["side"] for item in compiled["watch_for"]] == ["buy"]
+def test_wait_event_request_rejects_request_level_side_aliases() -> None:
+    with pytest.raises(ValueError, match="side aliases 'long'/'short' were removed"):
+        WaitEventRequest.model_validate(
+            {
+                "symbol": "EURUSD",
+                "side": "long",
+                "watch_for": [
+                    {"type": "position_opened"},
+                ],
+            }
+        )
 
 
-def test_wait_event_request_deduplicates_identical_candle_close_events() -> None:
-    request = WaitEventRequest.model_validate(
-        {
-            "symbol": "EURUSD",
-            "watch_for": [
-                {"type": "candle_close", "timeframe": "M15"},
-                {"type": "price_level_touch", "level": 1.1454, "tolerance": 0.0002},
-            ],
-            "end_on": [{"type": "candle_close", "timeframe": "M15"}],
-        }
-    )
-
-    assert [item.type for item in request.watch_for] == ["price_touch_level"]
-    assert [(item.type, item.timeframe) for item in request.end_on] == [("candle_close", "M15")]
+def test_wait_event_request_rejects_candle_close_in_watch_for() -> None:
+    with pytest.raises(ValueError, match="watch_for no longer accepts candle_close; use end_on"):
+        WaitEventRequest.model_validate(
+            {
+                "symbol": "EURUSD",
+                "watch_for": [{"type": "candle_close", "timeframe": "M15"}],
+            }
+        )
 
 
-def test_wait_event_request_deduplicates_candle_close_events_with_null_optionals() -> None:
-    request = WaitEventRequest.model_validate(
-        {
-            "symbol": "EURUSD",
-            "watch_for": [{"type": "candle_close", "timeframe": "M15", "buffer_seconds": None}],
-            "end_on": [{"type": "candle_close", "timeframe": "M15"}],
-        }
-    )
-
-    assert request.watch_for == []
-    assert [(item.type, item.timeframe, item.buffer_seconds) for item in request.end_on] == [
-        ("candle_close", "M15", None),
-    ]
+def test_wait_event_request_rejects_non_boundary_events_in_end_on() -> None:
+    with pytest.raises(ValueError, match="end_on only accepts candle_close events"):
+        WaitEventRequest.model_validate(
+            {
+                "symbol": "EURUSD",
+                "end_on": [{"type": "order_created", "symbol": "EURUSD"}],
+            }
+        )
 
 
 def test_wait_event_request_preserves_distinct_candle_close_boundaries() -> None:
     request = WaitEventRequest.model_validate(
         {
             "symbol": "EURUSD",
-            "watch_for": [{"type": "candle_close", "timeframe": "M15"}],
-            "end_on": [{"type": "candle_close", "timeframe": "M5"}],
+            "end_on": [
+                {"type": "candle_close", "timeframe": "M15"},
+                {"type": "candle_close", "timeframe": "M5"},
+            ],
         }
     )
 
-    assert request.watch_for == []
     assert [(item.type, item.timeframe) for item in request.end_on] == [
         ("candle_close", "M15"),
         ("candle_close", "M5"),
@@ -240,18 +209,7 @@ def test_wait_event_request_preserves_distinct_candle_close_boundaries() -> None
 @patch("mtdata.core.data.get_mt5_gateway", return_value=object())
 @patch("mtdata.core.data._compact_wait_event_public_result", side_effect=lambda result, **_: result)
 @patch("mtdata.core.data.run_wait_event", return_value={"success": True})
-@patch(
-    "mtdata.core.data._build_default_wait_event_watchers",
-    return_value=[
-        {"type": "price_touch_level", "symbol": "BTCUSD", "level": 100000.0},
-        {"type": "price_break_level", "symbol": "BTCUSD", "level": 100500.0},
-        {"type": "price_enter_zone", "symbol": "BTCUSD", "lower": 99500.0, "upper": 100500.0},
-        {"type": "pending_near_fill", "symbol": "BTCUSD"},
-        {"type": "stop_threat", "symbol": "BTCUSD"},
-    ],
-)
-def test_wait_event_accepts_symbolic_watch_for_shorthand(
-    _mock_defaults,
+def test_wait_event_accepts_explicit_watch_for_objects(
     mock_run_wait,
     _mock_compact,
     _mock_gateway,
@@ -260,11 +218,11 @@ def test_wait_event_accepts_symbolic_watch_for_shorthand(
         symbol="BTCUSD",
         timeframe="M15",
         watch_for=[
-            "price_touch_level",
-            "price_break_level",
-            "price_enter_zone",
-            "pending_near_fill",
-            "stop_threat",
+            {"type": "price_touch_level", "symbol": "BTCUSD", "level": 100000.0},
+            {"type": "price_break_level", "symbol": "BTCUSD", "level": 100500.0},
+            {"type": "price_enter_zone", "symbol": "BTCUSD", "lower": 99500.0, "upper": 100500.0},
+            {"type": "pending_near_fill", "symbol": "BTCUSD"},
+            {"type": "stop_threat", "symbol": "BTCUSD"},
         ],
     )
 
@@ -279,14 +237,13 @@ def test_wait_event_accepts_symbolic_watch_for_shorthand(
     ]
 
 
-def test_expand_public_wait_event_watchers_rejects_unknown_shorthand() -> None:
-    from mtdata.core.data import _expand_public_wait_event_watchers
-
-    with pytest.raises(ValueError, match="Unsupported wait_event watch_for shorthand"):
-        _expand_public_wait_event_watchers(
-            ["unknown_event"],
-            instrument="BTCUSD",
-            timeframe="M15",
+def test_wait_event_request_rejects_watch_for_string_shorthand() -> None:
+    with pytest.raises(ValueError, match="watch_for string shorthand was removed"):
+        WaitEventRequest.model_validate(
+            {
+                "symbol": "BTCUSD",
+                "watch_for": ["price_touch_level"],
+            }
         )
 
 
@@ -307,20 +264,11 @@ def test_wait_event_prefers_public_symbol_name(mock_run_wait, _mock_compact, _mo
     assert request.symbol == "EURUSD"
 
 
-@patch("mtdata.core.data.get_mt5_gateway", return_value=object())
-@patch("mtdata.core.data._compact_wait_event_public_result", side_effect=lambda result, **_: result)
-@patch("mtdata.core.data.run_wait_event", return_value={"success": True})
-def test_wait_event_keeps_instrument_alias_for_compatibility(mock_run_wait, _mock_compact, _mock_gateway) -> None:
-    result = _raw_wait_event()(instrument="EURUSD", watch_for=[])
-
-    assert result == {"success": True}
-    request = mock_run_wait.call_args.args[0]
-    assert request.symbol == "EURUSD"
-
-
-def test_wait_event_rejects_conflicting_symbol_and_instrument() -> None:
-    result = _raw_wait_event()(symbol="EURUSD", instrument="GBPUSD", watch_for=[])
-
-    assert result == {
-        "error": "Provide either symbol or instrument, not both with different values."
-    }
+def test_wait_event_request_rejects_instrument_alias() -> None:
+    with pytest.raises(ValueError, match="instrument was removed; use symbol"):
+        WaitEventRequest.model_validate(
+            {
+                "instrument": "EURUSD",
+                "watch_for": [],
+            }
+        )

@@ -110,7 +110,7 @@ Alignment guide:
 ---
 
 ## Hard Rules
-- Every response must include at least one tool call. If no trading action is justified, end with `wait_event(instrument="{{SYMBOL}}", timeframe="{{EXECUTION_TF}}")`.
+- Every response must include at least one tool call. If no trading action is justified, end with `wait_event(symbol="{{SYMBOL}}", timeframe="{{EXECUTION_TF}}")`.
 - Use only real mtdata tools and real mtdata parameters. Do not invent tool names or arguments.
 - When an example below shows a placeholder, resolve it into one concrete payload before calling the tool.
 - Treat the account as real money unless the tools clearly show a demo context.
@@ -903,7 +903,7 @@ If a position was closed or disappeared:
 2. produce a concise post-mortem with thesis, what worked, what failed, and the key lesson
 
 ## Waiting Logic
-- If no immediate action is justified, prefer plain `wait_event(instrument="{{SYMBOL}}", timeframe="{{EXECUTION_TF}}")` over custom watcher payloads unless you need to narrow or override the default watcher set.
+- If no immediate action is justified, prefer plain `wait_event(symbol="{{SYMBOL}}", timeframe="{{EXECUTION_TF}}")` over custom watcher payloads unless you need to narrow or override the default watcher set.
 - Omitting `watch_for` already subscribes to the broad default event set, including lifecycle, proximity, volatility/activity, and level-based triggers.
 - Add explicit `watch_for` only when a narrow custom trigger set is materially better than the default broad watchlist.
 - With open exposure or an active pending ladder, do not wait longer than the active `EXECUTION_TF`.

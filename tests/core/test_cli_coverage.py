@@ -3159,12 +3159,11 @@ class TestAddDynamicArguments:
         )
         assert "--require-dom" in compact_action.option_strings
 
-    def test_wait_event_prefers_symbol_and_hides_instrument_alias(self):
+    def test_wait_event_exposes_symbol_without_instrument_alias(self):
         parser = argparse.ArgumentParser()
         func_info = {
             "params": [
                 {"name": "symbol", "type": str, "required": False, "default": None},
-                {"name": "instrument", "type": str, "required": False, "default": None},
             ]
         }
 
@@ -3172,7 +3171,7 @@ class TestAddDynamicArguments:
 
         assert parser.parse_args(["EURUSD"]).symbol == "EURUSD"
         assert not any(
-            action.dest == "instrument" and action.help != argparse.SUPPRESS
+            action.dest == "instrument"
             for action in parser._actions
         )
 

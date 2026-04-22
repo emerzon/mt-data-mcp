@@ -257,45 +257,6 @@ def _patch_wait_event_schema(schema: Dict[str, Any]) -> None:
     for field_name in ("watch_for", "end_on"):
         field_schema = wait_event_props.get(field_name)
         if isinstance(field_schema, dict):
-            field_schema = copy.deepcopy(field_schema)
-            if field_name == "watch_for":
-                array_candidates = []
-                if field_schema.get("type") == "array" and isinstance(
-                    field_schema.get("items"), dict
-                ):
-                    array_candidates.append(field_schema)
-                for union_key in ("anyOf", "oneOf", "allOf"):
-                    variants = field_schema.get(union_key)
-                    if not isinstance(variants, list):
-                        continue
-                    for variant in variants:
-                        if isinstance(variant, dict) and variant.get("type") == "array" and isinstance(
-                            variant.get("items"), dict
-                        ):
-                            array_candidates.append(variant)
-                for array_schema in array_candidates:
-                    watch_items = array_schema.get("items")
-                    discriminator = (
-                        watch_items.get("discriminator")
-                        if isinstance(watch_items, dict)
-                        else None
-                    )
-                    mapping = (
-                        discriminator.get("mapping")
-                        if isinstance(discriminator, dict)
-                        else None
-                    )
-                    if isinstance(watch_items, dict) and isinstance(mapping, dict) and mapping:
-                        array_schema["items"] = {
-                            "anyOf": [
-                                copy.deepcopy(watch_items),
-                                {
-                                    "type": "string",
-                                    "enum": sorted(mapping.keys()),
-                                },
-                            ]
-                        }
-                        break
             params[field_name] = copy.deepcopy(field_schema)
 
     defs = wait_event_schema.get("$defs")
