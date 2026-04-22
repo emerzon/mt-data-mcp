@@ -54,6 +54,7 @@ from mtdata.utils.mt5 import (
     _normalize_times_in_struct,
     _rates_to_df,
     _symbol_ready_guard,
+    _to_utc_history_query_dt,
     _to_server_naive_dt,
     clear_mt5_time_alignment_cache,
     clear_symbol_info_cache,
@@ -285,6 +286,22 @@ class TestToServerNaiveDt:
         dt = datetime(2024, 6, 15)
         assert _to_server_naive_dt(dt) == dt
         assert any("Failed to convert UTC datetime" in record.message for record in caplog.records)
+
+
+class TestToUtcHistoryQueryDt:
+    def test_naive_datetime_is_normalized_to_utc(self):
+        dt = datetime(2024, 1, 1, 12, 0)
+
+        assert _to_utc_history_query_dt(dt) == datetime(
+            2024, 1, 1, 12, 0, tzinfo=timezone.utc
+        )
+
+    def test_aware_datetime_is_converted_to_utc(self):
+        dt = datetime(2024, 1, 1, 12, 0, tzinfo=timezone(timedelta(hours=2)))
+
+        assert _to_utc_history_query_dt(dt) == datetime(
+            2024, 1, 1, 10, 0, tzinfo=timezone.utc
+        )
 
 
 # ── _normalize_times_in_struct  (lines 88-102) ───────────────────────────────

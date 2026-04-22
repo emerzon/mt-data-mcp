@@ -1371,7 +1371,7 @@ def test_close_positions_uses_history_deal_profit_when_result_profit_is_missing(
     mock_mt5.history_deals_get.assert_called_once()
 
 
-def test_close_positions_converts_history_lookup_window_to_server_time(mock_mt5):
+def test_close_positions_converts_history_lookup_window_to_utc(mock_mt5):
     mock_mt5.positions_get.return_value = [
         SimpleNamespace(
             ticket=123,
@@ -1398,19 +1398,19 @@ def test_close_positions_converts_history_lookup_window_to_server_time(mock_mt5)
     mock_mt5.history_deals_get.return_value = [
         SimpleNamespace(ticket=987, order=456, position_id=123, profit=42.5, time=1700000200),
     ]
-    server_from = object()
-    server_to = object()
+    utc_from = object()
+    utc_to = object()
 
     with patch(
-        "src.mtdata.core.trading.execution._to_server_naive_dt",
-        side_effect=[server_from, server_to],
-    ) as to_server:
+        "src.mtdata.core.trading.execution._to_utc_history_query_dt",
+        side_effect=[utc_from, utc_to],
+    ) as to_utc:
         res = _close_positions(ticket=123)
 
     assert "error" not in res
     assert res["pnl"] == pytest.approx(42.5)
-    assert to_server.call_count == 2
-    mock_mt5.history_deals_get.assert_called_once_with(server_from, server_to)
+    assert to_utc.call_count == 2
+    mock_mt5.history_deals_get.assert_called_once_with(utc_from, utc_to)
 
 
 def test_close_positions_retries_without_comment_when_result_retcode_rejects_comment(mock_mt5):

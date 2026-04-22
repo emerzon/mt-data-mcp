@@ -17,7 +17,7 @@ from ...utils.mt5 import (
     MT5ConnectionError,
     _ensure_symbol_ready,
     _normalize_times_in_struct,
-    _to_server_naive_dt,
+    _to_utc_history_query_dt,
 )
 from ..config import trade_guardrails_config
 from ..execution_logging import (
@@ -1410,9 +1410,10 @@ def run_trade_history(  # noqa: C901
             if from_dt > to_dt:
                 return {"error": "start must be before end."}
 
-            # MT5 history queries expect broker/server-local naive datetimes.
-            history_from_dt = _to_server_naive_dt(from_dt)
-            history_to_dt = _to_server_naive_dt(to_dt)
+            # MT5 history_* query bounds must stay in UTC instead of broker-local wall
+            # time, otherwise recent windows can shift away from the intended range.
+            history_from_dt = _to_utc_history_query_dt(from_dt)
+            history_to_dt = _to_utc_history_query_dt(to_dt)
 
             kind = str(request.history_kind or "deals").strip().lower()
             if kind not in ("deals", "orders"):

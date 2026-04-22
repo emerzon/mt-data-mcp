@@ -311,6 +311,13 @@ def _to_server_naive_dt(dt: datetime) -> datetime:
         return dt
 
 
+def _to_utc_history_query_dt(dt: datetime) -> datetime:
+    """Convert a datetime to a UTC-aware instant for MT5 history_* queries."""
+    from .utils import _utc_epoch_seconds
+
+    return datetime.fromtimestamp(_utc_epoch_seconds(dt), tz=timezone.utc)
+
+
 def _normalize_times_in_struct(arr: Any):
     """Convert all time fields in a structured array to UTC."""
     try:
