@@ -167,6 +167,12 @@ class TestSymbolsTopMarkets:
         assert result["results"]["lowest_spread"]["data"][0]["symbol"] == "EURUSD"
         assert result["results"]["highest_volume"]["data"][0]["symbol"] == "EURUSD"
         assert result["results"]["highest_price_change"]["data"][0]["symbol"] == "GBPUSD"
+        assert "success" not in result["results"]["lowest_spread"]
+        assert "count" not in result["results"]["lowest_spread"]
+        assert "success" not in result["results"]["highest_volume"]
+        assert "count" not in result["results"]["highest_volume"]
+        assert "success" not in result["results"]["highest_price_change"]
+        assert "count" not in result["results"]["highest_price_change"]
         assert result["detail"] == "full"
         assert result["timeframe_requested"] == "H1"
         assert result["timeframe_used"] == "H1"
@@ -277,6 +283,8 @@ class TestSymbolsTopMarkets:
             "price_change_pct",
             "tick_volume",
         ]
+        assert "success" not in result["results"]["lowest_spread"]
+        assert "count" not in result["results"]["highest_volume"]
 
     def test_invalid_rank_by_returns_error(self):
         fn = _get_symbols_top_markets()

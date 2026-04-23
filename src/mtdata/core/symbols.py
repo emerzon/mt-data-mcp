@@ -572,6 +572,10 @@ def _market_scan_table(headers: List[str], rows: List[Dict[str, Any]]) -> Dict[s
     return _table_from_rows(headers, ordered_rows)
 
 
+def _strip_nested_market_scan_meta(table: Dict[str, Any]) -> Dict[str, Any]:
+    return {k: v for k, v in table.items() if k not in ("success", "count")}
+
+
 def _market_scan_contract_table(
     headers: List[str],
     rows: List[Dict[str, Any]],
@@ -1211,17 +1215,23 @@ def symbols_top_markets(  # noqa: C901
             return {
                 **scan_meta,
                 "results": {
-                    "lowest_spread": _market_scan_table(
-                        _top_markets_headers("spread", detail_mode=detail_mode),
-                        spread_rows,
+                    "lowest_spread": _strip_nested_market_scan_meta(
+                        _market_scan_table(
+                            _top_markets_headers("spread", detail_mode=detail_mode),
+                            spread_rows,
+                        )
                     ),
-                    "highest_volume": _market_scan_table(
-                        _top_markets_headers("volume", detail_mode=detail_mode),
-                        volume_rows,
+                    "highest_volume": _strip_nested_market_scan_meta(
+                        _market_scan_table(
+                            _top_markets_headers("volume", detail_mode=detail_mode),
+                            volume_rows,
+                        )
                     ),
-                    "highest_price_change": _market_scan_table(
-                        _top_markets_headers("price_change", detail_mode=detail_mode),
-                        price_change_rows,
+                    "highest_price_change": _strip_nested_market_scan_meta(
+                        _market_scan_table(
+                            _top_markets_headers("price_change", detail_mode=detail_mode),
+                            price_change_rows,
+                        )
                     ),
                 },
                 "scan_stats": {
