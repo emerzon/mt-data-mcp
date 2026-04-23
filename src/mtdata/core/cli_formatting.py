@@ -469,6 +469,7 @@ def _normalize_symbols_describe_cli_payload(result: Any, *, verbose: bool) -> An
     symbol = dict(symbol_in)
     if not verbose:
         symbol.pop("time_epoch", None)
+        out.pop("meta", None)
     out["symbol"] = symbol
     return out
 

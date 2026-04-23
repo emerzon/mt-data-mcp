@@ -875,6 +875,28 @@ class TestFormatResultForCli:
         )
         assert 'time: "2023-11-14 22:13"' in result
         assert "time_epoch" not in result
+        assert "meta:" not in result
+
+    def test_symbols_describe_json_compact_hides_meta_block(self):
+        payload = json.loads(
+            _format_result_for_cli(
+                {
+                    "success": True,
+                    "symbol": {
+                        "name": "BTCUSD",
+                        "time_epoch": 1700000000.0,
+                        "time": "2023-11-14 22:13",
+                    },
+                    "meta": {"tool": "symbols_describe"},
+                },
+                fmt="json",
+                verbose=False,
+                cmd_name="symbols_describe",
+            )
+        )
+
+        assert "time_epoch" not in payload["symbol"]
+        assert "meta" not in payload
 
     def test_candle_json_uses_bars_key(self):
         payload = json.loads(
@@ -1778,6 +1800,22 @@ class TestRenderCliResult:
         out = capsys.readouterr().out
         assert "meta:" in out
         assert "tool: sample_tool" in out
+
+    def test_symbols_describe_default_full_detail_does_not_force_meta(self, capsys):
+        args = argparse.Namespace(detail="full", json=True, verbose=False)
+
+        _render_cli_result(
+            {
+                "success": True,
+                "symbol": {"name": "EURUSD", "time_epoch": 1700000000.0},
+            },
+            args=args,
+            cmd_name="symbols_describe",
+        )
+
+        payload = json.loads(capsys.readouterr().out)
+        assert "meta" not in payload
+        assert "time_epoch" not in payload["symbol"]
 
 
 # ========================================================================

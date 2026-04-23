@@ -544,6 +544,8 @@ def _write_cli_text(text: str, *, stream: Any = None) -> None:
 
 def _render_cli_result(result: Any, *, args: Any, cmd_name: str) -> None:
     verbose = resolve_output_contract(args).verbose
+    if cmd_name == "symbols_describe" and not bool(getattr(args, "verbose", False)):
+        verbose = False
     result = _attach_cli_meta(result, cmd_name=cmd_name, verbose=verbose)
     output = _format_result_for_cli(
         result,
