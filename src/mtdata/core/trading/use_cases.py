@@ -987,11 +987,14 @@ def run_trade_modify(
             if result.get("error") == f"Pending order {request.ticket} not found":
                 return _finish(
                     {
+                        "error_code": "ticket_not_found",
                         "error": (
                             f"Pending order {request.ticket} not found. "
                             "Note: price/expiration only apply to pending orders."
                         ),
+                        "ticket": request.ticket,
                         "checked_scopes": ["pending_orders"],
+                        "suggestion": "Use trade_get_pending to find active pending-order tickets before retrying trade_modify.",
                     },
                     pending=True,
                 )
@@ -1017,8 +1020,11 @@ def run_trade_modify(
             if pending_result.get("error") == f"Pending order {request.ticket} not found":
                 return _finish(
                     {
+                        "error_code": "ticket_not_found",
                         "error": f"Ticket {request.ticket} not found as position or pending order.",
+                        "ticket": request.ticket,
                         "checked_scopes": ["positions", "pending_orders"],
+                        "suggestion": "Use trade_get_open or trade_get_pending to find active tickets before retrying trade_modify.",
                     },
                     pending=None,
                 )

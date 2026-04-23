@@ -372,7 +372,10 @@ def test_trade_modify_pending_not_found_reports_checked_scope() -> None:
     ):
         out = trade_modify(ticket=123, price=1.2, __cli_raw=True)
     assert "error" in out
+    assert out.get("error_code") == "ticket_not_found"
+    assert out.get("ticket") == 123
     assert out.get("checked_scopes") == ["pending_orders"]
+    assert "trade_get_pending" in str(out.get("suggestion"))
 
 
 def test_trade_modify_missing_ticket_reports_both_checked_scopes() -> None:
@@ -385,4 +388,7 @@ def test_trade_modify_missing_ticket_reports_both_checked_scopes() -> None:
     ):
         out = trade_modify(ticket=123, stop_loss=1.0, __cli_raw=True)
     assert "error" in out
+    assert out.get("error_code") == "ticket_not_found"
+    assert out.get("ticket") == 123
     assert out.get("checked_scopes") == ["positions", "pending_orders"]
+    assert "trade_get_open" in str(out.get("suggestion"))
