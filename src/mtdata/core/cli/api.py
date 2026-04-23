@@ -138,10 +138,15 @@ def _invoke_cli_tool_function(
     warning_texts: List[str] = []
     seen: set[str] = set()
     for record in warning_records:
+        category = getattr(record, "category", Warning)
+        if isinstance(category, type) and issubclass(
+            category, (DeprecationWarning, PendingDeprecationWarning)
+        ):
+            continue
         try:
             text = warnings.formatwarning(
                 message=record.message,
-                category=record.category,
+                category=category,
                 filename=record.filename,
                 lineno=record.lineno,
                 line=record.line,

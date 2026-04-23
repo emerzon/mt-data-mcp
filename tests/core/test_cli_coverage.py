@@ -4756,6 +4756,36 @@ class TestMain:
         assert "runtime warning" in out.out
 
     @patch("mtdata.core.cli.discover_tools")
+    def test_cli_ignores_deprecation_warnings_in_structured_output(
+        self, mock_discover, capsys
+    ):
+        import warnings
+
+        def noisy_tool(**_kwargs):
+            warnings.warn("deprecated runtime path", DeprecationWarning)
+            warnings.warn("pending deprecation path", PendingDeprecationWarning)
+            warnings.warn("runtime warning", RuntimeWarning)
+            return {"ok": True}
+
+        info = get_function_info(noisy_tool)
+        mock_discover.return_value = {
+            "noisy_tool": {
+                "func": noisy_tool,
+                "meta": {"description": "Noisy tool"},
+                "_cli_func_info": info,
+            },
+        }
+
+        with patch("sys.argv", ["cli.py", "noisy_tool"]):
+            result = main()
+
+        assert result == 0
+        out = capsys.readouterr()
+        assert "runtime warning" in out.out
+        assert "deprecated runtime path" not in out.out
+        assert "pending deprecation path" not in out.out
+
+    @patch("mtdata.core.cli.discover_tools")
     def test_help_hides_irrelevant_timeframe_for_trade_account_info(
         self, mock_discover, capsys
     ):
