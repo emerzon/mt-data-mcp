@@ -63,6 +63,29 @@ def test_preview_trade_guardrails_reports_dynamic_checks(restore_trade_guardrail
     assert "wallet_risk" in preview["checks_not_performed"]
 
 
+def test_preview_trade_guardrails_surfaces_allowlist_context():
+    config = TradeGuardrailsConfig(
+        enabled=True,
+        max_volume_by_symbol={"EURUSD": 0.5, "GBPUSD": 0.25},
+    )
+
+    preview = preview_trade_guardrails(
+        config,
+        symbol="XAUUSD",
+        volume=0.1,
+        stop_loss=None,
+        deviation=None,
+        side="BUY",
+    )
+
+    assert preview["blocked"] is True
+    assert preview["rule"] == "symbol_policy"
+    assert preview["error_code"] == "symbol_not_in_allowlist"
+    assert preview["allowed_symbols_sample"] == ["EURUSD", "GBPUSD"]
+    assert preview["allowed_symbols_count"] == 2
+    assert "configured max_volume_by_symbol entries" in preview["suggestion"]
+
+
 def test_evaluate_trade_guardrails_blocks_wallet_risk_threshold():
     config = TradeGuardrailsConfig(
         enabled=True,
@@ -187,3 +210,30 @@ def test_run_trade_place_blocks_static_guardrail_before_send(restore_trade_guard
     assert result["guardrail_blocked"] is True
     assert result["guardrail_rule"] == "symbol_policy"
     place_market_order.assert_not_called()
+
+
+def test_run_trade_place_dry_run_exposes_allowlist_samples(restore_trade_guardrails):
+    trade_guardrails_config.enabled = True
+    trade_guardrails_config.max_volume_by_symbol = {"EURUSD": 0.5, "GBPUSD": 0.25}
+
+    result = run_trade_place(
+        TradePlaceRequest(
+            symbol="XAUUSD",
+            volume=0.03,
+            order_type="BUY",
+            require_sl_tp=False,
+            dry_run=True,
+        ),
+        normalize_order_type_input=lambda value: ("BUY", None),
+        normalize_pending_expiration=lambda value: (value, False),
+        prevalidate_trade_place_market_input=lambda symbol, volume: None,
+        place_market_order=lambda **kwargs: {"ok": True},
+        place_pending_order=lambda **kwargs: {"ok": True},
+        close_positions=lambda **kwargs: {"closed_count": 1},
+        safe_int_ticket=lambda value: value,
+    )
+
+    assert result["guardrail_blocked"] is True
+    assert result["guardrails_preview"]["error_code"] == "symbol_not_in_allowlist"
+    assert result["guardrails_preview"]["allowed_symbols_sample"] == ["EURUSD", "GBPUSD"]
+    assert "guardrail configuration" in result["guardrails_preview"]["suggestion"]

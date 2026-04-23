@@ -269,6 +269,7 @@ def _evaluate_symbol_guardrails(
 ) -> Optional[Dict[str, Any]]:
     violations: List[str] = []
     normalized_symbol = _normalize_symbol(symbol)
+    allowlist_details: Optional[Dict[str, Any]] = None
 
     if not config.trading_enabled:
         violations.append("Trading is disabled by guardrail configuration.")
@@ -284,6 +285,12 @@ def _evaluate_symbol_guardrails(
             violations.append(
                 f"Symbol {normalized_symbol} is not in the configured allowlist."
             )
+            allowlist_details = {
+                "error_code": "symbol_not_in_allowlist",
+                "allowed_symbols_sample": sorted(item for item in allowed if item)[:5],
+                "allowed_symbols_count": len([item for item in allowed if item]),
+                "suggestion": "Use one of the allowed symbols or update the trade guardrail allowlist configuration.",
+            }
 
     if volume is not None and math.isfinite(float(volume)):
         limits = []
@@ -297,6 +304,17 @@ def _evaluate_symbol_guardrails(
                 violations.append(
                     f"Symbol {normalized_symbol} is not in the configured max_volume_by_symbol allowlist."
                 )
+                allowlist_keys = [
+                    _normalize_symbol(item)
+                    for item in config.max_volume_by_symbol.keys()
+                    if _normalize_symbol(item)
+                ]
+                allowlist_details = {
+                    "error_code": "symbol_not_in_allowlist",
+                    "allowed_symbols_sample": sorted(allowlist_keys)[:5],
+                    "allowed_symbols_count": len(allowlist_keys),
+                    "suggestion": "Use one of the configured max_volume_by_symbol entries or update the trade guardrail configuration.",
+                }
             else:
                 limits.append((normalized_symbol, float(symbol_limit)))
 
@@ -313,11 +331,14 @@ def _evaluate_symbol_guardrails(
 
     if not violations:
         return None
-    return _build_guardrail_block(
+    payload = _build_guardrail_block(
         violations,
         rule="symbol_policy",
         context={"symbol": normalized_symbol or symbol, "volume": volume},
     )
+    if allowlist_details:
+        payload.update(allowlist_details)
+    return payload
 
 
 def _estimate_order_risk_currency(
@@ -694,7 +715,7 @@ def preview_trade_guardrails(
         checks_not_performed.append("account_risk")
     if _wallet_limits_active(config.wallet_risk_limits):
         checks_not_performed.append("wallet_risk")
-    return {
+    preview = {
         "enabled": True,
         "blocked": static_result is not None,
         "violations": list(static_result.get("violations") or [])
@@ -703,6 +724,18 @@ def preview_trade_guardrails(
         "rule": static_result.get("guardrail_rule") if static_result else None,
         "checks_not_performed": checks_not_performed,
     }
+    if static_result:
+        for key in (
+            "error_code",
+            "suggestion",
+            "allowed_symbols_sample",
+            "allowed_symbols_count",
+            "guardrail_context",
+        ):
+            value = static_result.get(key)
+            if value not in (None, "", []):
+                preview[key] = value
+    return preview
 
 
 def pending_order_risk_increased(
