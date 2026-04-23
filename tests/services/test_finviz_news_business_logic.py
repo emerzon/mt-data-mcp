@@ -54,7 +54,7 @@ def test_finviz_news_logs_finish_event_for_success(caplog) -> None:
     )
 
 
-def test_finviz_news_adds_normalized_items_alias_for_stock_results() -> None:
+def test_finviz_news_normalizes_stock_results_to_single_items_array() -> None:
     raw = _unwrap(finviz_news)
 
     service_result = {
@@ -77,7 +77,6 @@ def test_finviz_news_adds_normalized_items_alias_for_stock_results() -> None:
     with patch("mtdata.core.finviz.get_stock_news", return_value=service_result):
         out = raw(symbol="AAPL", limit=5, page=1)
 
-    assert out["news"] == service_result["news"]
     assert out["items"] == [
         {
             "title": "Apple launches new chips",
@@ -86,6 +85,7 @@ def test_finviz_news_adds_normalized_items_alias_for_stock_results() -> None:
             "url": "https://example.test/apple",
         }
     ]
+    assert "news" not in out
 
 
 def test_finviz_news_without_symbol_keeps_general_news_shape() -> None:

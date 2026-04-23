@@ -201,13 +201,14 @@ def _normalize_finviz_news_item(item: Any) -> Any:
     return out
 
 
-def _with_finviz_news_items_alias(result: Dict[str, Any]) -> Dict[str, Any]:
+def _normalize_finviz_news_payload(result: Dict[str, Any]) -> Dict[str, Any]:
     news_rows = result.get("news")
-    if not isinstance(news_rows, list) or "items" in result:
+    if not isinstance(news_rows, list):
         return result
 
     out = dict(result)
     out["items"] = [_normalize_finviz_news_item(item) for item in news_rows]
+    out.pop("news", None)
     return out
 
 
@@ -295,9 +296,8 @@ def finviz_news(symbol: Optional[str] = None, limit: int = 20, page: int = 1) ->
     Returns
     -------
     dict
-        Stock-specific calls preserve the legacy `news` rows and also expose a
-        normalized `items` alias with `title`, `source`, `published_at`, and
-        `url` fields for easier consumption.
+        Stock-specific calls return normalized `items` rows with `title`,
+        `source`, `published_at`, and `url` fields.
     """
     fields = {"symbol": symbol, "limit": limit, "page": page}
 
@@ -307,7 +307,7 @@ def finviz_news(symbol: Optional[str] = None, limit: int = 20, page: int = 1) ->
             if error is not None:
                 return error
             assert symbol_norm is not None
-            return _with_finviz_news_items_alias(
+            return _normalize_finviz_news_payload(
                 get_stock_news(symbol_norm, limit=limit, page=page)
             )
         return get_general_news(news_type="news", limit=limit, page=page)
