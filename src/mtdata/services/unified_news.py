@@ -1820,7 +1820,7 @@ class NewsAggregator:
                 + details["selected_upcoming"]
                 + details["selected_recent"]
             )
-        return {
+        payload = {
             "success": True,
             "symbol": context.symbol if context is not None else None,
             "instrument": context.to_dict() if context is not None else None,
@@ -1837,8 +1837,8 @@ class NewsAggregator:
                 ],
                 "embeddings": embedding_service.status() if context is not None else {"enabled": embedding_service.enabled},
             },
-            "general_news": [item.to_dict() for item in general_news],
             "related_news": [item.to_dict() for item in related_news],
+            "general_news": [item.to_dict() for item in general_news],
             "impact_news": [item.to_dict() for item in impact_news],
             "upcoming_events": [item.to_dict() for item in upcoming_events],
             "recent_events": [item.to_dict() for item in recent_events],
@@ -1848,6 +1848,12 @@ class NewsAggregator:
             "upcoming_count": len(upcoming_events),
             "recent_count": len(recent_events),
         }
+        if context is None:
+            general_news_rows = payload.pop("general_news")
+            related_news_rows = payload.pop("related_news")
+            payload["general_news"] = general_news_rows
+            payload["related_news"] = related_news_rows
+        return payload
 
 
 _news_aggregator: Optional[NewsAggregator] = None

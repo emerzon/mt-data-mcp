@@ -256,6 +256,7 @@ def test_fetch_unified_news_includes_direct_equity_news(monkeypatch) -> None:
     result = svc.fetch_unified_news("AAPL")
 
     assert result["success"] is True
+    assert list(result).index("related_news") < list(result).index("general_news")
     assert result["instrument"]["asset_class"] == "equity"
     assert result["related_news"][0]["kind"] == "direct_symbol"
     assert result["related_news"][0]["title"] == "Apple unveils new AI features"
@@ -364,6 +365,7 @@ def test_fetch_unified_news_treats_whitespace_symbol_as_general_news(monkeypatch
     result = svc.fetch_unified_news("   ")
 
     assert result["success"] is True
+    assert list(result).index("general_news") < list(result).index("related_news")
     assert result["symbol"] is None
     assert result["instrument"] is None
     assert result["related_news"] == []
