@@ -67,6 +67,7 @@ class TestForecastTaskStatus:
         with patch(_PATCH_TM, return_value=mock_tm):
             result = _unwrap(forecast_task_status)(ForecastTaskStatusRequest(task_id="task-abc"))
 
+        assert result["success"] is True
         assert result["detail"] == "compact"
         assert result["task_id"] == "task-abc"
         assert result["status"] == "running"
@@ -90,6 +91,7 @@ class TestForecastTaskStatus:
         with patch(_PATCH_TM, return_value=mock_tm):
             result = _unwrap(forecast_task_status)(ForecastTaskStatusRequest(task_id="task-abc"))
 
+        assert result["success"] is True
         assert result["status"] == "completed"
         assert result["model_id"] == "nhits/EURUSD_H1/abc"
         assert "result" not in result
@@ -128,6 +130,7 @@ class TestForecastTaskStatus:
         with patch(_PATCH_TM, return_value=mock_tm):
             result = _unwrap(forecast_task_status)(ForecastTaskStatusRequest(task_id="task-abc", detail="full"))
 
+        assert result["success"] is True
         assert result["detail"] == "full"
         assert result["params_hash"] == "hash-123"
         assert result["progress"]["metrics"] == {"rmse": 0.1}
@@ -150,6 +153,7 @@ class TestForecastTaskCancel:
         with patch(_PATCH_TM, return_value=mock_tm):
             result = _unwrap(forecast_task_cancel)(ForecastTaskCancelRequest(task_id="task-abc"))
 
+        assert result["success"] is True
         assert result["cancel_requested"] is True
         assert result["status"] == "cancelling"
 
@@ -167,6 +171,7 @@ class TestForecastTaskCancel:
         with patch(_PATCH_TM, return_value=mock_tm):
             result = _unwrap(forecast_task_cancel)(ForecastTaskCancelRequest(task_id="nope"))
 
+        assert result["success"] is False
         assert result["status"] == "not_found"
 
 
@@ -180,6 +185,7 @@ class TestForecastTaskWait:
         with patch(_PATCH_TM, return_value=mock_tm):
             result = _unwrap(forecast_task_wait)(ForecastTaskWaitRequest(task_id="task-abc", timeout_seconds=10.0))
 
+        assert result["success"] is True
         assert result["status"] == "completed"
         assert result["wait_timeout_seconds"] == 10.0
 
@@ -208,6 +214,7 @@ class TestForecastTaskList:
         with patch(_PATCH_TM, return_value=mock_tm):
             result = _unwrap(forecast_task_list)()
 
+        assert result["success"] is True
         assert result["count"] == 2
         assert result["tasks"][0]["progress_fraction"] == 0.1
         assert result["tasks"][0]["pid"] == 4321
@@ -241,7 +248,20 @@ class TestForecastModels:
         with patch(_PATCH_STORE, return_value=mock_store):
             result = _unwrap(forecast_models_delete)(ForecastModelsDeleteRequest(model_id="nhits/EURUSD_H1/abc"))
 
+        assert result["success"] is True
         assert result["deleted"] is True
+
+    def test_delete_missing_marks_failure(self):
+        from src.mtdata.core.forecast_tasks import forecast_models_delete
+
+        mock_store = MagicMock()
+        mock_store.delete.return_value = False
+
+        with patch(_PATCH_STORE, return_value=mock_store):
+            result = _unwrap(forecast_models_delete)(ForecastModelsDeleteRequest(model_id="nhits/EURUSD_H1/missing"))
+
+        assert result["success"] is False
+        assert result["deleted"] is False
 
 
 class TestForecastTrain:
@@ -259,6 +279,7 @@ class TestForecastTrain:
         ):
             result = _unwrap(forecast_train)(ForecastTrainRequest(symbol="EURUSD", timeframe="H1", method="nhits", horizon=24))
 
+        assert result["success"] is True
         assert result["status"] == "pending"
         assert result["task_id"] == "task-abc"
         mock_tm.submit_forecast_request.assert_called_once()

@@ -115,6 +115,7 @@ def _serialize_model_handle(handle: Any, *, detail: DetailLevel) -> Dict[str, An
 
 def _task_status_payload(task: Any, *, detail: DetailLevel) -> Dict[str, Any]:
     payload: Dict[str, Any] = {
+        "success": True,
         "detail": detail,
         "task_id": task.task_id,
         "method": task.method,
@@ -231,6 +232,7 @@ def forecast_train(request: ForecastTrainRequest) -> Dict[str, Any]:
         task = tm.get_status(task_id)
         if task is None:
             return {
+                "success": True,
                 "task_id": task_id,
                 "status": "pending",
                 "method": request.method,
@@ -266,6 +268,7 @@ def forecast_task_status(request: ForecastTaskStatusRequest) -> Dict[str, Any]:
         task = tm.get_status(request.task_id)
         if task is None:
             return {
+                "success": False,
                 "detail": detail_mode,
                 "error": f"Task '{request.task_id}' not found.",
             }
@@ -286,6 +289,7 @@ def forecast_task_cancel(request: ForecastTaskCancelRequest) -> Dict[str, Any]:
     def _execute() -> Dict[str, Any]:
         tm = _get_task_manager()
         result = tm.cancel(request.task_id)
+        result["success"] = bool(result["cancel_requested"])
         if result["cancel_requested"]:
             result["message"] = (
                 "Task cancellation requested."
@@ -313,6 +317,7 @@ def forecast_task_wait(request: ForecastTaskWaitRequest) -> Dict[str, Any]:
         task = tm.wait_for_status(request.task_id, timeout_seconds=request.timeout_seconds)
         if task is None:
             return {
+                "success": False,
                 "detail": detail_mode,
                 "error": f"Task '{request.task_id}' not found.",
             }
@@ -346,6 +351,7 @@ def forecast_task_list(
         tasks = tm.list_tasks(status=status_filter)
         items = [_task_list_item_payload(task, detail=detail_mode) for task in tasks]
         return {
+            "success": True,
             "detail": detail_mode,
             "count": len(items),
             "tasks": items,
@@ -402,11 +408,13 @@ def forecast_models_delete(request: ForecastModelsDeleteRequest) -> Dict[str, An
         deleted = store.delete(request.model_id)
         if deleted:
             return {
+                "success": True,
                 "model_id": request.model_id,
                 "deleted": True,
                 "message": f"Model '{request.model_id}' deleted.",
             }
         return {
+            "success": False,
             "model_id": request.model_id,
             "deleted": False,
             "message": f"Model '{request.model_id}' not found.",
