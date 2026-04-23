@@ -23,6 +23,24 @@ _AGE_BAR_FLOOR, _AGE_BAR_CEIL = 30, 400
 _SPAN_BAR_FLOOR, _SPAN_BAR_CEIL = 15, 250
 
 
+def _filter_non_actionable_elliott_warnings(
+    warnings_in: Any,
+    *,
+    diagnostic: Any,
+    n_patterns: int,
+) -> List[str]:
+    if not isinstance(warnings_in, list):
+        return []
+    warnings_clean = [str(w) for w in warnings_in if str(w)]
+    if not diagnostic or int(n_patterns) != 0:
+        return warnings_clean
+    return [
+        warning_text
+        for warning_text in warnings_clean
+        if not warning_text.startswith("Data quality warning:")
+    ]
+
+
 def _timeframe_aware_age_limits(
     timeframe: str, limit: int,
 ) -> tuple[int, int]:
@@ -497,10 +515,6 @@ def run_patterns_detect(  # noqa: C901
                 finding_row["note"] = _elliott_hidden_completed_note(
                     completed_hidden, completed_preview
                 )
-            tf_warnings = df.attrs.get("warnings")
-            if isinstance(tf_warnings, list) and tf_warnings:
-                finding_row["warnings"] = [str(w) for w in tf_warnings if str(w)]
-                warnings_out.extend(f"{tf}: {str(w)}" for w in tf_warnings if str(w))
             if int(len(filtered)) == 0:
                 if completed_hidden > 0:
                     finding_row["diagnostic"] = (
@@ -513,6 +527,14 @@ def run_patterns_detect(  # noqa: C901
                         f"No valid Elliott Wave structures detected in {int(request.limit)} {tf} bars. "
                         f"{deps.elliott_timeframe_suggestion(tf)}"
                     )
+            tf_warnings = _filter_non_actionable_elliott_warnings(
+                df.attrs.get("warnings"),
+                diagnostic=finding_row.get("diagnostic"),
+                n_patterns=int(len(filtered)),
+            )
+            if tf_warnings:
+                finding_row["warnings"] = tf_warnings
+                warnings_out.extend(f"{tf}: {warning_text}" for warning_text in tf_warnings)
             findings.append(finding_row)
 
             for row in filtered:

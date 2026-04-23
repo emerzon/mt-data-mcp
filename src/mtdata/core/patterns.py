@@ -77,6 +77,26 @@ ClassicEngineRunner = Callable[
 ]
 _CLASSIC_ENGINE_REGISTRY: Dict[str, ClassicEngineRunner] = {}
 
+
+def _filter_non_actionable_elliott_warnings(
+    warnings_in: Any,
+    *,
+    mode: str,
+    diagnostic: Any,
+    n_patterns: int,
+) -> List[str]:
+    if not isinstance(warnings_in, list):
+        return []
+    warnings_clean = [str(w) for w in warnings_in if str(w)]
+    if str(mode).strip().lower() != "elliott" or not diagnostic or int(n_patterns) != 0:
+        return warnings_clean
+    return [
+        warning_text
+        for warning_text in warnings_clean
+        if not warning_text.startswith("Data quality warning:")
+    ]
+
+
 def _patterns_connection_error() -> Optional[Dict[str, Any]]:
     return mt5_connection_error(
         get_mt5_gateway(
@@ -431,13 +451,19 @@ def _build_pattern_response(
     
     warnings_out = df.attrs.get("warnings")
     if isinstance(warnings_out, list) and warnings_out:
-        if "warnings" not in resp:
-            resp["warnings"] = []
-        if isinstance(resp["warnings"], list):
-            for w in warnings_out:
-                w_str = str(w) if w else None
-                if w_str:
-                    resp["warnings"].append(w_str)
+        filtered_warnings = _filter_non_actionable_elliott_warnings(
+            warnings_out,
+            mode=mode,
+            diagnostic=resp.get("diagnostic"),
+            n_patterns=int(len(filtered)),
+        )
+        if filtered_warnings:
+            if "warnings" not in resp:
+                resp["warnings"] = []
+            if isinstance(resp["warnings"], list):
+                for warning_text in filtered_warnings:
+                    if warning_text not in resp["warnings"]:
+                        resp["warnings"].append(warning_text)
     
     # Include series data if requested
     if include_series:

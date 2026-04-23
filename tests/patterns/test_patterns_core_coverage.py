@@ -1582,12 +1582,17 @@ class TestPatternsDetect:
     @patch("mtdata.core.patterns._fetch_pattern_data")
     def test_elliott_mode_single_tf_zero_patterns_includes_diagnostic(self, mock_fetch, mock_format):
         df = _make_ohlcv_df(200)
+        df.attrs["warnings"] = [
+            "Data quality warning: detected time gaps larger than 1.5 bar intervals.",
+            "Pattern detection used the latest closed bars only.",
+        ]
         mock_fetch.return_value = (df, None)
         mock_format.return_value = []
         result = _call_patterns_detect(symbol="EURUSD", mode="elliott", timeframe="H1")
         assert result.get("success") is True
         assert "diagnostic" in result
         assert "No valid Elliott Wave structures detected" in str(result.get("diagnostic"))
+        assert result.get("warnings") == ["Pattern detection used the latest closed bars only."]
 
     @patch("mtdata.core.patterns._format_elliott_patterns")
     @patch("mtdata.core.patterns._fetch_pattern_data")
