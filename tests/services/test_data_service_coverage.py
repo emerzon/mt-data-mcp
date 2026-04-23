@@ -761,6 +761,9 @@ class TestFetchCandles(unittest.TestCase):
         self.assertEqual(result['candles_requested'], 5)
         self.assertEqual(result['candles'], 4)
         self.assertEqual(result['candles_excluded'], 1)
+        self.assertEqual(result['incomplete_candles_skipped'], 1)
+        self.assertTrue(result['has_forming_candle'])
+        self.assertIn('include_incomplete=true', result['hint'])
         self.assertFalse(result['last_candle_open'])
 
     @patch(_MT5_CONFIG)

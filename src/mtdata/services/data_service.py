@@ -1131,12 +1131,15 @@ def fetch_candles(  # noqa: C901
             )
         raw_bars_fetched = int(len(rates))
         live_bar_reference_epoch = _resolve_live_bar_reference_epoch(symbol, timeframe)
+        initial_incomplete_trimmed = False
         if not include_incomplete:
+            rates_before_trim = int(len(rates))
             rates = _drop_incomplete_tail(
                 rates,
                 timeframe,
                 current_time_epoch=live_bar_reference_epoch,
             )
+            initial_incomplete_trimmed = int(len(rates)) < rates_before_trim
         if len(rates) == 0:
             return _build_no_data_error_with_context(
                 symbol, timeframe, mt5_timeframe, start_datetime, end_datetime
@@ -1239,6 +1242,7 @@ def fetch_candles(  # noqa: C901
 
         # Authoritative incomplete-tail trim: covers the initial fetch *and*
         # the TI-retry rebuild path, applied before any non-causal transforms.
+        _trimmed_incomplete = False
         if not include_incomplete:
             df, _trimmed_incomplete = _drop_incomplete_tail_df(
                 df,
@@ -1306,6 +1310,8 @@ def fetch_candles(  # noqa: C901
         candles_returned = int(len(df))
         candles_requested = int(candles)
         candles_excluded = max(0, candles_requested - candles_returned)
+        incomplete_candles_skipped = int(bool(initial_incomplete_trimmed)) + int(bool(_trimmed_incomplete))
+        has_forming_candle = bool(initial_incomplete_trimmed or _trimmed_incomplete or last_candle_open)
 
         payload.update({
             "success": True,
@@ -1315,6 +1321,8 @@ def fetch_candles(  # noqa: C901
             "candles_requested": candles_requested,
             "candles_excluded": candles_excluded,
             "last_candle_open": last_candle_open,
+            "incomplete_candles_skipped": incomplete_candles_skipped,
+            "has_forming_candle": has_forming_candle,
             "meta": {
                 "runtime": {
                     "timezone": build_runtime_timezone_meta(
@@ -1348,6 +1356,8 @@ def fetch_candles(  # noqa: C901
                 },
             },
         })
+        if incomplete_candles_skipped and not include_incomplete:
+            payload["hint"] = "Set include_incomplete=true to include the latest forming candle."
         if isinstance(freshness_diagnostics, dict):
             payload["meta"]["diagnostics"]["freshness"] = dict(freshness_diagnostics)
         if session_gap_warning:

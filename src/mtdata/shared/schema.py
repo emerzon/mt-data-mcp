@@ -54,7 +54,7 @@ PARAM_HINTS = {
     "indicators": "Indicators as compact specs like 'rsi_14', 'rsi(length=14)', 'macd(12,26,9)', or 'macd(fast=12,slow=26,signal=9)', or JSON like '[{\"name\":\"rsi\",\"params\":{\"length\":14}}]'. Bare names such as 'rsi' are also accepted.",
     "denoise": "Denoise preset name or JSON spec. Examples: --denoise kalman or --denoise '{\"method\":\"kalman\",\"params\":{\"lookback\":100}}'.",
     "simplify": "Simplify preset name or JSON spec. Examples: --simplify select, --simplify '{\"mode\":\"select\",\"method\":\"lttb\",\"ratio\":0.2}', or --simplify select --simplify-params \"ratio=0.2\".",
-    "include_incomplete": "Include the latest forming candle; defaults to false so last_candle_open is false and fetches return the last closed bar.",
+    "include_incomplete": "Include the latest forming candle; defaults to false, so responses expose has_forming_candle/incomplete_candles_skipped while returned rows stay on closed bars.",
     "method": "Method/algorithm for this tool. For forecast methods, run forecast_list_methods to browse valid names.",
     "mode": "Mode for this tool.",
     "engine": "Detection engine or comma-separated engines (for ensemble mode).",

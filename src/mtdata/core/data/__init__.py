@@ -272,7 +272,7 @@ def data_fetch_candles(
     - Data simplification for large datasets
     - Defaults to closed candles only; set include_incomplete=true to keep the latest forming candle
     - Set allow_stale=true to return the latest available closed bars even when freshness checks would normally fail
-    - Includes metadata: last_candle_open (true if last candle is still forming)
+    - Includes metadata for forming-candle handling (for example has_forming_candle and incomplete_candles_skipped)
     
     Parameters:
     -----------
@@ -321,7 +321,9 @@ def data_fetch_candles(
         - symbol: str
         - timeframe: str
         - candles: int (number of candles returned)
-        - last_candle_open: bool (true if last candle is still forming)
+        - last_candle_open: bool (legacy flag on returned rows)
+        - has_forming_candle: bool (true when the latest available candle is still forming)
+        - incomplete_candles_skipped: int (number of forming candles trimmed because include_incomplete=false)
         - data: list[dict] (tabular candle rows)
     
     Examples:
