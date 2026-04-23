@@ -8,7 +8,6 @@ from typing import Any, Dict, List, Literal, Optional
 
 from ...utils.mt5 import (
     MT5ConnectionError,
-    _mt5_epoch_to_utc,
     ensure_mt5_connection_or_raise,
     mt5_adapter,
 )
@@ -57,6 +56,10 @@ _TRADE_ACCOUNT_BASIC_KEYS = _TRADE_ACCOUNT_SUMMARY_KEYS + (
 )
 
 
+def _utc_epoch_identity(value: Any) -> float:
+    return float(value)
+
+
 def _run_trade_history_request(request: TradeHistoryRequest) -> Any:
     result = run_trade_history(
         request,
@@ -68,7 +71,7 @@ def _run_trade_history_request(request: TradeHistoryRequest) -> Any:
         use_client_tz=_use_client_tz,
         format_time_minimal=_format_time_minimal,
         format_time_minimal_local=_format_time_minimal_local,
-        mt5_epoch_to_utc=_mt5_epoch_to_utc,
+        mt5_epoch_to_utc=_utc_epoch_identity,
         parse_start_datetime=_parse_start_datetime,
         normalize_limit=_normalize_limit,
         comment_row_metadata=comments._comment_row_metadata,

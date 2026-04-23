@@ -7,7 +7,6 @@ from typing import Any, Dict, Literal
 
 from ..utils.mt5 import (
     MT5ConnectionError,
-    _mt5_epoch_to_utc,
     ensure_mt5_connection_or_raise,
     mt5,
 )
@@ -289,7 +288,7 @@ def _market_depth_fetch_impl(symbol: str, spread: bool = False, compact: bool = 
                     "ask": float(tick.ask) if tick.ask else None,
                     "last": float(tick.last) if tick.last else None,
                     "volume": int(tick.volume) if tick.volume else None,
-                    "time": int(_mt5_epoch_to_utc(float(tick.time))) if tick.time else None,
+                    "time": int(float(tick.time)) if tick.time else None,
                     "note": "Full market depth not available, showing current bid/ask snapshot.",
                     "recommended_alternative": "market_ticker",
                 },
@@ -304,9 +303,9 @@ def _market_depth_fetch_impl(symbol: str, spread: bool = False, compact: bool = 
                     out["capabilities"]["spread_overlay_applied"] = True
             _use_ctz = _use_client_tz()
             if tick.time and _use_ctz:
-                out["data"]["time_display"] = _format_time_minimal_local(_mt5_epoch_to_utc(float(tick.time)))
+                out["data"]["time_display"] = _format_time_minimal_local(float(tick.time))
             elif tick.time:
-                out["data"]["time_display"] = _format_time_minimal(_mt5_epoch_to_utc(float(tick.time)))
+                out["data"]["time_display"] = _format_time_minimal(float(tick.time))
             if not _use_ctz:
                 out["timezone"] = "UTC"
             out["query_latency_ms"] = round((time.perf_counter() - started) * 1000.0, 3)
@@ -420,7 +419,7 @@ def market_ticker(
                     spread_usd = (spread_abs / tick_size) * tick_value
                     pricing_basis = "per_1_lot_estimate"
 
-            tick_time = int(_mt5_epoch_to_utc(float(tick.time))) if tick.time else None
+            tick_time = int(float(tick.time)) if tick.time else None
             _use_ctz = _use_client_tz()
 
             out: Dict[str, Any] = {

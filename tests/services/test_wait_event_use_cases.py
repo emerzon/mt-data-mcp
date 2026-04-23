@@ -1114,9 +1114,7 @@ def test_fetch_market_ticks_range_converts_window_to_server_naive(monkeypatch) -
     )
 
 
-def test_normalize_tick_rows_keeps_epoch_and_time_msc_on_same_utc_basis(monkeypatch) -> None:
-    monkeypatch.setattr(wait_events_mod, "_mt5_epoch_to_utc", lambda value: float(value) - 7200.0)
-
+def test_normalize_tick_rows_keeps_epoch_and_time_msc_on_same_utc_basis() -> None:
     rows = [
         {
             "time": 7201.0,
@@ -1134,22 +1132,20 @@ def test_normalize_tick_rows_keeps_epoch_and_time_msc_on_same_utc_basis(monkeypa
 
     assert normalized == [
         {
-            "epoch": 1.0,
-            "time_msc": 1500,
+            "epoch": 7201.0,
+            "time_msc": 7201500,
             "bid": 1.1,
             "ask": 1.2,
             "last": 1.15,
             "volume": 0.0,
             "volume_real": 0.0,
             "flags": 0,
-            "key": (1500, 1.1, 1.2, 1.15, 0.0, 0.0, 0),
+            "key": (7201500, 1.1, 1.2, 1.15, 0.0, 0.0, 0),
         }
     ]
 
 
-def test_format_account_match_uses_millisecond_timestamp_fields(monkeypatch) -> None:
-    monkeypatch.setattr(wait_events_mod, "_mt5_epoch_to_utc", lambda value: float(value) - 7200.0)
-
+def test_format_account_match_uses_millisecond_timestamp_fields() -> None:
     match = wait_events_mod._format_account_match(
         "order_created",
         {
@@ -1161,7 +1157,7 @@ def test_format_account_match_uses_millisecond_timestamp_fields(monkeypatch) -> 
         gateway=SequenceGateway(),
     )
 
-    assert match["observed"]["time_utc"] == "1970-01-01T00:00:01.500000+00:00"
+    assert match["observed"]["time_utc"] == "1970-01-01T02:00:01.500000+00:00"
 
 
 def test_merge_market_ticks_dedupes_rows_with_missing_volume_fields() -> None:

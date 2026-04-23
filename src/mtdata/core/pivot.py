@@ -12,7 +12,7 @@ from ..shared.validators import (
 from ..utils.mt5 import (
     MT5ConnectionError,
     _mt5_copy_rates_from,
-    _mt5_epoch_to_utc,
+    _mt5_epoch_to_utc as _mt5_epoch_to_utc_compat,
     _symbol_ready_guard,
     ensure_mt5_connection_or_raise,
     mt5,
@@ -36,6 +36,12 @@ from .mt5_gateway import get_mt5_gateway
 from .schema import _PIVOT_METHODS, TimeframeLiteral
 
 logger = logging.getLogger(__name__)
+
+
+def _mt5_epoch_to_utc(value: float) -> float:
+    """Backward-compatible patch target; MT5 reads are normalized upstream."""
+    return _mt5_epoch_to_utc_compat(value)
+
 
 # Keep the MT5 adapter in this module namespace for compatibility with tests
 # and callers that patch mtdata.core.pivot.mt5 directly.
@@ -152,7 +158,7 @@ def pivot_compute_points(  # noqa: C901
                 server_now_ts = system_now_ts
                 _tick = mt5.symbol_info_tick(symbol)
                 if _tick is not None and getattr(_tick, "time", None):
-                    t_utc = float(_mt5_epoch_to_utc(float(_tick.time)))
+                    t_utc = float(_tick.time)
                     freshness_limit = float(max(tf_secs, 300))
                     if abs(system_now_ts - t_utc) <= freshness_limit:
                         server_now_ts = t_utc

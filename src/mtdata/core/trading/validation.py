@@ -973,11 +973,9 @@ def _tick_age_seconds(tick: Any) -> Optional[float]:
     Prefers ``time_msc`` (millisecond epoch) over ``time`` (second epoch).
     Returns ``None`` when the tick has no usable timestamp.
 
-    Assumes tick timestamps are in MT5 server time and normalizes them to UTC
-    before comparing to system time.
+    Assumes tick timestamps have already been normalized to UTC by the MT5
+    adapter before comparing to system time.
     """
-    from ...utils.mt5 import _mt5_epoch_to_utc
-
     now_utc = _time_module.time()
 
     for field in ("time_msc", "time"):
@@ -990,9 +988,9 @@ def _tick_age_seconds(tick: Any) -> Optional[float]:
                 continue
 
             if field == "time_msc":
-                tick_utc = _mt5_epoch_to_utc(val / 1000.0)
+                tick_utc = val / 1000.0
             else:
-                tick_utc = _mt5_epoch_to_utc(val)
+                tick_utc = val
 
             age_s = now_utc - tick_utc
             return max(0.0, age_s)

@@ -3,6 +3,7 @@
 import sys
 import time
 import types
+from collections import namedtuple
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, PropertyMock, patch
 
@@ -51,6 +52,8 @@ from mtdata.utils.mt5 import (
     _mt5_copy_ticks_from,
     _mt5_copy_ticks_range,
     _mt5_epoch_to_utc,
+    _normalize_object_time_rows,
+    _normalize_object_times,
     _normalize_times_in_struct,
     _rates_to_df,
     _symbol_ready_guard,
@@ -168,6 +171,67 @@ class TestMt5Adapter:
         finally:
             if original is not None:
                 sys.modules["MetaTrader5"] = original
+
+    def test_adapter_normalizes_symbol_tick_time(self):
+        Tick = namedtuple("Tick", ["time", "time_msc", "bid"])
+        _mt5_mock.symbol_info_tick.return_value = Tick(time=7200, time_msc=7_200_000, bid=1.1)
+
+        with patch.dict(sys.modules, {"MetaTrader5": _mt5_mock}), patch(
+            "mtdata.utils.mt5._mt5_epoch_to_utc",
+            side_effect=lambda value: value - 3600,
+        ):
+            result = MT5Adapter().symbol_info_tick("EURUSD")
+
+        assert hasattr(result, "_asdict")
+        assert result.time == 3600
+        assert result.time_msc == 3_600_000
+        assert result.bid == 1.1
+
+    def test_adapter_normalizes_position_order_and_history_rows(self):
+        Position = namedtuple("Position", ["ticket", "time_update"])
+        Order = namedtuple("Order", ["ticket", "time_setup", "time_expiration"])
+        Deal = namedtuple("Deal", ["ticket", "time", "time_msc"])
+        _mt5_mock.positions_get.return_value = (Position(1, 7200),)
+        _mt5_mock.orders_get.return_value = [Order(2, 7200, 0)]
+        _mt5_mock.history_deals_get.return_value = (Deal(3, 7200, 7_200_000),)
+
+        with patch.dict(sys.modules, {"MetaTrader5": _mt5_mock}), patch(
+            "mtdata.utils.mt5._mt5_epoch_to_utc",
+            side_effect=lambda value: value - 3600,
+        ):
+            adapter = MT5Adapter()
+            positions = adapter.positions_get()
+            orders = adapter.orders_get()
+            deals = adapter.history_deals_get(datetime(2024, 1, 1), datetime(2024, 1, 2))
+
+        assert positions[0].time_update == 3600
+        assert orders[0].time_setup == 3600
+        assert orders[0].time_expiration == 0
+        assert deals[0].time == 3600
+        assert deals[0].time_msc == 3_600_000
+
+
+class TestNormalizeObjectTimes:
+    def test_preserves_namedtuple_shape_and_zero_expiration(self):
+        Order = namedtuple("Order", ["ticket", "time_setup", "time_expiration"])
+        order = Order(ticket=1, time_setup=7200, time_expiration=0)
+
+        with patch("mtdata.utils.mt5._mt5_epoch_to_utc", side_effect=lambda value: value - 3600):
+            result = _normalize_object_times(order)
+
+        assert hasattr(result, "_asdict")
+        assert result.time_setup == 3600
+        assert result.time_expiration == 0
+
+    def test_normalizes_list_rows(self):
+        Position = namedtuple("Position", ["ticket", "time_update"])
+        rows = [Position(ticket=1, time_update=7200)]
+
+        with patch("mtdata.utils.mt5._mt5_epoch_to_utc", side_effect=lambda value: value - 3600):
+            result = _normalize_object_time_rows(rows)
+
+        assert isinstance(result, list)
+        assert result[0].time_update == 3600
 
 
 # ── _mt5_epoch_to_utc  (lines 40-59) ─────────────────────────────────────────
@@ -354,6 +418,18 @@ class TestNormalizeTimesInStruct:
         assert float(result[0]["time"]) == 940.0
         assert float(result[1]["time"]) == 1940.0
         sentinel.assert_not_called()
+
+    @patch("mtdata.utils.mt5.mt5_config")
+    def test_static_offset_fast_path_leaves_zero_expiration_unchanged(self, cfg):
+        dt = np.dtype([("time_expiration", float), ("price", float)])
+        arr = np.array([(0.0, 1.1), (7200.0, 1.2)], dtype=dt)
+        cfg.get_server_tz.return_value = None
+        cfg.get_time_offset_seconds.return_value = 3600
+
+        result = _normalize_times_in_struct(arr)
+
+        assert float(result[0]["time_expiration"]) == 0.0
+        assert float(result[1]["time_expiration"]) == 3600.0
 
     def test_exception_returns_input(self):
         obj = MagicMock()

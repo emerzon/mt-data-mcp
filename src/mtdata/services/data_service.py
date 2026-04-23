@@ -56,7 +56,7 @@ from ..utils.mt5 import (
     _mt5_copy_rates_from_pos,
     _mt5_copy_rates_range,
     _mt5_copy_ticks_range,
-    _mt5_epoch_to_utc,
+    _mt5_epoch_to_utc as _mt5_epoch_to_utc_compat,
     _rates_to_df,
     _symbol_ready_guard,
     get_cached_mt5_time_alignment,
@@ -88,6 +88,12 @@ from ..utils.utils import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _mt5_epoch_to_utc(value: float) -> float:
+    """Backward-compatible patch target; MT5 reads are normalized upstream."""
+    return _mt5_epoch_to_utc_compat(value)
+
 
 _AUTO_TIME_ALIGNMENT_MIN_SHIFT_SECONDS = 1800
 _AUTO_TIME_ALIGNMENT_MAX_SHIFT_SECONDS = 18 * 3600
@@ -195,7 +201,7 @@ def _resolve_live_bar_reference_epoch(symbol: Optional[str], timeframe: str) -> 
         tick_time = getattr(tick, "time", None) if tick is not None else None
         if tick_time is None:
             return float(system_epoch)
-        tick_epoch = float(_mt5_epoch_to_utc(float(tick_time)))
+        tick_epoch = float(tick_time)
         if not math.isfinite(tick_epoch):
             return float(system_epoch)
         freshness_limit = float(max(seconds_per_bar, 300))

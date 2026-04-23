@@ -6,7 +6,6 @@ import logging
 import math
 from typing import Any, Dict, List, Optional, Tuple
 
-from ...utils.mt5 import _mt5_epoch_to_utc
 from ...utils.utils import (
     _format_time_minimal,
     _format_time_minimal_local,
@@ -22,6 +21,10 @@ from .requests import TradeGetOpenRequest, TradeGetPendingRequest
 from .use_cases import run_trade_get_open, run_trade_get_pending
 
 logger = logging.getLogger(__name__)
+
+
+def _utc_epoch_identity(value: Any) -> float:
+    return float(value)
 
 
 def _position_sort_key(position: Any) -> float:
@@ -610,7 +613,7 @@ def trade_get_open(
                 use_client_tz=_use_client_tz,
                 format_time_minimal=_format_time_minimal,
                 format_time_minimal_local=_format_time_minimal_local,
-                mt5_epoch_to_utc=_mt5_epoch_to_utc,
+                mt5_epoch_to_utc=_utc_epoch_identity,
                 normalize_limit=_normalize_limit,
                 comment_row_metadata=comments._comment_row_metadata,
             ),
@@ -637,7 +640,7 @@ def trade_get_pending(
                 use_client_tz=_use_client_tz,
                 format_time_minimal=_format_time_minimal,
                 format_time_minimal_local=_format_time_minimal_local,
-                mt5_epoch_to_utc=_mt5_epoch_to_utc,
+                mt5_epoch_to_utc=_utc_epoch_identity,
                 normalize_limit=_normalize_limit,
                 comment_row_metadata=comments._comment_row_metadata,
             ),

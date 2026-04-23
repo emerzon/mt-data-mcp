@@ -13,7 +13,7 @@ from ..utils.mt5 import (
     MT5ConnectionError,
     _mt5_copy_rates_from,
     _mt5_copy_rates_range,
-    _mt5_epoch_to_utc,
+    _mt5_epoch_to_utc as _mt5_epoch_to_utc_compat,
     _symbol_ready_guard,
     ensure_mt5_connection_or_raise,
     get_symbol_info_cached,
@@ -33,6 +33,12 @@ from .mt5_gateway import get_mt5_gateway
 from .schema import TimeframeLiteral
 
 logger = logging.getLogger(__name__)
+
+
+def _mt5_epoch_to_utc(value: float) -> float:
+    """Backward-compatible patch target; MT5 reads are normalized upstream."""
+    return _mt5_epoch_to_utc_compat(value)
+
 
 
 _DOW_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
@@ -274,7 +280,7 @@ def _fetch_rates(
 
     tick = mt5_gateway.symbol_info_tick(symbol)
     if tick is not None and getattr(tick, "time", None):
-        t_utc = _mt5_epoch_to_utc(float(tick.time))
+        t_utc = float(tick.time)
         to_dt = datetime.fromtimestamp(t_utc, tz=timezone.utc).replace(tzinfo=None)
     else:
         to_dt = datetime.now(timezone.utc).replace(tzinfo=None)

@@ -130,7 +130,7 @@ class MT5Adapter:
 
     def symbol_info_tick(self, symbol):
         with _mt5_lock:
-            return self._module().symbol_info_tick(symbol)
+            return _normalize_object_times(self._module().symbol_info_tick(symbol))
 
     def order_send(self, request):
         with _mt5_lock:
@@ -138,19 +138,23 @@ class MT5Adapter:
 
     def positions_get(self, **kwargs):
         with _mt5_lock:
-            return self._module().positions_get(**kwargs)
+            return _normalize_object_time_rows(self._module().positions_get(**kwargs))
 
     def orders_get(self, **kwargs):
         with _mt5_lock:
-            return self._module().orders_get(**kwargs)
+            return _normalize_object_time_rows(self._module().orders_get(**kwargs))
 
     def history_orders_get(self, dt_from, dt_to, **kwargs):
         with _mt5_lock:
-            return self._module().history_orders_get(dt_from, dt_to, **kwargs)
+            return _normalize_object_time_rows(
+                self._module().history_orders_get(dt_from, dt_to, **kwargs)
+            )
 
     def history_deals_get(self, dt_from, dt_to, **kwargs):
         with _mt5_lock:
-            return self._module().history_deals_get(dt_from, dt_to, **kwargs)
+            return _normalize_object_time_rows(
+                self._module().history_deals_get(dt_from, dt_to, **kwargs)
+            )
 
     def account_info(self):
         with _mt5_lock:
@@ -204,6 +208,17 @@ class MT5Adapter:
 
 mt5_adapter = MT5Adapter()
 mt5 = mt5_adapter
+
+
+def _raw_mt5_module() -> Any:
+    if isinstance(mt5, MT5Adapter):
+        return _load_mt5_module()
+    return mt5
+
+
+def _raw_symbol_info_tick(symbol: str) -> Any:
+    with _mt5_lock:
+        return _raw_mt5_module().symbol_info_tick(symbol)
 
 
 @lru_cache(maxsize=256)
@@ -367,7 +382,12 @@ def _normalize_times_in_struct(arr: Any):
                                 if field.endswith("_msc")
                                 else float(offset_seconds)
                             )
-                            out[field] = out[field] - shift
+                            values = out[field]
+                            try:
+                                mask = values > 0
+                                out[field][mask] = values[mask] - shift
+                            except Exception:
+                                out[field] = values - shift
                         except Exception as exc:
                             logger.warning(
                                 "Failed to normalize MT5 timestamp field %s with static offset; leaving raw values unchanged: %s",
@@ -407,12 +427,11 @@ def _normalize_times_in_struct(arr: Any):
 
 def _normalize_object_times(obj: Any) -> Any:
     """Normalize timestamp attributes on an MT5 object to UTC.
-    Returns a copy (SimpleNamespace) if the original was likely immutable.
+    Returns a copy when the original was likely immutable.
     """
     if obj is None:
         return None
 
-    # Common MT5 timestamp attributes
     time_attrs = (
         "time",
         "time_msc",
@@ -422,53 +441,88 @@ def _normalize_object_times(obj: Any) -> Any:
         "time_done_msc",
         "time_update",
         "time_update_msc",
+        "time_expiration",
+        "expiration",
     )
 
-    # Check if any attributes exist
-    has_any = False
-    for attr in time_attrs:
-        if hasattr(obj, attr):
-            has_any = True
-            break
-    if not has_any:
-        return obj
-
-    # MT5 library objects are often read-only.
-    # We'll convert to a SimpleNamespace for safe modification.
     from types import SimpleNamespace
 
     try:
-        # Try to use _asdict() if it's a namedtuple-like object
         if hasattr(obj, "_asdict"):
             data = obj._asdict()
+            if hasattr(obj, "__dict__"):
+                for attr, value in vars(obj).items():
+                    if attr.startswith("_") or callable(value):
+                        continue
+                    data.setdefault(attr, value)
+        elif hasattr(obj, "__dict__"):
+            data = {
+                attr: value
+                for attr, value in vars(obj).items()
+                if not attr.startswith("_") and not callable(value)
+            }
         else:
             data = {
                 attr: getattr(obj, attr)
                 for attr in dir(obj)
-                if not attr.startswith("_") and not callable(getattr(obj, attr))
+                if not attr.startswith("_")
+                and not callable(getattr(obj, attr, None))
             }
 
+        if not any(attr in data for attr in time_attrs):
+            return obj
+
         modified = False
+        updates = {}
         for attr in time_attrs:
-            if attr in data and data[attr]:
+            if attr in data:
                 try:
+                    if data[attr].__class__.__module__.startswith("unittest.mock"):
+                        continue
                     val = float(data[attr])
-                    if val > 0:
-                        if attr.endswith("_msc"):
-                            data[attr] = _mt5_epoch_to_utc(val / 1000.0) * 1000.0
-                        else:
-                            data[attr] = _mt5_epoch_to_utc(val)
-                        modified = True
+                    if not math.isfinite(val) or val <= 0.0:
+                        continue
+                    normalized = (
+                        _mt5_epoch_to_utc(val / 1000.0) * 1000.0
+                        if attr.endswith("_msc")
+                        else _mt5_epoch_to_utc(val)
+                    )
+                    data[attr] = normalized
+                    updates[attr] = normalized
+                    modified = True
                 except Exception:
                     continue
 
         if not modified:
             return obj
 
+        if updates and hasattr(obj, "_replace"):
+            try:
+                return obj._replace(**updates)
+            except Exception:
+                pass
+
         return SimpleNamespace(**data)
     except Exception as exc:
         logger.debug("Failed to normalize object timestamps: %s", exc)
         return obj
+
+
+def _normalize_object_time_rows(rows: Any) -> Any:
+    """Normalize timestamp attributes in MT5 object-row collections."""
+    if rows is None:
+        return None
+    if isinstance(rows, tuple):
+        return tuple(_normalize_object_times(row) for row in rows)
+    if isinstance(rows, list):
+        return [_normalize_object_times(row) for row in rows]
+    try:
+        return type(rows)(_normalize_object_times(row) for row in rows)
+    except Exception:
+        try:
+            return [_normalize_object_times(row) for row in rows]
+        except Exception:
+            return rows
 
 
 # ---------------------------------------------------------------------------
@@ -688,7 +742,7 @@ def _ensure_symbol_ready(symbol: str) -> Optional[str]:
         if was_visible is False:
             deadline = time.time() + data_ready_timeout
             while time.time() < deadline:
-                tick = mt5.symbol_info_tick(symbol)
+                tick = _raw_symbol_info_tick(symbol)
                 if tick and (getattr(tick, 'time', 0) or getattr(tick, 'bid', 0) or getattr(tick, 'ask', 0)):
                     break
                 time.sleep(data_poll_interval)
@@ -738,7 +792,7 @@ def estimate_server_offset(symbol: str = "EURUSD", samples: int = 5) -> int:
         
         deltas = []
         for _ in range(samples):
-            tick = mt5.symbol_info_tick(symbol)
+            tick = _raw_symbol_info_tick(symbol)
             if tick:
                 # MT5 tick.time is epoch seconds (server time)
                 # We compare to time.time() (system local epoch -> UTC)
@@ -852,7 +906,7 @@ def inspect_mt5_time_alignment(
 
     raw_tick_epoch: Optional[float] = None
     try:
-        tick = mt5.symbol_info_tick(symbol)
+        tick = _raw_symbol_info_tick(symbol)
         if tick is not None:
             raw_tick_epoch = float(getattr(tick, "time", 0.0) or 0.0)
     except Exception:

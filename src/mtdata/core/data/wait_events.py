@@ -7,7 +7,7 @@ from bisect import bisect_left, bisect_right
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional
 
-from ...utils.mt5 import _mt5_epoch_to_utc, _to_server_naive_dt
+from ...utils.mt5 import _to_server_naive_dt
 from ..trading.time import _next_candle_wait_payload, _sleep_until_next_candle
 from .requests import (
     CandleCloseEventSpec,
@@ -3196,14 +3196,14 @@ def _tick_epoch(row: Any) -> Optional[float]:
     if value is None:
         return None
     try:
-        return float(_mt5_epoch_to_utc(float(value)))
+        return float(value)
     except Exception:
         return None
 
 
 def _mt5_millis_to_utc(value_millis: float) -> int:
     try:
-        return int(round(float(_mt5_epoch_to_utc(float(value_millis) / 1000.0)) * 1000.0))
+        return int(round(float(value_millis)))
     except Exception:
         return int(round(float(value_millis)))
 
@@ -3448,7 +3448,7 @@ def _normalize_optional_utc_datetime(value: Any) -> Optional[datetime]:
         return _normalize_utc_datetime(value)
     if isinstance(value, (int, float)):
         try:
-            return datetime.fromtimestamp(_mt5_epoch_to_utc(float(value)), tz=timezone.utc)
+            return datetime.fromtimestamp(float(value), tz=timezone.utc)
         except Exception:
             return None
     if isinstance(value, str):

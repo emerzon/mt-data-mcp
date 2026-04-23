@@ -20,7 +20,7 @@ from ..utils.denoise import normalize_denoise_spec as _normalize_denoise_spec
 from ..utils.mt5 import (
     _ensure_symbol_ready,
     _mt5_copy_rates_from,
-    _mt5_epoch_to_utc,
+    _mt5_epoch_to_utc as _mt5_epoch_to_utc_compat,
     mt5,
 )
 from ..utils.utils import _parse_start_datetime, parse_kv_or_json
@@ -36,6 +36,12 @@ from .common import (
 from .common import (
     pd_freq_from_timeframe as _pd_freq_from_timeframe,
 )
+
+
+def _mt5_epoch_to_utc(value: float) -> float:
+    """Backward-compatible patch target; MT5 reads are normalized upstream."""
+    return _mt5_epoch_to_utc_compat(value)
+
 
 # Optional availability flags (match server discovery)
 try:
@@ -359,7 +365,7 @@ def _fetch_mt5_rates_guarded(
 
         tick = mt5.symbol_info_tick(symbol)
         if tick is not None and getattr(tick, "time", None):
-            t_utc = _mt5_epoch_to_utc(float(tick.time))
+            t_utc = float(tick.time)
             server_now_dt = datetime.fromtimestamp(t_utc, tz=timezone.utc)
         else:
             server_now_dt = datetime.now(timezone.utc)
