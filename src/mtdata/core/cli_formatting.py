@@ -355,7 +355,17 @@ def _normalize_trade_session_context_cli_payload(result: Any, *, verbose: bool) 
         else:
             compact_ticker = {
                 key: ticker_norm.get(key)
-                for key in ("bid", "ask", "last", "spread", "spread_points", "spread_pct", "spread_usd", "time")
+                for key in (
+                    "bid",
+                    "ask",
+                    "last",
+                    "spread",
+                    "spread_points",
+                    "spread_pips",
+                    "spread_pct",
+                    "spread_usd",
+                    "time",
+                )
                 if key in ticker_norm and not _is_empty_value(ticker_norm.get(key))
             }
             if "error" in ticker_norm and not _is_empty_value(ticker_norm.get("error")):

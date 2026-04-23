@@ -746,6 +746,7 @@ class TestFormatResultForCli:
                         "bid": 1.1,
                         "ask": 1.1002,
                         "spread": 0.0002,
+                        "spread_pips": 2.0,
                     },
                 },
                 fmt="json",
@@ -760,6 +761,7 @@ class TestFormatResultForCli:
             "margin_level": 250.0,
         }
         assert payload["ticker"]["time"] == "2023-11-14 22:13"
+        assert payload["ticker"]["spread_pips"] == 2.0
         assert "time_display" not in payload["ticker"]
         assert "time_epoch" not in payload["ticker"]
         assert payload["open_positions"] == [
