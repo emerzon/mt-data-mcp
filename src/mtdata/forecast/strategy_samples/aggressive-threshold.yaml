@@ -1,0 +1,20 @@
+name: aggressive-threshold
+version: 1
+description: Lower entry thresholds for more frequent forecast-driven trading.
+entry:
+  type: forecast_threshold
+  signal: expected_return
+  long_above: 0.002
+  short_below: -0.002
+position_sizing:
+  type: fixed_fraction
+  fraction: 1.0
+exits:
+  - type: forecast_target
+  - type: time_stop
+    bars: 16
+risk:
+  - type: max_hold_bars
+    bars: 16
+  - type: max_loss_pct
+    loss_pct: 0.025

@@ -1,0 +1,20 @@
+name: conservative-threshold
+version: 1
+description: Higher entry thresholds for fewer, higher-conviction trades.
+entry:
+  type: forecast_threshold
+  signal: expected_return
+  long_above: 0.01
+  short_below: -0.01
+position_sizing:
+  type: fixed_fraction
+  fraction: 0.5
+exits:
+  - type: forecast_target
+  - type: time_stop
+    bars: 8
+risk:
+  - type: max_hold_bars
+    bars: 8
+  - type: max_loss_pct
+    loss_pct: 0.01

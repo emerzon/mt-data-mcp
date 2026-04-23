@@ -206,6 +206,30 @@ class ForecastBarrierProbRequest(BaseModel):
         return _normalize_direction_alias(value)
 
 
+class ForecastOptimizeHintsRequest(BaseModel):
+    symbol: str
+    timeframe: Optional[TimeframeLiteral] = None
+    timeframes: Optional[List[TimeframeLiteral]] = None
+    methods: Optional[List[str]] = None
+    horizon: int = Field(12, ge=1)
+    steps: int = Field(5, ge=1)
+    spacing: int = Field(20, ge=1)
+    population: int = Field(20, ge=1, le=100)
+    generations: int = Field(15, ge=1, le=100)
+    crossover_rate: float = Field(0.6, ge=0.0, le=1.0)
+    mutation_rate: float = Field(0.3, ge=0.0, le=1.0)
+    fitness_metric: str = "composite"
+    fitness_weights: Optional[Dict[str, float]] = None
+    seed: int = 42
+    max_search_time_seconds: Optional[float] = None
+    denoise: Optional[DenoiseSpec] = None
+    features: Optional[Dict[str, Any]] = None
+    include_feature_genes: bool = False
+    top_n: int = Field(5, ge=1, le=20)
+    dimred_method: Optional[str] = None
+    dimred_params: Optional[Dict[str, Any]] = None
+
+
 class ForecastBarrierOptimizeRequest(BaseModel):
     symbol: str
     timeframe: TimeframeLiteral = "H1"

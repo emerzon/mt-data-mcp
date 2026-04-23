@@ -26,6 +26,7 @@ from .requests import (
     ForecastBarrierProbRequest,
     ForecastConformalIntervalsRequest,
     ForecastGenerateRequest,
+    ForecastOptimizeHintsRequest,
     ForecastTuneGeneticRequest,
     ForecastTuneOptunaRequest,
     ForecastVolatilityEstimateRequest,
@@ -962,5 +963,78 @@ def run_forecast_volatility_estimate(
         timeframe=request.timeframe,
         method=request.method,
         horizon=request.horizon,
+    )
+    return result
+
+
+def run_forecast_optimize_hints(
+    request: ForecastOptimizeHintsRequest,
+    *,
+    optimize_hints_impl: Any,
+) -> Dict[str, Any]:
+    """Run genetic search for optimal forecast settings across multiple dimensions.
+
+    Searches across timeframes, methods, parameters, and optionally feature indicators
+    to find top-N configurations ranked by composite fitness score.
+    """
+    started_at = time.perf_counter()
+    log_operation_start(
+        logger,
+        operation="forecast_optimize_hints",
+        symbol=request.symbol,
+        timeframe=request.timeframe,
+        methods=len(request.methods or []),
+    )
+
+    # Resolve timeframes to search
+    timeframes_to_search = request.timeframes
+    if not timeframes_to_search and request.timeframe:
+        timeframes_to_search = [request.timeframe]
+    if not timeframes_to_search:
+        timeframes_to_search = ['H1', 'H4', 'D1']
+
+    try:
+        result = optimize_hints_impl(
+            symbol=request.symbol,
+            timeframes=timeframes_to_search,
+            methods=request.methods,
+            horizon=int(request.horizon),
+            steps=int(request.steps),
+            spacing=int(request.spacing),
+            fitness_metric=str(request.fitness_metric or 'composite'),
+            fitness_weights=request.fitness_weights,
+            population=int(request.population),
+            generations=int(request.generations),
+            crossover_rate=float(request.crossover_rate),
+            mutation_rate=float(request.mutation_rate),
+            seed=int(request.seed),
+            max_search_time_seconds=float(request.max_search_time_seconds)
+            if request.max_search_time_seconds is not None
+            else None,
+            denoise=request.denoise,
+            features=request.features,
+            dimred_method=request.dimred_method,
+            dimred_params=request.dimred_params,
+            top_n=int(request.top_n),
+            include_feature_genes=bool(request.include_feature_genes),
+        )
+    except Exception as exc:
+        log_operation_exception(
+            logger,
+            operation="forecast_optimize_hints",
+            started_at=started_at,
+            exc=exc,
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+        )
+        raise
+    log_operation_finish(
+        logger,
+        operation="forecast_optimize_hints",
+        started_at=started_at,
+        success=infer_result_success(result),
+        symbol=request.symbol,
+        timeframe=request.timeframe,
+        methods=len(request.methods or []),
     )
     return result

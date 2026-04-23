@@ -1,0 +1,24 @@
+name: grid-threshold
+version: 1
+description: Threshold entry with staggered take-profit grid and time stop.
+entry:
+  type: forecast_threshold
+  signal: expected_return
+  long_above: 0.005
+  short_below: -0.005
+position_sizing:
+  type: fixed_fraction
+  fraction: 1.0
+exits:
+  - type: grid_take_profit
+    levels:
+      - 0.01
+      - 0.02
+      - 0.03
+  - type: time_stop
+    bars: 12
+risk:
+  - type: max_hold_bars
+    bars: 12
+  - type: max_loss_pct
+    loss_pct: 0.02

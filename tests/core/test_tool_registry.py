@@ -32,6 +32,7 @@ EXPECTED_TOOL_NAMES = frozenset(
         "forecast_list_methods",
         "forecast_models_delete",
         "forecast_models_list",
+        "forecast_optimize_hints",
         "forecast_options_chain",
         "forecast_options_expirations",
         "forecast_quantlib_barrier_price",

@@ -10,6 +10,7 @@ from ..forecast.requests import (
     ForecastBarrierProbRequest,
     ForecastConformalIntervalsRequest,
     ForecastGenerateRequest,
+    ForecastOptimizeHintsRequest,
     ForecastTuneGeneticRequest,
     ForecastTuneOptunaRequest,
     ForecastVolatilityEstimateRequest,
@@ -110,6 +111,10 @@ def _optuna_search_impl(**kwargs):
     return _forecast_tune_module().optuna_search_forecast_params(**kwargs)
 
 
+def _optimize_hints_impl(**kwargs):
+    return _forecast_tune_module().genetic_search_optimize_hints(**kwargs)
+
+
 def _discover_sktime_forecasters():
     return _forecast_use_cases_module()._discover_sktime_forecasters()
 
@@ -150,6 +155,10 @@ def run_forecast_tune_genetic(*args, **kwargs):
 
 def run_forecast_tune_optuna(*args, **kwargs):
     return _forecast_use_cases_module().run_forecast_tune_optuna(*args, **kwargs)
+
+
+def run_forecast_optimize_hints(*args, **kwargs):
+    return _forecast_use_cases_module().run_forecast_optimize_hints(*args, **kwargs)
 
 
 def run_forecast_barrier_prob(*args, **kwargs):
@@ -409,6 +418,112 @@ def forecast_tune_optuna(request: ForecastTuneOptunaRequest) -> Dict[str, Any]:
         metric=request.metric,
         require_connection=True,
         generic_error_prefix="Error in optuna tuning: ",
+        func=_execute,
+    )
+
+
+@mcp.tool()
+def forecast_optimize_hints(request: ForecastOptimizeHintsRequest) -> Dict[str, Any]:
+    """Genetic search for optimal forecast settings across timeframes, methods, and parameters.
+
+    Searches over timeframes, algorithms, and algorithm-specific parameters to find
+    top-N configurations ranked by composite fitness score (Sharpe ratio, win rate,
+    inverse drawdown, and average return).
+
+    Parameters:
+    -----------
+    symbol : str
+        Trading symbol (e.g., 'EURUSD')
+    
+    timeframes : list[str], optional
+        Timeframes to search (e.g., ['H1', 'H4', 'D1']).
+        If not provided, defaults to ['H1', 'H4', 'D1', 'W1'].
+    
+    methods : list[str], optional
+        Forecast methods to search over.
+        If not provided, defaults to fast + pretrained methods
+        (theta, ARIMA, chronos, timesfm, etc.).
+    
+    horizon : int, optional (default=12)
+        Forecast horizon in bars.
+    
+    steps : int, optional (default=5)
+        Number of backtest anchors.
+    
+    spacing : int, optional (default=20)
+        Spacing between anchors in bars.
+    
+    population : int, optional (default=20)
+        Genetic algorithm population size (1-100).
+    
+    generations : int, optional (default=15)
+        Number of generations to evolve (1-100).
+    
+    crossover_rate : float, optional (default=0.6)
+        Crossover probability (0-1).
+    
+    mutation_rate : float, optional (default=0.3)
+        Mutation probability (0-1).
+    
+    fitness_metric : str, optional (default='composite')
+        Fitness metric: 'composite' (default) or specific metric
+        ('avg_rmse', 'sharpe_ratio', 'win_rate', 'calmar_ratio', etc.).
+    
+    fitness_weights : dict, optional
+        Custom weights for composite fitness (metric -> weight).
+        Default: {'sharpe_ratio': 0.4, 'win_rate': 0.3, 'inverse_max_drawdown': 0.2, 'avg_return': 0.1}
+    
+    seed : int, optional (default=42)
+        Random seed for reproducibility.
+    
+    max_search_time_seconds : float, optional
+        Maximum time allowed for search (seconds). No limit if None.
+    
+    top_n : int, optional (default=5)
+        Number of top configurations to return (1-20).
+    
+    include_feature_genes : bool, optional (default=False)
+        If True, include technical indicator parameters (RSI, MACD, etc.) in search.
+    
+    denoise : DenoiseSpec, optional
+        Denoising configuration for preprocessing.
+    
+    features : dict, optional
+        Additional feature configurations.
+    
+    dimred_method : str, optional
+        Dimensionality reduction method for multivariate forecasts.
+    
+    dimred_params : dict, optional
+        Parameters for dimensionality reduction.
+
+    Returns:
+    --------
+    dict
+        Success response with:
+        - hints: list of top-N configurations ranked by fitness
+          Each hint contains: rank, timeframe, method, method_params, fitness_score, backtest_metrics
+        - search_summary: summary of search parameters and results
+        - history_tail: last 10 generations' statistics
+    """
+    from ..forecast.requests import ForecastOptimizeHintsRequest as ReqModel
+
+    # Validate request type if needed
+    if not isinstance(request, ReqModel):
+        request = ReqModel(**dict(request))
+
+    def _execute() -> Dict[str, Any]:
+        return run_forecast_optimize_hints(
+            request,
+            optimize_hints_impl=_optimize_hints_impl,
+        )
+
+    return _run_forecast_operation(
+        "forecast_optimize_hints",
+        symbol=request.symbol,
+        timeframe=request.timeframe,
+        require_connection=True,
+        generic_error_prefix="Error in optimize hints search: ",
         func=_execute,
     )
 

@@ -1,0 +1,25 @@
+name: confidence-scaled
+version: 1
+description: Sign-based entries with size scaled by model confidence.
+entry:
+  type: forecast_sign
+  signal: expected_return
+  allow_flat: true
+position_sizing:
+  type: confidence_scaled
+  min_fraction: 0.25
+  max_fraction: 1.0
+  confidence_key: model_confidence
+filters:
+  - type: min_confidence
+    min_confidence: 0.6
+    confidence_key: model_confidence
+exits:
+  - type: forecast_target
+  - type: time_stop
+    bars: 12
+risk:
+  - type: max_hold_bars
+    bars: 12
+  - type: max_loss_pct
+    loss_pct: 0.02

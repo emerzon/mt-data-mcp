@@ -112,6 +112,10 @@ def test_strategy_backtest_exposes_request_metadata_blocks(monkeypatch):
     assert out["resolved_request"]["lookback"] == 8
     assert out["resolved_request"]["slippage_bps"] == 1.5
     assert out["parameters"]["slippage_bps"] == 1.5
+    assert out["contracts"]["data_preparation"]["symbol"] == "EURUSD"
+    assert out["contracts"]["evaluation"]["detail"] == "full"
+    assert out["contracts"]["strategy"]["kind"] == "legacy_indicator_strategy"
+    assert out["contracts"]["strategy"]["position_mode"] == "long_short"
 
 
 def test_strategy_backtest_returns_no_action_on_flat_history(monkeypatch):

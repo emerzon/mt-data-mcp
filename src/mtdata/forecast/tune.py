@@ -3,9 +3,19 @@ from __future__ import annotations
 import math
 import random
 import threading
+import time
 from typing import Any, Dict, List, Optional, Tuple
 
 from .backtest import forecast_backtest as _forecast_backtest
+from .optimize import (
+    build_comprehensive_search_space as _build_search_space,
+)
+from .optimize import (
+    composite_fitness_score as _composite_fitness,
+)
+from .optimize import (
+    extract_method_params_from_genotype as _extract_params,
+)
 
 # Sensible default search spaces per method (lightweight, CPU-friendly)
 # These are intentionally conservative to keep runtime practical.
@@ -823,3 +833,313 @@ def genetic_search_forecast_params(  # noqa: C901
     except Exception:
         pass
     return payload
+
+
+def genetic_search_optimize_hints(  # noqa: C901
+    *,
+    symbol: str,
+    timeframes: Optional[List[str]] = None,
+    methods: Optional[List[str]] = None,
+    horizon: int = 12,
+    steps: int = 5,
+    spacing: int = 20,
+    search_space: Optional[Dict[str, Any]] = None,
+    fitness_metric: str = "composite",
+    fitness_weights: Optional[Dict[str, float]] = None,
+    population: int = 20,
+    generations: int = 15,
+    crossover_rate: float = 0.6,
+    mutation_rate: float = 0.3,
+    seed: int = 42,
+    max_search_time_seconds: Optional[float] = None,
+    denoise: Optional[Dict[str, Any]] = None,
+    features: Optional[Dict[str, Any]] = None,
+    dimred_method: Optional[str] = None,
+    dimred_params: Optional[Dict[str, Any]] = None,
+    top_n: int = 5,
+    include_feature_genes: bool = False,
+) -> Dict[str, Any]:
+    """Comprehensive genetic search for optimal forecast settings across timeframes, methods, and parameters.
+
+    Searches across:
+    - Timeframes (H1, H4, D1, W1, etc.)
+    - Methods (fast + pretrained: theta, ARIMA, chronos, timesfm, etc.)
+    - Method-specific parameters
+    - Optional feature indicators (RSI, MACD, Bollinger Bands)
+
+    Fitness: Composite score combining Sharpe ratio, win rate, inverse drawdown, and return,
+    or single metric if fitness_metric != "composite".
+
+    Args:
+        symbol: Symbol to optimize for
+        timeframes: Timeframes to search (default: ['H1', 'H4', 'D1', 'W1'])
+        methods: Methods to search (default: fast + pretrained)
+        horizon, steps, spacing: Backtest parameters
+        search_space: Optional pre-built search space. If None, uses default from optimize module.
+        fitness_metric: 'composite' or specific metric name ('avg_rmse', 'sharpe_ratio', etc.)
+        fitness_weights: Custom weights for composite fitness (dict of metric: weight)
+        population: Genetic population size
+        generations: Number of generations
+        crossover_rate, mutation_rate: Genetic parameters
+        seed: Random seed
+        max_search_time_seconds: Optional timeout for search
+        denoise, features, dimred_method, dimred_params: Preprocessing options
+        top_n: Number of top configurations to return
+        include_feature_genes: If True, search over feature indicators
+
+    Returns:
+        Dict with 'success', 'hints' (list of top-N configs), 'search_summary', etc.
+    """
+    start_time = time.time()
+    rng = random.Random(int(seed))
+
+    # Build search space if not provided
+    if search_space is None:
+        search_space = _build_search_space(
+            timeframes=timeframes,
+            methods=methods,
+            include_features=include_feature_genes,
+        )
+    else:
+        # Ensure comprehensive space has required keys
+        if '_method_spaces' not in search_space:
+            from .tune import default_search_space as _default_spaces
+            search_space['_method_spaces'] = _default_spaces(methods=methods)
+
+    # Extract genetic gene specs
+    tf_choices = search_space.get('timeframe', {}).get('choices', timeframes or ['H1', 'H4', 'D1'])
+    method_choices = search_space.get('method', {}).get('choices', methods or ['theta'])
+    method_spaces = search_space.get('_method_spaces', {})
+
+    # Helper: create random individual (genotype)
+    def _create_individual() -> Dict[str, Any]:
+        individual: Dict[str, Any] = {
+            'timeframe': rng.choice(list(tf_choices)),
+            'method': rng.choice(list(method_choices)),
+        }
+        # Sample parameters for chosen method
+        meth = individual['method']
+        params_space = method_spaces.get(str(meth), {})
+        for param_name, param_spec in params_space.items():
+            individual[param_name] = _sample_param(param_spec or {}, rng)
+        return individual
+
+    # Helper: crossover two individuals
+    def _crossover(a: Dict[str, Any], b: Dict[str, Any]) -> Dict[str, Any]:
+        child: Dict[str, Any] = {
+            'timeframe': rng.choice([a.get('timeframe'), b.get('timeframe')]),
+            'method': rng.choice([a.get('method'), b.get('method')]),
+        }
+        meth = child['method']
+        params_space = method_spaces.get(str(meth), {})
+        for param_name in params_space.keys():
+            av = a.get(param_name)
+            bv = b.get(param_name)
+            child[param_name] = av if rng.random() < 0.5 else bv
+        return child
+
+    # Helper: mutate an individual
+    def _mutate(individual: Dict[str, Any]) -> Dict[str, Any]:
+        mutant = dict(individual)
+        # Mutate timeframe with small probability
+        if rng.random() < mutation_rate * 0.3:
+            mutant['timeframe'] = rng.choice(list(tf_choices))
+        # Mutate method with small probability
+        if rng.random() < mutation_rate * 0.3:
+            mutant['method'] = rng.choice(list(method_choices))
+        # Mutate parameters
+        meth = mutant['method']
+        params_space = method_spaces.get(str(meth), {})
+        for param_name, param_spec in params_space.items():
+            if rng.random() < mutation_rate:
+                mutant[param_name] = _mutate_value(mutant.get(param_name), param_spec or {}, rng)
+        return mutant
+
+    # Helper: evaluate candidate
+    def _extract_method_backtest_metrics(backtest_res: Dict[str, Any], method_name: str) -> Dict[str, Any]:
+        if not isinstance(backtest_res, dict):
+            return {}
+        method_results = backtest_res.get('results', {}).get(method_name, {})
+        if not isinstance(method_results, dict):
+            return {}
+        metrics = method_results.get('metrics')
+        if isinstance(metrics, dict):
+            merged = dict(metrics)
+            for key in (
+                'avg_mae',
+                'avg_rmse',
+                'avg_directional_accuracy',
+                'successful_tests',
+                'num_tests',
+            ):
+                if key in method_results and key not in merged:
+                    merged[key] = method_results.get(key)
+            return merged
+        return method_results
+
+    def _evaluate(individual: Dict[str, Any]) -> Tuple[float, Dict[str, Any]]:
+        tf = str(individual.get('timeframe', 'H1'))
+        method = str(individual.get('method', 'theta'))
+        params = {k: v for k, v in individual.items() if k not in ('timeframe', 'method')}
+
+        # Run backtest with this config
+        score, res = _eval_candidate(
+            symbol=symbol,
+            timeframe=tf,
+            method=method,
+            horizon=horizon,
+            steps=steps,
+            spacing=spacing,
+            candidate_params={'method': method, **params},
+            metric=fitness_metric if fitness_metric != 'composite' else 'avg_rmse',
+            mode='min' if fitness_metric != 'composite' else 'min',
+            denoise=denoise,
+            features=features,
+            dimred_method=dimred_method,
+            dimred_params=dimred_params,
+            trade_threshold=0.0,
+        )
+
+        # Compute fitness
+        if fitness_metric == 'composite':
+            # Extract backtest metrics
+            try:
+                backtest_metrics = _extract_method_backtest_metrics(res, method)
+            except Exception:
+                backtest_metrics = {}
+            fitness = _composite_fitness(backtest_metrics, weights=fitness_weights)
+            # Convert to minimization score (1 - fitness to minimize)
+            fitness_score = 1.0 - fitness
+        else:
+            # Single metric: use raw score from backtest
+            fitness_score = float(score)
+
+        return fitness_score, res
+
+    # Initialize population
+    population_size = max(2, int(population))
+    pop: List[Tuple[Dict[str, Any], float, Dict[str, Any]]] = []
+
+    for _ in range(population_size):
+        ind = _create_individual()
+        try:
+            fitness, res = _evaluate(ind)
+            pop.append((ind, fitness, res))
+        except Exception as ex:
+            # Failed evaluation; use worst score
+            pop.append((ind, math.inf, {'error': str(ex)}))
+
+        # Check timeout
+        if max_search_time_seconds and (time.time() - start_time) > max_search_time_seconds:
+            return {
+                'success': False,
+                'error': f'Search timeout after {time.time() - start_time:.1f}s',
+                'hints': [],
+            }
+
+    history: List[Dict[str, Any]] = []
+    best_overall = min(pop, key=lambda t: t[1])[1]
+    # Generational loop
+    for gen in range(max(1, int(generations))):
+        # Sort by fitness
+        pop.sort(key=lambda t: t[1])
+
+        # Elitism: keep top 2
+        new_pop = [pop[0], pop[1] if len(pop) > 1 else pop[0]]
+
+        # Breed new population
+        while len(new_pop) < population_size:
+            # Tournament selection
+            a_ind, a_fit, _ = rng.choice(pop)
+            b_ind, b_fit, _ = rng.choice(pop)
+
+            # Crossover
+            if rng.random() < crossover_rate:
+                child = _crossover(a_ind, b_ind)
+            else:
+                child = dict(a_ind if a_fit < b_fit else b_ind)
+
+            # Mutation
+            if rng.random() < mutation_rate:
+                child = _mutate(child)
+
+            # Evaluate child
+            try:
+                fitness, res = _evaluate(child)
+                new_pop.append((child, fitness, res))
+            except Exception as ex:
+                new_pop.append((child, math.inf, {'error': str(ex)}))
+
+            # Check timeout
+            if max_search_time_seconds and (time.time() - start_time) > max_search_time_seconds:
+                return {
+                    'success': False,
+                    'error': f'Search timeout after {time.time() - start_time:.1f}s',
+                    'hints': [],
+                }
+
+        pop = new_pop[: population_size]
+
+        # Track best
+        gen_best = min(pop, key=lambda t: t[1])
+        if gen_best[1] < best_overall:
+            best_overall = gen_best[1]
+
+        gen_summary = {
+            'generation': gen,
+            'best_score': float(gen_best[1]),
+            'avg_score': float(sum(p[1] for p in pop) / len(pop)) if pop else float('nan'),
+        }
+        history.append(gen_summary)
+
+    # Extract top-N candidates
+    pop.sort(key=lambda t: t[1])
+    top_configs: List[Dict[str, Any]] = []
+
+    for rank, (individual, fitness, backtest_res) in enumerate(pop[: int(top_n)]):
+        tf, method, params = _extract_params(individual, search_space)
+
+        # Build hint entry
+        hint: Dict[str, Any] = {
+            'rank': rank + 1,
+            'timeframe': tf,
+            'method': method,
+            'method_params': params,
+            'fitness_score': 1.0 - fitness if fitness_metric == 'composite' else fitness,
+        }
+
+        # Extract backtest metrics
+        try:
+            method_metrics = _extract_method_backtest_metrics(backtest_res, method)
+            if method_metrics:
+                hint['backtest_metrics'] = {
+                    'sharpe_ratio': method_metrics.get('sharpe_ratio'),
+                    'win_rate': method_metrics.get('win_rate'),
+                    'max_drawdown': method_metrics.get('max_drawdown'),
+                    'avg_return_per_trade': method_metrics.get('avg_return_per_trade'),
+                    'calmar_ratio': method_metrics.get('calmar_ratio'),
+                    'annual_return': method_metrics.get('annual_return'),
+                }
+        except Exception:
+            pass
+
+        top_configs.append(hint)
+
+    elapsed = time.time() - start_time
+    result: Dict[str, Any] = {
+        'success': True,
+        'hints': top_configs,
+        'search_summary': {
+            'symbol': symbol,
+            'population': int(population),
+            'generations': int(generations),
+            'elapsed_seconds': round(elapsed, 2),
+            'fitness_metric': fitness_metric,
+            'timeframes_searched': list(tf_choices),
+            'methods_searched': list(method_choices),
+            'total_evaluations': int(population) * int(generations),
+        },
+        'history_tail': history[-10:] if history else [],
+    }
+
+    return result

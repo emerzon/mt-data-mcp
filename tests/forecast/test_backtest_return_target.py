@@ -239,3 +239,42 @@ def test_backtest_exposes_request_metadata_blocks() -> None:
     assert res["resolved_request"]["horizon"] == 3
     assert res["resolved_request"]["slippage_bps"] == 2.5
     assert res["resolved_request"]["trade_threshold"] == 0.01
+
+
+def test_backtest_full_detail_exposes_contract_and_strategy_context() -> None:
+    times = np.arange(1700000000, 1700000000 + 70 * 3600, 3600, dtype=float)
+    close = np.linspace(100.0, 120.0, 70, dtype=float)
+    df = pd.DataFrame({"time": times, "close": close})
+
+    idx = 60
+    anchor = _format_time_minimal(float(times[idx]))
+    with patch("mtdata.forecast.backtest._fetch_history", return_value=df), patch(
+        "mtdata.forecast.backtest.forecast",
+        return_value={"forecast_price": [110.0, 111.0, 112.0]},
+    ):
+        res = forecast_backtest(
+            symbol="EURUSD",
+            timeframe="H1",
+            horizon=3,
+            methods=["naive"],
+            anchors=[anchor],
+            detail="full",
+            trade_threshold=0.01,
+            features={"future_covariates": ["hour"], "ti": "rsi_14"},
+        )
+
+    detail = res["results"]["naive"]["details"][0]
+    assert res["contracts"]["data_preparation"]["symbol"] == "EURUSD"
+    assert res["contracts"]["evaluation"]["horizon"] == 3
+    assert res["contracts"]["strategy"]["entry"]["type"] == "forecast_threshold"
+    assert res["contracts"]["methods"]["naive"]["model"]["method"] == "naive"
+    assert detail["strategy_intent"]["direction"] in {"long", "flat", "short"}
+    assert detail["strategy_context"]["top_level_keys"] == [
+        "anchor",
+        "forecast",
+        "realized",
+        "prepared_inputs",
+        "model",
+        "evaluation",
+    ]
+    assert "rsi_14" in detail["strategy_context"]["visible_inputs"]

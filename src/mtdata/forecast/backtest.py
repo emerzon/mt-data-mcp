@@ -21,6 +21,20 @@ from .common import (
 from .common import (
     quantity_to_target as _quantity_to_target,
 )
+from .contracts import (
+    AnchorMetadata,
+    BacktestEvaluationContract,
+    CuratedPreparedInputs,
+    DataPreparationContract,
+    DeclarativeStrategyContract,
+    ForecastArtifact,
+    ForecastEvaluationContext,
+    ForecastExecutionContract,
+    ForecastModelContract,
+    RealizedPathArtifact,
+    StrategyEvaluationResult,
+    StrategyTradeIntent,
+)
 from .exceptions import ForecastError, raise_if_error_result
 from .forecast import forecast
 from .volatility import forecast_volatility
@@ -104,7 +118,6 @@ def _compute_performance_metrics(
     drawdowns = equity / np.where(peak == 0.0, 1.0, peak) - 1.0
     max_drawdown = float(abs(np.min(drawdowns))) if drawdowns.size > 0 else float('nan')
 
-    cumulative_return = float(equity[-1] - 1.0) if equity.size > 0 else float('nan')
     years = float(arr.size / trades_per_year) if math.isfinite(trades_per_year) and trades_per_year > 0 else float('nan')
     annual_return = float('nan')
     if (
@@ -148,6 +161,260 @@ def _compute_performance_metrics(
         )
         metrics["min_trades_for_annualization"] = float(_MIN_ANNUALIZATION_TRADES)
     return metrics
+
+
+def _normalize_detail_mode(value: Any) -> Literal["compact", "full"]:
+    detail_mode = str(value or "compact").strip().lower()
+    if detail_mode not in {"compact", "full"}:
+        return "compact"
+    return detail_mode  # type: ignore[return-value]
+
+
+def _contract_payload(model: Any) -> Dict[str, Any]:
+    if model is None:
+        return {}
+    return dict(model.model_dump(exclude_none=True))
+
+
+def _feature_names_from_spec(features: Optional[Dict[str, Any]]) -> List[str]:
+    if not isinstance(features, dict):
+        return []
+
+    names: List[str] = []
+    for key in ("ti", "indicators", "exog", "future_covariates"):
+        raw_value = features.get(key)
+        if raw_value is None:
+            continue
+        if isinstance(raw_value, str):
+            tokens = [token.strip() for token in raw_value.replace(",", " ").split() if token.strip()]
+        elif isinstance(raw_value, (list, tuple, set)):
+            tokens = [str(token).strip() for token in raw_value if str(token).strip()]
+        else:
+            tokens = [str(raw_value).strip()] if str(raw_value).strip() else []
+        names.extend(tokens)
+    return list(dict.fromkeys(names))
+
+
+def _build_curated_prepared_inputs(
+    *,
+    features: Optional[Dict[str, Any]],
+    anchor_history: Optional[Any],
+    entry_price: float,
+    expected_return: Optional[float],
+) -> CuratedPreparedInputs:
+    scalars: Dict[str, float] = {}
+    if math.isfinite(entry_price):
+        scalars["entry_price"] = float(entry_price)
+    if expected_return is not None and math.isfinite(float(expected_return)):
+        scalars["expected_return"] = float(expected_return)
+    if anchor_history is not None and getattr(anchor_history, "empty", True) is False:
+        for col in ("close", "close_dn"):
+            if col in anchor_history.columns:
+                try:
+                    value = float(anchor_history[col].iloc[-1])
+                except Exception:
+                    continue
+                if math.isfinite(value):
+                    scalars[col] = value
+    return CuratedPreparedInputs(
+        scalars=scalars,
+        feature_names=_feature_names_from_spec(features),
+    )
+
+
+def _build_forecast_threshold_strategy_contract(
+    trade_threshold: float,
+) -> DeclarativeStrategyContract:
+    threshold_value = float(trade_threshold or 0.0)
+    return DeclarativeStrategyContract(
+        name="forecast-threshold",
+        description="Built-in bridge strategy for forecast_backtest.",
+        entry={
+            "type": "forecast_threshold",
+            "signal": "expected_return",
+            "long_above": threshold_value,
+            "short_below": -threshold_value,
+        },
+        exits=[{"type": "forecast_target"}],
+    )
+
+
+def _resolve_strategy_signal_value(
+    signal: str,
+    *,
+    context: ForecastEvaluationContext,
+) -> Optional[float]:
+    if signal == "expected_return":
+        return context.forecast.expected_return
+    if signal == "forecast_sum":
+        if not context.forecast.values:
+            return None
+        return float(np.nansum(np.asarray(context.forecast.values, dtype=float)))
+    if signal == "forecast_last":
+        if not context.forecast.values:
+            return None
+        return float(context.forecast.values[-1])
+    return None
+
+
+def _resolve_size_fraction(
+    *,
+    strategy_contract: DeclarativeStrategyContract,
+    context: ForecastEvaluationContext,
+) -> float:
+    sizing = strategy_contract.position_sizing
+    if sizing.type == "fixed_fraction":
+        return float(sizing.fraction)
+    confidence = context.forecast.confidence
+    if confidence is None or not math.isfinite(float(confidence)):
+        return float(sizing.min_fraction)
+    confidence_value = min(1.0, max(0.0, float(confidence)))
+    span = float(sizing.max_fraction) - float(sizing.min_fraction)
+    return float(sizing.min_fraction) + span * confidence_value
+
+
+def _evaluate_forecast_strategy(
+    strategy_contract: DeclarativeStrategyContract,
+    *,
+    context: ForecastEvaluationContext,
+) -> StrategyEvaluationResult:
+    triggered_filters: List[str] = []
+    for filter_rule in strategy_contract.filters:
+        if filter_rule.type == "min_confidence":
+            confidence = context.forecast.confidence
+            if confidence is None or not math.isfinite(float(confidence)) or float(confidence) < float(filter_rule.min_confidence):
+                triggered_filters.append(filter_rule.type)
+        elif filter_rule.type == "prepared_input_threshold":
+            scalar_value = context.prepared_inputs.scalars.get(filter_rule.key)
+            numeric_value: Optional[float]
+            if isinstance(scalar_value, (int, float)):
+                numeric_value = float(scalar_value)
+            else:
+                numeric_value = None
+            if numeric_value is None:
+                triggered_filters.append(filter_rule.type)
+            elif filter_rule.min_value is not None and numeric_value < float(filter_rule.min_value):
+                triggered_filters.append(filter_rule.type)
+            elif filter_rule.max_value is not None and numeric_value > float(filter_rule.max_value):
+                triggered_filters.append(filter_rule.type)
+        if triggered_filters:
+            return StrategyEvaluationResult(
+                intent=StrategyTradeIntent(
+                    direction="flat",
+                    size_fraction=0.0,
+                    reason="blocked_by_filters",
+                ),
+                skipped=True,
+                triggered_filters=triggered_filters,
+                metadata={
+                    "planned_exit_types": [exit_rule.type for exit_rule in strategy_contract.exits],
+                },
+            )
+
+    signal_value = _resolve_strategy_signal_value(strategy_contract.entry.signal, context=context)
+    direction = "flat"
+    reason = "signal_not_actionable"
+    if signal_value is not None and math.isfinite(float(signal_value)):
+        if strategy_contract.entry.type == "forecast_threshold":
+            if (
+                strategy_contract.entry.long_above is not None
+                and float(signal_value) > float(strategy_contract.entry.long_above)
+            ):
+                direction = "long"
+                reason = "threshold_long"
+            elif (
+                strategy_contract.entry.short_below is not None
+                and float(signal_value) < float(strategy_contract.entry.short_below)
+            ):
+                direction = "short"
+                reason = "threshold_short"
+            else:
+                reason = "threshold_not_met"
+        elif float(signal_value) > 0.0:
+            direction = "long"
+            reason = "positive_signal"
+        elif float(signal_value) < 0.0:
+            direction = "short"
+            reason = "negative_signal"
+        else:
+            reason = "zero_signal"
+
+    size_fraction = 0.0 if direction == "flat" else _resolve_size_fraction(
+        strategy_contract=strategy_contract,
+        context=context,
+    )
+    return StrategyEvaluationResult(
+        intent=StrategyTradeIntent(
+            direction=direction,  # type: ignore[arg-type]
+            size_fraction=size_fraction,
+            reason=reason,
+            target_return=context.forecast.expected_return if direction != "flat" else None,
+            metadata={"signal_value": signal_value},
+        ),
+        skipped=direction == "flat",
+        metadata={
+            "planned_exit_types": [exit_rule.type for exit_rule in strategy_contract.exits],
+        },
+    )
+
+
+def _build_forecast_evaluation_context(
+    *,
+    execution_contract: ForecastExecutionContract,
+    anchor_time: str,
+    anchor_index: int,
+    entry_price: float,
+    forecast_values: List[float],
+    realized_values: List[float],
+    realized_timestamps: List[float],
+    expected_return: Optional[float],
+    target_value: Optional[float],
+    anchor_history: Optional[Any],
+) -> ForecastEvaluationContext:
+    quantity = str(execution_contract.model.quantity).lower().strip()
+    kind = "price_path"
+    if quantity == "return":
+        kind = "return_path"
+    elif quantity == "volatility":
+        kind = "volatility_path"
+    return ForecastEvaluationContext(
+        anchor=AnchorMetadata(
+            anchor_time=anchor_time,
+            horizon=int(execution_contract.evaluation.horizon),
+            anchor_index=int(anchor_index),
+            entry_price=float(entry_price) if math.isfinite(entry_price) else None,
+        ),
+        forecast=ForecastArtifact(
+            kind=kind,  # type: ignore[arg-type]
+            values=[float(value) for value in forecast_values],
+            expected_return=float(expected_return) if expected_return is not None and math.isfinite(float(expected_return)) else None,
+            target_value=float(target_value) if target_value is not None and math.isfinite(float(target_value)) else None,
+            metadata={"method": execution_contract.model.method},
+        ),
+        realized=RealizedPathArtifact(
+            values=[float(value) for value in realized_values],
+            timestamps=[_format_time_minimal(float(ts)) for ts in realized_timestamps],
+        ),
+        prepared_inputs=_build_curated_prepared_inputs(
+            features=execution_contract.data_preparation.features,
+            anchor_history=anchor_history,
+            entry_price=entry_price,
+            expected_return=expected_return,
+        ),
+        model=execution_contract.model,
+        evaluation=execution_contract.evaluation,
+    )
+
+
+def _build_execution_contract_metadata(
+    execution_contract: ForecastExecutionContract,
+) -> Dict[str, Any]:
+    return {
+        "data_preparation": _contract_payload(execution_contract.data_preparation),
+        "model": _contract_payload(execution_contract.model),
+        "evaluation": _contract_payload(execution_contract.evaluation),
+        "input_mode": execution_contract.inferred_input_mode(),
+    }
 
 
 def _strategy_signal_label(value: float) -> str:
@@ -280,8 +547,8 @@ def strategy_backtest(  # noqa: C901
         position_mode_value = str(position_mode or "long_short").strip().lower()
         if position_mode_value not in {"long_only", "long_short"}:
             return {"error": "position_mode must be 'long_only' or 'long_short'"}
-        detail_mode = str(detail or "compact").strip().lower()
-        if detail_mode not in {"compact", "full"}:
+        detail_mode = _normalize_detail_mode(detail)
+        if str(detail or "compact").strip().lower() not in {"compact", "full"}:
             return {"error": "detail must be 'compact' or 'full'"}
         if timeframe not in TIMEFRAME_MAP:
             return {"error": invalid_timeframe_error(timeframe, TIMEFRAME_MAP)}
@@ -430,6 +697,19 @@ def strategy_backtest(  # noqa: C901
         last_idx = len(df) - 1
         last_signal_value = float(signals[last_idx]) if math.isfinite(float(signals[last_idx])) else 0.0
 
+        data_contract = DataPreparationContract(
+            symbol=symbol,
+            timeframe=timeframe,
+            lookback=int(need),
+        )
+        evaluation_contract = BacktestEvaluationContract(
+            horizon=1,
+            steps=1,
+            spacing=1,
+            slippage_bps=float(slippage_bps),
+            detail=detail_mode,
+        )
+
         result: Dict[str, Any] = {
             "success": True,
             "symbol": symbol,
@@ -466,6 +746,24 @@ def strategy_backtest(  # noqa: C901
                 "time": _format_time_minimal(float(times[last_idx])),
             },
         }
+        if detail_mode == "full":
+            result["contracts"] = {
+                "data_preparation": _contract_payload(data_contract),
+                "evaluation": _contract_payload(evaluation_contract),
+                "strategy": {
+                    "kind": "legacy_indicator_strategy",
+                    "name": strategy_value,
+                    "position_mode": position_mode_value,
+                    "parameters": {
+                        "fast_period": int(fast_period),
+                        "slow_period": int(slow_period),
+                        "rsi_length": int(rsi_length),
+                        "oversold": float(oversold),
+                        "overbought": float(overbought),
+                        "max_hold_bars": int(max_hold_bars) if max_hold_bars is not None else None,
+                    },
+                },
+            }
         if trades:
             if detail_mode == "full":
                 result["trades"] = trades
@@ -500,11 +798,9 @@ def strategy_backtest(  # noqa: C901
                 drawdown_periods = []
                 if equity_curve and len(equity_curve) > 1:
                     peak_equity = 1.0
-                    peak_time = None
                     for point in equity_curve:
                         if point["equity"] > peak_equity:
                             peak_equity = point["equity"]
-                            peak_time = point["time"]
                     
                     current_peak = 1.0
                     current_peak_time = equity_curve[0]["time"] if equity_curve else None
@@ -671,9 +967,7 @@ def forecast_backtest(  # noqa: C901
             "detail": detail,
         }
         __stage = 'start'
-        detail_mode = str(detail or "compact").strip().lower()
-        if detail_mode not in ("compact", "full"):
-            detail_mode = "compact"
+        detail_mode = _normalize_detail_mode(detail)
         include_paths = detail_mode == "full"
         if timeframe not in TIMEFRAME_MAP:
             return {"error": invalid_timeframe_error(timeframe, TIMEFRAME_MAP)}
@@ -781,10 +1075,35 @@ def forecast_backtest(  # noqa: C901
         except Exception:
             _dn_used = None
 
+        data_contract = DataPreparationContract(
+            symbol=symbol,
+            timeframe=timeframe,
+            lookback=int(need),
+            denoise=_dn_used,
+            features=dict(features) if isinstance(features, dict) else features,
+            dimred_method=dimred_method,
+            dimred_params=dict(dimred_params) if isinstance(dimred_params, dict) else dimred_params,
+        )
+        evaluation_contract = BacktestEvaluationContract(
+            horizon=int(horizon),
+            steps=int(steps),
+            spacing=int(spacing),
+            anchors=list(anchors) if isinstance(anchors, (list, tuple)) else None,
+            slippage_bps=float(slippage_bps),
+            detail=detail_mode,
+        )
+        strategy_contract = (
+            _build_forecast_threshold_strategy_contract(float(trade_threshold or 0.0))
+            if quantity != "volatility"
+            else None
+        )
+
         # Run forecasts per method and compute metrics
         results: Dict[str, Any] = {}
+        contract_methods: Dict[str, Any] = {}
         for method in methods:
             per_anchor = []
+            execution_contract: Optional[ForecastExecutionContract] = None
             for idx in anchor_indices:
                 if idx not in actual_windows:
                     continue
@@ -796,6 +1115,16 @@ def forecast_backtest(  # noqa: C901
                         pm_raw = params_map.get(method) or {}
                         pm = dict(pm_raw) if isinstance(pm_raw, dict) else {}
                         proxy = pm.pop('proxy', None) if isinstance(pm, dict) else None
+                        if execution_contract is None:
+                            execution_contract = ForecastExecutionContract(
+                                data_preparation=data_contract,
+                                model=ForecastModelContract(
+                                    method=method,
+                                    params=pm if isinstance(pm, dict) else None,
+                                    quantity=quantity,
+                                ),
+                                evaluation=evaluation_contract,
+                            )
                         r = raise_if_error_result(forecast_volatility(  # type: ignore
                             symbol=symbol,
                             timeframe=timeframe,
@@ -812,6 +1141,16 @@ def forecast_backtest(  # noqa: C901
                         if pm is None:
                             pm = params
                         anchor_history = df.iloc[: idx + 1].copy()
+                        if execution_contract is None:
+                            execution_contract = ForecastExecutionContract(
+                                data_preparation=data_contract,
+                                model=ForecastModelContract(
+                                    method=method,
+                                    params=pm if isinstance(pm, dict) else None,
+                                    quantity=quantity,
+                                ),
+                                evaluation=evaluation_contract,
+                            )
                         r = raise_if_error_result(forecast(
                             symbol=symbol,
                             timeframe=timeframe,
@@ -892,18 +1231,33 @@ def forecast_backtest(  # noqa: C901
                             expected_return = float('nan')
                     elif math.isfinite(entry_price) and entry_price != 0.0:
                         expected_return = expected_move / entry_price
+                    evaluation_context = _build_forecast_evaluation_context(
+                        execution_contract=execution_contract if execution_contract is not None else ForecastExecutionContract(
+                            data_preparation=data_contract,
+                            model=ForecastModelContract(method=method, quantity=quantity),
+                            evaluation=evaluation_contract,
+                        ),
+                        anchor_time=anchor_time,
+                        anchor_index=int(idx),
+                        entry_price=entry_price,
+                        forecast_values=[float(v) for v in fcv[:m].tolist()],
+                        realized_values=[float(v) for v in act[:m].tolist()],
+                        realized_timestamps=ts[:m],
+                        expected_return=expected_return if math.isfinite(expected_return) else None,
+                        target_value=float(np.nansum(fcv[:m])) if target_mode == 'return' else float(fcv[m - 1]),
+                        anchor_history=anchor_history,
+                    )
+                    strategy_eval = _evaluate_forecast_strategy(
+                        strategy_contract if strategy_contract is not None else _build_forecast_threshold_strategy_contract(0.0),
+                        context=evaluation_context,
+                    )
+                    intent_direction = str(strategy_eval.intent.direction)
                     direction = 0
-                    threshold = float(trade_threshold or 0.0)
-                    if math.isfinite(expected_return):
-                        if expected_return > threshold:
-                            direction = 1
-                        elif expected_return < -threshold:
-                            direction = -1
-                    position = 'flat'
-                    if direction > 0:
-                        position = 'long'
-                    elif direction < 0:
-                        position = 'short'
+                    if intent_direction == "long":
+                        direction = 1
+                    elif intent_direction == "short":
+                        direction = -1
+                    position = intent_direction
                     gross_return = float('nan')
                     net_return = float('nan')
                     exit_price = float('nan')
@@ -971,6 +1325,12 @@ def forecast_backtest(  # noqa: C901
                         "trade_return": net_return,
                     }
                     if include_paths:
+                        detail_row["strategy_intent"] = strategy_eval.intent.model_dump(exclude_none=True)
+                        detail_row["strategy_context"] = {
+                            "top_level_keys": list(evaluation_context.top_level_context_keys()),
+                            "visible_inputs": evaluation_context.visible_prepared_input_names(),
+                        }
+                    if include_paths:
                         detail_row["forecast"] = [float(v) for v in fcv[:m].tolist()]
                         detail_row["actual"] = [float(v) for v in act[:m].tolist()]
                     else:
@@ -978,6 +1338,8 @@ def forecast_backtest(  # noqa: C901
                         detail_row["forecast_end"] = float(fcv[m - 1]) if m > 0 else None
                         detail_row["actual_end"] = float(act[m - 1]) if m > 0 else None
                     per_anchor.append(detail_row)
+            if execution_contract is not None and detail_mode == "full":
+                contract_methods[method] = _build_execution_contract_metadata(execution_contract)
             # Aggregate
             ok = [x for x in per_anchor if x.get('success')]
             if ok:
@@ -1025,14 +1387,26 @@ def forecast_backtest(  # noqa: C901
                     "slippage_bps": float(slippage_bps),
                 }
 
+        result_payload = {
+            "success": True,
+            "slippage_bps": float(slippage_bps),
+            "trade_threshold": float(trade_threshold or 0.0),
+            "detail": detail_mode,
+            "results": results,
+        }
+        if detail_mode == "full":
+            result_payload["contracts"] = {
+                "data_preparation": _contract_payload(data_contract),
+                "evaluation": _contract_payload(evaluation_contract),
+                "strategy": (
+                    _contract_payload(strategy_contract)
+                    if strategy_contract is not None
+                    else {"kind": "volatility_evaluation", "trade_generation": False}
+                ),
+                "methods": contract_methods,
+            }
         return _attach_request_metadata(
-            {
-                "success": True,
-                "slippage_bps": float(slippage_bps),
-                "trade_threshold": float(trade_threshold or 0.0),
-                "detail": detail_mode,
-                "results": results,
-            },
+            result_payload,
             request=request_payload,
             resolved_request={
                 "symbol": symbol,
