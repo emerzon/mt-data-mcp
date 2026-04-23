@@ -357,7 +357,9 @@ def _normalize_forecast_payload(
                 out["meta"] = meta_block
 
         ci_diag = _compact_forecast_ci(payload, lower=lower, upper=upper)
-        if ci_diag:
+        if ci_diag and not (
+            not verbose and str(ci_diag.get("status") or "").strip().lower() == "unavailable"
+        ):
             out["ci"] = ci_diag
 
         warnings_in = payload.get("warnings")

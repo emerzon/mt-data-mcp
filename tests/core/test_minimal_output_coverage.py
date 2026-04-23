@@ -330,15 +330,16 @@ class TestNormalizeForecastPayload:
         }
         result = _normalize_forecast_payload(payload, verbose=False)
         assert "meta" not in result
-        assert result["ci"] == {
-            "status": "unavailable",
-            "ci_alpha": 0.05,
-            "hint": "theta produces point forecasts only. Use forecast_conformal_intervals for uncertainty bands.",
-        }
+        assert "ci" not in result
         # CI unavailable is already conveyed structurally via ci.status, so
         # the warning text is only surfaced when the user opts into --verbose.
         assert "warnings" not in result
         verbose_result = _normalize_forecast_payload(payload, verbose=True)
+        assert verbose_result["ci"] == {
+            "status": "unavailable",
+            "ci_alpha": 0.05,
+            "hint": "theta produces point forecasts only. Use forecast_conformal_intervals for uncertainty bands.",
+        }
         assert verbose_result["warnings"][0].startswith("Point forecast only")
 
     def test_ci_diag_omitted_when_bounds_already_rendered(self):
