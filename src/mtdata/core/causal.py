@@ -472,6 +472,8 @@ def _rank_correlation_pairs(
                     "abs_correlation": abs(corr_f),
                     "samples": int(len(subset)),
                     "overlap_rows": overlap_rows,
+                    "window_requested": int(limit),
+                    "window_actual": int(len(subset)),
                     "window_truncated": bool(len(subset) < overlap_rows),
                     "relationship": (
                         "positive"
@@ -2016,6 +2018,8 @@ def cointegration_test(  # noqa: C901
                 )
                 if row is not None:
                     row["overlap_rows"] = overlap_rows
+                    row["window_requested"] = int(limit)
+                    row["window_actual"] = int(len(subset))
                     row["window_truncated"] = bool(len(subset) < overlap_rows)
                     rows.append(row)
                 if failures:

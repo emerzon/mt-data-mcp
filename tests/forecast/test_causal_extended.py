@@ -684,6 +684,7 @@ class TestCorrelationMatrix:
                 "A,B,C",
                 method="pearson",
                 transform="log_return",
+                limit=60,
                 min_overlap=30,
             )
 
@@ -694,6 +695,9 @@ class TestCorrelationMatrix:
         assert data["matrix"]["A"]["B"] > 0.95
         assert data["matrix"]["A"]["C"] < -0.95
         assert data["items"][0]["abs_correlation"] >= data["items"][1]["abs_correlation"]
+        assert data["items"][0]["window_requested"] == 60
+        assert data["items"][0]["window_actual"] == 60
+        assert data["items"][0]["window_truncated"] is True
         assert result["summary"]["highlights"]["strongest_positive"]
         assert result["summary"]["highlights"]["strongest_negative"]
         assert "pairs" not in data
@@ -874,7 +878,7 @@ class TestCointegrationTest:
 
         mock_fetch.side_effect = _fetch_side_effect
 
-        result = self._unwrapped()(group="Forex\\Majors", min_overlap=40)
+        result = self._unwrapped()(group="Forex\\Majors", limit=60, min_overlap=40)
 
         assert result["success"] is True
         assert result["meta"]["request"]["group_resolved"] == "Forex\\Majors"
@@ -885,6 +889,9 @@ class TestCointegrationTest:
         assert pair["p_value"] == pytest.approx(0.01)
         assert pair["critical_values"]["5%"] == pytest.approx(-3.3)
         assert pair["hedge_ratio"] is not None
+        assert pair["window_requested"] == 60
+        assert pair["window_actual"] == 60
+        assert pair["window_truncated"] is True
 
     @patch("statsmodels.tsa.stattools.coint", side_effect=RuntimeError("singular matrix"))
     @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
