@@ -108,11 +108,36 @@ def _join_doc_lines(lines: List[str]) -> str:
     return "\n".join(clean).strip()
 
 
+def _clean_overview_lines(lines: List[str]) -> List[str]:
+    cleaned: List[str] = []
+    in_signature = False
+    paren_depth = 0
+    for raw in lines or []:
+        text = str(raw or "").strip()
+        if not text:
+            continue
+        if text.lower().startswith("python library documentation:"):
+            continue
+        if _DOC_SIG_RE.match(text):
+            continue
+        if not cleaned and re.match(r"^[A-Za-z_][A-Za-z0-9_]*\s*\($", text):
+            in_signature = True
+            paren_depth = text.count("(") - text.count(")")
+            continue
+        if in_signature:
+            paren_depth += text.count("(") - text.count(")")
+            if paren_depth <= 0:
+                in_signature = False
+            continue
+        cleaned.append(text)
+    return cleaned
+
+
 def _extract_interpretation(sections: Dict[str, List[str]]) -> Optional[str]:
     explicit = _join_doc_lines(sections.get("interpretation", []))
     if explicit:
         return explicit
-    overview = [ln for ln in sections.get("overview", []) if not _DOC_SIG_RE.match(str(ln or "").strip())]
+    overview = _clean_overview_lines(sections.get("overview", []))
     return _join_doc_lines(overview) or None
 
 
@@ -191,7 +216,7 @@ def _build_indicator_documentation(target: Dict[str, Any]) -> Dict[str, Any]:
     raw_desc = str(target.get("description") or "")
     cleaned_desc = _clean_help_text(raw_desc, func_name=name) if raw_desc else ""
     sections = _parse_doc_sections(cleaned_desc)
-    overview = [ln for ln in sections.get("overview", []) if not _DOC_SIG_RE.match(str(ln or "").strip())]
+    overview = _clean_overview_lines(sections.get("overview", []))
     param_docs = _parse_parameter_docs(sections.get("parameters", []))
 
     params_out: List[Dict[str, Any]] = []

@@ -372,7 +372,11 @@ Values above 70 often indicate overbought conditions.
 
         sample_doc = """Python Library Documentation: function rsi in module pandas_ta_classic.momentum.rsi
 
-rsi(close, length=14, talib=True)
+rsi(
+close: Series,
+length: Optional[int] = None,
+talib: Optional[bool] = None
+) -> Optional[Series]
 Relative Strength Index
 Tracks momentum across the selected lookback window.
 Useful for overbought and oversold analysis.
