@@ -1990,10 +1990,20 @@ def run_trade_risk_analyze(  # noqa: C901
                     result["position_sizing"] = {
                         "status": "incomplete",
                         "message": (
-                            "Provide desired_risk_pct, proposed_entry, and proposed_sl "
-                            "to calculate position sizing."
+                            "Portfolio risk analysis completed. Position sizing is "
+                            "available when you provide desired_risk_pct, "
+                            "proposed_entry, and proposed_sl."
                         ),
                         "missing": position_sizing_missing,
+                        "required_for_sizing": [
+                            "desired_risk_pct",
+                            "proposed_entry",
+                            "proposed_sl",
+                        ],
+                        "note": (
+                            "Add desired_risk_pct to specify how much equity to risk "
+                            "on the proposed trade."
+                        ),
                     }
 
             if (

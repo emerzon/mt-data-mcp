@@ -19,7 +19,9 @@ def trade_risk_analyze(request: TradeRiskAnalyzeRequest) -> dict:
     """Analyze risk exposure for existing positions and calculate position sizing for new trades.
 
     When sizing a proposed trade, pass direction='long' or direction='short' to
-    validate that proposed SL/TP are on the correct side of the entry.
+    validate that proposed SL/TP are on the correct side of the entry. New-trade
+    sizing is opt-in: provide desired_risk_pct together with proposed_entry and
+    proposed_sl to calculate lot size.
     """
     return run_logged_operation(
         logger,

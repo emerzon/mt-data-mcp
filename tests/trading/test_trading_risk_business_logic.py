@@ -136,6 +136,13 @@ def test_trade_risk_analyze_marks_position_sizing_incomplete_without_required_in
         "proposed_entry",
         "proposed_sl",
     ]
+    assert out["position_sizing"]["required_for_sizing"] == [
+        "desired_risk_pct",
+        "proposed_entry",
+        "proposed_sl",
+    ]
+    assert "Portfolio risk analysis completed" in out["position_sizing"]["message"]
+    assert "desired_risk_pct" in out["position_sizing"]["note"]
 
 
 def test_trade_risk_analyze_returns_error_when_partial_position_sizing_params() -> None:
