@@ -2906,6 +2906,7 @@ class TestAddForecastGenerateArgs:
         assert args.method == "theta"
         assert args.timeframe == "H1"
         assert args.horizon == 12
+        assert args.detail == "compact"
 
     def test_all_options(self):
         parser = argparse.ArgumentParser()
@@ -2929,6 +2930,8 @@ class TestAddForecastGenerateArgs:
                 "0.1",
                 "--denoise",
                 "wavelet",
+                "--detail",
+                "full",
                 "--print-config",
             ]
         )
@@ -2939,6 +2942,7 @@ class TestAddForecastGenerateArgs:
         assert args.lookback == 200
         assert args.quantity == "return"
         assert args.ci_alpha == 0.1
+        assert args.detail == "full"
         assert args.print_config is True
 
     def test_symbol_flag_alias(self):
@@ -5172,7 +5176,27 @@ class TestForecastGenerateIntegration:
         assert request.symbol == "EURUSD"
         assert request.library == "native"
         assert request.method == "theta"
+        assert request.detail == "compact"
         assert call_kwargs["__cli_raw"] is True
+
+    @patch("mtdata.core.cli.discover_tools")
+    def test_forecast_generate_passes_detail(self, mock_discover):
+        mock_fn = MagicMock(return_value={"forecast": [1.0, 2.0]})
+        mock_fn.__module__ = "mtdata.core.server"
+        mock_fn.__name__ = "forecast_generate"
+        mock_fn.__doc__ = "Generate forecasts."
+
+        mock_discover.return_value = {
+            "forecast_generate": {
+                "func": mock_fn,
+                "meta": {"description": "Generate forecasts"},
+            },
+        }
+        with patch("sys.argv", ["cli.py", "forecast_generate", "EURUSD", "--detail", "standard"]):
+            result = main()
+        assert result == 0
+        request = mock_fn.call_args[1]["request"]
+        assert request.detail == "standard"
 
     @patch("mtdata.core.cli.discover_tools")
     def test_forecast_generate_accepts_symbol_flag_alias(self, mock_discover):

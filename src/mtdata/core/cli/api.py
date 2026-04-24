@@ -1030,6 +1030,14 @@ def _add_forecast_generate_args(cmd_parser: argparse.ArgumentParser) -> None:
         help="Override nested params (method, denoise, features, dimred, target).",
     )
 
+    group_output = cmd_parser.add_argument_group("Output")
+    group_output.add_argument(
+        "--detail",
+        choices=["compact", "standard", "full"],
+        default="compact",
+        help="Response detail level.",
+    )
+
     group_dbg = cmd_parser.add_argument_group("Debug")
     group_dbg.add_argument(
         "--print-config",
@@ -1648,6 +1656,7 @@ def main():
                 target_spec=target_spec or None,
                 async_mode=False,
                 model_id=None,
+                detail=args.detail,
             )
 
             if getattr(args, "print_config", False):
