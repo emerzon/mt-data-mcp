@@ -236,9 +236,16 @@ class TestNormalizeForecastPayload:
             "times": ["t1"],
             "forecast_price": [100.0],
             "symbol": "EURUSD",
+            "method": "arima",
+            "quantity": "price",
+            "detail": "compact",
         }
         result = _normalize_forecast_payload(payload, verbose=False)
         assert "meta" not in result
+        assert result["symbol"] == "EURUSD"
+        assert result["method"] == "arima"
+        assert result["quantity"] == "price"
+        assert result["detail"] == "compact"
 
     def test_q50_dedup(self):
         payload = {
@@ -330,7 +337,14 @@ class TestNormalizeForecastPayload:
         }
         result = _normalize_forecast_payload(payload, verbose=False)
         assert "meta" not in result
-        assert "ci" not in result
+        assert result["ci"] == {
+            "status": "unavailable",
+            "ci_alpha": 0.05,
+            "hint": (
+                "theta produces point forecasts only. "
+                "Use forecast_conformal_intervals for uncertainty bands."
+            ),
+        }
         # CI unavailable is already conveyed structurally via ci.status, so
         # the warning text is only surfaced when the user opts into --verbose.
         assert "warnings" not in result
@@ -353,6 +367,35 @@ class TestNormalizeForecastPayload:
         }
         result = _normalize_forecast_payload(payload, verbose=False)
         assert "ci" not in result
+
+    def test_interval_summary_rendered_when_bounds_are_compacted_away(self):
+        payload = {
+            "times": ["t1"],
+            "forecast_price": [100.0],
+            "method": "arima",
+            "quantity": "price",
+            "detail": "compact",
+            "ci_status": "available",
+            "ci_alpha": 0.05,
+            "interval_summary": {
+                "first_low": 98.0,
+                "first_high": 102.0,
+                "median_width": 4.0,
+            },
+        }
+        result = _normalize_forecast_payload(payload, verbose=False)
+        assert result["method"] == "arima"
+        assert result["quantity"] == "price"
+        assert result["detail"] == "compact"
+        assert result["ci"] == {
+            "status": "available",
+            "ci_alpha": 0.05,
+            "interval_summary": {
+                "first_low": 98.0,
+                "first_high": 102.0,
+                "median_width": 4.0,
+            },
+        }
 
 
 class TestNormalizeTripleBarrierPayload:

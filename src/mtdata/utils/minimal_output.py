@@ -355,11 +355,21 @@ def _normalize_forecast_payload(
             meta_block = _build_forecast_meta(payload)
             if meta_block:
                 out["meta"] = meta_block
+        else:
+            for key in (
+                "symbol",
+                "timeframe",
+                "method",
+                "quantity",
+                "detail",
+                "horizon",
+            ):
+                value = payload.get(key)
+                if not _is_empty_value(value):
+                    out[key] = value
 
         ci_diag = _compact_forecast_ci(payload, lower=lower, upper=upper)
-        if ci_diag and not (
-            not verbose and str(ci_diag.get("status") or "").strip().lower() == "unavailable"
-        ):
+        if ci_diag:
             out["ci"] = ci_diag
 
         warnings_in = payload.get("warnings")
@@ -1455,6 +1465,16 @@ def _compact_forecast_ci(
                     "This method produces point forecasts only. "
                     "Use forecast_conformal_intervals for uncertainty bands."
                 )
+
+    interval_summary = payload.get("interval_summary")
+    if isinstance(interval_summary, dict) and not has_interval_columns:
+        summary_out = {
+            key: value
+            for key, value in interval_summary.items()
+            if not _is_empty_value(value)
+        }
+        if summary_out:
+            out["interval_summary"] = summary_out
 
     return out
 

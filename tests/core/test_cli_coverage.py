@@ -5403,6 +5403,48 @@ class TestForecastGenerateIntegration:
         assert "forecast[1]{time,forecast,lower,upper}:" in out
         assert "\nci:" not in out
 
+    @patch("mtdata.core.cli.discover_tools")
+    def test_forecast_generate_default_output_includes_compact_context(
+        self, mock_discover, capsys
+    ):
+        mock_fn = MagicMock(
+            return_value={
+                "forecast_time": ["2026-03-07 18:00"],
+                "forecast_price": [1.17308],
+                "method": "arima",
+                "quantity": "price",
+                "detail": "compact",
+                "ci_status": "available",
+                "ci_alpha": 0.05,
+                "interval_summary": {
+                    "first_low": 1.1702,
+                    "first_high": 1.1729,
+                    "median_width": 0.0027,
+                },
+            }
+        )
+        mock_fn.__module__ = "mtdata.core.server"
+        mock_fn.__name__ = "forecast_generate"
+        mock_fn.__doc__ = "Generate forecasts."
+
+        mock_discover.return_value = {
+            "forecast_generate": {
+                "func": mock_fn,
+                "meta": {"description": "Generate forecasts"},
+            },
+        }
+        with patch("sys.argv", ["cli.py", "forecast_generate", "EURUSD"]):
+            result = main()
+        assert result == 0
+        out = capsys.readouterr().out
+        assert "method: arima" in out
+        assert "quantity: price" in out
+        assert "detail: compact" in out
+        assert "ci:" in out
+        assert "status: available" in out
+        assert "interval_summary:" in out
+        assert "forecast[1]{time,forecast}:" in out
+
 
 # ========================================================================
 # Edge cases / misc coverage
