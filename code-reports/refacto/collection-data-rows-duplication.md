@@ -3,6 +3,7 @@
 ## Source report
 
 - Original report: `code-reports/03-symbols_list-duplicate-data-rows.md`
+- Related source report: `code-reports/01-data-duplication-in-outputs.md`
 
 ## Status
 
@@ -12,6 +13,8 @@ Deferred for larger refactor.
 
 Several collection-style tools return both legacy `data` and normalized `rows` fields containing the same tabular records. This increases payload size and can confuse users, but the duplication is currently an explicit compatibility behavior in the shared collection contract helper.
 
+A broader follow-up report validates that the same compatibility pattern appears across multiple collection-style tools, including `data_fetch_candles` (`data`/`series`), symbols and market-scan outputs (`data`/`rows`), causal summaries (`data.items`/highlight subsets), and trade history (`items`/`normalized_items`).
+
 ## Evidence
 
 - `src/mtdata/core/output_contract.py::attach_collection_contract` documents that it adds normalized collection fields while preserving legacy payload shape.
@@ -19,6 +22,8 @@ Several collection-style tools return both legacy `data` and normalized `rows` f
 - `tests/core/test_output_contract.py::test_attach_collection_contract_adds_rows_without_replacing_legacy_data` asserts that both `data` and `rows` remain present.
 - `src/mtdata/core/symbols.py::symbols_list`, `_list_symbol_groups`, and `_market_scan_table` pass `rows=result.get("data")` after building legacy tabular payloads.
 - Other modules also call `attach_collection_contract`, so changing the helper would affect more than the symbols tools named in the source report.
+- `data_fetch_candles` and other time-series outputs can expose both legacy `data` and normalized `series` keys through the same collection contract.
+- Some related duplication, such as causal highlights and trade history normalized rows, is implemented outside `attach_collection_contract` but should be handled by the same output-contract migration policy.
 
 ## Why this should not be fixed inline
 
@@ -27,6 +32,8 @@ Removing either key changes a shared output contract and may break clients that 
 ## Recommended approach
 
 Define a versioned collection-output migration. Prefer `rows` as the canonical table field for collection.v2, then decide whether `data` should be removed entirely, omitted only in compact/detail modes, or retained behind a compatibility option. Update all `attach_collection_contract` call sites consistently instead of special-casing symbols.
+
+For non-collection-contract duplication such as causal highlights and trade-history normalized rows, align the compact/full response policy with the same migration rather than special-casing each tool independently.
 
 ## Scope
 
