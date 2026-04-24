@@ -301,6 +301,33 @@ def _apply_barrier_prob_detail(
     return compact
 
 
+def _closed_form_barrier_input_error(request: ForecastBarrierProbRequest) -> Optional[str]:
+    try:
+        barrier_value = float(request.barrier)
+    except (TypeError, ValueError):
+        barrier_value = 0.0
+    if barrier_value > 0.0:
+        return None
+    for field_name in (
+        "tp_abs",
+        "sl_abs",
+        "tp_pct",
+        "sl_pct",
+        "tp_ticks",
+        "sl_ticks",
+        "tp_pips",
+        "sl_pips",
+    ):
+        if getattr(request, field_name, None) is not None:
+            return (
+                "The closed_form method uses the absolute barrier parameter and "
+                "does not consume TP/SL inputs such as tp_pct/sl_pct, tp_abs/sl_abs, "
+                "or tick-based barriers. Provide barrier as a positive price, or use "
+                "a Monte Carlo method such as mc_gbm for TP/SL barrier inputs."
+            )
+    return None
+
+
 def _is_interval_unavailable_warning(value: Any) -> bool:
     text = str(value)
     return (
@@ -1029,6 +1056,20 @@ def run_forecast_barrier_prob(
             return result
 
         if method_val == "closed_form":
+            input_error = _closed_form_barrier_input_error(request)
+            if input_error is not None:
+                result = {"error": input_error, "error_code": "invalid_input"}
+                log_operation_finish(
+                    logger,
+                    operation="forecast_barrier_prob",
+                    started_at=started_at,
+                    success=False,
+                    symbol=request.symbol,
+                    timeframe=request.timeframe,
+                    method=method_val,
+                    direction=direction,
+                )
+                return result
             result = barrier_closed_form_impl(
                 symbol=request.symbol,
                 timeframe=request.timeframe,

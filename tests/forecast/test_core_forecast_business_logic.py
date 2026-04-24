@@ -1091,6 +1091,33 @@ def test_forecast_tune_genetic_and_barrier_prob_routing(monkeypatch):
     assert out["error"] == "Unknown method: mystery"
 
 
+def test_forecast_barrier_prob_closed_form_rejects_tp_sl_inputs_before_generic_error():
+    called = False
+
+    def fake_closed_form(**_kwargs):
+        nonlocal called
+        called = True
+        return {"error": "Provide a positive barrier price"}
+
+    out = forecast_use_cases.run_forecast_barrier_prob(
+        ForecastBarrierProbRequest(
+            symbol="EURUSD",
+            method="closed_form",
+            tp_pct=0.5,
+            sl_pct=0.5,
+        ),
+        build_barrier_kwargs=lambda _values: {},
+        normalize_trade_direction=lambda _direction: ("long", None),
+        barrier_hit_probabilities_impl=lambda **_kwargs: {"unused": True},
+        barrier_closed_form_impl=fake_closed_form,
+    )
+
+    assert called is False
+    assert out["error_code"] == "invalid_input"
+    assert "closed_form method uses the absolute barrier parameter" in out["error"]
+    assert "mc_gbm" in out["error"]
+
+
 def test_forecast_barrier_prob_wrapper_emits_single_finish_event(caplog, monkeypatch):
     raw = _unwrap(cf.forecast_barrier_prob)
     monkeypatch.setattr(cf, "_forecast_connection_error", lambda: None)
