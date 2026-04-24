@@ -76,6 +76,23 @@ def test_trade_history_deals_normalizes_time_to_utc_string() -> None:
     assert out["items"][0]["timestamp_timezone"] == "UTC"
 
 
+def test_trade_history_deals_accept_simplenamespace_rows() -> None:
+    mt5, prev = _install_mock_mt5()
+    mt5.history_deals_get.return_value = [
+        SimpleNamespace(ticket=1, time=1700000000, symbol="EURUSD")
+    ]
+
+    with patch("mtdata.core.trading.account._use_client_tz", lambda: False):
+        out = trade_history(history_kind="deals", __cli_raw=True)
+    if prev is not None:
+        sys.modules["MetaTrader5"] = prev
+
+    assert out["success"] is True
+    assert out["count"] == 1
+    assert out["items"][0]["ticket"] == 1
+    assert out["items"][0]["time"] == _format_time_minimal(_mt5_epoch_to_utc(1700000000))
+
+
 def test_trade_history_orders_normalizes_setup_and_done_times() -> None:
     mt5, prev = _install_mock_mt5()
     Order = namedtuple("Order", ["ticket", "time_setup", "time_done", "symbol"])

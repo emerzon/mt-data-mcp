@@ -76,6 +76,27 @@ _TRADE_PLACE_BASIC_KEYS = _TRADE_PLACE_PREVIEW_KEYS + (
 )
 
 
+def _trade_row_to_dict(row: Any) -> Dict[str, Any]:
+    if isinstance(row, dict):
+        return dict(row)
+    if hasattr(row, "_asdict"):
+        return dict(row._asdict())
+    try:
+        return dict(vars(row))
+    except TypeError as exc:
+        raise TypeError(f"Unsupported trade row type: {type(row).__name__}") from exc
+
+
+def _trade_rows_to_dataframe(rows: Any, *, pd_module: Any) -> Any:
+    row_dicts = [_trade_row_to_dict(row) for row in list(rows)]
+    if not row_dicts:
+        return pd_module.DataFrame()
+    return pd_module.DataFrame.from_records(
+        row_dicts,
+        columns=list(row_dicts[0].keys()),
+    )
+
+
 def _resolve_trade_place_preview_detail(request: TradePlaceRequest) -> str:
     contract = resolve_output_contract(
         request,
@@ -1585,7 +1606,7 @@ def run_trade_history(  # noqa: C901
                     return _history_fetch_error("deal", exc)
                 if rows is None or len(rows) == 0:
                     return _empty_history_message("deals")
-                df = pd.DataFrame(list(rows), columns=rows[0]._asdict().keys())
+                df = _trade_rows_to_dataframe(rows, pd_module=pd)
                 if request.symbol and "symbol" in df.columns:
                     df = df.loc[
                         df["symbol"].astype(str).str.upper()
@@ -1646,7 +1667,7 @@ def run_trade_history(  # noqa: C901
                     return _history_fetch_error("order", exc)
                 if rows is None or len(rows) == 0:
                     return _empty_history_message("orders")
-                df = pd.DataFrame(list(rows), columns=rows[0]._asdict().keys())
+                df = _trade_rows_to_dataframe(rows, pd_module=pd)
                 if request.symbol and "symbol" in df.columns:
                     df = df.loc[
                         df["symbol"].astype(str).str.upper()
@@ -3054,7 +3075,7 @@ def _run_trade_query_impl(
         if empty_response is not None:
             return Ok(empty_response)
 
-        df = pd_module.DataFrame(list(rows), columns=rows[0]._asdict().keys())
+        df = _trade_rows_to_dataframe(rows, pd_module=pd_module)
         time_utc, time_txt = _build_trade_time_columns(
             df,
             time_source_fields=time_source_fields,

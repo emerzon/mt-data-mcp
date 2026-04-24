@@ -294,6 +294,52 @@ def test_run_trade_get_open_logs_finish_event(caplog) -> None:
     )
 
 
+def test_run_trade_get_open_accepts_simplenamespace_rows() -> None:
+    rows = [
+        SimpleNamespace(
+            ticket=1,
+            symbol="EURUSD",
+            time_update=1700000000,
+            type=0,
+            volume=0.1,
+            price_open=1.1,
+            sl=1.0,
+            tp=1.2,
+            price_current=1.15,
+            swap=0.0,
+            profit=5.0,
+            comment="note",
+            magic=7,
+        )
+    ]
+    gateway = SimpleNamespace(
+        ensure_connection=lambda: None,
+        positions_get=lambda ticket=None, symbol=None: rows,
+        POSITION_TYPE_BUY=0,
+        POSITION_TYPE_SELL=1,
+    )
+
+    out = run_trade_get_open(
+        TradeGetOpenRequest(),
+        gateway=gateway,
+        use_client_tz=lambda: False,
+        format_time_minimal=lambda ts: f"t{int(ts)}",
+        format_time_minimal_local=lambda ts: f"lt{int(ts)}",
+        mt5_epoch_to_utc=lambda ts: ts,
+        normalize_limit=lambda value: value,
+        comment_row_metadata=lambda comment: {
+            "comment_visible_length": len(comment or ""),
+            "comment_max_length": 31,
+            "comment_may_be_truncated": False,
+        },
+    )
+
+    assert out[0]["Ticket"] == 1
+    assert out[0]["Time"] == "t1700000000"
+    assert out[0]["Type"] == "BUY"
+    assert out[0]["Profit"] == 5.0
+
+
 def test_run_trade_get_pending_logs_finish_event(caplog) -> None:
     Order = namedtuple(
         "Order",
