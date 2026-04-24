@@ -218,6 +218,7 @@ PARAM_HINTS = {
 
 _TIMEFRAME_CHOICES = tuple(sorted(TIMEFRAME_MAP.keys()))
 TimeframeLiteral = Literal[_TIMEFRAME_CHOICES]  # type: ignore
+AutoTimeframeLiteral = Union[TimeframeLiteral, Literal["auto"]]
 
 # ---- Technical Indicators (dynamic discovery and application) ----
 def _load_indicator_doc_choices(

@@ -4,6 +4,7 @@ from typing import Literal, Optional, Union
 
 from pydantic import BaseModel, Field, field_validator
 
+from ...shared.schema import TimeframeLiteral
 from .time import ExpirationValue
 from . import validation
 from .validation import OrderTypeInput
@@ -170,7 +171,7 @@ class TradeRiskAnalyzeRequest(BaseModel):
 
 class TradeVarCvarRequest(BaseModel):
     symbol: Optional[str] = None
-    timeframe: str = "H1"
+    timeframe: TimeframeLiteral = "H1"
     lookback: int = 500
     confidence: float = 0.95
     method: str = "historical"

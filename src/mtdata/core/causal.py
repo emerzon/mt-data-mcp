@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
+from ..shared.schema import TimeframeLiteral
 from ..utils.mt5 import (
     _ensure_symbol_ready,
     _mt5_copy_rates_from,
@@ -1012,7 +1013,7 @@ def _format_alignment_detail_summary(detail: Dict[str, Any]) -> str:
 @mcp.tool()
 def causal_discover_signals(  # noqa: C901
     symbols: str,
-    timeframe: str = "H1",
+    timeframe: TimeframeLiteral = "H1",
     limit: int = 500,
     max_lag: int = 5,
     significance: float = 0.05,
@@ -1417,7 +1418,7 @@ def causal_discover_signals(  # noqa: C901
 def correlation_matrix(  # noqa: C901
     symbols: Optional[str] = None,
     group: Optional[str] = None,
-    timeframe: str = "H1",
+    timeframe: TimeframeLiteral = "H1",
     limit: int = 500,
     method: str = "pearson",
     transform: str = "log_return",
@@ -1740,7 +1741,7 @@ def correlation_matrix(  # noqa: C901
 def cointegration_test(  # noqa: C901
     symbols: Optional[str] = None,
     group: Optional[str] = None,
-    timeframe: str = "H1",
+    timeframe: TimeframeLiteral = "H1",
     limit: int = 500,
     transform: str = "log_level",
     trend: str = "c",

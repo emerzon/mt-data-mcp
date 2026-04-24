@@ -33,7 +33,7 @@ from ._mcp_instance import mcp
 from .constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from .execution_logging import run_logged_operation
 from .mt5_gateway import get_mt5_gateway
-from .schema import _PIVOT_METHODS, TimeframeLiteral
+from .schema import _PIVOT_METHODS, AutoTimeframeLiteral, TimeframeLiteral
 
 logger = logging.getLogger(__name__)
 
@@ -411,7 +411,7 @@ def pivot_compute_points(  # noqa: C901
 @mcp.tool()
 def support_resistance_levels(
     symbol: str,
-    timeframe: str = "auto",
+    timeframe: AutoTimeframeLiteral = "auto",
     limit: int = 800,
     tolerance_pct: float = 0.0015,
     min_touches: int = 2,

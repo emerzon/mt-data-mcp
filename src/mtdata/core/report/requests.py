@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, field_validator, model_validator
 
-from ..schema import DenoiseSpec
+from ..schema import DenoiseSpec, TimeframeLiteral
 
 ReportFormat = Literal["toon", "structured", "markdown"]
 
@@ -19,7 +19,7 @@ class ReportGenerateRequest(BaseModel):
     symbol: str
     horizon: Optional[int] = None
     template: str = "basic"
-    timeframe: Optional[str] = None
+    timeframe: Optional[TimeframeLiteral] = None
     methods: Optional[Union[str, List[str]]] = None
     denoise: Optional[DenoiseSpec] = None
     params: Optional[Dict[str, Any]] = None
