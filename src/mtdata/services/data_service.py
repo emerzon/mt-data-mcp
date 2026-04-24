@@ -1647,7 +1647,7 @@ def fetch_ticks(  # noqa: C901
                 mean = float(vals.mean())
                 std = float(vals.std(ddof=0)) if n > 0 else float("nan")
                 stderr = float(std / math.sqrt(n)) if n > 0 else float("nan")
-                kurtosis = float(vals.kurtosis()) if n >= 4 else float("nan")
+                kurtosis = float(vals.kurtosis()) if n >= 4 else None
                 change = float(last - first)
                 change_pct = float((change / first) * 100.0) if first != 0.0 else float("nan")
                 out = {
