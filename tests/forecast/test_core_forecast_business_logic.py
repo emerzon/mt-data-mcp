@@ -603,6 +603,15 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert filtered["filters"]["limit"] == 1
     assert len(filtered["methods"]) == 1
     assert "theta" in str(filtered["methods"][0]["method"]).lower()
+    alias_filtered = _unwrap(cf.forecast_list_methods)(search_term="theta", limit=1)
+    assert alias_filtered["filters"]["search"] == "theta"
+    assert alias_filtered["filters"]["limit"] == 1
+    assert len(alias_filtered["methods"]) == 1
+    assert "theta" in str(alias_filtered["methods"][0]["method"]).lower()
+    conflict = _unwrap(cf.forecast_list_methods)(search="theta", search_term="arima")
+    assert conflict == {
+        "error": "Provide either search or search_term, not both with different values."
+    }
 
     monkeypatch.setattr(cf, "_get_forecast_methods_data", lambda: {"methods": [1]})
     assert _unwrap(cf.forecast_list_methods)() == {"methods": [1]}
