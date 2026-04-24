@@ -195,6 +195,43 @@ def test_regime_detect_all_respects_full_and_summary_detail(monkeypatch) -> None
     assert all(include_series is False for _, _, include_series in subcall_details)
 
 
+def test_regime_detect_all_reports_runtime_diagnostics_for_partial_results(monkeypatch) -> None:
+    real = _unwrap(regime_api.regime_detect)
+    monkeypatch.setattr(regime_api, "_fetch_history", lambda *args, **kwargs: _downtrend_df(120))
+    monkeypatch.setattr(regime_api, "_regime_connection_error", lambda: None)
+    monkeypatch.setattr(
+        regime_api,
+        "_build_all_method_comparison",
+        lambda results: {"methods_run": sorted(results.keys())},
+    )
+
+    def fake_recursive(*args, **kwargs):
+        method_name = str(kwargs.get("method") or "")
+        if method_name == "ms_ar":
+            return {"error": "simulated slow fit timeout"}
+        return {
+            "success": True,
+            "symbol": kwargs.get("symbol"),
+            "timeframe": kwargs.get("timeframe"),
+            "method": method_name,
+            "target": kwargs.get("target"),
+            "current_regime": {"label": "neutral"},
+        }
+
+    monkeypatch.setattr(regime_api, "regime_detect", fake_recursive)
+
+    result = real("EURUSD", method="all", detail="compact")
+
+    assert result["success"] is True
+    assert result["runtime"]["partial_results"] is True
+    assert "ms_ar" in result["runtime"]["failed_methods"]
+    assert result["runtime"]["method_errors"]["ms_ar"] == "simulated slow fit timeout"
+    assert "ms_ar" in result["runtime"]["method_durations_ms"]
+    assert result["runtime"]["method_guidance"]["all"]["speed_tier"] == "slow"
+    assert result["runtime"]["method_guidance"]["rule_based"]["speed_tier"] == "fast"
+    assert result["runtime"]["suggested_faster_methods"]
+
+
 def test_ensemble_labels_follow_mean_return_sign() -> None:
     descriptions = _build_regime_descriptions(
         {

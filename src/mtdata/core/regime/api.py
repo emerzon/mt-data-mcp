@@ -549,6 +549,82 @@ _TIMEFRAME_DEFAULTS: Dict[str, Dict[str, int]] = {
 }
 
 
+_REGIME_METHOD_RUNTIME_GUIDANCE: Dict[str, Dict[str, str]] = {
+    "rule_based": {
+        "speed_tier": "fast",
+        "use_case": "quick trend/ranging/transition snapshot",
+        "cost_notes": "deterministic indicator-style calculations",
+    },
+    "bocpd": {
+        "speed_tier": "medium",
+        "use_case": "change-point and transition timing",
+        "cost_notes": "calibration and run-length filtering cost grows with history",
+    },
+    "hmm": {
+        "speed_tier": "medium",
+        "use_case": "probabilistic return/price state segmentation",
+        "cost_notes": "Gaussian mixture fit; usually cheaper than MS-AR",
+    },
+    "gmm": {
+        "speed_tier": "medium",
+        "use_case": "alias for HMM-lite Gaussian mixture segmentation",
+        "cost_notes": "same runtime profile as hmm",
+    },
+    "clustering": {
+        "speed_tier": "medium",
+        "use_case": "rolling feature cluster regimes",
+        "cost_notes": "feature extraction and clustering can be slow on large windows",
+    },
+    "garch": {
+        "speed_tier": "medium",
+        "use_case": "volatility-regime classification",
+        "cost_notes": "optimization fit; convergence varies by symbol/history",
+    },
+    "wavelet": {
+        "speed_tier": "medium",
+        "use_case": "multi-resolution energy regimes",
+        "cost_notes": "depends on PyWavelets and decomposition level",
+    },
+    "ms_ar": {
+        "speed_tier": "slow",
+        "use_case": "Markov-switching autoregressive regimes",
+        "cost_notes": "statsmodels maximum-likelihood fit can be long-running",
+    },
+    "ensemble": {
+        "speed_tier": "slow",
+        "use_case": "consensus across selected regime methods",
+        "cost_notes": "runs multiple sub-methods",
+    },
+    "all": {
+        "speed_tier": "slow",
+        "use_case": "cross-method comparison and diagnostics",
+        "cost_notes": "runs every method plus ensemble; use faster methods for low-latency checks",
+    },
+}
+
+
+def _regime_runtime_guidance(methods: List[str]) -> Dict[str, Dict[str, str]]:
+    return {
+        method: dict(_REGIME_METHOD_RUNTIME_GUIDANCE[method])
+        for method in methods
+        if method in _REGIME_METHOD_RUNTIME_GUIDANCE
+    }
+
+
+def _suggest_faster_regime_methods(methods: List[str]) -> List[str]:
+    suggestions: List[str] = []
+    for candidate in ("rule_based", "bocpd", "hmm"):
+        if candidate not in methods and candidate not in suggestions:
+            suggestions.append(candidate)
+    for method in methods:
+        guidance = _REGIME_METHOD_RUNTIME_GUIDANCE.get(method, {})
+        if guidance.get("speed_tier") == "slow":
+            continue
+        if method not in suggestions:
+            suggestions.append(method)
+    return suggestions[:3]
+
+
 def _get_timeframe_defaults(timeframe: str) -> Dict[str, int]:
     """Get sensible defaults for regime detection based on timeframe.
 
@@ -2495,8 +2571,11 @@ def regime_detect(  # noqa: C901
             ]
             results_by_method: Dict[str, Any] = {}
             all_errors: List[str] = []
+            method_durations_ms: Dict[str, float] = {}
+            method_errors: Dict[str, str] = {}
 
             for m in all_methods:
+                method_started_at = time.perf_counter()
                 try:
                     sub_params = dict(p)
                     # Only set default n_states for methods that don't auto-detect
@@ -2537,17 +2616,46 @@ def regime_detect(  # noqa: C901
                         }
                         results_by_method[m] = cleaned_result
                     else:
-                        all_errors.append(f"{m}: {sr.get('error', 'unknown error')}")
+                        error_text = (
+                            str(sr.get("error", "unknown error"))
+                            if isinstance(sr, dict)
+                            else "unknown error"
+                        )
+                        method_errors[m] = error_text
+                        all_errors.append(f"{m}: {error_text}")
                 except Exception as exc:
+                    method_errors[m] = str(exc)
                     all_errors.append(f"{m}: {exc}")
+                finally:
+                    method_durations_ms[m] = round(
+                        (time.perf_counter() - method_started_at) * 1000.0,
+                        3,
+                    )
 
             if not results_by_method:
                 return _finish(
-                    {"error": f"All methods failed: {'; '.join(all_errors)}"}
+                    {
+                        "error": f"All methods failed: {'; '.join(all_errors)}",
+                        "error_code": "regime_methods_failed",
+                        "runtime": {
+                            "completed_methods": [],
+                            "failed_methods": list(method_errors.keys()),
+                            "method_errors": method_errors,
+                            "method_durations_ms": method_durations_ms,
+                            "partial_results": False,
+                            "suggested_faster_methods": _suggest_faster_regime_methods(
+                                all_methods
+                            ),
+                            "method_guidance": _regime_runtime_guidance(
+                                ["all", *all_methods]
+                            ),
+                        },
+                    }
                 )
 
             # Also run ensemble to provide consensus view
             try:
+                ensemble_started_at = time.perf_counter()
                 ens_params = dict(p)
                 ens_params["methods"] = list(
                     results_by_method.keys()
@@ -2577,9 +2685,28 @@ def regime_detect(  # noqa: C901
                         if k
                         not in ("symbol", "timeframe", "method", "target", "success")
                     }
-            except Exception:
+                    method_durations_ms["ensemble"] = round(
+                        (time.perf_counter() - ensemble_started_at) * 1000.0,
+                        3,
+                    )
+                else:
+                    error_text = (
+                        str(ensemble_result.get("error", "unknown error"))
+                        if isinstance(ensemble_result, dict)
+                        else "unknown error"
+                    )
+                    method_errors["ensemble"] = error_text
+                    method_durations_ms["ensemble"] = round(
+                        (time.perf_counter() - ensemble_started_at) * 1000.0,
+                        3,
+                    )
+            except Exception as exc:
                 # Ensemble is optional, don't fail if it errors
-                pass
+                method_errors["ensemble"] = str(exc)
+                method_durations_ms["ensemble"] = round(
+                    (time.perf_counter() - ensemble_started_at) * 1000.0,
+                    3,
+                )
 
             comparison = _build_all_method_comparison(results_by_method)
             comparison["methods_failed"] = [e.split(":")[0] for e in all_errors]
@@ -2611,6 +2738,19 @@ def regime_detect(  # noqa: C901
                 "target": target,
                 "detail": detail_value,
                 "comparison": comparison,
+                "runtime": {
+                    "completed_methods": list(results_by_method.keys()),
+                    "failed_methods": list(method_errors.keys()),
+                    "method_errors": method_errors,
+                    "method_durations_ms": method_durations_ms,
+                    "partial_results": bool(method_errors),
+                    "suggested_faster_methods": _suggest_faster_regime_methods(
+                        all_methods
+                    ),
+                    "method_guidance": _regime_runtime_guidance(
+                        ["all", *all_methods, "ensemble"]
+                    ),
+                },
             }
             if detail_value != "summary":
                 payload["params_used"] = {
