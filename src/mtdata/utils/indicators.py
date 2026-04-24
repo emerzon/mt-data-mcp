@@ -1,8 +1,10 @@
 import inspect
+import importlib
 import logging
 import pydoc
 import re
 from functools import lru_cache
+from types import ModuleType
 from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
@@ -26,6 +28,17 @@ _INDICATOR_ALIASES: dict[str, str] = {
 }
 _INDICATOR_SERIES_NAMES = ("open", "high", "low", "close", "volume")
 _VOLUME_SOURCE_COLUMNS = ("volume", "real_volume", "tick_volume")
+_TA_INDICATOR_CATEGORIES = (
+    "candles",
+    "momentum",
+    "overlap",
+    "performance",
+    "statistics",
+    "trend",
+    "volatility",
+    "volume",
+    "cycles",
+)
 logger = logging.getLogger(__name__)
 
 
@@ -37,6 +50,23 @@ def _normalize_ta_indicator_name(name: str) -> str:
 def _indicator_aliases(name: str) -> List[str]:
     canonical = _normalize_ta_indicator_name(name)
     return sorted(alias for alias, target in _INDICATOR_ALIASES.items() if target == canonical and alias != canonical)
+
+
+def _resolve_ta_category_module(category: str) -> Optional[ModuleType]:
+    """Resolve a pandas_ta category module even when a top-level function shadows it."""
+    package_name = str(getattr(pta, "__name__", "") or "").strip()
+    if package_name:
+        try:
+            module = importlib.import_module(f"{package_name}.{category}")
+            if isinstance(module, ModuleType):
+                return module
+        except Exception:
+            logger.debug("Unable to import pandas_ta category module %s", category, exc_info=True)
+
+    module = getattr(pta, category, None)
+    if isinstance(module, ModuleType):
+        return module
+    return None
 
 
 def clean_help_text(text: str, func_name: Optional[str] = None) -> str:
@@ -119,15 +149,10 @@ def list_ta_indicators(*, detailed: bool = False) -> List[Dict[str, Any]]:
     items: List[Dict[str, Any]] = []
     seen = set()
 
-    categories = [
-        'candles', 'momentum', 'overlap', 'performance', 'statistics',
-        'trend', 'volatility', 'volume', 'cycles'
-    ]
-
-    for category in categories:
+    for category in _TA_INDICATOR_CATEGORIES:
         try:
-            cat_module = getattr(pta, category, None)
-            if not cat_module or not hasattr(cat_module, '__file__'):
+            cat_module = _resolve_ta_category_module(category)
+            if cat_module is None:
                 continue
 
             for func_name in dir(cat_module):

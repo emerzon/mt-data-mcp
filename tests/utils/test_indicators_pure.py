@@ -49,6 +49,7 @@ from mtdata.utils.indicators import (
     _try_number,
     clean_help_text,
     infer_defaults_from_doc,
+    list_ta_indicators,
 )
 from mtdata.utils.utils import (
     _coerce_scalar,
@@ -261,6 +262,14 @@ class TestParseTiSpecs:
         assert proxy.lookups == 1
 
         indicators_mod._is_available_ta_indicator.cache_clear()
+
+    def test_list_ta_indicators_includes_shadowed_volatility_category(self):
+        items = list_ta_indicators(detailed=False)
+        by_name = {str(item.get("name")): item for item in items}
+
+        for name in ("atr", "natr", "bbands", "kc", "donchian"):
+            assert name in by_name
+            assert by_name[name]["category"] == "volatility"
 
 
 class TestEstimateWarmupBars:
