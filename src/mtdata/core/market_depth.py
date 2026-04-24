@@ -63,6 +63,8 @@ def _compact_market_ticker_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "price_precision",
         "bid",
         "ask",
+        "last",
+        "tick_volume",
         "spread",
         "spread_points",
         "spread_pips",
@@ -400,6 +402,12 @@ def market_ticker(
             bid = float(tick.bid) if tick.bid else None
             ask = float(tick.ask) if tick.ask else None
             last = float(tick.last) if tick.last else None
+            tick_volume = getattr(tick, "volume", None)
+            if tick_volume is not None:
+                try:
+                    tick_volume = int(tick_volume)
+                except (TypeError, ValueError, OverflowError):
+                    tick_volume = None
 
             spread_abs = None
             spread_points = None
@@ -431,6 +439,7 @@ def market_ticker(
                 "bid": _round_market_ticker_value(bid, digits=digits),
                 "ask": _round_market_ticker_value(ask, digits=digits),
                 "last": _round_market_ticker_value(last, digits=digits),
+                "tick_volume": tick_volume,
                 "spread": _round_market_ticker_value(spread_abs, digits=digits),
                 "spread_points": _round_market_ticker_value(spread_points, digits=4),
                 "spread_pips": _round_market_ticker_value(spread_pips, digits=4),

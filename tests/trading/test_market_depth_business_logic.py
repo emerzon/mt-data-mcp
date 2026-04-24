@@ -269,6 +269,8 @@ def test_market_ticker_returns_lightweight_spread_snapshot() -> None:
     assert out["spread_points"] == 100.0
     assert out["spread_pips"] == 100.0
     assert out["spread_pct_display"] == "0.498753%"
+    assert out["last"] == 200.5
+    assert out["tick_volume"] == 5
     assert out["pricing_basis"] == "per_1_lot_estimate"
     assert out["spread_currency"] == "USD"
     assert "spread_display" not in out
@@ -307,8 +309,9 @@ def test_market_ticker_compact_detail_omits_verbose_fields() -> None:
     assert out["spread_points"] == 100.0
     assert out["spread_pips"] == 100.0
     assert out["spread_pct_display"] == "0.498753%"
+    assert out["last"] == 200.5
+    assert out["tick_volume"] == 5
     assert out["time_display"] == "2023-11-14 22:13"
-    assert "last" not in out
     assert "spread_usd" not in out
     assert "pricing_basis" not in out
     assert "diagnostics" not in out
@@ -338,6 +341,7 @@ def test_market_ticker_full_detail_preserves_verbose_fields() -> None:
         out = _raw_market_ticker("BTCUSD", detail="full")
 
     assert out["last"] == 200.5
+    assert out["tick_volume"] == 5
     assert out["spread_usd"] == 100.0
     assert out["pricing_basis"] == "per_1_lot_estimate"
     assert out["meta"]["diagnostics"]["source"] == "mt5.symbol_info_tick"
