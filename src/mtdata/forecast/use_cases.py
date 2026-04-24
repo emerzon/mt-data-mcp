@@ -278,8 +278,11 @@ def _apply_barrier_prob_detail(
         if key in compact:
             continue
         if key in {
+            "prob_tp_first_ci95",
             "prob_tp_first_se",
+            "prob_sl_first_ci95",
             "prob_sl_first_se",
+            "prob_no_hit_ci95",
             "prob_tie",
             "prob_tie_se",
             "prob_no_hit_se",

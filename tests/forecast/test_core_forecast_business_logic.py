@@ -1160,6 +1160,33 @@ def test_forecast_barrier_prob_standard_hides_curves_only(monkeypatch):
     assert "prob_tp_first_ci95" in out
 
 
+def test_forecast_barrier_prob_compact_nests_confidence_intervals_once():
+    payload = {
+        "success": True,
+        "symbol": "EURUSD",
+        "prob_tp_first": 0.55,
+        "prob_sl_first": 0.30,
+        "prob_no_hit": 0.15,
+        "prob_tp_first_ci95": {"low": 0.5, "high": 0.6},
+        "prob_sl_first_ci95": {"low": 0.25, "high": 0.35},
+        "prob_no_hit_ci95": {"low": 0.1, "high": 0.2},
+    }
+
+    out = forecast_use_cases._apply_barrier_prob_detail(
+        payload,
+        ForecastBarrierProbRequest(symbol="EURUSD", detail="compact"),
+    )
+
+    assert out["confidence"] == {
+        "prob_tp_first_ci95": {"low": 0.5, "high": 0.6},
+        "prob_sl_first_ci95": {"low": 0.25, "high": 0.35},
+        "prob_no_hit_ci95": {"low": 0.1, "high": 0.2},
+    }
+    assert "prob_tp_first_ci95" not in out
+    assert "prob_sl_first_ci95" not in out
+    assert "prob_no_hit_ci95" not in out
+
+
 def test_forecast_tune_optuna_routing(monkeypatch):
     raw_tune = _unwrap(cf.forecast_tune_optuna)
     captured = {}
