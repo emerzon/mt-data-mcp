@@ -5,6 +5,7 @@
 - Original report: `code-reports/03-symbols_list-duplicate-data-rows.md`
 - Related source report: `code-reports/01-data-duplication-in-outputs.md`
 - Related source report: `code-reports/05-collection-metadata-noise.md`
+- Related source report: `code-reports/10-data-key-inconsistency-across-tools.md`
 
 ## Status
 
@@ -18,6 +19,8 @@ A broader follow-up report validates that the same compatibility pattern appears
 
 Another related report validates that collection contract metadata (`collection_kind`, `collection_contract_version`) and per-tool diagnostics can add noise to compact outputs. Whether those fields should remain in compact mode is part of the same versioned output-contract decision.
 
+A data-key consistency report further validates that list/table tools expose collections under many different keys (`data`, `rows`, `series`, `methods`, `models`, nested `data.items`, and summary counts). Standardizing this requires a migration strategy rather than a tool-by-tool rename.
+
 ## Evidence
 
 - `src/mtdata/core/output_contract.py::attach_collection_contract` documents that it adds normalized collection fields while preserving legacy payload shape.
@@ -28,6 +31,7 @@ Another related report validates that collection contract metadata (`collection_
 - `data_fetch_candles` and other time-series outputs can expose both legacy `data` and normalized `series` keys through the same collection contract.
 - Some related duplication, such as causal highlights and trade history normalized rows, is implemented outside `attach_collection_contract` but should be handled by the same output-contract migration policy.
 - `src/mtdata/core/output_contract.py::apply_output_verbosity` strips some diagnostic keys in compact mode but does not strip collection contract keys or tool-specific row diagnostics.
+- `forecast_list_methods`, `forecast_list_library_models`, causal tools, and trading tools use domain-specific collection keys that are not produced by `attach_collection_contract`.
 
 ## Why this should not be fixed inline
 
@@ -40,6 +44,8 @@ Define a versioned collection-output migration. Prefer `rows` as the canonical t
 For non-collection-contract duplication such as causal highlights and trade-history normalized rows, align the compact/full response policy with the same migration rather than special-casing each tool independently.
 
 Also define which protocol metadata belongs in compact output. If collection metadata is needed for machine consumers, consider moving it under `meta` or retaining it only in a full/detail contract version.
+
+If a universal extraction key is introduced, choose whether it should be `rows`, `items`, or a versioned `collection` object, then add aliases only through a documented compatibility window.
 
 ## Scope
 
@@ -59,6 +65,7 @@ Also define which protocol metadata belongs in compact output. If collection met
   - Shared output contract tests
   - Symbols list and market scan tests
   - Compact/full verbosity tests for collection metadata
+  - Generic collection extraction tests across representative tools
   - Any tests that assert `data` or `rows` presence
 - Docs/config/CLI/API affected:
   - MCP responses for collection-style tools
@@ -72,6 +79,7 @@ Also define which protocol metadata belongs in compact output. If collection met
 - Removing duplication without versioning could silently break automation.
 - Detail-mode gating could make output shape depend on verbosity in surprising ways.
 - Removing metadata from compact mode could break generic clients that use collection fields for extraction.
+- Adding aliases universally can temporarily increase payload size if legacy keys remain.
 
 ## Verification plan
 
