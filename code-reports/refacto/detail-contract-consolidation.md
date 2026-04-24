@@ -6,6 +6,7 @@
 - Original report: `code-reports/detail_parameter_value_proliferation.md`
 - Original report: `code-reports/detail-level-semantic-inconsistency.md`
 - Original report: `code-reports/12-multiple-tools-no-detail-parameter.md`
+- Original report: `code-reports/04-temporal_analyze-no-detail-parameter.md`
 
 ## Status
 
