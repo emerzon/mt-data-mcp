@@ -18,6 +18,7 @@ _OPTIONAL_FIRST_POSITIONAL_PARAMS: set[tuple[str, str]] = {
     ("correlation_matrix", "symbols"),
     ("cointegration_test", "symbols"),
     ("market_scan", "symbols"),
+    ("market_status", "symbol"),
     ("wait_event", "symbol"),
 }
 

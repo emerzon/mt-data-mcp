@@ -9,8 +9,11 @@ from typing import Any, Dict, List, Literal, Optional, Tuple
 
 import holidays
 
+from ..utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise
+from ..utils.mt5_enums import decode_mt5_enum_label
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
+from .mt5_gateway import get_mt5_gateway
 from .output_contract import resolve_output_detail
 from .schema import CompactFullDetailLiteral
 
@@ -469,8 +472,178 @@ def normalize_market_status_output(
     return out
 
 
+def _symbol_trade_mode_status(gateway: Any, trade_mode: Any) -> Dict[str, Any]:
+    label = decode_mt5_enum_label(
+        gateway,
+        trade_mode,
+        prefix="SYMBOL_TRADE_MODE_",
+    )
+    label_text = str(label or "").strip()
+    normalized = label_text.lower().replace("symbol_trade_mode_", "")
+    if not normalized:
+        normalized = str(trade_mode).strip().lower()
+
+    full_values = {
+        getattr(gateway, "SYMBOL_TRADE_MODE_FULL", object()),
+    }
+    disabled_values = {
+        getattr(gateway, "SYMBOL_TRADE_MODE_DISABLED", object()),
+    }
+    close_only_values = {
+        getattr(gateway, "SYMBOL_TRADE_MODE_CLOSEONLY", object()),
+    }
+    long_only_values = {
+        getattr(gateway, "SYMBOL_TRADE_MODE_LONGONLY", object()),
+    }
+    short_only_values = {
+        getattr(gateway, "SYMBOL_TRADE_MODE_SHORTONLY", object()),
+    }
+
+    if trade_mode in disabled_values or "disabled" in normalized:
+        status = "disabled"
+        can_open = False
+    elif trade_mode in close_only_values or "close" in normalized:
+        status = "close_only"
+        can_open = False
+    elif trade_mode in long_only_values or "long" in normalized:
+        status = "long_only"
+        can_open = True
+    elif trade_mode in short_only_values or "short" in normalized:
+        status = "short_only"
+        can_open = True
+    elif trade_mode in full_values or "full" in normalized:
+        status = "tradable"
+        can_open = True
+    else:
+        status = "unknown"
+        can_open = None
+
+    return {
+        "trade_mode": trade_mode,
+        "trade_mode_label": label_text or None,
+        "status": status,
+        "can_open_new_positions": can_open,
+    }
+
+
+def _symbol_tick_snapshot(tick: Any, *, now_utc: datetime) -> Dict[str, Any]:
+    if tick is None:
+        return {
+            "tick_available": False,
+            "tick_freshness": "missing",
+        }
+
+    out: Dict[str, Any] = {
+        "tick_available": True,
+    }
+    tick_time = getattr(tick, "time", None)
+    if tick_time is not None:
+        try:
+            tick_epoch = float(tick_time)
+            age_seconds = max(0.0, now_utc.timestamp() - tick_epoch)
+            out["last_tick_time"] = datetime.fromtimestamp(
+                tick_epoch,
+                tz=timezone.utc,
+            ).isoformat()
+            out["last_tick_age_seconds"] = round(age_seconds, 3)
+            out["tick_freshness"] = "fresh" if age_seconds <= 300.0 else "stale"
+        except (OSError, OverflowError, TypeError, ValueError):
+            out["tick_freshness"] = "unknown"
+    else:
+        out["tick_freshness"] = "unknown"
+
+    for field in ("bid", "ask", "last", "volume"):
+        value = getattr(tick, field, None)
+        if value is not None:
+            out[field] = value
+    return out
+
+
+def _check_symbol_market_status(
+    symbol: str,
+    *,
+    detail: str,
+    gateway: Any = None,
+) -> Dict[str, Any]:
+    symbol_name = str(symbol or "").strip().upper()
+    if not symbol_name:
+        return {"error": "symbol cannot be empty."}
+
+    mt5_gateway = gateway if gateway is not None else get_mt5_gateway(
+        ensure_connection_impl=ensure_mt5_connection_or_raise,
+    )
+    try:
+        mt5_gateway.ensure_connection()
+    except MT5ConnectionError as exc:
+        return {"error": str(exc)}
+
+    info = mt5_gateway.symbol_info(symbol_name)
+    if info is None:
+        return {"error": f"Symbol {symbol_name} not found"}
+
+    now_utc = datetime.now(timezone.utc)
+    trade_mode = getattr(info, "trade_mode", None)
+    mode_status = _symbol_trade_mode_status(mt5_gateway, trade_mode)
+    tick = mt5_gateway.symbol_info_tick(symbol_name)
+    tick_status = _symbol_tick_snapshot(tick, now_utc=now_utc)
+
+    can_open = mode_status["can_open_new_positions"]
+    tick_freshness = tick_status.get("tick_freshness")
+    if can_open is True and tick_freshness == "fresh":
+        open_state = "probably_open"
+    elif can_open is True:
+        open_state = "trade_mode_allows_opening"
+    elif can_open is False:
+        open_state = mode_status["status"]
+    else:
+        open_state = "unknown"
+
+    message = (
+        f"{symbol_name}: {open_state.replace('_', ' ')} "
+        "(heuristic from MT5 trade_mode and tick freshness)."
+    )
+
+    result: Dict[str, Any] = {
+        "success": True,
+        "mode": "symbol",
+        "symbol": symbol_name,
+        "status": open_state,
+        "status_source": "trade_mode_and_tick_freshness",
+        "status_confidence": "heuristic",
+        "can_open_new_positions": can_open,
+        "trade_mode_label": mode_status.get("trade_mode_label"),
+        "tick_freshness": tick_freshness,
+        "message": message,
+        "timestamp": now_utc.isoformat(),
+    }
+    if detail == "full":
+        result["trade_mode"] = trade_mode
+        result["symbol_info"] = {
+            key: getattr(info, key, None)
+            for key in (
+                "name",
+                "description",
+                "visible",
+                "select",
+                "session_deals",
+                "session_buy_orders",
+                "session_sell_orders",
+                "start_time",
+                "expiration_time",
+            )
+            if getattr(info, key, None) is not None
+        }
+        result["tick"] = tick_status
+    else:
+        for key in ("tick_available", "last_tick_time", "last_tick_age_seconds"):
+            if key in tick_status:
+                result[key] = tick_status[key]
+    return result
+
+
 @mcp.tool()
 def market_status(
+    symbol: Optional[str] = None,
     region: Optional[Literal["us", "europe", "asia", "all"]] = "all",
     timezone_display: Optional[Literal["local", "utc", "auto"]] = "local",
     detail: CompactFullDetailLiteral = "compact",
@@ -483,6 +656,10 @@ def market_status(
 
     Parameters
     ----------
+    symbol : str, optional
+        Broker symbol to check via MT5 trade mode and tick freshness. When
+        supplied, returns a heuristic symbol status instead of the exchange
+        overview.
     region : str, optional
         Filter by region: "us", "europe", "asia", or "all" (default: "all")
     timezone_display : str, optional
@@ -525,6 +702,9 @@ def market_status(
     detail_mode = resolve_output_detail(detail=detail)
 
     def _run() -> Dict[str, Any]:
+        if symbol not in (None, ""):
+            return _check_symbol_market_status(str(symbol), detail=detail_mode)
+
         # Map regions to markets
         region_map = {
             "us": ["NYSE", "NASDAQ"],
@@ -619,6 +799,7 @@ def market_status(
     return run_logged_operation(
         logger,
         operation="market_status",
+        symbol=symbol,
         region=region,
         detail=detail_mode,
         func=_run,

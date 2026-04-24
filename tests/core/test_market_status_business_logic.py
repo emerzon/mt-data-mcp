@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timezone
 from inspect import signature
+from types import SimpleNamespace
 
 import mtdata.core.market_status as market_status_mod
 
@@ -16,10 +17,82 @@ def test_market_status_tool_supports_detail_contract() -> None:
     raw = _unwrap(market_status_mod.market_status)
     params = list(signature(raw).parameters.values())
 
-    assert [param.name for param in params] == ["region", "timezone_display", "detail"]
-    assert params[0].default == "all"
-    assert params[1].default == "local"
-    assert params[2].default == "compact"
+    assert [param.name for param in params] == ["symbol", "region", "timezone_display", "detail"]
+    assert params[0].default is None
+    assert params[1].default == "all"
+    assert params[2].default == "local"
+    assert params[3].default == "compact"
+
+
+def test_market_status_symbol_mode_reports_heuristic_status(monkeypatch) -> None:
+    raw = _unwrap(market_status_mod.market_status)
+    now_epoch = datetime.now(timezone.utc).timestamp()
+
+    class Gateway:
+        SYMBOL_TRADE_MODE_FULL = 4
+        SYMBOL_TRADE_MODE_DISABLED = 0
+        SYMBOL_TRADE_MODE_CLOSEONLY = 3
+        SYMBOL_TRADE_MODE_LONGONLY = 1
+        SYMBOL_TRADE_MODE_SHORTONLY = 2
+
+        def ensure_connection(self) -> None:
+            return None
+
+        def symbol_info(self, symbol: str):
+            assert symbol == "EURUSD"
+            return SimpleNamespace(
+                name="EURUSD",
+                description="Euro vs US Dollar",
+                visible=True,
+                trade_mode=4,
+            )
+
+        def symbol_info_tick(self, symbol: str):
+            assert symbol == "EURUSD"
+            return SimpleNamespace(time=now_epoch, bid=1.1, ask=1.2)
+
+    monkeypatch.setattr(market_status_mod, "get_mt5_gateway", lambda **kwargs: Gateway())
+
+    result = raw(symbol="eurusd")
+
+    assert result["mode"] == "symbol"
+    assert result["symbol"] == "EURUSD"
+    assert result["status"] == "probably_open"
+    assert result["status_source"] == "trade_mode_and_tick_freshness"
+    assert result["status_confidence"] == "heuristic"
+    assert result["can_open_new_positions"] is True
+    assert result["tick_freshness"] == "fresh"
+    assert result["tick_available"] is True
+
+
+def test_market_status_symbol_mode_full_includes_diagnostics(monkeypatch) -> None:
+    raw = _unwrap(market_status_mod.market_status)
+
+    class Gateway:
+        SYMBOL_TRADE_MODE_FULL = 4
+        SYMBOL_TRADE_MODE_DISABLED = 0
+        SYMBOL_TRADE_MODE_CLOSEONLY = 3
+        SYMBOL_TRADE_MODE_LONGONLY = 1
+        SYMBOL_TRADE_MODE_SHORTONLY = 2
+
+        def ensure_connection(self) -> None:
+            return None
+
+        def symbol_info(self, symbol: str):
+            return SimpleNamespace(name=symbol, visible=False, trade_mode=0)
+
+        def symbol_info_tick(self, symbol: str):
+            return None
+
+    monkeypatch.setattr(market_status_mod, "get_mt5_gateway", lambda **kwargs: Gateway())
+
+    result = raw(symbol="BTCUSD", detail="full")
+
+    assert result["status"] == "disabled"
+    assert result["can_open_new_positions"] is False
+    assert result["trade_mode"] == 0
+    assert result["symbol_info"]["name"] == "BTCUSD"
+    assert result["tick"]["tick_available"] is False
 
 
 def test_is_holiday_loads_the_requested_year(monkeypatch) -> None:

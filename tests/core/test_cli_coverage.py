@@ -4667,6 +4667,34 @@ class TestMain:
         mock_fn.assert_called_once_with(group="Forex\\Majors", __cli_raw=True)
 
     @patch("mtdata.core.cli.discover_tools")
+    def test_market_status_keeps_optional_first_positional_symbol(self, mock_discover):
+        mock_fn = MagicMock(return_value="output text")
+        mock_fn.__module__ = "mtdata.core.server"
+        mock_fn.__name__ = "market_status"
+        mock_fn.__doc__ = "Market status."
+
+        def market_status(symbol: Optional[str] = None, region: Optional[str] = "all"):
+            """Market status."""
+            pass
+
+        info = get_function_info(market_status)
+        info["func"] = mock_fn
+
+        mock_discover.return_value = {
+            "market_status": {
+                "func": mock_fn,
+                "meta": {"description": "Market status"},
+                "_cli_func_info": info,
+            },
+        }
+
+        with patch("sys.argv", ["cli.py", "market_status", "EURUSD"]):
+            result = main()
+
+        assert result == 0
+        mock_fn.assert_called_once_with(symbol="EURUSD", region="all", __cli_raw=True)
+
+    @patch("mtdata.core.cli.discover_tools")
     def test_global_timeframe_before_command_is_applied(self, mock_discover):
         mock_fn = MagicMock(return_value="output text")
         mock_fn.__module__ = "mtdata.core.server"
