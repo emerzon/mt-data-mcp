@@ -593,7 +593,10 @@ class TestFormatResultForCli:
                 "success": True,
                 "start_epoch": 1.0,
                 "end_epoch": 2.0,
-                "stats": {"bid": {"first": 1.1}},
+                "stats": {
+                    "bid": {"first": 1.17225123, "std": 0.000007},
+                    "spread": {"mean": 0.00001234},
+                },
             },
             fmt="toon",
             verbose=False,
@@ -602,6 +605,9 @@ class TestFormatResultForCli:
         assert "start_epoch" in ticks
         assert "end_epoch" in ticks
         assert "stats" in ticks
+        assert "first: 1.17225123" in ticks
+        assert "std: 0.000007" in ticks
+        assert "spread.mean: 0.00001234" in ticks
 
     def test_market_ticker_json_uses_display_time_as_canonical_field(self):
         payload = json.loads(

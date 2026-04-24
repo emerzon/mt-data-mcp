@@ -36,6 +36,17 @@ _QUOTE_DECIMALS_BY_FIELD = {
     "session_close": 8,
 }
 
+_QUOTE_STAT_DECIMAL_FIELDS = {
+    "first",
+    "last",
+    "low",
+    "high",
+    "mean",
+    "median",
+    "std",
+    "change",
+}
+
 
 def _is_scalar_value(value: Any) -> bool:
     return isinstance(value, (str, int, float, bool)) or value is None
@@ -172,10 +183,25 @@ def _column_decimals(headers: List[str], rows: List[Dict[str, Any]]) -> Dict[str
     return col_decimals
 
 
-def _forced_scalar_decimals(key: Optional[str]) -> Optional[int]:
+def _forced_scalar_decimals(
+    key: Optional[str],
+    *,
+    parent_key: Optional[str] = None,
+) -> Optional[int]:
     if key is None:
         return None
-    return _QUOTE_DECIMALS_BY_FIELD.get(str(key))
+    forced = _QUOTE_DECIMALS_BY_FIELD.get(str(key))
+    if forced is not None:
+        return forced
+    if "." in str(key):
+        parent, _, child = str(key).partition(".")
+        if child in _QUOTE_STAT_DECIMAL_FIELDS:
+            forced = _QUOTE_DECIMALS_BY_FIELD.get(parent)
+            if forced is not None:
+                return forced
+    if parent_key is not None and str(key) in _QUOTE_STAT_DECIMAL_FIELDS:
+        return _QUOTE_DECIMALS_BY_FIELD.get(str(parent_key))
+    return None
 
 
 def _collapse_single_key_path(key: str, value: Any) -> tuple[str, Any]:
@@ -365,6 +391,7 @@ def _format_to_toon(
     value: Any,
     *,
     key: Optional[str] = None,
+    parent_key: Optional[str] = None,
     indent: int = 0,
     delimiter: str = _DEFAULT_DELIMITER,
     simplify_numbers: bool = True,
@@ -374,7 +401,7 @@ def _format_to_toon(
         key, value = _collapse_single_key_path(key, value)
 
     if _is_scalar_value(value):
-        forced_decimals = _forced_scalar_decimals(key)
+        forced_decimals = _forced_scalar_decimals(key, parent_key=parent_key)
         if (
             forced_decimals is not None
             and isinstance(value, Number)
@@ -438,6 +465,11 @@ def _format_to_toon(
             chunk = _format_to_toon(
                 subval,
                 key=subkey,
+                parent_key=(
+                    str(key)
+                    if key is not None and str(key) in _QUOTE_DECIMALS_BY_FIELD
+                    else parent_key
+                ),
                 indent=child_indent,
                 delimiter=delimiter,
                 simplify_numbers=simplify_numbers,
