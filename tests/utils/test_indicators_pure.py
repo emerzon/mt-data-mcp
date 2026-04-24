@@ -905,7 +905,7 @@ class TestSharedDefs:
 
         assert calls == [False]
         assert categories == ["momentum", "trend"]
-        assert names == ["ema", "rsi"]
+        assert names == []
 
     def test_load_indicator_doc_choices_falls_back_on_loader_error(self):
         categories, names = _load_indicator_doc_choices(

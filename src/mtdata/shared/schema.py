@@ -230,6 +230,11 @@ SummaryAliasCompactFullDetailLiteral = Literal["full", "summary", "summary_only"
 def _load_indicator_doc_choices(
     list_ta_indicators_docs: Optional[Any] = None,
 ) -> Tuple[List[str], List[str]]:
+    """Load small schema enums for indicator docs.
+
+    Indicator names intentionally stay runtime-validated strings to avoid
+    inflating MCP schemas with the full indicator registry.
+    """
     if list_ta_indicators_docs is None:
         try:
             from ..utils.indicators import list_ta_indicators as list_ta_indicators_docs
@@ -257,10 +262,7 @@ def _load_indicator_doc_choices(
     categories = sorted(
         {it.get("category") for it in docs if isinstance(it, dict) and it.get("category")}
     )
-    names = sorted(
-        {it.get("name") for it in docs if isinstance(it, dict) and it.get("name")}
-    )
-    return categories, names
+    return categories, []
 
 
 _CATEGORY_CHOICES, _INDICATOR_NAME_CHOICES = _load_indicator_doc_choices()
@@ -271,10 +273,7 @@ if _CATEGORY_CHOICES:
 else:
     CategoryLiteral = str  # fallback
 
-if _INDICATOR_NAME_CHOICES:
-    IndicatorNameLiteral = Literal[tuple(_INDICATOR_NAME_CHOICES)]  # type: ignore
-else:
-    IndicatorNameLiteral = str  # fallback
+IndicatorNameLiteral = str
 
 class IndicatorSpec(TypedDict, total=False):
     """Structured TI spec: name with optional numeric params.
