@@ -72,6 +72,21 @@ def test_run_data_fetch_candles_passes_include_spread_to_service():
     assert captured["kwargs"]["include_spread"] is True
 
 
+def test_run_data_fetch_candles_adds_time_series_collection_contract():
+    rows = [{"time": 1.0, "close": 1.1}]
+    request = DataFetchCandlesRequest(symbol="EURUSD", timeframe="H1", limit=10)
+
+    result = run_data_fetch_candles(
+        request,
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_candles_impl=lambda **kwargs: {"success": True, "data": rows},
+    )
+
+    assert result["data"] == rows
+    assert result["collection_kind"] == "time_series"
+    assert result["series"] == rows
+
+
 def test_run_data_fetch_ticks_logs_connection_error(caplog):
     request = DataFetchTicksRequest(symbol="EURUSD", limit=5)
 

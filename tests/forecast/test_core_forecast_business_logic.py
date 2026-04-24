@@ -275,6 +275,12 @@ def test_forecast_generate_defaults_to_compact_payload(monkeypatch):
     assert out["symbol"] == "BTCUSD"
     assert out["timeframe"] == "H1"
     assert out["forecast_price"] == [1.0, 1.1, 1.2]
+    assert out["collection_kind"] == "time_series"
+    assert out["series"] == [
+        {"time": "t1", "forecast_price": 1.0},
+        {"time": "t2", "forecast_price": 1.1},
+        {"time": "t3", "forecast_price": 1.2},
+    ]
     assert "forecast_epoch" not in out
 
 
@@ -306,6 +312,8 @@ def test_forecast_generate_standard_preserves_full_arrays(monkeypatch):
 
     assert out["detail"] == "standard"
     assert out["forecast_epoch"] == [1.0, 2.0, 3.0]
+    assert out["collection_kind"] == "time_series"
+    assert out["series"][0] == {"time": "t1", "forecast_price": 1.0}
 
 
 def test_run_forecast_generate_logs_finish_event(caplog):

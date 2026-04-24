@@ -1,6 +1,7 @@
 from unittest.mock import patch
 
 from mtdata.core.output_contract import (
+    attach_collection_contract,
     ensure_common_meta,
     normalize_output_detail,
     normalize_output_verbosity_detail,
@@ -104,3 +105,24 @@ def test_ensure_common_meta_preserves_existing_tool_and_timezone() -> None:
     build_meta.assert_not_called()
     assert out["meta"]["tool"] == "existing_tool"
     assert out["meta"]["runtime"]["timezone"] == existing_timezone
+
+
+def test_attach_collection_contract_adds_rows_without_replacing_legacy_data() -> None:
+    rows = [{"symbol": "EURUSD"}]
+
+    out = attach_collection_contract(
+        {"success": True, "data": rows},
+        collection_kind="table",
+        rows=rows,
+    )
+
+    assert out["data"] == rows
+    assert out["collection_kind"] == "table"
+    assert out["collection_contract_version"] == "collection.v1"
+    assert out["rows"] == rows
+
+
+def test_attach_collection_contract_preserves_error_payloads() -> None:
+    payload = {"error": "failed"}
+
+    assert attach_collection_contract(payload, collection_kind="table", rows=[]) == payload

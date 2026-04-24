@@ -167,6 +167,9 @@ class TestSymbolsTopMarkets:
         assert result["results"]["lowest_spread"]["data"][0]["symbol"] == "EURUSD"
         assert result["results"]["highest_volume"]["data"][0]["symbol"] == "EURUSD"
         assert result["results"]["highest_price_change"]["data"][0]["symbol"] == "GBPUSD"
+        assert result["collection_kind"] == "groups"
+        assert result["groups"] == result["results"]
+        assert result["groups"]["lowest_spread"]["rows"][0]["symbol"] == "EURUSD"
         assert "success" not in result["results"]["lowest_spread"]
         assert "count" not in result["results"]["lowest_spread"]
         assert "success" not in result["results"]["highest_volume"]
@@ -460,6 +463,8 @@ class TestMarketScan:
         assert result["data"]["table"]["rows"][0]["symbol"] == "EURUSD"
         assert result["data"]["table"]["rows"][0]["rsi"] == 100.0
         assert result["data"]["table"]["rows"][0]["sma_value"] == 5.0
+        assert result["collection_kind"] == "table"
+        assert result["rows"] == result["data"]["table"]["rows"]
         assert result["meta"]["request"]["timeframe"] == "H1"
         assert result["meta"]["request"]["rank_by"] == "abs_price_change_pct"
         assert result["meta"]["stats"]["matched_symbols"] == 1
@@ -487,6 +492,7 @@ class TestMarketScan:
         assert "columns" not in result["data"]["table"]
         assert result["data"]["table"]["row_count"] == 1
         assert result["data"]["table"]["rows"][0]["symbol"] == "EURUSD"
+        assert result["rows"] == result["data"]["table"]["rows"]
         assert result["meta"]["request"]["detail"] == "compact"
 
     @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)

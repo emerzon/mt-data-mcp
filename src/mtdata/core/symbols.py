@@ -21,7 +21,11 @@ from ._mcp_instance import mcp
 from .constants import DEFAULT_ROW_LIMIT, GROUP_SEARCH_THRESHOLD, TIMEFRAME_MAP
 from .execution_logging import run_logged_operation
 from .mt5_gateway import get_mt5_gateway
-from .output_contract import resolve_output_contract, resolve_output_detail
+from .output_contract import (
+    attach_collection_contract,
+    resolve_output_contract,
+    resolve_output_detail,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -252,7 +256,12 @@ def symbols_list(  # noqa: C901
             if limit_value:
                 symbol_list = symbol_list[:limit_value]
             rows = [[s["name"], s["group"], s["description"]] for s in symbol_list]
-            return _table_from_rows(["name", "group", "description"], rows)
+            result = _table_from_rows(["name", "group", "description"], rows)
+            return attach_collection_contract(
+                result,
+                collection_kind="table",
+                rows=result.get("data"),
+            )
         except MT5ConnectionError as exc:
             return {"error": str(exc)}
         except Exception as exc:
@@ -313,7 +322,12 @@ def _list_symbol_groups(
         # Build tabular result with only group names
         group_names = [name for name, _ in filtered_items]
         rows = [[g] for g in group_names]
-        return _table_from_rows(["group"], rows)
+        result = _table_from_rows(["group"], rows)
+        return attach_collection_contract(
+            result,
+            collection_kind="table",
+            rows=result.get("data"),
+        )
     except Exception as e:
         return {"error": f"Error getting symbol groups: {str(e)}"}
 
@@ -570,7 +584,12 @@ def _build_market_scan_bar_row(
 
 def _market_scan_table(headers: List[str], rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     ordered_rows = [[row.get(header) for header in headers] for row in rows]
-    return _table_from_rows(headers, ordered_rows)
+    result = _table_from_rows(headers, ordered_rows)
+    return attach_collection_contract(
+        result,
+        collection_kind="table",
+        rows=result.get("data"),
+    )
 
 
 def _strip_nested_market_scan_meta(table: Dict[str, Any]) -> Dict[str, Any]:
@@ -1222,48 +1241,57 @@ def symbols_top_markets(  # noqa: C901
                 out["skipped_symbols"] = metric_skips["price_change"]
                 out["skipped_examples"] = metric_issues["price_change"]
                 out["ranking"] = "highest_price_change"
-                return out
+                return attach_collection_contract(
+                    out,
+                    collection_kind="table",
+                    rows=out.get("data"),
+                )
 
-            return {
-                **scan_meta,
-                "results": {
-                    "lowest_spread": _strip_nested_market_scan_meta(
-                        _market_scan_table(
-                            _top_markets_headers("spread", detail_mode=detail_mode),
-                            spread_rows,
-                        )
-                    ),
-                    "highest_volume": _strip_nested_market_scan_meta(
-                        _market_scan_table(
-                            _top_markets_headers("volume", detail_mode=detail_mode),
-                            volume_rows,
-                        )
-                    ),
-                    "highest_price_change": _strip_nested_market_scan_meta(
-                        _market_scan_table(
-                            _top_markets_headers("price_change", detail_mode=detail_mode),
-                            price_change_rows,
-                        )
-                    ),
-                },
-                "scan_stats": {
-                    "spread": {
-                        "evaluated_symbols": evaluated_counts["spread"],
-                        "skipped_symbols": metric_skips["spread"],
-                        "skipped_examples": metric_issues["spread"],
-                    },
-                    "volume": {
-                        "evaluated_symbols": evaluated_counts["volume"],
-                        "skipped_symbols": metric_skips["volume"],
-                        "skipped_examples": metric_issues["volume"],
-                    },
-                    "price_change": {
-                        "evaluated_symbols": evaluated_counts["price_change"],
-                        "skipped_symbols": metric_skips["price_change"],
-                        "skipped_examples": metric_issues["price_change"],
-                    },
-                },
+            results = {
+                "lowest_spread": _strip_nested_market_scan_meta(
+                    _market_scan_table(
+                        _top_markets_headers("spread", detail_mode=detail_mode),
+                        spread_rows,
+                    )
+                ),
+                "highest_volume": _strip_nested_market_scan_meta(
+                    _market_scan_table(
+                        _top_markets_headers("volume", detail_mode=detail_mode),
+                        volume_rows,
+                    )
+                ),
+                "highest_price_change": _strip_nested_market_scan_meta(
+                    _market_scan_table(
+                        _top_markets_headers("price_change", detail_mode=detail_mode),
+                        price_change_rows,
+                    )
+                ),
             }
+            return attach_collection_contract(
+                {
+                    **scan_meta,
+                    "results": results,
+                    "scan_stats": {
+                        "spread": {
+                            "evaluated_symbols": evaluated_counts["spread"],
+                            "skipped_symbols": metric_skips["spread"],
+                            "skipped_examples": metric_issues["spread"],
+                        },
+                        "volume": {
+                            "evaluated_symbols": evaluated_counts["volume"],
+                            "skipped_symbols": metric_skips["volume"],
+                            "skipped_examples": metric_issues["volume"],
+                        },
+                        "price_change": {
+                            "evaluated_symbols": evaluated_counts["price_change"],
+                            "skipped_symbols": metric_skips["price_change"],
+                            "skipped_examples": metric_issues["price_change"],
+                        },
+                    },
+                },
+                collection_kind="groups",
+                groups=results,
+            )
         except MT5ConnectionError as exc:
             return {"error": str(exc)}
         except Exception as exc:
@@ -1636,7 +1664,11 @@ def market_scan(  # noqa: C901
             if total_matches == 0:
                 out["summary"]["empty"] = True
                 out["message"] = "No symbols matched the requested market scan filters."
-            return out
+            return attach_collection_contract(
+                out,
+                collection_kind="table",
+                rows=limited_rows,
+            )
         except MT5ConnectionError as exc:
             return _market_scan_error(
                 str(exc),

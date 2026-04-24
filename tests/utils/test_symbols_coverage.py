@@ -71,6 +71,8 @@ class TestSymbolsListNoSearch:
         res = fn(search_term=None, limit=25)
         assert "data" in res
         assert len(res["data"]) == 2
+        assert res["collection_kind"] == "table"
+        assert res["rows"] == res["data"]
 
     @patch(_NORM_LIMIT, return_value=25)
     @patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r})

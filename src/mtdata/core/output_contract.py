@@ -219,6 +219,30 @@ def ensure_common_meta(
     return out
 
 
+def attach_collection_contract(
+    result: Any,
+    *,
+    collection_kind: str,
+    rows: Any = None,
+    series: Any = None,
+    groups: Any = None,
+) -> Any:
+    """Add normalized collection fields while preserving legacy payload shape."""
+    if not isinstance(result, dict) or result.get("error"):
+        return result
+
+    out = dict(result)
+    out.setdefault("collection_kind", str(collection_kind))
+    out.setdefault("collection_contract_version", "collection.v1")
+    if rows is not None:
+        out.setdefault("rows", rows)
+    if series is not None:
+        out.setdefault("series", series)
+    if groups is not None:
+        out.setdefault("groups", groups)
+    return out
+
+
 def apply_output_verbosity(
     result: Any,
     *,

@@ -16,6 +16,7 @@ from ..core.execution_logging import (
     log_operation_finish,
     log_operation_start,
 )
+from ..core.output_contract import attach_collection_contract
 from .backtest import execute_forecast_backtest as _forecast_backtest_impl
 from .backtest import _compact_metrics_payload
 from .capabilities import resolve_capability_request
@@ -96,7 +97,11 @@ def _apply_forecast_generate_detail(
         out.setdefault("symbol", request.symbol)
         out.setdefault("timeframe", request.timeframe)
         out["detail"] = detail_value
-        return out
+        return attach_collection_contract(
+            out,
+            collection_kind="time_series",
+            series=_forecast_generate_series_rows(out),
+        )
 
     compact: Dict[str, Any] = {
         "success": bool(payload.get("success", True)),
@@ -146,7 +151,35 @@ def _apply_forecast_generate_detail(
         }:
             continue
         compact[key] = value
-    return compact
+    return attach_collection_contract(
+        compact,
+        collection_kind="time_series",
+        series=_forecast_generate_series_rows(compact),
+    )
+
+
+def _forecast_generate_series_rows(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    times = payload.get("forecast_time")
+    prices = payload.get("forecast_price")
+    if not isinstance(times, list) or not isinstance(prices, list):
+        return []
+
+    optional_series = {
+        "forecast_return": payload.get("forecast_return"),
+        "lower_price": payload.get("lower_price"),
+        "upper_price": payload.get("upper_price"),
+    }
+    rows: List[Dict[str, Any]] = []
+    for idx, time_value in enumerate(times):
+        row: Dict[str, Any] = {
+            "time": time_value,
+            "forecast_price": prices[idx] if idx < len(prices) else None,
+        }
+        for key, values in optional_series.items():
+            if isinstance(values, list) and idx < len(values):
+                row[key] = values[idx]
+        rows.append(row)
+    return rows
 
 
 def _apply_barrier_prob_detail(

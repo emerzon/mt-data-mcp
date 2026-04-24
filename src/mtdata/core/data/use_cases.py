@@ -8,6 +8,7 @@ from typing import Any, Dict
 from ...shared.result import Err, Ok, Result, to_dict
 from ..execution_logging import run_logged_operation
 from ..mt5_gateway import mt5_connection_error
+from ..output_contract import attach_collection_contract
 from ..trading.time import _next_candle_wait_payload, _sleep_until_next_candle
 from .requests import (
     DataFetchCandlesRequest,
@@ -119,7 +120,7 @@ def _run_data_fetch_candles_impl(
     connection_error = _ensure_gateway_connection(gateway)
     if connection_error is not None:
         return connection_error
-    return fetch_candles_impl(
+    result = fetch_candles_impl(
         symbol=request.symbol,
         timeframe=request.timeframe,
         limit=request.limit,
@@ -133,6 +134,13 @@ def _run_data_fetch_candles_impl(
         include_incomplete=request.include_incomplete,
         allow_stale=request.allow_stale,
     )
+    if isinstance(result, dict) and isinstance(result.get("data"), list):
+        return attach_collection_contract(
+            result,
+            collection_kind="time_series",
+            series=result["data"],
+        )
+    return result
 
 
 def _run_data_fetch_ticks_impl(
