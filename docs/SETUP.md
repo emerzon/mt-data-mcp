@@ -201,10 +201,10 @@ MT5_LOGIN=12345678
 MT5_PASSWORD=your_password
 MT5_SERVER=your_broker_server
 
-# Timezone Configuration (choose one method)
-MT5_TIME_OFFSET_MINUTES=120  # If server is UTC+2
-# OR
+# Timezone Configuration (choose one server-time method)
 MT5_SERVER_TZ=Europe/Athens  # Timezone name
+# OR
+MT5_TIME_OFFSET_MINUTES=120  # If server is UTC+2
 
 # Optional trade guardrails
 MTDATA_TRADE_GUARDRAILS_ENABLED=1
@@ -218,6 +218,8 @@ For the full guardrail surface, including blocklists, wallet-risk limits, and pe
 ### Timezone Configuration
 
 MT5 server times vary by broker. Configure timezone for correct timestamp normalization.
+
+Use one method at a time. `MT5_SERVER_TZ` is preferred because it handles DST; `MT5_TIME_OFFSET_MINUTES` is useful when you only know a fixed broker offset. If both are set and `MT5_TIME_OFFSET_MINUTES` is non-zero, the fixed offset wins and mtdata logs a warning because static offsets do not adjust for DST.
 
 **Option 1: Offset in minutes**
 ```ini
@@ -421,7 +423,7 @@ npm run build   # Production build
 ### Timezone Issues
 
 1. Check server time in MT5: Tools → Options → Server
-2. Set `MT5_TIME_OFFSET_MINUTES` in `.env`
+2. Set `MT5_SERVER_TZ` in `.env` when you know the broker's IANA timezone, or `MT5_TIME_OFFSET_MINUTES` when you only know a fixed offset
 3. Verify with: `mtdata-cli data_fetch_candles EURUSD --limit 1 --json`
 
 See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for more issues.

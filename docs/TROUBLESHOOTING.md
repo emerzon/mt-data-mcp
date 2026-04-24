@@ -190,15 +190,17 @@ mtdata-cli data_fetch_candles EURUSD --limit 100
 
 **Cause:** Server timezone offset not configured.
 
-**Solution:** Set timezone in `.env`:
+**Solution:** Set one timezone method in `.env`. Prefer an IANA timezone name because it handles DST:
+```ini
+MT5_SERVER_TZ=Europe/Athens
+```
+
+If you only know a fixed broker offset, use minutes from UTC instead:
 ```ini
 MT5_TIME_OFFSET_MINUTES=120  # If server is UTC+2
 ```
 
-Or use server timezone name:
-```ini
-MT5_SERVER_TZ=Europe/Athens
-```
+Avoid setting both unless you intentionally want a non-zero `MT5_TIME_OFFSET_MINUTES` value to override `MT5_SERVER_TZ`.
 
 To estimate an offset quickly (run during active market hours so ticks are current):
 ```bash
@@ -256,6 +258,14 @@ mtdata-cli regime_detect --help
 ```
 
 ### Enable Debug Mode
+PowerShell:
+```powershell
+$env:MTDATA_CLI_DEBUG = "1"
+mtdata-cli forecast_generate EURUSD --horizon 12
+$env:MTDATA_CLI_DEBUG = $null
+```
+
+Bash:
 ```bash
 MTDATA_CLI_DEBUG=1 mtdata-cli forecast_generate EURUSD --horizon 12
 ```
@@ -360,7 +370,7 @@ These models require PyTorch. GPU is recommended for training speed but not requ
 | Invalid timeframe | Use: M1, M5, M15, M30, H1, H4, D1, W1, MN1 |
 | Method not available | Check `forecast_list_methods` and install deps |
 | Output hard to read | Add `--json` |
-| Wrong timestamps | Set `MT5_TIME_OFFSET_MINUTES` in `.env` |
+| Wrong timestamps | Set `MT5_SERVER_TZ` in `.env`, or `MT5_TIME_OFFSET_MINUTES` if you only know a fixed offset |
 | Command slow | Reduce `--limit`, use faster method |
 | QuantLib import error | `pip install QuantLib` |
 | Finviz empty data | Check network / firewall (finvizfinance is pre-installed) |

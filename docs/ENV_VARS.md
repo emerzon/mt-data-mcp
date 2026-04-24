@@ -36,10 +36,10 @@ MT5 server clocks vary by broker. Configure one of the two methods below so mtda
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `MT5_SERVER_TZ` | — | IANA timezone of the MT5 server (e.g. `Europe/Athens`). Handles DST automatically. |
-| `MT5_TIME_OFFSET_MINUTES` | `0` | Fixed offset from UTC in minutes (e.g. `120` for UTC+2). Ignored when `MT5_SERVER_TZ` is set. |
+| `MT5_TIME_OFFSET_MINUTES` | `0` | Fixed offset from UTC in minutes (e.g. `120` for UTC+2). When set to a non-zero value, this explicit offset overrides `MT5_SERVER_TZ`. |
 | `MT5_CLIENT_TZ` / `CLIENT_TZ` | auto-detect | IANA timezone of the local machine. `CLIENT_TZ` takes precedence if both are set. |
 
-Prefer `MT5_SERVER_TZ` — it adjusts for DST. Use `MT5_TIME_OFFSET_MINUTES` only when you don't know the server's IANA name.
+Prefer `MT5_SERVER_TZ` because it adjusts for DST. Use `MT5_TIME_OFFSET_MINUTES` only when you do not know the server's IANA name, and avoid setting both unless you intentionally want the fixed offset to win.
 
 ```ini
 # Option A — timezone name (recommended)
@@ -152,6 +152,14 @@ Concurrency caps and on-disk cache used by `forecast_train` / `forecast_task_*` 
 |----------|---------|-------------|
 | `MTDATA_TRAIN_WORKERS` | `4` | Maximum number of background training threads in the shared executor. |
 | `MTDATA_HEAVY_LIMIT` | `1` | Number of heavyweight (e.g. neural / foundation) training jobs allowed to run concurrently. Other jobs queue on the executor. |
+| `MTDATA_FORECAST_JOBS_DB` | `~/.mtdata/forecast/jobs.sqlite` | SQLite registry for task status, progress, heartbeat, cancellation, and recovery across process restarts. |
+| `MTDATA_TRAIN_TIMEOUT_INSTANT_SECONDS` | `30` | Timeout for methods categorized as instant. Values below 1 second are clamped to 1. |
+| `MTDATA_TRAIN_TIMEOUT_FAST_SECONDS` | `120` | Timeout for methods categorized as fast. |
+| `MTDATA_TRAIN_TIMEOUT_MODERATE_SECONDS` | `600` | Timeout for methods categorized as moderate. |
+| `MTDATA_TRAIN_TIMEOUT_HEAVY_SECONDS` | `1800` | Timeout for methods categorized as heavy, such as neural / foundation training. |
+| `MTDATA_FORECAST_HEARTBEAT_SECONDS` | `2` | Heartbeat interval used by heavy-process training jobs. Values below 0.5 seconds are clamped. |
+| `MTDATA_FORECAST_CANCEL_GRACE_SECONDS` | `3` | Grace period after cancellation before a still-running heavy worker is terminated. Values below 0.1 seconds are clamped. |
+| `MTDATA_FORECAST_SWEEPER_SECONDS` | `60` | Interval for cleaning completed task records and expired model artifacts. Values below 5 seconds are clamped. |
 | `MTDATA_MODEL_STORE` | `~/.mtdata/models` | Root directory used by the model store. Trained models are keyed by `method/data_scope/params_hash`. |
 | `MTDATA_MODEL_TTL_DAYS` | `7` | Cached model expiry in days. Stale models are evicted on access. |
 
@@ -242,9 +250,10 @@ A starter template with all sections. Uncomment and fill in what you need.
 # MT5_SERVER=YourBroker-Demo
 # MT5_TIMEOUT=30
 
-# ── Timezone (pick one) ────────────────────────────────
+# ── Server timezone (pick one) + optional client TZ ─────
 # MT5_SERVER_TZ=Europe/Athens
 # MT5_TIME_OFFSET_MINUTES=120
+# MT5_CLIENT_TZ=America/New_York
 
 # ── Broker Time Check ──────────────────────────────────
 # MTDATA_BROKER_TIME_CHECK=false
@@ -268,12 +277,15 @@ A starter template with all sections. Uncomment and fill in what you need.
 # MTDATA_NEWS_EMBEDDINGS_MODEL=Qwen/Qwen3-Embedding-0.6B
 # MTDATA_NEWS_EMBEDDINGS_TOP_N=8
 # MTDATA_NEWS_EMBEDDINGS_WEIGHT=1.0
+# MTDATA_NEWS_EMBEDDINGS_TRUNCATE_DIM=
 # MTDATA_NEWS_EMBEDDINGS_CACHE_SIZE=256
+# MTDATA_NEWS_EMBEDDINGS_HF_TOKEN_ENV_VAR=HF_TOKEN
 # HF_TOKEN=
 
 # ── Finviz ─────────────────────────────────────────────
 # FINVIZ_HTTP_TIMEOUT=15.0
 # FINVIZ_SCREENER_MAX_ROWS=5000
+# FINVIZ_PAGE_LIMIT_MAX=500
 
 # ── Forecasting / GPU ──────────────────────────────────
 # MTDATA_NF_ACCEL=cpu
@@ -282,6 +294,14 @@ A starter template with all sections. Uncomment and fill in what you need.
 # ── Async Training & Model Store ───────────────────────
 # MTDATA_TRAIN_WORKERS=4
 # MTDATA_HEAVY_LIMIT=1
+# MTDATA_FORECAST_JOBS_DB=~/.mtdata/forecast/jobs.sqlite
+# MTDATA_TRAIN_TIMEOUT_INSTANT_SECONDS=30
+# MTDATA_TRAIN_TIMEOUT_FAST_SECONDS=120
+# MTDATA_TRAIN_TIMEOUT_MODERATE_SECONDS=600
+# MTDATA_TRAIN_TIMEOUT_HEAVY_SECONDS=1800
+# MTDATA_FORECAST_HEARTBEAT_SECONDS=2
+# MTDATA_FORECAST_CANCEL_GRACE_SECONDS=3
+# MTDATA_FORECAST_SWEEPER_SECONDS=60
 # MTDATA_MODEL_STORE=~/.mtdata/models
 # MTDATA_MODEL_TTL_DAYS=7
 

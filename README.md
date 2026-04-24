@@ -40,7 +40,7 @@ It runs as a **Model Context Protocol (MCP)** server or a standalone **CLI**.
 | **Scanning** | Screen MT5 symbols by spread, price change, volume, RSI, and SMA | `symbols_top_markets`, `market_scan` |
 | **Strategy Backtesting** | Backtest simple SMA/EMA/RSI trading rules on MT5 candles | `strategy_backtest` |
 | **Trading** | Place orders, manage positions, review realized performance, and estimate tail risk | `trade_place`, `trade_close`, `trade_journal_analyze`, `var_cvar_calculate` |
-| **Async Training** | Run heavyweight forecast training in the background and reuse cached models | `forecast_train`, `forecast_task_status`, `forecast_models_list`, `forecast_models_delete` |
+| **Async Training** | Run heavyweight forecast training in the background and reuse cached models | `forecast_train`, `forecast_task_status`, `forecast_task_wait`, `forecast_models_list`, `forecast_models_delete` |
 | **News** | Unified, ranked news + economic calendar relevant to a symbol | `news` |
 | **Fundamentals** | US equity data, screening, news, calendars | `finviz_fundamentals`, `finviz_screen`, `finviz_calendar` |
 | **Options** | Options chains and QuantLib barrier pricing | `forecast_options_chain`, `forecast_quantlib_barrier_price` |

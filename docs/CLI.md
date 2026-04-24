@@ -174,12 +174,13 @@ mtdata-cli data_fetch_candles EURUSD --start "2025-12-01" --end "2025-12-31"
 |---------|-------------|
 | `forecast_train` | Start a background training job for heavyweight methods (returns a `task_id`) |
 | `forecast_task_status` | Poll training progress for a `task_id` |
+| `forecast_task_wait` | Wait for a task to finish or until a timeout is reached |
 | `forecast_task_cancel` | Cancel a running training task |
 | `forecast_task_list` | List active and recent training tasks |
 | `forecast_models_list` | List trained models cached on disk |
 | `forecast_models_delete` | Delete a stored model by `model_id` |
 
-Trained models are written under `~/.mtdata/models/` by default and re-used automatically by subsequent `forecast_generate` calls with the same method/symbol/timeframe/params. See [ENV_VARS.md](ENV_VARS.md#async-training--model-store) for the related environment variables.
+Trained models are written under `~/.mtdata/models/` by default and re-used automatically by subsequent `forecast_generate` calls with the same method/symbol/timeframe/params. Task status is persisted in `~/.mtdata/forecast/jobs.sqlite` by default, so recent task state can survive process restarts. See [ENV_VARS.md](ENV_VARS.md#async-training--model-store) for the related environment variables.
 
 ### Risk Analysis
 | Command | Description |
@@ -428,7 +429,16 @@ mtdata-cli data_fetch_candles EURUSD --limit 1000 --json > eurusd_data.json
 ```
 
 ### Debug Mode
-Set environment variable for verbose debugging:
+Set the debug environment variable for verbose CLI logging:
+
+PowerShell:
+```powershell
+$env:MTDATA_CLI_DEBUG = "1"
+mtdata-cli forecast_generate EURUSD
+$env:MTDATA_CLI_DEBUG = $null
+```
+
+Bash:
 ```bash
 MTDATA_CLI_DEBUG=1 mtdata-cli forecast_generate EURUSD
 ```

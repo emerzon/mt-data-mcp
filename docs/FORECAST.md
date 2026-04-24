@@ -276,6 +276,7 @@ mtdata-cli forecast_train EURUSD --timeframe H1 --method nhits --horizon 24
 
 # Poll progress
 mtdata-cli forecast_task_status --task-id <task_id> --json
+mtdata-cli forecast_task_wait --task-id <task_id> --timeout-seconds 120 --json
 mtdata-cli forecast_task_list --json
 
 # Cancel if needed
@@ -293,6 +294,9 @@ Configuration (see [ENV_VARS.md](ENV_VARS.md#async-training--model-store)):
 
 - `MTDATA_TRAIN_WORKERS` — size of the background training thread pool (default `4`).
 - `MTDATA_HEAVY_LIMIT` — concurrent heavyweight (neural / foundation) jobs (default `1`).
+- `MTDATA_FORECAST_JOBS_DB` — durable SQLite task registry (default `~/.mtdata/forecast/jobs.sqlite`).
+- `MTDATA_TRAIN_TIMEOUT_*_SECONDS` — per-category training timeouts for `instant`, `fast`, `moderate`, and `heavy` methods.
+- `MTDATA_FORECAST_HEARTBEAT_SECONDS`, `MTDATA_FORECAST_CANCEL_GRACE_SECONDS`, `MTDATA_FORECAST_SWEEPER_SECONDS` — task liveness, cancellation, and cleanup tuning.
 - `MTDATA_MODEL_STORE` — root directory for cached models (default `~/.mtdata/models`).
 - `MTDATA_MODEL_TTL_DAYS` — cache expiry in days (default `7`).
 
