@@ -181,7 +181,7 @@ def _build_indicator_usage_examples(name: str, params: List[Dict[str, Any]]) -> 
     if not indicator_name:
         return []
 
-    examples = [f'mtdata-cli data_fetch_candles EURUSD --indicators "{indicator_name}"']
+    examples = [f'data_fetch_candles(symbol="EURUSD", indicators="{indicator_name}")']
     numeric_defaults: List[tuple[str, str]] = []
     for raw in params or []:
         if not isinstance(raw, dict):
@@ -196,16 +196,21 @@ def _build_indicator_usage_examples(name: str, params: List[Dict[str, Any]]) -> 
 
     if numeric_defaults and numeric_defaults[0][0] == "length":
         examples.append(
-            f'mtdata-cli data_fetch_candles EURUSD --indicators "{indicator_name}_{numeric_defaults[0][1]}"'
+            f'data_fetch_candles(symbol="EURUSD", indicators="{indicator_name}_{numeric_defaults[0][1]}")'
         )
     if numeric_defaults:
         positional = ",".join(value for _pname, value in numeric_defaults)
         named = ",".join(f"{pname}={value}" for pname, value in numeric_defaults)
+        positional_values = ",".join(value for _pname, value in numeric_defaults)
+        named_values = ", ".join(f'"{pname}": {value}' for pname, value in numeric_defaults)
         examples.append(
-            f'mtdata-cli data_fetch_candles EURUSD --indicators "{indicator_name}({positional})"'
+            f'data_fetch_candles(symbol="EURUSD", indicators="{indicator_name}({positional})")'
         )
         examples.append(
-            f'mtdata-cli data_fetch_candles EURUSD --indicators "{indicator_name}({named})"'
+            f'data_fetch_candles(symbol="EURUSD", indicators=[{{"name": "{indicator_name}", "params": [{positional_values}]}}])'
+        )
+        examples.append(
+            f'data_fetch_candles(symbol="EURUSD", indicators=[{{"name": "{indicator_name}", "params": {{{named_values}}}}}])'
         )
 
     return list(dict.fromkeys(examples))

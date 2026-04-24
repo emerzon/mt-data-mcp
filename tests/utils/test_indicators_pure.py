@@ -373,8 +373,9 @@ Values above 70 often indicate overbought conditions.
         params = {p["name"]: p for p in docs["parameters"]}
         assert params["length"]["description"] == "Window length."
         assert params["scalar"]["description"] == "Optional scalar multiplier."
+        assert all("mtdata-cli" not in example for example in indicator["usage_examples"])
         assert any('rsi_14' in example for example in indicator["usage_examples"])
-        assert any('rsi(length=14)' in example for example in indicator["usage_examples"])
+        assert any('"params": {"length": 14' in example for example in indicator["usage_examples"])
 
     def test_indicators_describe_cleans_signature_and_preserves_multiline_docs(self, monkeypatch):
         from mtdata.core import indicators as core_indicators
