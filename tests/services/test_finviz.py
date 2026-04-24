@@ -566,6 +566,8 @@ class TestFinvizTools:
         assert "JSON object" in result["error"]
         assert "filter names as keys" in result["error"]
         assert "Sector" in result["error"]  # Should include example
+        assert "Single-string Finviz screener shorthands" in result["error"]
+        assert "'not valid json'" in result["error"]
         assert result["success"] is False
         assert result["error_code"] == "finviz_screen_filters_invalid"
         assert result["operation"] == "finviz_screen"
@@ -582,6 +584,7 @@ class TestFinvizTools:
             result = finviz_screen.__wrapped__(filters='["NASDAQ"]')
 
         assert result["error"].startswith("Invalid filters format.")
+        assert "Got: [\"NASDAQ\"]" in result["error"]
         assert result["success"] is False
         assert result["error_code"] == "finviz_screen_filters_invalid"
         assert result["details"] == {"received_type": "str"}

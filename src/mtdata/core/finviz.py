@@ -137,13 +137,33 @@ def _finviz_earnings_error_code(message: str) -> str:
 
 
 def _invalid_finviz_screen_filters_error(filters: Any) -> Dict[str, Any]:
-    return _finviz_error_payload(
-        (
+    if isinstance(filters, str):
+        raw = filters.strip()
+        if raw and not raw.startswith("{"):
+            message = (
+                "Invalid filters format. Received a string value, but finviz_screen expects a JSON object "
+                "(dict) mapping filter names as keys to filter values. Single-string Finviz screener shorthands like "
+                f"{raw!r} are not supported. Example: "
+                "{'Exchange': 'NASDAQ', 'Sector': 'Technology'} or "
+                "'{\"Exchange\": \"NASDAQ\", \"Sector\": \"Technology\"}'. "
+                f"Got: {filters}"
+            )
+        else:
+            message = (
+                "Invalid filters format. Provide filters as a JSON object (dict) or JSON string with filter names as keys "
+                "and filter values as values. Example: {'Exchange': 'NASDAQ', 'Sector': 'Technology'} or "
+                "'{\"Exchange\": \"NASDAQ\", \"Sector\": \"Technology\"}'. "
+                f"Got: {filters}"
+            )
+    else:
+        message = (
             "Invalid filters format. Provide filters as a JSON object (dict) or JSON string with filter names as keys "
             "and filter values as values. Example: {'Exchange': 'NASDAQ', 'Sector': 'Technology'} or "
             "'{\"Exchange\": \"NASDAQ\", \"Sector\": \"Technology\"}'. "
             f"Got: {filters}"
-        ),
+        )
+    return _finviz_error_payload(
+        message,
         code="finviz_screen_filters_invalid",
         operation="finviz_screen",
         details={"received_type": type(filters).__name__},
