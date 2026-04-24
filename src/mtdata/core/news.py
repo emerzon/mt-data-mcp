@@ -30,6 +30,13 @@ _NEWS_COMPACT_TOP_LEVEL_KEYS = frozenset(
 _NEWS_BUCKET_KEYS = frozenset(
     {"general_news", "related_news", "impact_news", "upcoming_events", "recent_events"}
 )
+_NEWS_BUCKET_COUNT_KEYS = {
+    "general_news": "general_count",
+    "related_news": "related_count",
+    "impact_news": "impact_count",
+    "upcoming_events": "upcoming_count",
+    "recent_events": "recent_count",
+}
 _NEWS_COMPACT_ITEM_DROP_KEYS = frozenset(
     {
         "provider",
@@ -196,10 +203,25 @@ def normalize_news_output(
     return out
 
 
+def _apply_news_limit(result: Dict[str, Any], *, limit: Optional[int]) -> Dict[str, Any]:
+    if limit is None:
+        return result
+    out = dict(result)
+    for key in _NEWS_BUCKET_KEYS:
+        value = out.get(key)
+        if isinstance(value, list) and len(value) > limit:
+            out[key] = value[:limit]
+            count_key = _NEWS_BUCKET_COUNT_KEYS.get(key)
+            if count_key in out:
+                out[count_key] = limit
+    return out
+
+
 @mcp.tool()
 def news(
     symbol: Optional[str] = None,
     detail: CompactFullDetailLiteral = "compact",
+    limit: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Fetch important general news and, optionally, symbol-relevant news.
@@ -231,6 +253,9 @@ def news(
         Response detail level. `compact` (default) keeps the current concise
         buckets, while `full` preserves the richer source, matching, and item
         metadata payloads.
+    limit : int, optional
+        Maximum number of items to return per news bucket. Omit to keep the
+        source-selected bucket sizes.
 
     Returns
     -------
@@ -247,11 +272,22 @@ def news(
     """
 
     detail_mode = resolve_output_detail(detail=detail)
+    limit_value: Optional[int] = None
+    if limit is not None:
+        try:
+            limit_value = int(limit)
+        except (TypeError, ValueError):
+            return {"error": "limit must be a positive integer."}
+        if limit_value < 1:
+            return {"error": "limit must be a positive integer."}
 
     def _run() -> Dict[str, Any]:
-        return normalize_news_output(
-            fetch_unified_news(symbol=symbol),
-            detail=detail_mode,
+        return _apply_news_limit(
+            normalize_news_output(
+                fetch_unified_news(symbol=symbol),
+                detail=detail_mode,
+            ),
+            limit=limit_value,
         )
 
     return run_logged_operation(
@@ -259,5 +295,6 @@ def news(
         operation="news",
         symbol=symbol,
         detail=detail_mode,
+        limit=limit_value,
         func=_run,
     )

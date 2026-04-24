@@ -25,9 +25,10 @@ def test_news_tool_has_only_optional_symbol_parameter() -> None:
     raw = _unwrap(news)
     params = list(signature(raw).parameters.values())
 
-    assert [param.name for param in params] == ["symbol", "detail"]
+    assert [param.name for param in params] == ["symbol", "detail", "limit"]
     assert params[0].default is None
     assert params[1].default == "compact"
+    assert params[2].default is None
 
 
 def test_news_tool_forwards_symbol(monkeypatch) -> None:
@@ -47,6 +48,36 @@ def test_news_tool_forwards_symbol(monkeypatch) -> None:
 
     assert result["success"] is True
     assert result["symbol"] == "EURUSD"
+
+
+def test_news_tool_limits_each_bucket_without_changing_default(monkeypatch) -> None:
+    raw = _unwrap(news)
+
+    payload = {
+        "success": True,
+        "general_news": [{"title": "g1"}, {"title": "g2"}],
+        "related_news": [{"title": "r1"}, {"title": "r2"}],
+        "impact_news": [{"title": "i1"}, {"title": "i2"}],
+        "upcoming_events": [{"title": "u1"}, {"title": "u2"}],
+        "recent_events": [{"title": "e1"}, {"title": "e2"}],
+    }
+    monkeypatch.setattr("mtdata.core.news.fetch_unified_news", lambda symbol=None: payload)
+
+    unlimited = raw()
+    limited = raw(limit=1)
+
+    assert len(unlimited["general_news"]) == 2
+    assert limited["general_news"] == [{"title": "g1"}]
+    assert limited["related_news"] == [{"title": "r1"}]
+    assert limited["impact_news"] == [{"title": "i1"}]
+    assert limited["upcoming_events"] == [{"title": "u1"}]
+    assert limited["recent_events"] == [{"title": "e1"}]
+
+
+def test_news_tool_rejects_invalid_limit() -> None:
+    raw = _unwrap(news)
+
+    assert raw(limit=0)["error"] == "limit must be a positive integer."
 
 
 def test_news_tool_compact_and_full_detail_contract(monkeypatch) -> None:
