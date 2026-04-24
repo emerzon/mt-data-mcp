@@ -6,6 +6,7 @@
 - Related source report: `code-reports/01-data-duplication-in-outputs.md`
 - Related source report: `code-reports/05-collection-metadata-noise.md`
 - Related source report: `code-reports/10-data-key-inconsistency-across-tools.md`
+- Related source report: `code-reports/list_output_structure_inconsistent.md`
 
 ## Status
 
@@ -20,6 +21,8 @@ A broader follow-up report validates that the same compatibility pattern appears
 Another related report validates that collection contract metadata (`collection_kind`, `collection_contract_version`) and per-tool diagnostics can add noise to compact outputs. Whether those fields should remain in compact mode is part of the same versioned output-contract decision.
 
 A data-key consistency report further validates that list/table tools expose collections under many different keys (`data`, `rows`, `series`, `methods`, `models`, nested `data.items`, and summary counts). Standardizing this requires a migration strategy rather than a tool-by-tool rename.
+
+Another list-output structure report proposes `items` as the universal container key. That is a valid design option, but it conflicts with the existing `collection.v1` convention where tabular outputs tend to use `rows`, so the canonical key needs an explicit project-level decision.
 
 ## Evidence
 
@@ -47,6 +50,8 @@ Also define which protocol metadata belongs in compact output. If collection met
 
 If a universal extraction key is introduced, choose whether it should be `rows`, `items`, or a versioned `collection` object, then add aliases only through a documented compatibility window.
 
+Do not add aliases to every tool opportunistically without deciding how alias payload size, `collection_kind`, and compact/full verbosity should interact.
+
 ## Scope
 
 - Files:
@@ -66,6 +71,7 @@ If a universal extraction key is introduced, choose whether it should be `rows`,
   - Symbols list and market scan tests
   - Compact/full verbosity tests for collection metadata
   - Generic collection extraction tests across representative tools
+  - Alias behavior tests if a new universal key is introduced
   - Any tests that assert `data` or `rows` presence
 - Docs/config/CLI/API affected:
   - MCP responses for collection-style tools
@@ -80,6 +86,7 @@ If a universal extraction key is introduced, choose whether it should be `rows`,
 - Detail-mode gating could make output shape depend on verbosity in surprising ways.
 - Removing metadata from compact mode could break generic clients that use collection fields for extraction.
 - Adding aliases universally can temporarily increase payload size if legacy keys remain.
+- Choosing `items` over `rows` could conflict with existing collection-contract consumers.
 
 ## Verification plan
 
