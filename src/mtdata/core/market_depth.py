@@ -458,7 +458,6 @@ def market_ticker(
                 "data_freshness_seconds": age_seconds,
                 "query_latency_ms": round((time.perf_counter() - started) * 1000.0, 3),
             }
-            out["diagnostics"] = dict(diagnostics)
             meta = out.get("meta")
             if not isinstance(meta, dict):
                 meta = {}

@@ -272,9 +272,9 @@ def test_market_ticker_returns_lightweight_spread_snapshot() -> None:
     assert out["pricing_basis"] == "per_1_lot_estimate"
     assert out["spread_currency"] == "USD"
     assert "spread_display" not in out
-    assert out["diagnostics"]["cache_used"] is False
-    assert out["diagnostics"]["source"] == "mt5.symbol_info_tick"
-    assert isinstance(out["diagnostics"]["query_latency_ms"], float)
+    assert out["meta"]["diagnostics"]["cache_used"] is False
+    assert out["meta"]["diagnostics"]["source"] == "mt5.symbol_info_tick"
+    assert isinstance(out["meta"]["diagnostics"]["query_latency_ms"], float)
 
 
 def test_market_ticker_compact_detail_omits_verbose_fields() -> None:
@@ -340,7 +340,7 @@ def test_market_ticker_full_detail_preserves_verbose_fields() -> None:
     assert out["last"] == 200.5
     assert out["spread_usd"] == 100.0
     assert out["pricing_basis"] == "per_1_lot_estimate"
-    assert out["diagnostics"]["source"] == "mt5.symbol_info_tick"
+    assert out["meta"]["diagnostics"]["source"] == "mt5.symbol_info_tick"
 
 
 def test_market_ticker_includes_shared_meta_without_dropping_timezone_alias() -> None:
