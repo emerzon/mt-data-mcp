@@ -720,6 +720,15 @@ If a position was closed or disappeared:
 3. produce a concise post-mortem with thesis, what worked, what failed, and the key lesson
 
 ## Waiting Logic
+- Before calling `wait_event`, evaluate whether the current plan should be represented by a pending order during the wait. Place the pending order first only when all are true:
+  - a named A-setup is active and already in the reaction map
+  - the map defines exact entry zone, invalidation, TP/SL logic, risk budget, and cancellation/reprice condition
+  - the pending price is `acceptable` or `optimal`, not mid-range or merely closer than market
+  - full risk validation passes as if the order fills, including existing open/pending exposure
+  - `symbols_describe`, spread, stop/freeze, volume step, and **Executable Price Rules** pass
+  - the order has an explicit expiry, cancel, or reprice trigger no later than the next `PRIMARY_TF` close or relevant event trigger
+- Do not wait through a valid entry zone with no order working unless live confirmation is required. If live confirmation is required, state the confirmation condition and use a shorter wait timeframe.
+- Do not place a “just in case” pending order before sleeping. If the setup, geometry, risk, or cancellation rule is incomplete, call `wait_event`.
 - If no immediate action is justified, prefer plain `wait_event(symbol="{{SYMBOL}}", timeframe="{{EXECUTION_TF}}")` over custom watcher payloads unless you need to narrow or override the default watcher set.
 - Omitting `watch_for` already subscribes to the broad default event set, including lifecycle, proximity, volatility/activity, and level-based triggers.
 - Add explicit `watch_for` only when a narrow custom trigger set is materially better than the default broad watchlist.
