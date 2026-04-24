@@ -622,7 +622,7 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert all("requires" not in row for row in compact["methods"])
     assert compact["methods_shown"] == 2
     assert compact["methods_hidden"] == 0
-    assert compact["note"].endswith("Use --detail full to see all methods.")
+    assert "includes all filtered methods" in compact["note"]
 
     full = _unwrap(cf.forecast_list_methods)(detail="full")
     assert full["detail"] == "full"
@@ -659,14 +659,15 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     )
     grouped = _unwrap(cf.forecast_list_methods)()
     sf_rows = [r for r in grouped["methods"] if r.get("category") == "statsforecast"]
-    assert len(sf_rows) <= 3
+    assert len(sf_rows) == 4
     if sf_rows:
         assert all(str(r.get("namespace")) == "statsforecast" for r in sf_rows)
-    assert grouped["methods_hidden"] >= 1
+    assert grouped["methods_hidden"] == 0
     filtered = _unwrap(cf.forecast_list_methods)(search="theta", limit=1)
     assert filtered["filters"]["search"] == "theta"
     assert filtered["filters"]["limit"] == 1
     assert len(filtered["methods"]) == 1
+    assert filtered["methods_hidden"] >= 1
     assert "theta" in str(filtered["methods"][0]["method"]).lower()
     alias_filtered = _unwrap(cf.forecast_list_methods)(search_term="theta", limit=1)
     assert alias_filtered["filters"]["search"] == "theta"

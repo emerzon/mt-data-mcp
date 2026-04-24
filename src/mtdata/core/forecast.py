@@ -1025,17 +1025,15 @@ def _forecast_list_methods_impl(  # noqa: C901
             rows.sort(key=lambda row: (not bool(row.get("available")), str(row.get("method"))))
             n_total = len(rows)
             n_available = int(sum(1 for row in rows if bool(row.get("available"))))
-            per_category_cap = 3 if category == "statsforecast" else (8 if category == "other" else 2)
-            picks = rows[:per_category_cap]
-            selected_methods.extend(picks)
+            selected_methods.extend(rows)
             category_summary.append(
                 {
                     "category": category,
                     "total": n_total,
                     "available": n_available,
                     "unavailable": int(n_total - n_available),
-                    "examples": [str(row.get("method")) for row in picks],
-                    "hidden": int(max(0, n_total - len(picks))),
+                    "examples": [str(row.get("method")) for row in rows[:3]],
+                    "hidden": 0,
                 }
             )
 
@@ -1060,7 +1058,7 @@ def _forecast_list_methods_impl(  # noqa: C901
             "methods": selected_methods,
             "methods_shown": int(len(selected_methods)),
             "methods_hidden": int(max(0, len(compact_methods) - len(selected_methods))),
-            "note": "Compact view groups methods by category, includes `supports_ci` guidance, and shows a small representative subset. Use --detail full to see all methods.",
+            "note": "Compact view includes all filtered methods with compact columns; use --limit to cap rows or --detail full for complete metadata.",
             "filters": {
                 "search": search_value or None,
                 "limit": limit_value,
