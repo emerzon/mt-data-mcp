@@ -151,3 +151,32 @@ def test_trade_session_context_full_detail_keeps_nested_full_payloads() -> None:
     assert "meta" not in out["pending_orders"]
     assert out["meta"]["tool"] == "trade_session_context"
     assert out["meta"]["runtime"]["timezone"] == timezone_meta
+
+
+def test_trade_session_context_compact_sanitizes_nested_tool_errors() -> None:
+    with patch(
+        "mtdata.core.trading.context.trade_account_info",
+        new=lambda: {"success": True, "balance": 10000.0, "equity": 10010.0},
+    ), patch(
+        "mtdata.core.trading.context.market_ticker",
+        new=lambda symbol, detail="compact": {"success": True, "bid": 1.1, "ask": 1.1002},
+    ), patch(
+        "mtdata.core.trading.context.trade_get_open",
+        new=lambda request: {
+            "success": False,
+            "error": "'types.SimpleNamespace' object has no attribute '_asdict'",
+        },
+    ), patch(
+        "mtdata.core.trading.context.trade_get_pending",
+        new=lambda request: {"success": True, "count": 0, "message": "No pending orders"},
+    ):
+        out = _raw_trade_session_context("EURUSD")
+
+    assert out["success"] is True
+    assert out["partial_failure"] is True
+    assert out["state"] == "flat"
+    assert out["open_positions"] == {
+        "error": "Unable to fetch open positions.",
+        "count": 0,
+    }
+    assert "SimpleNamespace" not in str(out["open_positions"])

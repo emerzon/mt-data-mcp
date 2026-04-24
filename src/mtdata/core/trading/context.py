@@ -14,6 +14,23 @@ from .requests import TradeGetOpenRequest, TradeGetPendingRequest, TradeSessionC
 logger = logging.getLogger(__name__)
 
 
+def _sanitize_trade_session_section_error(
+    section: Any,
+    *,
+    label: str,
+    include_count: bool = False,
+) -> tuple[Any, bool]:
+    if not isinstance(section, dict):
+        return section, False
+    if section.get("error") in (None, ""):
+        return section, False
+
+    sanitized: Dict[str, Any] = {"error": f"Unable to fetch {label}."}
+    if include_count:
+        sanitized["count"] = 0
+    return sanitized, True
+
+
 def _strip_nested_envelope(section: Any) -> Any:
     """Remove redundant envelope fields (success, meta) from nested sections."""
     if not isinstance(section, dict):
@@ -50,7 +67,7 @@ def _compact_trade_session_items(
 def _compact_trade_session_context_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     compact: Dict[str, Any] = {
         key: payload.get(key)
-        for key in ("success", "symbol", "state")
+        for key in ("success", "symbol", "state", "partial_failure")
         if payload.get(key) not in (None, "")
     }
 
@@ -97,7 +114,10 @@ def _compact_trade_session_context_payload(payload: Dict[str, Any]) -> Dict[str,
     open_positions = payload.get("open_positions")
     if isinstance(open_positions, dict):
         if open_positions.get("error") not in (None, ""):
-            compact["open_positions"] = {"error": open_positions.get("error")}
+            open_error = {"error": open_positions.get("error")}
+            if open_positions.get("count") not in (None, ""):
+                open_error["count"] = open_positions.get("count")
+            compact["open_positions"] = open_error
         else:
             compact_rows = _compact_trade_session_items(
                 open_positions,
@@ -119,7 +139,10 @@ def _compact_trade_session_context_payload(payload: Dict[str, Any]) -> Dict[str,
     pending_orders = payload.get("pending_orders")
     if isinstance(pending_orders, dict):
         if pending_orders.get("error") not in (None, ""):
-            compact["pending_orders"] = {"error": pending_orders.get("error")}
+            pending_error = {"error": pending_orders.get("error")}
+            if pending_orders.get("count") not in (None, ""):
+                pending_error["count"] = pending_orders.get("count")
+            compact["pending_orders"] = pending_error
         else:
             compact_rows = _compact_trade_session_items(
                 pending_orders,
@@ -164,6 +187,28 @@ def trade_session_context(request: TradeSessionContextRequest) -> Dict[str, Any]
         pending_req = TradeGetPendingRequest(symbol=request.symbol)
         pending_res = pending_func(request=pending_req)
 
+        account_res, account_failed = _sanitize_trade_session_section_error(
+            account_res,
+            label="account context",
+        )
+        ticker_res, ticker_failed = _sanitize_trade_session_section_error(
+            ticker_res,
+            label="ticker data",
+        )
+        open_res, open_failed = _sanitize_trade_session_section_error(
+            open_res,
+            label="open positions",
+            include_count=True,
+        )
+        pending_res, pending_failed = _sanitize_trade_session_section_error(
+            pending_res,
+            label="pending orders",
+            include_count=True,
+        )
+        partial_failure = any(
+            (account_failed, ticker_failed, open_failed, pending_failed)
+        )
+
         # Determine internal book state
         has_open = bool(open_res.get("success", False) and open_res.get("count", 0) > 0)
         has_pending = bool(pending_res.get("success", False) and pending_res.get("count", 0) > 0)
@@ -186,6 +231,8 @@ def trade_session_context(request: TradeSessionContextRequest) -> Dict[str, Any]
             "pending_orders": pending_res,
             "ticker": ticker_res,
         }
+        if partial_failure:
+            payload["partial_failure"] = True
         if request.detail == "compact":
             payload = _compact_trade_session_context_payload(payload)
         else:
