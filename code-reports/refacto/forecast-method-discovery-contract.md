@@ -3,6 +3,7 @@
 ## Source report
 
 - Original report: `code-reports/07-forecast_list-methods-vs-models-overlap.md`
+- Related source report: `code-reports/18-forecast-list-methods-overwhelming.md`
 
 ## Status
 
@@ -12,10 +13,13 @@ Deferred for larger refactor.
 
 The report is partially stale but still identifies a real discovery-contract issue. `forecast_list_methods` now supports compact/full detail, descriptions, categories, search, limits, namespace metadata, support hints, and parameter counts. However, it still does not accept a `library` filter, and `forecast_list_library_models` still exposes library-scoped model names using a different primary key (`model`) from `forecast_list_methods` (`method`).
 
+A related report's claim that `forecast_list_methods` is entirely flat is stale because compact output now includes `category_summary` and category metadata. Its remaining valid concerns are that unavailable methods are still included by default and that the tool does not provide a curated/recommended subset.
+
 ## Evidence
 
 - `src/mtdata/core/forecast.py::forecast_list_methods` accepts `detail`, `limit`, `search`, and `search_term`, but no `library` parameter.
 - `src/mtdata/core/forecast.py::_forecast_list_methods_impl` builds `category_summary`, includes descriptions in compact rows, and includes full metadata under `detail="full"`.
+- The same implementation counts unavailable methods and includes them in compact rows by default, sorted after available methods within categories.
 - `src/mtdata/core/forecast.py::forecast_list_library_models` remains a separate library-scoped discovery tool.
 - The two tools still use different naming conventions for the primary row key: `method` versus `model`.
 
@@ -27,8 +31,10 @@ Consolidating forecast discovery changes MCP schemas, generated CLI help, and pu
 
 1. Decide on the canonical discovery tool and row key (`method` is likely preferred because `forecast_generate` accepts `method`).
 2. Add a `library`/`category` filter to `forecast_list_methods` if it remains the primary tool.
-3. Either deprecate `forecast_list_library_models` or make it a thin compatibility wrapper over the same discovery data.
-4. Add migration tests for both tool outputs.
+3. Add an explicit `show_unavailable` or `availability` filter instead of changing unavailable-method visibility silently.
+4. Add a curated/recommended view only after defining stable recommendation criteria.
+5. Either deprecate `forecast_list_library_models` or make it a thin compatibility wrapper over the same discovery data.
+6. Add migration tests for both tool outputs.
 
 ## Scope
 
@@ -44,6 +50,8 @@ Consolidating forecast discovery changes MCP schemas, generated CLI help, and pu
 - Tests:
   - Compact/full discovery output
   - Library/category filtering
+  - Unavailable-method filtering
+  - Recommended/curated view behavior if added
   - Compatibility behavior for `forecast_list_library_models`
 - Docs/config/CLI/API affected:
   - MCP tool schemas
