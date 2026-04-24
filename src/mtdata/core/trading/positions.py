@@ -219,6 +219,73 @@ def _normalize_trade_read_output(
     return out
 
 
+def _first_present(row: Dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        value = row.get(key)
+        if value is not None:
+            return value
+    return None
+
+
+def _compact_non_empty_mapping(row: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        str(key): value
+        for key, value in row.items()
+        if value is not None and not (isinstance(value, str) and not value.strip())
+    }
+
+
+def _normalize_trade_history_row(
+    row: Dict[str, Any],
+    *,
+    history_kind: Optional[str],
+) -> Dict[str, Any]:
+    item_kind = "order" if history_kind == "orders" else "deal"
+    if item_kind == "order":
+        timestamp = _first_present(row, "time_done", "time_setup", "time")
+        created_at = _first_present(row, "time_setup", "time")
+        state = _first_present(row, "state_label", "state")
+        price = _first_present(row, "price_current", "price_open", "price")
+        native_key = "order_details"
+    else:
+        timestamp = _first_present(row, "time", "time_msc")
+        created_at = timestamp
+        state = _first_present(row, "entry_label", "entry", "type_label", "type")
+        price = _first_present(row, "price")
+        native_key = "deal_details"
+
+    normalized: Dict[str, Any] = {
+        "kind": item_kind,
+        "ticket": _first_present(row, "ticket", "order", "deal"),
+        "symbol": row.get("symbol"),
+        "timestamp": timestamp,
+        "created_at": created_at,
+        "volume": _first_present(row, "volume", "volume_initial", "volume_current"),
+        "price": price,
+        "state": state,
+        native_key: _compact_non_empty_mapping(row),
+    }
+    return {
+        key: value
+        for key, value in normalized.items()
+        if value is not None and value != {}
+    }
+
+
+def _normalize_trade_history_items(
+    items: List[Any],
+    *,
+    history_kind: Optional[str],
+) -> List[Dict[str, Any]]:
+    normalized: List[Dict[str, Any]] = []
+    for item in items:
+        if isinstance(item, dict):
+            normalized.append(
+                _normalize_trade_history_row(item, history_kind=history_kind)
+            )
+    return normalized
+
+
 def normalize_trade_history_output(
     rows: Any,
     *,
@@ -226,8 +293,13 @@ def normalize_trade_history_output(
 ) -> Dict[str, Any]:
     """Normalize trade history into the standard trade read envelope."""
     out = _normalize_trade_read_output(rows, request=request, kind="trade_history")
+    history_kind = getattr(request, "history_kind", None)
+    if out.get("success") is True and isinstance(out.get("items"), list):
+        out["normalized_items"] = _normalize_trade_history_items(
+            out["items"],
+            history_kind=history_kind,
+        )
     if _include_trade_read_request_metadata(request):
-        history_kind = getattr(request, "history_kind", None)
         if history_kind is not None:
             out["history_kind"] = history_kind
         for field in (
@@ -246,8 +318,8 @@ def normalize_trade_history_output(
                     out[field] = normalized_side or value
                 else:
                     out[field] = value
-    elif getattr(request, "history_kind", None) is not None:
-        out["history_kind"] = getattr(request, "history_kind")
+    elif history_kind is not None:
+        out["history_kind"] = history_kind
     return out
 
 

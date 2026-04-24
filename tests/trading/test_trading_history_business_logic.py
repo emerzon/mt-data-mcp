@@ -117,6 +117,72 @@ def test_trade_history_orders_normalizes_setup_and_done_times() -> None:
     assert out["items"][0]["timestamp_timezone"] == "UTC"
 
 
+def test_trade_history_adds_normalized_deal_rows_without_changing_items() -> None:
+    out = normalize_trade_history_output(
+        [
+            {
+                "ticket": 11,
+                "order": 22,
+                "time": "2024-01-01 12:00:00",
+                "symbol": "EURUSD",
+                "volume": 0.5,
+                "price": 1.2345,
+                "entry_label": "Out",
+                "comment": "closed",
+            }
+        ],
+        request=TradeHistoryRequest(history_kind="deals"),
+    )
+
+    assert out["items"][0]["entry_label"] == "Out"
+    assert out["normalized_items"] == [
+        {
+            "kind": "deal",
+            "ticket": 11,
+            "symbol": "EURUSD",
+            "timestamp": "2024-01-01 12:00:00",
+            "created_at": "2024-01-01 12:00:00",
+            "volume": 0.5,
+            "price": 1.2345,
+            "state": "Out",
+            "deal_details": out["items"][0],
+        }
+    ]
+
+
+def test_trade_history_adds_normalized_order_rows_without_changing_items() -> None:
+    out = normalize_trade_history_output(
+        [
+            {
+                "ticket": 33,
+                "time_setup": "2024-01-01 12:00:00",
+                "time_done": "2024-01-01 12:05:00",
+                "symbol": "GBPUSD",
+                "volume_initial": 1.0,
+                "price_open": 1.25,
+                "price_current": 1.251,
+                "state_label": "Filled",
+            }
+        ],
+        request=TradeHistoryRequest(history_kind="orders"),
+    )
+
+    assert out["items"][0]["state_label"] == "Filled"
+    assert out["normalized_items"] == [
+        {
+            "kind": "order",
+            "ticket": 33,
+            "symbol": "GBPUSD",
+            "timestamp": "2024-01-01 12:05:00",
+            "created_at": "2024-01-01 12:00:00",
+            "volume": 1.0,
+            "price": 1.251,
+            "state": "Filled",
+            "order_details": out["items"][0],
+        }
+    ]
+
+
 def test_trade_history_filters_rows_by_symbol_even_if_mt5_returns_mixed_rows() -> None:
     mt5, prev = _install_mock_mt5()
     Deal = namedtuple("Deal", ["ticket", "time", "symbol"])
