@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 from inspect import signature
 from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 import mtdata.core.market_status as market_status_mod
 
@@ -22,6 +23,30 @@ def test_market_status_tool_supports_detail_contract() -> None:
     assert params[1].default == "all"
     assert params[2].default == "local"
     assert params[3].default == "compact"
+
+
+def test_market_status_timezone_display_utc_converts_market_times(monkeypatch) -> None:
+    raw = _unwrap(market_status_mod.market_status)
+    fixed_now = datetime(2024, 1, 2, 10, 0, tzinfo=ZoneInfo("America/New_York"))
+
+    monkeypatch.setattr(market_status_mod, "_get_local_time", lambda _tz_name: fixed_now)
+    monkeypatch.setattr(market_status_mod, "_get_upcoming_holidays", lambda _markets: [])
+
+    result = raw(region="us", timezone_display="utc", detail="full")
+
+    assert result["success"] is True
+    assert {market["symbol"] for market in result["markets"]} == {"NYSE", "NASDAQ"}
+    for market in result["markets"]:
+        assert market["local_time"] == "15:00"
+        assert market["next_close"] == "2024-01-02T21:00:00+00:00"
+
+
+def test_market_status_rejects_invalid_timezone_display() -> None:
+    raw = _unwrap(market_status_mod.market_status)
+
+    result = raw(timezone_display="broker")
+
+    assert result == {"error": "Invalid timezone_display. Use 'local', 'utc', or 'auto'."}
 
 
 def test_market_status_symbol_mode_reports_heuristic_status(monkeypatch) -> None:

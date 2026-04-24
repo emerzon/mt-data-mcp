@@ -161,6 +161,45 @@ def _format_duration(minutes: int) -> str:
     return f"{hours}h {mins}min{'s' if mins != 1 else ''}"
 
 
+def _normalize_timezone_display(value: Optional[str]) -> Optional[str]:
+    normalized = str(value or "local").strip().lower()
+    if normalized == "auto":
+        return "local"
+    if normalized in {"local", "utc"}:
+        return normalized
+    return None
+
+
+def _format_market_time(value: Any, display: str) -> Any:
+    if display != "utc":
+        return value
+    if not isinstance(value, str) or not value:
+        return value
+    try:
+        dt = datetime.fromisoformat(value)
+    except ValueError:
+        return value
+    if dt.tzinfo is None:
+        return value
+    return dt.astimezone(timezone.utc).isoformat()
+
+
+def _apply_market_timezone_display(
+    status: Dict[str, Any],
+    *,
+    now_local: datetime,
+    display: str,
+) -> Dict[str, Any]:
+    if display != "utc":
+        return status
+    out = dict(status)
+    out["local_time"] = now_local.astimezone(timezone.utc).strftime("%H:%M")
+    for key in ("next_open", "next_close"):
+        if key in out:
+            out[key] = _format_market_time(out[key], display)
+    return out
+
+
 def _is_early_close_session(
     market: Dict[str, Any],
     country: str,
@@ -700,6 +739,9 @@ def market_status(
     """
 
     detail_mode = resolve_output_detail(detail=detail)
+    timezone_display_mode = _normalize_timezone_display(timezone_display)
+    if timezone_display_mode is None:
+        return {"error": "Invalid timezone_display. Use 'local', 'utc', or 'auto'."}
 
     def _run() -> Dict[str, Any]:
         if symbol not in (None, ""):
@@ -728,6 +770,11 @@ def market_status(
             try:
                 local_now = _get_local_time(market["timezone"])
                 status = _check_market_status(market_id, local_now)
+                status = _apply_market_timezone_display(
+                    status,
+                    now_local=local_now,
+                    display=timezone_display_mode,
+                )
                 results.append(status)
             except Exception as exc:
                 logger.warning(f"Failed to check status for {market_id}: {exc}")
@@ -799,8 +846,9 @@ def market_status(
     return run_logged_operation(
         logger,
         operation="market_status",
-        symbol=symbol,
-        region=region,
-        detail=detail_mode,
-        func=_run,
-    )
+            symbol=symbol,
+            region=region,
+            timezone_display=timezone_display_mode,
+            detail=detail_mode,
+            func=_run,
+        )
