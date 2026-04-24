@@ -3,6 +3,7 @@
 ## Source report
 
 - Original report: `code-reports/08-trade-history-output-duplication.md`
+- Related source report: `code-reports/05-trade_history-compact-too-verbose.md`
 
 ## Status
 
@@ -12,11 +13,14 @@ Deferred for larger refactor.
 
 The report is partially stale but still identifies a real output-contract concern. Current `trade_history` no longer builds a semicolon-separated `deal_details` string; `deal_details`/`order_details` are structured mappings. However, successful `trade_history` responses still include both `items` and `normalized_items`, which can duplicate the same history rows in compact output.
 
+A related report also validates that compact mode defaults to a high `limit` of 200 and does not currently provide a lightweight summary-first view.
+
 ## Evidence
 
 - `src/mtdata/core/trading/positions.py::_normalize_trade_history_row` builds structured `deal_details` or `order_details` dictionaries via `_compact_non_empty_mapping`.
 - `src/mtdata/core/trading/positions.py::normalize_trade_history_output` unconditionally adds `normalized_items` whenever `items` is a list and the response succeeded.
 - `src/mtdata/core/trading/use_cases.py::run_trade_history` returns raw history rows as dictionaries, and normalization then adds the parallel normalized representation.
+- `src/mtdata/core/trading/requests.py::TradeHistoryRequest` defines `limit: Optional[int] = 200`, so compact history can still produce large responses by default.
 
 ## Why this should not be fixed inline
 
