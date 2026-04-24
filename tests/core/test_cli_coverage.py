@@ -3001,6 +3001,9 @@ class TestAddDynamicArguments:
         assert args.flag == "false"
         args = parser.parse_args(["--no-flag"])
         assert args.flag == "false"
+        help_text = parser.format_help()
+        assert "--flag [{true,false}]" in help_text
+        assert "[bool]" not in help_text
 
     def test_include_incomplete_bool_param_uses_canonical_hyphen_flag(self):
         parser = argparse.ArgumentParser()
@@ -3342,6 +3345,7 @@ class TestResolveParamKwargs:
         param = {"name": "verbose", "type": bool, "required": False, "default": None}
         kwargs, is_mapping = _resolve_param_kwargs(param, None)
         assert kwargs["choices"] == ["true", "false"]
+        assert "metavar" not in kwargs
         assert kwargs["type"]("True") == "true"
         assert kwargs["type"]("FALSE") == "false"
 

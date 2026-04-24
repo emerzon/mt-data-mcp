@@ -428,7 +428,6 @@ def resolve_param_kwargs(
             elif base_type is bool:
                 kwargs["type"] = _normalize_bool_choice
                 kwargs["choices"] = ["true", "false"]
-                kwargs["metavar"] = "bool"
 
             if origin in (list, tuple):
                 inner = get_args(ptype)[0] if get_args(ptype) else None
