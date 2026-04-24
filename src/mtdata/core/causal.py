@@ -526,6 +526,8 @@ def _build_correlation_summary(
     top_n: int = 5,
 ) -> Dict[str, List[Dict[str, Any]]]:
     limit = max(1, int(top_n))
+    if len(rows) <= limit:
+        return {}
     positive = sorted(
         [row for row in rows if float(row["correlation"]) > 0.0],
         key=lambda item: (

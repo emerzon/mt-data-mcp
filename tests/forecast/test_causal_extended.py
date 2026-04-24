@@ -738,8 +738,7 @@ class TestCorrelationMatrix:
         assert data["items"][0]["window_requested"] == 60
         assert data["items"][0]["window_actual"] == 60
         assert data["items"][0]["window_truncated"] is True
-        assert result["summary"]["highlights"]["strongest_positive"]
-        assert result["summary"]["highlights"]["strongest_negative"]
+        assert result["summary"]["highlights"] == {}
         assert "pairs" not in data
         assert result["meta"]["stats"]["pairs_computed"] == 3
         assert any(
@@ -772,7 +771,7 @@ class TestCorrelationMatrix:
         assert result["success"] is True
         assert "matrix" not in result["data"]
         assert result["data"]["items"]
-        assert result["summary"]["highlights"]["strongest_positive"]
+        assert result["summary"]["highlights"] == {}
 
     @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
     @patch("mtdata.core.causal._fetch_series")

@@ -180,6 +180,15 @@ class TestCorrelationHelpers:
         assert summary["strongest_positive"][0]["correlation"] == pytest.approx(0.91)
         assert summary["strongest_negative"][0]["correlation"] == pytest.approx(-0.87)
 
+    def test_build_correlation_summary_omits_duplicate_highlights_for_small_sets(self):
+        rows = [
+            {"left": "A", "right": "B", "correlation": 0.91, "samples": 100},
+            {"left": "A", "right": "C", "correlation": -0.87, "samples": 95},
+            {"left": "B", "right": "C", "correlation": 0.50, "samples": 90},
+        ]
+
+        assert _build_correlation_summary(rows, top_n=5) == {}
+
 
 class TestFormatSummary:
     def test_empty_rows(self):
