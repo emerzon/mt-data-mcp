@@ -888,6 +888,24 @@ def _consolidate_payload(  # noqa: C901
                     new_payload["total_regimes"] = total_regimes
 
         if regime_descriptions:
+            observed_regimes = {
+                int(row["regime"])
+                for row in final_segments
+                if isinstance(row, dict) and row.get("regime") is not None
+            }
+            for regime_id, description in regime_descriptions.items():
+                observed = int(regime_id) in observed_regimes
+                description.setdefault("observed_in_window", observed)
+                if not observed:
+                    description.setdefault(
+                        "note",
+                        "Learned model state not observed in the current decoded window.",
+                    )
+                if "weight" in description:
+                    description.setdefault(
+                        "weight_note",
+                        "Model state weight, not necessarily the fraction of displayed bars.",
+                    )
             new_payload["regime_info"] = regime_descriptions
         if "reliability" in payload:
             new_payload["reliability"] = payload["reliability"]

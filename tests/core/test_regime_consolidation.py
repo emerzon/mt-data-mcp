@@ -165,6 +165,32 @@ class TestConsolidatePayload:
         assert result["regime_info"][0]["volatility"] == pytest.approx(0.0004)
         assert result["regime_info"][1]["mean_return"] == pytest.approx(0.002)
         assert result["regime_info"][1]["volatility"] == pytest.approx(0.0035)
+        assert result["regime_info"][0]["observed_in_window"] is True
+        assert result["regime_info"][1]["observed_in_window"] is True
+
+    def test_hmm_regime_info_marks_unobserved_model_states(self):
+        payload = {
+            "symbol": "EURUSD",
+            "timeframe": "H1",
+            "method": "hmm",
+            "target": "return",
+            "success": True,
+            "times": ["T1", "T2"],
+            "state": [0, 0],
+            "state_probabilities": [[0.95, 0.05], [0.90, 0.10]],
+            "regime_params": {
+                "weights": [0.7, 0.3],
+                "mu": [-0.001, 0.002],
+                "sigma": [0.0004, 0.0035],
+            },
+        }
+
+        result = _consolidate_payload(payload, "hmm", "compact")
+
+        assert result["regime_info"][0]["observed_in_window"] is True
+        assert result["regime_info"][1]["observed_in_window"] is False
+        assert "not observed" in result["regime_info"][1]["note"]
+        assert "not necessarily the fraction" in result["regime_info"][1]["weight_note"]
 
     def test_hmm_price_target_uses_price_level_metadata(self):
         payload = {
