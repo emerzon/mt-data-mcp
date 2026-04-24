@@ -4,6 +4,7 @@
 
 - Original report: `code-reports/07-forecast_list-methods-vs-models-overlap.md`
 - Related source report: `code-reports/18-forecast-list-methods-overwhelming.md`
+- Related source report: `code-reports/04-forecast-method-naming-inconsistency.md`
 
 ## Status
 
@@ -15,6 +16,8 @@ The report is partially stale but still identifies a real discovery-contract iss
 
 A related report's claim that `forecast_list_methods` is entirely flat is stale because compact output now includes `category_summary` and category metadata. Its remaining valid concerns are that unavailable methods are still included by default and that the tool does not provide a curated/recommended subset.
 
+Another related report validates that method naming remains confusing across discovery and execution: registry names such as `sf_autoarima` are executable method IDs, while library model names such as `AutoARIMA` are display/library names. Current full metadata includes namespace/concept/method ID hints, but the user-facing lookup and examples still need a clearer canonical naming policy.
+
 ## Evidence
 
 - `src/mtdata/core/forecast.py::forecast_list_methods` accepts `detail`, `limit`, `search`, and `search_term`, but no `library` parameter.
@@ -22,6 +25,7 @@ A related report's claim that `forecast_list_methods` is entirely flat is stale 
 - The same implementation counts unavailable methods and includes them in compact rows by default, sorted after available methods within categories.
 - `src/mtdata/core/forecast.py::forecast_list_library_models` remains a separate library-scoped discovery tool.
 - The two tools still use different naming conventions for the primary row key: `method` versus `model`.
+- `forecast_generate` and related execution paths use registry method IDs, so accepting display names like `AutoARIMA` would require alias resolution and conflict handling across libraries.
 
 ## Why this should not be fixed inline
 
@@ -33,8 +37,10 @@ Consolidating forecast discovery changes MCP schemas, generated CLI help, and pu
 2. Add a `library`/`category` filter to `forecast_list_methods` if it remains the primary tool.
 3. Add an explicit `show_unavailable` or `availability` filter instead of changing unavailable-method visibility silently.
 4. Add a curated/recommended view only after defining stable recommendation criteria.
-5. Either deprecate `forecast_list_library_models` or make it a thin compatibility wrapper over the same discovery data.
-6. Add migration tests for both tool outputs.
+5. Document and expose the prefix/namespace policy in one canonical place.
+6. Consider explicit display-name aliases only if ambiguous names can produce helpful errors instead of silent selection.
+7. Either deprecate `forecast_list_library_models` or make it a thin compatibility wrapper over the same discovery data.
+8. Add migration tests for both tool outputs.
 
 ## Scope
 
@@ -52,6 +58,7 @@ Consolidating forecast discovery changes MCP schemas, generated CLI help, and pu
   - Library/category filtering
   - Unavailable-method filtering
   - Recommended/curated view behavior if added
+  - Ambiguous display-name lookup errors
   - Compatibility behavior for `forecast_list_library_models`
 - Docs/config/CLI/API affected:
   - MCP tool schemas
