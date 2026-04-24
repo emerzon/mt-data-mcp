@@ -127,8 +127,8 @@ PARAM_HINTS = {
     "sl_abs": "Stop-loss absolute price level.",
     "tp_pct": "Take-profit percent move (e.g. 2.0 for 2%).",
     "sl_pct": "Stop-loss percent move (e.g. 1.0 for 1%).",
-    "tp_pips": "Take-profit in pips/ticks.",
-    "sl_pips": "Stop-loss in pips/ticks.",
+    "tp_pips": "Take-profit in tick-size units. Preferred alias: tp_ticks.",
+    "sl_pips": "Stop-loss in tick-size units. Preferred alias: sl_ticks.",
     "label_on": "Barrier evaluation basis: close or high_low.",
     "barrier": "Barrier level for closed-form probability.",
     "mu": "Drift override for closed-form barrier method.",
@@ -155,11 +155,11 @@ PARAM_HINTS = {
     "concise": "Return a shorter barrier-optimization payload when true.",
     "grid_style": "TP/SL grid style.",
     "preset": "TP/SL grid preset. Common examples: volatility, conservative, aggressive.",
-    "tp_min": "Minimum TP level for grid (pct or pips depending on mode).",
-    "tp_max": "Maximum TP level for grid (pct or pips depending on mode).",
+    "tp_min": "Minimum TP level for grid (pct or tick-size units depending on mode).",
+    "tp_max": "Maximum TP level for grid (pct or tick-size units depending on mode).",
     "tp_steps": "Number of TP grid steps.",
-    "sl_min": "Minimum SL level for grid (pct or pips depending on mode).",
-    "sl_max": "Maximum SL level for grid (pct or pips depending on mode).",
+    "sl_min": "Minimum SL level for grid (pct or tick-size units depending on mode).",
+    "sl_max": "Maximum SL level for grid (pct or tick-size units depending on mode).",
     "sl_steps": "Number of SL grid steps.",
     "vol_window": "Lookback window for volatility-based grid.",
     "vol_min_mult": "Minimum volatility multiple for grid.",
@@ -167,7 +167,7 @@ PARAM_HINTS = {
     "vol_steps": "Number of volatility grid steps.",
     "vol_sl_extra": "Legacy alias for the volatility-grid SL multiplier (`vol_sl_multiplier`).",
     "vol_floor_pct": "Minimum TP/SL percent floor when using volatility grid.",
-    "vol_floor_pips": "Minimum TP/SL pips floor when using volatility grid.",
+    "vol_floor_pips": "Minimum TP/SL tick-size floor when using volatility grid. Preferred alias: vol_floor_ticks.",
     "ratio_min": "Minimum TP/SL ratio for ratio grid.",
     "ratio_max": "Maximum TP/SL ratio for ratio grid.",
     "ratio_steps": "Number of ratio grid steps.",
@@ -219,6 +219,12 @@ PARAM_HINTS = {
 _TIMEFRAME_CHOICES = tuple(sorted(TIMEFRAME_MAP.keys()))
 TimeframeLiteral = Literal[_TIMEFRAME_CHOICES]  # type: ignore
 AutoTimeframeLiteral = Union[TimeframeLiteral, Literal["auto"]]
+CANONICAL_OUTPUT_SHAPE_DETAILS = ("compact", "full")
+CANONICAL_OUTPUT_DETAIL_ALIASES = types.MappingProxyType({"summary_only": "summary"})
+CompactFullDetailLiteral = Literal["compact", "full"]
+CompactStandardFullDetailLiteral = Literal["compact", "standard", "full"]
+SummaryCompactFullDetailLiteral = Literal["full", "summary", "compact"]
+SummaryAliasCompactFullDetailLiteral = Literal["full", "summary", "summary_only", "compact"]
 
 # ---- Technical Indicators (dynamic discovery and application) ----
 def _load_indicator_doc_choices(

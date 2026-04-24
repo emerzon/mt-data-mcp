@@ -97,6 +97,32 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
         self.assertIn("prob_tp_first_se", result)
         self.assertIn("prob_sl_first_se", result)
 
+    def test_forecast_barrier_hit_probabilities_accepts_tick_aliases(self):
+        result = forecast_barrier_hit_probabilities(
+            symbol="EURUSD",
+            timeframe="H1",
+            horizon=10,
+            method="mc_gbm",
+            direction="long",
+            tp_ticks=5,
+            sl_ticks=5,
+        )
+        self.assertTrue(result["success"])
+
+    def test_forecast_barrier_hit_probabilities_warns_for_legacy_pip_names(self):
+        result = forecast_barrier_hit_probabilities(
+            symbol="EURUSD",
+            timeframe="H1",
+            horizon=10,
+            method="mc_gbm",
+            direction="long",
+            tp_pips=5,
+            sl_pips=5,
+        )
+        self.assertTrue(result["success"])
+        self.assertIn("warnings", result)
+        self.assertTrue(any("prefer tp_ticks/sl_ticks" in msg for msg in result["warnings"]))
+
     def test_forecast_barrier_hit_probabilities_prefers_live_tick_price(self):
         self._set_flat_history(1.0, bars=200)
         paths = self._sample_paths()
@@ -273,6 +299,46 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertIn("best", result)
         self.assertIn("grid", result)
+        self.assertEqual(result["distance_unit"], "pct")
+
+    def test_forecast_barrier_optimize_accepts_ticks_mode_alias(self):
+        result = forecast_barrier_optimize(
+            symbol="EURUSD",
+            timeframe="H1",
+            horizon=10,
+            method="mc_gbm",
+            direction="long",
+            mode="ticks",
+            tp_min=5.0,
+            tp_max=10.0,
+            tp_steps=2,
+            sl_min=5.0,
+            sl_max=10.0,
+            sl_steps=2,
+            objective="edge",
+        )
+        self.assertTrue(result["success"])
+        self.assertEqual(result["distance_unit"], "ticks")
+
+    def test_forecast_barrier_optimize_warns_for_legacy_pips_mode(self):
+        result = forecast_barrier_optimize(
+            symbol="EURUSD",
+            timeframe="H1",
+            horizon=10,
+            method="mc_gbm",
+            direction="long",
+            mode="pips",
+            tp_min=5.0,
+            tp_max=10.0,
+            tp_steps=2,
+            sl_min=5.0,
+            sl_max=10.0,
+            sl_steps=2,
+            objective="edge",
+        )
+        self.assertTrue(result["success"])
+        self.assertIn("warnings", result)
+        self.assertTrue(any("prefer mode='ticks'" in msg for msg in result["warnings"]))
 
     def test_forecast_barrier_optimize_optuna_backend(self):
         if importlib.util.find_spec("optuna") is None:

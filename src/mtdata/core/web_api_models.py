@@ -7,6 +7,7 @@ from typing import Any, Dict, Literal, Optional
 from pydantic import BaseModel, Field, model_validator
 
 from ..forecast.requests import ForecastBacktestRequest, ForecastGenerateRequest
+from .schema import CompactFullDetailLiteral, CompactStandardFullDetailLiteral
 
 
 def _reject_removed_target(values: Any) -> Any:
@@ -30,6 +31,7 @@ class ForecastPriceBody(BaseModel):
     dimred_method: Optional[str] = None
     dimred_params: Optional[Dict[str, Any]] = None
     target_spec: Optional[Dict[str, Any]] = None
+    detail: CompactStandardFullDetailLiteral = Field("compact")
 
     @model_validator(mode="before")
     @classmethod
@@ -53,6 +55,7 @@ class ForecastPriceBody(BaseModel):
             dimred_method=self.dimred_method,
             dimred_params=self.dimred_params,
             target_spec=self.target_spec,
+            detail=self.detail,
         )
 
 
@@ -83,7 +86,7 @@ class BacktestBody(BaseModel):
     dimred_params: Optional[Dict[str, Any]] = None
     slippage_bps: float = 0.0
     trade_threshold: float = 0.0
-    detail: Literal["compact", "full"] = Field("compact")
+    detail: CompactFullDetailLiteral = Field("compact")
 
     @model_validator(mode="before")
     @classmethod

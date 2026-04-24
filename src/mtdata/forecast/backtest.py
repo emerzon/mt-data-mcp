@@ -57,6 +57,22 @@ def _attach_request_metadata(
     return out
 
 
+def _compact_metrics_payload(metrics: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    if not isinstance(metrics, dict):
+        return {}
+
+    out = dict(metrics)
+    sample_warning = out.pop("sample_warning", None)
+    sample_notice = out.get("sample_notice")
+    if sample_warning and not isinstance(sample_notice, dict):
+        out["sample_notice"] = {
+            "code": "annualization_suppressed_low_sample",
+            "trades_observed": out.get("trades_observed"),
+            "minimum_trades": out.get("min_trades_for_annualization"),
+        }
+    return out
+
+
 def _get_forecast_methods_data_safe() -> Dict[str, Any]:
     """Safely fetch forecast methods metadata.
 
@@ -152,9 +168,15 @@ def _compute_performance_metrics(
         "calmar_ratio": _finite_or_none(calmar),
         "annual_return": _finite_or_none(annual_return),
         "trades_per_year": trades_per_year,
+        "trades_observed": int(arr.size),
         "slippage_bps": float(slippage_bps),
     })
     if not enough_trades:
+        metrics["sample_notice"] = {
+            "code": "annualization_suppressed_low_sample",
+            "trades_observed": int(arr.size),
+            "minimum_trades": int(_MIN_ANNUALIZATION_TRADES),
+        }
         metrics["sample_warning"] = (
             f"Only {int(arr.size)} trades. Annualized risk metrics "
             f"(Sharpe/Calmar/annual_return) are suppressed below {_MIN_ANNUALIZATION_TRADES} trades."
@@ -689,6 +711,8 @@ def strategy_backtest(  # noqa: C901
             float(slippage_bps),
             trade_spacing_bars=trade_spacing,
         ) if trade_returns else {}
+        if detail_mode == "compact" and metrics:
+            metrics = _compact_metrics_payload(metrics)
 
         gross_equity = np.cumprod([1.0 + float(trade["return_gross"]) for trade in trades]) if trades else np.array([1.0])
         net_equity = np.cumprod([1.0 + float(trade["return_net"]) for trade in trades]) if trades else np.array([1.0])
@@ -1373,6 +1397,8 @@ def forecast_backtest(  # noqa: C901
                         trade_spacing_bars=_spacing,
                     ) if trade_returns else {}
                     if metrics:
+                        if detail_mode == "compact":
+                            metrics = _compact_metrics_payload(metrics)
                         agg["metrics"] = metrics
                         agg["slippage_bps"] = float(slippage_bps)
                 if _dn_used:

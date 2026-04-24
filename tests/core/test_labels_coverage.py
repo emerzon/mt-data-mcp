@@ -93,6 +93,15 @@ class TestLabelsTripleBarrier:
         mock_hist.return_value = _make_df(60)
         result = _get_raw_fn()("EURUSD", tp_pips=50, sl_pips=50, horizon=12)
         assert result["success"] is True
+        assert any("prefer tp_ticks/sl_ticks" in msg for msg in result["warnings"])
+
+    @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
+    @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
+    @patch(f"{_LABELS_MOD}._fetch_history")
+    def test_tick_barriers_alias(self, mock_hist, mock_den, mock_pip):
+        mock_hist.return_value = _make_df(60)
+        result = _get_raw_fn()("EURUSD", tp_ticks=50, sl_ticks=50, horizon=12)
+        assert result["success"] is True
 
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
     @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
@@ -114,12 +123,12 @@ class TestLabelsTripleBarrier:
     def test_rejects_multiple_tp_unit_families(self):
         result = _get_raw_fn()("EURUSD", tp_abs=1.11, tp_pct=0.5)
 
-        assert result["error"] == "Provide only one take-profit unit family: tp_abs, tp_pct, tp_pips"
+        assert result["error"] == "Provide only one take-profit unit family: tp_abs, tp_pct, tp_ticks (legacy alias: tp_pips)"
 
     def test_rejects_multiple_sl_unit_families(self):
         result = _get_raw_fn()("EURUSD", sl_abs=1.09, sl_pips=15.0)
 
-        assert result["error"] == "Provide only one stop-loss unit family: sl_abs, sl_pct, sl_pips"
+        assert result["error"] == "Provide only one stop-loss unit family: sl_abs, sl_pct, sl_ticks (legacy alias: sl_pips)"
 
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
     @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
@@ -257,6 +266,7 @@ class TestLabelsTripleBarrier:
         assert "summary" in result
         assert "entries" not in result
         assert "labels" not in result
+        assert any("summary_only is deprecated" in msg for msg in result["warnings"])
 
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
     @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
@@ -267,6 +277,7 @@ class TestLabelsTripleBarrier:
         assert result["success"] is True
         assert "summary" in result
         assert "entries" not in result
+        assert any("detail='summary_only' is deprecated" in msg for msg in result["warnings"])
 
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
     @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")

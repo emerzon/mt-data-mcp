@@ -15,13 +15,13 @@ from typing import Any, Dict, Literal, Optional
 
 from pydantic import BaseModel, Field
 
-from ..shared.schema import TimeframeLiteral
+from ..shared.schema import CompactFullDetailLiteral, TimeframeLiteral
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
 
 logger = logging.getLogger(__name__)
 
-DetailLevel = Literal["compact", "full"]
+DetailLevel = CompactFullDetailLiteral
 
 
 # ---------------------------------------------------------------------------

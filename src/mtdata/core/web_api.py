@@ -5,7 +5,7 @@ from __future__ import annotations
 import hmac
 import logging
 from importlib.util import find_spec as _find_spec
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -19,6 +19,7 @@ from ..forecast.use_cases import (
 from ..forecast.use_cases import (
     run_forecast_generate as _run_forecast_generate_impl,
 )
+from .schema import CompactFullDetailLiteral
 from ..forecast.volatility import (
     forecast_volatility as _forecast_vol_impl,
 )
@@ -205,7 +206,7 @@ def get_instruments(search: Optional[str] = Query(None), limit: Optional[int] = 
 
 @api_router.get("/methods")
 def get_methods(
-    detail: Literal["compact", "full"] = Query("full"),
+    detail: CompactFullDetailLiteral = Query("full"),
 ) -> Dict[str, Any]:
     return _get_methods_response(get_methods_impl=_get_methods_impl, detail=detail)
 
@@ -213,7 +214,7 @@ def get_methods(
 @api_router.get("/models")
 def get_models(
     method: Optional[str] = Query(None),
-    detail: Literal["compact", "full"] = Query("compact"),
+    detail: CompactFullDetailLiteral = Query("compact"),
 ) -> Dict[str, Any]:
     return _get_models_response(
         get_models_impl=_get_models_impl,
@@ -256,6 +257,10 @@ def get_history(
     start: Optional[str] = Query(None),
     end: Optional[str] = Query(None),
     ohlcv: Optional[str] = Query("ohlc"),
+    include_spread: bool = Query(
+        False,
+        description="Append historical candle spread to each row.",
+    ),
     include_incomplete: bool = Query(False, description="Include the latest forming candle."),
     denoise_method: Optional[str] = Query(None, description="Denoise method name; if set, returns extra *_dn columns."),
     denoise_params: Optional[str] = Query(None, description="JSON or k=v list of denoise params."),
@@ -267,6 +272,7 @@ def get_history(
         start=start,
         end=end,
         ohlcv=ohlcv,
+        include_spread=include_spread,
         include_incomplete=include_incomplete,
         denoise_method=denoise_method,
         denoise_params=denoise_params,

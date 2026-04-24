@@ -115,6 +115,7 @@ def test_performance_metrics_skip_annualization_for_short_samples() -> None:
     assert metrics["annual_return"] is None
     assert metrics["calmar_ratio"] is None
     assert "sample_warning" in metrics
+    assert metrics["sample_notice"]["trades_observed"] == 6
     assert int(metrics["min_trades_for_annualization"]) == 30
 
 

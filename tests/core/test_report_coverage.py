@@ -31,6 +31,7 @@ def _get_report_generate():
         from mtdata.core.report.requests import ReportGenerateRequest
 
         with patch.object(report_mod, "ensure_mt5_connection_or_raise", return_value=None):
+            kwargs.setdefault("detail", "full")
             return raw(request=ReportGenerateRequest(symbol=symbol, **kwargs))
 
     return _call
@@ -59,6 +60,14 @@ def test_report_generate_request_accepts_structured_format_alias():
     request = ReportGenerateRequest(symbol="EURUSD", format="structured")
 
     assert request.format == "toon"
+
+
+def test_report_generate_request_defaults_to_compact_detail():
+    from mtdata.core.report.requests import ReportGenerateRequest
+
+    request = ReportGenerateRequest(symbol="EURUSD")
+
+    assert request.detail == "compact"
 
 
 def test_run_report_generate_logs_finish_event(caplog):
@@ -125,6 +134,29 @@ def test_report_generate_logs_finish_event(monkeypatch, caplog):
         "event=finish operation=report_generate success=True" in record.message
         for record in caplog.records
     )
+
+
+def test_report_generate_compact_structured_payload(monkeypatch):
+    from mtdata.core import report as report_mod
+
+    raw = _unwrap(report_mod.report_generate)
+    monkeypatch.setattr(report_mod, "_report_connection_error", lambda: None)
+    monkeypatch.setattr(
+        report_mod,
+        "run_report_generate",
+        lambda *args, **kwargs: {
+            "success": True,
+            "detail": "compact",
+            "summary": ["close=1.10"],
+            "sections_status": {"summary": {"ok": 1, "partial": 0, "error": 0}},
+        },
+    )
+
+    out = raw(request=report_mod.ReportGenerateRequest(symbol="EURUSD"))
+
+    assert out["detail"] == "compact"
+    assert "summary" in out
+    assert "sections" not in out
 
 
 def _make_full_sections():

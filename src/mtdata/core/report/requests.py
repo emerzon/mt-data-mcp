@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, field_validator, model_validator
 
-from ..schema import DenoiseSpec, TimeframeLiteral
+from ..schema import CompactStandardFullDetailLiteral, DenoiseSpec, TimeframeLiteral
 
 ReportFormat = Literal["toon", "structured", "markdown"]
 
@@ -24,6 +24,7 @@ class ReportGenerateRequest(BaseModel):
     denoise: Optional[DenoiseSpec] = None
     params: Optional[Dict[str, Any]] = None
     format: ReportFormat = "toon"
+    detail: CompactStandardFullDetailLiteral = "compact"
 
     @field_validator("format", mode="before")
     @classmethod

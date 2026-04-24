@@ -18,6 +18,7 @@ from ..utils.barriers import (
 from ..utils.barriers import (
     resolve_barrier_prices as _resolve_barrier_prices,
 )
+from ..utils.barriers import validate_barrier_unit_family_exclusivity
 from ..utils.utils import parse_kv_or_json as _parse_kv_or_json
 from .barriers_shared import (
     _auto_barrier_method,
@@ -49,6 +50,8 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
     sl_abs: Optional[float] = None,
     tp_pct: Optional[float] = None,
     sl_pct: Optional[float] = None,
+    tp_ticks: Optional[float] = None,
+    sl_ticks: Optional[float] = None,
     tp_pips: Optional[float] = None,
     sl_pips: Optional[float] = None,
     params: Optional[Dict[str, Any]] = None,
@@ -58,7 +61,8 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
 
     Notes:
     - Barriers are provided via absolute prices (tp_abs/sl_abs), percentages
-      (tp_pct/sl_pct), or ticks (tp_pips/sl_pips; uses `trade_tick_size`).
+      (tp_pct/sl_pct), or ticks (tp_ticks/sl_ticks; legacy aliases:
+      tp_pips/sl_pips; uses `trade_tick_size`).
     - In discrete time, TP and SL can be hit in the same bar. Those ties are
       split 50/50 into `prob_tp_first` and `prob_sl_first`.
     """
@@ -76,6 +80,25 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
             return {"error": direction_error}
         p = _parse_kv_or_json(params)
         warnings_out: List[str] = []
+        try:
+            barrier_values = validate_barrier_unit_family_exclusivity(
+                {
+                    "tp_abs": tp_abs,
+                    "sl_abs": sl_abs,
+                    "tp_pct": tp_pct,
+                    "sl_pct": sl_pct,
+                    "tp_ticks": tp_ticks,
+                    "sl_ticks": sl_ticks,
+                    "tp_pips": tp_pips,
+                    "sl_pips": sl_pips,
+                }
+            )
+        except ValueError as exc:
+            return {"error": str(exc)}
+        if tp_pips is not None or sl_pips is not None:
+            warnings_out.append(
+                "tp_pips/sl_pips use legacy pip terminology; prefer tp_ticks/sl_ticks for trade_tick_size-based barriers."
+            )
         # Fetch enough history for calibration
         need = int(max(2000, horizon_val + 100))
         df = _fetch_history(symbol, timeframe, need, as_of=None)
@@ -102,16 +125,20 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
             direction=direction_norm,
             tp_abs=tp_abs,
             sl_abs=sl_abs,
-            tp_pct=tp_pct,
-            sl_pct=sl_pct,
-            tp_pips=tp_pips,
-            sl_pips=sl_pips,
+            tp_pct=barrier_values.get("tp_pct"),
+            sl_pct=barrier_values.get("sl_pct"),
+            tp_ticks=barrier_values.get("tp_ticks"),
+            sl_ticks=barrier_values.get("sl_ticks"),
+            tp_pips=barrier_values.get("tp_pips"),
+            sl_pips=barrier_values.get("sl_pips"),
             pip_size=pip_size,
             adjust_inverted=True,
         )
 
         if tp_price is None or sl_price is None:
-            return {"error": "Provide barriers via tp_abs/sl_abs or tp_pct/sl_pct or tp_pips/sl_pips"}
+            return {
+                "error": "Provide barriers via tp_abs/sl_abs or tp_pct/sl_pct or tp_ticks/sl_ticks (legacy aliases: tp_pips/sl_pips)."
+            }
         if not _barrier_prices_are_valid(
             price=last_price,
             direction=direction_norm,

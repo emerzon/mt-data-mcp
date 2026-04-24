@@ -144,7 +144,7 @@ class TestPivotNoRates:
              patch(_EPOCH, side_effect=lambda x: x), \
              patch(_COPY_RATES, return_value=None), \
              patch(f"{_MT5}.last_error", return_value=(0, "no data")):
-            res = fn("EURUSD", timeframe="D1")
+            res = fn("EURUSD", timeframe="D1", detail="standard")
         assert "error" in res
 
     def test_rates_empty(self):
@@ -162,7 +162,7 @@ class TestPivotNoRates:
              patch(_EPOCH, side_effect=lambda x: x), \
              patch(_COPY_RATES, return_value=np.array([])), \
              patch(f"{_MT5}.last_error", return_value=(0, "")):
-            res = fn("EURUSD", timeframe="D1")
+            res = fn("EURUSD", timeframe="D1", detail="standard")
         assert "error" in res
 
 
@@ -208,7 +208,7 @@ class TestPivotSingleBar:
 class TestPivotHappyPath:
     """Full happy-path tests around completed-bar source selection."""
 
-    def _run(self, rates_list, digits=5, use_ctz=False):
+    def _run(self, rates_list, digits=5, use_ctz=False, detail="compact"):
         fn = _get_pivot_fn()
         info = _make_symbol_info(digits=digits)
         current_dt = datetime.fromtimestamp(1_700_000_000.0, tz=timezone.utc)
@@ -230,30 +230,79 @@ class TestPivotHappyPath:
              patch("mtdata.core.pivot.datetime") as mock_datetime:
             mock_datetime.now.return_value = current_dt
             mock_datetime.fromtimestamp.side_effect = lambda *args, **kwargs: datetime.fromtimestamp(*args, **kwargs)
-            return fn("EURUSD", timeframe="D1")
+            return fn("EURUSD", timeframe="D1", detail=detail)
 
     def test_classic_levels(self):
         r = [_make_rate(time_=100.0), _make_rate(time_=200.0)]
         res = self._run(r)
         assert res["success"] is True
-        assert isinstance(res["levels"], list)
-        level_names = [lv["level"] for lv in res["levels"]]
-        assert "PP" in level_names
-        assert "R1" in level_names
-        assert "S1" in level_names
+        assert res["detail"] == "compact"
+        assert res["method"] == "classic"
+        assert "PP" in res["levels"]
+        assert "R1" in res["levels"]
+        assert "S1" in res["levels"]
 
     def test_all_methods_present(self):
-        r = [_make_rate(time_=100.0), _make_rate(time_=200.0)]
-        res = self._run(r)
+        fn = _get_pivot_fn()
+        info = _make_symbol_info(digits=5)
+        current_dt = datetime.fromtimestamp(1_700_000_000.0, tz=timezone.utc)
+
+        @contextmanager
+        def _guard(symbol):
+            yield None, info
+
+        rates = np.array([_make_rate(time_=100.0), _make_rate(time_=200.0)])
+        with patch(_TF_MAP_PATCH, {"D1": 1}), \
+             patch(_TF_SECS_PATCH, {"D1": 86400}), \
+             patch(_GUARD, _guard), \
+             patch(f"{_MT5}.symbol_info_tick", return_value=_make_tick()), \
+             patch(_EPOCH, side_effect=lambda x: float(x)), \
+             patch(_COPY_RATES, return_value=rates), \
+             patch(_USE_CTZ, return_value=False), \
+             patch(_FMT, side_effect=lambda x: f"T{int(x)}"), \
+             patch(_FMT_LOCAL, side_effect=lambda x: f"L{int(x)}"), \
+             patch("mtdata.core.pivot.datetime") as mock_datetime:
+            mock_datetime.now.return_value = current_dt
+            mock_datetime.fromtimestamp.side_effect = lambda *args, **kwargs: datetime.fromtimestamp(*args, **kwargs)
+            res = fn("EURUSD", timeframe="D1", detail="standard")
+
+        assert res["detail"] == "standard"
         # Should have columns for classic, fibonacci, camarilla, woodie, demark
         for lv in res["levels"]:
             if lv["level"] == "PP":
                 assert "classic" in lv
                 assert "fibonacci" in lv
 
+    def test_full_detail_includes_methods(self):
+        fn = _get_pivot_fn()
+        info = _make_symbol_info(digits=5)
+        current_dt = datetime.fromtimestamp(1_700_000_000.0, tz=timezone.utc)
+
+        @contextmanager
+        def _guard(symbol):
+            yield None, info
+
+        rates = np.array([_make_rate(time_=100.0), _make_rate(time_=200.0)])
+        with patch(_TF_MAP_PATCH, {"D1": 1}), \
+             patch(_TF_SECS_PATCH, {"D1": 86400}), \
+             patch(_GUARD, _guard), \
+             patch(f"{_MT5}.symbol_info_tick", return_value=_make_tick()), \
+             patch(_EPOCH, side_effect=lambda x: float(x)), \
+             patch(_COPY_RATES, return_value=rates), \
+             patch(_USE_CTZ, return_value=False), \
+             patch(_FMT, side_effect=lambda x: f"T{int(x)}"), \
+             patch(_FMT_LOCAL, side_effect=lambda x: f"L{int(x)}"), \
+             patch("mtdata.core.pivot.datetime") as mock_datetime:
+            mock_datetime.now.return_value = current_dt
+            mock_datetime.fromtimestamp.side_effect = lambda *args, **kwargs: datetime.fromtimestamp(*args, **kwargs)
+            res = fn("EURUSD", timeframe="D1", detail="full")
+
+        assert res["detail"] == "full"
+        assert isinstance(res["methods"], list)
+
     def test_digits_rounding(self):
         r = [_make_rate(time_=100.0), _make_rate(time_=200.0)]
-        res = self._run(r, digits=2)
+        res = self._run(r, digits=2, detail="standard")
         for lv in res["levels"]:
             for method in ("classic", "fibonacci"):
                 val = lv.get(method)
@@ -263,7 +312,7 @@ class TestPivotHappyPath:
 
     def test_level_rows_omit_null_method_cells(self):
         r = [_make_rate(time_=100.0), _make_rate(time_=200.0)]
-        res = self._run(r)
+        res = self._run(r, detail="standard")
         for lv in res["levels"]:
             for key, val in lv.items():
                 if key == "level":
@@ -291,7 +340,7 @@ class TestPivotHappyPath:
         earlier = _make_rate(open_=1.1000, high=1.1050, low=1.0950, close=1.1020, time_=100.0)
         latest = _make_rate(open_=1.2000, high=1.2500, low=1.1500, close=1.2200, time_=200.0)
 
-        res = self._run([earlier, latest], use_ctz=False)
+        res = self._run([earlier, latest], use_ctz=False, detail="standard")
 
         assert res["success"] is True
         assert res["period"]["start"] == "T200"
@@ -323,7 +372,7 @@ class TestPivotHappyPath:
              patch("mtdata.core.pivot.datetime") as mock_datetime:
             mock_datetime.now.return_value = datetime.fromtimestamp(src_time + 172_801.0, tz=timezone.utc)
             mock_datetime.fromtimestamp.side_effect = lambda *args, **kwargs: datetime.fromtimestamp(*args, **kwargs)
-            res = fn("EURUSD", timeframe="D1")
+            res = fn("EURUSD", timeframe="D1", detail="standard")
 
         assert res["success"] is True
         assert res["period"]["start"] == f"T{int(src_time + 86400.0)}"
@@ -358,7 +407,7 @@ class TestPivotHappyPath:
 
     def test_calculation_basis_context(self):
         r = [_make_rate(time_=100.0), _make_rate(time_=200.0)]
-        res = self._run(r, use_ctz=False)
+        res = self._run(r, use_ctz=False, detail="standard")
         assert res["calculation_basis"]["source_bar"] == "last completed D1 bar"
         assert res["calculation_basis"]["session_boundary"] == "MT5 broker/session calendar"
         assert res["calculation_basis"]["display_timezone"] == "UTC"
@@ -402,7 +451,7 @@ class TestPivotMethods:
              patch("mtdata.core.pivot.datetime") as mock_datetime:
             mock_datetime.now.return_value = current_dt
             mock_datetime.fromtimestamp.side_effect = lambda *args, **kwargs: datetime.fromtimestamp(*args, **kwargs)
-            res = fn("EURUSD", timeframe="D1")
+            res = fn("EURUSD", timeframe="D1", detail="standard")
         # Convert levels list into a dict: method -> {level -> value}
         by_method: Dict[str, Dict[str, Any]] = {}
         for lv in res.get("levels", []):
@@ -553,7 +602,7 @@ class TestPivotInfoNone:
              patch(_COPY_RATES, return_value=np.array(rates)), \
              patch(_USE_CTZ, return_value=False), \
              patch(_FMT, side_effect=lambda x: f"T{int(x)}"):
-            res = fn("EURUSD", timeframe="D1")
+            res = fn("EURUSD", timeframe="D1", detail="standard")
         assert res.get("success") is True
 
 
@@ -577,7 +626,7 @@ class TestPivotLevelOrdering:
              patch(_COPY_RATES, return_value=np.array(rates)), \
              patch(_USE_CTZ, return_value=False), \
              patch(_FMT, side_effect=lambda x: f"T{int(x)}"):
-            res = fn("EURUSD", timeframe="D1")
+            res = fn("EURUSD", timeframe="D1", detail="standard")
 
         levels = [lv["level"] for lv in res["levels"]]
         # Find PP position

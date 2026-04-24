@@ -253,6 +253,61 @@ def test_forecast_generate_native_theta_suppresses_duplicate_interval_guidance(m
     assert all("StatsForecast theta is available" not in str(w) for w in out["warnings"])
 
 
+def test_forecast_generate_defaults_to_compact_payload(monkeypatch):
+    raw = _unwrap(cf.forecast_generate)
+    monkeypatch.setattr(
+        cf,
+        "_forecast_impl",
+        lambda **kwargs: {
+            "success": True,
+            "method": kwargs["method"],
+            "horizon": kwargs["horizon"],
+            "quantity": kwargs["quantity"],
+            "forecast_time": ["t1", "t2", "t3"],
+            "forecast_price": [1.0, 1.1, 1.2],
+            "forecast_epoch": [1.0, 2.0, 3.0],
+        },
+    )
+
+    out = raw(request=ForecastGenerateRequest(symbol="BTCUSD", timeframe="H1", method="theta", horizon=3))
+
+    assert out["detail"] == "compact"
+    assert out["symbol"] == "BTCUSD"
+    assert out["timeframe"] == "H1"
+    assert out["forecast_price"] == [1.0, 1.1, 1.2]
+    assert "forecast_epoch" not in out
+
+
+def test_forecast_generate_standard_preserves_full_arrays(monkeypatch):
+    raw = _unwrap(cf.forecast_generate)
+    monkeypatch.setattr(
+        cf,
+        "_forecast_impl",
+        lambda **kwargs: {
+            "success": True,
+            "method": kwargs["method"],
+            "horizon": kwargs["horizon"],
+            "quantity": kwargs["quantity"],
+            "forecast_time": ["t1", "t2", "t3"],
+            "forecast_price": [1.0, 1.1, 1.2],
+            "forecast_epoch": [1.0, 2.0, 3.0],
+        },
+    )
+
+    out = raw(
+        request=ForecastGenerateRequest(
+            symbol="BTCUSD",
+            timeframe="H1",
+            method="theta",
+            horizon=3,
+            detail="standard",
+        )
+    )
+
+    assert out["detail"] == "standard"
+    assert out["forecast_epoch"] == [1.0, 2.0, 3.0]
+
+
 def test_run_forecast_generate_logs_finish_event(caplog):
     with caplog.at_level("INFO", logger="mtdata.forecast.use_cases"):
         result = forecast_use_cases.run_forecast_generate(
@@ -293,6 +348,14 @@ def test_run_forecast_backtest_strips_per_anchor_details_in_compact_mode():
             "results": {
                 "theta": {
                     "avg_mae": 1.0,
+                    "metrics": {
+                        "sample_warning": "Only 1 trades. Annualized risk metrics are suppressed.",
+                        "sample_notice": {
+                            "code": "annualization_suppressed_low_sample",
+                            "trades_observed": 1,
+                            "minimum_trades": 30,
+                        },
+                    },
                     "details": [{"anchor": "2026-01-01 00:00", "success": True}],
                 }
             },
@@ -308,6 +371,8 @@ def test_run_forecast_backtest_strips_per_anchor_details_in_compact_mode():
     assert result["resolved_request"]["methods"] == ["theta"]
     assert "details" not in result["results"]["theta"]
     assert result["results"]["theta"]["details_count"] == 1
+    assert "sample_warning" not in result["results"]["theta"]["metrics"]
+    assert result["results"]["theta"]["metrics"]["sample_notice"]["code"] == "annualization_suppressed_low_sample"
 
 
 def test_forecast_generate_converts_typed_forecast_errors(monkeypatch):
@@ -1001,6 +1066,7 @@ def test_forecast_tune_genetic_and_barrier_prob_routing(monkeypatch):
     assert out["kind"] == "mc"
     assert out["method"] == "auto"
     assert out["direction"] == "short"
+    assert out["detail"] == "compact"
 
     out = raw_barrier(
         request=ForecastBarrierProbRequest(
@@ -1044,6 +1110,45 @@ def test_forecast_barrier_prob_wrapper_emits_single_finish_event(caplog, monkeyp
         if "event=finish operation=forecast_barrier_prob success=True" in record.message
     ]
     assert len(finish_records) == 1
+
+
+def test_forecast_barrier_prob_standard_hides_curves_only(monkeypatch):
+    raw = _unwrap(cf.forecast_barrier_prob)
+    monkeypatch.setattr(cf, "_forecast_connection_error", lambda: None)
+    monkeypatch.setattr(cf, "_build_barrier_kwargs_from", lambda _: {"tp_abs": 1.2, "sl_abs": 1.1})
+
+    import mtdata.forecast.barriers as barriers_mod
+
+    monkeypatch.setattr(
+        barriers_mod,
+        "forecast_barrier_hit_probabilities",
+        lambda **kwargs: {
+            "success": True,
+            "symbol": kwargs["symbol"],
+            "timeframe": kwargs["timeframe"],
+            "method": kwargs["method"],
+            "direction": kwargs["direction"],
+            "horizon": kwargs["horizon"],
+            "last_price": 1.15,
+            "tp_price": 1.2,
+            "sl_price": 1.1,
+            "prob_tp_first": 0.55,
+            "prob_sl_first": 0.30,
+            "prob_no_hit": 0.15,
+            "prob_tp_first_ci95": {"low": 0.5, "high": 0.6},
+            "tp_hit_prob_by_t": [0.1, 0.2],
+            "sl_hit_prob_by_t": [0.05, 0.1],
+            "sim_meta": {"foo": "bar"},
+        },
+    )
+    monkeypatch.setattr(barriers_mod, "forecast_barrier_closed_form", lambda **kwargs: {"success": True})
+
+    out = raw(request=ForecastBarrierProbRequest(symbol="EURUSD", detail="standard"))
+
+    assert out["detail"] == "standard"
+    assert "tp_hit_prob_by_t" not in out
+    assert "sim_meta" not in out
+    assert "prob_tp_first_ci95" in out
 
 
 def test_forecast_tune_optuna_routing(monkeypatch):
@@ -1262,13 +1367,35 @@ def test_forecast_barrier_optimize_keeps_grid_default_path(monkeypatch):
     monkeypatch.setattr(barriers_mod, "forecast_barrier_optimize", fake_optimize)
     out = raw_opt(request=ForecastBarrierOptimizeRequest(symbol="BTCUSD"))
     assert out["ok"] is True
+    assert out["detail"] == "compact"
     assert called["method"] == "auto"
     assert called["search_profile"] == "medium"
+    assert called["format"] == "summary"
+    assert called["concise"] is True
+    assert called["return_grid"] is False
     assert "seed" not in called["params"]
     assert "optimizer" not in called["params"]
     assert "sampler" not in called["params"]
     assert "pruner" not in called["params"]
     assert "n_jobs" not in called["params"]
+
+
+def test_forecast_barrier_optimize_standard_disables_concise_only(monkeypatch):
+    raw_opt = _unwrap(cf.forecast_barrier_optimize)
+    called = {}
+
+    import mtdata.forecast.barriers as barriers_mod
+
+    def fake_optimize(**kwargs):
+        called.update(kwargs)
+        return {"ok": True}
+
+    monkeypatch.setattr(barriers_mod, "forecast_barrier_optimize", fake_optimize)
+    out = raw_opt(request=ForecastBarrierOptimizeRequest(symbol="BTCUSD", detail="standard"))
+
+    assert out["detail"] == "standard"
+    assert called["format"] == "summary"
+    assert called["concise"] is False
 
 
 def test_forecast_barrier_optimize_applies_optuna_defaults_when_requested(monkeypatch):

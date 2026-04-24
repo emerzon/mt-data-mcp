@@ -7,7 +7,13 @@ from typing import Annotated, Any, Dict, List, Literal, Optional, Union
 from pydantic import AfterValidator, BaseModel, BeforeValidator, Field, field_validator, model_validator
 
 from ..output_contract import normalize_output_detail
-from ..schema import DenoiseSpec, IndicatorSpec, SimplifySpec, TimeframeLiteral
+from ..schema import (
+    CompactFullDetailLiteral,
+    DenoiseSpec,
+    IndicatorSpec,
+    SimplifySpec,
+    TimeframeLiteral,
+)
 
 _INDICATOR_FORMAT_HELP = (
     "Use bare names like 'rsi', underscore forms like 'rsi_14', "
@@ -288,7 +294,7 @@ IndicatorSpecsInput = Annotated[
 class DataFetchCandlesRequest(BaseModel):
     symbol: str
     timeframe: TimeframeLiteral = "H1"
-    detail: Literal["compact", "full"] = "compact"
+    detail: CompactFullDetailLiteral = "compact"
     limit: int = 200
     start: Optional[str] = None
     end: Optional[str] = None
@@ -296,6 +302,7 @@ class DataFetchCandlesRequest(BaseModel):
     indicators: IndicatorSpecsInput = None
     denoise: Optional[DenoiseSpec] = None
     simplify: Optional[SimplifySpec] = None
+    include_spread: bool = False
     include_incomplete: bool = False
     allow_stale: bool = False
 

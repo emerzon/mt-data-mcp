@@ -12,6 +12,7 @@ import holidays
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
 from .output_contract import resolve_output_detail
+from .schema import CompactFullDetailLiteral
 
 logger = logging.getLogger(__name__)
 
@@ -472,7 +473,7 @@ def normalize_market_status_output(
 def market_status(
     region: Optional[Literal["us", "europe", "asia", "all"]] = "all",
     timezone_display: Optional[Literal["local", "utc", "auto"]] = "local",
-    detail: Literal["compact", "full"] = "compact",
+    detail: CompactFullDetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """Get trading status of major stock markets worldwide.
 

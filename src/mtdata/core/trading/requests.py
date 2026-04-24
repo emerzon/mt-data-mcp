@@ -4,7 +4,7 @@ from typing import Literal, Optional, Union
 
 from pydantic import BaseModel, Field, field_validator
 
-from ...shared.schema import TimeframeLiteral
+from ...shared.schema import CompactFullDetailLiteral, TimeframeLiteral
 from .time import ExpirationValue
 from . import validation
 from .validation import OrderTypeInput
@@ -104,7 +104,7 @@ class TradeCloseRequest(BaseModel):
 
 class TradeHistoryRequest(BaseModel):
     history_kind: Literal["deals", "orders"] = "deals"
-    detail: Literal["compact", "full"] = "compact"
+    detail: CompactFullDetailLiteral = "compact"
     start: Optional[str] = None
     end: Optional[str] = None
     symbol: Optional[str] = None
@@ -183,7 +183,7 @@ class TradeGetOpenRequest(BaseModel):
     symbol: Optional[str] = None
     ticket: Optional[Union[int, str]] = None
     limit: Optional[int] = 200
-    detail: Literal["compact", "full"] = Field(
+    detail: CompactFullDetailLiteral = Field(
         default="full",
         description=(
             "Response detail level. Use compact to omit echoed request metadata "
@@ -203,7 +203,7 @@ class TradeGetPendingRequest(BaseModel):
     symbol: Optional[str] = None
     ticket: Optional[Union[int, str]] = None
     limit: Optional[int] = 200
-    detail: Literal["compact", "full"] = Field(
+    detail: CompactFullDetailLiteral = Field(
         default="full",
         description=(
             "Response detail level. Use compact to omit echoed request metadata "
@@ -221,4 +221,4 @@ class TradeGetPendingRequest(BaseModel):
 
 class TradeSessionContextRequest(BaseModel):
     symbol: str
-    detail: Literal["compact", "full"] = "compact"
+    detail: CompactFullDetailLiteral = "compact"

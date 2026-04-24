@@ -8,7 +8,7 @@ from ..utils.utils import _table_from_rows
 from ._mcp_instance import mcp
 from .constants import DEFAULT_ROW_LIMIT
 from .execution_logging import run_logged_operation
-from .schema import CategoryLiteral, IndicatorNameLiteral
+from .schema import CategoryLiteral, CompactFullDetailLiteral, IndicatorNameLiteral
 
 logger = logging.getLogger(__name__)
 
@@ -277,7 +277,7 @@ def indicators_list(
     search_term: Optional[str] = None,
     category: Optional[CategoryLiteral] = None,
     limit: Optional[int] = DEFAULT_ROW_LIMIT,
-    detail: Literal["compact", "full"] = "compact",
+    detail: CompactFullDetailLiteral = "compact",
 ) -> Dict[str, Any]:  # type: ignore
     """List indicators as a tabular result with optional search, category, and detail filters.
 

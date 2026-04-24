@@ -165,6 +165,8 @@ def labels_triple_barrier(
     sl_abs: Optional[float] = None,
     tp_pct: Optional[float] = None,
     sl_pct: Optional[float] = None,
+    tp_ticks: Optional[float] = None,
+    sl_ticks: Optional[float] = None,
     tp_pips: Optional[float] = None,
     sl_pips: Optional[float] = None,
     denoise: Optional[DenoiseSpec] = None,
@@ -179,7 +181,7 @@ def labels_triple_barrier(
     Barriers:
       - Absolute prices: tp_abs/sl_abs
       - Percent offsets: tp_pct/sl_pct (0.5 => 0.5%)
-      - Ticks: tp_pips/sl_pips (trade_tick_size from symbol info)
+      - Ticks: tp_ticks/sl_ticks (legacy aliases: tp_pips/sl_pips; trade_tick_size from symbol info)
 
     label_on='high_low' considers intrabar extremes for barrier hits; 'close' uses closes only.
     When both TP and SL are touched in the same high/low bar, the result is treated
@@ -196,6 +198,7 @@ def labels_triple_barrier(
             direction_value, direction_error = _normalize_trade_direction(direction)
             if direction_error or direction_value is None:
                 return {"error": direction_error or "Invalid direction."}
+            warnings_out: List[str] = []
             output_mode = normalize_output_detail(
                 detail,
                 aliases={"summary_only": "summary"},
@@ -212,22 +215,36 @@ def labels_triple_barrier(
                 summary_only_flag = bool(summary_only)
             if summary_only_flag:
                 output_mode = "summary"
+                warnings_out.append(
+                    "summary_only is deprecated; use detail='summary' instead."
+                )
+            detail_value = str(detail or "").strip().lower()
+            if detail_value == "summary_only":
+                warnings_out.append(
+                    "detail='summary_only' is deprecated; use detail='summary' instead."
+                )
             if output_mode not in {"full", "summary", "compact"}:
                 return {
-                    "error": "Invalid detail level. Use 'compact', 'full', 'summary', or 'summary_only'."
+                    "error": "Invalid detail level. Use 'compact', 'full', or 'summary' (legacy alias: 'summary_only')."
                 }
             barrier_values = {
                 "tp_abs": tp_abs,
                 "sl_abs": sl_abs,
                 "tp_pct": tp_pct,
                 "sl_pct": sl_pct,
+                "tp_ticks": tp_ticks,
+                "sl_ticks": sl_ticks,
                 "tp_pips": tp_pips,
                 "sl_pips": sl_pips,
             }
             try:
-                validate_barrier_unit_family_exclusivity(barrier_values)
+                barrier_values = validate_barrier_unit_family_exclusivity(barrier_values)
             except ValueError as exc:
                 return {"error": str(exc)}
+            if tp_pips is not None or sl_pips is not None:
+                warnings_out.append(
+                    "tp_pips/sl_pips use legacy pip terminology; prefer tp_ticks/sl_ticks for trade_tick_size-based barriers."
+                )
             df = _fetch_history(
                 symbol, timeframe, int(max(limit, horizon + 50)), as_of=None
             )
@@ -271,7 +288,7 @@ def labels_triple_barrier(
                 return {
                     "error": (
                         "Provide barriers via tp_abs/sl_abs or tp_pct/sl_pct or "
-                        "tp_pips/sl_pips. If you need help choosing values, run "
+                        "tp_ticks/sl_ticks (legacy aliases: tp_pips/sl_pips). If you need help choosing values, run "
                         "forecast_barrier_optimize first."
                     )
                 }
@@ -330,10 +347,12 @@ def labels_triple_barrier(
                 "tp_time": tp_times,
                 "sl_time": sl_times,
             }
+            if warnings_out:
+                payload["warnings"] = list(warnings_out)
             if skipped_entries > 0:
-                payload["warnings"] = [
+                payload.setdefault("warnings", []).append(
                     f"Skipped {int(skipped_entries)} entries with invalid or non-positive entry prices."
-                ]
+                )
                 payload["skipped_entries"] = int(skipped_entries)
             if output_mode in ("summary", "compact"):
                 import numpy as _np
@@ -365,10 +384,12 @@ def labels_triple_barrier(
                         "horizon": int(horizon),
                         "summary": summary,
                     }
+                    if warnings_out:
+                        out["warnings"] = list(warnings_out)
                     if skipped_entries > 0:
-                        out["warnings"] = [
+                        out.setdefault("warnings", []).append(
                             f"Skipped {int(skipped_entries)} entries with invalid or non-positive entry prices."
-                        ]
+                        )
                         out["skipped_entries"] = int(skipped_entries)
                     return out
                 payload["summary"] = summary

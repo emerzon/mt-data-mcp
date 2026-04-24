@@ -2,10 +2,19 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator
 
-from ..shared.schema import DenoiseSpec, ForecastLibraryLiteral, TimeframeLiteral
-from ..utils.barriers import normalize_trade_direction, validate_barrier_unit_family_exclusivity
+from ..shared.schema import (
+    CompactStandardFullDetailLiteral,
+    DenoiseSpec,
+    ForecastLibraryLiteral,
+    TimeframeLiteral,
+)
+from ..utils.barriers import (
+    normalize_barrier_tick_aliases,
+    normalize_trade_direction,
+    validate_barrier_unit_family_exclusivity,
+)
 
 
 def _reject_removed_field(values: Any, *, field_name: str, replacement: str) -> Any:
@@ -47,6 +56,7 @@ class ForecastGenerateRequest(BaseModel):
         None,
         description="Explicit trained-model params_hash to use for prediction. Skips training if the model exists in the store.",
     )
+    detail: CompactStandardFullDetailLiteral = "compact"
 
     @model_validator(mode="before")
     @classmethod
@@ -182,13 +192,20 @@ class ForecastBarrierProbRequest(BaseModel):
     sl_abs: Optional[float] = None
     tp_pct: Optional[float] = None
     sl_pct: Optional[float] = None
-    tp_pips: Optional[float] = None
-    sl_pips: Optional[float] = None
+    tp_pips: Optional[float] = Field(
+        None,
+        validation_alias=AliasChoices("tp_pips", "tp_ticks"),
+    )
+    sl_pips: Optional[float] = Field(
+        None,
+        validation_alias=AliasChoices("sl_pips", "sl_ticks"),
+    )
     params: Optional[Dict[str, Any]] = None
     denoise: Optional[DenoiseSpec] = None
     barrier: float = 0.0
     mu: Optional[float] = None
     sigma: Optional[float] = None
+    detail: CompactStandardFullDetailLiteral = "compact"
 
     @model_validator(mode="before")
     @classmethod
@@ -259,7 +276,10 @@ class ForecastBarrierOptimizeRequest(BaseModel):
     vol_steps: Optional[int] = Field(None, ge=1)
     vol_sl_multiplier: float = 1.8
     vol_floor_pct: float = 0.15
-    vol_floor_pips: float = 8.0
+    vol_floor_pips: float = Field(
+        8.0,
+        validation_alias=AliasChoices("vol_floor_pips", "vol_floor_ticks"),
+    )
     ratio_min: float = 0.5
     ratio_max: float = 4.0
     ratio_steps: Optional[int] = Field(None, ge=1)
@@ -283,6 +303,7 @@ class ForecastBarrierOptimizeRequest(BaseModel):
     power_effect_size: float = 0.05
     enable_sensitivity_analysis: bool = False
     sensitivity_params: Optional[List[str]] = None
+    detail: CompactStandardFullDetailLiteral = "compact"
 
     @model_validator(mode="before")
     @classmethod
@@ -302,6 +323,19 @@ class ForecastBarrierOptimizeRequest(BaseModel):
             updated["vol_sl_multiplier"] = updated.pop("vol_sl_extra")
             return updated
         return values
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_tick_aliases(cls, values: Any) -> Any:
+        return normalize_barrier_tick_aliases(values)
+
+    @field_validator("mode", mode="before")
+    @classmethod
+    def _normalize_mode_alias(cls, value: Optional[str]) -> Optional[str]:
+        text = str(value or "").strip().lower()
+        if text == "ticks":
+            return "pips"
+        return value
 
 
 class ForecastVolatilityEstimateRequest(BaseModel):

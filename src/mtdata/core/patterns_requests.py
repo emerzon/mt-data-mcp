@@ -1,17 +1,17 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Dict, Optional
 
 from pydantic import BaseModel
 
-from .schema import TimeframeLiteral
+from .schema import CompactStandardFullDetailLiteral, TimeframeLiteral
 
 
 class PatternsDetectRequest(BaseModel):
     symbol: str
     timeframe: Optional[TimeframeLiteral] = None
     mode: str = "all"
-    detail: Literal["compact", "full"] = "compact"
+    detail: CompactStandardFullDetailLiteral = "compact"
     limit: int = 1000
     min_strength: float = 0.90
     min_gap: int = 3

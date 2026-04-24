@@ -23,7 +23,7 @@ from ..execution_logging import (
 from ..features import extract_rolling_features
 from ..mt5_gateway import get_mt5_gateway, mt5_connection_error
 from ..output_contract import normalize_output_detail, normalize_output_verbosity_detail
-from ..schema import DenoiseSpec, TimeframeLiteral
+from ..schema import DenoiseSpec, SummaryCompactFullDetailLiteral, TimeframeLiteral
 from .crypto import (
     _CRYPTO_SYMBOL_HINTS,
     _is_probably_crypto_symbol,
@@ -580,7 +580,7 @@ def regime_detect(  # noqa: C901
     params: Optional[Dict[str, Any]] = None,
     denoise: Optional[DenoiseSpec] = None,
     threshold: float = 0.5,
-    detail: Literal["full", "summary", "compact"] = "compact",  # type: ignore
+    detail: SummaryCompactFullDetailLiteral = "compact",  # type: ignore
     lookback: int = -1,  # -1 means use timeframe-based default
     include_series: bool = False,
     min_regime_bars: int = -1,  # -1 means use timeframe-based default

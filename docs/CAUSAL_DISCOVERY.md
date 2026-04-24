@@ -44,12 +44,16 @@ For each unordered pair of symbols `(A, B)`, the tool:
 1. Fetches recent close-price histories
 2. Applies a transform (by default `log_return`)
 3. Computes pairwise correlations on overlapping transformed samples
-4. Returns a matrix plus ranked strongest positive/negative relationships
+4. Returns canonical ranked pair rows plus optional matrix/highlight views
 
 It accepts either:
 
-- an explicit `symbols` list, or
+- an explicit `symbols` list (or compatibility alias `symbol`), or
 - a `group` path that matches the MT5 symbol groups exposed by `symbols_list --list-mode groups`
+
+`data.items` is the canonical payload. Use `detail=full` (default) to also include
+the derived symmetric `data.matrix` convenience view; use `detail=compact` to keep
+only the ranked pair rows plus summary highlights.
 
 ### `cointegration_test`
 
@@ -61,7 +65,7 @@ For each unordered pair of symbols `(A, B)`, the tool:
 
 It accepts either:
 
-- an explicit `symbols` list, or
+- an explicit `symbols` list (or compatibility alias `symbol`), or
 - a `group` path that matches the MT5 symbol groups exposed by `symbols_list --list-mode groups`
 
 ### `causal_discover_signals`
@@ -80,6 +84,7 @@ For each ordered pair of symbols `(cause → effect)`, the tool:
 | Parameter | Default | Description |
 |----------|---------|-------------|
 | `symbols` | (required) | Comma-separated MT5 symbols. If you pass **one** symbol, mtdata expands to other visible symbols in the same MT5 group. |
+| `symbol` | (optional alias) | Compatibility alias for `symbols`. If both `symbol` and `symbols` are provided, they must resolve to the same selector set. |
 | `timeframe` | `H1` | Bar timeframe (`M15`, `H1`, etc.). |
 | `limit` | `500` | Bars per symbol to analyze (after alignment). |
 | `max_lag` | `5` | Maximum lag to test (≥ 1). |
@@ -105,6 +110,9 @@ Tip: `--json` wraps the text as `{"text": "..."}`.
 ---
 
 ## Interpretation and Caveats
+
+- `correlation_matrix`, `cointegration_test`, `causal_discover_signals`, and `market_scan` all normalize `symbol` vs `symbols` the same way. Prefer `symbols` for new multi-symbol calls.
+- `group` remains mutually exclusive with explicit symbol selectors.
 
 - Use **`correlation_matrix`** when you want a fast view of which symbols move together or in opposite directions.
 - Use **`cointegration_test`** when you want candidate pairs or baskets whose price levels may share a stable long-run relationship.

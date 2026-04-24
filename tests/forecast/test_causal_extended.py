@@ -3,7 +3,7 @@
 import math
 import time
 import warnings
-from unittest.mock import MagicMock, PropertyMock, patch
+from unittest.mock import ANY, MagicMock, PropertyMock, patch
 
 import numpy as np
 import pandas as pd
@@ -306,6 +306,23 @@ class TestCausalDiscoverSignals:
         assert result["success"] is False
         assert "Provide at least one symbol" in result["error"]
         assert result["error_code"] == "invalid_input"
+
+    @patch("mtdata.core.causal._expand_symbols_for_group", return_value=([], "Symbol X not found", None))
+    def test_symbol_alias_normalizes_to_plural_request_contract(self, mock_expand):
+        result = self._unwrapped()(symbol="X")
+
+        assert result["success"] is False
+        assert result["error_code"] == "symbol_group_error"
+        assert result["meta"]["request"]["symbol_input"] == ["X"]
+        assert result["meta"]["request"]["symbols_input"] == ["X"]
+        mock_expand.assert_called_once_with("X", gateway=ANY)
+
+    def test_conflicting_symbol_aliases_are_rejected(self):
+        result = self._unwrapped()(symbols="EURUSD", symbol="GBPUSD")
+
+        assert result["success"] is False
+        assert result["error_code"] == "invalid_input"
+        assert "Provide either symbol or symbols" in result["error"]
 
     @patch("mtdata.core.causal._expand_symbols_for_group", return_value=([], "Symbol X not found", None))
     def test_single_symbol_expand_error(self, mock_expand):
@@ -640,7 +657,30 @@ class TestCorrelationMatrix:
         result = self._unwrapped()("A,B", group="Forex\\Majors")
         assert result["success"] is False
         assert result["error_code"] == "invalid_input"
-        assert "either symbols or group" in result["error"]
+        assert "either symbol/symbols or group" in result["error"]
+
+    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal._expand_symbols_for_group", return_value=(["BTCUSD", "ETHUSD"], None, "Crypto"))
+    @patch("mtdata.core.causal._fetch_series")
+    def test_symbol_alias_auto_expands_like_symbols(self, mock_fetch, _mock_expand):
+        idx = pd.date_range("2024-01-01", periods=80, freq="h")
+        rets = np.linspace(-0.01, 0.01, 80)
+        series_map = {
+            "BTCUSD": pd.Series(100.0 * np.exp(np.cumsum(rets)), index=idx),
+            "ETHUSD": pd.Series(95.0 * np.exp(np.cumsum((rets * 0.9) + 0.0003)), index=idx),
+        }
+
+        def _fetch_side_effect(name, timeframe, count):
+            return series_map[name], None
+
+        mock_fetch.side_effect = _fetch_side_effect
+
+        result = self._unwrapped()(symbol="BTCUSD")
+
+        assert result["success"] is True
+        assert result["meta"]["request"]["symbol_input"] == ["BTCUSD"]
+        assert result["meta"]["request"]["symbols_input"] == ["BTCUSD"]
+        assert result["meta"]["request"]["symbols_expanded"] == ["BTCUSD", "ETHUSD"]
 
     @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
     @patch("mtdata.core.causal._fetch_series")
@@ -706,6 +746,33 @@ class TestCorrelationMatrix:
             "event=finish operation=correlation_matrix success=True" in record.message
             for record in caplog.records
         )
+
+    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal._fetch_series")
+    def test_compact_detail_omits_matrix_but_keeps_ranked_pairs(self, mock_fetch):
+        idx = pd.date_range("2024-01-01", periods=80, freq="h")
+        rets = np.linspace(-0.01, 0.015, 80)
+        series_map = {
+            "A": pd.Series(100.0 * np.exp(np.cumsum(rets)), index=idx),
+            "B": pd.Series(80.0 * np.exp(np.cumsum((rets * 0.95) + 0.0005)), index=idx),
+            "C": pd.Series(120.0 * np.exp(np.cumsum(-rets)), index=idx),
+        }
+
+        mock_fetch.side_effect = lambda symbol, timeframe, count: (series_map[symbol], None)
+
+        result = self._unwrapped()(
+            "A,B,C",
+            method="pearson",
+            transform="log_return",
+            limit=60,
+            min_overlap=30,
+            detail="compact",
+        )
+
+        assert result["success"] is True
+        assert "matrix" not in result["data"]
+        assert result["data"]["items"]
+        assert result["summary"]["highlights"]["strongest_positive"]
 
     @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
     @patch("mtdata.core.causal._fetch_series")
@@ -859,7 +926,14 @@ class TestCointegrationTest:
         result = self._unwrapped()("A,B", group="Forex\\Majors")
         assert result["success"] is False
         assert result["error_code"] == "invalid_input"
-        assert "either symbols or group" in result["error"]
+        assert "either symbol/symbols or group" in result["error"]
+
+    def test_symbol_alias_and_group_are_mutually_exclusive(self):
+        result = self._unwrapped()(symbol="A", group="Forex\\Majors")
+
+        assert result["success"] is False
+        assert result["error_code"] == "invalid_input"
+        assert "either symbol/symbols or group" in result["error"]
 
     @patch("statsmodels.tsa.stattools.coint", return_value=(-4.5, 0.01, [-3.9, -3.3, -3.0]))
     @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})

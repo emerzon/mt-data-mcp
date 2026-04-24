@@ -57,6 +57,7 @@ Fetch OHLCV candles for a symbol.
   - `limit` (int): Number of bars (default 500).
   - `start`, `end` (string, optional): ISO dates or relative strings.
   - `ohlcv` (string): Column selector (default "ohlc").
+  - `include_spread` (bool): Append the historical candle `spread` field without changing the default row shape.
   - `include_incomplete` (bool): Include the latest forming candle.
   - `denoise_method` (string, optional): Apply denoising (e.g., "ema").
   - `denoise_params` (string, optional): JSON or "k=v" params for denoising.    

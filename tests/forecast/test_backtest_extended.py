@@ -100,6 +100,8 @@ class TestComputePerformanceMetrics:
         # Annualized risk metrics are intentionally suppressed on tiny samples.
         assert m.get("sharpe_ratio") is None
         assert "sample_warning" in m
+        assert m["sample_notice"]["code"] == "annualization_suppressed_low_sample"
+        assert m["trades_observed"] == 1
 
     def test_large_dataset_annualization(self):
         np.random.seed(42)

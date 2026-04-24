@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Dict, Optional
 
 from ..services.unified_news import fetch_unified_news
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
 from .output_contract import resolve_output_detail
+from .schema import CompactFullDetailLiteral
 
 logger = logging.getLogger(__name__)
 
@@ -198,7 +199,7 @@ def normalize_news_output(
 @mcp.tool()
 def news(
     symbol: Optional[str] = None,
-    detail: Literal["compact", "full"] = "compact",
+    detail: CompactFullDetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """
     Fetch important general news and, optionally, symbol-relevant news.

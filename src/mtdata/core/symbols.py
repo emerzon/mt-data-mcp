@@ -4,7 +4,8 @@ import math
 import time
 from typing import Any, Dict, List, Literal, Optional
 
-from ..shared.schema import TimeframeLiteral
+from ..shared.parameter_contracts import normalize_symbol_selector_aliases
+from ..shared.schema import CompactFullDetailLiteral, TimeframeLiteral
 from ..shared.validators import invalid_timeframe_error
 from ..utils.mt5 import (
     MT5ConnectionError,
@@ -319,7 +320,7 @@ def _list_symbol_groups(
 @mcp.tool()
 def symbols_describe(
     symbol: str,
-    detail: Literal["compact", "full"] = "full",
+    detail: CompactFullDetailLiteral = "full",
     verbose: bool = False,
 ) -> Dict[str, Any]:
     """Return symbol information as JSON for `symbol`.
@@ -579,12 +580,16 @@ def _strip_nested_market_scan_meta(table: Dict[str, Any]) -> Dict[str, Any]:
 def _market_scan_contract_table(
     headers: List[str],
     rows: List[Dict[str, Any]],
+    *,
+    include_columns: bool = True,
 ) -> Dict[str, Any]:
-    return {
-        "columns": [str(header) for header in headers],
+    out: Dict[str, Any] = {
         "rows": [dict(row) for row in rows],
         "row_count": int(len(rows)),
     }
+    if include_columns:
+        out["columns"] = [str(header) for header in headers]
+    return out
 
 
 def _market_scan_contract_meta(
@@ -732,25 +737,30 @@ def _resolve_market_scan_group_path(
 def _select_market_scan_symbols(
     all_symbols: List[Any],
     *,
-    symbols: Optional[str],
+    symbol: Optional[str] = None,
+    symbols: Optional[str] = None,
     group: Optional[str],
     universe: str,
 ) -> tuple[List[Any], Dict[str, Any], Optional[str]]:
-    if symbols and group:
-        return [], {}, "Provide either symbols or group, not both."
+    requested_names, selection_meta, selection_error = normalize_symbol_selector_aliases(
+        symbol=symbol,
+        symbols=symbols,
+        parse_selector=_parse_market_scan_symbols,
+    )
+    if selection_error is not None:
+        return [], selection_meta, selection_error
+    if requested_names and group:
+        return [], selection_meta, "Provide either symbol/symbols or group, not both."
 
     tradable_symbols = [symbol for symbol in all_symbols if _market_scan_is_tradable(symbol)]
 
-    if symbols:
-        requested_names = _parse_market_scan_symbols(symbols)
-        if not requested_names:
-            return [], {}, "symbols must include at least one symbol name."
+    if requested_names:
         by_upper: Dict[str, Any] = {}
-        for symbol in tradable_symbols:
-            name = str(getattr(symbol, "name", "") or "").strip()
+        for tradable_symbol in tradable_symbols:
+            name = str(getattr(tradable_symbol, "name", "") or "").strip()
             if not name:
                 continue
-            by_upper.setdefault(name.upper(), symbol)
+            by_upper.setdefault(name.upper(), tradable_symbol)
         selected: List[Any] = []
         missing: List[str] = []
         for name in requested_names:
@@ -760,8 +770,9 @@ def _select_market_scan_symbols(
                 continue
             selected.append(symbol_obj)
         if not selected:
-            return [], {}, "None of the requested symbols matched the MT5 symbol list."
+            return [], selection_meta, "None of the requested symbols matched the MT5 symbol list."
         return selected, {
+            **selection_meta,
             "scope": "symbols",
             "requested_symbols": requested_names,
             "missing_symbols": missing,
@@ -780,6 +791,7 @@ def _select_market_scan_symbols(
             key=lambda symbol: _case_insensitive_sort_key(getattr(symbol, "name", "")),
         )
         return selected, {
+            **selection_meta,
             "scope": "group",
             "group": resolved_group,
         }, None
@@ -791,7 +803,7 @@ def _select_market_scan_symbols(
         ],
         key=lambda symbol: _case_insensitive_sort_key(getattr(symbol, "name", "")),
     )
-    return selected, {"scope": "universe"}, None
+    return selected, {**selection_meta, "scope": "universe"}, None
 
 
 def _market_scan_compute_rsi(closes: List[float], length: int) -> Optional[float]:
@@ -1011,7 +1023,7 @@ def symbols_top_markets(  # noqa: C901
     limit: Optional[int] = 10,
     universe: Literal["visible", "all"] = "visible",  # type: ignore
     timeframe: TimeframeLiteral = "H1",
-    detail: Literal["compact", "full"] = "full",
+    detail: CompactFullDetailLiteral = "full",
 ) -> Dict[str, Any]:
     """Scan MT5 symbols and rank the top markets by spread, recent volume, or recent price change.
 
@@ -1272,10 +1284,12 @@ def symbols_top_markets(  # noqa: C901
 @mcp.tool()
 def market_scan(  # noqa: C901
     symbols: Optional[str] = None,
+    symbol: Optional[str] = None,
     group: Optional[str] = None,
     limit: Optional[int] = 20,
     universe: Literal["visible", "all"] = "visible",  # type: ignore
     timeframe: TimeframeLiteral = "H1",
+    detail: CompactFullDetailLiteral = "full",
     lookback: int = 100,
     rsi_length: int = 14,
     sma_period: int = 20,
@@ -1288,15 +1302,22 @@ def market_scan(  # noqa: C901
     price_vs_sma: Optional[Literal["above", "below"]] = None,  # type: ignore
     rank_by: Literal["abs_price_change_pct", "price_change_pct", "tick_volume", "rsi", "spread_pct"] = "abs_price_change_pct",  # type: ignore
 ) -> Dict[str, Any]:
-    """Scan MT5 symbols with explicit price, spread, volume, RSI, and SMA filters."""
+    """Scan MT5 symbols with explicit price, spread, volume, RSI, and SMA filters.
+
+    `data.table.rows` is the canonical table payload. Use `detail="full"` (default)
+    when you also want the explicit `columns` ordering hint for compatibility.
+    `symbol` is accepted as a compatibility alias for `symbols`.
+    """
+
+    detail_mode = resolve_output_detail(detail=detail, default="full")
 
     def _run() -> Dict[str, Any]:  # noqa: C901
         request: Dict[str, Any] = {
-            "symbols": symbols,
             "group": group,
             "limit": limit,
             "universe": universe,
             "timeframe": timeframe,
+            "detail": detail_mode,
             "lookback": lookback,
             "rank_by": rank_by,
             "filters": {
@@ -1428,19 +1449,30 @@ def market_scan(  # noqa: C901
 
             selected_symbols, selection_meta, selection_error = _select_market_scan_symbols(
                 all_symbols,
+                symbol=symbol,
                 symbols=symbols,
                 group=group,
                 universe=universe_value,
             )
             if selection_error:
+                error_code = "invalid_input"
+                if group and not (
+                    selection_meta.get("symbol_input") is not None
+                    or selection_meta.get("symbols_input") is not None
+                ):
+                    error_code = "symbol_group_error"
                 return _market_scan_error(
                     selection_error,
-                    code="symbol_group_error" if group else "invalid_input",
+                    code=error_code,
                     request=request,
                 )
 
             limit_value = _normalize_limit(limit) or 20
             request["limit"] = limit_value
+            if selection_meta.get("symbol_input") is not None:
+                request["symbol_input"] = selection_meta.get("symbol_input")
+            if selection_meta.get("symbols_input") is not None:
+                request["symbols_input"] = selection_meta.get("symbols_input")
             request["scope"] = selection_meta.get("scope")
             if selection_meta.get("group") is not None:
                 request["group"] = selection_meta.get("group")
@@ -1584,7 +1616,11 @@ def market_scan(  # noqa: C901
             out: Dict[str, Any] = {
                 "success": True,
                 "data": {
-                    "table": _market_scan_contract_table(headers, limited_rows),
+                    "table": _market_scan_contract_table(
+                        headers,
+                        limited_rows,
+                        include_columns=detail_mode == "full",
+                    ),
                 },
                 "summary": {
                     "counts": {
@@ -1618,6 +1654,7 @@ def market_scan(  # noqa: C901
         logger,
         operation="market_scan",
         symbols=symbols,
+        symbol=symbol,
         group=group,
         limit=limit,
         universe=universe,

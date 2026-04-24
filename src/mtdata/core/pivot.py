@@ -33,7 +33,12 @@ from ._mcp_instance import mcp
 from .constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from .execution_logging import run_logged_operation
 from .mt5_gateway import get_mt5_gateway
-from .schema import _PIVOT_METHODS, AutoTimeframeLiteral, TimeframeLiteral
+from .schema import (
+    _PIVOT_METHODS,
+    AutoTimeframeLiteral,
+    CompactStandardFullDetailLiteral,
+    TimeframeLiteral,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +137,7 @@ def compute_support_resistance_payload(
 def pivot_compute_points(  # noqa: C901
     symbol: str,
     timeframe: TimeframeLiteral = "D1",
+    detail: CompactStandardFullDetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """Compute pivot point levels from the last completed bar on `timeframe`.
     Parameters: symbol, timeframe
@@ -372,6 +378,12 @@ def pivot_compute_points(  # noqa: C901
             start_str = _format_time_minimal_local(period_start) if _use_ctz else _format_time_minimal(period_start)
             end_str = _format_time_minimal_local(period_end) if _use_ctz else _format_time_minimal(period_end)
 
+            detail_value = str(detail).strip().lower()
+            if detail_value in {"summary", "summary_only"}:
+                detail_value = "compact"
+            elif detail_value not in {"compact", "standard", "full"}:
+                detail_value = "compact"
+
             payload: Dict[str, Any] = {
                 "success": True,
                 "symbol": symbol,
@@ -393,6 +405,48 @@ def pivot_compute_points(  # noqa: C901
             }
             if not _use_ctz:
                 payload["timezone"] = "UTC"
+            if detail_value == "compact":
+                classic_method = next(
+                    (
+                        info
+                        for info in methods_out
+                        if str(info.get("method")).strip().lower() == "classic"
+                    ),
+                    methods_out[0] if methods_out else None,
+                )
+                compact_levels = (
+                    dict(classic_method.get("levels", {}))
+                    if isinstance(classic_method, dict)
+                    else {}
+                )
+                compact_payload: Dict[str, Any] = {
+                    "success": True,
+                    "symbol": symbol,
+                    "timeframe": timeframe,
+                    "period": payload["period"],
+                    "detail": "compact",
+                    "method": (
+                        classic_method.get("method")
+                        if isinstance(classic_method, dict)
+                        else "classic"
+                    ),
+                    "pivot": (
+                        classic_method.get("pivot")
+                        if isinstance(classic_method, dict)
+                        else None
+                    ),
+                    "levels": {
+                        key: compact_levels[key]
+                        for key in ("PP", "R1", "S1", "R2", "S2", "R3", "S3")
+                        if key in compact_levels
+                    },
+                }
+                if not _use_ctz:
+                    compact_payload["timezone"] = "UTC"
+                return compact_payload
+            payload["detail"] = "full" if detail_value == "full" else "standard"
+            if detail_value == "full":
+                payload["methods"] = methods_out
             return payload
         except MT5ConnectionError as exc:
             return {"error": str(exc)}
@@ -404,6 +458,7 @@ def pivot_compute_points(  # noqa: C901
         operation="pivot_compute_points",
         symbol=symbol,
         timeframe=timeframe,
+        detail=detail,
         func=_run,
     )
 
@@ -421,7 +476,7 @@ def support_resistance_levels(
     reaction_bars: int = 6,
     adx_period: int = 14,
     decay_half_life_bars: Optional[int] = None,
-    detail: Literal["compact", "standard", "full"] = "compact",
+    detail: CompactStandardFullDetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """Detect support/resistance plus Fibonacci swing levels around the current price from historical structure.
 

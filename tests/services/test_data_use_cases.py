@@ -49,6 +49,29 @@ def test_run_data_fetch_candles_passes_allow_stale_to_service():
     assert captured["kwargs"]["allow_stale"] is True
 
 
+def test_run_data_fetch_candles_passes_include_spread_to_service():
+    captured = {}
+    request = DataFetchCandlesRequest(
+        symbol="EURUSD",
+        timeframe="H1",
+        limit=10,
+        include_spread=True,
+    )
+
+    def _fetch(**kwargs):
+        captured["kwargs"] = kwargs
+        return {"success": True}
+
+    result = run_data_fetch_candles(
+        request,
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_candles_impl=_fetch,
+    )
+
+    assert result["success"] is True
+    assert captured["kwargs"]["include_spread"] is True
+
+
 def test_run_data_fetch_ticks_logs_connection_error(caplog):
     request = DataFetchTicksRequest(symbol="EURUSD", limit=5)
 

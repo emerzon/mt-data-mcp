@@ -765,7 +765,12 @@ def _extend_unique_headers(headers: List[str], columns: List[str]) -> None:
             headers.append(column)
 
 
-def _build_candle_headers(rates: Any, ohlcv: Optional[str]) -> List[str]:
+def _build_candle_headers(
+    rates: Any,
+    ohlcv: Optional[str],
+    *,
+    include_spread: bool = False,
+) -> List[str]:
     """Build the initial candle header set before transforms add derived columns."""
     tick_volumes = [int(rate["tick_volume"]) for rate in rates]
     real_volumes = [int(rate["real_volume"]) for rate in rates]
@@ -786,6 +791,8 @@ def _build_candle_headers(rates: Any, ohlcv: Optional[str]) -> List[str]:
             headers.append("close")
         if "V" in requested:
             headers.append("tick_volume")
+        if include_spread:
+            headers.append("spread")
         return headers
 
     headers.extend(["open", "high", "low", "close"])
@@ -793,6 +800,8 @@ def _build_candle_headers(rates: Any, ohlcv: Optional[str]) -> List[str]:
         headers.append("tick_volume")
     if has_real_volume:
         headers.append("real_volume")
+    if include_spread:
+        headers.append("spread")
     return headers
 
 
@@ -1051,6 +1060,7 @@ def fetch_candles(  # noqa: C901
     simplify: Optional[SimplifySpec] = None,
     time_as_epoch: bool = False,
     *,
+    include_spread: bool = False,
     include_incomplete: bool = False,
     allow_stale: bool = False,
 ) -> Dict[str, Any]:
@@ -1144,7 +1154,11 @@ def fetch_candles(  # noqa: C901
             return _build_no_data_error_with_context(
                 symbol, timeframe, mt5_timeframe, start_datetime, end_datetime
             )
-        headers = _build_candle_headers(rates, ohlcv)
+        headers = _build_candle_headers(
+            rates,
+            ohlcv,
+            include_spread=include_spread,
+        )
         
         # Construct DataFrame to support indicators and consistent output
         client_tz = _resolve_client_tz()
@@ -1335,6 +1349,7 @@ def fetch_candles(  # noqa: C901
                 "diagnostics": {
                     "query": {
                         "mode": query_mode,
+                        "include_spread": bool(include_spread),
                         "include_incomplete": bool(include_incomplete),
                         "latency_ms": query_latency_ms,
                         "requested_bars": candles_requested,

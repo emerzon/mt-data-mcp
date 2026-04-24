@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Iterator, Mapping, Optional
 
+from ..shared.schema import CANONICAL_OUTPUT_DETAIL_ALIASES
 from ..utils.utils import _UNPARSED_BOOL, _parse_bool_like
 from .runtime_metadata import build_runtime_timezone_meta
 
@@ -18,7 +19,7 @@ class OutputContractState:
 
     @property
     def shape_detail(self) -> str:
-        return "full" if str(self.detail).strip().lower() == "full" else "compact"
+        return normalize_output_verbosity_detail(self.detail)
 
     @property
     def verbose(self) -> bool:
@@ -86,6 +87,23 @@ def _resolve_requested_detail_value(source: Any, *, detail: Any = _MISSING) -> A
     return None
 
 
+def _normalize_detail_token(value: Any, *, default: str) -> str:
+    return str(default if value is None else value).strip().lower()
+
+
+def _normalize_detail_aliases(aliases: Optional[Mapping[str, str]]) -> dict[str, str]:
+    if not aliases:
+        return {}
+
+    normalized: dict[str, str] = dict(CANONICAL_OUTPUT_DETAIL_ALIASES)
+    for key, value in aliases.items():
+        normalized[_normalize_detail_token(key, default="")] = _normalize_detail_token(
+            value,
+            default="",
+        )
+    return normalized
+
+
 def _iter_contract_sources(
     source: Any,
     *,
@@ -112,10 +130,11 @@ def normalize_output_detail(
     aliases: Optional[Mapping[str, str]] = None,
 ) -> str:
     """Normalize detail-like values while preserving tool-specific legacy modes."""
-    normalized = str(default if value is None else value).strip().lower()
-    if not aliases:
+    normalized = _normalize_detail_token(value, default=default)
+    normalized_aliases = _normalize_detail_aliases(aliases)
+    if not normalized_aliases:
         return normalized
-    return str(aliases.get(normalized, normalized))
+    return normalized_aliases.get(normalized, normalized)
 
 
 def normalize_output_verbosity_detail(value: Any, *, default: str = "compact") -> str:
@@ -142,13 +161,13 @@ def resolve_output_contract(
     aliases: Optional[Mapping[str, str]] = None,
 ) -> OutputContractState:
     """Resolve shared detail state."""
-    if detail is not _MISSING:
-        requested_detail_value = _resolve_requested_detail_value(source, detail=detail)
+    if detail is not _MISSING and detail is not None:
+        requested_detail_value = detail
     elif verbose is not _MISSING:
         verbose_value = _coerce_optional_verbose_flag(verbose)
         requested_detail_value = "full" if verbose_value is True else "compact"
     else:
-        requested_detail_value = _resolve_requested_detail_value(source)
+        requested_detail_value = _resolve_requested_detail_value(source, detail=detail)
     return OutputContractState(
         detail=normalize_output_detail(
             requested_detail_value,

@@ -17,6 +17,7 @@ from ..core.execution_logging import (
     log_operation_start,
 )
 from .backtest import execute_forecast_backtest as _forecast_backtest_impl
+from .backtest import _compact_metrics_payload
 from .capabilities import resolve_capability_request
 from .exceptions import ForecastError, raise_if_error_result
 from .forecast import execute_forecast as _forecast_impl
@@ -34,6 +35,234 @@ from .requests import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_trader_detail(value: Any, *, default: str = "compact") -> str:
+    normalized = str(default if value is None else value).strip().lower()
+    if normalized in {"summary", "summary_only"}:
+        return "compact"
+    if normalized == "full":
+        return "full"
+    if normalized == "standard":
+        return "standard"
+    return "compact"
+
+
+def _forecast_interval_summary(payload: Dict[str, Any]) -> Optional[Dict[str, float]]:
+    lower_key = next(
+        (
+            key
+            for key in ("lower_price", "lower_return", "lower")
+            if isinstance(payload.get(key), list)
+        ),
+        None,
+    )
+    if lower_key is None:
+        return None
+    upper_key = lower_key.replace("lower", "upper", 1)
+    lower_vals = payload.get(lower_key)
+    upper_vals = payload.get(upper_key)
+    if not isinstance(lower_vals, list) or not isinstance(upper_vals, list) or not lower_vals or not upper_vals:
+        return None
+    try:
+        widths = [
+            float(upper) - float(lower)
+            for lower, upper in zip(lower_vals, upper_vals)
+        ]
+        if not widths:
+            return None
+        widths_sorted = sorted(widths)
+        return {
+            "first_low": float(lower_vals[0]),
+            "first_high": float(upper_vals[0]),
+            "last_low": float(lower_vals[-1]),
+            "last_high": float(upper_vals[-1]),
+            "median_width": float(widths_sorted[len(widths_sorted) // 2]),
+        }
+    except Exception:
+        return None
+
+
+def _apply_forecast_generate_detail(
+    payload: Dict[str, Any],
+    request: ForecastGenerateRequest,
+) -> Dict[str, Any]:
+    if not isinstance(payload, dict) or payload.get("error"):
+        return payload
+
+    detail_value = _normalize_trader_detail(getattr(request, "detail", "compact"))
+    if detail_value in {"standard", "full"}:
+        out = dict(payload)
+        out.setdefault("symbol", request.symbol)
+        out.setdefault("timeframe", request.timeframe)
+        out["detail"] = detail_value
+        return out
+
+    compact: Dict[str, Any] = {
+        "success": bool(payload.get("success", True)),
+        "symbol": request.symbol,
+        "timeframe": request.timeframe,
+        "method": payload.get("method"),
+        "horizon": payload.get("horizon"),
+        "quantity": payload.get("quantity"),
+        "detail": "compact",
+    }
+    for key in (
+        "last_observation_time",
+        "forecast_start_time",
+        "forecast_time",
+        "forecast_price",
+        "forecast_return",
+        "ci_status",
+        "ci_available",
+        "ci_alpha",
+        "warnings",
+    ):
+        value = payload.get(key)
+        if value not in (None, "", [], {}):
+            compact[key] = value
+    interval_summary = _forecast_interval_summary(payload)
+    if interval_summary:
+        compact["interval_summary"] = interval_summary
+    for key, value in payload.items():
+        if key in compact:
+            continue
+        if key in {
+            "base_col",
+            "last_observation_epoch",
+            "forecast_start_epoch",
+            "forecast_anchor",
+            "forecast_step_seconds",
+            "forecast_epoch",
+            "last_price",
+            "last_price_close",
+            "last_price_source",
+            "lower_price",
+            "upper_price",
+            "lower_return",
+            "upper_return",
+            "lower",
+            "upper",
+        }:
+            continue
+        compact[key] = value
+    return compact
+
+
+def _apply_barrier_prob_detail(
+    payload: Dict[str, Any],
+    request: ForecastBarrierProbRequest,
+) -> Dict[str, Any]:
+    if not isinstance(payload, dict) or payload.get("error"):
+        return payload
+
+    def _set_if_present(target: Dict[str, Any], key: str, value: Any) -> None:
+        if value not in (None, "", [], {}):
+            target[key] = value
+
+    detail_value = _normalize_trader_detail(getattr(request, "detail", "compact"))
+    if detail_value == "full":
+        out = dict(payload)
+        out["detail"] = "full"
+        return out
+
+    if "prob_hit" in payload:
+        closed_form: Dict[str, Any] = {
+            "success": bool(payload.get("success", True)),
+            "detail": detail_value,
+        }
+        for key in (
+            "symbol",
+            "timeframe",
+            "direction",
+            "horizon",
+            "barrier",
+            "last_price",
+            "prob_hit",
+        ):
+            _set_if_present(closed_form, key, payload.get(key))
+        if detail_value == "standard":
+            for key in ("already_hit", "mu_annual", "log_drift_annual", "sigma_annual"):
+                value = payload.get(key)
+                if value not in (None, "", [], {}):
+                    closed_form[key] = value
+        if set(closed_form) == {"success", "detail"}:
+            return dict(payload)
+        return closed_form
+
+    if detail_value == "standard":
+        out = dict(payload)
+        out.pop("tp_hit_prob_by_t", None)
+        out.pop("sl_hit_prob_by_t", None)
+        out.pop("sim_meta", None)
+        out.pop("model_summary", None)
+        out["detail"] = "standard"
+        return out
+
+    compact: Dict[str, Any] = {
+        "success": bool(payload.get("success", True)),
+        "detail": "compact",
+    }
+    for key in (
+        "symbol",
+        "timeframe",
+        "method",
+        "direction",
+        "horizon",
+        "last_price",
+        "tp_price",
+        "sl_price",
+        "prob_tp_first",
+        "prob_sl_first",
+        "prob_no_hit",
+        "edge",
+    ):
+        _set_if_present(compact, key, payload.get(key))
+    confidence: Dict[str, Any] = {}
+    for key in ("prob_tp_first_ci95", "prob_sl_first_ci95", "prob_no_hit_ci95"):
+        value = payload.get(key)
+        if value not in (None, "", [], {}):
+            confidence[key] = value
+    if confidence:
+        compact["confidence"] = confidence
+    timing: Dict[str, Any] = {}
+    for source_key, target_key in (
+        ("time_to_tp_bars", "tp"),
+        ("time_to_sl_bars", "sl"),
+    ):
+        value = payload.get(source_key)
+        if isinstance(value, dict) and any(val not in (None, "") for val in value.values()):
+            timing[target_key] = {
+                key: value.get(key)
+                for key in ("mean", "median")
+                if value.get(key) not in (None, "")
+            }
+    if timing:
+        compact["timing_bars"] = timing
+    if payload.get("warnings") not in (None, "", [], {}):
+        compact["warnings"] = payload.get("warnings")
+    for key, value in payload.items():
+        if key in compact:
+            continue
+        if key in {
+            "prob_tp_first_se",
+            "prob_sl_first_se",
+            "prob_tie",
+            "prob_tie_se",
+            "prob_no_hit_se",
+            "prob_tie_ci95",
+            "tp_hit_prob_by_t",
+            "sl_hit_prob_by_t",
+            "time_to_tp_bars",
+            "time_to_sl_bars",
+            "sim_meta",
+            "model_summary",
+        }:
+            continue
+        compact[key] = value
+    if set(compact) == {"success", "detail"}:
+        return dict(payload)
+    return compact
 
 
 def _is_interval_unavailable_warning(value: Any) -> bool:
@@ -58,6 +287,8 @@ def _compact_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:
         details = method_out.pop("details", None)
         if isinstance(details, list):
             method_out["details_count"] = len(details)
+        if isinstance(method_out.get("metrics"), dict):
+            method_out["metrics"] = _compact_metrics_payload(method_out["metrics"])
         compact_results[method_name] = method_out
 
     compact_out = dict(result)
@@ -295,6 +526,7 @@ def run_forecast_generate(
             if warning not in warnings_out and not has_interval_warning:
                 warnings_out.append(warning)
             out["warnings"] = warnings_out
+        out = _apply_forecast_generate_detail(out, request)
         return _finish(out, resolved_method=str(resolved_method))
     except Exception as exc:
         if log_events:
@@ -747,6 +979,7 @@ def run_forecast_barrier_prob(
                 params=request.params,
                 denoise=request.denoise,
             )
+            result = _apply_barrier_prob_detail(result, request)
             log_operation_finish(
                 logger,
                 operation="forecast_barrier_prob",
@@ -770,6 +1003,7 @@ def run_forecast_barrier_prob(
                 sigma=request.sigma,
                 denoise=request.denoise,
             )
+            result = _apply_barrier_prob_detail(result, request)
             log_operation_finish(
                 logger,
                 operation="forecast_barrier_prob",
@@ -837,6 +1071,27 @@ def run_forecast_barrier_optimize(
             if key not in params_norm:
                 params_norm[key] = value
 
+    detail_value = _normalize_trader_detail(getattr(request, "detail", "compact"))
+    format_value = request.format
+    concise_value = request.concise
+    return_grid_value = request.return_grid
+    field_set = getattr(request, "model_fields_set", set())
+    if "detail" in field_set or (
+        "format" not in field_set
+        and "concise" not in field_set
+        and "return_grid" not in field_set
+    ):
+        if detail_value == "full":
+            format_value = "full"
+            concise_value = False
+        elif detail_value == "standard":
+            format_value = "summary"
+            concise_value = False
+        else:
+            format_value = "summary"
+            concise_value = True
+            return_grid_value = False
+
     try:
         result = barrier_optimize_impl(
             symbol=request.symbol,
@@ -854,11 +1109,11 @@ def run_forecast_barrier_optimize(
             params=params_norm,
             denoise=request.denoise,
             objective=request.objective,
-            return_grid=request.return_grid,
+            return_grid=return_grid_value,
             top_k=request.top_k,
-            format=request.format,
+            format=format_value,
             viable_only=request.viable_only,
-            concise=request.concise,
+            concise=concise_value,
             grid_style=request.grid_style,
             preset=request.preset,
             vol_window=request.vol_window,
@@ -892,6 +1147,9 @@ def run_forecast_barrier_optimize(
             enable_sensitivity_analysis=request.enable_sensitivity_analysis,
             sensitivity_params=request.sensitivity_params,
         )
+        if isinstance(result, dict) and not result.get("error"):
+            result = dict(result)
+            result["detail"] = detail_value
     except Exception as exc:
         log_operation_exception(
             logger,

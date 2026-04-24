@@ -29,6 +29,7 @@ from .cli_formatting import _sanitize_json_compat
 from .error_envelope import build_error_payload
 from .execution_logging import run_logged_operation
 from .mt5_gateway import get_mt5_gateway, mt5_connection_error
+from .schema import CompactFullDetailLiteral
 
 logger = logging.getLogger(__name__)
 
@@ -330,7 +331,7 @@ def forecast_volatility_estimate(
 
 @mcp.tool()
 def forecast_list_methods(
-    detail: Literal["compact", "full"] = "compact",  # type: ignore
+    detail: CompactFullDetailLiteral = "compact",  # type: ignore
     limit: Optional[int] = None,
     search: Optional[str] = None,
     search_term: Optional[str] = None,
@@ -901,7 +902,7 @@ def _forecast_list_library_models_impl(
 
 def _forecast_list_methods_impl(  # noqa: C901
     *,
-    detail: Literal["compact", "full"] = "compact",
+    detail: CompactFullDetailLiteral = "compact",
     limit: Optional[int] = None,
     search: Optional[str] = None,
 ) -> Dict[str, Any]:

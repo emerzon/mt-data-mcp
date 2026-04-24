@@ -267,6 +267,7 @@ def data_fetch_candles(
     Features:
     ---------
     - OHLCV data as tabular rows
+    - Optional historical candle spread column via include_spread=true
     - Technical indicators (RSI, MACD, EMA, SMA, etc.)
     - Data denoising and smoothing
     - Data simplification for large datasets
@@ -297,6 +298,10 @@ def data_fetch_candles(
     
     ohlcv : str, optional
         Fields to include: "close", "ohlc", "ohlcv", "all"
+
+    include_spread : bool, optional
+        Append the historical MT5 candle spread column to each returned row.
+        Defaults to false so the standard candle payload shape remains unchanged.
     
     indicators : list, optional
         Technical indicators list, e.g., [{"name": "rsi", "params": [14]}]
@@ -346,6 +351,9 @@ def data_fetch_candles(
         end="2025-11-30",
         indicators="rsi(14),ema(20),macd(12,26,9)"
     )
+
+    # Opt in to historical candle spread output
+    data_fetch_candles(symbol="EURUSD", include_spread=True)
     """
     return run_logged_operation(
         logger,

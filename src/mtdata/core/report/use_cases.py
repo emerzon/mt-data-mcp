@@ -12,6 +12,17 @@ from .requests import ReportGenerateRequest
 logger = logging.getLogger(__name__)
 
 
+def _normalize_report_detail(value: Any, *, default: str = "compact") -> str:
+    normalized = str(default if value is None else value).strip().lower()
+    if normalized in {"summary", "summary_only"}:
+        return "compact"
+    if normalized == "full":
+        return "full"
+    if normalized == "standard":
+        return "standard"
+    return "compact"
+
+
 def _report_time_label(value: Any) -> str | None:
     if isinstance(value, str) and value.strip():
         return value
@@ -70,6 +81,30 @@ def _prioritize_report_payload(report: Dict[str, Any]) -> Dict[str, Any]:
     return ordered
 
 
+def _compact_report_payload(
+    report: Dict[str, Any],
+    *,
+    symbol: str,
+    template: str,
+) -> Dict[str, Any]:
+    compact: Dict[str, Any] = {
+        "success": bool(report.get("success", True)),
+        "symbol": symbol,
+        "template": template,
+        "detail": "compact",
+    }
+    for key in ("summary", "sections_status"):
+        value = report.get(key)
+        if value not in (None, "", [], {}):
+            compact[key] = value
+    diagnostics = report.get("diagnostics")
+    if isinstance(diagnostics, dict):
+        warnings_list = diagnostics.get("warnings")
+        if warnings_list not in (None, "", [], {}):
+            compact["warnings"] = warnings_list
+    return compact
+
+
 def run_report_generate(  # noqa: C901
     request: ReportGenerateRequest,
     *,
@@ -84,6 +119,7 @@ def run_report_generate(  # noqa: C901
     if output_mode == "structured":
         output_mode = "toon"
     template_name = (request.template or "basic").lower().strip()
+    detail_value = _normalize_report_detail(getattr(request, "detail", "compact"))
 
     def _run() -> str | Dict[str, Any]:  # noqa: C901
         started_at = time.perf_counter()
@@ -444,10 +480,19 @@ def run_report_generate(  # noqa: C901
                 diagnostics = {}
             diagnostics["execution_time_ms"] = round((time.perf_counter() - started_at) * 1000.0, 3)
             rep["diagnostics"] = diagnostics
+            rep["symbol"] = request.symbol
+            rep["template"] = template_name
+            rep["detail"] = detail_value
             rep = _prioritize_report_payload(rep)
 
             if output_mode == "markdown":
                 return render_report(rep)
+            if detail_value == "compact":
+                return _compact_report_payload(rep, symbol=request.symbol, template=template_name)
+            if detail_value == "standard":
+                rep = dict(rep)
+                rep.pop("diagnostics", None)
+                rep["detail"] = "standard"
             return rep
         except Exception as exc:
             log_operation_exception(

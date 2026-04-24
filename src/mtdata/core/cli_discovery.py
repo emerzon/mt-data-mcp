@@ -59,7 +59,7 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("forecast_quantlib_barrier_price", "option_type"): "Option side: call or put.",
     ("forecast_tune_optuna", "search_space"): "Optuna search space (JSON or k=v).",
     ("indicators_list", "detail"): "Output detail: compact table or full rows with aliases and descriptions.",
-    ("labels_triple_barrier", "detail"): "Detail level: full, summary, compact (summary plus recent sample), or summary_only (alias for summary).",
+    ("labels_triple_barrier", "detail"): "Detail level: full, summary, or compact (summary plus recent sample). Legacy alias: summary_only -> summary.",
     ("market_scan", "limit"): "Max matching symbols to return.",
     ("market_depth_fetch", "compact"): "Fail if DOM is unavailable instead of falling back to a ticker snapshot. Alias: --require-dom.",
     ("report_generate", "format"): "Output format: formatted text or markdown.",
@@ -161,6 +161,14 @@ def _split_visible_and_hidden_flags(*flags: str) -> tuple[tuple[str, ...], tuple
 
 def should_expose_cli_param(*, cmd_name: Optional[str], param_name: str) -> bool:
     """Return whether a function parameter should surface as a user CLI argument."""
+    hidden_symbol_alias_tools = {
+        "causal_discover_signals",
+        "correlation_matrix",
+        "cointegration_test",
+        "market_scan",
+    }
+    if str(param_name or "") == "symbol" and str(cmd_name or "") in hidden_symbol_alias_tools:
+        return False
     if str(cmd_name or "") == "labels_triple_barrier" and str(param_name or "") == "summary_only":
         return False
     if str(cmd_name or "") == "finviz_calendar" and str(param_name or "") in {"date_from", "date_to"}:
@@ -198,6 +206,7 @@ def apply_schema_overrides(
 ) -> Dict[str, Any]:
     """Apply JSON schema defaults and required flags to CLI parameter metadata."""
     meta = tool.setdefault("meta", {})
+    tool_name = str(func_info.get("name") or "").strip()
     schema = meta.get("schema") or {}
     schema = enrich_schema_with_shared_defs(schema, func_info)
     meta["schema"] = schema
@@ -209,6 +218,8 @@ def apply_schema_overrides(
         if isinstance(prop, dict) and "default" in prop and param.get("default") is None:
             param["default"] = prop["default"]
         if param["name"] in schema_required:
+            param["required"] = True
+        if tool_name == "causal_discover_signals" and param["name"] == "symbols":
             param["required"] = True
     return schema
 

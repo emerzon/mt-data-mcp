@@ -33,6 +33,7 @@ from ..utils.utils import to_float_np as __to_float_np
 from ._mcp_instance import mcp
 from .constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from .execution_logging import run_logged_operation
+from .schema import CompactStandardFullDetailLiteral
 from .mt5_gateway import get_mt5_gateway, mt5_connection_error
 from .patterns_requests import PatternsDetectRequest
 from .patterns_support import (
@@ -334,7 +335,7 @@ def _build_pattern_response(
     include_series: bool,
     series_time: str,
     df: pd.DataFrame,
-    detail: Literal["compact", "full"] = "full",  # type: ignore
+    detail: CompactStandardFullDetailLiteral = "full",  # type: ignore
 ) -> Dict[str, Any]:
     """Build the response dict for pattern detection results."""
     # Filter patterns based on include_completed

@@ -208,8 +208,10 @@ def run_patterns_detect(  # noqa: C901
     if mode_value == "chart":
         mode_value = "classic"
     detail_value = str(request.detail).strip().lower()
-    if detail_value not in ("compact", "full"):
-        return {"error": "Invalid detail. Use 'compact' or 'full'."}
+    if detail_value in ("summary", "summary_only"):
+        detail_value = "compact"
+    if detail_value not in ("compact", "standard", "full"):
+        return {"error": "Invalid detail. Use 'compact', 'standard', or 'full'."}
 
     if mode_value == "candlestick":
         tf_single = tf_norm or "H1"

@@ -563,8 +563,8 @@ Pre-configured ranges for trading styles
 
 Note:
 - Presets are stored in percentage terms.
-- In `mode=pips`, the optimizer converts those preset percentages to pips using the current reference price.
-- That means named presets in pips mode are not portable across different price levels.
+- In `mode=ticks` (legacy alias: `mode=pips`), the optimizer converts those preset percentages to tick-size distances using the current reference price.
+- That means named presets in tick mode are not portable across different price levels.
 
 **Example**:
 ```bash
@@ -1122,13 +1122,13 @@ mtdata-cli regime_detect EURUSD --timeframe H1 --method hmm --params "n_states=3
 **Solution**:
 - Reduce TP by spread/2
 - Increase SL by spread/2
-- Or use `tp_pips`/`sl_pips` which accounts for pip size
+- Or use `tp_ticks`/`sl_ticks` (legacy aliases: `tp_pips`/`sl_pips`) which account for tick size
 
 ```bash
-# Example: 2 pip spread on EURUSD
+# Example: 20/15 tick-size barriers on EURUSD
 mtdata-cli forecast_barrier_prob \
   EURUSD --timeframe M5 --horizon 12 \
-  --method hmm_mc --tp-pips 20 --sl-pips 15  # RR = 1.33 after spread
+  --method hmm_mc --tp-ticks 20 --sl-ticks 15  # RR = 1.33 after spread
 ```
 
 ---

@@ -3,17 +3,28 @@ from unittest.mock import patch
 from mtdata.core.output_contract import (
     ensure_common_meta,
     normalize_output_detail,
-    resolve_output_contract,
     normalize_output_verbosity_detail,
+    resolve_output_contract,
     resolve_requested_output_verbosity,
 )
+from mtdata.shared.schema import CANONICAL_OUTPUT_DETAIL_ALIASES
 
 
 def test_normalize_output_detail_preserves_summary_mode_aliases() -> None:
     assert (
         normalize_output_detail(
             " Summary_Only ",
-            aliases={"summary_only": "summary"},
+            aliases=CANONICAL_OUTPUT_DETAIL_ALIASES,
+        )
+        == "summary"
+    )
+
+
+def test_normalize_output_detail_normalizes_alias_mapping_keys_and_values() -> None:
+    assert (
+        normalize_output_detail(
+            " summary_only ",
+            aliases={" Summary_Only ": " Summary "},
         )
         == "summary"
     )
@@ -43,13 +54,26 @@ def test_resolve_output_contract_maps_full_detail_to_full_state() -> None:
 def test_resolve_output_contract_preserves_tool_specific_detail_aliases() -> None:
     state = resolve_output_contract(
         {"detail": " summary_only "},
-        aliases={"summary_only": "summary"},
+        aliases=CANONICAL_OUTPUT_DETAIL_ALIASES,
     )
 
     assert state.detail == "summary"
     assert state.shape_detail == "compact"
     assert state.verbose is False
     assert state.transport_verbose is False
+
+
+def test_resolve_output_contract_prefers_explicit_verbose_when_detail_is_none() -> None:
+    state = resolve_output_contract(
+        {"detail": "summary"},
+        detail=None,
+        verbose=True,
+        aliases=CANONICAL_OUTPUT_DETAIL_ALIASES,
+    )
+
+    assert state.detail == "full"
+    assert state.shape_detail == "full"
+    assert state.verbose is True
 
 
 def test_ensure_common_meta_adds_tool_and_runtime_timezone() -> None:

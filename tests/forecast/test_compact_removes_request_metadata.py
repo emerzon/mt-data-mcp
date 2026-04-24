@@ -102,6 +102,9 @@ def test_strategy_backtest_compact_excludes_request_metadata() -> None:
     # But the response should still contain results
     assert res_compact["success"] is True
     assert "summary" in res_compact
+    assert "sample_warning" not in res_compact.get("metrics", {})
+    if res_compact.get("metrics"):
+        assert res_compact["metrics"]["sample_notice"]["code"] == "annualization_suppressed_low_sample"
 
 
 def test_strategy_backtest_full_includes_request_metadata() -> None:

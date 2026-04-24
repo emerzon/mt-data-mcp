@@ -3,7 +3,7 @@ import logging
 import math
 import os
 import time
-from typing import Any, Dict, Literal
+from typing import Any, Dict
 
 from ..utils.mt5 import (
     MT5ConnectionError,
@@ -19,6 +19,7 @@ from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
 from .mt5_gateway import get_mt5_gateway
 from .output_contract import ensure_common_meta, resolve_output_detail
+from .schema import CompactFullDetailLiteral
 
 logger = logging.getLogger(__name__)
 _MARKET_DEPTH_ENABLE_ENV = "MTDATA_ENABLE_MARKET_DEPTH_FETCH"
@@ -352,7 +353,7 @@ else:
 @mcp.tool()
 def market_ticker(
     symbol: str,
-    detail: Literal["compact", "full"] = "full",
+    detail: CompactFullDetailLiteral = "full",
 ) -> Dict[str, Any]:
     """Return a lightweight ticker snapshot with bid/ask/spread for `symbol`.
 

@@ -281,10 +281,13 @@ mtdata-cli symbols_top_markets --rank-by spread --limit 10 --universe all --json
 
 # Scan visible majors for strong RSI and price above SMA
 mtdata-cli market_scan --group "Forex\\Majors" --rsi-above 60 --price-vs-sma above \
-  --sma-period 20 --timeframe H1 --lookback 120 --json
+  --sma-period 20 --timeframe H1 --lookback 120 --detail compact --json
 
 # Scan an explicit symbol basket for oversold names with tight spreads
 mtdata-cli market_scan EURUSD,GBPUSD,USDJPY --rsi-below 35 --max-spread-pct 0.03 --json
+
+# Multi-symbol selectors prefer `symbols`, but MCP/Web API calls may also send
+# the compatibility alias `symbol` when only one selector string is available.
 ```
 
 ### Fetch Market Data
@@ -384,11 +387,11 @@ mtdata-cli regime_detect EURUSD --method bocpd --threshold 0.5
 ```bash
 # Rank co-moving symbols with transformed-return correlations
 mtdata-cli correlation_matrix "EURUSD,GBPUSD,USDJPY" --timeframe H1 \
-  --limit 500 --method pearson --transform log_return --json
+  --limit 500 --method pearson --transform log_return --detail compact --json
 
 # Use an explicit MT5 group path instead of naming symbols one-by-one
 mtdata-cli correlation_matrix --group "Forex\\Majors" --timeframe H1 \
-  --limit 120 --method pearson --transform log_return --json
+  --limit 120 --method pearson --transform log_return --detail full --json
 
 # Find candidate mean-reverting pairs inside an MT5 group
 mtdata-cli cointegration_test --group "Forex\\Majors" --timeframe H1 \
@@ -401,6 +404,12 @@ mtdata-cli causal_discover_signals "EURUSD,GBPUSD,USDJPY" --timeframe H1 \
 # Pass a single symbol to auto-expand its visible MT5 group (e.g., Forex\\Majors)
 mtdata-cli causal_discover_signals EURUSD --timeframe H1 --limit 800
 ```
+
+For `market_scan`, `correlation_matrix`, `cointegration_test`, and
+`causal_discover_signals`, prefer the canonical `symbols` selector for new
+multi-symbol integrations. The compatibility alias `symbol` is also accepted,
+but `symbol`/`symbols` must agree when both are supplied, and `group` remains
+mutually exclusive with explicit symbol selectors.
 
 See [CAUSAL_DISCOVERY.md](CAUSAL_DISCOVERY.md) for interpretation and caveats.
 
