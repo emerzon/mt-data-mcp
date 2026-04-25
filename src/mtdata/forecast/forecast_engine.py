@@ -838,7 +838,9 @@ def _format_forecast_output(
     """Format forecast output with proper structure."""
     # Generate future time indices
     future_epochs = next_times_from_last(last_epoch, tf_secs, horizon)
-    fmt_time = _format_time_minimal_local if _use_client_tz() else _format_time_minimal
+    use_client_tz = _use_client_tz()
+    fmt_time = _format_time_minimal_local if use_client_tz else _format_time_minimal
+    timestamp_timezone = "client" if use_client_tz else "UTC"
     forecast_times = [fmt_time(float(epoch)) for epoch in future_epochs]
     last_observation_time = fmt_time(float(last_epoch))
     price_anchor_series = df["close"] if "close" in df.columns else df[base_col]
@@ -864,6 +866,11 @@ def _format_forecast_output(
         "base_col": base_col,
         "last_observation_epoch": float(last_epoch),
         "last_observation_time": last_observation_time,
+        "timestamp_timezone": timestamp_timezone,
+        "forecast_from": {
+            "time": last_observation_time,
+            "anchor": "last_observation",
+        },
         "forecast_start_epoch": forecast_start_epoch,
         "forecast_start_time": forecast_times[0] if forecast_times else None,
         "forecast_start_gap_bars": forecast_start_gap_bars,

@@ -619,6 +619,11 @@ class TestFormatForecastOutput:
         assert result["forecast_start_gap_bars"] == 1.0
         assert result["forecast_step_seconds"] == 300
         assert result["forecast_anchor"] == "next_timeframe_bar_after_last_observation"
+        assert result["timestamp_timezone"] == "UTC"
+        assert result["forecast_from"] == {
+            "time": _format_time_minimal(1000.0),
+            "anchor": "last_observation",
+        }
 
 
 # ===================================================================

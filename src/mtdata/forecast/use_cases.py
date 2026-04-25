@@ -117,7 +117,11 @@ def _apply_forecast_generate_detail(
     ci_unavailable = str(payload.get("ci_status") or "").strip().lower() == "unavailable"
     for key in (
         "last_observation_time",
+        "timestamp_timezone",
+        "forecast_from",
         "forecast_start_time",
+        "forecast_anchor",
+        "forecast_step_seconds",
         "forecast_time",
         "forecast_price",
         "forecast_return",
@@ -141,8 +145,6 @@ def _apply_forecast_generate_detail(
             "base_col",
             "last_observation_epoch",
             "forecast_start_epoch",
-            "forecast_anchor",
-            "forecast_step_seconds",
             "forecast_epoch",
             "last_price",
             "last_price_close",

@@ -274,6 +274,10 @@ def test_forecast_generate_defaults_to_compact_payload(monkeypatch):
             "method": kwargs["method"],
             "horizon": kwargs["horizon"],
             "quantity": kwargs["quantity"],
+            "timestamp_timezone": "UTC",
+            "forecast_from": {"time": "t0", "anchor": "last_observation"},
+            "forecast_anchor": "next_timeframe_bar_after_last_observation",
+            "forecast_step_seconds": 3600,
             "forecast_time": ["t1", "t2", "t3"],
             "forecast_price": [1.0, 1.1, 1.2],
             "forecast_epoch": [1.0, 2.0, 3.0],
@@ -285,6 +289,10 @@ def test_forecast_generate_defaults_to_compact_payload(monkeypatch):
     assert out["detail"] == "compact"
     assert out["symbol"] == "BTCUSD"
     assert out["timeframe"] == "H1"
+    assert out["timestamp_timezone"] == "UTC"
+    assert out["forecast_from"] == {"time": "t0", "anchor": "last_observation"}
+    assert out["forecast_anchor"] == "next_timeframe_bar_after_last_observation"
+    assert out["forecast_step_seconds"] == 3600
     assert out["forecast_price"] == [1.0, 1.1, 1.2]
     assert out["series"] == [
         {"time": "t1", "forecast_price": 1.0},
