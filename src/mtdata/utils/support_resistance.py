@@ -812,7 +812,7 @@ def _analyze_cluster_state(
     cluster["role_reversal_count"] = 0
     cluster["breakout_penalty"] = 0.0
     cluster["role_reversal_bonus"] = 0.0
-    cluster["status"] = "active"
+    cluster["status"] = "intact"
 
     if dominant_source not in {"support", "resistance"}:
         cluster["score"] = max(0.0, float(cluster.get("score_base", cluster.get("score", 0.0))))
@@ -907,12 +907,11 @@ def _analyze_cluster_state(
     cluster["role_reversal_bonus"] = float(role_reversal_bonus)
 
     if role_reversal_tests:
-        expected_new_role = "resistance" if dominant_source == "support" else "support"
-        cluster["status"] = f"role_reversed_{expected_new_role}"
+        cluster["status"] = "role_reversal"
     elif breakout_count:
-        cluster["status"] = f"broken_{dominant_source}"
+        cluster["status"] = "broken"
     else:
-        cluster["status"] = "active"
+        cluster["status"] = "intact"
 
     base_score = float(cluster.get("score_base", cluster.get("score", 0.0)))
     cluster["score"] = max(0.0, base_score - breakout_penalty + role_reversal_bonus)
@@ -964,7 +963,7 @@ def _format_level(cluster: Dict[str, Any], *, current_price: Optional[float], to
         "first_touch": _format_time(cluster.get("first_time")),
         "last_touch": _format_time(cluster.get("last_time")),
         "dominant_source": dominant_source,
-        "status": str(cluster.get("status", "active")),
+        "status": str(cluster.get("status", "intact")),
         "source_tests": {
             "support": int(cluster.get("support_tests", 0)),
             "resistance": int(cluster.get("resistance_tests", 0)),
@@ -2072,7 +2071,7 @@ def merge_support_resistance_results(  # noqa: C901
                     "avg_breach_atr_sum": 0.0,
                     "breakout_metric_weight_sum": 0.0,
                     "last_break_time": breakout_analysis.get("last_break_time"),
-                    "status": status or "active",
+                    "status": status or "intact",
                     "cross_timeframe_dedupe_count": 0,
                     "deduped_timeframes": set(),
                     "merge_signatures": [merge_signature] if merge_signature is not None else [],
@@ -2209,9 +2208,9 @@ def merge_support_resistance_results(  # noqa: C901
             if isinstance(last_break_time, str) and last_break_time.strip():
                 current_break_time = cluster.get("last_break_time")
                 cluster["last_break_time"] = last_break_time if current_break_time is None else max(str(current_break_time), last_break_time)
-            if status and status.startswith("role_reversed_"):
+            if status == "role_reversal":
                 cluster["status"] = status
-            elif status and cluster.get("status") != "role_reversed_support" and cluster.get("status") != "role_reversed_resistance":
+            elif status and cluster.get("status") != "role_reversal":
                 cluster["status"] = status
             if merge_signature is not None:
                 cluster.setdefault("merge_signatures", []).append(merge_signature)

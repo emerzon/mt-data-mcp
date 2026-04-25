@@ -223,7 +223,7 @@ def test_compute_support_resistance_returns_ranked_levels_around_current_price()
     assert resistance["zone_low"] < resistance["value"] < resistance["zone_high"]
     assert support["zone_width"] > 0.0
     assert resistance["zone_width_atr"] is not None and resistance["zone_width_atr"] > 0.0
-    assert support["status"] == "active"
+    assert support["status"] == "intact"
     assert support["breakout_analysis"]["decisive_break_count"] == 0
     assert support["score_breakdown"]["total"] == support["score"]
     assert resistance["score_breakdown"]["total"] == resistance["score"]
@@ -543,7 +543,11 @@ def test_broken_support_levels_are_penalized_after_decisive_break():
         adx_period=5,
     )
 
-    broken_support = next(level for level in result["levels"] if level["status"] == "broken_support")
+    broken_support = next(
+        level
+        for level in result["levels"]
+        if level["status"] == "broken" and level["dominant_source"] == "support"
+    )
     assert broken_support["dominant_source"] == "support"
     assert broken_support["type"] == "resistance"
     assert broken_support["breakout_analysis"]["decisive_break_count"] >= 1
@@ -565,7 +569,11 @@ def test_role_reversal_levels_gain_bonus_after_break_and_retest():
         adx_period=5,
     )
 
-    role_reversed = next(level for level in result["levels"] if level["status"] == "role_reversed_support")
+    role_reversed = next(
+        level
+        for level in result["levels"]
+        if level["status"] == "role_reversal" and level["dominant_source"] == "resistance"
+    )
     assert role_reversed["dominant_source"] == "resistance"
     assert role_reversed["type"] == "support"
     assert role_reversed["breakout_analysis"]["decisive_break_count"] >= 1
