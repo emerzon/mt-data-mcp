@@ -137,6 +137,7 @@ def _trade_journal_metrics(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
         "losses": losses,
         "flats": flats,
         "win_rate": win_rate,
+        "win_rate_display": f"{win_rate:.1%}" if win_rate is not None else None,
         "net_pnl": net_pnl,
         "gross_profit": gross_profit,
         "gross_loss": gross_loss,

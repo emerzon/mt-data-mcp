@@ -198,6 +198,7 @@ def _compute_performance_metrics(
     metrics.update({
         "avg_return_per_trade": avg_return,
         "win_rate": win_rate,
+        "win_rate_display": f"{win_rate:.1%}",
         "sharpe_ratio": _finite_or_none(sharpe),
         "max_drawdown": max_drawdown,
         "calmar_ratio": _finite_or_none(calmar),

@@ -92,6 +92,7 @@ class TestComputePerformanceMetrics:
         m = _compute_performance_metrics(rets, "H1", 12, 0.0)
         assert "avg_return_per_trade" in m
         assert "win_rate" in m
+        assert "win_rate_display" in m
         assert "sharpe_ratio" in m
         assert "max_drawdown" in m
 

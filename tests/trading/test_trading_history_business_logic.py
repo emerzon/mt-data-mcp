@@ -920,6 +920,7 @@ def test_trade_journal_analyze_filters_best_worst_by_pnl_sign() -> None:
     assert out["summary"]["wins"] == 2
     assert out["summary"]["losses"] == 1
     assert out["summary"]["win_rate"] == 2 / 3
+    assert out["summary"]["win_rate_display"] == "66.7%"
     assert out["summary"]["best_trade"] == 0.82
     assert out["summary"]["worst_trade"] == -0.23
 
