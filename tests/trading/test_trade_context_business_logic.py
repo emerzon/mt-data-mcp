@@ -19,8 +19,7 @@ def test_trade_session_context_compacts_nested_sections_by_default() -> None:
         "ask": 1.1002,
         "spread": 0.0002,
         "spread_pips": 2.0,
-        "time": 1700000000,
-        "time_display": "2023-11-14 22:13",
+        "time": "2023-11-14 22:13",
         "timezone": "UTC",
     }
     open_positions = {
@@ -84,8 +83,7 @@ def test_trade_session_context_compacts_nested_sections_by_default() -> None:
         "ask": 1.1002,
         "spread": 0.0002,
         "spread_pips": 2.0,
-        "time": 1700000000,
-        "time_display": "2023-11-14 22:13",
+        "time": "2023-11-14 22:13",
         "timezone": "UTC",
     }
     assert out["open_positions"] == [
@@ -113,6 +111,8 @@ def test_trade_session_context_full_detail_keeps_nested_full_payloads() -> None:
         "symbol": "EURUSD",
         "bid": 1.1,
         "ask": 1.1002,
+        "time": 1700000000,
+        "time_display": "2023-11-14 22:13",
         "meta": {
             "tool": "market_ticker",
             "runtime": {"timezone": timezone_meta},
@@ -143,6 +143,9 @@ def test_trade_session_context_full_detail_keeps_nested_full_payloads() -> None:
     assert "success" not in out["ticker"]
     assert "meta" not in out["ticker"]
     assert out["ticker"]["bid"] == 1.1  # data is preserved
+    assert out["ticker"]["time"] == "2023-11-14 22:13"
+    assert out["ticker"]["time_epoch"] == 1700000000
+    assert "time_display" not in out["ticker"]
     assert out["account"]["balance"] == 10000.0
     assert "success" not in out["account"]
     assert "meta" not in out["account"]

@@ -39,6 +39,25 @@ def _strip_nested_envelope(section: Any) -> Any:
     return {k: v for k, v in section.items() if k not in ("success", "meta")}
 
 
+def _normalize_nested_ticker_time(ticker: Dict[str, Any], *, compact: bool) -> Dict[str, Any]:
+    normalized = dict(ticker)
+    raw_time = normalized.get("time_epoch")
+    if raw_time in (None, "") and isinstance(normalized.get("time"), (int, float)):
+        raw_time = normalized.get("time")
+    display_time = normalized.get("time_display")
+    if display_time in (None, "") and isinstance(normalized.get("time"), str):
+        display_time = normalized.get("time")
+
+    normalized.pop("time_display", None)
+    if display_time not in (None, ""):
+        normalized["time"] = display_time
+    if compact:
+        normalized.pop("time_epoch", None)
+    elif raw_time not in (None, ""):
+        normalized["time_epoch"] = raw_time
+    return normalized
+
+
 def _compact_trade_session_items(
     section: Any,
     *,
@@ -104,12 +123,16 @@ def _compact_trade_session_context_payload(payload: Dict[str, Any]) -> Dict[str,
                     "spread_usd",
                     "time",
                     "time_display",
+                    "time_epoch",
                     "timezone",
                 )
                 if ticker.get(key) not in (None, "")
             }
             if ticker_summary:
-                compact["ticker"] = ticker_summary
+                compact["ticker"] = _normalize_nested_ticker_time(
+                    ticker_summary,
+                    compact=True,
+                )
 
     open_positions = payload.get("open_positions")
     if isinstance(open_positions, dict):
@@ -241,6 +264,11 @@ def trade_session_context(request: TradeSessionContextRequest) -> Dict[str, Any]
             payload["open_positions"] = _strip_nested_envelope(payload["open_positions"])
             payload["pending_orders"] = _strip_nested_envelope(payload["pending_orders"])
             payload["ticker"] = _strip_nested_envelope(payload["ticker"])
+            if isinstance(payload["ticker"], dict):
+                payload["ticker"] = _normalize_nested_ticker_time(
+                    payload["ticker"],
+                    compact=False,
+                )
         return ensure_common_meta(payload, tool_name="trade_session_context")
 
     return run_logged_operation(
