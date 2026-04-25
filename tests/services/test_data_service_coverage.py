@@ -1863,7 +1863,7 @@ class TestFetchTicks(unittest.TestCase):
     @patch(_GUARD, _mock_symbol_guard)
     def test_summary_output(self, mock_ctz, mock_info, mock_ticks):
         mock_ticks.return_value = _make_ticks(20)
-        result = fetch_ticks('EURUSD', limit=10, format='summary')
+        result = fetch_ticks('EURUSD', limit=20, format='summary')
         self.assertTrue(result.get('success'))
         self.assertEqual(result['output'], 'summary')
         self.assertIn('stats', result)
@@ -1911,13 +1911,26 @@ class TestFetchTicks(unittest.TestCase):
     @patch(_RESOLVE_CTZ, return_value=None)
     @patch(_GUARD, _mock_symbol_guard)
     def test_summary_stats_structure(self, mock_ctz, mock_info, mock_ticks):
-        ticks = _make_ticks(10)
+        ticks = _make_ticks(20)
         mock_ticks.return_value = ticks
-        result = fetch_ticks('EURUSD', limit=10, format='summary')
+        result = fetch_ticks('EURUSD', limit=20, format='summary')
         bid = result['stats']['bid']
         for key in ('first', 'last', 'low', 'high', 'mean', 'std', 'stderr', 'change', 'change_pct'):
             self.assertIn(key, bid)
             self.assertIsInstance(bid[key], float)
+
+    @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_small_summary_uses_spread_only_stats(self, mock_ctz, mock_info, mock_ticks):
+        mock_ticks.return_value = _make_ticks(5)
+        result = fetch_ticks('EURUSD', limit=5, format='summary')
+        self.assertTrue(result.get('success'))
+        self.assertFalse(result.get('sample_adequacy'))
+        self.assertEqual(result.get('sample_min_ticks'), 20)
+        self.assertIn('spread stats only', result.get('sample_adequacy_note', ''))
+        self.assertEqual(set(result['stats']), {'spread'})
 
     @patch(_TICKS_RANGE)
     @patch(_CACHED_INFO, return_value=MagicMock())
@@ -2136,10 +2149,10 @@ class TestFetchTicks(unittest.TestCase):
     @patch(_RESOLVE_CTZ, return_value=None)
     @patch(_GUARD, _mock_symbol_guard)
     def test_summary_tick_volume_fallback(self, mock_ctz, mock_info, mock_ticks):
-        ticks = _make_ticks(10)
+        ticks = _make_ticks(20)
         # All volume_real == 0 → fallback to tick_volume
         mock_ticks.return_value = ticks
-        result = fetch_ticks('EURUSD', limit=10, format='summary')
+        result = fetch_ticks('EURUSD', limit=20, format='summary')
         vol = result['stats']['volume']
         self.assertEqual(vol['kind'], 'tick_volume')
 

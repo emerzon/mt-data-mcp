@@ -97,6 +97,7 @@ def _mt5_epoch_to_utc(value: float) -> float:
 
 _AUTO_TIME_ALIGNMENT_MIN_SHIFT_SECONDS = 1800
 _AUTO_TIME_ALIGNMENT_MAX_SHIFT_SECONDS = 18 * 3600
+_TICK_SUMMARY_MIN_ANALYTIC_TICKS = 20
 
 
 def _format_mt5_last_error() -> str:
@@ -1552,8 +1553,9 @@ def fetch_ticks(  # noqa: C901
     ----------
     format : {"summary","stats","rows"}
         - "summary" (default): compact descriptive statistics over the fetched
-          ticks (bid/ask/mid/spread, plus last and volume; volume uses real volume when
-          available, otherwise tick_volume).
+          ticks. Samples below 20 ticks report spread stats only with a sample
+          adequacy note; larger samples include bid/ask/mid, plus last and
+          volume when available.
         - "stats": more detailed stats (includes extra distribution moments and
           quantiles).
         - "rows": return tick rows as structured data.
@@ -1815,6 +1817,19 @@ def fetch_ticks(  # noqa: C901
             }
             if duration_seconds <= 0:
                 out["tick_rate_note"] = "< 1s window"
+            small_summary_sample = (
+                not detailed_stats
+                and int(len(df_stats)) < _TICK_SUMMARY_MIN_ANALYTIC_TICKS
+            )
+            if not detailed_stats:
+                out["sample_adequacy"] = not small_summary_sample
+                if small_summary_sample:
+                    out["sample_adequacy_note"] = (
+                        f"Small sample ({len(df_stats)} ticks"
+                        f" in {duration_seconds:g}s) - spread stats only."
+                    )
+                    out["sample_min_ticks"] = _TICK_SUMMARY_MIN_ANALYTIC_TICKS
+                    out["stats"] = {"spread": out["stats"]["spread"]}
             spread_stats = out.get("stats", {}).get("spread")
             if isinstance(spread_stats, dict):
                 try:
@@ -1828,7 +1843,7 @@ def fetch_ticks(  # noqa: C901
                     pass
             if price_digits > 0:
                 out["price_precision"] = int(price_digits)
-            if has_last:
+            if has_last and not small_summary_sample:
                 out["stats"]["last"] = _series_stats(df_stats["last"], total_count=len(df_stats))
             if has_flags:
                 out["flags_decoded"] = _observed_tick_flags_decoded(flags)
@@ -1911,17 +1926,17 @@ def fetch_ticks(  # noqa: C901
 
                 if detailed_stats:
                     vol_out["dist"] = _series_stats(vol_vals_num, total_count=len(df_stats))
-                out["stats"]["volume"] = vol_out
+                if not small_summary_sample:
+                    out["stats"]["volume"] = vol_out
             else:
-                out["stats"]["volume"] = (
-                    {
+                if detailed_stats:
+                    out["stats"]["volume"] = {
                         "kind": volume_kind,
                         "per_second": tick_rate_per_second,
                         "sum": int(len(df_stats)),
                     }
-                    if detailed_stats
-                    else {"kind": volume_kind}
-                )
+                elif not small_summary_sample:
+                    out["stats"]["volume"] = {"kind": volume_kind}
 
             return out
 
