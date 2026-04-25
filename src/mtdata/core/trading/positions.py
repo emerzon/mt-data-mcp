@@ -286,6 +286,63 @@ def _normalize_trade_history_items(
     return normalized
 
 
+def _trade_history_humanized_key(key: str) -> str:
+    overrides = {
+        "sl": "SL",
+        "tp": "TP",
+        "time": "Time",
+        "time_setup": "Setup Time",
+        "time_done": "Done Time",
+        "time_msc": "Time Msc",
+        "ticket": "Ticket",
+        "order": "Order",
+        "deal": "Deal",
+        "position_id": "Position ID",
+        "position_by_id": "Position By ID",
+        "symbol": "Symbol",
+        "type": "Type",
+        "type_code": "Type Code",
+        "entry": "Entry",
+        "entry_code": "Entry Code",
+        "reason": "Reason",
+        "reason_code": "Reason Code",
+        "state": "State",
+        "state_code": "State Code",
+        "volume": "Volume",
+        "volume_initial": "Initial Volume",
+        "volume_current": "Current Volume",
+        "price": "Price",
+        "price_open": "Open Price",
+        "price_current": "Current Price",
+        "profit": "Profit",
+        "commission": "Commission",
+        "swap": "Swap",
+        "fee": "Fee",
+        "comment": "Comments",
+        "magic": "Magic",
+        "timestamp_timezone": "Timestamp Timezone",
+        "exit_trigger": "Exit Trigger",
+        "exit_trigger_price": "Exit Trigger Price",
+        "exit_trigger_source": "Exit Trigger Source",
+    }
+    return overrides.get(key, key.replace("_", " ").title())
+
+
+def _style_trade_history_items(items: List[Any], *, column_style: Any) -> List[Any]:
+    style = str(column_style or "snake_case").strip().lower()
+    if style != "humanized":
+        return items
+    styled: List[Any] = []
+    for item in items:
+        if not isinstance(item, dict):
+            styled.append(item)
+            continue
+        styled.append(
+            {_trade_history_humanized_key(str(key)): value for key, value in item.items()}
+        )
+    return styled
+
+
 def normalize_trade_history_output(
     rows: Any,
     *,
@@ -295,13 +352,21 @@ def normalize_trade_history_output(
     out = _normalize_trade_read_output(rows, request=request, kind="trade_history")
     history_kind = getattr(request, "history_kind", None)
     if out.get("success") is True and isinstance(out.get("items"), list):
+        raw_items = list(out["items"])
+        out["items"] = _style_trade_history_items(
+            raw_items,
+            column_style=getattr(request, "column_style", "snake_case"),
+        )
         out["normalized_items"] = _normalize_trade_history_items(
-            out["items"],
+            raw_items,
             history_kind=history_kind,
         )
     if _include_trade_read_request_metadata(request):
         if history_kind is not None:
             out["history_kind"] = history_kind
+        column_style = getattr(request, "column_style", None)
+        if column_style is not None:
+            out["column_style"] = column_style
         for field in (
             "start",
             "end",

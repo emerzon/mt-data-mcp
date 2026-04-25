@@ -106,6 +106,13 @@ class TradeCloseRequest(BaseModel):
 class TradeHistoryRequest(BaseModel):
     history_kind: Literal["deals", "orders"] = "deals"
     detail: CompactFullDetailLiteral = "compact"
+    column_style: Literal["snake_case", "humanized"] = Field(
+        default="snake_case",
+        description=(
+            "Primary history item key style. Defaults to snake_case to preserve "
+            "raw MT5-style history keys; use humanized for display labels."
+        ),
+    )
     start: Optional[str] = None
     end: Optional[str] = None
     symbol: Optional[str] = None

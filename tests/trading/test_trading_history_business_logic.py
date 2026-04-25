@@ -150,6 +150,34 @@ def test_trade_history_adds_normalized_deal_rows_without_changing_items() -> Non
     ]
 
 
+def test_trade_history_humanized_column_style_only_renames_primary_items() -> None:
+    out = normalize_trade_history_output(
+        [
+            {
+                "ticket": 11,
+                "order": 22,
+                "time": "2024-01-01 12:00:00",
+                "symbol": "EURUSD",
+                "volume": 0.5,
+                "price": 1.2345,
+                "entry_label": "Out",
+                "comment": "closed",
+            }
+        ],
+        request=TradeHistoryRequest(
+            history_kind="deals",
+            column_style="humanized",
+        ),
+    )
+
+    assert out["items"][0]["Ticket"] == 11
+    assert out["items"][0]["Symbol"] == "EURUSD"
+    assert out["items"][0]["Comments"] == "closed"
+    assert "ticket" not in out["items"][0]
+    assert out["normalized_items"][0]["ticket"] == 11
+    assert out["normalized_items"][0]["deal_details"]["ticket"] == 11
+
+
 def test_trade_history_adds_normalized_order_rows_without_changing_items() -> None:
     out = normalize_trade_history_output(
         [
@@ -181,6 +209,32 @@ def test_trade_history_adds_normalized_order_rows_without_changing_items() -> No
             "order_details": out["items"][0],
         }
     ]
+
+
+def test_trade_history_order_humanized_column_style_renames_order_times() -> None:
+    out = normalize_trade_history_output(
+        [
+            {
+                "ticket": 33,
+                "time_setup": "2024-01-01 12:00:00",
+                "time_done": "2024-01-01 12:05:00",
+                "symbol": "GBPUSD",
+                "volume_initial": 1.0,
+                "price_current": 1.251,
+                "state_label": "Filled",
+            }
+        ],
+        request=TradeHistoryRequest(
+            history_kind="orders",
+            column_style="humanized",
+        ),
+    )
+
+    assert out["items"][0]["Setup Time"] == "2024-01-01 12:00:00"
+    assert out["items"][0]["Done Time"] == "2024-01-01 12:05:00"
+    assert out["items"][0]["Initial Volume"] == 1.0
+    assert "time_setup" not in out["items"][0]
+    assert out["normalized_items"][0]["order_details"]["time_setup"] == "2024-01-01 12:00:00"
 
 
 def test_trade_history_filters_rows_by_symbol_even_if_mt5_returns_mixed_rows() -> None:
