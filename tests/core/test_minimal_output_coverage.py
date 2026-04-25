@@ -877,6 +877,35 @@ class TestFormatResultMinimal:
         assert lines.index("  runtime.timezone:") > lines.index("  domain:")
         assert lines.index("forecast[1]{time,forecast}:") > lines.index("  runtime.timezone:")
 
+    def test_compact_collection_output_suppresses_duplicate_data_alias(self):
+        table_payload = {
+            "data": [{"name": "EURUSD"}, {"name": "GBPUSD"}],
+            "rows": [{"name": "EURUSD"}, {"name": "GBPUSD"}],
+            "success": True,
+            "count": 2,
+            "collection_kind": "table",
+            "collection_contract_version": "collection.v1",
+        }
+        series_payload = {
+            "data": [{"time": "t1", "close": 1.17221}],
+            "series": [{"time": "t1", "close": 1.17221}],
+            "success": True,
+            "count": 1,
+            "collection_kind": "time_series",
+            "collection_contract_version": "collection.v1",
+        }
+
+        table_compact = format_result_minimal(table_payload, verbose=False)
+        series_compact = format_result_minimal(series_payload, verbose=False)
+        table_verbose = format_result_minimal(table_payload, verbose=True)
+
+        assert "rows[2]{name}:" in table_compact
+        assert "data[2]{name}:" not in table_compact
+        assert "series[1]{time,close}:" in series_compact
+        assert "data[1]{time,close}:" not in series_compact
+        assert "data[2]{name}:" in table_verbose
+        assert "rows[2]{name}:" in table_verbose
+
     def test_triple_barrier_output_renders_as_single_table(self):
         payload = {
             "success": True,

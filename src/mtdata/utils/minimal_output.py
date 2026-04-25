@@ -73,6 +73,20 @@ def _format_complex_value(value: Any) -> str:
     return _stringify_scalar(value)
 
 
+def _suppress_duplicate_collection_data(payload: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(payload.get("data"), list):
+        return payload
+
+    out = dict(payload)
+    data = payload.get("data")
+    for canonical_key in ("rows", "series", "groups"):
+        canonical = payload.get(canonical_key)
+        if isinstance(canonical, list) and canonical == data:
+            out.pop("data", None)
+            break
+    return out
+
+
 def _render_news_bucket_toon(
     key: str,
     items: List[Any],
@@ -1710,6 +1724,8 @@ def format_result_minimal(
                             if forecast_norm is not None:
                                 normalized = forecast_norm
         if isinstance(normalized, dict):
+            if not verbose:
+                normalized = _suppress_duplicate_collection_data(normalized)
             analysis_legends_norm = _normalize_analysis_legends_payload(
                 normalized,
                 verbose=verbose,
