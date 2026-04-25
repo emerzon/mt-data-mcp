@@ -139,6 +139,8 @@ def _run_data_fetch_candles_impl(
             result,
             collection_kind="time_series",
             series=result["data"],
+            include_contract_meta=str(request.detail or "compact").strip().lower()
+            == "full",
         )
     return result
 

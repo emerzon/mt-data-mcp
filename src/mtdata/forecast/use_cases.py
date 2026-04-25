@@ -101,6 +101,7 @@ def _apply_forecast_generate_detail(
             out,
             collection_kind="time_series",
             series=_forecast_generate_series_rows(out),
+            include_contract_meta=detail_value == "full",
         )
 
     compact: Dict[str, Any] = {
@@ -155,6 +156,7 @@ def _apply_forecast_generate_detail(
         compact,
         collection_kind="time_series",
         series=_forecast_generate_series_rows(compact),
+        include_contract_meta=False,
     )
 
 

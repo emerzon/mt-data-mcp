@@ -901,10 +901,16 @@ class TestFormatResultMinimal:
 
         assert "rows[2]{name}:" in table_compact
         assert "data[2]{name}:" not in table_compact
+        assert "collection_kind:" not in table_compact
+        assert "collection_contract_version:" not in table_compact
         assert "series[1]{time,close}:" in series_compact
         assert "data[1]{time,close}:" not in series_compact
+        assert "collection_kind:" not in series_compact
+        assert "collection_contract_version:" not in series_compact
         assert "data[2]{name}:" in table_verbose
         assert "rows[2]{name}:" in table_verbose
+        assert "collection_kind: table" in table_verbose
+        assert "collection_contract_version: collection.v1" in table_verbose
 
     def test_compact_trade_risk_output_hides_intermediate_sizing_fields(self):
         payload = {

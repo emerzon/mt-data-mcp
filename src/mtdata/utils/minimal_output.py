@@ -74,10 +74,12 @@ def _format_complex_value(value: Any) -> str:
 
 
 def _suppress_duplicate_collection_data(payload: Dict[str, Any]) -> Dict[str, Any]:
-    if not isinstance(payload.get("data"), list):
-        return payload
-
     out = dict(payload)
+    out.pop("collection_kind", None)
+    out.pop("collection_contract_version", None)
+    if not isinstance(payload.get("data"), list):
+        return out
+
     data = payload.get("data")
     for canonical_key in ("rows", "series", "groups"):
         canonical = payload.get(canonical_key)

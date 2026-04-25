@@ -220,6 +220,8 @@ class TestSymbolsTopMarkets:
         ]
         assert "description" not in result["data"][0]
         assert "pricing_basis" not in result["data"][0]
+        assert "collection_kind" not in result
+        assert "collection_contract_version" not in result
 
     @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
     @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
@@ -288,6 +290,10 @@ class TestSymbolsTopMarkets:
         ]
         assert "success" not in result["results"]["lowest_spread"]
         assert "count" not in result["results"]["highest_volume"]
+        assert "collection_kind" not in result
+        assert "collection_contract_version" not in result
+        assert "collection_kind" not in result["results"]["lowest_spread"]
+        assert "collection_contract_version" not in result["results"]["lowest_spread"]
 
     def test_invalid_rank_by_returns_error(self):
         fn = _get_symbols_top_markets()
@@ -458,6 +464,8 @@ class TestMarketScan:
         assert result["data"]["table"]["rows"][0]["symbol"] == "EURUSD"
         assert result["rows"] == result["data"]["table"]["rows"]
         assert result["meta"]["request"]["detail"] == "compact"
+        assert "collection_kind" not in result
+        assert "collection_contract_version" not in result
 
     @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
     @patch("mtdata.core.symbols._symbol_ready_guard", side_effect=_ready_guard_ok)

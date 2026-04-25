@@ -72,7 +72,7 @@ def test_run_data_fetch_candles_passes_include_spread_to_service():
     assert captured["kwargs"]["include_spread"] is True
 
 
-def test_run_data_fetch_candles_adds_time_series_collection_contract():
+def test_run_data_fetch_candles_omits_contract_metadata_in_compact_detail():
     rows = [{"time": 1.0, "close": 1.1}]
     request = DataFetchCandlesRequest(symbol="EURUSD", timeframe="H1", limit=10)
 
@@ -83,8 +83,30 @@ def test_run_data_fetch_candles_adds_time_series_collection_contract():
     )
 
     assert result["data"] == rows
-    assert result["collection_kind"] == "time_series"
     assert result["series"] == rows
+    assert "collection_kind" not in result
+    assert "collection_contract_version" not in result
+
+
+def test_run_data_fetch_candles_adds_contract_metadata_in_full_detail():
+    rows = [{"time": 1.0, "close": 1.1}]
+    request = DataFetchCandlesRequest(
+        symbol="EURUSD",
+        timeframe="H1",
+        limit=10,
+        detail="full",
+    )
+
+    result = run_data_fetch_candles(
+        request,
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_candles_impl=lambda **kwargs: {"success": True, "data": rows},
+    )
+
+    assert result["data"] == rows
+    assert result["series"] == rows
+    assert result["collection_kind"] == "time_series"
+    assert result["collection_contract_version"] == "collection.v1"
 
 
 def test_run_data_fetch_ticks_logs_connection_error(caplog):

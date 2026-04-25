@@ -260,6 +260,7 @@ def symbols_list(  # noqa: C901
                 result,
                 collection_kind="table",
                 rows=result.get("data"),
+                include_contract_meta=False,
             )
         except MT5ConnectionError as exc:
             return {"error": str(exc)}
@@ -326,6 +327,7 @@ def _list_symbol_groups(
             result,
             collection_kind="table",
             rows=result.get("data"),
+            include_contract_meta=False,
         )
     except Exception as e:
         return {"error": f"Error getting symbol groups: {str(e)}"}
@@ -581,13 +583,19 @@ def _build_market_scan_bar_row(
     return row, None
 
 
-def _market_scan_table(headers: List[str], rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _market_scan_table(
+    headers: List[str],
+    rows: List[Dict[str, Any]],
+    *,
+    include_contract_meta: bool = True,
+) -> Dict[str, Any]:
     ordered_rows = [[row.get(header) for header in headers] for row in rows]
     result = _table_from_rows(headers, ordered_rows)
     return attach_collection_contract(
         result,
         collection_kind="table",
         rows=result.get("data"),
+        include_contract_meta=include_contract_meta,
     )
 
 
@@ -1206,6 +1214,7 @@ def symbols_top_markets(  # noqa: C901
                 out = _market_scan_table(
                     _top_markets_headers("spread", detail_mode=detail_mode),
                     spread_rows,
+                    include_contract_meta=detail_mode == "full",
                 )
                 out.update(scan_meta)
                 out["evaluated_symbols"] = evaluated_counts["spread"]
@@ -1218,6 +1227,7 @@ def symbols_top_markets(  # noqa: C901
                 out = _market_scan_table(
                     _top_markets_headers("volume", detail_mode=detail_mode),
                     volume_rows,
+                    include_contract_meta=detail_mode == "full",
                 )
                 out.update(scan_meta)
                 out["evaluated_symbols"] = evaluated_counts["volume"]
@@ -1230,6 +1240,7 @@ def symbols_top_markets(  # noqa: C901
                 out = _market_scan_table(
                     _top_markets_headers("price_change", detail_mode=detail_mode),
                     price_change_rows,
+                    include_contract_meta=detail_mode == "full",
                 )
                 out.update(scan_meta)
                 out["evaluated_symbols"] = evaluated_counts["price_change"]
@@ -1240,6 +1251,7 @@ def symbols_top_markets(  # noqa: C901
                     out,
                     collection_kind="table",
                     rows=out.get("data"),
+                    include_contract_meta=detail_mode == "full",
                 )
 
             results = {
@@ -1247,18 +1259,21 @@ def symbols_top_markets(  # noqa: C901
                     _market_scan_table(
                         _top_markets_headers("spread", detail_mode=detail_mode),
                         spread_rows,
+                        include_contract_meta=detail_mode == "full",
                     )
                 ),
                 "highest_volume": _strip_nested_market_scan_meta(
                     _market_scan_table(
                         _top_markets_headers("volume", detail_mode=detail_mode),
                         volume_rows,
+                        include_contract_meta=detail_mode == "full",
                     )
                 ),
                 "highest_price_change": _strip_nested_market_scan_meta(
                     _market_scan_table(
                         _top_markets_headers("price_change", detail_mode=detail_mode),
                         price_change_rows,
+                        include_contract_meta=detail_mode == "full",
                     )
                 ),
             }
@@ -1286,6 +1301,7 @@ def symbols_top_markets(  # noqa: C901
                 },
                 collection_kind="groups",
                 groups=results,
+                include_contract_meta=detail_mode == "full",
             )
         except MT5ConnectionError as exc:
             return {"error": str(exc)}
@@ -1655,6 +1671,7 @@ def market_scan(  # noqa: C901
                 out,
                 collection_kind="table",
                 rows=limited_rows,
+                include_contract_meta=detail_mode == "full",
             )
         except MT5ConnectionError as exc:
             return _market_scan_error(

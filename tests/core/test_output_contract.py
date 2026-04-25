@@ -123,6 +123,22 @@ def test_attach_collection_contract_adds_rows_without_replacing_legacy_data() ->
     assert out["rows"] == rows
 
 
+def test_attach_collection_contract_can_omit_contract_metadata() -> None:
+    rows = [{"symbol": "EURUSD"}]
+
+    out = attach_collection_contract(
+        {"success": True, "data": rows},
+        collection_kind="table",
+        rows=rows,
+        include_contract_meta=False,
+    )
+
+    assert out["data"] == rows
+    assert out["rows"] == rows
+    assert "collection_kind" not in out
+    assert "collection_contract_version" not in out
+
+
 def test_attach_collection_contract_preserves_error_payloads() -> None:
     payload = {"error": "failed"}
 

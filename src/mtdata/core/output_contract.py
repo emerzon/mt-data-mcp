@@ -8,7 +8,16 @@ from ..utils.utils import _UNPARSED_BOOL, _parse_bool_like
 from .runtime_metadata import build_runtime_timezone_meta
 
 _MISSING = object()
-_VERBOSE_ONLY_KEYS = frozenset({"meta", "diagnostics", "debug", "debug_info"})
+_VERBOSE_ONLY_KEYS = frozenset(
+    {
+        "meta",
+        "diagnostics",
+        "debug",
+        "debug_info",
+        "collection_kind",
+        "collection_contract_version",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -226,14 +235,16 @@ def attach_collection_contract(
     rows: Any = None,
     series: Any = None,
     groups: Any = None,
+    include_contract_meta: bool = True,
 ) -> Any:
     """Add normalized collection fields while preserving legacy payload shape."""
     if not isinstance(result, dict) or result.get("error"):
         return result
 
     out = dict(result)
-    out.setdefault("collection_kind", str(collection_kind))
-    out.setdefault("collection_contract_version", "collection.v1")
+    if include_contract_meta:
+        out.setdefault("collection_kind", str(collection_kind))
+        out.setdefault("collection_contract_version", "collection.v1")
     if rows is not None:
         out.setdefault("rows", rows)
     if series is not None:
