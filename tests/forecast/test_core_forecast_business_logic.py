@@ -575,6 +575,37 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
 
     monkeypatch.setattr(
         cf,
+        "_get_library_forecast_capabilities",
+        lambda lib, **_kwargs: [
+            {
+                "method": "theta",
+                "namespace": "native",
+                "available": True,
+                "execution": {"library": "native", "method": "theta"},
+            },
+            {
+                "method": "gt_deepar",
+                "namespace": "native",
+                "available": False,
+                "execution": {"library": "native", "method": "gt_deepar"},
+            },
+        ]
+        if lib == "native"
+        else [],
+    )
+    out_native_available = raw_list_models("native")
+    assert out_native_available["models"] == ["theta"]
+    assert out_native_available["unavailable"] == 0
+    assert out_native_available["unavailable_hidden"] == 1
+    assert out_native_available["filters"]["show_unavailable"] is False
+    out_native_all = raw_list_models("native", show_unavailable=True)
+    assert out_native_all["models"] == ["theta", "gt_deepar"]
+    assert out_native_all["unavailable"] == 1
+    assert out_native_all["unavailable_hidden"] == 0
+    assert out_native_all["filters"]["show_unavailable"] is True
+
+    monkeypatch.setattr(
+        cf,
         "_get_registered_forecast_capabilities",
         lambda: [
             {
@@ -636,28 +667,25 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert compact["detail"] == "compact"
     assert compact["total"] == 2
     assert compact["available"] == 1
-    assert compact["unavailable"] == 1
+    assert compact["unavailable"] == 0
     assert compact["methods"][0]["method"] == "theta"
     assert "category_summary" in compact
     assert "params_count" in compact["methods"][0]
     assert compact["methods"][0]["supports_ci"] is True
-    assert compact["methods"][1]["supports_ci"] is False
     assert "namespace" not in compact["methods"][0]
     assert "method_id" not in compact["methods"][0]
     assert "concept" not in compact["methods"][0]
     assert "capability_id" not in compact["methods"][0]
     assert "adapter_method" not in compact["methods"][0]
     assert "selector" not in compact["methods"][0]
-    assert "namespace" not in compact["methods"][1]
-    assert "method_id" not in compact["methods"][1]
-    assert "adapter_method" not in compact["methods"][1]
     assert "params" not in compact["methods"][0]
     assert all("requires" not in row for row in compact["methods"])
-    assert compact["methods_shown"] == 2
+    assert compact["methods_shown"] == 1
     assert compact["methods_hidden"] == 0
+    assert compact["filters"]["show_unavailable"] is False
     assert "includes all filtered methods" in compact["note"]
 
-    full = _unwrap(cf.forecast_list_methods)(detail="full")
+    full = _unwrap(cf.forecast_list_methods)(detail="full", show_unavailable=True)
     assert full["detail"] == "full"
     assert full["total"] == 2
     assert full["total_filtered"] == 2
@@ -697,7 +725,7 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert "library" in params
     assert "show_unavailable" in params
     sf_rows = [r for r in grouped["methods"] if r.get("category") == "statsforecast"]
-    assert len(sf_rows) == 4
+    assert len(sf_rows) == 3
     if sf_rows:
         assert all(str(r.get("namespace")) == "statsforecast" for r in sf_rows)
     assert grouped["methods_hidden"] == 0
@@ -712,9 +740,9 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert all(
         row.get("category") == "statsforecast" for row in sf_only["methods"]
     )
-    available_only = _unwrap(cf.forecast_list_methods)(show_unavailable=False)
-    assert available_only["unavailable"] == 0
-    assert all(row["available"] is True for row in available_only["methods"])
+    with_unavailable = _unwrap(cf.forecast_list_methods)(show_unavailable=True)
+    assert with_unavailable["unavailable"] == 1
+    assert any(row["available"] is False for row in with_unavailable["methods"])
 
     monkeypatch.setattr(cf, "_get_forecast_methods_data", lambda: {"methods": [1]})
     assert _unwrap(cf.forecast_list_methods)() == {"methods": [1]}

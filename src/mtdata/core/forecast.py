@@ -253,6 +253,7 @@ def forecast_generate(request: ForecastGenerateRequest) -> Dict[str, Any]:
 @mcp.tool()
 def forecast_list_library_models(
     library: Literal["native", "statsforecast", "sktime", "pretrained", "mlforecast"],
+    show_unavailable: bool = False,
 ) -> Dict[str, Any]:
     """List available model names within a forecast library.
 
@@ -262,7 +263,11 @@ def forecast_list_library_models(
     return _run_forecast_operation(
         "forecast_list_library_models",
         library=library,
-        func=lambda: _forecast_list_library_models_impl(library),
+        show_unavailable=show_unavailable,
+        func=lambda: _forecast_list_library_models_impl(
+            library,
+            show_unavailable=show_unavailable,
+        ),
     )
 
 
@@ -337,7 +342,7 @@ def forecast_list_methods(
     library: Optional[
         Literal["native", "statsforecast", "sktime", "pretrained", "mlforecast"]
     ] = None,
-    show_unavailable: bool = True,
+    show_unavailable: bool = False,
 ) -> Dict[str, Any]:
     """List forecast methods and availability.
 
@@ -813,19 +818,43 @@ def forecast_barrier_optimize(
 
 def _forecast_list_library_models_impl(
     library: Literal["native", "statsforecast", "sktime", "pretrained", "mlforecast"],
+    *,
+    show_unavailable: bool = False,
 ) -> Dict[str, Any]:
     lib = str(library).strip().lower()
-    capabilities = _get_library_forecast_capabilities(
+    capabilities_raw = _get_library_forecast_capabilities(
         lib,
         discover_sktime_forecasters=_discover_sktime_forecasters,
     )
+    capabilities_all = capabilities_raw if isinstance(capabilities_raw, list) else []
+    capabilities = [
+        row
+        for row in capabilities_all
+        if show_unavailable or row.get("available") is not False
+    ]
     method_rows = _forecast_library_method_rows(capabilities)
+    available_selected = int(
+        sum(1 for row in capabilities if row.get("available") is not False)
+    )
+    unavailable_selected = int(len(capabilities) - available_selected)
+    unavailable_total = int(
+        sum(1 for row in capabilities_all if row.get("available") is False)
+    )
+    availability_meta = {
+        "total": len(capabilities_all),
+        "total_filtered": len(capabilities),
+        "available": available_selected,
+        "unavailable": unavailable_selected,
+        "unavailable_hidden": 0 if show_unavailable else unavailable_total,
+        "filters": {"show_unavailable": bool(show_unavailable)},
+    }
     if lib == "native":
         return {
             "library": lib,
             "models": [str(row.get("method")) for row in capabilities],
             "methods": method_rows,
             "capabilities": capabilities,
+            **availability_meta,
             "usage": [
                 "mtdata-cli forecast_generate SYMBOL --library native --method analog",
                 "mtdata-cli forecast_generate SYMBOL --library native --method theta",
@@ -843,6 +872,7 @@ def _forecast_list_library_models_impl(
             "models": [str(row.get("display_name")) for row in capabilities],
             "methods": method_rows,
             "capabilities": capabilities,
+            **availability_meta,
             "usage": "mtdata-cli forecast_generate SYMBOL --library statsforecast --method AutoARIMA",
         }
 
@@ -852,6 +882,7 @@ def _forecast_list_library_models_impl(
             "models": [str(row.get("display_name")) for row in capabilities],
             "methods": method_rows,
             "capabilities": capabilities,
+            **availability_meta,
             "usage": [
                 "mtdata-cli forecast_generate SYMBOL --library sktime --method theta",
                 "mtdata-cli forecast_generate SYMBOL --library sktime --method ThetaForecaster",
@@ -881,6 +912,7 @@ def _forecast_list_library_models_impl(
             "models": models,
             "methods": method_rows,
             "capabilities": capabilities,
+            **availability_meta,
             "usage": [
                 "mtdata-cli forecast_generate SYMBOL --library pretrained --method chronos2",
                 "mtdata-cli forecast_generate SYMBOL --library pretrained --method timesfm",
@@ -892,6 +924,7 @@ def _forecast_list_library_models_impl(
             "library": lib,
             "methods": method_rows,
             "capabilities": capabilities,
+            **availability_meta,
             "note": "Use `--method <dotted sklearn/lightgbm regressor class>` plus optional constructor kwargs in --params (or use --set method.<k>=<v>).",
             "usage": [
                 "mtdata-cli forecast_generate SYMBOL --library mlforecast --method sklearn.ensemble.RandomForestRegressor --params \"n_estimators=200\"",
@@ -913,6 +946,7 @@ def _forecast_library_method_rows(capabilities: Any) -> List[Dict[str, Any]]:
         if not method:
             continue
         row: Dict[str, Any] = {"method": method}
+        row["available"] = capability.get("available") is not False
         display_name = str(capability.get("display_name") or "").strip()
         if display_name:
             row["model"] = display_name
