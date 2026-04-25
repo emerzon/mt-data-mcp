@@ -343,6 +343,8 @@ class TestForecastBacktest:
                 slippage_bps=10.0, trade_threshold=0.001,
             )
         assert isinstance(result, dict)
+        assert result["results"]["naive"]["metrics_available"] is True
+        assert result["results"]["naive"]["slippage_bps"] == 10.0
 
     @patch("mtdata.forecast.backtest._fetch_history")
     def test_volatility_forecast_with_realized(self, fetch):
@@ -415,6 +417,12 @@ class TestForecastBacktest:
                 trade_threshold=999.0,  # large threshold forces flat
             )
         assert isinstance(result, dict)
+        method_result = result["results"]["naive"]
+        assert method_result["metrics_available"] is False
+        assert method_result["metrics_reason"] == "no_non_flat_trades"
+        assert method_result["slippage_bps"] == 0.0
+        assert method_result["metrics"]["win_rate"] is None
+        assert method_result["metrics"]["trades_observed"] == 0
 
     @patch("mtdata.forecast.backtest._fetch_history")
     def test_params_per_method_and_global(self, fetch):

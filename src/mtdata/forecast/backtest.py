@@ -73,6 +73,41 @@ def _compact_metrics_payload(metrics: Optional[Dict[str, Any]]) -> Dict[str, Any
     return out
 
 
+def _unavailable_performance_metrics(reason: str, slippage_bps: float) -> Dict[str, Any]:
+    return {
+        "avg_return_per_trade": None,
+        "win_rate": None,
+        "max_drawdown": None,
+        "trades_per_year": None,
+        "trades_observed": 0,
+        "slippage_bps": float(slippage_bps),
+        "metrics_available": False,
+        "metrics_reason": str(reason),
+    }
+
+
+def _attach_metrics_status(
+    payload: Dict[str, Any],
+    *,
+    metrics: Dict[str, Any],
+    slippage_bps: float,
+    unavailable_reason: str,
+) -> None:
+    if metrics:
+        payload["metrics"] = metrics
+        payload["metrics_available"] = True
+        payload["slippage_bps"] = float(slippage_bps)
+        return
+
+    payload["metrics"] = _unavailable_performance_metrics(
+        unavailable_reason,
+        slippage_bps,
+    )
+    payload["metrics_available"] = False
+    payload["metrics_reason"] = str(unavailable_reason)
+    payload["slippage_bps"] = float(slippage_bps)
+
+
 def _get_forecast_methods_data_safe() -> Dict[str, Any]:
     """Safely fetch forecast methods metadata.
 
@@ -1399,8 +1434,19 @@ def forecast_backtest(  # noqa: C901
                     if metrics:
                         if detail_mode == "compact":
                             metrics = _compact_metrics_payload(metrics)
-                        agg["metrics"] = metrics
-                        agg["slippage_bps"] = float(slippage_bps)
+                    _attach_metrics_status(
+                        agg,
+                        metrics=metrics,
+                        slippage_bps=float(slippage_bps),
+                        unavailable_reason="no_non_flat_trades",
+                    )
+                else:
+                    _attach_metrics_status(
+                        agg,
+                        metrics={},
+                        slippage_bps=float(slippage_bps),
+                        unavailable_reason="not_applicable_for_volatility",
+                    )
                 if _dn_used:
                     agg["denoise_used"] = _dn_used
                 results[method] = agg
@@ -1411,6 +1457,12 @@ def forecast_backtest(  # noqa: C901
                     "num_tests": len(per_anchor),
                     "details": per_anchor,
                     "slippage_bps": float(slippage_bps),
+                    "metrics": _unavailable_performance_metrics(
+                        "no_successful_tests",
+                        float(slippage_bps),
+                    ),
+                    "metrics_available": False,
+                    "metrics_reason": "no_successful_tests",
                 }
 
         result_payload = {
