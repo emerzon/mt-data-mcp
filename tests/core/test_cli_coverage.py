@@ -2452,6 +2452,10 @@ class TestParseSetOverrides:
         assert "method" in result
         assert "denoise" in result
 
+    def test_nested_override(self):
+        result = _parse_set_overrides(["params.model.window=64"])
+        assert result == {"params": {"model": {"window": 64}}}
+
     def test_invalid_no_equals(self):
         with pytest.raises(ValueError, match="expected section.key=value"):
             _parse_set_overrides(["bad_override"])
@@ -2497,6 +2501,9 @@ class TestMergeDict:
 
     def test_src_overwrites_dst(self):
         assert _merge_dict({"a": 1}, {"a": 2}) == {"a": 2}
+
+    def test_nested_merge(self):
+        assert _merge_dict({"a": {"x": 1}}, {"a": {"y": 2}}) == {"a": {"x": 1, "y": 2}}
 
 
 # ========================================================================
@@ -3088,6 +3095,26 @@ class TestAddDynamicArguments:
         )
         assert args.simplify == "lttb"
         assert args.simplify_params == "points=100"
+
+    def test_mapping_param_adds_set_override(self):
+        parser = argparse.ArgumentParser()
+        func_info = {
+            "params": [
+                {
+                    "name": "params",
+                    "type": Dict[str, Any],
+                    "required": False,
+                    "default": None,
+                },
+            ]
+        }
+        add_dynamic_arguments(parser, func_info)
+        help_text = parser.format_help()
+        args = parser.parse_args(["--params", "alpha=0.5", "--set", "params.beta=0.2"])
+        assert args.params == "alpha=0.5"
+        assert args.set_overrides == ["params.beta=0.2"]
+        assert "--set" in help_text
+        assert "--params-params" not in help_text
 
     def test_first_required_param_accepts_flag_alias(self):
         parser = argparse.ArgumentParser()
@@ -3814,6 +3841,37 @@ class TestCreateCommandFunction:
         assert call_kwargs["symbol"] == "EURUSD"
         assert call_kwargs["detail"] == "full"
         assert "verbose" not in call_kwargs
+        assert call_kwargs["__cli_raw"] is True
+
+    def test_set_overrides_mapping_param(self, capsys):
+        mock_fn = MagicMock(return_value={"ok": True})
+        func_info = {
+            "func": mock_fn,
+            "params": [
+                {
+                    "name": "params",
+                    "type": Dict[str, Any],
+                    "required": False,
+                    "default": None,
+                },
+            ],
+        }
+        cmd_fn = create_command_function(func_info, cmd_name="test_cmd")
+        args = argparse.Namespace(
+            params="alpha=0.5",
+            set_overrides=["params.beta=0.2", "params.model.window=64"],
+            json=False,
+            verbose=False,
+        )
+
+        cmd_fn(args)
+
+        call_kwargs = mock_fn.call_args[1]
+        assert call_kwargs["params"] == {
+            "alpha": "0.5",
+            "beta": 0.2,
+            "model": {"window": 64},
+        }
         assert call_kwargs["__cli_raw"] is True
 
     def test_detail_full_is_not_forwarded_as_transport_verbose_to_tool_wrapper(self, capsys):

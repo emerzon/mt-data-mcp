@@ -135,6 +135,17 @@ def parse_set_overrides(
 ) -> Dict[str, Dict[str, Any]]:
     """Parse repeated --set entries like 'method.sp=24' into nested dicts."""
     out: Dict[str, Dict[str, Any]] = {}
+
+    def _assign_path(root: Dict[str, Any], parts: List[str], value: Any) -> None:
+        node = root
+        for part in parts[:-1]:
+            existing = node.get(part)
+            if not isinstance(existing, dict):
+                existing = {}
+                node[part] = existing
+            node = existing
+        node[parts[-1]] = value
+
     for item in items or []:
         if not isinstance(item, str) or not item.strip():
             continue
@@ -144,19 +155,21 @@ def parse_set_overrides(
         left = left.strip()
         if "." not in left:
             raise ValueError(f"Invalid --set '{item}': expected section.key=value")
-        section, key = left.split(".", 1)
-        section = section.strip().lower()
-        key = key.strip()
-        if not section or not key:
+        parts = [part.strip() for part in left.split(".")]
+        if len(parts) < 2 or not parts[0] or not all(parts[1:]):
             raise ValueError(f"Invalid --set '{item}': expected section.key=value")
-        out.setdefault(section, {})[key] = coerce_cli_scalar(right)
+        section = parts[0].lower()
+        _assign_path(out.setdefault(section, {}), parts[1:], coerce_cli_scalar(right))
     return out
 
 
 def merge_dict(dst: Optional[Dict[str, Any]], src: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     merged = dict(dst or {})
     for key, value in (src or {}).items():
-        merged[key] = value
+        if isinstance(merged.get(key), dict) and isinstance(value, dict):
+            merged[key] = merge_dict(merged[key], value)
+        else:
+            merged[key] = value
     return merged
 
 
@@ -235,6 +248,38 @@ def create_command_function(  # noqa: C901
     def command_func(args: Any) -> int:  # noqa: C901
         kwargs: Dict[str, Any] = {}
         missing_required: List[str] = []
+        mapping_param_names: set[str] = set()
+        for param in func_info["params"]:
+            try:
+                base_type, origin = unwrap_optional_type(param.get("type"))
+                if (
+                    base_type in (dict, Dict)
+                    or origin in (dict, Dict)
+                    or is_typed_dict_type(base_type)
+                ):
+                    mapping_param_names.add(param["name"])
+            except Exception:
+                continue
+        try:
+            set_overrides = parse_set_overrides(
+                getattr(args, "set_overrides", None),
+                coerce_cli_scalar=coerce_cli_scalar,
+            )
+        except ValueError as exc:
+            render_cli_result(_build_cli_error(str(exc)), args=args, cmd_name=cmd_name)
+            return 1
+        unknown_sections = sorted(set(set_overrides) - mapping_param_names)
+        if unknown_sections:
+            allowed = ", ".join(sorted(mapping_param_names)) or "none"
+            render_cli_result(
+                _build_cli_error(
+                    f"Unknown --set section(s): {', '.join(unknown_sections)}. "
+                    f"Use one of: {allowed}."
+                ),
+                args=args,
+                cmd_name=cmd_name,
+            )
+            return 1
         for param in func_info["params"]:
             param_name = param["name"]
             arg_value = getattr(args, param_name, param["default"])
@@ -273,7 +318,11 @@ def create_command_function(  # noqa: C901
                         if parsed is not None:
                             arg_value = parsed
                     else:
-                        arg_value = {"method": arg_value.strip()}
+                        parsed = parse_kv_string(arg_value)
+                        if parsed is not None:
+                            arg_value = parsed
+                        else:
+                            arg_value = {"method": arg_value.strip()}
 
                 extra_param_name = f"{param_name}_params"
                 extra_val = getattr(args, extra_param_name, None)
@@ -288,6 +337,13 @@ def create_command_function(  # noqa: C901
                                     arg_value[key] = value
                         else:
                             arg_value = extra
+                if param_name in set_overrides:
+                    if arg_value is None or arg_value in ("", "__PRESENT__"):
+                        arg_value = {}
+                    if isinstance(arg_value, dict):
+                        arg_value = merge_dict(arg_value, set_overrides.get(param_name))
+                    else:
+                        arg_value = set_overrides.get(param_name)
 
             if param["required"] and arg_value in (None, ""):
                 missing_required.append(param_name)

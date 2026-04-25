@@ -468,6 +468,8 @@ def add_dynamic_arguments(
     cmd_name: Optional[str] = None,
 ) -> None:
     """Add CLI arguments for an introspected function schema."""
+    has_mapping_param = False
+
     def _extra_option_flags(param_name: str, cmd_name_value: Optional[str]) -> tuple[str, ...]:
         extras: list[str] = []
         if param_name == "limit" and cmd_name_value in _BAR_LIMIT_ALIAS_COMMANDS:
@@ -581,9 +583,12 @@ def add_dynamic_arguments(
                 default=argparse.SUPPRESS,
                 metavar="DAYS",
                 help="Alias for --minutes-back expressed in days.",
-            )
+        )
 
         if is_mapping_type:
+            has_mapping_param = True
+            if param["name"] == "params":
+                continue
             params_flags = _dedupe_flags(
                 f"--{param['name'].replace('_', '-')}-params",
                 f"--{param['name']}_params",
@@ -595,3 +600,12 @@ def add_dynamic_arguments(
                 default=None,
                 help=f"Extra params for {param['name']} (key=value[,key=value])",
             )
+    if has_mapping_param:
+        parser.add_argument(
+            "--set",
+            dest="set_overrides",
+            action="append",
+            default=None,
+            metavar="PARAM.KEY=VALUE",
+            help="Override nested mapping params, e.g. --set params.window=64.",
+        )
