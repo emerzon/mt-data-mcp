@@ -848,6 +848,26 @@ class TestReportWarnings:
         assert "warnings" in res["diagnostics"]
         assert "model convergence warning" in res["diagnostics"]["warnings"][0]
 
+    def test_library_deprecation_warnings_are_not_user_facing(self):
+        fn = _get_report_generate()
+
+        def _warn_template(*args, **kwargs):
+            warnings.warn("Importing from torchao.dtypes is deprecated", DeprecationWarning)
+            warnings.warn("model convergence warning", RuntimeWarning)
+            return _make_report(sections=_make_full_sections())
+
+        with patch("mtdata.core.report_templates.template_basic", _warn_template, create=True), \
+             patch("mtdata.core.report_templates.template_advanced", _warn_template, create=True), \
+             patch("mtdata.core.report_templates.template_scalping", _warn_template, create=True), \
+             patch("mtdata.core.report_templates.template_intraday", _warn_template, create=True), \
+             patch("mtdata.core.report_templates.template_swing", _warn_template, create=True), \
+             patch("mtdata.core.report_templates.template_position", _warn_template, create=True), \
+             patch(_FMT_NUM, side_effect=str):
+            res = fn("EURUSD", template="basic", format="toon")
+
+        warnings_out = res["diagnostics"]["warnings"]
+        assert warnings_out == ["model convergence warning"]
+
     def test_flat_forecast_is_flagged_in_summary_and_diagnostics(self):
         fn = _get_report_generate()
         sec = _make_full_sections()

@@ -70,6 +70,22 @@ def _collect_payload_errors(payload: Any, *, path: str = "") -> List[Dict[str, s
     return errors
 
 
+def _is_user_facing_report_warning(warning_obj: Any) -> bool:
+    category = getattr(warning_obj, "category", None)
+    if isinstance(category, type) and issubclass(
+        category,
+        (DeprecationWarning, PendingDeprecationWarning, ImportWarning),
+    ):
+        return False
+    try:
+        warning_text = str(warning_obj.message).strip()
+    except Exception:
+        warning_text = ""
+    if "torchao." in warning_text or "will be removed in a future release" in warning_text:
+        return False
+    return bool(warning_text)
+
+
 def _build_sections_status(sections: Dict[str, Any]) -> Dict[str, Any]:
     statuses: Dict[str, str] = {}
     details: Dict[str, Dict[str, Any]] = {}
@@ -252,6 +268,8 @@ def run_report_generate(  # noqa: C901
                     return report_error_payload(msg)
 
             for warning_obj in warning_records:
+                if not _is_user_facing_report_warning(warning_obj):
+                    continue
                 try:
                     warning_text = str(warning_obj.message).strip()
                 except Exception:
