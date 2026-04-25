@@ -87,19 +87,49 @@ def test_finviz_news_normalizes_stock_results_to_single_items_array() -> None:
     assert "news" not in out
 
 
-def test_finviz_news_without_symbol_keeps_general_news_shape() -> None:
+def test_finviz_news_without_symbol_normalizes_general_items() -> None:
     raw = _unwrap(finviz_news)
     service_result = {
         "success": True,
         "type": "news",
         "count": 1,
-        "items": [{"Title": "Market wrap"}],
+        "items": [
+            {
+                "Title": " Market wrap ",
+                "Source": "Finviz",
+                "Date": "01:30PM",
+                "Link": "https://example.test/news",
+            }
+        ],
     }
 
     with patch("mtdata.core.finviz.get_general_news", return_value=service_result):
         out = raw(symbol=None, limit=5, page=1)
 
-    assert out == service_result
+    assert out["items"] == [
+        {
+            "title": "Market wrap",
+            "source": "Finviz",
+            "published_at": "01:30PM",
+            "url": "https://example.test/news",
+        }
+    ]
+
+
+def test_finviz_market_news_normalizes_items() -> None:
+    raw = _unwrap(finviz_market_news)
+    service_result = {
+        "success": True,
+        "type": "news",
+        "items": [{"Title": "Stocks rise", "Source": "AP", "Date": "02:00PM"}],
+    }
+
+    with patch("mtdata.core.finviz.get_general_news", return_value=service_result):
+        out = raw(news_type="news", limit=5, page=1)
+
+    assert out["items"] == [
+        {"title": "Stocks rise", "source": "AP", "published_at": "02:00PM"}
+    ]
 
 
 def test_finviz_news_helpers_are_registered_tools() -> None:

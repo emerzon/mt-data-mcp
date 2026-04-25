@@ -294,6 +294,10 @@ def _normalize_finviz_news_item(item: Any) -> Any:
         ("Source", "source"),
         ("Date", "published_at"),
         ("Link", "url"),
+        ("title", "title"),
+        ("source", "source"),
+        ("published_at", "published_at"),
+        ("url", "url"),
     ):
         if source_key not in item:
             continue
@@ -306,11 +310,13 @@ def _normalize_finviz_news_item(item: Any) -> Any:
 
 def _normalize_finviz_news_payload(result: Dict[str, Any]) -> Dict[str, Any]:
     news_rows = result.get("news")
-    if not isinstance(news_rows, list):
+    items_rows = result.get("items")
+    if not isinstance(news_rows, list) and not isinstance(items_rows, list):
         return result
 
     out = dict(result)
-    out["items"] = [_normalize_finviz_news_item(item) for item in news_rows]
+    source_rows = news_rows if isinstance(news_rows, list) else items_rows
+    out["items"] = [_normalize_finviz_news_item(item) for item in source_rows]
     out.pop("news", None)
     return out
 
@@ -601,7 +607,9 @@ def finviz_news(symbol: Optional[str] = None, limit: int = 20, page: int = 1) ->
             return _normalize_finviz_news_payload(
                 get_stock_news(symbol_norm, limit=limit, page=page)
             )
-        return get_general_news(news_type="news", limit=limit, page=page)
+        return _normalize_finviz_news_payload(
+            get_general_news(news_type="news", limit=limit, page=page)
+        )
 
     return _run_logged_tool("finviz_news", fields, _run)
 
@@ -848,7 +856,9 @@ def finviz_market_news(
     return _run_logged_tool(
         "finviz_market_news",
         {"news_type": news_type, "limit": limit, "page": page},
-        lambda: get_general_news(news_type=news_type, limit=limit, page=page),
+        lambda: _normalize_finviz_news_payload(
+            get_general_news(news_type=news_type, limit=limit, page=page)
+        ),
     )
 
 
