@@ -63,7 +63,7 @@ def log_operation_finish(
     parent_operation = _pop_operation(operation)
     if parent_operation == str(operation):
         return
-    logger.info(
+    logger.debug(
         "event=finish operation=%s success=%s duration_ms=%.3f %s",
         operation,
         bool(success),
