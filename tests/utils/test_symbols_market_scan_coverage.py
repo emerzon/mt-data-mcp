@@ -273,13 +273,19 @@ class TestSymbolsTopMarkets:
             "symbol",
             "group",
             "timeframe",
+            "bar_age_hours",
+            "data_stale",
             "tick_volume",
             "price_change_pct",
         ]
+        assert result["results"]["highest_volume"]["data"][0]["data_stale"] is True
+        assert result["results"]["highest_volume"]["data"][0]["bar_age_hours"] > 0
         assert list(result["results"]["highest_price_change"]["data"][0].keys()) == [
             "symbol",
             "group",
             "timeframe",
+            "bar_age_hours",
+            "data_stale",
             "price_change_pct",
             "tick_volume",
         ]
@@ -430,8 +436,8 @@ class TestMarketScan:
         assert result["data"]["table"]["rows"][0]["rsi"] == 100.0
         assert result["data"]["table"]["rows"][0]["sma_value"] == 5.0
         assert result["collection_kind"] == "table"
-        assert result["canonical_source"] == "rows"
-        assert result["rows"] == result["data"]["table"]["rows"]
+        assert result["canonical_source"] == "data.table.rows"
+        assert "rows" not in result
         assert result["meta"]["request"]["timeframe"] == "H1"
         assert result["meta"]["request"]["rank_by"] == "abs_price_change_pct"
         assert result["meta"]["stats"]["matched_symbols"] == 1

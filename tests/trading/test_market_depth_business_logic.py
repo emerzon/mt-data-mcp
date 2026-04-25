@@ -269,6 +269,9 @@ def test_market_ticker_returns_lightweight_spread_snapshot() -> None:
     assert out["spread_points"] == 100.0
     assert "spread_pips" not in out
     assert out["spread_pct_display"] == "0.498753%"
+    assert out["data_stale"] is True
+    assert out["data_age_hours"] > 0
+    assert "Tick data may be stale" in out["warning"]
     assert out["last"] == 200.5
     assert out["tick_volume"] == 5
     assert out["pricing_basis"] == "per_1_lot_estimate"
@@ -312,6 +315,8 @@ def test_market_ticker_compact_detail_omits_verbose_fields() -> None:
     assert out["last"] == 200.5
     assert out["tick_volume"] == 5
     assert out["time_display"] == "2023-11-14 22:13"
+    assert out["data_stale"] is True
+    assert "Tick data may be stale" in out["warning"]
     assert "spread_usd" not in out
     assert "pricing_basis" not in out
     assert "diagnostics" not in out

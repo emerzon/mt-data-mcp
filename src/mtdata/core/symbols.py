@@ -27,6 +27,7 @@ from .output_contract import (
 )
 
 logger = logging.getLogger(__name__)
+_MARKET_SCAN_STALE_BAR_SECONDS = 7 * 24 * 60 * 60
 
 
 def _case_insensitive_sort_key(value: Any) -> tuple[str, str]:
@@ -499,6 +500,25 @@ def _market_scan_round(value: Optional[float], digits: int = 6) -> Optional[floa
     return round(float(value), max(0, int(digits)))
 
 
+def _market_scan_freshness_fields(bar_time: Optional[float]) -> Dict[str, Any]:
+    if bar_time is None:
+        return {}
+    try:
+        age_seconds = max(0.0, float(time.time()) - float(bar_time))
+    except Exception:
+        return {}
+    fields: Dict[str, Any] = {
+        "bar_age_hours": _market_scan_round(age_seconds / 3600.0, digits=3),
+        "data_stale": age_seconds > _MARKET_SCAN_STALE_BAR_SECONDS,
+    }
+    if fields["data_stale"]:
+        fields["stale_warning"] = (
+            "Completed bar data may be stale; latest bar is "
+            f"{fields['bar_age_hours']} hours old."
+        )
+    return fields
+
+
 def _build_market_scan_spread_row(
     symbol: Any,
     mt5_gateway: Any,
@@ -570,6 +590,7 @@ def _build_market_scan_bar_row(
         {
             "timeframe": timeframe,
             "bar_time": _format_time_minimal(bar_time) if bar_time is not None else None,
+            **_market_scan_freshness_fields(bar_time),
             "open": _market_scan_round(open_price, digits=digits),
             "close": _market_scan_round(close_price, digits=digits),
             "tick_volume": tick_volume,
@@ -679,6 +700,9 @@ def _top_markets_headers(metric: str, *, detail_mode: str) -> List[str]:
             "description",
             "timeframe",
             "bar_time",
+            "bar_age_hours",
+            "data_stale",
+            "stale_warning",
             "tick_volume",
             "real_volume",
             "open",
@@ -691,6 +715,9 @@ def _top_markets_headers(metric: str, *, detail_mode: str) -> List[str]:
             "description",
             "timeframe",
             "bar_time",
+            "bar_age_hours",
+            "data_stale",
+            "stale_warning",
             "open",
             "close",
             "price_change_pct",
@@ -700,8 +727,24 @@ def _top_markets_headers(metric: str, *, detail_mode: str) -> List[str]:
     }
     compact_headers = {
         "spread": ["symbol", "group", "spread_pct", "spread_points"],
-        "volume": ["symbol", "group", "timeframe", "tick_volume", "price_change_pct"],
-        "price_change": ["symbol", "group", "timeframe", "price_change_pct", "tick_volume"],
+        "volume": [
+            "symbol",
+            "group",
+            "timeframe",
+            "bar_age_hours",
+            "data_stale",
+            "tick_volume",
+            "price_change_pct",
+        ],
+        "price_change": [
+            "symbol",
+            "group",
+            "timeframe",
+            "bar_age_hours",
+            "data_stale",
+            "price_change_pct",
+            "tick_volume",
+        ],
     }
     header_map = compact_headers if detail_mode == "compact" else full_headers
     return list(header_map[metric])
@@ -899,6 +942,7 @@ def _build_market_scan_signal_row(
         {
             "timeframe": timeframe,
             "bar_time": _format_time_minimal(bar_time) if bar_time is not None else None,
+            **_market_scan_freshness_fields(bar_time),
             "open": _market_scan_round(open_price, digits=digits),
             "close": _market_scan_round(close_price, digits=digits),
             "tick_volume": tick_volume,
@@ -1654,6 +1698,9 @@ def market_scan(  # noqa: C901
                 "description",
                 "timeframe",
                 "bar_time",
+                "bar_age_hours",
+                "data_stale",
+                "stale_warning",
                 "close",
                 "price_change_pct",
                 "tick_volume",

@@ -23,6 +23,7 @@ from .schema import CompactFullDetailLiteral
 
 logger = logging.getLogger(__name__)
 _MARKET_DEPTH_ENABLE_ENV = "MTDATA_ENABLE_MARKET_DEPTH_FETCH"
+_MARKET_TICKER_STALE_SECONDS = 24 * 60 * 60
 
 
 def _round_market_ticker_value(value: Any, *, digits: int) -> Any:
@@ -56,6 +57,10 @@ def _compact_market_ticker_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "spread_points",
         "spread_pct",
         "spread_pct_display",
+        "data_age_seconds",
+        "data_age_hours",
+        "data_stale",
+        "warning",
         "time",
         "time_display",
         "timezone",
@@ -446,6 +451,21 @@ def market_ticker(
                     age_seconds = max(0.0, float(time.time()) - float(tick_time))
                 except Exception:
                     age_seconds = None
+            if age_seconds is not None:
+                out["data_age_seconds"] = _round_market_ticker_value(
+                    age_seconds,
+                    digits=3,
+                )
+                out["data_age_hours"] = _round_market_ticker_value(
+                    age_seconds / 3600.0,
+                    digits=3,
+                )
+                out["data_stale"] = age_seconds > _MARKET_TICKER_STALE_SECONDS
+                if out["data_stale"]:
+                    out["warning"] = (
+                        "Tick data may be stale; last tick time is "
+                        f"{out.get('time_display') or tick_time}."
+                    )
             diagnostics = {
                 "source": "mt5.symbol_info_tick",
                 "cache_used": False,
