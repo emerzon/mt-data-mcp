@@ -820,23 +820,8 @@ class TestFormatResultMinimal:
         )
         assert compact is not None
         assert "upcoming_holidays" not in compact
-        assert compact["upcoming_holidays_count"] == 2
-        assert compact["upcoming_holidays_summary"] == [
-            {
-                "date": "2031-01-01",
-                "holiday": "New Year's Day",
-                "impact": "closed",
-                "days_away": 2,
-                "markets_affected": ["NYSE", "NASDAQ"],
-            },
-            {
-                "date": "2031-01-20",
-                "holiday": "Martin Luther King Jr. Day",
-                "impact": "closed",
-                "days_away": 21,
-                "markets_affected": ["NYSE"],
-            },
-        ]
+        assert "upcoming_holidays_count" not in compact
+        assert "upcoming_holidays_summary" not in compact
         assert "show_all_hint" not in compact
         # Verbose mode leaves the payload untouched.
         assert _normalize_market_status_payload(

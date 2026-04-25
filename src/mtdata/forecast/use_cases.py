@@ -1412,6 +1412,7 @@ def run_forecast_volatility_estimate(
             params=request.params,
             as_of=request.as_of,
             denoise=request.denoise,
+            detail=request.detail,
         )
     except Exception as exc:
         log_operation_exception(

@@ -10,7 +10,7 @@ from ..services.data_service import (
     _resolve_live_rate_auto_shift_seconds,
     _shift_rate_times,
 )
-from ..shared.schema import DenoiseSpec, TimeframeLiteral
+from ..shared.schema import CompactFullDetailLiteral, DenoiseSpec, TimeframeLiteral
 from ..shared.validators import (
     invalid_timeframe_error,
     unsupported_timeframe_seconds_error,
@@ -346,12 +346,17 @@ def _annualize_horizon_sigma(horizon_sigma_return: float, bars_per_year: float) 
     return float(horizon_sigma_return * math.sqrt(bars_per_year))
 
 
-def _finalize_volatility_output(payload: Dict[str, Any]) -> Dict[str, Any]:
+def _finalize_volatility_output(
+    payload: Dict[str, Any],
+    *,
+    detail: str = "full",
+) -> Dict[str, Any]:
     """Add trader-friendly volatility aliases while preserving legacy sigma keys."""
     if not isinstance(payload, dict) or not payload.get("success"):
         return payload
 
     out = dict(payload)
+    detail_mode = str(detail or "compact").strip().lower()
     sigma_bar = out.get("sigma_bar_return")
     sigma_annual = out.get("sigma_annual_return")
     horizon_sigma = out.get("horizon_sigma_return")
@@ -364,6 +369,18 @@ def _finalize_volatility_output(payload: Dict[str, Any]) -> Dict[str, Any]:
         out.setdefault("volatility_horizon", horizon_sigma)
     if horizon_sigma_annual is not None:
         out.setdefault("volatility_horizon_annualized", horizon_sigma_annual)
+
+    if detail_mode != "full":
+        for key in (
+            "sigma_bar_return",
+            "sigma_annual_return",
+            "horizon_sigma_return",
+            "horizon_sigma_annual",
+            "params_explained",
+            "volatility_interpretation",
+        ):
+            out.pop(key, None)
+        return out
 
     horizon = out.get("horizon")
     interpretation = {
@@ -452,6 +469,7 @@ def forecast_volatility(  # noqa: C901
     params: Optional[Dict[str, Any]] = None,
     as_of: Optional[str] = None,
     denoise: Optional[DenoiseSpec] = None,
+    detail: CompactFullDetailLiteral = "full",
 ) -> Dict[str, Any]:
     """Forecast volatility over `horizon` bars with direct estimators/GARCH or general forecasters on a proxy.
 
@@ -549,6 +567,7 @@ def forecast_volatility(  # noqa: C901
                     params=call_params or None,
                     as_of=as_of,
                     denoise=denoise,
+                    detail="full",
                 )
                 if not isinstance(result, dict) or not result.get('success'):
                     err = result.get('error') if isinstance(result, dict) else None
@@ -615,7 +634,7 @@ def forecast_volatility(  # noqa: C901
             if component_errors:
                 out["component_errors"] = component_errors
                 out["warning"] = f"{len(component_errors)} ensemble component(s) failed."
-            return _finalize_volatility_output(out)
+            return _finalize_volatility_output(out, detail=detail)
 
         # If using general forecasters on proxy, compute proxy series and return using internal logic
         if method_l in valid_general:
@@ -787,7 +806,8 @@ def forecast_volatility(  # noqa: C901
                 {"success": True, "symbol": symbol, "timeframe": timeframe, "method": method_l, "proxy": proxy_l,
                  "horizon": int(horizon), "sigma_bar_return": sbar, "sigma_annual_return": float(sbar*math.sqrt(bpy)),
                  "horizon_sigma_return": hsig, "horizon_sigma_annual": _annualize_horizon_sigma(hsig, bpy),
-                 "params_used": p}
+                 "params_used": p},
+                detail=detail,
             )
 
         if method_l == 'har_rv':
@@ -880,7 +900,8 @@ def forecast_volatility(  # noqa: C901
                      "params_used": {"rv_timeframe": rv_tf, "window_w": w, "window_m": m,
                                       "beta": [float(b) for b in beta.tolist()],
                                       "days": days},
-                     "denoise_used": dn_spec_used}
+                     "denoise_used": dn_spec_used},
+                    detail=detail,
                 )
             except Exception as ex:
                 return {"error": f"HAR-RV error: {ex}"}
@@ -961,7 +982,8 @@ def forecast_volatility(  # noqa: C901
                  "horizon_sigma_return": hsig, "horizon_sigma_annual": _annualize_horizon_sigma(hsig, bpy),
                  "params_used": params_used,
                  "params_explained": _ewma_param_explanations(lambda_source),
-                 "denoise_used": dn_spec_used}
+                 "denoise_used": dn_spec_used},
+                detail=detail,
             )
 
         if method_l in {'parkinson','gk','rs','yang_zhang','rolling_std'}:
@@ -998,7 +1020,8 @@ def forecast_volatility(  # noqa: C901
                  "sigma_bar_return": sbar, "sigma_annual_return": float(sbar*math.sqrt(bpy)),
                  "horizon_sigma_return": hsig, "horizon_sigma_annual": _annualize_horizon_sigma(hsig, bpy),
                  "params_used": {"window": int(window)},
-                 "denoise_used": dn_spec_used}
+                 "denoise_used": dn_spec_used},
+                detail=detail,
             )
 
         if method_l == 'realized_kernel':
@@ -1028,7 +1051,8 @@ def forecast_volatility(  # noqa: C901
                     "horizon_sigma_annual": _annualize_horizon_sigma(float(sigma_h), bpy),
                     "params_used": {"window": int(window), "kernel": kernel, "bandwidth": bandwidth_val},
                     "denoise_used": dn_spec_used,
-                }
+                },
+                detail=detail,
             )
 
         if method_l in garch_family:
@@ -1069,7 +1093,8 @@ def forecast_volatility(  # noqa: C901
                      "sigma_bar_return": sbar, "sigma_annual_return": float(sbar*math.sqrt(bpy)),
                      "horizon_sigma_return": hsig, "horizon_sigma_annual": _annualize_horizon_sigma(hsig, bpy),
                      "params_used": params_used,
-                     "denoise_used": dn_spec_used}
+                     "denoise_used": dn_spec_used},
+                    detail=detail,
                 )
             except Exception as ex:
                 return {"error": f"{method_l} error: {ex}"}

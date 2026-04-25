@@ -353,3 +353,4 @@ class ForecastVolatilityEstimateRequest(BaseModel):
     params: Optional[Dict[str, Any]] = None
     as_of: Optional[str] = None
     denoise: Optional[DenoiseSpec] = None
+    detail: CompactFullDetailLiteral = "compact"

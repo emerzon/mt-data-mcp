@@ -334,38 +334,38 @@ def labels_triple_barrier(
                 barrier_kwargs=barrier_kwargs,
             )
 
-            # Build label legend for interpretability
-            label_legend = {
-                "1": {
-                    "code": 1,
-                    "label": "tp_first",
-                    "description": "Take-profit barrier hit before stop-loss (profitable outcome)",
-                },
-                "-1": {
-                    "code": -1,
-                    "label": "sl_first",
-                    "description": "Stop-loss barrier hit before take-profit (loss outcome)",
-                },
-                "0": {
-                    "code": 0,
-                    "label": "hold",
-                    "description": "Neither barrier hit within horizon bars (neutral/timeout outcome)",
-                },
-            }
-
             payload: Dict[str, Any] = {
                 "success": True,
                 "symbol": symbol,
                 "timeframe": timeframe,
                 "direction": direction_value,
                 "horizon": int(horizon),
-                "label_legend": label_legend,
                 "entries": t_entry,
                 "labels": labels,
                 "holding_bars": hold,
                 "tp_time": tp_times,
                 "sl_time": sl_times,
             }
+            if output_mode == "full":
+                payload["label_legend"] = {
+                    "1": {
+                        "code": 1,
+                        "label": "tp_first",
+                        "description": "Take-profit barrier hit before stop-loss (profitable outcome)",
+                    },
+                    "-1": {
+                        "code": -1,
+                        "label": "sl_first",
+                        "description": "Stop-loss barrier hit before take-profit (loss outcome)",
+                    },
+                    "0": {
+                        "code": 0,
+                        "label": "hold",
+                        "description": "Neither barrier hit within horizon bars (neutral/timeout outcome)",
+                    },
+                }
+            elif output_mode == "compact":
+                payload["label_key"] = {"1": "tp_first", "-1": "sl_first", "0": "hold"}
             if warnings_out:
                 payload["warnings"] = list(warnings_out)
             if skipped_entries > 0:

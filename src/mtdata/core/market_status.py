@@ -511,12 +511,9 @@ def normalize_market_status_output(
     if detail_mode == "full":
         return out
 
-    upcoming = out.pop("upcoming_holidays", None)
-    if isinstance(upcoming, list) and upcoming:
-        out["upcoming_holidays_count"] = len(upcoming)
-        out["upcoming_holidays_summary"] = [
-            _summarize_upcoming_holiday(entry) for entry in upcoming
-        ]
+    out.pop("upcoming_holidays", None)
+    out.pop("upcoming_holidays_count", None)
+    out.pop("upcoming_holidays_summary", None)
     return out
 
 
@@ -728,8 +725,8 @@ def market_status(
     timezone_display : str, optional
         Time display format: "local" (market's local time), "utc", or "auto" (default: "local")
     detail : {"compact", "full"}, optional
-        Response detail level. `compact` (default) summarizes upcoming holiday
-        information, while `full` preserves the complete holiday list.
+        Response detail level. `compact` (default) omits upcoming holiday
+        details, while `full` preserves the complete holiday list.
 
     Returns
     -------
@@ -742,8 +739,6 @@ def market_status(
         - `markets_pre_market`: Count of markets in pre-market
         - `markets_lunch_break`: Count of markets in lunch break
         - `markets_closed`: Count of markets currently closed
-        - `upcoming_holidays_summary`: Compact holiday summary rows when
-          `detail='compact'`
         - `upcoming_holidays`: Full holiday rows when `detail='full'`
             - `date`: Holiday date (ISO format)
             - `holiday`: Holiday name

@@ -259,7 +259,7 @@ def test_upcoming_holidays_crosses_into_the_next_year(monkeypatch) -> None:
     assert calls == [("US", (2030,)), ("US", (2031,))]
 
 
-def test_normalize_market_status_output_compact_summarizes_holidays() -> None:
+def test_normalize_market_status_output_compact_hides_holidays() -> None:
     payload = {
         "success": True,
         "upcoming_holidays": [
@@ -288,24 +288,8 @@ def test_normalize_market_status_output_compact_summarizes_holidays() -> None:
     full = market_status_mod.normalize_market_status_output(payload, detail="full")
 
     assert "upcoming_holidays" not in compact
-    assert compact["upcoming_holidays_count"] == 2
-    assert compact["upcoming_holidays_summary"] == [
-        {
-            "date": "2031-01-01",
-            "holiday": "New Year's Day",
-            "impact": "closed",
-            "days_away": 2,
-            "markets_affected": ["NYSE", "NASDAQ"],
-        },
-        {
-            "date": "2031-01-02",
-            "holiday": "Day after New Year's Day",
-            "impact": "early_close",
-            "days_away": 3,
-            "markets_affected": ["NYSE"],
-            "early_close_time": "13:00",
-        },
-    ]
+    assert "upcoming_holidays_count" not in compact
+    assert "upcoming_holidays_summary" not in compact
     assert "show_all_hint" not in compact
 
     assert full["upcoming_holidays"] == payload["upcoming_holidays"]

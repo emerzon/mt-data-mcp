@@ -1454,7 +1454,7 @@ def _normalize_market_status_payload(
     verbose: bool,
     tool_name: str,
 ) -> Optional[Dict[str, Any]]:
-    """Summarize holiday details for compact market-status output."""
+    """Remove holiday details from compact market-status output."""
     if tool_name != "market_status" or verbose:
         return None
     if "upcoming_holidays" not in payload and "upcoming_holidays_summary" not in payload:

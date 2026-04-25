@@ -176,9 +176,9 @@ _COINTEGRATION_REQUEST_KEYS = frozenset(
         "trend",
         "significance",
         "min_overlap",
+        "detail",
     }
 )
-
 
 def _causal_connection_error() -> Dict[str, Any] | None:
     return mt5_connection_error(
@@ -1821,6 +1821,7 @@ def cointegration_test(  # noqa: C901
     trend: str = "c",
     significance: float = 0.05,
     min_overlap: int = 80,
+    detail: CompactFullDetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """Run pairwise Engle-Granger cointegration tests on MT5 symbols.
 
@@ -1842,6 +1843,8 @@ def cointegration_test(  # noqa: C901
         trend: Deterministic trend term for the test: "c", "ct", "ctt", or "n".
         significance: Alpha threshold for reporting cointegrated pairs.
         min_overlap: Minimum overlapping transformed samples required per pair.
+        detail: "compact" keeps pair results concise; "full" adds overlap/window
+            diagnostics and legends.
     """
 
     def _run() -> Dict[str, Any]:  # noqa: C901
@@ -1854,6 +1857,7 @@ def cointegration_test(  # noqa: C901
             "trend": str(trend),
             "significance": float(significance),
             "min_overlap": int(min_overlap),
+            "detail": str(detail or "compact"),
         }
         connection_error = _causal_connection_error()
         if connection_error is not None:
@@ -1963,6 +1967,15 @@ def cointegration_test(  # noqa: C901
                 code="invalid_input",
                 meta=meta,
             )
+
+        detail_mode = str(detail or "compact").strip().lower()
+        if detail_mode not in {"compact", "full"}:
+            return _causal_error(
+                "detail must be 'compact' or 'full'.",
+                code="invalid_input",
+                meta=meta,
+            )
+        meta["detail"] = detail_mode
 
         transform_value = _normalize_cointegration_transform(transform)
         if transform_value is None:
@@ -2093,13 +2106,14 @@ def cointegration_test(  # noqa: C901
                     coint_func=coint,
                 )
                 if row is not None:
-                    row["overlap_rows"] = overlap_rows
-                    row["aligned_observations"] = overlap_rows
-                    row["available_overlap_rows"] = overlap_rows
-                    row["calculation_samples"] = int(len(subset))
-                    row["window_requested"] = int(limit)
-                    row["window_actual"] = int(len(subset))
-                    row["window_truncated"] = bool(len(subset) < overlap_rows)
+                    if detail_mode == "full":
+                        row["overlap_rows"] = overlap_rows
+                        row["aligned_observations"] = overlap_rows
+                        row["available_overlap_rows"] = overlap_rows
+                        row["calculation_samples"] = int(len(subset))
+                        row["window_requested"] = int(limit)
+                        row["window_actual"] = int(len(subset))
+                        row["window_truncated"] = bool(len(subset) < overlap_rows)
                     rows.append(row)
                 if failures:
                     for failure in failures:
@@ -2122,14 +2136,15 @@ def cointegration_test(  # noqa: C901
                 "pairs_tested": int(len(rows)),
                 "pairs_failed": int(len(pair_failures)),
                 "pairs_skipped_min_overlap": int(pairs_skipped_min_overlap),
-                "pair_overlaps": pair_overlaps,
-                "window_interpretation": (
-                    "calculation_samples/window_actual is the capped sample count used in each test; "
-                    "aligned_observations/available_overlap_rows is the full pairwise overlap before "
-                    "the limit window is applied."
-                ),
             }
         )
+        if detail_mode == "full":
+            meta["pair_overlaps"] = pair_overlaps
+            meta["window_interpretation"] = (
+                "calculation_samples/window_actual is the capped sample count used in each test; "
+                "aligned_observations/available_overlap_rows is the full pairwise overlap before "
+                "the limit window is applied."
+            )
         if pair_failures:
             meta["pair_failures"] = pair_failures
             warnings_out.append(
@@ -2184,18 +2199,22 @@ def cointegration_test(  # noqa: C901
             },
             "meta": _causal_contract_meta(
                 meta,
-                legends={
-                    "transform": cointegration_transform_legend,
-                    "trend": _COINTEGRATION_TREND_LEGEND,
-                    "cointegration": {
-                        "description": "Long-term equilibrium relationship between non-stationary price series",
-                        "cointegrated_true": "Series share a common stochastic drift - deviations are mean-reverting",
-                        "cointegrated_false": "No statistically significant long-term relationship detected",
-                        "test_statistic": "Engle-Granger test statistic; more negative = stronger evidence of cointegration",
-                        "critical_values": "Thresholds at 1%, 5%, 10% significance levels; test statistic < critical value indicates cointegration",
-                    },
-                    "hedge_ratio": "Units of quote symbol needed to hedge one unit of base symbol in a pairs trade",
-                },
+                legends=(
+                    {
+                        "transform": cointegration_transform_legend,
+                        "trend": _COINTEGRATION_TREND_LEGEND,
+                        "cointegration": {
+                            "description": "Long-term equilibrium relationship between non-stationary price series",
+                            "cointegrated_true": "Series share a common stochastic drift - deviations are mean-reverting",
+                            "cointegrated_false": "No statistically significant long-term relationship detected",
+                            "test_statistic": "Engle-Granger test statistic; more negative = stronger evidence of cointegration",
+                            "critical_values": "Thresholds at 1%, 5%, 10% significance levels; test statistic < critical value indicates cointegration",
+                        },
+                        "hedge_ratio": "Units of quote symbol needed to hedge one unit of base symbol in a pairs trade",
+                    }
+                    if detail_mode == "full"
+                    else None
+                ),
             ),
         }
         if warnings_out:
@@ -2217,5 +2236,6 @@ def cointegration_test(  # noqa: C901
         trend=trend,
         significance=significance,
         min_overlap=min_overlap,
+        detail=detail,
         func=_run,
     )

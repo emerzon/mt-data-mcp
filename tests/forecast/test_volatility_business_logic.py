@@ -61,6 +61,29 @@ def test_volatility_metadata_and_helper_functions(monkeypatch):
     assert np.all(np.isfinite(rs))
 
 
+def test_finalize_volatility_output_compact_omits_explanatory_fields():
+    payload = {
+        "success": True,
+        "sigma_bar_return": 0.01,
+        "sigma_annual_return": 0.5,
+        "horizon_sigma_return": 0.02,
+        "horizon_sigma_annual": 0.8,
+        "params_explained": {"lambda_": "legacy explanation"},
+    }
+
+    compact = vol._finalize_volatility_output(payload, detail="compact")
+    full = vol._finalize_volatility_output(payload, detail="full")
+
+    assert compact["volatility_per_bar"] == pytest.approx(0.01)
+    assert compact["volatility_horizon"] == pytest.approx(0.02)
+    assert "sigma_bar_return" not in compact
+    assert "horizon_sigma_return" not in compact
+    assert "params_explained" not in compact
+    assert "volatility_interpretation" not in compact
+    assert full["sigma_bar_return"] == pytest.approx(0.01)
+    assert "volatility_interpretation" in full
+
+
 def test_forecast_volatility_validations(monkeypatch):
     monkeypatch.setattr(vol, "TIMEFRAME_MAP", {"H1": 1})
     monkeypatch.setattr(vol, "TIMEFRAME_SECONDS", {"H1": 3600})

@@ -940,7 +940,12 @@ class TestCointegrationTest:
 
         mock_fetch.side_effect = _fetch_side_effect
 
-        result = self._unwrapped()(group="Forex\\Majors", limit=60, min_overlap=40)
+        result = self._unwrapped()(
+            group="Forex\\Majors",
+            limit=60,
+            min_overlap=40,
+            detail="full",
+        )
 
         assert result["success"] is True
         assert result["meta"]["request"]["group_resolved"] == "Forex\\Majors"
@@ -958,6 +963,32 @@ class TestCointegrationTest:
         assert pair["window_actual"] == 60
         assert pair["window_truncated"] is True
         assert "window_interpretation" in result["meta"]["stats"]
+
+    @patch("statsmodels.tsa.stattools.coint", return_value=(-4.5, 0.01, [-3.9, -3.3, -3.0]))
+    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal._fetch_series")
+    def test_compact_omits_cointegration_window_diagnostics(self, mock_fetch, _mock_coint):
+        idx = pd.date_range("2024-01-01", periods=120, freq="h")
+        base = np.cumsum(np.linspace(-0.01, 0.01, 120))
+        series_map = {
+            "A": pd.Series(100.0 * np.exp(base), index=idx),
+            "B": pd.Series(50.0 * np.exp(base * 0.98), index=idx),
+        }
+
+        def _fetch_side_effect(symbol, timeframe, count):
+            return series_map[symbol], None
+
+        mock_fetch.side_effect = _fetch_side_effect
+
+        result = self._unwrapped()("A,B", limit=60, min_overlap=40)
+
+        assert result["success"] is True
+        pair = result["data"]["items"][0]
+        assert pair["cointegrated"] is True
+        assert "calculation_samples" not in pair
+        assert "aligned_observations" not in pair
+        assert "window_truncated" not in pair
+        assert "window_interpretation" not in result["meta"].get("stats", {})
 
     @patch("statsmodels.tsa.stattools.coint", side_effect=RuntimeError("singular matrix"))
     @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
