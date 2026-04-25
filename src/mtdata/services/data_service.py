@@ -1642,11 +1642,10 @@ def fetch_ticks(  # noqa: C901
                 volumes.append(float(_tick_field(tick, "volume")))
             except (TypeError, ValueError):
                 volumes.append(float("nan"))
-            if needs_stats:
-                try:
-                    volumes_real.append(float(_tick_field(tick, "volume_real")))
-                except (TypeError, ValueError):
-                    volumes_real.append(float("nan"))
+            try:
+                volumes_real.append(float(_tick_field(tick, "volume_real")))
+            except (TypeError, ValueError):
+                volumes_real.append(float("nan"))
 
         has_last = len(set(lasts)) > 1 or any(v != 0 for v in lasts)
         finite_volumes = [v for v in volumes if math.isfinite(v)]
@@ -1654,14 +1653,16 @@ def fetch_ticks(  # noqa: C901
             len(set(finite_volumes)) > 1 or any(v != 0.0 for v in finite_volumes)
         )
         has_flags = len(set(flags)) > 1 or any(v != 0 for v in flags)
-        has_real_volume = needs_stats and any(math.isfinite(v) and v != 0.0 for v in volumes_real)
-        
+        has_real_volume = any(math.isfinite(v) and v != 0.0 for v in volumes_real)
+
         # Build header dynamically (time, bid, ask are always included)
         headers = ["time", "bid", "ask"]
         if has_last:
             headers.append("last")
         if has_volume:
             headers.append("volume")
+        if has_real_volume:
+            headers.append("volume_real")
         if has_flags:
             headers.append("flags")
 
@@ -2039,6 +2040,8 @@ def fetch_ticks(  # noqa: C901
                 values.append(lasts[i])
             if has_volume:
                 values.append(volumes[i])
+            if has_real_volume:
+                values.append(volumes_real[i])
             if has_flags:
                 values.append(flags[i])
             rows.append(values)

@@ -494,16 +494,7 @@ def _filter_finviz_fundamentals_payload(
 def finviz_fundamentals(
     symbol: str,
     detail: Literal["compact", "full"] = "compact",  # type: ignore
-    category: Literal[
-        "summary",
-        "valuation",
-        "performance",
-        "technicals",
-        "dividends",
-        "ownership",
-        "profile",
-        "all",
-    ] = "summary",  # type: ignore
+    category: str = "summary",
     fields: Optional[str] = None,
 ) -> Dict[str, Any]:
     """

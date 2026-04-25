@@ -1982,7 +1982,7 @@ def to_methods_availability_toon(methods: List[Dict[str, Any]]) -> str:
     rows: List[Dict[str, Any]] = []
     for m in methods or []:
         if isinstance(m, dict):
-            rows.append({"method": m.get("method"), "available": m.get("available")})
+            rows.append({k: v for k, v in m.items() if not k.startswith("_")})
     if not rows:
         return ""
     headers = _headers_from_dicts(rows)
