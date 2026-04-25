@@ -3,7 +3,7 @@ import logging
 import math
 import os
 import time
-from typing import Any, Dict
+from typing import Any, Dict, Literal, Optional
 
 from ..utils.mt5 import (
     MT5ConnectionError,
@@ -356,11 +356,13 @@ else:
 def market_ticker(
     symbol: str,
     detail: CompactFullDetailLiteral = "full",
+    price_field: Optional[Literal["bid", "ask", "mid", "last", "spread"]] = None,
 ) -> Dict[str, Any]:
     """Return a lightweight ticker snapshot with bid/ask/spread for `symbol`.
 
     Parameters: symbol
     Use `detail="compact"` to keep only the most operational bid/ask/spread fields.
+    Set `price_field` to bid, ask, mid, last, or spread for a simple price result.
     """
     detail_mode = resolve_output_detail(detail=detail, default="full")
 
@@ -475,6 +477,43 @@ def market_ticker(
             out["meta"] = meta
             if not _use_ctz:
                 out["timezone"] = "UTC"
+            if price_field is not None:
+                field_value = str(price_field or "").strip().lower()
+                price_values = {
+                    "bid": out.get("bid"),
+                    "ask": out.get("ask"),
+                    "mid": _round_market_ticker_value(
+                        ((bid + ask) / 2.0) if bid is not None and ask is not None else None,
+                        digits=digits,
+                    ),
+                    "last": out.get("last"),
+                    "spread": out.get("spread"),
+                }
+                if field_value not in price_values:
+                    return _finalize(
+                        {
+                            "error": (
+                                "price_field must be one of: bid, ask, mid, last, spread."
+                            )
+                        }
+                    )
+                price = price_values.get(field_value)
+                if price is None:
+                    return _finalize(
+                        {"error": f"{field_value} price is unavailable for {symbol}."}
+                    )
+                simple: Dict[str, Any] = {
+                    "success": True,
+                    "symbol": symbol,
+                    "type": "price",
+                    "field": field_value,
+                    "price": price,
+                    "price_precision": digits,
+                }
+                for key in ("time", "time_display", "timezone"):
+                    if out.get(key) is not None:
+                        simple[key] = out.get(key)
+                return _finalize(simple)
             if detail_mode == "compact":
                 out = _compact_market_ticker_payload(out)
             return _finalize(out)
@@ -488,5 +527,6 @@ def market_ticker(
         operation="market_ticker",
         symbol=symbol,
         detail=detail_mode,
+        price_field=price_field,
         func=_run,
     )

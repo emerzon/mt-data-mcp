@@ -17,8 +17,8 @@ def _raw_market_depth_fetch(symbol: str, spread: bool = False, compact: bool = F
     return raw(symbol, spread=spread, compact=compact)
 
 
-def _raw_market_ticker(symbol: str, *, detail: str = "full"):
-    return market_ticker.__wrapped__(symbol, detail=detail)
+def _raw_market_ticker(symbol: str, *, detail: str = "full", price_field=None):
+    return market_ticker.__wrapped__(symbol, detail=detail, price_field=price_field)
 
 
 @pytest.fixture(autouse=True)
@@ -315,6 +315,62 @@ def test_market_ticker_compact_detail_omits_verbose_fields() -> None:
     assert "spread_usd" not in out
     assert "pricing_basis" not in out
     assert "diagnostics" not in out
+    assert out["meta"]["tool"] == "market_ticker"
+
+
+def test_market_ticker_price_field_returns_simple_price() -> None:
+    tick = SimpleNamespace(
+        bid=1.17221,
+        ask=1.17237,
+        last=1.17230,
+        volume=5,
+        time=1700000000,
+    )
+    with patch("mtdata.core.market_depth.mt5") as mt5, patch(
+        "mtdata.core.market_depth._use_client_tz", return_value=False
+    ):
+        mt5.symbol_select.return_value = True
+        mt5.symbol_info.return_value = SimpleNamespace(
+            digits=5,
+            point=0.00001,
+            trade_tick_size=0.00001,
+            trade_tick_value=1.0,
+            currency_profit="USD",
+        )
+        mt5.symbol_info_tick.return_value = tick
+        out = _raw_market_ticker("EURUSD", price_field="mid")
+
+    assert out["success"] is True
+    assert out["type"] == "price"
+    assert out["field"] == "mid"
+    assert out["price"] == 1.17229
+    assert out["price_precision"] == 5
+    assert out["time_display"] == "2023-11-14 22:13"
+    assert "bid" not in out
+    assert "spread_pips" not in out
+    assert out["meta"]["tool"] == "market_ticker"
+
+
+def test_market_ticker_price_field_reports_unavailable_last() -> None:
+    tick = SimpleNamespace(
+        bid=1.1,
+        ask=1.2,
+        last=0.0,
+        volume=5,
+        time=1700000000,
+    )
+    with patch("mtdata.core.market_depth.mt5") as mt5:
+        mt5.symbol_select.return_value = True
+        mt5.symbol_info.return_value = SimpleNamespace(
+            digits=5,
+            point=0.00001,
+            trade_tick_size=0.00001,
+            trade_tick_value=1.0,
+        )
+        mt5.symbol_info_tick.return_value = tick
+        out = _raw_market_ticker("EURUSD", price_field="last")
+
+    assert out["error"] == "last price is unavailable for EURUSD."
     assert out["meta"]["tool"] == "market_ticker"
 
 
