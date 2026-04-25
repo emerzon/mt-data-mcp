@@ -1279,18 +1279,24 @@ def symbols_top_markets(  # noqa: C901
             volume_rows = volume_rows[:limit_value]
             price_change_rows = price_change_rows[:limit_value]
 
-            scan_meta = {
-                "success": True,
-                "rank_by": rank_by_value,
-                "limit": limit_value,
-                "universe": universe_value,
-                "detail": detail_mode,
-                "timeframe": timeframe_value if needs_bar_data else None,
-                "timeframe_requested": timeframe_value,
-                "timeframe_used": timeframe_value if needs_bar_data else None,
-                "scanned_symbols": len(selected_symbols),
-                "query_latency_ms": round((time.perf_counter() - started_at) * 1000.0, 3),
-            }
+            scan_meta = {"success": True}
+            if detail_mode == "full":
+                scan_meta.update(
+                    {
+                        "rank_by": rank_by_value,
+                        "limit": limit_value,
+                        "universe": universe_value,
+                        "detail": detail_mode,
+                        "timeframe": timeframe_value if needs_bar_data else None,
+                        "timeframe_requested": timeframe_value,
+                        "timeframe_used": timeframe_value if needs_bar_data else None,
+                        "scanned_symbols": len(selected_symbols),
+                        "query_latency_ms": round(
+                            (time.perf_counter() - started_at) * 1000.0,
+                            3,
+                        ),
+                    }
+                )
 
             if rank_by_value == "spread":
                 out = _market_scan_table(
@@ -1299,10 +1305,11 @@ def symbols_top_markets(  # noqa: C901
                     include_contract_meta=detail_mode == "full",
                 )
                 out.update(scan_meta)
-                out["evaluated_symbols"] = evaluated_counts["spread"]
-                out["skipped_symbols"] = metric_skips["spread"]
-                out["skipped_examples"] = metric_issues["spread"]
                 out["ranking"] = "lowest_spread"
+                if detail_mode == "full":
+                    out["evaluated_symbols"] = evaluated_counts["spread"]
+                    out["skipped_symbols"] = metric_skips["spread"]
+                    out["skipped_examples"] = metric_issues["spread"]
                 return out
 
             if rank_by_value == "volume":
@@ -1312,10 +1319,11 @@ def symbols_top_markets(  # noqa: C901
                     include_contract_meta=detail_mode == "full",
                 )
                 out.update(scan_meta)
-                out["evaluated_symbols"] = evaluated_counts["volume"]
-                out["skipped_symbols"] = metric_skips["volume"]
-                out["skipped_examples"] = metric_issues["volume"]
                 out["ranking"] = "highest_volume"
+                if detail_mode == "full":
+                    out["evaluated_symbols"] = evaluated_counts["volume"]
+                    out["skipped_symbols"] = metric_skips["volume"]
+                    out["skipped_examples"] = metric_issues["volume"]
                 return out
 
             if rank_by_value == "price_change":
@@ -1325,10 +1333,11 @@ def symbols_top_markets(  # noqa: C901
                     include_contract_meta=detail_mode == "full",
                 )
                 out.update(scan_meta)
-                out["evaluated_symbols"] = evaluated_counts["price_change"]
-                out["skipped_symbols"] = metric_skips["price_change"]
-                out["skipped_examples"] = metric_issues["price_change"]
                 out["ranking"] = "highest_price_change"
+                if detail_mode == "full":
+                    out["evaluated_symbols"] = evaluated_counts["price_change"]
+                    out["skipped_symbols"] = metric_skips["price_change"]
+                    out["skipped_examples"] = metric_issues["price_change"]
                 return attach_collection_contract(
                     out,
                     collection_kind="table",
@@ -1363,23 +1372,29 @@ def symbols_top_markets(  # noqa: C901
                 {
                     **scan_meta,
                     "results": results,
-                    "scan_stats": {
-                        "spread": {
-                            "evaluated_symbols": evaluated_counts["spread"],
-                            "skipped_symbols": metric_skips["spread"],
-                            "skipped_examples": metric_issues["spread"],
-                        },
-                        "volume": {
-                            "evaluated_symbols": evaluated_counts["volume"],
-                            "skipped_symbols": metric_skips["volume"],
-                            "skipped_examples": metric_issues["volume"],
-                        },
-                        "price_change": {
-                            "evaluated_symbols": evaluated_counts["price_change"],
-                            "skipped_symbols": metric_skips["price_change"],
-                            "skipped_examples": metric_issues["price_change"],
-                        },
-                    },
+                    **(
+                        {
+                            "scan_stats": {
+                                "spread": {
+                                    "evaluated_symbols": evaluated_counts["spread"],
+                                    "skipped_symbols": metric_skips["spread"],
+                                    "skipped_examples": metric_issues["spread"],
+                                },
+                                "volume": {
+                                    "evaluated_symbols": evaluated_counts["volume"],
+                                    "skipped_symbols": metric_skips["volume"],
+                                    "skipped_examples": metric_issues["volume"],
+                                },
+                                "price_change": {
+                                    "evaluated_symbols": evaluated_counts["price_change"],
+                                    "skipped_symbols": metric_skips["price_change"],
+                                    "skipped_examples": metric_issues["price_change"],
+                                },
+                            },
+                        }
+                        if detail_mode == "full"
+                        else {}
+                    ),
                 },
                 collection_kind="groups",
                 groups=results,

@@ -121,12 +121,12 @@ class TestSymbolsTopMarkets:
 
         assert result["success"] is True
         assert result["ranking"] == "lowest_spread"
-        assert result["universe"] == "visible"
-        assert result["scanned_symbols"] == 2
-        assert result["evaluated_symbols"] == 2
-        assert result["detail"] == "compact"
-        assert result["timeframe_requested"] == "H1"
-        assert result["timeframe_used"] is None
+        assert "universe" not in result
+        assert "scanned_symbols" not in result
+        assert "evaluated_symbols" not in result
+        assert "detail" not in result
+        assert "timeframe_requested" not in result
+        assert "query_latency_ms" not in result
         assert [row["symbol"] for row in result["data"]] == ["EURUSD", "XAUUSD"]
         assert list(result["data"][0].keys()) == [
             "symbol",
@@ -206,7 +206,7 @@ class TestSymbolsTopMarkets:
         result = fn(rank_by="spread", limit=5, detail="compact")
 
         assert result["success"] is True
-        assert result["detail"] == "compact"
+        assert "detail" not in result
         assert list(result["data"][0].keys()) == [
             "symbol",
             "group",
@@ -262,7 +262,9 @@ class TestSymbolsTopMarkets:
         result = fn(rank_by="all", limit=5, timeframe="H1", detail="compact")
 
         assert result["success"] is True
-        assert result["detail"] == "compact"
+        assert "detail" not in result
+        assert "scan_stats" not in result
+        assert "query_latency_ms" not in result
         assert list(result["results"]["lowest_spread"]["data"][0].keys()) == [
             "symbol",
             "group",
@@ -337,7 +339,7 @@ class TestSymbolsTopMarkets:
         result = fn(rank_by="spread", universe="all", limit=5)
 
         assert result["success"] is True
-        assert result["scanned_symbols"] == 2
+        assert "scanned_symbols" not in result
         assert [row["symbol"] for row in result["data"]] == ["EURUSD", "USDJPY"]
         mock_ready_guard.assert_called_once_with("USDJPY", info_before=mock_symbols_get.return_value[1])
 
@@ -355,7 +357,7 @@ class TestSymbolsTopMarkets:
         }[symbol]
 
         fn = _get_symbols_top_markets()
-        result = fn(rank_by="volume", timeframe="H1", limit=5)
+        result = fn(rank_by="volume", timeframe="H1", limit=5, detail="full")
 
         assert result["success"] is True
         assert result["evaluated_symbols"] == 1
@@ -372,7 +374,7 @@ class TestSymbolsTopMarkets:
         ]
 
         fn = _get_symbols_top_markets()
-        result = fn(rank_by="volume", timeframe="H1", limit=5)
+        result = fn(rank_by="volume", timeframe="H1", limit=5, detail="full")
 
         assert result["success"] is True
         assert [row["symbol"] for row in result["skipped_examples"]] == ["EURUSD", "usdjpy"]
