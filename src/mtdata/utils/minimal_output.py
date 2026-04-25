@@ -105,11 +105,17 @@ def _render_news_bucket_toon(
     if len(dict_rows) != len(items):
         return _encode_expanded_array(key, items, indent, delimiter)
 
-    include_kind = key not in {"upcoming_events", "recent_events"} and any(
-        not _is_empty_value(row.get("kind")) for row in dict_rows
+    include_source = any(not _is_empty_value(row.get("source")) for row in dict_rows)
+    include_published_at = any(
+        not _is_empty_value(row.get("published_at")) for row in dict_rows
     )
+    include_kind = any(not _is_empty_value(row.get("kind")) for row in dict_rows)
     include_summary = any(not _is_empty_value(row.get("summary")) for row in dict_rows)
     headers = ["title", "time"]
+    if include_source:
+        headers.append("source")
+    if include_published_at:
+        headers.append("published_at")
     if include_kind:
         headers.append("kind")
     if include_summary:
@@ -120,24 +126,37 @@ def _render_news_bucket_toon(
     row_indent = ind + _INDENT
     for row in dict_rows:
         values: List[str] = []
-        title = row.get("title")
-        if not _is_empty_value(title):
-            values.append(_quote_always(title))
+
+        def append_value(value: Any, *, quote: bool = False) -> None:
+            if _is_empty_value(value):
+                values.append("null")
+            elif quote:
+                values.append(_quote_always(value))
+            else:
+                values.append(_stringify_for_toon_value(value, None, delimiter))
+
+        append_value(row.get("title"), quote=True)
 
         display_time = row.get("time_utc")
         if _is_empty_value(display_time):
             display_time = row.get("relative_time")
-        if not _is_empty_value(display_time):
-            values.append(_stringify_for_toon_value(display_time, None, delimiter))
+        append_value(display_time)
+
+        if include_source:
+            append_value(row.get("source"))
+        if include_published_at:
+            append_value(row.get("published_at"))
 
         kind = row.get("kind")
-        if include_kind and not _is_empty_value(kind):
-            values.append(_stringify_for_toon_value(kind, None, delimiter))
+        if include_kind:
+            append_value(kind)
 
         summary = row.get("summary")
-        if include_summary and not _is_empty_value(summary):
-            values.append(_quote_always(summary))
+        if include_summary:
+            append_value(summary, quote=True)
 
+        while values and values[-1] == "null":
+            values.pop()
         if values:
             lines.append(f"{row_indent}{delimiter.join(values)}")
     return "\n".join(lines)

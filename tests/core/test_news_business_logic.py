@@ -108,7 +108,13 @@ def test_news_tool_compact_and_full_detail_contract(monkeypatch) -> None:
 
     assert "instrument" not in compact
     assert "matching" not in compact
-    assert compact["general_news"] == [{"title": "Fed preview", "relative_time": "9 days ago"}]
+    assert compact["general_news"] == [
+        {
+            "title": "Fed preview",
+            "published_at": "2026-03-29T08:00:00Z",
+            "relative_time": "9 days ago",
+        }
+    ]
 
     assert full["instrument"] == {"symbol": "EURUSD"}
     assert full["matching"] == {"embeddings": {"enabled": True}}
@@ -170,15 +176,28 @@ def test_news_output_hides_debug_fields_when_not_verbose() -> None:
     assert "general_count" not in result
     assert "related_count" not in result
     assert "impact_count" not in result
-    assert result["general_news"] == [{"title": "Fed preview", "relative_time": "9 days ago"}]
+    assert result["general_news"] == [
+        {
+            "title": "Fed preview",
+            "source": "Reuters",
+            "kind": "headline",
+            "published_at": "2026-03-29T08:00:00Z",
+            "relative_time": "9 days ago",
+        }
+    ]
     assert "url" not in result["general_news"][0]
     assert result["related_news"] == [
-        {"title": "EUR/USD market snapshot", "relative_time": "9 days ago", "kind": "market_snapshot", "summary": "Price: 1.1541"}
+        {
+            "title": "EUR/USD market snapshot",
+            "source": "Finviz Forex",
+            "kind": "market_snapshot",
+            "published_at": "2026-03-29T08:05:00Z",
+            "relative_time": "9 days ago",
+            "summary": "Price: 1.1541",
+        }
     ]
     assert "url" not in result["related_news"][0]
-    assert "source" not in result["general_news"][0]
     assert "category" not in result["general_news"][0]
-    assert "published_at" not in result["general_news"][0]
 
 
 def test_news_output_keeps_debug_fields_when_verbose() -> None:
@@ -240,8 +259,10 @@ def test_news_output_derives_relative_time_from_published_at_when_needed() -> No
 
     item = result["general_news"][0]
     assert item["title"] == "Fed preview"
+    assert item["source"] == "Reuters"
+    assert item["kind"] == "headline"
     assert item["relative_time"].endswith("ago")
-    assert "published_at" not in item
+    assert item["published_at"] == published_at
 
 
 def test_news_output_keeps_future_event_time_in_utc() -> None:
@@ -274,7 +295,9 @@ def test_news_output_keeps_future_event_time_in_utc() -> None:
     assert item["title"] == "US CPI (USD)"
     assert item["time_utc"] == published_at.strftime("%Y-%m-%d %H:%M UTC")
     assert "relative_time" not in item
-    assert "published_at" not in item
+    assert item["published_at"] == published_at.isoformat()
+    assert item["source"] == "Finviz Economic Calendar"
+    assert item["kind"] == "economic_event"
 
 
 def test_news_output_compaction_is_idempotent() -> None:
@@ -330,6 +353,9 @@ def test_news_output_compacts_upcoming_events_bucket() -> None:
     assert result["upcoming_events"] == [
         {
             "title": "US CPI (USD)",
+            "source": "Finviz Economic Calendar",
+            "kind": "economic_event",
+            "published_at": published_at.isoformat(),
             "time_utc": published_at.strftime("%Y-%m-%d %H:%M UTC"),
             "summary": "Expected: 3.2% | Prior: 3.1%",
         }
@@ -369,6 +395,9 @@ def test_news_output_compacts_recent_events_bucket() -> None:
     assert result["recent_events"] == [
         {
             "title": "US CPI (USD)",
+            "source": "Finviz Economic Calendar",
+            "kind": "economic_event",
+            "published_at": published_at.isoformat(),
             "relative_time": "2 hours ago",
             "summary": "Actual: 3.2% | Expected: 3.1% | Prior: 3.0%",
         }

@@ -45,7 +45,6 @@ _NEWS_COMPACT_ITEM_DROP_KEYS = frozenset(
         "importance_score",
         "metadata",
         "url",
-        "source",
         "category",
     }
 )
@@ -153,20 +152,29 @@ def _strip_news_compact_item_fields(value: Any, *, bucket_name: Optional[str] = 
     title = value.get("title")
     if title is not None:
         out["title"] = title
+    source = value.get("source")
+    if source not in (None, ""):
+        out["source"] = source
+    kind = value.get("kind")
+    if kind not in (None, ""):
+        out["kind"] = kind
+    published_at = value.get("published_at")
+    if published_at not in (None, ""):
+        out["published_at"] = published_at
     if time_field_name and time_field_value:
         out[time_field_name] = time_field_value
     for key, subvalue in value.items():
         key_text = str(key)
-        if key_text in {"title", "published_at", "relative_time", "time_utc"}:
-            continue
-        if key_text in _NEWS_COMPACT_ITEM_DROP_KEYS:
-            continue
-        if key_text == "kind" and str(bucket_name or "").strip() in {
-            "upcoming_events",
-            "recent_events",
+        if key_text in {
+            "title",
+            "source",
+            "kind",
+            "published_at",
+            "relative_time",
+            "time_utc",
         }:
             continue
-        if key_text == "kind" and str(subvalue).strip().lower() == "headline":
+        if key_text in _NEWS_COMPACT_ITEM_DROP_KEYS:
             continue
         if key_text == "summary" and subvalue is None:
             continue
