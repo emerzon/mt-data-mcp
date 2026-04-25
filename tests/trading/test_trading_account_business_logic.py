@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import sys
+from inspect import signature
 from collections import namedtuple
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -70,6 +71,13 @@ def test_trade_account_info_includes_execution_preflight_fields() -> None:
     assert out["execution_hard_blockers"] == []
     assert "Terminal AutoTrading is disabled." in out["execution_soft_blockers"]
     assert "Terminal AutoTrading is disabled." in out["execution_blockers"]
+
+
+def test_trade_account_info_uses_single_detail_output_control() -> None:
+    params = signature(_unwrap(trade_account_info)).parameters
+
+    assert list(params) == ["detail"]
+    assert "verbose" not in params
 
 
 def test_trade_account_info_rounds_margin_level_for_display() -> None:

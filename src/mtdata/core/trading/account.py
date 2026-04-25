@@ -25,7 +25,6 @@ from ..execution_logging import run_logged_operation
 from ..output_contract import (
     ensure_common_meta,
     normalize_output_detail,
-    resolve_output_contract,
 )
 from . import comments, validation
 from .gateway import create_trading_gateway
@@ -418,7 +417,6 @@ def _trade_account_payload_for_mode(payload: Dict[str, Any], *, mode: str) -> Di
 @mcp.tool()
 def trade_account_info(
     detail: Literal["summary", "compact", "basic", "full"] = "full",  # type: ignore
-    verbose: bool = False,
 ) -> dict:
     """Get account information with summary, basic, or full account output modes.
 
@@ -437,12 +435,7 @@ def trade_account_info(
             return {
                 "error": "Invalid detail level. Use 'summary', 'compact', 'basic', or 'full'."
             }
-        contract = resolve_output_contract(
-            detail="compact" if requested_mode in {"summary", "compact"} else "full",
-            verbose=verbose,
-            default_detail="full",
-        )
-        output_mode = "summary" if contract.shape_detail == "compact" else requested_mode
+        output_mode = requested_mode
         if output_mode == "compact":
             output_mode = "summary"
 
