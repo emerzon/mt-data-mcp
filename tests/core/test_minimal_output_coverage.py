@@ -906,6 +906,126 @@ class TestFormatResultMinimal:
         assert "data[2]{name}:" in table_verbose
         assert "rows[2]{name}:" in table_verbose
 
+    def test_compact_trade_risk_output_hides_intermediate_sizing_fields(self):
+        payload = {
+            "success": True,
+            "account": {"equity": 10000.0, "currency": "USD"},
+            "portfolio_risk": {
+                "overall_risk_status": "defined",
+                "quantified_risk_level": "low",
+                "total_risk_currency": 100.0,
+                "total_risk_pct": 1.0,
+                "positions_count": 1,
+                "notional_exposure": 100000.0,
+            },
+            "position_sizing": {
+                "symbol": "EURUSD",
+                "direction": "long",
+                "suggested_volume": 0.04,
+                "requested_risk_currency": 100.0,
+                "risk_currency": 99.5,
+                "risk_pct": 0.99,
+                "rr_ratio": 2.0,
+                "raw_volume": 0.04123456,
+                "volume_step": 0.01,
+                "volume_rounding": "rounded_down_to_step",
+            },
+        }
+
+        compact = format_result_minimal(
+            payload,
+            verbose=False,
+            tool_name="trade_risk_analyze",
+        )
+        verbose = format_result_minimal(
+            payload,
+            verbose=True,
+            tool_name="trade_risk_analyze",
+        )
+
+        assert "suggested_volume: 0.04" in compact
+        assert "rr_ratio: 2" in compact
+        assert "raw_volume" not in compact
+        assert "volume_step" not in compact
+        assert "notional_exposure" not in compact
+        assert "raw_volume" in verbose
+
+    def test_compact_barrier_probability_output_hides_confidence_bands(self):
+        payload = {
+            "success": True,
+            "symbol": "EURUSD",
+            "tp_price": 1.19,
+            "sl_price": 1.17,
+            "prob_tp_first": 0.52,
+            "prob_sl_first": 0.48,
+            "edge": 0.04,
+            "confidence": {
+                "prob_tp_first_ci95": {"low": 0.48, "high": 0.56},
+            },
+        }
+
+        compact = format_result_minimal(
+            payload,
+            verbose=False,
+            tool_name="forecast_barrier_prob",
+        )
+
+        assert "prob_tp_first: 0.52" in compact
+        assert "prob_sl_first: 0.48" in compact
+        assert "confidence" not in compact
+        assert "ci95" not in compact
+
+    def test_compact_barrier_optimize_output_keeps_best_only(self):
+        payload = {
+            "success": True,
+            "symbol": "EURUSD",
+            "viable": True,
+            "best": {
+                "tp": 1.0,
+                "sl": 0.5,
+                "tp_price": 1.19,
+                "sl_price": 1.17,
+                "prob_win": 0.55,
+                "prob_resolve": 0.9,
+                "breakeven_win_rate": 0.33,
+            },
+            "results": [{"tp": 1.0, "sl": 0.5}],
+            "actionability_flags": ["ok"],
+        }
+
+        compact = format_result_minimal(
+            payload,
+            verbose=False,
+            tool_name="forecast_barrier_optimize",
+        )
+
+        assert "best:" in compact
+        assert "viable: true" in compact
+        assert "results[" not in compact
+        assert "actionability_flags" not in compact
+        assert "breakeven_win_rate" not in compact
+
+    def test_compact_patterns_output_prefers_highlights(self):
+        payload = {
+            "success": True,
+            "symbol": "EURUSD",
+            "mode": "all",
+            "total_patterns": 12,
+            "highlights": [{"pattern": "triangle", "bias": "bullish"}],
+            "classic": {"patterns": [{"pattern": "triangle", "details": {"x": 1}}]},
+            "fractal": {"patterns": [{"pattern": "breakout"}]},
+        }
+
+        compact = format_result_minimal(
+            payload,
+            verbose=False,
+            tool_name="patterns_detect",
+        )
+
+        assert "highlights[1]{pattern,bias}:" in compact
+        assert "classic:" not in compact
+        assert "fractal:" not in compact
+
     def test_triple_barrier_output_renders_as_single_table(self):
         payload = {
             "success": True,

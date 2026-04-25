@@ -482,10 +482,12 @@ class TestFormatResultForCli:
         assert "warmup_bars" in result
         assert "requested_bars" in result
 
-    def test_toon_format_keeps_barrier_probability_curves_in_default_view(self):
+    def test_toon_format_hides_barrier_probability_curves_in_default_view(self):
         result = _format_result_for_cli(
             {
                 "success": True,
+                "prob_tp_first": 0.52,
+                "prob_sl_first": 0.48,
                 "tp_hit_prob_by_t": [0.1, 0.2],
                 "sl_hit_prob_by_t": [0.3, 0.4],
             },
@@ -493,10 +495,12 @@ class TestFormatResultForCli:
             verbose=False,
             cmd_name="forecast_barrier_prob",
         )
-        assert "tp_hit_prob_by_t" in result
-        assert "sl_hit_prob_by_t" in result
+        assert "prob_tp_first" in result
+        assert "prob_sl_first" in result
+        assert "tp_hit_prob_by_t" not in result
+        assert "sl_hit_prob_by_t" not in result
 
-    def test_toon_format_preserves_barrier_grid_and_param_help_in_shared_output(self):
+    def test_toon_format_hides_barrier_grid_and_param_help_in_shared_output(self):
         result = _format_result_for_cli(
             {
                 "success": True,
@@ -545,7 +549,7 @@ class TestFormatResultForCli:
             cmd_name="forecast_barrier_optimize",
         )
         assert "best" in result
-        assert "results" in result
+        assert "results" not in result
         assert "grid" not in result
         assert "ev_gross" not in result
         assert "ev_net" not in result

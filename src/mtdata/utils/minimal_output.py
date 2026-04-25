@@ -916,7 +916,20 @@ def _normalize_barrier_optimize_payload(
     if tool_name != "forecast_barrier_optimize" or verbose:
         return None
 
-    out = dict(payload)
+    out: Dict[str, Any] = {}
+    for key in (
+        "success",
+        "symbol",
+        "timeframe",
+        "direction",
+        "reference_price",
+        "viable",
+        "no_action",
+        "status",
+    ):
+        value = payload.get(key)
+        if not _is_empty_value(value):
+            out[key] = value
     best = payload.get("best")
     if isinstance(best, dict):
         best_keys = [
@@ -927,13 +940,9 @@ def _normalize_barrier_optimize_payload(
             "sl_price",
             "prob_win",
             "prob_loss",
-            "prob_resolve",
             "ev",
             "profit_factor",
-            "breakeven_win_rate",
             "edge_vs_breakeven",
-            "phantom_profit_risk",
-            "low_confidence",
         ]
         out["best"] = {
             key: best.get(key)
@@ -941,36 +950,166 @@ def _normalize_barrier_optimize_payload(
             if key in best and not _is_empty_value(best.get(key))
         }
 
-    row_keys = [
-        "tp",
-        "sl",
-        "rr",
+    for key in ("actionability", "actionability_reason", "warning", "warnings", "error"):
+        value = payload.get(key)
+        if not _is_empty_value(value):
+            out[key] = value
+
+    return out
+
+
+def _normalize_barrier_prob_payload(
+    payload: Dict[str, Any],
+    *,
+    verbose: bool,
+    tool_name: str,
+) -> Optional[Dict[str, Any]]:
+    if tool_name != "forecast_barrier_prob" or verbose:
+        return None
+
+    out: Dict[str, Any] = {}
+    for key in (
+        "success",
+        "symbol",
+        "timeframe",
+        "direction",
+        "reference_price",
         "tp_price",
         "sl_price",
-        "prob_win",
-        "prob_loss",
+        "prob_tp_first",
+        "prob_sl_first",
         "prob_no_hit",
-        "prob_resolve",
-        "ev",
-        "profit_factor",
-        "t_hit_resolve_median",
-        "low_confidence",
-    ]
-    compact_results = _compact_barrier_rows(
-        payload.get("results"), preferred_keys=row_keys
-    )
-    if compact_results is not None:
-        out["results"] = compact_results
+        "edge",
+        "edge_score",
+        "expected_value",
+        "method",
+        "warning",
+        "warnings",
+        "error",
+    ):
+        value = payload.get(key)
+        if not _is_empty_value(value):
+            out[key] = value
+    return out or None
 
-    if "grid" in out and "results" in out:
-        out.pop("grid", None)
-    else:
-        compact_grid = _compact_barrier_rows(
-            payload.get("grid"), preferred_keys=row_keys
+
+def _normalize_trade_risk_payload(
+    payload: Dict[str, Any],
+    *,
+    verbose: bool,
+    tool_name: str,
+) -> Optional[Dict[str, Any]]:
+    if tool_name != "trade_risk_analyze" or verbose:
+        return None
+
+    out: Dict[str, Any] = {}
+    for key in ("success", "error_code", "error"):
+        value = payload.get(key)
+        if not _is_empty_value(value):
+            out[key] = value
+
+    account = payload.get("account")
+    if isinstance(account, dict):
+        account_out = {
+            key: account.get(key)
+            for key in ("equity", "currency")
+            if not _is_empty_value(account.get(key))
+        }
+        if account_out:
+            out["account"] = account_out
+
+    portfolio = payload.get("portfolio_risk")
+    if isinstance(portfolio, dict):
+        portfolio_keys = (
+            "overall_risk_status",
+            "quantified_risk_level",
+            "total_risk_currency",
+            "total_risk_pct",
+            "positions_count",
+            "positions_without_sl",
         )
-        if compact_grid is not None:
-            out["grid"] = compact_grid
+        portfolio_out = {
+            key: portfolio.get(key)
+            for key in portfolio_keys
+            if not _is_empty_value(portfolio.get(key))
+        }
+        failures = portfolio.get("positions_with_risk_calculation_failures")
+        if failures:
+            portfolio_out["positions_with_risk_calculation_failures"] = failures
+        if portfolio_out:
+            out["portfolio_risk"] = portfolio_out
 
+    sizing = payload.get("position_sizing")
+    if isinstance(sizing, dict):
+        sizing_keys = (
+            "status",
+            "symbol",
+            "direction",
+            "suggested_volume",
+            "requested_risk_currency",
+            "requested_risk_pct",
+            "risk_currency",
+            "risk_pct",
+            "risk_compliance",
+            "entry",
+            "sl",
+            "tp",
+            "reward_currency",
+            "rr_ratio",
+            "message",
+        )
+        sizing_out = {
+            key: sizing.get(key)
+            for key in sizing_keys
+            if not _is_empty_value(sizing.get(key))
+        }
+        if sizing_out:
+            out["position_sizing"] = sizing_out
+
+    for key in (
+        "position_sizing_error",
+        "position_sizing_warning",
+        "risk_alert",
+        "warning",
+        "warnings",
+    ):
+        value = payload.get(key)
+        if not _is_empty_value(value):
+            out[key] = value
+
+    return out or None
+
+
+def _normalize_patterns_payload(
+    payload: Dict[str, Any],
+    *,
+    verbose: bool,
+    tool_name: str,
+) -> Optional[Dict[str, Any]]:
+    if tool_name != "patterns_detect" or verbose:
+        return None
+    highlights = payload.get("highlights")
+    if _is_empty_value(highlights):
+        return None
+
+    out: Dict[str, Any] = {}
+    for key in (
+        "success",
+        "symbol",
+        "mode",
+        "timeframe",
+        "timeframes",
+        "total_patterns",
+        "n_patterns",
+    ):
+        value = payload.get(key)
+        if not _is_empty_value(value):
+            out[key] = value
+    out["highlights"] = highlights
+    for key in ("signal_bias", "active_levels", "warnings", "errors"):
+        value = payload.get(key)
+        if not _is_empty_value(value):
+            out[key] = value
     return out
 
 
@@ -1690,14 +1829,37 @@ def format_result_minimal(
         if trade_table_norm is not None:
             normalized = trade_table_norm
         if isinstance(result, dict):
+            trade_risk_norm = _normalize_trade_risk_payload(
+                result,
+                verbose=verbose,
+                tool_name=resolved_tool_name,
+            )
+            if trade_risk_norm is not None:
+                normalized = trade_risk_norm
+            else:
+                patterns_norm = _normalize_patterns_payload(
+                    result,
+                    verbose=verbose,
+                    tool_name=resolved_tool_name,
+                )
+                if patterns_norm is not None:
+                    normalized = patterns_norm
+                else:
+                    barrier_prob_norm = _normalize_barrier_prob_payload(
+                        result,
+                        verbose=verbose,
+                        tool_name=resolved_tool_name,
+                    )
+                    if barrier_prob_norm is not None:
+                        normalized = barrier_prob_norm
             trade_norm = _normalize_trade_payload(
                 result,
                 verbose=verbose,
                 tool_name=resolved_tool_name,
             )
-            if trade_norm is not None:
+            if trade_norm is not None and normalized is result:
                 normalized = trade_norm
-            else:
+            elif normalized is result:
                 market_ticker_norm = _normalize_market_ticker_payload(
                     result,
                     verbose=verbose,
