@@ -51,6 +51,7 @@ def test_support_resistance_tool_returns_weighted_levels():
             tolerance_pct=0.005,
             min_touches=2,
             max_levels=3,
+            max_distance_pct=None,
             reaction_bars=4,
         )
 
@@ -75,6 +76,28 @@ def test_support_resistance_tool_returns_weighted_levels():
     assert result["fibonacci"]["nearest"]["support"]["type"] == "support"
     assert "supports" not in result
     assert "resistances" not in result
+
+
+def test_support_resistance_tool_applies_near_price_distance_default():
+    fn = _get_support_resistance_fn()
+    gateway = type("Gateway", (), {"ensure_connection": lambda self: None})()
+    payload = {
+        "success": True,
+        "symbol": "EURUSD",
+        "timeframe": "H1",
+        "current_price": 1.1,
+        "supports": [],
+        "resistances": [],
+        "levels": [],
+        "max_distance_pct": 0.05,
+    }
+
+    with patch("mtdata.core.pivot.get_mt5_gateway", return_value=gateway), \
+         patch("mtdata.core.pivot.compute_support_resistance_payload", return_value=payload) as mock_compute:
+        result = fn("EURUSD", timeframe="H1")
+
+    assert result["max_distance_pct"] == 0.05
+    assert mock_compute.call_args.kwargs["max_distance_pct"] == 0.05
 
 
 def test_support_resistance_tool_compact_preserves_zone_overlap_and_fib_grid_metadata():
@@ -188,6 +211,7 @@ def test_support_resistance_tool_standard_detail_keeps_actionable_lists_without_
             tolerance_pct=0.005,
             min_touches=2,
             max_levels=3,
+            max_distance_pct=None,
             reaction_bars=4,
             detail="standard",
         )
@@ -218,7 +242,16 @@ def test_support_resistance_tool_auto_mode_merges_timeframes():
 
     with patch("mtdata.core.pivot.get_mt5_gateway", return_value=gateway), \
          patch("mtdata.core.pivot._fetch_history", side_effect=_fetch) as mock_fetch:
-        result = fn("EURUSD", timeframe="auto", limit=200, tolerance_pct=0.005, min_touches=2, max_levels=3, reaction_bars=4)
+        result = fn(
+            "EURUSD",
+            timeframe="auto",
+            limit=200,
+            tolerance_pct=0.005,
+            min_touches=2,
+            max_levels=3,
+            max_distance_pct=None,
+            reaction_bars=4,
+        )
 
     assert mock_fetch.call_count == 4
     assert result["success"] is True
@@ -250,6 +283,7 @@ def test_support_resistance_tool_full_detail_retains_support_and_resistance_list
             tolerance_pct=0.005,
             min_touches=2,
             max_levels=3,
+            max_distance_pct=None,
             reaction_bars=4,
             detail="full",
         )

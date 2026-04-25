@@ -537,7 +537,7 @@ def support_resistance_levels(
     tolerance_pct: float = 0.0015,
     min_touches: int = 2,
     max_levels: int = 4,
-    max_distance_pct: Optional[float] = None,
+    max_distance_pct: Optional[float] = 0.05,
     volume_weighting: Literal["off", "auto"] = "off",
     reaction_bars: int = 6,
     adx_period: int = 14,
@@ -549,7 +549,8 @@ def support_resistance_levels(
     Set `timeframe="auto"` to merge levels from M15, H1, H4, and D1.
     Use `detail="compact"` for the nearest-level summary, `detail="standard"`
     for compact actionable supports/resistances/levels, and `detail="full"`
-    for the raw diagnostic payload.
+    for the raw diagnostic payload. The default `max_distance_pct=0.05`
+    keeps returned levels near current price; pass `None` for all levels.
 
     Score combines:
     - repeated tests of a level
