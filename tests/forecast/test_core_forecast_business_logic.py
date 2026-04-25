@@ -152,16 +152,22 @@ def test_forecast_generate_routes_by_library_and_validates_inputs(monkeypatch):
     assert out["ok"] is True
     assert captured["method"] == "statsforecast"
     assert captured["params"]["model_name"] == "AutoARIMA"
+    assert out["method"] == "AutoARIMA"
+    assert out["library"] == "statsforecast"
 
     out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="statsforecast", method="sf_autoarima", params={}))
     assert out["ok"] is True
     assert captured["method"] == "statsforecast"
     assert captured["params"]["model_name"] == "AutoARIMA"
+    assert out["method"] == "sf_autoarima"
+    assert out["library"] == "statsforecast"
 
     out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="native", method="statsforecast:autoarima", params={}))
     assert out["ok"] is True
     assert captured["method"] == "statsforecast"
     assert captured["params"]["model_name"] == "AutoARIMA"
+    assert out["method"] == "autoarima"
+    assert out["library"] == "statsforecast"
 
     out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="sktime", method="theta", params={}))
     assert out["ok"] is True
@@ -172,6 +178,8 @@ def test_forecast_generate_routes_by_library_and_validates_inputs(monkeypatch):
     assert out["ok"] is True
     assert captured["method"] == "sktime"
     assert captured["params"]["estimator"] == "sktime.forecasting.theta.ThetaForecaster"
+    assert out["method"] == "skt_theta"
+    assert out["library"] == "sktime"
 
     out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="native", method="sktime:theta", params={}))
     assert out["ok"] is True
@@ -200,6 +208,8 @@ def test_forecast_generate_routes_by_library_and_validates_inputs(monkeypatch):
     assert out["ok"] is True
     assert captured["method"] == "mlforecast"
     assert captured["params"]["model"] == "sklearn.linear_model.LinearRegression"
+    assert out["method"] == "sklearn.linear_model.LinearRegression"
+    assert out["library"] == "mlforecast"
 
     out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="native", method="mlforecast:rf", params={"lags": [1, 2, 3]}))
     assert out["ok"] is True

@@ -182,6 +182,58 @@ def _forecast_generate_series_rows(payload: Dict[str, Any]) -> List[Dict[str, An
     return rows
 
 
+def _specific_forecast_method_name(
+    *,
+    requested_method: str,
+    resolved_method: str,
+    resolved_library: str,
+    params: Dict[str, Any],
+) -> str:
+    requested = str(requested_method or "").strip()
+    if ":" in requested:
+        requested = requested.split(":", 1)[1].strip()
+    if requested and requested.lower() != str(resolved_method or "").strip().lower():
+        return requested
+
+    selector_key_by_library = {
+        "statsforecast": "model_name",
+        "sktime": "estimator",
+        "mlforecast": "model",
+    }
+    selector_key = selector_key_by_library.get(resolved_library)
+    if selector_key:
+        selector_value = params.get(selector_key)
+        if selector_value not in (None, "", [], {}):
+            return str(selector_value)
+    return str(resolved_method or requested or "").strip()
+
+
+def _annotate_forecast_generate_method(
+    payload: Dict[str, Any],
+    *,
+    requested_method: str,
+    resolved_method: str,
+    resolved_library: str,
+    params: Dict[str, Any],
+) -> None:
+    if not isinstance(payload, dict) or payload.get("error"):
+        return
+    library_name = str(resolved_library or "native").strip().lower() or "native"
+    if library_name in {"", "native"}:
+        return
+
+    payload["library"] = library_name
+    adapter_method = str(resolved_method or "").strip().lower()
+    output_method = str(payload.get("method") or "").strip().lower()
+    if output_method in {"", adapter_method}:
+        payload["method"] = _specific_forecast_method_name(
+            requested_method=requested_method,
+            resolved_method=resolved_method,
+            resolved_library=library_name,
+            params=params,
+        )
+
+
 def _apply_barrier_prob_detail(
     payload: Dict[str, Any],
     request: ForecastBarrierProbRequest,
@@ -498,6 +550,7 @@ def run_forecast_generate(
 
     try:
         capability_requested = ":" in method
+        requested_method = method
         original_resolution = (lib, method, dict(params))
         lib, method, params = resolve_capability_request(
             library=lib,
@@ -589,6 +642,14 @@ def run_forecast_generate(
             if warning not in warnings_out and not has_interval_warning:
                 warnings_out.append(warning)
             out["warnings"] = warnings_out
+        if isinstance(out, dict):
+            _annotate_forecast_generate_method(
+                out,
+                requested_method=requested_method,
+                resolved_method=str(resolved_method),
+                resolved_library=lib,
+                params=params,
+            )
         out = _apply_forecast_generate_detail(out, request)
         return _finish(out, resolved_method=str(resolved_method))
     except Exception as exc:
