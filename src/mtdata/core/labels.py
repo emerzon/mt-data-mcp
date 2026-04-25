@@ -435,19 +435,32 @@ def labels_triple_barrier(
                     return out
                 payload["summary"] = summary
                 sample_n = n
+                sample_indices = list(range(max(0, len(labels) - sample_n), len(labels)))
                 if output_mode == "compact":
-                    sample_n = min(n, _COMPACT_LABEL_SAMPLE_SIZE)
-                    payload["sample_size"] = int(sample_n)
-                    if sample_n < n:
+                    outcome_indices = [
+                        len(labels) - len(lab_tail) + idx
+                        for idx, value in enumerate(lab_tail)
+                        if value != 0
+                    ]
+                    if outcome_indices:
+                        sample_indices = outcome_indices[-_COMPACT_LABEL_SAMPLE_SIZE:]
+                        payload["sample_basis"] = "outcomes"
+                    else:
+                        sample_n = min(n, _COMPACT_LABEL_SAMPLE_SIZE)
+                        sample_indices = list(range(max(0, len(labels) - sample_n), len(labels)))
+                        payload["sample_basis"] = "recent"
+                    payload["sample_size"] = int(len(sample_indices))
+                    if len(sample_indices) < n:
                         payload["sample_note"] = (
-                            f"entries, labels, and timing arrays show the most recent {sample_n} observations."
+                            "entries, labels, and timing arrays show non-neutral outcomes in the lookback window when present; "
+                            f"otherwise the most recent {len(sample_indices)} observations."
                         )
-                if sample_n > 0:
-                    payload["entries"] = t_entry[-sample_n:]
-                    payload["labels"] = lab_tail[-sample_n:]
-                    payload["holding_bars"] = hold_tail[-sample_n:]
-                    payload["tp_time"] = tp_times[-sample_n:]
-                    payload["sl_time"] = sl_times[-sample_n:]
+                if sample_indices:
+                    payload["entries"] = [t_entry[idx] for idx in sample_indices]
+                    payload["labels"] = [labels[idx] for idx in sample_indices]
+                    payload["holding_bars"] = [hold[idx] for idx in sample_indices]
+                    payload["tp_time"] = [tp_times[idx] for idx in sample_indices]
+                    payload["sl_time"] = [sl_times[idx] for idx in sample_indices]
             return payload
         except MT5ConnectionError as exc:
             return {"error": str(exc)}

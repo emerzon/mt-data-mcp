@@ -247,9 +247,29 @@ class TestLabelsTripleBarrier:
         assert result["summary"]["lookback"] == 25
         assert result["sample_size"] == 10
         assert len(result["labels"]) == 10
+        assert result["sample_basis"] == "recent"
         assert "sample_note" in result
         assert "label_legend" not in result
         assert result["label_key"] == {"1": "tp_first", "-1": "sl_first", "0": "hold"}
+
+    @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
+    @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
+    @patch(f"{_LABELS_MOD}._fetch_history")
+    def test_output_compact_prefers_outcome_sample(self, mock_hist, mock_den, mock_pip):
+        mock_hist.return_value = _make_df(80)
+        result = _get_raw_fn()(
+            "EURUSD",
+            tp_pct=0.05,
+            sl_pct=0.5,
+            horizon=5,
+            detail="compact",
+            lookback=25,
+        )
+
+        assert result["success"] is True
+        assert result["summary"]["counts"]["pos"] > 0
+        assert result["sample_basis"] == "outcomes"
+        assert all(label != 0 for label in result["labels"])
 
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
     @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
