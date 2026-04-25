@@ -177,6 +177,13 @@ class TradeVarCvarRequest(BaseModel):
     method: str = "historical"
     transform: str = "log_return"
     min_observations: int = 50
+    detail: CompactFullDetailLiteral = Field(
+        default="compact",
+        description=(
+            "Response detail level. Use full to include the legacy zero-filled "
+            "risk arrays when no open positions are available."
+        ),
+    )
 
 
 class TradeGetOpenRequest(BaseModel):

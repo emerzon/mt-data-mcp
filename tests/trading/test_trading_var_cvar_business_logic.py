@@ -100,5 +100,32 @@ def test_run_trade_var_cvar_calculate_returns_no_action_when_no_open_positions()
     assert out["success"] is True
     assert out["no_action"] is True
     assert out["summary"]["positions"] == 0
+    assert out["summary"]["equity"] == 1000.0
+    assert out["summary"]["currency"] == "USD"
+    assert "var" not in out["summary"]
+    assert "symbol_exposures" not in out
+    assert "positions" not in out
+    assert "worst_observations" not in out
+    assert out["message"] == "No open positions found for VaR/CVaR calculation."
+
+
+def test_run_trade_var_cvar_calculate_full_detail_keeps_legacy_no_action_shape() -> None:
+    gateway = SimpleNamespace(
+        ensure_connection=lambda: None,
+        account_info=lambda: SimpleNamespace(equity=1000.0, currency="USD"),
+        positions_get=lambda symbol=None: [],
+    )
+
+    out = run_trade_var_cvar_calculate(
+        TradeVarCvarRequest(detail="full"),
+        gateway=gateway,
+    )
+
+    assert out["success"] is True
+    assert out["no_action"] is True
+    assert out["summary"]["positions"] == 0
     assert out["summary"]["var"] == 0.0
+    assert out["symbol_exposures"] == []
+    assert out["positions"] == []
+    assert out["worst_observations"] == []
     assert out["message"] == "No open positions found for VaR/CVaR calculation."

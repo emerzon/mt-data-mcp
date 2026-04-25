@@ -2378,17 +2378,27 @@ def run_trade_var_cvar_calculate(  # noqa: C901
             summary["cvar_pct_of_equity"] = 0.0
         if currency:
             summary["currency"] = currency
-        return _finish(
-            {
-                "success": True,
-                "message": message,
-                "no_action": True,
-                "summary": summary,
-                "symbol_exposures": [],
-                "positions": [],
-                "worst_observations": [],
+        result: Dict[str, Any] = {
+            "success": True,
+            "message": message,
+            "no_action": True,
+        }
+        if request.detail == "full":
+            result.update(
+                {
+                    "summary": summary,
+                    "symbol_exposures": [],
+                    "positions": [],
+                    "worst_observations": [],
+                }
+            )
+        else:
+            result["summary"] = {
+                key: summary[key]
+                for key in ("positions", "symbols", "equity", "currency")
+                if key in summary
             }
-        )
+        return _finish(result)
 
     position_type_buy = validation._safe_int_attr(
         gateway,
