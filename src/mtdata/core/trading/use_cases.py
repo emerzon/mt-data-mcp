@@ -100,7 +100,7 @@ def _trade_rows_to_dataframe(rows: Any, *, pd_module: Any) -> Any:
 def _resolve_trade_place_preview_detail(request: TradePlaceRequest) -> str:
     contract = resolve_output_contract(
         request,
-        detail=request.detail,
+        detail=request.preview_detail,
         default_detail="basic",
         aliases={
             "compact": "preview",

@@ -48,8 +48,9 @@ class TradePlaceRequest(BaseModel):
     comment: Optional[str] = None
     deviation: int = 20
     dry_run: bool = False
-    detail: Literal["preview", "basic", "full", "compact", "summary"] = Field(
+    preview_detail: Literal["preview", "basic", "full", "compact", "summary"] = Field(
         default="basic",
+        validation_alias=AliasChoices("preview_detail", "detail"),
         description=(
             "Dry-run preview detail level. Use preview/basic/full; compact/summary "
             "aliases map to preview."

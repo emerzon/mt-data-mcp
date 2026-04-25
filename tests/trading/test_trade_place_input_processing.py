@@ -30,6 +30,14 @@ def trade_modify(**kwargs):
     return _trade_modify_tool(request=request, __cli_raw=raw_output)
 
 
+def test_trade_place_request_uses_preview_detail_canonical_field() -> None:
+    fields = TradePlaceRequest.model_fields
+
+    assert "preview_detail" in fields
+    assert "detail" not in fields
+    assert TradePlaceRequest(detail="full").preview_detail == "full"
+
+
 def test_normalize_order_type_accepts_mt5_integer() -> None:
     normalized, error = _normalize_order_type_input(2)
     assert error is None
@@ -212,7 +220,7 @@ def test_trade_place_dry_run_preview_detail_omits_safety_lists() -> None:
             stop_loss=64000,
             take_profit=68000,
             dry_run=True,
-            detail="preview",
+            preview_detail="preview",
             __cli_raw=True,
         )
 
