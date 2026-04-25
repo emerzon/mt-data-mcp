@@ -4,7 +4,15 @@ import json
 import re
 from typing import Annotated, Any, Dict, List, Literal, Optional, Union
 
-from pydantic import AfterValidator, BaseModel, BeforeValidator, Field, field_validator, model_validator
+from pydantic import (
+    AfterValidator,
+    AliasChoices,
+    BaseModel,
+    BeforeValidator,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 from ..output_contract import normalize_output_detail
 from ..schema import (
@@ -20,12 +28,6 @@ _INDICATOR_FORMAT_HELP = (
     "compact specs like 'sma(20)' and 'macd(12,26,9)', or named specs like "
     "'rsi(length=14)' and 'macd(fast=12,slow=26,signal=9)'."
 )
-_TICKS_FORMAT_ALIASES = {
-    "compact": "summary",
-    "full": "stats",
-}
-
-
 def _reject_removed_field(values: Any, *, field_name: str, replacement: str) -> Any:
     if isinstance(values, dict) and field_name in values:
         raise ValueError(f"{field_name} was removed; use {replacement}")
@@ -320,12 +322,17 @@ class DataFetchCandlesRequest(BaseModel):
 
 
 class DataFetchTicksRequest(BaseModel):
+    model_config = {"populate_by_name": True}
+
     symbol: str
     limit: int = 200
     start: Optional[str] = None
     end: Optional[str] = None
     simplify: Optional[SimplifySpec] = None
-    format: Literal["summary", "stats", "rows", "compact", "full"] = "summary"
+    output_mode: Literal["summary", "stats", "rows"] = Field(
+        default="summary",
+        validation_alias=AliasChoices("output_mode", "format"),
+    )
 
     @field_validator("symbol")
     @classmethod
@@ -337,15 +344,14 @@ class DataFetchTicksRequest(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _reject_removed_output(cls, values: Any) -> Any:
-        return _reject_removed_field(values, field_name="output", replacement="format")
+        return _reject_removed_field(values, field_name="output", replacement="output_mode")
 
-    @field_validator("format", mode="before")
+    @field_validator("output_mode", mode="before")
     @classmethod
-    def _normalize_format(cls, value: Any) -> Any:
+    def _normalize_output_mode(cls, value: Any) -> Any:
         return normalize_output_detail(
             value,
             default="summary",
-            aliases=_TICKS_FORMAT_ALIASES,
         )
 
     @field_validator("limit")

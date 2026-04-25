@@ -1448,21 +1448,19 @@ def fetch_ticks(  # noqa: C901
     start: Optional[str] = None,
     end: Optional[str] = None,
     simplify: Optional[SimplifySpec] = None,
-    format: Literal["summary", "stats", "rows", "compact", "full"] = "summary",
+    format: Literal["summary", "stats", "rows"] = "summary",
 ) -> Dict[str, Any]:
     """Fetch tick data and return either a summary (default) or raw rows.
 
     Parameters
     ----------
-    format : {"summary","stats","rows","compact","full"}
+    format : {"summary","stats","rows"}
         - "summary" (default): compact descriptive statistics over the fetched
           ticks (bid/ask/mid/spread, plus last and volume; volume uses real volume when
           available, otherwise tick_volume).
         - "stats": more detailed stats (includes extra distribution moments and
           quantiles).
         - "rows": return tick rows as structured data.
-        - "compact": shared output-contract alias for "summary".
-        - "full": shared output-contract alias for "stats".
     """
     try:
         effective_limit = int(limit)
@@ -1486,8 +1484,6 @@ def fetch_ticks(  # noqa: C901
                 format,
                 default="summary",
                 aliases={
-                    "compact": "summary",
-                    "full": "stats",
                     "raw": "rows",
                     "ticks": "rows",
                 },
@@ -1533,7 +1529,7 @@ def fetch_ticks(  # noqa: C901
             return {
                 "error": (
                     f"Invalid format: {format}. "
-                    "Use 'summary', 'stats', 'rows', 'compact', or 'full'."
+                    "Use 'summary', 'stats', or 'rows'."
                 )
             }
 
