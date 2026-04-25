@@ -82,7 +82,15 @@ def test_market_status_rejects_invalid_timezone_display() -> None:
 
 def test_market_status_symbol_mode_reports_heuristic_status(monkeypatch) -> None:
     raw = _unwrap(market_status_mod.market_status)
-    now_epoch = datetime.now(timezone.utc).timestamp()
+    fixed_now = datetime(2024, 1, 2, 12, 0, tzinfo=timezone.utc)
+    now_epoch = fixed_now.timestamp()
+
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            if tz is None:
+                return fixed_now.replace(tzinfo=None)
+            return fixed_now.astimezone(tz)
 
     class Gateway:
         SYMBOL_TRADE_MODE_FULL = 4
@@ -107,6 +115,7 @@ def test_market_status_symbol_mode_reports_heuristic_status(monkeypatch) -> None
             assert symbol == "EURUSD"
             return SimpleNamespace(time=now_epoch, bid=1.1, ask=1.2)
 
+    monkeypatch.setattr(market_status_mod, "datetime", FixedDateTime)
     monkeypatch.setattr(market_status_mod, "get_mt5_gateway", lambda **kwargs: Gateway())
 
     result = raw(symbol="eurusd")
@@ -117,8 +126,49 @@ def test_market_status_symbol_mode_reports_heuristic_status(monkeypatch) -> None
     assert result["status_source"] == "trade_mode_and_tick_freshness"
     assert result["status_confidence"] == "heuristic"
     assert result["can_open_new_positions"] is True
+    assert result["trade_mode_allows_opening"] is True
     assert result["tick_freshness"] == "fresh"
     assert result["tick_available"] is True
+
+
+def test_market_status_symbol_mode_blocks_weekend_opening(monkeypatch) -> None:
+    raw = _unwrap(market_status_mod.market_status)
+    fixed_now = datetime(2026, 4, 25, 3, 14, tzinfo=timezone.utc)
+    now_epoch = fixed_now.timestamp()
+
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            if tz is None:
+                return fixed_now.replace(tzinfo=None)
+            return fixed_now.astimezone(tz)
+
+    class Gateway:
+        SYMBOL_TRADE_MODE_FULL = 4
+        SYMBOL_TRADE_MODE_DISABLED = 0
+        SYMBOL_TRADE_MODE_CLOSEONLY = 3
+        SYMBOL_TRADE_MODE_LONGONLY = 1
+        SYMBOL_TRADE_MODE_SHORTONLY = 2
+
+        def ensure_connection(self) -> None:
+            return None
+
+        def symbol_info(self, symbol: str):
+            return SimpleNamespace(name=symbol, visible=True, trade_mode=4)
+
+        def symbol_info_tick(self, symbol: str):
+            return SimpleNamespace(time=now_epoch - 60, bid=1.1, ask=1.2)
+
+    monkeypatch.setattr(market_status_mod, "datetime", FixedDateTime)
+    monkeypatch.setattr(market_status_mod, "get_mt5_gateway", lambda **kwargs: Gateway())
+
+    result = raw(symbol="EURUSD")
+
+    assert result["status"] == "weekend_closed"
+    assert result["reason"] == "weekend"
+    assert result["can_open_new_positions"] is False
+    assert result["trade_mode_allows_opening"] is True
+    assert "closed for UTC weekend" in result["message"]
 
 
 def test_market_status_symbol_mode_full_includes_diagnostics(monkeypatch) -> None:

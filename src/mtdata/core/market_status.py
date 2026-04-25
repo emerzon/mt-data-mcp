@@ -635,9 +635,15 @@ def _check_symbol_market_status(
     tick = mt5_gateway.symbol_info_tick(symbol_name)
     tick_status = _symbol_tick_snapshot(tick, now_utc=now_utc)
 
-    can_open = mode_status["can_open_new_positions"]
+    trade_mode_can_open = mode_status["can_open_new_positions"]
+    can_open = trade_mode_can_open
     tick_freshness = tick_status.get("tick_freshness")
-    if can_open is True and tick_freshness == "fresh":
+    reason = None
+    if can_open is True and now_utc.weekday() >= 5:
+        open_state = "weekend_closed"
+        can_open = False
+        reason = "weekend"
+    elif can_open is True and tick_freshness == "fresh":
         open_state = "probably_open"
     elif can_open is True:
         open_state = "trade_mode_allows_opening"
@@ -646,10 +652,16 @@ def _check_symbol_market_status(
     else:
         open_state = "unknown"
 
-    message = (
-        f"{symbol_name}: {open_state.replace('_', ' ')} "
-        "(heuristic from MT5 trade_mode and tick freshness)."
-    )
+    if reason == "weekend":
+        message = (
+            f"{symbol_name}: closed for UTC weekend even though MT5 trade_mode "
+            "allows opening."
+        )
+    else:
+        message = (
+            f"{symbol_name}: {open_state.replace('_', ' ')} "
+            "(heuristic from MT5 trade_mode and tick freshness)."
+        )
 
     result: Dict[str, Any] = {
         "success": True,
@@ -659,11 +671,14 @@ def _check_symbol_market_status(
         "status_source": "trade_mode_and_tick_freshness",
         "status_confidence": "heuristic",
         "can_open_new_positions": can_open,
+        "trade_mode_allows_opening": trade_mode_can_open,
         "trade_mode_label": mode_status.get("trade_mode_label"),
         "tick_freshness": tick_freshness,
         "message": message,
         "timestamp": now_utc.isoformat(),
     }
+    if reason:
+        result["reason"] = reason
     if detail == "full":
         result["trade_mode"] = trade_mode
         result["symbol_info"] = {
