@@ -393,7 +393,8 @@ class TestFetchRatesWithWarmup(unittest.TestCase):
                 retry=True, sanity_check=True, diagnostics=diagnostics,
             )
         self.assertIsNone(result)
-        self.assertIn('remained stale after 2 attempt(s)', err)
+        self.assertIn('Data appears stale for EURUSD H1', err)
+        self.assertIn('allow_stale=true', err)
         self.assertEqual(mock_from.call_count, 2)
         self.assertEqual(
             diagnostics['freshness'],
@@ -1158,7 +1159,8 @@ class TestFetchCandles(unittest.TestCase):
         with patch(f'{_DS}.FETCH_RETRY_ATTEMPTS', 2), patch(f'{_DS}.FETCH_RETRY_DELAY', 0):
             result = fetch_candles('EURUSD', limit=5, end='2025-01-02')
         self.assertIn('error', result)
-        self.assertIn('remained stale after 2 attempt(s)', result['error'])
+        self.assertIn('Data appears stale for EURUSD H1', result['error'])
+        self.assertIn('allow_stale=true', result['error'])
         self.assertEqual(
             result['details']['diagnostics']['freshness'],
             {
@@ -1642,7 +1644,7 @@ class TestFetchCandles(unittest.TestCase):
         self.assertEqual(float(result['data'][-1]['time']), float(fresh_rates[-1]['time']))
         warmup_retry = result['meta']['diagnostics']['query']['warmup_retry']
         self.assertFalse(warmup_retry['applied'])
-        self.assertIn('remained stale after 1 attempt(s)', warmup_retry['error'])
+        self.assertIn('Data appears stale for EURUSD H1', warmup_retry['error'])
         self.assertTrue(any('Indicator warmup retry failed:' in str(w) for w in result.get('warnings', [])))
 
     # -- Simplify ------------------------------------------------------------

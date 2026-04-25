@@ -139,7 +139,10 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
 
         if tp_price is None or sl_price is None:
             return {
-                "error": "Provide barriers via tp_abs/sl_abs or tp_pct/sl_pct or tp_ticks/sl_ticks (legacy aliases: tp_pips/sl_pips)."
+                "error": (
+                    "Missing barriers. Provide either tp_pct and sl_pct, "
+                    "tp_abs and sl_abs, or tp_ticks and sl_ticks."
+                )
             }
         if not _barrier_prices_are_valid(
             price=last_price,

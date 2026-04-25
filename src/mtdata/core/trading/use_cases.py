@@ -1991,15 +1991,15 @@ def run_trade_risk_analyze(  # noqa: C901
                 
                 if position_sizing_provided:
                     # User started providing position sizing params, so fail clearly
+                    missing_text = ", ".join(position_sizing_missing)
+                    plural = "s" if len(position_sizing_missing) != 1 else ""
                     return {
                         "success": False,
-                        "error_code": "INCOMPLETE_POSITION_SIZING_PARAMS",
-                        "error": (
-                            "Position sizing requires all three parameters: "
-                            "desired_risk_pct, entry, and stop_loss"
-                        ),
+                        "error_code": "missing_position_sizing_params",
+                        "error": f"Missing required parameter{plural}: {missing_text}",
                         "provided": position_sizing_provided,
                         "missing": position_sizing_missing,
+                        "required": ["desired_risk_pct", "entry", "stop_loss"],
                         "guidance": {
                             "desired_risk_pct": "Risk as percentage of account equity (e.g., 2 for 2%)",
                             "entry": "Expected entry price for the new trade",

@@ -1340,7 +1340,7 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
                 sl_abs=0.99,
             )
         self.assertIn("error", result)
-        self.assertIn("Provide barriers", result["error"])
+        self.assertIn("Missing barriers", result["error"])
 
     def test_forecast_barrier_optimize_rejects_invalid_mode(self):
         result = forecast_barrier_optimize(

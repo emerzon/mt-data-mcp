@@ -158,9 +158,11 @@ def test_trade_risk_analyze_returns_error_when_partial_position_sizing_params() 
         )
 
     assert out["success"] is False
-    assert out["error_code"] == "INCOMPLETE_POSITION_SIZING_PARAMS"
+    assert out["error_code"] == "missing_position_sizing_params"
+    assert out["error"] == "Missing required parameters: entry, stop_loss"
     assert out["provided"] == ["desired_risk_pct"]
     assert set(out["missing"]) == {"entry", "stop_loss"}
+    assert out["required"] == ["desired_risk_pct", "entry", "stop_loss"]
     assert "guidance" in out
     assert "desired_risk_pct" in out["guidance"]
     assert "entry" in out["guidance"]

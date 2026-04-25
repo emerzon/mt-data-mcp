@@ -118,7 +118,10 @@ class TestLabelsTripleBarrier:
         mock_hist.return_value = _make_df(60)
         result = _get_raw_fn()("EURUSD", horizon=12)
         assert "error" in result
-        assert "forecast_barrier_optimize" in str(result["error"])
+        assert result["error"] == (
+            "Missing barriers. Provide either tp_pct and sl_pct, "
+            "tp_abs and sl_abs, or tp_ticks and sl_ticks."
+        )
 
     def test_rejects_multiple_tp_unit_families(self):
         result = _get_raw_fn()("EURUSD", tp_abs=1.11, tp_pct=0.5)

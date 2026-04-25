@@ -427,10 +427,9 @@ def _fetch_rates_with_warmup(
         and len(rates) > 0
     ):
         return None, (
-            f"Latest {timeframe} bar for {symbol} remained stale after {attempts} attempt(s) "
-            f"(last={_format_time_minimal(stale_last_t)}, "
-            f"freshness_cutoff={_format_time_minimal(float(freshness_cutoff))}). "
-            "If the market is closed, set allow_stale=true to retrieve the latest "
+            f"Data appears stale for {symbol} {timeframe}: latest completed bar is "
+            f"from {_format_time_minimal(stale_last_t)}. Market may be closed; "
+            "set allow_stale=true to retrieve the latest "
             "available completed historical bars."
         )
     return rates, None
