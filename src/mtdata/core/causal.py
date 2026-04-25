@@ -500,6 +500,17 @@ def _rank_correlation_pairs(
     return rows, pair_overlaps, skipped
 
 
+def _compact_correlation_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    return [
+        {
+            "left": row.get("left"),
+            "right": row.get("right"),
+            "correlation": row.get("correlation"),
+        }
+        for row in rows
+    ]
+
+
 def _build_correlation_matrix(
     symbols: List[str],
     rows: List[Dict[str, Any]],
@@ -1768,9 +1779,10 @@ def correlation_matrix(  # noqa: C901
                 or None,
             )
 
+        output_rows = rows if detail_mode == "full" else _compact_correlation_rows(rows)
         out: Dict[str, Any] = {
             "success": True,
-            "items": rows,
+            "items": output_rows,
             "count": int(len(rows)),
             "summary": {
                 "counts": {

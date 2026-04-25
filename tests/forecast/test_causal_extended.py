@@ -774,7 +774,7 @@ class TestCorrelationMatrix:
 
     @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
     @patch("mtdata.core.causal._fetch_series")
-    def test_compact_detail_omits_matrix_but_keeps_ranked_pairs(self, mock_fetch):
+    def test_compact_detail_omits_matrix_and_row_metadata(self, mock_fetch):
         idx = pd.date_range("2024-01-01", periods=80, freq="h")
         rets = np.linspace(-0.01, 0.015, 80)
         series_map = {
@@ -799,6 +799,7 @@ class TestCorrelationMatrix:
         assert result["meta"]["request"]["detail"] == "compact"
         assert result["items"]
         assert result["count"] == len(result["items"])
+        assert set(result["items"][0]) == {"left", "right", "correlation"}
         assert result["summary"]["highlights"] == {}
 
     @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
