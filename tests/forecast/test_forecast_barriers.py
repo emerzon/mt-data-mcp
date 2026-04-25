@@ -2470,6 +2470,11 @@ class TestUnresolvedTerminalPnl(unittest.TestCase):
         )
         self.assertIsNotNone(result)
         self.assertIn("ev_unresolved", result)
+        self.assertTrue(result["zero_win_probability"])
+        self.assertEqual(
+            result["warning"],
+            "prob_win is 0: no simulated paths reached TP within horizon.",
+        )
 
 
 class TestCandidateBarrierGeometry(unittest.TestCase):

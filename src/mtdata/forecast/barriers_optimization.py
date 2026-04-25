@@ -37,6 +37,7 @@ from .barrier_stats import (
 from .barriers_shared import (
     BARRIER_GRID_PRESETS,
     DEGENERATE_OBJECTIVE_MIN_RESOLVE,
+    LOW_PRACTICAL_WIN_PROB_THRESHOLD,
     _annotate_candidate_metrics,
     _auto_barrier_method,
     barrier_method_error,
@@ -499,6 +500,15 @@ def _evaluate_barrier_candidate(
     }
     if profit_factor_note:
         result["profit_factor_note"] = profit_factor_note
+    if effective_prob_win <= 0.0:
+        result["zero_win_probability"] = True
+        result["warning"] = "prob_win is 0: no simulated paths reached TP within horizon."
+    elif effective_prob_win < LOW_PRACTICAL_WIN_PROB_THRESHOLD:
+        result["low_practical_win_probability"] = True
+        result["warning"] = (
+            f"prob_win is below {LOW_PRACTICAL_WIN_PROB_THRESHOLD:.0%}; "
+            "treat positive EV as unresolved-path driven unless confirmed."
+        )
     _annotate_candidate_metrics(result, cost_per_trade=context.cost_per_trade)
     return result, False
 
