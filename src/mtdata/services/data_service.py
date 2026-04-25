@@ -1853,8 +1853,6 @@ def fetch_ticks(  # noqa: C901
                 out["price_precision"] = int(price_digits)
             if has_last and not small_summary_sample:
                 out["stats"]["last"] = _series_stats(df_stats["last"], total_count=len(df_stats))
-            if has_flags:
-                out["flags_decoded"] = _observed_tick_flags_decoded(flags)
 
             volume_kind = "tick_volume"
             vol_vals = pd.Series([1.0] * int(len(df_stats)), dtype=float)

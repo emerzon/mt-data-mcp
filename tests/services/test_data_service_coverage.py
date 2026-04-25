@@ -1876,7 +1876,9 @@ class TestFetchTicks(unittest.TestCase):
     @patch(_RESOLVE_CTZ, return_value=None)
     @patch(_GUARD, _mock_symbol_guard)
     def test_stats_output(self, mock_ctz, mock_info, mock_ticks):
-        mock_ticks.return_value = _make_ticks(20)
+        ticks = _make_ticks(20)
+        ticks[0]["flags"] = 2
+        mock_ticks.return_value = ticks
         result = fetch_ticks('EURUSD', limit=10, format='stats')
         self.assertTrue(result.get('success'))
         self.assertEqual(result['output'], 'stats')
@@ -1886,6 +1888,7 @@ class TestFetchTicks(unittest.TestCase):
         self.assertIn('skew', bid_stats)
         self.assertIn('q25', bid_stats)
         self.assertIn('q75', bid_stats)
+        self.assertNotIn('flags_decoded', result)
 
     @patch(_TICKS_RANGE)
     @patch(_CACHED_INFO, return_value=MagicMock())
