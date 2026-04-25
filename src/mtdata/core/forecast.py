@@ -333,7 +333,6 @@ def forecast_volatility_estimate(
 def forecast_list_methods(
     detail: CompactFullDetailLiteral = "compact",  # type: ignore
     limit: Optional[int] = None,
-    search: Optional[str] = None,
     search_term: Optional[str] = None,
 ) -> Dict[str, Any]:
     """List forecast methods and availability.
@@ -341,27 +340,16 @@ def forecast_list_methods(
     - detail='compact' (default): concise list with availability and `supports_ci` guidance.
     - detail='full': include full parameter docs and supports metadata.
     """
-    search_value = str(search or "").strip() or None
     search_term_value = str(search_term or "").strip() or None
-    if (
-        search_value is not None
-        and search_term_value is not None
-        and search_value.lower() != search_term_value.lower()
-    ):
-        return {
-            "error": "Provide either search or search_term, not both with different values."
-        }
-    effective_search = search_term_value or search_value
     return _run_forecast_operation(
         "forecast_list_methods",
         detail=detail,
         limit=limit,
-        search=effective_search,
         search_term=search_term_value,
         func=lambda: _forecast_list_methods_impl(
             detail=detail,
             limit=limit,
-            search=effective_search,
+            search=search_term_value,
         ),
     )
 

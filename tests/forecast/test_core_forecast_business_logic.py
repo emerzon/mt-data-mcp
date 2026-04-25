@@ -4,6 +4,7 @@ import importlib
 import logging
 import pkgutil
 import sys
+from inspect import signature
 from types import ModuleType, SimpleNamespace
 
 import pytest
@@ -666,26 +667,20 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
         },
     )
     grouped = _unwrap(cf.forecast_list_methods)()
+    params = signature(_unwrap(cf.forecast_list_methods)).parameters
+    assert "search_term" in params
+    assert "search" not in params
     sf_rows = [r for r in grouped["methods"] if r.get("category") == "statsforecast"]
     assert len(sf_rows) == 4
     if sf_rows:
         assert all(str(r.get("namespace")) == "statsforecast" for r in sf_rows)
     assert grouped["methods_hidden"] == 0
-    filtered = _unwrap(cf.forecast_list_methods)(search="theta", limit=1)
+    filtered = _unwrap(cf.forecast_list_methods)(search_term="theta", limit=1)
     assert filtered["filters"]["search"] == "theta"
     assert filtered["filters"]["limit"] == 1
     assert len(filtered["methods"]) == 1
     assert filtered["methods_hidden"] >= 1
     assert "theta" in str(filtered["methods"][0]["method"]).lower()
-    alias_filtered = _unwrap(cf.forecast_list_methods)(search_term="theta", limit=1)
-    assert alias_filtered["filters"]["search"] == "theta"
-    assert alias_filtered["filters"]["limit"] == 1
-    assert len(alias_filtered["methods"]) == 1
-    assert "theta" in str(alias_filtered["methods"][0]["method"]).lower()
-    conflict = _unwrap(cf.forecast_list_methods)(search="theta", search_term="arima")
-    assert conflict == {
-        "error": "Provide either search or search_term, not both with different values."
-    }
 
     monkeypatch.setattr(cf, "_get_forecast_methods_data", lambda: {"methods": [1]})
     assert _unwrap(cf.forecast_list_methods)() == {"methods": [1]}
