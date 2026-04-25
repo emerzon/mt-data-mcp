@@ -259,30 +259,18 @@ class TestLabelsTripleBarrier:
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
     @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
     @patch(f"{_LABELS_MOD}._fetch_history")
-    def test_summary_only_flag(self, mock_hist, mock_den, mock_pip):
+    def test_summary_output_uses_canonical_detail(self, mock_hist, mock_den, mock_pip):
         mock_hist.return_value = _make_df(60)
-        result = _get_raw_fn()("EURUSD", tp_pct=0.5, sl_pct=0.5, horizon=5, detail="compact", summary_only=True)
+        result = _get_raw_fn()("EURUSD", tp_pct=0.5, sl_pct=0.5, horizon=5, detail="summary")
         assert result["success"] is True
         assert "summary" in result
         assert "entries" not in result
-        assert "labels" not in result
-        assert any("summary_only is deprecated" in msg for msg in result["warnings"])
+        assert "warnings" not in result
 
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
     @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
     @patch(f"{_LABELS_MOD}._fetch_history")
-    def test_output_summary_only_alias(self, mock_hist, mock_den, mock_pip):
-        mock_hist.return_value = _make_df(60)
-        result = _get_raw_fn()("EURUSD", tp_pct=0.5, sl_pct=0.5, horizon=5, detail="summary_only")
-        assert result["success"] is True
-        assert "summary" in result
-        assert "entries" not in result
-        assert any("detail='summary_only' is deprecated" in msg for msg in result["warnings"])
-
-    @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
-    @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
-    @patch(f"{_LABELS_MOD}._fetch_history")
-    def test_output_summary_only_alias_is_normalized_case_insensitively(
+    def test_summary_only_detail_alias_is_rejected(
         self,
         mock_hist,
         mock_den,
@@ -296,9 +284,7 @@ class TestLabelsTripleBarrier:
             horizon=5,
             detail=" Summary_Only ",
         )
-        assert result["success"] is True
-        assert "summary" in result
-        assert "entries" not in result
+        assert result["error"] == "Invalid detail level. Use 'compact', 'full', or 'summary'."
 
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
     @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")

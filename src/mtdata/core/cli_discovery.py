@@ -60,7 +60,7 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("forecast_quantlib_barrier_price", "option_type"): "Option side: call or put.",
     ("forecast_tune_optuna", "search_space"): "Optuna search space (JSON or k=v).",
     ("indicators_list", "detail"): "Output detail: compact table or full rows with aliases and descriptions.",
-    ("labels_triple_barrier", "detail"): "Detail level: full, summary, or compact (summary plus recent sample). Legacy alias: summary_only -> summary.",
+    ("labels_triple_barrier", "detail"): "Detail level: full, summary, or compact (summary plus recent sample).",
     ("market_scan", "limit"): "Max matching symbols to return.",
     ("market_depth_fetch", "compact"): "Fail if DOM is unavailable instead of falling back to a ticker snapshot. Alias: --require-dom.",
     ("report_generate", "format"): "Output format: formatted text or markdown.",
@@ -99,16 +99,7 @@ def _normalize_cli_choice_value(value: Any) -> str:
     return str(value or "").strip().lower()
 
 
-def _normalize_labels_detail_cli_value(value: Any) -> str:
-    normalized = _normalize_cli_choice_value(value)
-    if normalized == "summary_only":
-        return "summary"
-    return normalized
-
-
-_COMMAND_PARAM_VALUE_NORMALIZERS: Dict[tuple[str, str], Callable[[Any], str]] = {
-    ("labels_triple_barrier", "detail"): _normalize_labels_detail_cli_value,
-}
+_COMMAND_PARAM_VALUE_NORMALIZERS: Dict[tuple[str, str], Callable[[Any], str]] = {}
 
 
 def _normalize_bool_choice(value: Any) -> str:
@@ -169,8 +160,6 @@ def should_expose_cli_param(*, cmd_name: Optional[str], param_name: str) -> bool
         "market_scan",
     }
     if str(param_name or "") == "symbol" and str(cmd_name or "") in hidden_symbol_alias_tools:
-        return False
-    if str(cmd_name or "") == "labels_triple_barrier" and str(param_name or "") == "summary_only":
         return False
     if str(cmd_name or "") == "finviz_calendar" and str(param_name or "") in {"date_from", "date_to"}:
         return False

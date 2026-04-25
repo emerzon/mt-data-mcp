@@ -172,8 +172,7 @@ def labels_triple_barrier(
     denoise: Optional[DenoiseSpec] = None,
     direction: Literal["long", "short"] = "long",  # type: ignore
     label_on: Literal["close", "high_low"] = "high_low",  # type: ignore
-    detail: Literal["full", "summary", "compact", "summary_only"] = "compact",  # type: ignore
-    summary_only: bool = False,
+    detail: Literal["full", "summary", "compact"] = "compact",  # type: ignore
     lookback: int = 300,
 ) -> Dict[str, Any]:
     """Label each bar with triple-barrier outcomes using future path up to `horizon` bars.
@@ -199,33 +198,10 @@ def labels_triple_barrier(
             if direction_error or direction_value is None:
                 return {"error": direction_error or "Invalid direction."}
             warnings_out: List[str] = []
-            output_mode = normalize_output_detail(
-                detail,
-                aliases={"summary_only": "summary"},
-            )
-            if isinstance(summary_only, str):
-                summary_only_flag = summary_only.strip().lower() in {
-                    "1",
-                    "true",
-                    "yes",
-                    "y",
-                    "on",
-                }
-            else:
-                summary_only_flag = bool(summary_only)
-            if summary_only_flag:
-                output_mode = "summary"
-                warnings_out.append(
-                    "summary_only is deprecated; use detail='summary' instead."
-                )
-            detail_value = str(detail or "").strip().lower()
-            if detail_value == "summary_only":
-                warnings_out.append(
-                    "detail='summary_only' is deprecated; use detail='summary' instead."
-                )
+            output_mode = normalize_output_detail(detail)
             if output_mode not in {"full", "summary", "compact"}:
                 return {
-                    "error": "Invalid detail level. Use 'compact', 'full', or 'summary' (legacy alias: 'summary_only')."
+                    "error": "Invalid detail level. Use 'compact', 'full', or 'summary'."
                 }
             barrier_values = {
                 "tp_abs": tp_abs,
