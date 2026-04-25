@@ -240,6 +240,22 @@ def run_patterns_detect(  # noqa: C901
             last_n_bars=last_n_bars_val,
             config=request.config if isinstance(request.config, dict) else None,
         )
+        if detail_value == "highlights":
+            rows = out.get("data") if isinstance(out, dict) else []
+            if not isinstance(rows, list):
+                rows = []
+            highlights = _build_highlights(
+                {"candlestick": {"patterns": rows}},
+                limit=min(max(1, int(request.top_k or 5)), 10),
+            )
+            return {
+                "success": bool(isinstance(out, dict) and out.get("success", True)),
+                "symbol": request.symbol,
+                "timeframe": tf_single,
+                "mode": "candlestick",
+                "n_patterns": len(rows),
+                "highlights": highlights,
+            }
         if detail_value == "compact":
             return deps.compact_patterns_payload(
                 out if isinstance(out, dict) else {"data": out}

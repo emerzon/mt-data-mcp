@@ -1497,6 +1497,45 @@ class TestPatternsDetect:
         _call_patterns_detect(symbol="EURUSD", mode="candlestick")
         mock_detect.assert_called_once()
 
+    @patch("mtdata.core.patterns._detect_candlestick_patterns")
+    def test_candlestick_highlights_omits_diagnostics(self, mock_detect):
+        mock_detect.return_value = {
+            "success": True,
+            "data": [
+                {
+                    "timeframe": "H1",
+                    "pattern": "Hammer",
+                    "direction": "bullish",
+                    "confidence": 0.91,
+                    "price": 1.2345,
+                    "volume_confirmation": {"status": "confirmed", "signal_to_baseline_ratio": 2.0},
+                    "regime_context": {"status": "context_only", "state": "ranging"},
+                }
+            ],
+        }
+
+        result = _call_patterns_detect(
+            symbol="EURUSD",
+            mode="candlestick",
+            timeframe="H1",
+            detail="highlights",
+            top_k=3,
+        )
+
+        assert result["highlights"] == [
+            {
+                "section": "candlestick",
+                "timeframe": "H1",
+                "name": "Hammer",
+                "direction": "bullish",
+                "status": "trigger",
+                "confidence": 0.91,
+                "price": 1.2345,
+            }
+        ]
+        assert "volume_confirmation" not in result["highlights"][0]
+        assert "regime_context" not in result["highlights"][0]
+
     def test_unknown_mode(self):
         result = _call_patterns_detect(symbol="EURUSD", mode="unknown_mode")
         assert "error" in result
