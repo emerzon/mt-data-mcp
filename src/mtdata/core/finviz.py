@@ -315,6 +315,105 @@ def _normalize_finviz_news_payload(result: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
+def _validate_finviz_detail(detail: str, *, operation: str) -> Optional[Dict[str, Any]]:
+    if str(detail or "full").strip().lower() in {"compact", "full"}:
+        return None
+    return _finviz_error_payload(
+        "detail must be 'compact' or 'full'.",
+        code=f"{operation}_invalid_detail",
+        operation=operation,
+        details={"detail": detail},
+    )
+
+
+def _transaction_text(row: Dict[str, Any]) -> str:
+    parts = [
+        str(value)
+        for key, value in row.items()
+        if "transaction" in str(key).lower() or "trade" in str(key).lower()
+    ]
+    return " ".join(parts).lower()
+
+
+def _compact_finviz_insider_payload(result: Dict[str, Any], *, detail: str) -> Dict[str, Any]:
+    error = _validate_finviz_detail(detail, operation="finviz_insider")
+    if error is not None or not result.get("success"):
+        return error or result
+    detail_mode = str(detail or "full").strip().lower()
+    rows = result.get("insider_trades")
+    if not isinstance(rows, list):
+        return result
+    out = dict(result)
+    out["detail"] = detail_mode
+    if detail_mode == "full":
+        return out
+    compact_rows = rows[:3]
+    transaction_texts = [_transaction_text(row) for row in rows if isinstance(row, dict)]
+    buys = sum(1 for text in transaction_texts if "buy" in text or "purchase" in text)
+    sells = sum(1 for text in transaction_texts if "sell" in text or "sale" in text)
+    out["insider_trades"] = compact_rows
+    out["summary"] = {
+        "counts": {
+            "returned": len(compact_rows),
+            "available": len(rows),
+            "total": result.get("total", len(rows)),
+            "buy_transactions": buys,
+            "sell_transactions": sells,
+        }
+    }
+    out["omitted_item_count"] = max(0, len(rows) - len(compact_rows))
+    return out
+
+
+def _compact_finviz_ratings_payload(result: Dict[str, Any], *, detail: str) -> Dict[str, Any]:
+    error = _validate_finviz_detail(detail, operation="finviz_ratings")
+    if error is not None or not result.get("success"):
+        return error or result
+    detail_mode = str(detail or "full").strip().lower()
+    rows = result.get("ratings")
+    if not isinstance(rows, list):
+        return result
+    out = dict(result)
+    out["detail"] = detail_mode
+    if detail_mode == "full":
+        return out
+    compact_rows = rows[:3]
+    out["ratings"] = compact_rows
+    out["summary"] = {
+        "counts": {
+            "returned": len(compact_rows),
+            "available": len(rows),
+        },
+        "latest": compact_rows[0] if compact_rows else None,
+    }
+    out["omitted_item_count"] = max(0, len(rows) - len(compact_rows))
+    return out
+
+
+def _compact_finviz_peers_payload(result: Dict[str, Any], *, detail: str) -> Dict[str, Any]:
+    error = _validate_finviz_detail(detail, operation="finviz_peers")
+    if error is not None or not result.get("success"):
+        return error or result
+    detail_mode = str(detail or "full").strip().lower()
+    peers = result.get("peers")
+    if not isinstance(peers, list):
+        return result
+    out = dict(result)
+    out["detail"] = detail_mode
+    if detail_mode == "full":
+        return out
+    compact_peers = peers[:5]
+    out["peers"] = compact_peers
+    out["summary"] = {
+        "counts": {
+            "returned": len(compact_peers),
+            "available": len(peers),
+        }
+    }
+    out["omitted_item_count"] = max(0, len(peers) - len(compact_peers))
+    return out
+
+
 def _parse_finviz_fields(fields: Optional[Union[str, list[str]]]) -> Optional[list[str]]:
     if fields is None:
         return None
@@ -513,7 +612,12 @@ def finviz_news(symbol: Optional[str] = None, limit: int = 20, page: int = 1) ->
 
 
 @mcp.tool()
-def finviz_insider(symbol: str, limit: int = 20, page: int = 1) -> Dict[str, Any]:
+def finviz_insider(
+    symbol: str,
+    limit: int = 20,
+    page: int = 1,
+    detail: Literal["compact", "full"] = "full",  # type: ignore
+) -> Dict[str, Any]:
     """
     Get insider trading activity for a US stock.
     
@@ -528,6 +632,9 @@ def finviz_insider(symbol: str, limit: int = 20, page: int = 1) -> Dict[str, Any
         Max trades per page (default 20)
     page : int
         Page number for pagination (default 1)
+    detail : {"compact", "full"}
+        "full" preserves all returned trades. "compact" returns the first
+        three rows plus aggregate buy/sell counts.
     
     Returns
     -------
@@ -539,17 +646,23 @@ def finviz_insider(symbol: str, limit: int = 20, page: int = 1) -> Dict[str, Any
         if error is not None:
             return error
         assert symbol_norm is not None
-        return get_stock_insider_trades(symbol_norm, limit=limit, page=page)
+        return _compact_finviz_insider_payload(
+            get_stock_insider_trades(symbol_norm, limit=limit, page=page),
+            detail=detail,
+        )
 
     return _run_logged_tool(
         "finviz_insider",
-        {"symbol": symbol, "limit": limit, "page": page},
+        {"symbol": symbol, "limit": limit, "page": page, "detail": detail},
         _run,
     )
 
 
 @mcp.tool()
-def finviz_ratings(symbol: str) -> Dict[str, Any]:
+def finviz_ratings(
+    symbol: str,
+    detail: Literal["compact", "full"] = "full",  # type: ignore
+) -> Dict[str, Any]:
     """
     Get analyst ratings for a US stock.
     
@@ -560,6 +673,9 @@ def finviz_ratings(symbol: str) -> Dict[str, Any]:
     ----------
     symbol : str
         Stock ticker symbol
+    detail : {"compact", "full"}
+        "full" preserves the full ratings history. "compact" returns the
+        latest three rows plus a latest-rating summary.
     
     Returns
     -------
@@ -571,17 +687,20 @@ def finviz_ratings(symbol: str) -> Dict[str, Any]:
         if error is not None:
             return error
         assert symbol_norm is not None
-        return get_stock_ratings(symbol_norm)
+        return _compact_finviz_ratings_payload(get_stock_ratings(symbol_norm), detail=detail)
 
     return _run_logged_tool(
         "finviz_ratings",
-        {"symbol": symbol},
+        {"symbol": symbol, "detail": detail},
         _run,
     )
 
 
 @mcp.tool()
-def finviz_peers(symbol: str) -> Dict[str, Any]:
+def finviz_peers(
+    symbol: str,
+    detail: Literal["compact", "full"] = "full",  # type: ignore
+) -> Dict[str, Any]:
     """
     Get peer companies for a US stock.
     
@@ -589,6 +708,9 @@ def finviz_peers(symbol: str) -> Dict[str, Any]:
     ----------
     symbol : str
         Stock ticker symbol
+    detail : {"compact", "full"}
+        "full" preserves the complete peer list. "compact" returns up to
+        five peers plus peer counts.
     
     Returns
     -------
@@ -600,11 +722,11 @@ def finviz_peers(symbol: str) -> Dict[str, Any]:
         if error is not None:
             return error
         assert symbol_norm is not None
-        return get_stock_peers(symbol_norm)
+        return _compact_finviz_peers_payload(get_stock_peers(symbol_norm), detail=detail)
 
     return _run_logged_tool(
         "finviz_peers",
-        {"symbol": symbol},
+        {"symbol": symbol, "detail": detail},
         _run,
     )
 
