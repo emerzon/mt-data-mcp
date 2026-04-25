@@ -430,6 +430,7 @@ def _compact_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:
             "win_rate",
             "win_rate_display",
             "max_drawdown",
+            "avg_return",
             "avg_return_per_trade",
             "trades_observed",
         ):

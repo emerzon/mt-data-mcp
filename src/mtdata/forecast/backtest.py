@@ -75,6 +75,7 @@ def _compact_metrics_payload(metrics: Optional[Dict[str, Any]]) -> Dict[str, Any
 
 def _unavailable_performance_metrics(reason: str, slippage_bps: float) -> Dict[str, Any]:
     return {
+        "avg_return": None,
         "avg_return_per_trade": None,
         "win_rate": None,
         "max_drawdown": None,
@@ -196,6 +197,7 @@ def _compute_performance_metrics(
         return value_f
 
     metrics.update({
+        "avg_return": avg_return,
         "avg_return_per_trade": avg_return,
         "win_rate": win_rate,
         "win_rate_display": f"{win_rate:.1%}",

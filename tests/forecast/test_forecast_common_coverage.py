@@ -662,6 +662,7 @@ class TestComputePerformanceMetrics:
 
     def test_single_return(self):
         m = _compute_performance_metrics([0.05], "H1", 1, 0.0)
+        assert m["avg_return"] == pytest.approx(0.05)
         assert m["avg_return_per_trade"] == pytest.approx(0.05)
 
     def test_positive_sharpe(self):
@@ -685,7 +686,8 @@ class TestComputePerformanceMetrics:
         rets = [0.1, 0.1]
         m = _compute_performance_metrics(rets, "H1", 1, 0.0)
         # cumulative_return is now tracked in summary, not in metrics
-        # Verify the metrics are still calculated correctly by checking avg_return_per_trade
+        # Verify the metrics are still calculated correctly by checking avg_return.
+        assert m["avg_return"] == pytest.approx(0.1, rel=1e-6)
         assert m["avg_return_per_trade"] == pytest.approx(0.1, rel=1e-6)
 
     def test_slippage_stored(self):
@@ -697,6 +699,7 @@ class TestComputePerformanceMetrics:
         m = _compute_performance_metrics(rets, "H1", 1, 0.0)
         # num_trades is now only in summary, not in metrics
         # Verify metrics are calculated properly
+        assert "avg_return" in m
         assert "avg_return_per_trade" in m
 
     def test_all_nan_returns_empty(self):
