@@ -558,8 +558,9 @@ class TestFinvizTools:
         assert result["category"] == "summary"
         assert result["fundamentals"]["P/E"] == "34.29"
         assert "Insider Own" not in result["fundamentals"]
-        assert result["available_field_count"] == 9
-        assert result["omitted_field_count"] == 1
+        assert "fields_returned" not in result
+        assert "available_field_count" not in result
+        assert "omitted_field_count" not in result
 
     @patch("mtdata.core.finviz.get_stock_fundamentals")
     def test_finviz_fundamentals_filters_category_and_fields(self, mock_get_fundamentals):
@@ -585,6 +586,27 @@ class TestFinvizTools:
         assert custom["category"] == "custom"
         assert custom["fundamentals"] == {"P/E": "34.29", "RSI (14)": "62.1"}
         assert custom["missing_fields"] == ["Missing"]
+
+    @patch("mtdata.core.finviz.get_stock_fundamentals")
+    def test_finviz_fundamentals_full_keeps_field_inventory(self, mock_get_fundamentals):
+        from mtdata.core.finviz import finviz_fundamentals
+
+        mock_get_fundamentals.return_value = {
+            "success": True,
+            "symbol": "AAPL",
+            "fundamentals": {
+                "Company": "Apple Inc",
+                "Sector": "Technology",
+                "P/E": "34.29",
+            },
+        }
+
+        raw = getattr(finviz_fundamentals, "__wrapped__", finviz_fundamentals)
+        result = raw("AAPL", detail="full")
+
+        assert result["fields_returned"] == ["Company", "Sector", "P/E"]
+        assert result["available_field_count"] == 3
+        assert result["omitted_field_count"] == 0
 
     @patch('mtdata.services.finviz.get_stock_fundamentals')
     def test_finviz_fundamentals_tool(self, mock_get_fundamentals):
