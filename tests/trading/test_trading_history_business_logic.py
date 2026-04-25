@@ -117,7 +117,17 @@ def test_trade_history_orders_normalizes_setup_and_done_times() -> None:
     assert out["items"][0]["timestamp_timezone"] == "UTC"
 
 
-def test_trade_history_adds_normalized_deal_rows_without_changing_items() -> None:
+def test_trade_history_compact_omits_parallel_normalized_rows() -> None:
+    out = normalize_trade_history_output(
+        [{"ticket": 11, "time": "2024-01-01 12:00:00", "symbol": "EURUSD"}],
+        request=TradeHistoryRequest(history_kind="deals"),
+    )
+
+    assert out["items"][0]["ticket"] == 11
+    assert "normalized_items" not in out
+
+
+def test_trade_history_full_detail_adds_normalized_deal_rows_without_changing_items() -> None:
     out = normalize_trade_history_output(
         [
             {
@@ -131,7 +141,7 @@ def test_trade_history_adds_normalized_deal_rows_without_changing_items() -> Non
                 "comment": "closed",
             }
         ],
-        request=TradeHistoryRequest(history_kind="deals"),
+        request=TradeHistoryRequest(history_kind="deals", detail="full"),
     )
 
     assert out["items"][0]["entry_label"] == "Out"
@@ -166,6 +176,7 @@ def test_trade_history_humanized_column_style_only_renames_primary_items() -> No
         ],
         request=TradeHistoryRequest(
             history_kind="deals",
+            detail="full",
             column_style="humanized",
         ),
     )
@@ -178,7 +189,7 @@ def test_trade_history_humanized_column_style_only_renames_primary_items() -> No
     assert out["normalized_items"][0]["deal_details"]["ticket"] == 11
 
 
-def test_trade_history_adds_normalized_order_rows_without_changing_items() -> None:
+def test_trade_history_full_detail_adds_normalized_order_rows_without_changing_items() -> None:
     out = normalize_trade_history_output(
         [
             {
@@ -192,7 +203,7 @@ def test_trade_history_adds_normalized_order_rows_without_changing_items() -> No
                 "state_label": "Filled",
             }
         ],
-        request=TradeHistoryRequest(history_kind="orders"),
+        request=TradeHistoryRequest(history_kind="orders", detail="full"),
     )
 
     assert out["items"][0]["state_label"] == "Filled"
@@ -226,6 +237,7 @@ def test_trade_history_order_humanized_column_style_renames_order_times() -> Non
         ],
         request=TradeHistoryRequest(
             history_kind="orders",
+            detail="full",
             column_style="humanized",
         ),
     )

@@ -351,17 +351,19 @@ def normalize_trade_history_output(
     """Normalize trade history into the standard trade read envelope."""
     out = _normalize_trade_read_output(rows, request=request, kind="trade_history")
     history_kind = getattr(request, "history_kind", None)
+    include_request_metadata = _include_trade_read_request_metadata(request)
     if out.get("success") is True and isinstance(out.get("items"), list):
         raw_items = list(out["items"])
         out["items"] = _style_trade_history_items(
             raw_items,
             column_style=getattr(request, "column_style", "snake_case"),
         )
-        out["normalized_items"] = _normalize_trade_history_items(
-            raw_items,
-            history_kind=history_kind,
-        )
-    if _include_trade_read_request_metadata(request):
+        if include_request_metadata:
+            out["normalized_items"] = _normalize_trade_history_items(
+                raw_items,
+                history_kind=history_kind,
+            )
+    if include_request_metadata:
         if history_kind is not None:
             out["history_kind"] = history_kind
         column_style = getattr(request, "column_style", None)
