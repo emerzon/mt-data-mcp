@@ -20,7 +20,7 @@ class ForecastPriceBody(BaseModel):
     symbol: str
     timeframe: str = Field("H1")
     method: str = Field("theta")
-    horizon: int = Field(12, ge=1)
+    horizon: int = Field(5, ge=1)
     lookback: Optional[int] = Field(None, ge=1)
     as_of: Optional[str] = None
     params: Optional[Dict[str, Any]] = None

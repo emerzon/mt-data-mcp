@@ -89,6 +89,10 @@ def test_forecast_detail_schema_distinguishes_standard_support() -> None:
         ForecastBacktestRequest(symbol="EURUSD", detail="standard")
 
 
+def test_forecast_generate_default_horizon_is_short_actionable_window() -> None:
+    assert ForecastGenerateRequest(symbol="EURUSD").horizon == 5
+
+
 def test_execution_contract_rejects_multivariate_features_for_univariate_only_model() -> None:
     with pytest.raises(ValidationError):
         ForecastExecutionContract(

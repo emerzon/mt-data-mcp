@@ -957,7 +957,7 @@ def _add_forecast_generate_args(cmd_parser: argparse.ArgumentParser) -> None:
         help=_PARAM_HINTS["timeframe"],
     )
     group_window.add_argument(
-        "--horizon", type=int, default=12, help="Forecast horizon in bars."
+        "--horizon", type=int, default=5, help="Forecast horizon in bars."
     )
     group_window.add_argument(
         "--lookback", type=int, default=None, help="Historical bars to use."
