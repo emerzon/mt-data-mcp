@@ -3134,11 +3134,13 @@ def _run_trade_query_impl(
             fmt_time=fmt_time,
             mt5_epoch_to_utc=mt5_epoch_to_utc,
         )
-        _append_trade_comment_metadata(
-            out_df,
-            comment_series=comment_series,
-            comment_row_metadata=comment_row_metadata,
-        )
+        detail = str(getattr(request, "detail", "compact") or "compact").strip().lower()
+        if detail == "full":
+            _append_trade_comment_metadata(
+                out_df,
+                comment_series=comment_series,
+                comment_row_metadata=comment_row_metadata,
+            )
         out_df = _apply_trade_query_limit(
             out_df,
             time_utc=time_utc,

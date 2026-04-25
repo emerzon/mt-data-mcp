@@ -145,11 +145,46 @@ class TestMergedTools(unittest.TestCase):
             )
         ]
 
-        res = get_open(__cli_raw=True)
+        res = get_open(detail="full", __cli_raw=True)
         row = res["items"][0]
         self.assertEqual(row.get("comment_max_length"), 31)
         self.assertEqual(row.get("comment_visible_length"), len("audit short"))
         self.assertFalse(row.get("comment_may_be_truncated"))
+
+    def test_trading_open_compact_omits_comment_metadata(self):
+        Pos = namedtuple(
+            "Pos",
+            [
+                "ticket",
+                "time",
+                "time_msc",
+                "time_update",
+                "time_update_msc",
+                "type",
+                "symbol",
+                "comment",
+            ],
+        )
+        self.mt5.positions_get.return_value = [
+            Pos(
+                ticket=1,
+                time=1700000000,
+                time_msc=1700000000000,
+                time_update=1700000001,
+                time_update_msc=1700000001000,
+                type=0,
+                symbol="EURUSD",
+                comment="audit short",
+            )
+        ]
+
+        res = get_open(__cli_raw=True)
+        row = res["items"][0]
+
+        self.assertEqual(row.get("comment"), "audit short")
+        self.assertNotIn("comment_max_length", row)
+        self.assertNotIn("comment_visible_length", row)
+        self.assertNotIn("comment_may_be_truncated", row)
 
     def test_trading_open_compact_detail_omits_echoed_request_metadata(self):
         Pos = namedtuple("Pos", ["ticket", "time", "time_msc", "time_update", "time_update_msc", "type", "symbol"])
