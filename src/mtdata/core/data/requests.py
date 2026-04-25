@@ -293,6 +293,33 @@ IndicatorSpecsInput = Annotated[
 ]
 
 
+def _normalize_simplify_input(value: Any) -> Any:
+    if value is None or isinstance(value, dict):
+        return value
+    if isinstance(value, bool):
+        return {} if value else None
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"", "none", "null", "false", "off", "no", "0"}:
+            return None
+        if normalized in {"true", "on", "yes", "1", "default", "auto"}:
+            return {}
+        raise ValueError(
+            "simplify must be a dict such as {'method': 'lttb', 'points': 100}, "
+            "or use true/on/default to enable defaults and false/off to disable."
+        )
+    return value
+
+
+SimplifySpecInput = Annotated[
+    Optional[SimplifySpec],
+    BeforeValidator(
+        _normalize_simplify_input,
+        json_schema_input_type=Optional[Union[bool, str, SimplifySpec]],
+    ),
+]
+
+
 class DataFetchCandlesRequest(BaseModel):
     symbol: str
     timeframe: TimeframeLiteral = "H1"
@@ -303,7 +330,7 @@ class DataFetchCandlesRequest(BaseModel):
     ohlcv: Optional[str] = None
     indicators: IndicatorSpecsInput = None
     denoise: Optional[DenoiseSpec] = None
-    simplify: Optional[SimplifySpec] = None
+    simplify: SimplifySpecInput = None
     include_spread: bool = False
     include_incomplete: bool = False
     allow_stale: bool = False
@@ -328,7 +355,7 @@ class DataFetchTicksRequest(BaseModel):
     limit: int = 200
     start: Optional[str] = None
     end: Optional[str] = None
-    simplify: Optional[SimplifySpec] = None
+    simplify: SimplifySpecInput = None
     output_mode: Literal["summary", "stats", "rows"] = Field(
         default="summary",
         validation_alias=AliasChoices("output_mode", "format"),

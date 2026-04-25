@@ -311,7 +311,10 @@ def data_fetch_candles(
         Denoising configuration to smooth price data
     
     simplify : dict, optional
-        Data reduction options for large datasets
+        Data reduction options for large datasets. Use a dict such as
+        {"method": "lttb", "points": 100} or {"ratio": 0.25}. Passing
+        true/"on"/"default" enables default simplification; false/"off"
+        disables it.
 
     include_incomplete : bool, optional
         Keep the latest forming candle instead of trimming it. Defaults to false.
@@ -381,7 +384,9 @@ def data_fetch_ticks(
 
     Use `output_mode="stats"` for a more detailed stats payload.
     Use `output_mode="rows"` to return raw tick rows as structured data.
-    `simplify` only applies to row output.
+    `simplify` only applies to row output. Use a dict such as
+    {"method": "lttb", "points": 100} or pass true/"on"/"default" for
+    default simplification; false/"off" disables it.
     """
     return run_logged_operation(
         logger,

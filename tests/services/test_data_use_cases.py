@@ -72,6 +72,23 @@ def test_run_data_fetch_candles_passes_include_spread_to_service():
     assert captured["kwargs"]["include_spread"] is True
 
 
+def test_data_fetch_requests_accept_simplify_boolean_and_string_aliases():
+    candles_on = DataFetchCandlesRequest(symbol="EURUSD", simplify=True)
+    ticks_on = DataFetchTicksRequest(symbol="EURUSD", simplify="on")
+    candles_off = DataFetchCandlesRequest(symbol="EURUSD", simplify="off")
+
+    assert candles_on.simplify == {}
+    assert ticks_on.simplify == {}
+    assert candles_off.simplify is None
+
+
+def test_data_fetch_requests_explain_invalid_simplify_string():
+    with pytest.raises(ValidationError) as exc_info:
+        DataFetchCandlesRequest(symbol="EURUSD", simplify="maybe")
+
+    assert "{'method': 'lttb', 'points': 100}" in str(exc_info.value)
+
+
 def test_run_data_fetch_candles_omits_contract_metadata_in_compact_detail():
     rows = [{"time": 1.0, "close": 1.1}]
     request = DataFetchCandlesRequest(symbol="EURUSD", timeframe="H1", limit=10)

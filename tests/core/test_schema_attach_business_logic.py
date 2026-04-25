@@ -80,7 +80,12 @@ def test_attach_schemas_to_tools_patches_indicator_and_data_refs(monkeypatch) ->
     assert any(option.get("type") == "string" for option in indicator_any_of)
     assert {"type": "null"} not in indicator_any_of
     assert params["denoise"] == {"$ref": "#/$defs/DenoiseSpec"}
-    assert params["simplify"] == {"$ref": "#/$defs/SimplifySpec"}
+    simplify_schema = params["simplify"]
+    simplify_any_of = simplify_schema["anyOf"]
+    assert {"$ref": "#/$defs/SimplifySpec"} in simplify_any_of
+    assert {"type": "boolean"} in simplify_any_of
+    assert any(option.get("type") == "string" for option in simplify_any_of)
+    assert {"method": "lttb", "points": 100} in simplify_schema["examples"]
 
     indicator_obj, _indicator_func, _apply_calls = _attach_tool_schema(
         monkeypatch,

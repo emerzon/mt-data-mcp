@@ -146,6 +146,27 @@ def _set_ref(
     params[param_name] = {"$ref": ref}
 
 
+def _set_simplify_param(params: Dict[str, Any], required_params: set[str]) -> None:
+    if "simplify" not in params:
+        return
+    options = [
+        {"$ref": "#/$defs/SimplifySpec"},
+        {"type": "boolean"},
+        {"type": "string", "enum": ["on", "off", "true", "false", "default", "auto"]},
+    ]
+    if "simplify" not in required_params:
+        options.append({"type": "null"})
+    params["simplify"] = {
+        "description": (
+            "Optional data reduction spec. Use a dict such as "
+            "{'method': 'lttb', 'points': 100}; true/on/default enables "
+            "default simplification, false/off disables it."
+        ),
+        "anyOf": options,
+        "examples": [{"method": "lttb", "points": 100}, True, "off"],
+    }
+
+
 def _patch_forecast_generate_schema(schema: Dict[str, Any]) -> None:
     params, required_params = _schema_params(schema)
     _set_ref(params, required_params, "quantity", "#/$defs/QuantitySpec")
@@ -180,12 +201,12 @@ def _patch_data_fetch_candles_schema(schema: Dict[str, Any]) -> None:
             indicator_options.append({"type": "null"})
         params["indicators"] = {"anyOf": indicator_options}
     _set_ref(params, required_params, "denoise", "#/$defs/DenoiseSpec", allow_null=True)
-    _set_ref(params, required_params, "simplify", "#/$defs/SimplifySpec", allow_null=True)
+    _set_simplify_param(params, required_params)
 
 
 def _patch_data_fetch_ticks_schema(schema: Dict[str, Any]) -> None:
     params, required_params = _schema_params(schema)
-    _set_ref(params, required_params, "simplify", "#/$defs/SimplifySpec", allow_null=True)
+    _set_simplify_param(params, required_params)
 
 
 def _patch_forecast_barrier_prob_schema(schema: Dict[str, Any]) -> None:
