@@ -636,6 +636,13 @@ class TestCorrelationMatrix:
         assert result["error_code"] == "invalid_input"
         assert "min_overlap" in result["error"]
 
+    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
+    def test_limit_must_cover_minimum_overlap_window(self):
+        result = self._unwrapped()("A,B", limit=3, min_overlap=30)
+        assert result["success"] is False
+        assert result["error_code"] == "invalid_input"
+        assert "calculation window" in result["error"]
+
     def test_symbols_and_group_are_mutually_exclusive(self):
         result = self._unwrapped()("A,B", group="Forex\\Majors")
         assert result["success"] is False
@@ -720,10 +727,13 @@ class TestCorrelationMatrix:
         assert result["items"][0]["abs_correlation"] >= result["items"][1]["abs_correlation"]
         assert result["items"][0]["window_requested"] == 60
         assert result["items"][0]["window_actual"] == 60
+        assert result["items"][0]["calculation_samples"] == 60
+        assert result["items"][0]["available_overlap_rows"] == result["items"][0]["overlap_rows"]
         assert result["items"][0]["window_truncated"] is True
         assert result["summary"]["highlights"] == {}
         assert "data" not in result
         assert "legends" in result["meta"]
+        assert "not an output-row limit" in result["meta"]["stats"]["limit_interpretation"]
         assert result["meta"]["stats"]["pairs_computed"] == 3
         assert any(
             "event=finish operation=correlation_matrix success=True" in record.message

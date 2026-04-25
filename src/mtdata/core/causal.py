@@ -473,7 +473,9 @@ def _rank_correlation_pairs(
                     "correlation": corr_f,
                     "abs_correlation": abs(corr_f),
                     "samples": int(len(subset)),
+                    "calculation_samples": int(len(subset)),
                     "overlap_rows": overlap_rows,
+                    "available_overlap_rows": overlap_rows,
                     "window_requested": int(limit),
                     "window_actual": int(len(subset)),
                     "window_truncated": bool(len(subset) < overlap_rows),
@@ -1593,6 +1595,12 @@ def correlation_matrix(  # noqa: C901
                 code="invalid_input",
                 meta=meta,
             )
+        if limit < min_overlap:
+            return _causal_error(
+                "limit must be at least min_overlap because limit controls the correlation calculation window.",
+                code="invalid_input",
+                meta=meta,
+            )
 
         method_value = _normalize_correlation_method(method)
         if method_value is None:
@@ -1619,6 +1627,10 @@ def correlation_matrix(  # noqa: C901
                 meta=meta,
             )
         meta["detail"] = detail_mode
+        meta["limit_interpretation"] = (
+            "limit controls the maximum overlapping transformed samples used for each correlation calculation; "
+            "it is not an output-row limit."
+        )
 
         fetch_count = max(int(limit) + 10, int(min_overlap) + 10, 200)
         meta["fetch_count"] = int(fetch_count)
