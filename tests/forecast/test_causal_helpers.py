@@ -17,7 +17,6 @@ from mtdata.core.causal import (
     _transform_cointegration_frame,
     _transform_frame,
 )
-from mtdata.shared.parameter_contracts import normalize_symbol_selector_aliases
 
 
 class TestParseSymbols:
@@ -38,32 +37,6 @@ class TestParseSymbols:
 
     def test_mixed_delimiters(self):
         assert _parse_symbols("A;B,C;D") == ["A", "B", "C", "D"]
-
-
-class TestNormalizeSymbolSelectorAliases:
-    def test_symbol_alias_populates_plural_contract(self):
-        tokens, meta, error = normalize_symbol_selector_aliases(
-            symbol="EURUSD",
-            symbols=None,
-            parse_selector=_parse_symbols,
-        )
-
-        assert error is None
-        assert tokens == ["EURUSD"]
-        assert meta["symbol_input"] == ["EURUSD"]
-        assert meta["symbols_input"] == ["EURUSD"]
-
-    def test_conflicting_symbol_aliases_are_rejected(self):
-        tokens, meta, error = normalize_symbol_selector_aliases(
-            symbol="EURUSD",
-            symbols="GBPUSD",
-            parse_selector=_parse_symbols,
-        )
-
-        assert tokens == []
-        assert "Provide either symbol or symbols" in str(error)
-        assert meta["symbol_input"] == ["EURUSD"]
-        assert meta["symbols_input"] == ["GBPUSD"]
 
 
 class TestTransformFrame:

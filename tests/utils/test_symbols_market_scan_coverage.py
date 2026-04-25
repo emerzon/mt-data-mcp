@@ -381,7 +381,6 @@ class TestMarketScan:
                 _make_symbol("GBPUSD"),
                 _make_symbol("USDJPY"),
             ],
-            symbol=None,
             symbols="USDJPY, eurusd, MISSING",
             group=None,
             universe="visible",
@@ -390,41 +389,6 @@ class TestMarketScan:
         assert error is None
         assert [symbol.name for symbol in selected] == ["USDJPY", "EURUSD"]
         assert meta["missing_symbols"] == ["MISSING"]
-
-    def test_singular_symbol_alias_selects_requested_symbol(self):
-        fn = _get_select_market_scan_symbols()
-
-        selected, meta, error = fn(
-            [
-                _make_symbol("EURUSD"),
-                _make_symbol("GBPUSD"),
-            ],
-            symbol="eurusd",
-            symbols=None,
-            group=None,
-            universe="visible",
-        )
-
-        assert error is None
-        assert [symbol.name for symbol in selected] == ["EURUSD"]
-        assert meta["symbol_input"] == ["eurusd"]
-        assert meta["symbols_input"] == ["eurusd"]
-
-    def test_conflicting_symbol_aliases_are_rejected(self):
-        fn = _get_select_market_scan_symbols()
-
-        selected, meta, error = fn(
-            [_make_symbol("EURUSD"), _make_symbol("GBPUSD")],
-            symbol="EURUSD",
-            symbols="GBPUSD",
-            group=None,
-            universe="visible",
-        )
-
-        assert selected == []
-        assert "Provide either symbol or symbols" in str(error)
-        assert meta["symbol_input"] == ["EURUSD"]
-        assert meta["symbols_input"] == ["GBPUSD"]
 
     @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
     @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
@@ -536,7 +500,7 @@ class TestMarketScan:
     @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
     @patch("mtdata.core.symbols.mt5.symbol_info_tick")
     @patch("mtdata.core.symbols.mt5.symbols_get")
-    def test_market_scan_symbol_alias_updates_request_meta(
+    def test_market_scan_symbols_updates_request_meta(
         self,
         mock_symbols_get,
         mock_tick,
@@ -548,19 +512,10 @@ class TestMarketScan:
         mock_rates.return_value = _make_bars([1.0, 1.01, 1.02, 1.03], tick_volume=50)
 
         fn = _get_market_scan()
-        result = fn(symbol="EURUSD", lookback=4)
+        result = fn(symbols="EURUSD", lookback=4)
 
         assert result["success"] is True
-        assert result["meta"]["request"]["symbol_input"] == ["EURUSD"]
         assert result["meta"]["request"]["symbols_input"] == ["EURUSD"]
-
-    def test_market_scan_rejects_conflicting_symbol_aliases(self):
-        fn = _get_market_scan()
-        result = fn(symbol="EURUSD", symbols="GBPUSD")
-
-        assert result["success"] is False
-        assert result["error_code"] == "invalid_input"
-        assert "Provide either symbol or symbols" in result["error"]
 
     @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
     @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")

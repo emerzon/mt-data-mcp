@@ -14,7 +14,6 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from ..shared.parameter_contracts import normalize_symbol_selector_aliases
 from ..shared.schema import CompactFullDetailLiteral, TimeframeLiteral
 from ..utils.mt5 import (
     _ensure_symbol_ready,
@@ -139,7 +138,6 @@ _COINTEGRATION_TREND_LEGEND: Dict[str, Dict[str, str]] = {
 
 _CAUSAL_DISCOVER_REQUEST_KEYS = frozenset(
     {
-        "symbol_input",
         "symbols_input",
         "symbols_expanded",
         "timeframe",
@@ -153,7 +151,6 @@ _CAUSAL_DISCOVER_REQUEST_KEYS = frozenset(
 
 _CORRELATION_REQUEST_KEYS = frozenset(
     {
-        "symbol_input",
         "symbols_input",
         "symbols_expanded",
         "group_input",
@@ -169,7 +166,6 @@ _CORRELATION_REQUEST_KEYS = frozenset(
 
 _COINTEGRATION_REQUEST_KEYS = frozenset(
     {
-        "symbol_input",
         "symbols_input",
         "symbols_expanded",
         "group_input",
@@ -1020,7 +1016,6 @@ def _format_alignment_detail_summary(detail: Dict[str, Any]) -> str:
 @mcp.tool()
 def causal_discover_signals(  # noqa: C901
     symbols: Optional[str] = None,
-    symbol: Optional[str] = None,
     timeframe: TimeframeLiteral = "H1",
     limit: int = 500,
     max_lag: int = 5,
@@ -1032,7 +1027,6 @@ def causal_discover_signals(  # noqa: C901
 
     Args:
         symbols: Comma-separated MT5 symbols; provide one symbol to auto-expand its group.
-        symbol: Compatibility alias for `symbols`.
         timeframe: MT5 timeframe key (e.g. "M15", "H1").
         limit: Number of recent bars to analyse per symbol.
         max_lag: Maximum lag order for tests (>=1).
@@ -1040,8 +1034,6 @@ def causal_discover_signals(  # noqa: C901
         transform: Preprocessing transform: "log_return", "pct", "diff", or "level".
         normalize: Z-score columns before testing to stabilise scale.
     """
-
-    symbol_alias = symbol
 
     def _run() -> Dict[str, Any]:  # noqa: C901
         meta: Dict[str, Any] = {
@@ -1075,18 +1067,9 @@ def causal_discover_signals(  # noqa: C901
                 meta=meta,
             )
 
-        symbol_list, selector_meta, selector_error = normalize_symbol_selector_aliases(
-            symbol=symbol_alias,
-            symbols=symbols,
-            parse_selector=_parse_symbols,
-        )
-        meta.update(selector_meta)
-        if selector_error is not None:
-            return _causal_error(
-                selector_error,
-                code="invalid_input",
-                meta=meta,
-            )
+        symbol_list = _parse_symbols(symbols)
+        if symbol_list:
+            meta["symbols_input"] = list(symbol_list)
         group_hint: str | None = None
         requested_anchor = symbol_list[0] if len(symbol_list) == 1 else None
         if not symbol_list:
@@ -1428,7 +1411,6 @@ def causal_discover_signals(  # noqa: C901
         logger,
         operation="causal_discover_signals",
         symbols=symbols,
-        symbol=symbol,
         timeframe=timeframe,
         limit=limit,
         max_lag=max_lag,
@@ -1439,7 +1421,6 @@ def causal_discover_signals(  # noqa: C901
 @mcp.tool()
 def correlation_matrix(  # noqa: C901
     symbols: Optional[str] = None,
-    symbol: Optional[str] = None,
     group: Optional[str] = None,
     timeframe: TimeframeLiteral = "H1",
     limit: int = 500,
@@ -1460,7 +1441,6 @@ def correlation_matrix(  # noqa: C901
         symbols: Comma-separated MT5 symbols; a single symbol auto-expands to
             its entire MT5 group (e.g. "EURUSD" → all Forex majors).
             Optional when using `group`.
-        symbol: Compatibility alias for `symbols`. Optional when using `group`.
         group: Explicit MT5 group path (for example "Forex\\Majors"). Mutually
             exclusive with `symbols`.
         timeframe: MT5 timeframe key (e.g. "M15", "H1").
@@ -1471,8 +1451,6 @@ def correlation_matrix(  # noqa: C901
         detail: "compact" keeps canonical pair rows plus highlights; "full" also
             includes the derived matrix view.
     """
-
-    symbol_alias = symbol
 
     def _run() -> Dict[str, Any]:  # noqa: C901
         meta: Dict[str, Any] = {
@@ -1497,27 +1475,18 @@ def correlation_matrix(  # noqa: C901
             ensure_connection_impl=ensure_mt5_connection_or_raise,
         )
 
-        symbol_list, selector_meta, selector_error = normalize_symbol_selector_aliases(
-            symbol=symbol_alias,
-            symbols=symbols,
-            parse_selector=_parse_symbols,
-        )
-        meta.update(selector_meta)
+        symbol_list = _parse_symbols(symbols)
+        if symbol_list:
+            meta["symbols_input"] = list(symbol_list)
         if group is not None:
             meta["group_input"] = str(group)
-        if selector_error is not None:
-            return _causal_error(
-                selector_error,
-                code="invalid_input",
-                meta=meta,
-            )
         requested_anchor = (
             symbol_list[0] if group is None and len(symbol_list) == 1 else None
         )
         group_hint: str | None = None
         if group and symbol_list:
             return _causal_error(
-                "Provide either symbol/symbols or group for correlation analysis, not both.",
+                "Provide either symbols or group for correlation analysis, not both.",
                 code="invalid_input",
                 meta=meta,
             )
@@ -1778,7 +1747,6 @@ def correlation_matrix(  # noqa: C901
         logger,
         operation="correlation_matrix",
         symbols=symbols,
-        symbol=symbol,
         group=group,
         timeframe=timeframe,
         limit=limit,
@@ -1793,7 +1761,6 @@ def correlation_matrix(  # noqa: C901
 @mcp.tool()
 def cointegration_test(  # noqa: C901
     symbols: Optional[str] = None,
-    symbol: Optional[str] = None,
     group: Optional[str] = None,
     timeframe: TimeframeLiteral = "H1",
     limit: int = 500,
@@ -1814,7 +1781,6 @@ def cointegration_test(  # noqa: C901
         symbols: Comma-separated MT5 symbols; a single symbol auto-expands to
             its entire MT5 group (e.g. "EURUSD" → all Forex majors).
             Optional when using `group`.
-        symbol: Compatibility alias for `symbols`. Optional when using `group`.
         group: Explicit MT5 group path (for example "Forex\\Majors"). Mutually
             exclusive with `symbols`.
         timeframe: MT5 timeframe key (e.g. "M15", "H1").
@@ -1824,8 +1790,6 @@ def cointegration_test(  # noqa: C901
         significance: Alpha threshold for reporting cointegrated pairs.
         min_overlap: Minimum overlapping transformed samples required per pair.
     """
-
-    symbol_alias = symbol
 
     def _run() -> Dict[str, Any]:  # noqa: C901
         meta: Dict[str, Any] = {
@@ -1859,27 +1823,18 @@ def cointegration_test(  # noqa: C901
                 meta=meta,
             )
 
-        symbol_list, selector_meta, selector_error = normalize_symbol_selector_aliases(
-            symbol=symbol_alias,
-            symbols=symbols,
-            parse_selector=_parse_symbols,
-        )
-        meta.update(selector_meta)
+        symbol_list = _parse_symbols(symbols)
+        if symbol_list:
+            meta["symbols_input"] = list(symbol_list)
         if group is not None:
             meta["group_input"] = str(group)
-        if selector_error is not None:
-            return _causal_error(
-                selector_error,
-                code="invalid_input",
-                meta=meta,
-            )
         requested_anchor = (
             symbol_list[0] if group is None and len(symbol_list) == 1 else None
         )
         group_hint: str | None = None
         if group and symbol_list:
             return _causal_error(
-                "Provide either symbol/symbols or group for cointegration testing, not both.",
+                "Provide either symbols or group for cointegration testing, not both.",
                 code="invalid_input",
                 meta=meta,
             )
@@ -2194,7 +2149,6 @@ def cointegration_test(  # noqa: C901
         logger,
         operation="cointegration_test",
         symbols=symbols,
-        symbol=symbol,
         group=group,
         timeframe=timeframe,
         limit=limit,

@@ -4,7 +4,6 @@ import math
 import time
 from typing import Any, Dict, List, Literal, Optional
 
-from ..shared.parameter_contracts import normalize_symbol_selector_aliases
 from ..shared.schema import CompactFullDetailLiteral, TimeframeLiteral
 from ..shared.validators import invalid_timeframe_error
 from ..utils.mt5 import (
@@ -756,20 +755,16 @@ def _resolve_market_scan_group_path(
 def _select_market_scan_symbols(
     all_symbols: List[Any],
     *,
-    symbol: Optional[str] = None,
     symbols: Optional[str] = None,
     group: Optional[str],
     universe: str,
 ) -> tuple[List[Any], Dict[str, Any], Optional[str]]:
-    requested_names, selection_meta, selection_error = normalize_symbol_selector_aliases(
-        symbol=symbol,
-        symbols=symbols,
-        parse_selector=_parse_market_scan_symbols,
-    )
-    if selection_error is not None:
-        return [], selection_meta, selection_error
+    requested_names = _parse_market_scan_symbols(symbols)
+    selection_meta: Dict[str, Any] = {}
+    if requested_names:
+        selection_meta["symbols_input"] = list(requested_names)
     if requested_names and group:
-        return [], selection_meta, "Provide either symbol/symbols or group, not both."
+        return [], selection_meta, "Provide either symbols or group, not both."
 
     tradable_symbols = [symbol for symbol in all_symbols if _market_scan_is_tradable(symbol)]
 
@@ -1312,7 +1307,6 @@ def symbols_top_markets(  # noqa: C901
 @mcp.tool()
 def market_scan(  # noqa: C901
     symbols: Optional[str] = None,
-    symbol: Optional[str] = None,
     group: Optional[str] = None,
     limit: Optional[int] = 20,
     universe: Literal["visible", "all"] = "visible",  # type: ignore
@@ -1334,7 +1328,6 @@ def market_scan(  # noqa: C901
 
     `data.table.rows` is the canonical table payload. Use `detail="full"` (default)
     when you also want the explicit `columns` ordering hint for compatibility.
-    `symbol` is accepted as a compatibility alias for `symbols`.
     """
 
     detail_mode = resolve_output_detail(detail=detail, default="full")
@@ -1477,17 +1470,13 @@ def market_scan(  # noqa: C901
 
             selected_symbols, selection_meta, selection_error = _select_market_scan_symbols(
                 all_symbols,
-                symbol=symbol,
                 symbols=symbols,
                 group=group,
                 universe=universe_value,
             )
             if selection_error:
                 error_code = "invalid_input"
-                if group and not (
-                    selection_meta.get("symbol_input") is not None
-                    or selection_meta.get("symbols_input") is not None
-                ):
+                if group and selection_meta.get("symbols_input") is None:
                     error_code = "symbol_group_error"
                 return _market_scan_error(
                     selection_error,
@@ -1497,8 +1486,6 @@ def market_scan(  # noqa: C901
 
             limit_value = _normalize_limit(limit) or 20
             request["limit"] = limit_value
-            if selection_meta.get("symbol_input") is not None:
-                request["symbol_input"] = selection_meta.get("symbol_input")
             if selection_meta.get("symbols_input") is not None:
                 request["symbols_input"] = selection_meta.get("symbols_input")
             request["scope"] = selection_meta.get("scope")
@@ -1686,7 +1673,6 @@ def market_scan(  # noqa: C901
         logger,
         operation="market_scan",
         symbols=symbols,
-        symbol=symbol,
         group=group,
         limit=limit,
         universe=universe,

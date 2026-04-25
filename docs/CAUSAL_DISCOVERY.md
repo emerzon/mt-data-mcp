@@ -84,7 +84,6 @@ For each ordered pair of symbols `(cause → effect)`, the tool:
 | Parameter | Default | Description |
 |----------|---------|-------------|
 | `symbols` | (required) | Comma-separated MT5 symbols. If you pass **one** symbol, mtdata expands to other visible symbols in the same MT5 group. |
-| `symbol` | (optional alias) | Compatibility alias for `symbols`. If both `symbol` and `symbols` are provided, they must resolve to the same selector set. |
 | `timeframe` | `H1` | Bar timeframe (`M15`, `H1`, etc.). |
 | `limit` | `500` | Bars per symbol to analyze (after alignment). |
 | `max_lag` | `5` | Maximum lag to test (≥ 1). |
