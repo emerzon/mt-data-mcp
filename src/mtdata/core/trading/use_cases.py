@@ -2880,26 +2880,6 @@ def _build_trade_get_open_output(
     pd_module: Any,
     **_kwargs: Any,
 ) -> Any:
-    def _column_name(field_name: str) -> str:
-        style = str(getattr(request, "column_style", "humanized") or "humanized").strip().lower()
-        if style == "snake_case":
-            return field_name
-        return {
-            "symbol": "Symbol",
-            "ticket": "Ticket",
-            "time": "Time",
-            "type": "Type",
-            "volume": "Volume",
-            "price_open": "Open Price",
-            "sl": "SL",
-            "tp": "TP",
-            "price_current": "Current Price",
-            "swap": "Swap",
-            "profit": "Profit",
-            "comment": "Comments",
-            "magic": "Magic",
-        }.get(field_name, field_name.replace("_", " ").title())
-
     open_df = df.drop(
         columns=[
             col
@@ -2917,25 +2897,25 @@ def _build_trade_get_open_output(
         open_df["type"] = mapped.fillna(open_df["type"].astype(str))
     return pd_module.DataFrame(
         {
-            _column_name("symbol"): _pick_trade_series(open_df, pd_module, "symbol"),
-            _column_name("ticket"): _pick_trade_series(open_df, pd_module, "ticket"),
-            _column_name("time"): time_txt,
-            _column_name("type"): _pick_trade_series(open_df, pd_module, "type"),
-            _column_name("volume"): _pick_trade_series(open_df, pd_module, "volume"),
-            _column_name("price_open"): _pick_trade_series(open_df, pd_module, "price_open"),
-            _column_name("sl"): _pick_trade_series(open_df, pd_module, "sl"),
-            _column_name("tp"): _pick_trade_series(open_df, pd_module, "tp"),
-            _column_name("price_current"): _pick_trade_series(open_df, pd_module, "price_current"),
-            _column_name("swap"): pd_module.to_numeric(
+            "symbol": _pick_trade_series(open_df, pd_module, "symbol"),
+            "ticket": _pick_trade_series(open_df, pd_module, "ticket"),
+            "time": time_txt,
+            "type": _pick_trade_series(open_df, pd_module, "type"),
+            "volume": _pick_trade_series(open_df, pd_module, "volume"),
+            "price_open": _pick_trade_series(open_df, pd_module, "price_open"),
+            "sl": _pick_trade_series(open_df, pd_module, "sl"),
+            "tp": _pick_trade_series(open_df, pd_module, "tp"),
+            "price_current": _pick_trade_series(open_df, pd_module, "price_current"),
+            "swap": pd_module.to_numeric(
                 _pick_trade_series(open_df, pd_module, "swap"),
                 errors="coerce",
             ).fillna(0.0),
-            _column_name("profit"): pd_module.to_numeric(
+            "profit": pd_module.to_numeric(
                 _pick_trade_series(open_df, pd_module, "profit"),
                 errors="coerce",
             ).fillna(0.0),
-            _column_name("comment"): _pick_trade_series(open_df, pd_module, "comment"),
-            _column_name("magic"): _pick_trade_series(open_df, pd_module, "magic"),
+            "comment": _pick_trade_series(open_df, pd_module, "comment"),
+            "magic": _pick_trade_series(open_df, pd_module, "magic"),
         }
     )
 
@@ -2951,25 +2931,6 @@ def _build_trade_get_pending_output(
     mt5_epoch_to_utc: Any,
     **_kwargs: Any,
 ) -> Any:
-    def _column_name(field_name: str) -> str:
-        style = str(getattr(request, "column_style", "humanized") or "humanized").strip().lower()
-        if style == "snake_case":
-            return field_name
-        return {
-            "symbol": "Symbol",
-            "ticket": "Ticket",
-            "time": "Time",
-            "expiration": "Expiration",
-            "type": "Type",
-            "volume": "Volume",
-            "price_open": "Open Price",
-            "sl": "SL",
-            "tp": "TP",
-            "price_current": "Current Price",
-            "comment": "Comments",
-            "magic": "Magic",
-        }.get(field_name, field_name.replace("_", " ").title())
-
     pending_df = df.copy()
     if "time_expiration" in pending_df.columns:
         exp_raw = pd_module.to_numeric(pending_df["time_expiration"], errors="coerce")
@@ -3028,24 +2989,24 @@ def _build_trade_get_pending_output(
         pending_df["type"] = mapped.fillna(pending_df["type"].astype(str))
     return pd_module.DataFrame(
         {
-            _column_name("symbol"): _pick_trade_series(pending_df, pd_module, "symbol"),
-            _column_name("ticket"): _pick_trade_series(pending_df, pd_module, "ticket"),
-            _column_name("time"): time_txt,
-            _column_name("expiration"): expiration,
-            _column_name("type"): _pick_trade_series(pending_df, pd_module, "type"),
-            _column_name("volume"): _pick_trade_series(
+            "symbol": _pick_trade_series(pending_df, pd_module, "symbol"),
+            "ticket": _pick_trade_series(pending_df, pd_module, "ticket"),
+            "time": time_txt,
+            "expiration": expiration,
+            "type": _pick_trade_series(pending_df, pd_module, "type"),
+            "volume": _pick_trade_series(
                 pending_df,
                 pd_module,
                 "volume",
                 "volume_current",
                 "volume_initial",
             ),
-            _column_name("price_open"): _pick_trade_series(pending_df, pd_module, "price_open"),
-            _column_name("sl"): _pick_trade_series(pending_df, pd_module, "sl"),
-            _column_name("tp"): _pick_trade_series(pending_df, pd_module, "tp"),
-            _column_name("price_current"): _pick_trade_series(pending_df, pd_module, "price_current"),
-            _column_name("comment"): _pick_trade_series(pending_df, pd_module, "comment"),
-            _column_name("magic"): _pick_trade_series(pending_df, pd_module, "magic"),
+            "price_open": _pick_trade_series(pending_df, pd_module, "price_open"),
+            "sl": _pick_trade_series(pending_df, pd_module, "sl"),
+            "tp": _pick_trade_series(pending_df, pd_module, "tp"),
+            "price_current": _pick_trade_series(pending_df, pd_module, "price_current"),
+            "comment": _pick_trade_series(pending_df, pd_module, "comment"),
+            "magic": _pick_trade_series(pending_df, pd_module, "magic"),
         }
     )
 

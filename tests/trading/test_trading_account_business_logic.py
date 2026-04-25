@@ -411,10 +411,10 @@ def test_run_trade_get_open_accepts_simplenamespace_rows() -> None:
         },
     )
 
-    assert out[0]["Ticket"] == 1
-    assert out[0]["Time"] == "t1700000000"
-    assert out[0]["Type"] == "BUY"
-    assert out[0]["Profit"] == 5.0
+    assert out[0]["ticket"] == 1
+    assert out[0]["time"] == "t1700000000"
+    assert out[0]["type"] == "BUY"
+    assert out[0]["profit"] == 5.0
 
 
 def test_run_trade_get_pending_logs_finish_event(caplog) -> None:
@@ -520,8 +520,8 @@ def test_run_trade_get_open_limit_prefers_latest_valid_timestamps() -> None:
         },
     )
 
-    assert [row["Ticket"] for row in out] == [3, 4]
-    assert [row["Time"] for row in out] == ["t200", "t300"]
+    assert [row["ticket"] for row in out] == [3, 4]
+    assert [row["time"] for row in out] == ["t200", "t300"]
 
 
 def test_run_trade_get_pending_limit_prefers_latest_valid_timestamps() -> None:
@@ -575,11 +575,11 @@ def test_run_trade_get_pending_limit_prefers_latest_valid_timestamps() -> None:
         },
     )
 
-    assert [row["Ticket"] for row in out] == [13, 14]
-    assert [row["Time"] for row in out] == ["t200", "t300"]
+    assert [row["ticket"] for row in out] == [13, 14]
+    assert [row["time"] for row in out] == ["t200", "t300"]
 
 
-def test_run_trade_get_open_supports_snake_case_columns() -> None:
+def test_run_trade_get_open_uses_snake_case_columns() -> None:
     Position = namedtuple(
         "Position",
         [
@@ -609,7 +609,7 @@ def test_run_trade_get_open_supports_snake_case_columns() -> None:
     )
 
     out = run_trade_get_open(
-        TradeGetOpenRequest(column_style="snake_case"),
+        TradeGetOpenRequest(),
         gateway=gateway,
         use_client_tz=lambda: False,
         format_time_minimal=lambda ts: f"t{int(ts)}",
@@ -633,7 +633,7 @@ def test_run_trade_get_open_supports_snake_case_columns() -> None:
     assert "Ticket" not in out[0]
 
 
-def test_run_trade_get_pending_supports_snake_case_columns() -> None:
+def test_run_trade_get_pending_uses_snake_case_columns() -> None:
     Order = namedtuple(
         "Order",
         [
@@ -668,7 +668,7 @@ def test_run_trade_get_pending_supports_snake_case_columns() -> None:
     )
 
     out = run_trade_get_pending(
-        TradeGetPendingRequest(column_style="snake_case"),
+        TradeGetPendingRequest(),
         gateway=gateway,
         use_client_tz=lambda: False,
         format_time_minimal=lambda ts: f"t{int(ts)}",
@@ -737,9 +737,9 @@ def test_run_trade_get_open_falls_back_to_time_column() -> None:
         },
     )
 
-    assert out[0]["Ticket"] == 21
-    assert out[0]["Time"] == "t1700000100"
-    assert out[0]["Type"] == "BUY"
+    assert out[0]["ticket"] == 21
+    assert out[0]["time"] == "t1700000100"
+    assert out[0]["type"] == "BUY"
 
 
 def test_run_trade_get_pending_falls_back_to_volume_initial() -> None:
@@ -791,9 +791,9 @@ def test_run_trade_get_pending_falls_back_to_volume_initial() -> None:
         },
     )
 
-    assert out[0]["Ticket"] == 22
-    assert out[0]["Volume"] == 0.3
-    assert out[0]["Type"] == "BUY_LIMIT"
+    assert out[0]["ticket"] == 22
+    assert out[0]["volume"] == 0.3
+    assert out[0]["type"] == "BUY_LIMIT"
 
 
 def test_trade_get_open_logs_finish_event(caplog) -> None:
