@@ -189,6 +189,23 @@ class TestFinvizService:
         assert "Price_display" not in result["coins"][0]
 
     @patch('finvizfinance.crypto.Crypto')
+    def test_get_crypto_performance_uses_scientific_notation_for_tiny_prices(self, mock_crypto_class):
+        """Tiny nonzero token prices should not round down to zero."""
+        from mtdata.services.finviz import get_crypto_performance
+
+        mock_crypto = MagicMock()
+        mock_df = pd.DataFrame([
+            {"Ticker": "TINY", "Price": "0.0000000015", "Change": "2.5%"},
+        ])
+        mock_crypto.performance.return_value = mock_df
+        mock_crypto_class.return_value = mock_crypto
+
+        result = get_crypto_performance()
+
+        assert result["success"] is True
+        assert result["coins"][0]["Price"] == "1.5e-09"
+
+    @patch('finvizfinance.crypto.Crypto')
     def test_get_crypto_performance_adds_wtd_alias_when_day_week_identical(self, mock_crypto_class):
         """When day/week values are identical for all rows, add WTD alias and warning."""
         from mtdata.services.finviz import get_crypto_performance

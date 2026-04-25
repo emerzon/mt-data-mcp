@@ -268,6 +268,8 @@ def _crypto_price_display(value: Any) -> Optional[str]:
         decimals = 4
     elif abs_num >= 0.0001:
         decimals = 6
+    elif abs_num > 0.0 and abs_num < 0.00000001:
+        return f"{num:.8g}"
     else:
         decimals = 8
     return f"{num:.{decimals}f}"
