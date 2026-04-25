@@ -1046,7 +1046,7 @@ def patterns_detect(
         - "standard": sectioned all-mode output with trimmed pattern rows.
         - "full": complete pattern rows suitable for research/debugging.
     
-    limit : int, optional (default=1000)
+    limit : int, optional (default=500)
         Number of historical bars to analyze
     
     Candlestick Mode Parameters:

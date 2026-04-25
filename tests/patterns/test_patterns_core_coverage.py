@@ -1489,6 +1489,11 @@ def _call_patterns_detect(**kwargs):
     with patch("mtdata.core.patterns.ensure_mt5_connection_or_raise", return_value=None):
         return inner(request=PatternsDetectRequest(**kwargs))
 
+
+def test_patterns_detect_request_default_limit_is_recent_window():
+    assert PatternsDetectRequest(symbol="EURUSD").limit == 500
+
+
 class TestPatternsDetect:
 
     @patch("mtdata.core.patterns._detect_candlestick_patterns")
@@ -2364,12 +2369,14 @@ class TestRelevanceScoring:
         payload = {
             "candlestick": {"patterns": [
                 {"pattern": "Doji", "direction": "neutral", "confidence": 0.5,
-                 "relevance": 0.5, "recency": 0.3, "timeframe": "H1", "price": 1.1},
+                 "relevance": 0.5, "recency": 0.3, "timeframe": "H1", "price": 1.1,
+                 "time": "2026-01-01 10:00", "bar_index": 118},
             ]},
             "classic": {"patterns": [
                 {"name": "Triangle", "bias": "bullish", "status": "forming",
                  "confidence": 0.9, "relevance": 0.85, "recency": 0.8, "timeframe": "D1",
-                 "reference_price": 1.2, "target_price": 1.3},
+                 "reference_price": 1.2, "target_price": 1.3,
+                 "end_date": "2026-01-02", "end_index": 42},
             ]},
             "elliott": {"patterns": [
                 {"wave_type": "impulse", "status": "forming",
@@ -2381,9 +2388,13 @@ class TestRelevanceScoring:
         # Classic should be first due to higher relevance * 1.0 weight
         assert highlights[0]["section"] == "classic"
         assert "price" in highlights[0]  # reference_price mapped to price
+        assert highlights[0]["time"] == "2026-01-02"
+        assert highlights[0]["bar_index"] == 42
         # Candlestick entries get status="trigger"
         candle_h = [h for h in highlights if h["section"] == "candlestick"]
         assert candle_h[0]["status"] == "trigger"
+        assert candle_h[0]["time"] == "2026-01-01 10:00"
+        assert candle_h[0]["bar_index"] == 118
         # No internal scores in output
         for h in highlights:
             assert "relevance" not in h

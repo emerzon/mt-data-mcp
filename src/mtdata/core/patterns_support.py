@@ -537,7 +537,7 @@ _ALL_COMPACT_FRACTAL_KEYS = (
 
 _HIGHLIGHT_KEYS = (
     "section", "timeframe", "name", "direction", "status",
-    "confidence", "price", "target_price", "invalidation_price",
+    "confidence", "time", "bar_index", "price", "target_price", "invalidation_price",
 )
 
 # Section weight multipliers for highlight ranking
@@ -680,6 +680,8 @@ def _build_highlights(
             "direction": row.get("direction"),
             "status": "trigger",
             "confidence": row.get("confidence"),
+            "time": row.get("time"),
+            "bar_index": row.get("bar_index", row.get("end_index")),
             "price": row.get("price"),
             "_relevance": (row.get("relevance", 0) or 0) * _SECTION_WEIGHT["candlestick"],
         })
@@ -692,6 +694,8 @@ def _build_highlights(
             "direction": row.get("bias"),
             "status": row.get("status"),
             "confidence": row.get("confidence"),
+            "time": row.get("end_date", row.get("start_date")),
+            "bar_index": row.get("end_index", row.get("start_index")),
             "price": row.get("reference_price"),
             "target_price": row.get("target_price"),
             "invalidation_price": row.get("invalidation_price"),
@@ -706,6 +710,8 @@ def _build_highlights(
             "direction": None,
             "status": row.get("status"),
             "confidence": row.get("confidence"),
+            "time": row.get("end_date", row.get("start_date")),
+            "bar_index": row.get("end_index", row.get("start_index")),
             "price": None,
             "_relevance": (row.get("relevance", 0) or 0) * _SECTION_WEIGHT["elliott"],
         })
@@ -718,6 +724,8 @@ def _build_highlights(
             "direction": row.get("bias") or row.get("direction"),
             "status": row.get("level_state") or row.get("status"),
             "confidence": row.get("confidence"),
+            "time": row.get("breakout_date", row.get("confirmation_date", row.get("time"))),
+            "bar_index": row.get("breakout_index", row.get("confirmation_index", row.get("end_index"))),
             "price": row.get("level_price", row.get("price")),
             "_relevance": (row.get("relevance", 0) or 0) * _SECTION_WEIGHT["fractal"],
         })
