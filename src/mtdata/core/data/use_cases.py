@@ -134,6 +134,8 @@ def _run_data_fetch_candles_impl(
         include_incomplete=request.include_incomplete,
         allow_stale=request.allow_stale,
     )
+    if isinstance(result, dict) and str(request.detail or "compact").strip().lower() == "compact":
+        result = _compact_candles_payload(result)
     if isinstance(result, dict) and isinstance(result.get("data"), list):
         return attach_collection_contract(
             result,
@@ -143,6 +145,19 @@ def _run_data_fetch_candles_impl(
             == "full",
         )
     return result
+
+
+def _compact_candles_payload(result: Dict[str, Any]) -> Dict[str, Any]:
+    compact = dict(result)
+    for key in ("symbol", "timeframe", "candles_requested"):
+        compact.pop(key, None)
+    for key in ("candles_excluded", "incomplete_candles_skipped"):
+        if compact.get(key) in (None, 0):
+            compact.pop(key, None)
+    for key in ("last_candle_open", "has_forming_candle"):
+        if not bool(compact.get(key)):
+            compact.pop(key, None)
+    return compact
 
 
 def _run_data_fetch_ticks_impl(

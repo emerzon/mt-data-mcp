@@ -110,6 +110,59 @@ def test_run_data_fetch_candles_omits_contract_metadata_in_compact_detail():
     assert "collection_contract_version" not in result
 
 
+def test_run_data_fetch_candles_compact_omits_default_metadata():
+    request = DataFetchCandlesRequest(symbol="EURUSD", timeframe="H1", limit=5)
+
+    result = run_data_fetch_candles(
+        request,
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_candles_impl=lambda **kwargs: {
+            "success": True,
+            "symbol": "EURUSD",
+            "timeframe": "H1",
+            "candles": 5,
+            "candles_requested": 5,
+            "candles_excluded": 0,
+            "last_candle_open": False,
+            "incomplete_candles_skipped": 0,
+            "has_forming_candle": False,
+            "data": [],
+        },
+    )
+
+    assert result == {"success": True, "candles": 5, "data": []}
+
+
+def test_run_data_fetch_candles_compact_keeps_anomaly_metadata():
+    request = DataFetchCandlesRequest(symbol="EURUSD", timeframe="H1", limit=5)
+
+    result = run_data_fetch_candles(
+        request,
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_candles_impl=lambda **kwargs: {
+            "success": True,
+            "symbol": "EURUSD",
+            "timeframe": "H1",
+            "candles": 4,
+            "candles_requested": 5,
+            "candles_excluded": 1,
+            "last_candle_open": True,
+            "incomplete_candles_skipped": 1,
+            "has_forming_candle": True,
+            "data": [],
+        },
+    )
+
+    assert result["candles"] == 4
+    assert result["candles_excluded"] == 1
+    assert result["last_candle_open"] is True
+    assert result["incomplete_candles_skipped"] == 1
+    assert result["has_forming_candle"] is True
+    assert "symbol" not in result
+    assert "timeframe" not in result
+    assert "candles_requested" not in result
+
+
 def test_run_data_fetch_candles_adds_contract_metadata_in_full_detail():
     rows = [{"time": 1.0, "close": 1.1}]
     request = DataFetchCandlesRequest(
@@ -122,10 +175,21 @@ def test_run_data_fetch_candles_adds_contract_metadata_in_full_detail():
     result = run_data_fetch_candles(
         request,
         gateway=SimpleNamespace(ensure_connection=lambda: None),
-        fetch_candles_impl=lambda **kwargs: {"success": True, "data": rows},
+        fetch_candles_impl=lambda **kwargs: {
+            "success": True,
+            "symbol": "EURUSD",
+            "timeframe": "H1",
+            "candles_requested": 10,
+            "last_candle_open": False,
+            "data": rows,
+        },
     )
 
     assert result["data"] == rows
+    assert result["symbol"] == "EURUSD"
+    assert result["timeframe"] == "H1"
+    assert result["candles_requested"] == 10
+    assert result["last_candle_open"] is False
     assert result["series"] == rows
     assert result["collection_kind"] == "time_series"
     assert result["collection_contract_version"] == "collection.v1"
