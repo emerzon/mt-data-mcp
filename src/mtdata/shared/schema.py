@@ -221,10 +221,9 @@ TimeframeLiteral = Literal[_TIMEFRAME_CHOICES]  # type: ignore
 AutoTimeframeLiteral = Union[TimeframeLiteral, Literal["auto"]]
 CANONICAL_OUTPUT_SHAPE_DETAILS = ("compact", "full")
 CANONICAL_OUTPUT_DETAIL_ALIASES = types.MappingProxyType({"summary_only": "summary"})
-CompactFullDetailLiteral = Literal["compact", "full"]
-CompactStandardFullDetailLiteral = Literal["compact", "standard", "full"]
-SummaryCompactFullDetailLiteral = Literal["full", "summary", "compact"]
-SummaryAliasCompactFullDetailLiteral = Literal["full", "summary", "summary_only", "compact"]
+CompactFullDetailLiteral = Literal["compact", "standard", "full"]
+CompactStandardFullDetailLiteral = CompactFullDetailLiteral
+SummaryCompactFullDetailLiteral = Literal["full", "summary", "compact", "standard"]
 
 # ---- Technical Indicators (dynamic discovery and application) ----
 def _load_indicator_doc_choices(

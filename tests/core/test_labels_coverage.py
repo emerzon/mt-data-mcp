@@ -284,7 +284,9 @@ class TestLabelsTripleBarrier:
             horizon=5,
             detail=" Summary_Only ",
         )
-        assert result["error"] == "Invalid detail level. Use 'compact', 'full', or 'summary'."
+        assert result["error"] == (
+            "Invalid detail level. Use 'compact', 'standard', 'full', or 'summary'."
+        )
 
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
     @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")

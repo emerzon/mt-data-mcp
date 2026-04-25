@@ -416,7 +416,7 @@ def _trade_account_payload_for_mode(payload: Dict[str, Any], *, mode: str) -> Di
 
 @mcp.tool()
 def trade_account_info(
-    detail: Literal["summary", "compact", "basic", "full"] = "full",  # type: ignore
+    detail: Literal["summary", "compact", "standard", "basic", "full"] = "full",  # type: ignore
 ) -> dict:
     """Get account information with summary, basic, or full account output modes.
 
@@ -431,12 +431,12 @@ def trade_account_info(
             default="full",
             aliases={"summary_only": "summary"},
         )
-        if requested_mode not in {"summary", "compact", "basic", "full"}:
+        if requested_mode not in {"summary", "compact", "standard", "basic", "full"}:
             return {
-                "error": "Invalid detail level. Use 'summary', 'compact', 'basic', or 'full'."
+                "error": "Invalid detail level. Use 'summary', 'compact', 'standard', 'basic', or 'full'."
             }
         output_mode = requested_mode
-        if output_mode == "compact":
+        if output_mode in {"compact", "standard"}:
             output_mode = "summary"
 
         mt5 = create_trading_gateway(

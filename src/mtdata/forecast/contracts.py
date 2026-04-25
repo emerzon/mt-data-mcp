@@ -4,7 +4,7 @@ from typing import Annotated, Any, Dict, List, Literal, Optional, TypeAlias
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from ..shared.schema import DenoiseSpec, TimeframeLiteral
+from ..shared.schema import CompactFullDetailLiteral, DenoiseSpec, TimeframeLiteral
 
 ContractOwner = Literal["data_preparation", "forecast_model", "strategy", "evaluation"]
 RequestSurface = Literal[
@@ -274,7 +274,7 @@ class BacktestEvaluationContract(BaseModel):
     spacing: int = Field(12, ge=1)
     anchors: Optional[List[str]] = None
     slippage_bps: float = 0.0
-    detail: Literal["compact", "full"] = "compact"
+    detail: CompactFullDetailLiteral = "compact"
     fitness_metric: Optional[str] = None
     fitness_weights: Optional[Dict[str, float]] = None
 

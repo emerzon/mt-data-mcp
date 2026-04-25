@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Literal, Optional
 from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator
 
 from ..shared.schema import (
+    CompactFullDetailLiteral,
     CompactStandardFullDetailLiteral,
     DenoiseSpec,
     ForecastLibraryLiteral,
@@ -80,7 +81,7 @@ class ForecastBacktestRequest(BaseModel):
     dimred_params: Optional[Dict[str, Any]] = None
     slippage_bps: float = 0.0
     trade_threshold: float = 0.0
-    detail: Literal["compact", "full"] = "compact"
+    detail: CompactFullDetailLiteral = "compact"
 
     @model_validator(mode="before")
     @classmethod
@@ -93,7 +94,7 @@ class StrategyBacktestRequest(BaseModel):
     timeframe: TimeframeLiteral = "H1"
     strategy: Literal["sma_cross", "ema_cross", "rsi_reversion"] = "sma_cross"
     lookback: int = Field(500, ge=5)
-    detail: Literal["compact", "full"] = "compact"
+    detail: CompactFullDetailLiteral = "compact"
     position_mode: Literal["long_only", "long_short"] = "long_short"
     fast_period: int = Field(10, ge=1)
     slow_period: int = Field(30, ge=2)

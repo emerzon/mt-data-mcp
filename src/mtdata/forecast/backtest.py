@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Literal, Optional, Tuple
 import numpy as np
 
 from ..shared.constants import TIMEFRAME_MAP
-from ..shared.schema import DenoiseSpec, TimeframeLiteral
+from ..shared.schema import CompactFullDetailLiteral, DenoiseSpec, TimeframeLiteral
 from ..shared.validators import invalid_timeframe_error
 from ..utils.denoise import normalize_denoise_spec as _normalize_denoise_spec
 from ..utils.utils import _format_time_minimal
@@ -45,7 +45,7 @@ def _attach_request_metadata(
     *,
     request: Dict[str, Any],
     resolved_request: Optional[Dict[str, Any]] = None,
-    detail: Literal["compact", "full"] = "compact",  # type: ignore
+    detail: CompactFullDetailLiteral = "compact",
 ) -> Dict[str, Any]:
     out = dict(result)
     # Only include request metadata in full detail mode
@@ -537,7 +537,7 @@ def strategy_backtest(  # noqa: C901
     timeframe: TimeframeLiteral = "H1",
     strategy: Literal["sma_cross", "ema_cross", "rsi_reversion"] = "sma_cross",  # type: ignore
     lookback: int = 500,
-    detail: Literal["compact", "full"] = "compact",  # type: ignore
+    detail: CompactFullDetailLiteral = "compact",
     position_mode: Literal["long_only", "long_short"] = "long_short",  # type: ignore
     fast_period: int = 10,
     slow_period: int = 30,
@@ -962,7 +962,7 @@ def forecast_backtest(  # noqa: C901
     dimred_params: Optional[Dict[str, Any]] = None,
     slippage_bps: float = 0.0,
     trade_threshold: float = 0.0,
-    detail: Literal['compact', 'full'] = 'compact',  # type: ignore
+    detail: CompactFullDetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """Rolling-origin backtest over historical anchors using the forecast tool.
 

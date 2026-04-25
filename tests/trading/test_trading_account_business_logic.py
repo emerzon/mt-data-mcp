@@ -153,6 +153,39 @@ def test_trade_account_info_summary_detail_omits_execution_diagnostics() -> None
     assert "server" not in out
 
 
+def test_trade_account_info_standard_detail_aliases_summary() -> None:
+    gateway = SimpleNamespace(
+        ensure_connection=lambda: None,
+        account_info=lambda: SimpleNamespace(
+            balance=10000.0,
+            equity=10050.0,
+            profit=50.0,
+            margin=100.0,
+            margin_free=9950.0,
+            margin_level=1000.0,
+            currency="USD",
+            leverage=100,
+            trade_allowed=True,
+            trade_expert=True,
+        ),
+        build_trade_preflight=lambda account_info=None: {
+            "server": "Demo-Server",
+            "company": "Broker LLC",
+            "trade_mode": "demo",
+            "execution_ready": True,
+            "execution_blockers": [],
+        },
+    )
+
+    raw = _unwrap(trade_account_info)
+    with patch.object(core_trading_account, "create_trading_gateway", return_value=gateway):
+        out = raw(detail="standard")
+
+    assert out["balance"] == 10000.0
+    assert "execution_ready" not in out
+    assert "server" not in out
+
+
 def test_trade_account_info_basic_detail_keeps_identity_without_diagnostics() -> None:
     gateway = SimpleNamespace(
         ensure_connection=lambda: None,

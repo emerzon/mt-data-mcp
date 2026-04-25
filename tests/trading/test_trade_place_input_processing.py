@@ -36,6 +36,7 @@ def test_trade_place_request_uses_preview_detail_canonical_field() -> None:
     assert "preview_detail" in fields
     assert "detail" not in fields
     assert TradePlaceRequest(detail="full").preview_detail == "full"
+    assert TradePlaceRequest(detail="standard").preview_detail == "standard"
 
 
 def test_normalize_order_type_accepts_mt5_integer() -> None:

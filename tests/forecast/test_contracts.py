@@ -77,6 +77,12 @@ def test_execution_contract_inferrs_multivariate_mode_and_validates_capabilities
     assert execution.inferred_input_mode() == "multivariate"
 
 
+def test_backtest_evaluation_contract_accepts_standard_detail_alias() -> None:
+    contract = BacktestEvaluationContract(detail="standard")
+
+    assert contract.detail == "standard"
+
+
 def test_execution_contract_rejects_multivariate_features_for_univariate_only_model() -> None:
     with pytest.raises(ValidationError):
         ForecastExecutionContract(

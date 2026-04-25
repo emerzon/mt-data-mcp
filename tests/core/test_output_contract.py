@@ -33,6 +33,7 @@ def test_normalize_output_detail_normalizes_alias_mapping_keys_and_values() -> N
 
 def test_normalize_output_verbosity_detail_is_strict_compact_or_full() -> None:
     assert normalize_output_verbosity_detail(" summary ") == "compact"
+    assert normalize_output_verbosity_detail(" standard ") == "compact"
     assert normalize_output_verbosity_detail(" Summary_Only ") == "compact"
     assert normalize_output_verbosity_detail(" FULL ") == "full"
 
