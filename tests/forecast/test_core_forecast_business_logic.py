@@ -392,8 +392,9 @@ def test_run_forecast_backtest_strips_per_anchor_details_in_compact_mode():
     assert result["resolved_request"]["methods"] == ["theta"]
     assert "details" not in result["results"]["theta"]
     assert result["results"]["theta"]["details_count"] == 1
-    assert "sample_warning" not in result["results"]["theta"]["metrics"]
-    assert result["results"]["theta"]["metrics"]["sample_notice"]["code"] == "annualization_suppressed_low_sample"
+    assert "metrics" not in result["results"]["theta"]
+    assert result["ranked_methods"][0]["method"] == "theta"
+    assert result["ranked_methods"][0]["details_count"] == 1
 
 
 def test_forecast_generate_converts_typed_forecast_errors(monkeypatch):
