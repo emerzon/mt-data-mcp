@@ -378,6 +378,7 @@ def test_rule_based_uses_price_window_metrics_for_return_target() -> None:
             method="rule_based",
             target="return",
             params={"window_bars": 60},
+            detail="full",
         )
 
     regime = out["regime"]
@@ -401,6 +402,7 @@ def test_rule_based_explains_ranging_direction_bias() -> None:
             limit=120,
             method="rule_based",
             params={"window_bars": 60},
+            detail="full",
         )
 
     regime = out["regime"]
@@ -410,3 +412,29 @@ def test_rule_based_explains_ranging_direction_bias() -> None:
     assert "window bias, not a trend classification" in regime["interpretation"]
     assert regime["trend_strength"] >= out["params_used"]["trend_strength_threshold"]
     assert "efficiency_ratio indicates a choppy path" in regime["note"]
+
+
+def test_rule_based_compact_omits_explanatory_fields() -> None:
+    raw = _unwrap(regime_detect)
+
+    with (
+        patch("mtdata.core.regime._fetch_history", return_value=_choppy_bearish_df()),
+        patch("mtdata.core.regime._resolve_denoise_base_col", return_value="close"),
+        patch("mtdata.core.regime._format_time_minimal", side_effect=lambda x: f"T{x}"),
+    ):
+        out = raw(
+            symbol="TEST",
+            timeframe="H1",
+            limit=120,
+            method="rule_based",
+            params={"window_bars": 60},
+        )
+
+    regime = out["regime"]
+    assert set(regime) == {"state", "direction", "efficiency_ratio"}
+    assert regime["state"] == "ranging"
+    assert regime["direction"] == "bearish"
+    assert "interpretation" not in regime
+    assert "note" not in regime
+    assert "signal_source" not in regime
+    assert "params_used" not in out

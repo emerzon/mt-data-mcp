@@ -2080,6 +2080,13 @@ def regime_detect(  # noqa: C901
                     "signal_source": "price",
                 },
             }
+            if output == "compact":
+                payload["regime"] = {
+                    key: regime_info[key]
+                    for key in ("state", "direction", "efficiency_ratio")
+                    if key in regime_info
+                }
+                payload.pop("params_used", None)
 
             return _finish(payload)
 
