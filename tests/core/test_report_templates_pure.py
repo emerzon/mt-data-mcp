@@ -1057,7 +1057,14 @@ class TestTemplateBasic:
 
         vol = report["sections"].get("volatility", {})
         # Should have matrix if vol estimates succeed
-        assert "matrix" in vol or "error" in vol
+        assert "matrix" in vol
+        volatility_calls = [
+            call
+            for call in mock_raw.call_args_list
+            if getattr(call.args[0], "__name__", "") == "forecast_volatility_estimate"
+        ]
+        assert volatility_calls
+        assert all(call.kwargs.get("detail") == "full" for call in volatility_calls)
 
     @patch(f"{_BASIC_MODULE}._get_raw_result")
     @patch(f"{_BASIC_MODULE}.now_utc_iso", return_value="2024-01-15T00:00:00Z")

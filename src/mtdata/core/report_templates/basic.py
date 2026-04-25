@@ -640,6 +640,7 @@ def template_basic(  # noqa: C901
                 horizon=int(hh),
                 method=m,
                 params={'lambda_': 0.94} if m == 'ewma' else None,
+                detail='full',
             )
             if 'error' in vres:
                 row[m + '_err'] = vres.get('error')
@@ -661,6 +662,7 @@ def template_basic(  # noqa: C901
                     timeframe=tf,
                     horizon=int(hh),
                     method='rolling_std',
+                    detail='full',
                 )
                 psh = proxy_res.get('horizon_sigma_return') or proxy_res.get('horizon_sigma_price')
                 try:
