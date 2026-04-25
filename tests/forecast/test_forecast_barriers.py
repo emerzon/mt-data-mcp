@@ -932,6 +932,37 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
         self.assertNotIn("diagnostics", result)
         self.assertIn("compute_profile", result)
 
+    def test_forecast_barrier_optimize_uses_null_profit_factor_when_lossless(self):
+        self._set_flat_history(1.0)
+        paths = np.repeat(np.array([[1.0, 1.01]]), 20, axis=0)
+        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc') as mock_sim:
+            mock_sim.return_value = {"price_paths": paths}
+            result = forecast_barrier_optimize(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=2,
+                method="mc_gbm",
+                direction="long",
+                mode="pct",
+                tp_min=0.5,
+                tp_max=0.5,
+                tp_steps=1,
+                sl_min=0.5,
+                sl_max=0.5,
+                sl_steps=1,
+                objective="profit_factor",
+                return_grid=True,
+            )
+
+        self.assertTrue(result["success"])
+        best = result["best"]
+        self.assertIsNone(best["profit_factor"])
+        self.assertEqual(
+            best["profit_factor_note"],
+            "Undefined: no simulated losses for this barrier pair.",
+        )
+        self.assertNotEqual(best["profit_factor"], 1e9)
+
     def test_forecast_barrier_optimize_keeps_compact_results_with_full_grid(self):
         self._set_flat_history(1.0)
         paths = np.array([

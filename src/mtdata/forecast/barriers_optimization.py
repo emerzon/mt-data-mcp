@@ -420,12 +420,14 @@ def _evaluate_barrier_candidate(
     if t_res_mean_all and t_res_mean_all > 0:
         ev_per_bar = ev_val / t_res_mean_all
 
-    profit_factor = 0.0
+    profit_factor: Optional[float] = 0.0
+    profit_factor_note: Optional[str] = None
     denom = effective_prob_loss * net_risk
     if denom > 0:
         profit_factor = (effective_prob_win * net_reward) / denom
     elif effective_prob_win > 0 and net_reward > 0:
-        profit_factor = 1e9
+        profit_factor = None
+        profit_factor_note = "Undefined: no simulated losses for this barrier pair."
 
     reward_frac, risk_frac = _barrier_return_fractions(
         net_reward,
@@ -495,6 +497,8 @@ def _evaluate_barrier_candidate(
         "t_hit_resolve_mean_all": t_res_mean_all,
         "t_hit_resolve_median_all": t_res_med_all,
     }
+    if profit_factor_note:
+        result["profit_factor_note"] = profit_factor_note
     _annotate_candidate_metrics(result, cost_per_trade=context.cost_per_trade)
     return result, False
 
