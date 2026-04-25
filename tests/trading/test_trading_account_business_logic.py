@@ -53,7 +53,7 @@ def test_trade_account_info_includes_execution_preflight_fields() -> None:
 
     raw = _unwrap(trade_account_info)
     with patch("mtdata.core.trading.account.ensure_mt5_connection_or_raise", return_value=None):
-        out = raw()
+        out = raw(detail="full")
 
     if prev is not None:
         sys.modules["MetaTrader5"] = prev
@@ -77,6 +77,7 @@ def test_trade_account_info_uses_single_detail_output_control() -> None:
     params = signature(_unwrap(trade_account_info)).parameters
 
     assert list(params) == ["detail"]
+    assert params["detail"].default == "compact"
     assert "verbose" not in params
 
 
@@ -188,38 +189,11 @@ def test_trade_account_info_compact_detail_includes_margin_fields_without_identi
     assert "server" not in out
 
 
-def test_trade_account_info_standard_detail_aliases_compact() -> None:
-    gateway = SimpleNamespace(
-        ensure_connection=lambda: None,
-        account_info=lambda: SimpleNamespace(
-            balance=10000.0,
-            equity=10050.0,
-            profit=50.0,
-            margin=100.0,
-            margin_free=9950.0,
-            margin_level=1000.0,
-            currency="USD",
-            leverage=100,
-            trade_allowed=True,
-            trade_expert=True,
-        ),
-        build_trade_preflight=lambda account_info=None: {
-            "server": "Demo-Server",
-            "company": "Broker LLC",
-            "trade_mode": "demo",
-            "execution_ready": True,
-            "execution_blockers": [],
-        },
-    )
-
+def test_trade_account_info_standard_detail_is_rejected() -> None:
     raw = _unwrap(trade_account_info)
-    with patch.object(core_trading_account, "create_trading_gateway", return_value=gateway):
-        compact = raw(detail="compact")
-        standard = raw(detail="standard")
+    out = raw(detail="standard")
 
-    compact_without_meta = {key: value for key, value in compact.items() if key != "meta"}
-    standard_without_meta = {key: value for key, value in standard.items() if key != "meta"}
-    assert standard_without_meta == compact_without_meta
+    assert out == {"error": "Invalid detail level. Use 'summary', 'compact', 'basic', or 'full'."}
 
 
 def test_trade_account_info_basic_detail_keeps_identity_without_diagnostics() -> None:

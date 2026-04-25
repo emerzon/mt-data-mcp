@@ -409,7 +409,7 @@ def lookup_trade_ticket_history(ticket: Any) -> Optional[Dict[str, Any]]:
 def _trade_account_payload_for_mode(payload: Dict[str, Any], *, mode: str) -> Dict[str, Any]:
     if mode == "summary":
         keys = _TRADE_ACCOUNT_SUMMARY_KEYS
-    elif mode in {"compact", "standard"}:
+    elif mode == "compact":
         keys = _TRADE_ACCOUNT_COMPACT_KEYS
     elif mode == "basic":
         keys = _TRADE_ACCOUNT_BASIC_KEYS
@@ -420,12 +420,12 @@ def _trade_account_payload_for_mode(payload: Dict[str, Any], *, mode: str) -> Di
 
 @mcp.tool()
 def trade_account_info(
-    detail: Literal["summary", "compact", "standard", "basic", "full"] = "full",  # type: ignore
+    detail: Literal["summary", "compact", "basic", "full"] = "compact",  # type: ignore
 ) -> dict:
     """Get account information with summary, compact, basic, or full account output modes.
 
     Use `detail="summary"` for the smallest balance/equity snapshot,
-    `detail="compact"` for routine balance and margin checks,
+    `detail="compact"` (default) for routine balance and margin checks,
     `detail="basic"` for account identity/configuration fields, and
     `detail="full"` for the existing execution-readiness diagnostics.
     """
@@ -436,9 +436,9 @@ def trade_account_info(
             default="full",
             aliases={"summary_only": "summary"},
         )
-        if requested_mode not in {"summary", "compact", "standard", "basic", "full"}:
+        if requested_mode not in {"summary", "compact", "basic", "full"}:
             return {
-                "error": "Invalid detail level. Use 'summary', 'compact', 'standard', 'basic', or 'full'."
+                "error": "Invalid detail level. Use 'summary', 'compact', 'basic', or 'full'."
             }
 
         mt5 = create_trading_gateway(
