@@ -9,6 +9,7 @@ from .patterns_support import (
     _compact_all_mode_payload,
     _elliott_completed_preview,
     _elliott_hidden_completed_note,
+    _highlights_all_mode_payload,
     score_all_mode_patterns,
 )
 
@@ -210,8 +211,12 @@ def run_patterns_detect(  # noqa: C901
     detail_value = str(request.detail).strip().lower()
     if detail_value in ("summary", "summary_only"):
         detail_value = "compact"
-    if detail_value not in ("compact", "standard", "full"):
-        return {"error": "Invalid detail. Use 'compact', 'standard', or 'full'."}
+    if detail_value not in ("highlights", "compact", "standard", "full"):
+        return {
+            "error": (
+                "Invalid detail. Use 'highlights', 'compact', 'standard', or 'full'."
+            )
+        }
 
     if mode_value == "candlestick":
         tf_single = tf_norm or "H1"
@@ -862,7 +867,9 @@ def run_patterns_detect(  # noqa: C901
         # Merged cross-section highlights for quick trader read
         resp["highlights"] = _build_highlights(resp, limit=5)
 
-        if detail_value == "compact":
+        if detail_value == "highlights":
+            return _highlights_all_mode_payload(resp)
+        if detail_value in ("compact", "standard"):
             return _compact_all_mode_payload(resp)
         return resp
 

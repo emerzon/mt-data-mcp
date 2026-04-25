@@ -33,9 +33,8 @@ from ..utils.utils import to_float_np as __to_float_np
 from ._mcp_instance import mcp
 from .constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from .execution_logging import run_logged_operation
-from .schema import CompactStandardFullDetailLiteral
 from .mt5_gateway import get_mt5_gateway, mt5_connection_error
-from .patterns_requests import PatternsDetectRequest
+from .patterns_requests import PatternsDetectRequest, PatternsDetailLiteral
 from .patterns_support import (
     _STOCK_PATTERN_UTILS_CACHE,  # noqa: F401
     _build_stock_pattern_frame,
@@ -335,7 +334,7 @@ def _build_pattern_response(
     include_series: bool,
     series_time: str,
     df: pd.DataFrame,
-    detail: CompactStandardFullDetailLiteral = "full",  # type: ignore
+    detail: PatternsDetailLiteral = "full",
 ) -> Dict[str, Any]:
     """Build the response dict for pattern detection results."""
     # Filter patterns based on include_completed
@@ -481,8 +480,29 @@ def _build_pattern_response(
     # Keep this helper's implicit default as full for direct callers that still
     # rely on the legacy shape. The public patterns_detect contract defaults to
     # compact via PatternsDetectRequest.
-    if detail_value == "compact":
-        return _compact_patterns_payload(resp)
+    if detail_value in ("compact", "highlights"):
+        compact_resp = _compact_patterns_payload(resp)
+        if detail_value == "highlights":
+            return {
+                key: value
+                for key, value in compact_resp.items()
+                if key
+                in {
+                    "success",
+                    "symbol",
+                    "timeframe",
+                    "lookback",
+                    "mode",
+                    "n_patterns",
+                    "summary",
+                    "recent_patterns",
+                    "show_all_hint",
+                    "warnings",
+                    "note",
+                    "failed_timeframes",
+                }
+            }
+        return compact_resp
     return resp
 
 
@@ -1021,7 +1041,9 @@ def patterns_detect(
 
     detail : str, optional (default="compact")
         Output verbosity:
+        - "highlights": quick-read highlights and aggregate bias/counts only.
         - "compact": trader-focused summary with recent patterns and pattern mix.
+        - "standard": sectioned all-mode output with trimmed pattern rows.
         - "full": complete pattern rows suitable for research/debugging.
     
     limit : int, optional (default=1000)

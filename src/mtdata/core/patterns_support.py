@@ -825,6 +825,47 @@ def _compact_all_mode_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     return compact
 
 
+def _highlights_all_mode_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Return only the all-mode quick-read pattern summary."""
+    if not isinstance(payload, dict) or payload.get("error"):
+        return payload
+
+    compact: Dict[str, Any] = {
+        "success": True,
+        "symbol": payload.get("symbol"),
+        "mode": "all",
+        "timeframes": payload.get("timeframes"),
+        "total_patterns": int(payload.get("total_patterns") or 0),
+    }
+
+    highlights = payload.get("highlights")
+    if highlights:
+        compact["highlights"] = highlights
+
+    section_counts: Dict[str, int] = {}
+    signal_inputs: List[Dict[str, Any]] = []
+    for section_name in ("candlestick", "classic", "elliott", "fractal"):
+        section = payload.get(section_name)
+        if not isinstance(section, dict):
+            continue
+        rows = section.get("patterns")
+        if isinstance(rows, list):
+            section_counts[section_name] = len(rows)
+            signal_inputs.extend(row for row in rows if isinstance(row, dict))
+
+    if section_counts:
+        compact["section_counts"] = section_counts
+    signal_bias = _summarize_pattern_bias(signal_inputs)
+    if signal_bias:
+        compact["signal_bias"] = signal_bias
+
+    errors = payload.get("errors")
+    if errors:
+        compact["errors"] = errors
+
+    return compact
+
+
 def _detail_float(details: Dict[str, Any], key: str) -> Optional[float]:
     try:
         value = float(details.get(key))

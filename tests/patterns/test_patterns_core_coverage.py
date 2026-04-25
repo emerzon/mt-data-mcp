@@ -2108,6 +2108,53 @@ class TestPatternsDetectAllMode:
     @patch("mtdata.core.patterns._run_classic_engine")
     @patch("mtdata.core.patterns._fetch_pattern_data")
     @patch("mtdata.core.patterns._detect_candlestick_patterns")
+    def test_all_mode_highlights_detail_omits_section_payloads(
+        self, mock_candle, mock_fetch, mock_engine, mock_elliott
+    ):
+        df = _make_ohlcv_df(200)
+        mock_candle.return_value = {
+            "data": [{
+                "pattern": "Hammer",
+                "direction": "bullish",
+                "confidence": 0.9,
+                "time": "2024-01-01",
+                "price": 1.1,
+                "end_index": 198,
+            }],
+        }
+        mock_fetch.return_value = (df, None)
+        mock_engine.return_value = ([{
+            "name": "Triangle",
+            "status": "forming",
+            "confidence": 0.8,
+            "bias": "bullish",
+            "start_index": 100,
+            "end_index": 195,
+        }], None)
+        mock_elliott.return_value = []
+
+        result = _call_patterns_detect(
+            symbol="EURUSD",
+            mode="all",
+            timeframe="H1",
+            detail="highlights",
+        )
+
+        assert result["success"] is True
+        assert result["mode"] == "all"
+        assert result["section_counts"]["candlestick"] == 1
+        assert result["section_counts"]["classic"] == 1
+        assert result["highlights"]
+        assert result["signal_bias"]["net_bias"] == "bullish"
+        assert "candlestick" not in result
+        assert "classic" not in result
+        assert "elliott" not in result
+        assert "fractal" not in result
+
+    @patch("mtdata.core.patterns._format_elliott_patterns")
+    @patch("mtdata.core.patterns._run_classic_engine")
+    @patch("mtdata.core.patterns._fetch_pattern_data")
+    @patch("mtdata.core.patterns._detect_candlestick_patterns")
     def test_all_mode_config_forwarded(self, mock_candle, mock_fetch, mock_engine, mock_elliott):
         """Config dict is forwarded to classic and elliott without strict key validation."""
         df = _make_ohlcv_df(200)
