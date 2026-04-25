@@ -661,6 +661,23 @@ def _resolved_barrier_output_mode(*, output_mode: str, concise_val: bool) -> str
     return "full" if output_mode == "full" else "summary"
 
 
+def _minimal_barrier_diagnostics(
+    *,
+    ranked_candidates: Optional[List[Dict[str, Any]]],
+    viable_candidates: Optional[List[Dict[str, Any]]],
+    candidates: Optional[List[Dict[str, Any]]],
+) -> Dict[str, Any]:
+    ranked = ranked_candidates or []
+    best_any = ranked[0] if ranked and isinstance(ranked[0], dict) else {}
+    return {
+        "candidates_evaluated": len(ranked),
+        "candidates_viable": len(viable_candidates or []),
+        "candidates_returned": len(candidates or []),
+        "best_ev": _safe_float(best_any.get("ev")) if best_any else None,
+        "best_edge": _safe_float(best_any.get("edge")) if best_any else None,
+    }
+
+
 def _finalize_barrier_output(
     out: Dict[str, Any],
     *,
@@ -710,6 +727,12 @@ def _finalize_barrier_output(
     if resolved_mode == "concise":
         for key in _BARRIER_CONCISE_DROP_KEYS:
             out.pop(key, None)
+    if out.get("status") != "ok":
+        out["diagnostics"] = _minimal_barrier_diagnostics(
+            ranked_candidates=ranked_candidates,
+            viable_candidates=viable_candidates,
+            candidates=candidates,
+        )
     return out
 
 

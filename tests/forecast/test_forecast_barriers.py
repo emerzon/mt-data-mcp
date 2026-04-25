@@ -1604,7 +1604,12 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
         self.assertFalse(result.get("trade_gate_passed"))
         self.assertIn("status_non_viable", result.get("actionability_flags", []))
         self.assertNotIn("compute_profile", result)
-        self.assertNotIn("diagnostics", result)
+        diagnostics = result.get("diagnostics")
+        self.assertEqual(diagnostics.get("candidates_evaluated"), 1)
+        self.assertEqual(diagnostics.get("candidates_viable"), 0)
+        self.assertEqual(diagnostics.get("candidates_returned"), 0)
+        self.assertIsInstance(diagnostics.get("best_ev"), float)
+        self.assertIsInstance(diagnostics.get("best_edge"), float)
 
     def test_forecast_barrier_optimize_marks_low_confidence_viable_result_for_review(self):
         self._set_flat_history(1.0)
