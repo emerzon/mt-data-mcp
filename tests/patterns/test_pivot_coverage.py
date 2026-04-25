@@ -242,6 +242,29 @@ class TestPivotHappyPath:
         assert "R1" in res["levels"]
         assert "S1" in res["levels"]
 
+    def test_compact_warns_on_degenerate_rounded_levels(self):
+        r = [
+            _make_rate(time_=100.0),
+            _make_rate(
+                time_=200.0,
+                open_=1.1720,
+                high=1.17227,
+                low=1.17171,
+                close=1.17225,
+            ),
+        ]
+
+        res = self._run(r, digits=3, detail="compact")
+
+        assert res["success"] is True
+        assert res["levels_degenerate"] is True
+        assert res["digits"] == 3
+        assert res["source_range"] == 0.00056
+        assert res["price_increment"] == 0.001
+        assert res["unique_level_count"] <= 3
+        assert "Source bar range" in res["reason"]
+        assert "Pivot levels may appear identical after rounding." in res["reason"]
+
     def test_all_methods_present(self):
         fn = _get_pivot_fn()
         info = _make_symbol_info(digits=5)

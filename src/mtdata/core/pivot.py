@@ -211,7 +211,70 @@ def pivot_compute_points(  # noqa: C901
                 except Exception:
                     return float(v)
 
+            def _round_context(v: float) -> float:
+                try:
+                    return round(float(v), max(int(digits) + 2, 8))
+                except Exception:
+                    return float(v)
+
+            def _positive_float_attr(obj: Any, *names: str) -> Optional[float]:
+                if obj is None:
+                    return None
+                for name in names:
+                    value = getattr(obj, name, None)
+                    if isinstance(value, bool) or not isinstance(value, (int, float)):
+                        continue
+                    numeric = float(value)
+                    if math.isfinite(numeric) and numeric > 0:
+                        return numeric
+                return None
+
             rng = H - L
+            price_increment = _positive_float_attr(
+                _info_before,
+                "trade_tick_size",
+                "point",
+            )
+            if price_increment is None and digits >= 0:
+                price_increment = 10.0 ** (-int(digits))
+
+            def _degenerate_levels_info(levels: Dict[str, float]) -> Dict[str, Any]:
+                values = [
+                    float(value)
+                    for value in levels.values()
+                    if isinstance(value, (int, float)) and math.isfinite(float(value))
+                ]
+                if not values:
+                    return {}
+                unique_count = len(set(values))
+                reasons: List[str] = []
+                if len(values) >= 3 and unique_count < 3:
+                    reasons.append(
+                        f"Only {unique_count} unique rounded level price(s) remain."
+                    )
+                if (
+                    price_increment is not None
+                    and math.isfinite(rng)
+                    and rng < 2.0 * price_increment
+                ):
+                    reasons.append(
+                        "Source bar range "
+                        f"({_round_context(rng)}) is smaller than 2x price increment "
+                        f"({_round_context(price_increment)})."
+                    )
+                if not reasons:
+                    return {}
+                return {
+                    "levels_degenerate": True,
+                    "reason": " ".join(reasons)
+                    + " Pivot levels may appear identical after rounding.",
+                    "source_range": _round_context(rng),
+                    "price_increment": _round_context(price_increment)
+                    if price_increment is not None
+                    else None,
+                    "digits": digits,
+                    "unique_level_count": unique_count,
+                }
 
             def _compute_method(method_name: str):
                 name = method_name.lower().strip()
@@ -443,6 +506,9 @@ def pivot_compute_points(  # noqa: C901
                 }
                 if not _use_ctz:
                     compact_payload["timezone"] = "UTC"
+                degenerate_info = _degenerate_levels_info(compact_payload["levels"])
+                if degenerate_info:
+                    compact_payload.update(degenerate_info)
                 return compact_payload
             payload["detail"] = "full" if detail_value == "full" else "standard"
             if detail_value == "full":
