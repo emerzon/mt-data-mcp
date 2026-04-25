@@ -74,8 +74,11 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
             [1.0, 1.002, 0.998, 1.006],
         ])
 
-    def test_forecast_barrier_optimize_signature_defaults_to_summary_format(self):
-        self.assertEqual(inspect.signature(forecast_barrier_optimize).parameters["format"].default, "summary")
+    def test_forecast_barrier_optimize_signature_uses_output_mode_with_legacy_format(self):
+        parameters = inspect.signature(forecast_barrier_optimize).parameters
+
+        self.assertEqual(parameters["output_mode"].default, "summary")
+        self.assertIsNone(parameters["format"].default)
 
     def tearDown(self):
         self._stop_barrier_module_patchers()

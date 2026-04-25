@@ -1278,7 +1278,7 @@ def run_forecast_barrier_optimize(
             objective=request.objective,
             return_grid=return_grid_value,
             top_k=request.top_k,
-            format=format_value,
+            output_mode=format_value,
             viable_only=request.viable_only,
             concise=concise_value,
             grid_style=request.grid_style,

@@ -1175,6 +1175,8 @@ def test_forecast_barrier_methods_accept_monte_carlo_aliases():
 
     def fake_optimize(**kwargs):
         called["optimize_method"] = kwargs["method"]
+        called["optimize_output_mode"] = kwargs["output_mode"]
+        assert "format" not in kwargs
         return {"success": True, "best": {}}
 
     out_opt = forecast_use_cases.run_forecast_barrier_optimize(
@@ -1185,6 +1187,7 @@ def test_forecast_barrier_methods_accept_monte_carlo_aliases():
 
     assert out_opt["success"] is True
     assert called["optimize_method"] == "mc_gbm_bb"
+    assert called["optimize_output_mode"] == "summary"
 
 
 def test_forecast_barrier_optimize_rejects_unknown_method_without_traceback():
@@ -1549,7 +1552,8 @@ def test_forecast_barrier_optimize_keeps_grid_default_path(monkeypatch):
     assert out["detail"] == "compact"
     assert called["method"] == "auto"
     assert called["search_profile"] == "medium"
-    assert called["format"] == "summary"
+    assert called["output_mode"] == "summary"
+    assert "format" not in called
     assert called["concise"] is True
     assert called["return_grid"] is False
     assert "seed" not in called["params"]
@@ -1573,7 +1577,8 @@ def test_forecast_barrier_optimize_standard_disables_concise_only(monkeypatch):
     out = raw_opt(request=ForecastBarrierOptimizeRequest(symbol="BTCUSD", detail="standard"))
 
     assert out["detail"] == "standard"
-    assert called["format"] == "summary"
+    assert called["output_mode"] == "summary"
+    assert "format" not in called
     assert called["concise"] is False
 
 
