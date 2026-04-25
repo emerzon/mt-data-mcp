@@ -241,34 +241,52 @@ def attach_collection_contract(
     if not isinstance(result, dict) or result.get("error"):
         return result
 
-    def _already_present(collection: Any) -> bool:
+    def _existing_row_source(collection: Any) -> Optional[str]:
         if collection is None:
-            return False
+            return None
         data = out.get("data")
         if data == collection:
-            return True
+            return "data"
         if isinstance(data, dict):
             table = data.get("table")
             if isinstance(table, dict) and table.get("rows") == collection:
-                return True
+                return "data.table.rows"
             if data.get("items") == collection:
-                return True
-        return False
+                return "data.items"
+        return None
+
+    def _existing_group_source(collection: Any) -> Optional[str]:
+        if collection is None:
+            return None
+        if out.get("results") == collection:
+            return "results"
+        return None
+
+    def _already_present(collection: Any) -> bool:
+        return _existing_row_source(collection) is not None
 
     out = dict(result)
     canonical_source = None
     if include_contract_meta:
         out.setdefault("collection_kind", str(collection_kind))
         out.setdefault("collection_contract_version", "collection.v1")
-    if rows is not None and (include_contract_meta or not _already_present(rows)):
-        out.setdefault("rows", rows)
-        canonical_source = canonical_source or "rows"
+    if rows is not None:
+        existing_source = _existing_row_source(rows)
+        if existing_source is not None:
+            canonical_source = canonical_source or existing_source
+        else:
+            out.setdefault("rows", rows)
+            canonical_source = canonical_source or "rows"
     if series is not None and (include_contract_meta or not _already_present(series)):
         out.setdefault("series", series)
         canonical_source = canonical_source or "series"
     if groups is not None:
-        out.setdefault("groups", groups)
-        canonical_source = canonical_source or "groups"
+        existing_source = _existing_group_source(groups)
+        if existing_source is not None:
+            canonical_source = canonical_source or existing_source
+        else:
+            out.setdefault("groups", groups)
+            canonical_source = canonical_source or "groups"
     if include_contract_meta and canonical_source:
         out.setdefault("canonical_source", canonical_source)
     return out

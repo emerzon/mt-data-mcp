@@ -108,7 +108,7 @@ def test_ensure_common_meta_preserves_existing_tool_and_timezone() -> None:
     assert out["meta"]["runtime"]["timezone"] == existing_timezone
 
 
-def test_attach_collection_contract_adds_rows_without_replacing_legacy_data() -> None:
+def test_attach_collection_contract_avoids_duplicate_rows_for_legacy_data() -> None:
     rows = [{"symbol": "EURUSD"}]
 
     out = attach_collection_contract(
@@ -120,8 +120,8 @@ def test_attach_collection_contract_adds_rows_without_replacing_legacy_data() ->
     assert out["data"] == rows
     assert out["collection_kind"] == "table"
     assert out["collection_contract_version"] == "collection.v1"
-    assert out["canonical_source"] == "rows"
-    assert out["rows"] == rows
+    assert out["canonical_source"] == "data"
+    assert "rows" not in out
 
 
 def test_attach_collection_contract_can_omit_contract_metadata() -> None:
@@ -151,6 +151,22 @@ def test_attach_collection_contract_keeps_compact_alias_when_no_legacy_collectio
     )
 
     assert out["rows"] == rows
+
+
+def test_attach_collection_contract_avoids_duplicate_groups_for_results() -> None:
+    groups = {"lowest_spread": {"data": [["EURUSD"]]}}
+
+    out = attach_collection_contract(
+        {"success": True, "results": groups},
+        collection_kind="groups",
+        groups=groups,
+    )
+
+    assert out["results"] == groups
+    assert out["collection_kind"] == "groups"
+    assert out["collection_contract_version"] == "collection.v1"
+    assert out["canonical_source"] == "results"
+    assert "groups" not in out
 
 
 def test_attach_collection_contract_preserves_error_payloads() -> None:

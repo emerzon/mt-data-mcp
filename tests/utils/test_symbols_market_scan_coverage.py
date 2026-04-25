@@ -162,8 +162,9 @@ class TestSymbolsTopMarkets:
         assert result["results"]["highest_volume"]["data"][0]["symbol"] == "EURUSD"
         assert result["results"]["highest_price_change"]["data"][0]["symbol"] == "GBPUSD"
         assert result["collection_kind"] == "groups"
-        assert result["groups"] == result["results"]
-        assert result["groups"]["lowest_spread"]["rows"][0]["symbol"] == "EURUSD"
+        assert result["canonical_source"] == "results"
+        assert "groups" not in result
+        assert "rows" not in result["results"]["lowest_spread"]
         assert "success" not in result["results"]["lowest_spread"]
         assert "count" not in result["results"]["lowest_spread"]
         assert "success" not in result["results"]["highest_volume"]
