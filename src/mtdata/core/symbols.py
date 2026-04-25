@@ -1349,6 +1349,7 @@ def symbols_top_markets(  # noqa: C901
 @mcp.tool()
 def market_scan(  # noqa: C901
     symbols: Optional[str] = None,
+    symbol: Optional[str] = None,
     group: Optional[str] = None,
     limit: Optional[int] = 20,
     universe: Literal["visible", "all"] = "visible",  # type: ignore
@@ -1368,6 +1369,7 @@ def market_scan(  # noqa: C901
 ) -> Dict[str, Any]:
     """Scan MT5 symbols with explicit price, spread, volume, RSI, and SMA filters.
 
+    Pass `symbol` for one instrument or `symbols` for a comma-separated list.
     `data.table.rows` is the canonical table payload. Compact detail is the
     default; use `detail="full"` when you also want the explicit `columns`
     ordering hint for compatibility.
@@ -1377,6 +1379,8 @@ def market_scan(  # noqa: C901
 
     def _run() -> Dict[str, Any]:  # noqa: C901
         request: Dict[str, Any] = {
+            "symbol": symbol,
+            "symbols": symbols,
             "group": group,
             "limit": limit,
             "universe": universe,
@@ -1409,6 +1413,19 @@ def market_scan(  # noqa: C901
                     code="invalid_input",
                     request=request,
                 )
+
+            symbol_value = str(symbol or "").strip()
+            symbols_value = str(symbols or "").strip()
+            if symbol_value and symbols_value:
+                return _market_scan_error(
+                    "Provide either symbol or symbols, not both.",
+                    code="invalid_input",
+                    request=request,
+                )
+            symbols_filter = symbols_value or symbol_value or None
+            if symbol_value:
+                request["symbols"] = symbol_value
+                request["symbol_alias_used"] = True
 
             timeframe_value = str(timeframe or "H1").strip().upper()
             request["timeframe"] = timeframe_value
@@ -1515,7 +1532,7 @@ def market_scan(  # noqa: C901
 
             selected_symbols, selection_meta, selection_error = _select_market_scan_symbols(
                 all_symbols,
-                symbols=symbols,
+                symbols=symbols_filter,
                 group=group,
                 universe=universe_value,
             )
