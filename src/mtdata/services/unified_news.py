@@ -1463,6 +1463,15 @@ class FinvizNewsSource:
             display_name = ticker or label or market.upper()
             if context.asset_class in {"index", "commodity"} and label:
                 display_name = label
+            def _format_snapshot_value(display_key: str, value: Any) -> str:
+                text = _safe_text(value).strip()
+                if display_key in {"Price", "Change", "Perf", "Perf Day", "Perf Week", "Perf WTD"}:
+                    try:
+                        return f"{float(text):.4f}"
+                    except (TypeError, ValueError):
+                        return text
+                return text
+
             summary_parts = []
             for display_key, row_keys in (
                 ("Label", ("Label", "label")),
@@ -1476,7 +1485,7 @@ class FinvizNewsSource:
             ):
                 value = _first_present(row, *row_keys)
                 if value:
-                    summary_parts.append(f"{display_key}: {value}")
+                    summary_parts.append(f"{display_key}: {_format_snapshot_value(display_key, value)}")
             observed_at = datetime.now(timezone.utc)
             out.append(
                 NewsItem(

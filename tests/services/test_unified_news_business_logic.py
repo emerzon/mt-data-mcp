@@ -623,7 +623,14 @@ def test_market_snapshots_handle_lowercase_and_pair_keys(monkeypatch) -> None:
         "get_forex_performance",
         lambda: {
             "success": True,
-            "pairs": [{"Pair": "EUR/USD", "Change": "0.5%"}],
+            "pairs": [
+                {
+                    "Pair": "EUR/USD",
+                    "Price": 1.1717,
+                    "Perf Day": 0.0029,
+                    "Perf Week": -0.0039000000000000003,
+                }
+            ],
         },
     )
     monkeypatch.setattr(
@@ -649,6 +656,8 @@ def test_market_snapshots_handle_lowercase_and_pair_keys(monkeypatch) -> None:
     futures_result = svc.fetch_unified_news("NAS100")
 
     assert forex_result["related_news"][0]["title"] == "EUR/USD market snapshot"
+    assert "Perf Week: -0.0039" in (forex_result["related_news"][0]["summary"] or "")
+    assert "-0.0039000000000000003" not in (forex_result["related_news"][0]["summary"] or "")
     assert futures_result["related_news"][0]["title"] == "Nasdaq 100 E-mini market snapshot"
     assert "Label: Nasdaq 100 E-mini" in (futures_result["related_news"][0]["summary"] or "")
     assert "Perf: 0.8%" in (futures_result["related_news"][0]["summary"] or "")
