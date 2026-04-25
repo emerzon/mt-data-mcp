@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from typing import Any, Dict, Literal, Optional, Tuple, Union
+from typing import Any, Dict, Literal, Optional, Tuple
 
 from ...utils.utils import _coerce_finite_float, _coerce_scalar
 from .gateway import MT5TradingGateway, create_trading_gateway, trading_connection_error
@@ -12,16 +12,14 @@ MarketOrderTypeLiteral = Literal["BUY", "SELL"]
 OrderTypeLiteral = Literal[
     "BUY",
     "SELL",
-    "LONG",
-    "SHORT",
     "BUY_LIMIT",
     "BUY_STOP",
     "SELL_LIMIT",
     "SELL_STOP",
 ]
 
-MarketOrderTypeInput = Union[MarketOrderTypeLiteral, int, float, str]
-OrderTypeInput = Union[OrderTypeLiteral, int, float, str]
+MarketOrderTypeInput = MarketOrderTypeLiteral | str
+OrderTypeInput = OrderTypeLiteral | str
 
 _SUPPORTED_ORDER_TYPES = {
     "BUY",
@@ -30,18 +28,6 @@ _SUPPORTED_ORDER_TYPES = {
     "BUY_STOP",
     "SELL_LIMIT",
     "SELL_STOP",
-}
-_ORDER_TYPE_NUMERIC_MAP = {
-    0: "BUY",
-    1: "SELL",
-    2: "BUY_LIMIT",
-    3: "SELL_LIMIT",
-    4: "BUY_STOP",
-    5: "SELL_STOP",
-}
-_ORDER_TYPE_ALIASES = {
-    "LONG": "BUY",
-    "SHORT": "SELL",
 }
 _TRADE_SIDE_FILTER_ALIASES = {
     "BUY": "BUY",
@@ -56,46 +42,22 @@ def _normalize_order_type_input(order_type: Any) -> Tuple[Optional[str], Optiona
     if order_type is None:
         return None, "order_type is required."
 
-    value = order_type
-    if isinstance(value, bool):
+    if isinstance(order_type, bool):
         return None, f"Unsupported order_type '{order_type}'."
+    if isinstance(order_type, (int, float)):
+        return None, f"Unsupported order_type '{order_type}'. Use canonical string order types."
 
-    if isinstance(value, (int, float)):
-        if not math.isfinite(float(value)):
-            return None, f"Unsupported order_type '{order_type}'."
-        if float(value).is_integer():
-            mapped = _ORDER_TYPE_NUMERIC_MAP.get(int(value))
-            if mapped:
-                return mapped, None
-            return (
-                None,
-                (
-                    f"Unsupported order_type '{order_type}'. "
-                    "Numeric values must match MT5 constants 0..5."
-                ),
-            )
-        return None, f"Unsupported order_type '{order_type}'."
-
-    text = str(value).strip()
+    text = str(order_type).strip()
     if not text:
         return None, "order_type is required."
 
     scalar = _coerce_scalar(text)
     if isinstance(scalar, (int, float)) and not isinstance(scalar, bool):
-        if isinstance(scalar, float) and (not math.isfinite(scalar) or not scalar.is_integer()):
-            return None, f"Unsupported order_type '{order_type}'."
-        mapped = _ORDER_TYPE_NUMERIC_MAP.get(int(scalar))
-        if mapped:
-            return mapped, None
+        return None, f"Unsupported order_type '{order_type}'. Use canonical string order types."
 
     normalized = text.upper().replace("-", "_").replace(" ", "_")
     while "__" in normalized:
         normalized = normalized.replace("__", "_")
-    if normalized.startswith("MT5."):
-        normalized = normalized[4:]
-    if normalized.startswith("ORDER_TYPE_"):
-        normalized = normalized[len("ORDER_TYPE_") :]
-    normalized = _ORDER_TYPE_ALIASES.get(normalized, normalized)
     if normalized in _SUPPORTED_ORDER_TYPES:
         return normalized, None
 
@@ -103,7 +65,7 @@ def _normalize_order_type_input(order_type: Any) -> Tuple[Optional[str], Optiona
         None,
         (
             f"Unsupported order_type '{order_type}'. "
-            "Use BUY/SELL (or LONG/SHORT) or BUY_LIMIT/BUY_STOP/SELL_LIMIT/SELL_STOP."
+            "Use BUY/SELL or BUY_LIMIT/BUY_STOP/SELL_LIMIT/SELL_STOP."
         ),
     )
 

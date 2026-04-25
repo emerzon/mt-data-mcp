@@ -5,6 +5,9 @@ import os
 import sys
 from unittest.mock import patch
 
+import pytest
+from pydantic import ValidationError
+
 # Add src to path to ensure local package is found
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
@@ -41,36 +44,35 @@ def test_trade_place_request_uses_preview_detail_canonical_field() -> None:
     assert TradePlaceRequest(preview_detail="basic").preview_detail == "compact"
 
 
-def test_normalize_order_type_accepts_mt5_integer() -> None:
+def test_normalize_order_type_rejects_mt5_integer() -> None:
     normalized, error = _normalize_order_type_input(2)
-    assert error is None
-    assert normalized == "BUY_LIMIT"
+    assert normalized is None
+    assert "canonical string" in error
 
 
-def test_normalize_order_type_accepts_prefixed_symbolic_name() -> None:
+def test_normalize_order_type_rejects_prefixed_symbolic_name() -> None:
     normalized, error = _normalize_order_type_input("ORDER_TYPE_BUY_STOP")
-    assert error is None
-    assert normalized == "BUY_STOP"
+    assert normalized is None
+    assert "Unsupported" in error
 
 
-def test_normalize_order_type_accepts_numeric_string() -> None:
+def test_normalize_order_type_rejects_numeric_string() -> None:
     normalized, error = _normalize_order_type_input("4")
-    assert error is None
-    assert normalized == "BUY_STOP"
+    assert normalized is None
+    assert "canonical string" in error
 
 
-def test_trade_place_routes_numeric_order_type_to_pending() -> None:
-    with patch("mtdata.core.trading._place_pending_order", return_value={"ok": True}) as mock_pending:
-        out = trade_place(symbol="BTCUSD", volume=0.03, order_type=2, price=68750, __cli_raw=True)
-        assert out == {"ok": True}
-        assert mock_pending.call_args.kwargs["order_type"] == "BUY_LIMIT"
+def test_trade_place_rejects_numeric_order_type() -> None:
+    with pytest.raises(ValidationError):
+        TradePlaceRequest(symbol="BTCUSD", volume=0.03, order_type=2, price=68750)
 
 
-def test_trade_place_routes_prefixed_order_type_to_pending() -> None:
+def test_trade_place_rejects_prefixed_order_type() -> None:
     with patch("mtdata.core.trading._place_pending_order", return_value={"ok": True}) as mock_pending:
         out = trade_place(symbol="BTCUSD", volume=0.03, order_type="ORDER_TYPE_BUY_STOP", price=70650, __cli_raw=True)
-        assert out == {"ok": True}
-        assert mock_pending.call_args.kwargs["order_type"] == "BUY_STOP"
+
+    assert "Unsupported order_type" in out["error"]
+    mock_pending.assert_not_called()
 
 
 def test_trade_place_routes_prefixed_market_order_type() -> None:
@@ -78,7 +80,7 @@ def test_trade_place_routes_prefixed_market_order_type() -> None:
         out = trade_place(
             symbol="BTCUSD",
             volume=0.03,
-            order_type="ORDER_TYPE_BUY",
+            order_type="BUY",
             require_sl_tp=False,
             __cli_raw=True,
         )
@@ -87,10 +89,8 @@ def test_trade_place_routes_prefixed_market_order_type() -> None:
 
 
 def test_trade_place_rejects_unknown_numeric_order_type() -> None:
-    out = trade_place(symbol="BTCUSD", volume=0.03, order_type=99, price=68750, __cli_raw=True)
-    assert isinstance(out, dict)
-    assert "error" in out
-    assert "Numeric values must match MT5 constants 0..5" in str(out["error"])
+    with pytest.raises(ValidationError):
+        TradePlaceRequest(symbol="BTCUSD", volume=0.03, order_type=99, price=68750)
 
 
 def test_trade_place_logs_finish_event(caplog) -> None:

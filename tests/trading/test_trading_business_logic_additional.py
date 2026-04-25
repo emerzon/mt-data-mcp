@@ -31,14 +31,14 @@ def test_normalize_order_type_rejects_bool_and_fractional_numeric():
     assert "Unsupported order_type" in error
 
 
-def test_normalize_order_type_accepts_alias_and_prefixed_names():
+def test_normalize_order_type_rejects_alias_and_prefixed_names():
     normalized, error = _normalize_order_type_input("long")
-    assert error is None
-    assert normalized == "BUY"
+    assert normalized is None
+    assert "Unsupported order_type" in error
 
     normalized, error = _normalize_order_type_input("mt5.order_type_sell_limit")
-    assert error is None
-    assert normalized == "SELL_LIMIT"
+    assert normalized is None
+    assert "Unsupported order_type" in error
 
 
 def test_validate_volume_handles_bad_symbol_constraints_gracefully():

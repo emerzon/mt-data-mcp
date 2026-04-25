@@ -54,18 +54,10 @@ _BARRIER_OPTIMIZE_METHODS = [
 _TRADE_PLACE_STRING_ORDER_TYPES = [
     "BUY",
     "SELL",
-    "LONG",
-    "SHORT",
     "BUY_LIMIT",
     "BUY_STOP",
     "SELL_LIMIT",
     "SELL_STOP",
-    "ORDER_TYPE_BUY",
-    "ORDER_TYPE_SELL",
-    "ORDER_TYPE_BUY_LIMIT",
-    "ORDER_TYPE_BUY_STOP",
-    "ORDER_TYPE_SELL_LIMIT",
-    "ORDER_TYPE_SELL_STOP",
 ]
 
 _SchemaPatcher = Callable[[Dict[str, Any]], None]
@@ -245,20 +237,11 @@ def _patch_trade_place_schema(schema: Dict[str, Any]) -> None:
     params, _required_params = _schema_params(schema)
     if "order_type" in params:
         params["order_type"] = {
-            "anyOf": [
-                {
-                    "type": "string",
-                    "enum": list(_TRADE_PLACE_STRING_ORDER_TYPES),
-                },
-                {
-                    "type": "integer",
-                    "enum": [0, 1, 2, 3, 4, 5],
-                },
-            ],
+            "type": "string",
+            "enum": list(_TRADE_PLACE_STRING_ORDER_TYPES),
             "description": (
-                "Preferred values are BUY/SELL, LONG/SHORT, or BUY_LIMIT/BUY_STOP/"
-                "SELL_LIMIT/SELL_STOP. ORDER_TYPE_* names and MT5 constants 0..5 "
-                "are accepted for compatibility."
+                "Canonical order type: BUY/SELL for market orders or "
+                "BUY_LIMIT/BUY_STOP/SELL_LIMIT/SELL_STOP for pending orders."
             ),
         }
     if "expiration" in params:

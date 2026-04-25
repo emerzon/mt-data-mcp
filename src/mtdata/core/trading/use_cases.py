@@ -618,7 +618,7 @@ def run_trade_place(  # noqa: C901
                     "required": ["symbol", "volume", "order_type"],
                     "hint": (
                         "Example: symbol='BTCUSD', volume=0.03, "
-                        "order_type='BUY_LIMIT' (or ORDER_TYPE_BUY_LIMIT or 2)."
+                        "order_type='BUY_LIMIT'."
                     ),
                 }
             )

@@ -91,7 +91,6 @@ from mtdata.core.trading.time import (
     _to_server_time_naive,
 )
 from mtdata.core.trading.validation import (
-    _ORDER_TYPE_NUMERIC_MAP,
     _SUPPORTED_ORDER_TYPES,
     _normalize_order_type_input,
     _validate_deviation,
@@ -285,20 +284,19 @@ class TestNormalizeOrderTypeInput:
         t, err = _normalize_order_type_input(None)
         assert t is None and "required" in err
 
-    @pytest.mark.parametrize("val,expected", [
-        (0, "BUY"), (1, "SELL"), (2, "BUY_LIMIT"),
-        (3, "SELL_LIMIT"), (4, "BUY_STOP"), (5, "SELL_STOP"),
+    @pytest.mark.parametrize("val", [
+        0, 1, 2, 3, 4, 5,
     ])
-    def test_numeric_ints(self, val, expected):
+    def test_numeric_ints_rejected(self, val):
         t, err = _normalize_order_type_input(val)
-        assert t == expected and err is None
+        assert t is None and "canonical string" in err
 
-    @pytest.mark.parametrize("val,expected", [
-        (0.0, "BUY"), (1.0, "SELL"), (5.0, "SELL_STOP"),
+    @pytest.mark.parametrize("val", [
+        0.0, 1.0, 5.0,
     ])
-    def test_numeric_floats_whole(self, val, expected):
+    def test_numeric_floats_whole_rejected(self, val):
         t, err = _normalize_order_type_input(val)
-        assert t == expected and err is None
+        assert t is None and "canonical string" in err
 
     def test_numeric_float_non_integer_rejected(self):
         t, err = _normalize_order_type_input(1.5)
@@ -306,7 +304,7 @@ class TestNormalizeOrderTypeInput:
 
     def test_numeric_out_of_range(self):
         t, err = _normalize_order_type_input(99)
-        assert t is None and "0..5" in err
+        assert t is None and "canonical string" in err
 
     def test_numeric_negative(self):
         t, err = _normalize_order_type_input(-1)
@@ -336,21 +334,21 @@ class TestNormalizeOrderTypeInput:
         t, err = _normalize_order_type_input(text)
         assert t == expected and err is None
 
-    def test_text_alias_long(self):
+    def test_text_alias_long_rejected(self):
         t, err = _normalize_order_type_input("LONG")
-        assert t == "BUY"
+        assert t is None and "Use BUY/SELL" in err
 
-    def test_text_alias_short(self):
+    def test_text_alias_short_rejected(self):
         t, err = _normalize_order_type_input("SHORT")
-        assert t == "SELL"
+        assert t is None and "Use BUY/SELL" in err
 
-    def test_text_mt5_prefix(self):
+    def test_text_mt5_prefix_rejected(self):
         t, err = _normalize_order_type_input("MT5.ORDER_TYPE_BUY_LIMIT")
-        assert t == "BUY_LIMIT"
+        assert t is None and "Unsupported" in err
 
-    def test_text_order_type_prefix(self):
+    def test_text_order_type_prefix_rejected(self):
         t, err = _normalize_order_type_input("ORDER_TYPE_SELL_STOP")
-        assert t == "SELL_STOP"
+        assert t is None and "Unsupported" in err
 
     def test_empty_string(self):
         t, err = _normalize_order_type_input("")
@@ -364,13 +362,13 @@ class TestNormalizeOrderTypeInput:
         t, err = _normalize_order_type_input("MARKET_BUY")
         assert t is None and "Unsupported" in err
 
-    def test_string_numeric_coerced(self):
+    def test_string_numeric_rejected(self):
         t, err = _normalize_order_type_input("0")
-        assert t == "BUY"
+        assert t is None and "canonical string" in err
 
-    def test_string_numeric_float(self):
+    def test_string_numeric_float_rejected(self):
         t, err = _normalize_order_type_input("3.0")
-        assert t == "SELL_LIMIT"
+        assert t is None and "canonical string" in err
 
     def test_string_numeric_out_of_range(self):
         t, err = _normalize_order_type_input("99")
@@ -2269,15 +2267,15 @@ class TestTradeRiskAnalyze:
 
 class TestEdgeCases:
 
-    def test_order_type_numeric_map_completeness(self):
-        """All values 0-5 should be in the numeric map."""
-        for i in range(6):
-            assert i in _ORDER_TYPE_NUMERIC_MAP
-
-    def test_supported_order_types_match_map(self):
-        """All mapped names should be in SUPPORTED_ORDER_TYPES."""
-        for name in _ORDER_TYPE_NUMERIC_MAP.values():
-            assert name in _SUPPORTED_ORDER_TYPES
+    def test_supported_order_types_are_canonical_trade_place_names(self):
+        assert _SUPPORTED_ORDER_TYPES == {
+            "BUY",
+            "SELL",
+            "BUY_LIMIT",
+            "BUY_STOP",
+            "SELL_LIMIT",
+            "SELL_STOP",
+        }
 
     def test_gtc_tokens_all_uppercase(self):
         for token in _GTC_EXPIRATION_TOKENS:
