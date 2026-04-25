@@ -536,12 +536,17 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     out_native = raw_list_models("native")
     assert out_native["library"] == "native"
     assert isinstance(out_native["models"], list)
+    assert out_native["methods"][0]["method"] == out_native["models"][0]
     assert isinstance(out_native["capabilities"], list)
     assert out_native["capabilities"][0]["execution"]["library"] == "native"
 
     out_stats = raw_list_models("statsforecast")
     assert out_stats["library"] == "statsforecast"
     assert "AutoARIMA" in out_stats["models"]
+    assert any(
+        row["method"] == "AutoARIMA" and row["model"] == "AutoARIMA"
+        for row in out_stats["methods"]
+    )
     assert out_stats["capabilities"][0]["execution"]["library"] == "statsforecast"
     assert out_stats["capabilities"][0]["selector"]["key"] == "model_name"
 
@@ -679,6 +684,8 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     params = signature(_unwrap(cf.forecast_list_methods)).parameters
     assert "search_term" in params
     assert "search" not in params
+    assert "library" in params
+    assert "show_unavailable" in params
     sf_rows = [r for r in grouped["methods"] if r.get("category") == "statsforecast"]
     assert len(sf_rows) == 4
     if sf_rows:
@@ -690,6 +697,14 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert len(filtered["methods"]) == 1
     assert filtered["methods_hidden"] >= 1
     assert "theta" in str(filtered["methods"][0]["method"]).lower()
+    sf_only = _unwrap(cf.forecast_list_methods)(library="statsforecast")
+    assert sf_only["filters"]["library"] == "statsforecast"
+    assert all(
+        row.get("category") == "statsforecast" for row in sf_only["methods"]
+    )
+    available_only = _unwrap(cf.forecast_list_methods)(show_unavailable=False)
+    assert available_only["unavailable"] == 0
+    assert all(row["available"] is True for row in available_only["methods"])
 
     monkeypatch.setattr(cf, "_get_forecast_methods_data", lambda: {"methods": [1]})
     assert _unwrap(cf.forecast_list_methods)() == {"methods": [1]}

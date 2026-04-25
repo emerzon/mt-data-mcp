@@ -334,6 +334,10 @@ def forecast_list_methods(
     detail: CompactFullDetailLiteral = "compact",  # type: ignore
     limit: Optional[int] = None,
     search_term: Optional[str] = None,
+    library: Optional[
+        Literal["native", "statsforecast", "sktime", "pretrained", "mlforecast"]
+    ] = None,
+    show_unavailable: bool = True,
 ) -> Dict[str, Any]:
     """List forecast methods and availability.
 
@@ -346,10 +350,14 @@ def forecast_list_methods(
         detail=detail,
         limit=limit,
         search_term=search_term_value,
+        library=library,
+        show_unavailable=show_unavailable,
         func=lambda: _forecast_list_methods_impl(
             detail=detail,
             limit=limit,
             search=search_term_value,
+            library=library,
+            show_unavailable=show_unavailable,
         ),
     )
 
@@ -811,10 +819,12 @@ def _forecast_list_library_models_impl(
         lib,
         discover_sktime_forecasters=_discover_sktime_forecasters,
     )
+    method_rows = _forecast_library_method_rows(capabilities)
     if lib == "native":
         return {
             "library": lib,
             "models": [str(row.get("method")) for row in capabilities],
+            "methods": method_rows,
             "capabilities": capabilities,
             "usage": [
                 "mtdata-cli forecast_generate SYMBOL --library native --method analog",
@@ -831,6 +841,7 @@ def _forecast_list_library_models_impl(
         return {
             "library": lib,
             "models": [str(row.get("display_name")) for row in capabilities],
+            "methods": method_rows,
             "capabilities": capabilities,
             "usage": "mtdata-cli forecast_generate SYMBOL --library statsforecast --method AutoARIMA",
         }
@@ -839,6 +850,7 @@ def _forecast_list_library_models_impl(
         return {
             "library": lib,
             "models": [str(row.get("display_name")) for row in capabilities],
+            "methods": method_rows,
             "capabilities": capabilities,
             "usage": [
                 "mtdata-cli forecast_generate SYMBOL --library sktime --method theta",
@@ -867,6 +879,7 @@ def _forecast_list_library_models_impl(
         return {
             "library": lib,
             "models": models,
+            "methods": method_rows,
             "capabilities": capabilities,
             "usage": [
                 "mtdata-cli forecast_generate SYMBOL --library pretrained --method chronos2",
@@ -877,6 +890,7 @@ def _forecast_list_library_models_impl(
     if lib == "mlforecast":
         return {
             "library": lib,
+            "methods": method_rows,
             "capabilities": capabilities,
             "note": "Use `--method <dotted sklearn/lightgbm regressor class>` plus optional constructor kwargs in --params (or use --set method.<k>=<v>).",
             "usage": [
@@ -888,11 +902,44 @@ def _forecast_list_library_models_impl(
     return {"library": lib, "error": "Unsupported library (supported: native, statsforecast, sktime, pretrained, mlforecast)"}
 
 
+def _forecast_library_method_rows(capabilities: Any) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    if not isinstance(capabilities, list):
+        return rows
+    for capability in capabilities:
+        if not isinstance(capability, dict):
+            continue
+        method = str(capability.get("method") or "").strip()
+        if not method:
+            continue
+        row: Dict[str, Any] = {"method": method}
+        display_name = str(capability.get("display_name") or "").strip()
+        if display_name:
+            row["model"] = display_name
+        selector = capability.get("selector")
+        if isinstance(selector, dict):
+            selector_value = selector.get("value")
+            if selector_value is not None:
+                row["selector_value"] = selector_value
+            selector_key = selector.get("key")
+            if selector_key is not None:
+                row["selector_key"] = selector_key
+        execution = capability.get("execution")
+        if isinstance(execution, dict):
+            library = execution.get("library")
+            if library is not None:
+                row["library"] = library
+        rows.append(row)
+    return rows
+
+
 def _forecast_list_methods_impl(  # noqa: C901
     *,
     detail: CompactFullDetailLiteral = "compact",
     limit: Optional[int] = None,
     search: Optional[str] = None,
+    library: Optional[str] = None,
+    show_unavailable: bool = True,
 ) -> Dict[str, Any]:
     try:
         snapshot = _get_forecast_methods_snapshot()
@@ -901,6 +948,21 @@ def _forecast_list_methods_impl(  # noqa: C901
             data = {}
         detail_value = str(detail or "compact").strip().lower()
         search_value = str(search or "").strip().lower()
+        library_value = str(library or "").strip().lower()
+        supported_libraries = {
+            "native",
+            "statsforecast",
+            "sktime",
+            "pretrained",
+            "mlforecast",
+        }
+        if library_value and library_value not in supported_libraries:
+            return {
+                "error": (
+                    "Invalid library filter. Use native, statsforecast, sktime, "
+                    "pretrained, or mlforecast."
+                )
+            }
         limit_value: Optional[int] = None
         if limit is not None:
             try:
@@ -915,7 +977,29 @@ def _forecast_list_methods_impl(  # noqa: C901
         if not isinstance(method_to_category, dict):
             method_to_category = {}
 
+        def _item_library(item: Dict[str, Any]) -> str:
+            method_name = str(item.get("method") or "")
+            for key in ("namespace", "library"):
+                value = str(item.get(key) or "").strip().lower()
+                if value in supported_libraries:
+                    return value
+            execution = item.get("execution")
+            if isinstance(execution, dict):
+                value = str(execution.get("library") or "").strip().lower()
+                if value in supported_libraries:
+                    return value
+            category = str(
+                item.get("category") or method_to_category.get(method_name) or ""
+            ).strip().lower()
+            if category in supported_libraries:
+                return category
+            return "native"
+
         def _method_matches(item: Dict[str, Any]) -> bool:
+            if library_value and _item_library(item) != library_value:
+                return False
+            if not show_unavailable and not bool(item.get("available")):
+                return False
             if not search_value:
                 return True
             method_name = str(item.get("method") or "")
@@ -951,6 +1035,8 @@ def _forecast_list_methods_impl(  # noqa: C901
             out_full["filters"] = {
                 "search": search_value or None,
                 "limit": limit_value,
+                "library": library_value or None,
+                "show_unavailable": bool(show_unavailable),
             }
             out_full["note"] = (
                 "Methods include namespace/concept/method_id fields to disambiguate similarly named implementations "
@@ -1050,6 +1136,8 @@ def _forecast_list_methods_impl(  # noqa: C901
             "filters": {
                 "search": search_value or None,
                 "limit": limit_value,
+                "library": library_value or None,
+                "show_unavailable": bool(show_unavailable),
             },
         }
     except Exception as exc:
