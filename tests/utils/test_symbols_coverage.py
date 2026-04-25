@@ -622,11 +622,75 @@ class TestSymbolsDescribe:
         sd = res["symbol"]
 
         assert sd["name"] == "EURUSD"
-        assert sd["trade_mode_label"] == "Longonly"
-        assert "Market" in sd["order_mode_label"]
-        assert "Limit" in sd["order_mode_label"]
-        assert sd["trade_tick_value"] == 1.25
-        assert "trade_mode" not in sd
+        assert sd["trade_mode"] == "Longonly"
+        assert "Market" in sd["allowed_order_types"]
+        assert "Limit" in sd["allowed_order_types"]
+        assert sd["tick_value"] == 1.25
         assert "order_mode" not in sd
+        assert "order_mode_label" not in sd
         assert "trade_tick_value_profit" not in sd
         assert "time_epoch" not in sd
+
+    @patch(f"{_MT5}.symbol_info")
+    def test_compact_detail_uses_trader_friendly_field_names(self, mock_info):
+        info = MagicMock()
+        info.__dir__ = lambda self: [
+            "name",
+            "digits",
+            "point",
+            "bidlow",
+            "bidhigh",
+            "asklow",
+            "askhigh",
+            "trade_contract_size",
+            "trade_tick_size",
+            "trade_tick_value",
+            "volume_min",
+            "volume_max",
+            "volume_step",
+            "order_mode",
+        ]
+        info.name = "EURUSD"
+        info.digits = 5
+        info.point = 0.00001
+        info.bidlow = 1.16724
+        info.bidhigh = 1.17223
+        info.asklow = 1.16734
+        info.askhigh = 1.17242
+        info.trade_contract_size = 100000.0
+        info.trade_tick_size = 0.00001
+        info.trade_tick_value = 1.0
+        info.volume_min = 0.01
+        info.volume_max = 100.0
+        info.volume_step = 0.01
+        info.order_mode = 3
+        mock_info.return_value = info
+
+        import mtdata.core.symbols as symbols_mod
+
+        symbols_mod.mt5.SYMBOL_ORDER_MARKET = 1
+        symbols_mod.mt5.SYMBOL_ORDER_LIMIT = 2
+
+        fn = _get_symbols_describe()
+        res = fn("EURUSD", detail="compact")
+        sd = res["symbol"]
+
+        assert sd["price_precision"] == 5
+        assert sd["point_size"] == 0.00001
+        assert sd["contract_size"] == 100000.0
+        assert sd["tick_size"] == 0.00001
+        assert sd["tick_value"] == 1.0
+        assert sd["min_volume"] == 0.01
+        assert sd["max_volume"] == 100.0
+        assert sd["volume_step"] == 0.01
+        assert sd["allowed_order_types"] == ["Market", "Limit"]
+        for raw_key in (
+            "bidlow",
+            "bidhigh",
+            "asklow",
+            "askhigh",
+            "order_mode",
+            "digits",
+            "point",
+        ):
+            assert raw_key not in sd

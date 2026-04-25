@@ -42,6 +42,13 @@ def _normalize_symbol_search_term(value: Optional[str]) -> Optional[str]:
     return text or None
 
 
+def _nonempty_symbol_string(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
 _SYMBOL_DESCRIBE_PRICE_FIELDS = frozenset(
     {
         "bidlow",
@@ -102,24 +109,19 @@ _SYMBOL_DESCRIBE_COMPACT_DIRECT_FIELDS: tuple[str, ...] = (
     "description",
     "currency_base",
     "currency_profit",
-    "digits",
-    "point",
-    "bidlow",
-    "bidhigh",
-    "asklow",
-    "askhigh",
-    "trade_contract_size",
-    "trade_tick_size",
-    "trade_tick_value",
-    "volume_min",
-    "volume_max",
-    "volume_step",
-    "spread_float",
     "time",
 )
-_SYMBOL_DESCRIBE_COMPACT_ENUM_FIELDS: tuple[str, ...] = (
-    "trade_mode",
-    "order_mode",
+
+_SYMBOL_DESCRIBE_COMPACT_RENAMED_FIELDS: tuple[tuple[str, str], ...] = (
+    ("digits", "price_precision"),
+    ("point", "point_size"),
+    ("trade_contract_size", "contract_size"),
+    ("trade_tick_size", "tick_size"),
+    ("trade_tick_value", "tick_value"),
+    ("volume_min", "min_volume"),
+    ("volume_max", "max_volume"),
+    ("volume_step", "volume_step"),
+    ("spread_float", "floating_spread"),
 )
 
 
@@ -146,12 +148,28 @@ def _compact_symbol_describe_payload(symbol_data: Dict[str, Any]) -> Dict[str, A
     for field in _SYMBOL_DESCRIBE_COMPACT_DIRECT_FIELDS:
         _copy_symbol_describe_field(compact, symbol_data, field)
 
-    for field in _SYMBOL_DESCRIBE_COMPACT_ENUM_FIELDS:
-        if _copy_symbol_describe_field(compact, symbol_data, f"{field}_label"):
+    for source, target in _SYMBOL_DESCRIBE_COMPACT_RENAMED_FIELDS:
+        if source not in symbol_data:
             continue
-        if _copy_symbol_describe_field(compact, symbol_data, f"{field}_labels"):
-            continue
-        _copy_symbol_describe_field(compact, symbol_data, field)
+        value = symbol_data.get(source)
+        if value is not None:
+            compact[target] = value
+
+    trade_mode_label = _nonempty_symbol_string(symbol_data.get("trade_mode_label"))
+    if trade_mode_label:
+        compact["trade_mode"] = trade_mode_label
+
+    order_mode_labels = symbol_data.get("order_mode_labels")
+    if isinstance(order_mode_labels, list) and order_mode_labels:
+        compact["allowed_order_types"] = list(order_mode_labels)
+    else:
+        order_mode_label = _nonempty_symbol_string(symbol_data.get("order_mode_label"))
+        if order_mode_label:
+            compact["allowed_order_types"] = [
+                token.strip()
+                for token in order_mode_label.split(",")
+                if token.strip()
+            ]
 
     if "time_epoch" in symbol_data:
         compact["time_epoch"] = symbol_data["time_epoch"]
