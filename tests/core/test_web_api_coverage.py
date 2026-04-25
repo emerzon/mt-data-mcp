@@ -657,6 +657,22 @@ class TestGetHistory:
             "used": {"tz": "UTC"},
         }
 
+    def test_v1_history_omits_runtime_timezone_meta(self):
+        payload = {"data": [{"time": 1.0, "close": 1.1}], "last_candle_open": False}
+        with patch.object(web_api.mt5_connection, "_ensure_connection", return_value=True), \
+             patch("mtdata.core.web_api._fetch_candles_impl", return_value=payload), \
+             patch("mtdata.core.web_api.mt5_config") as mock_cfg:
+            mock_cfg.server_tz_name = "Europe/Nicosia"
+            mock_cfg.client_tz_name = None
+            mock_cfg.get_server_tz.return_value = ZoneInfo("Europe/Nicosia")
+            mock_cfg.get_client_tz.return_value = None
+            mock_cfg.get_time_offset_seconds.return_value = 0
+            resp = _client.get("/api/v1/history", params={"symbol": "EURUSD"})
+        res = resp.json()
+        assert res["data"] == [{"time": 1.0, "close": 1.1}]
+        assert res["meta"]["tool"] == "data_fetch_candles"
+        assert "runtime" not in res["meta"]
+
     def test_strips_incomplete_candle(self):
         payload = {"data": [{"time": 1.0}, {"time": 2.0}], "last_candle_open": True}
         with patch.object(web_api.mt5_connection, "_ensure_connection", return_value=True), \

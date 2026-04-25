@@ -569,18 +569,22 @@ def get_history_response(  # noqa: C901
         response_out["meta"] = meta_out
         return response_out
 
-    if not isinstance(timezone_in, dict) or "used" not in timezone_in:
+    if not isinstance(timezone_in, dict):
         return response
 
-    timezone_out = dict(timezone_in)
-    timezone_out.pop("used", None)
     runtime_out = dict(runtime_in)
-    runtime_out["timezone"] = timezone_out
+    runtime_out.pop("timezone", None)
     meta_out = dict(meta_in)
-    meta_out["runtime"] = runtime_out
+    if runtime_out:
+        meta_out["runtime"] = runtime_out
+    else:
+        meta_out.pop("runtime", None)
 
     response_out = dict(response)
-    response_out["meta"] = meta_out
+    if meta_out:
+        response_out["meta"] = meta_out
+    else:
+        response_out.pop("meta", None)
     return response_out
 
 
