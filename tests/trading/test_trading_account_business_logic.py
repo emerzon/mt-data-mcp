@@ -107,52 +107,7 @@ def test_trade_account_info_rounds_margin_level_for_display() -> None:
     assert out["margin_level"] == 53231.43
 
 
-def test_trade_account_info_summary_detail_is_minimal_snapshot() -> None:
-    gateway = SimpleNamespace(
-        ensure_connection=lambda: None,
-        account_info=lambda: SimpleNamespace(
-            balance=10000.0,
-            equity=10050.0,
-            profit=50.0,
-            margin=100.0,
-            margin_free=9950.0,
-            margin_level=53231.42857143,
-            currency="USD",
-            leverage=100,
-            trade_allowed=True,
-            trade_expert=True,
-        ),
-        build_trade_preflight=lambda account_info=None: {
-            "server": "Demo-Server",
-            "company": "Broker LLC",
-            "trade_mode": "demo",
-            "execution_ready": True,
-            "execution_blockers": [],
-        },
-    )
-
-    raw = _unwrap(trade_account_info)
-    with patch.object(core_trading_account, "create_trading_gateway", return_value=gateway):
-        out = raw(detail="summary")
-
-    assert set(out) == {
-        "success",
-        "balance",
-        "equity",
-        "margin_level",
-        "currency",
-        "meta",
-    }
-    assert out["balance"] == 10000.0
-    assert out["margin_level"] == 53231.43
-    assert out["meta"]["tool"] == "trade_account_info"
-    assert "profit" not in out
-    assert "margin_free" not in out
-    assert "execution_ready" not in out
-    assert "server" not in out
-
-
-def test_trade_account_info_compact_detail_includes_margin_fields_without_identity() -> None:
+def test_trade_account_info_compact_detail_includes_account_fields_without_diagnostics() -> None:
     gateway = SimpleNamespace(
         ensure_connection=lambda: None,
         account_info=lambda: SimpleNamespace(
@@ -185,54 +140,20 @@ def test_trade_account_info_compact_detail_includes_margin_fields_without_identi
     assert out["margin"] == 100.0
     assert out["margin_free"] == 9950.0
     assert out["leverage"] == 100
-    assert "execution_ready" not in out
-    assert "server" not in out
-
-
-def test_trade_account_info_standard_detail_is_rejected() -> None:
-    raw = _unwrap(trade_account_info)
-    out = raw(detail="standard")
-
-    assert out == {"error": "Invalid detail level. Use 'summary', 'compact', 'basic', or 'full'."}
-
-
-def test_trade_account_info_basic_detail_keeps_identity_without_diagnostics() -> None:
-    gateway = SimpleNamespace(
-        ensure_connection=lambda: None,
-        account_info=lambda: SimpleNamespace(
-            balance=10000.0,
-            equity=10050.0,
-            profit=50.0,
-            margin=100.0,
-            margin_free=9950.0,
-            margin_level=53231.42857143,
-            currency="USD",
-            leverage=100,
-            trade_allowed=True,
-            trade_expert=False,
-        ),
-        build_trade_preflight=lambda account_info=None: {
-            "server": "Demo-Server",
-            "company": "Broker LLC",
-            "trade_mode": "demo",
-            "execution_ready": False,
-            "execution_hard_blockers": ["Expert trading is disabled for the account."],
-            "execution_blockers": ["Expert trading is disabled for the account."],
-        },
-    )
-
-    raw = _unwrap(trade_account_info)
-    with patch.object(core_trading_account, "create_trading_gateway", return_value=gateway):
-        out = raw(detail="basic")
-
-    assert out["success"] is True
     assert out["server"] == "Demo-Server"
     assert out["company"] == "Broker LLC"
     assert out["trade_mode"] == "demo"
-    assert out["trade_expert"] is False
+    assert out["trade_allowed"] is True
+    assert out["trade_expert"] is True
     assert "execution_ready" not in out
-    assert "execution_blockers" not in out
-    assert out["meta"]["tool"] == "trade_account_info"
+
+
+def test_trade_account_info_rejects_non_compact_full_detail() -> None:
+    raw = _unwrap(trade_account_info)
+
+    assert raw(detail="standard") == {"error": "Invalid detail level. Use 'compact' or 'full'."}
+    assert raw(detail="summary") == {"error": "Invalid detail level. Use 'compact' or 'full'."}
+    assert raw(detail="basic") == {"error": "Invalid detail level. Use 'compact' or 'full'."}
 
 
 def test_trade_account_info_returns_connection_error_payload() -> None:

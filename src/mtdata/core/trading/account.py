@@ -5,8 +5,9 @@ from __future__ import annotations
 import logging
 import math
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Optional
 
+from ...shared.schema import CompactFullDetailLiteral
 from ...utils.mt5 import (
     MT5ConnectionError,
     ensure_mt5_connection_or_raise,
@@ -35,21 +36,17 @@ from .use_cases import _DEFAULT_TRADE_HISTORY_LOOKBACK_DAYS, run_trade_history
 
 logger = logging.getLogger(__name__)
 
-_TRADE_ACCOUNT_SUMMARY_KEYS = (
+_TRADE_ACCOUNT_COMPACT_KEYS = (
     "success",
     "balance",
     "equity",
-    "margin_level",
-    "margin_level_note",
-    "currency",
-)
-_TRADE_ACCOUNT_COMPACT_KEYS = _TRADE_ACCOUNT_SUMMARY_KEYS + (
     "profit",
     "margin",
     "margin_free",
+    "margin_level",
+    "margin_level_note",
+    "currency",
     "leverage",
-)
-_TRADE_ACCOUNT_BASIC_KEYS = _TRADE_ACCOUNT_COMPACT_KEYS + (
     "trade_allowed",
     "trade_expert",
     "server",
@@ -495,12 +492,8 @@ def lookup_trade_ticket_history(ticket: Any) -> Optional[Dict[str, Any]]:
 
 
 def _trade_account_payload_for_mode(payload: Dict[str, Any], *, mode: str) -> Dict[str, Any]:
-    if mode == "summary":
-        keys = _TRADE_ACCOUNT_SUMMARY_KEYS
-    elif mode == "compact":
+    if mode == "compact":
         keys = _TRADE_ACCOUNT_COMPACT_KEYS
-    elif mode == "basic":
-        keys = _TRADE_ACCOUNT_BASIC_KEYS
     else:
         return dict(payload)
     return {key: payload.get(key) for key in keys if key in payload}
@@ -508,26 +501,21 @@ def _trade_account_payload_for_mode(payload: Dict[str, Any], *, mode: str) -> Di
 
 @mcp.tool()
 def trade_account_info(
-    detail: Literal["summary", "compact", "basic", "full"] = "compact",  # type: ignore
+    detail: CompactFullDetailLiteral = "compact",  # type: ignore
 ) -> dict:
-    """Get account information with summary, compact, basic, or full account output modes.
+    """Get account information with compact or full account output modes.
 
-    Use `detail="summary"` for the smallest balance/equity snapshot,
-    `detail="compact"` (default) for routine balance and margin checks,
-    `detail="basic"` for account identity/configuration fields, and
-    `detail="full"` for the existing execution-readiness diagnostics.
+    Use `detail="compact"` (default) for routine balance, margin, and account
+    identity checks. Use `detail="full"` for execution-readiness diagnostics.
     """
 
     def _run() -> dict:
         requested_mode = normalize_output_detail(
             detail,
             default="full",
-            aliases={"summary_only": "summary"},
         )
-        if requested_mode not in {"summary", "compact", "basic", "full"}:
-            return {
-                "error": "Invalid detail level. Use 'summary', 'compact', 'basic', or 'full'."
-            }
+        if requested_mode not in {"compact", "full"}:
+            return {"error": "Invalid detail level. Use 'compact' or 'full'."}
 
         mt5 = create_trading_gateway(
             include_trade_preflight=True,
