@@ -708,6 +708,7 @@ class TestCorrelationMatrix:
                 transform="log_return",
                 limit=60,
                 min_overlap=30,
+                detail="full",
             )
 
         assert result["success"] is True
@@ -722,6 +723,7 @@ class TestCorrelationMatrix:
         assert data["items"][0]["window_truncated"] is True
         assert result["summary"]["highlights"] == {}
         assert "pairs" not in data
+        assert "legends" in result["meta"]
         assert result["meta"]["stats"]["pairs_computed"] == 3
         assert any(
             "event=finish operation=correlation_matrix success=True" in record.message
@@ -747,11 +749,12 @@ class TestCorrelationMatrix:
             transform="log_return",
             limit=60,
             min_overlap=30,
-            detail="compact",
         )
 
         assert result["success"] is True
         assert "matrix" not in result["data"]
+        assert "legends" not in result["meta"]
+        assert result["meta"]["request"]["detail"] == "compact"
         assert result["data"]["items"]
         assert result["summary"]["highlights"] == {}
 
@@ -772,7 +775,7 @@ class TestCorrelationMatrix:
 
         mock_fetch.side_effect = _fetch_side_effect
 
-        result = self._unwrapped()("A,B,C", min_overlap=20)
+        result = self._unwrapped()("A,B,C", min_overlap=20, detail="full")
 
         assert result["success"] is True
         assert result["summary"]["counts"]["pairs"] == 1

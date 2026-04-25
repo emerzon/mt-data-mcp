@@ -1465,7 +1465,7 @@ def correlation_matrix(  # noqa: C901
     method: str = "pearson",
     transform: str = "log_return",
     min_overlap: int = 30,
-    detail: CompactFullDetailLiteral = "full",
+    detail: CompactFullDetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """Calculate pairwise symbol correlations from MT5 price history.
 
@@ -1487,7 +1487,7 @@ def correlation_matrix(  # noqa: C901
         transform: Preprocessing transform: "log_return", "pct", "diff", or "level".
         min_overlap: Minimum overlapping transformed samples required per pair.
         detail: "compact" keeps canonical pair rows plus highlights; "full" also
-            includes the derived matrix view.
+            includes the derived matrix view and explanatory legends.
     """
 
     def _run() -> Dict[str, Any]:  # noqa: C901
@@ -1499,7 +1499,7 @@ def correlation_matrix(  # noqa: C901
             "method": str(method),
             "transform": str(transform),
             "min_overlap": int(min_overlap),
-            "detail": str(detail or "full"),
+            "detail": str(detail or "compact"),
         }
         connection_error = _causal_connection_error()
         if connection_error is not None:
@@ -1611,7 +1611,7 @@ def correlation_matrix(  # noqa: C901
                 meta=meta,
             )
         meta["transform"] = transform_value
-        detail_mode = str(detail or "full").strip().lower()
+        detail_mode = str(detail or "compact").strip().lower()
         if detail_mode not in {"compact", "full"}:
             return _causal_error(
                 "detail must be 'compact' or 'full'.",
@@ -1763,18 +1763,22 @@ def correlation_matrix(  # noqa: C901
             },
             "meta": _causal_contract_meta(
                 meta,
-                legends={
-                    "transform": _TRANSFORM_LEGEND,
-                    "correlation_method": _CORRELATION_METHOD_LEGEND,
-                    "relationship": {
-                        "positive": "Symbols tend to move in the same direction",
-                        "negative": "Symbols tend to move in opposite directions",
-                        "flat": "No consistent directional relationship (correlation near zero)",
-                        "strength_weak": "|correlation| < 0.3",
-                        "strength_moderate": "0.3 <= |correlation| < 0.7",
-                        "strength_strong": "|correlation| >= 0.7",
-                    },
-                },
+                legends=(
+                    {
+                        "transform": _TRANSFORM_LEGEND,
+                        "correlation_method": _CORRELATION_METHOD_LEGEND,
+                        "relationship": {
+                            "positive": "Symbols tend to move in the same direction",
+                            "negative": "Symbols tend to move in opposite directions",
+                            "flat": "No consistent directional relationship (correlation near zero)",
+                            "strength_weak": "|correlation| < 0.3",
+                            "strength_moderate": "0.3 <= |correlation| < 0.7",
+                            "strength_strong": "|correlation| >= 0.7",
+                        },
+                    }
+                    if detail_mode == "full"
+                    else None
+                ),
             ),
         }
         if warnings_out:
