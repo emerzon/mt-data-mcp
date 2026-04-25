@@ -145,8 +145,7 @@ def test_trade_risk_analyze_marks_position_sizing_incomplete_without_required_in
     assert "desired_risk_pct" in out["position_sizing"]["note"]
 
 
-def test_trade_risk_analyze_returns_error_when_partial_position_sizing_params() -> None:
-    """When any position sizing param is provided, all must be provided."""
+def test_trade_risk_analyze_keeps_exposure_analysis_with_partial_sizing_params() -> None:
     mt5 = MagicMock()
     mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
     mt5.positions_get.return_value = []
@@ -157,16 +156,15 @@ def test_trade_risk_analyze_returns_error_when_partial_position_sizing_params() 
             desired_risk_pct=2.0,  # Only risk pct provided
         )
 
-    assert out["success"] is False
-    assert out["error_code"] == "missing_position_sizing_params"
-    assert out["error"] == "Missing required parameters: entry, stop_loss"
-    assert out["provided"] == ["desired_risk_pct"]
-    assert set(out["missing"]) == {"entry", "stop_loss"}
-    assert out["required"] == ["desired_risk_pct", "entry", "stop_loss"]
-    assert "guidance" in out
-    assert "desired_risk_pct" in out["guidance"]
-    assert "entry" in out["guidance"]
-    assert "stop_loss" in out["guidance"]
+    assert out["success"] is True
+    assert "portfolio_risk" in out
+    sizing = out["position_sizing"]
+    assert sizing["status"] == "incomplete"
+    assert sizing["provided"] == ["desired_risk_pct"]
+    assert set(sizing["missing"]) == {"entry", "stop_loss"}
+    assert sizing["required_for_sizing"] == ["desired_risk_pct", "entry", "stop_loss"]
+    assert sizing["proposed_trade_context"] == {"desired_risk_pct": 2.0}
+    assert "requires desired_risk_pct, entry, and stop_loss" in sizing["sizing_not_calculated_reason"]
 
 
 def test_trade_risk_analyze_handles_missing_account_fields() -> None:

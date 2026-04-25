@@ -1978,7 +1978,6 @@ def run_trade_risk_analyze(  # noqa: C901
                 if value is None
             ]
             if position_sizing_missing:
-                # If any position sizing param was provided but not all, return an error
                 position_sizing_provided = [
                     field_name
                     for field_name, value in (
@@ -1988,44 +1987,46 @@ def run_trade_risk_analyze(  # noqa: C901
                     )
                     if value is not None
                 ]
-                
+                position_sizing: Dict[str, Any] = {
+                    "status": "incomplete",
+                    "message": (
+                        "Portfolio risk analysis completed. Position sizing is "
+                        "available when you provide desired_risk_pct, "
+                        "entry, and stop_loss."
+                    ),
+                    "missing": position_sizing_missing,
+                    "required_for_sizing": [
+                        "desired_risk_pct",
+                        "entry",
+                        "stop_loss",
+                    ],
+                    "note": (
+                        "Add desired_risk_pct to specify how much equity to risk "
+                        "on the proposed trade."
+                    ),
+                }
                 if position_sizing_provided:
-                    # User started providing position sizing params, so fail clearly
-                    missing_text = ", ".join(position_sizing_missing)
-                    plural = "s" if len(position_sizing_missing) != 1 else ""
-                    return {
-                        "success": False,
-                        "error_code": "missing_position_sizing_params",
-                        "error": f"Missing required parameter{plural}: {missing_text}",
-                        "provided": position_sizing_provided,
-                        "missing": position_sizing_missing,
-                        "required": ["desired_risk_pct", "entry", "stop_loss"],
-                        "guidance": {
-                            "desired_risk_pct": "Risk as percentage of account equity (e.g., 2 for 2%)",
-                            "entry": "Expected entry price for the new trade",
-                            "stop_loss": "Stop-loss price (must be on correct side of entry based on direction)",
+                    position_sizing.update(
+                        {
+                            "provided": position_sizing_provided,
+                            "proposed_trade_context": {
+                                key: value
+                                for key, value in (
+                                    ("desired_risk_pct", request.desired_risk_pct),
+                                    ("entry", request.entry),
+                                    ("stop_loss", request.stop_loss),
+                                    ("take_profit", request.take_profit),
+                                    ("direction", request.direction),
+                                )
+                                if value is not None
+                            },
+                            "sizing_not_calculated_reason": (
+                                "Position sizing requires desired_risk_pct, "
+                                "entry, and stop_loss."
+                            ),
                         }
-                    }
-                else:
-                    # No params provided, just mark as incomplete
-                    result["position_sizing"] = {
-                        "status": "incomplete",
-                        "message": (
-                            "Portfolio risk analysis completed. Position sizing is "
-                            "available when you provide desired_risk_pct, "
-                            "entry, and stop_loss."
-                        ),
-                        "missing": position_sizing_missing,
-                        "required_for_sizing": [
-                            "desired_risk_pct",
-                            "entry",
-                            "stop_loss",
-                        ],
-                        "note": (
-                            "Add desired_risk_pct to specify how much equity to risk "
-                            "on the proposed trade."
-                        ),
-                    }
+                    )
+                result["position_sizing"] = position_sizing
 
             if (
                 request.desired_risk_pct is not None
