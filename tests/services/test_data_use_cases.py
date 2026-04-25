@@ -83,7 +83,7 @@ def test_run_data_fetch_candles_omits_contract_metadata_in_compact_detail():
     )
 
     assert result["data"] == rows
-    assert result["series"] == rows
+    assert "series" not in result
     assert "collection_kind" not in result
     assert "collection_contract_version" not in result
 
@@ -107,6 +107,7 @@ def test_run_data_fetch_candles_adds_contract_metadata_in_full_detail():
     assert result["series"] == rows
     assert result["collection_kind"] == "time_series"
     assert result["collection_contract_version"] == "collection.v1"
+    assert result["canonical_source"] == "series"
 
 
 def test_run_data_fetch_ticks_logs_connection_error(caplog):

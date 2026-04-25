@@ -71,7 +71,7 @@ class TestSymbolsListNoSearch:
         res = fn(search_term=None, limit=25)
         assert "data" in res
         assert len(res["data"]) == 2
-        assert res["rows"] == res["data"]
+        assert "rows" not in res
         assert "collection_kind" not in res
         assert "collection_contract_version" not in res
 

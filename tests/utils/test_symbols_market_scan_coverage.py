@@ -434,6 +434,7 @@ class TestMarketScan:
         assert result["data"]["table"]["rows"][0]["rsi"] == 100.0
         assert result["data"]["table"]["rows"][0]["sma_value"] == 5.0
         assert result["collection_kind"] == "table"
+        assert result["canonical_source"] == "rows"
         assert result["rows"] == result["data"]["table"]["rows"]
         assert result["meta"]["request"]["timeframe"] == "H1"
         assert result["meta"]["request"]["rank_by"] == "abs_price_change_pct"
@@ -462,7 +463,7 @@ class TestMarketScan:
         assert "columns" not in result["data"]["table"]
         assert result["data"]["table"]["row_count"] == 1
         assert result["data"]["table"]["rows"][0]["symbol"] == "EURUSD"
-        assert result["rows"] == result["data"]["table"]["rows"]
+        assert "rows" not in result
         assert result["meta"]["request"]["detail"] == "compact"
         assert "collection_kind" not in result
         assert "collection_contract_version" not in result

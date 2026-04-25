@@ -120,6 +120,7 @@ def test_attach_collection_contract_adds_rows_without_replacing_legacy_data() ->
     assert out["data"] == rows
     assert out["collection_kind"] == "table"
     assert out["collection_contract_version"] == "collection.v1"
+    assert out["canonical_source"] == "rows"
     assert out["rows"] == rows
 
 
@@ -134,9 +135,22 @@ def test_attach_collection_contract_can_omit_contract_metadata() -> None:
     )
 
     assert out["data"] == rows
-    assert out["rows"] == rows
+    assert "rows" not in out
     assert "collection_kind" not in out
     assert "collection_contract_version" not in out
+
+
+def test_attach_collection_contract_keeps_compact_alias_when_no_legacy_collection() -> None:
+    rows = [{"symbol": "EURUSD"}]
+
+    out = attach_collection_contract(
+        {"success": True, "data": {"table": {"columns": ["symbol"]}}},
+        collection_kind="table",
+        rows=rows,
+        include_contract_meta=False,
+    )
+
+    assert out["rows"] == rows
 
 
 def test_attach_collection_contract_preserves_error_payloads() -> None:
