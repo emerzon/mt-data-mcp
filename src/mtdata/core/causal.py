@@ -2092,6 +2092,9 @@ def cointegration_test(  # noqa: C901
                 )
                 if row is not None:
                     row["overlap_rows"] = overlap_rows
+                    row["aligned_observations"] = overlap_rows
+                    row["available_overlap_rows"] = overlap_rows
+                    row["calculation_samples"] = int(len(subset))
                     row["window_requested"] = int(limit)
                     row["window_actual"] = int(len(subset))
                     row["window_truncated"] = bool(len(subset) < overlap_rows)
@@ -2118,6 +2121,11 @@ def cointegration_test(  # noqa: C901
                 "pairs_failed": int(len(pair_failures)),
                 "pairs_skipped_min_overlap": int(pairs_skipped_min_overlap),
                 "pair_overlaps": pair_overlaps,
+                "window_interpretation": (
+                    "calculation_samples/window_actual is the capped sample count used in each test; "
+                    "aligned_observations/available_overlap_rows is the full pairwise overlap before "
+                    "the limit window is applied."
+                ),
             }
         )
         if pair_failures:

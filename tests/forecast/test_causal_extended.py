@@ -951,9 +951,13 @@ class TestCointegrationTest:
         assert pair["p_value"] == pytest.approx(0.01)
         assert pair["critical_values"]["5%"] == pytest.approx(-3.3)
         assert pair["hedge_ratio"] is not None
+        assert pair["calculation_samples"] == 60
+        assert pair["aligned_observations"] == 120
+        assert pair["available_overlap_rows"] == pair["overlap_rows"]
         assert pair["window_requested"] == 60
         assert pair["window_actual"] == 60
         assert pair["window_truncated"] is True
+        assert "window_interpretation" in result["meta"]["stats"]
 
     @patch("statsmodels.tsa.stattools.coint", side_effect=RuntimeError("singular matrix"))
     @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
