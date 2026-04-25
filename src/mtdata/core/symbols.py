@@ -764,10 +764,10 @@ def _parse_market_scan_symbols(symbols: Optional[str]) -> List[str]:
 def _resolve_market_scan_group_path(
     all_symbols: List[Any],
     group: str,
-) -> tuple[Optional[str], Optional[str]]:
+) -> tuple[List[str], Optional[str]]:
     requested = str(group or "").strip()
     if not requested:
-        return None, "group must not be empty."
+        return [], "group must not be empty."
 
     groups: Dict[str, str] = {}
     for symbol in all_symbols:
@@ -779,7 +779,7 @@ def _resolve_market_scan_group_path(
     requested_lower = requested.lower()
     exact = groups.get(requested_lower)
     if exact is not None:
-        return exact, None
+        return [exact], None
 
     partial_matches = sorted(
         (
@@ -789,13 +789,10 @@ def _resolve_market_scan_group_path(
         key=_case_insensitive_sort_key,
     )
     if len(partial_matches) == 1:
-        return partial_matches[0], None
+        return [partial_matches[0]], None
     if partial_matches:
-        return None, (
-            f"Ambiguous group '{requested}'. Matching groups: "
-            + ", ".join(partial_matches[:10])
-        )
-    return None, f"No symbol group matched '{requested}'."
+        return partial_matches, None
+    return [], f"No symbol group matched '{requested}'."
 
 
 def _select_market_scan_symbols(
@@ -839,13 +836,14 @@ def _select_market_scan_symbols(
         }, None
 
     if group:
-        resolved_group, group_error = _resolve_market_scan_group_path(tradable_symbols, group)
-        if group_error or resolved_group is None:
+        resolved_groups, group_error = _resolve_market_scan_group_path(tradable_symbols, group)
+        if group_error or not resolved_groups:
             return [], {}, group_error
+        resolved_group_set = {str(group_path).strip() for group_path in resolved_groups}
         selected = sorted(
             [
                 symbol for symbol in tradable_symbols
-                if str(_extract_group_path_util(symbol) or "").strip() == resolved_group
+                if str(_extract_group_path_util(symbol) or "").strip() in resolved_group_set
                 and (universe == "all" or bool(getattr(symbol, "visible", False)))
             ],
             key=lambda symbol: _case_insensitive_sort_key(getattr(symbol, "name", "")),
@@ -853,7 +851,8 @@ def _select_market_scan_symbols(
         return selected, {
             **selection_meta,
             "scope": "group",
-            "group": resolved_group,
+            "group": resolved_groups[0] if len(resolved_groups) == 1 else str(group).strip(),
+            "groups": resolved_groups,
         }, None
 
     selected = sorted(
@@ -1592,6 +1591,8 @@ def market_scan(  # noqa: C901
             request["scope"] = selection_meta.get("scope")
             if selection_meta.get("group") is not None:
                 request["group"] = selection_meta.get("group")
+            if selection_meta.get("groups") is not None:
+                request["groups"] = selection_meta.get("groups")
             if selection_meta.get("requested_symbols") is not None:
                 request["requested_symbols"] = selection_meta.get("requested_symbols")
             if selection_meta.get("missing_symbols") is not None:

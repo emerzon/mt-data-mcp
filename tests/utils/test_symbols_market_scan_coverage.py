@@ -613,19 +613,29 @@ class TestMarketScan:
 
     @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
     @patch("mtdata.core.symbols.mt5.symbols_get")
-    def test_market_scan_rejects_ambiguous_group(self, mock_symbols_get, mock_group):
+    @patch("mtdata.core.symbols.mt5.copy_rates_from_pos")
+    @patch("mtdata.core.symbols.mt5.symbol_info_tick")
+    def test_market_scan_expands_parent_group(
+        self,
+        mock_tick,
+        mock_rates,
+        mock_symbols_get,
+        mock_group,
+    ):
         mock_symbols_get.return_value = [
             _make_symbol("EURUSD", path="Forex\\Majors"),
             _make_symbol("AUDCAD", path="Forex\\Minors"),
         ]
+        mock_tick.return_value = _make_tick(bid=1.1000, ask=1.1001)
+        mock_rates.return_value = _make_bars([1.0, 1.01, 1.02, 1.03], tick_volume=50)
 
         fn = _get_market_scan()
-        result = fn(group="Forex")
+        result = fn(group="Forex", universe="all", lookback=4)
 
-        assert result["success"] is False
-        assert "Ambiguous group" in result["error"]
-        assert result["error_code"] == "symbol_group_error"
-        assert result["meta"]["tool"] == "market_scan"
+        assert result["success"] is True
+        assert result["meta"]["request"]["group"] == "Forex"
+        assert result["meta"]["request"]["groups"] == ["Forex\\Majors", "Forex\\Minors"]
+        assert {row["symbol"] for row in result["data"]["table"]["rows"]} == {"EURUSD", "AUDCAD"}
 
     @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
     @patch("mtdata.core.symbols.mt5.symbol_info_tick", return_value=None)
