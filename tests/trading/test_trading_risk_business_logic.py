@@ -424,7 +424,7 @@ def test_run_trade_risk_analyze_logs_finish_event(caplog) -> None:
         positions_get=lambda symbol=None: [],
     )
 
-    with caplog.at_level("INFO", logger="mtdata.core.trading.use_cases"):
+    with caplog.at_level("DEBUG", logger="mtdata.core.trading.use_cases"):
         out = run_trade_risk_analyze(
             TradeRiskAnalyzeRequest(),
             gateway=gateway,
@@ -444,7 +444,7 @@ def test_trade_risk_analyze_logs_finish_event(caplog) -> None:
         core_trading_risk,
         "run_trade_risk_analyze",
         return_value={"success": True, "positions": []},
-    ), caplog.at_level(logging.INFO, logger=core_trading_risk.logger.name):
+    ), caplog.at_level(logging.DEBUG, logger=core_trading_risk.logger.name):
         out = raw(TradeRiskAnalyzeRequest(symbol="EURUSD"))
 
     assert out["success"] is True

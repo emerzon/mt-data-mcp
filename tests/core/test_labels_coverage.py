@@ -414,7 +414,7 @@ class TestLabelsTripleBarrier:
 @patch(f"{_LABELS_MOD}._fetch_history")
 def test_labels_triple_barrier_logs_finish_event(mock_hist, mock_den, mock_pip, caplog):
     mock_hist.return_value = _make_df(60)
-    with caplog.at_level("INFO", logger="mtdata.core.labels"):
+    with caplog.at_level("DEBUG", logger="mtdata.core.labels"):
         result = _get_raw_fn()("EURUSD", tp_pct=0.5, sl_pct=0.5, horizon=12)
 
     assert result["success"] is True

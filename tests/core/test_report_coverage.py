@@ -81,7 +81,7 @@ def test_run_report_generate_logs_finish_event(caplog):
          patch("mtdata.core.report_templates.template_intraday", basic_template, create=True), \
          patch("mtdata.core.report_templates.template_swing", basic_template, create=True), \
          patch("mtdata.core.report_templates.template_position", basic_template, create=True), \
-         caplog.at_level("INFO", logger="mtdata.core.report.use_cases"):
+         caplog.at_level("DEBUG", logger="mtdata.core.report.use_cases"):
         result = run_report_generate(
             ReportGenerateRequest(symbol="EURUSD"),
             render_report=lambda rep: "# report",
@@ -125,7 +125,7 @@ def test_report_generate_logs_finish_event(monkeypatch, caplog):
     monkeypatch.setattr(report_mod, "_report_connection_error", lambda: None)
     monkeypatch.setattr(report_mod, "run_report_generate", lambda *args, **kwargs: {"success": True, "sections": {}})
 
-    with caplog.at_level(logging.INFO, logger=report_mod.logger.name):
+    with caplog.at_level(logging.DEBUG, logger=report_mod.logger.name):
         out = raw(request=report_mod.ReportGenerateRequest(symbol="EURUSD"))
 
     assert out["success"] is True

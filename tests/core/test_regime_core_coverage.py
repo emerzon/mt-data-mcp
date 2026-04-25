@@ -432,7 +432,7 @@ class TestRegimeDetectBOCPD:
         cp[20] = 0.8
         with (
             patch("mtdata.utils.regime.bocpd_gaussian", return_value={"cp_prob": cp}),
-            caplog.at_level("INFO", logger="mtdata.core.regime"),
+            caplog.at_level("DEBUG", logger="mtdata.core.regime"),
         ):
             fn = _get_regime_detect()
             res = fn(

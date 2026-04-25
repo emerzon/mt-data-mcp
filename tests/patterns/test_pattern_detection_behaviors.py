@@ -3280,7 +3280,7 @@ def test_patterns_detect_classic_ensemble_merges_engine_outputs(monkeypatch, cap
 
     monkeypatch.setattr(core_patterns, "_run_classic_engine", _fake_engine)
 
-    with caplog.at_level(logging.INFO, logger=core_patterns.logger.name):
+    with caplog.at_level(logging.DEBUG, logger=core_patterns.logger.name):
         res = patterns_detect(
             symbol="EURUSD",
             mode="classic",

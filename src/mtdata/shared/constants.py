@@ -53,7 +53,7 @@ TI_NAN_WARMUP_MIN_ADD = 50
 
 # Global parameter defaults
 DEFAULT_TIMEFRAME = "H1"
-DEFAULT_ROW_LIMIT = 25
+DEFAULT_ROW_LIMIT = 50
 
 # Simplification defaults
 SIMPLIFY_DEFAULT_METHOD = "lttb"

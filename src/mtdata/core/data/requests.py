@@ -324,7 +324,7 @@ class DataFetchCandlesRequest(BaseModel):
     symbol: str
     timeframe: TimeframeLiteral = "H1"
     detail: CompactFullDetailLiteral = "compact"
-    limit: int = 200
+    limit: int = 500
     start: Optional[str] = None
     end: Optional[str] = None
     ohlcv: Optional[str] = None
@@ -352,7 +352,7 @@ class DataFetchTicksRequest(BaseModel):
     model_config = {"populate_by_name": True}
 
     symbol: str
-    limit: int = 200
+    limit: int = 500
     start: Optional[str] = None
     end: Optional[str] = None
     simplify: SimplifySpecInput = None

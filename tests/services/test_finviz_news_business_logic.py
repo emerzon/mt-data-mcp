@@ -41,8 +41,7 @@ def test_get_stock_news_returns_clean_message_for_404_like_errors() -> None:
 def test_finviz_news_logs_finish_event_for_success(caplog) -> None:
     raw = _unwrap(finviz_news)
 
-    with patch("mtdata.core.finviz.get_stock_news", return_value={"success": True, "items": []}), caplog.at_level(
-        logging.INFO,
+    with patch("mtdata.core.finviz.get_stock_news", return_value={"success": True, "items": []}), caplog.at_level(logging.DEBUG,
         logger=core_finviz.logger.name,
     ):
         out = raw(symbol="AAPL", limit=5, page=1)

@@ -94,8 +94,7 @@ def test_trade_place_rejects_unknown_numeric_order_type() -> None:
 
 
 def test_trade_place_logs_finish_event(caplog) -> None:
-    with patch("mtdata.core.trading._place_market_order", return_value={"success": True}), caplog.at_level(
-        logging.INFO,
+    with patch("mtdata.core.trading._place_market_order", return_value={"success": True}), caplog.at_level(logging.DEBUG,
         logger="mtdata.core.trading",
     ):
         out = trade_place(

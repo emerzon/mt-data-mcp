@@ -12,7 +12,7 @@ from mtdata.utils.mt5 import MT5ConnectionError
 def test_run_data_fetch_candles_logs_finish_event(caplog):
     request = DataFetchCandlesRequest(symbol="EURUSD", timeframe="H1", limit=10)
 
-    with caplog.at_level("INFO", logger="mtdata.core.data.use_cases"):
+    with caplog.at_level("DEBUG", logger="mtdata.core.data.use_cases"):
         result = run_data_fetch_candles(
             request,
             gateway=SimpleNamespace(ensure_connection=lambda: None),
@@ -135,7 +135,7 @@ def test_run_data_fetch_candles_adds_contract_metadata_in_full_detail():
 def test_run_data_fetch_ticks_logs_connection_error(caplog):
     request = DataFetchTicksRequest(symbol="EURUSD", limit=5)
 
-    with caplog.at_level("INFO", logger="mtdata.core.data.use_cases"):
+    with caplog.at_level("DEBUG", logger="mtdata.core.data.use_cases"):
         result = run_data_fetch_ticks(
             request,
             gateway=SimpleNamespace(
@@ -169,7 +169,7 @@ def test_data_fetch_candles_logs_finish_event(monkeypatch, caplog):
 
     raw = getattr(core_data.data_fetch_candles, "__wrapped__", core_data.data_fetch_candles)
     request = DataFetchCandlesRequest(symbol="EURUSD", timeframe="H1", limit=10)
-    with caplog.at_level("INFO", logger=core_data.logger.name):
+    with caplog.at_level("DEBUG", logger=core_data.logger.name):
         result = raw(request)
 
     assert result["success"] is True
@@ -193,7 +193,7 @@ def test_data_fetch_candles_wrapper_and_use_case_emit_single_finish_event(monkey
 
     raw = getattr(core_data.data_fetch_candles, "__wrapped__", core_data.data_fetch_candles)
     request = DataFetchCandlesRequest(symbol="EURUSD", timeframe="H1", limit=10)
-    with caplog.at_level("INFO"):
+    with caplog.at_level("DEBUG"):
         result = raw(request)
 
     assert result["success"] is True
@@ -234,7 +234,7 @@ def test_data_fetch_candles_wrapper_respects_detail_contract(monkeypatch):
 
     assert "meta" not in compact
     assert full["meta"]["tool"] == "data_fetch_candles"
-    assert full["meta"]["diagnostics"]["query"]["requested_bars"] == 200
+    assert full["meta"]["diagnostics"]["query"]["requested_bars"] == 500
 
 
 def test_data_fetch_ticks_request_rejects_removed_output_field():

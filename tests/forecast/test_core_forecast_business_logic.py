@@ -368,7 +368,7 @@ def test_forecast_generate_standard_preserves_full_arrays(monkeypatch):
 
 
 def test_run_forecast_generate_logs_finish_event(caplog):
-    with caplog.at_level("INFO", logger="mtdata.forecast.use_cases"):
+    with caplog.at_level("DEBUG", logger="mtdata.forecast.use_cases"):
         result = forecast_use_cases.run_forecast_generate(
             ForecastGenerateRequest(symbol="EURUSD", timeframe="H1", library="native", method="theta"),
             forecast_impl=lambda **kwargs: {"ok": True, "method": kwargs["method"]},
@@ -453,7 +453,7 @@ def test_forecast_generate_logs_finish_event(caplog, monkeypatch):
     raw = _unwrap(cf.forecast_generate)
     monkeypatch.setattr(cf, "_forecast_impl", lambda **kwargs: {"success": True, "method": kwargs["method"]})
 
-    with caplog.at_level(logging.INFO, logger=cf.logger.name):
+    with caplog.at_level(logging.DEBUG, logger=cf.logger.name):
         out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="native", method="theta"))
 
     assert out["success"] is True
@@ -467,7 +467,7 @@ def test_forecast_generate_wrapper_emits_single_finish_event(caplog, monkeypatch
     raw = _unwrap(cf.forecast_generate)
     monkeypatch.setattr(cf, "_forecast_impl", lambda **kwargs: {"success": True, "method": kwargs["method"]})
 
-    with caplog.at_level(logging.INFO):
+    with caplog.at_level(logging.DEBUG):
         out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="native", method="theta"))
 
     assert out["success"] is True
@@ -502,7 +502,7 @@ def test_forecast_tune_genetic_logs_finish_event(caplog, monkeypatch):
     raw = _unwrap(cf.forecast_tune_genetic)
     monkeypatch.setattr(cf, "run_forecast_tune_genetic", lambda request, genetic_search_impl: {"success": True, "best": {}})
 
-    with caplog.at_level(logging.INFO, logger=cf.logger.name):
+    with caplog.at_level(logging.DEBUG, logger=cf.logger.name):
         out = raw(request=ForecastTuneGeneticRequest(symbol="EURUSD", method="theta"))
 
     assert out["success"] is True
@@ -516,7 +516,7 @@ def test_forecast_barrier_optimize_logs_finish_event(caplog, monkeypatch):
     raw = _unwrap(cf.forecast_barrier_optimize)
     monkeypatch.setattr(cf, "run_forecast_barrier_optimize", lambda request, parse_kv_or_json, barrier_optimize_impl: {"success": True, "best": {}})
 
-    with caplog.at_level(logging.INFO, logger=cf.logger.name):
+    with caplog.at_level(logging.DEBUG, logger=cf.logger.name):
         out = raw(request=ForecastBarrierOptimizeRequest(symbol="EURUSD"))
 
     assert out["success"] is True
@@ -915,7 +915,7 @@ def test_registered_forecast_capabilities_are_cached(monkeypatch):
 def test_forecast_list_library_models_logs_finish_event(caplog):
     raw_list_models = _unwrap(cf.forecast_list_library_models)
 
-    with caplog.at_level(logging.INFO, logger=cf.logger.name):
+    with caplog.at_level(logging.DEBUG, logger=cf.logger.name):
         out = raw_list_models("mlforecast")
 
     assert out["library"] == "mlforecast"
@@ -1300,7 +1300,7 @@ def test_forecast_barrier_prob_wrapper_emits_single_finish_event(caplog, monkeyp
         lambda **kwargs: {"success": True, "kind": "closed_form", "direction": kwargs["direction"]},
     )
 
-    with caplog.at_level(logging.INFO):
+    with caplog.at_level(logging.DEBUG):
         out = raw(request=ForecastBarrierProbRequest(symbol="EURUSD", timeframe="H1"))
 
     assert out["success"] is True
@@ -1480,7 +1480,7 @@ def test_forecast_options_chain_logs_finish_event(caplog, monkeypatch):
 
     monkeypatch.setattr(options_service, "get_options_chain", lambda **kwargs: {"success": True, **kwargs})
 
-    with caplog.at_level(logging.INFO, logger=cf.logger.name):
+    with caplog.at_level(logging.DEBUG, logger=cf.logger.name):
         out = raw_chain(symbol="AAPL", expiration="2026-06-19", option_type="call", limit=25)
 
     assert out["success"] is True

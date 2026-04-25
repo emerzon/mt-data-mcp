@@ -106,7 +106,7 @@ def test_pivot_compute_points_logs_finish_event(caplog):
          patch(_COPY_RATES, return_value=rates), \
          patch(_USE_CTZ, return_value=False), \
          patch(_FMT, side_effect=lambda x: f"T{int(x)}"), \
-         caplog.at_level("INFO", logger="mtdata.core.pivot"):
+         caplog.at_level("DEBUG", logger="mtdata.core.pivot"):
         res = fn("EURUSD", timeframe="D1")
 
     assert res["success"] is True

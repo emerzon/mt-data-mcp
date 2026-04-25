@@ -510,7 +510,7 @@ def test_market_ticker_logs_finish_event(caplog) -> None:
     )
     with patch("mtdata.core.market_depth.mt5") as mt5, patch(
         "mtdata.core.market_depth._use_client_tz", return_value=False
-    ), caplog.at_level("INFO", logger="mtdata.core.market_depth"):
+    ), caplog.at_level("DEBUG", logger="mtdata.core.market_depth"):
         mt5.symbol_select.return_value = True
         mt5.symbol_info.return_value = SimpleNamespace(
             digits=2,

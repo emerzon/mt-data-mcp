@@ -501,8 +501,7 @@ class TestCausalDiscoverSignals:
 
         mock_granger.side_effect = _granger_side_effect
 
-        with warnings.catch_warnings(record=True) as records, caplog.at_level(
-            "INFO",
+        with warnings.catch_warnings(record=True) as records, caplog.at_level("DEBUG",
             logger="mtdata.core.causal",
         ):
             warnings.simplefilter("always")
@@ -708,7 +707,7 @@ class TestCorrelationMatrix:
 
         mock_fetch.side_effect = _fetch_side_effect
 
-        with caplog.at_level("INFO", logger="mtdata.core.causal"):
+        with caplog.at_level("DEBUG", logger="mtdata.core.causal"):
             result = self._unwrapped()(
                 "A,B,C",
                 method="pearson",

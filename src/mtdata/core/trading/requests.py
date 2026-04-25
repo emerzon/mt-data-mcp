@@ -141,7 +141,7 @@ class TradeHistoryRequest(BaseModel):
     deal_ticket: Optional[Union[int, str]] = None
     order_ticket: Optional[Union[int, str]] = None
     minutes_back: Optional[int] = None
-    limit: Optional[int] = 200
+    limit: Optional[int] = 500
 
     @field_validator("side", mode="before")
     @classmethod
@@ -160,7 +160,7 @@ class TradeJournalAnalyzeRequest(BaseModel):
     position_ticket: Optional[Union[int, str]] = None
     deal_ticket: Optional[Union[int, str]] = None
     minutes_back: Optional[int] = None
-    limit: Optional[int] = 200
+    limit: Optional[int] = 500
     breakdown_limit: int = 10
 
     @field_validator("side", mode="before")

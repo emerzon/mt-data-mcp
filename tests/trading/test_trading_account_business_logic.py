@@ -279,8 +279,7 @@ def test_trade_account_info_logs_finish_event(caplog) -> None:
     )
 
     raw = _unwrap(trade_account_info)
-    with patch.object(core_trading_account, "create_trading_gateway", return_value=gateway), caplog.at_level(
-        logging.INFO,
+    with patch.object(core_trading_account, "create_trading_gateway", return_value=gateway), caplog.at_level(logging.DEBUG,
         logger=core_trading_account.logger.name,
     ):
         out = raw()
@@ -322,7 +321,7 @@ def test_run_trade_get_open_logs_finish_event(caplog) -> None:
         POSITION_TYPE_SELL=1,
     )
 
-    with caplog.at_level("INFO", logger="mtdata.core.trading.use_cases"):
+    with caplog.at_level("DEBUG", logger="mtdata.core.trading.use_cases"):
         out = run_trade_get_open(
             TradeGetOpenRequest(),
             gateway=gateway,
@@ -424,7 +423,7 @@ def test_run_trade_get_pending_logs_finish_event(caplog) -> None:
         ORDER_TYPE_SELL_STOP_LIMIT=7,
     )
 
-    with caplog.at_level("INFO", logger="mtdata.core.trading.use_cases"):
+    with caplog.at_level("DEBUG", logger="mtdata.core.trading.use_cases"):
         out = run_trade_get_pending(
             TradeGetPendingRequest(),
             gateway=gateway,
@@ -777,7 +776,7 @@ def test_trade_get_open_logs_finish_event(caplog) -> None:
         core_trading_positions,
         "run_trade_get_open",
         return_value=[{"ticket": 1, "symbol": "EURUSD"}],
-    ), caplog.at_level(logging.INFO, logger=core_trading_positions.logger.name):
+    ), caplog.at_level(logging.DEBUG, logger=core_trading_positions.logger.name):
         out = raw(TradeGetOpenRequest(symbol="EURUSD", limit=10))
 
     assert out["success"] is True
@@ -796,7 +795,7 @@ def test_trade_get_pending_logs_finish_event(caplog) -> None:
         core_trading_positions,
         "run_trade_get_pending",
         return_value=[{"ticket": 2, "symbol": "EURUSD"}],
-    ), caplog.at_level(logging.INFO, logger=core_trading_positions.logger.name):
+    ), caplog.at_level(logging.DEBUG, logger=core_trading_positions.logger.name):
         out = raw(TradeGetPendingRequest(symbol="EURUSD", limit=10))
 
     assert out["success"] is True

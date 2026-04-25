@@ -444,7 +444,7 @@ Values below 30 often indicate oversold conditions.
         )
 
         raw_describe = getattr(core_indicators.indicators_describe, "__wrapped__", core_indicators.indicators_describe)
-        with caplog.at_level(logging.INFO, logger=core_indicators.logger.name):
+        with caplog.at_level(logging.DEBUG, logger=core_indicators.logger.name):
             out = raw_describe("rsi")
 
         assert out["success"] is True

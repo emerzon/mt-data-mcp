@@ -1390,7 +1390,7 @@ def market_scan(  # noqa: C901
     symbols: Optional[str] = None,
     symbol: Optional[str] = None,
     group: Optional[str] = None,
-    limit: Optional[int] = 20,
+    limit: Optional[int] = 50,
     universe: Literal["visible", "all"] = "visible",  # type: ignore
     timeframe: TimeframeLiteral = "H1",
     detail: CompactFullDetailLiteral = "compact",
@@ -1585,7 +1585,7 @@ def market_scan(  # noqa: C901
                     request=request,
                 )
 
-            limit_value = _normalize_limit(limit) or 20
+            limit_value = _normalize_limit(limit) or 50
             request["limit"] = limit_value
             if selection_meta.get("symbols_input") is not None:
                 request["symbols_input"] = selection_meta.get("symbols_input")

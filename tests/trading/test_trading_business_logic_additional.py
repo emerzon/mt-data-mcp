@@ -178,7 +178,7 @@ def test_run_trade_place_logs_finish_event(caplog):
         require_sl_tp=False,
     )
 
-    with caplog.at_level("INFO", logger="mtdata.core.trading.use_cases"):
+    with caplog.at_level("DEBUG", logger="mtdata.core.trading.use_cases"):
         result = run_trade_place(
             request,
             normalize_order_type_input=lambda value: ("BUY", None),

@@ -521,7 +521,7 @@ def test_run_trade_history_logs_finish_event(caplog) -> None:
         ],
     )
 
-    with caplog.at_level("INFO", logger="mtdata.core.trading.use_cases"):
+    with caplog.at_level("DEBUG", logger="mtdata.core.trading.use_cases"):
         out = run_trade_history(
             TradeHistoryRequest(history_kind="deals"),
             gateway=gateway,

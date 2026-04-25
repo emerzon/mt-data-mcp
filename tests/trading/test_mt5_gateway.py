@@ -12,7 +12,7 @@ def test_mt5_gateway_ensure_connection_logs_finish_event(caplog):
         ensure_connection_impl=lambda: None,
     )
 
-    with caplog.at_level("INFO", logger="mtdata.core.mt5_gateway"):
+    with caplog.at_level("DEBUG", logger="mtdata.core.mt5_gateway"):
         gateway.ensure_connection()
 
     assert any(
