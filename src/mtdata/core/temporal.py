@@ -311,6 +311,7 @@ def temporal_analyze(  # noqa: C901
     month: Optional[str] = None,
     time_range: Optional[str] = None,
     return_mode: Literal["pct", "log"] = "pct",  # type: ignore
+    min_bars: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Temporal analysis by day-of-week, hour, or month.
 
@@ -319,6 +320,8 @@ def temporal_analyze(  # noqa: C901
     - month: 1-12 or names like Jan, September
     - time_range: 'HH:MM-HH:MM' (start inclusive, end exclusive; local/client
       timezone if configured, wraps midnight like 22:00-02:00)
+    - min_bars: exclude grouped rows below this sample size. When omitted for
+      day-of-week analysis, sparse weekend groups are auto-filtered.
     - volume: uses real_volume when available and non-zero, else tick_volume
 
     Returns grouped averages for returns and volatility plus simple extras.
@@ -335,6 +338,8 @@ def temporal_analyze(  # noqa: C901
             "start": start,
             "end": end,
         }
+        if min_bars is not None:
+            context["min_bars"] = min_bars
         try:
             mt5_gateway = get_mt5_gateway(
                 adapter=mt5,
@@ -385,6 +390,23 @@ def temporal_analyze(  # noqa: C901
                     context=context,
                     details={"time_range": time_range},
                 )
+
+            min_bars_value: Optional[int] = None
+            if min_bars is not None:
+                try:
+                    min_bars_value = int(min_bars)
+                except Exception:
+                    return _error_response(
+                        "min_bars must be a non-negative integer.",
+                        stage="validate",
+                        context=context,
+                    )
+                if min_bars_value < 0:
+                    return _error_response(
+                        "min_bars must be a non-negative integer.",
+                        stage="validate",
+                        context=context,
+                    )
 
             filters: Dict[str, Any] = {}
             if dow_val is not None:
@@ -506,7 +528,6 @@ def temporal_analyze(  # noqa: C901
                     filters=filters,
                 )
 
-            overall = _stats_for_group(df, volume_col)
             groups_out: List[Dict[str, Any]] = []
 
             if group_norm == "dow":
@@ -514,6 +535,7 @@ def temporal_analyze(  # noqa: C901
                 for key, grp in df.groupby("__group", sort=True):
                     row = _stats_for_group(grp, volume_col)
                     row["group"] = _DOW_LABELS[int(key)] if 0 <= int(key) <= 6 else str(key)
+                    row["_group_key"] = int(key)
                     groups_out.append(row)
             elif group_norm == "month":
                 df["__group"] = df["__dt"].dt.month
@@ -521,16 +543,63 @@ def temporal_analyze(  # noqa: C901
                     label = _MONTH_LABELS[int(key) - 1] if 1 <= int(key) <= 12 else str(key)
                     row = _stats_for_group(grp, volume_col)
                     row["group"] = label
+                    row["_group_key"] = int(key)
                     groups_out.append(row)
             elif group_norm == "hour":
                 df["__group"] = df["__dt"].dt.hour
                 for key, grp in df.groupby("__group", sort=True):
                     row = _stats_for_group(grp, volume_col)
                     row["group"] = f"{int(key):02d}:00"
+                    row["_group_key"] = int(key)
                     groups_out.append(row)
 
-            start_epoch = float(df["__epoch"].iloc[0])
-            end_epoch = float(df["__epoch"].iloc[-1])
+            excluded_groups: List[Dict[str, Any]] = []
+            auto_min_bars = False
+            if (
+                min_bars_value is None
+                and group_norm == "dow"
+                and dow_val is None
+                and groups_out
+            ):
+                bar_counts = [int(row.get("bars", 0) or 0) for row in groups_out]
+                median_bars = float(np.median(bar_counts)) if bar_counts else 0.0
+                min_bars_value = max(2, int(median_bars * 0.25))
+                auto_min_bars = True
+
+            analysis_df = df
+            if min_bars_value is not None and min_bars_value > 0 and groups_out:
+                excluded = [
+                    row
+                    for row in groups_out
+                    if int(row.get("bars", 0) or 0) < min_bars_value
+                ]
+                included = [
+                    row
+                    for row in groups_out
+                    if int(row.get("bars", 0) or 0) >= min_bars_value
+                ]
+                if excluded and included:
+                    excluded_keys = {row.get("_group_key") for row in excluded}
+                    excluded_groups = [
+                        {
+                            "group": row.get("group"),
+                            "bars": int(row.get("bars", 0) or 0),
+                            "min_bars": int(min_bars_value),
+                            "auto": bool(auto_min_bars),
+                        }
+                        for row in excluded
+                    ]
+                    groups_out = included
+                    analysis_df = df[~df["__group"].isin(excluded_keys)]
+
+            groups_out = [
+                {key: value for key, value in row.items() if key != "_group_key"}
+                for row in groups_out
+            ]
+            overall = _stats_for_group(analysis_df, volume_col)
+
+            start_epoch = float(analysis_df["__epoch"].iloc[0])
+            end_epoch = float(analysis_df["__epoch"].iloc[-1])
             start_str = _format_time_minimal_local(start_epoch) if use_client_tz else _format_time_minimal(start_epoch)
             end_str = _format_time_minimal_local(end_epoch) if use_client_tz else _format_time_minimal(end_epoch)
 
@@ -548,13 +617,23 @@ def temporal_analyze(  # noqa: C901
                 "group_by": group_norm,
                 "return_mode": return_mode,
                 "timezone": tz_name,
-                "bars": int(len(df)),
+                "bars": int(len(analysis_df)),
                 "start": start_str,
                 "end": end_str,
                 "filters": filters,
                 "overall": overall,
                 "volume_source": volume_col,
             }
+            if excluded_groups:
+                filters["min_bars"] = {
+                    "value": int(min_bars_value or 0),
+                    "auto": bool(auto_min_bars),
+                }
+                payload["excluded_groups"] = excluded_groups
+                payload["warnings"] = [
+                    "Sparse temporal groups below min_bars were excluded from "
+                    "grouped results and overall summary."
+                ]
             if groups_out:
                 payload["groups"] = groups_out
             return payload

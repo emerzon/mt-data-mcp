@@ -61,6 +61,21 @@ def _make_rates(n=100, start_epoch=1704067200, interval=3600):
     return rates
 
 
+def _make_weekday_heavy_rates():
+    """Create two full weekday weeks plus a sparse Sunday session."""
+    start_epoch = 1704067200  # 2024-01-01 00:00:00 UTC, Monday
+    times = []
+    for week in range(2):
+        for day in range(5):
+            for hour in range(24):
+                times.append(start_epoch + (week * 7 + day) * 86400 + hour * 3600)
+    for hour in range(5):
+        times.append(start_epoch + 6 * 86400 + hour * 3600)
+    rates = _make_rates(n=len(times))
+    rates["time"] = np.asarray(sorted(times), dtype=np.int64)
+    return rates
+
+
 @contextmanager
 def _mock_guard_ok():
     """Context manager stub replacing _symbol_ready_guard."""
@@ -550,6 +565,37 @@ class TestTemporalAnalyze:
         r = self._call(mock_fetch, group_by="day_of_week")
         assert r.get("success") is True
         assert r["group_by"] == "dow"
+
+    @_apply_analyze_patches
+    def test_dow_auto_excludes_sparse_weekend_groups(self, mock_fetch, *_):
+        r = self._call(mock_fetch, rates=_make_weekday_heavy_rates(), group_by="dow")
+
+        assert r.get("success") is True
+        assert [group["group"] for group in r["groups"]] == [
+            "Mon",
+            "Tue",
+            "Wed",
+            "Thu",
+            "Fri",
+        ]
+        assert r["bars"] == 240
+        assert r["filters"]["min_bars"] == {"value": 12, "auto": True}
+        assert r["excluded_groups"] == [
+            {"group": "Sun", "bars": 5, "min_bars": 12, "auto": True}
+        ]
+
+    @_apply_analyze_patches
+    def test_min_bars_zero_keeps_sparse_weekend_groups(self, mock_fetch, *_):
+        r = self._call(
+            mock_fetch,
+            rates=_make_weekday_heavy_rates(),
+            group_by="dow",
+            min_bars=0,
+        )
+
+        assert r.get("success") is True
+        assert "Sun" in [group["group"] for group in r["groups"]]
+        assert "excluded_groups" not in r
 
     @_apply_analyze_patches
     def test_temporal_analyze_logs_finish_event(self, mock_fetch, caplog):
