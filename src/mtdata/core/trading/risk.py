@@ -38,11 +38,11 @@ def trade_risk_analyze(request: TradeRiskAnalyzeRequest) -> dict:
 
 
 @mcp.tool()
-def var_cvar_calculate(request: TradeVarCvarRequest) -> dict:
+def trade_var_cvar_calculate(request: TradeVarCvarRequest) -> dict:
     """Estimate portfolio VaR/CVaR for current open MT5 positions."""
     return run_logged_operation(
         logger,
-        operation="var_cvar_calculate",
+        operation="trade_var_cvar_calculate",
         symbol=request.symbol,
         timeframe=request.timeframe,
         func=lambda: run_trade_var_cvar_calculate(

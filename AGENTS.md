@@ -21,7 +21,7 @@ mtdata/
 │   │   ├── report/     # report_generate runtime, request models, rendering
 │   │   ├── report_templates/  # Per-style report templates (basic, intraday, swing, …)
 │   │   ├── reports/    # Legacy/shared report helpers
-│   │   └── trading/    # trade_*, var_cvar_calculate, account/positions/risk modules
+│   │   └── trading/    # trade_*, account/positions/risk modules
 │   ├── forecast/       # Forecasting engines, backtests, methods registry, model store
 │   │   └── methods/    # Individual model implementations
 │   ├── patterns/       # Chart/candlestick/Elliott wave detection

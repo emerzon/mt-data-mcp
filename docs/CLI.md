@@ -215,7 +215,7 @@ Trained models are written under `~/.mtdata/models/` by default and re-used auto
 | `trade_history` | Get trading history |
 | `trade_journal_analyze` | Summarize realized exit-deal performance |
 | `trade_risk_analyze` | Analyze position risk |
-| `var_cvar_calculate` | Estimate portfolio VaR/CVaR from open positions |
+| `trade_var_cvar_calculate` | Estimate portfolio VaR/CVaR from open positions |
 
 ### News
 | Command | Description |
@@ -368,8 +368,8 @@ mtdata-cli trade_journal_analyze --symbol EURUSD --minutes-back 43200 --breakdow
 
 ### Estimate Portfolio Tail Risk
 ```bash
-mtdata-cli var_cvar_calculate --timeframe H1 --lookback 500 --confidence 95 --json
-mtdata-cli var_cvar_calculate --symbol EURUSD --method gaussian --transform pct --lookback 300 --json
+mtdata-cli trade_var_cvar_calculate --timeframe H1 --lookback 500 --confidence 95 --json
+mtdata-cli trade_var_cvar_calculate --symbol EURUSD --method gaussian --transform pct --lookback 300 --json
 ```
 
 ### Detect Patterns and Regimes

@@ -127,7 +127,7 @@ Risk parameters:
 - `{{MAX_OPEN_RISK_PCT}}`: maximum total quantified open risk across the account
 
 Risk-budget rules:
-- Before adding new risk, estimate existing book risk and candidate risk with `trade_risk_analyze`; use `var_cvar_calculate` when existing account exposure is material, correlated, or tail risk could change the decision.
+- Before adding new risk, estimate existing book risk and candidate risk with `trade_risk_analyze`; use `trade_var_cvar_calculate` when existing account exposure is material, correlated, or tail risk could change the decision.
 - The `desired_risk_pct` passed to `trade_risk_analyze` must not exceed `{{MAX_SINGLE_TRADE_RISK_PCT}}` or the remaining `{{MAX_CAMPAIGN_RISK_PCT}}` budget.
 - Never add a leg if the resulting campaign risk would exceed `{{MAX_CAMPAIGN_RISK_PCT}}`, even when `{{MAX_TOTAL_LOTS}}` still has room.
 - Never add risk if total quantified open account risk would exceed `{{MAX_OPEN_RISK_PCT}}`.
@@ -280,7 +280,7 @@ Tool tiers:
 
 Tool families:
 - execution/account: `trade_session_context`, `trade_history`, `trade_journal_analyze`, `symbols_describe`
-- risk: `trade_risk_analyze`, `var_cvar_calculate`
+- risk: `trade_risk_analyze`, `trade_var_cvar_calculate`
 - structure: `data_fetch_candles`, `data_fetch_ticks`, `support_resistance_levels`, `pivot_compute_points`
 - context: `regime_detect`, `temporal_analyze`, `news`, `market_status`, secondary `finviz_*`
 - veto/refinement: forecast, barrier, pattern, uncertainty, options-implied tools
@@ -376,7 +376,7 @@ Run at session start, after reconnect, after a major event, or after repeated ex
 5. Resolve the active ladder:
    - if `PRIMARY_TF` and `EXECUTION_TF` were user-pinned, keep them and derive `HIGHER_TF`
    - otherwise determine `TRADING_MODE` and assign `HIGHER_TF`, `PRIMARY_TF`, and `EXECUTION_TF` from the mode ladder
-6. `var_cvar_calculate(symbol="{{SYMBOL}}", timeframe="{{PRIMARY_TF}}")` when `{{SYMBOL}}` exposure is material; omit `symbol` for an account-wide portfolio view when other open positions could change the risk gate
+6. `trade_var_cvar_calculate(symbol="{{SYMBOL}}", timeframe="{{PRIMARY_TF}}")` when `{{SYMBOL}}` exposure is material; omit `symbol` for an account-wide portfolio view when other open positions could change the risk gate
 7. `data_fetch_candles(symbol="{{SYMBOL}}", timeframe=HIGHER_TF, limit=220, indicators="ema(20),ema(50),rsi(14),macd(12,26,9),adx(14),chop(14),atr(14),mfi(14)")`
 8. `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{PRIMARY_TF}}", limit=180, indicators="ema(20),ema(50),rsi(14),macd(12,26,9),adx(14),chop(14),atr(14),mfi(14)")`
 9. `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{EXECUTION_TF}}", limit=140, indicators="ema(20),ema(50),rsi(14),macd(12,26,9),adx(14),chop(14),atr(14),natr(14),supertrend(7,3),mfi(14),obv")`
@@ -566,7 +566,7 @@ Permission gates before the stack:
 15. Run `forecast_barrier_prob` on the exact final executable TP/SL prices. Bake spread/slippage into the absolute prices; the tool does not accept entry, spread, or slippage args. For pending orders, remember the tool starts from live `last_price`, not the pending entry.
 16. For optionable names near event risk, optionally run options/Heston tools when implied-vol context could change aggression.
 17. Run `trade_risk_analyze` on the exact proposed entry, stop, target, and desired risk percent, and pass `direction="long"` for longs or `direction="short"` for shorts.
-18. If account-level open exposure or correlated tail risk is material, run `var_cvar_calculate` before approving size.
+18. If account-level open exposure or correlated tail risk is material, run `trade_var_cvar_calculate` before approving size.
 19. Check risk-budget compliance:
    - candidate risk must be at or below `{{MAX_SINGLE_TRADE_RISK_PCT}}`
    - total `{{SYMBOL}}` campaign risk after the candidate must be at or below `{{MAX_CAMPAIGN_RISK_PCT}}`

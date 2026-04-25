@@ -2268,7 +2268,7 @@ def run_trade_var_cvar_calculate(  # noqa: C901
     started_at = time.perf_counter()
     log_operation_start(
         logger,
-        operation="var_cvar_calculate",
+        operation="trade_var_cvar_calculate",
         symbol=request.symbol,
         timeframe=request.timeframe,
         method=request.method,
@@ -2278,7 +2278,7 @@ def run_trade_var_cvar_calculate(  # noqa: C901
     def _finish(result: Dict[str, Any]) -> Dict[str, Any]:
         log_operation_finish(
             logger,
-            operation="var_cvar_calculate",
+            operation="trade_var_cvar_calculate",
             started_at=started_at,
             success=infer_result_success(result),
             symbol=request.symbol,
