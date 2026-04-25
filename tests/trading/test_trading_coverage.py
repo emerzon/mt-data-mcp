@@ -2189,9 +2189,9 @@ class TestTradeRiskAnalyze:
         result = _unwrap_mcp(trade_risk_analyze(
             symbol="EURUSD",
             desired_risk_pct=2.0,
-            proposed_entry=1.1000,
-            proposed_sl=1.0950,
-            proposed_tp=1.1100,
+            entry=1.1000,
+            stop_loss=1.0950,
+            take_profit=1.1100,
         ))
         assert "position_sizing" in result or "suggested_volume" in result
 
@@ -2202,7 +2202,7 @@ class TestTradeRiskAnalyze:
         mt5.account_info.return_value = SimpleNamespace(equity=10000, currency="USD")
         mt5.positions_get.return_value = []
         result = _unwrap_mcp(trade_risk_analyze(
-            desired_risk_pct=2.0, proposed_entry=1.1, proposed_sl=1.09,
+            desired_risk_pct=2.0, entry=1.1, stop_loss=1.09,
         ))
         assert "error" in result.lower()
 
@@ -2215,7 +2215,7 @@ class TestTradeRiskAnalyze:
         mt5.symbol_info.return_value = None
         result = _unwrap_mcp(trade_risk_analyze(
             symbol="INVALID", desired_risk_pct=2.0,
-            proposed_entry=1.1, proposed_sl=1.09,
+            entry=1.1, stop_loss=1.09,
         ))
         assert "error" in result.lower() or "not found" in result.lower()
 
@@ -2242,7 +2242,7 @@ class TestTradeRiskAnalyze:
         mt5.symbol_info.return_value = _sym()
         result = _unwrap_mcp(trade_risk_analyze(
             symbol="EURUSD", desired_risk_pct=2.0,
-            proposed_entry=1.1, proposed_sl=1.1,
+            entry=1.1, stop_loss=1.1,
         ))
         assert "position_sizing_error" in result or "SL distance" in result
 

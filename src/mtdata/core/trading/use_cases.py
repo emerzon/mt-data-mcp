@@ -243,8 +243,8 @@ def _resolve_trade_risk_direction(
             return "short", None, "inferred_from_take_profit"
     return (
         None,
-        "Unable to infer trade direction when proposed_sl equals proposed_entry "
-        "and proposed_tp is missing or also equals proposed_entry. "
+        "Unable to infer trade direction when stop_loss equals entry "
+        "and take_profit is missing or also equals entry. "
         "Provide direction='long' or direction='short'.",
         "unable_to_infer",
     )
@@ -259,14 +259,14 @@ def _validate_trade_risk_levels(
 ) -> str | None:
     if direction == "long":
         if stop_loss > entry:
-            return "For long trades, proposed_sl must be below proposed_entry."
+            return "For long trades, stop_loss must be below entry."
         if take_profit is not None and take_profit <= entry:
-            return "For long trades, proposed_tp must be above proposed_entry."
+            return "For long trades, take_profit must be above entry."
         return None
     if stop_loss < entry:
-        return "For short trades, proposed_sl must be above proposed_entry."
+        return "For short trades, stop_loss must be above entry."
     if take_profit is not None and take_profit >= entry:
-        return "For short trades, proposed_tp must be below proposed_entry."
+        return "For short trades, take_profit must be below entry."
     return None
 
 
@@ -1972,8 +1972,8 @@ def run_trade_risk_analyze(  # noqa: C901
                 field_name
                 for field_name, value in (
                     ("desired_risk_pct", request.desired_risk_pct),
-                    ("proposed_entry", request.proposed_entry),
-                    ("proposed_sl", request.proposed_sl),
+                    ("entry", request.entry),
+                    ("stop_loss", request.stop_loss),
                 )
                 if value is None
             ]
@@ -1983,8 +1983,8 @@ def run_trade_risk_analyze(  # noqa: C901
                     field_name
                     for field_name, value in (
                         ("desired_risk_pct", request.desired_risk_pct),
-                        ("proposed_entry", request.proposed_entry),
-                        ("proposed_sl", request.proposed_sl),
+                        ("entry", request.entry),
+                        ("stop_loss", request.stop_loss),
                     )
                     if value is not None
                 ]
@@ -1996,14 +1996,14 @@ def run_trade_risk_analyze(  # noqa: C901
                         "error_code": "INCOMPLETE_POSITION_SIZING_PARAMS",
                         "error": (
                             "Position sizing requires all three parameters: "
-                            "desired_risk_pct, proposed_entry, and proposed_sl"
+                            "desired_risk_pct, entry, and stop_loss"
                         ),
                         "provided": position_sizing_provided,
                         "missing": position_sizing_missing,
                         "guidance": {
                             "desired_risk_pct": "Risk as percentage of account equity (e.g., 2 for 2%)",
-                            "proposed_entry": "Expected entry price for the new trade",
-                            "proposed_sl": "Stop-loss price (must be on correct side of entry based on direction)",
+                            "entry": "Expected entry price for the new trade",
+                            "stop_loss": "Stop-loss price (must be on correct side of entry based on direction)",
                         }
                     }
                 else:
@@ -2013,13 +2013,13 @@ def run_trade_risk_analyze(  # noqa: C901
                         "message": (
                             "Portfolio risk analysis completed. Position sizing is "
                             "available when you provide desired_risk_pct, "
-                            "proposed_entry, and proposed_sl."
+                            "entry, and stop_loss."
                         ),
                         "missing": position_sizing_missing,
                         "required_for_sizing": [
                             "desired_risk_pct",
-                            "proposed_entry",
-                            "proposed_sl",
+                            "entry",
+                            "stop_loss",
                         ],
                         "note": (
                             "Add desired_risk_pct to specify how much equity to risk "
@@ -2029,8 +2029,8 @@ def run_trade_risk_analyze(  # noqa: C901
 
             if (
                 request.desired_risk_pct is not None
-                and request.proposed_entry is not None
-                and request.proposed_sl is not None
+                and request.entry is not None
+                and request.stop_loss is not None
             ):
                 if not request.symbol:
                     return {"error": "symbol is required for position sizing"}
@@ -2072,10 +2072,10 @@ def run_trade_risk_analyze(  # noqa: C901
                 direction_norm, direction_error, direction_source = (
                     _resolve_trade_risk_direction(
                         direction=request.direction,
-                        entry=float(request.proposed_entry),
-                        stop_loss=float(request.proposed_sl),
-                        take_profit=float(request.proposed_tp)
-                        if request.proposed_tp is not None
+                        entry=float(request.entry),
+                        stop_loss=float(request.stop_loss),
+                        take_profit=float(request.take_profit)
+                        if request.take_profit is not None
                         else None,
                     )
                 )
@@ -2087,10 +2087,10 @@ def run_trade_risk_analyze(  # noqa: C901
                     return result
                 level_error = _validate_trade_risk_levels(
                     direction=direction_norm,
-                    entry=float(request.proposed_entry),
-                    stop_loss=float(request.proposed_sl),
-                    take_profit=float(request.proposed_tp)
-                    if request.proposed_tp is not None
+                    entry=float(request.entry),
+                    stop_loss=float(request.stop_loss),
+                    take_profit=float(request.take_profit)
+                    if request.take_profit is not None
                     else None,
                 )
                 if level_error:
@@ -2100,11 +2100,11 @@ def run_trade_risk_analyze(  # noqa: C901
                 risk_amount = equity * (request.desired_risk_pct / 100.0)
                 if direction_norm == "long":
                     sl_distance_ticks = (
-                        request.proposed_entry - request.proposed_sl
+                        request.entry - request.stop_loss
                     ) / tick_size
                 else:
                     sl_distance_ticks = (
-                        request.proposed_sl - request.proposed_entry
+                        request.stop_loss - request.entry
                     ) / tick_size
                 if sl_distance_ticks > 0:
                     raw_volume = risk_amount / (sl_distance_ticks * risk_tick_value)
@@ -2181,14 +2181,14 @@ def run_trade_risk_analyze(  # noqa: C901
 
                     rr_ratio = None
                     reward_currency = None
-                    if request.proposed_tp is not None:
+                    if request.take_profit is not None:
                         if direction_norm == "long":
                             tp_distance_ticks = (
-                                request.proposed_tp - request.proposed_entry
+                                request.take_profit - request.entry
                             ) / tick_size
                         else:
                             tp_distance_ticks = (
-                                request.proposed_entry - request.proposed_tp
+                                request.entry - request.take_profit
                             ) / tick_size
                         reward_currency = (
                             tp_distance_ticks * tick_value * suggested_volume
@@ -2203,9 +2203,9 @@ def run_trade_risk_analyze(  # noqa: C901
                         "suggested_volume": suggested_volume,
                         "requested_risk_currency": round(risk_amount, 2),
                         "requested_risk_pct": float(request.desired_risk_pct),
-                        "entry": request.proposed_entry,
-                        "sl": request.proposed_sl,
-                        "tp": request.proposed_tp,
+                        "entry": request.entry,
+                        "sl": request.stop_loss,
+                        "tp": request.take_profit,
                         "risk_currency": round(actual_risk, 2),
                         "risk_pct": round(actual_risk_pct, 2),
                         "risk_pct_diff": round(risk_pct_diff, 2),

@@ -85,8 +85,8 @@ def test_trade_risk_analyze_does_not_round_up_substep_boundary_volume() -> None:
         out = trade_risk_analyze(
             symbol="EURUSD",
             desired_risk_pct=0.3,
-            proposed_entry=100.0,
-            proposed_sl=89.99999999999667,
+            entry=100.0,
+            stop_loss=89.99999999999667,
         )
 
     sizing = out["position_sizing"]
@@ -107,8 +107,8 @@ def test_trade_risk_analyze_rounds_down_to_step_to_avoid_overshoot() -> None:
         out = trade_risk_analyze(
             symbol="EURUSD",
             desired_risk_pct=1.0,
-            proposed_entry=100.0,
-            proposed_sl=92.06,
+            entry=100.0,
+            stop_loss=92.06,
         )
 
     sizing = out["position_sizing"]
@@ -133,13 +133,13 @@ def test_trade_risk_analyze_marks_position_sizing_incomplete_without_required_in
     assert out["position_sizing"]["status"] == "incomplete"
     assert out["position_sizing"]["missing"] == [
         "desired_risk_pct",
-        "proposed_entry",
-        "proposed_sl",
+        "entry",
+        "stop_loss",
     ]
     assert out["position_sizing"]["required_for_sizing"] == [
         "desired_risk_pct",
-        "proposed_entry",
-        "proposed_sl",
+        "entry",
+        "stop_loss",
     ]
     assert "Portfolio risk analysis completed" in out["position_sizing"]["message"]
     assert "desired_risk_pct" in out["position_sizing"]["note"]
@@ -160,11 +160,11 @@ def test_trade_risk_analyze_returns_error_when_partial_position_sizing_params() 
     assert out["success"] is False
     assert out["error_code"] == "INCOMPLETE_POSITION_SIZING_PARAMS"
     assert out["provided"] == ["desired_risk_pct"]
-    assert set(out["missing"]) == {"proposed_entry", "proposed_sl"}
+    assert set(out["missing"]) == {"entry", "stop_loss"}
     assert "guidance" in out
     assert "desired_risk_pct" in out["guidance"]
-    assert "proposed_entry" in out["guidance"]
-    assert "proposed_sl" in out["guidance"]
+    assert "entry" in out["guidance"]
+    assert "stop_loss" in out["guidance"]
 
 
 def test_trade_risk_analyze_handles_missing_account_fields() -> None:
@@ -190,8 +190,8 @@ def test_trade_risk_analyze_warns_when_min_volume_forces_overshoot() -> None:
         out = trade_risk_analyze(
             symbol="EURUSD",
             desired_risk_pct=0.1,
-            proposed_entry=100.0,
-            proposed_sl=80.0,
+            entry=100.0,
+            stop_loss=80.0,
         )
 
     sizing = out["position_sizing"]
@@ -218,9 +218,9 @@ def test_trade_risk_analyze_accepts_explicit_short_direction() -> None:
             symbol="EURUSD",
             direction="short",
             desired_risk_pct=1.0,
-            proposed_entry=100.0,
-            proposed_sl=108.0,
-            proposed_tp=92.0,
+            entry=100.0,
+            stop_loss=108.0,
+            take_profit=92.0,
         )
 
     sizing = out["position_sizing"]
@@ -235,6 +235,30 @@ def test_trade_risk_request_normalizes_known_direction_aliases_only() -> None:
     assert TradeRiskAnalyzeRequest(direction="buy").direction == "long"
     assert TradeRiskAnalyzeRequest(direction="DOWN").direction == "short"
     assert TradeRiskAnalyzeRequest(direction="sideways").direction == "sideways"
+
+
+def test_trade_risk_request_keeps_legacy_position_sizing_aliases() -> None:
+    request = TradeRiskAnalyzeRequest(
+        proposed_entry=100.0,
+        proposed_sl=90.0,
+        proposed_tp=120.0,
+    )
+
+    assert request.entry == 100.0
+    assert request.stop_loss == 90.0
+    assert request.take_profit == 120.0
+
+
+def test_trade_risk_request_accepts_short_stop_and_target_aliases() -> None:
+    request = TradeRiskAnalyzeRequest(
+        entry=100.0,
+        sl=90.0,
+        tp=120.0,
+    )
+
+    assert request.entry == 100.0
+    assert request.stop_loss == 90.0
+    assert request.take_profit == 120.0
 
 
 def test_trade_risk_analyze_uses_loss_tick_value_for_position_sizing() -> None:
@@ -253,9 +277,9 @@ def test_trade_risk_analyze_uses_loss_tick_value_for_position_sizing() -> None:
         out = trade_risk_analyze(
             symbol="EURUSD",
             desired_risk_pct=1.0,
-            proposed_entry=100.0,
-            proposed_sl=90.0,
-            proposed_tp=120.0,
+            entry=100.0,
+            stop_loss=90.0,
+            take_profit=120.0,
         )
 
     sizing = out["position_sizing"]
@@ -301,9 +325,9 @@ def test_trade_risk_analyze_falls_back_to_take_profit_direction_for_break_even_s
         out = trade_risk_analyze(
             symbol="EURUSD",
             desired_risk_pct=1.0,
-            proposed_entry=100.0,
-            proposed_sl=100.0,
-            proposed_tp=110.0,
+            entry=100.0,
+            stop_loss=100.0,
+            take_profit=110.0,
         )
 
     assert (
@@ -324,11 +348,11 @@ def test_trade_risk_analyze_rejects_wrong_side_stop_for_short_trade() -> None:
             symbol="EURUSD",
             direction="short",
             desired_risk_pct=1.0,
-            proposed_entry=100.0,
-            proposed_sl=95.0,
+            entry=100.0,
+            stop_loss=95.0,
         )
 
-    assert out["position_sizing_error"] == "For short trades, proposed_sl must be above proposed_entry."
+    assert out["position_sizing_error"] == "For short trades, stop_loss must be above entry."
     assert "position_sizing" not in out
 
 
@@ -343,12 +367,12 @@ def test_trade_risk_analyze_rejects_wrong_side_take_profit_for_long_trade() -> N
             symbol="EURUSD",
             direction="long",
             desired_risk_pct=1.0,
-            proposed_entry=100.0,
-            proposed_sl=92.0,
-            proposed_tp=95.0,
+            entry=100.0,
+            stop_loss=92.0,
+            take_profit=95.0,
         )
 
-    assert out["position_sizing_error"] == "For long trades, proposed_tp must be above proposed_entry."
+    assert out["position_sizing_error"] == "For long trades, take_profit must be above entry."
     assert "position_sizing" not in out
 
 
@@ -370,8 +394,8 @@ def test_trade_risk_analyze_rejects_position_sizing_when_tick_size_is_invalid() 
         out = trade_risk_analyze(
             symbol="EURUSD",
             desired_risk_pct=1.0,
-            proposed_entry=100.0,
-            proposed_sl=95.0,
+            entry=100.0,
+            stop_loss=95.0,
         )
 
     assert out["position_sizing_error"] == "Symbol tick configuration is invalid for risk sizing"

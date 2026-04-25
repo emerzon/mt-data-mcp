@@ -1194,8 +1194,8 @@ _COMMAND_USAGE_EXAMPLES: Dict[str, Tuple[str, Optional[str]]] = {
         f"{CLI_PROGRAM} regime_detect BTCUSD --timeframe H1 --method hmm --detail full",
     ),
     "trade_risk_analyze": (
-        f"{CLI_PROGRAM} trade_risk_analyze --symbol BTCUSD --direction long --desired-risk-pct 1 --proposed-entry 66317 --proposed-sl 65000",
-        f"{CLI_PROGRAM} trade_risk_analyze --symbol BTCUSD --direction long --desired-risk-pct 1 --proposed-entry 66317 --proposed-sl 65000 --proposed-tp 69000",
+        f"{CLI_PROGRAM} trade_risk_analyze --symbol BTCUSD --direction long --desired-risk-pct 1 --entry 66317 --stop-loss 65000",
+        f"{CLI_PROGRAM} trade_risk_analyze --symbol BTCUSD --direction long --desired-risk-pct 1 --entry 66317 --stop-loss 65000 --take-profit 69000",
     ),
     "trade_modify": (
         f"{CLI_PROGRAM} trade_modify 123456789 --price 61000",

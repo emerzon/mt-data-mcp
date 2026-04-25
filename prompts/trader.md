@@ -550,7 +550,7 @@ Before any market order, pending order, or scale-in:
 10. If entry, stop, and target are already specified, run `forecast_barrier_prob` on the exact proposed geometry with the resolved trade direction.
 11. If TP/SL geometry is unclear, the trade is countertrend, size is above baseline, or the nearest opposing level compresses the path to target, run `forecast_barrier_optimize` with the resolved trade direction using `grid_style="preset"`, `preset=TRADING_MODE`, `search_profile="fast"`, `viable_only=true`, `top_k=3`, and `output="summary"`.
 12. If the optimizer returns `status!="ok"`, `no_action=true`, or `viable=false`, do not force the trade. Either redesign the plan materially or wait.
-13. Run `trade_risk_analyze(symbol="{{SYMBOL}}", desired_risk_pct=..., proposed_entry=..., proposed_sl=..., proposed_tp=...)`.
+13. Run `trade_risk_analyze(symbol="{{SYMBOL}}", desired_risk_pct=..., entry=..., stop_loss=..., take_profit=...)`.
     Pass `direction="long"` for longs or `direction="short"` for shorts so the tool can validate the geometry.
 14. Convert the tool suggestion into `final_volume` with this clamp order:
    - start from `trade_risk_analyze -> suggested_volume`

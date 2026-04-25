@@ -34,7 +34,7 @@ Execute the following steps using the available tools:
 6.  **Analyze Risk:**
     *   **Action**: Call `trade_risk_analyze()` to get current portfolio risk analysis.
     *   **Goal**: Review `portfolio_risk.total_risk_pct` to ensure it does not exceed **5% of equity**.
-    *   **Optional**: For new trades, call `trade_risk_analyze(symbol="...", desired_risk_pct=2.0, proposed_entry=..., proposed_sl=..., proposed_tp=...)` to calculate the appropriate position size.
+    *   **Optional**: For new trades, call `trade_risk_analyze(symbol="...", desired_risk_pct=2.0, entry=..., stop_loss=..., take_profit=...)` to calculate the appropriate position size.
 
 7.  **Adjust Existing Positions/Orders:**
     *   **Decide**: Do any TP/SL levels need updating based on **Pivots** and **Barrier Probabilities**?

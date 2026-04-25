@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal, Optional, Union
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import AliasChoices, BaseModel, Field, field_validator
 
 from ...shared.schema import CompactFullDetailLiteral, TimeframeLiteral
 from .time import ExpirationValue
@@ -150,17 +150,17 @@ class TradeRiskAnalyzeRequest(BaseModel):
     symbol: Optional[str] = None
     desired_risk_pct: Optional[float] = None
     direction: Optional[str] = None
-    proposed_entry: Optional[float] = Field(
+    entry: Optional[float] = Field(
         default=None,
-        validation_alias="entry",
+        validation_alias="proposed_entry",
     )
-    proposed_sl: Optional[float] = Field(
+    stop_loss: Optional[float] = Field(
         default=None,
-        validation_alias="stop_loss",
+        validation_alias=AliasChoices("proposed_sl", "sl"),
     )
-    proposed_tp: Optional[float] = Field(
+    take_profit: Optional[float] = Field(
         default=None,
-        validation_alias="take_profit",
+        validation_alias=AliasChoices("proposed_tp", "tp"),
     )
 
     @field_validator("direction", mode="before")

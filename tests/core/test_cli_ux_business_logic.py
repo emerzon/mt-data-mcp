@@ -11,7 +11,7 @@ def test_build_usage_examples_trade_risk_analyze_uses_symbol_flag() -> None:
     assert "--desired-risk-pct 1" in base
     assert advanced is not None
     assert "--direction long" in advanced
-    assert "--proposed-tp 69000" in advanced
+    assert "--take-profit 69000" in advanced
 
 
 def test_build_usage_examples_trade_modify_keeps_ticket_positional() -> None:
