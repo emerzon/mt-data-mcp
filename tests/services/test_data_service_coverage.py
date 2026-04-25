@@ -389,6 +389,7 @@ class TestFetchRatesWithWarmup(unittest.TestCase):
         ):
             result, err = _fetch_rates_with_warmup(
                 'EURUSD', 16385, 'H1', 5, 0, None, None,
+                include_incomplete=True,
                 retry=True, sanity_check=True, diagnostics=diagnostics,
             )
         self.assertIsNone(result)
@@ -399,10 +400,34 @@ class TestFetchRatesWithWarmup(unittest.TestCase):
             {
                 'last_bar_epoch': float(stale_rates[-1]['time']),
                 'expected_end_epoch': float(12 * 60 * 60),
-                'freshness_cutoff_epoch': float((12 * 60 * 60) - (4 * 60 * 60)),
+                'freshness_cutoff_epoch': float((12 * 60 * 60) - (3 * 60 * 60)),
                 'data_freshness_seconds': float((12 * 60 * 60) - stale_rates[-1]['time']),
                 'last_bar_within_policy_window': False,
             },
+        )
+
+    @patch(_RATES_FROM)
+    def test_live_completed_bars_relax_stale_policy(self, mock_from):
+        """Live requests can return the latest completed bar when markets are idle."""
+        stale_rates = _make_rates(5, base_ts=60 * 60 * 5, step=60 * 60)
+        mock_from.return_value = stale_rates
+        diagnostics = {}
+        with (
+            patch(f'{_DS}.FETCH_RETRY_ATTEMPTS', 2),
+            patch(f'{_DS}.FETCH_RETRY_DELAY', 0),
+            patch(f'{_DS}._utc_epoch_seconds', return_value=12 * 60 * 60),
+        ):
+            result, err = _fetch_rates_with_warmup(
+                'EURUSD', 16385, 'H1', 5, 0, None, None,
+                retry=True, sanity_check=True, diagnostics=diagnostics,
+            )
+
+        self.assertIsNone(err)
+        self.assertEqual(result, stale_rates)
+        self.assertEqual(mock_from.call_count, 1)
+        self.assertEqual(
+            diagnostics['freshness']['freshness_policy_relaxed'],
+            'latest_completed_bar_for_live_request',
         )
 
     @patch(_RATES_FROM)

@@ -401,6 +401,21 @@ def _fetch_rates_with_warmup(
             if bool(freshness_meta.get("last_bar_within_policy_window")):
                 stale_last_t = None
                 break
+            if (
+                not start_datetime
+                and not end_datetime
+                and not include_incomplete
+                and not _is_last_candle_open(
+                    rates,
+                    timeframe,
+                    current_time_epoch=float(expected_end_ts),
+                )
+            ):
+                freshness_meta["freshness_policy_relaxed"] = (
+                    "latest_completed_bar_for_live_request"
+                )
+                stale_last_t = None
+                break
             stale_last_t = float(last_t)
         if retry and idx < (attempts - 1):
             time.sleep(FETCH_RETRY_DELAY)
@@ -414,7 +429,9 @@ def _fetch_rates_with_warmup(
         return None, (
             f"Latest {timeframe} bar for {symbol} remained stale after {attempts} attempt(s) "
             f"(last={_format_time_minimal(stale_last_t)}, "
-            f"freshness_cutoff={_format_time_minimal(float(freshness_cutoff))})."
+            f"freshness_cutoff={_format_time_minimal(float(freshness_cutoff))}). "
+            "If the market is closed, set allow_stale=true to retrieve the latest "
+            "available completed historical bars."
         )
     return rates, None
 
