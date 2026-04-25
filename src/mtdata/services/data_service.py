@@ -13,7 +13,6 @@ import pandas as pd
 
 from ..bootstrap.settings import mt5_config
 from ..core.output_contract import normalize_output_detail
-from ..core.runtime_metadata import build_runtime_timezone_meta
 from ..shared.constants import (
     DEFAULT_ROW_LIMIT,
     FETCH_RETRY_ATTEMPTS,
@@ -1334,10 +1333,6 @@ def fetch_candles(  # noqa: C901
                     except Exception:
                         pass
         
-        timezone_meta_input: Dict[str, Any] = dict(payload)
-        if not _use_ctz:
-            timezone_meta_input["timezone"] = "UTC"
-
         candles_returned = int(len(df))
         candles_requested = int(candles)
         candles_excluded = max(0, candles_requested - candles_returned)
@@ -1355,14 +1350,6 @@ def fetch_candles(  # noqa: C901
             "incomplete_candles_skipped": incomplete_candles_skipped,
             "has_forming_candle": has_forming_candle,
             "meta": {
-                "runtime": {
-                    "timezone": build_runtime_timezone_meta(
-                        timezone_meta_input,
-                        mt5_config=mt5_config,
-                        include_local=True,
-                        include_now=False,
-                    ),
-                },
                 "diagnostics": {
                     "query": {
                         "mode": query_mode,

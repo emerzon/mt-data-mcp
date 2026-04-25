@@ -859,7 +859,7 @@ class TestFetchCandles(unittest.TestCase):
     @patch(_RESOLVE_CTZ, return_value=None)
     @patch(_ESTIMATE_WARMUP, return_value=0)
     @patch(_GUARD, _mock_symbol_guard)
-    def test_meta_server_tz_offset(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_cfg):
+    def test_meta_runtime_timezone_not_in_raw_output(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_cfg):
         mock_cfg.server_tz_name = "Europe/Nicosia"
         mock_cfg.client_tz_name = None
         mock_cfg.get_server_tz.return_value = ZoneInfo("Europe/Nicosia")
@@ -867,18 +867,8 @@ class TestFetchCandles(unittest.TestCase):
         mock_cfg.get_time_offset_seconds.return_value = 7200
         mock_from.return_value = _make_rates(10)
         result = fetch_candles('EURUSD', limit=5)
-        self.assertEqual(
-            result['meta']['runtime']['timezone'],
-            {
-                'utc': {'tz': 'UTC'},
-                'server': {
-                    'source': 'MT5_SERVER_TZ',
-                    'tz': 'Europe/Nicosia',
-                    'offset_seconds': 7200,
-                },
-                'used': {'tz': 'UTC'},
-            },
-        )
+        self.assertIsInstance(result.get('meta'), dict)
+        self.assertIsNone(result['meta'].get('runtime'))
 
     @patch(_MT5_CONFIG)
     @patch(_RATES_FROM)
@@ -886,7 +876,7 @@ class TestFetchCandles(unittest.TestCase):
     @patch(_RESOLVE_CTZ, return_value=ZoneInfo("America/Chicago"))
     @patch(_ESTIMATE_WARMUP, return_value=0)
     @patch(_GUARD, _mock_symbol_guard)
-    def test_meta_used_timezone_uses_iana_name(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_cfg):
+    def test_meta_runtime_not_in_raw_with_client_tz(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_cfg):
         mock_cfg.server_tz_name = "Europe/Nicosia"
         mock_cfg.client_tz_name = "America/Chicago"
         mock_cfg.get_server_tz.return_value = ZoneInfo("Europe/Nicosia")
@@ -894,7 +884,8 @@ class TestFetchCandles(unittest.TestCase):
         mock_cfg.get_time_offset_seconds.return_value = 0
         mock_from.return_value = _make_rates(10)
         result = fetch_candles('EURUSD', limit=5)
-        self.assertEqual(result['meta']['runtime']['timezone']['used'], {'tz': 'America/Chicago'})
+        self.assertIsInstance(result.get('meta'), dict)
+        self.assertIsNone(result['meta'].get('runtime'))
 
     @patch(_MT5_CONFIG)
     @patch(_RATES_FROM)
