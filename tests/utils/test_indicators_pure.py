@@ -373,9 +373,7 @@ Values above 70 often indicate overbought conditions.
         params = {p["name"]: p for p in docs["parameters"]}
         assert params["length"]["description"] == "Window length."
         assert params["scalar"]["description"] == "Optional scalar multiplier."
-        assert all("mtdata-cli" not in example for example in indicator["usage_examples"])
-        assert any('rsi_14' in example for example in indicator["usage_examples"])
-        assert any('"params": {"length": 14' in example for example in indicator["usage_examples"])
+        assert "usage_examples" not in indicator
 
     def test_indicators_describe_cleans_signature_and_preserves_multiline_docs(self, monkeypatch):
         from mtdata.core import indicators as core_indicators
@@ -460,7 +458,12 @@ Values below 30 often indicate oversold conditions.
             core_indicators,
             "_list_ta_indicators",
             lambda detailed=False: [
-                {"name": f"ind_{i:02d}", "category": "momentum", "description": ""}
+                {
+                    "name": f"ind_{i:02d}",
+                    "category": "momentum",
+                    "description": "",
+                    "params": [{"name": "length", "default": 14}],
+                }
                 for i in range(30)
             ],
         )
@@ -470,6 +473,8 @@ Values below 30 often indicate oversold conditions.
 
         assert out["success"] is True
         assert out["count"] == 25
+        assert out["data"][0]["params_count"] == 1
+        assert out["data"][0]["params"] == "length=14"
         assert out["total_count"] == 30
         assert out["more_available"] == 5
         assert out["truncated"] is True
@@ -536,7 +541,7 @@ Values below 30 often indicate oversold conditions.
         assert "Parameters:" not in description
         assert "Sources:" not in description
 
-    def test_indicators_list_search_matches_names_and_aliases_only(self, monkeypatch):
+    def test_indicators_list_search_matches_names_aliases_and_categories(self, monkeypatch):
         from mtdata.core import indicators as core_indicators
 
         monkeypatch.setattr(
@@ -555,6 +560,10 @@ Values below 30 often indicate oversold conditions.
 
         assert out["success"] is True
         assert [row["name"] for row in out["data"]] == ["rsi", "lrsi", "stochrsi"]
+
+        category_out = raw_list(search_term="momentum", detail="full")
+        assert category_out["success"] is True
+        assert [row["name"] for row in category_out["data"]] == ["lrsi", "rsi", "stochrsi"]
 
     def test_indicators_describe_accepts_aliases(self, monkeypatch):
         from mtdata.core import indicators as core_indicators
@@ -578,7 +587,7 @@ Values below 30 often indicate oversold conditions.
 
         assert out["success"] is True
         assert out["indicator"]["name"] == "bbands"
-        assert any('bbands_20' in example for example in out["indicator"]["usage_examples"])
+        assert "usage_examples" not in out["indicator"]
 
 
 # ===================================================================

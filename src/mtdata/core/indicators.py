@@ -164,58 +164,6 @@ def _extract_short_description(description: Optional[str]) -> Optional[str]:
     return first_line
 
 
-def _format_indicator_example_number(value: Any) -> Optional[str]:
-    if isinstance(value, bool) or value is None:
-        return None
-    if isinstance(value, int):
-        return str(value)
-    if isinstance(value, float):
-        if value.is_integer():
-            return str(int(value))
-        return str(value)
-    return None
-
-
-def _build_indicator_usage_examples(name: str, params: List[Dict[str, Any]]) -> List[str]:
-    indicator_name = str(name or "").strip()
-    if not indicator_name:
-        return []
-
-    examples = [f'data_fetch_candles(symbol="EURUSD", indicators="{indicator_name}")']
-    numeric_defaults: List[tuple[str, str]] = []
-    for raw in params or []:
-        if not isinstance(raw, dict):
-            continue
-        pname = str(raw.get("name") or "").strip()
-        rendered_default = _format_indicator_example_number(raw.get("default"))
-        if not pname or rendered_default is None:
-            continue
-        numeric_defaults.append((pname, rendered_default))
-        if len(numeric_defaults) >= 3:
-            break
-
-    if numeric_defaults and numeric_defaults[0][0] == "length":
-        examples.append(
-            f'data_fetch_candles(symbol="EURUSD", indicators="{indicator_name}_{numeric_defaults[0][1]}")'
-        )
-    if numeric_defaults:
-        positional = ",".join(value for _pname, value in numeric_defaults)
-        named = ",".join(f"{pname}={value}" for pname, value in numeric_defaults)
-        positional_values = ",".join(value for _pname, value in numeric_defaults)
-        named_values = ", ".join(f'"{pname}": {value}' for pname, value in numeric_defaults)
-        examples.append(
-            f'data_fetch_candles(symbol="EURUSD", indicators="{indicator_name}({positional})")'
-        )
-        examples.append(
-            f'data_fetch_candles(symbol="EURUSD", indicators=[{{"name": "{indicator_name}", "params": [{positional_values}]}}])'
-        )
-        examples.append(
-            f'data_fetch_candles(symbol="EURUSD", indicators=[{{"name": "{indicator_name}", "params": {{{named_values}}}}}])'
-        )
-
-    return list(dict.fromkeys(examples))
-
-
 def _build_indicator_documentation(target: Dict[str, Any]) -> Dict[str, Any]:
     name = str(target.get("name") or "")
     raw_desc = str(target.get("description") or "")
@@ -262,6 +210,7 @@ def _indicator_search_rank(item: Dict[str, Any], query: str) -> tuple[int, str] 
         for alias in (item.get("aliases") or [])
         if str(alias).strip()
     ]
+    category = str(item.get("category") or "").strip().lower()
 
     if name == q:
         return (0, name)
@@ -275,7 +224,30 @@ def _indicator_search_rank(item: Dict[str, Any], query: str) -> tuple[int, str] 
         return (4, name)
     if any(q in alias for alias in aliases):
         return (5, name)
+    if category == q:
+        return (6, name)
+    if category.startswith(q):
+        return (7, name)
+    if q in category:
+        return (8, name)
     return None
+
+
+def _format_indicator_param_summary(params: List[Dict[str, Any]]) -> str:
+    parts: List[str] = []
+    for raw in params or []:
+        if not isinstance(raw, dict):
+            continue
+        name = str(raw.get("name") or "").strip()
+        if not name:
+            continue
+        if "default" in raw:
+            parts.append(f"{name}={raw.get('default')}")
+        else:
+            parts.append(name)
+        if len(parts) >= 4:
+            break
+    return ",".join(parts)
 
 @mcp.tool()
 def indicators_list(
@@ -336,10 +308,12 @@ def indicators_list(
                         it.get('name',''),
                         it.get('category',''),
                         _extract_short_description(it.get('description', '')),
+                        len(it.get("params") or []),
+                        _format_indicator_param_summary(it.get("params") or []),
                     ]
                     for it in items
                 ]
-                result = _table_from_rows(["name", "category", "description"], rows)
+                result = _table_from_rows(["name", "category", "description", "params_count", "params"], rows)
             result["detail"] = detail_mode
             if total_matches > len(items):
                 result["total_count"] = total_matches
@@ -390,12 +364,6 @@ def indicators_describe(name: IndicatorNameLiteral) -> Dict[str, Any]:  # type: 
             indicator = dict(target)
             docs = _build_indicator_documentation(indicator)
             indicator["description"] = docs.get("description") or indicator.get("description") or ""
-            usage_examples = _build_indicator_usage_examples(
-                str(indicator.get("name") or name),
-                docs.get("parameters") or indicator.get("params") or [],
-            )
-            if usage_examples:
-                indicator["usage_examples"] = usage_examples
             indicator["documentation"] = {
                 "calculation": docs.get("calculation"),
                 "parameters": docs.get("parameters") or [],
