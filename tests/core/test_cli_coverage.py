@@ -3458,6 +3458,30 @@ class TestResolveParamKwargs:
         assert kwargs["metavar"] == "METHOD"
         assert "forecast_list_methods" in kwargs["help"]
 
+    def test_non_forecast_method_help_does_not_mention_forecast_browser(self):
+        param = {"name": "method", "type": str, "required": False, "default": None}
+        kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="correlation_matrix")
+
+        assert kwargs["help"] == "Method/algorithm for this tool."
+        assert "forecast_list_methods" not in kwargs["help"]
+
+    def test_common_analysis_params_have_specific_help(self):
+        transform_kwargs, _ = _resolve_param_kwargs(
+            {"name": "transform", "type": str, "required": False, "default": None},
+            None,
+            cmd_name="correlation_matrix",
+        )
+        min_regime_kwargs, _ = _resolve_param_kwargs(
+            {"name": "min_regime_bars", "type": int, "required": False, "default": -1},
+            None,
+            cmd_name="regime_detect",
+        )
+
+        assert "Preprocessing transform" in transform_kwargs["help"]
+        assert transform_kwargs["help"] != "transform parameter"
+        assert "Minimum bars a detected regime must span" in min_regime_kwargs["help"]
+        assert min_regime_kwargs["help"] != "min_regime_bars parameter"
+
     def test_report_generate_format_help_is_command_specific(self):
         param = {
             "name": "format",
