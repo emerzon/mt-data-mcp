@@ -130,8 +130,8 @@ def _prioritize_report_payload(report: Dict[str, Any]) -> Dict[str, Any]:
     preferred_keys = (
         "success",
         "completeness",
-        "summary",
         "summary_structured",
+        "summary",
         "sections_status",
         "sections",
         "diagnostics",
@@ -161,7 +161,7 @@ def _compact_report_payload(
     completeness = report.get("completeness")
     if completeness not in (None, "", [], {}):
         compact["completeness"] = completeness
-    for key in ("summary", "summary_structured", "sections_status"):
+    for key in ("summary_structured", "summary", "sections_status"):
         value = report.get(key)
         if value not in (None, "", [], {}):
             compact[key] = value

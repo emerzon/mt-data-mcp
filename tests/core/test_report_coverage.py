@@ -147,6 +147,7 @@ def test_report_generate_compact_structured_payload(monkeypatch):
             "success": True,
             "detail": "compact",
             "summary": ["close=1.10"],
+            "summary_structured": {"market": {"close": 1.10}},
             "sections_status": {"summary": {"ok": 1, "partial": 0, "error": 0}},
         },
     )
@@ -156,6 +157,23 @@ def test_report_generate_compact_structured_payload(monkeypatch):
     assert out["detail"] == "compact"
     assert "summary" in out
     assert "sections" not in out
+
+
+def test_compact_report_payload_orders_structured_summary_first():
+    from mtdata.core.report.use_cases import _compact_report_payload
+
+    out = _compact_report_payload(
+        {
+            "success": True,
+            "summary": ["close=1.10"],
+            "summary_structured": {"market": {"close": 1.10}},
+            "sections_status": {"summary": {"ok": 1, "partial": 0, "error": 0}},
+        },
+        symbol="EURUSD",
+        template="basic",
+    )
+
+    assert list(out).index("summary_structured") < list(out).index("summary")
 
 
 def _make_full_sections():
