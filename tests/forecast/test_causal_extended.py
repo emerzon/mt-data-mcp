@@ -511,8 +511,10 @@ class TestCausalDiscoverSignals:
         assert "data" in result
         assert "summary" in result
         assert "meta" in result
-        assert result["summary"]["counts"]["links"] >= 1
+        assert result["summary"]["counts"]["pairs_tested"] >= 1
+        assert result["summary"]["counts"]["significant_links"] >= 1
         assert isinstance(result["data"]["items"], list)
+        assert all(item["significant"] is True for item in result["data"]["items"])
         assert "links" not in result["data"]
         assert "summary_text" not in result["data"]
         assert result["meta"]["stats"]["pairs_tested"] >= 1
@@ -524,6 +526,37 @@ class TestCausalDiscoverSignals:
         assert any(
             "event=finish operation=causal_discover_signals success=True" in record.message
             for record in caplog.records
+        )
+
+    @patch("statsmodels.tsa.stattools.grangercausalitytests")
+    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal._fetch_series")
+    def test_no_significant_links_returns_empty_items_with_message(self, mock_fetch, mock_granger):
+        idx = pd.date_range("2024-01-01", periods=80, freq="h")
+        series_map = {
+            "A": pd.Series(np.linspace(1.0, 2.0, 80), index=idx),
+            "B": pd.Series(np.linspace(2.0, 1.0, 80), index=idx),
+        }
+
+        def _fetch_side_effect(symbol, timeframe, count):
+            return series_map[symbol], None
+
+        mock_fetch.side_effect = _fetch_side_effect
+        mock_granger.return_value = {
+            1: ({"ssr_ftest": (1.0, 0.90, 10, 1)}, None),
+            2: ({"ssr_ftest": (1.0, 0.80, 10, 1)}, None),
+        }
+
+        result = self._unwrapped()("A,B", max_lag=2, transform="diff", normalize=False)
+
+        assert result["success"] is True
+        assert result["data"]["items"] == []
+        assert result["summary"]["counts"] == {
+            "pairs_tested": 2,
+            "significant_links": 0,
+        }
+        assert result["message"] == (
+            "No statistically significant causal links detected at the selected threshold."
         )
 
     @patch("statsmodels.tsa.stattools.grangercausalitytests")

@@ -1404,6 +1404,9 @@ def causal_discover_signals(  # noqa: C901
         rows_sorted = sorted(
             rows, key=lambda item: (item["p_value"], item["effect"], item["cause"])
         )
+        significant_rows = [
+            row for row in rows_sorted if bool(row.get("significant"))
+        ]
         meta.update(
             {
                 "group_hint": group_hint,
@@ -1421,14 +1424,15 @@ def causal_discover_signals(  # noqa: C901
                 f"{max(pair_attempts - pair_success, 0)} pairwise Granger tests failed; see meta['pair_failures']."
             )
         data: Dict[str, Any] = {
-            "items": rows_sorted,
+            "items": significant_rows,
         }
         out: Dict[str, Any] = {
             "success": True,
             "data": data,
             "summary": {
                 "counts": {
-                    "links": int(len(rows_sorted)),
+                    "pairs_tested": int(len(rows_sorted)),
+                    "significant_links": int(len(significant_rows)),
                 }
             },
             "meta": _causal_contract_meta(
@@ -1446,6 +1450,10 @@ def causal_discover_signals(  # noqa: C901
         if not rows_sorted:
             out["message"] = (
                 "No causal relationships detected (insufficient data or all tests failed)."
+            )
+        elif not significant_rows:
+            out["message"] = (
+                "No statistically significant causal links detected at the selected threshold."
             )
         return out
 
