@@ -105,6 +105,9 @@ def test_forecast_volatility_general_theta_and_proxy_errors(monkeypatch):
     assert out["method"] == "theta"
     assert out["proxy"] == "squared_return"
     assert out["horizon_sigma_return"] > 0
+    assert out["volatility_per_bar"] == out["sigma_bar_return"]
+    assert out["volatility_horizon"] == out["horizon_sigma_return"]
+    assert "volatility_horizon" in out["volatility_interpretation"]
     expected_bpy = vol._bars_per_year("H1")
     assert out["sigma_annual_return"] == pytest.approx(out["sigma_bar_return"] * math.sqrt(expected_bpy))
     assert out["horizon_sigma_annual"] == pytest.approx(
@@ -134,8 +137,10 @@ def test_forecast_volatility_direct_methods_and_short_data(monkeypatch):
     assert out["method"] == "ewma"
     assert out["params_used"]["lookback"] == 80
     assert out["params_used"]["lambda_source"] == "lambda_"
+    assert out["params_used"]["decay_factor"] == pytest.approx(0.9)
     assert "params_explained" in out
     assert "lambda_" in out["params_explained"]
+    assert "decay_factor" in out["params_explained"]
     expected_bpy = vol._bars_per_year("H1")
     assert out["sigma_annual_return"] == pytest.approx(out["sigma_bar_return"] * math.sqrt(expected_bpy))
     assert out["horizon_sigma_annual"] == pytest.approx(
@@ -151,6 +156,8 @@ def test_forecast_volatility_direct_methods_and_short_data(monkeypatch):
     )
     assert out["success"] is True
     assert out["params_used"]["kernel"] == "bartlett"
+    assert out["volatility_horizon"] == out["volatility_per_bar"]
+    assert "horizon=1" in out["volatility_interpretation"]["horizon_note"]
 
     out = vol.forecast_volatility(
         symbol="EURUSD",
