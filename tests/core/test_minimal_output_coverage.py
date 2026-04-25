@@ -702,6 +702,33 @@ class TestFormatToToon:
         result = _format_to_toon({"a": 1, "b": 2}, key="data")
         assert "a" in result
 
+    def test_tick_mid_stats_preserve_quote_precision(self):
+        result = _format_to_toon(
+            {
+                "stats": {
+                    "mid": {
+                        "first": 1.172295,
+                        "mean": 1.1722825,
+                        "median": 1.17229,
+                        "q25": 1.17227,
+                        "q75": 1.1723,
+                    },
+                    "bid": {
+                        "q25": 1.17224,
+                        "q75": 1.17225,
+                    },
+                }
+            }
+        )
+
+        assert "first: 1.172295" in result
+        assert "mean: 1.1722825" in result
+        assert "median: 1.17229" in result
+        assert "q25: 1.17227" in result
+        assert "q75: 1.1723" in result
+        assert "q25: 1.17224" in result
+        assert "q75: 1.17225" in result
+
     def test_list(self):
         result = _format_to_toon([1, 2, 3], key="items")
         assert len(result) > 0

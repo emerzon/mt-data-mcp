@@ -16,6 +16,7 @@ _DEFAULT_DELIMITER = ","
 _QUOTE_DECIMALS_BY_FIELD = {
     "bid": 8,
     "ask": 8,
+    "mid": 8,
     "last": 8,
     "open": 8,
     "high": 8,
@@ -78,6 +79,8 @@ _QUOTE_STAT_DECIMAL_FIELDS = {
     "high",
     "mean",
     "median",
+    "q25",
+    "q75",
     "std",
     "change",
 }
