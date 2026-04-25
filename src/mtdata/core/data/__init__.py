@@ -9,7 +9,7 @@ from .._mcp_instance import mcp
 from ..execution_logging import run_logged_operation
 from ..mt5_gateway import get_mt5_gateway
 from ..pivot import pivot_compute_points, support_resistance_levels
-from ..schema import TimeframeLiteral
+from ..schema import CompactFullDetailLiteral, TimeframeLiteral
 from .requests import (
     DataFetchCandlesRequest,
     DataFetchTicksRequest,
@@ -198,7 +198,7 @@ def _compact_wait_event_public_result(
     *,
     explicit_watch_for: bool,
     explicit_end_on: bool,
-    verbose: bool = False,
+    detail: CompactFullDetailLiteral = "compact",
 ) -> Dict[str, Any]:
     out = dict(result)
     out.pop("max_wait_seconds", None)
@@ -209,7 +209,7 @@ def _compact_wait_event_public_result(
         criteria["watch_for_inferred"] = not explicit_watch_for
         criteria["end_on_inferred"] = not explicit_end_on
 
-    if verbose:
+    if str(detail or "compact").strip().lower() == "full":
         if criteria is not None:
             out["criteria"] = criteria
         return out
@@ -404,7 +404,7 @@ def wait_event(
     watch_tick_count_spike: bool = True,
     watch_for: Optional[List[WaitEventPublicWatchSpec]] = None,
     end_on: Optional[List[Dict[str, Any]]] = None,
-    verbose: bool = False,
+    detail: CompactFullDetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """Wait for watch events on a symbol until the next timeframe boundary.
 
@@ -427,7 +427,7 @@ def wait_event(
     Advanced callers can pass explicit `watch_for` and `end_on` event specs to
     use the richer wait-event engine directly. When explicit `watch_for` is
     provided, `watch_tick_count_spike` no longer alters the watcher list.
-    Set `verbose=true` to include polling/timing details and the full criteria
+    Set `detail="full"` to include polling/timing details and the full criteria
     echo in the response.
     """
     symbol_value = str(symbol or "").strip() or None
@@ -469,7 +469,7 @@ def wait_event(
                 result,
                 explicit_watch_for=explicit_watch_for,
                 explicit_end_on=explicit_end_on,
-                verbose=verbose,
+                detail=detail,
             )
         return result
 
@@ -479,7 +479,7 @@ def wait_event(
         symbol=symbol_value,
         timeframe=timeframe,
         watch_tick_count_spike=watch_tick_count_spike,
-        verbose=verbose,
+        detail=detail,
         explicit_watch_for=explicit_watch_for,
         end_on_count=len(end_on or []),
         func=_run,

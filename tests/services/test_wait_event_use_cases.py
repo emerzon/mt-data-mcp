@@ -227,7 +227,7 @@ def test_wait_event_tool_exposes_minimal_public_contract(monkeypatch) -> None:
         "watch_tick_count_spike",
         "watch_for",
         "end_on",
-        "verbose",
+        "detail",
     )
 
     raw = getattr(core_data.wait_event, "__wrapped__", core_data.wait_event)
@@ -261,7 +261,7 @@ def test_wait_event_tool_exposes_minimal_public_contract(monkeypatch) -> None:
         watch_tick_count_spike=True,
         watch_for=[{"type": "price_touch_level", "symbol": "BTCUSD", "level": 100.0}],
         end_on=[{"type": "candle_close", "timeframe": "M5"}],
-        verbose=True,
+        detail="full",
     )
     assert [item.type for item in explicit["criteria"]["watch_for"]] == ["price_touch_level"]
     assert [item.type for item in explicit["criteria"]["end_on"]] == ["candle_close"]
@@ -322,7 +322,7 @@ def test_wait_event_tool_compacts_matched_event_by_default(monkeypatch) -> None:
         watch_tick_count_spike=True,
         watch_for=[{"type": "price_touch_level", "symbol": "BTCUSD", "level": 100.0}],
         end_on=None,
-        verbose=False,
+        detail="compact",
     )
 
     assert result["matched_event"] == {
@@ -384,7 +384,7 @@ def test_wait_event_tool_preserves_shared_account_identity_fields(monkeypatch) -
         watch_tick_count_spike=True,
         watch_for=[{"type": "order_created", "symbol": "EURUSD"}],
         end_on=None,
-        verbose=False,
+        detail="compact",
     )
 
     assert result["symbol"] == "EURUSD"
