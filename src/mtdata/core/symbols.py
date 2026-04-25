@@ -337,7 +337,6 @@ def _list_symbol_groups(
 def symbols_describe(
     symbol: str,
     detail: CompactFullDetailLiteral = "full",
-    verbose: bool = False,
 ) -> Dict[str, Any]:
     """Return symbol information as JSON for `symbol`.
     
@@ -349,9 +348,6 @@ def symbols_describe(
         Output verbosity level:
         - "compact": Essential fields only (name, bid/ask, volume limits, contract size, tick size/value)
         - "full": Complete metadata including all trading modes, swap details, and session times
-    verbose : bool, optional (default=False)
-        Include time_epoch field for timestamps
-    
     Returns:
     --------
     dict
@@ -361,7 +357,6 @@ def symbols_describe(
         try:
             contract = resolve_output_contract(
                 detail=detail,
-                verbose=verbose,
                 default_detail="full",
             )
             mt5_gateway = get_mt5_gateway(
@@ -404,11 +399,11 @@ def symbols_describe(
 
                         epoch = float(value)
                         utc_epoch = _mt5_epoch_to_utc(epoch)
-                        if verbose:
+                        if contract.shape_detail == "full":
                             symbol_data["time_epoch"] = utc_epoch
                         symbol_data["time"] = _format_time_minimal(utc_epoch)
                     except Exception:
-                        if verbose:
+                        if contract.shape_detail == "full":
                             symbol_data["time_epoch"] = value
                         symbol_data["time"] = str(value)
                 else:

@@ -500,12 +500,12 @@ class TestSymbolsDescribe:
 
         assert isinstance(sd.get("time"), str)
         assert ":" in sd.get("time")
-        assert "time_epoch" not in sd
+        assert sd["time_epoch"] == 1700000000.0
         assert "n_fields" not in sd
         assert "n_sequence_fields" not in sd
 
     @patch(f"{_MT5}.symbol_info")
-    def test_verbose_describe_adds_time_epoch(self, mock_info):
+    def test_full_detail_describe_adds_time_epoch(self, mock_info):
         info = MagicMock()
         info.__dir__ = lambda self: ["name", "time"]
         info.name = "EURUSD"
@@ -513,7 +513,7 @@ class TestSymbolsDescribe:
         mock_info.return_value = info
 
         fn = _get_symbols_describe()
-        res = fn("EURUSD", verbose=True)
+        res = fn("EURUSD", detail="full")
 
         assert res["symbol"]["time_epoch"] == 1700000000.0
         assert isinstance(res["symbol"]["time"], str)
