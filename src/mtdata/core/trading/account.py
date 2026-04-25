@@ -38,15 +38,17 @@ _TRADE_ACCOUNT_SUMMARY_KEYS = (
     "success",
     "balance",
     "equity",
-    "profit",
-    "margin",
-    "margin_free",
     "margin_level",
     "margin_level_note",
     "currency",
+)
+_TRADE_ACCOUNT_COMPACT_KEYS = _TRADE_ACCOUNT_SUMMARY_KEYS + (
+    "profit",
+    "margin",
+    "margin_free",
     "leverage",
 )
-_TRADE_ACCOUNT_BASIC_KEYS = _TRADE_ACCOUNT_SUMMARY_KEYS + (
+_TRADE_ACCOUNT_BASIC_KEYS = _TRADE_ACCOUNT_COMPACT_KEYS + (
     "trade_allowed",
     "trade_expert",
     "server",
@@ -407,6 +409,8 @@ def lookup_trade_ticket_history(ticket: Any) -> Optional[Dict[str, Any]]:
 def _trade_account_payload_for_mode(payload: Dict[str, Any], *, mode: str) -> Dict[str, Any]:
     if mode == "summary":
         keys = _TRADE_ACCOUNT_SUMMARY_KEYS
+    elif mode in {"compact", "standard"}:
+        keys = _TRADE_ACCOUNT_COMPACT_KEYS
     elif mode == "basic":
         keys = _TRADE_ACCOUNT_BASIC_KEYS
     else:
@@ -418,9 +422,10 @@ def _trade_account_payload_for_mode(payload: Dict[str, Any], *, mode: str) -> Di
 def trade_account_info(
     detail: Literal["summary", "compact", "standard", "basic", "full"] = "full",  # type: ignore
 ) -> dict:
-    """Get account information with summary, basic, or full account output modes.
+    """Get account information with summary, compact, basic, or full account output modes.
 
-    Use `detail="summary"`/`"compact"` for routine balance and margin checks,
+    Use `detail="summary"` for the smallest balance/equity snapshot,
+    `detail="compact"` for routine balance and margin checks,
     `detail="basic"` for account identity/configuration fields, and
     `detail="full"` for the existing execution-readiness diagnostics.
     """
@@ -435,9 +440,6 @@ def trade_account_info(
             return {
                 "error": "Invalid detail level. Use 'summary', 'compact', 'standard', 'basic', or 'full'."
             }
-        output_mode = requested_mode
-        if output_mode in {"compact", "standard"}:
-            output_mode = "summary"
 
         mt5 = create_trading_gateway(
             include_trade_preflight=True,
@@ -496,7 +498,7 @@ def trade_account_info(
         }
         if margin_level_note:
             payload["margin_level_note"] = margin_level_note
-        payload = _trade_account_payload_for_mode(payload, mode=output_mode)
+        payload = _trade_account_payload_for_mode(payload, mode=requested_mode)
         return ensure_common_meta(
             payload,
             tool_name="trade_account_info",

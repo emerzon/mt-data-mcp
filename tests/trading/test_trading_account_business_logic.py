@@ -106,7 +106,7 @@ def test_trade_account_info_rounds_margin_level_for_display() -> None:
     assert out["margin_level"] == 53231.43
 
 
-def test_trade_account_info_summary_detail_omits_execution_diagnostics() -> None:
+def test_trade_account_info_summary_detail_is_minimal_snapshot() -> None:
     gateway = SimpleNamespace(
         ensure_connection=lambda: None,
         account_info=lambda: SimpleNamespace(
@@ -138,22 +138,20 @@ def test_trade_account_info_summary_detail_omits_execution_diagnostics() -> None
         "success",
         "balance",
         "equity",
-        "profit",
-        "margin",
-        "margin_free",
         "margin_level",
         "currency",
-        "leverage",
         "meta",
     }
     assert out["balance"] == 10000.0
     assert out["margin_level"] == 53231.43
     assert out["meta"]["tool"] == "trade_account_info"
+    assert "profit" not in out
+    assert "margin_free" not in out
     assert "execution_ready" not in out
     assert "server" not in out
 
 
-def test_trade_account_info_standard_detail_aliases_summary() -> None:
+def test_trade_account_info_compact_detail_includes_margin_fields_without_identity() -> None:
     gateway = SimpleNamespace(
         ensure_connection=lambda: None,
         account_info=lambda: SimpleNamespace(
@@ -179,11 +177,49 @@ def test_trade_account_info_standard_detail_aliases_summary() -> None:
 
     raw = _unwrap(trade_account_info)
     with patch.object(core_trading_account, "create_trading_gateway", return_value=gateway):
-        out = raw(detail="standard")
+        out = raw(detail="compact")
 
     assert out["balance"] == 10000.0
+    assert out["profit"] == 50.0
+    assert out["margin"] == 100.0
+    assert out["margin_free"] == 9950.0
+    assert out["leverage"] == 100
     assert "execution_ready" not in out
     assert "server" not in out
+
+
+def test_trade_account_info_standard_detail_aliases_compact() -> None:
+    gateway = SimpleNamespace(
+        ensure_connection=lambda: None,
+        account_info=lambda: SimpleNamespace(
+            balance=10000.0,
+            equity=10050.0,
+            profit=50.0,
+            margin=100.0,
+            margin_free=9950.0,
+            margin_level=1000.0,
+            currency="USD",
+            leverage=100,
+            trade_allowed=True,
+            trade_expert=True,
+        ),
+        build_trade_preflight=lambda account_info=None: {
+            "server": "Demo-Server",
+            "company": "Broker LLC",
+            "trade_mode": "demo",
+            "execution_ready": True,
+            "execution_blockers": [],
+        },
+    )
+
+    raw = _unwrap(trade_account_info)
+    with patch.object(core_trading_account, "create_trading_gateway", return_value=gateway):
+        compact = raw(detail="compact")
+        standard = raw(detail="standard")
+
+    compact_without_meta = {key: value for key, value in compact.items() if key != "meta"}
+    standard_without_meta = {key: value for key, value in standard.items() if key != "meta"}
+    assert standard_without_meta == compact_without_meta
 
 
 def test_trade_account_info_basic_detail_keeps_identity_without_diagnostics() -> None:
