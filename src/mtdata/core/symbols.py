@@ -1039,6 +1039,32 @@ def _market_scan_sort_rows(
     )
 
 
+_MARKET_SCAN_RANK_BY_ALIASES = {
+    "abs_price_change": "abs_price_change_pct",
+    "price_change": "price_change_pct",
+    "volume": "tick_volume",
+    "spread": "spread_pct",
+}
+
+
+_MARKET_SCAN_RANK_BY_CHOICES = (
+    "abs_price_change_pct",
+    "abs_price_change",
+    "price_change_pct",
+    "price_change",
+    "tick_volume",
+    "volume",
+    "rsi",
+    "spread_pct",
+    "spread",
+)
+
+
+def _normalize_market_scan_rank_by(value: Any) -> tuple[str, Optional[str]]:
+    raw_value = str(value or "abs_price_change_pct").strip().lower()
+    return _MARKET_SCAN_RANK_BY_ALIASES.get(raw_value, raw_value), raw_value
+
+
 @mcp.tool()
 def symbols_top_markets(  # noqa: C901
     rank_by: Literal["all", "spread", "volume", "price_change"] = "all",  # type: ignore
@@ -1338,7 +1364,7 @@ def market_scan(  # noqa: C901
     rsi_below: Optional[float] = None,
     rsi_above: Optional[float] = None,
     price_vs_sma: Optional[Literal["above", "below"]] = None,  # type: ignore
-    rank_by: Literal["abs_price_change_pct", "price_change_pct", "tick_volume", "rsi", "spread_pct"] = "abs_price_change_pct",  # type: ignore
+    rank_by: Literal["abs_price_change_pct", "abs_price_change", "price_change_pct", "price_change", "tick_volume", "volume", "rsi", "spread_pct", "spread"] = "abs_price_change_pct",  # type: ignore
 ) -> Dict[str, Any]:
     """Scan MT5 symbols with explicit price, spread, volume, RSI, and SMA filters.
 
@@ -1394,13 +1420,15 @@ def market_scan(  # noqa: C901
                 )
             mt5_timeframe = TIMEFRAME_MAP[timeframe_value]
 
-            rank_by_value = str(rank_by or "abs_price_change_pct").strip().lower()
+            rank_by_value, rank_by_input = _normalize_market_scan_rank_by(rank_by)
             request["rank_by"] = rank_by_value
+            if rank_by_input != rank_by_value:
+                request["rank_by_input"] = rank_by_input
             if rank_by_value not in {"abs_price_change_pct", "price_change_pct", "tick_volume", "rsi", "spread_pct"}:
                 return _market_scan_error(
                     (
-                        "rank_by must be one of: abs_price_change_pct, "
-                        "price_change_pct, tick_volume, rsi, spread_pct."
+                        "rank_by must be one of: "
+                        f"{', '.join(_MARKET_SCAN_RANK_BY_CHOICES)}."
                     ),
                     code="invalid_input",
                     request=request,
