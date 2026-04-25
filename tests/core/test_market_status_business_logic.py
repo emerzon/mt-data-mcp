@@ -41,6 +41,37 @@ def test_market_status_timezone_display_utc_converts_market_times(monkeypatch) -
         assert market["next_close"] == "2024-01-02T21:00:00+00:00"
 
 
+def test_market_status_uses_utc_weekend_for_closed_reason(monkeypatch) -> None:
+    raw = _unwrap(market_status_mod.market_status)
+    fixed_utc = datetime(2026, 4, 25, 3, 18, tzinfo=timezone.utc)
+
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            if tz is None:
+                return fixed_utc.replace(tzinfo=None)
+            return fixed_utc.astimezone(tz)
+
+    monkeypatch.setattr(market_status_mod, "datetime", FixedDateTime)
+    monkeypatch.setattr(
+        market_status_mod,
+        "_get_local_time",
+        lambda tz_name: fixed_utc.astimezone(ZoneInfo(tz_name)),
+    )
+    monkeypatch.setattr(market_status_mod, "_get_upcoming_holidays", lambda _markets: [])
+
+    result = raw(region="all", detail="full")
+
+    assert result["success"] is True
+    assert result["global_status"] == "weekend"
+    assert result["closed_reason_counts"] == {"weekend": 9}
+    reasons_by_symbol = {
+        market["symbol"]: market.get("reason") for market in result["markets"]
+    }
+    assert reasons_by_symbol["NYSE"] == "weekend"
+    assert reasons_by_symbol["NASDAQ"] == "weekend"
+
+
 def test_market_status_rejects_invalid_timezone_display() -> None:
     raw = _unwrap(market_status_mod.market_status)
 

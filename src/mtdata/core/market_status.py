@@ -200,6 +200,16 @@ def _apply_market_timezone_display(
     return out
 
 
+def _apply_global_weekend_reason(status: Dict[str, Any], *, now_utc: datetime) -> Dict[str, Any]:
+    if now_utc.weekday() < 5:
+        return status
+    if status.get("status") != "closed" or status.get("reason") != "after_hours":
+        return status
+    out = dict(status)
+    out["reason"] = "weekend"
+    return out
+
+
 def _is_early_close_session(
     market: Dict[str, Any],
     country: str,
@@ -761,6 +771,8 @@ def market_status(
         results: List[Dict[str, Any]] = []
         errors: List[Dict[str, Any]] = []
         
+        now_utc = datetime.now(timezone.utc)
+
         for market_id in markets_to_check:
             if market_id not in _MARKETS:
                 continue
@@ -769,6 +781,7 @@ def market_status(
             try:
                 local_now = _get_local_time(market["timezone"])
                 status = _check_market_status(market_id, local_now)
+                status = _apply_global_weekend_reason(status, now_utc=now_utc)
                 status = _apply_market_timezone_display(
                     status,
                     now_local=local_now,
@@ -822,12 +835,20 @@ def market_status(
             else:
                 summary_messages.append(f"{status_counts['closed']} closed")
         
+        reason_counts: Dict[str, int] = {}
+        for market in results:
+            if market.get("status") == "closed" and market.get("reason"):
+                reason = str(market.get("reason"))
+                reason_counts[reason] = reason_counts.get(reason, 0) + 1
+
+        global_status = None
+        if results and status_counts["closed"] == len(results) and reason_counts.get("weekend") == len(results):
+            global_status = "weekend"
+
         # Get upcoming holidays impacting these markets
         upcoming_holidays = _get_upcoming_holidays(markets_to_check)
-        
-        now_utc = datetime.now(timezone.utc)
-        
-        return normalize_market_status_output({
+
+        payload = {
             "success": True,
             "timestamp": now_utc.isoformat(),
             "day_of_week": now_utc.strftime("%A"),
@@ -840,7 +861,12 @@ def market_status(
             "markets": results,
             "upcoming_holidays": upcoming_holidays if upcoming_holidays else None,
             "errors": errors if errors else None,
-        }, detail=detail_mode)
+        }
+        if reason_counts:
+            payload["closed_reason_counts"] = reason_counts
+        if global_status:
+            payload["global_status"] = global_status
+        return normalize_market_status_output(payload, detail=detail_mode)
 
     return run_logged_operation(
         logger,
