@@ -148,6 +148,7 @@ def _include_trade_read_request_metadata(request: Any) -> bool:
 
 def _mark_trade_read_empty(out: Dict[str, Any], message: Optional[str] = None) -> None:
     out["empty"] = True
+    out["no_action"] = True
     if message:
         out["reason"] = message
 

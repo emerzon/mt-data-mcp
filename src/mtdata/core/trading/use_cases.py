@@ -2910,9 +2910,9 @@ def _append_trade_comment_metadata(
         comment_lengths.append(metadata.get("comment_visible_length"))
         comment_limits.append(metadata.get("comment_max_length"))
         comment_truncation.append(metadata.get("comment_may_be_truncated"))
-    out_df["Comment Length"] = comment_lengths
-    out_df["Comment Limit"] = comment_limits
-    out_df["Comment May Be Truncated"] = comment_truncation
+    out_df["comment_visible_length"] = comment_lengths
+    out_df["comment_max_length"] = comment_limits
+    out_df["comment_may_be_truncated"] = comment_truncation
 
 
 def _apply_trade_query_limit(

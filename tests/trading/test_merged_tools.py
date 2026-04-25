@@ -77,7 +77,7 @@ class TestMergedTools(unittest.TestCase):
         self.assertEqual(res.get("count"), 0)
         self.assertTrue(res.get("empty"))
         self.assertEqual(res.get("reason"), "No open positions")
-        self.assertNotIn("no_action", res)
+        self.assertTrue(res.get("no_action"))
 
         # Test with symbol
         get_open(symbol="EURUSD", __cli_raw=True)
@@ -146,9 +146,9 @@ class TestMergedTools(unittest.TestCase):
 
         res = get_open(__cli_raw=True)
         row = res["items"][0]
-        self.assertEqual(row.get("Comment Limit"), 31)
-        self.assertEqual(row.get("Comment Length"), len("audit short"))
-        self.assertFalse(row.get("Comment May Be Truncated"))
+        self.assertEqual(row.get("comment_max_length"), 31)
+        self.assertEqual(row.get("comment_visible_length"), len("audit short"))
+        self.assertFalse(row.get("comment_may_be_truncated"))
 
     def test_trading_open_compact_detail_omits_echoed_request_metadata(self):
         Pos = namedtuple("Pos", ["ticket", "time", "time_msc", "time_update", "time_update_msc", "type", "symbol"])
@@ -180,7 +180,7 @@ class TestMergedTools(unittest.TestCase):
         self.assertEqual(res.get("count"), 0)
         self.assertTrue(res.get("empty"))
         self.assertEqual(res.get("reason"), "No pending orders")
-        self.assertNotIn("no_action", res)
+        self.assertTrue(res.get("no_action"))
 
         get_pending(symbol="EURUSD", __cli_raw=True)
         self.mt5.orders_get.assert_called_with(symbol="EURUSD")

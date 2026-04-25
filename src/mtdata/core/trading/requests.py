@@ -200,9 +200,9 @@ class TradeGetOpenRequest(BaseModel):
     ticket: Optional[Union[int, str]] = None
     limit: Optional[int] = 200
     detail: CompactFullDetailLiteral = Field(
-        default="full",
+        default="compact",
         description=(
-            "Response detail level. Use compact to omit echoed request metadata "
+            "Response detail level. Use full to include echoed request metadata "
             "while preserving the standard read envelope."
         ),
     )
@@ -213,9 +213,9 @@ class TradeGetPendingRequest(BaseModel):
     ticket: Optional[Union[int, str]] = None
     limit: Optional[int] = 200
     detail: CompactFullDetailLiteral = Field(
-        default="full",
+        default="compact",
         description=(
-            "Response detail level. Use compact to omit echoed request metadata "
+            "Response detail level. Use full to include echoed request metadata "
             "while preserving the standard read envelope."
         ),
     )

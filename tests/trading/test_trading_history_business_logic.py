@@ -9,7 +9,12 @@ from unittest.mock import MagicMock, patch
 from mtdata.core.trading import trade_history as _trade_history_tool
 from mtdata.core.trading.account import trade_journal_analyze as _trade_journal_tool
 from mtdata.core.trading.positions import normalize_trade_history_output
-from mtdata.core.trading.requests import TradeHistoryRequest, TradeJournalAnalyzeRequest
+from mtdata.core.trading.requests import (
+    TradeGetOpenRequest,
+    TradeGetPendingRequest,
+    TradeHistoryRequest,
+    TradeJournalAnalyzeRequest,
+)
 from mtdata.core.trading.use_cases import run_trade_history
 from mtdata.utils.mt5 import MT5ConnectionError, _mt5_epoch_to_utc
 from mtdata.utils.utils import _format_time_minimal
@@ -296,6 +301,8 @@ def test_trade_history_request_normalizes_buy_sell_aliases() -> None:
     assert TradeHistoryRequest(side="short").side == "SELL"
     assert TradeHistoryRequest(side="weird").side == "weird"
     assert TradeHistoryRequest().detail == "compact"
+    assert TradeGetOpenRequest().detail == "compact"
+    assert TradeGetPendingRequest().detail == "compact"
 
 
 def test_trade_history_filters_orders_by_side_prefix() -> None:
