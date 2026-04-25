@@ -89,6 +89,16 @@ class TestLabelsTripleBarrier:
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
     @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
     @patch(f"{_LABELS_MOD}._fetch_history")
+    def test_abs_barriers_reject_offset_like_levels(self, mock_hist, mock_den, mock_pip):
+        mock_hist.return_value = _make_df(60, base=1.1720, step=0.0001)
+        result = _get_raw_fn()("EURUSD", tp_abs=0.01, sl_abs=0.01, horizon=12)
+
+        assert "error" in result
+        assert "absolute price levels, not offsets" in result["error"]
+
+    @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
+    @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
+    @patch(f"{_LABELS_MOD}._fetch_history")
     def test_pip_barriers(self, mock_hist, mock_den, mock_pip):
         mock_hist.return_value = _make_df(60)
         result = _get_raw_fn()("EURUSD", tp_pips=50, sl_pips=50, horizon=12)

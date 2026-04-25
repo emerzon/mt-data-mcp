@@ -80,7 +80,7 @@ def _build_triple_barrier_outputs(
             price=price,
             direction=direction_value,
             pip_size=pip_size,
-            adjust_inverted=True,
+            adjust_inverted=False,
             **barrier_kwargs,
         )
         if tp_price is None or sl_price is None:
@@ -294,7 +294,7 @@ def labels_triple_barrier(
                 price=sample_entry_price,
                 direction=direction_value,
                 pip_size=pip_size,
-                adjust_inverted=True,
+                adjust_inverted=False,
                 **barrier_kwargs,
             )
             if sample_tp is None or sample_sl is None:
@@ -310,6 +310,14 @@ def labels_triple_barrier(
                 tp_price=sample_tp,
                 sl_price=sample_sl,
             ):
+                if tp_abs is not None or sl_abs is not None:
+                    return {
+                        "error": (
+                            "Invalid absolute TP/SL levels for the entry price. "
+                            "tp_abs/sl_abs are absolute price levels, not offsets; "
+                            "use tp_ticks/sl_ticks or tp_pct/sl_pct for offset-style barriers."
+                        )
+                    }
                 return {
                     "error": "Resolved TP/SL barriers are invalid for the entry price."
                 }
