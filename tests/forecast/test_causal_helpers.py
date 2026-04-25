@@ -195,7 +195,7 @@ class TestCorrelationHelpers:
 
         summary = _build_cointegration_summary(rows, top_n=2)
 
-        assert summary["best_pairs"][0] == {
+        expected = {
             "pair": "A-B",
             "left": "A",
             "right": "B",
@@ -204,7 +204,30 @@ class TestCorrelationHelpers:
             "cointegrated": True,
             "samples": 100,
         }
-        assert summary["cointegrated_pairs"] == [summary["best_pairs"][0]]
+        assert "best_pairs" not in summary
+        assert summary["cointegrated_pairs"] == [expected]
+
+    def test_build_cointegration_summary_omits_duplicate_highlights_for_small_sets(self):
+        rows = [
+            {
+                "left": "A",
+                "right": "B",
+                "p_value": 0.01,
+                "test_stat": -4.1,
+                "cointegrated": True,
+                "samples": 100,
+            },
+            {
+                "left": "A",
+                "right": "C",
+                "p_value": 0.02,
+                "test_stat": -3.8,
+                "cointegrated": True,
+                "samples": 95,
+            },
+        ]
+
+        assert _build_cointegration_summary(rows, top_n=5) == {}
 
 
 class TestFormatSummary:

@@ -736,22 +736,24 @@ def _build_cointegration_summary(
 ) -> Dict[str, List[Dict[str, Any]]]:
     limit = max(1, int(top_n))
     cointegrated = [row for row in rows if bool(row.get("cointegrated"))]
-    return {
-        "best_pairs": [
+    summary: Dict[str, List[Dict[str, Any]]] = {}
+    if len(rows) > limit:
+        summary["best_pairs"] = [
             _pair_highlight_ref(
                 row,
                 metrics=("p_value", "test_stat", "cointegrated"),
             )
             for row in rows[:limit]
-        ],
-        "cointegrated_pairs": [
+        ]
+    if cointegrated and (len(rows) > limit or len(cointegrated) < len(rows)):
+        summary["cointegrated_pairs"] = [
             _pair_highlight_ref(
                 row,
                 metrics=("p_value", "test_stat", "cointegrated"),
             )
             for row in cointegrated[:limit]
-        ],
-    }
+        ]
+    return summary
 
 
 def _format_summary(
