@@ -409,11 +409,10 @@ def _compact_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:
             return None
         return value_f if math.isfinite(value_f) else None
 
-    compact_results: Dict[str, Any] = {}
     ranked_methods: list[Dict[str, Any]] = []
     for method_name, method_payload in raw_results.items():
         if not isinstance(method_payload, dict):
-            compact_results[method_name] = method_payload
+            ranked_methods.append({"method": method_name, "result": method_payload})
             continue
         details = method_payload.get("details")
         details_count = len(details) if isinstance(details, list) else None
@@ -424,11 +423,14 @@ def _compact_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:
         )
         method_out: Dict[str, Any] = {"method": method_name}
         for key in (
+            "success",
             "avg_rmse",
             "avg_mae",
             "avg_directional_accuracy",
             "successful_tests",
             "num_tests",
+            "metrics_available",
+            "metrics_reason",
         ):
             if key in method_payload:
                 method_out[key] = method_payload[key]
@@ -444,7 +446,6 @@ def _compact_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:
                 method_out[key] = metrics[key]
         if isinstance(details, list):
             method_out["details_count"] = len(details)
-        compact_results[method_name] = method_out
         ranked_row = dict(method_out)
         ranked_row["_sort_metric"] = _sort_metric(
             method_payload.get("avg_rmse", method_payload.get("avg_mae"))
@@ -452,7 +453,7 @@ def _compact_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:
         ranked_methods.append(ranked_row)
 
     compact_out = dict(result)
-    compact_out["results"] = compact_results
+    compact_out.pop("results", None)
     ranked_methods.sort(
         key=lambda row: (
             row.get("_sort_metric") is None,

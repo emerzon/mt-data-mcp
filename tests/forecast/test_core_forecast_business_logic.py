@@ -428,11 +428,10 @@ def test_run_forecast_backtest_strips_per_anchor_details_in_compact_mode():
     assert result["success"] is True
     assert result["request"]["detail"] == "compact"
     assert result["resolved_request"]["methods"] == ["theta"]
-    assert "details" not in result["results"]["theta"]
-    assert result["results"]["theta"]["details_count"] == 1
-    assert "metrics" not in result["results"]["theta"]
+    assert "results" not in result
     assert result["ranked_methods"][0]["method"] == "theta"
     assert result["ranked_methods"][0]["details_count"] == 1
+    assert "metrics" not in result["ranked_methods"][0]
 
 
 def test_forecast_generate_converts_typed_forecast_errors(monkeypatch):

@@ -163,8 +163,9 @@ mtdata-cli forecast_backtest_run EURUSD --horizon 12 --methods theta \
 
 ```json
 {
-  "results": {
-    "theta": {
+  "ranked_methods": [
+    {
+      "method": "theta",
       "success": true,
       "avg_mae": 0.00142,
       "avg_rmse": 0.00186,
@@ -173,7 +174,7 @@ mtdata-cli forecast_backtest_run EURUSD --horizon 12 --methods theta \
       "successful_tests": 20,
       "num_tests": 20
     }
-  }
+  ]
 }
 ```
 
@@ -215,7 +216,7 @@ When `slippage-bps` or `trade-threshold` is set:
 
 ### Per-Anchor Details
 
-Add `--json` to see individual test results:
+Use full detail to see individual test results:
 
 ```json
 {
@@ -507,4 +508,3 @@ mtdata-cli forecast_backtest_run GBPUSD --methods theta --steps 30
 - [FORECAST.md](../FORECAST.md) — Forecasting methods overview
 - [FORECAST_GENERATE.md](FORECAST_GENERATE.md) — Forecast generation options
 - [DENOISING.md](../DENOISING.md) — Preprocessing options
-
