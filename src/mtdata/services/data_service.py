@@ -1442,6 +1442,96 @@ def fetch_candles(  # noqa: C901
                 warns = []
             warns.append(session_gap_warning)
             payload['warnings'] = warns
+
+        # If include_spread requested but spread data is missing or all zero, try fallback estimate from recent ticks.
+        if include_spread:
+            data_rows = payload.get("data", []) or []
+            has_spread_values = False
+            spread_all_zero = True
+            spread_idx = None
+            try:
+                if "spread" in headers:
+                    spread_idx = headers.index("spread")
+            except Exception:
+                spread_idx = None
+            for row in data_rows:
+                if isinstance(row, dict):
+                    if "spread" in row and row.get("spread") is not None:
+                        has_spread_values = True
+                        try:
+                            if float(row.get("spread", 0)) != 0.0:
+                                spread_all_zero = False
+                                break
+                        except Exception:
+                            has_spread_values = True
+                            spread_all_zero = False
+                            break
+                elif isinstance(row, (list, tuple)):
+                    if spread_idx is not None and spread_idx < len(row):
+                        val = row[spread_idx]
+                        if val is not None:
+                            has_spread_values = True
+                            try:
+                                if float(val) != 0.0:
+                                    spread_all_zero = False
+                                    break
+                            except Exception:
+                                has_spread_values = True
+                                spread_all_zero = False
+                                break
+            if not has_spread_values or spread_all_zero:
+                try:
+                    tick_stats = fetch_ticks(symbol, limit=5000, format="stats")
+                    spread_stats = tick_stats.get("stats", {}).get("spread")
+                    est_mean = None
+                    if isinstance(spread_stats, dict):
+                        est_mean = spread_stats.get("mean") or spread_stats.get("median") or spread_stats.get("first")
+                    if est_mean is not None:
+                        est_mean = float(est_mean)
+                        # Apply estimated spread to rows
+                        for i, row in enumerate(data_rows):
+                            if isinstance(row, dict):
+                                row["spread"] = est_mean
+                            else:
+                                row_list = list(row)
+                                if spread_idx is not None:
+                                    if spread_idx >= len(row_list):
+                                        row_list += [None] * (spread_idx - len(row_list) + 1)
+                                    row_list[spread_idx] = est_mean
+                                data_rows[i] = row_list
+                        payload["data"] = data_rows
+                        payload.setdefault("warnings", []).append(
+                            "include_spread requested but spread unavailable; estimated mean spread from recent ticks applied."
+                        )
+                        payload.setdefault("meta", {}).setdefault("diagnostics", {}).setdefault("spread_estimate", {})["estimated_mean"] = est_mean
+                        payload["meta"]["diagnostics"]["spread_estimate"]["source"] = "tick_stats"
+                        payload["meta"]["diagnostics"]["spread_estimate"]["tick_stats"] = spread_stats
+                    else:
+                        # Fallback to live ticker
+                        tick = mt5.symbol_info_tick(symbol)
+                        bid = getattr(tick, "bid", None) if tick is not None else None
+                        ask = getattr(tick, "ask", None) if tick is not None else None
+                        if bid is not None and ask is not None:
+                            est_mean = float(max(0.0, (ask - bid)))
+                            for i, row in enumerate(data_rows):
+                                if isinstance(row, dict):
+                                    row["spread"] = est_mean
+                                else:
+                                    row_list = list(row)
+                                    if spread_idx is not None:
+                                        if spread_idx >= len(row_list):
+                                            row_list += [None] * (spread_idx - len(row_list) + 1)
+                                        row_list[spread_idx] = est_mean
+                                    data_rows[i] = row_list
+                            payload["data"] = data_rows
+                            payload.setdefault("warnings", []).append(
+                                "include_spread requested but spread unavailable; estimated spread from current live ticker applied."
+                            )
+                            payload.setdefault("meta", {}).setdefault("diagnostics", {}).setdefault("spread_estimate", {})["estimated_mean"] = est_mean
+                            payload["meta"]["diagnostics"]["spread_estimate"]["source"] = "live_ticker"
+                except Exception:
+                    payload.setdefault("warnings", []).append("include_spread requested but spread unavailable; no fallback available.")
+
         return payload
     except Exception as e:
         return {"error": f"Error getting rates: {str(e)}"}
