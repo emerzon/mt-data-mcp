@@ -1901,8 +1901,20 @@ class TestFullReportRoundTrip:
         report["sections_status"] = {
             "summary": {"ok": 3, "partial": 1, "error": 0},
             "sections": {"context": "ok", "forecast": "ok", "barriers": "partial"},
+            "definitions": {
+                "partial": "section returned usable data but one or more nested sub-results failed",
+            },
+            "details": {
+                "barriers": {
+                    "status": "partial",
+                    "reason": "section contains usable data plus one or more nested errors",
+                    "errors": [{"path": "short", "message": "optimizer failed"}],
+                }
+            },
         }
         result = render_enhanced_report(report)
         assert "Section Status" in result
         assert "Partial" in result
         assert "barriers" in result
+        assert "section returned usable data" in result
+        assert "section_details" in result

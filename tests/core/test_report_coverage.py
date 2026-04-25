@@ -906,7 +906,7 @@ class TestReportWarnings:
         assert res["sections_status"]["sections"]["forecast"] == "ok"
         assert res["success"] is True
 
-    def test_partial_section_marks_report_unsuccessful(self):
+    def test_partial_section_marks_report_partially_complete(self):
         fn = _get_report_generate()
         sec = _make_full_sections()
         sec["barriers"] = {
@@ -926,6 +926,28 @@ class TestReportWarnings:
 
         assert res["sections_status"]["sections"]["barriers"] == "partial"
         assert res["sections_status"]["summary"]["partial"] >= 1
+        assert res["sections_status"]["details"]["barriers"]["errors"][0]["path"] == "short"
+        assert "usable data" in res["sections_status"]["definitions"]["partial"]
+        assert res["completeness"] == "partial"
+        assert res["success"] is True
+
+    def test_error_only_section_marks_report_failed(self):
+        fn = _get_report_generate()
+        sec = _make_full_sections()
+        sec["forecast"] = {"error": "forecast failed"}
+        rep = _make_report(sections=sec)
+        mock_basic = MagicMock(return_value=rep)
+        with patch("mtdata.core.report_templates.template_basic", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_advanced", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_scalping", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_intraday", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_swing", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_position", mock_basic, create=True), \
+             patch(_FMT_NUM, side_effect=str):
+            res = fn("EURUSD", template="basic", format="toon")
+
+        assert res["sections_status"]["sections"]["forecast"] == "error"
+        assert res["completeness"] == "failed"
         assert res["success"] is False
 
 

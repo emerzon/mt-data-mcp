@@ -114,6 +114,37 @@ def _render_sections_status(data: Any) -> List[str]:
         section_rows.append([str(name), str(sections[name])])
     if section_rows:
         lines.extend(_format_table(["Section", "Status"], section_rows, name="sections"))
+    definitions = data.get("definitions")
+    partial_definition = (
+        definitions.get("partial")
+        if isinstance(definitions, dict)
+        else None
+    )
+    if isinstance(partial_definition, str) and partial_definition.strip():
+        lines.append(f"Partial: {partial_definition.strip()}")
+    details = data.get("details")
+    if isinstance(details, dict):
+        detail_rows: List[List[str]] = []
+        for name in sorted(details.keys()):
+            detail = details.get(name)
+            if not isinstance(detail, dict):
+                continue
+            errors = detail.get("errors")
+            error_count = len(errors) if isinstance(errors, list) else 0
+            detail_rows.append([
+                str(name),
+                str(detail.get("status") or ""),
+                str(detail.get("reason") or ""),
+                str(error_count),
+            ])
+        if detail_rows:
+            lines.extend(
+                _format_table(
+                    ["Section", "Status", "Reason", "Errors"],
+                    detail_rows,
+                    name="section_details",
+                )
+            )
     return lines
 
 

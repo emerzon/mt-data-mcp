@@ -52,12 +52,32 @@ def _has_payload_content(payload: Any) -> bool:
     return payload not in (None, "")
 
 
+def _collect_payload_errors(payload: Any, *, path: str = "") -> List[Dict[str, str]]:
+    errors: List[Dict[str, str]] = []
+    if isinstance(payload, dict):
+        err = payload.get("error")
+        if isinstance(err, str) and err.strip():
+            errors.append({"path": path or "error", "message": err.strip()})
+        for key, value in payload.items():
+            if key == "error":
+                continue
+            child_path = f"{path}.{key}" if path else str(key)
+            errors.extend(_collect_payload_errors(value, path=child_path))
+    elif isinstance(payload, list):
+        for index, value in enumerate(payload):
+            child_path = f"{path}[{index}]" if path else f"[{index}]"
+            errors.extend(_collect_payload_errors(value, path=child_path))
+    return errors
+
+
 def _build_sections_status(sections: Dict[str, Any]) -> Dict[str, Any]:
     statuses: Dict[str, str] = {}
+    details: Dict[str, Dict[str, Any]] = {}
     summary = {"ok": 0, "partial": 0, "error": 0}
     for name, payload in sections.items():
         has_error = _has_payload_error(payload)
         has_content = _has_payload_content(payload)
+        errors = _collect_payload_errors(payload)
         if has_error and has_content:
             status = "partial"
         elif has_error:
@@ -66,11 +86,39 @@ def _build_sections_status(sections: Dict[str, Any]) -> Dict[str, Any]:
             status = "ok"
         statuses[str(name)] = status
         summary[status] += 1
-    return {"summary": summary, "sections": statuses}
+        if status != "ok":
+            details[str(name)] = {
+                "status": status,
+                "reason": (
+                    "section contains usable data plus one or more nested errors"
+                    if status == "partial"
+                    else "section contains errors and no usable data"
+                ),
+                "errors": errors,
+            }
+    out: Dict[str, Any] = {
+        "summary": summary,
+        "sections": statuses,
+        "definitions": {
+            "ok": "section returned usable data and no nested errors",
+            "partial": "section returned usable data but one or more nested sub-results failed",
+            "error": "section returned no usable data because it failed",
+        },
+    }
+    if details:
+        out["details"] = details
+    return out
 
 
 def _prioritize_report_payload(report: Dict[str, Any]) -> Dict[str, Any]:
-    preferred_keys = ("success", "summary", "sections_status", "sections", "diagnostics")
+    preferred_keys = (
+        "success",
+        "completeness",
+        "summary",
+        "sections_status",
+        "sections",
+        "diagnostics",
+    )
     ordered: Dict[str, Any] = {}
     for key in preferred_keys:
         if key in report:
@@ -93,6 +141,9 @@ def _compact_report_payload(
         "template": template,
         "detail": "compact",
     }
+    completeness = report.get("completeness")
+    if completeness not in (None, "", [], {}):
+        compact["completeness"] = completeness
     for key in ("summary", "sections_status"):
         value = report.get(key)
         if value not in (None, "", [], {}):
@@ -472,9 +523,16 @@ def run_report_generate(  # noqa: C901
                 sections_status = _build_sections_status(sections)
                 rep["sections_status"] = sections_status
                 summary_counts = sections_status.get("summary", {})
-                rep["success"] = bool(
-                    int(summary_counts.get("error", 0)) == 0 and int(summary_counts.get("partial", 0)) == 0
+                error_count = int(summary_counts.get("error", 0))
+                partial_count = int(summary_counts.get("partial", 0))
+                rep["completeness"] = (
+                    "failed"
+                    if error_count > 0
+                    else "partial"
+                    if partial_count > 0
+                    else "complete"
                 )
+                rep["success"] = bool(error_count == 0)
             diagnostics = rep.get("diagnostics")
             if not isinstance(diagnostics, dict):
                 diagnostics = {}
