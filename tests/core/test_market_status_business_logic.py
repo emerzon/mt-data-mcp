@@ -225,6 +225,6 @@ def test_normalize_market_status_output_compact_summarizes_holidays() -> None:
             "early_close_time": "13:00",
         },
     ]
-    assert compact["show_all_hint"] == "Use --detail full for the full upcoming_holidays list."
+    assert "show_all_hint" not in compact
 
     assert full["upcoming_holidays"] == payload["upcoming_holidays"]

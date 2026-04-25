@@ -1214,11 +1214,11 @@ def _normalize_regime_all_payload(
     if detail_value != "full" and ("results" in payload or "params_used" in payload):
         if detail_value == "summary":
             out["show_all_hint"] = (
-                "Use --detail full / --verbose for per-method details."
+                "Set detail='full' to include per-method details."
             )
         else:
             out["show_all_hint"] = (
-                "Use --detail summary for stats only, or --detail full / --verbose for per-method details."
+                "Set detail='summary' for stats only, or detail='full' to include per-method details."
             )
 
     return out
@@ -1313,7 +1313,7 @@ def _normalize_forecast_methods_payload(
     hidden = payload.get("methods_hidden")
     try:
         if detail_value != "full" and hidden is not None and int(hidden) > 0:
-            out["show_all_hint"] = "Use --detail full to see all methods."
+            out["show_all_hint"] = "Set detail='full' to see complete method metadata."
     except Exception:
         pass
 
@@ -1398,7 +1398,7 @@ def _normalize_library_models_payload(
         out["usage"] = usage
 
     if compact_rows and "capabilities" in payload:
-        out["show_all_hint"] = "Use --json for full capability metadata and params."
+        out["show_all_hint"] = "Inspect the structured response for full model metadata and params."
 
     return out
 
@@ -1555,7 +1555,8 @@ def _normalize_support_resistance_payload(
         )
     ):
         out["show_all_hint"] = (
-            "Use --detail full for timeframe selection rationale, zone widths, and coverage diagnostics."
+            "Set detail='full' to include timeframe selection rationale, "
+            "zone widths, and coverage diagnostics."
         )
 
     return out

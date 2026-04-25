@@ -1166,7 +1166,7 @@ def _forecast_list_methods_impl(  # noqa: C901
             "methods": selected_methods,
             "methods_shown": int(len(selected_methods)),
             "methods_hidden": int(max(0, len(compact_methods) - len(selected_methods))),
-            "note": "Compact view includes all filtered methods with compact columns; use --limit to cap rows or --detail full for complete metadata.",
+            "note": "Compact view includes all filtered methods with compact columns; set limit to cap rows or detail='full' for complete metadata.",
             "filters": {
                 "search": search_value or None,
                 "limit": limit_value,

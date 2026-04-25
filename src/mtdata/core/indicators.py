@@ -345,7 +345,7 @@ def indicators_list(
                 result["total_count"] = total_matches
                 result["more_available"] = total_matches - len(items)
                 result["truncated"] = True
-                result["show_all_hint"] = "Increase --limit to view more matching indicators."
+                result["show_all_hint"] = "Set limit to a higher value to view more matching indicators."
             return result
         except Exception as exc:
             return {"error": f"Error listing indicators: {exc}"}

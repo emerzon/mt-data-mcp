@@ -507,7 +507,6 @@ def normalize_market_status_output(
         out["upcoming_holidays_summary"] = [
             _summarize_upcoming_holiday(entry) for entry in upcoming
         ]
-        out["show_all_hint"] = "Use --detail full for the full upcoming_holidays list."
     return out
 
 
