@@ -459,7 +459,10 @@ def _filter_finviz_fundamentals_payload(
         selected_fields = requested_fields
         category_out = "custom"
     elif category_mode != "all":
-        selected_fields = list(_FINVIZ_FUNDAMENTAL_CATEGORIES[category_mode])
+        if detail_mode == "compact":
+            selected_fields = list(_FINVIZ_FUNDAMENTAL_CATEGORIES[category_mode])
+        else:
+            selected_fields = list(fundamentals.keys())
         category_out = category_mode
     elif detail_mode == "compact":
         selected_fields = list(_FINVIZ_FUNDAMENTAL_CATEGORIES["summary"])
