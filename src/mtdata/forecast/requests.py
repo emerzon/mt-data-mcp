@@ -280,10 +280,7 @@ class ForecastBarrierOptimizeRequest(BaseModel):
     objective: str = "ev"
     return_grid: bool = True
     top_k: Optional[int] = None
-    output_mode: Literal["full", "summary"] = Field(
-        default="summary",
-        validation_alias=AliasChoices("output_mode", "format"),
-    )
+    output_mode: Literal["full", "summary"] = "summary"
     viable_only: bool = True
     concise: bool = False
     grid_style: str = "fixed"
@@ -331,7 +328,8 @@ class ForecastBarrierOptimizeRequest(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _reject_removed_output(cls, values: Any) -> Any:
-        return _reject_removed_field(values, field_name="output", replacement="output_mode")
+        values = _reject_removed_field(values, field_name="output", replacement="output_mode")
+        return _reject_removed_field(values, field_name="format", replacement="output_mode")
 
     @field_validator("direction", mode="before")
     @classmethod

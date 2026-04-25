@@ -761,7 +761,6 @@ def forecast_barrier_optimize(  # noqa: C901
     return_grid: bool = True,
     top_k: Optional[int] = None,
     output_mode: Literal['full','summary'] = 'summary',
-    format: Optional[Literal['full','summary']] = None,
     viable_only: bool = True,
     concise: bool = False,
     grid_style: Literal['fixed','volatility','ratio','preset'] = 'fixed',
@@ -854,7 +853,7 @@ def forecast_barrier_optimize(  # noqa: C901
                 "mode='pips' uses legacy pip terminology; prefer mode='ticks' for trade_tick_size-based distances."
             )
         mode_val = 'pips' if mode_requested in {'ticks', 'pips'} else 'pct'
-        output_mode = str(output_mode if format is None else format).strip().lower()
+        output_mode = str(output_mode).strip().lower()
         if output_mode not in {'full', 'summary'}:
             output_mode = 'summary'
 
@@ -1329,7 +1328,7 @@ def forecast_barrier_optimize(  # noqa: C901
                     objective=objective_val,  # type: ignore[arg-type]
                     return_grid=False,
                     top_k=1,
-                    format='summary',  # type: ignore[arg-type]
+                    output_mode='summary',  # type: ignore[arg-type]
                     viable_only=viable_only_val,
                     concise=concise_val,
                     grid_style=grid_style_val,  # type: ignore[arg-type]

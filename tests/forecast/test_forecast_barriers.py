@@ -75,11 +75,11 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
             [1.0, 1.002, 0.998, 1.006],
         ])
 
-    def test_forecast_barrier_optimize_signature_uses_output_mode_with_legacy_format(self):
+    def test_forecast_barrier_optimize_signature_uses_output_mode(self):
         parameters = inspect.signature(forecast_barrier_optimize).parameters
 
         self.assertEqual(parameters["output_mode"].default, "summary")
-        self.assertIsNone(parameters["format"].default)
+        self.assertNotIn("format", parameters)
         self.assertTrue(parameters["viable_only"].default)
 
     def test_low_win_probability_candidate_is_not_viable(self):
@@ -662,7 +662,7 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
                     "n_seeds": 1,
                 },
                 return_grid=False,
-                format="summary",
+                output_mode="summary",
             )
         self.assertTrue(result.get("success"))
         self.assertEqual(result.get("method"), "ensemble")
@@ -699,7 +699,7 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
                     "n_seeds": 1,
                 },
                 return_grid=False,
-                format="summary",
+                output_mode="summary",
             )
         self.assertTrue(result.get("success"))
         self.assertEqual(self.mock_fetch_history_opt.call_count, 1)
@@ -723,7 +723,7 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
             sl_steps=1,
             params={"optimizer": "grid", "n_sims": 50, "n_seeds": 1, "use_live_price": False},
             return_grid=False,
-            format="summary",
+            output_mode="summary",
         )
         self.assertEqual(
             result.get("error"),
@@ -767,7 +767,7 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
                     "n_seeds": 1,
                 },
                 return_grid=True,
-                format="summary",
+                output_mode="summary",
             )
         self.assertTrue(result.get("success"))
         self.assertEqual(result.get("method"), "ensemble")
@@ -941,7 +941,7 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
                 sl_min=0.5, sl_max=1.0, sl_steps=2,
                 objective="edge",
                 refine=False,
-                format="summary",
+                output_mode="summary",
                 top_k=2,
                 return_grid=True,
             )
@@ -1004,7 +1004,7 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
                 tp_min=0.2, tp_max=1.4, tp_steps=4,
                 sl_min=0.2, sl_max=1.4, sl_steps=4,
                 objective="edge",
-                format="full",
+                output_mode="full",
                 return_grid=True,
             )
         self.assertTrue(result["success"])
@@ -1586,7 +1586,7 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
                 concise=True,
                 top_k=2,
                 return_grid=True,
-                format="full",
+                output_mode="full",
             )
         self.assertTrue(result.get("success"))
         self.assertFalse(result.get("viable"))
@@ -1910,7 +1910,7 @@ class TestTier1TradingCosts(_BarrierModulePatchMixin, unittest.TestCase):
                     "n_seeds": 1,
                 },
                 return_grid=False,
-                format="summary",
+                output_mode="summary",
                 viable_only=False,
             )
 
@@ -1964,7 +1964,7 @@ class TestTier1TradingCosts(_BarrierModulePatchMixin, unittest.TestCase):
                     "n_seeds": 1,
                 },
                 return_grid=False,
-                format="summary",
+                output_mode="summary",
             )
 
         self.assertTrue(result.get("success"))
@@ -2014,7 +2014,7 @@ class TestTier1TradingCosts(_BarrierModulePatchMixin, unittest.TestCase):
                     "min_barrier_multiplier": 0.0,
                 },
                 return_grid=True,
-                format="summary",
+                output_mode="summary",
                 viable_only=False,
             )
         self.assertTrue(result.get("success"))

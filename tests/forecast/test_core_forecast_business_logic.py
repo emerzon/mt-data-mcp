@@ -544,11 +544,9 @@ def test_forecast_barrier_optimize_request_rejects_removed_output_field():
         ForecastBarrierOptimizeRequest(symbol="EURUSD", output="summary")
 
 
-def test_forecast_barrier_optimize_request_accepts_format_alias():
-    request = ForecastBarrierOptimizeRequest(symbol="EURUSD", format="full")
-
-    assert request.output_mode == "full"
-    assert request.model_fields_set == {"symbol", "output_mode"}
+def test_forecast_barrier_optimize_request_rejects_removed_format_field():
+    with pytest.raises(ValidationError, match="format was removed; use output_mode"):
+        ForecastBarrierOptimizeRequest(symbol="EURUSD", format="full")
 
 
 def test_forecast_barrier_optimize_request_accepts_legacy_vol_sl_extra():
