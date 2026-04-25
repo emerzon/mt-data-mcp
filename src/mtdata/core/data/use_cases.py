@@ -134,6 +134,38 @@ def _run_data_fetch_candles_impl(
         include_incomplete=request.include_incomplete,
         allow_stale=request.allow_stale,
     )
+    # Detect missing or all-zero spread when include_spread requested.
+    # MT5 often only reports spread at tick level; aggregated higher-timeframe bars may show spread==0.
+    if isinstance(result, dict) and getattr(request, "include_spread", False):
+        data = result.get("data")
+        if isinstance(data, list) and len(data) > 0:
+            has_spread_values = False
+            spread_all_zero = True
+            for bar in data:
+                if isinstance(bar, dict):
+                    if "spread" in bar and bar.get("spread") is not None:
+                        has_spread_values = True
+                        try:
+                            if float(bar.get("spread", 0)) != 0.0:
+                                spread_all_zero = False
+                                break
+                        except Exception:
+                            # non-numeric spread; treat as available
+                            has_spread_values = True
+                            spread_all_zero = False
+                            break
+                # If bars are lists/sequences, skip detection here.
+            if not has_spread_values:
+                # No spread values present at all
+                result.setdefault("warnings", []).append(
+                    "include_spread requested but returned bars do not contain 'spread' values; spread unavailable at this timeframe or source."
+                )
+                result["spread_unavailable"] = True
+            elif spread_all_zero:
+                result.setdefault("warnings", []).append(
+                    "include_spread requested but all returned spread values are zero; spread likely unavailable at this timeframe/source."
+                )
+                result["spread_unavailable"] = True
     detail_mode = str(request.detail or "compact").strip().lower()
     if isinstance(result, dict) and detail_mode == "compact":
         result = _compact_candles_payload(result)

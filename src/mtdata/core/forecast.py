@@ -1121,7 +1121,7 @@ def _forecast_list_methods_impl(  # noqa: C901
                 "available": available,
             }
             desc = str(item.get("description") or "").strip()
-            if desc:
+            if desc and desc.lower() != method_name.lower():
                 row["description"] = desc.splitlines()[0].strip()
             cat = item.get("category") or method_to_category.get(method_name)
             row["category"] = str(cat or "other")

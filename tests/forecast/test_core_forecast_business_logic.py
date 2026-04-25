@@ -758,6 +758,7 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert compact["methods"][0]["method"] == "theta"
     assert "category_summary" in compact
     assert "params_count" in compact["methods"][0]
+    assert compact["methods"][0]["description"] == "Theta model."
     assert compact["methods"][0]["supports_ci"] is True
     assert "namespace" not in compact["methods"][0]
     assert "method_id" not in compact["methods"][0]
@@ -793,6 +794,26 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert full["methods"][1]["supports_ci"] is False
     assert full["methods"][1]["execution"] == {"library": "native", "method": "mlf_rf"}
     assert full["barrier_methods"]["optimizer_only_methods"] == ["ensemble"]
+
+    monkeypatch.setattr(
+        cf,
+        "_get_forecast_methods_data",
+        lambda: {
+            "total": 1,
+            "categories": {"classical": ["naive"]},
+            "methods": [
+                {
+                    "method": "naive",
+                    "available": True,
+                    "description": "naive",
+                    "params": [],
+                    "requires": [],
+                },
+            ],
+        },
+    )
+    compact_repeated_description = _unwrap(cf.forecast_list_methods)()
+    assert "description" not in compact_repeated_description["methods"][0]
 
     monkeypatch.setattr(
         cf,
