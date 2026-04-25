@@ -350,6 +350,26 @@ class TestLabelsTripleBarrier:
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
     @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
     @patch(f"{_LABELS_MOD}._fetch_history")
+    def test_all_neutral_summary_explains_timeout(self, mock_hist, mock_den, mock_pip):
+        mock_hist.return_value = _make_flat_df(60)
+        result = _get_raw_fn()(
+            "EURUSD",
+            tp_pct=1.0,
+            sl_pct=1.0,
+            horizon=10,
+            detail="summary",
+        )
+        summary = result["summary"]
+        assert summary["counts"]["pos"] == 0
+        assert summary["counts"]["neg"] == 0
+        assert summary["counts"]["neut"] > 0
+        assert "no price path hit TP or SL" in summary["explanation"]
+        assert summary["max_observed_move_pct"]["favorable"] >= 0.0
+        assert summary["max_observed_move_pct"]["adverse"] >= 0.0
+
+    @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
+    @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
+    @patch(f"{_LABELS_MOD}._fetch_history")
     def test_short_direction_labels_falling_prices_as_take_profit(self, mock_hist, mock_den, mock_pip):
         mock_hist.return_value = _make_down_df(60)
         result = _get_raw_fn()(

@@ -55,7 +55,14 @@ def _build_triple_barrier_outputs(
     pip_size: float,
     barrier_kwargs: Dict[str, Any],
 ) -> tuple[
-    List[int], List[int], List[str], List[Optional[str]], List[Optional[str]], int
+    List[int],
+    List[int],
+    List[str],
+    List[Optional[str]],
+    List[Optional[str]],
+    List[float],
+    List[float],
+    int,
 ]:
     max_entry_index = len(closes) - int(horizon)
     if max_entry_index <= 0:
@@ -92,6 +99,9 @@ def _build_triple_barrier_outputs(
     valid_entry_mask = valid_price_mask & valid_barrier_mask
     skipped_entries = int(max_entry_index - np.count_nonzero(valid_entry_mask))
 
+    high_values = highs if highs is not None else closes
+    low_values = lows if lows is not None else closes
+
     if label_on == "close":
         close_windows = np.lib.stride_tricks.sliding_window_view(
             closes[1:], int(horizon)
@@ -103,8 +113,6 @@ def _build_triple_barrier_outputs(
             tp_hits = close_windows <= tp_levels[:, None]
             sl_hits = close_windows >= sl_levels[:, None]
     else:
-        high_values = highs if highs is not None else closes
-        low_values = lows if lows is not None else closes
         high_windows = np.lib.stride_tricks.sliding_window_view(
             high_values[1:], int(horizon)
         )
@@ -126,8 +134,26 @@ def _build_triple_barrier_outputs(
     entries: List[str] = []
     tp_times: List[Optional[str]] = []
     sl_times: List[Optional[str]] = []
+    max_favorable_moves_pct: List[float] = []
+    max_adverse_moves_pct: List[float] = []
 
     for idx in np.flatnonzero(valid_entry_mask):
+        entry_price = float(entry_prices[idx])
+        future_high = np.asarray(high_values[idx + 1 : idx + int(horizon) + 1], dtype=float)
+        future_low = np.asarray(low_values[idx + 1 : idx + int(horizon) + 1], dtype=float)
+        finite_high = future_high[np.isfinite(future_high)]
+        finite_low = future_low[np.isfinite(future_low)]
+        window_high = float(np.max(finite_high)) if finite_high.size else entry_price
+        window_low = float(np.min(finite_low)) if finite_low.size else entry_price
+        if direction_value == "long":
+            favorable_move = max(0.0, (window_high - entry_price) / entry_price * 100.0)
+            adverse_move = max(0.0, (entry_price - window_low) / entry_price * 100.0)
+        else:
+            favorable_move = max(0.0, (entry_price - window_low) / entry_price * 100.0)
+            adverse_move = max(0.0, (window_high - entry_price) / entry_price * 100.0)
+        max_favorable_moves_pct.append(favorable_move)
+        max_adverse_moves_pct.append(adverse_move)
+
         tp_offset = int(hit_tp[idx])
         sl_offset = int(hit_sl[idx])
         if tp_offset < 0 and sl_offset < 0:
@@ -152,7 +178,16 @@ def _build_triple_barrier_outputs(
             sl_times.append(_format_time_minimal(times[idx + sl_offset]))
         entries.append(_format_time_minimal(times[idx]))
 
-    return labels, hold, entries, tp_times, sl_times, skipped_entries
+    return (
+        labels,
+        hold,
+        entries,
+        tp_times,
+        sl_times,
+        max_favorable_moves_pct,
+        max_adverse_moves_pct,
+        skipped_entries,
+    )
 
 
 @mcp.tool()
@@ -278,18 +313,25 @@ def labels_triple_barrier(
                 return {
                     "error": "Resolved TP/SL barriers are invalid for the entry price."
                 }
-            labels, hold, t_entry, tp_times, sl_times, skipped_entries = (
-                _build_triple_barrier_outputs(
-                    closes=closes,
-                    highs=highs,
-                    lows=lows,
-                    times=times,
-                    horizon=int(horizon),
-                    label_on=label_on,
-                    direction_value=direction_value,
-                    pip_size=pip_size,
-                    barrier_kwargs=barrier_kwargs,
-                )
+            (
+                labels,
+                hold,
+                t_entry,
+                tp_times,
+                sl_times,
+                max_favorable_moves_pct,
+                max_adverse_moves_pct,
+                skipped_entries,
+            ) = _build_triple_barrier_outputs(
+                closes=closes,
+                highs=highs,
+                lows=lows,
+                times=times,
+                horizon=int(horizon),
+                label_on=label_on,
+                direction_value=direction_value,
+                pip_size=pip_size,
+                barrier_kwargs=barrier_kwargs,
             )
 
             # Build label legend for interpretability
@@ -352,6 +394,20 @@ def labels_triple_barrier(
                     "counts": counts,
                     "median_holding_bars": med_hold,
                 }
+                favorable_tail = max_favorable_moves_pct[-n:] if n > 0 else max_favorable_moves_pct
+                adverse_tail = max_adverse_moves_pct[-n:] if n > 0 else max_adverse_moves_pct
+                if favorable_tail or adverse_tail:
+                    summary["max_observed_move_pct"] = {
+                        "favorable": round(float(max(favorable_tail or [0.0])), 6),
+                        "adverse": round(float(max(adverse_tail or [0.0])), 6),
+                    }
+                if counts["pos"] == 0 and counts["neg"] == 0 and counts["neut"] > 0:
+                    summary["explanation"] = (
+                        "All labels are neutral because no price path hit TP or SL within "
+                        "the horizon. Label 0 means a timeout/hold outcome, not a "
+                        "calculation failure; consider tightening barriers or increasing "
+                        "horizon if you need more barrier hits."
+                    )
                 if output_mode == "summary":
                     out = {
                         "success": True,
