@@ -1638,6 +1638,23 @@ def run_trade_history(  # noqa: C901
                         return False
                 return True
 
+            def _backfill_filled_order_price_open(df_in: "pd.DataFrame") -> None:
+                required = {"price_open", "price_current", "state"}
+                if not required.issubset(set(df_in.columns)):
+                    return
+                state_text = df_in["state"].astype(str).str.lower()
+                open_price = pd.to_numeric(df_in["price_open"], errors="coerce")
+                current_price = pd.to_numeric(df_in["price_current"], errors="coerce")
+                mask = (
+                    state_text.str.contains("filled", na=False)
+                    & (open_price.isna() | open_price.eq(0))
+                    & current_price.notna()
+                    & current_price.ne(0)
+                )
+                if mask.any():
+                    df_in["price_open"] = open_price.astype(float)
+                    df_in.loc[mask, "price_open"] = current_price.loc[mask]
+
             def _history_fetch_error(kind_label: str, exc: Exception) -> Dict[str, str]:
                 detail = str(exc).strip()
                 if "exception set" in detail.lower():
@@ -1781,6 +1798,7 @@ def run_trade_history(  # noqa: C901
                 _normalize_time_col(df, "time_done")
                 for col, prefix in order_enum_columns:
                     _decode_enum_column(df, col, prefix)
+                _backfill_filled_order_price_open(df)
                 df = _filter_by_side(df)
                 if len(df) == 0:
                     return _empty_history_message("orders")

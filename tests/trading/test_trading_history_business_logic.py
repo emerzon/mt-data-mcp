@@ -122,6 +122,42 @@ def test_trade_history_orders_normalizes_setup_and_done_times() -> None:
     assert out["items"][0]["timestamp_timezone"] == "UTC"
 
 
+def test_trade_history_orders_backfills_filled_zero_open_price() -> None:
+    mt5, prev = _install_mock_mt5()
+    Order = namedtuple(
+        "Order",
+        [
+            "ticket",
+            "time_setup",
+            "time_done",
+            "symbol",
+            "state",
+            "price_open",
+            "price_current",
+        ],
+    )
+    mt5.history_orders_get.return_value = [
+        Order(
+            ticket=1,
+            time_setup=1700000000,
+            time_done=1700003600,
+            symbol="BTCUSD",
+            state="Filled",
+            price_open=0,
+            price_current=77474.01,
+        )
+    ]
+
+    with patch("mtdata.core.trading.account._use_client_tz", lambda: False):
+        out = trade_history(history_kind="orders", __cli_raw=True)
+    if prev is not None:
+        sys.modules["MetaTrader5"] = prev
+
+    assert out["success"] is True
+    assert out["items"][0]["price_open"] == 77474.01
+    assert out["items"][0]["price_current"] == 77474.01
+
+
 def test_trade_history_compact_omits_parallel_normalized_rows() -> None:
     out = normalize_trade_history_output(
         [{"ticket": 11, "time": "2024-01-01 12:00:00", "symbol": "EURUSD"}],
