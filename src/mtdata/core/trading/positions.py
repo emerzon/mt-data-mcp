@@ -286,6 +286,35 @@ def _normalize_trade_history_items(
     return normalized
 
 
+def _trade_history_request_echo(request: Any, *, history_kind: Any) -> Dict[str, Any]:
+    echo: Dict[str, Any] = {}
+    if history_kind is not None:
+        echo["history_kind"] = history_kind
+    column_style = getattr(request, "column_style", None)
+    if column_style is not None:
+        echo["column_style"] = column_style
+    for field in (
+        "start",
+        "end",
+        "side",
+        "minutes_back",
+        "position_ticket",
+        "deal_ticket",
+        "order_ticket",
+        "symbol",
+        "limit",
+    ):
+        value = getattr(request, field, None)
+        if value is None:
+            continue
+        if field == "side":
+            normalized_side, _ = validation._normalize_trade_side_filter(value)
+            echo[field] = normalized_side or value
+        else:
+            echo[field] = value
+    return echo
+
+
 def _trade_history_humanized_key(key: str) -> str:
     overrides = {
         "sl": "SL",
@@ -354,37 +383,23 @@ def normalize_trade_history_output(
     include_request_metadata = _include_trade_read_request_metadata(request)
     if out.get("success") is True and isinstance(out.get("items"), list):
         raw_items = list(out["items"])
-        out["items"] = _style_trade_history_items(
-            raw_items,
-            column_style=getattr(request, "column_style", "snake_case"),
-        )
         if include_request_metadata:
-            out["normalized_items"] = _normalize_trade_history_items(
+            out["items"] = _normalize_trade_history_items(
                 raw_items,
                 history_kind=history_kind,
             )
+            out["item_schema"] = "normalized_trade_history.v1"
+        else:
+            out["items"] = _style_trade_history_items(
+                raw_items,
+                column_style=getattr(request, "column_style", "snake_case"),
+            )
     if include_request_metadata:
-        if history_kind is not None:
-            out["history_kind"] = history_kind
-        column_style = getattr(request, "column_style", None)
-        if column_style is not None:
-            out["column_style"] = column_style
-        for field in (
-            "start",
-            "end",
-            "side",
-            "minutes_back",
-            "position_ticket",
-            "deal_ticket",
-            "order_ticket",
-        ):
-            value = getattr(request, field, None)
-            if value is not None:
-                if field == "side":
-                    normalized_side, _ = validation._normalize_trade_side_filter(value)
-                    out[field] = normalized_side or value
-                else:
-                    out[field] = value
+        for key in ("symbol", "ticket", "limit"):
+            out.pop(key, None)
+        request_echo = _trade_history_request_echo(request, history_kind=history_kind)
+        if request_echo:
+            out["request_echo"] = request_echo
     elif history_kind is not None:
         out["history_kind"] = history_kind
     return out

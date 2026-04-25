@@ -127,25 +127,25 @@ def test_trade_history_compact_omits_parallel_normalized_rows() -> None:
     assert "normalized_items" not in out
 
 
-def test_trade_history_full_detail_adds_normalized_deal_rows_without_changing_items() -> None:
+def test_trade_history_full_detail_uses_normalized_deal_items() -> None:
+    raw_item = {
+        "ticket": 11,
+        "order": 22,
+        "time": "2024-01-01 12:00:00",
+        "symbol": "EURUSD",
+        "volume": 0.5,
+        "price": 1.2345,
+        "entry_label": "Out",
+        "comment": "closed",
+    }
     out = normalize_trade_history_output(
-        [
-            {
-                "ticket": 11,
-                "order": 22,
-                "time": "2024-01-01 12:00:00",
-                "symbol": "EURUSD",
-                "volume": 0.5,
-                "price": 1.2345,
-                "entry_label": "Out",
-                "comment": "closed",
-            }
-        ],
+        [raw_item],
         request=TradeHistoryRequest(history_kind="deals", detail="full"),
     )
 
-    assert out["items"][0]["entry_label"] == "Out"
-    assert out["normalized_items"] == [
+    assert "normalized_items" not in out
+    assert out["item_schema"] == "normalized_trade_history.v1"
+    assert out["items"] == [
         {
             "kind": "deal",
             "ticket": 11,
@@ -155,12 +155,14 @@ def test_trade_history_full_detail_adds_normalized_deal_rows_without_changing_it
             "volume": 0.5,
             "price": 1.2345,
             "state": "Out",
-            "deal_details": out["items"][0],
+            "deal_details": raw_item,
         }
     ]
+    assert out["request_echo"]["history_kind"] == "deals"
+    assert out["request_echo"]["column_style"] == "snake_case"
 
 
-def test_trade_history_humanized_column_style_only_renames_primary_items() -> None:
+def test_trade_history_full_detail_ignores_humanized_style_for_canonical_items() -> None:
     out = normalize_trade_history_output(
         [
             {
@@ -181,33 +183,32 @@ def test_trade_history_humanized_column_style_only_renames_primary_items() -> No
         ),
     )
 
-    assert out["items"][0]["Ticket"] == 11
-    assert out["items"][0]["Symbol"] == "EURUSD"
-    assert out["items"][0]["Comments"] == "closed"
-    assert "ticket" not in out["items"][0]
-    assert out["normalized_items"][0]["ticket"] == 11
-    assert out["normalized_items"][0]["deal_details"]["ticket"] == 11
+    assert out["items"][0]["ticket"] == 11
+    assert out["items"][0]["symbol"] == "EURUSD"
+    assert out["items"][0]["deal_details"]["comment"] == "closed"
+    assert "Ticket" not in out["items"][0]
+    assert "normalized_items" not in out
+    assert out["request_echo"]["column_style"] == "humanized"
 
 
-def test_trade_history_full_detail_adds_normalized_order_rows_without_changing_items() -> None:
+def test_trade_history_full_detail_uses_normalized_order_items() -> None:
+    raw_item = {
+        "ticket": 33,
+        "time_setup": "2024-01-01 12:00:00",
+        "time_done": "2024-01-01 12:05:00",
+        "symbol": "GBPUSD",
+        "volume_initial": 1.0,
+        "price_open": 1.25,
+        "price_current": 1.251,
+        "state_label": "Filled",
+    }
     out = normalize_trade_history_output(
-        [
-            {
-                "ticket": 33,
-                "time_setup": "2024-01-01 12:00:00",
-                "time_done": "2024-01-01 12:05:00",
-                "symbol": "GBPUSD",
-                "volume_initial": 1.0,
-                "price_open": 1.25,
-                "price_current": 1.251,
-                "state_label": "Filled",
-            }
-        ],
+        [raw_item],
         request=TradeHistoryRequest(history_kind="orders", detail="full"),
     )
 
-    assert out["items"][0]["state_label"] == "Filled"
-    assert out["normalized_items"] == [
+    assert "normalized_items" not in out
+    assert out["items"] == [
         {
             "kind": "order",
             "ticket": 33,
@@ -217,12 +218,12 @@ def test_trade_history_full_detail_adds_normalized_order_rows_without_changing_i
             "volume": 1.0,
             "price": 1.251,
             "state": "Filled",
-            "order_details": out["items"][0],
+            "order_details": raw_item,
         }
     ]
 
 
-def test_trade_history_order_humanized_column_style_renames_order_times() -> None:
+def test_trade_history_compact_humanized_column_style_renames_order_times() -> None:
     out = normalize_trade_history_output(
         [
             {
@@ -237,7 +238,7 @@ def test_trade_history_order_humanized_column_style_renames_order_times() -> Non
         ],
         request=TradeHistoryRequest(
             history_kind="orders",
-            detail="full",
+            detail="compact",
             column_style="humanized",
         ),
     )
@@ -246,7 +247,7 @@ def test_trade_history_order_humanized_column_style_renames_order_times() -> Non
     assert out["items"][0]["Done Time"] == "2024-01-01 12:05:00"
     assert out["items"][0]["Initial Volume"] == 1.0
     assert "time_setup" not in out["items"][0]
-    assert out["normalized_items"][0]["order_details"]["time_setup"] == "2024-01-01 12:00:00"
+    assert "normalized_items" not in out
 
 
 def test_trade_history_filters_rows_by_symbol_even_if_mt5_returns_mixed_rows() -> None:
@@ -284,10 +285,10 @@ def test_trade_history_filters_deals_by_side_alias() -> None:
         sys.modules["MetaTrader5"] = prev
 
     assert out["success"] is True
-    assert out["side"] == "BUY"
+    assert out["request_echo"]["side"] == "BUY"
     assert out["count"] == 1
     assert out["items"][0]["ticket"] == 1
-    assert out["items"][0]["type"] == "Buy"
+    assert out["items"][0]["deal_details"]["type"] == "Buy"
 
 
 def test_trade_history_request_normalizes_buy_sell_aliases() -> None:
@@ -313,10 +314,10 @@ def test_trade_history_filters_orders_by_side_prefix() -> None:
         sys.modules["MetaTrader5"] = prev
 
     assert out["success"] is True
-    assert out["side"] == "SELL"
+    assert out["request_echo"]["side"] == "SELL"
     assert out["count"] == 1
     assert out["items"][0]["ticket"] == 12
-    assert out["items"][0]["type"] == "Sell Stop"
+    assert out["items"][0]["order_details"]["type"] == "Sell Stop"
 
 
 def test_trade_history_deals_decodes_enum_codes_to_labels() -> None:
@@ -608,7 +609,7 @@ def test_trade_history_rejects_invalid_side_filter() -> None:
 
     assert out["success"] is False
     assert out["error"] == "side must be BUY/SELL or LONG/SHORT."
-    assert out["side"] == "flat"
+    assert out["request_echo"]["side"] == "flat"
 
 
 def test_trade_history_surfaces_comment_limit_metadata() -> None:
