@@ -235,6 +235,9 @@ class TestLabelsTripleBarrier:
         assert result["sample_size"] == 10
         assert len(result["labels"]) == 10
         assert "sample_note" in result
+        assert result["label_legend"]["1"]["label"] == "tp_first"
+        assert result["label_legend"]["-1"]["label"] == "sl_first"
+        assert result["label_legend"]["0"]["label"] == "hold"
 
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
     @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")

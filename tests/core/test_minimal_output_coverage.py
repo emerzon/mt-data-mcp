@@ -414,6 +414,13 @@ class TestNormalizeTripleBarrierPayload:
                 "lookback": 2,
                 "counts": {"pos": 1, "neg": 0, "neut": 1},
             },
+            "label_legend": {
+                "1": {"label": "tp_first"},
+                "-1": {"label": "sl_first"},
+                "0": {"label": "hold"},
+            },
+            "sample_size": 2,
+            "sample_note": "entries, labels, and timing arrays show the most recent 2 observations.",
         }
         result = _normalize_triple_barrier_payload(payload)
         assert result == {
@@ -441,6 +448,13 @@ class TestNormalizeTripleBarrierPayload:
                 "lookback": 2,
                 "counts": {"pos": 1, "neg": 0, "neut": 1},
             },
+            "label_legend": {
+                "1": {"label": "tp_first"},
+                "-1": {"label": "sl_first"},
+                "0": {"label": "hold"},
+            },
+            "sample_size": 2,
+            "sample_note": "entries, labels, and timing arrays show the most recent 2 observations.",
         }
 
 

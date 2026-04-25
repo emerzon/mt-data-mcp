@@ -456,7 +456,16 @@ def _normalize_triple_barrier_payload(
     if isinstance(summary, dict) and summary:
         out["summary"] = summary
 
-    for key in ("params_used", "meta"):
+    for key in (
+        "direction",
+        "label_legend",
+        "sample_size",
+        "sample_note",
+        "skipped_entries",
+        "warnings",
+        "params_used",
+        "meta",
+    ):
         value = payload.get(key)
         if not _is_empty_value(value):
             out[key] = value
