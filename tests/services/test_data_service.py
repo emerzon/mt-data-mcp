@@ -321,10 +321,16 @@ class TestDataService(unittest.TestCase):
             self.assertTrue(result.get('success'))
             self.assertIn('stats', result)
             self.assertGreater(mock_dataframe.call_count, 0)
-            self.assertEqual(result.get('output'), output_mode)
             if output_mode == "summary":
-                self.assertFalse(result.get("sample_adequacy"))
                 self.assertEqual(set(result.get("stats", {})), {"spread"})
+                self.assertNotIn("output", result)
+                self.assertNotIn("sample_adequacy", result)
+                self.assertEqual(
+                    set(result.get("stats", {}).get("spread", {})),
+                    {"low", "high", "mean"},
+                )
+            else:
+                self.assertEqual(result.get('output'), output_mode)
 
     @patch('mtdata.services.data_service._mt5_copy_ticks_range')
     @patch('mtdata.services.data_service._resolve_client_tz', return_value=None)
@@ -439,9 +445,9 @@ class TestDataService(unittest.TestCase):
         self.assertTrue(result.get('success'))
         self.assertEqual(result.get('duration_seconds'), 0.0)
         self.assertIsNone(result.get('tick_rate_per_second'))
-        self.assertEqual(result.get('tick_rate_note'), "< 1s window")
-        self.assertFalse(result.get("sample_adequacy"))
-        self.assertIn("spread stats only", result.get("sample_adequacy_note", ""))
+        self.assertNotIn('tick_rate_note', result)
+        self.assertNotIn("sample_adequacy", result)
+        self.assertNotIn("sample_adequacy_note", result)
 
     @patch('mtdata.services.data_service._mt5_copy_ticks_range')
     @patch('mtdata.services.data_service._symbol_ready_guard', _mock_symbol_ready_guard)
@@ -481,7 +487,7 @@ class TestDataService(unittest.TestCase):
         ]
         mock_copy_ticks.return_value = ticks
 
-        result = fetch_ticks(symbol="EURUSD", limit=3, format="summary")
+        result = fetch_ticks(symbol="EURUSD", limit=3, format="stats")
 
         self.assertTrue(result.get("success"))
         self.assertEqual(result.get("spread_change_pct_note"), "first spread was zero")
@@ -617,15 +623,10 @@ class TestDataService(unittest.TestCase):
         result = fetch_ticks(symbol="EURUSD", limit=3, format="summary")
 
         self.assertTrue(result.get("success"))
-        self.assertFalse(result.get("sample_adequacy"))
         self.assertEqual(set(result.get("stats", {})), {"spread"})
         spread_stats = result.get("stats", {}).get("spread", {})
         self.assertFalse(spread_stats.get("available"))
-        for key in ("first", "last", "low", "high", "mean", "std", "stderr", "kurtosis", "change", "change_pct"):
-            self.assertIn(key, spread_stats)
-        self.assertEqual(spread_stats.get("count"), 0)
-        self.assertTrue(math.isnan(spread_stats["first"]))
-        self.assertTrue(math.isnan(spread_stats["mean"]))
+        self.assertEqual(set(spread_stats), {"available"})
 
     def test_format_candle_times_vectorizes_utc_formatting(self):
         import pandas as pd

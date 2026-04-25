@@ -1511,19 +1511,39 @@ def _decode_tick_flags(flag_value: int) -> List[str]:
     return labels
 
 
-def _tick_flags_legend() -> Dict[str, str]:
-    return {
-        label: description
-        for bit, label, description in _tick_flag_definitions()
-        if bit > 0
-    }
-
-
 def _observed_tick_flags_decoded(flags: List[int]) -> Dict[str, List[str]]:
     return {
         str(flag): _decode_tick_flags(flag)
         for flag in sorted(set(int(value) for value in flags if int(value) != 0))
     }
+
+
+def _compact_tick_summary(out: Dict[str, Any]) -> Dict[str, Any]:
+    spread = out.get("stats", {}).get("spread")
+    compact_spread: Dict[str, Any] = {}
+    if isinstance(spread, dict):
+        if spread.get("available") is False:
+            compact_spread["available"] = False
+        else:
+            for source_key, target_key in (
+                ("low", "low"),
+                ("high", "high"),
+                ("mean", "mean"),
+            ):
+                value = spread.get(source_key)
+                if value is not None:
+                    compact_spread[target_key] = value
+    compact: Dict[str, Any] = {
+        "success": bool(out.get("success")),
+        "count": out.get("count"),
+        "start": out.get("start"),
+        "end": out.get("end"),
+        "duration_seconds": out.get("duration_seconds"),
+        "tick_rate_per_second": out.get("tick_rate_per_second"),
+        "timezone": out.get("timezone"),
+        "stats": {"spread": compact_spread},
+    }
+    return compact
 
 
 def fetch_ticks(  # noqa: C901
@@ -1835,7 +1855,6 @@ def fetch_ticks(  # noqa: C901
                 out["stats"]["last"] = _series_stats(df_stats["last"], total_count=len(df_stats))
             if has_flags:
                 out["flags_decoded"] = _observed_tick_flags_decoded(flags)
-                out["flags_legend"] = _tick_flags_legend()
 
             volume_kind = "tick_volume"
             vol_vals = pd.Series([1.0] * int(len(df_stats)), dtype=float)
@@ -1926,7 +1945,7 @@ def fetch_ticks(  # noqa: C901
                 elif not small_summary_sample:
                     out["stats"]["volume"] = {"kind": volume_kind}
 
-            return out
+            return out if detailed_stats else _compact_tick_summary(out)
 
         # If simplify mode requests approximation or resampling, use shared path
         if simplify_present and simplify_mode in ('approximate', 'resample'):
@@ -1942,7 +1961,6 @@ def fetch_ticks(  # noqa: C901
                 payload["timezone"] = "UTC"
             if has_flags:
                 payload["flags_decoded"] = _observed_tick_flags_decoded(flags)
-                payload["flags_legend"] = _tick_flags_legend()
             if simplify_meta is not None and original_count > len(rows):
                 payload["simplified"] = True
                 meta = dict(simplify_meta)
@@ -2056,7 +2074,6 @@ def fetch_ticks(  # noqa: C901
             payload["timezone"] = "UTC"
         if has_flags:
             payload["flags_decoded"] = _observed_tick_flags_decoded(flags)
-            payload["flags_legend"] = _tick_flags_legend()
         if simplify_present and original_count > len(rows):
             payload["simplified"] = True
             meta = {
