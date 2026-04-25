@@ -1459,6 +1459,86 @@ def fetch_candles(  # noqa: C901
     except Exception as e:
         return {"error": f"Error getting rates: {str(e)}"}
 
+
+def _mt5_tick_flag_value(name: str, default: int) -> int:
+    try:
+        return int(getattr(mt5, name))
+    except (TypeError, ValueError, AttributeError):
+        return int(default)
+
+
+def _tick_flag_definitions() -> tuple[tuple[int, str, str], ...]:
+    return (
+        (
+            _mt5_tick_flag_value("TICK_FLAG_BID", 2),
+            "bid",
+            "Bid price changed or is present in the tick.",
+        ),
+        (
+            _mt5_tick_flag_value("TICK_FLAG_ASK", 4),
+            "ask",
+            "Ask price changed or is present in the tick.",
+        ),
+        (
+            _mt5_tick_flag_value("TICK_FLAG_LAST", 8),
+            "last",
+            "Last traded price changed or is present in the tick.",
+        ),
+        (
+            _mt5_tick_flag_value("TICK_FLAG_VOLUME", 16),
+            "volume",
+            "Tick volume changed or is present in the tick.",
+        ),
+        (
+            _mt5_tick_flag_value("TICK_FLAG_BUY", 32),
+            "buy",
+            "Last trade was buyer-initiated.",
+        ),
+        (
+            _mt5_tick_flag_value("TICK_FLAG_SELL", 64),
+            "sell",
+            "Last trade was seller-initiated.",
+        ),
+        (
+            _mt5_tick_flag_value("TICK_FLAG_VOLUME_REAL", 1024),
+            "volume_real",
+            "Real volume changed or is present in the tick.",
+        ),
+    )
+
+
+def _decode_tick_flags(flag_value: int) -> List[str]:
+    try:
+        remaining = int(flag_value)
+    except (TypeError, ValueError):
+        return []
+    labels: List[str] = []
+    for bit, label, _description in _tick_flag_definitions():
+        if bit > 0 and remaining & bit:
+            labels.append(label)
+            remaining &= ~bit
+    while remaining > 0:
+        bit = remaining & -remaining
+        labels.append(f"unknown_{bit}")
+        remaining &= ~bit
+    return labels
+
+
+def _tick_flags_legend() -> Dict[str, str]:
+    return {
+        label: description
+        for bit, label, description in _tick_flag_definitions()
+        if bit > 0
+    }
+
+
+def _observed_tick_flags_decoded(flags: List[int]) -> Dict[str, List[str]]:
+    return {
+        str(flag): _decode_tick_flags(flag)
+        for flag in sorted(set(int(value) for value in flags if int(value) != 0))
+    }
+
+
 def fetch_ticks(  # noqa: C901
     symbol: str,
     limit: int = DEFAULT_ROW_LIMIT,
@@ -1751,6 +1831,9 @@ def fetch_ticks(  # noqa: C901
                 out["price_precision"] = int(price_digits)
             if has_last:
                 out["stats"]["last"] = _series_stats(df_stats["last"], total_count=len(df_stats))
+            if has_flags:
+                out["flags_decoded"] = _observed_tick_flags_decoded(flags)
+                out["flags_legend"] = _tick_flags_legend()
 
             volume_kind = "tick_volume"
             vol_vals = pd.Series([1.0] * int(len(df_stats)), dtype=float)
@@ -1855,6 +1938,9 @@ def fetch_ticks(  # noqa: C901
             })
             if not _use_ctz:
                 payload["timezone"] = "UTC"
+            if has_flags:
+                payload["flags_decoded"] = _observed_tick_flags_decoded(flags)
+                payload["flags_legend"] = _tick_flags_legend()
             if simplify_meta is not None and original_count > len(rows):
                 payload["simplified"] = True
                 meta = dict(simplify_meta)
@@ -1964,6 +2050,9 @@ def fetch_ticks(  # noqa: C901
         })
         if not _use_ctz:
             payload["timezone"] = "UTC"
+        if has_flags:
+            payload["flags_decoded"] = _observed_tick_flags_decoded(flags)
+            payload["flags_legend"] = _tick_flags_legend()
         if simplify_present and original_count > len(rows):
             payload["simplified"] = True
             meta = {

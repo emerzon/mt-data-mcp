@@ -2289,6 +2289,11 @@ class TestEdgeCases(unittest.TestCase):
         mock_ticks.return_value = ticks
         result = fetch_ticks('EURUSD', limit=5, format='rows')
         self.assertTrue(result.get('success'))
+        self.assertEqual(result["flags_decoded"]["1"], ["unknown_1"])
+        self.assertEqual(result["flags_decoded"]["2"], ["bid"])
+        self.assertEqual(result["flags_decoded"]["3"], ["bid", "unknown_1"])
+        self.assertIn("bid", result["flags_legend"])
+        self.assertIn("volume_real", result["flags_legend"])
 
     @patch(_TICKS_RANGE)
     @patch(_CACHED_INFO, return_value=MagicMock())
