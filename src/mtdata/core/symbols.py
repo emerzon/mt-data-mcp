@@ -648,7 +648,17 @@ def _market_scan_contract_table(
         "row_count": int(len(rows)),
     }
     if include_columns:
-        out["columns"] = [str(header) for header in headers]
+        columns = [str(header) for header in headers]
+        seen = set(columns)
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            for key in row.keys():
+                column = str(key)
+                if column not in seen:
+                    columns.append(column)
+                    seen.add(column)
+        out["columns"] = columns
     return out
 
 

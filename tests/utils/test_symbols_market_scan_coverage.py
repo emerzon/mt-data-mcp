@@ -433,6 +433,13 @@ class TestMarketScan:
         assert result["summary"]["counts"]["matched_symbols"] == 1
         assert result["summary"]["counts"]["filtered_out_symbols"] == 1
         assert result["data"]["table"]["columns"][0] == "symbol"
+        assert set(result["data"]["table"]["rows"][0]).issubset(
+            set(result["data"]["table"]["columns"])
+        )
+        assert "bid" in result["data"]["table"]["columns"]
+        assert "ask" in result["data"]["table"]["columns"]
+        assert "open" in result["data"]["table"]["columns"]
+        assert "real_volume" in result["data"]["table"]["columns"]
         assert result["data"]["table"]["row_count"] == 1
         assert result["data"]["table"]["rows"][0]["symbol"] == "EURUSD"
         assert result["data"]["table"]["rows"][0]["rsi"] == 100.0
