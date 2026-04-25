@@ -287,7 +287,7 @@ def get_history(
 @api_router.get("/pivots")
 def get_pivots(
     symbol: str = Query(...),
-    timeframe: str = Query("D1"),
+    timeframe: str = Query("H1"),
     method: str = Query("classic"),
 ) -> Dict[str, Any]:
     return _get_pivots_response(
@@ -302,7 +302,7 @@ def get_pivots(
 @api_router.get("/support-resistance")
 def get_support_resistance(
     symbol: str = Query(...),
-    timeframe: str = Query("auto"),
+    timeframe: str = Query("H1"),
     limit: int = Query(800, ge=100, le=20000),
     tolerance_pct: float = Query(0.0015, ge=0.0, le=0.05),
     min_touches: int = Query(2, ge=1),

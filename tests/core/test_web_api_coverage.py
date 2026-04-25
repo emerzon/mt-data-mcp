@@ -1327,7 +1327,7 @@ class TestGetSupportResistance:
         assert len(res["fibonacci"]["levels"]) == 7
         assert res["fibonacci"]["nearest"]["support"]["type"] == "support"
 
-    def test_default_timeframe_uses_auto_mode(self):
+    def test_default_timeframe_uses_h1_mode(self):
         import pandas as pd
 
         n = 20
@@ -1345,12 +1345,9 @@ class TestGetSupportResistance:
 
         assert resp.status_code == 200
         body = resp.json()
-        assert body["timeframe"] == "auto"
-        assert body["mode"] == "auto"
-        assert body["timeframes_analyzed"] == ["M15", "H1", "H4", "D1"]
-        assert body["fibonacci"]["mode"] == "auto"
-        assert body["fibonacci"]["selected_timeframe"] == "D1"
-        assert mock_fetch.call_count == 4
+        assert body["timeframe"] == "H1"
+        assert body["mode"] == "single"
+        assert mock_fetch.call_count == 1
 
     def test_no_levels_detected(self):
         import pandas as pd

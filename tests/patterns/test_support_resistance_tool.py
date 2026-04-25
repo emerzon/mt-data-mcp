@@ -204,7 +204,7 @@ def test_support_resistance_tool_standard_detail_keeps_actionable_lists_without_
     assert result["fibonacci"]["nearest"]["support"]["type"] == "support"
 
 
-def test_support_resistance_tool_defaults_to_auto_mode():
+def test_support_resistance_tool_auto_mode_merges_timeframes():
     fn = _get_support_resistance_fn()
     gateway = type("Gateway", (), {"ensure_connection": lambda self: None})()
 
@@ -218,7 +218,7 @@ def test_support_resistance_tool_defaults_to_auto_mode():
 
     with patch("mtdata.core.pivot.get_mt5_gateway", return_value=gateway), \
          patch("mtdata.core.pivot._fetch_history", side_effect=_fetch) as mock_fetch:
-        result = fn("EURUSD", limit=200, tolerance_pct=0.005, min_touches=2, max_levels=3, reaction_bars=4)
+        result = fn("EURUSD", timeframe="auto", limit=200, tolerance_pct=0.005, min_touches=2, max_levels=3, reaction_bars=4)
 
     assert mock_fetch.call_count == 4
     assert result["success"] is True

@@ -136,7 +136,7 @@ def compute_support_resistance_payload(
 @mcp.tool()
 def pivot_compute_points(  # noqa: C901
     symbol: str,
-    timeframe: TimeframeLiteral = "D1",
+    timeframe: TimeframeLiteral = "H1",
     detail: CompactStandardFullDetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """Compute pivot point levels from the last completed bar on `timeframe`.
@@ -466,7 +466,7 @@ def pivot_compute_points(  # noqa: C901
 @mcp.tool()
 def support_resistance_levels(
     symbol: str,
-    timeframe: AutoTimeframeLiteral = "auto",
+    timeframe: AutoTimeframeLiteral = "H1",
     limit: int = 800,
     tolerance_pct: float = 0.0015,
     min_touches: int = 2,
@@ -480,7 +480,7 @@ def support_resistance_levels(
 ) -> Dict[str, Any]:
     """Detect support/resistance plus Fibonacci swing levels around the current price from historical structure.
 
-    `timeframe="auto"` (default) merges levels from M15, H1, H4, and D1.
+    Set `timeframe="auto"` to merge levels from M15, H1, H4, and D1.
     Use `detail="compact"` for the nearest-level summary, `detail="standard"`
     for compact actionable supports/resistances/levels, and `detail="full"`
     for the raw diagnostic payload.
