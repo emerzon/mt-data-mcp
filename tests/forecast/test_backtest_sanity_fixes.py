@@ -105,6 +105,7 @@ class TestFlatTradeFiltering:
                 assert d["position"] == "flat"
         assert r["metrics_available"] is False
         assert r["metrics_reason"] == "no_non_flat_trades"
+        assert r["trade_status"] == "flat"
         assert r["metrics"]["trades_observed"] == 0
 
     @patch("mtdata.forecast.backtest._fetch_history")

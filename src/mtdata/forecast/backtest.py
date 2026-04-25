@@ -106,6 +106,8 @@ def _attach_metrics_status(
     )
     payload["metrics_available"] = False
     payload["metrics_reason"] = str(unavailable_reason)
+    if unavailable_reason == "no_non_flat_trades":
+        payload["trade_status"] = "flat"
     payload["slippage_bps"] = float(slippage_bps)
 
 

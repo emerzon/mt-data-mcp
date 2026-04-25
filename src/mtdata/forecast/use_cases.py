@@ -431,6 +431,7 @@ def _compact_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:
             "avg_directional_accuracy",
             "successful_tests",
             "num_tests",
+            "trade_status",
             "metrics_available",
             "metrics_reason",
         ):

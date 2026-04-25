@@ -421,6 +421,7 @@ class TestForecastBacktest:
         method_result = result["results"]["naive"]
         assert method_result["metrics_available"] is False
         assert method_result["metrics_reason"] == "no_non_flat_trades"
+        assert method_result["trade_status"] == "flat"
         assert method_result["slippage_bps"] == 0.0
         assert method_result["metrics"]["win_rate"] is None
         assert method_result["metrics"]["trades_observed"] == 0

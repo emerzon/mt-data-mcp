@@ -455,6 +455,7 @@ def test_run_forecast_backtest_marks_no_trade_compact_rows():
                     "avg_directional_accuracy": 0.0,
                     "successful_tests": 3,
                     "num_tests": 3,
+                    "trade_status": "flat",
                     "metrics": {
                         "avg_return": None,
                         "avg_return_per_trade": None,
@@ -475,6 +476,7 @@ def test_run_forecast_backtest_marks_no_trade_compact_rows():
 
     row = result["ranked_methods"][0]
     assert row["no_trades"] is True
+    assert row["trade_status"] == "flat"
     assert row["trades_observed"] == 0
     assert "win_rate" not in row
     assert "win_rate_display" not in row
