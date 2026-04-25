@@ -2381,7 +2381,8 @@ def run_trade_var_cvar_calculate(  # noqa: C901
         result: Dict[str, Any] = {
             "success": True,
             "message": message,
-            "no_action": True,
+            "empty": True,
+            "reason": message,
         }
         if request.detail == "full":
             result.update(

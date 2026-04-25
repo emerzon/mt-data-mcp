@@ -85,7 +85,7 @@ def test_run_trade_var_cvar_calculate_summarizes_open_position_portfolio() -> No
     assert out["worst_observations"][0]["simulated_pnl"] == -14.29
 
 
-def test_run_trade_var_cvar_calculate_returns_no_action_when_no_open_positions() -> None:
+def test_run_trade_var_cvar_calculate_returns_empty_when_no_open_positions() -> None:
     gateway = SimpleNamespace(
         ensure_connection=lambda: None,
         account_info=lambda: SimpleNamespace(equity=1000.0, currency="USD"),
@@ -98,7 +98,9 @@ def test_run_trade_var_cvar_calculate_returns_no_action_when_no_open_positions()
     )
 
     assert out["success"] is True
-    assert out["no_action"] is True
+    assert out["empty"] is True
+    assert out["reason"] == "No open positions found for VaR/CVaR calculation."
+    assert "no_action" not in out
     assert out["summary"]["positions"] == 0
     assert out["summary"]["equity"] == 1000.0
     assert out["summary"]["currency"] == "USD"
@@ -109,7 +111,7 @@ def test_run_trade_var_cvar_calculate_returns_no_action_when_no_open_positions()
     assert out["message"] == "No open positions found for VaR/CVaR calculation."
 
 
-def test_run_trade_var_cvar_calculate_full_detail_keeps_legacy_no_action_shape() -> None:
+def test_run_trade_var_cvar_calculate_full_detail_keeps_empty_shape() -> None:
     gateway = SimpleNamespace(
         ensure_connection=lambda: None,
         account_info=lambda: SimpleNamespace(equity=1000.0, currency="USD"),
@@ -122,7 +124,9 @@ def test_run_trade_var_cvar_calculate_full_detail_keeps_legacy_no_action_shape()
     )
 
     assert out["success"] is True
-    assert out["no_action"] is True
+    assert out["empty"] is True
+    assert out["reason"] == "No open positions found for VaR/CVaR calculation."
+    assert "no_action" not in out
     assert out["summary"]["positions"] == 0
     assert out["summary"]["var"] == 0.0
     assert out["symbol_exposures"] == []

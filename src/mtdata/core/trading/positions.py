@@ -146,6 +146,12 @@ def _include_trade_read_request_metadata(request: Any) -> bool:
     return contract.shape_detail == "full"
 
 
+def _mark_trade_read_empty(out: Dict[str, Any], message: Optional[str] = None) -> None:
+    out["empty"] = True
+    if message:
+        out["reason"] = message
+
+
 def _normalize_trade_read_output(
     rows: Any,
     *,
@@ -182,17 +188,17 @@ def _normalize_trade_read_output(
         if isinstance(items, list):
             out["items"] = items
             out["count"] = len(items)
-            if rows.get("no_action"):
-                out["no_action"] = True
             message_text = str(rows.get("message", "")).strip()
             if message_text:
                 out["message"] = message_text
+            if len(items) == 0:
+                _mark_trade_read_empty(out, message_text or None)
             return out
 
         message_text = str(rows.get("message", "")).strip()
         if message_text:
             out["message"] = message_text
-            out["no_action"] = True
+            _mark_trade_read_empty(out, message_text)
             return out
 
     if isinstance(rows, list) and len(rows) == 1 and isinstance(rows[0], dict):
@@ -206,7 +212,7 @@ def _normalize_trade_read_output(
         message_text = str(first.get("message", "")).strip()
         if message_text:
             out["message"] = message_text
-            out["no_action"] = True
+            _mark_trade_read_empty(out, message_text)
             return out
 
     if not isinstance(rows, list):
@@ -216,6 +222,8 @@ def _normalize_trade_read_output(
 
     out["items"] = rows
     out["count"] = len(rows)
+    if len(rows) == 0:
+        _mark_trade_read_empty(out)
     return out
 
 
