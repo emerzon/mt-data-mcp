@@ -80,7 +80,7 @@ def test_finviz_news_normalizes_stock_results_to_single_items_array() -> None:
         {
             "title": "Apple launches new chips",
             "source": "Reuters",
-            "published_at": "2026-04-18",
+            "published_at": "2026-04-18T00:00:00+00:00",
             "url": "https://example.test/apple",
         }
     ]
@@ -106,14 +106,10 @@ def test_finviz_news_without_symbol_normalizes_general_items() -> None:
     with patch("mtdata.core.finviz.get_general_news", return_value=service_result):
         out = raw(symbol=None, limit=5, page=1)
 
-    assert out["items"] == [
-        {
-            "title": "Market wrap",
-            "source": "Finviz",
-            "published_at": "01:30PM",
-            "url": "https://example.test/news",
-        }
-    ]
+    assert out["items"][0]["title"] == "Market wrap"
+    assert out["items"][0]["source"] == "Finviz"
+    assert "T13:30:00+00:00" in out["items"][0]["published_at"]
+    assert out["items"][0]["url"] == "https://example.test/news"
 
 
 def test_finviz_market_news_normalizes_items() -> None:
@@ -127,9 +123,9 @@ def test_finviz_market_news_normalizes_items() -> None:
     with patch("mtdata.core.finviz.get_general_news", return_value=service_result):
         out = raw(news_type="news", limit=5, page=1)
 
-    assert out["items"] == [
-        {"title": "Stocks rise", "source": "AP", "published_at": "02:00PM"}
-    ]
+    assert out["items"][0]["title"] == "Stocks rise"
+    assert out["items"][0]["source"] == "AP"
+    assert "T14:00:00+00:00" in out["items"][0]["published_at"]
 
 
 def test_finviz_news_helpers_are_registered_tools() -> None:

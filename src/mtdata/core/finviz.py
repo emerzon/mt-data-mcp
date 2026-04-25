@@ -7,6 +7,7 @@ Note: Data is delayed 15-20 minutes; US stocks only.
 
 import json
 import logging
+from datetime import datetime, time as datetime_time, timezone, timedelta
 from typing import Any, Callable, Dict, Literal, Optional, Union
 from urllib.parse import parse_qs
 
@@ -333,6 +334,57 @@ def _clean_finviz_text_value(value: Any) -> Any:
     return value
 
 
+def _normalize_finviz_published_at(value: Any, *, now: Optional[datetime] = None) -> Any:
+    if isinstance(value, datetime):
+        dt = value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc).isoformat()
+    if not isinstance(value, str):
+        return value
+    text = value.strip()
+    if not text:
+        return text
+
+    iso_text = text.replace("Z", "+00:00") if text.endswith("Z") else text
+    try:
+        dt = datetime.fromisoformat(iso_text)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc).isoformat()
+    except ValueError:
+        pass
+
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+        try:
+            dt = datetime.strptime(text, fmt)
+            return dt.replace(tzinfo=timezone.utc).isoformat()
+        except ValueError:
+            continue
+
+    for fmt in ("%I:%M%p", "%I:%M %p"):
+        try:
+            parsed_time = datetime.strptime(text.upper(), fmt).time()
+        except ValueError:
+            continue
+        reference = now or datetime.now(timezone.utc)
+        if reference.tzinfo is None:
+            reference = reference.replace(tzinfo=timezone.utc)
+        reference = reference.astimezone(timezone.utc)
+        dt = datetime.combine(
+            reference.date(),
+            datetime_time(
+                parsed_time.hour,
+                parsed_time.minute,
+                parsed_time.second,
+                tzinfo=timezone.utc,
+            ),
+        )
+        if dt > reference + timedelta(hours=1):
+            dt -= timedelta(days=1)
+        return dt.isoformat()
+
+    return text
+
+
 def _normalize_finviz_news_item(item: Any) -> Any:
     if not isinstance(item, dict):
         return item
@@ -353,6 +405,8 @@ def _normalize_finviz_news_item(item: Any) -> Any:
         value = _clean_finviz_text_value(item.get(source_key))
         if value in (None, ""):
             continue
+        if target_key == "published_at":
+            value = _normalize_finviz_published_at(value)
         out[target_key] = value
     return out
 
