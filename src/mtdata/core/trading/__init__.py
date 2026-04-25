@@ -37,8 +37,7 @@ def trade_place(request: TradePlaceRequest) -> dict:
     - BUY_LIMIT/BUY_STOP/SELL_LIMIT/SELL_STOP: pending (requires `price`).
     - Also accepts ORDER_TYPE_* aliases and MT5 numeric constants 0..5 for order_type.
     - dry_run: validate routing and preview the order without sending it to MT5.
-      Use `preview_detail="preview"|"basic"|"full"` to control preview depth
-      (defaults to `basic`; `compact`/`summary` alias to `preview`).
+      Use `preview_detail="compact"|"full"` to control preview depth.
     - require_sl_tp: for market orders, require both SL and TP inputs before order
       submission, and fail when a filled order cannot apply TP/SL.
       Defaults to True for safer automation behavior.

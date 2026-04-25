@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import Literal, Optional, Union
+from typing import Annotated, Literal, Optional, Union
 
-from pydantic import AliasChoices, BaseModel, Field, field_validator
+from pydantic import AliasChoices, BaseModel, BeforeValidator, Field, field_validator
 
 from ...shared.schema import CompactFullDetailLiteral, TimeframeLiteral
 from .time import ExpirationValue
@@ -29,6 +29,21 @@ def _normalize_trade_direction_alias(value: Optional[str]) -> Optional[str]:
     return value
 
 
+def _normalize_trade_place_preview_detail(value: object) -> str:
+    if value is None:
+        return "compact"
+    normalized = str(value).strip().lower()
+    if normalized in {"preview", "basic", "standard", "summary", "compact"}:
+        return "compact"
+    return normalized
+
+
+TradePlacePreviewDetail = Annotated[
+    Literal["compact", "full"],
+    BeforeValidator(_normalize_trade_place_preview_detail),
+]
+
+
 class TradePlaceRequest(BaseModel):
     model_config = {"populate_by_name": True}
 
@@ -48,12 +63,13 @@ class TradePlaceRequest(BaseModel):
     comment: Optional[str] = None
     deviation: int = 20
     dry_run: bool = False
-    preview_detail: Literal["preview", "basic", "standard", "full", "compact", "summary"] = Field(
-        default="basic",
+    preview_detail: TradePlacePreviewDetail = Field(
+        default="compact",
         validation_alias=AliasChoices("preview_detail", "detail"),
         description=(
-            "Dry-run preview detail level. Use preview/basic/standard/full; "
-            "compact/summary aliases map to preview."
+            "Dry-run preview detail level. Use compact for routing/local checks "
+            "or full for MT5 validation details. Legacy preview/basic/standard/"
+            "summary values normalize to compact."
         ),
     )
     require_sl_tp: bool = True

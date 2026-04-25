@@ -36,7 +36,9 @@ def test_trade_place_request_uses_preview_detail_canonical_field() -> None:
     assert "preview_detail" in fields
     assert "detail" not in fields
     assert TradePlaceRequest(detail="full").preview_detail == "full"
-    assert TradePlaceRequest(detail="standard").preview_detail == "standard"
+    assert TradePlaceRequest(detail="compact").preview_detail == "compact"
+    assert TradePlaceRequest(detail="standard").preview_detail == "compact"
+    assert TradePlaceRequest(preview_detail="basic").preview_detail == "compact"
 
 
 def test_normalize_order_type_accepts_mt5_integer() -> None:
@@ -204,8 +206,8 @@ def test_trade_place_dry_run_market_preview_skips_order_send() -> None:
     assert out.get("action") == "place_market_order"
     assert out.get("actionability") == "preview_only"
     assert out.get("preview_scope_summary") == "Routing and local request checks only."
-    assert "fillability" in (out.get("validation_not_performed") or [])
-    assert "warnings" in out
+    assert "validation_not_performed" not in out
+    assert "warnings" not in out
     assert "validation_scope" not in out
     assert "trade_gate_passed" not in out
     assert out.get("message") == "Dry run only. No order was sent to MT5."
@@ -221,7 +223,7 @@ def test_trade_place_dry_run_preview_detail_omits_safety_lists() -> None:
             stop_loss=64000,
             take_profit=68000,
             dry_run=True,
-            preview_detail="preview",
+            preview_detail="compact",
             __cli_raw=True,
         )
 
@@ -256,7 +258,7 @@ def test_trade_place_dry_run_pending_preview_skips_order_send() -> None:
     assert out.get("action") == "place_pending_order"
     assert out.get("actionability") == "preview_only"
     assert out.get("preview_scope_summary") == "Routing and local request checks only."
-    assert "warnings" in out
+    assert "warnings" not in out
     assert "trade_gate_passed" not in out
     assert out.get("requested_price") == 64500
     assert out.get("expiration") == "GTC"

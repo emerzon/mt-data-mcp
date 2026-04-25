@@ -101,17 +101,11 @@ def _resolve_trade_place_preview_detail(request: TradePlaceRequest) -> str:
     contract = resolve_output_contract(
         request,
         detail=request.preview_detail,
-        default_detail="basic",
-        aliases={
-            "compact": "preview",
-            "summary": "preview",
-        },
+        default_detail="compact",
     )
     if contract.shape_detail == "full":
         return "full"
-    if contract.detail == "preview":
-        return "preview"
-    return "basic"
+    return "preview"
 
 
 def _shape_trade_place_preview(
