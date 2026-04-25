@@ -377,6 +377,7 @@ def _finalize_volatility_output(
             "horizon_sigma_return",
             "horizon_sigma_annual",
             "params_explained",
+            "params_used",
             "volatility_interpretation",
         ):
             out.pop(key, None)

@@ -68,6 +68,7 @@ def test_finalize_volatility_output_compact_omits_explanatory_fields():
         "sigma_annual_return": 0.5,
         "horizon_sigma_return": 0.02,
         "horizon_sigma_annual": 0.8,
+        "params_used": {"lookback": 100, "lambda_": 0.94},
         "params_explained": {"lambda_": "legacy explanation"},
     }
 
@@ -78,9 +79,11 @@ def test_finalize_volatility_output_compact_omits_explanatory_fields():
     assert compact["volatility_horizon"] == pytest.approx(0.02)
     assert "sigma_bar_return" not in compact
     assert "horizon_sigma_return" not in compact
+    assert "params_used" not in compact
     assert "params_explained" not in compact
     assert "volatility_interpretation" not in compact
     assert full["sigma_bar_return"] == pytest.approx(0.01)
+    assert full["params_used"]["lookback"] == 100
     assert "volatility_interpretation" in full
 
 
