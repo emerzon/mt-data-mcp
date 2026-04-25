@@ -1,6 +1,6 @@
 import logging
 import statistics
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from ...services.data_service import fetch_candles, fetch_ticks
 from ...utils.mt5 import ensure_mt5_connection_or_raise
@@ -27,7 +27,7 @@ __all__ = ['data_fetch_candles', 'data_fetch_ticks', 'wait_event']
 
 logger = logging.getLogger(__name__)
 
-WaitEventPublicWatchSpec = Dict[str, Any]
+WaitEventPublicWatchSpec = Union[Dict[str, Any], str]
 
 
 def _build_default_wait_event_watchers(
@@ -408,7 +408,7 @@ def wait_event(
     timeframe: TimeframeLiteral = "M1",
     watch_tick_count_spike: bool = True,
     watch_for: Optional[List[WaitEventPublicWatchSpec]] = None,
-    end_on: Optional[List[Dict[str, Any]]] = None,
+    end_on: Optional[List[Union[Dict[str, Any], str]]] = None,
     detail: CompactFullDetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """Wait for watch events on a symbol until the next timeframe boundary.
@@ -425,9 +425,14 @@ def wait_event(
     its default watcher set. For boundary-only waits, pass `watch_for=[]` and
     rely on `timeframe` or explicit `end_on` candle-close events.
 
-    Boundary waits belong in `end_on` as `{"type": "candle_close", ...}`.
-    `watch_for` is for market/account events and only accepts explicit event
-    objects; `end_on` only accepts `candle_close` events.
+    Boundary waits belong in `end_on` as `{"type": "candle_close", ...}`;
+    string shorthands such as `"new_bar"` and `"candle_close"` are accepted
+    and normalized to that shape. `watch_for` is for market/account events and
+    accepts event objects or strings like `"order_filled"`; candle-close
+    strings passed in `watch_for` are moved to `end_on`.
+
+    Example: `end_on=[{"type": "candle_close", "timeframe": "H1"}]` or
+    `watch_for=["order_filled", "new_bar"]`.
 
     Advanced callers can pass explicit `watch_for` and `end_on` event specs to
     use the richer wait-event engine directly. When explicit `watch_for` is

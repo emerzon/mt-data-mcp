@@ -673,6 +673,59 @@ _REMOVED_WAIT_EVENT_TYPE_ALIASES = {
     "price_level_touch": "price_touch_level",
 }
 
+_WAIT_EVENT_BOUNDARY_STRING_ALIASES = {
+    "new_bar",
+    "candle_close",
+    "bar_close",
+    "candle_closed",
+}
+
+_WAIT_EVENT_WATCH_STRING_TYPES = {
+    "order_created",
+    "order_filled",
+    "order_cancelled",
+    "position_opened",
+    "position_closed",
+    "tp_hit",
+    "sl_hit",
+    "price_change",
+    "volume_spike",
+    "tick_count_spike",
+    "spread_spike",
+    "tick_count_drought",
+    "range_expansion",
+    "pending_near_fill",
+    "stop_threat",
+}
+
+
+def _normalize_wait_event_string(value: str, *, field_name: str) -> Dict[str, Any]:
+    event_type = value.strip().lower()
+    replacement = _REMOVED_WAIT_EVENT_TYPE_ALIASES.get(event_type)
+    if replacement is not None:
+        raise ValueError(f"{event_type} was removed; use {replacement}.")
+    if event_type in _WAIT_EVENT_BOUNDARY_STRING_ALIASES:
+        return {"type": "candle_close"}
+    if field_name == "watch_for" and event_type in _WAIT_EVENT_WATCH_STRING_TYPES:
+        return {"type": event_type}
+    if field_name == "watch_for":
+        raise ValueError(
+            "Unknown wait_event watch_for string. Use an event object or one of: "
+            f"{', '.join(sorted(_WAIT_EVENT_WATCH_STRING_TYPES | _WAIT_EVENT_BOUNDARY_STRING_ALIASES))}."
+        )
+    raise ValueError("end_on only accepts candle_close/new_bar boundary events.")
+
+
+def _normalize_wait_event_bucket(value: Any, *, field_name: str) -> Any:
+    if not isinstance(value, list):
+        return value
+    return [
+        _normalize_wait_event_string(item, field_name=field_name)
+        if isinstance(item, str)
+        else item
+        for item in value
+    ]
+
 
 def _reject_legacy_wait_event_bucket(value: Any, *, field_name: str) -> Any:
     if not isinstance(value, list):
@@ -680,11 +733,7 @@ def _reject_legacy_wait_event_bucket(value: Any, *, field_name: str) -> Any:
 
     for item in value:
         if isinstance(item, str):
-            if field_name == "watch_for":
-                raise ValueError(
-                    "watch_for string shorthand was removed; pass full event objects."
-                )
-            raise ValueError(f"{field_name} only accepts event objects.")
+            continue
         if not isinstance(item, dict):
             continue
 
@@ -705,6 +754,28 @@ def _reject_legacy_wait_event_request_payload(value: Any) -> Any:
     data = dict(value)
     if "instrument" in data:
         raise ValueError("instrument was removed; use symbol")
+
+    if "watch_for" in data:
+        data["watch_for"] = _normalize_wait_event_bucket(
+            data.get("watch_for"),
+            field_name="watch_for",
+        )
+    if "end_on" in data:
+        data["end_on"] = _normalize_wait_event_bucket(
+            data.get("end_on"),
+            field_name="end_on",
+        )
+    if isinstance(data.get("watch_for"), list):
+        watch_for = []
+        end_on = list(data.get("end_on") or [])
+        for item in data["watch_for"]:
+            if isinstance(item, dict) and item.get("type") == "candle_close":
+                end_on.append(item)
+            else:
+                watch_for.append(item)
+        data["watch_for"] = watch_for
+        if end_on:
+            data["end_on"] = end_on
 
     _reject_legacy_wait_event_bucket(data.get("watch_for"), field_name="watch_for")
     _reject_legacy_wait_event_bucket(data.get("end_on"), field_name="end_on")

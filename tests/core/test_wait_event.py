@@ -169,14 +169,34 @@ def test_wait_event_request_rejects_request_level_side_aliases() -> None:
         )
 
 
-def test_wait_event_request_rejects_candle_close_in_watch_for() -> None:
-    with pytest.raises(ValueError, match="watch_for no longer accepts candle_close; use end_on"):
-        WaitEventRequest.model_validate(
-            {
-                "symbol": "EURUSD",
-                "watch_for": [{"type": "candle_close", "timeframe": "M15"}],
-            }
-        )
+def test_wait_event_request_moves_candle_close_from_watch_for_to_end_on() -> None:
+    request = WaitEventRequest.model_validate(
+        {
+            "symbol": "EURUSD",
+            "watch_for": [{"type": "candle_close", "timeframe": "M15"}],
+        }
+    )
+
+    assert request.watch_for == []
+    assert [(item.type, item.timeframe) for item in request.end_on] == [
+        ("candle_close", "M15"),
+    ]
+
+
+def test_wait_event_request_accepts_string_shorthands() -> None:
+    request = WaitEventRequest.model_validate(
+        {
+            "symbol": "EURUSD",
+            "watch_for": ["order_filled", "new_bar"],
+            "end_on": ["candle_close"],
+        }
+    )
+
+    assert [item.type for item in request.watch_for or []] == ["order_filled"]
+    assert [(item.type, item.timeframe) for item in request.end_on] == [
+        ("candle_close", None),
+        ("candle_close", None),
+    ]
 
 
 def test_wait_event_request_rejects_non_boundary_events_in_end_on() -> None:
@@ -237,8 +257,8 @@ def test_wait_event_accepts_explicit_watch_for_objects(
     ]
 
 
-def test_wait_event_request_rejects_watch_for_string_shorthand() -> None:
-    with pytest.raises(ValueError, match="watch_for string shorthand was removed"):
+def test_wait_event_request_rejects_watch_for_string_without_required_fields() -> None:
+    with pytest.raises(ValueError, match="Unknown wait_event watch_for string"):
         WaitEventRequest.model_validate(
             {
                 "symbol": "BTCUSD",
