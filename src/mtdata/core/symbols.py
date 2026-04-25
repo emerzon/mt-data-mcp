@@ -1045,7 +1045,7 @@ def symbols_top_markets(  # noqa: C901
     limit: Optional[int] = 10,
     universe: Literal["visible", "all"] = "visible",  # type: ignore
     timeframe: TimeframeLiteral = "H1",
-    detail: CompactFullDetailLiteral = "full",
+    detail: CompactFullDetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """Scan MT5 symbols and rank the top markets by spread, recent volume, or recent price change.
 
@@ -1053,11 +1053,11 @@ def symbols_top_markets(  # noqa: C901
     include hidden tradable symbols too; that mode is slower because MT5 may need to
     activate quotes for instruments that are not already visible. Volume and
     price-change rankings use the most recent completed bar on `timeframe`.
-    Use `detail="compact"` to return leaner leaderboard rows while preserving the
-    current full row shape by default.
+    Uses compact leaderboard rows by default. Set `detail="full"` for the
+    expanded row shape and collection metadata.
     """
 
-    detail_mode = resolve_output_detail(detail=detail, default="full")
+    detail_mode = resolve_output_detail(detail=detail, default="compact")
 
     def _run() -> Dict[str, Any]:  # noqa: C901
         try:
@@ -1327,7 +1327,7 @@ def market_scan(  # noqa: C901
     limit: Optional[int] = 20,
     universe: Literal["visible", "all"] = "visible",  # type: ignore
     timeframe: TimeframeLiteral = "H1",
-    detail: CompactFullDetailLiteral = "full",
+    detail: CompactFullDetailLiteral = "compact",
     lookback: int = 100,
     rsi_length: int = 14,
     sma_period: int = 20,
@@ -1342,11 +1342,12 @@ def market_scan(  # noqa: C901
 ) -> Dict[str, Any]:
     """Scan MT5 symbols with explicit price, spread, volume, RSI, and SMA filters.
 
-    `data.table.rows` is the canonical table payload. Use `detail="full"` (default)
-    when you also want the explicit `columns` ordering hint for compatibility.
+    `data.table.rows` is the canonical table payload. Compact detail is the
+    default; use `detail="full"` when you also want the explicit `columns`
+    ordering hint for compatibility.
     """
 
-    detail_mode = resolve_output_detail(detail=detail, default="full")
+    detail_mode = resolve_output_detail(detail=detail, default="compact")
 
     def _run() -> Dict[str, Any]:  # noqa: C901
         request: Dict[str, Any] = {

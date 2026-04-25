@@ -124,23 +124,17 @@ class TestSymbolsTopMarkets:
         assert result["universe"] == "visible"
         assert result["scanned_symbols"] == 2
         assert result["evaluated_symbols"] == 2
-        assert result["detail"] == "full"
+        assert result["detail"] == "compact"
         assert result["timeframe_requested"] == "H1"
         assert result["timeframe_used"] is None
         assert [row["symbol"] for row in result["data"]] == ["EURUSD", "XAUUSD"]
         assert list(result["data"][0].keys()) == [
             "symbol",
             "group",
-            "description",
-            "bid",
-            "ask",
-            "spread",
-            "spread_points",
             "spread_pct",
-            "spread_usd",
-            "pricing_basis",
+            "spread_points",
         ]
-        assert all(row["pricing_basis"] == "per_1_lot_estimate" for row in result["data"])
+        assert "pricing_basis" not in result["data"][0]
 
     @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
     @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
@@ -161,7 +155,7 @@ class TestSymbolsTopMarkets:
         }[symbol]
 
         fn = _get_symbols_top_markets()
-        result = fn(rank_by="all", limit=5, timeframe="H1")
+        result = fn(rank_by="all", limit=5, timeframe="H1", detail="full")
 
         assert result["success"] is True
         assert result["results"]["lowest_spread"]["data"][0]["symbol"] == "EURUSD"
@@ -423,6 +417,7 @@ class TestMarketScan:
             rsi_above=60,
             price_vs_sma="above",
             limit=10,
+            detail="full",
         )
 
         assert result["success"] is True
@@ -445,7 +440,7 @@ class TestMarketScan:
     @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
     @patch("mtdata.core.symbols.mt5.symbol_info_tick")
     @patch("mtdata.core.symbols.mt5.symbols_get")
-    def test_market_scan_compact_detail_omits_redundant_columns(
+    def test_market_scan_default_compact_detail_omits_redundant_columns(
         self,
         mock_symbols_get,
         mock_tick,
@@ -457,7 +452,7 @@ class TestMarketScan:
         mock_rates.return_value = _make_bars([1.0, 2.0, 3.0, 4.0], tick_volume=120)
 
         fn = _get_market_scan()
-        result = fn(timeframe="H1", lookback=4, limit=5, detail="compact")
+        result = fn(timeframe="H1", lookback=4, limit=5)
 
         assert result["success"] is True
         assert "columns" not in result["data"]["table"]
