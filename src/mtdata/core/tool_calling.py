@@ -59,7 +59,20 @@ def _coerce_tool_kwargs(target: Any, kwargs: dict[str, Any]) -> dict[str, Any]:
             ):
                 model_fields, _ = _get_pydantic_model_fields(request_type)
                 field_names = set(model_fields.keys())
-                payload = {key: coerced.pop(key) for key in list(coerced.keys()) if key in field_names}
+                alias_map: dict[str, str] = {}
+                for name, info in model_fields.items():
+                    for attr in ("alias", "validation_alias"):
+                        val = getattr(info, attr, None)
+                        if isinstance(val, str) and val != name:
+                            alias_map[val] = name
+                        elif hasattr(val, "choices"):
+                            for choice in val.choices:
+                                if isinstance(choice, str) and choice != name:
+                                    alias_map[choice] = name
+                payload: dict[str, Any] = {}
+                for key in list(coerced.keys()):
+                    if key in field_names or key in alias_map:
+                        payload[alias_map.get(key, key)] = coerced.pop(key)
                 if payload:
                     model_validate = getattr(request_type, "model_validate", None)
                     coerced[request_param.name] = (
