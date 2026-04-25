@@ -291,6 +291,11 @@ def _candidate_is_viable(row: Optional[Dict[str, Any]], cost_per_trade: float = 
         return False
     if bool(row.get("phantom_profit_risk")):
         return False
+    win_rate = _safe_float(row.get("prob_tp_first"))
+    if win_rate is None:
+        win_rate = _safe_float(row.get("prob_win"))
+    if win_rate is not None and win_rate < LOW_PRACTICAL_WIN_PROB_THRESHOLD:
+        return False
     return True
 
 

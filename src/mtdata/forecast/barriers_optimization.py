@@ -762,7 +762,7 @@ def forecast_barrier_optimize(  # noqa: C901
     top_k: Optional[int] = None,
     output_mode: Literal['full','summary'] = 'summary',
     format: Optional[Literal['full','summary']] = None,
-    viable_only: bool = False,
+    viable_only: bool = True,
     concise: bool = False,
     grid_style: Literal['fixed','volatility','ratio','preset'] = 'fixed',
     preset: Optional[str] = None,

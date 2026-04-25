@@ -20,6 +20,7 @@ from mtdata.forecast.barriers import (
 from mtdata.forecast.barriers_shared import (
     _build_actionability_payload,
     _build_selection_diagnostics,
+    _candidate_is_viable,
     _sort_candidate_results,
 )
 from mtdata.forecast.monte_carlo import gbm_single_barrier_upcross_prob
@@ -79,6 +80,22 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
 
         self.assertEqual(parameters["output_mode"].default, "summary")
         self.assertIsNone(parameters["format"].default)
+        self.assertTrue(parameters["viable_only"].default)
+
+    def test_low_win_probability_candidate_is_not_viable(self):
+        candidate = {
+            "ev": 0.017,
+            "tp": 1.5,
+            "sl": 0.25,
+            "rr": 6.0,
+            "prob_win": 0.001,
+            "prob_loss": 0.001,
+            "prob_tp_first": 0.001,
+            "prob_sl_first": 0.001,
+            "prob_no_hit": 0.998,
+        }
+
+        self.assertFalse(_candidate_is_viable(candidate))
 
     def tearDown(self):
         self._stop_barrier_module_patchers()
@@ -507,6 +524,7 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
                 mode="pct",
                 fast_defaults=True,
                 return_grid=True,
+                viable_only=False,
             )
         self.assertTrue(result.get("success"))
         self.assertTrue(result.get("fast_defaults"))
@@ -783,6 +801,7 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
                 sl_max=0.5,
                 sl_steps=1,
                 return_grid=True,
+                viable_only=False,
             )
         self.assertTrue(result["success"])
         self.assertAlmostEqual(result["last_price"], 1.2345, places=8)
@@ -1067,6 +1086,7 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
                 max_prob_no_hit=0.2,
                 max_median_time=2,
                 return_grid=True,
+                viable_only=False,
             )
         self.assertTrue(result["success"])
         grid = result.get("grid")
@@ -1145,6 +1165,7 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
                 sl_min=0.5, sl_max=1.0, sl_steps=2,
                 objective="edge",
                 return_grid=True,
+                viable_only=False,
             )
         self.assertTrue(result["success"])
         grid = result.get("grid")
@@ -1202,6 +1223,7 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
                 min_prob_win=0.5,
                 objective="ev",
                 return_grid=True,
+                viable_only=False,
             )
 
         self.assertTrue(result.get("success"))
@@ -1411,6 +1433,7 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
                 sl_steps=1,
                 objective="edge",
                 return_grid=True,
+                viable_only=False,
             )
         self.assertTrue(result.get("success"))
         self.assertLess(float(result["best"]["ev"]), 0.0)
@@ -1451,6 +1474,7 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
                 sl_steps=1,
                 objective="ev",
                 return_grid=True,
+                viable_only=False,
             )
         self.assertTrue(result.get("success"))
         self.assertGreater(float(result["best"]["ev"]), 0.0)
@@ -1717,6 +1741,7 @@ class TestTier1TradingCosts(_BarrierModulePatchMixin, unittest.TestCase):
                 tp_min=0.5, tp_max=0.5, tp_steps=1,
                 sl_min=0.5, sl_max=0.5, sl_steps=1,
                 objective="utility",
+                viable_only=False,
             )
             with_cost = forecast_barrier_optimize(
                 symbol="EURUSD", timeframe="H1", horizon=3,
@@ -1725,6 +1750,7 @@ class TestTier1TradingCosts(_BarrierModulePatchMixin, unittest.TestCase):
                 sl_min=0.5, sl_max=0.5, sl_steps=1,
                 objective="utility",
                 params={"spread_pct": 0.45, "min_barrier_multiplier": 0.0},
+                viable_only=False,
             )
 
         self.assertTrue(no_cost.get("success"))
@@ -1831,6 +1857,7 @@ class TestTier1TradingCosts(_BarrierModulePatchMixin, unittest.TestCase):
                 tp_min=0.5, tp_max=0.5, tp_steps=1,
                 sl_min=0.5, sl_max=0.5, sl_steps=1,
                 return_grid=True,
+                viable_only=False,
             )
 
         self.assertTrue(result.get("success"))
@@ -1884,6 +1911,7 @@ class TestTier1TradingCosts(_BarrierModulePatchMixin, unittest.TestCase):
                 },
                 return_grid=False,
                 format="summary",
+                viable_only=False,
             )
 
         self.assertTrue(result.get("success"))
@@ -1987,6 +2015,7 @@ class TestTier1TradingCosts(_BarrierModulePatchMixin, unittest.TestCase):
                 },
                 return_grid=True,
                 format="summary",
+                viable_only=False,
             )
         self.assertTrue(result.get("success"))
         self.assertEqual(result.get("method"), "ensemble")

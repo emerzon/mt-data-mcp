@@ -284,7 +284,7 @@ class ForecastBarrierOptimizeRequest(BaseModel):
         default="summary",
         validation_alias=AliasChoices("output_mode", "format"),
     )
-    viable_only: bool = False
+    viable_only: bool = True
     concise: bool = False
     grid_style: str = "fixed"
     preset: Optional[str] = None
