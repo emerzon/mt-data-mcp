@@ -1746,15 +1746,10 @@ def correlation_matrix(  # noqa: C901
                 or None,
             )
 
-        data_out: Dict[str, Any] = {
-            "items": rows,
-        }
-        if detail_mode == "full":
-            data_out["matrix"] = _build_correlation_matrix(symbols_used, rows)
-
         out: Dict[str, Any] = {
             "success": True,
-            "data": data_out,
+            "items": rows,
+            "count": int(len(rows)),
             "summary": {
                 "counts": {
                     "pairs": int(len(rows)),
@@ -1781,6 +1776,8 @@ def correlation_matrix(  # noqa: C901
                 ),
             ),
         }
+        if detail_mode == "full":
+            out["matrix"] = _build_correlation_matrix(symbols_used, rows)
         if warnings_out:
             out["warnings"] = warnings_out
         return out

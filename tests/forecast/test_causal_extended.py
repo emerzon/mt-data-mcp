@@ -712,17 +712,17 @@ class TestCorrelationMatrix:
             )
 
         assert result["success"] is True
-        data = result["data"]
         assert result["summary"]["counts"]["pairs"] == 3
-        assert data["matrix"]["A"]["A"] == pytest.approx(1.0)
-        assert data["matrix"]["A"]["B"] > 0.95
-        assert data["matrix"]["A"]["C"] < -0.95
-        assert data["items"][0]["abs_correlation"] >= data["items"][1]["abs_correlation"]
-        assert data["items"][0]["window_requested"] == 60
-        assert data["items"][0]["window_actual"] == 60
-        assert data["items"][0]["window_truncated"] is True
+        assert result["count"] == 3
+        assert result["matrix"]["A"]["A"] == pytest.approx(1.0)
+        assert result["matrix"]["A"]["B"] > 0.95
+        assert result["matrix"]["A"]["C"] < -0.95
+        assert result["items"][0]["abs_correlation"] >= result["items"][1]["abs_correlation"]
+        assert result["items"][0]["window_requested"] == 60
+        assert result["items"][0]["window_actual"] == 60
+        assert result["items"][0]["window_truncated"] is True
         assert result["summary"]["highlights"] == {}
-        assert "pairs" not in data
+        assert "data" not in result
         assert "legends" in result["meta"]
         assert result["meta"]["stats"]["pairs_computed"] == 3
         assert any(
@@ -752,10 +752,11 @@ class TestCorrelationMatrix:
         )
 
         assert result["success"] is True
-        assert "matrix" not in result["data"]
+        assert "matrix" not in result
         assert "legends" not in result["meta"]
         assert result["meta"]["request"]["detail"] == "compact"
-        assert result["data"]["items"]
+        assert result["items"]
+        assert result["count"] == len(result["items"])
         assert result["summary"]["highlights"] == {}
 
     @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
@@ -779,9 +780,9 @@ class TestCorrelationMatrix:
 
         assert result["success"] is True
         assert result["summary"]["counts"]["pairs"] == 1
-        assert result["data"]["matrix"]["A"]["B"] is not None
-        assert result["data"]["matrix"]["A"]["C"] is None
-        assert result["data"]["matrix"]["B"]["C"] is None
+        assert result["matrix"]["A"]["B"] is not None
+        assert result["matrix"]["A"]["C"] is None
+        assert result["matrix"]["B"]["C"] is None
         assert result["meta"]["stats"]["pairs_computed"] == 1
         assert result["meta"]["stats"]["pair_overlaps"]["A-C"] == 0
         assert result["meta"]["stats"]["pair_overlaps"]["B-C"] == 0
