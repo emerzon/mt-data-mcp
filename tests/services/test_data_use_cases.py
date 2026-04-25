@@ -185,7 +185,7 @@ def test_run_data_fetch_candles_adds_contract_metadata_in_full_detail():
         },
     )
 
-    assert result["data"] == rows
+    assert "data" not in result
     assert result["symbol"] == "EURUSD"
     assert result["timeframe"] == "H1"
     assert result["candles_requested"] == 10

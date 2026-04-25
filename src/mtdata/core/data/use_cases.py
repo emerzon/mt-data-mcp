@@ -134,16 +134,19 @@ def _run_data_fetch_candles_impl(
         include_incomplete=request.include_incomplete,
         allow_stale=request.allow_stale,
     )
-    if isinstance(result, dict) and str(request.detail or "compact").strip().lower() == "compact":
+    detail_mode = str(request.detail or "compact").strip().lower()
+    if isinstance(result, dict) and detail_mode == "compact":
         result = _compact_candles_payload(result)
     if isinstance(result, dict) and isinstance(result.get("data"), list):
-        return attach_collection_contract(
+        out = attach_collection_contract(
             result,
             collection_kind="time_series",
             series=result["data"],
-            include_contract_meta=str(request.detail or "compact").strip().lower()
-            == "full",
+            include_contract_meta=detail_mode == "full",
         )
+        if detail_mode == "full" and isinstance(out, dict):
+            out.pop("data", None)
+        return out
     return result
 
 
