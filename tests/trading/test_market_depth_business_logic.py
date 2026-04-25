@@ -267,7 +267,7 @@ def test_market_ticker_returns_lightweight_spread_snapshot() -> None:
     assert out["ask"] == 201.0
     assert out["spread"] == 1.0
     assert out["spread_points"] == 100.0
-    assert out["spread_pips"] == 100.0
+    assert "spread_pips" not in out
     assert out["spread_pct_display"] == "0.498753%"
     assert out["last"] == 200.5
     assert out["tick_volume"] == 5
@@ -307,7 +307,7 @@ def test_market_ticker_compact_detail_omits_verbose_fields() -> None:
     assert out["ask"] == 201.0
     assert out["spread"] == 1.0
     assert out["spread_points"] == 100.0
-    assert out["spread_pips"] == 100.0
+    assert "spread_pips" not in out
     assert out["spread_pct_display"] == "0.498753%"
     assert out["last"] == 200.5
     assert out["tick_volume"] == 5
@@ -460,7 +460,7 @@ def test_market_ticker_rounds_to_symbol_precision() -> None:
     assert out["last"] == 1.17586
     assert out["spread"] == 0.00009
     assert out["spread_points"] == 9.0
-    assert out["spread_pips"] == 0.9
+    assert "spread_pips" not in out
 
 
 def test_market_depth_returns_connection_error_payload() -> None:

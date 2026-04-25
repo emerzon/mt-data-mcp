@@ -34,19 +34,6 @@ def _round_market_ticker_value(value: Any, *, digits: int) -> Any:
         return value
 
 
-def _market_ticker_display_pip_size(tick_size: float) -> float:
-    if tick_size <= 0:
-        return tick_size
-    if math.isclose(tick_size, 0.00001, rel_tol=0.0, abs_tol=1e-12) or math.isclose(
-        tick_size,
-        0.001,
-        rel_tol=0.0,
-        abs_tol=1e-12,
-    ):
-        return tick_size * 10.0
-    return tick_size
-
-
 def _market_depth_fetch_enabled() -> bool:
     raw = os.getenv(_MARKET_DEPTH_ENABLE_ENV)
     if raw is None:
@@ -67,7 +54,6 @@ def _compact_market_ticker_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "tick_volume",
         "spread",
         "spread_points",
-        "spread_pips",
         "spread_pct",
         "spread_pct_display",
         "time",
@@ -394,7 +380,6 @@ def market_ticker(
             point = float(getattr(symbol_info, "point", 0.0) or 0.0)
             tick_size = float(getattr(symbol_info, "trade_tick_size", 0.0) or 0.0)
             tick_value = float(getattr(symbol_info, "trade_tick_value", 0.0) or 0.0)
-            pip_size = _market_ticker_display_pip_size(tick_size)
             spread_currency = str(
                 getattr(symbol_info, "currency_profit", None)
                 or getattr(symbol_info, "currency_margin", None)
@@ -413,7 +398,6 @@ def market_ticker(
 
             spread_abs = None
             spread_points = None
-            spread_pips = None
             spread_pct = None
             spread_pct_display = None
             spread_usd = None
@@ -422,7 +406,6 @@ def market_ticker(
                 spread_abs = float(ask - bid)
                 mid = (ask + bid) / 2.0
                 spread_points = (spread_abs / point) if point > 0 else None
-                spread_pips = (spread_abs / pip_size) if pip_size > 0 else None
                 spread_pct = ((spread_abs / mid) * 100.0) if mid > 0 else None
                 if spread_pct is not None:
                     spread_pct_display = f"{round(spread_pct, 6):g}%"
@@ -444,7 +427,6 @@ def market_ticker(
                 "tick_volume": tick_volume,
                 "spread": _round_market_ticker_value(spread_abs, digits=digits),
                 "spread_points": _round_market_ticker_value(spread_points, digits=4),
-                "spread_pips": _round_market_ticker_value(spread_pips, digits=4),
                 "spread_pct": _round_market_ticker_value(spread_pct, digits=6),
                 "spread_pct_display": spread_pct_display,
                 "spread_usd": _round_market_ticker_value(spread_usd, digits=6),

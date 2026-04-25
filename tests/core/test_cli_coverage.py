@@ -622,7 +622,6 @@ class TestFormatResultForCli:
                     "time": 1700000000,
                     "time_display": "2023-11-14 22:13",
                     "spread_points": 8.999999999992347,
-                    "spread_pips": 0.8999999999992347,
                     "spread_pct": 0.007795818842487513,
                     "spread_pct_display": "0.007796%",
                 },
@@ -633,7 +632,7 @@ class TestFormatResultForCli:
         )
         assert payload["time"] == "2023-11-14 22:13"
         assert payload["spread_points"] == 9.0
-        assert payload["spread_pips"] == 0.9
+        assert "spread_pips" not in payload
         assert payload["spread_pct"] == 0.007796
         assert payload["spread_pct_display"] == "0.007796%"
         assert "time_display" not in payload
@@ -756,7 +755,7 @@ class TestFormatResultForCli:
                         "bid": 1.1,
                         "ask": 1.1002,
                         "spread": 0.0002,
-                        "spread_pips": 2.0,
+                        "spread_points": 20.0,
                     },
                 },
                 fmt="json",
@@ -771,7 +770,7 @@ class TestFormatResultForCli:
             "margin_level": 250.0,
         }
         assert payload["ticker"]["time"] == "2023-11-14 22:13"
-        assert payload["ticker"]["spread_pips"] == 2.0
+        assert payload["ticker"]["spread_points"] == 20.0
         assert "time_display" not in payload["ticker"]
         assert "time_epoch" not in payload["ticker"]
         assert payload["open_positions"] == [
