@@ -12,6 +12,8 @@ MarketOrderTypeLiteral = Literal["BUY", "SELL"]
 OrderTypeLiteral = Literal[
     "BUY",
     "SELL",
+    "LONG",
+    "SHORT",
     "BUY_LIMIT",
     "BUY_STOP",
     "SELL_LIMIT",
@@ -101,7 +103,7 @@ def _normalize_order_type_input(order_type: Any) -> Tuple[Optional[str], Optiona
         None,
         (
             f"Unsupported order_type '{order_type}'. "
-            "Use BUY/SELL or BUY_LIMIT/BUY_STOP/SELL_LIMIT/SELL_STOP."
+            "Use BUY/SELL (or LONG/SHORT) or BUY_LIMIT/BUY_STOP/SELL_LIMIT/SELL_STOP."
         ),
     )
 

@@ -54,6 +54,8 @@ _BARRIER_OPTIMIZE_METHODS = [
 _TRADE_PLACE_STRING_ORDER_TYPES = [
     "BUY",
     "SELL",
+    "LONG",
+    "SHORT",
     "BUY_LIMIT",
     "BUY_STOP",
     "SELL_LIMIT",
@@ -232,7 +234,11 @@ def _patch_trade_place_schema(schema: Dict[str, Any]) -> None:
                     "enum": [0, 1, 2, 3, 4, 5],
                 },
             ],
-            "description": "BUY/SELL or pending aliases; MT5 constants 0..5 are also accepted.",
+            "description": (
+                "Preferred values are BUY/SELL, LONG/SHORT, or BUY_LIMIT/BUY_STOP/"
+                "SELL_LIMIT/SELL_STOP. ORDER_TYPE_* names and MT5 constants 0..5 "
+                "are accepted for compatibility."
+            ),
         }
     if "expiration" in params:
         params["expiration"] = {

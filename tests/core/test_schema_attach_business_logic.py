@@ -219,6 +219,9 @@ def test_attach_schemas_to_tools_patches_trade_place(monkeypatch) -> None:
 
     assert params_obj["required"] == ["symbol", "volume", "order_type"]
     assert params["order_type"]["anyOf"][0]["enum"][0] == "BUY"
+    assert "LONG" in params["order_type"]["anyOf"][0]["enum"]
+    assert "SHORT" in params["order_type"]["anyOf"][0]["enum"]
+    assert "ORDER_TYPE_BUY_STOP_LIMIT" not in params["order_type"]["anyOf"][0]["enum"]
     assert params["order_type"]["anyOf"][1]["enum"] == [0, 1, 2, 3, 4, 5]
     assert params["expiration"]["anyOf"] == [
         {"type": "string"},

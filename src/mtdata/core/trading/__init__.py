@@ -32,7 +32,8 @@ def trade_place(request: TradePlaceRequest) -> dict:
     """Place a market or pending order.
 
     Required inputs: symbol, volume, order_type.
-    - BUY/SELL: market by default; treated as pending when `price`/`expiration` is provided.
+    - Preferred side names are BUY/SELL (LONG/SHORT aliases are accepted).
+      Market sides are treated as pending when `price`/`expiration` is provided.
     - BUY_LIMIT/BUY_STOP/SELL_LIMIT/SELL_STOP: pending (requires `price`).
     - Also accepts ORDER_TYPE_* aliases and MT5 numeric constants 0..5 for order_type.
     - dry_run: validate routing and preview the order without sending it to MT5.
