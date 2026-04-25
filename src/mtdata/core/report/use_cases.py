@@ -167,8 +167,6 @@ def run_report_generate(  # noqa: C901
     append_diagnostic_warning: Any,
 ) -> str | Dict[str, Any]:
     output_mode = str(request.format or "toon").strip().lower()
-    if output_mode == "structured":
-        output_mode = "toon"
     template_name = (request.template or "basic").lower().strip()
     detail_value = _normalize_report_detail(getattr(request, "detail", "compact"))
 

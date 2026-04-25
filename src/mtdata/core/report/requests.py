@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Literal, Optional, Union
 
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, model_validator
 
 from ..schema import CompactStandardFullDetailLiteral, DenoiseSpec, TimeframeLiteral
 
-ReportFormat = Literal["toon", "structured", "markdown"]
+ReportFormat = Literal["toon", "markdown"]
 
 
 def _reject_removed_field(values: Any, *, field_name: str, replacement: str) -> Any:
@@ -25,16 +25,6 @@ class ReportGenerateRequest(BaseModel):
     params: Optional[Dict[str, Any]] = None
     format: ReportFormat = "toon"
     detail: CompactStandardFullDetailLiteral = "compact"
-
-    @field_validator("format", mode="before")
-    @classmethod
-    def _normalize_format_aliases(cls, value: Any) -> Any:
-        if value is None:
-            return value
-        text = str(value).strip().lower()
-        if text == "structured":
-            return "toon"
-        return value
 
     @model_validator(mode="before")
     @classmethod

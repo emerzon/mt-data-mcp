@@ -54,12 +54,11 @@ def test_report_generate_request_rejects_removed_output_field():
         ReportGenerateRequest(symbol="EURUSD", output="markdown")
 
 
-def test_report_generate_request_accepts_structured_format_alias():
+def test_report_generate_request_rejects_removed_structured_format_alias():
     from mtdata.core.report.requests import ReportGenerateRequest
 
-    request = ReportGenerateRequest(symbol="EURUSD", format="structured")
-
-    assert request.format == "toon"
+    with pytest.raises(ValidationError, match="Input should be 'toon' or 'markdown'"):
+        ReportGenerateRequest(symbol="EURUSD", format="structured")
 
 
 def test_report_generate_request_defaults_to_compact_detail():
@@ -302,10 +301,6 @@ class TestReportTemplateDispatch:
 
     def test_basic_template_toon(self):
         res = self._run("basic")
-        assert isinstance(res, dict)
-
-    def test_basic_template_structured_alias(self):
-        res = self._run("basic", format="structured")
         assert isinstance(res, dict)
 
     def test_advanced_template(self):
