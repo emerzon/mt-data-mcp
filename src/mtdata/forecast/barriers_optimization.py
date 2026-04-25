@@ -39,6 +39,7 @@ from .barriers_shared import (
     DEGENERATE_OBJECTIVE_MIN_RESOLVE,
     _annotate_candidate_metrics,
     _auto_barrier_method,
+    barrier_method_error,
     _binomial_se,
     _binomial_wilson_95,
     _brownian_bridge_hits,
@@ -52,6 +53,7 @@ from .barriers_shared import (
     _safe_float,
     _scale_price_paths_to_reference,
     _sort_candidate_results,
+    normalize_barrier_method,
 )
 from .common import fetch_history as _fetch_history
 from .common import log_returns_from_prices as _log_returns_from_prices
@@ -1215,7 +1217,9 @@ def forecast_barrier_optimize(  # noqa: C901
         # structurally negative-EV after slippage/commission can slip through.
         min_barrier_distance = max(min_barrier_absolute, min_barrier_multiplier * cost_per_trade)
         
-        method_name = str(method).lower().strip()
+        method_name = normalize_barrier_method(method, allow_ensemble=True)
+        if method_name is None:
+            return {"error": barrier_method_error(method, allow_ensemble=True)}
         method_requested = method_name
         auto_reason = None
         supported_member_methods = ['mc_gbm', 'mc_gbm_bb', 'hmm_mc', 'garch', 'bootstrap', 'heston', 'jump_diffusion', 'auto']

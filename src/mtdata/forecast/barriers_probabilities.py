@@ -25,9 +25,11 @@ from .barriers_shared import (
     _binomial_se,
     _binomial_wilson_95,
     _brownian_bridge_hits,
+    barrier_method_error,
     _get_live_reference_price,
     _resolve_reference_prices,
     _scale_price_paths_to_reference,
+    normalize_barrier_method,
 )
 from .common import fetch_history as _fetch_history
 from .common import log_returns_from_prices as _log_returns_from_prices
@@ -170,7 +172,9 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
             if seed is not None
             else int(np.random.default_rng().integers(0, np.iinfo(np.int32).max))
         )
-        method_key = str(method).lower().strip()
+        method_key = normalize_barrier_method(method)
+        if method_key is None:
+            return {"error": barrier_method_error(method)}
         method_requested = method_key
         auto_reason = None
         if method_key == 'auto':

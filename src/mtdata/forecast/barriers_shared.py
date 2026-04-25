@@ -56,6 +56,78 @@ PHANTOM_PROFIT_LOSS_THRESHOLD = 0.01
 DEGENERATE_OBJECTIVE_MIN_RESOLVE = 0.20
 LOW_CONFIDENCE_CI_THRESHOLD = 0.10
 
+BarrierMethodLiteral = Literal[
+    "mc_gbm",
+    "mc_gbm_bb",
+    "hmm_mc",
+    "garch",
+    "bootstrap",
+    "heston",
+    "jump_diffusion",
+    "auto",
+]
+
+BARRIER_MONTE_CARLO_METHODS: Tuple[BarrierMethodLiteral, ...] = (
+    "mc_gbm",
+    "mc_gbm_bb",
+    "hmm_mc",
+    "garch",
+    "bootstrap",
+    "heston",
+    "jump_diffusion",
+    "auto",
+)
+BARRIER_METHOD_ALIASES: Dict[str, str] = {
+    "mc": "hmm_mc",
+    "gbm": "mc_gbm",
+    "gbm_bb": "mc_gbm_bb",
+    "hmm": "hmm_mc",
+    "jump": "jump_diffusion",
+    "jump_diff": "jump_diffusion",
+    "monte_carlo": "mc_gbm",
+    "monte_carlo_gbm": "mc_gbm",
+    "monte_carlo_bb": "mc_gbm_bb",
+    "monte_carlo_gbm_bb": "mc_gbm_bb",
+}
+
+
+def normalize_barrier_method(
+    method: Any,
+    *,
+    allow_closed_form: bool = False,
+    allow_ensemble: bool = False,
+) -> Optional[str]:
+    method_key = str(method or "").strip().lower()
+    method_key = BARRIER_METHOD_ALIASES.get(method_key, method_key)
+    allowed = set(BARRIER_MONTE_CARLO_METHODS)
+    if allow_closed_form:
+        allowed.add("closed_form")
+    if allow_ensemble:
+        allowed.add("ensemble")
+    return method_key if method_key in allowed else None
+
+
+def barrier_method_error(
+    method: Any,
+    *,
+    allow_closed_form: bool = False,
+    allow_ensemble: bool = False,
+) -> str:
+    allowed = list(BARRIER_MONTE_CARLO_METHODS)
+    if allow_closed_form:
+        allowed.append("closed_form")
+    if allow_ensemble:
+        allowed.append("ensemble")
+    aliases = ", ".join(
+        f"{alias}->{target}"
+        for alias, target in sorted(BARRIER_METHOD_ALIASES.items())
+        if alias.startswith("monte_carlo")
+    )
+    return (
+        f"Unsupported barrier method: {method}. Use one of: {', '.join(allowed)}. "
+        f"Aliases: {aliases}."
+    )
+
 
 def _binomial_wilson_95(p_hat: float, n: int) -> Tuple[float, float]:
     """Wilson 95% interval for a Bernoulli proportion."""

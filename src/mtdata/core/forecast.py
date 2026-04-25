@@ -4,6 +4,7 @@ from importlib import import_module
 from typing import Any, Dict, List, Literal, Optional
 
 from ..forecast.exceptions import ForecastError
+from ..forecast.barriers_shared import BARRIER_METHOD_ALIASES, BARRIER_MONTE_CARLO_METHODS
 from ..forecast.requests import (
     ForecastBacktestRequest,
     ForecastBarrierOptimizeRequest,
@@ -1042,6 +1043,18 @@ def _forecast_list_methods_impl(  # noqa: C901
             haystack = " ".join((method_name, desc, cat)).lower()
             return search_value in haystack
 
+        barrier_methods = {
+            "methods": list(BARRIER_MONTE_CARLO_METHODS),
+            "aliases": {
+                key: value
+                for key, value in BARRIER_METHOD_ALIASES.items()
+                if key.startswith("monte_carlo")
+            },
+            "probability_only_methods": ["closed_form"],
+            "optimizer_only_methods": ["ensemble"],
+            "note": "Barrier methods are for forecast_barrier_prob and forecast_barrier_optimize; forecast_generate uses the main forecast method registry.",
+        }
+
         if detail_value == "full":
             if not bool(snapshot.get("methods_valid")):
                 return data
@@ -1077,6 +1090,7 @@ def _forecast_list_methods_impl(  # noqa: C901
                 "(for example native:theta vs statsforecast:theta). "
                 "`supports_ci` indicates whether the method reports built-in interval support."
             )
+            out_full["barrier_methods"] = barrier_methods
             return out_full
 
         if not bool(snapshot.get("methods_valid")):
@@ -1166,6 +1180,7 @@ def _forecast_list_methods_impl(  # noqa: C901
             "methods": selected_methods,
             "methods_shown": int(len(selected_methods)),
             "methods_hidden": int(max(0, len(compact_methods) - len(selected_methods))),
+            "barrier_methods": barrier_methods,
             "note": "Compact view includes all filtered methods with compact columns; set limit to cap rows or detail='full' for complete metadata.",
             "filters": {
                 "search": search_value or None,

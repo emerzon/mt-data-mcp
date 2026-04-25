@@ -20,6 +20,7 @@ from ..core.output_contract import attach_collection_contract
 from .backtest import execute_forecast_backtest as _forecast_backtest_impl
 from .backtest import _compact_metrics_payload
 from .capabilities import resolve_capability_request
+from .barriers_shared import barrier_method_error, normalize_barrier_method
 from .exceptions import ForecastError, raise_if_error_result
 from .forecast import execute_forecast as _forecast_impl
 from .requests import (
@@ -1055,9 +1056,12 @@ def run_forecast_barrier_prob(
     barrier_closed_form_impl: Any,
 ) -> Dict[str, Any]:
     started_at = time.perf_counter()
-    method_raw = str(request.method or "hmm_mc").lower().strip()
-    method_aliases = {"mc": "hmm_mc"}
-    method_val = method_aliases.get(method_raw, method_raw)
+    method_val = normalize_barrier_method(
+        request.method or "hmm_mc",
+        allow_closed_form=True,
+    )
+    if method_val is None:
+        method_val = str(request.method or "hmm_mc").lower().strip()
     mc_methods = {
         "auto",
         "bootstrap",
@@ -1168,7 +1172,10 @@ def run_forecast_barrier_prob(
         )
         raise
 
-    result = {"error": f"Unknown method: {request.method}"}
+    result = {
+        "error": barrier_method_error(request.method, allow_closed_form=True),
+        "error_code": "unsupported_method",
+    }
     log_operation_finish(
         logger,
         operation="forecast_barrier_prob",
@@ -1190,14 +1197,34 @@ def run_forecast_barrier_optimize(
     cpu_count: Any = os.cpu_count,
 ) -> Dict[str, Any]:
     started_at = time.perf_counter()
+    method_val = normalize_barrier_method(request.method or "auto", allow_ensemble=True)
+    method_supported = method_val is not None
+    if method_val is None:
+        method_val = str(request.method or "auto").lower().strip()
     log_operation_start(
         logger,
         operation="forecast_barrier_optimize",
         symbol=request.symbol,
         timeframe=request.timeframe,
-        method=request.method,
+        method=method_val,
         direction=request.direction,
     )
+    if not method_supported:
+        result = {
+            "error": barrier_method_error(request.method, allow_ensemble=True),
+            "error_code": "unsupported_method",
+        }
+        log_operation_finish(
+            logger,
+            operation="forecast_barrier_optimize",
+            started_at=started_at,
+            success=False,
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            method=method_val,
+            direction=request.direction,
+        )
+        return result
     params_norm = parse_kv_or_json(request.params)
     if not isinstance(params_norm, dict):
         params_norm = {}
@@ -1237,7 +1264,7 @@ def run_forecast_barrier_optimize(
             symbol=request.symbol,
             timeframe=request.timeframe,
             horizon=request.horizon,
-            method=request.method,
+            method=method_val,
             direction=request.direction,
             mode=request.mode,
             tp_min=request.tp_min,
@@ -1298,7 +1325,7 @@ def run_forecast_barrier_optimize(
             exc=exc,
             symbol=request.symbol,
             timeframe=request.timeframe,
-            method=request.method,
+            method=method_val,
             direction=request.direction,
         )
         raise
@@ -1309,7 +1336,7 @@ def run_forecast_barrier_optimize(
         success=infer_result_success(result),
         symbol=request.symbol,
         timeframe=request.timeframe,
-        method=request.method,
+        method=method_val,
         direction=request.direction,
     )
     return result

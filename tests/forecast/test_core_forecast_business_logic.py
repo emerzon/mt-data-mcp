@@ -685,6 +685,8 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert compact["methods_shown"] == 1
     assert compact["methods_hidden"] == 0
     assert compact["filters"]["show_unavailable"] is False
+    assert "monte_carlo" in compact["barrier_methods"]["aliases"]
+    assert "mc_gbm" in compact["barrier_methods"]["methods"]
     assert "includes all filtered methods" in compact["note"]
 
     full = _unwrap(cf.forecast_list_methods)(detail="full", show_unavailable=True)
@@ -701,6 +703,7 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert full["methods"][0]["supports_ci"] is True
     assert full["methods"][1]["supports_ci"] is False
     assert full["methods"][1]["execution"] == {"library": "native", "method": "mlf_rf"}
+    assert full["barrier_methods"]["optimizer_only_methods"] == ["ensemble"]
 
     monkeypatch.setattr(
         cf,
@@ -1147,7 +1150,61 @@ def test_forecast_tune_genetic_and_barrier_prob_routing(monkeypatch):
     assert "Invalid direction" in out["error"]
 
     out = raw_barrier(request=ForecastBarrierProbRequest(symbol="EURUSD", method="mystery"))
-    assert out["error"] == "Unknown method: mystery"
+    assert out["error_code"] == "unsupported_method"
+    assert "Unsupported barrier method: mystery" in out["error"]
+    assert "monte_carlo->mc_gbm" in out["error"]
+
+
+def test_forecast_barrier_methods_accept_monte_carlo_aliases():
+    called: dict[str, str] = {}
+
+    def fake_barrier_hit(**kwargs):
+        called["prob_method"] = kwargs["method"]
+        return {"success": True}
+
+    out = forecast_use_cases.run_forecast_barrier_prob(
+        ForecastBarrierProbRequest(symbol="EURUSD", method="monte_carlo"),
+        build_barrier_kwargs=lambda _values: {},
+        normalize_trade_direction=lambda _direction: ("long", None),
+        barrier_hit_probabilities_impl=fake_barrier_hit,
+        barrier_closed_form_impl=lambda **_kwargs: {"unused": True},
+    )
+
+    assert out["success"] is True
+    assert called["prob_method"] == "mc_gbm"
+
+    def fake_optimize(**kwargs):
+        called["optimize_method"] = kwargs["method"]
+        return {"success": True, "best": {}}
+
+    out_opt = forecast_use_cases.run_forecast_barrier_optimize(
+        ForecastBarrierOptimizeRequest(symbol="EURUSD", method="monte_carlo_bb"),
+        parse_kv_or_json=lambda value: value or {},
+        barrier_optimize_impl=fake_optimize,
+    )
+
+    assert out_opt["success"] is True
+    assert called["optimize_method"] == "mc_gbm_bb"
+
+
+def test_forecast_barrier_optimize_rejects_unknown_method_without_traceback():
+    called = False
+
+    def fake_optimize(**_kwargs):
+        nonlocal called
+        called = True
+        return {"success": True}
+
+    out = forecast_use_cases.run_forecast_barrier_optimize(
+        ForecastBarrierOptimizeRequest(symbol="EURUSD", method="mystery"),
+        parse_kv_or_json=lambda value: value or {},
+        barrier_optimize_impl=fake_optimize,
+    )
+
+    assert called is False
+    assert out["error_code"] == "unsupported_method"
+    assert "Unsupported barrier method: mystery" in out["error"]
+    assert "traceback_summary" not in out
 
 
 def test_forecast_barrier_prob_closed_form_rejects_tp_sl_inputs_before_generic_error():
