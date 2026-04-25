@@ -513,6 +513,62 @@ class TestFinvizTools:
         assert result["details"] == {"tool": "finviz_fundamentals"}
         assert isinstance(result.get("request_id"), str)
 
+    @patch("mtdata.core.finviz.get_stock_fundamentals")
+    def test_finviz_fundamentals_defaults_to_compact_summary(self, mock_get_fundamentals):
+        from mtdata.core.finviz import finviz_fundamentals
+
+        mock_get_fundamentals.return_value = {
+            "success": True,
+            "symbol": "AAPL",
+            "fundamentals": {
+                "Company": "Apple Inc",
+                "Sector": "Technology",
+                "P/E": "34.29",
+                "EPS (ttm)": "7.90",
+                "Market Cap": "3979.47B",
+                "Price": "270.00",
+                "Change": "1.2%",
+                "RSI (14)": "62.1",
+                "Insider Own": "0.1%",
+            },
+        }
+
+        raw = getattr(finviz_fundamentals, "__wrapped__", finviz_fundamentals)
+        result = raw("aapl")
+
+        mock_get_fundamentals.assert_called_once_with("AAPL")
+        assert result["detail"] == "compact"
+        assert result["category"] == "summary"
+        assert result["fundamentals"]["P/E"] == "34.29"
+        assert "Insider Own" not in result["fundamentals"]
+        assert result["available_field_count"] == 9
+        assert result["omitted_field_count"] == 1
+
+    @patch("mtdata.core.finviz.get_stock_fundamentals")
+    def test_finviz_fundamentals_filters_category_and_fields(self, mock_get_fundamentals):
+        from mtdata.core.finviz import finviz_fundamentals
+
+        mock_get_fundamentals.return_value = {
+            "success": True,
+            "symbol": "AAPL",
+            "fundamentals": {
+                "P/E": "34.29",
+                "P/S": "8.1",
+                "EPS (ttm)": "7.90",
+                "RSI (14)": "62.1",
+            },
+        }
+
+        raw = getattr(finviz_fundamentals, "__wrapped__", finviz_fundamentals)
+        valuation = raw("AAPL", category="valuation")
+        custom = raw("AAPL", fields="P/E,RSI (14),Missing")
+
+        assert valuation["category"] == "valuation"
+        assert valuation["fundamentals"] == {"P/E": "34.29", "P/S": "8.1", "EPS (ttm)": "7.90"}
+        assert custom["category"] == "custom"
+        assert custom["fundamentals"] == {"P/E": "34.29", "RSI (14)": "62.1"}
+        assert custom["missing_fields"] == ["Missing"]
+
     @patch('mtdata.services.finviz.get_stock_fundamentals')
     def test_finviz_fundamentals_tool(self, mock_get_fundamentals):
         """Test finviz_fundamentals tool."""

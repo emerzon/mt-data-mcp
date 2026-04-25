@@ -36,6 +36,89 @@ logger = logging.getLogger(__name__)
 
 _PAIR_SUFFIXES = {"USD", "EUR", "GBP", "JPY", "AUD", "CAD", "CHF", "NZD"}
 _FINVIZ_SCREEN_FILTERS_EXAMPLE = '{"Exchange":"NASDAQ","Sector":"Technology"}'
+_FINVIZ_FUNDAMENTAL_CATEGORIES: Dict[str, tuple[str, ...]] = {
+    "summary": (
+        "Company",
+        "Sector",
+        "Industry",
+        "Market Cap",
+        "Price",
+        "Change",
+        "P/E",
+        "Forward P/E",
+        "EPS (ttm)",
+        "52W High",
+        "52W Low",
+        "RSI (14)",
+    ),
+    "valuation": (
+        "Market Cap",
+        "P/E",
+        "Forward P/E",
+        "PEG",
+        "P/S",
+        "P/B",
+        "P/C",
+        "P/FCF",
+        "EPS (ttm)",
+        "EPS next Y",
+        "EPS next Q",
+    ),
+    "performance": (
+        "Perf Week",
+        "Perf Month",
+        "Perf Quarter",
+        "Perf Half Y",
+        "Perf Year",
+        "Perf YTD",
+        "Perf 3Y",
+        "Perf 5Y",
+        "Perf 10Y",
+        "52W High",
+        "52W Low",
+    ),
+    "technicals": (
+        "RSI (14)",
+        "SMA20",
+        "SMA50",
+        "SMA200",
+        "ATR (14)",
+        "Beta",
+        "Volatility W",
+        "Volatility M",
+        "Price",
+        "Change",
+        "Volume",
+        "Avg Volume",
+        "Rel Volume",
+    ),
+    "dividends": (
+        "Dividend Est.",
+        "Dividend TTM",
+        "Dividend Ex-Date",
+        "Dividend Gr. 3Y",
+        "Dividend Gr. 5Y",
+        "Payout",
+    ),
+    "ownership": (
+        "Insider Own",
+        "Insider Trans",
+        "Inst Own",
+        "Inst Trans",
+        "Short Float",
+        "Short Ratio",
+    ),
+    "profile": (
+        "Company",
+        "Sector",
+        "Industry",
+        "Country",
+        "Exchange",
+        "Index",
+        "Employees",
+        "IPO",
+    ),
+}
 
 
 def _finviz_error_payload(
@@ -232,8 +315,95 @@ def _normalize_finviz_news_payload(result: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
+def _parse_finviz_fields(fields: Optional[Union[str, list[str]]]) -> Optional[list[str]]:
+    if fields is None:
+        return None
+    if isinstance(fields, str):
+        return [field.strip() for field in fields.split(",") if field.strip()]
+    return [str(field).strip() for field in fields if str(field).strip()]
+
+
+def _filter_finviz_fundamentals_payload(
+    result: Dict[str, Any],
+    *,
+    detail: str,
+    category: str,
+    fields: Optional[Union[str, list[str]]],
+) -> Dict[str, Any]:
+    fundamentals = result.get("fundamentals")
+    if not isinstance(fundamentals, dict):
+        return result
+
+    detail_mode = str(detail or "compact").strip().lower()
+    category_mode = str(category or "summary").strip().lower()
+    if detail_mode not in {"compact", "full"}:
+        return _finviz_error_payload(
+            "detail must be 'compact' or 'full'.",
+            code="finviz_fundamentals_invalid_detail",
+            operation="finviz_fundamentals",
+            details={"detail": detail},
+        )
+    if category_mode != "all" and category_mode not in _FINVIZ_FUNDAMENTAL_CATEGORIES:
+        return _finviz_error_payload(
+            (
+                "category must be one of: all, "
+                + ", ".join(sorted(_FINVIZ_FUNDAMENTAL_CATEGORIES))
+                + "."
+            ),
+            code="finviz_fundamentals_invalid_category",
+            operation="finviz_fundamentals",
+            details={"category": category},
+        )
+
+    requested_fields = _parse_finviz_fields(fields)
+    if requested_fields is not None:
+        selected_fields = requested_fields
+        category_out = "custom"
+    elif category_mode != "all":
+        selected_fields = list(_FINVIZ_FUNDAMENTAL_CATEGORIES[category_mode])
+        category_out = category_mode
+    elif detail_mode == "compact":
+        selected_fields = list(_FINVIZ_FUNDAMENTAL_CATEGORIES["summary"])
+        category_out = "summary"
+    else:
+        selected_fields = list(fundamentals.keys())
+        category_out = "all"
+
+    filtered = {
+        field: fundamentals[field]
+        for field in selected_fields
+        if field in fundamentals and fundamentals[field] not in (None, "")
+    }
+    out = dict(result)
+    out["fundamentals"] = filtered
+    out["detail"] = detail_mode
+    out["category"] = category_out
+    out["fields_returned"] = list(filtered.keys())
+    out["available_field_count"] = len(fundamentals)
+    out["omitted_field_count"] = max(0, len(fundamentals) - len(filtered))
+    if requested_fields is not None:
+        missing = [field for field in requested_fields if field not in fundamentals]
+        if missing:
+            out["missing_fields"] = missing
+    return out
+
+
 @mcp.tool()
-def finviz_fundamentals(symbol: str) -> Dict[str, Any]:
+def finviz_fundamentals(
+    symbol: str,
+    detail: Literal["compact", "full"] = "compact",  # type: ignore
+    category: Literal[
+        "summary",
+        "valuation",
+        "performance",
+        "technicals",
+        "dividends",
+        "ownership",
+        "profile",
+        "all",
+    ] = "summary",  # type: ignore
+    fields: Optional[str] = None,
+) -> Dict[str, Any]:
     """
     Get fundamental data for a US stock symbol.
     
@@ -248,7 +418,8 @@ def finviz_fundamentals(symbol: str) -> Dict[str, Any]:
     Returns
     -------
     dict
-        Fundamental metrics for the stock
+        Fundamental metrics for the stock. By default this returns a compact
+        summary; set `detail="full", category="all"` for the full Finviz field set.
     
     Example
     -------
@@ -260,11 +431,17 @@ def finviz_fundamentals(symbol: str) -> Dict[str, Any]:
         if error is not None:
             return error
         assert symbol_norm is not None
-        return get_stock_fundamentals(symbol_norm)
+        result = get_stock_fundamentals(symbol_norm)
+        return _filter_finviz_fundamentals_payload(
+            result,
+            detail=detail,
+            category=category,
+            fields=fields,
+        )
 
     return _run_logged_tool(
         "finviz_fundamentals",
-        {"symbol": symbol},
+        {"symbol": symbol, "detail": detail, "category": category, "fields": fields},
         _run,
     )
 
