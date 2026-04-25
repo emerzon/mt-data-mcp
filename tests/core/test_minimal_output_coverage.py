@@ -736,6 +736,34 @@ class TestFormatToToon:
         assert "      now: \"2026-03-08T10:10:00-06:00\"" in lines
         assert "forecast[1]{time,forecast}:" in lines
 
+    def test_price_like_fields_preserve_precision_in_compact_text(self):
+        result = _format_to_toon(
+            {
+                "current_price": 1.17221,
+                "best": {"tp_price": 1.19045, "sl_price": 1.16987},
+                "active_levels": {
+                    "bullish": {
+                        "level_price": 1.17005,
+                        "reference_price": 1.17221,
+                    },
+                },
+                "levels": {"PP": 1.16893, "R1": 1.17456, "S1": 1.16321},
+                "nearest": {"support": {"value": 1.16893}},
+                "interval_summary": {"first_low": 1.16987, "first_high": 1.17453},
+            }
+        )
+
+        assert "current_price: 1.17221" in result
+        assert "tp_price: 1.19045" in result
+        assert "sl_price: 1.16987" in result
+        assert "level_price: 1.17005" in result
+        assert "reference_price: 1.17221" in result
+        assert "PP: 1.16893" in result
+        assert "R1: 1.17456" in result
+        assert "S1: 1.16321" in result
+        assert "value: 1.16893" in result
+        assert "first_low: 1.16987" in result
+
 
 class TestFormatResultMinimal:
     def test_market_ticker_verbose_uses_display_time_and_keeps_epoch_field(self):

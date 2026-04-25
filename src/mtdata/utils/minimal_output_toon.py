@@ -34,6 +34,41 @@ _QUOTE_DECIMALS_BY_FIELD = {
     "askhigh": 8,
     "session_open": 8,
     "session_close": 8,
+    "current_price": 8,
+    "reference_price": 8,
+    "level_price": 8,
+    "target_price": 8,
+    "entry_price": 8,
+    "open_price": 8,
+    "close_price": 8,
+    "high_price": 8,
+    "low_price": 8,
+    "tp_price": 8,
+    "sl_price": 8,
+    "fast_ma": 8,
+    "slow_ma": 8,
+    "sma_value": 8,
+    "ema_value": 8,
+    "first_low": 8,
+    "first_high": 8,
+    "last_low": 8,
+    "last_high": 8,
+    "pivot": 8,
+}
+
+_PRICE_CONTAINER_KEYS = {
+    "levels",
+    "nearest",
+    "support",
+    "resistance",
+    "supports",
+    "resistances",
+    "active_levels",
+}
+_PRICE_LEVEL_KEYS = {
+    "PP",
+    *(f"R{idx}" for idx in range(1, 11)),
+    *(f"S{idx}" for idx in range(1, 11)),
 }
 
 _QUOTE_STAT_DECIMAL_FIELDS = {
@@ -194,13 +229,21 @@ def _forced_scalar_decimals(
     if forced is not None:
         return forced
     if "." in str(key):
-        parent, _, child = str(key).partition(".")
+        key_parts = str(key).split(".")
+        parent, child = key_parts[0], key_parts[-1]
         if child in _QUOTE_STAT_DECIMAL_FIELDS:
             forced = _QUOTE_DECIMALS_BY_FIELD.get(parent)
             if forced is not None:
                 return forced
+        if any(part in _PRICE_CONTAINER_KEYS for part in key_parts[:-1]):
+            if child in _PRICE_LEVEL_KEYS or child in {"value", "price"}:
+                return _QUOTE_DECIMALS_BY_FIELD["price"]
     if parent_key is not None and str(key) in _QUOTE_STAT_DECIMAL_FIELDS:
         return _QUOTE_DECIMALS_BY_FIELD.get(str(parent_key))
+    if parent_key is not None and str(parent_key) in _PRICE_CONTAINER_KEYS:
+        key_text = str(key)
+        if key_text in _PRICE_LEVEL_KEYS or key_text in {"value", "price"}:
+            return _QUOTE_DECIMALS_BY_FIELD["price"]
     return None
 
 
@@ -465,11 +508,7 @@ def _format_to_toon(
             chunk = _format_to_toon(
                 subval,
                 key=subkey,
-                parent_key=(
-                    str(key)
-                    if key is not None and str(key) in _QUOTE_DECIMALS_BY_FIELD
-                    else parent_key
-                ),
+                parent_key=str(key) if key is not None else parent_key,
                 indent=child_indent,
                 delimiter=delimiter,
                 simplify_numbers=simplify_numbers,
