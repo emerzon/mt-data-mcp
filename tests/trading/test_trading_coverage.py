@@ -856,6 +856,22 @@ class TestTradeClose:
 
     @patch("mtdata.core.trading._cancel_pending")
     @patch("mtdata.core.trading._close_positions")
+    def test_dry_run_ticket_preview_skips_execution(self, mock_close, mock_cancel):
+        out = trade_close(ticket=123, volume=0.05, dry_run=True, __cli_raw=True)
+
+        assert out["success"] is True
+        assert out["dry_run"] is True
+        assert out["actionability"] == "preview_only"
+        assert out["operation"] == "partial_close_position"
+        assert out["ticket"] == 123
+        assert out["volume"] == 0.05
+        assert out["would_send_order"] is False
+        assert "realized_pnl" in out["not_estimated"]
+        mock_close.assert_not_called()
+        mock_cancel.assert_not_called()
+
+    @patch("mtdata.core.trading._cancel_pending")
+    @patch("mtdata.core.trading._close_positions")
     def test_partial_close_requires_ticket(self, mock_close, mock_cancel):
         out = _unwrap_mcp(trade_close(symbol="EURUSD", volume=0.05))
         if isinstance(out, dict):

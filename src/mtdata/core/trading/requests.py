@@ -96,6 +96,7 @@ class TradeCloseRequest(BaseModel):
     close_all: bool = False
     symbol: Optional[str] = None
     volume: Optional[float] = None
+    dry_run: bool = False
     profit_only: bool = False
     loss_only: bool = False
     close_priority: Optional[Literal["loss_first", "profit_first", "largest_first"]] = None

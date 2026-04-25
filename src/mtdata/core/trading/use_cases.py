@@ -1081,6 +1081,7 @@ def run_trade_close(  # noqa: C901
         volume=request.volume,
         profit_only=request.profit_only,
         loss_only=request.loss_only,
+        dry_run=request.dry_run,
     )
 
     def _finish(
@@ -1100,6 +1101,7 @@ def run_trade_close(  # noqa: C901
             scope=scope,
             profit_only=request.profit_only,
             loss_only=request.loss_only,
+            dry_run=request.dry_run,
         )
         return result
 
@@ -1167,6 +1169,67 @@ def run_trade_close(  # noqa: C901
             },
             scope="bulk_confirmation",
         )
+
+    if request.dry_run:
+        scope = (
+            "ticket"
+            if request.ticket is not None
+            else "symbol"
+            if request.symbol is not None
+            else "positions"
+        )
+        operation = (
+            "partial_close_position"
+            if request.volume is not None
+            else "close_or_cancel_ticket"
+            if request.ticket is not None
+            else "close_symbol_positions"
+            if request.symbol is not None
+            else "close_all_positions"
+        )
+        preview: Dict[str, Any] = {
+            "success": True,
+            "dry_run": True,
+            "actionability": "preview_only",
+            "operation": operation,
+            "scope": scope,
+            "would_send_order": False,
+            "would_cancel_pending_order": False,
+            "preview_scope_summary": (
+                "Routing and request validation only; no close or cancel request was sent to MT5."
+            ),
+            "not_estimated": [
+                "realized_pnl",
+                "slippage",
+                "post_close_balance",
+                "tax_impact",
+            ],
+        }
+        if request.ticket is not None:
+            preview["ticket"] = request.ticket
+            preview["ticket_resolution"] = (
+                "Would try an open position first, then a pending order if no position matches."
+            )
+        if request.symbol is not None:
+            preview["symbol"] = request.symbol
+        if request.volume is not None:
+            preview["volume"] = request.volume
+            preview["ticket_resolution"] = (
+                "Would target only an open position; partial close does not fall back to pending orders."
+            )
+        if request.close_all:
+            preview["close_all"] = True
+        if request.profit_only:
+            preview["profit_only"] = True
+        if request.loss_only:
+            preview["loss_only"] = True
+        if request.close_priority:
+            preview["close_priority"] = request.close_priority
+        if request.comment:
+            preview["comment"] = request.comment
+        if request.deviation != 20:
+            preview["deviation"] = request.deviation
+        return _finish(preview, scope=scope)
 
     if request.profit_only or request.loss_only:
         result = close_positions(
