@@ -63,15 +63,5 @@ def test_history_available_on_versioned_route() -> None:
         "candles_excluded": 0,
         "meta": {
             "tool": "data_fetch_candles",
-            "runtime": {
-                "timezone": {
-                    "utc": {"tz": "UTC"},
-                    "server": {
-                        "source": "MT5_SERVER_TZ",
-                        "tz": "Europe/Nicosia",
-                        "offset_seconds": 7200,
-                    },
-                },
-            },
         },
     }

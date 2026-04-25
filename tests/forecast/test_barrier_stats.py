@@ -602,6 +602,8 @@ class TestBarrierOptimizationWithStats(_BarrierOptimizationPatchMixin, unittest.
                     enable_convergence_check=True,
                     enable_bootstrap=False,
                     n_seeds_stability=1,
+                    viable_only=False,
+                    output_mode="full",
                     params={'n_sims': 100, 'seed': 42},
                 )
 

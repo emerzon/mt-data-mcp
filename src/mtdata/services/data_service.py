@@ -1543,6 +1543,8 @@ def _compact_tick_summary(out: Dict[str, Any]) -> Dict[str, Any]:
         "timezone": out.get("timezone"),
         "stats": {"spread": compact_spread},
     }
+    if out.get("price_precision") is not None:
+        compact["price_precision"] = out.get("price_precision")
     return compact
 
 

@@ -103,8 +103,9 @@ class TestFlatTradeFiltering:
         for d in r["details"]:
             if d.get("success"):
                 assert d["position"] == "flat"
-        # Metrics should be empty (no trades to measure)
-        assert "metrics" not in r
+        assert r["metrics_available"] is False
+        assert r["metrics_reason"] == "no_non_flat_trades"
+        assert r["metrics"]["trades_observed"] == 0
 
     @patch("mtdata.forecast.backtest._fetch_history")
     def test_mixed_flat_and_active_counts_only_active(self, fetch):
@@ -126,9 +127,8 @@ class TestFlatTradeFiltering:
             )
         r = result["results"]["naive"]
         if "metrics" in r:
-            # num_trades should only count non-flat
             active = [d for d in r["details"] if d.get("success") and d.get("position") != "flat"]
-            assert r["metrics"]["num_trades"] <= len(active)
+            assert r["metrics"]["trades_observed"] <= len(active)
 
 
 # ── Fix 3: Non-finite forecast values fail the anchor ────────────────────────
