@@ -114,6 +114,7 @@ def _apply_forecast_generate_detail(
         "quantity": payload.get("quantity"),
         "detail": "compact",
     }
+    ci_unavailable = str(payload.get("ci_status") or "").strip().lower() == "unavailable"
     for key in (
         "last_observation_time",
         "forecast_start_time",
@@ -125,6 +126,8 @@ def _apply_forecast_generate_detail(
         "ci_alpha",
         "warnings",
     ):
+        if ci_unavailable and key.startswith("ci_"):
+            continue
         value = payload.get(key)
         if value not in (None, "", [], {}):
             compact[key] = value
@@ -150,7 +153,10 @@ def _apply_forecast_generate_detail(
             "upper_return",
             "lower",
             "upper",
+            "ci",
         }:
+            continue
+        if ci_unavailable and str(key).startswith("ci_"):
             continue
         compact[key] = value
     return attach_collection_contract(

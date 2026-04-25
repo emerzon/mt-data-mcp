@@ -296,6 +296,44 @@ def test_forecast_generate_defaults_to_compact_payload(monkeypatch):
     assert "forecast_epoch" not in out
 
 
+def test_forecast_generate_compact_omits_unavailable_ci_metadata(monkeypatch):
+    raw = _unwrap(cf.forecast_generate)
+    monkeypatch.setattr(
+        cf,
+        "_forecast_impl",
+        lambda **kwargs: {
+            "success": True,
+            "method": kwargs["method"],
+            "horizon": kwargs["horizon"],
+            "quantity": kwargs["quantity"],
+            "forecast_time": ["t1"],
+            "forecast_price": [1.0],
+            "ci_status": "unavailable",
+            "ci_available": False,
+            "ci_alpha": 0.05,
+            "ci": {
+                "status": "unavailable",
+                "hint": "Use forecast_conformal_intervals for uncertainty bands.",
+            },
+        },
+    )
+
+    out = raw(
+        request=ForecastGenerateRequest(
+            symbol="BTCUSD",
+            timeframe="H1",
+            method="theta",
+            horizon=1,
+        )
+    )
+
+    assert out["detail"] == "compact"
+    assert "ci_status" not in out
+    assert "ci_available" not in out
+    assert "ci_alpha" not in out
+    assert "ci" not in out
+
+
 def test_forecast_generate_standard_preserves_full_arrays(monkeypatch):
     raw = _unwrap(cf.forecast_generate)
     monkeypatch.setattr(

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import math
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Literal, Optional
 
 from ...utils.mt5 import (
@@ -30,7 +31,7 @@ from . import comments, validation
 from .gateway import create_trading_gateway
 from .positions import normalize_trade_history_output
 from .requests import TradeHistoryRequest, TradeJournalAnalyzeRequest
-from .use_cases import run_trade_history
+from .use_cases import _DEFAULT_TRADE_HISTORY_LOOKBACK_DAYS, run_trade_history
 
 logger = logging.getLogger(__name__)
 
@@ -195,7 +196,51 @@ def _trade_journal_trade_snapshot(row: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _trade_journal_period_context(
+    request: TradeJournalAnalyzeRequest,
+) -> Dict[str, Any]:
+    def _format_period_dt(value: Any) -> Optional[str]:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        else:
+            value = value.astimezone(timezone.utc)
+        return value.isoformat().replace("+00:00", "Z")
+
+    to_dt = _parse_start_datetime(request.end) if request.end else None
+    if to_dt is None:
+        to_dt = datetime.now(timezone.utc).replace(tzinfo=None)
+
+    minutes_back_value, minutes_back_error = validation._normalize_minutes_back(
+        request.minutes_back
+    )
+    if minutes_back_error:
+        minutes_back_value = None
+
+    if minutes_back_value is not None:
+        from_dt = to_dt - timedelta(minutes=minutes_back_value)
+    elif request.start:
+        from_dt = _parse_start_datetime(request.start)
+    else:
+        from_dt = to_dt - timedelta(days=_DEFAULT_TRADE_HISTORY_LOOKBACK_DAYS)
+
+    out: Dict[str, Any] = {
+        "period_start": _format_period_dt(from_dt),
+        "period_end": _format_period_dt(to_dt),
+        "period_timezone": "UTC",
+    }
+    if minutes_back_value is not None:
+        out["period_source"] = "minutes_back"
+    elif request.start or request.end:
+        out["period_source"] = "explicit_range"
+    else:
+        out["period_source"] = "default_lookback"
+    return out
+
+
 def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str, Any]:
+    period_context = _trade_journal_period_context(request)
     history_result = _run_trade_history_request(
         TradeHistoryRequest(
             history_kind="deals",
@@ -222,6 +267,7 @@ def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str,
     if isinstance(message, str) and message.strip() and not raw_rows:
         return {
             "success": True,
+            **period_context,
             "summary": _trade_journal_metrics([]),
             "breakdowns": {
                 "by_symbol": [],
@@ -258,6 +304,7 @@ def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str,
     if not analyzed_rows:
         return {
             "success": True,
+            **period_context,
             "summary": _trade_journal_metrics([]),
             "breakdowns": {
                 "by_symbol": [],
@@ -288,6 +335,7 @@ def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str,
     )
     return {
         "success": True,
+        **period_context,
         "summary": _trade_journal_metrics(analyzed_rows),
         "breakdowns": {
             "by_symbol": _build_trade_journal_breakdown(
