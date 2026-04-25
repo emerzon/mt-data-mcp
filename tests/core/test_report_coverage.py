@@ -720,6 +720,11 @@ class TestReportSummaryBarriers:
         assert "edge=" in long_line
         assert "ev_edge_conflict=true" in long_line
         assert "ev_edge_conflict_reason=" in long_line
+        structured = res["summary_structured"]["barriers"]["long"]
+        assert structured["ev"] == 0.03
+        assert structured["edge"] == -0.1
+        assert structured["ev_edge_conflict"] is True
+        assert structured["conflict_reason"] == "ev and edge have opposite signs"
 
     def test_no_barriers_section(self):
         sec = _make_full_sections()

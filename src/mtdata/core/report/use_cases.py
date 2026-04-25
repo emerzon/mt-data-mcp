@@ -115,6 +115,7 @@ def _prioritize_report_payload(report: Dict[str, Any]) -> Dict[str, Any]:
         "success",
         "completeness",
         "summary",
+        "summary_structured",
         "sections_status",
         "sections",
         "diagnostics",
@@ -144,7 +145,7 @@ def _compact_report_payload(
     completeness = report.get("completeness")
     if completeness not in (None, "", [], {}):
         compact["completeness"] = completeness
-    for key in ("summary", "sections_status"):
+    for key in ("summary", "summary_structured", "sections_status"):
         value = report.get(key)
         if value not in (None, "", [], {}):
             compact[key] = value
@@ -273,6 +274,7 @@ def run_report_generate(  # noqa: C901
                     append_diagnostic_warning(rep, warning_text)
 
             summ: List[str] = []
+            summary_structured: Dict[str, Any] = {}
             try:
                 ctx = rep.get("sections", {}).get("context", {})
                 last = ctx.get("last_snapshot") or {}
@@ -280,17 +282,23 @@ def run_report_generate(  # noqa: C901
                 ema20 = get_indicator_value(last, "EMA_20")
                 ema50 = get_indicator_value(last, "EMA_50")
                 rsi = get_indicator_value(last, "RSI_14")
+                market_summary: Dict[str, Any] = {}
                 if price is not None:
                     summ.append(f"close={format_number(price)}")
+                    market_summary["close"] = price
                 if price is not None and ema20 is not None and ema50 is not None:
                     trend_note = (
-                        "trend: above EMAs"
+                        "above EMAs"
                         if float(price or 0) > float(ema20) > float(ema50)
-                        else "trend: mixed"
+                        else "mixed"
                     )
-                    summ.append(trend_note)
+                    summ.append(f"trend: {trend_note}")
+                    market_summary["trend"] = trend_note
                 if rsi is not None:
                     summ.append(f"RSI={format_number(rsi)}")
+                    market_summary["rsi"] = rsi
+                if market_summary:
+                    summary_structured["market"] = market_summary
             except Exception:
                 pass
 
@@ -338,11 +346,13 @@ def run_report_generate(  # noqa: C901
                 pp = _pivot_lookup("PP")
                 r1 = _pivot_lookup("R1")
                 s1 = _pivot_lookup("S1")
+                pivot_summary: Dict[str, Any] = {"method": chosen_method}
                 if pp is not None and r1 is not None and s1 is not None:
                     summ.append(
                         f"pivot {chosen_method} PP={format_number(pp)} "
                         f"(R1={format_number(r1)}, S1={format_number(s1)})"
                     )
+                    pivot_summary.update({"PP": pp, "R1": r1, "S1": s1})
                 calc_basis = (
                     piv.get("calculation_basis")
                     if isinstance(piv.get("calculation_basis"), dict)
@@ -353,10 +363,14 @@ def run_report_generate(  # noqa: C901
                 context_parts: List[str] = []
                 if session_boundary:
                     context_parts.append(f"session={session_boundary}")
+                    pivot_summary["session_boundary"] = session_boundary
                 if display_tz:
                     context_parts.append(f"display_tz={display_tz}")
+                    pivot_summary["display_timezone"] = display_tz
                 if context_parts:
                     summ.append("pivot context " + " ".join(context_parts))
+                if len(pivot_summary) > 1:
+                    summary_structured["pivot"] = pivot_summary
             except Exception:
                 pass
 
@@ -366,6 +380,10 @@ def run_report_generate(  # noqa: C901
                     hs = vol.get("horizon_sigma_price") or vol.get("horizon_sigma_return")
                     if hs is not None:
                         summ.append(f"h{eff_horizon} sigma={format_number(hs)}")
+                        summary_structured["volatility"] = {
+                            "horizon": eff_horizon,
+                            "sigma": hs,
+                        }
             except Exception:
                 pass
 
@@ -374,6 +392,7 @@ def run_report_generate(  # noqa: C901
                 if isinstance(fc, dict) and "method" in fc:
                     method_name = str(fc.get("method"))
                     forecast_line = f"forecast={method_name}"
+                    forecast_summary: Dict[str, Any] = {"method": method_name}
                     values = None
                     for key in ("forecast_price", "forecast_return", "forecast_series", "forecast"):
                         candidate = fc.get(key)
@@ -394,6 +413,7 @@ def run_report_generate(  # noqa: C901
                             tol = max(1e-9, abs(first) * 1e-6)
                             if span <= tol:
                                 forecast_line += " (flat)"
+                                forecast_summary["flat"] = True
                                 append_diagnostic_warning(
                                     rep,
                                     "Selected forecast appears degenerate (near-constant values across horizon).",
@@ -409,12 +429,16 @@ def run_report_generate(  # noqa: C901
                     anchor = fc.get("forecast_anchor")
                     if last_obs:
                         timing_parts.append(f"last_obs={last_obs}")
+                        forecast_summary["last_observation"] = last_obs
                     if start_time:
                         timing_parts.append(f"start={start_time}")
+                        forecast_summary["start"] = start_time
                     if anchor:
                         timing_parts.append(f"anchor={anchor}")
+                        forecast_summary["anchor"] = anchor
                     if timing_parts:
                         summ.append("forecast timing: " + " ".join(timing_parts))
+                    summary_structured["forecast"] = forecast_summary
             except Exception:
                 pass
 
@@ -444,12 +468,30 @@ def run_report_generate(  # noqa: C901
                         chosen = best_payload.get("method")
                         if initial and chosen and str(initial) != str(chosen):
                             line += ", fallback=degenerate-initial-forecast"
+                    forecast_summary = summary_structured.setdefault("forecast", {})
+                    if isinstance(forecast_summary, dict):
+                        forecast_summary["selection"] = {
+                            "primary_metric": primary,
+                            "tie_breaker": tie_breaker,
+                        }
+                        if tol_pct is not None:
+                            forecast_summary["rmse_tolerance_pct"] = tol_pct
+                        if min_da is not None:
+                            forecast_summary["min_directional_accuracy"] = min_da
+                        if isinstance(best_payload, dict):
+                            initial = best_payload.get("initial_method")
+                            chosen = best_payload.get("method")
+                            if initial is not None:
+                                forecast_summary["initial_method"] = initial
+                            if chosen is not None:
+                                forecast_summary["chosen_method"] = chosen
                     summ.append(line)
             except Exception:
                 pass
 
             try:
                 bar = rep.get("sections", {}).get("barriers", {})
+                barriers_summary: Dict[str, Any] = {}
                 if isinstance(bar, dict) and any(k in bar for k in ("long", "short")):
                     for dname in ("long", "short"):
                         sub = bar.get(dname)
@@ -463,14 +505,19 @@ def run_report_generate(  # noqa: C901
                         ev = best.get("ev")
                         edge = best.get("edge")
                         details: List[str] = [f"dir={dname}"]
+                        barrier_entry: Dict[str, Any] = {}
                         if tp is not None:
                             details.append(f"tp={format_number(tp)}%")
+                            barrier_entry["tp_pct"] = tp
                         if sl is not None:
                             details.append(f"sl={format_number(sl)}%")
+                            barrier_entry["sl_pct"] = sl
                         if ev is not None:
                             details.append(f"ev={format_number(ev)}")
+                            barrier_entry["ev"] = ev
                         if edge is not None:
                             details.append(f"edge={format_number(edge)}")
+                            barrier_entry["edge"] = edge
                         try:
                             if ev is not None and edge is not None:
                                 ev_num = float(ev)
@@ -478,10 +525,14 @@ def run_report_generate(  # noqa: C901
                                 if (ev_num > 0 and edge_num < 0) or (ev_num < 0 and edge_num > 0):
                                     details.append("ev_edge_conflict=true")
                                     details.append("ev_edge_conflict_reason=ev and edge have opposite signs")
+                                    barrier_entry["ev_edge_conflict"] = True
+                                    barrier_entry["conflict_reason"] = "ev and edge have opposite signs"
                         except Exception:
                             pass
                         if details:
                             summ.append("barrier best " + " ".join(details))
+                        if barrier_entry:
+                            barriers_summary[dname] = barrier_entry
                 else:
                     best = bar.get("best") if isinstance(bar, dict) else None
                     direction = bar.get("direction") if isinstance(bar, dict) else None
@@ -491,16 +542,22 @@ def run_report_generate(  # noqa: C901
                         ev = best.get("ev")
                         edge = best.get("edge")
                         details: List[str] = []
+                        barrier_entry: Dict[str, Any] = {}
                         if direction:
                             details.append(f"dir={str(direction)}")
+                            barrier_entry["direction"] = str(direction)
                         if tp is not None:
                             details.append(f"tp={format_number(tp)}%")
+                            barrier_entry["tp_pct"] = tp
                         if sl is not None:
                             details.append(f"sl={format_number(sl)}%")
+                            barrier_entry["sl_pct"] = sl
                         if ev is not None:
                             details.append(f"ev={format_number(ev)}")
+                            barrier_entry["ev"] = ev
                         if edge is not None:
                             details.append(f"edge={format_number(edge)}")
+                            barrier_entry["edge"] = edge
                         try:
                             if ev is not None and edge is not None:
                                 ev_num = float(ev)
@@ -508,14 +565,22 @@ def run_report_generate(  # noqa: C901
                                 if (ev_num > 0 and edge_num < 0) or (ev_num < 0 and edge_num > 0):
                                     details.append("ev_edge_conflict=true")
                                     details.append("ev_edge_conflict_reason=ev and edge have opposite signs")
+                                    barrier_entry["ev_edge_conflict"] = True
+                                    barrier_entry["conflict_reason"] = "ev and edge have opposite signs"
                         except Exception:
                             pass
                         if details:
                             summ.append("barrier best " + " ".join(details))
+                        if barrier_entry:
+                            barriers_summary["best"] = barrier_entry
+                if barriers_summary:
+                    summary_structured["barriers"] = barriers_summary
             except Exception:
                 pass
 
             rep["summary"] = summ
+            if summary_structured:
+                rep["summary_structured"] = summary_structured
             sections = rep.get("sections")
             if isinstance(sections, dict):
                 sections_status = _build_sections_status(sections)
