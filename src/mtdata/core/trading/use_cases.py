@@ -2440,7 +2440,6 @@ def run_trade_var_cvar_calculate(  # noqa: C901
             "success": True,
             "message": message,
             "empty": True,
-            "reason": message,
         }
         if request.detail == "full":
             result.update(

@@ -76,7 +76,8 @@ class TestMergedTools(unittest.TestCase):
         self.assertTrue(res.get("success"))
         self.assertEqual(res.get("count"), 0)
         self.assertTrue(res.get("empty"))
-        self.assertEqual(res.get("reason"), "No open positions")
+        self.assertEqual(res.get("message"), "No open positions")
+        self.assertNotIn("reason", res)
         self.assertTrue(res.get("no_action"))
 
         # Test with symbol
@@ -179,7 +180,8 @@ class TestMergedTools(unittest.TestCase):
         self.assertTrue(res.get("success"))
         self.assertEqual(res.get("count"), 0)
         self.assertTrue(res.get("empty"))
-        self.assertEqual(res.get("reason"), "No pending orders")
+        self.assertEqual(res.get("message"), "No pending orders")
+        self.assertNotIn("reason", res)
         self.assertTrue(res.get("no_action"))
 
         get_pending(symbol="EURUSD", __cli_raw=True)
