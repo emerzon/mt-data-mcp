@@ -248,6 +248,8 @@ class ForecastOptimizeHintsRequest(BaseModel):
 
 
 class ForecastBarrierOptimizeRequest(BaseModel):
+    model_config = {"populate_by_name": True}
+
     symbol: str
     timeframe: TimeframeLiteral = "H1"
     horizon: int = Field(12, ge=1)
@@ -265,7 +267,10 @@ class ForecastBarrierOptimizeRequest(BaseModel):
     objective: str = "ev"
     return_grid: bool = True
     top_k: Optional[int] = None
-    format: Literal["full", "summary"] = "summary"
+    output_mode: Literal["full", "summary"] = Field(
+        default="summary",
+        validation_alias=AliasChoices("output_mode", "format"),
+    )
     viable_only: bool = False
     concise: bool = False
     grid_style: str = "fixed"
@@ -308,7 +313,7 @@ class ForecastBarrierOptimizeRequest(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _reject_removed_output(cls, values: Any) -> Any:
-        return _reject_removed_field(values, field_name="output", replacement="format")
+        return _reject_removed_field(values, field_name="output", replacement="output_mode")
 
     @field_validator("direction", mode="before")
     @classmethod

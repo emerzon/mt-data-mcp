@@ -1149,12 +1149,12 @@ def run_forecast_barrier_optimize(
                 params_norm[key] = value
 
     detail_value = _normalize_trader_detail(getattr(request, "detail", "compact"))
-    format_value = request.format
+    format_value = request.output_mode
     concise_value = request.concise
     return_grid_value = request.return_grid
     field_set = getattr(request, "model_fields_set", set())
     if "detail" in field_set or (
-        "format" not in field_set
+        "output_mode" not in field_set
         and "concise" not in field_set
         and "return_grid" not in field_set
     ):

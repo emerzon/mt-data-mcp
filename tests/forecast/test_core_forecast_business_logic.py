@@ -477,8 +477,10 @@ def test_forecast_barrier_optimize_logs_finish_event(caplog, monkeypatch):
 
 def test_forecast_barrier_optimize_request_defaults_to_summary_output():
     request = ForecastBarrierOptimizeRequest(symbol="EURUSD")
-    assert request.format == "summary"
+    assert request.output_mode == "summary"
     assert request.search_profile == "medium"
+    assert list(ForecastBarrierOptimizeRequest.model_fields).count("output_mode") == 1
+    assert "format" not in ForecastBarrierOptimizeRequest.model_fields
 
 
 def test_forecast_barrier_requests_normalize_known_direction_aliases_only():
@@ -488,8 +490,15 @@ def test_forecast_barrier_requests_normalize_known_direction_aliases_only():
 
 
 def test_forecast_barrier_optimize_request_rejects_removed_output_field():
-    with pytest.raises(ValidationError, match="output was removed; use format"):
+    with pytest.raises(ValidationError, match="output was removed; use output_mode"):
         ForecastBarrierOptimizeRequest(symbol="EURUSD", output="summary")
+
+
+def test_forecast_barrier_optimize_request_accepts_format_alias():
+    request = ForecastBarrierOptimizeRequest(symbol="EURUSD", format="full")
+
+    assert request.output_mode == "full"
+    assert request.model_fields_set == {"symbol", "output_mode"}
 
 
 def test_forecast_barrier_optimize_request_accepts_legacy_vol_sl_extra():

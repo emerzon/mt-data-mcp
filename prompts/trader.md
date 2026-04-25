@@ -488,7 +488,7 @@ Use:
 - `forecast_generate` with the session-best method
 - `forecast_conformal_intervals` when uncertainty bands matter
 - `forecast_volatility_estimate` when stop/target distance is unclear
-- `forecast_barrier_prob` on exact proposed TP/SL geometry with the resolved trade direction, or `forecast_barrier_optimize` with the resolved trade direction plus the active mode preset, `search_profile="fast"`, `viable_only=true`, `top_k=3`, and `output="summary"` when the trade is larger than baseline, countertrend, or the TP/SL geometry is still unclear
+- `forecast_barrier_prob` on exact proposed TP/SL geometry with the resolved trade direction, or `forecast_barrier_optimize` with the resolved trade direction plus the active mode preset, `search_profile="fast"`, `viable_only=true`, `top_k=3`, and `output_mode="summary"` when the trade is larger than baseline, countertrend, or the TP/SL geometry is still unclear
 
 Analog directional rule:
 - If `analog` is available and was competitive in the session backtest, keep it as a secondary directional cross-check even when another method won the session.
@@ -520,7 +520,7 @@ Use these when they can sharpen the decision. Do not run them by default every c
 
 - `forecast_barrier_optimize`
   Use the active mode preset as the default barrier-search template: `grid_style="preset"` with `preset=TRADING_MODE`.
-  For normal decision loops, prefer `search_profile="fast"`, `viable_only=true`, `top_k=3`, and `output="summary"`.
+  For normal decision loops, prefer `search_profile="fast"`, `viable_only=true`, `top_k=3`, and `output_mode="summary"`.
   Escalate to `search_profile="long"` only for session-start redesign, major regime shifts, or larger/high-stakes positions, not normal loops.
   If the optimizer returns `status!="ok"`, `no_action=true`, or `viable=false`, treat that as a no-trade or redesign signal, not a reason to keep forcing geometry.
 
@@ -548,7 +548,7 @@ Before any market order, pending order, or scale-in:
 8. Run `forecast_generate` using the session-best available method.
 9. If `analog` is available and was competitive in the session backtest, run a secondary `forecast_generate(..., method="analog")` on each newly closed `PRIMARY_TF` candle, or after 3 fresh loops when direction is still unclear.
 10. If entry, stop, and target are already specified, run `forecast_barrier_prob` on the exact proposed geometry with the resolved trade direction.
-11. If TP/SL geometry is unclear, the trade is countertrend, size is above baseline, or the nearest opposing level compresses the path to target, run `forecast_barrier_optimize` with the resolved trade direction using `grid_style="preset"`, `preset=TRADING_MODE`, `search_profile="fast"`, `viable_only=true`, `top_k=3`, and `output="summary"`.
+11. If TP/SL geometry is unclear, the trade is countertrend, size is above baseline, or the nearest opposing level compresses the path to target, run `forecast_barrier_optimize` with the resolved trade direction using `grid_style="preset"`, `preset=TRADING_MODE`, `search_profile="fast"`, `viable_only=true`, `top_k=3`, and `output_mode="summary"`.
 12. If the optimizer returns `status!="ok"`, `no_action=true`, or `viable=false`, do not force the trade. Either redesign the plan materially or wait.
 13. Run `trade_risk_analyze(symbol="{{SYMBOL}}", desired_risk_pct=..., entry=..., stop_loss=..., take_profit=...)`.
     Pass `direction="long"` for longs or `direction="short"` for shorts so the tool can validate the geometry.
