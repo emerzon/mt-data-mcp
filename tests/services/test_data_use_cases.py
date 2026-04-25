@@ -89,6 +89,11 @@ def test_data_fetch_requests_explain_invalid_simplify_string():
     assert "{'method': 'lttb', 'points': 100}" in str(exc_info.value)
 
 
+def test_data_fetch_candles_rejects_standard_detail_alias():
+    with pytest.raises(ValidationError):
+        DataFetchCandlesRequest(symbol="EURUSD", detail="standard")
+
+
 def test_run_data_fetch_candles_omits_contract_metadata_in_compact_detail():
     rows = [{"time": 1.0, "close": 1.1}]
     request = DataFetchCandlesRequest(symbol="EURUSD", timeframe="H1", limit=10)

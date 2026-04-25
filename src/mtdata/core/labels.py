@@ -203,7 +203,7 @@ def labels_triple_barrier(
                 output_mode = "compact"
             if output_mode not in {"full", "summary", "compact"}:
                 return {
-                    "error": "Invalid detail level. Use 'compact', 'standard', 'full', or 'summary'."
+                    "error": "Invalid detail level. Use 'compact', 'full', or 'summary'."
                 }
             barrier_values = {
                 "tp_abs": tp_abs,

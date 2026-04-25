@@ -19,6 +19,7 @@ from mtdata.forecast.contracts import (
     build_contract_field_ownership_matrix,
     list_contract_field_inventory,
 )
+from mtdata.forecast.requests import ForecastBacktestRequest, ForecastGenerateRequest
 
 
 def test_contract_inventory_covers_all_declared_request_surfaces() -> None:
@@ -77,10 +78,15 @@ def test_execution_contract_inferrs_multivariate_mode_and_validates_capabilities
     assert execution.inferred_input_mode() == "multivariate"
 
 
-def test_backtest_evaluation_contract_accepts_standard_detail_alias() -> None:
-    contract = BacktestEvaluationContract(detail="standard")
+def test_backtest_evaluation_contract_rejects_standard_detail_alias() -> None:
+    with pytest.raises(ValidationError):
+        BacktestEvaluationContract(detail="standard")
 
-    assert contract.detail == "standard"
+
+def test_forecast_detail_schema_distinguishes_standard_support() -> None:
+    assert ForecastGenerateRequest(symbol="EURUSD", detail="standard").detail == "standard"
+    with pytest.raises(ValidationError):
+        ForecastBacktestRequest(symbol="EURUSD", detail="standard")
 
 
 def test_execution_contract_rejects_multivariate_features_for_univariate_only_model() -> None:
