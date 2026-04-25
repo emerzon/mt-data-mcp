@@ -346,7 +346,7 @@ else:
 @mcp.tool()
 def market_ticker(
     symbol: str,
-    detail: CompactFullDetailLiteral = "full",
+    detail: CompactFullDetailLiteral = "compact",
     price_field: Optional[Literal["bid", "ask", "mid", "last", "spread"]] = None,
 ) -> Dict[str, Any]:
     """Return a lightweight ticker snapshot with bid/ask/spread for `symbol`.

@@ -197,7 +197,6 @@ def _compute_performance_metrics(
         return value_f
 
     metrics.update({
-        "avg_return": avg_return,
         "avg_return_per_trade": avg_return,
         "win_rate": win_rate,
         "win_rate_display": f"{win_rate:.1%}",
@@ -772,6 +771,19 @@ def strategy_backtest(  # noqa: C901
             detail=detail_mode,
         )
 
+        _params: Dict[str, Any] = {
+            "lookback": int(lookback),
+            "max_hold_bars": int(max_hold_bars) if max_hold_bars is not None else None,
+            "slippage_bps": float(slippage_bps),
+        }
+        if strategy_value in {"sma_cross", "ema_cross"}:
+            _params["fast_period"] = int(fast_period)
+            _params["slow_period"] = int(slow_period)
+        if strategy_value == "rsi_reversion":
+            _params["rsi_length"] = int(rsi_length)
+            _params["oversold"] = float(oversold)
+            _params["overbought"] = float(overbought)
+
         result: Dict[str, Any] = {
             "success": True,
             "symbol": symbol,
@@ -779,16 +791,7 @@ def strategy_backtest(  # noqa: C901
             "strategy": strategy_value,
             "detail": detail_mode,
             "position_mode": position_mode_value,
-            "parameters": {
-                "lookback": int(lookback),
-                "fast_period": int(fast_period),
-                "slow_period": int(slow_period),
-                "rsi_length": int(rsi_length),
-                "oversold": float(oversold),
-                "overbought": float(overbought),
-                "max_hold_bars": int(max_hold_bars) if max_hold_bars is not None else None,
-                "slippage_bps": float(slippage_bps),
-            },
+            "parameters": _params,
             "summary": {
                 "bars_used": int(lookback),
                 "warmup_bars": int(signal_warmup),
