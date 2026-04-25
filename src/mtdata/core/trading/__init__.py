@@ -17,6 +17,7 @@ from .execution import (
     _close_positions,
     _modify_pending_order,
     _modify_position,
+    _resolve_close_dry_run_target,
 )
 from .orders import _place_market_order, _place_pending_order
 from .positions import trade_get_open, trade_get_pending
@@ -107,5 +108,6 @@ def trade_close(request: TradeCloseRequest) -> dict:
             close_positions=_close_positions,
             cancel_pending=_cancel_pending,
             lookup_ticket_history=lookup_trade_ticket_history,
+            resolve_close_target=_resolve_close_dry_run_target,
         ),
     )

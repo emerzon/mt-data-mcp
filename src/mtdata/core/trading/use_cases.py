@@ -1074,6 +1074,7 @@ def run_trade_close(  # noqa: C901
     close_positions: Any,
     cancel_pending: Any,
     lookup_ticket_history: Any = None,
+    resolve_close_target: Any = None,
 ) -> Dict[str, Any]:
     started_at = time.perf_counter()
     log_operation_start(
@@ -1175,6 +1176,19 @@ def run_trade_close(  # noqa: C901
         )
 
     if request.dry_run:
+        target_result: Optional[Dict[str, Any]] = None
+        if request.ticket is not None and resolve_close_target is not None:
+            target_result = resolve_close_target(
+                ticket=request.ticket,
+                symbol=request.symbol,
+                volume=request.volume,
+            )
+            if isinstance(target_result, dict) and target_result.get("error"):
+                return _finish(
+                    target_result,
+                    scope=str(target_result.get("target_scope") or "ticket"),
+                )
+
         scope = (
             "ticket"
             if request.ticket is not None
@@ -1214,6 +1228,17 @@ def run_trade_close(  # noqa: C901
             preview["ticket_resolution"] = (
                 "Would try an open position first, then a pending order if no position matches."
             )
+            if isinstance(target_result, dict):
+                for key in (
+                    "target_scope",
+                    "target_kind",
+                    "resolved_ticket",
+                    "target_symbol",
+                    "target_volume",
+                ):
+                    value = target_result.get(key)
+                    if value is not None:
+                        preview[key] = value
         if request.symbol is not None:
             preview["symbol"] = request.symbol
         if request.volume is not None:

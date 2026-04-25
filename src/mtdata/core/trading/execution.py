@@ -1151,6 +1151,74 @@ def _close_positions(  # noqa: C901
     return _close_positions()
 
 
+def _resolve_close_dry_run_target(
+    *,
+    ticket: Union[int, str],
+    symbol: Optional[str] = None,
+    volume: Optional[Union[int, float]] = None,
+    gateway: Optional[MT5TradingGateway] = None,
+) -> dict:
+    """Resolve a close target for dry-run validation without sending trade requests."""
+    mt5 = create_trading_gateway(
+        gateway=gateway,
+        include_retcode_name=True,
+    )
+
+    connection_error = trading_connection_error(mt5)
+    if connection_error is not None:
+        return connection_error
+
+    requested_ticket = validation._safe_int_ticket(ticket)
+    if requested_ticket is None:
+        return {"error": f"Invalid ticket {ticket!r}"}
+
+    position, resolved_ticket, position_resolution = _resolve_open_position(
+        mt5,
+        ticket_candidates=[requested_ticket],
+        symbol=symbol,
+    )
+    if position is not None:
+        return {
+            "success": True,
+            "target_scope": "positions",
+            "target_kind": "open_position",
+            "resolved_ticket": resolved_ticket,
+            "target_symbol": getattr(position, "symbol", None),
+            "target_volume": getattr(position, "volume", None),
+            "ticket_resolution": position_resolution,
+        }
+
+    if volume is not None:
+        return {
+            "error": (
+                f"Position {ticket} not found. "
+                "Partial close volume only applies to open positions."
+            ),
+            "checked_scopes": ["positions"],
+        }
+
+    pending_order, resolved_ticket, pending_resolution = _resolve_pending_order(
+        mt5,
+        ticket_candidates=[requested_ticket],
+        symbol=symbol,
+    )
+    if pending_order is not None:
+        return {
+            "success": True,
+            "target_scope": "pending_orders",
+            "target_kind": "pending_order",
+            "resolved_ticket": resolved_ticket,
+            "target_symbol": getattr(pending_order, "symbol", None),
+            "target_volume": getattr(pending_order, "volume_current", None),
+            "ticket_resolution": pending_resolution,
+        }
+
+    return {
+        "error": f"Ticket {ticket} not found as position or pending order.",
+        "checked_scopes": ["positions", "pending_orders"],
+    }
+
+
 def _cancel_pending(
     ticket: Optional[Union[int, str]] = None,
     symbol: Optional[str] = None,

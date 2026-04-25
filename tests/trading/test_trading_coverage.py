@@ -852,9 +852,21 @@ class TestTradeClose:
         )
         mock_cancel.assert_not_called()
 
+    @patch("mtdata.core.trading._resolve_close_dry_run_target")
     @patch("mtdata.core.trading._cancel_pending")
     @patch("mtdata.core.trading._close_positions")
-    def test_dry_run_ticket_preview_skips_execution(self, mock_close, mock_cancel):
+    def test_dry_run_ticket_preview_skips_execution(
+        self, mock_close, mock_cancel, mock_resolve
+    ):
+        mock_resolve.return_value = {
+            "success": True,
+            "target_scope": "positions",
+            "target_kind": "open_position",
+            "resolved_ticket": 123,
+            "target_symbol": "EURUSD",
+            "target_volume": 0.1,
+        }
+
         out = trade_close(ticket=123, volume=0.05, dry_run=True, __cli_raw=True)
 
         assert out["success"] is True
@@ -864,7 +876,30 @@ class TestTradeClose:
         assert out["ticket"] == 123
         assert out["volume"] == 0.05
         assert out["would_send_order"] is False
+        assert out["target_scope"] == "positions"
+        assert out["target_kind"] == "open_position"
+        assert out["resolved_ticket"] == 123
         assert "realized_pnl" in out["not_estimated"]
+        mock_resolve.assert_called_once_with(ticket=123, symbol=None, volume=0.05)
+        mock_close.assert_not_called()
+        mock_cancel.assert_not_called()
+
+    @patch("mtdata.core.trading._resolve_close_dry_run_target")
+    @patch("mtdata.core.trading._cancel_pending")
+    @patch("mtdata.core.trading._close_positions")
+    def test_dry_run_ticket_validates_ticket_exists(
+        self, mock_close, mock_cancel, mock_resolve
+    ):
+        mock_resolve.return_value = {
+            "error": "Ticket 999 not found as position or pending order.",
+            "checked_scopes": ["positions", "pending_orders"],
+        }
+
+        out = trade_close(ticket=999, dry_run=True, __cli_raw=True)
+
+        assert out["error"] == "Ticket 999 not found as position or pending order."
+        assert out["checked_scopes"] == ["positions", "pending_orders"]
+        mock_resolve.assert_called_once_with(ticket=999, symbol=None, volume=None)
         mock_close.assert_not_called()
         mock_cancel.assert_not_called()
 
