@@ -24,11 +24,16 @@ def test_forecast_barrier_prob_request_allows_one_unit_family_per_side():
     request = ForecastBarrierProbRequest(symbol="EURUSD", tp_pct=0.5, sl_pips=15.0)
 
     assert request.tp_pct == 0.5
+    assert request.sl_ticks == 15.0
     assert request.sl_pips == 15.0
 
 
-def test_forecast_barrier_prob_request_accepts_tick_aliases():
+def test_forecast_barrier_prob_request_uses_tick_fields_as_canonical_names():
     request = ForecastBarrierProbRequest(symbol="EURUSD", tp_ticks=12.0, sl_ticks=9.0)
 
+    assert request.tp_ticks == 12.0
+    assert request.sl_ticks == 9.0
     assert request.tp_pips == 12.0
     assert request.sl_pips == 9.0
+    assert "tp_ticks" in request.model_dump()
+    assert "tp_pips" not in request.model_dump()

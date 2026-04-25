@@ -184,6 +184,8 @@ class ForecastTuneOptunaRequest(BaseModel):
 
 
 class ForecastBarrierProbRequest(BaseModel):
+    model_config = {"populate_by_name": True}
+
     symbol: str
     timeframe: TimeframeLiteral = "H1"
     horizon: int = Field(12, ge=1)
@@ -193,13 +195,13 @@ class ForecastBarrierProbRequest(BaseModel):
     sl_abs: Optional[float] = None
     tp_pct: Optional[float] = None
     sl_pct: Optional[float] = None
-    tp_pips: Optional[float] = Field(
+    tp_ticks: Optional[float] = Field(
         None,
-        validation_alias=AliasChoices("tp_pips", "tp_ticks"),
+        validation_alias=AliasChoices("tp_ticks", "tp_pips"),
     )
-    sl_pips: Optional[float] = Field(
+    sl_ticks: Optional[float] = Field(
         None,
-        validation_alias=AliasChoices("sl_pips", "sl_ticks"),
+        validation_alias=AliasChoices("sl_ticks", "sl_pips"),
     )
     params: Optional[Dict[str, Any]] = None
     denoise: Optional[DenoiseSpec] = None
@@ -207,6 +209,16 @@ class ForecastBarrierProbRequest(BaseModel):
     mu: Optional[float] = None
     sigma: Optional[float] = None
     detail: CompactStandardFullDetailLiteral = "compact"
+
+    @property
+    def tp_pips(self) -> Optional[float]:
+        """Legacy alias for tick-size barrier distance."""
+        return self.tp_ticks
+
+    @property
+    def sl_pips(self) -> Optional[float]:
+        """Legacy alias for tick-size barrier distance."""
+        return self.sl_ticks
 
     @model_validator(mode="before")
     @classmethod
@@ -282,9 +294,9 @@ class ForecastBarrierOptimizeRequest(BaseModel):
     vol_steps: Optional[int] = Field(None, ge=1)
     vol_sl_multiplier: float = 1.8
     vol_floor_pct: float = 0.15
-    vol_floor_pips: float = Field(
+    vol_floor_ticks: float = Field(
         8.0,
-        validation_alias=AliasChoices("vol_floor_pips", "vol_floor_ticks"),
+        validation_alias=AliasChoices("vol_floor_ticks", "vol_floor_pips"),
     )
     ratio_min: float = 0.5
     ratio_max: float = 4.0
@@ -309,6 +321,11 @@ class ForecastBarrierOptimizeRequest(BaseModel):
     power_effect_size: float = 0.05
     enable_sensitivity_analysis: bool = False
     sensitivity_params: Optional[List[str]] = None
+
+    @property
+    def vol_floor_pips(self) -> float:
+        """Legacy alias for tick-size volatility-grid floor."""
+        return self.vol_floor_ticks
     detail: CompactStandardFullDetailLiteral = "compact"
 
     @model_validator(mode="before")
