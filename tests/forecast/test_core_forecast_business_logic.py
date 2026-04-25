@@ -434,6 +434,47 @@ def test_run_forecast_backtest_strips_per_anchor_details_in_compact_mode():
     assert "metrics" not in result["ranked_methods"][0]
 
 
+def test_run_forecast_backtest_marks_no_trade_compact_rows():
+    def fake_backtest_impl(**kwargs):
+        return {
+            "success": True,
+            "request": {"detail": "compact"},
+            "results": {
+                "naive": {
+                    "success": True,
+                    "avg_mae": 1.0,
+                    "avg_rmse": 1.2,
+                    "avg_directional_accuracy": 0.0,
+                    "successful_tests": 3,
+                    "num_tests": 3,
+                    "metrics": {
+                        "avg_return": None,
+                        "avg_return_per_trade": None,
+                        "win_rate": None,
+                        "win_rate_display": None,
+                        "max_drawdown": None,
+                        "trades_observed": 0,
+                    },
+                    "details": [],
+                }
+            },
+        }
+
+    result = forecast_use_cases.run_forecast_backtest(
+        ForecastBacktestRequest(symbol="EURUSD", detail="compact"),
+        backtest_impl=fake_backtest_impl,
+    )
+
+    row = result["ranked_methods"][0]
+    assert row["no_trades"] is True
+    assert row["trades_observed"] == 0
+    assert "win_rate" not in row
+    assert "win_rate_display" not in row
+    assert "max_drawdown" not in row
+    assert "avg_return" not in row
+    assert "avg_return_per_trade" not in row
+
+
 def test_forecast_generate_converts_typed_forecast_errors(monkeypatch):
     raw = _unwrap(cf.forecast_generate)
 

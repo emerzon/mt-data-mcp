@@ -444,6 +444,8 @@ def _compact_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:
         ):
             if key in metrics:
                 method_out[key] = metrics[key]
+        if method_out.get("trades_observed") == 0:
+            method_out["no_trades"] = True
         if isinstance(details, list):
             method_out["details_count"] = len(details)
         ranked_row = dict(method_out)
@@ -462,7 +464,7 @@ def _compact_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:
         )
     )
     compact_out["ranked_methods"] = [
-        {key: value for key, value in row.items() if key != "_sort_metric"}
+        {key: value for key, value in row.items() if key != "_sort_metric" and value is not None}
         for row in ranked_methods
     ]
     return compact_out
