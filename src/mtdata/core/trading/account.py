@@ -180,6 +180,56 @@ def _build_trade_journal_breakdown(
     return output[: max(1, int(limit))]
 
 
+def _compact_trade_journal_breakdown(
+    items: List[Dict[str, Any]],
+    *,
+    label_name: str,
+) -> List[Dict[str, Any]]:
+    compact_keys = ("closed_deals", "win_rate", "net_pnl", "avg_pnl")
+    output: List[Dict[str, Any]] = []
+    for item in items:
+        compact_item = {label_name: item.get(label_name)}
+        compact_item.update({key: item.get(key) for key in compact_keys})
+        output.append(compact_item)
+    return output
+
+
+def _trade_journal_breakdowns(
+    rows: List[Dict[str, Any]],
+    *,
+    limit: int,
+    detail: str,
+) -> Dict[str, List[Dict[str, Any]]]:
+    by_symbol = _build_trade_journal_breakdown(
+        rows,
+        key_name="symbol",
+        label_name="symbol",
+        limit=limit,
+    )
+    if detail != "full":
+        return {
+            "by_symbol": _compact_trade_journal_breakdown(
+                by_symbol,
+                label_name="symbol",
+            )
+        }
+    return {
+        "by_symbol": by_symbol,
+        "by_side": _build_trade_journal_breakdown(
+            rows,
+            key_name="side",
+            label_name="side",
+            limit=limit,
+        ),
+        "by_exit_trigger": _build_trade_journal_breakdown(
+            rows,
+            key_name="exit_trigger",
+            label_name="exit_trigger",
+            limit=limit,
+        ),
+    }
+
+
 def _trade_journal_trade_snapshot(row: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "ticket": row.get("ticket"),
@@ -241,6 +291,7 @@ def _trade_journal_period_context(
 
 def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str, Any]:
     period_context = _trade_journal_period_context(request)
+    detail_mode = str(request.detail or "compact").strip().lower()
     history_result = _run_trade_history_request(
         TradeHistoryRequest(
             history_kind="deals",
@@ -265,20 +316,21 @@ def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str,
 
     message = history_result.get("message")
     if isinstance(message, str) and message.strip() and not raw_rows:
+        breakdown_limit = int(max(1, int(request.breakdown_limit)))
         return {
             "success": True,
             **period_context,
             "summary": _trade_journal_metrics([]),
-            "breakdowns": {
-                "by_symbol": [],
-                "by_side": [],
-                "by_exit_trigger": [],
-            },
+            "breakdowns": _trade_journal_breakdowns(
+                [],
+                limit=breakdown_limit,
+                detail=detail_mode,
+            ),
             "message": message,
             "meta": {
                 "history_rows": 0,
                 "exit_deals": 0,
-                "breakdown_limit": int(max(1, int(request.breakdown_limit))),
+                "breakdown_limit": breakdown_limit,
             },
         }
 
@@ -306,11 +358,11 @@ def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str,
             "success": True,
             **period_context,
             "summary": _trade_journal_metrics([]),
-            "breakdowns": {
-                "by_symbol": [],
-                "by_side": [],
-                "by_exit_trigger": [],
-            },
+            "breakdowns": _trade_journal_breakdowns(
+                [],
+                limit=breakdown_limit,
+                detail=detail_mode,
+            ),
             "message": "No realized exit deals found in the requested trade history.",
             "meta": {
                 "history_rows": int(len(rows)),
@@ -333,44 +385,31 @@ def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str,
         losses,
         key=lambda row: float(row.get("net_pnl") or 0.0),
     )
-    return {
+    payload = {
         "success": True,
         **period_context,
         "summary": _trade_journal_metrics(analyzed_rows),
-        "breakdowns": {
-            "by_symbol": _build_trade_journal_breakdown(
-                analyzed_rows,
-                key_name="symbol",
-                label_name="symbol",
-                limit=breakdown_limit,
-            ),
-            "by_side": _build_trade_journal_breakdown(
-                analyzed_rows,
-                key_name="side",
-                label_name="side",
-                limit=breakdown_limit,
-            ),
-            "by_exit_trigger": _build_trade_journal_breakdown(
-                analyzed_rows,
-                key_name="exit_trigger",
-                label_name="exit_trigger",
-                limit=breakdown_limit,
-            ),
-        },
-        "best_trades": [
-            _trade_journal_trade_snapshot(row)
-            for row in ranked_best[: min(5, len(ranked_best))]
-        ],
-        "worst_trades": [
-            _trade_journal_trade_snapshot(row)
-            for row in ranked_worst[: min(5, len(ranked_worst))]
-        ],
+        "breakdowns": _trade_journal_breakdowns(
+            analyzed_rows,
+            limit=breakdown_limit,
+            detail=detail_mode,
+        ),
         "meta": {
             "history_rows": int(len(rows)),
             "exit_deals": int(len(analyzed_rows)),
             "breakdown_limit": breakdown_limit,
         },
     }
+    if detail_mode == "full":
+        payload["best_trades"] = [
+            _trade_journal_trade_snapshot(row)
+            for row in ranked_best[: min(5, len(ranked_best))]
+        ]
+        payload["worst_trades"] = [
+            _trade_journal_trade_snapshot(row)
+            for row in ranked_worst[: min(5, len(ranked_worst))]
+        ]
+    return payload
 
 
 def lookup_trade_ticket_history(ticket: Any) -> Optional[Dict[str, Any]]:

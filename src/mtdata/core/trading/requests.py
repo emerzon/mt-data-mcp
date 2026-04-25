@@ -150,6 +150,13 @@ class TradeHistoryRequest(BaseModel):
 
 
 class TradeJournalAnalyzeRequest(BaseModel):
+    detail: CompactFullDetailLiteral = Field(
+        default="compact",
+        description=(
+            "Response detail level. Compact returns summary plus a concise "
+            "symbol breakdown; full includes all breakdowns and trade lists."
+        ),
+    )
     start: Optional[str] = None
     end: Optional[str] = None
     symbol: Optional[str] = None

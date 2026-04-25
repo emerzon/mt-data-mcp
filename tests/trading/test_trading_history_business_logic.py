@@ -301,6 +301,7 @@ def test_trade_history_request_normalizes_buy_sell_aliases() -> None:
     assert TradeHistoryRequest(side="short").side == "SELL"
     assert TradeHistoryRequest(side="weird").side == "weird"
     assert TradeHistoryRequest().detail == "compact"
+    assert TradeJournalAnalyzeRequest().detail == "compact"
     assert TradeGetOpenRequest().detail == "compact"
     assert TradeGetPendingRequest().detail == "compact"
 
@@ -854,6 +855,7 @@ def test_trade_journal_analyze_summarizes_realized_exit_deals() -> None:
         out = trade_journal_analyze(
             start="2026-01-01 00:00",
             end="2026-01-03 00:00",
+            detail="full",
             __cli_raw=True,
         )
 
@@ -870,6 +872,57 @@ def test_trade_journal_analyze_summarizes_realized_exit_deals() -> None:
     assert out["breakdowns"]["by_symbol"][0]["symbol"] == "EURUSD"
     assert out["best_trades"][0]["ticket"] == 2
     assert out["worst_trades"][0]["ticket"] == 3
+
+
+def test_trade_journal_analyze_compact_uses_lite_symbol_breakdown() -> None:
+    history_rows = [
+        {
+            "ticket": 1,
+            "symbol": "EURUSD",
+            "entry": "Out",
+            "type": "Buy",
+            "profit": 25.0,
+            "commission": -1.0,
+            "swap": -0.5,
+            "exit_trigger": "TP",
+            "time": "2026-01-01 12:00",
+        },
+        {
+            "ticket": 2,
+            "symbol": "GBPUSD",
+            "entry": "Out",
+            "type": "Sell",
+            "profit": -10.0,
+            "commission": -0.5,
+            "swap": 0.0,
+            "exit_trigger": "SL",
+            "time": "2026-01-02 09:00",
+        },
+    ]
+
+    with patch(
+        "mtdata.core.trading.account._run_trade_history_request",
+        return_value={
+            "success": True,
+            "count": len(history_rows),
+            "items": history_rows,
+        },
+    ):
+        out = trade_journal_analyze(__cli_raw=True)
+
+    assert out["success"] is True
+    assert list(out["breakdowns"]) == ["by_symbol"]
+    assert set(out["breakdowns"]["by_symbol"][0]) == {
+        "symbol",
+        "closed_deals",
+        "win_rate",
+        "net_pnl",
+        "avg_pnl",
+    }
+    assert "by_side" not in out["breakdowns"]
+    assert "by_exit_trigger" not in out["breakdowns"]
+    assert "best_trades" not in out
+    assert "worst_trades" not in out
 
 
 def test_trade_journal_analyze_filters_best_worst_by_pnl_sign() -> None:
@@ -922,7 +975,7 @@ def test_trade_journal_analyze_filters_best_worst_by_pnl_sign() -> None:
             "items": history_rows,
         },
     ):
-        out = trade_journal_analyze(__cli_raw=True)
+        out = trade_journal_analyze(detail="full", __cli_raw=True)
 
     # Verify metrics are correct
     assert out["summary"]["wins"] == 2
