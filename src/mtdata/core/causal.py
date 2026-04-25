@@ -516,6 +516,26 @@ def _build_correlation_matrix(
     return matrix
 
 
+def _pair_highlight_ref(
+    row: Dict[str, Any],
+    *,
+    metrics: tuple[str, ...],
+) -> Dict[str, Any]:
+    left = str(row.get("left") or "")
+    right = str(row.get("right") or "")
+    out: Dict[str, Any] = {
+        "pair": f"{left}-{right}",
+        "left": left,
+        "right": right,
+    }
+    for key in metrics:
+        if key in row:
+            out[key] = row.get(key)
+    if "samples" in row:
+        out["samples"] = row.get("samples")
+    return out
+
+
 def _build_correlation_summary(
     rows: List[Dict[str, Any]],
     *,
@@ -543,9 +563,15 @@ def _build_correlation_summary(
         ),
     )
     return {
-        "strongest_absolute": rows[:limit],
-        "strongest_positive": positive[:limit],
-        "strongest_negative": negative[:limit],
+        "strongest_absolute": [
+            _pair_highlight_ref(row, metrics=("correlation",)) for row in rows[:limit]
+        ],
+        "strongest_positive": [
+            _pair_highlight_ref(row, metrics=("correlation",)) for row in positive[:limit]
+        ],
+        "strongest_negative": [
+            _pair_highlight_ref(row, metrics=("correlation",)) for row in negative[:limit]
+        ],
     }
 
 
@@ -709,8 +735,20 @@ def _build_cointegration_summary(
     limit = max(1, int(top_n))
     cointegrated = [row for row in rows if bool(row.get("cointegrated"))]
     return {
-        "best_pairs": rows[:limit],
-        "cointegrated_pairs": cointegrated[:limit],
+        "best_pairs": [
+            _pair_highlight_ref(
+                row,
+                metrics=("p_value", "test_stat", "cointegrated"),
+            )
+            for row in rows[:limit]
+        ],
+        "cointegrated_pairs": [
+            _pair_highlight_ref(
+                row,
+                metrics=("p_value", "test_stat", "cointegrated"),
+            )
+            for row in cointegrated[:limit]
+        ],
     }
 
 

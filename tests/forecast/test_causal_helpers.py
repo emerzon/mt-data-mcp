@@ -5,6 +5,7 @@ import pytest
 
 from mtdata.core.causal import (
     _TRANSFORM_LEGEND,
+    _build_cointegration_summary,
     _build_correlation_matrix,
     _build_correlation_summary,
     _format_summary,
@@ -150,8 +151,16 @@ class TestCorrelationHelpers:
 
         assert summary["strongest_absolute"][0]["left"] == "A"
         assert summary["strongest_absolute"][0]["right"] == "B"
+        assert summary["strongest_absolute"][0]["pair"] == "A-B"
         assert summary["strongest_positive"][0]["correlation"] == pytest.approx(0.91)
         assert summary["strongest_negative"][0]["correlation"] == pytest.approx(-0.87)
+        assert set(summary["strongest_absolute"][0]) == {
+            "pair",
+            "left",
+            "right",
+            "correlation",
+            "samples",
+        }
 
     def test_build_correlation_summary_omits_duplicate_highlights_for_small_sets(self):
         rows = [
@@ -161,6 +170,41 @@ class TestCorrelationHelpers:
         ]
 
         assert _build_correlation_summary(rows, top_n=5) == {}
+
+    def test_build_cointegration_summary_uses_pair_references(self):
+        rows = [
+            {
+                "left": "A",
+                "right": "B",
+                "p_value": 0.01,
+                "test_stat": -4.1,
+                "cointegrated": True,
+                "hedge_ratio": 1.2,
+                "samples": 100,
+            },
+            {
+                "left": "A",
+                "right": "C",
+                "p_value": 0.20,
+                "test_stat": -1.1,
+                "cointegrated": False,
+                "hedge_ratio": 0.8,
+                "samples": 95,
+            },
+        ]
+
+        summary = _build_cointegration_summary(rows, top_n=2)
+
+        assert summary["best_pairs"][0] == {
+            "pair": "A-B",
+            "left": "A",
+            "right": "B",
+            "p_value": 0.01,
+            "test_stat": -4.1,
+            "cointegrated": True,
+            "samples": 100,
+        }
+        assert summary["cointegrated_pairs"] == [summary["best_pairs"][0]]
 
 
 class TestFormatSummary:
