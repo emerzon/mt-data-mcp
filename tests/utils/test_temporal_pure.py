@@ -149,15 +149,17 @@ class TestNormalizeGroupBy:
     def test_none_returns_dow(self):
         assert _normalize_group_by(None) == "dow"
 
-    @pytest.mark.parametrize("val", ["weekday", "week_day", "day", "dow", "wday"])
+    @pytest.mark.parametrize(
+        "val", ["day_of_week", "weekday", "week_day", "day", "daily", "dow", "wday"]
+    )
     def test_dow_aliases(self, val):
         assert _normalize_group_by(val) == "dow"
 
-    @pytest.mark.parametrize("val", ["hour", "hr", "time", "time_of_day"])
+    @pytest.mark.parametrize("val", ["hour", "hours", "hr", "time", "time_of_day"])
     def test_hour_aliases(self, val):
         assert _normalize_group_by(val) == "hour"
 
-    @pytest.mark.parametrize("val", ["month", "mo"])
+    @pytest.mark.parametrize("val", ["month", "months", "mo"])
     def test_month_aliases(self, val):
         assert _normalize_group_by(val) == "month"
 
@@ -542,6 +544,12 @@ class TestTemporalAnalyze:
         assert r["group_by"] == "dow"
         assert "overall" in r
         assert "groups" in r
+
+    @_apply_analyze_patches
+    def test_group_by_day_of_week_alias(self, mock_fetch, *_):
+        r = self._call(mock_fetch, group_by="day_of_week")
+        assert r.get("success") is True
+        assert r["group_by"] == "dow"
 
     @_apply_analyze_patches
     def test_temporal_analyze_logs_finish_event(self, mock_fetch, caplog):

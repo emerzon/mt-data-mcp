@@ -39,7 +39,7 @@ PARAM_HINTS = {
     "limit": "Max rows/bars to return.",
     "start": "Start time (dateparser).",
     "end": "End time (dateparser).",
-    "group_by": "Temporal grouping: dow, hour, month, or all.",
+    "group_by": "Temporal grouping: dow/day_of_week, hour, month, or all.",
     "day_of_week": "Weekday filter (0-6 or Mon..Sun).",
     "month": "Month filter (1-12 or Jan..Dec).",
     "time_range": "Time-of-day filter 'HH:MM-HH:MM' (start inclusive, end exclusive; wraps midnight).",

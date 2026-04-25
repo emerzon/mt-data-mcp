@@ -73,11 +73,11 @@ def _normalize_group_by(value: Optional[str]) -> str:
     if value is None:
         return "dow"
     v = str(value).strip().lower()
-    if v in ("weekday", "week_day", "day", "dow", "wday"):
+    if v in ("day_of_week", "weekday", "week_day", "day", "daily", "dow", "wday"):
         return "dow"
-    if v in ("hour", "hr", "time", "time_of_day"):
+    if v in ("hour", "hours", "hr", "time", "time_of_day"):
         return "hour"
-    if v in ("month", "mo"):
+    if v in ("month", "months", "mo"):
         return "month"
     if v in ("all", "none", "overall"):
         return "all"
@@ -295,7 +295,18 @@ def temporal_analyze(  # noqa: C901
     limit: int = 1000,
     start: Optional[str] = None,
     end: Optional[str] = None,
-    group_by: Literal["dow", "hour", "month", "all"] = "dow",  # type: ignore
+    group_by: Literal[
+        "dow",
+        "day_of_week",
+        "weekday",
+        "day",
+        "daily",
+        "hour",
+        "hours",
+        "month",
+        "months",
+        "all",
+    ] = "dow",  # type: ignore
     day_of_week: Optional[str] = None,
     month: Optional[str] = None,
     time_range: Optional[str] = None,
@@ -311,6 +322,7 @@ def temporal_analyze(  # noqa: C901
     - volume: uses real_volume when available and non-zero, else tick_volume
 
     Returns grouped averages for returns and volatility plus simple extras.
+    Example: temporal_analyze(symbol="EURUSD", group_by="dow")
     Use group_by='all' for a single overall summary.
     """
     def _run() -> Dict[str, Any]:  # noqa: C901
