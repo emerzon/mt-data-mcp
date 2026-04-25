@@ -974,7 +974,7 @@ def _forecast_list_methods_impl(  # noqa: C901
     limit: Optional[int] = None,
     search: Optional[str] = None,
     library: Optional[str] = None,
-    show_unavailable: bool = True,
+    show_unavailable: bool = False,
 ) -> Dict[str, Any]:
     try:
         snapshot = _get_forecast_methods_snapshot()
@@ -1137,6 +1137,13 @@ def _forecast_list_methods_impl(  # noqa: C901
             params = item.get("params")
             if isinstance(params, list):
                 row["params_count"] = len(params)
+            requires = item.get("requires")
+            if not available and isinstance(requires, list) and requires:
+                req_text = ", ".join(str(req) for req in requires if str(req).strip())
+                if req_text:
+                    row["unavailable_reason"] = "Requires: " + req_text
+            if not available and "unavailable_reason" not in row:
+                row["unavailable_reason"] = "Unavailable in the current environment."
             compact_methods.append(row)
             by_category.setdefault(str(row["category"]), []).append(row)
 

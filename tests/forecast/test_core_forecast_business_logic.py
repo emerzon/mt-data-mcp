@@ -689,6 +689,10 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert "mc_gbm" in compact["barrier_methods"]["methods"]
     assert "includes all filtered methods" in compact["note"]
 
+    compact_all = _unwrap(cf.forecast_list_methods)(show_unavailable=True)
+    unavailable_method = next(row for row in compact_all["methods"] if row["available"] is False)
+    assert unavailable_method["unavailable_reason"] == "Requires: mlforecast, sklearn"
+
     full = _unwrap(cf.forecast_list_methods)(detail="full", show_unavailable=True)
     assert full["detail"] == "full"
     assert full["total"] == 2
@@ -748,6 +752,8 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     with_unavailable = _unwrap(cf.forecast_list_methods)(show_unavailable=True)
     assert with_unavailable["unavailable"] == 1
     assert any(row["available"] is False for row in with_unavailable["methods"])
+    unavailable_row = next(row for row in with_unavailable["methods"] if row["available"] is False)
+    assert unavailable_row["unavailable_reason"] == "Unavailable in the current environment."
 
     monkeypatch.setattr(cf, "_get_forecast_methods_data", lambda: {"methods": [1]})
     assert _unwrap(cf.forecast_list_methods)() == {"methods": [1]}
