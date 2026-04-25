@@ -2021,22 +2021,58 @@ def regime_detect(  # noqa: C901
             else:
                 direction = "neutral"
 
+            direction_bias = {
+                "bullish": "upward",
+                "bearish": "downward",
+                "neutral": "neutral",
+            }.get(direction, "neutral")
+            if regime_state == "ranging":
+                interpretation = (
+                    f"Price is ranging with a {direction_bias} net move over "
+                    f"{int(window_bars)} bars; direction is a window bias, not a trend classification."
+                )
+            elif regime_state == "transition":
+                interpretation = (
+                    f"Price is in transition with a {direction_bias} net move over "
+                    f"{int(window_bars)} bars."
+                )
+            else:
+                interpretation = (
+                    f"Price is trending {direction_bias} over {int(window_bars)} bars."
+                )
+
+            state_note = None
+            if (
+                regime_state == "ranging"
+                and trend_strength >= trend_strength_threshold
+            ):
+                state_note = (
+                    "trend_strength exceeds threshold, but efficiency_ratio indicates "
+                    "a choppy path; state uses both metrics."
+                )
+
             # Build payload - single regime for the window
+            regime_info = {
+                "state": regime_state,
+                "direction": direction,
+                "direction_basis": "net_window_move",
+                "interpretation": interpretation,
+                "trend_strength": round(trend_strength, 4),
+                "efficiency_ratio": round(efficiency_ratio, 4),
+                "window_bars": int(window_bars),
+                "window_move_pct": round((move / base_price) * 100.0, 4),
+                "signal_source": "price",
+            }
+            if state_note:
+                regime_info["note"] = state_note
+
             payload = {
                 "success": True,
                 "symbol": symbol,
                 "timeframe": timeframe,
                 "method": method,
                 "target": target,
-                "regime": {
-                    "state": regime_state,
-                    "direction": direction,
-                    "trend_strength": round(trend_strength, 4),
-                    "efficiency_ratio": round(efficiency_ratio, 4),
-                    "window_bars": int(window_bars),
-                    "window_move_pct": round((move / base_price) * 100.0, 4),
-                    "signal_source": "price",
-                },
+                "regime": regime_info,
                 "params_used": {
                     "efficiency_threshold": float(efficiency_threshold),
                     "trend_strength_threshold": float(trend_strength_threshold),

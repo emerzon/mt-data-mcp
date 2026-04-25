@@ -31,6 +31,13 @@ def _downtrend_df(n: int = 120) -> pd.DataFrame:
     return pd.DataFrame({"time": t, "close": close})
 
 
+def _choppy_bearish_df(n: int = 120) -> pd.DataFrame:
+    t = np.arange(float(n))
+    alternating = np.where(np.arange(n) % 2 == 0, 2.0, -2.0)
+    close = 100.0 + alternating + np.linspace(0.0, -10.0, n)
+    return pd.DataFrame({"time": t, "close": close})
+
+
 def test_build_all_method_comparison_uses_semantic_signals() -> None:
     comparison = _build_all_method_comparison(
         {
@@ -378,3 +385,28 @@ def test_rule_based_uses_price_window_metrics_for_return_target() -> None:
     assert regime["signal_source"] == "price"
     assert regime["window_move_pct"] == expected_move_pct
     assert out["params_used"]["signal_source"] == "price"
+
+
+def test_rule_based_explains_ranging_direction_bias() -> None:
+    raw = _unwrap(regime_detect)
+
+    with (
+        patch("mtdata.core.regime._fetch_history", return_value=_choppy_bearish_df()),
+        patch("mtdata.core.regime._resolve_denoise_base_col", return_value="close"),
+        patch("mtdata.core.regime._format_time_minimal", side_effect=lambda x: f"T{x}"),
+    ):
+        out = raw(
+            symbol="TEST",
+            timeframe="H1",
+            limit=120,
+            method="rule_based",
+            params={"window_bars": 60},
+        )
+
+    regime = out["regime"]
+    assert regime["state"] == "ranging"
+    assert regime["direction"] == "bearish"
+    assert regime["direction_basis"] == "net_window_move"
+    assert "window bias, not a trend classification" in regime["interpretation"]
+    assert regime["trend_strength"] >= out["params_used"]["trend_strength_threshold"]
+    assert "efficiency_ratio indicates a choppy path" in regime["note"]
