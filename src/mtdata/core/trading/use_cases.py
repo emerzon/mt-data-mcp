@@ -76,6 +76,16 @@ _TRADE_PLACE_BASIC_KEYS = _TRADE_PLACE_PREVIEW_KEYS + (
 )
 
 
+def _human_join(items: List[str]) -> str:
+    if not items:
+        return ""
+    if len(items) == 1:
+        return items[0]
+    if len(items) == 2:
+        return f"{items[0]} and {items[1]}"
+    return ", ".join(items[:-1]) + f", and {items[-1]}"
+
+
 def _trade_row_to_dict(row: Any) -> Dict[str, Any]:
     if isinstance(row, dict):
         return dict(row)
@@ -2044,13 +2054,15 @@ def run_trade_risk_analyze(  # noqa: C901
                     )
                     if value is not None
                 ]
+                _missing_msg = (
+                    "Portfolio risk analysis completed. Position sizing is "
+                    "available when you provide "
+                    + _human_join(position_sizing_missing)
+                    + "."
+                )
                 position_sizing: Dict[str, Any] = {
                     "status": "incomplete",
-                    "message": (
-                        "Portfolio risk analysis completed. Position sizing is "
-                        "available when you provide desired_risk_pct, "
-                        "entry, and stop_loss."
-                    ),
+                    "message": _missing_msg,
                     "missing": position_sizing_missing,
                     "required_for_sizing": [
                         "desired_risk_pct",
