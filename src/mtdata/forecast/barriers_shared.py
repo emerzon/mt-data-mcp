@@ -55,6 +55,7 @@ PHANTOM_PROFIT_NO_HIT_THRESHOLD = 0.50
 PHANTOM_PROFIT_LOSS_THRESHOLD = 0.01
 DEGENERATE_OBJECTIVE_MIN_RESOLVE = 0.20
 LOW_CONFIDENCE_CI_THRESHOLD = 0.10
+LOW_PRACTICAL_WIN_PROB_THRESHOLD = 0.05
 
 BarrierMethodLiteral = Literal[
     "mc_gbm",
@@ -336,6 +337,14 @@ def _build_selection_diagnostics(row: Optional[Dict[str, Any]], cost_per_trade: 
     win_rate = _safe_float(row.get("prob_tp_first"))
     if win_rate is None:
         win_rate = _safe_float(row.get("prob_win"))
+    low_practical_win_probability = bool(
+        win_rate is not None and win_rate < LOW_PRACTICAL_WIN_PROB_THRESHOLD
+    )
+    if low_practical_win_probability:
+        warnings_out.append(
+            f"Best candidate win probability is {win_rate:.1%}, below the "
+            f"{LOW_PRACTICAL_WIN_PROB_THRESHOLD:.0%} practical review threshold."
+        )
     if best_edge is not None and best_edge < 0.0:
         if win_rate is not None:
             warnings_out.append(
@@ -370,6 +379,15 @@ def _build_selection_diagnostics(row: Optional[Dict[str, Any]], cost_per_trade: 
         warnings_out.append(
             f"More than {PHANTOM_PROFIT_NO_HIT_THRESHOLD:.0%} of simulations did not reach either barrier "
             f"before the horizon ({prob_no_hit:.1%} no-hit)."
+        )
+        out_metric_note = (
+            "EV includes unresolved/no-hit paths at the horizon, while profit_factor "
+            "only compares resolved TP-first reward against SL-first loss."
+        )
+    else:
+        out_metric_note = (
+            "EV includes all simulated outcomes; profit_factor compares resolved "
+            "TP-first reward against SL-first loss."
         )
 
     if best_ev is not None and edge_vs_breakeven is not None:
@@ -416,6 +434,11 @@ def _build_selection_diagnostics(row: Optional[Dict[str, Any]], cost_per_trade: 
         out["ev_edge_conflict"] = True
         if ev_edge_conflict_reason:
             out["ev_edge_conflict_reason"] = ev_edge_conflict_reason
+    if low_practical_win_probability:
+        out["low_practical_win_probability"] = True
+        out["low_practical_win_probability_threshold"] = LOW_PRACTICAL_WIN_PROB_THRESHOLD
+    if best_ev is not None and row.get("profit_factor") is not None:
+        out["metric_interpretation"] = out_metric_note
     if caution:
         out["caution"] = caution
     if bool(row.get("low_confidence")):
@@ -458,6 +481,8 @@ def _build_actionability_payload(
         flags.append("phantom_profit_risk")
     if bool(diag.get("ev_edge_conflict")):
         flags.append("ev_edge_conflict")
+    if bool(diag.get("low_practical_win_probability")):
+        flags.append("low_practical_win_probability")
     if bool(diag.get("low_confidence")):
         flags.append("low_confidence")
     if diag.get("selection_warnings"):
@@ -480,7 +505,12 @@ def _build_actionability_payload(
     trade_gate_passed = True
     actionability_reason = "No blocking diagnostics detected."
 
-    if status != "ok" or "phantom_profit_risk" in seen or "ev_edge_conflict" in seen:
+    if (
+        status != "ok"
+        or "phantom_profit_risk" in seen
+        or "ev_edge_conflict" in seen
+        or "low_practical_win_probability" in seen
+    ):
         actionability = "blocked"
         trade_gate_passed = False
         if status != "ok":
@@ -492,6 +522,11 @@ def _build_actionability_payload(
             actionability_reason = (
                 "Positive EV is dominated by unresolved paths with near-zero observed loss; "
                 "skip this setup."
+            )
+        elif "low_practical_win_probability" in seen:
+            actionability_reason = (
+                "Win probability is below the practical review threshold; skip or set "
+                "min_prob_win explicitly."
             )
         else:
             actionability_reason = (

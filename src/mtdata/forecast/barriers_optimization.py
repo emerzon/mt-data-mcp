@@ -699,6 +699,23 @@ def _finalize_barrier_output(
     return out
 
 
+def _attach_viability_semantics(
+    out: Dict[str, Any],
+    *,
+    mathematically_viable: bool,
+    trade_gate_passed: Any,
+) -> None:
+    tradable = bool(trade_gate_passed)
+    out["mathematically_viable"] = bool(mathematically_viable)
+    out["tradable"] = tradable
+    if bool(mathematically_viable) != tradable:
+        out["viability_note"] = (
+            "`viable`/`mathematically_viable` means the selected candidate passed "
+            "the optimizer's EV screen; `tradable` and `trade_gate_passed` apply "
+            "risk/actionability diagnostics."
+        )
+
+
 def forecast_barrier_optimize(  # noqa: C901
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
@@ -1665,6 +1682,11 @@ def forecast_barrier_optimize(  # noqa: C901
             )
             out.update(actionability_payload)
             out["no_action"] = not bool(actionability_payload.get("trade_gate_passed"))
+            _attach_viability_semantics(
+                out,
+                mathematically_viable=bool(viable),
+                trade_gate_passed=actionability_payload.get("trade_gate_passed"),
+            )
             return _finalize_barrier_output(
                 out,
                 output_mode=output_mode,
@@ -2680,6 +2702,11 @@ def forecast_barrier_optimize(  # noqa: C901
         )
         out.update(actionability_payload)
         out["no_action"] = not bool(actionability_payload.get("trade_gate_passed"))
+        _attach_viability_semantics(
+            out,
+            mathematically_viable=bool(viable),
+            trade_gate_passed=actionability_payload.get("trade_gate_passed"),
+        )
         if invalid_barrier_candidates > 0:
             out["barrier_sanity_filtered"] = int(invalid_barrier_candidates)
         if min_prob_resolve_val is not None:

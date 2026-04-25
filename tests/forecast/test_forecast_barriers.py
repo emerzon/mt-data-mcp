@@ -17,7 +17,11 @@ from mtdata.forecast.barriers import (
     forecast_barrier_hit_probabilities,
     forecast_barrier_optimize,
 )
-from mtdata.forecast.barriers_shared import _sort_candidate_results
+from mtdata.forecast.barriers_shared import (
+    _build_actionability_payload,
+    _build_selection_diagnostics,
+    _sort_candidate_results,
+)
 from mtdata.forecast.monte_carlo import gbm_single_barrier_upcross_prob
 
 _BARRIER_PROB_ROOT = "mtdata.forecast.barriers_probabilities"
@@ -1211,8 +1215,44 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
         self.assertTrue(result.get("ev_edge_conflict"))
         self.assertEqual(result.get("actionability"), "blocked")
         self.assertFalse(result.get("trade_gate_passed"))
+        self.assertFalse(result.get("tradable"))
+        self.assertTrue(result.get("mathematically_viable"))
+        self.assertIn("EV screen", result.get("viability_note", ""))
+        self.assertIn("metric_interpretation", result)
         self.assertTrue(result.get("no_action"))
         self.assertIn("ev_edge_conflict", result.get("actionability_flags", []))
+
+    def test_barrier_diagnostics_block_low_practical_win_probability(self):
+        row = {
+            "ev": 0.02,
+            "edge": -0.35,
+            "prob_win": 0.004,
+            "prob_tp_first": 0.004,
+            "prob_loss": 0.35,
+            "prob_sl_first": 0.35,
+            "prob_no_hit": 0.646,
+            "rr": 6.0,
+            "tp": 1.5,
+            "sl": 0.25,
+            "profit_factor": 0.014,
+        }
+
+        diagnostics = _build_selection_diagnostics(row)
+        actionability = _build_actionability_payload(
+            status="ok",
+            row=row,
+            diagnostics=diagnostics,
+        )
+
+        self.assertTrue(diagnostics["low_practical_win_probability"])
+        self.assertEqual(diagnostics["low_practical_win_probability_threshold"], 0.05)
+        self.assertIn("unresolved/no-hit paths", diagnostics["metric_interpretation"])
+        self.assertEqual(actionability["actionability"], "blocked")
+        self.assertFalse(actionability["trade_gate_passed"])
+        self.assertIn(
+            "low_practical_win_probability",
+            actionability["actionability_flags"],
+        )
 
     def test_forecast_barrier_hit_probabilities_rejects_non_positive_horizon(self):
         result = forecast_barrier_hit_probabilities(
