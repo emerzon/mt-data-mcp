@@ -3703,7 +3703,7 @@ class TestApplyCliOutputModeDefaults:
 
         assert out.detail == "summary"
 
-    def test_preserves_symbols_describe_full_default_when_user_does_not_specify_mode(self):
+    def test_defaults_symbols_describe_to_compact_when_user_does_not_specify_mode(self):
         args = argparse.Namespace(command="symbols_describe", detail="full", verbose=False)
         func_info = {
             "params": [
@@ -3725,7 +3725,7 @@ class TestApplyCliOutputModeDefaults:
 
         out = _apply_cli_output_mode_defaults(args, ["symbols_describe"], functions)
 
-        assert out.detail == "full"
+        assert out.detail == "compact"
 
     def test_legacy_verbose_flag_no_longer_promotes_supported_modes_to_full(self):
         args = argparse.Namespace(

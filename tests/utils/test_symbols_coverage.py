@@ -398,7 +398,7 @@ class TestSymbolsDescribe:
         info.method = lambda: None  # excluded (callable)
         mock_info.return_value = info
         fn = _get_symbols_describe()
-        res = fn("EURUSD")
+        res = fn("EURUSD", detail="full")
         assert res["success"] is True
         assert "symbol" in res
         sd = res["symbol"]
@@ -436,7 +436,7 @@ class TestSymbolsDescribe:
         info.trade_mode = 0
         mock_info.return_value = info
         fn = _get_symbols_describe()
-        res = fn("X")
+        res = fn("X", detail="full")
         assert res["symbol"]["trade_mode"] == 0
 
     @patch(f"{_MT5}.symbol_info")
@@ -472,7 +472,7 @@ class TestSymbolsDescribe:
         symbols_mod.mt5.SYMBOL_SWAP_MODE_POINTS = 1
 
         fn = _get_symbols_describe()
-        res = fn("EURUSD")
+        res = fn("EURUSD", detail="full")
         sd = res["symbol"]
 
         assert sd.get("trade_exemode_label") == "Market"
@@ -495,7 +495,7 @@ class TestSymbolsDescribe:
         mock_info.return_value = info
 
         fn = _get_symbols_describe()
-        res = fn("EURUSD")
+        res = fn("EURUSD", detail="full")
         sd = res["symbol"]
 
         assert isinstance(sd.get("time"), str)
@@ -503,6 +503,26 @@ class TestSymbolsDescribe:
         assert sd["time_epoch"] == 1700000000.0
         assert "n_fields" not in sd
         assert "n_sequence_fields" not in sd
+
+    @patch(f"{_MT5}.symbol_info")
+    def test_default_describe_uses_compact_detail(self, mock_info):
+        info = MagicMock()
+        info.__dir__ = lambda self: ["name", "time", "digits", "point"]
+        info.name = "EURUSD"
+        info.time = 1700000000
+        info.digits = 5
+        info.point = 0.00001
+        mock_info.return_value = info
+
+        fn = _get_symbols_describe()
+        res = fn("EURUSD")
+        sd = res["symbol"]
+
+        assert sd["name"] == "EURUSD"
+        assert sd["price_precision"] == 5
+        assert "time_epoch" not in sd
+        assert "digits" not in sd
+        assert "point" not in sd
 
     @patch(f"{_MT5}.symbol_info")
     def test_full_detail_describe_adds_time_epoch(self, mock_info):
@@ -544,7 +564,7 @@ class TestSymbolsDescribe:
         mock_info.return_value = info
 
         fn = _get_symbols_describe()
-        res = fn("BTCUSD")
+        res = fn("BTCUSD", detail="full")
         sd = res["symbol"]
 
         assert sd["name"] == "BTCUSD"
@@ -578,7 +598,7 @@ class TestSymbolsDescribe:
         mock_info.return_value = info
 
         fn = _get_symbols_describe()
-        res = fn("XAUUSD")
+        res = fn("XAUUSD", detail="full")
         sd = res["symbol"]
 
         assert sd["bidlow"] == 4744.3

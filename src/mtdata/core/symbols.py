@@ -354,7 +354,7 @@ def _list_symbol_groups(
 @mcp.tool()
 def symbols_describe(
     symbol: str,
-    detail: CompactFullDetailLiteral = "full",
+    detail: CompactFullDetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """Return symbol information as JSON for `symbol`.
     
@@ -362,7 +362,7 @@ def symbols_describe(
     -----------
     symbol : str
         Trading symbol (e.g., "EURUSD")
-    detail : str, optional (default="full")
+    detail : str, optional (default="compact")
         Output verbosity level:
         - "compact": Essential fields only (name, bid/ask, volume limits, contract size, tick size/value)
         - "full": Complete metadata including all trading modes, swap details, and session times
@@ -375,7 +375,7 @@ def symbols_describe(
         try:
             contract = resolve_output_contract(
                 detail=detail,
-                default_detail="full",
+                default_detail="compact",
             )
             mt5_gateway = get_mt5_gateway(
                 adapter=mt5,

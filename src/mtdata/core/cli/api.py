@@ -389,13 +389,8 @@ def _literal_choices_for_cli_param(
     return choices or None
 
 
-_CLI_DETAIL_DEFAULT_PRESERVE_COMMANDS = frozenset({"symbols_describe"})
-
-
 def _default_cli_compact_choice(
     choices: List[str],
-    *,
-    cmd_name: Optional[str] = None,
 ) -> Optional[str]:
     by_lower = {
         str(choice).strip().lower(): str(choice)
@@ -403,8 +398,6 @@ def _default_cli_compact_choice(
         if str(choice).strip()
     }
     if "full" not in by_lower:
-        return None
-    if str(cmd_name or "").strip() in _CLI_DETAIL_DEFAULT_PRESERVE_COMMANDS:
         return None
     if "compact" in by_lower:
         return by_lower["compact"]
@@ -441,10 +434,7 @@ def _apply_cli_output_mode_defaults(
         choices = _literal_choices_for_cli_param(param, cmd_name=command)
         if not choices:
             continue
-        selected = _default_cli_compact_choice(
-            choices,
-            cmd_name=command,
-        )
+        selected = _default_cli_compact_choice(choices)
         if selected is None:
             continue
         setattr(args, param_name, selected)
