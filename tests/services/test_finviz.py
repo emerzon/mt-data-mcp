@@ -661,7 +661,7 @@ class TestFinvizTools:
         assert "JSON object" in result["error"]
         assert "filter names as keys" in result["error"]
         assert "Sector" in result["error"]  # Should include example
-        assert "Single-string Finviz screener shorthands" in result["error"]
+        assert "Finviz screener shorthand tokens" in result["error"]
         assert "'not valid json'" in result["error"]
         assert result["success"] is False
         assert result["error_code"] == "finviz_screen_filters_invalid"
@@ -679,7 +679,7 @@ class TestFinvizTools:
             result = finviz_screen.__wrapped__(filters='["NASDAQ"]')
 
         assert result["error"].startswith("Invalid filters format.")
-        assert "Got: [\"NASDAQ\"]" in result["error"]
+        assert "Got: '[\"NASDAQ\"]'" in result["error"]
         assert result["success"] is False
         assert result["error_code"] == "finviz_screen_filters_invalid"
         assert result["details"] == {"received_type": "str"}
@@ -735,6 +735,35 @@ class TestFinvizTools:
         )
         assert result["success"] is True
         assert result["count"] == 3
+
+    @patch('mtdata.core.finviz.screen_stocks')
+    def test_finviz_screen_tool_accepts_finviz_shorthand_filters(self, mock_screen):
+        """Test finviz_screen accepts native Finviz screener shorthand filters."""
+        from mtdata.core.finviz import finviz_screen
+
+        def _run_direct(_logger, operation, func, **fields):
+            return func()
+
+        mock_screen.return_value = {"success": True, "count": 2, "stocks": []}
+
+        with patch("mtdata.core.finviz.run_logged_operation", side_effect=_run_direct):
+            result = finviz_screen.__wrapped__(
+                filters="cap_largeover,exch_nyse",
+                limit=5,
+            )
+
+        mock_screen.assert_called_once_with(
+            filters={
+                "Market Cap.": "+Large (over $10bln)",
+                "Exchange": "NYSE",
+            },
+            order=None,
+            limit=5,
+            page=1,
+            view="overview",
+        )
+        assert result["success"] is True
+        assert result["count"] == 2
 
     def test_finviz_calendar_prefers_start_end_aliases(self):
         from mtdata.core.finviz import finviz_calendar

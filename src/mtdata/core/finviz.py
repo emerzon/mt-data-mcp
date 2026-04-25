@@ -225,11 +225,11 @@ def _invalid_finviz_screen_filters_error(filters: Any) -> Dict[str, Any]:
         if raw and not raw.startswith("{"):
             message = (
                 "Invalid filters format. Received a string value, but finviz_screen expects a JSON object "
-                "(dict) mapping filter names as keys to filter values. Single-string Finviz screener shorthands like "
-                f"{raw!r} are not supported. Example: "
+                "(dict) mapping filter names as keys to filter values or Finviz screener shorthand tokens like "
+                "'cap_largeover,exch_nyse'. Example: "
                 "{'Exchange': 'NASDAQ', 'Sector': 'Technology'} or "
                 "'{\"Exchange\": \"NASDAQ\", \"Sector\": \"Technology\"}'. "
-                f"Got: {filters}"
+                f"Got: {filters!r}"
             )
         else:
             message = (
@@ -251,6 +251,55 @@ def _invalid_finviz_screen_filters_error(filters: Any) -> Dict[str, Any]:
         operation="finviz_screen",
         details={"received_type": type(filters).__name__},
     )
+
+
+def _parse_finviz_screen_shorthand(raw: str) -> Optional[Dict[str, Any]]:
+    try:
+        from finvizfinance.screener.base import filter_dict
+    except ImportError:
+        return None
+
+    reverse_filters: Dict[str, tuple[str, str]] = {}
+    for filter_name, spec in filter_dict.items():
+        prefix = str(spec.get("prefix") or "").strip()
+        for option_name, option_code in (spec.get("option") or {}).items():
+            code = str(option_code or "").strip()
+            if prefix and code:
+                reverse_filters[f"{prefix}_{code}"] = (str(filter_name), str(option_name))
+
+    filters: Dict[str, Any] = {}
+    for token in [part.strip() for part in raw.split(",") if part.strip()]:
+        match = reverse_filters.get(token)
+        if match is None:
+            return None
+        filters[match[0]] = match[1]
+    return filters or None
+
+
+def _resolve_finviz_screen_filters(filters: Any) -> tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+    if filters is None:
+        return None, None
+    if isinstance(filters, dict):
+        return filters, None
+    if not isinstance(filters, str):
+        return None, _invalid_finviz_screen_filters_error(filters)
+
+    raw = filters.strip()
+    if not raw:
+        return None, None
+    if raw.startswith("{"):
+        try:
+            parsed = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return None, _invalid_finviz_screen_filters_error(filters)
+        if not isinstance(parsed, dict):
+            return None, _invalid_finviz_screen_filters_error(filters)
+        return parsed, None
+    if "_" in raw:
+        parsed = _parse_finviz_screen_shorthand(raw)
+        if parsed is not None:
+            return parsed, None
+    return None, _invalid_finviz_screen_filters_error(filters)
 
 
 def _resolve_preferred_text_arg(
@@ -748,11 +797,12 @@ def finviz_screen(
     Parameters
     ----------
     filters : str or dict, optional
-        Filter criteria as a JSON string or dict. Filter names should be keys 
-        with filter values as values. Use the exact filter names and values shown 
-        on finviz.com screener.
+        Filter criteria as a JSON string, dict, or Finviz URL shorthand string.
+        Dict filter names should be keys with filter values as values. Use the
+        exact filter names and values shown on finviz.com screener.
         
         Can be provided as:
+        - Finviz shorthand: "cap_largeover,exch_nyse"
         - JSON string: '{"Exchange": "NASDAQ", "Sector": "Technology"}'
         - Dict object: {"Exchange": "NASDAQ", "Sector": "Technology"}
         
@@ -790,6 +840,9 @@ def finviz_screen(
     Screen for tech stocks on NASDAQ (using dict):
     >>> finviz_screen(filters={"Exchange": "NASDAQ", "Sector": "Technology"})
     
+    Screen for large NYSE stocks (using Finviz shorthand):
+    >>> finviz_screen(filters="cap_largeover,exch_nyse")
+
     Screen for tech stocks on NASDAQ (using JSON string):
     >>> finviz_screen(filters='{"Exchange": "NASDAQ", "Sector": "Technology"}')
     
@@ -808,22 +861,9 @@ def finviz_screen(
     fields = {"limit": limit, "page": page, "view": view, "order": order}
 
     def _run() -> Dict[str, Any]:
-        filters_dict = None
-        if filters:
-            # If filters is already a dict, use it directly
-            if isinstance(filters, dict):
-                filters_dict = filters
-            # If filters is a string, try to parse it as JSON
-            elif isinstance(filters, str):
-                try:
-                    filters_dict = json.loads(filters)
-                except (json.JSONDecodeError, TypeError):
-                    return _invalid_finviz_screen_filters_error(filters)
-                # Verify parsed JSON is a dict
-                if not isinstance(filters_dict, dict):
-                    return _invalid_finviz_screen_filters_error(filters)
-            else:
-                return _invalid_finviz_screen_filters_error(filters)
+        filters_dict, filter_error = _resolve_finviz_screen_filters(filters)
+        if filter_error is not None:
+            return filter_error
 
         return screen_stocks(filters=filters_dict, order=order, limit=limit, page=page, view=view)
 
