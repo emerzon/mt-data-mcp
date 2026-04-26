@@ -1640,6 +1640,7 @@ def _compact_tick_summary(out: Dict[str, Any]) -> Dict[str, Any]:
                     compact_spread[target_key] = value
     compact: Dict[str, Any] = {
         "success": bool(out.get("success")),
+        "symbol": out.get("symbol"),
         "count": out.get("count"),
         "start": out.get("start"),
         "end": out.get("end"),
@@ -1650,6 +1651,8 @@ def _compact_tick_summary(out: Dict[str, Any]) -> Dict[str, Any]:
     }
     if out.get("price_precision") is not None:
         compact["price_precision"] = out.get("price_precision")
+    if isinstance(out.get("last_quote"), dict):
+        compact["last_quote"] = dict(out["last_quote"])
     return compact
 
 
@@ -1929,6 +1932,12 @@ def fetch_ticks(  # noqa: C901
                     "mid": _series_stats(df_stats["mid"], total_count=len(df_stats)),
                     "spread": _series_stats(df_stats["spread"], total_count=len(df_stats)),
                 },
+            }
+            out["last_quote"] = {
+                "bid": float(df_stats["bid"].iloc[-1]),
+                "ask": float(df_stats["ask"].iloc[-1]),
+                "mid": float(df_stats["mid"].iloc[-1]),
+                "spread": float(df_stats["spread"].iloc[-1]),
             }
             if duration_seconds <= 0:
                 out["tick_rate_note"] = "< 1s window"

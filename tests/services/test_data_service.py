@@ -323,6 +323,11 @@ class TestDataService(unittest.TestCase):
             self.assertGreater(mock_dataframe.call_count, 0)
             if output_mode == "summary":
                 self.assertEqual(set(result.get("stats", {})), {"spread"})
+                self.assertEqual(result.get("symbol"), "EURUSD")
+                self.assertEqual(
+                    set(result.get("last_quote", {})),
+                    {"bid", "ask", "mid", "spread"},
+                )
                 self.assertNotIn("output", result)
                 self.assertNotIn("sample_adequacy", result)
                 self.assertEqual(
