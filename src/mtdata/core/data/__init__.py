@@ -297,7 +297,9 @@ def data_fetch_candles(
         End time (dateparser)
     
     ohlcv : str, optional
-        Fields to include: "close", "ohlc", "ohlcv", "all"
+        Candle fields to include. Use "all", "ohlcv", "ohlc", "close"/"price",
+        compact letters from o/h/l/c/v, or comma-separated field names such as
+        "open,high,low,close,volume".
 
     include_spread : bool, optional
         Append the historical MT5 candle spread column to each returned row.

@@ -327,7 +327,15 @@ class DataFetchCandlesRequest(BaseModel):
     limit: int = 200
     start: Optional[str] = None
     end: Optional[str] = None
-    ohlcv: Optional[str] = None
+    ohlcv: Optional[str] = Field(
+        None,
+        description=(
+            "Candle fields to include. Use all, ohlcv, ohlc, close/price, compact "
+            "letters from o/h/l/c/v, or comma-separated names such as "
+            "open,high,low,close,volume."
+        ),
+        examples=["ohlcv", "close", "open,high,low,close,volume"],
+    )
     indicators: IndicatorSpecsInput = None
     denoise: Optional[DenoiseSpec] = None
     simplify: SimplifySpecInput = None

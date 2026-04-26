@@ -98,6 +98,15 @@ def test_data_fetch_candles_rejects_standard_detail_alias():
         DataFetchCandlesRequest(symbol="EURUSD", detail="standard")
 
 
+def test_data_fetch_candles_schema_documents_ohlcv():
+    schema = DataFetchCandlesRequest.model_json_schema()
+    ohlcv = schema["properties"]["ohlcv"]
+
+    assert "Candle fields to include" in ohlcv["description"]
+    assert "ohlcv" in ohlcv["examples"]
+    assert "open,high,low,close,volume" in ohlcv["description"]
+
+
 def test_run_data_fetch_candles_omits_contract_metadata_in_compact_detail():
     rows = [{"time": 1.0, "close": 1.1}]
     request = DataFetchCandlesRequest(symbol="EURUSD", timeframe="H1", limit=10)
