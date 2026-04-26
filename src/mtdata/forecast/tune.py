@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import math
 import random
 import threading
@@ -17,6 +18,22 @@ from .optimize import (
 from .optimize import (
     extract_method_params_from_genotype as _extract_params,
 )
+
+_NOISY_FORECAST_TUNE_LOGGERS = (
+    "timesfm",
+    "timesfm_2p5_torch",
+    "torchao",
+    "torch._dynamo",
+    "torch._inductor",
+)
+
+
+def _suppress_noisy_forecast_tune_loggers() -> None:
+    for logger_name in _NOISY_FORECAST_TUNE_LOGGERS:
+        noisy_logger = logging.getLogger(logger_name)
+        if noisy_logger.level == logging.NOTSET or noisy_logger.getEffectiveLevel() < logging.WARNING:
+            noisy_logger.setLevel(logging.WARNING)
+
 
 # Sensible default search spaces per method (lightweight, CPU-friendly)
 # These are intentionally conservative to keep runtime practical.
@@ -925,6 +942,8 @@ def genetic_search_optimize_hints(  # noqa: C901
     Returns:
         Dict with 'success', 'hints' (list of top-N configs), 'search_summary', etc.
     """
+    _suppress_noisy_forecast_tune_loggers()
+
     start_time = time.time()
     rng = random.Random(int(seed))
 

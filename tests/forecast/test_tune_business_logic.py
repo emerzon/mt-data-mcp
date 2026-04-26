@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import random
 import warnings
 
@@ -23,6 +24,18 @@ def test_default_search_space_modes():
     none_given = tune.default_search_space()
     assert "_shared" in none_given
     assert "theta" in none_given
+
+
+def test_suppress_noisy_forecast_tune_loggers_raises_verbose_loggers(monkeypatch):
+    logger = logging.getLogger("timesfm_2p5_torch")
+    original_level = logger.level
+    monkeypatch.setattr(logger, "level", logging.INFO)
+
+    try:
+        tune._suppress_noisy_forecast_tune_loggers()
+        assert logger.level == logging.WARNING
+    finally:
+        logger.setLevel(original_level)
 
 
 def test_default_search_space_does_not_advertise_disabled_mlforecast_rolling_agg():
