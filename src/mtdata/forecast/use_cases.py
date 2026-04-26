@@ -115,6 +115,11 @@ def _apply_forecast_generate_detail(
         "detail": "compact",
     }
     ci_unavailable = str(payload.get("ci_status") or "").strip().lower() == "unavailable"
+    if ci_unavailable:
+        compact["ci"] = {"status": "unavailable"}
+        ci_payload = payload.get("ci")
+        if isinstance(ci_payload, dict) and ci_payload.get("hint"):
+            compact["ci"]["hint"] = ci_payload["hint"]
     for key in (
         "last_observation_time",
         "timestamp_timezone",

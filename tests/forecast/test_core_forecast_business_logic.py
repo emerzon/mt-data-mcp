@@ -304,7 +304,7 @@ def test_forecast_generate_defaults_to_compact_payload(monkeypatch):
     assert "forecast_epoch" not in out
 
 
-def test_forecast_generate_compact_omits_unavailable_ci_metadata(monkeypatch):
+def test_forecast_generate_compact_marks_unavailable_ci(monkeypatch):
     raw = _unwrap(cf.forecast_generate)
     monkeypatch.setattr(
         cf,
@@ -336,10 +336,13 @@ def test_forecast_generate_compact_omits_unavailable_ci_metadata(monkeypatch):
     )
 
     assert out["detail"] == "compact"
+    assert out["ci"] == {
+        "status": "unavailable",
+        "hint": "Use forecast_conformal_intervals for uncertainty bands.",
+    }
     assert "ci_status" not in out
     assert "ci_available" not in out
     assert "ci_alpha" not in out
-    assert "ci" not in out
 
 
 def test_forecast_generate_standard_preserves_full_arrays(monkeypatch):
