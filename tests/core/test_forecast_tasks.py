@@ -211,14 +211,21 @@ class TestForecastTaskList:
         mock_tm = MagicMock()
         mock_tm.list_tasks.return_value = tasks
 
-        with patch(_PATCH_TM, return_value=mock_tm):
+        with patch(_PATCH_TM, return_value=mock_tm), patch(
+            "src.mtdata.core.forecast_tasks.time.time",
+            return_value=1015.0,
+        ):
             result = _unwrap(forecast_task_list)()
 
         assert result["success"] is True
         assert result["count"] == 2
+        assert result["summary"] == {"running": 1, "completed": 1}
         assert result["tasks"][0]["progress_fraction"] == 0.1
+        assert result["tasks"][0]["started_at"] == 1001.0
+        assert result["tasks"][0]["elapsed_seconds"] == 14.0
         assert result["tasks"][0]["pid"] == 4321
         assert result["tasks"][1]["model_id"] == "nhits/EURUSD_H1/x"
+        assert result["tasks"][1]["elapsed_seconds"] == 59.0
 
 
 class TestForecastModels:

@@ -11,6 +11,7 @@ Provides tools for:
 """
 
 import logging
+import time
 from typing import Any, Dict, Literal, Optional
 
 from pydantic import BaseModel, Field
@@ -155,15 +156,25 @@ def _task_status_payload(task: Any, *, detail: DetailLevel) -> Dict[str, Any]:
 
 
 def _task_list_item_payload(task: Any, *, detail: DetailLevel) -> Dict[str, Any]:
+    started_at = getattr(task, "started_at", None)
     payload: Dict[str, Any] = {
         "task_id": task.task_id,
         "method": task.method,
         "data_scope": task.data_scope,
         "status": task.status,
         "created_at": task.created_at,
+        "started_at": started_at,
         "heartbeat_at": getattr(task, "heartbeat_at", None),
         "cancel_requested": bool(getattr(task, "cancel_requested", False)),
     }
+    completed_at = getattr(task, "completed_at", None)
+    elapsed_start = started_at or getattr(task, "created_at", None)
+    elapsed_end = completed_at or time.time()
+    if elapsed_start is not None:
+        payload["elapsed_seconds"] = round(
+            max(0.0, float(elapsed_end) - float(elapsed_start)),
+            3,
+        )
     pid = getattr(task, "pid", None)
     if pid is not None:
         payload["pid"] = pid
@@ -175,7 +186,6 @@ def _task_list_item_payload(task: Any, *, detail: DetailLevel) -> Dict[str, Any]
         payload["error"] = task.error
 
     if detail == "full":
-        payload["started_at"] = task.started_at
         payload["completed_at"] = task.completed_at
         params_hash = getattr(task, "params_hash", None)
         if params_hash:
@@ -350,10 +360,15 @@ def forecast_task_list(
         tm = _get_task_manager()
         tasks = tm.list_tasks(status=status_filter)
         items = [_task_list_item_payload(task, detail=detail_mode) for task in tasks]
+        summary: Dict[str, int] = {}
+        for item in items:
+            status = str(item.get("status") or "unknown")
+            summary[status] = summary.get(status, 0) + 1
         return {
             "success": True,
             "detail": detail_mode,
             "count": len(items),
+            "summary": summary,
             "tasks": items,
         }
 
