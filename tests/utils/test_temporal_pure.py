@@ -548,7 +548,7 @@ class TestTemporalAnalyze:
         if rates is None:
             rates = _make_rates(n=n, start_epoch=1704067200, interval=3600)
         mock_fetch.return_value = (rates, None)
-        defaults = dict(symbol="EURUSD", timeframe="H1", limit=1000, group_by="dow")
+        defaults = dict(symbol="EURUSD", timeframe="H1", limit=1000, group_by="dow", detail="full")
         defaults.update(kwargs)
         return _raw_temporal_analyze(**defaults)
 
@@ -559,6 +559,19 @@ class TestTemporalAnalyze:
         assert r["group_by"] == "dow"
         assert "overall" in r
         assert "groups" in r
+
+    @_apply_analyze_patches
+    def test_default_compact_omits_verbose_overall_stats(self, mock_fetch, *_):
+        mock_fetch.return_value = (_make_rates(n=200, start_epoch=1704067200, interval=3600), None)
+
+        r = _raw_temporal_analyze(symbol="EURUSD", timeframe="H1", limit=1000, group_by="dow")
+
+        assert r.get("success") is True
+        assert "overall" not in r
+        assert "groups" in r
+        assert "avg_range" not in r["groups"][0]
+        assert "avg_volume" not in r["groups"][0]
+        assert "best" in r
 
     @_apply_analyze_patches
     def test_group_by_day_of_week_alias(self, mock_fetch, *_):

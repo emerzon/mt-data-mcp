@@ -30,7 +30,7 @@ from ._mcp_instance import mcp
 from .constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from .execution_logging import run_logged_operation
 from .mt5_gateway import get_mt5_gateway
-from .schema import TimeframeLiteral
+from .schema import CompactFullDetailLiteral, TimeframeLiteral
 
 logger = logging.getLogger(__name__)
 
@@ -234,6 +234,59 @@ def _stats_for_group(df: pd.DataFrame, volume_col: Optional[str]) -> Dict[str, A
     return out
 
 
+def _compact_temporal_stats(row: Dict[str, Any]) -> Dict[str, Any]:
+    keys = ("group", "bars", "avg_return", "median_return", "win_rate", "volatility")
+    return {key: row.get(key) for key in keys if row.get(key) is not None}
+
+
+def _compact_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    out: Dict[str, Any] = {
+        key: payload[key]
+        for key in (
+            "success",
+            "symbol",
+            "timeframe",
+            "group_by",
+            "return_mode",
+            "timezone",
+            "bars",
+            "start",
+            "end",
+        )
+        if key in payload
+    }
+    groups = payload.get("groups")
+    if isinstance(groups, list) and groups:
+        compact_groups = [
+            _compact_temporal_stats(row)
+            for row in groups
+            if isinstance(row, dict)
+        ]
+        out["groups"] = compact_groups
+        best = max(
+            (
+                row
+                for row in compact_groups
+                if row.get("avg_return") is not None
+            ),
+            key=lambda row: float(row.get("avg_return") or 0.0),
+            default=None,
+        )
+        if best:
+            out["best"] = {
+                key: best[key]
+                for key in ("group", "avg_return", "win_rate")
+                if key in best
+            }
+    elif isinstance(payload.get("overall"), dict):
+        out["overall"] = _compact_temporal_stats(payload["overall"])
+    for key in ("warnings", "excluded_groups"):
+        value = payload.get(key)
+        if value:
+            out[key] = value
+    return out
+
+
 def _fetch_rates(
     symbol: str,
     timeframe: str,
@@ -312,6 +365,7 @@ def temporal_analyze(  # noqa: C901
     time_range: Optional[str] = None,
     return_mode: Literal["pct", "log"] = "pct",  # type: ignore
     min_bars: Optional[int] = None,
+    detail: CompactFullDetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """Temporal analysis by day-of-week, hour, or month.
 
@@ -337,6 +391,7 @@ def temporal_analyze(  # noqa: C901
             "limit": limit,
             "start": start,
             "end": end,
+            "detail": detail,
         }
         if min_bars is not None:
             context["min_bars"] = min_bars
@@ -363,6 +418,13 @@ def temporal_analyze(  # noqa: C901
                     context=context,
                 )
             context["group_by"] = group_norm
+            detail_mode = str(detail or "compact").strip().lower()
+            if detail_mode not in {"compact", "full"}:
+                return _error_response(
+                    "detail must be 'compact' or 'full'.",
+                    stage="validate",
+                    context=context,
+                )
 
             dow_val = _parse_weekday(day_of_week)
             if day_of_week is not None and dow_val is None:
@@ -636,6 +698,8 @@ def temporal_analyze(  # noqa: C901
                 ]
             if groups_out:
                 payload["groups"] = groups_out
+            if detail_mode == "compact":
+                return _compact_temporal_payload(payload)
             return payload
         except MT5ConnectionError as exc:
             return {"error": str(exc)}
