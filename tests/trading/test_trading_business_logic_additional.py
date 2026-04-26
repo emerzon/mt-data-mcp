@@ -298,6 +298,7 @@ def test_run_trade_place_uses_candidate_tickets_when_position_ticket_is_missing(
         order_type="BUY",
         stop_loss=1.08,
         take_profit=1.12,
+        auto_close_on_sl_tp_fail=False,
     )
 
     result = run_trade_place(

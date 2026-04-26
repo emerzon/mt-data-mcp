@@ -73,7 +73,7 @@ class TradePlaceRequest(BaseModel):
         ),
     )
     require_sl_tp: bool = True
-    auto_close_on_sl_tp_fail: bool = False
+    auto_close_on_sl_tp_fail: bool = True
     idempotency_key: Optional[str] = Field(
         default=None,
         description=(

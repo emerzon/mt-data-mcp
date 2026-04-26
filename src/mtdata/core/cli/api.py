@@ -1411,7 +1411,7 @@ def _print_extended_help(functions: Dict[str, ToolInfo], query: str) -> None:
                 "  Safety: market orders default to require_sl_tp=true; add both stop_loss and take_profit or explicitly set --require-sl-tp false."
             )
             print(
-                "  Recovery: set --auto-close-on-sl-tp-fail true to try to close a filled order if TP/SL attachment fails."
+                "  Recovery: auto_close_on_sl_tp_fail defaults true; set --auto-close-on-sl-tp-fail false only if you will handle unprotected fills manually."
             )
             print(
                 "  Preview: set --dry-run true to preview routing without sending an order to MT5."

@@ -287,7 +287,7 @@ def test_trade_place_require_sl_tp_flags_unprotected_market_fill() -> None:
     assert any("CRITICAL" in str(w) for w in out.get("warnings", []))
 
 
-def test_trade_place_defaults_to_failing_unprotected_market_fill() -> None:
+def test_trade_place_defaults_to_auto_closing_unprotected_market_fill() -> None:
     with patch(
         "mtdata.core.trading._place_market_order",
         return_value={
@@ -295,7 +295,10 @@ def test_trade_place_defaults_to_failing_unprotected_market_fill() -> None:
             "sl_tp_result": {"status": "failed", "requested": {"sl": 64000.0, "tp": 68000.0}},
             "position_ticket": 456,
         },
-    ):
+    ), patch(
+        "mtdata.core.trading._close_positions",
+        return_value={"closed_count": 1},
+    ) as mock_close:
         out = trade_place(
             symbol="BTCUSD",
             volume=0.03,
@@ -304,10 +307,12 @@ def test_trade_place_defaults_to_failing_unprotected_market_fill() -> None:
             take_profit=68000,
             __cli_raw=True,
         )
+    mock_close.assert_called_once()
     assert "error" in out
     assert out.get("require_sl_tp") is True
+    assert out.get("auto_close_on_sl_tp_fail") is True
+    assert out.get("protection_status") == "auto_closed_after_sl_tp_fail"
     assert "TP/SL protection could not be applied" in str(out.get("error"))
-    assert any("trade_modify 456" in str(w) for w in out.get("warnings", []))
 
 
 def test_trade_place_auto_close_attempts_recovery_on_sl_tp_fail() -> None:

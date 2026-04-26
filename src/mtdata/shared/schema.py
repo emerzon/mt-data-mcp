@@ -107,7 +107,7 @@ PARAM_HINTS = {
     "stop_loss": "Stop-loss price.",
     "take_profit": "Take-profit price.",
     "require_sl_tp": "For market orders, require both stop_loss and take_profit and fail if protection cannot be attached. Defaults to true.",
-    "auto_close_on_sl_tp_fail": "If a filled market order cannot attach TP/SL, immediately try to close the unprotected position. Defaults to false.",
+    "auto_close_on_sl_tp_fail": "If a filled market order cannot attach TP/SL, immediately try to close the unprotected position. Defaults to true.",
     "ticket": "Ticket/order ID.",
     "expiration": "Expiration time/date. For trade orders accepts a dateparser string, UTC epoch seconds, or GTC token; for option tools accepts YYYY-MM-DD.",
     "profit_only": "Close only profitable positions when true.",

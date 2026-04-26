@@ -2832,7 +2832,7 @@ class TestPrintExtendedHelp:
             deviation: int = 20,
             dry_run: bool = False,
             require_sl_tp: bool = True,
-            auto_close_on_sl_tp_fail: bool = False,
+            auto_close_on_sl_tp_fail: bool = True,
         ):
             """Place a market or pending order."""
             pass
@@ -2850,8 +2850,9 @@ class TestPrintExtendedHelp:
         out = capsys.readouterr().out
         assert "dry_run=false" in out
         assert "require_sl_tp=true" in out
-        assert "auto_close_on_sl_tp_fail=false" in out
+        assert "auto_close_on_sl_tp_fail=true" in out
         assert "market orders default to require_sl_tp=true" in out
+        assert "auto_close_on_sl_tp_fail defaults true" in out
         assert (
             "set --dry-run true to preview routing without sending an order to MT5"
             in out
