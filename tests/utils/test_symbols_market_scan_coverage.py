@@ -473,7 +473,17 @@ class TestMarketScan:
         assert result["success"] is True
         assert "columns" not in result["data"]["table"]
         assert result["data"]["table"]["row_count"] == 1
-        assert result["data"]["table"]["rows"][0]["symbol"] == "EURUSD"
+        row = result["data"]["table"]["rows"][0]
+        assert row["symbol"] == "EURUSD"
+        assert set(row) == {
+            "symbol",
+            "close",
+            "price_change_pct",
+            "tick_volume",
+            "spread_pct",
+        }
+        assert "real_volume" not in row
+        assert "bar_time" not in row
         assert "rows" not in result
         assert result["meta"]["request"]["detail"] == "compact"
         assert "collection_kind" not in result

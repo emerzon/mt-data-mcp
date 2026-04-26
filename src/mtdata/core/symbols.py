@@ -662,6 +662,21 @@ def _market_scan_contract_table(
     return out
 
 
+def _project_market_scan_rows(
+    headers: List[str],
+    rows: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    projected: List[Dict[str, Any]] = []
+    for row in rows:
+        out = {
+            header: row.get(header)
+            for header in headers
+            if row.get(header) is not None
+        }
+        projected.append(out)
+    return projected
+
+
 def _market_scan_contract_meta(
     *,
     request: Dict[str, Any],
@@ -1731,7 +1746,7 @@ def market_scan(  # noqa: C901
             total_matches = len(matched_rows)
             limited_rows = matched_rows[:limit_value]
 
-            headers = [
+            full_headers = [
                 "symbol",
                 "group",
                 "description",
@@ -1748,6 +1763,21 @@ def market_scan(  # noqa: C901
                 "sma_value",
                 "sma_distance_pct",
             ]
+            compact_headers = [
+                "symbol",
+                "close",
+                "price_change_pct",
+                "tick_volume",
+                "spread_pct",
+                "rsi",
+                "sma_distance_pct",
+            ]
+            headers = compact_headers if detail_mode == "compact" else full_headers
+            output_rows = (
+                _project_market_scan_rows(headers, limited_rows)
+                if detail_mode == "compact"
+                else limited_rows
+            )
             request["filters"] = {
                 key: value
                 for key, value in {
@@ -1781,7 +1811,7 @@ def market_scan(  # noqa: C901
                 "data": {
                     "table": _market_scan_contract_table(
                         headers,
-                        limited_rows,
+                        output_rows,
                         include_columns=detail_mode == "full",
                     ),
                 },
@@ -1802,7 +1832,7 @@ def market_scan(  # noqa: C901
             return attach_collection_contract(
                 out,
                 collection_kind="table",
-                rows=limited_rows,
+                rows=output_rows,
                 include_contract_meta=detail_mode == "full",
             )
         except MT5ConnectionError as exc:
