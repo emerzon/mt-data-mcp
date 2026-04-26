@@ -370,7 +370,8 @@ Values above 70 often indicate overbought conditions.
         assert docs["calculation"]
         assert docs["interpretation"]
         assert docs["sources"] == ["https://example.com/rsi"]
-        params = {p["name"]: p for p in docs["parameters"]}
+        assert "parameters" not in docs
+        params = {p["name"]: p for p in indicator["params"]}
         assert params["length"]["description"] == "Window length."
         assert params["scalar"]["description"] == "Optional scalar multiplier."
         assert "usage_examples" not in indicator
@@ -412,7 +413,8 @@ Values below 30 often indicate oversold conditions.
         out = raw_describe("rsi")
         indicator = out["indicator"]
         docs = indicator["documentation"]
-        params = {p["name"]: p for p in docs["parameters"]}
+        assert "parameters" not in docs
+        params = {p["name"]: p for p in indicator["params"]}
 
         assert "pandas_ta_classic" not in indicator["description"]
         assert "rsi(" not in indicator["description"]

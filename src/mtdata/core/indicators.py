@@ -364,9 +364,9 @@ def indicators_describe(name: IndicatorNameLiteral) -> Dict[str, Any]:  # type: 
             indicator = dict(target)
             docs = _build_indicator_documentation(indicator)
             indicator["description"] = docs.get("description") or indicator.get("description") or ""
+            indicator["params"] = docs.get("parameters") or indicator.get("params") or []
             indicator["documentation"] = {
                 "calculation": docs.get("calculation"),
-                "parameters": docs.get("parameters") or [],
                 "interpretation": docs.get("interpretation"),
                 "sources": docs.get("sources") or [],
             }
