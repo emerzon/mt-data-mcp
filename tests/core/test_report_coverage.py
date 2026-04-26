@@ -69,6 +69,31 @@ def test_report_generate_request_defaults_to_compact_detail():
     assert request.detail == "compact"
 
 
+def test_basic_report_volatility_failure_keeps_method_errors(monkeypatch):
+    from mtdata.core.report_templates import basic as template_basic_mod
+
+    def fake_raw_result(func, *args, **kwargs):
+        name = getattr(func, "__name__", "")
+        if name == "forecast_volatility_estimate":
+            return {"error": f"{kwargs.get('method')} unavailable"}
+        return {"error": "stubbed section"}
+
+    monkeypatch.setattr(template_basic_mod, "_get_raw_result", fake_raw_result)
+
+    out = template_basic_mod.template_basic(
+        "EURUSD",
+        horizon=3,
+        denoise=None,
+        params={"timeframe": "H1"},
+    )
+
+    volatility = out["sections"]["volatility"]
+    assert volatility["error"] == "Volatility estimation failed."
+    assert volatility["hint"].startswith("Run forecast_volatility_estimate")
+    assert volatility["errors"][0]["method"] == "ewma"
+    assert "unavailable" in volatility["errors"][0]["error"]
+
+
 def test_run_report_generate_logs_finish_event(caplog):
     from mtdata.core.report.requests import ReportGenerateRequest
     from mtdata.core.report.use_cases import run_report_generate

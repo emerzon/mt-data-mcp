@@ -629,6 +629,7 @@ def template_basic(  # noqa: C901
     # Build method x horizon matrix (Horizon σ); keep per-bar for potential future use
     methods = ['ewma', 'parkinson', 'gk', 'yang_zhang']
     matrix_rows: List[Dict[str, Any]] = []
+    vol_errors: List[Dict[str, Any]] = []
     for hh in vol_horizons:
         row: Dict[str, Any] = {'horizon': int(hh)}
         vals: List[float] = []
@@ -643,7 +644,13 @@ def template_basic(  # noqa: C901
                 detail='full',
             )
             if 'error' in vres:
-                row[m + '_err'] = vres.get('error')
+                error_text = str(vres.get('error') or 'volatility method failed')
+                row[m + '_err'] = error_text
+                vol_errors.append({
+                    'horizon': int(hh),
+                    'method': m,
+                    'error': error_text,
+                })
                 continue
             sh = vres.get('horizon_sigma_return') or vres.get('horizon_sigma_price')
             sb = vres.get('sigma_bar_return') or vres.get('sigma_bar_price')
@@ -672,9 +679,21 @@ def template_basic(  # noqa: C901
                         row[m + '_note'] = 'std proxy'
                         vals.append(pf)
                     else:
-                        row[m + '_err'] = proxy_res.get('error') or 'no value'
+                        error_text = str(proxy_res.get('error') or 'no value')
+                        row[m + '_err'] = error_text
+                        vol_errors.append({
+                            'horizon': int(hh),
+                            'method': m,
+                            'error': error_text,
+                        })
                 except Exception:
-                    row[m + '_err'] = proxy_res.get('error') or 'invalid proxy value'
+                    error_text = str(proxy_res.get('error') or 'invalid proxy value')
+                    row[m + '_err'] = error_text
+                    vol_errors.append({
+                        'horizon': int(hh),
+                        'method': m,
+                        'error': error_text,
+                    })
             else:
                 row[m] = use_val
                 vals.append(use_val)
@@ -700,7 +719,11 @@ def template_basic(  # noqa: C901
             'matrix': matrix_rows,
         }
     else:
-        report['sections']['volatility'] = {'error': 'Volatility estimation failed.'}
+        report['sections']['volatility'] = {
+            'error': 'Volatility estimation failed.',
+            'errors': vol_errors[:8],
+            'hint': 'Run forecast_volatility_estimate directly for full diagnostics.',
+        }
 
     # Backtest select best
     steps = int(p.get('backtest_steps', 25))
