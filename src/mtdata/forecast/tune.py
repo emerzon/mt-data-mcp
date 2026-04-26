@@ -1125,6 +1125,13 @@ def genetic_search_optimize_hints(  # noqa: C901
             'best_score': float(gen_best[1]),
             'avg_score': float(sum(p[1] for p in pop) / len(pop)) if pop else float('nan'),
         }
+        if fitness_metric == 'composite':
+            gen_summary['best_fitness_score'] = 1.0 - float(gen_best[1])
+            gen_summary['avg_fitness_score'] = (
+                1.0 - float(gen_summary['avg_score'])
+                if math.isfinite(float(gen_summary['avg_score']))
+                else float('nan')
+            )
         history.append(gen_summary)
 
     # Extract top-N candidates
@@ -1183,6 +1190,12 @@ def genetic_search_optimize_hints(  # noqa: C901
             'generations': int(generations),
             'elapsed_seconds': round(elapsed, 2),
             'fitness_metric': fitness_metric,
+            'fitness_score_direction': 'higher_is_better',
+            'history_score_direction': (
+                'lower_is_better_internal_objective'
+                if fitness_metric == 'composite'
+                else 'lower_is_better'
+            ),
             'timeframes_searched': list(tf_choices),
             'methods_searched': list(method_choices),
             'total_evaluations': int(population) * int(generations),
