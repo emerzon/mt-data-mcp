@@ -102,6 +102,10 @@ class TestOptimalDecimals:
         result = optimal_decimals([0.000000001, 0.000000002], max_decimals=4)
         assert result <= 4
 
+    def test_nonzero_tiny_values_do_not_round_to_zero_in_wide_columns(self):
+        result = optimal_decimals([77000.0, 0.00001234])
+        assert round(0.00001234, result) != 0.0
+
 
 class TestAdaptiveDecimals:
     def test_integer(self):

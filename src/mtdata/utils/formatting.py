@@ -66,6 +66,9 @@ def optimal_decimals(
         max_diff = 0.0
         for v in nums:
             rv = round(v * factor) / factor
+            if v != 0.0 and rv == 0.0 and abs(v) > abs_tol:
+                max_diff = float("inf")
+                break
             diff = abs(rv - v)
             if diff > max_diff:
                 max_diff = diff

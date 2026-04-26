@@ -189,6 +189,10 @@ class TestColumnDecimals:
         result = _column_decimals(["x"], [{"x": 1.001}, {"x": 1.002}])
         assert result["x"] >= 2
 
+    def test_quote_decimal_columns_are_case_insensitive(self):
+        result = _column_decimals(["Price"], [{"Price": 77000.0}, {"Price": 0.00001234}])
+        assert result["Price"] == 8
+
     def test_none_values_skipped(self):
         result = _column_decimals(["x"], [{"x": None}, {"x": 1.0}])
         assert "x" in result

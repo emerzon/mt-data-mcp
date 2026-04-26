@@ -57,6 +57,14 @@ _QUOTE_DECIMALS_BY_FIELD = {
     "pivot": 8,
 }
 
+
+def _quote_decimals_for_field(field: Any) -> Optional[int]:
+    text = str(field)
+    forced = _QUOTE_DECIMALS_BY_FIELD.get(text)
+    if forced is not None:
+        return forced
+    return _QUOTE_DECIMALS_BY_FIELD.get(text.lower())
+
 _PRICE_CONTAINER_KEYS = {
     "levels",
     "nearest",
@@ -198,7 +206,7 @@ def _headers_from_dicts(items: Iterable[Dict[str, Any]]) -> List[str]:
 def _column_decimals(headers: List[str], rows: List[Dict[str, Any]]) -> Dict[str, int]:
     col_decimals: Dict[str, int] = {}
     for header in headers:
-        forced = _QUOTE_DECIMALS_BY_FIELD.get(str(header))
+        forced = _quote_decimals_for_field(header)
         if forced is not None:
             col_decimals[header] = int(forced)
             continue
@@ -228,21 +236,21 @@ def _forced_scalar_decimals(
 ) -> Optional[int]:
     if key is None:
         return None
-    forced = _QUOTE_DECIMALS_BY_FIELD.get(str(key))
+    forced = _quote_decimals_for_field(key)
     if forced is not None:
         return forced
     if "." in str(key):
         key_parts = str(key).split(".")
         parent, child = key_parts[0], key_parts[-1]
         if child in _QUOTE_STAT_DECIMAL_FIELDS:
-            forced = _QUOTE_DECIMALS_BY_FIELD.get(parent)
+            forced = _quote_decimals_for_field(parent)
             if forced is not None:
                 return forced
         if any(part in _PRICE_CONTAINER_KEYS for part in key_parts[:-1]):
             if child in _PRICE_LEVEL_KEYS or child in {"value", "price"}:
                 return _QUOTE_DECIMALS_BY_FIELD["price"]
     if parent_key is not None and str(key) in _QUOTE_STAT_DECIMAL_FIELDS:
-        return _QUOTE_DECIMALS_BY_FIELD.get(str(parent_key))
+        return _quote_decimals_for_field(parent_key)
     if parent_key is not None and str(parent_key) in _PRICE_CONTAINER_KEYS:
         key_text = str(key)
         if key_text in _PRICE_LEVEL_KEYS or key_text in {"value", "price"}:
