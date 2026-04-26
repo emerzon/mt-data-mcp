@@ -803,6 +803,19 @@ def _consolidate_payload(  # noqa: C901
                         latest_transition_probability_value,
                         4,
                     )
+                reliability_confidence = _finite_float(reliability.get("confidence"))
+                current_regime = {
+                    "label": current_segment["status"],
+                    "state": (
+                        "transition"
+                        if current_segment["transition_risk"] in {"elevated", "high"}
+                        else "stable"
+                    ),
+                    "since": current_segment["started_at"],
+                    "bars": current_segment["bars_since_change"],
+                }
+                if reliability_confidence is not None:
+                    current_regime["confidence"] = round(reliability_confidence, 4)
                 segment_context = {
                     key: last_seg[key]
                     for key in ("source", "bias", "return_pct", "volatility_pct")
@@ -852,6 +865,8 @@ def _consolidate_payload(  # noqa: C901
         }
 
         if method == "bocpd":
+            if current_regime:
+                new_payload["current_regime"] = current_regime
             if current_segment:
                 new_payload["current_segment"] = current_segment
             if transition_summary:

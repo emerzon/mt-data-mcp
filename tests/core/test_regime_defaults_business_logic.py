@@ -65,6 +65,7 @@ def test_regime_detect_defaults_to_compact_output() -> None:
     assert "summary" not in out
     assert "reliability" in out
     assert "segments" in out
+    assert "current_regime" in out
     assert "current_segment" in out
 
 

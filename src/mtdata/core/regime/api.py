@@ -2065,6 +2065,33 @@ def regime_detect(  # noqa: C901
             }
             if state_note:
                 regime_info["note"] = state_note
+            confidence = 0.0
+            try:
+                confidence = min(
+                    1.0,
+                    max(
+                        0.0,
+                        (
+                            efficiency_ratio / max(float(efficiency_threshold), 1e-9)
+                            + trend_strength / max(float(trend_strength_threshold), 1e-9)
+                        )
+                        / 2.0,
+                    ),
+                )
+            except Exception:
+                confidence = 0.0
+            current_regime = {
+                "label": regime_state,
+                "state": regime_state,
+                "direction": direction,
+                "confidence": round(float(confidence), 4),
+                "since": (
+                    t_fmt[-int(window_bars)]
+                    if len(t_fmt) >= int(window_bars)
+                    else t_fmt[0]
+                ),
+                "bars": int(window_bars),
+            }
 
             payload = {
                 "success": True,
@@ -2073,6 +2100,7 @@ def regime_detect(  # noqa: C901
                 "method": method,
                 "target": target,
                 "regime": regime_info,
+                "current_regime": current_regime,
                 "params_used": {
                     "efficiency_threshold": float(efficiency_threshold),
                     "trend_strength_threshold": float(trend_strength_threshold),

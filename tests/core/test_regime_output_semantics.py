@@ -434,6 +434,9 @@ def test_rule_based_compact_omits_explanatory_fields() -> None:
     assert set(regime) == {"state", "direction", "efficiency_ratio"}
     assert regime["state"] == "ranging"
     assert regime["direction"] == "bearish"
+    assert out["current_regime"]["state"] == "ranging"
+    assert out["current_regime"]["direction"] == "bearish"
+    assert out["current_regime"]["bars"] == 60
     assert "interpretation" not in regime
     assert "note" not in regime
     assert "signal_source" not in regime
