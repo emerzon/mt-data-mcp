@@ -183,6 +183,30 @@ def _run_logged_tool(
     )
 
 
+def _snake_finviz_market_key(value: Any) -> str:
+    key = str(value).strip().lower()
+    for old, new in (("%", "pct"), ("/", "_"), ("&", "and"), ("-", "_")):
+        key = key.replace(old, new)
+    return "_".join(part for part in key.replace(".", "").split() if part)
+
+
+def _normalize_finviz_market_payload(
+    result: Dict[str, Any], *, rows_key: str
+) -> Dict[str, Any]:
+    if not isinstance(result, dict) or "error" in result:
+        return result
+    rows = result.get(rows_key, [])
+    out = {key: value for key, value in result.items() if key != rows_key}
+    out["items"] = [
+        {_snake_finviz_market_key(key): value for key, value in row.items()}
+        if isinstance(row, dict)
+        else row
+        for row in (rows if isinstance(rows, list) else [])
+    ]
+    out["count"] = int(result.get("count", len(out["items"])))
+    return out
+
+
 def _build_tool_contract_meta(
     *,
     tool: str,
@@ -1004,7 +1028,14 @@ def finviz_forex() -> Dict[str, Any]:
     dict
         Forex pairs performance data
     """
-    return _run_logged_tool("finviz_forex", {}, get_forex_performance)
+    return _run_logged_tool(
+        "finviz_forex",
+        {},
+        lambda: _normalize_finviz_market_payload(
+            get_forex_performance(),
+            rows_key="pairs",
+        ),
+    )
 
 
 @mcp.tool()
@@ -1020,7 +1051,14 @@ def finviz_crypto() -> Dict[str, Any]:
     dict
         Crypto performance data
     """
-    return _run_logged_tool("finviz_crypto", {}, get_crypto_performance)
+    return _run_logged_tool(
+        "finviz_crypto",
+        {},
+        lambda: _normalize_finviz_market_payload(
+            get_crypto_performance(),
+            rows_key="coins",
+        ),
+    )
 
 
 @mcp.tool()
@@ -1036,7 +1074,14 @@ def finviz_futures() -> Dict[str, Any]:
     dict
         Futures performance data
     """
-    return _run_logged_tool("finviz_futures", {}, get_futures_performance)
+    return _run_logged_tool(
+        "finviz_futures",
+        {},
+        lambda: _normalize_finviz_market_payload(
+            get_futures_performance(),
+            rows_key="futures",
+        ),
+    )
 
 
 @mcp.tool()

@@ -465,6 +465,57 @@ class TestFinvizService:
 class TestFinvizTools:
     """Tests for finviz MCP tools."""
 
+    @patch("mtdata.core.finviz.get_forex_performance")
+    def test_finviz_forex_uses_items_with_snake_case_rows(self, mock_get_forex):
+        from mtdata.core.finviz import finviz_forex
+
+        mock_get_forex.return_value = {
+            "success": True,
+            "market": "forex",
+            "count": 1,
+            "pairs": [{"Pair": "EUR/USD", "Perf 5Min": "0.1%"}],
+        }
+
+        raw = getattr(finviz_forex, "__wrapped__", finviz_forex)
+        result = raw()
+
+        assert "pairs" not in result
+        assert result["items"] == [{"pair": "EUR/USD", "perf_5min": "0.1%"}]
+
+    @patch("mtdata.core.finviz.get_crypto_performance")
+    def test_finviz_crypto_uses_items_with_snake_case_rows(self, mock_get_crypto):
+        from mtdata.core.finviz import finviz_crypto
+
+        mock_get_crypto.return_value = {
+            "success": True,
+            "market": "crypto",
+            "count": 1,
+            "coins": [{"Ticker": "BTC", "Perf WTD": "2.5%"}],
+        }
+
+        raw = getattr(finviz_crypto, "__wrapped__", finviz_crypto)
+        result = raw()
+
+        assert "coins" not in result
+        assert result["items"] == [{"ticker": "BTC", "perf_wtd": "2.5%"}]
+
+    @patch("mtdata.core.finviz.get_futures_performance")
+    def test_finviz_futures_uses_items_with_snake_case_rows(self, mock_get_futures):
+        from mtdata.core.finviz import finviz_futures
+
+        mock_get_futures.return_value = {
+            "success": True,
+            "market": "futures",
+            "count": 1,
+            "futures": [{"ticker": "NQ", "label": "Nasdaq 100", "perf": "0.8%"}],
+        }
+
+        raw = getattr(finviz_futures, "__wrapped__", finviz_futures)
+        result = raw()
+
+        assert "futures" not in result
+        assert result["items"] == [{"ticker": "NQ", "label": "Nasdaq 100", "perf": "0.8%"}]
+
     @patch("mtdata.core.finviz.get_stock_fundamentals")
     def test_finviz_fundamentals_rejects_non_equity_symbols_upfront(self, mock_get_fundamentals):
         from mtdata.core.finviz import finviz_fundamentals
