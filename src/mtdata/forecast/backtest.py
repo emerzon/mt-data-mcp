@@ -773,18 +773,21 @@ def strategy_backtest(  # noqa: C901
             detail=detail_mode,
         )
 
-        _params: Dict[str, Any] = {
-            "lookback": int(lookback),
+        _strategy_params: Dict[str, Any] = {
             "max_hold_bars": int(max_hold_bars) if max_hold_bars is not None else None,
-            "slippage_bps": float(slippage_bps),
         }
         if strategy_value in {"sma_cross", "ema_cross"}:
-            _params["fast_period"] = int(fast_period)
-            _params["slow_period"] = int(slow_period)
+            _strategy_params["fast_period"] = int(fast_period)
+            _strategy_params["slow_period"] = int(slow_period)
         if strategy_value == "rsi_reversion":
-            _params["rsi_length"] = int(rsi_length)
-            _params["oversold"] = float(oversold)
-            _params["overbought"] = float(overbought)
+            _strategy_params["rsi_length"] = int(rsi_length)
+            _strategy_params["oversold"] = float(oversold)
+            _strategy_params["overbought"] = float(overbought)
+        _params: Dict[str, Any] = {
+            "lookback": int(lookback),
+            "slippage_bps": float(slippage_bps),
+            **_strategy_params,
+        }
 
         result: Dict[str, Any] = {
             "success": True,
@@ -821,14 +824,7 @@ def strategy_backtest(  # noqa: C901
                     "kind": "legacy_indicator_strategy",
                     "name": strategy_value,
                     "position_mode": position_mode_value,
-                    "parameters": {
-                        "fast_period": int(fast_period),
-                        "slow_period": int(slow_period),
-                        "rsi_length": int(rsi_length),
-                        "oversold": float(oversold),
-                        "overbought": float(overbought),
-                        "max_hold_bars": int(max_hold_bars) if max_hold_bars is not None else None,
-                    },
+                    "parameters": dict(_strategy_params),
                 },
             }
         if trades:
