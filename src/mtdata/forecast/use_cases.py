@@ -984,6 +984,16 @@ def _resolve_tuning_search_space(
     return method_for_search, search_space
 
 
+def _apply_tuning_detail(result: Dict[str, Any], detail: str) -> Dict[str, Any]:
+    if str(detail or "compact").strip().lower() == "full":
+        return result
+    out = dict(result)
+    if "history_tail" in out:
+        out["history_tail_count"] = len(out.get("history_tail") or [])
+        out.pop("history_tail", None)
+    return out
+
+
 def run_forecast_tune_genetic(
     request: ForecastTuneGeneticRequest,
     *,
@@ -1033,6 +1043,7 @@ def run_forecast_tune_genetic(
             method=request.method,
         )
         raise
+    result = _apply_tuning_detail(result, request.detail)
     log_operation_finish(
         logger,
         operation="forecast_tune_genetic",
@@ -1098,6 +1109,7 @@ def run_forecast_tune_optuna(
             method=request.method,
         )
         raise
+    result = _apply_tuning_detail(result, request.detail)
     log_operation_finish(
         logger,
         operation="forecast_tune_optuna",
@@ -1518,6 +1530,7 @@ def run_forecast_optimize_hints(
             timeframe=request.timeframe,
         )
         raise
+    result = _apply_tuning_detail(result, request.detail)
     log_operation_finish(
         logger,
         operation="forecast_optimize_hints",

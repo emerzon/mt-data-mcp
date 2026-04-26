@@ -19,6 +19,7 @@ from mtdata.forecast.requests import (
     ForecastBarrierProbRequest,
     ForecastConformalIntervalsRequest,
     ForecastGenerateRequest,
+    ForecastOptimizeHintsRequest,
     ForecastTuneGeneticRequest,
     ForecastTuneOptunaRequest,
 )
@@ -563,6 +564,51 @@ def test_forecast_tune_genetic_logs_finish_event(caplog, monkeypatch):
         "event=finish operation=forecast_tune_genetic success=True" in record.message
         for record in caplog.records
     )
+
+
+def test_forecast_tune_detail_compacts_history_tail():
+    def fake_genetic(**kwargs):
+        return {
+            "success": True,
+            "history_count": 2,
+            "history_tail": [{"score": 1.0}, {"score": 0.9}],
+        }
+
+    compact = forecast_use_cases.run_forecast_tune_genetic(
+        ForecastTuneGeneticRequest(symbol="EURUSD", method="theta"),
+        genetic_search_impl=fake_genetic,
+    )
+    assert "history_tail" not in compact
+    assert compact["history_tail_count"] == 2
+    assert compact["history_count"] == 2
+
+    full = forecast_use_cases.run_forecast_tune_genetic(
+        ForecastTuneGeneticRequest(symbol="EURUSD", method="theta", detail="full"),
+        genetic_search_impl=fake_genetic,
+    )
+    assert full["history_tail"] == [{"score": 1.0}, {"score": 0.9}]
+    assert "history_tail_count" not in full
+
+
+def test_forecast_tune_optuna_and_optimize_hints_accept_detail():
+    def fake_optuna(**kwargs):
+        return {"success": True, "history_count": 1, "history_tail": [{"score": 1.0}]}
+
+    def fake_hints(**kwargs):
+        return {"success": True, "history_count": 1, "history_tail": [{"best_score": 0.5}]}
+
+    optuna = forecast_use_cases.run_forecast_tune_optuna(
+        ForecastTuneOptunaRequest(symbol="EURUSD", method="theta"),
+        optuna_search_impl=fake_optuna,
+    )
+    assert "history_tail" not in optuna
+    assert optuna["history_tail_count"] == 1
+
+    hints = forecast_use_cases.run_forecast_optimize_hints(
+        ForecastOptimizeHintsRequest(symbol="EURUSD", timeframe="H1", detail="full"),
+        optimize_hints_impl=fake_hints,
+    )
+    assert hints["history_tail"] == [{"best_score": 0.5}]
 
 
 def test_forecast_barrier_optimize_logs_finish_event(caplog, monkeypatch):
