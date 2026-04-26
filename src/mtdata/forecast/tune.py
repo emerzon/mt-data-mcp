@@ -647,8 +647,36 @@ def optuna_search_forecast_params(  # noqa: C901
         if isinstance(agg, dict):
             payload["best_result_summary"] = {"horizon": agg.get('horizon'), "result": agg}
     if history:
-        payload["history_tail"] = history[-50:]
+        compact_tail = _compact_optuna_history_tail(history, limit=10)
+        payload["history_tail"] = compact_tail
+        payload["history_tail_limit"] = 10
     return payload
+
+
+def _compact_optuna_history_tail(
+    history: List[Dict[str, Any]],
+    *,
+    limit: int = 10,
+) -> List[Dict[str, Any]]:
+    tail = [dict(row) for row in history[-max(1, int(limit)):]]
+    methods = {
+        str(row.get("method"))
+        for row in tail
+        if row.get("method") not in (None, "")
+    }
+    single_method = next(iter(methods)) if len(methods) == 1 else None
+    out: List[Dict[str, Any]] = []
+    for row in tail:
+        params = row.get("params")
+        if isinstance(params, dict):
+            params = dict(params)
+            if single_method is not None and params.get("method") == single_method:
+                params.pop("method", None)
+            row["params"] = params
+        if single_method is not None:
+            row.pop("method", None)
+        out.append(row)
+    return out
 
 
 def genetic_search_forecast_params(  # noqa: C901

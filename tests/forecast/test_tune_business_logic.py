@@ -229,7 +229,7 @@ def test_optuna_search_method_scoped_and_flat_spaces(monkeypatch):
     assert out["optimizer"] == "optuna"
     assert out["history_count"] == 8
     assert out["best_method"] in {"theta", "naive"}
-    assert len(out["history_tail"]) <= 50
+    assert len(out["history_tail"]) <= 10
 
     flat_space = {
         "method": {"type": "categorical", "choices": ["theta", "naive"]},
@@ -253,6 +253,24 @@ def test_optuna_search_method_scoped_and_flat_spaces(monkeypatch):
     assert out["success"] is True
     assert out["mode"] == "max"
     assert out["history_count"] == 6
+
+
+def test_compact_optuna_history_tail_drops_repeated_method() -> None:
+    history = [
+        {
+            "trial": trial,
+            "score": float(trial),
+            "params": {"method": "arima", "p": trial % 3},
+            "method": "arima",
+        }
+        for trial in range(12)
+    ]
+
+    out = tune._compact_optuna_history_tail(history, limit=5)
+
+    assert [row["trial"] for row in out] == [7, 8, 9, 10, 11]
+    assert all("method" not in row for row in out)
+    assert all("method" not in row["params"] for row in out)
 
 
 def test_optuna_search_suppresses_tpe_multivariate_warning(monkeypatch):
