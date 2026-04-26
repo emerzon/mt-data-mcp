@@ -109,13 +109,23 @@ def _render_news_bucket_toon(
     include_published_at = any(
         not _is_empty_value(row.get("published_at")) for row in dict_rows
     )
+    include_time_utc = any(not _is_empty_value(row.get("time_utc")) for row in dict_rows)
+    include_relative_time = any(
+        not _is_empty_value(row.get("relative_time")) for row in dict_rows
+    )
     include_kind = any(not _is_empty_value(row.get("kind")) for row in dict_rows)
     include_summary = any(not _is_empty_value(row.get("summary")) for row in dict_rows)
-    headers = ["title", "time"]
-    if include_source:
-        headers.append("source")
+    headers = ["title"]
     if include_published_at:
         headers.append("published_at")
+        if include_relative_time:
+            headers.append("time_relative")
+        elif include_time_utc:
+            headers.append("time_utc")
+    else:
+        headers.append("time")
+    if include_source:
+        headers.append("source")
     if include_kind:
         headers.append("kind")
     if include_summary:
@@ -137,15 +147,20 @@ def _render_news_bucket_toon(
 
         append_value(row.get("title"), quote=True)
 
-        display_time = row.get("time_utc")
-        if _is_empty_value(display_time):
-            display_time = row.get("relative_time")
-        append_value(display_time)
+        if include_published_at:
+            append_value(row.get("published_at"))
+            if include_relative_time:
+                append_value(row.get("relative_time"))
+            elif include_time_utc:
+                append_value(row.get("time_utc"))
+        else:
+            display_time = row.get("time_utc")
+            if _is_empty_value(display_time):
+                display_time = row.get("relative_time")
+            append_value(display_time)
 
         if include_source:
             append_value(row.get("source"))
-        if include_published_at:
-            append_value(row.get("published_at"))
 
         kind = row.get("kind")
         if include_kind:

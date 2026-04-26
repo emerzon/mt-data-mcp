@@ -462,6 +462,27 @@ class TestFormatResultForCli:
         )
         assert "null" not in result
 
+    def test_news_toon_format_uses_published_at_before_relative_time(self):
+        result = _format_result_for_cli(
+            {
+                "success": True,
+                "general_news": [
+                    {
+                        "title": "Fed preview",
+                        "published_at": "2026-04-25T17:25:00+00:00",
+                        "relative_time": "4 hours ago",
+                        "source": "Reuters",
+                    }
+                ],
+            },
+            fmt="toon",
+            verbose=False,
+            cmd_name="news",
+        )
+
+        assert "general_news[1]{title,published_at,time_relative,source}:" in result
+        assert '"Fed preview","2026-04-25T17:25:00+00:00",4 hours ago,Reuters' in result
+
     def test_toon_format_preserves_candle_diagnostics_in_shared_output(self):
         result = _format_result_for_cli(
             {
