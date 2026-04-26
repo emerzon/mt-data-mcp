@@ -61,6 +61,10 @@ class TradePlaceRequest(BaseModel):
     )
     expiration: Optional[ExpirationValue] = None
     comment: Optional[str] = None
+    magic: Optional[int] = Field(
+        default=None,
+        description="Optional MT5 magic number. Defaults to configured order_magic when omitted.",
+    )
     deviation: int = 20
     dry_run: bool = False
     preview_detail: TradePlacePreviewDetail = Field(
@@ -111,6 +115,7 @@ class TradeCloseRequest(BaseModel):
     ticket: Optional[Union[int, str]] = None
     close_all: bool = False
     symbol: Optional[str] = None
+    magic: Optional[int] = None
     volume: Optional[float] = None
     dry_run: bool = False
     profit_only: bool = False
@@ -221,6 +226,7 @@ class TradeVarCvarRequest(BaseModel):
 class TradeGetOpenRequest(BaseModel):
     symbol: Optional[str] = None
     ticket: Optional[Union[int, str]] = None
+    magic: Optional[int] = None
     limit: Optional[int] = 200
     detail: CompactFullDetailLiteral = Field(
         default="compact",
@@ -234,6 +240,7 @@ class TradeGetOpenRequest(BaseModel):
 class TradeGetPendingRequest(BaseModel):
     symbol: Optional[str] = None
     ticket: Optional[Union[int, str]] = None
+    magic: Optional[int] = None
     limit: Optional[int] = 200
     detail: CompactFullDetailLiteral = Field(
         default="compact",

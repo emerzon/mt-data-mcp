@@ -700,6 +700,7 @@ def _place_market_order(  # noqa: C901
     stop_loss: Optional[Union[int, float]] = None,
     take_profit: Optional[Union[int, float]] = None,
     comment: Optional[str] = None,
+    magic: Optional[int] = None,
     deviation: int = 20,
     gateway: Optional[MT5TradingGateway] = None,
 ) -> dict:
@@ -858,7 +859,7 @@ def _place_market_order(  # noqa: C901
                 "type": mt5.ORDER_TYPE_BUY if side == "BUY" else mt5.ORDER_TYPE_SELL,
                 "price": price,
                 "deviation": deviation_validated,
-                "magic": _configured_order_magic(),
+                "magic": magic if magic is not None else _configured_order_magic(),
                 "comment": request_comment,
                 "type_time": mt5.ORDER_TIME_GTC,
                 "type_filling": validation._safe_int_attr(mt5, "ORDER_FILLING_IOC", 1),
@@ -970,6 +971,7 @@ def _place_pending_order(
     take_profit: Optional[Union[int, float]] = None,
     expiration: Optional[ExpirationValue] = None,
     comment: Optional[str] = None,
+    magic: Optional[int] = None,
     deviation: int = 20,
     gateway: Optional[MT5TradingGateway] = None,
 ) -> dict:
@@ -1098,7 +1100,7 @@ def _place_pending_order(
                 "sl": 0.0 if norm_sl is None else float(norm_sl),
                 "tp": 0.0 if norm_tp is None else float(norm_tp),
                 "deviation": deviation_validated,
-                "magic": _configured_order_magic(),
+                "magic": magic if magic is not None else _configured_order_magic(),
                 "comment": request_comment,
                 "type_time": mt5.ORDER_TIME_GTC,
                 "type_filling": validation._safe_int_attr(mt5, "ORDER_FILLING_IOC", 1),

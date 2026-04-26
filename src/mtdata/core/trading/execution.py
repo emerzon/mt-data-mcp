@@ -906,6 +906,7 @@ def _sort_close_positions(
 def _close_positions(  # noqa: C901
     ticket: Optional[Union[int, str]] = None,
     symbol: Optional[str] = None,
+    magic: Optional[int] = None,
     volume: Optional[Union[int, float]] = None,
     profit_only: bool = False,
     loss_only: bool = False,
@@ -928,6 +929,9 @@ def _close_positions(  # noqa: C901
         try:
             if profit_only and loss_only:
                 return {"error": "profit_only and loss_only cannot both be true."}
+            magic_filter = (
+                validation._safe_int_ticket(magic) if magic is not None else None
+            )
 
             # 1. Fetch positions based on criteria
             requested_ticket = None
@@ -946,6 +950,15 @@ def _close_positions(  # noqa: C901
                     if isinstance(ticket_resolution, dict):
                         out["ticket_resolution"] = ticket_resolution
                     return out
+                if (
+                    magic_filter is not None
+                    and validation._safe_int_ticket(getattr(position, "magic", None))
+                    != magic_filter
+                ):
+                    return {
+                        "error": f"Position {ticket} does not match magic={magic_filter}",
+                        "checked_scopes": ["positions"],
+                    }
                 positions = [position]
             elif symbol is not None:
                 positions = mt5.positions_get(symbol=symbol)
@@ -959,6 +972,12 @@ def _close_positions(  # noqa: C901
             # 2. Filter positions
             to_close = []
             for pos in positions:
+                if (
+                    magic_filter is not None
+                    and validation._safe_int_ticket(getattr(pos, "magic", None))
+                    != magic_filter
+                ):
+                    continue
                 position_profit = validation._safe_float_attr(pos, "profit")
                 if profit_only and position_profit <= 0.0:
                     continue
@@ -1222,6 +1241,7 @@ def _resolve_close_dry_run_target(
 def _cancel_pending(
     ticket: Optional[Union[int, str]] = None,
     symbol: Optional[str] = None,
+    magic: Optional[int] = None,
     comment: Optional[str] = None,
     gateway: Optional[MT5TradingGateway] = None,
 ) -> dict:
@@ -1237,6 +1257,9 @@ def _cancel_pending(
 
     def _cancel_pending():
         try:
+            magic_filter = (
+                validation._safe_int_ticket(magic) if magic is not None else None
+            )
             # 1. Fetch orders based on criteria
             if ticket is not None:
                 t_int = int(ticket)
@@ -1251,6 +1274,15 @@ def _cancel_pending(
                     if isinstance(ticket_resolution, dict):
                         out["ticket_resolution"] = ticket_resolution
                     return out
+                if (
+                    magic_filter is not None
+                    and validation._safe_int_ticket(getattr(order, "magic", None))
+                    != magic_filter
+                ):
+                    return {
+                        "error": f"Pending order {ticket} does not match magic={magic_filter}",
+                        "checked_scopes": ["pending_orders"],
+                    }
                 orders = [order]
             elif symbol is not None:
                 orders = mt5.orders_get(symbol=symbol)
@@ -1260,6 +1292,15 @@ def _cancel_pending(
                 orders = mt5.orders_get()
                 if orders is None or len(orders) == 0:
                     return {"message": "No pending orders"}
+            if magic_filter is not None:
+                orders = [
+                    order
+                    for order in orders
+                    if validation._safe_int_ticket(getattr(order, "magic", None))
+                    == magic_filter
+                ]
+                if not orders:
+                    return {"message": "No pending orders matched criteria"}
 
             # 2. Cancel orders
             results = []

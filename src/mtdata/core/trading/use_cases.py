@@ -62,6 +62,7 @@ _TRADE_PLACE_PREVIEW_KEYS = (
     "preview_scope_summary",
     "require_sl_tp",
     "auto_close_on_sl_tp_fail",
+    "magic",
     "requested_price",
     "requested_sl",
     "requested_tp",
@@ -590,6 +591,8 @@ def run_trade_place(  # noqa: C901
             }
             if pending:
                 preview["requested_price"] = request.price
+            if request.magic is not None:
+                preview["magic"] = request.magic
             if request.stop_loss not in (None, 0):
                 preview["requested_sl"] = request.stop_loss
             if request.take_profit not in (None, 0):
@@ -798,6 +801,7 @@ def run_trade_place(  # noqa: C901
                 stop_loss=request.stop_loss,
                 take_profit=request.take_profit,
                 comment=request.comment,
+                magic=request.magic,
                 deviation=request.deviation,
             )
             if isinstance(result, dict):
@@ -917,6 +921,7 @@ def run_trade_place(  # noqa: C901
                 take_profit=request.take_profit,
                 expiration=request.expiration,
                 comment=request.comment,
+                magic=request.magic,
                 deviation=request.deviation,
             ),
             order_type=order_type_norm,
@@ -1087,6 +1092,7 @@ def run_trade_close(  # noqa: C901
         profit_only=request.profit_only,
         loss_only=request.loss_only,
         dry_run=request.dry_run,
+        magic=request.magic,
     )
 
     def _finish(
@@ -1107,6 +1113,7 @@ def run_trade_close(  # noqa: C901
             profit_only=request.profit_only,
             loss_only=request.loss_only,
             dry_run=request.dry_run,
+            magic=request.magic,
         )
         return result
 
@@ -1241,6 +1248,8 @@ def run_trade_close(  # noqa: C901
                         preview[key] = value
         if request.symbol is not None:
             preview["symbol"] = request.symbol
+        if request.magic is not None:
+            preview["magic"] = request.magic
         if request.volume is not None:
             preview["volume"] = request.volume
             preview["ticket_resolution"] = (
@@ -1264,6 +1273,7 @@ def run_trade_close(  # noqa: C901
         result = close_positions(
             ticket=request.ticket,
             symbol=request.symbol,
+            magic=request.magic,
             volume=None,
             profit_only=request.profit_only,
             loss_only=request.loss_only,
@@ -1284,6 +1294,7 @@ def run_trade_close(  # noqa: C901
         position_result = close_positions(
             ticket=request.ticket,
             symbol=request.symbol,
+            magic=request.magic,
             volume=request.volume,
             profit_only=False,
             loss_only=False,
@@ -1313,6 +1324,7 @@ def run_trade_close(  # noqa: C901
             pending_result = cancel_pending(
                 ticket=request.ticket,
                 symbol=request.symbol,
+                magic=request.magic,
                 comment=request.comment,
             )
             if (
@@ -1341,6 +1353,7 @@ def run_trade_close(  # noqa: C901
     if request.symbol is not None:
         position_result = close_positions(
             symbol=request.symbol,
+            magic=request.magic,
             volume=None,
             profit_only=False,
             loss_only=False,
@@ -1350,14 +1363,18 @@ def run_trade_close(  # noqa: C901
         )
         if isinstance(position_result, dict):
             msg = str(position_result.get("message", "")).strip().lower()
-            if msg.startswith("no open positions for "):
+            if msg.startswith("no open positions for ") or msg == "no positions matched criteria":
                 pending_result = cancel_pending(
                     symbol=request.symbol,
+                    magic=request.magic,
                     comment=request.comment,
                 )
                 if isinstance(pending_result, dict):
                     pending_msg = str(pending_result.get("message", "")).strip().lower()
-                    if pending_msg.startswith("no pending orders for "):
+                    if (
+                        pending_msg.startswith("no pending orders for ")
+                        or pending_msg == "no pending orders matched criteria"
+                    ):
                         return _finish(
                             _with_no_action(
                                 message=f"No open positions or pending orders for {request.symbol}"
@@ -1368,6 +1385,7 @@ def run_trade_close(  # noqa: C901
         return _finish(position_result, scope="positions")
 
     position_result = close_positions(
+        magic=request.magic,
         volume=None,
         profit_only=False,
         loss_only=False,
@@ -1377,12 +1395,15 @@ def run_trade_close(  # noqa: C901
     )
     if isinstance(position_result, dict):
         msg = str(position_result.get("message", "")).strip().lower()
-        if msg == "no open positions":
-            pending_result = cancel_pending(comment=request.comment)
+        if msg in {"no open positions", "no positions matched criteria"}:
+            pending_result = cancel_pending(
+                magic=request.magic,
+                comment=request.comment,
+            )
             if (
                 isinstance(pending_result, dict)
                 and str(pending_result.get("message", "")).strip().lower()
-                == "no pending orders"
+                in {"no pending orders", "no pending orders matched criteria"}
             ):
                 return _finish(
                     _with_no_action(message="No open positions or pending orders"),
@@ -2884,6 +2905,17 @@ def _pick_trade_series(df: Any, pd_module: Any, *names: str):
     return out
 
 
+def _filter_trade_query_magic(df: Any, request: Any) -> Any:
+    magic = getattr(request, "magic", None)
+    if magic is None or "magic" not in df.columns:
+        return df
+    magic_value = validation._safe_int_ticket(magic)
+    if magic_value is None:
+        return df.iloc[0:0].copy()
+    mask = df["magic"].map(validation._safe_int_ticket) == magic_value
+    return df.loc[mask].copy()
+
+
 def _fetch_trade_query_rows(
     request: Any,
     *,
@@ -3156,6 +3188,11 @@ def _run_trade_query_impl(
             return Ok(empty_response)
 
         df = _trade_rows_to_dataframe(rows, pd_module=pd_module)
+        df = _filter_trade_query_magic(df, request)
+        if len(df) == 0:
+            magic = getattr(request, "magic", None)
+            if magic is not None:
+                return Ok([{"message": f"No rows matched magic={magic}"}])
         time_utc, time_txt = _build_trade_time_columns(
             df,
             time_source_fields=time_source_fields,

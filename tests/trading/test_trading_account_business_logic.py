@@ -311,6 +311,61 @@ def test_run_trade_get_open_accepts_simplenamespace_rows() -> None:
     assert out[0]["profit"] == 5.0
 
 
+def test_run_trade_get_open_filters_by_magic() -> None:
+    rows = [
+        SimpleNamespace(
+            ticket=1,
+            symbol="EURUSD",
+            time_update=1700000000,
+            type=0,
+            volume=0.1,
+            price_open=1.1,
+            sl=1.0,
+            tp=1.2,
+            price_current=1.15,
+            swap=0.0,
+            profit=5.0,
+            comment="a",
+            magic=7,
+        ),
+        SimpleNamespace(
+            ticket=2,
+            symbol="EURUSD",
+            time_update=1700000060,
+            type=0,
+            volume=0.2,
+            price_open=1.2,
+            sl=1.1,
+            tp=1.3,
+            price_current=1.25,
+            swap=0.0,
+            profit=6.0,
+            comment="b",
+            magic=9,
+        ),
+    ]
+    gateway = SimpleNamespace(
+        ensure_connection=lambda: None,
+        positions_get=lambda ticket=None, symbol=None: rows,
+        POSITION_TYPE_BUY=0,
+        POSITION_TYPE_SELL=1,
+    )
+
+    out = run_trade_get_open(
+        TradeGetOpenRequest(magic=9),
+        gateway=gateway,
+        use_client_tz=lambda: False,
+        format_time_minimal=lambda ts: f"t{int(ts)}",
+        format_time_minimal_local=lambda ts: f"lt{int(ts)}",
+        mt5_epoch_to_utc=lambda ts: ts,
+        normalize_limit=lambda value: value,
+        comment_row_metadata=lambda comment: {},
+    )
+
+    assert [row["ticket"] for row in out] == [2]
+    assert out[0]["magic"] == 9
+
+
 def test_run_trade_get_pending_logs_finish_event(caplog) -> None:
     Order = namedtuple(
         "Order",
@@ -585,6 +640,65 @@ def test_run_trade_get_pending_uses_snake_case_columns() -> None:
     assert out[0]["comment"] == "pending"
     assert out[0]["magic"] == 9
     assert "Ticket" not in out[0]
+
+
+def test_run_trade_get_pending_filters_by_magic() -> None:
+    rows = [
+        SimpleNamespace(
+            ticket=31,
+            symbol="EURUSD",
+            time_setup=1700000200,
+            time_expiration=0,
+            type=2,
+            volume=0.1,
+            price_open=1.1,
+            sl=1.0,
+            tp=1.2,
+            price_current=1.15,
+            comment="a",
+            magic=7,
+        ),
+        SimpleNamespace(
+            ticket=32,
+            symbol="EURUSD",
+            time_setup=1700000260,
+            time_expiration=0,
+            type=2,
+            volume=0.2,
+            price_open=1.2,
+            sl=1.1,
+            tp=1.3,
+            price_current=1.25,
+            comment="b",
+            magic=9,
+        ),
+    ]
+    gateway = SimpleNamespace(
+        ensure_connection=lambda: None,
+        orders_get=lambda ticket=None, symbol=None: rows,
+        ORDER_TYPE_BUY=0,
+        ORDER_TYPE_SELL=1,
+        ORDER_TYPE_BUY_LIMIT=2,
+        ORDER_TYPE_SELL_LIMIT=3,
+        ORDER_TYPE_BUY_STOP=4,
+        ORDER_TYPE_SELL_STOP=5,
+        ORDER_TYPE_BUY_STOP_LIMIT=6,
+        ORDER_TYPE_SELL_STOP_LIMIT=7,
+    )
+
+    out = run_trade_get_pending(
+        TradeGetPendingRequest(magic=9),
+        gateway=gateway,
+        use_client_tz=lambda: False,
+        format_time_minimal=lambda ts: f"t{int(ts)}",
+        format_time_minimal_local=lambda ts: f"lt{int(ts)}",
+        mt5_epoch_to_utc=lambda ts: ts,
+        normalize_limit=lambda value: value,
+        comment_row_metadata=lambda comment: {},
+    )
+
+    assert [row["ticket"] for row in out] == [32]
+    assert out[0]["magic"] == 9
 
 
 def test_run_trade_get_open_falls_back_to_time_column() -> None:
