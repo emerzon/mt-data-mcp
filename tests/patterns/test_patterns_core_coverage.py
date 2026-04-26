@@ -1491,7 +1491,9 @@ def _call_patterns_detect(**kwargs):
 
 
 def test_patterns_detect_request_default_limit_is_recent_window():
-    assert PatternsDetectRequest(symbol="EURUSD").limit == 500
+    request = PatternsDetectRequest(symbol="EURUSD")
+    assert request.limit == 500
+    assert request.min_strength == 0.70
 
 
 class TestPatternsDetect:

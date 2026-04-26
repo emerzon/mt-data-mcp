@@ -16,7 +16,7 @@ class PatternsDetectRequest(BaseModel):
     mode: str = "all"
     detail: PatternsDetailLiteral = "compact"
     limit: int = 500
-    min_strength: float = 0.90
+    min_strength: float = 0.70
     min_gap: int = 3
     robust_only: bool = False
     whitelist: Optional[str] = None

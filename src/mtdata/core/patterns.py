@@ -1051,7 +1051,7 @@ def patterns_detect(
     
     Candlestick Mode Parameters:
     ----------------------------
-    min_strength : float, optional (default=0.90)
+    min_strength : float, optional (default=0.70)
         Minimum semantic conviction threshold (0.0 to 1.0). This filters on a
         normalized candlestick strength score that combines pattern reliability,
         multi-bar span, and any raw detector bonus rather than raw pandas_ta
@@ -1128,7 +1128,7 @@ def patterns_detect(
     patterns_detect(symbol="EURUSD", timeframe="H4")
     
     # Detect candlestick patterns only
-    patterns_detect(symbol="EURUSD", mode="candlestick", timeframe="M15", min_strength=0.90, top_k=3)
+    patterns_detect(symbol="EURUSD", mode="candlestick", timeframe="M15", min_strength=0.70, top_k=3)
     
     # Detect classic chart patterns
     patterns_detect(symbol="GBPUSD", mode="classic", limit=500)
