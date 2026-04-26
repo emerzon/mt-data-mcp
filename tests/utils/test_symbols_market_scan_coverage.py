@@ -131,6 +131,8 @@ class TestSymbolsTopMarkets:
         assert list(result["data"][0].keys()) == [
             "symbol",
             "group",
+            "bid",
+            "ask",
             "spread_pct",
             "spread_points",
         ]
@@ -210,6 +212,8 @@ class TestSymbolsTopMarkets:
         assert list(result["data"][0].keys()) == [
             "symbol",
             "group",
+            "bid",
+            "ask",
             "spread_pct",
             "spread_points",
         ]
@@ -268,6 +272,8 @@ class TestSymbolsTopMarkets:
         assert list(result["results"]["lowest_spread"]["data"][0].keys()) == [
             "symbol",
             "group",
+            "bid",
+            "ask",
             "spread_pct",
             "spread_points",
         ]

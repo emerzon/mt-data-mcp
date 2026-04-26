@@ -764,7 +764,7 @@ def _top_markets_headers(metric: str, *, detail_mode: str) -> List[str]:
         ],
     }
     compact_headers = {
-        "spread": ["symbol", "group", "spread_pct", "spread_points"],
+        "spread": ["symbol", "group", "bid", "ask", "spread_pct", "spread_points"],
         "volume": [
             "symbol",
             "group",
