@@ -805,6 +805,24 @@ def _format_summary(
     return "\n".join(lines)
 
 
+def _compact_causal_pair_rows(
+    rows: List[Dict[str, Any]], *, limit: int = 20
+) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    for row in rows[: max(0, int(limit))]:
+        out.append(
+            {
+                "effect": row.get("effect"),
+                "cause": row.get("cause"),
+                "lag": row.get("lag"),
+                "p_value": row.get("p_value"),
+                "p_value_raw": row.get("p_value_raw"),
+                "significant": bool(row.get("significant")),
+            }
+        )
+    return out
+
+
 def _causal_error(
     message: str,
     *,
@@ -1441,9 +1459,12 @@ def causal_discover_signals(  # noqa: C901
             "success": True,
             "data": data,
             "summary": {
+                "significance": float(significance),
                 "counts": {
                     "pairs_tested": int(len(rows_sorted)),
                     "significant_links": int(len(significant_rows)),
+                    "pairs_shown": int(min(len(rows_sorted), 20)),
+                    "pairs_hidden": int(max(0, len(rows_sorted) - 20)),
                 }
             },
             "meta": _causal_contract_meta(
@@ -1458,6 +1479,8 @@ def causal_discover_signals(  # noqa: C901
         }
         if warnings_out:
             out["warnings"] = warnings_out
+        if rows_sorted:
+            out["pairs"] = _compact_causal_pair_rows(rows_sorted, limit=20)
         if not rows_sorted:
             out["message"] = (
                 "No causal relationships detected (insufficient data or all tests failed)."
