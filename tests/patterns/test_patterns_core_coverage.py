@@ -1496,6 +1496,11 @@ def test_patterns_detect_request_default_limit_is_recent_window():
     assert request.min_strength == 0.70
 
 
+def test_patterns_detect_denoise_schema_uses_shared_spec():
+    denoise_schema = PatternsDetectRequest.model_json_schema()["properties"]["denoise"]
+    assert {"$ref": "#/$defs/DenoiseSpec"} in denoise_schema["anyOf"]
+
+
 class TestPatternsDetect:
 
     @patch("mtdata.core.patterns._detect_candlestick_patterns")

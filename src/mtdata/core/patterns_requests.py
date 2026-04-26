@@ -4,7 +4,7 @@ from typing import Any, Dict, Literal, Optional
 
 from pydantic import BaseModel
 
-from .schema import TimeframeLiteral
+from .schema import DenoiseSpec, TimeframeLiteral
 
 
 PatternsDetailLiteral = Literal["highlights", "compact", "standard", "full"]
@@ -22,7 +22,7 @@ class PatternsDetectRequest(BaseModel):
     whitelist: Optional[str] = None
     top_k: int = 1
     last_n_bars: Optional[int] = None
-    denoise: Optional[Dict[str, Any]] = None
+    denoise: Optional[DenoiseSpec] = None
     config: Optional[Dict[str, Any]] = None
     engine: str = "native"
     ensemble: bool = False
