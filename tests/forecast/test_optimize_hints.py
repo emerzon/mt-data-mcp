@@ -205,6 +205,38 @@ def test_genetic_search_optimize_hints_uses_nested_backtest_metrics():
     assert hint["fitness_score"] > 0.1
 
 
+def test_genetic_search_optimize_hints_deduplicates_identical_configs():
+    backtest_result = {
+        "results": {
+            "naive": {
+                "success": True,
+                "avg_rmse": 0.12,
+                "metrics": {"win_rate": 0.5},
+            }
+        }
+    }
+
+    with patch("mtdata.forecast.tune._eval_candidate", return_value=(0.12, backtest_result)):
+        result = genetic_search_optimize_hints(
+            symbol="EURUSD",
+            timeframes=["H1"],
+            methods=["naive"],
+            horizon=6,
+            steps=5,
+            spacing=12,
+            population=4,
+            generations=1,
+            top_n=3,
+            fitness_metric="avg_rmse",
+            seed=42,
+        )
+
+    assert len(result["hints"]) == 1
+    assert result["hints"][0]["rank"] == 1
+    assert result["search_summary"]["unique_configs_returned"] == 1
+    assert result["search_summary"]["duplicate_results_filtered"] > 0
+
+
 @pytest.mark.skip(reason="Long-running integration test; run manually")
 class TestGeneticSearchOptimizeHints:
     """Integration test for genetic search (skipped by default)."""

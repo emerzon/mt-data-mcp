@@ -1096,12 +1096,25 @@ def genetic_search_optimize_hints(  # noqa: C901
     pop.sort(key=lambda t: t[1])
     top_configs: List[Dict[str, Any]] = []
 
-    for rank, (individual, fitness, backtest_res) in enumerate(pop[: int(top_n)]):
+    seen_configs = set()
+    duplicate_results_filtered = 0
+    for individual, fitness, backtest_res in pop:
+        if len(top_configs) >= int(top_n):
+            break
         tf, method, params = _extract_params(individual, search_space)
+        config_key = (
+            str(tf),
+            str(method),
+            tuple(sorted((str(key), repr(value)) for key, value in dict(params).items())),
+        )
+        if config_key in seen_configs:
+            duplicate_results_filtered += 1
+            continue
+        seen_configs.add(config_key)
 
         # Build hint entry
         hint: Dict[str, Any] = {
-            'rank': rank + 1,
+            'rank': len(top_configs) + 1,
             'timeframe': tf,
             'method': method,
             'method_params': params,
@@ -1138,6 +1151,8 @@ def genetic_search_optimize_hints(  # noqa: C901
             'timeframes_searched': list(tf_choices),
             'methods_searched': list(method_choices),
             'total_evaluations': int(population) * int(generations),
+            'unique_configs_returned': len(top_configs),
+            'duplicate_results_filtered': int(duplicate_results_filtered),
         },
         'history_tail': history[-10:] if history else [],
     }
