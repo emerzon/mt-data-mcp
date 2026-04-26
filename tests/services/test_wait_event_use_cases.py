@@ -194,7 +194,10 @@ def test_wait_event_tool_exposes_minimal_public_contract(monkeypatch) -> None:
             "criteria": {
                 "watch_for": list(request.watch_for or []),
                 "watch_for_inferred": False,
-                "end_on": list(request.end_on or []),
+                "end_on": list(
+                    request.end_on
+                    or [{"type": "candle_close", "timeframe": request.timeframe}]
+                ),
                 "end_on_inferred": False,
                 "accept_preexisting": bool(request.accept_preexisting),
             },
@@ -240,6 +243,22 @@ def test_wait_event_tool_exposes_minimal_public_contract(monkeypatch) -> None:
         "type": "candle_close",
         "timeframe": "M1",
     }
+    assert result["watched_for"]["inferred"] is True
+    assert result["watched_for"]["count"] == 3
+    assert result["watched_for"]["types"] == [
+        "position_opened",
+        "price_touch_level",
+        "tick_count_spike",
+    ]
+    assert [item["type"] for item in result["watched_for"]["items"]] == [
+        "position_opened",
+        "tick_count_spike",
+        "price_touch_level",
+    ]
+    assert result["watched_for"]["items"][2]["level"] == 100.0
+    assert result["ending_on"]["inferred"] is True
+    assert result["ending_on"]["types"] == ["candle_close"]
+    assert result["reason"] == "No watched event matched before the boundary event."
     assert result["bid"] == 1.2345
     assert result["ask"] == 1.2347
     assert result["observed_at_utc"] == "2026-04-06T02:01:01+00:00"
@@ -333,6 +352,20 @@ def test_wait_event_tool_compacts_matched_event_by_default(monkeypatch) -> None:
             "current_price": 100.02,
             "distance": 0.02,
         },
+    }
+    assert result["watched_for"] == {
+        "inferred": False,
+        "count": 1,
+        "types": ["price_touch_level"],
+        "items": [
+            {
+                "type": "price_touch_level",
+                "symbol": "BTCUSD",
+                "direction": "either",
+                "level": 100.0,
+                "price_source": "auto",
+            }
+        ],
     }
     assert result["symbol"] == "BTCUSD"
     assert result["bid"] == 100.01

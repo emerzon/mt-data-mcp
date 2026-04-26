@@ -29,6 +29,25 @@ logger = logging.getLogger(__name__)
 
 WaitEventPublicWatchSpec = Union[Dict[str, Any], str]
 
+_COMPACT_WAIT_EVENT_SPEC_FIELDS = (
+    "type",
+    "symbol",
+    "timeframe",
+    "ticket",
+    "order_ticket",
+    "position_ticket",
+    "magic",
+    "side",
+    "direction",
+    "level",
+    "lower",
+    "upper",
+    "distance",
+    "price_source",
+    "threshold_mode",
+    "threshold_value",
+)
+
 
 def _build_default_wait_event_watchers(
     *,
@@ -193,6 +212,40 @@ def _dedupe_wait_event_watchers(watch_for: List[Dict[str, Any]]) -> List[Dict[st
     return out
 
 
+def _compact_wait_event_spec(spec: Any) -> Dict[str, Any]:
+    if hasattr(spec, "model_dump"):
+        raw = spec.model_dump(exclude_none=True)
+    elif isinstance(spec, dict):
+        raw = dict(spec)
+    else:
+        raw = {"type": str(spec)}
+    return {
+        field_name: raw.get(field_name)
+        for field_name in _COMPACT_WAIT_EVENT_SPEC_FIELDS
+        if raw.get(field_name) is not None
+    }
+
+
+def _compact_wait_event_specs(specs: Any, *, inferred: bool) -> Dict[str, Any]:
+    source = list(specs or []) if isinstance(specs, list) else []
+    items = [_compact_wait_event_spec(item) for item in source]
+    event_types = sorted(
+        {
+            str(item.get("type"))
+            for item in items
+            if item.get("type") not in (None, "")
+        }
+    )
+    out: Dict[str, Any] = {
+        "inferred": bool(inferred),
+        "count": len(items),
+        "types": event_types,
+    }
+    if not inferred or len(items) <= 8:
+        out["items"] = items
+    return out
+
+
 def _compact_wait_event_public_result(
     result: Dict[str, Any],
     *,
@@ -252,6 +305,22 @@ def _compact_wait_event_public_result(
         if isinstance(observed, dict) and observed:
             compact_matched["observed"] = dict(observed)
         out["matched_event"] = compact_matched or None
+
+    if criteria is not None:
+        watch_specs = criteria.get("watch_for") or []
+        end_specs = criteria.get("end_on") or []
+        out["watched_for"] = _compact_wait_event_specs(
+            watch_specs,
+            inferred=bool(criteria.get("watch_for_inferred")),
+        )
+        out["ending_on"] = _compact_wait_event_specs(
+            end_specs,
+            inferred=bool(criteria.get("end_on_inferred")),
+        )
+        if out.get("status") == "boundary_reached" and watch_specs:
+            out["reason"] = "No watched event matched before the boundary event."
+        elif out.get("status") == "timeout" and watch_specs:
+            out["reason"] = "No watched event matched before max_wait_seconds."
 
     return out
 
