@@ -300,13 +300,13 @@ def _normalize_simplify_input(value: Any) -> Any:
         return {} if value else None
     if isinstance(value, str):
         normalized = value.strip().lower()
-        if normalized in {"", "none", "null", "false", "off", "no", "0"}:
+        if normalized in {"", "none", "null", "off"}:
             return None
-        if normalized in {"true", "on", "yes", "1", "default", "auto"}:
+        if normalized in {"on", "auto"}:
             return {}
         raise ValueError(
             "simplify must be a dict such as {'method': 'lttb', 'points': 100}, "
-            "or use true/on/default to enable defaults and false/off to disable."
+            "a boolean, or use on/auto to enable defaults and off to disable."
         )
     return value
 

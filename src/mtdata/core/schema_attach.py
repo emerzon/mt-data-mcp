@@ -144,15 +144,15 @@ def _set_simplify_param(params: Dict[str, Any], required_params: set[str]) -> No
     options = [
         {"$ref": "#/$defs/SimplifySpec"},
         {"type": "boolean"},
-        {"type": "string", "enum": ["on", "off", "true", "false", "default", "auto"]},
+        {"type": "string", "enum": ["on", "off", "auto"]},
     ]
     if "simplify" not in required_params:
         options.append({"type": "null"})
     params["simplify"] = {
         "description": (
             "Optional data reduction spec. Use a dict such as "
-            "{'method': 'lttb', 'points': 100}; true/on/default enables "
-            "default simplification, false/off disables it."
+            "{'method': 'lttb', 'points': 100}; true, on, or auto enables "
+            "default simplification; false or off disables it."
         ),
         "anyOf": options,
         "examples": [{"method": "lttb", "points": 100}, True, "off"],

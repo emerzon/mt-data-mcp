@@ -72,21 +72,25 @@ def test_run_data_fetch_candles_passes_include_spread_to_service():
     assert captured["kwargs"]["include_spread"] is True
 
 
-def test_data_fetch_requests_accept_simplify_boolean_and_string_aliases():
+def test_data_fetch_requests_accept_simplify_boolean_and_modes():
     candles_on = DataFetchCandlesRequest(symbol="EURUSD", simplify=True)
-    ticks_on = DataFetchTicksRequest(symbol="EURUSD", simplify="on")
+    ticks_on = DataFetchTicksRequest(symbol="EURUSD", simplify="auto")
     candles_off = DataFetchCandlesRequest(symbol="EURUSD", simplify="off")
+    ticks_off = DataFetchTicksRequest(symbol="EURUSD", simplify=False)
 
     assert candles_on.simplify == {}
     assert ticks_on.simplify == {}
     assert candles_off.simplify is None
+    assert ticks_off.simplify is None
 
 
 def test_data_fetch_requests_explain_invalid_simplify_string():
     with pytest.raises(ValidationError) as exc_info:
         DataFetchCandlesRequest(symbol="EURUSD", simplify="maybe")
 
-    assert "{'method': 'lttb', 'points': 100}" in str(exc_info.value)
+    message = str(exc_info.value)
+    assert "{'method': 'lttb', 'points': 100}" in message
+    assert "on/auto" in message
 
 
 def test_data_fetch_candles_rejects_standard_detail_alias():
