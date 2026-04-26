@@ -4,6 +4,7 @@ import math
 import random
 import threading
 import time
+import warnings
 from typing import Any, Dict, List, Optional, Tuple
 
 from .backtest import forecast_backtest as _forecast_backtest
@@ -475,7 +476,13 @@ def optuna_search_forecast_params(  # noqa: C901
         sampler_obj = optuna.samplers.CmaEsSampler(seed=int(seed))
     else:
         sampler_name = 'tpe'
-        sampler_obj = optuna.samplers.TPESampler(seed=int(seed), multivariate=True)
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message=r".*multivariate.*experimental.*",
+                category=Warning,
+            )
+            sampler_obj = optuna.samplers.TPESampler(seed=int(seed), multivariate=True)
 
     pruner_name = str(pruner or 'median').strip().lower()
     if pruner_name in {'none', 'off', 'disabled'}:

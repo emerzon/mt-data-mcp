@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import random
+import warnings
 
 import pytest
 
@@ -252,3 +253,39 @@ def test_optuna_search_method_scoped_and_flat_spaces(monkeypatch):
     assert out["success"] is True
     assert out["mode"] == "max"
     assert out["history_count"] == 6
+
+
+def test_optuna_search_suppresses_tpe_multivariate_warning(monkeypatch):
+    pytest.importorskip("optuna")
+
+    monkeypatch.setattr(
+        tune,
+        "_eval_candidate",
+        lambda **kwargs: (
+            0.1,
+            {"results": {"theta": {"success": True, "avg_rmse": 0.1}}},
+        ),
+    )
+
+    with warnings.catch_warnings(record=True) as records:
+        warnings.simplefilter("always")
+        out = tune.optuna_search_forecast_params(
+            symbol="EURUSD",
+            timeframe="H1",
+            method="theta",
+            horizon=2,
+            steps=2,
+            spacing=1,
+            search_space={"x": {"type": "float", "min": 0.2, "max": 0.9}},
+            n_trials=1,
+            sampler="tpe",
+            pruner="none",
+            seed=17,
+        )
+
+    assert out["success"] is True
+    assert not any(
+        "multivariate" in str(item.message).lower()
+        and "experimental" in str(item.message).lower()
+        for item in records
+    )
