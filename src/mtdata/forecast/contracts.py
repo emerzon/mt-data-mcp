@@ -102,6 +102,7 @@ _FIELD_OWNERSHIP: Dict[RequestSurface, Dict[str, ContractOwner]] = {
         "top_n": "evaluation",
         "dimred_method": "data_preparation",
         "dimred_params": "data_preparation",
+        "detail": "evaluation",
     },
 }
 
