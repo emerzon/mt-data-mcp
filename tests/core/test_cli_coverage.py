@@ -2921,7 +2921,7 @@ class TestAddForecastGenerateArgs:
         assert args.library == "native"
         assert args.method == "theta"
         assert args.timeframe == "H1"
-        assert args.horizon == 5
+        assert args.horizon == 12
         assert args.detail == "compact"
 
     def test_all_options(self):

@@ -121,7 +121,7 @@ class TestPydanticModels:
         body = ForecastPriceBody(symbol="EURUSD")
         assert body.timeframe == "H1"
         assert body.method == "theta"
-        assert body.horizon == 5
+        assert body.horizon == 12
         assert body.ci_alpha == 0.05
         assert body.quantity == "price"
         assert body.to_domain_request().method == "theta"
@@ -130,7 +130,7 @@ class TestPydanticModels:
         body = ForecastVolBody(symbol="EURUSD")
         assert body.timeframe == "H1"
         assert body.method == "ewma"
-        assert body.horizon == 1
+        assert body.horizon == 12
 
     def test_backtest_body_defaults(self):
         body = BacktestBody(symbol="EURUSD")
