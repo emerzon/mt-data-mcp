@@ -677,6 +677,11 @@ class TestFetchCandles(unittest.TestCase):
         self.assertIn('high', row_keys)
         self.assertNotIn('low', row_keys)
 
+    def test_ohlcv_filter_rejects_invalid_value(self):
+        result = fetch_candles('EURUSD', limit=5, ohlcv='invalid')
+
+        self.assertIn('Invalid ohlcv value', result.get('error', ''))
+
     @patch(_MT5_CONFIG)
     @patch(_RATES_FROM)
     @patch(_CACHED_INFO, return_value=MagicMock())

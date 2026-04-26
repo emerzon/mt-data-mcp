@@ -821,6 +821,18 @@ def _build_candle_headers(
     return headers
 
 
+def _validate_ohlcv_selection(ohlcv: Optional[str]) -> Optional[str]:
+    if ohlcv is None or str(ohlcv).strip() == "":
+        return None
+    if _normalize_ohlcv_arg(ohlcv) is not None:
+        return None
+    return (
+        "Invalid ohlcv value. Use all, ohlcv, ohlc, close/price, compact "
+        "letters from o/h/l/c/v, or comma-separated names such as "
+        "open,high,low,close,volume."
+    )
+
+
 def _append_denoise_application(
     denoise_apps: List[Dict[str, Any]],
     source_spec: Any,
@@ -1094,6 +1106,9 @@ def fetch_candles(  # noqa: C901
         if timeframe not in TIMEFRAME_MAP:
             return {"error": invalid_timeframe_error(timeframe, TIMEFRAME_MAP)}
         mt5_timeframe = TIMEFRAME_MAP[timeframe]
+        ohlcv_error = _validate_ohlcv_selection(ohlcv)
+        if ohlcv_error is not None:
+            return {"error": ohlcv_error}
         
         # Ensure symbol is ready; remember original visibility to restore later
         _info_before = get_symbol_info_cached(symbol)
