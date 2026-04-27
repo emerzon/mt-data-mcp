@@ -3101,6 +3101,30 @@ class TestAddDynamicArguments:
             parser.parse_args(["--no_include_incomplete"]).include_incomplete == "false"
         )
 
+    def test_market_scan_exposes_symbol_alias_flag(self):
+        parser = argparse.ArgumentParser()
+        func_info = {
+            "params": [
+                {
+                    "name": "symbols",
+                    "type": Optional[str],
+                    "required": False,
+                    "default": None,
+                },
+                {
+                    "name": "symbol",
+                    "type": Optional[str],
+                    "required": False,
+                    "default": None,
+                },
+            ]
+        }
+        add_dynamic_arguments(parser, func_info, cmd_name="market_scan")
+
+        args = parser.parse_args(["--symbol", "EURUSD"])
+
+        assert args.symbol == "EURUSD"
+
     def test_list_param(self):
         parser = argparse.ArgumentParser()
         func_info = {

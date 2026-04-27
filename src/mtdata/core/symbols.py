@@ -1133,6 +1133,14 @@ _MARKET_SCAN_RANK_BY_ALIASES = {
     "spread": "spread_pct",
 }
 
+_SYMBOLS_TOP_MARKETS_RANK_BY_ALIASES = {
+    "spread_pct": "spread",
+    "tick_volume": "volume",
+    "price_change_pct": "price_change",
+    "abs_price_change_pct": "price_change",
+    "abs_price_change": "price_change",
+}
+
 
 _MARKET_SCAN_RANK_BY_CHOICES = (
     "abs_price_change_pct",
@@ -1154,30 +1162,47 @@ def _normalize_market_scan_rank_by(value: Any) -> tuple[str, Optional[str]]:
 
 @mcp.tool()
 def symbols_top_markets(  # noqa: C901
-    rank_by: Literal["all", "spread", "volume", "price_change"] = "all",  # type: ignore
+    rank_by: Literal[
+        "all",
+        "spread",
+        "volume",
+        "price_change",
+        "spread_pct",
+        "tick_volume",
+        "price_change_pct",
+        "abs_price_change_pct",
+    ] = "all",  # type: ignore
     limit: Optional[int] = 10,
     universe: Literal["visible", "all"] = "visible",  # type: ignore
     timeframe: TimeframeLiteral = "H1",
     detail: CompactFullDetailLiteral = "compact",
 ) -> Dict[str, Any]:
-    """Scan MT5 symbols and rank the top markets by spread, recent volume, or recent price change.
+    """Quick MT5 market overview with leaderboards for spread, volume, or price change.
 
     Defaults to visible tradable symbols for responsiveness. Set `universe="all"` to
     include hidden tradable symbols too; that mode is slower because MT5 may need to
     activate quotes for instruments that are not already visible. Volume and
     price-change rankings use the most recent completed bar on `timeframe`.
     Uses compact leaderboard rows by default. Set `detail="full"` for the
-    expanded row shape and collection metadata.
+    expanded row shape and collection metadata. Use `market_scan` instead when
+    you need symbol/group inputs, RSI/SMA filters, or a single flat scanner table.
     """
 
     detail_mode = resolve_output_detail(detail=detail, default="compact")
 
     def _run() -> Dict[str, Any]:  # noqa: C901
         try:
-            rank_by_value = str(rank_by or "all").strip().lower()
+            raw_rank_by_value = str(rank_by or "all").strip().lower()
+            rank_by_value = _SYMBOLS_TOP_MARKETS_RANK_BY_ALIASES.get(
+                raw_rank_by_value,
+                raw_rank_by_value,
+            )
             if rank_by_value not in {"all", "spread", "volume", "price_change"}:
                 return {
-                    "error": "rank_by must be one of: all, spread, volume, price_change."
+                    "error": (
+                        "rank_by must be one of: all, spread/spread_pct, "
+                        "volume/tick_volume, price_change/price_change_pct."
+                    )
                 }
 
             universe_value = str(universe or "visible").strip().lower()
@@ -1315,6 +1340,9 @@ def symbols_top_markets(  # noqa: C901
                 scan_meta.update(
                     {
                         "rank_by": rank_by_value,
+                        "rank_by_input": raw_rank_by_value
+                        if raw_rank_by_value != rank_by_value
+                        else None,
                         "limit": limit_value,
                         "universe": universe_value,
                         "detail": detail_mode,
@@ -1469,12 +1497,13 @@ def market_scan(  # noqa: C901
     price_vs_sma: Optional[Literal["above", "below"]] = None,  # type: ignore
     rank_by: Literal["abs_price_change_pct", "abs_price_change", "price_change_pct", "price_change", "tick_volume", "volume", "rsi", "spread_pct", "spread"] = "abs_price_change_pct",  # type: ignore
 ) -> Dict[str, Any]:
-    """Scan MT5 symbols with explicit price, spread, volume, RSI, and SMA filters.
+    """Filtered MT5 market scanner with one flat table and technical filters.
 
     Pass `symbol` for one instrument or `symbols` for a comma-separated list.
     `data.table.rows` is the canonical table payload. Compact detail is the
     default; use `detail="full"` when you also want the explicit `columns`
-    ordering hint for compatibility.
+    ordering hint for compatibility. Use `symbols_top_markets` for a quick
+    all-market overview with separate spread, volume, and mover leaderboards.
     """
 
     detail_mode = resolve_output_detail(detail=detail, default="compact")

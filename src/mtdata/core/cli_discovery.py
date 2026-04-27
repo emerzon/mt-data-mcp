@@ -158,7 +158,6 @@ def should_expose_cli_param(*, cmd_name: Optional[str], param_name: str) -> bool
         "causal_discover_signals",
         "correlation_matrix",
         "cointegration_test",
-        "market_scan",
     }
     if str(param_name or "") == "symbol" and str(cmd_name or "") in hidden_symbol_alias_tools:
         return False
