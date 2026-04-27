@@ -145,6 +145,7 @@ def _compact_trade_session_context_payload(payload: Dict[str, Any]) -> Dict[str,
             compact_rows = _compact_trade_session_items(
                 open_positions,
                 field_map=(
+                    ("symbol", "Symbol"),
                     ("ticket", "Ticket"),
                     ("time", "Time"),
                     ("type", "Type"),
@@ -154,6 +155,8 @@ def _compact_trade_session_context_payload(payload: Dict[str, Any]) -> Dict[str,
                     ("sl", "SL"),
                     ("tp", "TP"),
                     ("profit", "Profit"),
+                    ("comment", "Comments"),
+                    ("magic", "Magic"),
                 ),
             )
             if compact_rows:
@@ -170,6 +173,7 @@ def _compact_trade_session_context_payload(payload: Dict[str, Any]) -> Dict[str,
             compact_rows = _compact_trade_session_items(
                 pending_orders,
                 field_map=(
+                    ("symbol", "Symbol"),
                     ("ticket", "Ticket"),
                     ("time", "Time"),
                     ("expiration", "Expiration"),
@@ -179,6 +183,8 @@ def _compact_trade_session_context_payload(payload: Dict[str, Any]) -> Dict[str,
                     ("current_price", "Current Price"),
                     ("sl", "SL"),
                     ("tp", "TP"),
+                    ("comment", "Comments"),
+                    ("magic", "Magic"),
                 ),
             )
             if compact_rows:

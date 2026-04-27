@@ -28,6 +28,7 @@ def test_trade_session_context_compacts_nested_sections_by_default() -> None:
         "count": 1,
         "items": [
             {
+                "Symbol": "EURUSD",
                 "Ticket": 123456,
                 "Time": "2023-11-14 22:13",
                 "Type": "BUY",
@@ -37,6 +38,8 @@ def test_trade_session_context_compacts_nested_sections_by_default() -> None:
                 "SL": 1.095,
                 "TP": 1.11,
                 "Profit": 4.2,
+                "Comments": "agent-open",
+                "Magic": 77,
             }
         ],
     }
@@ -88,6 +91,7 @@ def test_trade_session_context_compacts_nested_sections_by_default() -> None:
     }
     assert out["open_positions"] == [
         {
+            "symbol": "EURUSD",
             "ticket": 123456,
             "time": "2023-11-14 22:13",
             "type": "BUY",
@@ -97,6 +101,8 @@ def test_trade_session_context_compacts_nested_sections_by_default() -> None:
             "sl": 1.095,
             "tp": 1.11,
             "profit": 4.2,
+            "comment": "agent-open",
+            "magic": 77,
         }
     ]
     assert "pending_orders" not in out
@@ -183,3 +189,72 @@ def test_trade_session_context_compact_sanitizes_nested_tool_errors() -> None:
         "count": 0,
     }
     assert "SimpleNamespace" not in str(out["open_positions"])
+
+
+def test_trade_session_context_compact_keeps_order_attribution_fields() -> None:
+    with patch(
+        "mtdata.core.trading.context.trade_account_info",
+        new=lambda: {"success": True, "balance": 10000.0, "equity": 10010.0},
+    ), patch(
+        "mtdata.core.trading.context.market_ticker",
+        new=lambda symbol, detail="compact": {"success": True, "bid": 1.1, "ask": 1.1002},
+    ), patch(
+        "mtdata.core.trading.context.trade_get_open",
+        new=lambda request: {
+            "success": True,
+            "count": 1,
+            "items": [
+                {
+                    "Symbol": "EURUSD",
+                    "Ticket": 123,
+                    "Type": "BUY",
+                    "Volume": 0.1,
+                    "Open Price": 1.1,
+                    "Comments": "open-agent",
+                    "Magic": 7001,
+                }
+            ],
+        },
+    ), patch(
+        "mtdata.core.trading.context.trade_get_pending",
+        new=lambda request: {
+            "success": True,
+            "count": 1,
+            "items": [
+                {
+                    "Symbol": "EURUSD",
+                    "Ticket": 456,
+                    "Type": "BUY_LIMIT",
+                    "Volume": 0.1,
+                    "Open Price": 1.095,
+                    "Comments": "pending-agent",
+                    "Magic": 7002,
+                }
+            ],
+        },
+    ):
+        out = _raw_trade_session_context("EURUSD")
+
+    assert out["state"] == "mixed"
+    assert out["open_positions"] == [
+        {
+            "symbol": "EURUSD",
+            "ticket": 123,
+            "type": "BUY",
+            "volume": 0.1,
+            "open_price": 1.1,
+            "comment": "open-agent",
+            "magic": 7001,
+        }
+    ]
+    assert out["pending_orders"] == [
+        {
+            "symbol": "EURUSD",
+            "ticket": 456,
+            "type": "BUY_LIMIT",
+            "volume": 0.1,
+            "open_price": 1.095,
+            "comment": "pending-agent",
+            "magic": 7002,
+        }
+    ]
