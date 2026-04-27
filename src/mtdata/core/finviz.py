@@ -453,12 +453,16 @@ def _normalize_finviz_news_item(item: Any) -> Any:
 
 
 def _normalize_finviz_news_payload(result: Dict[str, Any]) -> Dict[str, Any]:
+    out = dict(result)
+    out.setdefault("tool_scope", "raw_finviz_provider")
+    out.setdefault("preferred_tool", "news")
+    out.setdefault("output_shape", "flat_paginated_items")
+
     news_rows = result.get("news")
     items_rows = result.get("items")
     if not isinstance(news_rows, list) and not isinstance(items_rows, list):
-        return result
+        return out
 
-    out = dict(result)
     source_rows = news_rows if isinstance(news_rows, list) else items_rows
     out["items"] = [_normalize_finviz_news_item(item) for item in source_rows]
     out.pop("news", None)
@@ -793,8 +797,12 @@ def finviz_description(symbol: str) -> Dict[str, Any]:
 @mcp.tool()
 def finviz_news(symbol: Optional[str] = None, limit: int = 20, page: int = 1) -> Dict[str, Any]:
     """
-    Get latest news. If symbol provided, returns stock-specific news.
-    If no symbol, returns general market news.
+    Raw Finviz news provider endpoint.
+
+    Prefer `news` for trading workflows because it merges Finviz with MT5/CNBC
+    sources, ranks relevance, and buckets general, related, impact, and event
+    news. Use `finviz_news` when you specifically need Finviz pagination, URLs,
+    or the raw flat provider schema.
     
     Parameters
     ----------
@@ -809,7 +817,9 @@ def finviz_news(symbol: Optional[str] = None, limit: int = 20, page: int = 1) ->
     -------
     dict
         Stock-specific calls return normalized `items` rows with `title`,
-        `source`, `published_at`, and `url` fields.
+        `source`, `published_at`, and `url` fields. Top-level metadata marks
+        this as a raw Finviz provider endpoint and points traders to `news` as
+        the preferred unified tool.
     """
     fields = {"symbol": symbol, "limit": limit, "page": page}
 
@@ -1060,7 +1070,12 @@ def finviz_market_news(
     page: int = 1,
 ) -> Dict[str, Any]:
     """
-    Get general financial market news from Finviz.
+    Raw Finviz general market news/blog provider endpoint.
+
+    Prefer `news` for trader-facing market news because it aggregates Finviz
+    with other sources and categorizes relevance/impact. Use
+    `finviz_market_news` when you specifically need Finviz-only pagination,
+    `news_type` (`news` vs `blogs`), URLs, or the raw flat provider schema.
     
     Parameters
     ----------
@@ -1074,7 +1089,9 @@ def finviz_market_news(
     Returns
     -------
     dict
-        List of news/blog items
+        List of news/blog items. Top-level metadata marks this as a raw Finviz
+        provider endpoint and points traders to `news` as the preferred unified
+        tool.
     """
     return _run_logged_tool(
         "finviz_market_news",

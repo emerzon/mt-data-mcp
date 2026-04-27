@@ -234,6 +234,11 @@ def news(
     """
     Fetch important general news and, optionally, symbol-relevant news.
 
+    This is the preferred trader-facing news tool. It merges Finviz, MT5, and
+    CNBC sources when available, then ranks and buckets headlines by relevance,
+    market impact, and event timing. Use Finviz-specific news tools only when
+    you need raw provider pagination, URLs, blogs, or Finviz-only rows.
+
     With no symbol, returns the most important recent general news from all
     available sources.
 
@@ -290,13 +295,15 @@ def news(
             return {"error": "limit must be a positive integer."}
 
     def _run() -> Dict[str, Any]:
-        return _apply_news_limit(
+        out = _apply_news_limit(
             normalize_news_output(
                 fetch_unified_news(symbol=symbol),
                 detail=detail_mode,
             ),
             limit=limit_value,
         )
+        out.setdefault("tool_scope", "unified_trading_news")
+        return out
 
     return run_logged_operation(
         logger,
