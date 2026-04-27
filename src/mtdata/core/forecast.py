@@ -968,6 +968,61 @@ def _forecast_library_method_rows(capabilities: Any) -> List[Dict[str, Any]]:
     return rows
 
 
+def _forecast_method_params(params: Any) -> List[Dict[str, Any]]:
+    if not isinstance(params, list):
+        return []
+    rows: List[Dict[str, Any]] = []
+    for item in params:
+        if not isinstance(item, dict):
+            continue
+        row = {
+            key: item.get(key)
+            for key in ("name", "type", "default", "description")
+            if item.get(key) not in (None, "", [], {})
+        }
+        if row:
+            rows.append(row)
+    return rows
+
+
+def _forecast_list_full_row(
+    item: Dict[str, Any],
+    *,
+    method_to_category: Dict[str, Any],
+) -> Dict[str, Any]:
+    method_name = str(item.get("method") or "")
+    category = item.get("category") or method_to_category.get(method_name) or "other"
+    params = _forecast_method_params(item.get("params"))
+    row: Dict[str, Any] = {
+        "method": method_name,
+        "category": str(category),
+        "available": bool(item.get("available")),
+        "params_count": len(params),
+    }
+    desc = str(item.get("description") or "").strip()
+    if desc and desc.lower() != method_name.lower():
+        row["description"] = desc.splitlines()[0].strip()
+    supports = item.get("supports")
+    if isinstance(supports, dict) and isinstance(supports.get("ci"), bool):
+        row["supports_ci"] = bool(supports.get("ci"))
+    elif isinstance(item.get("supports_ci"), bool):
+        row["supports_ci"] = bool(item.get("supports_ci"))
+    if params:
+        row["params"] = params
+    requires = item.get("requires")
+    if isinstance(requires, list) and requires:
+        row["requires"] = [str(req) for req in requires if str(req).strip()]
+    aliases = item.get("aliases")
+    if isinstance(aliases, list) and aliases:
+        row["aliases"] = [str(alias) for alias in aliases if str(alias).strip()]
+    execution = item.get("execution")
+    if isinstance(execution, dict) and execution.get("library") not in (None, ""):
+        row["library"] = execution.get("library")
+    elif item.get("namespace") not in (None, ""):
+        row["library"] = item.get("namespace")
+    return row
+
+
 def _forecast_list_methods_impl(  # noqa: C901
     *,
     detail: CompactFullDetailLiteral = "compact",
@@ -1062,7 +1117,7 @@ def _forecast_list_methods_impl(  # noqa: C901
             if not isinstance(methods_full, list):
                 return data
             filtered_full = [
-                dict(row)
+                _forecast_list_full_row(row, method_to_category=method_to_category)
                 for row in methods_full
                 if isinstance(row, dict) and _method_matches(row)
             ]
@@ -1086,9 +1141,8 @@ def _forecast_list_methods_impl(  # noqa: C901
                 "show_unavailable": bool(show_unavailable),
             }
             out_full["note"] = (
-                "Methods include namespace/concept/method_id fields to disambiguate similarly named implementations "
-                "(for example native:theta vs statsforecast:theta). "
-                "`supports_ci` indicates whether the method reports built-in interval support."
+                "Full view includes trader-facing method metadata and structured params; "
+                "use search_term, library, or limit to narrow large catalogs."
             )
             out_full["barrier_methods"] = barrier_methods
             return out_full

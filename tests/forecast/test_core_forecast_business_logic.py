@@ -847,12 +847,16 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert full["methods_hidden"] == 0
     assert isinstance(full.get("methods"), list)
     assert "params" in full["methods"][0]
-    assert "method_id" in full["methods"][0]
-    assert "execution" in full["methods"][0]
-    assert "selector" in full["methods"][0]
+    assert full["methods"][0]["params"] == [{"name": "window"}]
+    assert "method_id" not in full["methods"][0]
+    assert "capability_id" not in full["methods"][0]
+    assert "concept" not in full["methods"][0]
+    assert "adapter_method" not in full["methods"][0]
+    assert "execution" not in full["methods"][0]
+    assert "selector" not in full["methods"][0]
     assert full["methods"][0]["supports_ci"] is True
     assert full["methods"][1]["supports_ci"] is False
-    assert full["methods"][1]["execution"] == {"library": "native", "method": "mlf_rf"}
+    assert full["methods"][1]["library"] == "native"
     assert full["barrier_methods"]["optimizer_only_methods"] == ["ensemble"]
 
     monkeypatch.setattr(
