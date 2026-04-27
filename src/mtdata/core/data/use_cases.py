@@ -186,8 +186,14 @@ def _compact_candles_payload(result: Dict[str, Any]) -> Dict[str, Any]:
     compact = dict(result)
     for key in ("symbol", "timeframe", "candles_requested"):
         compact.pop(key, None)
+    candle_counts = compact.get("candle_counts")
+    if isinstance(candle_counts, dict):
+        excluded = candle_counts.get("excluded")
+        total_excluded = excluded.get("total") if isinstance(excluded, dict) else None
+        if total_excluded in (None, 0):
+            compact.pop("candle_counts", None)
     for key in ("candles_excluded", "incomplete_candles_skipped"):
-        if compact.get(key) in (None, 0):
+        if "candle_counts" in compact or compact.get(key) in (None, 0):
             compact.pop(key, None)
     for key in ("last_candle_open", "has_forming_candle"):
         if not bool(compact.get(key)):

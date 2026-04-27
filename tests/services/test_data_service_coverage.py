@@ -835,6 +835,16 @@ class TestFetchCandles(unittest.TestCase):
         self.assertEqual(result['candles'], 4)
         self.assertEqual(result['candles_excluded'], 1)
         self.assertEqual(result['incomplete_candles_skipped'], 1)
+        self.assertEqual(
+            result['candle_counts']['excluded'],
+            {
+                'forming_bar': 1,
+                'indicator_warmup': 0,
+                'quality_filtered': 0,
+                'window_or_source_shortfall': 0,
+                'total': 1,
+            },
+        )
         self.assertTrue(result['has_forming_candle'])
         self.assertIn('include_incomplete=true', result['hint'])
         self.assertFalse(result['last_candle_open'])

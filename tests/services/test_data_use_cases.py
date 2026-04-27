@@ -159,6 +159,17 @@ def test_run_data_fetch_candles_compact_keeps_anomaly_metadata():
             "candles": 4,
             "candles_requested": 5,
             "candles_excluded": 1,
+            "candle_counts": {
+                "requested": 5,
+                "returned": 4,
+                "excluded": {
+                    "forming_bar": 1,
+                    "indicator_warmup": 0,
+                    "quality_filtered": 0,
+                    "window_or_source_shortfall": 0,
+                    "total": 1,
+                },
+            },
             "last_candle_open": True,
             "incomplete_candles_skipped": 1,
             "has_forming_candle": True,
@@ -167,9 +178,11 @@ def test_run_data_fetch_candles_compact_keeps_anomaly_metadata():
     )
 
     assert result["candles"] == 4
-    assert result["candles_excluded"] == 1
+    assert result["candle_counts"]["excluded"]["forming_bar"] == 1
+    assert result["candle_counts"]["excluded"]["total"] == 1
     assert result["last_candle_open"] is True
-    assert result["incomplete_candles_skipped"] == 1
+    assert "candles_excluded" not in result
+    assert "incomplete_candles_skipped" not in result
     assert result["has_forming_candle"] is True
     assert "symbol" not in result
     assert "timeframe" not in result

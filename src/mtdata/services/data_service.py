@@ -1353,6 +1353,22 @@ def fetch_candles(  # noqa: C901
         candles_excluded = max(0, candles_requested - candles_returned)
         incomplete_candles_skipped = int(bool(initial_incomplete_trimmed)) + int(bool(_trimmed_incomplete))
         has_forming_candle = bool(initial_incomplete_trimmed or _trimmed_incomplete or last_candle_open)
+        remaining_after_forming = max(0, candles_excluded - incomplete_candles_skipped)
+        quality_excluded = min(int(quality_rows_removed), remaining_after_forming)
+        remaining_excluded = max(0, remaining_after_forming - quality_excluded)
+        window_shortfall = remaining_excluded if (start_datetime or end_datetime) else 0
+        source_shortfall = max(0, remaining_excluded - window_shortfall)
+        candle_counts = {
+            "requested": candles_requested,
+            "returned": candles_returned,
+            "excluded": {
+                "forming_bar": incomplete_candles_skipped,
+                "indicator_warmup": 0,
+                "quality_filtered": quality_excluded,
+                "window_or_source_shortfall": window_shortfall + source_shortfall,
+                "total": candles_excluded,
+            },
+        }
 
         payload.update({
             "success": True,
@@ -1361,6 +1377,7 @@ def fetch_candles(  # noqa: C901
             "candles": candles_returned,
             "candles_requested": candles_requested,
             "candles_excluded": candles_excluded,
+            "candle_counts": candle_counts,
             "last_candle_open": last_candle_open,
             "incomplete_candles_skipped": incomplete_candles_skipped,
             "has_forming_candle": has_forming_candle,
@@ -1391,7 +1408,13 @@ def fetch_candles(  # noqa: C901
             },
         })
         if incomplete_candles_skipped and not include_incomplete:
-            payload["hint"] = "Set include_incomplete=true to include the latest forming candle."
+            if ti_spec:
+                payload["hint"] = (
+                    "Latest forming candle was skipped. Set include_incomplete=true only if you need "
+                    "that bar; increase limit if requested indicators need more warmup context."
+                )
+            else:
+                payload["hint"] = "Set include_incomplete=true to include the latest forming candle."
         if isinstance(freshness_diagnostics, dict):
             payload["meta"]["diagnostics"]["freshness"] = dict(freshness_diagnostics)
         if session_gap_warning:
