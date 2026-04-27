@@ -18,6 +18,39 @@ DEFAULT_METHOD_SUPPORTS: Dict[str, bool] = {
     "volatility": False,
     "ci": False,
 }
+METHOD_DESCRIPTIONS: Dict[str, str] = {
+    "arima": "ARIMA statistical model for autoregressive, differenced, moving-average forecasts.",
+    "sarima": "Seasonal ARIMA model for trend, autocorrelation, and repeating seasonal structure.",
+    "drift": "Linear drift baseline that extrapolates the historical start-to-end slope.",
+    "fourier_ols": "Fourier regression with optional trend for smooth seasonal cycles.",
+    "naive": "Naive baseline that repeats the latest observed value.",
+    "seasonal_naive": "Seasonal naive baseline that repeats the last observed seasonal cycle.",
+    "theta": "Classical Theta method combining linear trend and exponential smoothing.",
+    "holt": "Holt exponential smoothing with level and trend components.",
+    "holt_winters_add": "Holt-Winters exponential smoothing with additive seasonality.",
+    "holt_winters_mul": "Holt-Winters exponential smoothing with multiplicative seasonality.",
+    "ses": "Simple exponential smoothing for level-only series without explicit trend.",
+    "mlf_lightgbm": "MLForecast adapter using LightGBM regressors with lag features.",
+    "mlf_rf": "MLForecast adapter using random forests with lag features.",
+    "hmm_mc": "Monte Carlo simulation with regime transitions estimated by an HMM.",
+    "mc_gbm": "Geometric Brownian motion Monte Carlo simulation for price paths.",
+    "nbeatsx": "NeuralForecast NBEATSx deep model for exogenous-aware time-series forecasts.",
+    "nhits": "NeuralForecast NHITS deep model for hierarchical interpolation forecasts.",
+    "patchtst": "NeuralForecast PatchTST transformer model for patched time-series windows.",
+    "tft": "NeuralForecast Temporal Fusion Transformer for multivariate sequence forecasts.",
+    "chronos2": "Chronos-2 pretrained foundation model for probabilistic time-series forecasts.",
+    "chronos_bolt": "Chronos Bolt pretrained foundation model for fast time-series forecasts.",
+    "timesfm": "TimesFM pretrained foundation model for long-context time-series forecasts.",
+    "lag_llama": "Lag-Llama pretrained probabilistic model for univariate time-series forecasts.",
+    "gt_deepar": "GluonTS DeepAR recurrent probabilistic forecasting model.",
+    "gt_deepnpts": "GluonTS DeepNPTS nonparametric probabilistic forecasting model.",
+    "gt_mqf2": "GluonTS MQF2 multivariate quantile forecasting model.",
+    "gt_npts": "GluonTS NPTS nonparametric probabilistic forecasting model.",
+    "gt_prophet": "GluonTS Prophet adapter for trend and seasonality forecasting.",
+    "gt_sfeedforward": "GluonTS simple feed-forward neural forecasting model.",
+    "gt_tft": "GluonTS Temporal Fusion Transformer forecasting model.",
+    "gt_wavenet": "GluonTS WaveNet sequence model for probabilistic forecasting.",
+}
 
 _FORECAST_METHOD_MODULES = (
     "classical",
@@ -175,7 +208,8 @@ def _extract_description(cls: Any, fallback: str) -> str:
         line = doc.strip().splitlines()
         if line and line[0].strip():
             return line[0].strip()
-    return str(fallback)
+    fallback_text = str(fallback)
+    return METHOD_DESCRIPTIONS.get(fallback_text, fallback_text)
 
 
 @lru_cache(maxsize=1)

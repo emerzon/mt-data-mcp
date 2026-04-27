@@ -927,6 +927,17 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert "Error listing forecast methods" in _unwrap(cf.forecast_list_methods)()["error"]
 
 
+def test_forecast_list_methods_compact_describes_builtin_methods():
+    compact = _unwrap(cf.forecast_list_methods)(show_unavailable=True)
+    missing = [
+        row["method"]
+        for row in compact["methods"]
+        if not row.get("description")
+    ]
+
+    assert missing == []
+
+
 def test_forecast_list_methods_uses_shared_snapshot(monkeypatch):
     monkeypatch.setattr(
         cf,
