@@ -339,7 +339,14 @@ class DataFetchCandlesRequest(BaseModel):
     indicators: IndicatorSpecsInput = None
     denoise: Optional[DenoiseSpec] = None
     simplify: SimplifySpecInput = None
-    include_spread: bool = False
+    include_spread: bool = Field(
+        False,
+        description=(
+            "Append MT5 historical candle spread values. Defaults false because many "
+            "symbols/timeframes return missing or zero historical spread and the extra "
+            "column increases every row."
+        ),
+    )
     include_incomplete: bool = False
     allow_stale: bool = False
 

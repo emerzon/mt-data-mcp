@@ -372,7 +372,8 @@ def data_fetch_candles(
 
     include_spread : bool, optional
         Append the historical MT5 candle spread column to each returned row.
-        Defaults to false so the standard candle payload shape remains unchanged.
+        Defaults to false because many symbols/timeframes return missing or zero
+        historical spread and the extra column increases every row.
     
     indicators : list, optional
         Technical indicators list, e.g., [{"name": "rsi", "params": [14]}]
