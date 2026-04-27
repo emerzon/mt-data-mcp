@@ -75,10 +75,10 @@ class TestMergedTools(unittest.TestCase):
         self.assertIsInstance(res, dict)
         self.assertTrue(res.get("success"))
         self.assertEqual(res.get("count"), 0)
-        self.assertTrue(res.get("empty"))
-        self.assertEqual(res.get("message"), "No open positions")
+        self.assertNotIn("empty", res)
+        self.assertNotIn("message", res)
         self.assertNotIn("reason", res)
-        self.assertTrue(res.get("no_action"))
+        self.assertNotIn("no_action", res)
 
         # Test with symbol
         get_open(symbol="EURUSD", __cli_raw=True)
@@ -202,8 +202,8 @@ class TestMergedTools(unittest.TestCase):
 
         res = get_open(symbol="EURUSD", limit=5, detail="compact", __cli_raw=True)
         self.assertIsInstance(res, dict)
-        self.assertEqual(res.get("kind"), "open_positions")
-        self.assertEqual(res.get("scope"), "symbol")
+        self.assertNotIn("kind", res)
+        self.assertNotIn("scope", res)
         self.assertNotIn("symbol", res)
         self.assertNotIn("limit", res)
 
@@ -214,10 +214,10 @@ class TestMergedTools(unittest.TestCase):
         self.assertIsInstance(res, dict)
         self.assertTrue(res.get("success"))
         self.assertEqual(res.get("count"), 0)
-        self.assertTrue(res.get("empty"))
-        self.assertEqual(res.get("message"), "No pending orders")
+        self.assertNotIn("empty", res)
+        self.assertNotIn("message", res)
         self.assertNotIn("reason", res)
-        self.assertTrue(res.get("no_action"))
+        self.assertNotIn("no_action", res)
 
         get_pending(symbol="EURUSD", __cli_raw=True)
         self.mt5.orders_get.assert_called_with(symbol="EURUSD")
@@ -273,8 +273,8 @@ class TestMergedTools(unittest.TestCase):
 
         res = get_pending(symbol="EURUSD", limit=5, detail="compact", __cli_raw=True)
         self.assertIsInstance(res, dict)
-        self.assertEqual(res.get("kind"), "pending_orders")
-        self.assertEqual(res.get("scope"), "symbol")
+        self.assertNotIn("kind", res)
+        self.assertNotIn("scope", res)
         self.assertNotIn("symbol", res)
         self.assertNotIn("limit", res)
 

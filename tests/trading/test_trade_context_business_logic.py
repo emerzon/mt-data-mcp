@@ -106,6 +106,7 @@ def test_trade_session_context_compacts_nested_sections_by_default() -> None:
         }
     ]
     assert "pending_orders" not in out
+    assert out["pending"] == 0
     assert out["meta"]["tool"] == "trade_session_context"
     assert out["meta"]["runtime"]["timezone"] == timezone_meta
 

@@ -192,13 +192,13 @@ def _normalize_trade_read_output(
                 out["message"] = message_text
             if len(items) == 0:
                 _mark_trade_read_empty(out, message_text or None)
-            return out
+            return _compact_trade_read_output(out, request=request)
 
         message_text = str(rows.get("message", "")).strip()
         if message_text:
             out["message"] = message_text
             _mark_trade_read_empty(out, message_text)
-            return out
+            return _compact_trade_read_output(out, request=request)
 
     if isinstance(rows, list) and len(rows) == 1 and isinstance(rows[0], dict):
         first = rows[0]
@@ -212,7 +212,7 @@ def _normalize_trade_read_output(
         if message_text:
             out["message"] = message_text
             _mark_trade_read_empty(out, message_text)
-            return out
+            return _compact_trade_read_output(out, request=request)
 
     if not isinstance(rows, list):
         out["success"] = False
@@ -223,7 +223,18 @@ def _normalize_trade_read_output(
     out["count"] = len(rows)
     if len(rows) == 0:
         _mark_trade_read_empty(out)
-    return out
+    return _compact_trade_read_output(out, request=request)
+
+
+def _compact_trade_read_output(out: Dict[str, Any], *, request: Any) -> Dict[str, Any]:
+    if _include_trade_read_request_metadata(request) or not out.get("success", False):
+        return out
+    if int(out.get("count") or 0) == 0:
+        return {"success": True, "count": 0}
+    compact = dict(out)
+    for key in ("kind", "scope", "empty", "no_action"):
+        compact.pop(key, None)
+    return compact
 
 
 def _first_present(row: Dict[str, Any], *keys: str) -> Any:
