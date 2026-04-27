@@ -105,6 +105,18 @@ class TestFinvizProgressiveDisclosure:
         assert result["summary"]["latest"] == expected_rows[0]
         assert result["summary"]["counts"]["available"] == 5
 
+    @patch("mtdata.core.finviz.get_stock_ratings")
+    def test_ratings_limit_controls_returned_rows(self, mock_get):
+        rows = [{"Date": f"2026-01-0{i}", "Rating": "Buy"} for i in range(1, 6)]
+        mock_get.return_value = {"success": True, "symbol": "AAPL", "ratings": rows}
+
+        result = _unwrap(finviz_ratings)("AAPL", limit=2)
+
+        assert result["detail"] == "compact"
+        assert len(result["ratings"]) == 2
+        assert result["summary"]["counts"] == {"returned": 2, "available": 5}
+        assert result["omitted_item_count"] == 3
+
     @patch("mtdata.core.finviz.get_stock_peers")
     def test_peers_compact_returns_top_five_and_counts(self, mock_get):
         peers = ["MSFT", "GOOGL", "META", "AMZN", "NVDA", "ORCL"]
@@ -115,6 +127,17 @@ class TestFinvizProgressiveDisclosure:
         assert result["detail"] == "compact"
         assert result["peers"] == peers[:5]
         assert result["summary"]["counts"]["available"] == 6
+        assert result["omitted_item_count"] == 1
+
+    @patch("mtdata.core.finviz.get_stock_peers")
+    def test_peers_limit_controls_returned_rows(self, mock_get):
+        peers = ["MSFT", "GOOGL", "META"]
+        mock_get.return_value = {"success": True, "symbol": "AAPL", "peers": peers}
+
+        result = _unwrap(finviz_peers)("AAPL", limit=2)
+
+        assert result["peers"] == ["MSFT", "GOOGL"]
+        assert result["summary"]["counts"] == {"returned": 2, "available": 3}
         assert result["omitted_item_count"] == 1
 
     @patch("mtdata.core.finviz.get_stock_ratings")

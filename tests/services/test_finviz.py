@@ -482,6 +482,28 @@ class TestFinvizTools:
         assert "pairs" not in result
         assert result["items"] == [{"pair": "EUR/USD", "perf_5min": "0.1%"}]
 
+    @patch("mtdata.core.finviz.get_forex_performance")
+    def test_finviz_forex_applies_limit(self, mock_get_forex):
+        from mtdata.core.finviz import finviz_forex
+
+        mock_get_forex.return_value = {
+            "success": True,
+            "market": "forex",
+            "pairs": [
+                {"Pair": "EUR/USD"},
+                {"Pair": "GBP/USD"},
+                {"Pair": "USD/JPY"},
+            ],
+        }
+
+        raw = getattr(finviz_forex, "__wrapped__", finviz_forex)
+        result = raw(limit=2)
+
+        assert result["count"] == 2
+        assert result["available_count"] == 3
+        assert result["omitted_item_count"] == 1
+        assert result["items"] == [{"pair": "EUR/USD"}, {"pair": "GBP/USD"}]
+
     @patch("mtdata.core.finviz.get_crypto_performance")
     def test_finviz_crypto_uses_items_with_snake_case_rows(self, mock_get_crypto):
         from mtdata.core.finviz import finviz_crypto

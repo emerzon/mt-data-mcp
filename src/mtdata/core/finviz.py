@@ -194,20 +194,34 @@ def _snake_finviz_market_key(value: Any) -> str:
 
 
 def _normalize_finviz_market_payload(
-    result: Dict[str, Any], *, rows_key: str
+    result: Dict[str, Any], *, rows_key: str, limit: Optional[int] = None
 ) -> Dict[str, Any]:
     if not isinstance(result, dict) or "error" in result:
         return result
     rows = result.get(rows_key, [])
-    out = {key: value for key, value in result.items() if key != rows_key}
-    out["items"] = [
+    normalized_rows = [
         {_snake_finviz_market_key(key): value for key, value in row.items()}
         if isinstance(row, dict)
         else row
         for row in (rows if isinstance(rows, list) else [])
     ]
-    out["count"] = int(result.get("count", len(out["items"])))
+    limit_value = _coerce_finviz_limit(limit, default=len(normalized_rows))
+    limited_rows = normalized_rows[:limit_value]
+    out = {key: value for key, value in result.items() if key != rows_key}
+    out["items"] = limited_rows
+    out["count"] = len(limited_rows)
+    available = len(normalized_rows)
+    out["available_count"] = available
+    omitted = max(0, available - len(limited_rows))
+    if omitted:
+        out["omitted_item_count"] = omitted
     return out
+
+
+def _coerce_finviz_limit(limit: Optional[int], *, default: int) -> int:
+    if limit is None:
+        return max(0, int(default))
+    return max(0, int(limit))
 
 
 def _build_tool_contract_meta(
@@ -551,7 +565,9 @@ def _compact_finviz_insider_payload(result: Dict[str, Any], *, detail: str) -> D
     return out
 
 
-def _compact_finviz_ratings_payload(result: Dict[str, Any], *, detail: str) -> Dict[str, Any]:
+def _compact_finviz_ratings_payload(
+    result: Dict[str, Any], *, detail: str, limit: Optional[int]
+) -> Dict[str, Any]:
     error = _validate_finviz_detail(detail, operation="finviz_ratings")
     if error is not None or not result.get("success"):
         return error or result
@@ -561,11 +577,15 @@ def _compact_finviz_ratings_payload(result: Dict[str, Any], *, detail: str) -> D
         return result
     out = dict(result)
     normalized_rows = _normalize_finviz_output_rows(rows)
-    out["ratings"] = normalized_rows
+    limit_value = _coerce_finviz_limit(limit, default=len(normalized_rows))
+    limited_rows = normalized_rows[:limit_value]
+    out["ratings"] = limited_rows
     out["detail"] = detail_mode
     if detail_mode == "full":
+        out["available_count"] = len(normalized_rows)
+        out["omitted_item_count"] = max(0, len(normalized_rows) - len(limited_rows))
         return out
-    compact_rows = normalized_rows[:3]
+    compact_rows = limited_rows
     out["ratings"] = compact_rows
     out["summary"] = {
         "counts": {
@@ -578,7 +598,9 @@ def _compact_finviz_ratings_payload(result: Dict[str, Any], *, detail: str) -> D
     return out
 
 
-def _compact_finviz_peers_payload(result: Dict[str, Any], *, detail: str) -> Dict[str, Any]:
+def _compact_finviz_peers_payload(
+    result: Dict[str, Any], *, detail: str, limit: Optional[int]
+) -> Dict[str, Any]:
     error = _validate_finviz_detail(detail, operation="finviz_peers")
     if error is not None or not result.get("success"):
         return error or result
@@ -587,10 +609,15 @@ def _compact_finviz_peers_payload(result: Dict[str, Any], *, detail: str) -> Dic
     if not isinstance(peers, list):
         return result
     out = dict(result)
+    limit_value = _coerce_finviz_limit(limit, default=len(peers))
+    limited_peers = peers[:limit_value]
     out["detail"] = detail_mode
     if detail_mode == "full":
+        out["peers"] = limited_peers
+        out["available_count"] = len(peers)
+        out["omitted_item_count"] = max(0, len(peers) - len(limited_peers))
         return out
-    compact_peers = peers[:5]
+    compact_peers = limited_peers
     out["peers"] = compact_peers
     out["summary"] = {
         "counts": {
@@ -852,7 +879,8 @@ def finviz_insider(
 @mcp.tool()
 def finviz_ratings(
     symbol: str,
-    detail: CompactFullDetailLiteral = "full",  # type: ignore
+    detail: CompactFullDetailLiteral = "compact",  # type: ignore
+    limit: int = 3,
 ) -> Dict[str, Any]:
     """
     Get analyst ratings for a US stock.
@@ -865,8 +893,10 @@ def finviz_ratings(
     symbol : str
         Stock ticker symbol
     detail : {"compact", "full"}
-        "full" preserves the full ratings history. "compact" returns the
-        latest three rows plus a latest-rating summary.
+        "full" preserves the requested ratings fields. "compact" returns the
+        latest limited rows plus a latest-rating summary.
+    limit : int
+        Maximum rating rows to return (default 3).
     
     Returns
     -------
@@ -878,11 +908,15 @@ def finviz_ratings(
         if error is not None:
             return error
         assert symbol_norm is not None
-        return _compact_finviz_ratings_payload(get_stock_ratings(symbol_norm), detail=detail)
+        return _compact_finviz_ratings_payload(
+            get_stock_ratings(symbol_norm),
+            detail=detail,
+            limit=limit,
+        )
 
     return _run_logged_tool(
         "finviz_ratings",
-        {"symbol": symbol, "detail": detail},
+        {"symbol": symbol, "detail": detail, "limit": limit},
         _run,
     )
 
@@ -890,7 +924,8 @@ def finviz_ratings(
 @mcp.tool()
 def finviz_peers(
     symbol: str,
-    detail: CompactFullDetailLiteral = "full",  # type: ignore
+    detail: CompactFullDetailLiteral = "compact",  # type: ignore
+    limit: int = 5,
 ) -> Dict[str, Any]:
     """
     Get peer companies for a US stock.
@@ -913,11 +948,15 @@ def finviz_peers(
         if error is not None:
             return error
         assert symbol_norm is not None
-        return _compact_finviz_peers_payload(get_stock_peers(symbol_norm), detail=detail)
+        return _compact_finviz_peers_payload(
+            get_stock_peers(symbol_norm),
+            detail=detail,
+            limit=limit,
+        )
 
     return _run_logged_tool(
         "finviz_peers",
-        {"symbol": symbol, "detail": detail},
+        {"symbol": symbol, "detail": detail, "limit": limit},
         _run,
     )
 
@@ -1082,7 +1121,7 @@ def finviz_insider_activity(
 
 
 @mcp.tool()
-def finviz_forex() -> Dict[str, Any]:
+def finviz_forex(limit: int = 20) -> Dict[str, Any]:
     """
     Get forex currency pairs performance from Finviz.
     
@@ -1096,16 +1135,17 @@ def finviz_forex() -> Dict[str, Any]:
     """
     return _run_logged_tool(
         "finviz_forex",
-        {},
+        {"limit": limit},
         lambda: _normalize_finviz_market_payload(
             get_forex_performance(),
             rows_key="pairs",
+            limit=limit,
         ),
     )
 
 
 @mcp.tool()
-def finviz_crypto() -> Dict[str, Any]:
+def finviz_crypto(limit: int = 20) -> Dict[str, Any]:
     """
     Get cryptocurrency performance from Finviz.
     
@@ -1119,16 +1159,17 @@ def finviz_crypto() -> Dict[str, Any]:
     """
     return _run_logged_tool(
         "finviz_crypto",
-        {},
+        {"limit": limit},
         lambda: _normalize_finviz_market_payload(
             get_crypto_performance(),
             rows_key="coins",
+            limit=limit,
         ),
     )
 
 
 @mcp.tool()
-def finviz_futures() -> Dict[str, Any]:
+def finviz_futures(limit: int = 20) -> Dict[str, Any]:
     """
     Get futures market performance from Finviz.
     
@@ -1142,10 +1183,11 @@ def finviz_futures() -> Dict[str, Any]:
     """
     return _run_logged_tool(
         "finviz_futures",
-        {},
+        {"limit": limit},
         lambda: _normalize_finviz_market_payload(
             get_futures_performance(),
             rows_key="futures",
+            limit=limit,
         ),
     )
 
