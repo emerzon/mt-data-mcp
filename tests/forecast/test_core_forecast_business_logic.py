@@ -284,6 +284,7 @@ def test_forecast_generate_defaults_to_compact_payload(monkeypatch):
             "forecast_epoch": [1.0, 2.0, 3.0],
             "last_price": 1.05,
             "last_price_source": "candle_close",
+            "digits": 5,
         },
     )
 
@@ -299,9 +300,9 @@ def test_forecast_generate_defaults_to_compact_payload(monkeypatch):
     assert out["last_price"] == 1.05
     assert out["last_price_source"] == "candle_close"
     assert out["forecast_vs_last_price"] == {
-        "first_forecast_delta": pytest.approx(-0.05),
-        "first_forecast_delta_pct": pytest.approx(-4.7619047619),
-        "last_forecast_delta": pytest.approx(0.15),
+        "first_forecast_delta": -0.05,
+        "first_forecast_delta_pct": -4.7619,
+        "last_forecast_delta": 0.15,
     }
     assert out["forecast_price"] == [1.0, 1.1, 1.2]
     assert out["series"] == [
@@ -312,6 +313,38 @@ def test_forecast_generate_defaults_to_compact_payload(monkeypatch):
     assert "collection_kind" not in out
     assert "collection_contract_version" not in out
     assert "forecast_epoch" not in out
+
+
+def test_forecast_generate_rounds_price_outputs_to_symbol_digits(monkeypatch):
+    raw = _unwrap(cf.forecast_generate)
+    monkeypatch.setattr(
+        cf,
+        "_forecast_impl",
+        lambda **kwargs: {
+            "success": True,
+            "method": kwargs["method"],
+            "horizon": kwargs["horizon"],
+            "quantity": kwargs["quantity"],
+            "forecast_time": ["t1", "t2"],
+            "forecast_price": [1.1731445723463942, 1.1731467944693543],
+            "last_price": 1.17266,
+            "last_price_source": "candle_close",
+            "digits": 5,
+        },
+    )
+
+    out = raw(request=ForecastGenerateRequest(symbol="EURUSD", timeframe="H1", method="theta", horizon=2))
+
+    assert out["forecast_price"] == [1.17314, 1.17315]
+    assert out["forecast_vs_last_price"] == {
+        "first_forecast_delta": 0.00048,
+        "first_forecast_delta_pct": 0.0409,
+        "last_forecast_delta": 0.00049,
+    }
+    assert out["series"] == [
+        {"time": "t1", "forecast_price": 1.17314},
+        {"time": "t2", "forecast_price": 1.17315},
+    ]
 
 
 def test_forecast_generate_compact_marks_unavailable_ci(monkeypatch):

@@ -93,6 +93,50 @@ def _finite_float(value: Any) -> Optional[float]:
     return out if math.isfinite(out) else None
 
 
+def _forecast_price_digits(payload: Dict[str, Any]) -> Optional[int]:
+    for key in ("digits", "price_precision"):
+        value = payload.get(key)
+        try:
+            digits = int(value)
+        except Exception:
+            continue
+        return max(0, digits)
+    return None
+
+
+def _round_forecast_number(value: Any, *, digits: int) -> Any:
+    numeric = _finite_float(value)
+    if numeric is None:
+        return value
+    return float(round(numeric, max(0, int(digits))))
+
+
+def _round_forecast_list(values: Any, *, digits: int) -> Any:
+    if not isinstance(values, list):
+        return values
+    return [_round_forecast_number(value, digits=digits) for value in values]
+
+
+def _round_forecast_generate_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    digits = _forecast_price_digits(payload)
+    if digits is None:
+        return payload
+    out = dict(payload)
+    for key in (
+        "forecast_price",
+        "lower_price",
+        "upper_price",
+        "lower",
+        "upper",
+    ):
+        if key in out:
+            out[key] = _round_forecast_list(out.get(key), digits=digits)
+    for key in ("last_price", "last_price_close"):
+        if key in out:
+            out[key] = _round_forecast_number(out.get(key), digits=digits)
+    return out
+
+
 def _forecast_vs_last_price(payload: Dict[str, Any]) -> Optional[Dict[str, float]]:
     last_price = _finite_float(payload.get("last_price"))
     prices = payload.get("forecast_price")
@@ -102,14 +146,16 @@ def _forecast_vs_last_price(payload: Dict[str, Any]) -> Optional[Dict[str, float
     if first_forecast is None:
         return None
     delta = first_forecast - last_price
+    digits = _forecast_price_digits(payload)
+    delta_digits = digits if digits is not None else 6
     out: Dict[str, float] = {
-        "first_forecast_delta": float(delta),
+        "first_forecast_delta": float(round(delta, delta_digits)),
     }
     if last_price:
-        out["first_forecast_delta_pct"] = float(delta / last_price * 100.0)
+        out["first_forecast_delta_pct"] = float(round(delta / last_price * 100.0, 4))
     last_forecast = _finite_float(prices[-1])
     if last_forecast is not None and last_forecast != first_forecast:
-        out["last_forecast_delta"] = float(last_forecast - last_price)
+        out["last_forecast_delta"] = float(round(last_forecast - last_price, delta_digits))
     return out
 
 
@@ -119,6 +165,7 @@ def _apply_forecast_generate_detail(
 ) -> Dict[str, Any]:
     if not isinstance(payload, dict) or payload.get("error"):
         return payload
+    payload = _round_forecast_generate_payload(payload)
 
     detail_value = _normalize_trader_detail(getattr(request, "detail", "compact"))
     if detail_value in {"standard", "full"}:
