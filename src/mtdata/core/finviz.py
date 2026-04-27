@@ -1151,7 +1151,7 @@ def finviz_calendar(
     date_to: Optional[str] = None,
     params: Optional[str] = None,
     query: Optional[str] = None,
-    limit: int = 100,
+    limit: int = 20,
     page: int = 1,
 ) -> Dict[str, Any]:
     """
@@ -1176,7 +1176,7 @@ def finviz_calendar(
     query : str, optional
         Alias for `params`.
     limit : int
-        Max events per page (default 100)
+        Max events per page (default 20)
     page : int
         Page number for pagination (default 1)
 

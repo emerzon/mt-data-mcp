@@ -841,7 +841,7 @@ class TestFinvizTools:
         assert result["success"] is True
         mock_calendar.assert_called_once_with(
             impact=None,
-            limit=100,
+            limit=20,
             page=1,
             date_from="2026-01-05",
             date_to="2026-01-12",
