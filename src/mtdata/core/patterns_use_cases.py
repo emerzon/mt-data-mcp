@@ -217,6 +217,8 @@ def run_patterns_detect(  # noqa: C901
                 "Invalid detail. Use 'highlights', 'compact', 'standard', or 'full'."
             )
         }
+    if request.whitelist and mode_value != "candlestick":
+        return {"error": "whitelist applies only to mode='candlestick'."}
 
     if mode_value == "candlestick":
         tf_single = tf_norm or "H1"

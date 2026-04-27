@@ -2228,6 +2228,10 @@ class TestPatternsDetectAllMode:
         assert "error" in result
         assert "all" in result["error"].lower()
 
+    def test_whitelist_rejected_outside_candlestick_mode(self):
+        result = _call_patterns_detect(symbol="EURUSD", mode="all", whitelist="engulfing")
+        assert result == {"error": "whitelist applies only to mode='candlestick'."}
+
     @patch("mtdata.core.patterns._format_elliott_patterns")
     @patch("mtdata.core.patterns._run_classic_engine")
     @patch("mtdata.core.patterns._fetch_pattern_data")

@@ -1064,7 +1064,8 @@ def patterns_detect(
         Only return high-confidence patterns
     
     whitelist : str, optional
-        Comma-separated list of specific patterns to detect (e.g., "doji,hammer,engulfing")
+        Candlestick mode only. Comma-separated list of specific candlestick
+        patterns to detect (e.g., "doji,hammer,engulfing").
     
     top_k : int, optional (default=1)
         Return only the top K strongest patterns
