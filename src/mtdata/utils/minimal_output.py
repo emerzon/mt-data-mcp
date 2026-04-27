@@ -414,6 +414,9 @@ def _normalize_forecast_payload(
                 "quantity",
                 "detail",
                 "horizon",
+                "last_price",
+                "last_price_source",
+                "forecast_vs_last_price",
             ):
                 value = payload.get(key)
                 if not _is_empty_value(value):

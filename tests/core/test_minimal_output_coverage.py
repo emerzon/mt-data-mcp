@@ -239,6 +239,9 @@ class TestNormalizeForecastPayload:
             "method": "arima",
             "quantity": "price",
             "detail": "compact",
+            "last_price": 101.0,
+            "last_price_source": "candle_close",
+            "forecast_vs_last_price": {"first_forecast_delta": -1.0},
         }
         result = _normalize_forecast_payload(payload, verbose=False)
         assert "meta" not in result
@@ -246,6 +249,9 @@ class TestNormalizeForecastPayload:
         assert result["method"] == "arima"
         assert result["quantity"] == "price"
         assert result["detail"] == "compact"
+        assert result["last_price"] == 101.0
+        assert result["last_price_source"] == "candle_close"
+        assert result["forecast_vs_last_price"] == {"first_forecast_delta": -1.0}
 
     def test_q50_dedup(self):
         payload = {

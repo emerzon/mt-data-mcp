@@ -282,6 +282,8 @@ def test_forecast_generate_defaults_to_compact_payload(monkeypatch):
             "forecast_time": ["t1", "t2", "t3"],
             "forecast_price": [1.0, 1.1, 1.2],
             "forecast_epoch": [1.0, 2.0, 3.0],
+            "last_price": 1.05,
+            "last_price_source": "candle_close",
         },
     )
 
@@ -294,6 +296,13 @@ def test_forecast_generate_defaults_to_compact_payload(monkeypatch):
     assert out["forecast_from"] == {"time": "t0", "anchor": "last_observation"}
     assert out["forecast_anchor"] == "next_timeframe_bar_after_last_observation"
     assert out["forecast_step_seconds"] == 3600
+    assert out["last_price"] == 1.05
+    assert out["last_price_source"] == "candle_close"
+    assert out["forecast_vs_last_price"] == {
+        "first_forecast_delta": pytest.approx(-0.05),
+        "first_forecast_delta_pct": pytest.approx(-4.7619047619),
+        "last_forecast_delta": pytest.approx(0.15),
+    }
     assert out["forecast_price"] == [1.0, 1.1, 1.2]
     assert out["series"] == [
         {"time": "t1", "forecast_price": 1.0},

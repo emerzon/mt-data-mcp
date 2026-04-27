@@ -85,6 +85,34 @@ def _forecast_interval_summary(payload: Dict[str, Any]) -> Optional[Dict[str, fl
         return None
 
 
+def _finite_float(value: Any) -> Optional[float]:
+    try:
+        out = float(value)
+    except Exception:
+        return None
+    return out if math.isfinite(out) else None
+
+
+def _forecast_vs_last_price(payload: Dict[str, Any]) -> Optional[Dict[str, float]]:
+    last_price = _finite_float(payload.get("last_price"))
+    prices = payload.get("forecast_price")
+    if last_price is None or not isinstance(prices, list) or not prices:
+        return None
+    first_forecast = _finite_float(prices[0])
+    if first_forecast is None:
+        return None
+    delta = first_forecast - last_price
+    out: Dict[str, float] = {
+        "first_forecast_delta": float(delta),
+    }
+    if last_price:
+        out["first_forecast_delta_pct"] = float(delta / last_price * 100.0)
+    last_forecast = _finite_float(prices[-1])
+    if last_forecast is not None and last_forecast != first_forecast:
+        out["last_forecast_delta"] = float(last_forecast - last_price)
+    return out
+
+
 def _apply_forecast_generate_detail(
     payload: Dict[str, Any],
     request: ForecastGenerateRequest,
@@ -130,6 +158,8 @@ def _apply_forecast_generate_detail(
         "forecast_time",
         "forecast_price",
         "forecast_return",
+        "last_price",
+        "last_price_source",
         "ci_status",
         "ci_available",
         "ci_alpha",
@@ -143,6 +173,9 @@ def _apply_forecast_generate_detail(
     interval_summary = _forecast_interval_summary(payload)
     if interval_summary:
         compact["interval_summary"] = interval_summary
+    price_context = _forecast_vs_last_price(payload)
+    if price_context:
+        compact["forecast_vs_last_price"] = price_context
     for key, value in payload.items():
         if key in compact:
             continue
@@ -151,9 +184,7 @@ def _apply_forecast_generate_detail(
             "last_observation_epoch",
             "forecast_start_epoch",
             "forecast_epoch",
-            "last_price",
             "last_price_close",
-            "last_price_source",
             "lower_price",
             "upper_price",
             "lower_return",
