@@ -48,8 +48,8 @@ def test_forecast_backtest_compact_excludes_request_metadata() -> None:
     assert "results" in res_compact
 
 
-def test_forecast_backtest_full_includes_request_metadata() -> None:
-    """Test that forecast_backtest with detail='full' includes request/resolved_request."""
+def test_forecast_backtest_full_excludes_request_metadata() -> None:
+    """Test that forecast_backtest with detail='full' doesn't echo request/resolved_request."""
     times = np.arange(1700000000, 1700000000 + 70 * 3600, 3600, dtype=float)
     close = np.linspace(100.0, 120.0, 70, dtype=float)
     df = pd.DataFrame({"time": times, "close": close})
@@ -70,10 +70,9 @@ def test_forecast_backtest_full_includes_request_metadata() -> None:
             slippage_bps=2.5,
         )
 
-    # In full mode, request and resolved_request SHOULD be present
-    assert "request" in res_full, "full mode should include 'request'"
-    assert res_full["request"]["symbol"] == "EURUSD"
-    assert res_full["request"]["slippage_bps"] == 2.5
+    assert "request" not in res_full, "full mode should not include 'request'"
+    assert "resolved_request" not in res_full, "full mode should not include 'resolved_request'"
+    assert res_full["success"] is True
 
 
 def test_strategy_backtest_compact_excludes_request_metadata() -> None:

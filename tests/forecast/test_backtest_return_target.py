@@ -210,7 +210,7 @@ def test_backtest_full_detail_includes_series_arrays() -> None:
     assert isinstance(detail["actual"], list)
 
 
-def test_backtest_exposes_request_metadata_blocks() -> None:
+def test_backtest_full_detail_omits_request_metadata_blocks() -> None:
     times = np.arange(1700000000, 1700000000 + 70 * 3600, 3600, dtype=float)
     close = np.linspace(100.0, 120.0, 70, dtype=float)
     df = pd.DataFrame({"time": times, "close": close})
@@ -232,17 +232,12 @@ def test_backtest_exposes_request_metadata_blocks() -> None:
             trade_threshold=0.01,
         )
 
-    assert res["request"]["detail"] == "FULL"
-    assert res["request"]["methods"] == "naive drift"
-    assert res["request"]["slippage_bps"] == 2.5
-    assert res["resolved_request"]["detail"] == "full"
-    assert res["resolved_request"]["methods"] == ["naive", "drift"]
-    assert res["resolved_request"]["horizon"] == 3
-    assert res["resolved_request"]["slippage_bps"] == 2.5
-    assert res["resolved_request"]["trade_threshold"] == 0.01
+    assert res["detail"] == "full"
+    assert "request" not in res
+    assert "resolved_request" not in res
 
 
-def test_backtest_full_detail_exposes_contract_and_strategy_context() -> None:
+def test_backtest_full_detail_keeps_actionable_strategy_intent_only() -> None:
     times = np.arange(1700000000, 1700000000 + 70 * 3600, 3600, dtype=float)
     close = np.linspace(100.0, 120.0, 70, dtype=float)
     df = pd.DataFrame({"time": times, "close": close})
@@ -265,17 +260,6 @@ def test_backtest_full_detail_exposes_contract_and_strategy_context() -> None:
         )
 
     detail = res["results"]["naive"]["details"][0]
-    assert res["contracts"]["data_preparation"]["symbol"] == "EURUSD"
-    assert res["contracts"]["evaluation"]["horizon"] == 3
-    assert res["contracts"]["strategy"]["entry"]["type"] == "forecast_threshold"
-    assert res["contracts"]["methods"]["naive"]["model"]["method"] == "naive"
+    assert "contracts" not in res
     assert detail["strategy_intent"]["direction"] in {"long", "flat", "short"}
-    assert detail["strategy_context"]["top_level_keys"] == [
-        "anchor",
-        "forecast",
-        "realized",
-        "prepared_inputs",
-        "model",
-        "evaluation",
-    ]
-    assert "rsi_14" in detail["strategy_context"]["visible_inputs"]
+    assert "strategy_context" not in detail

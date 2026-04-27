@@ -1010,25 +1010,6 @@ def forecast_backtest(  # noqa: C901
     - For each method, runs our `forecast` as-of that anchor and reports MAE/RMSE/directional accuracy.
     """
     try:
-        request_payload = {
-            "symbol": symbol,
-            "timeframe": timeframe,
-            "horizon": horizon,
-            "steps": steps,
-            "spacing": spacing,
-            "methods": methods,
-            "params_per_method": params_per_method,
-            "quantity": quantity,
-            "denoise": denoise,
-            "anchors": anchors,
-            "params": params,
-            "features": features,
-            "dimred_method": dimred_method,
-            "dimred_params": dimred_params,
-            "slippage_bps": slippage_bps,
-            "trade_threshold": trade_threshold,
-            "detail": detail,
-        }
         __stage = 'start'
         detail_mode = _normalize_detail_mode(detail)
         include_paths = detail_mode == "full"
@@ -1163,7 +1144,6 @@ def forecast_backtest(  # noqa: C901
 
         # Run forecasts per method and compute metrics
         results: Dict[str, Any] = {}
-        contract_methods: Dict[str, Any] = {}
         for method in methods:
             per_anchor = []
             execution_contract: Optional[ForecastExecutionContract] = None
@@ -1389,10 +1369,6 @@ def forecast_backtest(  # noqa: C901
                     }
                     if include_paths:
                         detail_row["strategy_intent"] = strategy_eval.intent.model_dump(exclude_none=True)
-                        detail_row["strategy_context"] = {
-                            "top_level_keys": list(evaluation_context.top_level_context_keys()),
-                            "visible_inputs": evaluation_context.visible_prepared_input_names(),
-                        }
                     if include_paths:
                         detail_row["forecast"] = [float(v) for v in fcv[:m].tolist()]
                         detail_row["actual"] = [float(v) for v in act[:m].tolist()]
@@ -1401,8 +1377,6 @@ def forecast_backtest(  # noqa: C901
                         detail_row["forecast_end"] = float(fcv[m - 1]) if m > 0 else None
                         detail_row["actual_end"] = float(act[m - 1]) if m > 0 else None
                     per_anchor.append(detail_row)
-            if execution_contract is not None and detail_mode == "full":
-                contract_methods[method] = _build_execution_contract_metadata(execution_contract)
             # Aggregate
             ok = [x for x in per_anchor if x.get('success')]
             if ok:
@@ -1476,41 +1450,7 @@ def forecast_backtest(  # noqa: C901
             "detail": detail_mode,
             "results": results,
         }
-        if detail_mode == "full":
-            result_payload["contracts"] = {
-                "data_preparation": _contract_payload(data_contract),
-                "evaluation": _contract_payload(evaluation_contract),
-                "strategy": (
-                    _contract_payload(strategy_contract)
-                    if strategy_contract is not None
-                    else {"kind": "volatility_evaluation", "trade_generation": False}
-                ),
-                "methods": contract_methods,
-            }
-        return _attach_request_metadata(
-            result_payload,
-            request=request_payload,
-            resolved_request={
-                "symbol": symbol,
-                "timeframe": timeframe,
-                "horizon": int(horizon),
-                "steps": int(steps),
-                "spacing": int(spacing),
-                "methods": list(methods or []),
-                "params_per_method": dict(params_map),
-                "quantity": quantity,
-                "denoise": _dn_used,
-                "anchors": list(anchors) if isinstance(anchors, (list, tuple)) else anchors,
-                "params": dict(params) if isinstance(params, dict) else params,
-                "features": dict(features) if isinstance(features, dict) else features,
-                "dimred_method": dimred_method,
-                "dimred_params": dict(dimred_params) if isinstance(dimred_params, dict) else dimred_params,
-                "slippage_bps": float(slippage_bps),
-                "trade_threshold": float(trade_threshold or 0.0),
-                "detail": detail_mode,
-            },
-            detail=detail_mode,
-        )
+        return result_payload
     except Exception as e:
         return {"error": f"Error in forecast_backtest: {str(e)}"}
 
