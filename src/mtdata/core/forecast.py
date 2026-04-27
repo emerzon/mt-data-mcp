@@ -340,9 +340,11 @@ def forecast_list_methods(
     detail: CompactFullDetailLiteral = "compact",  # type: ignore
     limit: Optional[int] = None,
     search_term: Optional[str] = None,
+    category: Optional[str] = None,
     library: Optional[
         Literal["native", "statsforecast", "sktime", "pretrained", "mlforecast"]
     ] = None,
+    supports_ci: Optional[bool] = None,
     show_unavailable: bool = False,
 ) -> Dict[str, Any]:
     """List forecast methods and availability.
@@ -356,13 +358,17 @@ def forecast_list_methods(
         detail=detail,
         limit=limit,
         search_term=search_term_value,
+        category=category,
         library=library,
+        supports_ci=supports_ci,
         show_unavailable=show_unavailable,
         func=lambda: _forecast_list_methods_impl(
             detail=detail,
             limit=limit,
             search=search_term_value,
+            category=category,
             library=library,
+            supports_ci=supports_ci,
             show_unavailable=show_unavailable,
         ),
     )
@@ -1015,6 +1021,12 @@ def _forecast_list_full_row(
     aliases = item.get("aliases")
     if isinstance(aliases, list) and aliases:
         row["aliases"] = [str(alias) for alias in aliases if str(alias).strip()]
+    metadata_namespace = str(item.get("namespace") or item.get("library") or "").strip().lower()
+    if metadata_namespace and metadata_namespace != "native":
+        for key in ("method_id", "capability_id", "adapter_method", "selector", "execution"):
+            value = item.get(key)
+            if value not in (None, "", [], {}):
+                row[key] = value
     execution = item.get("execution")
     if isinstance(execution, dict) and execution.get("library") not in (None, ""):
         row["library"] = execution.get("library")
@@ -1028,7 +1040,9 @@ def _forecast_list_methods_impl(  # noqa: C901
     detail: CompactFullDetailLiteral = "compact",
     limit: Optional[int] = None,
     search: Optional[str] = None,
+    category: Optional[str] = None,
     library: Optional[str] = None,
+    supports_ci: Optional[bool] = None,
     show_unavailable: bool = False,
 ) -> Dict[str, Any]:
     try:
@@ -1038,6 +1052,7 @@ def _forecast_list_methods_impl(  # noqa: C901
             data = {}
         detail_value = str(detail or "compact").strip().lower()
         search_value = str(search or "").strip().lower()
+        category_filter_value = str(category or "").strip().lower()
         library_value = str(library or "").strip().lower()
         supported_libraries = {
             "native",
@@ -1067,6 +1082,20 @@ def _forecast_list_methods_impl(  # noqa: C901
         if not isinstance(method_to_category, dict):
             method_to_category = {}
 
+        def _item_category(item: Dict[str, Any]) -> str:
+            method_name = str(item.get("method") or "")
+            return str(
+                item.get("category") or method_to_category.get(method_name) or "other"
+            ).strip().lower()
+
+        def _item_supports_ci(item: Dict[str, Any]) -> Optional[bool]:
+            supports = item.get("supports")
+            if isinstance(supports, dict) and isinstance(supports.get("ci"), bool):
+                return bool(supports.get("ci"))
+            if isinstance(item.get("supports_ci"), bool):
+                return bool(item.get("supports_ci"))
+            return None
+
         def _item_library(item: Dict[str, Any]) -> str:
             method_name = str(item.get("method") or "")
             for key in ("namespace", "library"):
@@ -1078,9 +1107,7 @@ def _forecast_list_methods_impl(  # noqa: C901
                 value = str(execution.get("library") or "").strip().lower()
                 if value in supported_libraries:
                     return value
-            category = str(
-                item.get("category") or method_to_category.get(method_name) or ""
-            ).strip().lower()
+            category = _item_category(item)
             if category in supported_libraries:
                 return category
             return "native"
@@ -1088,14 +1115,19 @@ def _forecast_list_methods_impl(  # noqa: C901
         def _method_matches(item: Dict[str, Any]) -> bool:
             if library_value and _item_library(item) != library_value:
                 return False
+            if category_filter_value and _item_category(item) != category_filter_value:
+                return False
+            if supports_ci is not None and _item_supports_ci(item) is not bool(supports_ci):
+                return False
             if not show_unavailable and not bool(item.get("available")):
                 return False
             if not search_value:
                 return True
             method_name = str(item.get("method") or "")
             desc = str(item.get("description") or "")
-            cat = method_to_category.get(method_name, "")
-            haystack = " ".join((method_name, desc, cat)).lower()
+            cat = _item_category(item)
+            namespace = str(item.get("namespace") or "")
+            haystack = " ".join((method_name, desc, cat, namespace)).lower()
             return search_value in haystack
 
         barrier_methods = {
@@ -1136,8 +1168,10 @@ def _forecast_list_methods_impl(  # noqa: C901
             out_full["methods_hidden"] = int(max(0, total_filtered - len(filtered_full)))
             out_full["filters"] = {
                 "search": search_value or None,
+                "category": category_filter_value or None,
                 "limit": limit_value,
                 "library": library_value or None,
+                "supports_ci": supports_ci,
                 "show_unavailable": bool(show_unavailable),
             }
             out_full["note"] = (
@@ -1177,8 +1211,7 @@ def _forecast_list_methods_impl(  # noqa: C901
             desc = str(item.get("description") or "").strip()
             if desc and desc.lower() != method_name.lower():
                 row["description"] = desc.splitlines()[0].strip()
-            cat = item.get("category") or method_to_category.get(method_name)
-            row["category"] = str(cat or "other")
+            row["category"] = _item_category(item)
             if row["category"] in {"statsforecast", "sktime", "mlforecast", "pretrained"}:
                 namespace = item.get("namespace")
                 if isinstance(namespace, str) and namespace.strip():
@@ -1245,8 +1278,10 @@ def _forecast_list_methods_impl(  # noqa: C901
             "note": "Compact view includes all filtered methods with compact columns; set limit to cap rows or detail='full' for complete metadata.",
             "filters": {
                 "search": search_value or None,
+                "category": category_filter_value or None,
                 "limit": limit_value,
                 "library": library_value or None,
+                "supports_ci": supports_ci,
                 "show_unavailable": bool(show_unavailable),
             },
         }

@@ -934,7 +934,9 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     params = signature(_unwrap(cf.forecast_list_methods)).parameters
     assert "search_term" in params
     assert "search" not in params
+    assert "category" in params
     assert "library" in params
+    assert "supports_ci" in params
     assert "show_unavailable" in params
     sf_rows = [r for r in grouped["methods"] if r.get("category") == "statsforecast"]
     assert len(sf_rows) == 3
@@ -952,6 +954,16 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert all(
         row.get("category") == "statsforecast" for row in sf_only["methods"]
     )
+    category_only = _unwrap(cf.forecast_list_methods)(category="statsforecast")
+    assert category_only["filters"]["category"] == "statsforecast"
+    assert all(row.get("category") == "statsforecast" for row in category_only["methods"])
+    ci_only = _unwrap(cf.forecast_list_methods)(supports_ci=True)
+    assert ci_only["filters"]["supports_ci"] is True
+    assert ci_only["methods"]
+    assert all(row.get("supports_ci") is True for row in ci_only["methods"])
+    no_ci = _unwrap(cf.forecast_list_methods)(supports_ci=False, show_unavailable=True)
+    assert no_ci["filters"]["supports_ci"] is False
+    assert all(row.get("supports_ci") is False for row in no_ci["methods"])
     with_unavailable = _unwrap(cf.forecast_list_methods)(show_unavailable=True)
     assert with_unavailable["unavailable"] == 1
     assert any(row["available"] is False for row in with_unavailable["methods"])
