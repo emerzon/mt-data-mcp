@@ -517,6 +517,7 @@ class TestCausalDiscoverSignals:
         assert all(item["significant"] is True for item in result["data"]["items"])
         assert result["meta"]["request"]["detail"] == "compact"
         assert "links" not in result["data"]
+        assert "pairs" not in result
         assert "summary_text" not in result["data"]
         assert result["meta"]["stats"]["pairs_tested"] >= 1
         assert result["meta"]["stats"]["p_value_correction"] == "bonferroni_across_lags"
@@ -559,6 +560,7 @@ class TestCausalDiscoverSignals:
         assert result["summary"]["counts"]["significant_links"] == 1
         assert len(result["data"]["items"]) == 2
         assert {row["significant"] for row in result["data"]["items"]} == {False, True}
+        assert "pairs" in result
 
     def test_invalid_detail_is_rejected(self):
         result = self._unwrapped()("A,B", detail="standard")  # type: ignore[arg-type]

@@ -1489,7 +1489,7 @@ def causal_discover_signals(  # noqa: C901
         }
         if warnings_out:
             out["warnings"] = warnings_out
-        if rows_sorted:
+        if rows_sorted and detail_mode == "full":
             out["pairs"] = _compact_causal_pair_rows(rows_sorted, limit=20)
         if not rows_sorted:
             out["message"] = (
