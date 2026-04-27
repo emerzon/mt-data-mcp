@@ -167,8 +167,10 @@ def _run_data_fetch_candles_impl(
                 )
                 result["spread_unavailable"] = True
     detail_mode = str(request.detail or "compact").strip().lower()
-    if isinstance(result, dict) and detail_mode == "compact":
-        result = _compact_candles_payload(result)
+    if isinstance(result, dict):
+        _prune_zero_candle_exclusions(result)
+        if detail_mode == "compact":
+            result = _compact_candles_payload(result)
     if isinstance(result, dict) and isinstance(result.get("data"), list):
         out = attach_collection_contract(
             result,
@@ -184,21 +186,34 @@ def _run_data_fetch_candles_impl(
 
 def _compact_candles_payload(result: Dict[str, Any]) -> Dict[str, Any]:
     compact = dict(result)
-    for key in ("symbol", "timeframe", "candles_requested"):
+    for key in (
+        "symbol",
+        "timeframe",
+        "candles_requested",
+        "candle_counts",
+        "candles_excluded",
+        "hint",
+        "incomplete_candles_skipped",
+        "last_candle_open",
+    ):
         compact.pop(key, None)
-    candle_counts = compact.get("candle_counts")
-    if isinstance(candle_counts, dict):
-        excluded = candle_counts.get("excluded")
-        total_excluded = excluded.get("total") if isinstance(excluded, dict) else None
-        if total_excluded in (None, 0):
-            compact.pop("candle_counts", None)
-    for key in ("candles_excluded", "incomplete_candles_skipped"):
-        if "candle_counts" in compact or compact.get(key) in (None, 0):
-            compact.pop(key, None)
-    for key in ("last_candle_open", "has_forming_candle"):
-        if not bool(compact.get(key)):
-            compact.pop(key, None)
+    if not bool(compact.get("has_forming_candle")):
+        compact.pop("has_forming_candle", None)
     return compact
+
+
+def _prune_zero_candle_exclusions(result: Dict[str, Any]) -> None:
+    candle_counts = result.get("candle_counts")
+    if not isinstance(candle_counts, dict):
+        return
+    excluded = candle_counts.get("excluded")
+    if not isinstance(excluded, dict):
+        return
+    candle_counts["excluded"] = {
+        key: value
+        for key, value in excluded.items()
+        if key == "total" or value not in (None, 0)
+    }
 
 
 def _run_data_fetch_ticks_impl(

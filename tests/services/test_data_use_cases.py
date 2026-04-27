@@ -178,15 +178,49 @@ def test_run_data_fetch_candles_compact_keeps_anomaly_metadata():
     )
 
     assert result["candles"] == 4
-    assert result["candle_counts"]["excluded"]["forming_bar"] == 1
-    assert result["candle_counts"]["excluded"]["total"] == 1
-    assert result["last_candle_open"] is True
+    assert "candle_counts" not in result
+    assert "last_candle_open" not in result
+    assert "hint" not in result
     assert "candles_excluded" not in result
     assert "incomplete_candles_skipped" not in result
     assert result["has_forming_candle"] is True
     assert "symbol" not in result
     assert "timeframe" not in result
     assert "candles_requested" not in result
+
+
+def test_run_data_fetch_candles_full_omits_zero_exclusion_categories():
+    request = DataFetchCandlesRequest(
+        symbol="EURUSD",
+        timeframe="H1",
+        limit=5,
+        detail="full",
+    )
+
+    result = run_data_fetch_candles(
+        request,
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_candles_impl=lambda **kwargs: {
+            "success": True,
+            "symbol": "EURUSD",
+            "timeframe": "H1",
+            "candles": 4,
+            "candle_counts": {
+                "requested": 5,
+                "returned": 4,
+                "excluded": {
+                    "forming_bar": 1,
+                    "indicator_warmup": 0,
+                    "quality_filtered": 0,
+                    "window_or_source_shortfall": 0,
+                    "total": 1,
+                },
+            },
+            "data": [],
+        },
+    )
+
+    assert result["candle_counts"]["excluded"] == {"forming_bar": 1, "total": 1}
 
 
 def test_run_data_fetch_candles_adds_contract_metadata_in_full_detail():
