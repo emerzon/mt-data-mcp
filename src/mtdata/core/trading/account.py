@@ -92,6 +92,13 @@ def _safe_trade_journal_float(value: Any) -> Optional[float]:
     return float(numeric)
 
 
+def _round_trade_journal_value(value: Any, *, digits: int) -> Optional[float]:
+    numeric = _safe_trade_journal_float(value)
+    if numeric is None:
+        return None
+    return float(round(numeric, max(0, int(digits))))
+
+
 def _is_exit_deal_row(row: Dict[str, Any]) -> bool:
     entry_text = str(row.get("entry") or "").strip().lower()
     if entry_text and "out" in entry_text:
@@ -108,7 +115,7 @@ def _trade_journal_net_pnl(row: Dict[str, Any]) -> Optional[float]:
             continue
         total += value
         seen = True
-    return float(total) if seen else None
+    return _round_trade_journal_value(total, digits=2) if seen else None
 
 
 def _trade_journal_metrics(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -134,18 +141,18 @@ def _trade_journal_metrics(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
         "wins": wins,
         "losses": losses,
         "flats": flats,
-        "win_rate": win_rate,
+        "win_rate": _round_trade_journal_value(win_rate, digits=4),
         "win_rate_display": f"{win_rate:.1%}" if win_rate is not None else None,
-        "net_pnl": net_pnl,
-        "gross_profit": gross_profit,
-        "gross_loss": gross_loss,
-        "profit_factor": profit_factor,
-        "expectancy": avg_pnl,
-        "avg_pnl": avg_pnl,
-        "avg_win": avg_win,
-        "avg_loss": avg_loss,
-        "best_trade": max(pnls) if pnls else None,
-        "worst_trade": min(pnls) if pnls else None,
+        "net_pnl": _round_trade_journal_value(net_pnl, digits=2),
+        "gross_profit": _round_trade_journal_value(gross_profit, digits=2),
+        "gross_loss": _round_trade_journal_value(gross_loss, digits=2),
+        "profit_factor": _round_trade_journal_value(profit_factor, digits=4),
+        "expectancy": _round_trade_journal_value(avg_pnl, digits=4),
+        "avg_pnl": _round_trade_journal_value(avg_pnl, digits=4),
+        "avg_win": _round_trade_journal_value(avg_win, digits=2),
+        "avg_loss": _round_trade_journal_value(avg_loss, digits=2),
+        "best_trade": _round_trade_journal_value(max(pnls), digits=2) if pnls else None,
+        "worst_trade": _round_trade_journal_value(min(pnls), digits=2) if pnls else None,
     }
 
 

@@ -438,7 +438,7 @@ def test_market_ticker_includes_shared_meta_without_dropping_timezone_alias() ->
     assert out["meta"]["runtime"]["timezone"] == timezone_meta
 
 
-def test_market_ticker_preserves_raw_tick_precision() -> None:
+def test_market_ticker_rounds_tick_precision_noise() -> None:
     tick = SimpleNamespace(
         bid=1.17581,
         ask=1.1758999999999235,
@@ -461,10 +461,11 @@ def test_market_ticker_preserves_raw_tick_precision() -> None:
         out = _raw_market_ticker("EURUSD")
 
     assert out["bid"] == 1.17581
-    assert out["ask"] == 1.1758999999999236
-    assert out["last"] == 1.175856
-    assert out["spread"] == pytest.approx(0.00008999999992360895)
-    assert out["spread_points"] == pytest.approx(8.999999992360895)
+    assert out["ask"] == 1.1759
+    assert out["last"] == 1.17586
+    assert out["spread"] == 0.00009
+    assert out["spread_points"] == 9.0
+    assert out["spread_pct"] == 0.007654
     assert "spread_pips" not in out
 
 

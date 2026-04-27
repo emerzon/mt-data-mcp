@@ -904,7 +904,7 @@ def test_trade_journal_analyze_summarizes_realized_exit_deals() -> None:
     assert out["summary"]["wins"] == 1
     assert out["summary"]["losses"] == 1
     assert out["summary"]["net_pnl"] == 13.0
-    assert out["summary"]["profit_factor"] == 2.238095238095238
+    assert out["summary"]["profit_factor"] == 2.2381
     assert out["breakdowns"]["by_symbol"][0]["symbol"] == "EURUSD"
     assert out["best_trades"][0]["ticket"] == 2
     assert out["worst_trades"][0]["ticket"] == 3
@@ -1016,7 +1016,7 @@ def test_trade_journal_analyze_filters_best_worst_by_pnl_sign() -> None:
     # Verify metrics are correct
     assert out["summary"]["wins"] == 2
     assert out["summary"]["losses"] == 1
-    assert out["summary"]["win_rate"] == 2 / 3
+    assert out["summary"]["win_rate"] == 0.6667
     assert out["summary"]["win_rate_display"] == "66.7%"
     assert out["summary"]["best_trade"] == 0.82
     assert out["summary"]["worst_trade"] == -0.23
@@ -1038,6 +1038,51 @@ def test_trade_journal_analyze_filters_best_worst_by_pnl_sign() -> None:
     assert 1 in best_tickets  # EURUSD +0.82
     assert 2 in best_tickets  # USDJPY +0.04
     assert 3 in worst_tickets  # EURUSD -0.23
+
+
+def test_trade_journal_analyze_rounds_float_noise() -> None:
+    history_rows = [
+        {
+            "ticket": 1,
+            "symbol": "EURUSD",
+            "entry": "Out",
+            "type": "Buy",
+            "profit": 1.9100000000000001,
+            "commission": 0.0,
+            "swap": 0.0,
+            "exit_trigger": "TP",
+            "time": "2026-01-01 10:00",
+        },
+        {
+            "ticket": 2,
+            "symbol": "EURUSD",
+            "entry": "Out",
+            "type": "Buy",
+            "profit": -7.4399999999999995,
+            "commission": 0.0,
+            "swap": 0.0,
+            "exit_trigger": "SL",
+            "time": "2026-01-01 11:00",
+        },
+    ]
+
+    with patch(
+        "mtdata.core.trading.account._run_trade_history_request",
+        return_value={
+            "success": True,
+            "count": len(history_rows),
+            "items": history_rows,
+        },
+    ):
+        out = trade_journal_analyze(detail="full", __cli_raw=True)
+
+    assert out["summary"]["net_pnl"] == -5.53
+    assert out["summary"]["gross_loss"] == 7.44
+    assert out["summary"]["profit_factor"] == 0.2567
+    assert out["summary"]["expectancy"] == -2.765
+    assert out["summary"]["avg_win"] == 1.91
+    assert out["summary"]["avg_loss"] == 7.44
+    assert out["worst_trades"][0]["net_pnl"] == -7.44
 
 
 def test_trade_journal_analyze_returns_message_when_no_exit_deals_found() -> None:

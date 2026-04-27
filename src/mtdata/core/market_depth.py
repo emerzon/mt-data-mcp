@@ -35,6 +35,16 @@ def _round_market_ticker_value(value: Any, *, digits: int) -> Any:
         return value
 
 
+def _market_ticker_pct_display(value: Any) -> Optional[str]:
+    try:
+        numeric = float(value)
+    except Exception:
+        return None
+    if not math.isfinite(numeric):
+        return None
+    return f"{round(numeric, 6):g}%"
+
+
 def _market_depth_fetch_enabled() -> bool:
     raw = os.getenv(_MARKET_DEPTH_ENABLE_ENV)
     if raw is None:
@@ -412,10 +422,15 @@ def market_ticker(
                 mid = (ask + bid) / 2.0
                 spread_points = (spread_abs / point) if point > 0 else None
                 spread_pct = ((spread_abs / mid) * 100.0) if mid > 0 else None
-                if spread_pct is not None:
-                    spread_pct_display = f"{round(spread_pct, 6):g}%"
+                spread_abs = _round_market_ticker_value(spread_abs, digits=digits)
+                spread_points = _round_market_ticker_value(spread_points, digits=4)
+                spread_pct = _round_market_ticker_value(spread_pct, digits=6)
+                spread_pct_display = _market_ticker_pct_display(spread_pct)
                 if tick_size > 0 and tick_value > 0:
-                    spread_usd = (spread_abs / tick_size) * tick_value
+                    spread_usd = _round_market_ticker_value(
+                        (float(spread_abs) / tick_size) * tick_value,
+                        digits=6,
+                    )
                     pricing_basis = "per_1_lot_estimate"
 
             tick_time = int(float(tick.time)) if tick.time else None
@@ -426,9 +441,9 @@ def market_ticker(
                 "symbol": symbol,
                 "type": "ticker",
                 "price_precision": digits,
-                "bid": bid,
-                "ask": ask,
-                "last": last,
+                "bid": _round_market_ticker_value(bid, digits=digits),
+                "ask": _round_market_ticker_value(ask, digits=digits),
+                "last": _round_market_ticker_value(last, digits=digits),
                 "tick_volume": tick_volume,
                 "spread": spread_abs,
                 "spread_points": spread_points,
@@ -478,7 +493,7 @@ def market_ticker(
                 price_values = {
                     "bid": out.get("bid"),
                     "ask": out.get("ask"),
-                    "mid": ((bid + ask) / 2.0)
+                    "mid": _round_market_ticker_value((bid + ask) / 2.0, digits=digits)
                     if bid is not None and ask is not None
                     else None,
                     "last": out.get("last"),
