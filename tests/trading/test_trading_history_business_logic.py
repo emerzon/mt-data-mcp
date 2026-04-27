@@ -115,8 +115,9 @@ def test_trade_history_rounds_money_fields_for_display() -> None:
         request=TradeHistoryRequest(history_kind="deals", detail="full"),
     )
 
-    assert full["items"][0]["deal_details"]["profit"] == -1.68
-    assert full["items"][0]["deal_details"]["commission"] == -0.1
+    assert full["items"][0]["profit"] == -1.68
+    assert full["items"][0]["commission"] == -0.1
+    assert "deal_details" not in full["items"][0]
 
 
 def test_trade_history_deals_accept_simplenamespace_rows() -> None:
@@ -212,10 +213,14 @@ def test_trade_history_full_detail_uses_normalized_deal_items() -> None:
         "ticket": 11,
         "order": 22,
         "time": "2024-01-01 12:00:00",
+        "time_msc": 1704110400000,
         "symbol": "EURUSD",
         "volume": 0.5,
         "price": 1.2345,
-        "entry_label": "Out",
+        "entry": "Out",
+        "entry_code": 1,
+        "reason": "Expert",
+        "external_id": "diagnostic-noise",
         "comment": "closed",
     }
     out = normalize_trade_history_output(
@@ -224,7 +229,7 @@ def test_trade_history_full_detail_uses_normalized_deal_items() -> None:
     )
 
     assert "normalized_items" not in out
-    assert out["item_schema"] == "normalized_trade_history.v1"
+    assert out["item_schema"] == "normalized_trade_history.v2"
     assert out["items"] == [
         {
             "kind": "deal",
@@ -235,7 +240,12 @@ def test_trade_history_full_detail_uses_normalized_deal_items() -> None:
             "volume": 0.5,
             "price": 1.2345,
             "state": "Out",
-            "deal_details": raw_item,
+            "order": 22,
+            "time": "2024-01-01 12:00:00",
+            "time_msc": 1704110400000,
+            "entry": "Out",
+            "reason": "Expert",
+            "comment": "closed",
         }
     ]
     assert out["request_echo"]["history_kind"] == "deals"
@@ -265,7 +275,8 @@ def test_trade_history_full_detail_ignores_humanized_style_for_canonical_items()
 
     assert out["items"][0]["ticket"] == 11
     assert out["items"][0]["symbol"] == "EURUSD"
-    assert out["items"][0]["deal_details"]["comment"] == "closed"
+    assert out["items"][0]["comment"] == "closed"
+    assert "deal_details" not in out["items"][0]
     assert "Ticket" not in out["items"][0]
     assert "normalized_items" not in out
     assert out["request_echo"]["column_style"] == "humanized"
@@ -281,6 +292,8 @@ def test_trade_history_full_detail_uses_normalized_order_items() -> None:
         "price_open": 1.25,
         "price_current": 1.251,
         "state_label": "Filled",
+        "state_code": 3,
+        "provider_order_note": "kept",
     }
     out = normalize_trade_history_output(
         [raw_item],
@@ -298,9 +311,16 @@ def test_trade_history_full_detail_uses_normalized_order_items() -> None:
             "volume": 1.0,
             "price": 1.251,
             "state": "Filled",
-            "order_details": raw_item,
+            "time_setup": "2024-01-01 12:00:00",
+            "time_done": "2024-01-01 12:05:00",
+            "volume_initial": 1.0,
+            "price_open": 1.25,
+            "price_current": 1.251,
+            "state_label": "Filled",
+            "order_details": {"provider_order_note": "kept"},
         }
     ]
+    assert "state_code" not in out["items"][0]["order_details"]
 
 
 def test_trade_history_compact_humanized_column_style_renames_order_times() -> None:
@@ -368,7 +388,8 @@ def test_trade_history_filters_deals_by_side_alias() -> None:
     assert out["request_echo"]["side"] == "BUY"
     assert out["count"] == 1
     assert out["items"][0]["ticket"] == 1
-    assert out["items"][0]["deal_details"]["type"] == "Buy"
+    assert out["items"][0]["type"] == "Buy"
+    assert "deal_details" not in out["items"][0]
 
 
 def test_trade_history_request_normalizes_buy_sell_aliases() -> None:
@@ -400,7 +421,8 @@ def test_trade_history_filters_orders_by_side_prefix() -> None:
     assert out["request_echo"]["side"] == "SELL"
     assert out["count"] == 1
     assert out["items"][0]["ticket"] == 12
-    assert out["items"][0]["order_details"]["type"] == "Sell Stop"
+    assert out["items"][0]["type"] == "Sell Stop"
+    assert "order_details" not in out["items"][0]
 
 
 def test_trade_history_deals_decodes_enum_codes_to_labels() -> None:

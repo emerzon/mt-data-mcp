@@ -258,6 +258,68 @@ def _compact_non_empty_mapping(row: Dict[str, Any]) -> Dict[str, Any]:
 
 
 _TRADE_MONEY_FIELDS = {"profit", "commission", "swap", "fee"}
+_TRADE_HISTORY_DIAGNOSTIC_FIELDS = {
+    "comment_visible_length",
+    "comment_max_length",
+    "comment_may_be_truncated",
+    "type_code",
+    "entry_code",
+    "reason_code",
+    "state_code",
+    "type_time_code",
+    "type_filling_code",
+    "external_id",
+}
+_TRADE_HISTORY_DEAL_TOP_LEVEL_FIELDS = (
+    "ticket",
+    "order",
+    "time",
+    "time_msc",
+    "type",
+    "type_label",
+    "entry",
+    "entry_label",
+    "magic",
+    "position_id",
+    "position_by_id",
+    "reason",
+    "reason_label",
+    "volume",
+    "price",
+    "commission",
+    "swap",
+    "profit",
+    "fee",
+    "symbol",
+    "comment",
+    "timestamp_timezone",
+    "exit_trigger",
+    "exit_trigger_price",
+    "exit_trigger_source",
+)
+_TRADE_HISTORY_ORDER_TOP_LEVEL_FIELDS = (
+    "ticket",
+    "time_setup",
+    "time_done",
+    "time_setup_msc",
+    "time_done_msc",
+    "type",
+    "state",
+    "state_label",
+    "magic",
+    "position_id",
+    "position_by_id",
+    "volume_initial",
+    "volume_current",
+    "price_open",
+    "price_current",
+    "price_stoplimit",
+    "sl",
+    "tp",
+    "symbol",
+    "comment",
+    "timestamp_timezone",
+)
 
 
 def _round_trade_money_value(value: Any) -> Any:
@@ -283,6 +345,14 @@ def _round_trade_money_fields(row: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
+def _public_trade_history_details(row: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        key: value
+        for key, value in _compact_non_empty_mapping(row).items()
+        if str(key) not in _TRADE_HISTORY_DIAGNOSTIC_FIELDS
+    }
+
+
 def _normalize_trade_history_row(
     row: Dict[str, Any],
     *,
@@ -296,12 +366,14 @@ def _normalize_trade_history_row(
         state = _first_present(row, "state_label", "state")
         price = _first_present(row, "price_current", "price_open", "price")
         native_key = "order_details"
+        top_level_fields = _TRADE_HISTORY_ORDER_TOP_LEVEL_FIELDS
     else:
         timestamp = _first_present(row, "time", "time_msc")
         created_at = timestamp
         state = _first_present(row, "entry_label", "entry", "type_label", "type")
         price = _first_present(row, "price")
         native_key = "deal_details"
+        top_level_fields = _TRADE_HISTORY_DEAL_TOP_LEVEL_FIELDS
 
     normalized: Dict[str, Any] = {
         "kind": item_kind,
@@ -312,8 +384,18 @@ def _normalize_trade_history_row(
         "volume": _first_present(row, "volume", "volume_initial", "volume_current"),
         "price": price,
         "state": state,
-        native_key: _compact_non_empty_mapping(row),
     }
+    public_details = _public_trade_history_details(row)
+    for key in top_level_fields:
+        if key in public_details:
+            normalized[key] = public_details[key]
+    remaining_details = {
+        key: value
+        for key, value in public_details.items()
+        if key not in top_level_fields
+    }
+    if remaining_details:
+        normalized[native_key] = remaining_details
     return {
         key: value
         for key, value in normalized.items()
@@ -437,7 +519,7 @@ def normalize_trade_history_output(
                 raw_items,
                 history_kind=history_kind,
             )
-            out["item_schema"] = "normalized_trade_history.v1"
+            out["item_schema"] = "normalized_trade_history.v2"
         else:
             out["items"] = _style_trade_history_items(
                 [
