@@ -281,18 +281,26 @@ class TestSymbolsTopMarkets:
             "symbol",
             "group",
             "timeframe",
+            "data_freshness_seconds",
+            "stale_after_seconds",
             "bar_age_hours",
+            "freshness_status",
             "data_stale",
             "tick_volume",
             "price_change_pct",
         ]
         assert result["results"]["highest_volume"]["data"][0]["data_stale"] is True
+        assert result["results"]["highest_volume"]["data"][0]["freshness_status"] == "stale"
+        assert result["results"]["highest_volume"]["data"][0]["stale_after_seconds"] == 604800
         assert result["results"]["highest_volume"]["data"][0]["bar_age_hours"] > 0
         assert list(result["results"]["highest_price_change"]["data"][0].keys()) == [
             "symbol",
             "group",
             "timeframe",
+            "data_freshness_seconds",
+            "stale_after_seconds",
             "bar_age_hours",
+            "freshness_status",
             "data_stale",
             "price_change_pct",
             "tick_volume",
@@ -485,6 +493,10 @@ class TestMarketScan:
             "symbol",
             "close",
             "price_change_pct",
+            "bar_age_hours",
+            "freshness_status",
+            "stale_after_seconds",
+            "data_stale",
             "tick_volume",
             "spread_pct",
         }
