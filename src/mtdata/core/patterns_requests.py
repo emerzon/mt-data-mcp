@@ -13,7 +13,7 @@ PatternsDetailLiteral = Literal["highlights", "compact", "standard", "full"]
 class PatternsDetectRequest(BaseModel):
     symbol: str
     timeframe: Optional[TimeframeLiteral] = None
-    mode: str = "all"
+    mode: str = "candlestick"
     detail: PatternsDetailLiteral = "compact"
     limit: int = 500
     min_strength: float = 0.70

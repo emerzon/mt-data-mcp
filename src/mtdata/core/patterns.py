@@ -1013,9 +1013,9 @@ def patterns_detect(
     
     **REQUIRED**: symbol parameter must be provided (e.g., "EURUSD", "BTCUSD")
     
-    By default (mode="all"), runs all pattern types across a default
-    multi-timeframe set (`M30`, `H1`, `H4`, `D1`, `W1`)
-    and returns a sectioned response with candlestick, classic, fractal, and Elliott results.
+    By default (mode="candlestick"), scans recent H1 candlestick patterns.
+    Use `mode="all"` to run all pattern types across the default multi-timeframe
+    set (`M30`, `H1`, `H4`, `D1`, `W1`).
     
     Parameters:
     -----------
@@ -1029,7 +1029,7 @@ def patterns_detect(
         For `mode="elliott"`, when omitted, a higher-structure subset
         (`H1`, `H4`, `D1`) is scanned automatically.
     
-    mode : str, optional (default="all")
+    mode : str, optional (default="candlestick")
         Pattern detection method:
         - "all": Comprehensive scan — candlestick + classic + fractal + Elliott across
           multiple timeframes. Returns sectioned output.
