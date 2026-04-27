@@ -4,9 +4,18 @@ from mtdata.core.trading.context import trade_session_context
 from mtdata.core.trading.requests import TradeSessionContextRequest
 
 
-def _raw_trade_session_context(symbol: str, *, detail: str = "compact"):
+def _raw_trade_session_context(
+    symbol: str,
+    *,
+    detail: str = "compact",
+    include_account: bool = True,
+):
     return trade_session_context.__wrapped__(
-        TradeSessionContextRequest(symbol=symbol, detail=detail)
+        TradeSessionContextRequest(
+            symbol=symbol,
+            detail=detail,
+            include_account=include_account,
+        )
     )
 
 
@@ -77,9 +86,7 @@ def test_trade_session_context_compacts_nested_sections_by_default() -> None:
 
     assert out["state"] == "open_position"
     assert out["account"] == {
-        "balance": 10000.0,
         "equity": 10010.0,
-        "margin_level": 250.0,
     }
     assert out["ticker"] == {
         "bid": 1.1,
@@ -161,6 +168,30 @@ def test_trade_session_context_full_detail_keeps_nested_full_payloads() -> None:
     assert "meta" not in out["pending_orders"]
     assert out["meta"]["tool"] == "trade_session_context"
     assert out["meta"]["runtime"]["timezone"] == timezone_meta
+
+
+def test_trade_session_context_can_omit_account_section() -> None:
+    def fail_account_call():
+        raise AssertionError("account info should not be fetched")
+
+    with patch(
+        "mtdata.core.trading.context.trade_account_info",
+        new=fail_account_call,
+    ), patch(
+        "mtdata.core.trading.context.market_ticker",
+        new=lambda symbol, detail="compact": {"success": True, "bid": 1.1, "ask": 1.1002},
+    ), patch(
+        "mtdata.core.trading.context.trade_get_open",
+        new=lambda request: {"success": True, "count": 0},
+    ), patch(
+        "mtdata.core.trading.context.trade_get_pending",
+        new=lambda request: {"success": True, "count": 0},
+    ):
+        out = _raw_trade_session_context("EURUSD", include_account=False)
+
+    assert out["success"] is True
+    assert out["state"] == "flat"
+    assert "account" not in out
 
 
 def test_trade_session_context_compact_sanitizes_nested_tool_errors() -> None:

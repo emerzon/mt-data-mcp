@@ -97,7 +97,7 @@ def _compact_trade_session_context_payload(payload: Dict[str, Any]) -> Dict[str,
         else:
             account_summary = {
                 key: account.get(key)
-                for key in ("balance", "equity", "margin_level")
+                for key in ("equity", "margin_free")
                 if account.get(key) not in (None, "")
             }
             if account.get("execution_ready") is False:
@@ -201,7 +201,7 @@ def _compact_trade_session_context_payload(payload: Dict[str, Any]) -> Dict[str,
 def trade_session_context(request: TradeSessionContextRequest) -> Dict[str, Any]:
     """Get a consolidated session context including account info, open positions, pending orders, ticker, and computed state for a symbol.
 
-    Parameters: symbol, detail
+    Parameters: symbol, detail, include_account
     """
 
     def _run() -> Dict[str, Any]:
@@ -211,7 +211,7 @@ def trade_session_context(request: TradeSessionContextRequest) -> Dict[str, Any]
         open_func = getattr(trade_get_open, "__wrapped__", trade_get_open)
         pending_func = getattr(trade_get_pending, "__wrapped__", trade_get_pending)
 
-        account_res = acc_func()
+        account_res = acc_func() if request.include_account else None
         ticker_res = ticker_func(symbol=request.symbol, detail=request.detail)
 
         open_req = TradeGetOpenRequest(symbol=request.symbol)
@@ -220,10 +220,13 @@ def trade_session_context(request: TradeSessionContextRequest) -> Dict[str, Any]
         pending_req = TradeGetPendingRequest(symbol=request.symbol)
         pending_res = pending_func(request=pending_req)
 
-        account_res, account_failed = _sanitize_trade_session_section_error(
-            account_res,
-            label="account context",
-        )
+        if request.include_account:
+            account_res, account_failed = _sanitize_trade_session_section_error(
+                account_res,
+                label="account context",
+            )
+        else:
+            account_failed = False
         ticker_res, ticker_failed = _sanitize_trade_session_section_error(
             ticker_res,
             label="ticker data",
@@ -259,18 +262,20 @@ def trade_session_context(request: TradeSessionContextRequest) -> Dict[str, Any]
             "success": True,
             "symbol": request.symbol,
             "state": state,
-            "account": account_res,
             "open_positions": open_res,
             "pending_orders": pending_res,
             "ticker": ticker_res,
         }
+        if request.include_account:
+            payload["account"] = account_res
         if partial_failure:
             payload["partial_failure"] = True
         if request.detail == "compact":
             payload = _compact_trade_session_context_payload(payload)
         else:
             # For full detail, strip redundant envelope fields from nested sections
-            payload["account"] = _strip_nested_envelope(payload["account"])
+            if request.include_account:
+                payload["account"] = _strip_nested_envelope(payload["account"])
             payload["open_positions"] = _strip_nested_envelope(payload["open_positions"])
             payload["pending_orders"] = _strip_nested_envelope(payload["pending_orders"])
             payload["ticker"] = _strip_nested_envelope(payload["ticker"])
@@ -286,5 +291,6 @@ def trade_session_context(request: TradeSessionContextRequest) -> Dict[str, Any]
         operation="trade_session_context",
         symbol=request.symbol,
         detail=request.detail,
+        include_account=request.include_account,
         func=_run,
     )

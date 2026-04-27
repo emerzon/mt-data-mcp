@@ -254,3 +254,4 @@ class TradeGetPendingRequest(BaseModel):
 class TradeSessionContextRequest(BaseModel):
     symbol: str
     detail: CompactFullDetailLiteral = "compact"
+    include_account: bool = True
