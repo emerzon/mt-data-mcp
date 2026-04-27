@@ -457,6 +457,7 @@ def _normalize_finviz_news_payload(result: Dict[str, Any]) -> Dict[str, Any]:
     out.setdefault("tool_scope", "raw_finviz_provider")
     out.setdefault("preferred_tool", "news")
     out.setdefault("output_shape", "flat_paginated_items")
+    out.setdefault("timezone", "UTC")
 
     news_rows = result.get("news")
     items_rows = result.get("items")

@@ -13,6 +13,7 @@ from ..utils.mt5 import (
 from ..utils.utils import (
     _format_time_minimal,
     _format_time_minimal_local,
+    _resolve_client_tz,
     _use_client_tz,
 )
 from ._mcp_instance import mcp
@@ -24,6 +25,16 @@ from .schema import CompactFullDetailLiteral
 logger = logging.getLogger(__name__)
 _MARKET_DEPTH_ENABLE_ENV = "MTDATA_ENABLE_MARKET_DEPTH_FETCH"
 _MARKET_TICKER_STALE_SECONDS = 24 * 60 * 60
+
+
+def _display_timezone_label(*, use_client_tz: bool) -> str:
+    if not use_client_tz:
+        return "UTC"
+    try:
+        client_tz = _resolve_client_tz()
+        return str(getattr(client_tz, "zone", None) or client_tz or "client_local")
+    except Exception:
+        return "client_local"
 
 
 def _round_market_ticker_value(value: Any, *, digits: int) -> Any:
@@ -321,8 +332,7 @@ def _market_depth_fetch_impl(symbol: str, spread: bool = False, compact: bool = 
                 out["data"]["time_display"] = _format_time_minimal_local(float(tick.time))
             elif tick.time:
                 out["data"]["time_display"] = _format_time_minimal(float(tick.time))
-            if not _use_ctz:
-                out["timezone"] = "UTC"
+            out["timezone"] = _display_timezone_label(use_client_tz=_use_ctz)
             out["query_latency_ms"] = round((time.perf_counter() - started) * 1000.0, 3)
             return out
         except MT5ConnectionError as exc:
@@ -501,8 +511,7 @@ def market_ticker(
                 meta = {}
             meta["diagnostics"] = dict(diagnostics)
             out["meta"] = meta
-            if not _use_ctz:
-                out["timezone"] = "UTC"
+            out["timezone"] = _display_timezone_label(use_client_tz=_use_ctz)
             if price_field is not None:
                 field_value = str(price_field or "").strip().lower()
                 price_values = {

@@ -35,6 +35,26 @@ from .schema import CompactFullDetailLiteral
 logger = logging.getLogger(__name__)
 
 
+_FORECAST_TIMESTAMP_OPERATIONS = frozenset(
+    {
+        "forecast_generate",
+        "forecast_backtest_run",
+        "forecast_conformal_intervals",
+        "forecast_volatility_estimate",
+    }
+)
+
+
+def _attach_timestamp_timezone(result: Dict[str, Any], *, operation: str) -> Dict[str, Any]:
+    if (
+        operation in _FORECAST_TIMESTAMP_OPERATIONS
+        and isinstance(result, dict)
+        and "error" not in result
+    ):
+        result.setdefault("timezone", "UTC")
+    return result
+
+
 def _forecast_module():
     return import_module("mtdata.forecast.forecast")
 
@@ -204,7 +224,7 @@ def _run_forecast_operation(
             if connection_error is not None:
                 return connection_error
         try:
-            return func()
+            return _attach_timestamp_timezone(func(), operation=operation)
         except ForecastError as exc:
             if catch_forecast_error:
                 return _forecast_error_payload(exc, operation=operation)

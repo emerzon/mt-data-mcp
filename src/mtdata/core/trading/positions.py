@@ -454,6 +454,15 @@ def normalize_trade_history_output(
             out["request_echo"] = request_echo
     elif history_kind is not None:
         out["history_kind"] = history_kind
+    if out.get("success") is True:
+        timezone_label = "UTC"
+        items = out.get("items")
+        if isinstance(items, list):
+            for item in items:
+                if isinstance(item, dict) and item.get("timestamp_timezone"):
+                    timezone_label = str(item["timestamp_timezone"])
+                    break
+        out.setdefault("timezone", timezone_label)
     return out
 
 

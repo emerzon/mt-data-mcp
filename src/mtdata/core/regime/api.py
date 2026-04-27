@@ -764,6 +764,8 @@ def regime_detect(  # noqa: C901
     )
 
     def _finish(result: Dict[str, Any]) -> Dict[str, Any]:
+        if isinstance(result, dict) and "error" not in result:
+            result.setdefault("timezone", "UTC")
         log_operation_finish(
             logger,
             operation="regime_detect",

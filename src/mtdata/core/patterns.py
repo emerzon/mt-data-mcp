@@ -1144,7 +1144,10 @@ def patterns_detect(
         connection_error = _patterns_connection_error()
         if connection_error is not None:
             return connection_error
-        return run_patterns_detect(request, _patterns_detect_deps())
+        result = run_patterns_detect(request, _patterns_detect_deps())
+        if isinstance(result, dict) and "error" not in result:
+            result.setdefault("timezone", "UTC")
+        return result
 
     return run_logged_operation(
         logger,

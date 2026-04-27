@@ -350,7 +350,7 @@ class TestPivotHappyPath:
     def test_client_tz_no_utc_label(self):
         r = [_make_rate(time_=100.0), _make_rate(time_=200.0)]
         res = self._run(r, use_ctz=True)
-        assert "timezone" not in res
+        assert res["timezone"] == "client_local"
 
     def test_period_field(self):
         r = [_make_rate(time_=100.0), _make_rate(time_=200.0)]

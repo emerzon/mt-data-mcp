@@ -17,7 +17,12 @@ from mtdata.core.trading.requests import (
 )
 from mtdata.core.trading.use_cases import run_trade_history
 from mtdata.utils.mt5 import MT5ConnectionError, _mt5_epoch_to_utc
-from mtdata.utils.utils import _format_time_minimal
+
+
+def _format_utc_seconds(epoch_seconds: float) -> str:
+    return datetime.fromtimestamp(epoch_seconds, tz=timezone.utc).strftime(
+        "%Y-%m-%d %H:%M:%S"
+    )
 
 
 def _unwrap(fn):
@@ -75,10 +80,11 @@ def test_trade_history_deals_normalizes_time_to_utc_string() -> None:
     assert out["kind"] == "trade_history"
     assert out["history_kind"] == "deals"
     assert out["count"] == 1
-    assert out["items"][0]["time"] == _format_time_minimal(
+    assert out["items"][0]["time"] == _format_utc_seconds(
         _mt5_epoch_to_utc(1700000000)
     )
     assert out["items"][0]["timestamp_timezone"] == "UTC"
+    assert out["timezone"] == "UTC"
 
 
 def test_trade_history_rounds_money_fields_for_display() -> None:
@@ -127,7 +133,7 @@ def test_trade_history_deals_accept_simplenamespace_rows() -> None:
     assert out["success"] is True
     assert out["count"] == 1
     assert out["items"][0]["ticket"] == 1
-    assert out["items"][0]["time"] == _format_time_minimal(_mt5_epoch_to_utc(1700000000))
+    assert out["items"][0]["time"] == _format_utc_seconds(_mt5_epoch_to_utc(1700000000))
 
 
 def test_trade_history_orders_normalizes_setup_and_done_times() -> None:
@@ -145,13 +151,14 @@ def test_trade_history_orders_normalizes_setup_and_done_times() -> None:
     assert out["success"] is True
     assert out["history_kind"] == "orders"
     assert out["count"] == 1
-    assert out["items"][0]["time_setup"] == _format_time_minimal(
+    assert out["items"][0]["time_setup"] == _format_utc_seconds(
         _mt5_epoch_to_utc(1700000000)
     )
-    assert out["items"][0]["time_done"] == _format_time_minimal(
+    assert out["items"][0]["time_done"] == _format_utc_seconds(
         _mt5_epoch_to_utc(1700003600)
     )
     assert out["items"][0]["timestamp_timezone"] == "UTC"
+    assert out["timezone"] == "UTC"
 
 
 def test_trade_history_orders_backfills_filled_zero_open_price() -> None:

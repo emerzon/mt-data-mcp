@@ -1474,11 +1474,24 @@ def run_trade_history(  # noqa: C901
     def _get_history():  # noqa: C901
         try:
             use_client_tz_value = use_client_tz()
-            fmt_time = (
-                format_time_minimal_local
-                if use_client_tz_value
-                else format_time_minimal
-            )
+
+            def _format_trade_history_timestamp(epoch_seconds: float) -> str:
+                if use_client_tz_value:
+                    try:
+                        tz_obj = mt5_config.get_client_tz()
+                        if tz_obj is not None:
+                            return datetime.fromtimestamp(
+                                epoch_seconds,
+                                tz=timezone.utc,
+                            ).astimezone(tz_obj).strftime("%Y-%m-%d %H:%M:%S")
+                    except Exception:
+                        return format_time_minimal_local(epoch_seconds)
+                return datetime.fromtimestamp(
+                    epoch_seconds,
+                    tz=timezone.utc,
+                ).strftime("%Y-%m-%d %H:%M:%S")
+
+            fmt_time = _format_trade_history_timestamp
             trigger_pattern = re.compile(
                 r"\[(sl|tp)\s+([+-]?\d+(?:\.\d+)?)\]", re.IGNORECASE
             )

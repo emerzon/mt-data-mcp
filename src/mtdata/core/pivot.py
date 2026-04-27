@@ -466,8 +466,7 @@ def pivot_compute_points(  # noqa: C901
                 ),
                 "levels": levels_table,
             }
-            if not _use_ctz:
-                payload["timezone"] = "UTC"
+            payload["timezone"] = "client_local" if _use_ctz else "UTC"
             if detail_value == "compact":
                 classic_method = next(
                     (
@@ -504,8 +503,7 @@ def pivot_compute_points(  # noqa: C901
                         if key in compact_levels
                     },
                 }
-                if not _use_ctz:
-                    compact_payload["timezone"] = "UTC"
+                compact_payload["timezone"] = "client_local" if _use_ctz else "UTC"
                 degenerate_info = _degenerate_levels_info(compact_payload["levels"])
                 if degenerate_info:
                     compact_payload.update(degenerate_info)
@@ -588,6 +586,7 @@ def support_resistance_levels(
                 detail_value = "full"
                 payload = dict(result)
             payload["detail"] = detail_value
+            payload.setdefault("timezone", "UTC")
             return payload
         except MT5ConnectionError as exc:
             return {"error": str(exc)}
