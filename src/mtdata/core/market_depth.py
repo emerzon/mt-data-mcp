@@ -45,6 +45,16 @@ def _market_ticker_pct_display(value: Any) -> Optional[str]:
     return f"{round(numeric, 6):g}%"
 
 
+def _market_ticker_price_display(value: Any, *, digits: int) -> Optional[str]:
+    try:
+        numeric = float(value)
+    except Exception:
+        return None
+    if not math.isfinite(numeric):
+        return None
+    return f"{numeric:.{max(0, int(digits))}f}"
+
+
 def _market_depth_fetch_enabled() -> bool:
     raw = os.getenv(_MARKET_DEPTH_ENABLE_ENV)
     if raw is None:
@@ -64,6 +74,7 @@ def _compact_market_ticker_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "last",
         "tick_volume",
         "spread",
+        "spread_display",
         "spread_points",
         "spread_pct",
         "spread_pct_display",
@@ -446,6 +457,10 @@ def market_ticker(
                 "last": _round_market_ticker_value(last, digits=digits),
                 "tick_volume": tick_volume,
                 "spread": spread_abs,
+                "spread_display": _market_ticker_price_display(
+                    spread_abs,
+                    digits=digits,
+                ),
                 "spread_points": spread_points,
                 "spread_pct": spread_pct,
                 "spread_pct_display": spread_pct_display,

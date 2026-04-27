@@ -227,7 +227,11 @@ def _normalize_trade_read_output(
 
 
 def _compact_trade_read_output(out: Dict[str, Any], *, request: Any) -> Dict[str, Any]:
-    if _include_trade_read_request_metadata(request) or not out.get("success", False):
+    if (
+        out.get("kind") == "trade_history"
+        or _include_trade_read_request_metadata(request)
+        or not out.get("success", False)
+    ):
         return out
     if int(out.get("count") or 0) == 0:
         return {"success": True, "count": 0}
@@ -253,11 +257,38 @@ def _compact_non_empty_mapping(row: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+_TRADE_MONEY_FIELDS = {"profit", "commission", "swap", "fee"}
+
+
+def _round_trade_money_value(value: Any) -> Any:
+    try:
+        numeric = float(value)
+    except Exception:
+        return value
+    if not math.isfinite(numeric):
+        return value
+    return float(round(numeric, 2))
+
+
+def _round_trade_money_fields(row: Dict[str, Any]) -> Dict[str, Any]:
+    out: Dict[str, Any] = {}
+    for key, value in row.items():
+        key_text = str(key)
+        if key_text in _TRADE_MONEY_FIELDS:
+            out[key] = _round_trade_money_value(value)
+        elif isinstance(value, dict):
+            out[key] = _round_trade_money_fields(value)
+        else:
+            out[key] = value
+    return out
+
+
 def _normalize_trade_history_row(
     row: Dict[str, Any],
     *,
     history_kind: Optional[str],
 ) -> Dict[str, Any]:
+    row = _round_trade_money_fields(row)
     item_kind = "order" if history_kind == "orders" else "deal"
     if item_kind == "order":
         timestamp = _first_present(row, "time_done", "time_setup", "time")
@@ -409,7 +440,10 @@ def normalize_trade_history_output(
             out["item_schema"] = "normalized_trade_history.v1"
         else:
             out["items"] = _style_trade_history_items(
-                raw_items,
+                [
+                    _round_trade_money_fields(item) if isinstance(item, dict) else item
+                    for item in raw_items
+                ],
                 column_style=getattr(request, "column_style", "snake_case"),
             )
     if include_request_metadata:

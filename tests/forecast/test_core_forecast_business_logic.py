@@ -1553,6 +1553,32 @@ def test_forecast_barrier_prob_compact_nests_confidence_intervals_once():
     assert "prob_no_hit_ci95" not in out
 
 
+def test_forecast_barrier_prob_detail_rounds_display_values():
+    payload = {
+        "success": True,
+        "symbol": "EURUSD",
+        "last_price": 1.1720124100000001,
+        "tp_price": 1.1780124100000001,
+        "sl_price": 1.1690124100000001,
+        "prob_tp_first": 0.5123456789,
+        "prob_sl_first": 0.4876543211,
+        "edge": -0.17800000000000005,
+        "prob_tp_first_ci95": {"low": 0.5000000001, "high": 0.6000000001},
+    }
+
+    out = forecast_use_cases._apply_barrier_prob_detail(
+        payload,
+        ForecastBarrierProbRequest(symbol="EURUSD", detail="compact"),
+    )
+
+    assert out["last_price"] == "1.17201241"
+    assert out["tp_price"] == "1.17801241"
+    assert out["sl_price"] == "1.16901241"
+    assert out["prob_tp_first"] == 0.512346
+    assert out["edge"] == -0.178
+    assert out["confidence"]["prob_tp_first_ci95"] == {"low": 0.5, "high": 0.6}
+
+
 def test_forecast_tune_optuna_routing(monkeypatch):
     raw_tune = _unwrap(cf.forecast_tune_optuna)
     captured = {}

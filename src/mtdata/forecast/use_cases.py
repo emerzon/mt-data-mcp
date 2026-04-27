@@ -144,6 +144,61 @@ def _round_forecast_generate_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
+def _round_barrier_value(value: Any, *, digits: int) -> Any:
+    numeric = _finite_float(value)
+    if numeric is None:
+        return value
+    precision = max(0, int(digits))
+    return float(f"{numeric:.{precision}f}")
+
+
+def _format_barrier_price_value(value: Any, *, digits: int) -> Any:
+    numeric = _finite_float(value)
+    if numeric is None:
+        return value
+    return f"{numeric:.{max(0, int(digits))}f}"
+
+
+def _round_barrier_ci(value: Any, *, digits: int) -> Any:
+    if not isinstance(value, dict):
+        return value
+    return {
+        key: _round_barrier_value(item, digits=digits)
+        for key, item in value.items()
+    }
+
+
+def _round_barrier_prob_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    price_digits = _forecast_price_digits(payload) or 8
+    out = dict(payload)
+    for key in ("last_price", "last_price_close", "tp_price", "sl_price", "barrier"):
+        if key in out:
+            out[key] = _format_barrier_price_value(out.get(key), digits=price_digits)
+    for key in (
+        "prob_hit",
+        "prob_tp_first",
+        "prob_sl_first",
+        "prob_tie",
+        "prob_no_hit",
+        "edge",
+        "prob_tp_first_se",
+        "prob_sl_first_se",
+        "prob_tie_se",
+        "prob_no_hit_se",
+    ):
+        if key in out:
+            out[key] = _round_barrier_value(out.get(key), digits=6)
+    for key in (
+        "prob_tp_first_ci95",
+        "prob_sl_first_ci95",
+        "prob_tie_ci95",
+        "prob_no_hit_ci95",
+    ):
+        if key in out:
+            out[key] = _round_barrier_ci(out.get(key), digits=6)
+    return out
+
+
 def _strip_public_legacy_volatility_fields(result: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(result, dict) or not result.get("success"):
         return result
@@ -358,6 +413,7 @@ def _apply_barrier_prob_detail(
 ) -> Dict[str, Any]:
     if not isinstance(payload, dict) or payload.get("error"):
         return payload
+    payload = _round_barrier_prob_payload(payload)
 
     def _set_if_present(target: Dict[str, Any], key: str, value: Any) -> None:
         if value not in (None, "", [], {}):

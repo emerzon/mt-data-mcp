@@ -81,6 +81,38 @@ def test_trade_history_deals_normalizes_time_to_utc_string() -> None:
     assert out["items"][0]["timestamp_timezone"] == "UTC"
 
 
+def test_trade_history_rounds_money_fields_for_display() -> None:
+    out = normalize_trade_history_output(
+        [
+            {
+                "ticket": 1,
+                "symbol": "EURUSD",
+                "profit": -1.6800000000000002,
+                "commission": -0.10000000000000002,
+            }
+        ],
+        request=TradeHistoryRequest(history_kind="deals"),
+    )
+
+    assert out["items"][0]["profit"] == -1.68
+    assert out["items"][0]["commission"] == -0.1
+
+    full = normalize_trade_history_output(
+        [
+            {
+                "ticket": 1,
+                "symbol": "EURUSD",
+                "profit": -1.6800000000000002,
+                "commission": -0.10000000000000002,
+            }
+        ],
+        request=TradeHistoryRequest(history_kind="deals", detail="full"),
+    )
+
+    assert full["items"][0]["deal_details"]["profit"] == -1.68
+    assert full["items"][0]["deal_details"]["commission"] == -0.1
+
+
 def test_trade_history_deals_accept_simplenamespace_rows() -> None:
     mt5, prev = _install_mock_mt5()
     mt5.history_deals_get.return_value = [
@@ -859,7 +891,7 @@ def test_trade_journal_analyze_summarizes_realized_exit_deals() -> None:
             "symbol": "EURUSD",
             "entry": "Out",
             "type": "Buy",
-            "profit": 25.0,
+            "profit": 25.000000000000004,
             "commission": -1.0,
             "swap": -0.5,
             "exit_trigger": "TP",
@@ -907,6 +939,7 @@ def test_trade_journal_analyze_summarizes_realized_exit_deals() -> None:
     assert out["summary"]["profit_factor"] == 2.2381
     assert out["breakdowns"]["by_symbol"][0]["symbol"] == "EURUSD"
     assert out["best_trades"][0]["ticket"] == 2
+    assert out["best_trades"][0]["profit"] == 25.0
     assert out["worst_trades"][0]["ticket"] == 3
 
 

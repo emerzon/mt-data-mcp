@@ -276,7 +276,7 @@ def test_market_ticker_returns_lightweight_spread_snapshot() -> None:
     assert out["tick_volume"] == 5
     assert out["pricing_basis"] == "per_1_lot_estimate"
     assert out["spread_currency"] == "USD"
-    assert "spread_display" not in out
+    assert out["spread_display"] == "1.00"
     assert out["meta"]["diagnostics"]["cache_used"] is False
     assert out["meta"]["diagnostics"]["source"] == "mt5.symbol_info_tick"
     assert isinstance(out["meta"]["diagnostics"]["query_latency_ms"], float)
@@ -464,6 +464,7 @@ def test_market_ticker_rounds_tick_precision_noise() -> None:
     assert out["ask"] == 1.1759
     assert out["last"] == 1.17586
     assert out["spread"] == 0.00009
+    assert out["spread_display"] == "0.00009"
     assert out["spread_points"] == 9.0
     assert out["spread_pct"] == 0.007654
     assert "spread_pips" not in out

@@ -354,6 +354,14 @@ def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str,
         enriched["exit_trigger"] = (
             str(row.get("exit_trigger") or "").strip() or "Unspecified"
         )
+        for money_key in ("profit", "commission", "swap", "fee"):
+            if money_key in enriched:
+                rounded_value = _round_trade_journal_value(
+                    enriched.get(money_key),
+                    digits=2,
+                )
+                if rounded_value is not None:
+                    enriched[money_key] = rounded_value
         enriched["net_pnl"] = net_pnl
         analyzed_rows.append(enriched)
 
