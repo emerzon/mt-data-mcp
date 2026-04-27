@@ -38,6 +38,13 @@ from .requests import (
 
 logger = logging.getLogger(__name__)
 
+_LEGACY_VOLATILITY_SIGMA_FIELDS = (
+    "sigma_bar_return",
+    "sigma_annual_return",
+    "horizon_sigma_return",
+    "horizon_sigma_annual",
+)
+
 
 def _normalize_trader_detail(value: Any, *, default: str = "compact") -> str:
     normalized = str(default if value is None else value).strip().lower()
@@ -134,6 +141,23 @@ def _round_forecast_generate_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     for key in ("last_price", "last_price_close"):
         if key in out:
             out[key] = _round_forecast_number(out.get(key), digits=digits)
+    return out
+
+
+def _strip_public_legacy_volatility_fields(result: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(result, dict) or not result.get("success"):
+        return result
+    out = dict(result)
+    for key in _LEGACY_VOLATILITY_SIGMA_FIELDS:
+        out.pop(key, None)
+    interpretation = out.get("volatility_interpretation")
+    if isinstance(interpretation, dict) and "legacy_sigma_fields" in interpretation:
+        interpretation_out = dict(interpretation)
+        interpretation_out.pop("legacy_sigma_fields", None)
+        if interpretation_out:
+            out["volatility_interpretation"] = interpretation_out
+        else:
+            out.pop("volatility_interpretation", None)
     return out
 
 
@@ -1522,6 +1546,7 @@ def run_forecast_volatility_estimate(
             denoise=request.denoise,
             detail=request.detail,
         )
+        result = _strip_public_legacy_volatility_fields(result)
     except Exception as exc:
         log_operation_exception(
             logger,

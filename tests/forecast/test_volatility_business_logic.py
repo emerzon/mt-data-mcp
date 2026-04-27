@@ -6,6 +6,8 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
+from mtdata.forecast.requests import ForecastVolatilityEstimateRequest
+from mtdata.forecast.use_cases import run_forecast_volatility_estimate
 from mtdata.forecast import volatility as vol
 
 
@@ -85,6 +87,38 @@ def test_finalize_volatility_output_compact_omits_explanatory_fields():
     assert full["sigma_bar_return"] == pytest.approx(0.01)
     assert full["params_used"]["lookback"] == 100
     assert "volatility_interpretation" in full
+
+
+def test_forecast_volatility_estimate_public_output_omits_legacy_sigma_fields():
+    def fake_forecast_volatility(**_kwargs):
+        return {
+            "success": True,
+            "volatility_per_bar": 0.01,
+            "volatility_annualized": 0.5,
+            "volatility_horizon": 0.02,
+            "volatility_horizon_annualized": 0.8,
+            "sigma_bar_return": 0.01,
+            "sigma_annual_return": 0.5,
+            "horizon_sigma_return": 0.02,
+            "horizon_sigma_annual": 0.8,
+            "volatility_interpretation": {
+                "volatility_per_bar": "per bar",
+                "legacy_sigma_fields": "legacy duplicates",
+            },
+        }
+
+    out = run_forecast_volatility_estimate(
+        ForecastVolatilityEstimateRequest(symbol="EURUSD", detail="full"),
+        forecast_volatility_impl=fake_forecast_volatility,
+    )
+
+    assert out["volatility_per_bar"] == pytest.approx(0.01)
+    assert out["volatility_horizon"] == pytest.approx(0.02)
+    assert "sigma_bar_return" not in out
+    assert "sigma_annual_return" not in out
+    assert "horizon_sigma_return" not in out
+    assert "horizon_sigma_annual" not in out
+    assert "legacy_sigma_fields" not in out["volatility_interpretation"]
 
 
 def test_forecast_volatility_validations(monkeypatch):
