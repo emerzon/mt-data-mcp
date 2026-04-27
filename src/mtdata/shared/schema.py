@@ -229,7 +229,7 @@ CANONICAL_OUTPUT_DETAIL_ALIASES = types.MappingProxyType(
 DetailLiteral = Literal["compact", "standard", "summary", "full"]
 CompactFullDetailLiteral = DetailLiteral
 CompactStandardFullDetailLiteral = DetailLiteral
-SummaryCompactFullDetailLiteral = DetailLiteral
+SummaryCompactFullDetailLiteral = Literal["full", "summary", "compact"]
 
 # ---- Technical Indicators (dynamic discovery and application) ----
 def _load_indicator_doc_choices(

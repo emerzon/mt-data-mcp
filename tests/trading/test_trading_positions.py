@@ -46,8 +46,8 @@ def test_normalize_trade_read_output_compact_omits_request_echoes():
         kind="open_positions",
     )
 
-    assert out["scope"] == "ticket"
     assert out["count"] == 1
+    assert "scope" not in out
     assert "symbol" not in out
     assert "ticket" not in out
     assert "limit" not in out

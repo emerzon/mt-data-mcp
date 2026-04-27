@@ -327,7 +327,10 @@ class TestSymbolsTopMarkets:
         result = fn(rank_by="unknown")
 
         assert result == {
-            "error": "rank_by must be one of: all, spread, volume, price_change."
+            "error": (
+                "rank_by must be one of: all, spread/spread_pct, volume/tick_volume, "
+                "price_change/price_change_pct."
+            )
         }
 
     def test_invalid_timeframe_returns_error_for_bar_metrics(self):

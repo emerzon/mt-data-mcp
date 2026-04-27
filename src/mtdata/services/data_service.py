@@ -1717,15 +1717,13 @@ def fetch_ticks(  # noqa: C901
             except Exception:
                 price_digits = 0
 
-            # Normalized params only
-            output_mode = normalize_output_detail(
-                format,
-                default="summary",
-                aliases={
-                    "raw": "rows",
-                    "ticks": "rows",
-                },
-            )
+            # Normalized params only. This is an output shape selector, not the
+            # shared compact/full detail enum.
+            output_mode = str(format or "summary").strip().lower()
+            output_mode = {
+                "raw": "rows",
+                "ticks": "rows",
+            }.get(output_mode, output_mode)
             if start:
                 from_date = _parse_start_datetime(start)
                 if not from_date:
