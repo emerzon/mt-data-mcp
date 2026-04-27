@@ -1303,6 +1303,9 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
         self.assertTrue(diagnostics["low_practical_win_probability"])
         self.assertEqual(diagnostics["low_practical_win_probability_threshold"], 0.05)
         self.assertIn("unresolved/no-hit paths", diagnostics["metric_interpretation"])
+        self.assertTrue(
+            any("raw win/loss edge" in msg for msg in diagnostics["selection_warnings"])
+        )
         self.assertEqual(actionability["actionability"], "blocked")
         self.assertFalse(actionability["trade_gate_passed"])
         self.assertIn(

@@ -353,13 +353,13 @@ def _build_selection_diagnostics(row: Optional[Dict[str, Any]], cost_per_trade: 
     if best_edge is not None and best_edge < 0.0:
         if win_rate is not None:
             warnings_out.append(
-                "Best candidate has negative edge "
+                "Best candidate has negative raw win/loss edge "
                 f"({best_edge:.3f}) with win rate {win_rate:.1%}; "
                 "positive EV depends on reward/risk skew."
             )
         else:
             warnings_out.append(
-                f"Best candidate has negative edge ({best_edge:.3f}); "
+                f"Best candidate has negative raw win/loss edge ({best_edge:.3f}); "
                 "positive EV may depend on reward/risk skew."
             )
 

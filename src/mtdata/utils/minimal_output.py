@@ -986,7 +986,12 @@ def _normalize_barrier_optimize_payload(
             "sl_price",
             "prob_win",
             "prob_loss",
+            "prob_tp_first",
+            "prob_sl_first",
+            "prob_no_hit",
+            "prob_resolve",
             "ev",
+            "edge",
             "profit_factor",
             "edge_vs_breakeven",
         ]

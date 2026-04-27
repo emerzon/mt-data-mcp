@@ -1018,7 +1018,9 @@ class TestFormatResultMinimal:
                 "tp_price": 1.19,
                 "sl_price": 1.17,
                 "prob_win": 0.55,
+                "prob_no_hit": 0.1,
                 "prob_resolve": 0.9,
+                "edge": -0.05,
                 "breakeven_win_rate": 0.33,
             },
             "results": [{"tp": 1.0, "sl": 0.5}],
@@ -1035,6 +1037,9 @@ class TestFormatResultMinimal:
         assert "viable: true" in compact
         assert "results[" not in compact
         assert "actionability_flags" not in compact
+        assert "edge: -0.05" in compact
+        assert "prob_no_hit: 0.1" in compact
+        assert "prob_resolve: 0.9" in compact
         assert "breakeven_win_rate" not in compact
 
     def test_compact_patterns_output_prefers_highlights(self):
