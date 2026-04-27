@@ -99,9 +99,10 @@ class TestFinvizProgressiveDisclosure:
 
         result = _unwrap(finviz_ratings)("AAPL", detail="compact")
 
+        expected_rows = [{"date": f"2026-01-0{i}", "rating": "Buy"} for i in range(1, 4)]
         assert result["detail"] == "compact"
-        assert result["ratings"] == rows[:3]
-        assert result["summary"]["latest"] == rows[0]
+        assert result["ratings"] == expected_rows
+        assert result["summary"]["latest"] == expected_rows[0]
         assert result["summary"]["counts"]["available"] == 5
 
     @patch("mtdata.core.finviz.get_stock_peers")

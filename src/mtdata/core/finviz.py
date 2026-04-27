@@ -7,6 +7,7 @@ Note: Data is delayed 15-20 minutes; US stocks only.
 
 import json
 import logging
+import re
 from datetime import datetime, time as datetime_time, timezone, timedelta
 from typing import Any, Callable, Dict, Literal, Optional, Union
 from urllib.parse import parse_qs
@@ -448,6 +449,55 @@ def _normalize_finviz_news_payload(result: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
+_FINVIZ_OUTPUT_KEY_MAP = {
+    "Market Cap": "market_cap",
+    "Market Cap.": "market_cap",
+    "P/E": "pe_ratio",
+    "Forward P/E": "forward_pe",
+    "P/S": "price_to_sales",
+    "P/B": "price_to_book",
+    "P/C": "price_to_cash",
+    "P/FCF": "price_to_free_cash_flow",
+    "Price/Cash": "price_to_cash",
+    "Price/Free Cash Flow": "price_to_free_cash_flow",
+    "EPS (ttm)": "eps_ttm",
+    "EPS next Y": "eps_next_y",
+    "EPS next Q": "eps_next_q",
+    "52W High": "high_52w",
+    "52W Low": "low_52w",
+    "RSI (14)": "rsi_14",
+    "ATR (14)": "atr_14",
+    "Dividend %": "dividend_yield",
+    "Dividend Est.": "dividend_est",
+    "Dividend TTM": "dividend_ttm",
+    "Dividend Ex-Date": "dividend_ex_date",
+    "Dividend Gr. 3Y": "dividend_growth_3y",
+    "Dividend Gr. 5Y": "dividend_growth_5y",
+}
+
+
+def _normalize_finviz_output_key(key: Any) -> str:
+    text = str(key).strip()
+    mapped = _FINVIZ_OUTPUT_KEY_MAP.get(text)
+    if mapped:
+        return mapped
+    text = text.replace("%", " pct ").replace("&", " and ").replace("/", " ")
+    text = re.sub(r"[^0-9A-Za-z]+", "_", text).strip("_").lower()
+    return text or str(key)
+
+
+def _normalize_finviz_output_row(row: Any) -> Any:
+    if not isinstance(row, dict):
+        return row
+    return {_normalize_finviz_output_key(key): value for key, value in row.items()}
+
+
+def _normalize_finviz_output_rows(rows: Any) -> Any:
+    if not isinstance(rows, list):
+        return rows
+    return [_normalize_finviz_output_row(row) for row in rows]
+
+
 def _validate_finviz_detail(detail: str, *, operation: str) -> Optional[Dict[str, Any]]:
     if str(detail or "full").strip().lower() in {"compact", "full"}:
         return None
@@ -507,19 +557,21 @@ def _compact_finviz_ratings_payload(result: Dict[str, Any], *, detail: str) -> D
     if not isinstance(rows, list):
         return result
     out = dict(result)
+    normalized_rows = _normalize_finviz_output_rows(rows)
+    out["ratings"] = normalized_rows
     out["detail"] = detail_mode
     if detail_mode == "full":
         return out
-    compact_rows = rows[:3]
+    compact_rows = normalized_rows[:3]
     out["ratings"] = compact_rows
     out["summary"] = {
         "counts": {
             "returned": len(compact_rows),
-            "available": len(rows),
+            "available": len(normalized_rows),
         },
         "latest": compact_rows[0] if compact_rows else None,
     }
-    out["omitted_item_count"] = max(0, len(rows) - len(compact_rows))
+    out["omitted_item_count"] = max(0, len(normalized_rows) - len(compact_rows))
     return out
 
 
@@ -605,7 +657,7 @@ def _filter_finviz_fundamentals_payload(
         category_out = "all"
 
     filtered = {
-        field: fundamentals[field]
+        _normalize_finviz_output_key(field): fundamentals[field]
         for field in selected_fields
         if field in fundamentals and fundamentals[field] not in (None, "")
     }
@@ -651,7 +703,7 @@ def finviz_fundamentals(
     Example
     -------
     >>> finviz_fundamentals("AAPL")
-    {"success": True, "symbol": "AAPL", "fundamentals": {"P/E": "28.5", ...}}
+    {"success": True, "symbol": "AAPL", "fundamentals": {"pe_ratio": "28.5", ...}}
     """
     def _run() -> Dict[str, Any]:
         symbol_norm, error = _normalize_equity_symbol(symbol, tool_name="finviz_fundamentals")
@@ -943,7 +995,12 @@ def finviz_screen(
         if filter_error is not None:
             return filter_error
 
-        return screen_stocks(filters=filters_dict, order=order, limit=limit, page=page, view=view)
+        result = screen_stocks(filters=filters_dict, order=order, limit=limit, page=page, view=view)
+        if result.get("success") and isinstance(result.get("stocks"), list):
+            out = dict(result)
+            out["stocks"] = _normalize_finviz_output_rows(result["stocks"])
+            return out
+        return result
 
     return _run_logged_tool("finviz_screen", fields, _run)
 

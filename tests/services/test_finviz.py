@@ -607,8 +607,9 @@ class TestFinvizTools:
         mock_get_fundamentals.assert_called_once_with("AAPL")
         assert result["detail"] == "compact"
         assert result["category"] == "summary"
-        assert result["fundamentals"]["P/E"] == "34.29"
-        assert "Insider Own" not in result["fundamentals"]
+        assert result["fundamentals"]["pe_ratio"] == "34.29"
+        assert result["fundamentals"]["market_cap"] == "3979.47B"
+        assert "insider_own" not in result["fundamentals"]
         assert "fields_returned" not in result
         assert "available_field_count" not in result
         assert "omitted_field_count" not in result
@@ -633,9 +634,13 @@ class TestFinvizTools:
         custom = raw("AAPL", fields="P/E,RSI (14),Missing")
 
         assert valuation["category"] == "valuation"
-        assert valuation["fundamentals"] == {"P/E": "34.29", "P/S": "8.1", "EPS (ttm)": "7.90"}
+        assert valuation["fundamentals"] == {
+            "pe_ratio": "34.29",
+            "price_to_sales": "8.1",
+            "eps_ttm": "7.90",
+        }
         assert custom["category"] == "custom"
-        assert custom["fundamentals"] == {"P/E": "34.29", "RSI (14)": "62.1"}
+        assert custom["fundamentals"] == {"pe_ratio": "34.29", "rsi_14": "62.1"}
         assert custom["missing_fields"] == ["Missing"]
 
     @patch("mtdata.core.finviz.get_stock_fundamentals")
@@ -655,7 +660,7 @@ class TestFinvizTools:
         raw = getattr(finviz_fundamentals, "__wrapped__", finviz_fundamentals)
         result = raw("AAPL", detail="full")
 
-        assert result["fields_returned"] == ["Company", "Sector", "P/E"]
+        assert result["fields_returned"] == ["company", "sector", "pe_ratio"]
         assert result["available_field_count"] == 3
         assert result["omitted_field_count"] == 0
 
@@ -743,7 +748,11 @@ class TestFinvizTools:
         def _run_direct(_logger, operation, func, **fields):
             return func()
 
-        mock_screen.return_value = {"success": True, "count": 5, "stocks": []}
+        mock_screen.return_value = {
+            "success": True,
+            "count": 5,
+            "stocks": [{"Ticker": "AAPL", "Market Cap": "3.0T", "P/E": "28.5"}],
+        }
 
         with patch("mtdata.core.finviz.run_logged_operation", side_effect=_run_direct):
             result = finviz_screen.__wrapped__(
@@ -760,6 +769,7 @@ class TestFinvizTools:
         )
         assert result["success"] is True
         assert result["count"] == 5
+        assert result["stocks"] == [{"ticker": "AAPL", "market_cap": "3.0T", "pe_ratio": "28.5"}]
 
     @patch('mtdata.core.finviz.screen_stocks')
     def test_finviz_screen_tool_accepts_json_string_filters(self, mock_screen):
