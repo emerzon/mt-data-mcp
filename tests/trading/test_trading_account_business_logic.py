@@ -148,11 +148,45 @@ def test_trade_account_info_compact_detail_includes_account_fields_without_diagn
     assert "execution_ready" not in out
 
 
-def test_trade_account_info_rejects_non_compact_full_detail() -> None:
+def test_trade_account_info_accepts_standard_and_summary_as_compact() -> None:
     raw = _unwrap(trade_account_info)
 
-    assert raw(detail="standard") == {"error": "Invalid detail level. Use 'compact' or 'full'."}
-    assert raw(detail="summary") == {"error": "Invalid detail level. Use 'compact' or 'full'."}
+    gateway = SimpleNamespace(
+        ensure_connection=lambda: None,
+        account_info=lambda: SimpleNamespace(
+            balance=10000.0,
+            equity=10050.0,
+            profit=50.0,
+            margin=100.0,
+            margin_free=9950.0,
+            margin_level=1000.0,
+            currency="USD",
+            leverage=100,
+            trade_allowed=True,
+            trade_expert=True,
+        ),
+        build_trade_preflight=lambda account_info=None: {
+            "server": "Demo-Server",
+            "company": "Broker LLC",
+            "trade_mode": "demo",
+            "execution_ready": True,
+            "execution_blockers": [],
+        },
+    )
+    with patch.object(core_trading_account, "create_trading_gateway", return_value=gateway):
+        standard = raw(detail="standard")
+    with patch.object(core_trading_account, "create_trading_gateway", return_value=gateway):
+        summary = raw(detail="summary")
+
+    assert "execution_ready" not in standard
+    assert "execution_ready" not in summary
+    assert standard["balance"] == 10000.0
+    assert summary["balance"] == 10000.0
+
+
+def test_trade_account_info_rejects_unknown_detail() -> None:
+    raw = _unwrap(trade_account_info)
+
     assert raw(detail="basic") == {"error": "Invalid detail level. Use 'compact' or 'full'."}
 
 

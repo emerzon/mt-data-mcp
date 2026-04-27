@@ -118,10 +118,10 @@ class TestFinvizProgressiveDisclosure:
         assert result["omitted_item_count"] == 1
 
     @patch("mtdata.core.finviz.get_stock_ratings")
-    def test_finviz_detail_rejects_unknown_values(self, mock_get):
+    def test_finviz_detail_accepts_standard_alias_as_compact(self, mock_get):
         mock_get.return_value = {"success": True, "symbol": "AAPL", "ratings": []}
 
         result = _unwrap(finviz_ratings)("AAPL", detail="standard")  # type: ignore[arg-type]
 
-        assert result["success"] is False
-        assert result["error_code"] == "finviz_ratings_invalid_detail"
+        assert result["success"] is True
+        assert result["detail"] == "compact"

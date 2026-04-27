@@ -7,6 +7,7 @@ import numpy as np
 from ..shared.constants import TIMEFRAME_MAP
 from ..shared.schema import CompactFullDetailLiteral, DenoiseSpec, TimeframeLiteral
 from ..shared.validators import invalid_timeframe_error
+from ..core.output_contract import normalize_output_verbosity_detail
 from ..utils.denoise import normalize_denoise_spec as _normalize_denoise_spec
 from ..utils.utils import _format_time_minimal
 from .common import (
@@ -225,10 +226,7 @@ def _compute_performance_metrics(
 
 
 def _normalize_detail_mode(value: Any) -> Literal["compact", "full"]:
-    detail_mode = str(value or "compact").strip().lower()
-    if detail_mode not in {"compact", "full"}:
-        return "compact"
-    return detail_mode  # type: ignore[return-value]
+    return normalize_output_verbosity_detail(value, default="compact")  # type: ignore[return-value]
 
 
 def _contract_payload(model: Any) -> Dict[str, Any]:
@@ -609,8 +607,6 @@ def strategy_backtest(  # noqa: C901
         if position_mode_value not in {"long_only", "long_short"}:
             return {"error": "position_mode must be 'long_only' or 'long_short'"}
         detail_mode = _normalize_detail_mode(detail)
-        if str(detail or "compact").strip().lower() not in {"compact", "full"}:
-            return {"error": "detail must be 'compact' or 'full'"}
         if timeframe not in TIMEFRAME_MAP:
             return {"error": invalid_timeframe_error(timeframe, TIMEFRAME_MAP)}
         if int(lookback) < 5:

@@ -26,6 +26,7 @@ from ._mcp_instance import mcp
 from .constants import TIMEFRAME_MAP
 from .execution_logging import run_logged_operation
 from .mt5_gateway import get_mt5_gateway, mt5_connection_error
+from .output_contract import normalize_output_verbosity_detail
 
 logger = logging.getLogger(__name__)
 
@@ -1111,7 +1112,8 @@ def causal_discover_signals(  # noqa: C901
     """
 
     def _run() -> Dict[str, Any]:  # noqa: C901
-        detail_mode = str(detail or "compact").strip().lower()
+        requested_detail = str(detail or "compact").strip().lower()
+        detail_mode = normalize_output_verbosity_detail(detail, default="compact")
         meta: Dict[str, Any] = {
             "_tool": "causal_discover_signals",
             "_request_keys": _CAUSAL_DISCOVER_REQUEST_KEYS,
@@ -1123,9 +1125,9 @@ def causal_discover_signals(  # noqa: C901
             "normalize": bool(normalize),
             "detail": detail_mode,
         }
-        if detail_mode not in {"compact", "full"}:
+        if requested_detail not in {"compact", "standard", "summary", "full"}:
             return _causal_error(
-                "detail must be 'compact' or 'full'.",
+                "detail must be one of: compact, standard, summary, full.",
                 code="invalid_detail",
                 meta=meta,
             )
@@ -1674,10 +1676,11 @@ def correlation_matrix(  # noqa: C901
                 meta=meta,
             )
         meta["transform"] = transform_value
-        detail_mode = str(detail or "compact").strip().lower()
-        if detail_mode not in {"compact", "full"}:
+        requested_detail = str(detail or "compact").strip().lower()
+        detail_mode = normalize_output_verbosity_detail(detail, default="compact")
+        if requested_detail not in {"compact", "standard", "summary", "full"}:
             return _causal_error(
-                "detail must be 'compact' or 'full'.",
+                "detail must be one of: compact, standard, summary, full.",
                 code="invalid_input",
                 meta=meta,
             )
@@ -2022,10 +2025,11 @@ def cointegration_test(  # noqa: C901
                 meta=meta,
             )
 
-        detail_mode = str(detail or "compact").strip().lower()
-        if detail_mode not in {"compact", "full"}:
+        requested_detail = str(detail or "compact").strip().lower()
+        detail_mode = normalize_output_verbosity_detail(detail, default="compact")
+        if requested_detail not in {"compact", "standard", "summary", "full"}:
             return _causal_error(
-                "detail must be 'compact' or 'full'.",
+                "detail must be one of: compact, standard, summary, full.",
                 code="invalid_input",
                 meta=meta,
             )

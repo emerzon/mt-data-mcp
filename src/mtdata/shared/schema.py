@@ -222,11 +222,14 @@ PARAM_HINTS = {
 _TIMEFRAME_CHOICES = tuple(sorted(TIMEFRAME_MAP.keys()))
 TimeframeLiteral = Literal[_TIMEFRAME_CHOICES]  # type: ignore
 AutoTimeframeLiteral = Union[TimeframeLiteral, Literal["auto"]]
-CANONICAL_OUTPUT_SHAPE_DETAILS = ("compact", "full")
-CANONICAL_OUTPUT_DETAIL_ALIASES = types.MappingProxyType({"summary_only": "summary"})
-CompactFullDetailLiteral = Literal["compact", "full"]
-CompactStandardFullDetailLiteral = Literal["compact", "standard", "full"]
-SummaryCompactFullDetailLiteral = Literal["full", "summary", "compact"]
+CANONICAL_OUTPUT_SHAPE_DETAILS = ("compact", "standard", "summary", "full")
+CANONICAL_OUTPUT_DETAIL_ALIASES = types.MappingProxyType(
+    {"summary_only": "summary", "standard": "compact", "summary": "compact"}
+)
+DetailLiteral = Literal["compact", "standard", "summary", "full"]
+CompactFullDetailLiteral = DetailLiteral
+CompactStandardFullDetailLiteral = DetailLiteral
+SummaryCompactFullDetailLiteral = DetailLiteral
 
 # ---- Technical Indicators (dynamic discovery and application) ----
 def _load_indicator_doc_choices(

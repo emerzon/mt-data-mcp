@@ -93,9 +93,8 @@ def test_data_fetch_requests_explain_invalid_simplify_string():
     assert "on/auto" in message
 
 
-def test_data_fetch_candles_rejects_standard_detail_alias():
-    with pytest.raises(ValidationError):
-        DataFetchCandlesRequest(symbol="EURUSD", detail="standard")
+def test_data_fetch_candles_accepts_standard_detail_alias():
+    assert DataFetchCandlesRequest(symbol="EURUSD", detail="standard").detail == "standard"
 
 
 def test_data_fetch_candles_schema_documents_ohlcv():

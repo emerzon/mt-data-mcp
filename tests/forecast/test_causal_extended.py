@@ -562,12 +562,19 @@ class TestCausalDiscoverSignals:
         assert {row["significant"] for row in result["data"]["items"]} == {False, True}
         assert "pairs" in result
 
-    def test_invalid_detail_is_rejected(self):
+    @patch("mtdata.core.causal._causal_connection_error", return_value={"error": "offline"})
+    def test_standard_detail_alias_uses_compact_output(self, _mock_connection):
         result = self._unwrapped()("A,B", detail="standard")  # type: ignore[arg-type]
 
         assert result["success"] is False
+        assert result["meta"]["request"]["detail"] == "compact"
+
+    def test_invalid_detail_is_rejected(self):
+        result = self._unwrapped()("A,B", detail="basic")  # type: ignore[arg-type]
+
+        assert result["success"] is False
         assert result["error_code"] == "invalid_detail"
-        assert "detail must be" in result["error"]
+        assert "detail must be one of" in result["error"]
 
     @patch("statsmodels.tsa.stattools.grangercausalitytests")
     @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})

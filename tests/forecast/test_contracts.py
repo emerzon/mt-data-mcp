@@ -78,15 +78,13 @@ def test_execution_contract_inferrs_multivariate_mode_and_validates_capabilities
     assert execution.inferred_input_mode() == "multivariate"
 
 
-def test_backtest_evaluation_contract_rejects_standard_detail_alias() -> None:
-    with pytest.raises(ValidationError):
-        BacktestEvaluationContract(detail="standard")
+def test_backtest_evaluation_contract_accepts_standard_detail_alias() -> None:
+    assert BacktestEvaluationContract(detail="standard").detail == "standard"
 
 
 def test_forecast_detail_schema_distinguishes_standard_support() -> None:
     assert ForecastGenerateRequest(symbol="EURUSD", detail="standard").detail == "standard"
-    with pytest.raises(ValidationError):
-        ForecastBacktestRequest(symbol="EURUSD", detail="standard")
+    assert ForecastBacktestRequest(symbol="EURUSD", detail="standard").detail == "standard"
 
 
 def test_forecast_generate_default_horizon_matches_forecast_tooling() -> None:

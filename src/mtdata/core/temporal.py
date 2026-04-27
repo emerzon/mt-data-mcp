@@ -30,6 +30,7 @@ from ._mcp_instance import mcp
 from .constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from .execution_logging import run_logged_operation
 from .mt5_gateway import get_mt5_gateway
+from .output_contract import normalize_output_verbosity_detail
 from .schema import CompactFullDetailLiteral, TimeframeLiteral
 
 logger = logging.getLogger(__name__)
@@ -418,10 +419,11 @@ def temporal_analyze(  # noqa: C901
                     context=context,
                 )
             context["group_by"] = group_norm
-            detail_mode = str(detail or "compact").strip().lower()
-            if detail_mode not in {"compact", "full"}:
+            requested_detail = str(detail or "compact").strip().lower()
+            detail_mode = normalize_output_verbosity_detail(detail, default="compact")
+            if requested_detail not in {"compact", "standard", "summary", "full"}:
                 return _error_response(
-                    "detail must be 'compact' or 'full'.",
+                    "detail must be one of: compact, standard, summary, full.",
                     stage="validate",
                     context=context,
                 )

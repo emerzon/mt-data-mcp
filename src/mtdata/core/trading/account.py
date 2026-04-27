@@ -27,6 +27,7 @@ from ..execution_logging import run_logged_operation
 from ..output_contract import (
     ensure_common_meta,
     normalize_output_detail,
+    normalize_output_verbosity_detail,
 )
 from . import comments, validation
 from .gateway import create_trading_gateway
@@ -517,12 +518,10 @@ def trade_account_info(
     """
 
     def _run() -> dict:
-        requested_mode = normalize_output_detail(
-            detail,
-            default="full",
-        )
-        if requested_mode not in {"compact", "full"}:
+        requested_raw = normalize_output_detail(detail, default="full")
+        if requested_raw not in {"compact", "standard", "summary", "full"}:
             return {"error": "Invalid detail level. Use 'compact' or 'full'."}
+        requested_mode = normalize_output_verbosity_detail(detail, default="full")
 
         mt5 = create_trading_gateway(
             include_trade_preflight=True,

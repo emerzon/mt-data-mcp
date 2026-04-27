@@ -33,6 +33,8 @@ from ..services.finviz import (
 from ._mcp_instance import mcp
 from .error_envelope import build_error_payload
 from .execution_logging import run_logged_operation
+from .output_contract import normalize_output_verbosity_detail
+from .schema import CompactFullDetailLiteral
 
 logger = logging.getLogger(__name__)
 
@@ -499,7 +501,8 @@ def _normalize_finviz_output_rows(rows: Any) -> Any:
 
 
 def _validate_finviz_detail(detail: str, *, operation: str) -> Optional[Dict[str, Any]]:
-    if str(detail or "full").strip().lower() in {"compact", "full"}:
+    normalized = str(detail or "full").strip().lower()
+    if normalized in {"compact", "standard", "summary", "full"}:
         return None
     return _finviz_error_payload(
         "detail must be 'compact' or 'full'.",
@@ -522,7 +525,7 @@ def _compact_finviz_insider_payload(result: Dict[str, Any], *, detail: str) -> D
     error = _validate_finviz_detail(detail, operation="finviz_insider")
     if error is not None or not result.get("success"):
         return error or result
-    detail_mode = str(detail or "full").strip().lower()
+    detail_mode = normalize_output_verbosity_detail(detail, default="full")
     rows = result.get("insider_trades")
     if not isinstance(rows, list):
         return result
@@ -552,7 +555,7 @@ def _compact_finviz_ratings_payload(result: Dict[str, Any], *, detail: str) -> D
     error = _validate_finviz_detail(detail, operation="finviz_ratings")
     if error is not None or not result.get("success"):
         return error or result
-    detail_mode = str(detail or "full").strip().lower()
+    detail_mode = normalize_output_verbosity_detail(detail, default="full")
     rows = result.get("ratings")
     if not isinstance(rows, list):
         return result
@@ -579,7 +582,7 @@ def _compact_finviz_peers_payload(result: Dict[str, Any], *, detail: str) -> Dic
     error = _validate_finviz_detail(detail, operation="finviz_peers")
     if error is not None or not result.get("success"):
         return error or result
-    detail_mode = str(detail or "full").strip().lower()
+    detail_mode = normalize_output_verbosity_detail(detail, default="full")
     peers = result.get("peers")
     if not isinstance(peers, list):
         return result
@@ -618,9 +621,9 @@ def _filter_finviz_fundamentals_payload(
     if not isinstance(fundamentals, dict):
         return result
 
-    detail_mode = str(detail or "compact").strip().lower()
+    detail_mode = normalize_output_verbosity_detail(detail, default="compact")
     category_mode = str(category or "summary").strip().lower()
-    if detail_mode not in {"compact", "full"}:
+    if str(detail or "compact").strip().lower() not in {"compact", "standard", "summary", "full"}:
         return _finviz_error_payload(
             "detail must be 'compact' or 'full'.",
             code="finviz_fundamentals_invalid_detail",
@@ -679,7 +682,7 @@ def _filter_finviz_fundamentals_payload(
 @mcp.tool()
 def finviz_fundamentals(
     symbol: str,
-    detail: Literal["compact", "full"] = "compact",  # type: ignore
+    detail: CompactFullDetailLiteral = "compact",  # type: ignore
     category: str = "summary",
     fields: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -798,7 +801,7 @@ def finviz_insider(
     symbol: str,
     limit: int = 20,
     page: int = 1,
-    detail: Literal["compact", "full"] = "full",  # type: ignore
+    detail: CompactFullDetailLiteral = "full",  # type: ignore
 ) -> Dict[str, Any]:
     """
     Get insider trading activity for a US stock.
@@ -843,7 +846,7 @@ def finviz_insider(
 @mcp.tool()
 def finviz_ratings(
     symbol: str,
-    detail: Literal["compact", "full"] = "full",  # type: ignore
+    detail: CompactFullDetailLiteral = "full",  # type: ignore
 ) -> Dict[str, Any]:
     """
     Get analyst ratings for a US stock.
@@ -881,7 +884,7 @@ def finviz_ratings(
 @mcp.tool()
 def finviz_peers(
     symbol: str,
-    detail: Literal["compact", "full"] = "full",  # type: ignore
+    detail: CompactFullDetailLiteral = "full",  # type: ignore
 ) -> Dict[str, Any]:
     """
     Get peer companies for a US stock.
