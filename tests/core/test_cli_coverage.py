@@ -2073,7 +2073,7 @@ class TestAttachCliMeta:
         assert out["meta"]["tool"] == "market_ticker"
         assert out["diagnostics"]["source"] == "mt5.symbol_info_tick"
 
-    def test_verbose_market_ticker_reads_meta_diagnostics_first(self):
+    def test_verbose_market_ticker_does_not_copy_meta_diagnostics_to_root(self):
         r = {
             "time": 1700000000,
             "bid": 200.0,
@@ -2099,8 +2099,27 @@ class TestAttachCliMeta:
         out = _attach_cli_meta(r, cmd_name="market_ticker", verbose=True)
 
         assert out["meta"]["tool"] == "market_ticker"
-        assert out["diagnostics"]["source"] == "meta.source"
-        assert out["diagnostics"]["cache_used"] is True
+        assert out["meta"]["diagnostics"]["source"] == "meta.source"
+        assert out["diagnostics"]["source"] == "legacy.source"
+        assert out["diagnostics"]["cache_used"] is False
+
+    def test_verbose_market_ticker_keeps_meta_diagnostics_nested(self):
+        r = {
+            "time": 1700000000,
+            "bid": 200.0,
+            "ask": 201.0,
+            "meta": {
+                "diagnostics": {
+                    "source": "mt5.symbol_info_tick",
+                    "cache_used": False,
+                }
+            },
+        }
+        out = _attach_cli_meta(r, cmd_name="market_ticker", verbose=True)
+
+        assert out["meta"]["tool"] == "market_ticker"
+        assert out["meta"]["diagnostics"]["source"] == "mt5.symbol_info_tick"
+        assert "diagnostics" not in out
 
 
 # ========================================================================

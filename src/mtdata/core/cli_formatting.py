@@ -633,11 +633,4 @@ def _attach_cli_meta(result: Any, *, cmd_name: str, verbose: bool) -> Any:
         from .news import normalize_news_output
 
         result = normalize_news_output(result, detail=detail)
-    elif cmd_name == "market_ticker" and isinstance(result, dict):
-        meta = result.get("meta")
-        diagnostics = meta.get("diagnostics") if isinstance(meta, dict) else None
-        if isinstance(diagnostics, dict):
-            normalized = dict(result)
-            normalized["diagnostics"] = dict(diagnostics)
-            result = normalized
     return apply_output_verbosity(result, tool_name=cmd_name, detail=detail)
