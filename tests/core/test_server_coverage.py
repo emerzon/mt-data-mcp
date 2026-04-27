@@ -881,6 +881,30 @@ class TestRecordingToolDecorator:
         finally:
             srv._ORIG_TOOL_DECORATOR = original
 
+    def test_async_wrapped_skips_transport_timeout_for_forecast_tuning_tools(self):
+        import asyncio
+
+        import mtdata.core.server as srv
+
+        original = srv._ORIG_TOOL_DECORATOR
+        try:
+            srv._ORIG_TOOL_DECORATOR = lambda *a, **k: (lambda fn: fn)
+            dec = srv._recording_tool_decorator()
+
+            def forecast_optimize_hints():
+                return {"success": True}
+
+            wrapped = dec(forecast_optimize_hints)
+            async_wrapped = wrapped._mcp_async_wrapper
+
+            with patch("mtdata.core._mcp_tools.asyncio.wait_for") as wait_for:
+                result = asyncio.run(async_wrapped(__cli_raw=True))
+
+            assert result == {"success": True}
+            wait_for.assert_not_called()
+        finally:
+            srv._ORIG_TOOL_DECORATOR = original
+
     def test_skips_variadic_args_in_exposed_signature(self):
         import mtdata.core.server as srv
         from mtdata.core._mcp_tools import _TOOL_REGISTRY

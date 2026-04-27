@@ -29,6 +29,15 @@ except Exception:  # pragma: no cover - Python 3.14+ should provide this
 _ORIG_TOOL_DECORATOR: Any = None
 _ANNOTATION_VALUE_FORMAT = getattr(getattr(annotationlib, "Format", None), "VALUE", None)
 _REGISTRY_UNSET = object()
+_TOOL_TIMEOUT_SECONDS = 120
+_NO_TIMEOUT_TOOLS = frozenset(
+    {
+        "wait_event",
+        "forecast_optimize_hints",
+        "forecast_tune_genetic",
+        "forecast_tune_optuna",
+    }
+)
 
 
 @dataclass
@@ -653,11 +662,6 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # n
         # block the event loop while the underlying work runs in a worker thread.
         # A generous timeout prevents indefinite hangs when the underlying MT5
         # COM bridge deadlocks under concurrent access.
-        _TOOL_TIMEOUT_SECONDS = 120
-        # Tools that legitimately block for extended periods (e.g. wait_event
-        # polling for price targets) must not be killed by the safety timeout.
-        _NO_TIMEOUT_TOOLS = frozenset({"wait_event"})
-
         @_wraps(func)
         async def _async_wrapped(*a, **kw):
             _tool_name = getattr(func, "__name__", "tool")
