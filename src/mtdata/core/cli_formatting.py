@@ -4,12 +4,9 @@ import types
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from ..utils.minimal_output import (
-    _is_empty_value,
-)
-from ..utils.minimal_output import (
-    format_result_minimal as _shared_minimal,
-)
+from ..shared.output_precision import resolve_output_precision
+from ..utils.minimal_output import _is_empty_value
+from ..utils.minimal_output import format_result_minimal as _shared_minimal
 from .mt5_gateway import get_default_mt5_gateway
 from .output_contract import apply_output_verbosity
 from .runtime_metadata import _safe_tz_name as _runtime_safe_tz_name
@@ -104,13 +101,29 @@ def _resolve_cli_formatter(args: Any) -> str:
     return CLI_FORMAT_TOON
 
 
-def _format_result_for_cli(result: Any, *, fmt: str, verbose: bool, cmd_name: str) -> str:
+def _format_result_for_cli(
+    result: Any,
+    *,
+    fmt: str,
+    verbose: bool,
+    cmd_name: str,
+    precision: Any = None,
+    decimals: Any = None,
+) -> str:
     fmt_s = _normalize_cli_formatter(fmt)
+    precision_policy = resolve_output_precision(
+        None,
+        tool_name=cmd_name,
+        fmt=fmt_s,
+        precision=precision,
+        decimals=decimals,
+    )
     prepared = _prepare_cli_payload(
         result,
         fmt=fmt_s,
         verbose=verbose,
         cmd_name=cmd_name,
+        precision=precision_policy.mode,
     )
     if fmt_s == CLI_FORMAT_JSON:
         payload = {"text": prepared} if isinstance(prepared, str) else prepared
@@ -118,12 +131,12 @@ def _format_result_for_cli(result: Any, *, fmt: str, verbose: bool, cmd_name: st
         return json.dumps(payload, ensure_ascii=False, indent=2, allow_nan=False, default=_json_default)
     if isinstance(prepared, str):
         return prepared
-    simplify_numbers = not str(cmd_name or "").startswith("trade_")
     try:
         return _shared_minimal(
             prepared,
             verbose=verbose,
-            simplify_numbers=simplify_numbers,
+            precision=precision_policy.mode,
+            decimals=precision_policy.decimals,
             tool_name=cmd_name,
         )
     except TypeError:
@@ -279,7 +292,12 @@ def _round_cli_float(value: Any, *, digits: int) -> Any:
         return value
 
 
-def _normalize_market_ticker_cli_payload(result: Any, *, verbose: bool) -> Any:
+def _normalize_market_ticker_cli_payload(
+    result: Any,
+    *,
+    verbose: bool,
+    compact_numbers: bool = False,
+) -> Any:
     if not isinstance(result, dict):
         return result
 
@@ -300,14 +318,15 @@ def _normalize_market_ticker_cli_payload(result: Any, *, verbose: bool) -> Any:
     else:
         out.pop("time", None)
 
-    for field, digits in (
-        ("spread_points", 4),
-        ("spread_pips", 4),
-        ("spread_pct", 6),
-        ("spread_usd", 6),
-    ):
-        if field in out:
-            out[field] = _round_cli_float(out.get(field), digits=digits)
+    if compact_numbers:
+        for field, digits in (
+            ("spread_points", 4),
+            ("spread_pips", 4),
+            ("spread_pct", 6),
+            ("spread_usd", 6),
+        ):
+            if field in out:
+                out[field] = _round_cli_float(out.get(field), digits=digits)
 
     out.pop("time_display", None)
     if verbose and not _is_empty_value(raw_epoch):
@@ -342,14 +361,23 @@ def _compact_trade_session_items(
     return rows or None
 
 
-def _normalize_trade_session_context_cli_payload(result: Any, *, verbose: bool) -> Any:
+def _normalize_trade_session_context_cli_payload(
+    result: Any,
+    *,
+    verbose: bool,
+    compact_numbers: bool = False,
+) -> Any:
     if not isinstance(result, dict):
         return result
 
     out = dict(result)
     ticker_in = out.get("ticker")
     if isinstance(ticker_in, dict):
-        ticker_norm = _normalize_market_ticker_cli_payload(ticker_in, verbose=verbose)
+        ticker_norm = _normalize_market_ticker_cli_payload(
+            ticker_in,
+            verbose=verbose,
+            compact_numbers=compact_numbers,
+        )
         if verbose:
             out["ticker"] = ticker_norm
         else:
@@ -555,12 +583,33 @@ def _render_mt5_news_cli_compact(result: Any) -> Any:
     return "\n".join(lines)
 
 
-def _prepare_cli_payload(result: Any, *, fmt: str, verbose: bool, cmd_name: str) -> Any:
+def _prepare_cli_payload(
+    result: Any,
+    *,
+    fmt: str,
+    verbose: bool,
+    cmd_name: str,
+    precision: Any = None,
+) -> Any:
     prepared = result
+    compact_numbers = resolve_output_precision(
+        None,
+        tool_name=cmd_name,
+        fmt=fmt,
+        precision=precision,
+    ).simplify_numbers
     if cmd_name == "market_ticker":
-        prepared = _normalize_market_ticker_cli_payload(prepared, verbose=verbose)
+        prepared = _normalize_market_ticker_cli_payload(
+            prepared,
+            verbose=verbose,
+            compact_numbers=compact_numbers,
+        )
     elif cmd_name == "trade_session_context":
-        prepared = _normalize_trade_session_context_cli_payload(prepared, verbose=verbose)
+        prepared = _normalize_trade_session_context_cli_payload(
+            prepared,
+            verbose=verbose,
+            compact_numbers=compact_numbers,
+        )
     elif cmd_name == "symbols_describe":
         prepared = _normalize_symbols_describe_cli_payload(prepared, verbose=verbose)
     elif cmd_name == "market_scan" and fmt == CLI_FORMAT_TOON:

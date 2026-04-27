@@ -527,6 +527,8 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # n
         @_wraps(func)
         def _wrapped(*a, **kw):
             raw_output = kw.pop("__cli_raw", False)
+            precision = kw.pop("precision", None)
+            decimals = kw.pop("decimals", None)
             contract_state = resolve_output_contract({})
 
             try:
@@ -599,11 +601,11 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # n
                         s = _fmt_methods(cast(List[Dict[str, Any]], methods_list))
                         if s:
                             return s
-                simplify_numbers = not str(fname).startswith("trade_")
                 return _fmt_min(
                     out,
                     verbose=contract_state.verbose,
-                    simplify_numbers=simplify_numbers,
+                    precision=precision,
+                    decimals=decimals,
                     tool_name=fname,
                 )
             except Exception:
@@ -622,6 +624,25 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # n
                     ):
                         continue
                     params.append(param.replace(annotation=cleaned.get(name)))
+            existing_names = {param.name for param in params}
+            if "precision" not in existing_names:
+                params.append(
+                    inspect.Parameter(
+                        "precision",
+                        inspect.Parameter.KEYWORD_ONLY,
+                        default="auto",
+                        annotation=str,
+                    )
+                )
+            if "decimals" not in existing_names:
+                params.append(
+                    inspect.Parameter(
+                        "decimals",
+                        inspect.Parameter.KEYWORD_ONLY,
+                        default=None,
+                        annotation=Union[int, None],
+                    )
+                )
             _wrapped.__annotations__ = cleaned
             return_ann = cleaned.get("return", inspect._empty)
             _wrapped.__signature__ = inspect.Signature(parameters=params, return_annotation=return_ann)

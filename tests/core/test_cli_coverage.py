@@ -652,9 +652,9 @@ class TestFormatResultForCli:
             )
         )
         assert payload["time"] == "2023-11-14 22:13"
-        assert payload["spread_points"] == 9.0
+        assert payload["spread_points"] == 8.999999999992347
         assert "spread_pips" not in payload
-        assert payload["spread_pct"] == 0.007796
+        assert payload["spread_pct"] == 0.007795818842487513
         assert payload["spread_pct_display"] == "0.007796%"
         assert "time_display" not in payload
         assert "time_epoch" not in payload

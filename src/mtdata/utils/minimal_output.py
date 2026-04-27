@@ -10,6 +10,7 @@ import math
 from numbers import Number
 from typing import Any, Dict, Iterable, List, Optional, cast
 
+from ..shared.output_precision import resolve_output_precision
 from .minimal_output_toon import (
     _DEFAULT_DELIMITER,
     _INDENT,
@@ -244,7 +245,7 @@ def _resolve_tool_name(result: Any, tool_name: Optional[str]) -> str:
 
 
 def _normalize_forecast_payload(
-    payload: Dict[str, Any], verbose: bool = True
+    payload: Dict[str, Any], verbose: bool = True, *, format_digits: bool = True
 ) -> Optional[Dict[str, Any]]:  # noqa: C901
     """Convert forecast payload into meta + tabular rows when possible."""
     try:
@@ -360,7 +361,7 @@ def _normalize_forecast_payload(
         rows: List[Dict[str, Any]] = []
         for i in range(n):
             val = fvals[i]
-            if digits is not None and isinstance(val, (int, float)):
+            if format_digits and digits is not None and isinstance(val, (int, float)):
                 try:
                     val = f"{float(val):.{digits}f}"
                 except Exception:
@@ -373,7 +374,7 @@ def _normalize_forecast_payload(
             if include_interval_columns:
                 low_val = lower[i] if i < len(lower) else None
                 up_val = upper[i] if i < len(upper) else None
-                if digits is not None:
+                if format_digits and digits is not None:
                     try:
                         if isinstance(low_val, (int, float)):
                             low_val = f"{float(low_val):.{digits}f}"
@@ -388,7 +389,7 @@ def _normalize_forecast_payload(
                 if not isinstance(qarr, list):
                     continue
                 q_val = qarr[i] if i < len(qarr) else None
-                if digits is not None and isinstance(q_val, (int, float)):
+                if format_digits and digits is not None and isinstance(q_val, (int, float)):
                     try:
                         q_val = f"{float(q_val):.{digits}f}"
                     except Exception:
@@ -1849,8 +1850,10 @@ def format_result_minimal(
     result: Any,
     verbose: bool = True,
     *,
-    simplify_numbers: bool = True,
+    simplify_numbers: Optional[bool] = None,
     tool_name: Optional[str] = None,
+    precision: Any = None,
+    decimals: Any = None,
 ) -> str:
     """Render tool outputs as TOON text."""
     if result is None:
@@ -1858,12 +1861,19 @@ def format_result_minimal(
     try:
         normalized = result
         resolved_tool_name = _resolve_tool_name(result, tool_name)
+        precision_policy = resolve_output_precision(
+            None,
+            tool_name=resolved_tool_name,
+            precision=precision,
+            decimals=decimals,
+            simplify_numbers=simplify_numbers,
+        )
         if isinstance(result, dict):
             news_rendered = _render_news_payload(
                 result,
                 verbose=verbose,
                 tool_name=resolved_tool_name,
-                simplify_numbers=simplify_numbers,
+                simplify_numbers=precision_policy.simplify_numbers,
             )
             if news_rendered is not None:
                 return news_rendered.strip()
@@ -1927,7 +1937,9 @@ def format_result_minimal(
                             normalized = triple_barrier_norm
                         else:
                             forecast_norm = _normalize_forecast_payload(
-                                result, verbose=verbose
+                                result,
+                                verbose=verbose,
+                                format_digits=precision_policy.simplify_numbers,
                             )
                             if forecast_norm is not None:
                                 normalized = forecast_norm
@@ -1983,7 +1995,11 @@ def format_result_minimal(
                 normalized = market_status_norm
         if isinstance(normalized, str):
             return normalized.strip()
-        toon_text = _format_to_toon(normalized, simplify_numbers=simplify_numbers)
+        toon_text = _format_to_toon(
+            normalized,
+            simplify_numbers=precision_policy.simplify_numbers,
+            decimals=precision_policy.decimals,
+        )
         return toon_text.strip()
     except Exception:
         try:

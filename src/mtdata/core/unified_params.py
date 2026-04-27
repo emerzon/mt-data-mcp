@@ -9,6 +9,7 @@ import argparse
 from typing import Optional
 
 from ..shared.parameter_contracts import PARAMETER_HELP
+from ..shared.output_precision import PRECISION_CHOICES
 from .constants import DEFAULT_TIMEFRAME
 
 
@@ -49,3 +50,26 @@ def add_global_args_to_parser(
             '--json',
             **json_kwargs,
         )
+
+    if 'precision' not in exclude_params:
+        precision_kwargs = {
+            "choices": PRECISION_CHOICES,
+            "default": "auto",
+            "help": (
+                "Numeric display precision: auto (safe defaults), compact/display "
+                "for token-saving output, or full/raw for unminimized numbers."
+            ),
+        }
+        if suppress_defaults:
+            precision_kwargs["default"] = argparse.SUPPRESS
+        parser.add_argument("--precision", **precision_kwargs)
+
+    if 'decimals' not in exclude_params:
+        decimals_kwargs = {
+            "type": int,
+            "default": None,
+            "help": "Optional display decimal override for formatted text output.",
+        }
+        if suppress_defaults:
+            decimals_kwargs["default"] = argparse.SUPPRESS
+        parser.add_argument("--decimals", **decimals_kwargs)

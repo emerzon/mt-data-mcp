@@ -60,6 +60,26 @@ Structured output for programmatic use:
 mtdata-cli symbols_list --limit 5 --json
 ```
 
+JSON output keeps numeric values unminimized by default. Text output uses
+`--precision auto`, which preserves full precision for trading and price-level
+tools while compacting known large tables such as candles and scans.
+
+Control display precision explicitly:
+```bash
+# Preserve full numeric precision in formatted text
+mtdata-cli market_ticker EURUSD --precision full
+
+# Compact a large table for token-saving display
+mtdata-cli data_fetch_candles EURUSD --limit 200 --precision compact
+
+# Use a deterministic display decimal count
+mtdata-cli data_fetch_candles EURUSD --limit 200 --precision compact --decimals 5
+```
+
+`--precision raw` is accepted as an alias for `full`, and `display` is accepted
+as an alias for `compact`. Precision controls only presentation; internal tool
+processing and JSON/raw payloads keep numeric values.
+
 ### Full Detail
 For commands that expose a `--detail` flag, request the richer contract:
 ```bash

@@ -31,6 +31,7 @@ from pydantic import BaseModel
 from ...bootstrap.settings import load_environment
 from ...bootstrap.tools import bootstrap_tools
 from ...forecast.requests import ForecastGenerateRequest
+from ...shared.output_precision import resolve_output_precision
 from ...utils.minimal_output import format_result_minimal as _shared_minimal
 from .._mcp_instance import mcp
 from .._mcp_tools import _get_pydantic_model_fields
@@ -442,14 +443,28 @@ def _apply_cli_output_mode_defaults(
 
 
 def _format_result_for_cli(
-    result: Any, *, fmt: str, verbose: bool, cmd_name: str
+    result: Any,
+    *,
+    fmt: str,
+    verbose: bool,
+    cmd_name: str,
+    precision: Any = None,
+    decimals: Any = None,
 ) -> str:
     fmt_s = _normalize_cli_formatter(fmt)
+    precision_policy = resolve_output_precision(
+        None,
+        tool_name=cmd_name,
+        fmt=fmt_s,
+        precision=precision,
+        decimals=decimals,
+    )
     prepared = _prepare_cli_payload(
         result,
         fmt=fmt_s,
         verbose=verbose,
         cmd_name=cmd_name,
+        precision=precision_policy.mode,
     )
     if fmt_s == CLI_FORMAT_JSON:
         payload = {"text": prepared} if isinstance(prepared, str) else prepared
@@ -463,12 +478,12 @@ def _format_result_for_cli(
         )
     if isinstance(prepared, str):
         return prepared
-    simplify_numbers = not str(cmd_name or "").startswith("trade_")
     try:
         return _shared_minimal(
             prepared,
             verbose=verbose,
-            simplify_numbers=simplify_numbers,
+            precision=precision_policy.mode,
+            decimals=precision_policy.decimals,
             tool_name=cmd_name,
         )
     except TypeError:
@@ -542,6 +557,8 @@ def _render_cli_result(result: Any, *, args: Any, cmd_name: str) -> None:
         fmt=_resolve_cli_formatter(args),
         verbose=verbose,
         cmd_name=cmd_name,
+        precision=getattr(args, "precision", None),
+        decimals=getattr(args, "decimals", None),
     )
     if output:
         _write_cli_text(output)

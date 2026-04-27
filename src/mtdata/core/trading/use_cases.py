@@ -1128,6 +1128,8 @@ def run_trade_close(  # noqa: C901
         out["no_action"] = True
         return out
 
+    magic_kwargs = {"magic": request.magic} if request.magic is not None else {}
+
     if request.profit_only and request.loss_only:
         return _finish(
             {"error": "profit_only and loss_only cannot both be true."},
@@ -1273,7 +1275,7 @@ def run_trade_close(  # noqa: C901
         result = close_positions(
             ticket=request.ticket,
             symbol=request.symbol,
-            magic=request.magic,
+            **magic_kwargs,
             volume=None,
             profit_only=request.profit_only,
             loss_only=request.loss_only,
@@ -1294,7 +1296,7 @@ def run_trade_close(  # noqa: C901
         position_result = close_positions(
             ticket=request.ticket,
             symbol=request.symbol,
-            magic=request.magic,
+            **magic_kwargs,
             volume=request.volume,
             profit_only=False,
             loss_only=False,
@@ -1324,7 +1326,7 @@ def run_trade_close(  # noqa: C901
             pending_result = cancel_pending(
                 ticket=request.ticket,
                 symbol=request.symbol,
-                magic=request.magic,
+                **magic_kwargs,
                 comment=request.comment,
             )
             if (
@@ -1353,7 +1355,7 @@ def run_trade_close(  # noqa: C901
     if request.symbol is not None:
         position_result = close_positions(
             symbol=request.symbol,
-            magic=request.magic,
+            **magic_kwargs,
             volume=None,
             profit_only=False,
             loss_only=False,
@@ -1366,7 +1368,7 @@ def run_trade_close(  # noqa: C901
             if msg.startswith("no open positions for ") or msg == "no positions matched criteria":
                 pending_result = cancel_pending(
                     symbol=request.symbol,
-                    magic=request.magic,
+                    **magic_kwargs,
                     comment=request.comment,
                 )
                 if isinstance(pending_result, dict):
@@ -1385,7 +1387,7 @@ def run_trade_close(  # noqa: C901
         return _finish(position_result, scope="positions")
 
     position_result = close_positions(
-        magic=request.magic,
+        **magic_kwargs,
         volume=None,
         profit_only=False,
         loss_only=False,
@@ -1397,7 +1399,7 @@ def run_trade_close(  # noqa: C901
         msg = str(position_result.get("message", "")).strip().lower()
         if msg in {"no open positions", "no positions matched criteria"}:
             pending_result = cancel_pending(
-                magic=request.magic,
+                **magic_kwargs,
                 comment=request.comment,
             )
             if (

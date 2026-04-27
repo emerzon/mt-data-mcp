@@ -6,7 +6,6 @@ import math
 from numbers import Number
 from typing import Any, Dict, Iterable, List, Optional, cast
 
-from ..shared.constants import DISPLAY_MAX_DECIMALS
 from .formatting import format_float as _format_float
 from .formatting import format_number
 from .formatting import optimal_decimals as _optimal_decimals
@@ -110,8 +109,8 @@ def _is_empty_value(value: Any) -> bool:
     return False
 
 
-def _format_number_fixed(num: float) -> str:
-    return _format_float(num, DISPLAY_MAX_DECIMALS)
+def _format_number_full(num: float) -> str:
+    return repr(float(num))
 
 
 def _minify_number(num: float) -> str:
@@ -278,6 +277,7 @@ def _stringify_for_toon(
     delimiter: str = _DEFAULT_DELIMITER,
     *,
     simplify_numbers: bool = True,
+    decimals: Optional[int] = None,
 ) -> str:
     if value is None:
         return "null"
@@ -288,7 +288,9 @@ def _stringify_for_toon(
     if isinstance(value, float):
         if not math.isfinite(value):
             return _stringify_nonfinite_number(value)
-        return format_number(value) if simplify_numbers else _format_number_fixed(value)
+        if decimals is not None:
+            return _format_float(value, int(decimals))
+        return format_number(value) if simplify_numbers else _format_number_full(value)
     return _quote_if_needed(str(value), delimiter)
 
 
@@ -303,6 +305,8 @@ def _stringify_for_toon_value(
         return "null"
     if isinstance(value, bool):
         return format_number(value)
+    if isinstance(value, int):
+        return format_number(value)
     if isinstance(value, (dict, list, tuple, set)):
         rendered = _stringify_cell(value)
         return _quote_if_needed(rendered, delimiter) if rendered else ""
@@ -312,11 +316,9 @@ def _stringify_for_toon_value(
             return _quote_if_needed(str(value), delimiter)
         if not math.isfinite(num):
             return _stringify_nonfinite_number(num)
-        if not simplify_numbers:
-            return _format_number_fixed(num)
-        if decimals is None:
-            return format_number(num)
-        return _format_float(num, int(decimals))
+        if decimals is not None:
+            return _format_float(num, int(decimals))
+        return format_number(num) if simplify_numbers else _format_number_full(num)
     return _quote_if_needed(str(value), delimiter)
 
 
@@ -328,11 +330,18 @@ def _encode_tabular(
     delimiter: str = _DEFAULT_DELIMITER,
     *,
     simplify_numbers: bool = True,
+    decimals: Optional[int] = None,
 ) -> str:
     ind = _INDENT * indent
     name = _quote_key(key, delimiter) or "items"
     header_line = delimiter.join(_quote_key(h, delimiter) for h in headers)
-    col_decimals = _column_decimals(headers, rows) if simplify_numbers else {}
+    col_decimals = (
+        {header: int(decimals) for header in headers}
+        if decimals is not None
+        else _column_decimals(headers, rows)
+        if simplify_numbers
+        else {}
+    )
     lines = [f"{ind}{name}[{len(rows)}]{{{header_line}}}:"]
     row_indent = ind + _INDENT
     for row in rows:
@@ -355,6 +364,7 @@ def format_table_toon(
     name: str = "data",
     *,
     simplify_numbers: bool = True,
+    decimals: Optional[int] = None,
 ) -> List[str]:
     if not headers or not rows:
         return []
@@ -366,7 +376,12 @@ def format_table_toon(
             item[col] = row[idx] if idx < len(row) else None
         items.append(item)
     return _encode_tabular(
-        name, cols, items, indent=0, simplify_numbers=simplify_numbers
+        name,
+        cols,
+        items,
+        indent=0,
+        simplify_numbers=simplify_numbers,
+        decimals=decimals,
     ).splitlines()
 
 
@@ -377,14 +392,13 @@ def _encode_inline_array(
     delimiter: str = _DEFAULT_DELIMITER,
     *,
     simplify_numbers: bool = True,
+    decimals: Optional[int] = None,
 ) -> str:
     ind = _INDENT * indent
     name = _quote_key(key, delimiter) or "items"
-    decimals = None
-    if not simplify_numbers:
-        decimals = DISPLAY_MAX_DECIMALS
+    resolved_decimals = decimals
     values: List[float] = []
-    if simplify_numbers:
+    if simplify_numbers and resolved_decimals is None:
         for item in items:
             if item is None or isinstance(item, bool):
                 continue
@@ -397,11 +411,11 @@ def _encode_inline_array(
             if math.isfinite(num):
                 values.append(num)
         if values:
-            decimals = _optimal_decimals(values)
+            resolved_decimals = _optimal_decimals(values)
     vals = delimiter.join(
         _stringify_for_toon_value(
             value,
-            decimals,
+            resolved_decimals,
             delimiter,
             simplify_numbers=simplify_numbers,
         )
@@ -417,6 +431,7 @@ def _encode_expanded_array(
     delimiter: str = _DEFAULT_DELIMITER,
     *,
     simplify_numbers: bool = True,
+    decimals: Optional[int] = None,
 ) -> str:
     ind = _INDENT * indent
     name = _quote_key(key, delimiter) or "items"
@@ -429,6 +444,7 @@ def _encode_expanded_array(
             indent=indent + 1,
             delimiter=delimiter,
             simplify_numbers=simplify_numbers,
+            decimals=decimals,
         )
         if not rendered:
             continue
@@ -449,13 +465,20 @@ def _format_to_toon(
     indent: int = 0,
     delimiter: str = _DEFAULT_DELIMITER,
     simplify_numbers: bool = True,
+    decimals: Optional[int] = None,
 ) -> str:
     ind = _INDENT * indent
     if key is not None and isinstance(value, dict):
         key, value = _collapse_single_key_path(key, value)
 
     if _is_scalar_value(value):
-        forced_decimals = _forced_scalar_decimals(key, parent_key=parent_key)
+        forced_decimals = (
+            int(decimals)
+            if decimals is not None
+            else _forced_scalar_decimals(key, parent_key=parent_key)
+            if simplify_numbers
+            else None
+        )
         if (
             forced_decimals is not None
             and isinstance(value, Number)
@@ -464,20 +487,26 @@ def _format_to_toon(
             num = _coerce_float(value)
             if num is None:
                 rendered = _stringify_for_toon(
-                    value, delimiter, simplify_numbers=simplify_numbers
+                    value,
+                    delimiter,
+                    simplify_numbers=simplify_numbers,
+                    decimals=decimals,
                 )
             else:
                 rendered = _stringify_for_toon_value(
                     num,
                     int(forced_decimals),
                     delimiter,
-                    simplify_numbers=True,
+                    simplify_numbers=simplify_numbers,
                 )
             if key is None:
                 return f"{ind}{rendered}".rstrip()
             return f"{ind}{_quote_key(key, delimiter)}: {rendered}".rstrip()
         rendered = _stringify_for_toon(
-            value, delimiter, simplify_numbers=simplify_numbers
+            value,
+            delimiter,
+            simplify_numbers=simplify_numbers,
+            decimals=decimals,
         )
         if key is None:
             return f"{ind}{rendered}".rstrip()
@@ -497,13 +526,24 @@ def _format_to_toon(
                     indent,
                     delimiter,
                     simplify_numbers=simplify_numbers,
+                    decimals=decimals,
                 )
         if all(_is_scalar_value(item) for item in value):
             return _encode_inline_array(
-                name, value, indent, delimiter, simplify_numbers=simplify_numbers
+                name,
+                value,
+                indent,
+                delimiter,
+                simplify_numbers=simplify_numbers,
+                decimals=decimals,
             )
         return _encode_expanded_array(
-            name, value, indent, delimiter, simplify_numbers=simplify_numbers
+            name,
+            value,
+            indent,
+            delimiter,
+            simplify_numbers=simplify_numbers,
+            decimals=decimals,
         )
 
     if isinstance(value, dict):
@@ -523,6 +563,7 @@ def _format_to_toon(
                 indent=child_indent,
                 delimiter=delimiter,
                 simplify_numbers=simplify_numbers,
+                decimals=decimals,
             )
             if chunk:
                 lines.append(chunk)
@@ -533,4 +574,4 @@ def _format_to_toon(
             return "\n".join([head, *lines])
         return head
 
-    return f"{ind}{_stringify_for_toon(value, delimiter)}".rstrip()
+    return f"{ind}{_stringify_for_toon(value, delimiter, simplify_numbers=simplify_numbers, decimals=decimals)}".rstrip()

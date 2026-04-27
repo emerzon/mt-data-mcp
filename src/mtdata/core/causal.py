@@ -1463,8 +1463,6 @@ def causal_discover_signals(  # noqa: C901
                 "counts": {
                     "pairs_tested": int(len(rows_sorted)),
                     "significant_links": int(len(significant_rows)),
-                    "pairs_shown": int(min(len(rows_sorted), 20)),
-                    "pairs_hidden": int(max(0, len(rows_sorted) - 20)),
                 }
             },
             "meta": _causal_contract_meta(

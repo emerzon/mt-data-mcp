@@ -426,15 +426,15 @@ def market_ticker(
                 "symbol": symbol,
                 "type": "ticker",
                 "price_precision": digits,
-                "bid": _round_market_ticker_value(bid, digits=digits),
-                "ask": _round_market_ticker_value(ask, digits=digits),
-                "last": _round_market_ticker_value(last, digits=digits),
+                "bid": bid,
+                "ask": ask,
+                "last": last,
                 "tick_volume": tick_volume,
-                "spread": _round_market_ticker_value(spread_abs, digits=digits),
-                "spread_points": _round_market_ticker_value(spread_points, digits=4),
-                "spread_pct": _round_market_ticker_value(spread_pct, digits=6),
+                "spread": spread_abs,
+                "spread_points": spread_points,
+                "spread_pct": spread_pct,
                 "spread_pct_display": spread_pct_display,
-                "spread_usd": _round_market_ticker_value(spread_usd, digits=6),
+                "spread_usd": spread_usd,
                 "pricing_basis": pricing_basis,
                 "time": tick_time,
             }
@@ -452,14 +452,8 @@ def market_ticker(
                 except Exception:
                     age_seconds = None
             if age_seconds is not None:
-                out["data_age_seconds"] = _round_market_ticker_value(
-                    age_seconds,
-                    digits=3,
-                )
-                out["data_age_hours"] = _round_market_ticker_value(
-                    age_seconds / 3600.0,
-                    digits=3,
-                )
+                out["data_age_seconds"] = age_seconds
+                out["data_age_hours"] = age_seconds / 3600.0
                 out["data_stale"] = age_seconds > _MARKET_TICKER_STALE_SECONDS
                 if out["data_stale"]:
                     out["warning"] = (
@@ -484,10 +478,9 @@ def market_ticker(
                 price_values = {
                     "bid": out.get("bid"),
                     "ask": out.get("ask"),
-                    "mid": _round_market_ticker_value(
-                        ((bid + ask) / 2.0) if bid is not None and ask is not None else None,
-                        digits=digits,
-                    ),
+                    "mid": ((bid + ask) / 2.0)
+                    if bid is not None and ask is not None
+                    else None,
                     "last": out.get("last"),
                     "spread": out.get("spread"),
                 }
