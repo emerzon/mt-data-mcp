@@ -656,7 +656,7 @@ def regime_detect(  # noqa: C901
     params: Optional[Dict[str, Any]] = None,
     denoise: Optional[DenoiseSpec] = None,
     threshold: float = 0.5,
-    detail: SummaryCompactFullDetailLiteral = "compact",  # type: ignore
+    detail: SummaryCompactFullDetailLiteral = "compact",
     lookback: int = -1,  # -1 means use timeframe-based default
     include_series: bool = False,
     min_regime_bars: int = -1,  # -1 means use timeframe-based default
@@ -779,8 +779,6 @@ def regime_detect(  # noqa: C901
         return result
 
     output = normalize_output_detail(detail)
-    if output == "standard":
-        output = "compact"
     verbosity_output = normalize_output_verbosity_detail(detail)
     connection_error = _regime_connection_error()
     if connection_error is not None:
