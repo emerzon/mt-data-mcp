@@ -146,6 +146,7 @@ _CAUSAL_DISCOVER_REQUEST_KEYS = frozenset(
         "significance",
         "transform",
         "normalize",
+        "detail",
     }
 )
 
@@ -1093,6 +1094,7 @@ def causal_discover_signals(  # noqa: C901
     significance: float = 0.05,
     transform: str = "log_return",
     normalize: bool = True,
+    detail: CompactFullDetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """Run Granger-style causal discovery on MT5 symbols.
 
@@ -1104,9 +1106,12 @@ def causal_discover_signals(  # noqa: C901
         significance: Alpha level for reporting causal links.
         transform: Preprocessing transform: "log_return", "pct", "diff", or "level".
         normalize: Z-score columns before testing to stabilise scale.
+        detail: "compact" returns significant links plus top pair summaries; "full"
+            returns every tested pair in data.items.
     """
 
     def _run() -> Dict[str, Any]:  # noqa: C901
+        detail_mode = str(detail or "compact").strip().lower()
         meta: Dict[str, Any] = {
             "_tool": "causal_discover_signals",
             "_request_keys": _CAUSAL_DISCOVER_REQUEST_KEYS,
@@ -1116,7 +1121,14 @@ def causal_discover_signals(  # noqa: C901
             "significance": float(significance),
             "transform": str(transform),
             "normalize": bool(normalize),
+            "detail": detail_mode,
         }
+        if detail_mode not in {"compact", "full"}:
+            return _causal_error(
+                "detail must be 'compact' or 'full'.",
+                code="invalid_detail",
+                meta=meta,
+            )
         connection_error = _causal_connection_error()
         if connection_error is not None:
             return _causal_error(
@@ -1453,7 +1465,7 @@ def causal_discover_signals(  # noqa: C901
                 f"{max(pair_attempts - pair_success, 0)} pairwise Granger tests failed; see meta['pair_failures']."
             )
         data: Dict[str, Any] = {
-            "items": significant_rows,
+            "items": rows_sorted if detail_mode == "full" else significant_rows,
         }
         out: Dict[str, Any] = {
             "success": True,
@@ -1496,6 +1508,7 @@ def causal_discover_signals(  # noqa: C901
         timeframe=timeframe,
         limit=limit,
         max_lag=max_lag,
+        detail=detail,
         func=_run,
     )
 

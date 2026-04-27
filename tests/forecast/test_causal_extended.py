@@ -515,6 +515,7 @@ class TestCausalDiscoverSignals:
         assert result["summary"]["counts"]["significant_links"] >= 1
         assert isinstance(result["data"]["items"], list)
         assert all(item["significant"] is True for item in result["data"]["items"])
+        assert result["meta"]["request"]["detail"] == "compact"
         assert "links" not in result["data"]
         assert "summary_text" not in result["data"]
         assert result["meta"]["stats"]["pairs_tested"] >= 1
@@ -527,6 +528,44 @@ class TestCausalDiscoverSignals:
             "event=finish operation=causal_discover_signals success=True" in record.message
             for record in caplog.records
         )
+
+    @patch("statsmodels.tsa.stattools.grangercausalitytests")
+    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal._fetch_series")
+    def test_full_detail_returns_all_tested_pairs(self, mock_fetch, mock_granger):
+        idx = pd.date_range("2024-01-01", periods=80, freq="h")
+        series_map = {
+            "A": pd.Series(np.linspace(1.0, 2.0, 80), index=idx),
+            "B": pd.Series(np.linspace(2.0, 1.0, 80), index=idx),
+        }
+
+        mock_fetch.side_effect = lambda symbol, timeframe, count: (series_map[symbol], None)
+        mock_granger.side_effect = [
+            {1: ({"ssr_ftest": (1.0, 0.20, 10, 1)}, None)},
+            {1: ({"ssr_ftest": (1.0, 0.01, 10, 1)}, None)},
+        ]
+
+        result = self._unwrapped()(
+            "A,B",
+            max_lag=1,
+            transform="diff",
+            normalize=False,
+            detail="full",
+        )
+
+        assert result["success"] is True
+        assert result["meta"]["request"]["detail"] == "full"
+        assert result["summary"]["counts"]["pairs_tested"] == 2
+        assert result["summary"]["counts"]["significant_links"] == 1
+        assert len(result["data"]["items"]) == 2
+        assert {row["significant"] for row in result["data"]["items"]} == {False, True}
+
+    def test_invalid_detail_is_rejected(self):
+        result = self._unwrapped()("A,B", detail="standard")  # type: ignore[arg-type]
+
+        assert result["success"] is False
+        assert result["error_code"] == "invalid_detail"
+        assert "detail must be" in result["error"]
 
     @patch("statsmodels.tsa.stattools.grangercausalitytests")
     @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
