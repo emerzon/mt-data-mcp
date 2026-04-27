@@ -669,9 +669,15 @@ def _filter_finviz_fundamentals_payload(
     out["detail"] = detail_mode
     out["category"] = category_out
     if detail_mode == "full":
-        out["fields_returned"] = list(filtered.keys())
         out["available_field_count"] = len(fundamentals)
-        out["omitted_field_count"] = max(0, len(fundamentals) - len(filtered))
+        omitted_fields = [
+            _normalize_finviz_output_key(field)
+            for field in fundamentals
+            if _normalize_finviz_output_key(field) not in filtered
+        ]
+        out["omitted_field_count"] = len(omitted_fields)
+        if omitted_fields:
+            out["omitted_fields"] = omitted_fields
     if requested_fields is not None:
         missing = [field for field in requested_fields if field not in fundamentals]
         if missing:

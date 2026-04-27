@@ -644,7 +644,7 @@ class TestFinvizTools:
         assert custom["missing_fields"] == ["Missing"]
 
     @patch("mtdata.core.finviz.get_stock_fundamentals")
-    def test_finviz_fundamentals_full_keeps_field_inventory(self, mock_get_fundamentals):
+    def test_finviz_fundamentals_full_omits_redundant_field_echo(self, mock_get_fundamentals):
         from mtdata.core.finviz import finviz_fundamentals
 
         mock_get_fundamentals.return_value = {
@@ -660,7 +660,7 @@ class TestFinvizTools:
         raw = getattr(finviz_fundamentals, "__wrapped__", finviz_fundamentals)
         result = raw("AAPL", detail="full")
 
-        assert result["fields_returned"] == ["company", "sector", "pe_ratio"]
+        assert "fields_returned" not in result
         assert result["available_field_count"] == 3
         assert result["omitted_field_count"] == 0
 
