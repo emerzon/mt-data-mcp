@@ -494,6 +494,7 @@ Values below 30 often indicate oversold conditions.
                     "category": "volatility",
                     "description": "Bollinger Bands volatility envelope.",
                     "aliases": ["bb", "bollinger_bands"],
+                    "params": [{"name": "length", "default": 20}],
                 }
             ],
         )
@@ -503,6 +504,9 @@ Values below 30 often indicate oversold conditions.
 
         assert out["success"] is True
         assert out["detail"] == "full"
+        assert out["data"][0]["summary"] == "Bollinger Bands volatility envelope."
+        assert out["data"][0]["params_count"] == 1
+        assert out["data"][0]["params"] == [{"name": "length", "default": 20}]
         assert out["data"][0]["aliases"] == "bb, bollinger_bands"
         assert "Bollinger Bands" in out["data"][0]["description"]
 
@@ -528,6 +532,7 @@ Values below 30 often indicate oversold conditions.
                     "category": "trend",
                     "description": sample_doc,
                     "aliases": [],
+                    "params": [{"name": "length", "default": 14}],
                 }
             ],
         )
@@ -542,6 +547,9 @@ Values below 30 often indicate oversold conditions.
         assert "adx(" not in description
         assert "Parameters:" not in description
         assert "Sources:" not in description
+        assert out["data"][0]["params"] == [
+            {"name": "length", "default": 14, "description": "Window length."}
+        ]
 
     def test_indicators_list_search_matches_names_aliases_and_categories(self, monkeypatch):
         from mtdata.core import indicators as core_indicators

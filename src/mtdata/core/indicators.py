@@ -292,16 +292,25 @@ def indicators_list(
             if limit_value and limit_value > 0:
                 items = items[:limit_value]
             if detailed:
-                rows = [
-                    [
-                        it.get("name", ""),
-                        it.get("category", ""),
-                        ", ".join(str(alias) for alias in (it.get("aliases") or []) if str(alias).strip()),
-                        (_build_indicator_documentation(it).get("description") or it.get("description", "")),
-                    ]
-                    for it in items
-                ]
-                result = _table_from_rows(["name", "category", "aliases", "description"], rows)
+                rows = []
+                for it in items:
+                    docs = _build_indicator_documentation(it)
+                    params = docs.get("parameters") or it.get("params") or []
+                    rows.append(
+                        [
+                            it.get("name", ""),
+                            it.get("category", ""),
+                            _extract_short_description(it.get("description", "")),
+                            len(params),
+                            params,
+                            ", ".join(str(alias) for alias in (it.get("aliases") or []) if str(alias).strip()),
+                            docs.get("description") or it.get("description", ""),
+                        ]
+                    )
+                result = _table_from_rows(
+                    ["name", "category", "summary", "params_count", "params", "aliases", "description"],
+                    rows,
+                )
             else:
                 rows = [
                     [
