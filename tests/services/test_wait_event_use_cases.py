@@ -62,12 +62,16 @@ class SequenceGateway:
         history_orders_seq=None,
         history_deals_seq=None,
         ticks_by_symbol=None,
+        rates_by_symbol=None,
+        rates_by_symbol_timeframe=None,
     ) -> None:
         self.orders_seq = list(orders_seq or [[]])
         self.positions_seq = list(positions_seq or [[]])
         self.history_orders_seq = list(history_orders_seq or [[]])
         self.history_deals_seq = list(history_deals_seq or [[]])
         self.ticks_by_symbol = dict(ticks_by_symbol or {})
+        self.rates_by_symbol = dict(rates_by_symbol or {})
+        self.rates_by_symbol_timeframe = dict(rates_by_symbol_timeframe or {})
         self._orders_calls = 0
         self._positions_calls = 0
         self._history_orders_calls = 0
@@ -101,6 +105,23 @@ class SequenceGateway:
             if from_epoch <= epoch <= to_epoch:
                 out.append(row)
         return out
+
+    def copy_rates_from(self, symbol, timeframe, dt_from, count):
+        rows = list(
+            self.rates_by_symbol_timeframe.get(
+                (str(symbol).upper(), timeframe),
+                self.rates_by_symbol.get(str(symbol).upper(), []),
+            )
+        )
+        if not rows:
+            return []
+        if getattr(dt_from, "tzinfo", None) is None:
+            dt_from = dt_from.replace(tzinfo=timezone.utc)
+        to_epoch = float(dt_from.timestamp())
+        filtered = [
+            row for row in rows if float(row.get("time", 0.0)) <= to_epoch + 1e-6
+        ]
+        return filtered[-int(count):]
 
     def symbol_info_tick(self, symbol):
         rows = list(self.ticks_by_symbol.get(str(symbol).upper(), []))
@@ -292,6 +313,58 @@ def test_wait_event_tool_exposes_minimal_public_contract(monkeypatch) -> None:
     assert explicit["matched"] is False
     assert explicit["event"] is None
     assert explicit["started_at_utc"] == "2026-04-06T02:00:29.017205+00:00"
+
+
+def test_wait_event_tool_compact_result_preserves_boundary_closed_candle() -> None:
+    result = core_data._compact_wait_event_public_result(
+        {
+            "success": True,
+            "status": "boundary_reached",
+            "matched": False,
+            "event": None,
+            "boundary_event": {
+                "type": "candle_close",
+                "timeframe": "M1",
+                "buffer_seconds": 1.0,
+                "closed_candle": {
+                    "symbol": "EURUSD",
+                    "timeframe": "M1",
+                    "open": 1.1,
+                    "high": 1.2,
+                    "low": 1.0,
+                    "close": 1.15,
+                    "volume": 42,
+                    "direction": "bullish",
+                    "range": 0.2,
+                },
+            },
+            "criteria": {
+                "watch_for": [{"type": "order_created", "symbol": "EURUSD"}],
+                "watch_for_inferred": False,
+                "end_on": [{"type": "candle_close", "timeframe": "M1"}],
+                "end_on_inferred": False,
+                "accept_preexisting": False,
+            },
+        },
+        explicit_watch_for=True,
+        explicit_end_on=True,
+    )
+
+    assert result["boundary_event"] == {
+        "type": "candle_close",
+        "timeframe": "M1",
+        "closed_candle": {
+            "symbol": "EURUSD",
+            "timeframe": "M1",
+            "open": 1.1,
+            "high": 1.2,
+            "low": 1.0,
+            "close": 1.15,
+            "volume": 42,
+            "direction": "bullish",
+            "range": 0.2,
+        },
+    }
 
 
 def test_wait_event_tool_compacts_matched_event_by_default(monkeypatch) -> None:
@@ -1510,6 +1583,87 @@ def test_run_wait_event_boundary_only_includes_gateway_quote_when_symbol_is_set(
     assert result["observed_at_utc"] == "2026-03-15T12:00:01+00:00"
 
 
+def test_run_wait_event_boundary_only_includes_closed_candle_stats(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "mtdata.core.data.wait_events._next_candle_wait_payload",
+        lambda timeframe, buffer_seconds, now_utc: {
+            "timeframe": timeframe,
+            "buffer_seconds": buffer_seconds,
+            "sleep_seconds": 60.0,
+            "started_at_utc": now_utc.isoformat(),
+            "next_candle_close_utc": (now_utc + timedelta(seconds=60)).isoformat(),
+            "next_candle_close_server": "2026-03-15T12:01:00",
+            "server_timezone": "UTC",
+        },
+    )
+    monkeypatch.setattr(
+        "mtdata.core.data.wait_events._sleep_until_next_candle",
+        lambda timeframe, buffer_seconds, sleep_impl, now_utc: {
+            "timeframe": timeframe,
+            "buffer_seconds": buffer_seconds,
+            "sleep_seconds": 60.0,
+            "started_at_utc": now_utc.isoformat(),
+            "next_candle_close_utc": (now_utc + timedelta(seconds=60)).isoformat(),
+            "next_candle_close_server": "2026-03-15T12:01:00",
+            "server_timezone": "UTC",
+            "status": "completed",
+            "slept": True,
+            "slept_seconds": 60.0,
+            "remaining_seconds": 0.0,
+        },
+    )
+    started = datetime(2026, 3, 15, 12, 0, 0, tzinfo=timezone.utc)
+    gateway = SequenceGateway(
+        rates_by_symbol={
+            "EURUSD": [
+                {
+                    "time": started.timestamp(),
+                    "open": 1.1000,
+                    "high": 1.2000,
+                    "low": 1.0000,
+                    "close": 1.1500,
+                    "tick_volume": 42,
+                    "real_volume": 0,
+                    "spread": 7,
+                }
+            ]
+        }
+    )
+    clock = FakeClock(started)
+
+    result = run_wait_event(
+        WaitEventRequest(
+            symbol="EURUSD",
+            watch_for=[],
+            end_on=[{"type": "candle_close", "timeframe": "M1"}],
+            poll_interval_seconds=1.0,
+            max_wait_seconds=120.0,
+        ),
+        gateway=gateway,
+        sleep_impl=clock.sleep,
+        monotonic_impl=clock.monotonic,
+        now_utc_impl=clock.now_utc,
+    )
+
+    closed_candle = result["boundary_event"]["closed_candle"]
+    assert closed_candle["symbol"] == "EURUSD"
+    assert closed_candle["timeframe"] == "M1"
+    assert closed_candle["open_time_utc"] == "2026-03-15T12:00:00+00:00"
+    assert closed_candle["close_time_utc"] == "2026-03-15T12:01:00+00:00"
+    assert closed_candle["open"] == 1.1
+    assert closed_candle["high"] == 1.2
+    assert closed_candle["low"] == 1.0
+    assert closed_candle["close"] == 1.15
+    assert closed_candle["volume"] == 42
+    assert closed_candle["tick_volume"] == 42
+    assert closed_candle["spread"] == 7
+    assert closed_candle["direction"] == "bullish"
+    assert closed_candle["change"] == 0.05
+    assert closed_candle["range"] == 0.2
+    assert closed_candle["body"] == 0.05
+    assert closed_candle["close_position"] == 0.75
+
+
 def test_run_wait_event_still_matches_pre_boundary_market_event_after_oversleep(monkeypatch) -> None:
     monkeypatch.setattr(
         "mtdata.core.data.wait_events._next_candle_wait_payload",
@@ -1588,8 +1742,23 @@ def test_run_wait_event_stops_on_candle_boundary_when_no_watch_event(monkeypatch
             "server_timezone": "UTC",
         },
     )
-    gateway = SequenceGateway(orders_seq=[[], [], []])
-    clock = FakeClock(datetime(2026, 3, 15, 12, 0, 0, tzinfo=timezone.utc))
+    started = datetime(2026, 3, 15, 12, 0, 0, tzinfo=timezone.utc)
+    gateway = SequenceGateway(
+        orders_seq=[[], [], []],
+        rates_by_symbol={
+            "EURUSD": [
+                {
+                    "time": started.timestamp() - 58.0,
+                    "open": 1.2000,
+                    "high": 1.2050,
+                    "low": 1.1975,
+                    "close": 1.1980,
+                    "tick_volume": 18,
+                }
+            ]
+        },
+    )
+    clock = FakeClock(started)
 
     result = run_wait_event(
         WaitEventRequest(
@@ -1606,6 +1775,9 @@ def test_run_wait_event_stops_on_candle_boundary_when_no_watch_event(monkeypatch
 
     assert result["status"] == "boundary_reached"
     assert result["boundary_event"]["type"] == "candle_close"
+    assert result["boundary_event"]["closed_candle"]["symbol"] == "EURUSD"
+    assert result["boundary_event"]["closed_candle"]["direction"] == "bearish"
+    assert result["boundary_event"]["closed_candle"]["volume"] == 18
 
 
 def test_run_wait_event_respects_boundary_when_live_state_changes_after_oversleep(monkeypatch) -> None:

@@ -289,6 +289,9 @@ def _compact_wait_event_public_result(
             for key in ("type", "timeframe")
             if boundary_event.get(key) is not None
         }
+        closed_candle = boundary_event.get("closed_candle")
+        if isinstance(closed_candle, dict) and closed_candle:
+            compact_boundary["closed_candle"] = dict(closed_candle)
         out["boundary_event"] = compact_boundary or None
 
     matched_event = out.get("matched_event")
@@ -502,6 +505,9 @@ def wait_event(
     and normalized to that shape. `watch_for` is for market/account events and
     accepts event objects or strings like `"order_filled"`; candle-close
     strings passed in `watch_for` are moved to `end_on`.
+    When a candle boundary is reached and a symbol is known, `boundary_event`
+    includes a best-effort `closed_candle` snapshot with OHLCV and basic
+    range/body/wick stats for the candle that just closed.
 
     Example: `end_on=[{"type": "candle_close", "timeframe": "H1"}]` or
     `watch_for=["order_filled", "new_bar"]`.
