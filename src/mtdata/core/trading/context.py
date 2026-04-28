@@ -1,6 +1,7 @@
 """Trading session context utilities."""
 
 import logging
+import math
 from typing import Any, Dict, Optional
 
 from .._mcp_instance import mcp
@@ -37,6 +38,64 @@ def _strip_nested_envelope(section: Any) -> Any:
         return section
     # Keep all data fields, remove redundant envelope fields
     return {k: v for k, v in section.items() if k not in ("success", "meta")}
+
+
+_TRADE_SESSION_PRICE_KEYS = {
+    "price",
+    "price_open",
+    "price_current",
+    "price_stoplimit",
+    "open_price",
+    "current_price",
+    "sl",
+    "tp",
+    "Price",
+    "Open Price",
+    "Current Price",
+    "Stoplimit Price",
+    "SL",
+    "TP",
+}
+
+
+def _price_precision_from_ticker(ticker: Any) -> int:
+    if isinstance(ticker, dict):
+        for key in ("price_precision", "digits"):
+            try:
+                return max(0, int(ticker.get(key)))
+            except Exception:
+                continue
+    return 6
+
+
+def _round_trade_session_price(value: Any, *, digits: int) -> Any:
+    try:
+        numeric = float(value)
+    except Exception:
+        return value
+    if not math.isfinite(numeric):
+        return value
+    return float(round(numeric, max(0, int(digits))))
+
+
+def _round_trade_session_prices(value: Any, *, digits: int, key: Optional[str] = None) -> Any:
+    if isinstance(value, dict):
+        return {
+            item_key: _round_trade_session_prices(
+                item_value,
+                digits=digits,
+                key=str(item_key),
+            )
+            for item_key, item_value in value.items()
+        }
+    if isinstance(value, list):
+        return [
+            _round_trade_session_prices(item, digits=digits, key=key)
+            for item in value
+        ]
+    if key in _TRADE_SESSION_PRICE_KEYS:
+        return _round_trade_session_price(value, digits=digits)
+    return value
 
 
 def _normalize_nested_ticker_time(ticker: Dict[str, Any], *, compact: bool) -> Dict[str, Any]:
@@ -279,6 +338,15 @@ def trade_session_context(request: TradeSessionContextRequest) -> Dict[str, Any]
             payload["open_positions"] = _strip_nested_envelope(payload["open_positions"])
             payload["pending_orders"] = _strip_nested_envelope(payload["pending_orders"])
             payload["ticker"] = _strip_nested_envelope(payload["ticker"])
+            price_digits = _price_precision_from_ticker(payload.get("ticker"))
+            payload["open_positions"] = _round_trade_session_prices(
+                payload["open_positions"],
+                digits=price_digits,
+            )
+            payload["pending_orders"] = _round_trade_session_prices(
+                payload["pending_orders"],
+                digits=price_digits,
+            )
             if isinstance(payload["ticker"], dict):
                 payload["ticker"] = _normalize_nested_ticker_time(
                     payload["ticker"],

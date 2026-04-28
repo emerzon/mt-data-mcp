@@ -199,6 +199,80 @@ def _round_barrier_prob_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
+_BARRIER_OPTIMIZE_PRICE_KEYS = {
+    "last_price",
+    "last_price_close",
+    "tp_price",
+    "sl_price",
+    "barrier",
+    "entry_price",
+}
+_BARRIER_OPTIMIZE_METRIC_DIGITS = {
+    "tp": 6,
+    "sl": 6,
+    "rr": 4,
+    "prob_win": 6,
+    "prob_loss": 6,
+    "prob_tp_first": 6,
+    "prob_sl_first": 6,
+    "prob_no_hit": 6,
+    "prob_tie": 6,
+    "prob_resolve": 6,
+    "ev": 6,
+    "ev_gross": 6,
+    "ev_net": 6,
+    "ev_unresolved": 6,
+    "ev_cond": 6,
+    "edge": 6,
+    "edge_vs_breakeven": 6,
+    "breakeven_win_rate": 6,
+    "profit_factor": 6,
+    "kelly": 6,
+    "kelly_cond": 6,
+    "ev_per_bar": 6,
+    "utility": 6,
+}
+
+
+def _round_barrier_optimize_value(value: Any, *, key: str, price_digits: int) -> Any:
+    if key in _BARRIER_OPTIMIZE_PRICE_KEYS:
+        return _round_barrier_value(value, digits=price_digits)
+    digits = _BARRIER_OPTIMIZE_METRIC_DIGITS.get(key)
+    if digits is not None:
+        return _round_barrier_value(value, digits=digits)
+    return value
+
+
+def _round_barrier_optimize_payload_value(value: Any, *, key: str, price_digits: int) -> Any:
+    if isinstance(value, dict):
+        return {
+            item_key: _round_barrier_optimize_payload_value(
+                item_value,
+                key=str(item_key),
+                price_digits=price_digits,
+            )
+            for item_key, item_value in value.items()
+        }
+    if isinstance(value, list):
+        return [
+            _round_barrier_optimize_payload_value(item, key=key, price_digits=price_digits)
+            for item in value
+        ]
+    return _round_barrier_optimize_value(value, key=key, price_digits=price_digits)
+
+
+def _round_barrier_optimize_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    price_digits = _forecast_price_digits(payload) or 6
+    return {
+        key: _round_barrier_optimize_payload_value(
+            value,
+            key=str(key),
+            price_digits=price_digits,
+        )
+        for key, value in payload.items()
+    }
+
+
 def _strip_public_legacy_volatility_fields(result: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(result, dict) or not result.get("success"):
         return result
@@ -1549,7 +1623,7 @@ def run_forecast_barrier_optimize(
             sensitivity_params=request.sensitivity_params,
         )
         if isinstance(result, dict) and not result.get("error"):
-            result = dict(result)
+            result = _round_barrier_optimize_payload(dict(result))
             result["detail"] = detail_value
     except Exception as exc:
         log_operation_exception(

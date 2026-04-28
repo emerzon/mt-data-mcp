@@ -123,6 +123,7 @@ def test_trade_session_context_full_detail_keeps_nested_full_payloads() -> None:
     ticker = {
         "success": True,
         "symbol": "EURUSD",
+        "price_precision": 5,
         "bid": 1.1,
         "ask": 1.1002,
         "time": 1700000000,
@@ -148,7 +149,17 @@ def test_trade_session_context_full_detail_keeps_nested_full_payloads() -> None:
         new=lambda request: {"success": True, "count": 0},
     ), patch(
         "mtdata.core.trading.context.trade_get_pending",
-        new=lambda request: {"success": True, "count": 1},
+        new=lambda request: {
+            "success": True,
+            "count": 1,
+            "items": [
+                {
+                    "symbol": "EURUSD",
+                    "price_current": 1.1710099999999999,
+                    "Current Price": 1.1710099999999999,
+                }
+            ],
+        },
     ):
         out = _raw_trade_session_context("EURUSD", detail="full")
 
@@ -164,6 +175,8 @@ def test_trade_session_context_full_detail_keeps_nested_full_payloads() -> None:
     assert "success" not in out["account"]
     assert "meta" not in out["account"]
     assert out["pending_orders"]["count"] == 1
+    assert out["pending_orders"]["items"][0]["price_current"] == 1.17101
+    assert out["pending_orders"]["items"][0]["Current Price"] == 1.17101
     assert "success" not in out["pending_orders"]
     assert "meta" not in out["pending_orders"]
     assert out["meta"]["tool"] == "trade_session_context"

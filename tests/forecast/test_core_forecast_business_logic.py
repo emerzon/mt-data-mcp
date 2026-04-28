@@ -1442,6 +1442,43 @@ def test_forecast_barrier_optimize_rejects_unknown_method_without_traceback():
     assert "traceback_summary" not in out
 
 
+def test_forecast_barrier_optimize_rounds_public_float_artifacts():
+    def fake_optimize(**_kwargs):
+        return {
+            "success": True,
+            "price_precision": 5,
+            "best": {
+                "tp": 0.45833333333333337,
+                "rr": 1.8333333333333335,
+                "tp_price": 1.1764675416666668,
+                "prob_resolve": 0.46950000000000003,
+                "edge": -0.21050000000000002,
+                "profit_factor": 0.6982843137254903,
+            },
+            "results": [
+                {
+                    "sl_price": 1.1681722500000001,
+                    "edge_vs_breakeven": -0.2234411764705882,
+                }
+            ],
+        }
+
+    out = forecast_use_cases.run_forecast_barrier_optimize(
+        ForecastBarrierOptimizeRequest(symbol="EURUSD", method="mc_gbm"),
+        parse_kv_or_json=lambda value: value or {},
+        barrier_optimize_impl=fake_optimize,
+    )
+
+    assert out["best"]["tp"] == 0.458333
+    assert out["best"]["rr"] == 1.8333
+    assert out["best"]["tp_price"] == 1.17647
+    assert out["best"]["prob_resolve"] == 0.4695
+    assert out["best"]["edge"] == -0.2105
+    assert out["best"]["profit_factor"] == 0.698284
+    assert out["results"][0]["sl_price"] == 1.16817
+    assert out["results"][0]["edge_vs_breakeven"] == -0.223441
+
+
 def test_forecast_barrier_prob_closed_form_rejects_tp_sl_inputs_before_generic_error():
     called = False
 
