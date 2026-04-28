@@ -179,7 +179,8 @@ def _run_data_fetch_candles_impl(
             include_contract_meta=detail_mode == "full",
         )
         if detail_mode == "full" and isinstance(out, dict):
-            out.pop("data", None)
+            out.pop("series", None)
+            out.pop("canonical_source", None)
         return out
     return result
 

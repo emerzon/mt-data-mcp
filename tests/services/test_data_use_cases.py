@@ -244,15 +244,15 @@ def test_run_data_fetch_candles_adds_contract_metadata_in_full_detail():
         },
     )
 
-    assert "data" not in result
+    assert result["data"] == rows
     assert result["symbol"] == "EURUSD"
     assert result["timeframe"] == "H1"
     assert result["candles_requested"] == 10
     assert result["last_candle_open"] is False
-    assert result["series"] == rows
+    assert "series" not in result
     assert result["collection_kind"] == "time_series"
     assert result["collection_contract_version"] == "collection.v1"
-    assert result["canonical_source"] == "series"
+    assert "canonical_source" not in result
 
 
 def test_run_data_fetch_ticks_logs_connection_error(caplog):
