@@ -686,7 +686,7 @@ A financial visualization platform providing fundamental data, stock screening, 
 ### QuantLib
 An open-source C++ library (with Python bindings) for quantitative finance, providing pricing engines for exotic options, yield curves, and calibration routines.
 
-**In mtdata:** Used for barrier option pricing (`forecast_quantlib_barrier_price`) and Heston model calibration (`forecast_quantlib_heston_calibrate`). See [OPTIONS_QUANTLIB.md](OPTIONS_QUANTLIB.md).
+**In mtdata:** Used for barrier option pricing (`options_barrier_price`) and Heston model calibration (`options_heston_calibrate`). See [OPTIONS_QUANTLIB.md](OPTIONS_QUANTLIB.md).
 
 ### Heston Model
 A stochastic volatility model where the asset price and its variance follow correlated stochastic processes. Characterized by five parameters: v0 (initial variance), kappa (mean reversion speed), theta (long-run variance), sigma (vol of vol), and rho (correlation).

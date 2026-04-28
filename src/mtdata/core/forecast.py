@@ -575,20 +575,20 @@ def forecast_optimize_hints(request: ForecastOptimizeHintsRequest) -> Dict[str, 
 
 
 @mcp.tool()
-def forecast_options_expirations(
+def options_expirations(
     symbol: str,
 ) -> Dict[str, Any]:
     """Fetch option expirations via Yahoo Finance; provider availability/auth can change."""
     from ..services.options_service import get_options_expirations as _impl
     return _run_forecast_operation(
-        "forecast_options_expirations",
+        "options_expirations",
         symbol=symbol,
         func=lambda: _impl(symbol=symbol),
     )
 
 
 @mcp.tool()
-def forecast_options_chain(
+def options_chain(
     symbol: str,
     expiration: Optional[str] = None,
     option_type: Literal["call", "put", "both"] = "both",  # type: ignore
@@ -599,7 +599,7 @@ def forecast_options_chain(
     """Fetch option-chain snapshots via Yahoo Finance; provider availability/auth can change."""
     from ..services.options_service import get_options_chain as _impl
     return _run_forecast_operation(
-        "forecast_options_chain",
+        "options_chain",
         symbol=symbol,
         expiration=expiration,
         option_type=option_type,
@@ -616,7 +616,7 @@ def forecast_options_chain(
 
 
 @mcp.tool()
-def forecast_quantlib_barrier_price(
+def options_barrier_price(
     spot: float,
     strike: float,
     barrier: float,
@@ -631,7 +631,7 @@ def forecast_quantlib_barrier_price(
     """Price a barrier option using QuantLib."""
     from ..forecast.quantlib_tools import price_barrier_option_quantlib as _impl
     return _run_forecast_operation(
-        "forecast_quantlib_barrier_price",
+        "options_barrier_price",
         option_type=option_type,
         barrier_type=barrier_type,
         maturity_days=maturity_days,
@@ -651,7 +651,7 @@ def forecast_quantlib_barrier_price(
 
 
 @mcp.tool()
-def forecast_quantlib_heston_calibrate(
+def options_heston_calibrate(
     symbol: str,
     expiration: Optional[str] = None,
     option_type: Literal["call", "put", "both"] = "call",  # type: ignore
@@ -666,7 +666,7 @@ def forecast_quantlib_heston_calibrate(
         calibrate_heston_quantlib_from_options as _impl,
     )
     return _run_forecast_operation(
-        "forecast_quantlib_heston_calibrate",
+        "options_heston_calibrate",
         symbol=symbol,
         expiration=expiration,
         option_type=option_type,

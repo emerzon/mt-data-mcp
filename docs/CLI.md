@@ -275,10 +275,10 @@ See [FINVIZ.md](FINVIZ.md) for detailed examples.
 ### Options & QuantLib
 | Command | Description |
 |---------|-------------|
-| `forecast_options_expirations` | List available option expiration dates |
-| `forecast_options_chain` | Fetch options chain snapshot with filtering |
-| `forecast_quantlib_barrier_price` | Price a barrier option using QuantLib |
-| `forecast_quantlib_heston_calibrate` | Calibrate Heston stochastic volatility model |
+| `options_expirations` | List available option expiration dates |
+| `options_chain` | Fetch options chain snapshot with filtering |
+| `options_barrier_price` | Price a barrier option using QuantLib |
+| `options_heston_calibrate` | Calibrate Heston stochastic volatility model |
 
 See [OPTIONS_QUANTLIB.md](OPTIONS_QUANTLIB.md) for detailed examples.
 

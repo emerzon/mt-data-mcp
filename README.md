@@ -43,7 +43,7 @@ It runs as a **Model Context Protocol (MCP)** server or a standalone **CLI**.
 | **Async Training** | Run heavyweight forecast training in the background and reuse cached models | `forecast_train`, `forecast_task_status`, `forecast_task_wait`, `forecast_models_list`, `forecast_models_delete` |
 | **News** | Unified, ranked news + economic calendar relevant to a symbol | `news` |
 | **Fundamentals** | US equity data, screening, news, calendars | `finviz_fundamentals`, `finviz_screen`, `finviz_calendar` |
-| **Options** | Options chains and QuantLib barrier pricing | `forecast_options_chain`, `forecast_quantlib_barrier_price` |
+| **Options** | Options chains and QuantLib barrier pricing | `options_chain`, `options_barrier_price` |
 
 ## Quick Start
 

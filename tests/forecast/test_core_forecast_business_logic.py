@@ -1669,11 +1669,11 @@ def test_forecast_tune_optuna_routing(monkeypatch):
     assert "Error in optuna tuning" in raw_tune(request=ForecastTuneOptunaRequest(symbol="EURUSD"))["error"]
 
 
-def test_forecast_options_and_quantlib_tool_routing(monkeypatch):
-    raw_exp = _unwrap(cf.forecast_options_expirations)
-    raw_chain = _unwrap(cf.forecast_options_chain)
-    raw_price = _unwrap(cf.forecast_quantlib_barrier_price)
-    raw_cal = _unwrap(cf.forecast_quantlib_heston_calibrate)
+def test_options_and_quantlib_tool_routing(monkeypatch):
+    raw_exp = _unwrap(cf.options_expirations)
+    raw_chain = _unwrap(cf.options_chain)
+    raw_price = _unwrap(cf.options_barrier_price)
+    raw_cal = _unwrap(cf.options_heston_calibrate)
 
     import mtdata.forecast.quantlib_tools as quantlib_tools
     import mtdata.services.options_service as options_service
@@ -1723,8 +1723,8 @@ def test_forecast_options_and_quantlib_tool_routing(monkeypatch):
     assert out["option_type"] == "put"
 
 
-def test_forecast_options_chain_logs_finish_event(caplog, monkeypatch):
-    raw_chain = _unwrap(cf.forecast_options_chain)
+def test_options_chain_logs_finish_event(caplog, monkeypatch):
+    raw_chain = _unwrap(cf.options_chain)
 
     import mtdata.services.options_service as options_service
 
@@ -1735,7 +1735,7 @@ def test_forecast_options_chain_logs_finish_event(caplog, monkeypatch):
 
     assert out["success"] is True
     assert any(
-        "event=finish operation=forecast_options_chain success=True" in record.message
+        "event=finish operation=options_chain success=True" in record.message
         for record in caplog.records
     )
 

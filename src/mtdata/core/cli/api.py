@@ -1219,13 +1219,13 @@ _COMMAND_USAGE_EXAMPLES: Dict[str, Tuple[str, Optional[str]]] = {
 }
 
 _TIMEFRAMELESS_GLOBAL_COMMANDS: set[str] = {
-    "forecast_options_chain",
-    "forecast_options_expirations",
-    "forecast_quantlib_barrier_price",
-    "forecast_quantlib_heston_calibrate",
     "indicators_describe",
     "indicators_list",
     "market_ticker",
+    "options_barrier_price",
+    "options_chain",
+    "options_expirations",
+    "options_heston_calibrate",
     "symbols_describe",
     "trade_account_info",
     "trade_close",
