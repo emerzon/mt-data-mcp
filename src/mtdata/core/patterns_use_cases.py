@@ -115,6 +115,23 @@ def _unknown_config_keys_for_mode(mode: str, unknown_keys: List[str]) -> List[st
     return list(unknown_keys)
 
 
+def _attach_signal_bias_summary(resp: Dict[str, Any], deps: "PatternsDetectDeps") -> None:
+    summary = resp.get("summary")
+    if isinstance(summary, dict) and summary.get("signal_bias"):
+        return
+
+    rows = resp.get("patterns")
+    if not isinstance(rows, list):
+        return
+    signal_bias = deps.summarize_pattern_bias(rows)
+    if not signal_bias:
+        return
+    if not isinstance(summary, dict):
+        summary = {}
+        resp["summary"] = summary
+    summary["signal_bias"] = signal_bias
+
+
 def _all_mode_invalid_config_keys(
     config: Optional[Dict[str, Any]],
     *,
@@ -380,17 +397,7 @@ def run_patterns_detect(  # noqa: C901
         resp["engine_findings"] = deps.summarize_engine_findings(
             per_engine, engines, request.include_completed
         )
-        signal_summary = None
-        if detail_value == "compact":
-            summary = resp.get("summary")
-            if isinstance(summary, dict):
-                signal_summary = summary.get("signal_bias")
-        else:
-            rows = resp.get("patterns")
-            if isinstance(rows, list):
-                signal_summary = deps.summarize_pattern_bias(rows)
-        if signal_summary:
-            resp["signal_summary"] = signal_summary
+        _attach_signal_bias_summary(resp, deps)
         if engine_errors:
             resp["engine_errors"] = engine_errors
         return resp
@@ -439,17 +446,7 @@ def run_patterns_detect(  # noqa: C901
         fractal_context = deps.summarize_fractal_context(visible_rows)
         if fractal_context:
             resp.update(fractal_context)
-        signal_summary = None
-        if detail_value == "compact":
-            summary = resp.get("summary")
-            if isinstance(summary, dict):
-                signal_summary = summary.get("signal_bias")
-        else:
-            rows = resp.get("patterns")
-            if isinstance(rows, list):
-                signal_summary = deps.summarize_pattern_bias(rows)
-        if signal_summary:
-            resp["signal_summary"] = signal_summary
+        _attach_signal_bias_summary(resp, deps)
         return resp
 
     if mode_value == "elliott":

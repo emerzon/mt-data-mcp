@@ -3378,9 +3378,9 @@ def test_patterns_detect_classic_adds_signal_summary_and_levels(monkeypatch):
     )
 
     assert res["success"] is True
-    assert "signal_summary" in res
-    assert res["signal_summary"]["conflict"] is True
-    assert res["signal_summary"]["net_bias"] == "mixed"
+    assert "signal_summary" not in res
+    assert res["summary"]["signal_bias"]["conflict"] is True
+    assert res["summary"]["signal_bias"]["net_bias"] == "mixed"
     rows = res["patterns"]
     assert all("bias" in row for row in rows)
     assert all("reference_price" in row for row in rows)
