@@ -1467,6 +1467,7 @@ def finviz_earnings(
     period: Literal["This Week", "Next Week", "Previous Week", "This Month"] = "This Week",
     limit: int = 50,
     page: int = 1,
+    detail: str = "compact",
 ) -> Dict[str, Any]:
     """
     Get upcoming earnings calendar from Finviz.
@@ -1482,6 +1483,9 @@ def finviz_earnings(
         Max items per page (default 50)
     page : int
         Page number for pagination (default 1)
+    detail : str
+        Response detail level. Compact returns normalized top-level rows; full
+        adds the tool metadata block.
     
     Returns
     -------
@@ -1493,7 +1497,11 @@ def finviz_earnings(
             "period": period,
             "limit": limit,
             "page": page,
+            "detail": detail,
         }
+        detail_error = _validate_finviz_detail(detail, operation="finviz_earnings")
+        if detail_error is not None:
+            return detail_error
         result = get_earnings_calendar(period=period, limit=limit, page=page)
         if not isinstance(result, dict):
             return {
@@ -1519,6 +1527,7 @@ def finviz_earnings(
         items = result.get("earnings")
         if not isinstance(items, list):
             items = []
+        normalized_items = _normalize_finviz_output_rows(items)
         pagination = {
             "page": result.get("page"),
             "total": result.get("total"),
@@ -1527,26 +1536,27 @@ def finviz_earnings(
         stats = {
             "truncated": result.get("truncated"),
         }
-        return {
+        out: Dict[str, Any] = {
             "success": True,
-            "data": {
-                "items": items,
-            },
-            "summary": {
-                "counts": {
-                    "items": int(result.get("count") or len(items)),
-                }
-            },
-            "meta": _build_tool_contract_meta(
+            "period": result.get("period", period),
+            "detail": normalize_output_verbosity_detail(detail, default="compact"),
+            "items": normalized_items,
+            "count": int(result.get("count") or len(normalized_items)),
+            "total": result.get("total"),
+            "page": result.get("page"),
+            "pages": result.get("pages"),
+        }
+        if out["detail"] == "full":
+            out["meta"] = _build_tool_contract_meta(
                 tool="finviz_earnings",
                 request=request,
                 stats=stats,
                 pagination=pagination,
-            ),
-        }
+            )
+        return out
 
     return _run_logged_tool(
         "finviz_earnings",
-        {"period": period, "limit": limit, "page": page},
+        {"period": period, "limit": limit, "page": page, "detail": detail},
         _run,
     )

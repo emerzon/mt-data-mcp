@@ -21,7 +21,7 @@ class TestFinvizEarningsOutputContract:
         return _unwrap(finviz_earnings)
 
     @patch("mtdata.core.finviz.get_earnings_calendar")
-    def test_success_moves_items_and_pagination_into_contract(self, mock_get):
+    def test_success_returns_flat_normalized_items(self, mock_get):
         mock_get.return_value = {
             "success": True,
             "period": "This Week",
@@ -31,21 +31,51 @@ class TestFinvizEarningsOutputContract:
             "pages": 3,
             "truncated": False,
             "earnings": [
-                {"ticker": "AAPL", "date": "2026-01-10"},
-                {"ticker": "MSFT", "date": "2026-01-11"},
+                {"Ticker": "AAPL", "Market Cap": "3T", "Date": "2026-01-10"},
+                {"Ticker": "MSFT", "Market Cap": "2T", "Date": "2026-01-11"},
             ],
         }
 
         result = self._unwrapped()(period="This Week", limit=2, page=2)
 
         assert result["success"] is True
-        assert result["data"]["items"][0]["ticker"] == "AAPL"
-        assert result["summary"]["counts"]["items"] == 2
+        assert result["items"][0] == {
+            "ticker": "AAPL",
+            "market_cap": "3T",
+            "date": "2026-01-10",
+        }
+        assert result["count"] == 2
+        assert result["page"] == 2
+        assert result["total"] == 6
+        assert result["pages"] == 3
+        assert "data" not in result
+        assert "summary" not in result
+        assert "meta" not in result
+        assert "earnings" not in result
+
+    @patch("mtdata.core.finviz.get_earnings_calendar")
+    def test_full_includes_metadata(self, mock_get):
+        mock_get.return_value = {
+            "success": True,
+            "period": "This Week",
+            "count": 2,
+            "total": 6,
+            "page": 2,
+            "pages": 3,
+            "truncated": False,
+            "earnings": [{"Ticker": "AAPL", "Date": "2026-01-10"}],
+        }
+
+        result = self._unwrapped()(period="This Week", limit=2, page=2, detail="full")
+
+        assert result["success"] is True
+        assert result["detail"] == "full"
         assert result["meta"]["tool"] == "finviz_earnings"
         assert result["meta"]["request"] == {
             "period": "This Week",
             "limit": 2,
             "page": 2,
+            "detail": "full",
         }
         assert result["meta"]["pagination"] == {
             "page": 2,
@@ -53,10 +83,6 @@ class TestFinvizEarningsOutputContract:
             "pages": 3,
         }
         assert result["meta"]["stats"]["truncated"] is False
-        assert "earnings" not in result
-        assert "page" not in result
-        assert "total" not in result
-        assert "pages" not in result
 
     @patch("mtdata.core.finviz.get_earnings_calendar")
     def test_invalid_period_returns_error_envelope(self, mock_get):
@@ -72,6 +98,7 @@ class TestFinvizEarningsOutputContract:
         assert result["meta"]["request"]["period"] == "Bad"
         assert result["meta"]["request"]["limit"] == 50
         assert result["meta"]["request"]["page"] == 1
+        assert result["meta"]["request"]["detail"] == "compact"
         assert "operation" not in result
 
 
