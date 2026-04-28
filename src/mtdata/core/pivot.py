@@ -27,6 +27,7 @@ from ..utils.support_resistance import (
 from ..utils.utils import (
     _format_time_minimal,
     _format_time_minimal_local,
+    _resolve_client_tz,
     _use_client_tz,
 )
 from ._mcp_instance import mcp
@@ -41,6 +42,13 @@ from .schema import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _pivot_display_timezone(use_client_tz: bool) -> str:
+    if not use_client_tz:
+        return "UTC"
+    client_tz = _resolve_client_tz()
+    return str(getattr(client_tz, "zone", None) or client_tz or "UTC")
 
 
 def _mt5_epoch_to_utc(value: float) -> float:
@@ -438,6 +446,7 @@ def pivot_compute_points(  # noqa: C901
                 levels_table.append(row)
 
             _use_ctz = _use_client_tz()
+            timezone_label = _pivot_display_timezone(_use_ctz)
             start_str = _format_time_minimal_local(period_start) if _use_ctz else _format_time_minimal(period_start)
             end_str = _format_time_minimal_local(period_end) if _use_ctz else _format_time_minimal(period_end)
 
@@ -458,7 +467,7 @@ def pivot_compute_points(  # noqa: C901
                 "calculation_basis": {
                     "source_bar": f"last completed {timeframe} bar",
                     "session_boundary": "MT5 broker/session calendar",
-                    "display_timezone": "client_local" if _use_ctz else "UTC",
+                    "display_timezone": timezone_label,
                 },
                 "levels_note": (
                     "null cells mean that pivot method does not define that level. "
@@ -466,7 +475,7 @@ def pivot_compute_points(  # noqa: C901
                 ),
                 "levels": levels_table,
             }
-            payload["timezone"] = "client_local" if _use_ctz else "UTC"
+            payload["timezone"] = timezone_label
             if detail_value == "compact":
                 classic_method = next(
                     (
@@ -503,7 +512,7 @@ def pivot_compute_points(  # noqa: C901
                         if key in compact_levels
                     },
                 }
-                compact_payload["timezone"] = "client_local" if _use_ctz else "UTC"
+                compact_payload["timezone"] = timezone_label
                 degenerate_info = _degenerate_levels_info(compact_payload["levels"])
                 if degenerate_info:
                     compact_payload.update(degenerate_info)

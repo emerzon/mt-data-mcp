@@ -67,8 +67,13 @@ _GUARD = "mtdata.core.pivot._symbol_ready_guard"
 _FMT = "mtdata.core.pivot._format_time_minimal"
 _FMT_LOCAL = "mtdata.core.pivot._format_time_minimal_local"
 _USE_CTZ = "mtdata.core.pivot._use_client_tz"
+_RESOLVE_CTZ = "mtdata.core.pivot._resolve_client_tz"
 _EPOCH = "mtdata.core.pivot._mt5_epoch_to_utc"
 _COPY_RATES = "mtdata.core.pivot._mt5_copy_rates_from"
+
+
+class _FakeClientTz:
+    zone = "America/New_York"
 
 
 class TestPivotInvalidInputs:
@@ -225,6 +230,7 @@ class TestPivotHappyPath:
              patch(_EPOCH, side_effect=lambda x: float(x)), \
              patch(_COPY_RATES, return_value=rates), \
              patch(_USE_CTZ, return_value=use_ctz), \
+             patch(_RESOLVE_CTZ, return_value=_FakeClientTz()), \
              patch(_FMT, side_effect=lambda x: f"T{int(x)}"), \
              patch(_FMT_LOCAL, side_effect=lambda x: f"L{int(x)}"), \
              patch("mtdata.core.pivot.datetime") as mock_datetime:
@@ -350,7 +356,7 @@ class TestPivotHappyPath:
     def test_client_tz_no_utc_label(self):
         r = [_make_rate(time_=100.0), _make_rate(time_=200.0)]
         res = self._run(r, use_ctz=True)
-        assert res["timezone"] == "client_local"
+        assert res["timezone"] == "America/New_York"
 
     def test_period_field(self):
         r = [_make_rate(time_=100.0), _make_rate(time_=200.0)]
@@ -436,6 +442,12 @@ class TestPivotHappyPath:
         assert res["calculation_basis"]["display_timezone"] == "UTC"
         assert "null cells mean that pivot method does not define that level." in res["levels_note"]
         assert "Camarilla levels are centered on the close price" in res["levels_note"]
+
+    def test_client_timezone_label_uses_resolved_timezone_name(self):
+        r = [_make_rate(time_=100.0), _make_rate(time_=200.0)]
+        res = self._run(r, use_ctz=True, detail="standard")
+        assert res["timezone"] == "America/New_York"
+        assert res["calculation_basis"]["display_timezone"] == "America/New_York"
 
     def test_symbol_timeframe_in_response(self):
         r = [_make_rate(time_=100.0), _make_rate(time_=200.0)]
