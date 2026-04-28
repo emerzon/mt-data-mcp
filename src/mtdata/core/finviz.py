@@ -562,6 +562,46 @@ def _transaction_text(row: Dict[str, Any]) -> str:
     return " ".join(parts).lower()
 
 
+def _coerce_finviz_number(value: Any) -> float:
+    if value in (None, ""):
+        return 0.0
+    try:
+        return float(str(value).replace("$", "").replace(",", "").replace("%", "").strip())
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _summarize_insider_activity_tickers(rows: List[Any]) -> List[Dict[str, Any]]:
+    by_ticker: Dict[str, Dict[str, Any]] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        ticker = str(row.get("ticker") or "").strip().upper()
+        if not ticker:
+            continue
+        item = by_ticker.setdefault(
+            ticker,
+            {"ticker": ticker, "transactions": 0, "shares": 0.0, "value_usd": 0.0},
+        )
+        item["transactions"] += 1
+        item["shares"] += abs(_coerce_finviz_number(row.get("shares")))
+        item["value_usd"] += abs(_coerce_finviz_number(row.get("value_usd")))
+    ranked = sorted(
+        by_ticker.values(),
+        key=lambda item: (item["value_usd"], item["shares"], item["transactions"]),
+        reverse=True,
+    )
+    return [
+        {
+            "ticker": item["ticker"],
+            "transactions": int(item["transactions"]),
+            "shares": round(float(item["shares"]), 2),
+            "value_usd": round(float(item["value_usd"]), 2),
+        }
+        for item in ranked[:5]
+    ]
+
+
 def _compact_finviz_insider_payload(result: Dict[str, Any], *, detail: str) -> Dict[str, Any]:
     error = _validate_finviz_detail(detail, operation="finviz_insider")
     if error is not None or not result.get("success"):
@@ -589,6 +629,57 @@ def _compact_finviz_insider_payload(result: Dict[str, Any], *, detail: str) -> D
         }
     }
     out["omitted_item_count"] = max(0, len(rows) - len(compact_rows))
+    return out
+
+
+def _compact_finviz_insider_activity_payload(
+    result: Dict[str, Any], *, detail: str
+) -> Dict[str, Any]:
+    error = _validate_finviz_detail(detail, operation="finviz_insider_activity")
+    if error is not None or not result.get("success"):
+        return error or result
+    rows = result.get("insider_trades")
+    if not isinstance(rows, list):
+        return result
+
+    detail_mode = normalize_output_verbosity_detail(detail, default="compact")
+    normalized_rows = _normalize_finviz_output_rows(rows)
+    out = {key: value for key, value in result.items() if key != "insider_trades"}
+    out["detail"] = detail_mode
+    if detail_mode == "full":
+        out["items"] = normalized_rows
+        out["count"] = len(normalized_rows)
+        return out
+
+    compact_rows: List[Any] = []
+    for row in normalized_rows[:5]:
+        if not isinstance(row, dict):
+            compact_rows.append(row)
+            continue
+        item = dict(row)
+        item.pop("sec_form_4_link", None)
+        if str(item.get("sec_form_4") or "").startswith(("http://", "https://")):
+            item.pop("sec_form_4", None)
+        compact_rows.append(item)
+
+    transaction_texts = [
+        _transaction_text(row) for row in normalized_rows if isinstance(row, dict)
+    ]
+    buys = sum(1 for text in transaction_texts if "buy" in text or "purchase" in text)
+    sells = sum(1 for text in transaction_texts if "sell" in text or "sale" in text)
+    out["items"] = compact_rows
+    out["count"] = len(compact_rows)
+    out["summary"] = {
+        "counts": {
+            "returned": len(compact_rows),
+            "available": len(normalized_rows),
+            "total": result.get("total", len(normalized_rows)),
+            "buy_transactions": buys,
+            "sell_transactions": sells,
+        },
+        "top_tickers": _summarize_insider_activity_tickers(normalized_rows),
+    }
+    out["omitted_item_count"] = max(0, len(normalized_rows) - len(compact_rows))
     return out
 
 
@@ -1130,6 +1221,7 @@ def finviz_insider_activity(
     option: Literal["latest", "top week", "top owner trade", "insider buy", "insider sale"] = "latest",
     limit: int = 50,
     page: int = 1,
+    detail: str = "compact",
 ) -> Dict[str, Any]:
     """
     Get general insider trading activity across the market.
@@ -1147,6 +1239,9 @@ def finviz_insider_activity(
         Max items per page (default 50)
     page : int
         Page number for pagination (default 1)
+    detail : str
+        Response detail level. Compact returns a short normalized item list and
+        summary; full keeps all normalized rows including SEC link fields.
     
     Returns
     -------
@@ -1155,8 +1250,11 @@ def finviz_insider_activity(
     """
     return _run_logged_tool(
         "finviz_insider_activity",
-        {"option": option, "limit": limit, "page": page},
-        lambda: get_insider_activity(option=option, limit=limit, page=page),
+        {"option": option, "limit": limit, "page": page, "detail": detail},
+        lambda: _compact_finviz_insider_activity_payload(
+            get_insider_activity(option=option, limit=limit, page=page),
+            detail=detail,
+        ),
     )
 
 

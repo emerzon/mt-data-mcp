@@ -4,6 +4,7 @@ from mtdata.core.finviz import (
     finviz_calendar,
     finviz_earnings,
     finviz_insider,
+    finviz_insider_activity,
     finviz_peers,
     finviz_ratings,
 )
@@ -105,6 +106,78 @@ class TestFinvizCalendarOutputContract:
                 "reference_date": "2025-12",
             }
         ]
+
+
+class TestFinvizInsiderActivityOutputContract:
+    @patch("mtdata.core.finviz.get_insider_activity")
+    def test_compact_normalizes_items_and_summarizes_without_urls(self, mock_get):
+        mock_get.return_value = {
+            "success": True,
+            "option": "latest",
+            "count": 6,
+            "total": 6,
+            "page": 1,
+            "pages": 1,
+            "insider_trades": [
+                {
+                    "Ticker": "AAPL",
+                    "SEC Form 4 Link": "https://sec.example/a",
+                    "Transaction": "Sale",
+                    "#Shares": "10",
+                    "Value ($)": "1000",
+                },
+                {
+                    "Ticker": "AAPL",
+                    "SEC Form 4 Link": "https://sec.example/b",
+                    "Transaction": "Buy",
+                    "#Shares": "5",
+                    "Value ($)": "600",
+                },
+                {"Ticker": "MSFT", "Transaction": "Sale", "#Shares": "2", "Value ($)": "200"},
+                {"Ticker": "NVDA", "Transaction": "Option Exercise"},
+                {"Ticker": "TSLA", "Transaction": "Sale"},
+                {"Ticker": "META", "Transaction": "Buy"},
+            ],
+        }
+
+        result = _unwrap(finviz_insider_activity)(detail="compact")
+
+        assert result["detail"] == "compact"
+        assert "insider_trades" not in result
+        assert len(result["items"]) == 5
+        assert result["items"][0]["ticker"] == "AAPL"
+        assert "sec_form_4_link" not in result["items"][0]
+        assert result["summary"]["counts"] == {
+            "returned": 5,
+            "available": 6,
+            "total": 6,
+            "buy_transactions": 2,
+            "sell_transactions": 3,
+        }
+        assert result["summary"]["top_tickers"][0] == {
+            "ticker": "AAPL",
+            "transactions": 2,
+            "shares": 15.0,
+            "value_usd": 1600.0,
+        }
+        assert result["omitted_item_count"] == 1
+
+    @patch("mtdata.core.finviz.get_insider_activity")
+    def test_full_keeps_all_normalized_rows_including_urls(self, mock_get):
+        mock_get.return_value = {
+            "success": True,
+            "insider_trades": [
+                {"Ticker": "AAPL", "SEC Form 4 Link": "https://sec.example/a"}
+            ],
+        }
+
+        result = _unwrap(finviz_insider_activity)(detail="full")
+
+        assert result["detail"] == "full"
+        assert result["items"] == [
+            {"ticker": "AAPL", "sec_form_4_link": "https://sec.example/a"}
+        ]
+        assert "insider_trades" not in result
 
 
 class TestFinvizProgressiveDisclosure:
