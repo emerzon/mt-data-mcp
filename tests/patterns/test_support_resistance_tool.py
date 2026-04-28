@@ -228,6 +228,34 @@ def test_support_resistance_tool_standard_detail_keeps_actionable_lists_without_
     assert result["fibonacci"]["nearest"]["support"]["type"] == "support"
 
 
+def test_support_resistance_tool_full_detail_keeps_rows_compact_with_structured_diagnostics():
+    fn = _get_support_resistance_fn()
+    gateway = type("Gateway", (), {"ensure_connection": lambda self: None})()
+    with patch("mtdata.core.pivot.get_mt5_gateway", return_value=gateway), \
+         patch("mtdata.core.pivot._fetch_history", return_value=_frame()):
+        result = fn(
+            "EURUSD",
+            timeframe="H1",
+            limit=200,
+            tolerance_pct=0.005,
+            min_touches=2,
+            max_levels=3,
+            max_distance_pct=None,
+            reaction_bars=4,
+            detail="full",
+        )
+
+    assert result["detail"] == "full"
+    assert "score_breakdown" not in result["levels"][0]
+    assert "episode_details" not in result["levels"][0]
+    assert "breakout_analysis" not in result["levels"][0]
+    diagnostics = result["diagnostics"]["levels"]
+    first_detail = next(iter(diagnostics.values()))
+    assert isinstance(first_detail["score_breakdown"], dict)
+    assert isinstance(first_detail["breakout_analysis"], dict)
+    assert isinstance(first_detail["episode_details"], list)
+
+
 def test_support_resistance_tool_auto_mode_merges_timeframes():
     fn = _get_support_resistance_fn()
     gateway = type("Gateway", (), {"ensure_connection": lambda self: None})()

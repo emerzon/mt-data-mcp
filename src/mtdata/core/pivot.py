@@ -20,6 +20,7 @@ from ..utils.mt5 import (
 from ..utils.support_resistance import (
     compact_support_resistance_payload,
     compute_support_resistance_levels,
+    full_support_resistance_payload,
     get_auto_support_resistance_timeframes,
     merge_support_resistance_results,
     standard_support_resistance_payload,
@@ -593,7 +594,7 @@ def support_resistance_levels(
                 payload = standard_support_resistance_payload(result)
             else:
                 detail_value = "full"
-                payload = dict(result)
+                payload = full_support_resistance_payload(result)
             payload["detail"] = detail_value
             payload.setdefault("timezone", "UTC")
             return payload

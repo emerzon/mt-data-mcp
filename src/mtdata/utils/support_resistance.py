@@ -2530,6 +2530,66 @@ def standard_support_resistance_payload(payload: Dict[str, Any]) -> Dict[str, An
     return out or dict(payload)
 
 
+def _support_resistance_level_key(level: Any, fallback: str) -> str:
+    if not isinstance(level, dict):
+        return fallback
+    level_type = str(level.get("type") or "level").strip().lower() or "level"
+    value = level.get("value")
+    try:
+        value_text = f"{float(value):.6f}".rstrip("0").rstrip(".")
+    except Exception:
+        value_text = str(value or fallback)
+    return f"{level_type}_{value_text}".replace(".", "_").replace("-", "m")
+
+
+def _support_resistance_level_diagnostics(levels: Any) -> Dict[str, Any]:
+    if not isinstance(levels, list):
+        return {}
+    diagnostics: Dict[str, Any] = {}
+    diagnostic_keys = (
+        "source_tests",
+        "source_episodes",
+        "avg_bounce_atr",
+        "avg_pretest_adx",
+        "avg_test_volume_ratio",
+        "volume_source",
+        "breakout_analysis",
+        "episode_details",
+        "score_breakdown",
+    )
+    for index, level in enumerate(levels, start=1):
+        if not isinstance(level, dict):
+            continue
+        detail = {
+            key: level.get(key)
+            for key in diagnostic_keys
+            if level.get(key) not in (None, "", [], {})
+        }
+        if not detail:
+            continue
+        detail["type"] = level.get("type")
+        detail["value"] = level.get("value")
+        diagnostics[_support_resistance_level_key(level, f"level_{index}")] = detail
+    return diagnostics
+
+
+def full_support_resistance_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(payload, dict):
+        return payload
+
+    out = standard_support_resistance_payload(payload)
+    if isinstance(payload.get("fibonacci"), dict):
+        out["fibonacci"] = dict(payload["fibonacci"])
+    diagnostics: Dict[str, Any] = {}
+    for key in ("supports", "resistances", "levels"):
+        section = _support_resistance_level_diagnostics(payload.get(key))
+        if section:
+            diagnostics[key] = section
+    if diagnostics:
+        out["diagnostics"] = diagnostics
+    return out or dict(payload)
+
+
 def compute_support_resistance_levels(
     frame: pd.DataFrame,
     *,
