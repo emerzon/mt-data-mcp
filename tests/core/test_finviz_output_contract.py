@@ -1,6 +1,12 @@
 from unittest.mock import patch
 
-from mtdata.core.finviz import finviz_earnings, finviz_insider, finviz_peers, finviz_ratings
+from mtdata.core.finviz import (
+    finviz_calendar,
+    finviz_earnings,
+    finviz_insider,
+    finviz_peers,
+    finviz_ratings,
+)
 
 
 def _unwrap(fn):
@@ -66,6 +72,39 @@ class TestFinvizEarningsOutputContract:
         assert result["meta"]["request"]["limit"] == 50
         assert result["meta"]["request"]["page"] == 1
         assert "operation" not in result
+
+
+class TestFinvizCalendarOutputContract:
+    @patch("mtdata.core.finviz.get_economic_calendar")
+    def test_calendar_normalizes_top_level_and_item_keys(self, mock_get):
+        mock_get.return_value = {
+            "success": True,
+            "dateFrom": "2026-01-05",
+            "dateTo": "2026-01-12",
+            "items": [
+                {
+                    "Datetime": "2026-01-06T13:30:00",
+                    "Release": "CPI",
+                    "Impact": "high",
+                    "For": "USD",
+                    "ReferenceDate": "2025-12",
+                }
+            ],
+        }
+
+        result = _unwrap(finviz_calendar)(start="2026-01-05", end="2026-01-12")
+
+        assert result["date_from"] == "2026-01-05"
+        assert result["date_to"] == "2026-01-12"
+        assert result["items"] == [
+            {
+                "datetime": "2026-01-06T13:30:00",
+                "release": "CPI",
+                "impact": "high",
+                "for_currency": "USD",
+                "reference_date": "2025-12",
+            }
+        ]
 
 
 class TestFinvizProgressiveDisclosure:

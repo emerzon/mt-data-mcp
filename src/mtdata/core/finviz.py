@@ -471,8 +471,18 @@ def _normalize_finviz_news_payload(result: Dict[str, Any]) -> Dict[str, Any]:
 
 
 _FINVIZ_OUTPUT_KEY_MAP = {
+    "#Shares": "shares",
+    "#Shares Total": "shares_total",
+    "Datetime": "datetime",
+    "For": "for_currency",
     "Market Cap": "market_cap",
     "Market Cap.": "market_cap",
+    "ReferenceDate": "reference_date",
+    "SEC Form 4": "sec_form_4",
+    "SEC Form 4 Link": "sec_form_4_link",
+    "Value ($)": "value_usd",
+    "dateFrom": "date_from",
+    "dateTo": "date_to",
     "P/E": "pe_ratio",
     "Forward P/E": "forward_pe",
     "P/S": "price_to_sales",
@@ -517,6 +527,18 @@ def _normalize_finviz_output_rows(rows: Any) -> Any:
     if not isinstance(rows, list):
         return rows
     return [_normalize_finviz_output_row(row) for row in rows]
+
+
+def _normalize_finviz_calendar_payload(result: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(result, dict) or result.get("error"):
+        return result
+    out: Dict[str, Any] = {}
+    for key, value in result.items():
+        normalized_key = _normalize_finviz_output_key(key)
+        out[normalized_key] = value
+    if isinstance(out.get("items"), list):
+        out["items"] = _normalize_finviz_output_rows(out["items"])
+    return out
 
 
 def _validate_finviz_detail(detail: str, *, operation: str) -> Optional[Dict[str, Any]]:
@@ -1310,26 +1332,32 @@ def finviz_calendar(
             cal = cal.rstrip("/").split("/")[-1]
 
         if cal == "economic":
-            return get_economic_calendar(
-                impact=impact,
-                limit=limit,
-                page=page,
-                date_from=start_value,
-                date_to=end_value,
+            return _normalize_finviz_calendar_payload(
+                get_economic_calendar(
+                    impact=impact,
+                    limit=limit,
+                    page=page,
+                    date_from=start_value,
+                    date_to=end_value,
+                )
             )
         if cal == "earnings":
-            return get_earnings_calendar_api(
-                limit=limit,
-                page=page,
-                date_from=start_value,
-                date_to=end_value,
+            return _normalize_finviz_calendar_payload(
+                get_earnings_calendar_api(
+                    limit=limit,
+                    page=page,
+                    date_from=start_value,
+                    date_to=end_value,
+                )
             )
         if cal == "dividends":
-            return get_dividends_calendar_api(
-                limit=limit,
-                page=page,
-                date_from=start_value,
-                date_to=end_value,
+            return _normalize_finviz_calendar_payload(
+                get_dividends_calendar_api(
+                    limit=limit,
+                    page=page,
+                    date_from=start_value,
+                    date_to=end_value,
+                )
             )
         return {"error": f"Unsupported calendar '{calendar}'. Expected economic, earnings, or dividends."}
 
