@@ -271,6 +271,7 @@ def _compact_wait_event_public_result(
         "matched",
         "event",
         "criteria",
+        "timeframe",
         "started_at_utc",
         "elapsed_seconds",
         "polls",
@@ -308,22 +309,6 @@ def _compact_wait_event_public_result(
         if isinstance(observed, dict) and observed:
             compact_matched["observed"] = dict(observed)
         out["matched_event"] = compact_matched or None
-
-    if criteria is not None:
-        watch_specs = criteria.get("watch_for") or []
-        end_specs = criteria.get("end_on") or []
-        out["watched_for"] = _compact_wait_event_specs(
-            watch_specs,
-            inferred=bool(criteria.get("watch_for_inferred")),
-        )
-        out["ending_on"] = _compact_wait_event_specs(
-            end_specs,
-            inferred=bool(criteria.get("end_on_inferred")),
-        )
-        if out.get("status") == "boundary_reached" and watch_specs:
-            out["reason"] = "No watched event matched before the boundary event."
-        elif out.get("status") == "timeout" and watch_specs:
-            out["reason"] = "No watched event matched before max_wait_seconds."
 
     return out
 
@@ -535,6 +520,10 @@ def wait_event(
             request_kwargs["symbol"] = symbol_value
         if end_on is not None:
             request_kwargs["end_on"] = list(end_on)
+        else:
+            request_kwargs["end_on"] = [
+                {"type": "candle_close", "timeframe": timeframe},
+            ]
         resolved_watch_for = (
             list(watch_for)
             if explicit_watch_for

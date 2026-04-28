@@ -880,6 +880,24 @@ def _normalize_market_ticker_payload(
         out["error"] = payload.get("error")
         return out
 
+    price_precision = None
+    try:
+        raw_precision = payload.get("price_precision")
+        if raw_precision is not None:
+            price_precision = max(0, int(raw_precision))
+    except Exception:
+        price_precision = None
+
+    def _price_value(value: Any) -> Any:
+        if price_precision is None or isinstance(value, bool):
+            return value
+        if not isinstance(value, (int, float)):
+            return value
+        try:
+            return f"{float(value):.{price_precision}f}"
+        except Exception:
+            return value
+
     for key in (
         "success",
         "symbol",
@@ -896,6 +914,8 @@ def _normalize_market_ticker_payload(
     ):
         value = payload.get(key)
         if not _is_empty_value(value):
+            if key in {"bid", "ask", "last", "spread"}:
+                value = _price_value(value)
             out[key] = value
 
     display_time = payload.get("time_display")
@@ -925,6 +945,82 @@ def _normalize_market_ticker_payload(
         out["meta"] = meta
 
     return out
+
+
+_WAIT_EVENT_PRICE_FIELDS = {
+    "bid",
+    "ask",
+    "last",
+    "open",
+    "high",
+    "low",
+    "close",
+    "price",
+    "spread",
+    "change",
+    "range",
+    "body",
+    "upper_wick",
+    "lower_wick",
+    "midpoint",
+    "typical_price",
+}
+
+
+def _fixed_price_text(value: Any, *, precision: int) -> Any:
+    if isinstance(value, bool) or not isinstance(value, Number):
+        return value
+    try:
+        numeric = float(value)
+    except Exception:
+        return value
+    if not math.isfinite(numeric):
+        return value
+    return f"{numeric:.{max(0, int(precision))}f}"
+
+
+def _format_price_fields_with_precision(value: Any, *, precision: int) -> Any:
+    if isinstance(value, list):
+        return [
+            _format_price_fields_with_precision(item, precision=precision)
+            for item in value
+        ]
+    if not isinstance(value, dict):
+        return value
+    out: Dict[str, Any] = {}
+    for key, item in value.items():
+        if key == "price_precision":
+            continue
+        if str(key).lower() in _WAIT_EVENT_PRICE_FIELDS:
+            out[key] = _fixed_price_text(item, precision=precision)
+        else:
+            out[key] = _format_price_fields_with_precision(item, precision=precision)
+    return out
+
+
+def _normalize_wait_event_payload(
+    payload: Dict[str, Any],
+    *,
+    tool_name: str,
+) -> Optional[Dict[str, Any]]:
+    if tool_name != "wait_event":
+        return None
+    try:
+        precision = payload.get("price_precision")
+        if precision is None:
+            boundary = payload.get("boundary_event")
+            if isinstance(boundary, dict):
+                closed = boundary.get("closed_candle")
+                if isinstance(closed, dict):
+                    precision = closed.get("price_precision")
+        if precision is None:
+            return None
+        precision_i = int(precision)
+        if precision_i < 0 or precision_i > 15:
+            return None
+    except Exception:
+        return None
+    return _format_price_fields_with_precision(payload, precision=precision_i)
 
 
 def _compact_barrier_rows(
@@ -1861,7 +1957,6 @@ def format_result_minimal(
     simplify_numbers: Optional[bool] = None,
     tool_name: Optional[str] = None,
     precision: Any = None,
-    decimals: Any = None,
 ) -> str:
     """Render tool outputs as TOON text."""
     if result is None:
@@ -1873,7 +1968,6 @@ def format_result_minimal(
             None,
             tool_name=resolved_tool_name,
             precision=precision,
-            decimals=decimals,
             simplify_numbers=simplify_numbers,
         )
         if isinstance(result, dict):
@@ -1885,6 +1979,12 @@ def format_result_minimal(
             )
             if news_rendered is not None:
                 return news_rendered.strip()
+            wait_event_norm = _normalize_wait_event_payload(
+                result,
+                tool_name=resolved_tool_name,
+            )
+            if wait_event_norm is not None:
+                normalized = wait_event_norm
         trade_table_norm = _normalize_trade_table_payload(
             result,
             verbose=verbose,
@@ -2006,7 +2106,6 @@ def format_result_minimal(
         toon_text = _format_to_toon(
             normalized,
             simplify_numbers=precision_policy.simplify_numbers,
-            decimals=precision_policy.decimals,
         )
         return toon_text.strip()
     except Exception:

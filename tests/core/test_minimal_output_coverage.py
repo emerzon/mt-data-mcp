@@ -827,6 +827,54 @@ class TestFormatResultMinimal:
         assert "time_display" not in result
         assert result["meta"]["tool"] == "market_ticker"
 
+    def test_market_ticker_text_uses_symbol_price_precision(self):
+        payload = {
+            "success": True,
+            "symbol": "US500",
+            "type": "ticker",
+            "price_precision": 2,
+            "bid": 7175,
+            "ask": 7175.5,
+            "spread": 0.5,
+            "meta": {"tool": "market_ticker"},
+        }
+
+        result = format_result_minimal(payload, verbose=False, tool_name="market_ticker")
+
+        assert "bid: 7175.00" in result
+        assert "ask: 7175.50" in result
+        assert "spread: 0.50" in result
+
+    def test_wait_event_text_uses_symbol_price_precision_without_echoing_it(self):
+        payload = {
+            "success": True,
+            "status": "boundary_reached",
+            "symbol": "BTCUSD",
+            "price_precision": 2,
+            "bid": 76864.08,
+            "ask": 76876.08,
+            "boundary_event": {
+                "type": "candle_close",
+                "timeframe": "M15",
+                "closed_candle": {
+                    "symbol": "BTCUSD",
+                    "timeframe": "M15",
+                    "open": 76876.8,
+                    "high": 76886.32,
+                    "low": 76848.9,
+                    "close": 76864.08,
+                },
+            },
+        }
+
+        result = format_result_minimal(payload, verbose=False, tool_name="wait_event")
+
+        assert "price_precision" not in result
+        assert "bid: 76864.08" in result
+        assert "ask: 76876.08" in result
+        assert "open: 76876.80" in result
+        assert "low: 76848.90" in result
+
     def test_market_status_hides_upcoming_holidays_by_default(self):
         payload = {
             "success": True,

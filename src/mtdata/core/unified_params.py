@@ -64,12 +64,3 @@ def add_global_args_to_parser(
             precision_kwargs["default"] = argparse.SUPPRESS
         parser.add_argument("--precision", **precision_kwargs)
 
-    if 'decimals' not in exclude_params:
-        decimals_kwargs = {
-            "type": int,
-            "default": None,
-            "help": "Optional display decimal override for formatted text output.",
-        }
-        if suppress_defaults:
-            decimals_kwargs["default"] = argparse.SUPPRESS
-        parser.add_argument("--decimals", **decimals_kwargs)

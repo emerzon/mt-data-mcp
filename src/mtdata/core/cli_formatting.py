@@ -108,7 +108,6 @@ def _format_result_for_cli(
     verbose: bool,
     cmd_name: str,
     precision: Any = None,
-    decimals: Any = None,
 ) -> str:
     fmt_s = _normalize_cli_formatter(fmt)
     precision_policy = resolve_output_precision(
@@ -116,7 +115,6 @@ def _format_result_for_cli(
         tool_name=cmd_name,
         fmt=fmt_s,
         precision=precision,
-        decimals=decimals,
     )
     prepared = _prepare_cli_payload(
         result,
@@ -136,7 +134,6 @@ def _format_result_for_cli(
             prepared,
             verbose=verbose,
             precision=precision_policy.mode,
-            decimals=precision_policy.decimals,
             tool_name=cmd_name,
         )
     except TypeError:

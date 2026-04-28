@@ -55,6 +55,11 @@ _QUOTE_DECIMALS_BY_FIELD = {
     "last_high": 8,
     "pivot": 8,
 }
+_SYMBOL_PRICE_PRECISION_FIELDS = {
+    key.lower()
+    for key, value in _QUOTE_DECIMALS_BY_FIELD.items()
+    if int(value) == 8
+}
 
 
 def _quote_decimals_for_field(field: Any) -> Optional[int]:
@@ -63,6 +68,48 @@ def _quote_decimals_for_field(field: Any) -> Optional[int]:
     if forced is not None:
         return forced
     return _QUOTE_DECIMALS_BY_FIELD.get(text.lower())
+
+
+def _coerce_precision(value: Any) -> Optional[int]:
+    try:
+        precision = int(value)
+    except Exception:
+        return None
+    if precision < 0 or precision > 15:
+        return None
+    return precision
+
+
+def _payload_price_precision(value: Any) -> Optional[int]:
+    if not isinstance(value, dict):
+        return None
+    for key in ("price_precision", "digits"):
+        precision = _coerce_precision(value.get(key))
+        if precision is not None:
+            return precision
+    return None
+
+
+def _symbol_precision_for_field(
+    field: Any,
+    price_precision: Optional[int],
+) -> Optional[int]:
+    precision = _coerce_precision(price_precision)
+    if precision is None or field is None:
+        return None
+    text = str(field)
+    lowered = text.lower()
+    if lowered in _SYMBOL_PRICE_PRECISION_FIELDS:
+        return precision
+    if "." in text:
+        child = text.split(".")[-1].lower()
+        if child in _SYMBOL_PRICE_PRECISION_FIELDS:
+            return precision
+    return None
+
+
+def _format_fixed_float(num: float, decimals: int) -> str:
+    return f"{float(num):.{max(0, int(decimals))}f}"
 
 _PRICE_CONTAINER_KEYS = {
     "levels",
@@ -331,6 +378,7 @@ def _encode_tabular(
     *,
     simplify_numbers: bool = True,
     decimals: Optional[int] = None,
+    price_precision: Optional[int] = None,
 ) -> str:
     ind = _INDENT * indent
     name = _quote_key(key, delimiter) or "items"
@@ -342,18 +390,33 @@ def _encode_tabular(
         if simplify_numbers
         else {}
     )
+    fixed_decimals = {
+        header: precision
+        for header in headers
+        if (
+            precision := _symbol_precision_for_field(header, price_precision)
+        )
+        is not None
+    }
     lines = [f"{ind}{name}[{len(rows)}]{{{header_line}}}:"]
     row_indent = ind + _INDENT
     for row in rows:
-        vals = [
-            _stringify_for_toon_value(
-                row.get(header),
-                col_decimals.get(header),
-                delimiter,
-                simplify_numbers=simplify_numbers,
+        vals = []
+        for header in headers:
+            value = row.get(header)
+            if header in fixed_decimals and isinstance(value, Number) and not isinstance(value, bool):
+                num = _coerce_float(value)
+                if num is not None and math.isfinite(num):
+                    vals.append(_format_fixed_float(num, fixed_decimals[header]))
+                    continue
+            vals.append(
+                _stringify_for_toon_value(
+                    value,
+                    col_decimals.get(header),
+                    delimiter,
+                    simplify_numbers=simplify_numbers,
+                )
             )
-            for header in headers
-        ]
         lines.append(f"{row_indent}{delimiter.join(vals)}")
     return "\n".join(lines)
 
@@ -432,6 +495,7 @@ def _encode_expanded_array(
     *,
     simplify_numbers: bool = True,
     decimals: Optional[int] = None,
+    price_precision: Optional[int] = None,
 ) -> str:
     ind = _INDENT * indent
     name = _quote_key(key, delimiter) or "items"
@@ -445,6 +509,7 @@ def _encode_expanded_array(
             delimiter=delimiter,
             simplify_numbers=simplify_numbers,
             decimals=decimals,
+            price_precision=price_precision,
         )
         if not rendered:
             continue
@@ -462,6 +527,7 @@ def _format_to_toon(
     *,
     key: Optional[str] = None,
     parent_key: Optional[str] = None,
+    price_precision: Optional[int] = None,
     indent: int = 0,
     delimiter: str = _DEFAULT_DELIMITER,
     simplify_numbers: bool = True,
@@ -470,11 +536,17 @@ def _format_to_toon(
     ind = _INDENT * indent
     if key is not None and isinstance(value, dict):
         key, value = _collapse_single_key_path(key, value)
+    local_price_precision = _payload_price_precision(value)
+    if local_price_precision is None:
+        local_price_precision = price_precision
 
     if _is_scalar_value(value):
+        symbol_decimals = _symbol_precision_for_field(key, local_price_precision)
         forced_decimals = (
             int(decimals)
             if decimals is not None
+            else symbol_decimals
+            if simplify_numbers and symbol_decimals is not None
             else _forced_scalar_decimals(key, parent_key=parent_key)
             if simplify_numbers
             else None
@@ -493,11 +565,15 @@ def _format_to_toon(
                     decimals=decimals,
                 )
             else:
-                rendered = _stringify_for_toon_value(
-                    num,
-                    int(forced_decimals),
-                    delimiter,
-                    simplify_numbers=simplify_numbers,
+                rendered = (
+                    _format_fixed_float(num, int(symbol_decimals))
+                    if symbol_decimals is not None and decimals is None
+                    else _stringify_for_toon_value(
+                        num,
+                        int(forced_decimals),
+                        delimiter,
+                        simplify_numbers=simplify_numbers,
+                    )
                 )
             if key is None:
                 return f"{ind}{rendered}".rstrip()
@@ -527,6 +603,7 @@ def _format_to_toon(
                     delimiter,
                     simplify_numbers=simplify_numbers,
                     decimals=decimals,
+                    price_precision=local_price_precision,
                 )
         if all(_is_scalar_value(item) for item in value):
             return _encode_inline_array(
@@ -544,6 +621,7 @@ def _format_to_toon(
             delimiter,
             simplify_numbers=simplify_numbers,
             decimals=decimals,
+            price_precision=local_price_precision,
         )
 
     if isinstance(value, dict):
@@ -560,6 +638,7 @@ def _format_to_toon(
                 subval,
                 key=subkey,
                 parent_key=str(key) if key is not None else parent_key,
+                price_precision=local_price_precision,
                 indent=child_indent,
                 delimiter=delimiter,
                 simplify_numbers=simplify_numbers,

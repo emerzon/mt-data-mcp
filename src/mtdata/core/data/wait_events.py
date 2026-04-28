@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional
 
 from ...shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
-from ...utils.mt5 import _to_server_naive_dt
+from ...utils.mt5 import _normalize_times_in_struct, _to_server_naive_dt
 from ..trading.time import _next_candle_wait_payload, _sleep_until_next_candle
 from .requests import (
     CandleCloseEventSpec,
@@ -1475,7 +1475,7 @@ def _fetch_boundary_candle_rows(
                 _to_server_naive_dt(query_to_utc),
                 _BOUNDARY_CANDLE_LOOKBACK_BARS,
             )
-            coerced = _coerce_rows(rows)
+            coerced = _coerce_rows(_normalize_times_in_struct(rows))
             if coerced:
                 return coerced
         except Exception:
@@ -1489,7 +1489,7 @@ def _fetch_boundary_candle_rows(
                 _to_server_naive_dt(from_utc),
                 _to_server_naive_dt(query_to_utc),
             )
-            return _coerce_rows(rows)
+            return _coerce_rows(_normalize_times_in_struct(rows))
         except Exception:
             return []
     return []
@@ -1514,8 +1514,10 @@ def _select_boundary_closed_candle_row(
             candidates.append((abs(open_epoch - expected_open_epoch), row))
     if candidates:
         candidates.sort(key=lambda item: item[0])
-        return candidates[0][1]
-    return rows[-1]
+        tolerance = max(1.0, float(seconds_per_bar) * 0.5)
+        if candidates[0][0] <= tolerance:
+            return candidates[0][1]
+    return None
 
 
 def _format_boundary_closed_candle(
@@ -2407,7 +2409,29 @@ def _wait_result_quote_payload(
     )
     if tick_row is None:
         tick_row = _latest_quote_row_from_gateway(gateway, symbol=symbol)
-    return _quote_payload_from_row(tick_row)
+    payload = _quote_payload_from_row(tick_row)
+    precision = _symbol_price_precision_from_gateway(gateway, symbol=symbol)
+    if precision is not None:
+        payload["price_precision"] = precision
+    return payload
+
+
+def _symbol_price_precision_from_gateway(gateway: Any, *, symbol: str) -> Optional[int]:
+    if gateway is None or not hasattr(gateway, "symbol_info"):
+        return None
+    try:
+        info = gateway.symbol_info(symbol)
+    except Exception:
+        return None
+    if info is None:
+        return None
+    try:
+        digits = int(getattr(info, "digits", 0) or 0)
+    except Exception:
+        return None
+    if digits < 0 or digits > 15:
+        return None
+    return digits
 
 
 def _latest_quote_row_from_market_state(

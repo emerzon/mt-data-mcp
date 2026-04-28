@@ -45,12 +45,11 @@ class OutputPrecisionPolicy:
     """Resolved numeric precision behavior for display rendering only."""
 
     mode: str = PRECISION_AUTO
-    decimals: Optional[int] = None
     simplify_numbers: bool = False
 
     @property
     def is_full(self) -> bool:
-        return not self.simplify_numbers and self.decimals is None
+        return not self.simplify_numbers
 
 
 def normalize_precision_mode(value: Any) -> str:
@@ -65,19 +64,6 @@ def normalize_precision_mode(value: Any) -> str:
     raise ValueError(
         "precision must be one of: auto, compact/display, full/raw"
     )
-
-
-def normalize_precision_decimals(value: Any) -> Optional[int]:
-    """Normalize an optional display decimal override."""
-    if value is None or value == "":
-        return None
-    try:
-        decimals = int(value)
-    except (TypeError, ValueError) as exc:
-        raise ValueError("decimals must be an integer between 0 and 15") from exc
-    if decimals < 0 or decimals > 15:
-        raise ValueError("decimals must be an integer between 0 and 15")
-    return decimals
 
 
 def _source_get(source: Any, key: str) -> Any:
@@ -108,17 +94,13 @@ def resolve_output_precision(
     tool_name: Optional[str] = None,
     fmt: Optional[str] = None,
     precision: Any = None,
-    decimals: Any = None,
     simplify_numbers: Optional[bool] = None,
 ) -> OutputPrecisionPolicy:
     """Resolve precision controls from args/kwargs for output rendering."""
     if precision is None:
         precision = _source_get(source, "precision")
-    if decimals is None:
-        decimals = _source_get(source, "decimals")
 
     mode = normalize_precision_mode(precision)
-    normalized_decimals = normalize_precision_decimals(decimals)
 
     if mode == PRECISION_FULL:
         simplify = False
@@ -131,7 +113,6 @@ def resolve_output_precision(
 
     return OutputPrecisionPolicy(
         mode=mode,
-        decimals=normalized_decimals,
         simplify_numbers=simplify,
     )
 

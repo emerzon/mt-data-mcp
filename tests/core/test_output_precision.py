@@ -1,7 +1,6 @@
 import pytest
 
 from mtdata.shared.output_precision import (
-    normalize_precision_decimals,
     normalize_precision_mode,
     resolve_output_precision,
 )
@@ -17,8 +16,6 @@ def test_precision_aliases_normalize_to_canonical_modes():
 def test_invalid_precision_controls_raise_clear_errors():
     with pytest.raises(ValueError, match="precision"):
         normalize_precision_mode("lossy")
-    with pytest.raises(ValueError, match="decimals"):
-        normalize_precision_decimals(20)
 
 
 def test_json_auto_precision_keeps_full_numbers():
@@ -51,14 +48,4 @@ def test_full_precision_rendering_does_not_display_round_price_fields():
     assert "1.234567891234" in result
 
 
-def test_compact_precision_can_use_explicit_display_decimals():
-    result = format_result_minimal(
-        {"data": [{"close": 1.234567891234}]},
-        verbose=False,
-        tool_name="data_fetch_candles",
-        precision="compact",
-        decimals=4,
-    )
-
-    assert "1.2346" in result
 

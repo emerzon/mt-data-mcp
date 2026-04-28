@@ -537,7 +537,6 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # n
         def _wrapped(*a, **kw):
             raw_output = kw.pop("__cli_raw", False)
             precision = kw.pop("precision", None)
-            decimals = kw.pop("decimals", None)
             contract_state = resolve_output_contract({})
 
             try:
@@ -614,7 +613,6 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # n
                     out,
                     verbose=contract_state.verbose,
                     precision=precision,
-                    decimals=decimals,
                     tool_name=fname,
                 )
             except Exception:
@@ -641,15 +639,6 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # n
                         inspect.Parameter.KEYWORD_ONLY,
                         default="auto",
                         annotation=str,
-                    )
-                )
-            if "decimals" not in existing_names:
-                params.append(
-                    inspect.Parameter(
-                        "decimals",
-                        inspect.Parameter.KEYWORD_ONLY,
-                        default=None,
-                        annotation=Union[int, None],
                     )
                 )
             _wrapped.__annotations__ = cleaned
