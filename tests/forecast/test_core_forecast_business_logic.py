@@ -295,9 +295,9 @@ def test_forecast_generate_defaults_to_compact_payload(monkeypatch):
     assert out["symbol"] == "BTCUSD"
     assert out["timeframe"] == "H1"
     assert out["timestamp_timezone"] == "UTC"
-    assert out["forecast_from"] == {"time": "t0", "anchor": "last_observation"}
-    assert out["forecast_anchor"] == "next_timeframe_bar_after_last_observation"
-    assert out["forecast_step_seconds"] == 3600
+    assert "forecast_from" not in out
+    assert "forecast_anchor" not in out
+    assert "forecast_step_seconds" not in out
     assert out["last_price"] == 1.05
     assert out["last_price_source"] == "candle_close"
     assert out["forecast_vs_last_price"] == {

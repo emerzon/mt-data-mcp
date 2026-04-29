@@ -316,6 +316,7 @@ def _apply_forecast_generate_detail(
     detail_value = _normalize_trader_detail(getattr(request, "detail", "compact"))
     if detail_value in {"standard", "full"}:
         out = dict(payload)
+        out.pop("ci_available", None)
         out.setdefault("symbol", request.symbol)
         out.setdefault("timeframe", request.timeframe)
         out["detail"] = detail_value
@@ -344,17 +345,12 @@ def _apply_forecast_generate_detail(
     for key in (
         "last_observation_time",
         "timestamp_timezone",
-        "forecast_from",
-        "forecast_start_time",
-        "forecast_anchor",
-        "forecast_step_seconds",
         "forecast_time",
         "forecast_price",
         "forecast_return",
         "last_price",
         "last_price_source",
         "ci_status",
-        "ci_available",
         "ci_alpha",
         "warnings",
     ):
@@ -376,6 +372,10 @@ def _apply_forecast_generate_detail(
             "base_col",
             "last_observation_epoch",
             "forecast_start_epoch",
+            "forecast_from",
+            "forecast_start_time",
+            "forecast_anchor",
+            "forecast_step_seconds",
             "forecast_epoch",
             "last_price_close",
             "lower_price",
@@ -385,6 +385,7 @@ def _apply_forecast_generate_detail(
             "lower",
             "upper",
             "ci",
+            "ci_available",
         }:
             continue
         if ci_unavailable and str(key).startswith("ci_"):
