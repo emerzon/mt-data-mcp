@@ -79,9 +79,7 @@ def _news_relative_time_text(value: datetime) -> Optional[str]:
 
     now = datetime.now(timezone.utc)
     delta_seconds = int(round((now - published_at).total_seconds()))
-    if delta_seconds < 0:
-        return None
-    if delta_seconds < 60:
+    if abs(delta_seconds) < 60:
         return "just now"
 
     seconds = abs(delta_seconds)
@@ -102,6 +100,8 @@ def _news_relative_time_text(value: datetime) -> Optional[str]:
         unit = "month"
 
     plural = "" if amount == 1 else "s"
+    if delta_seconds < 0:
+        return f"in {amount} {unit}{plural}"
     return f"{amount} {unit}{plural} ago"
 
 
@@ -111,8 +111,6 @@ def _news_compact_time_field(
     metadata_relative_time: Optional[str] = None,
 ) -> tuple[Optional[str], Optional[str]]:
     published_at = _news_datetime_utc(published_at_value)
-    if published_at is not None and published_at > datetime.now(timezone.utc):
-        return "time_utc", _news_time_utc_text(published_at)
     if metadata_relative_time:
         return "relative_time", metadata_relative_time
     if published_at is None:
@@ -127,26 +125,26 @@ def _strip_news_compact_item_fields(value: Any, *, bucket_name: Optional[str] = 
     if not isinstance(value, dict):
         return value
 
-    existing_time_utc = value.get("time_utc")
-    if isinstance(existing_time_utc, str) and existing_time_utc.strip():
-        time_field_name = "time_utc"
-        time_field_value = existing_time_utc.strip()
+    existing_relative_time = value.get("relative_time")
+    if isinstance(existing_relative_time, str) and existing_relative_time.strip():
+        time_field_name = "relative_time"
+        time_field_value = existing_relative_time.strip()
     else:
-        existing_relative_time = value.get("relative_time")
-        if isinstance(existing_relative_time, str) and existing_relative_time.strip():
-            time_field_name = "relative_time"
-            time_field_value = existing_relative_time.strip()
-        else:
-            metadata_relative_time = None
-            metadata = value.get("metadata")
-            if isinstance(metadata, dict):
-                metadata_relative = metadata.get("relative_time")
-                if isinstance(metadata_relative, str) and metadata_relative.strip():
-                    metadata_relative_time = metadata_relative.strip()
-            time_field_name, time_field_value = _news_compact_time_field(
-                value.get("published_at"),
-                metadata_relative_time=metadata_relative_time,
-            )
+        metadata_relative_time = None
+        metadata = value.get("metadata")
+        if isinstance(metadata, dict):
+            metadata_relative = metadata.get("relative_time")
+            if isinstance(metadata_relative, str) and metadata_relative.strip():
+                metadata_relative_time = metadata_relative.strip()
+        time_field_name, time_field_value = _news_compact_time_field(
+            value.get("published_at"),
+            metadata_relative_time=metadata_relative_time,
+        )
+        if not time_field_name:
+            existing_time_utc = value.get("time_utc")
+            if isinstance(existing_time_utc, str) and existing_time_utc.strip():
+                time_field_name = "time_utc"
+                time_field_value = existing_time_utc.strip()
 
     out = {}
     title = value.get("title")

@@ -484,7 +484,7 @@ class TestFormatResultForCli:
             cmd_name="news",
         )
 
-        assert "general_news[1]{title,published_at,time_relative,source}:" in result
+        assert "general_news[1]{title,published_at,relative_time,source}:" in result
         assert '"Fed preview","2026-04-25T17:25:00+00:00",4 hours ago,Reuters' in result
 
     def test_toon_format_preserves_candle_diagnostics_in_shared_output(self):

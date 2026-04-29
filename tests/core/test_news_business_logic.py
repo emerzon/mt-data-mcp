@@ -269,7 +269,7 @@ def test_news_output_derives_relative_time_from_published_at_when_needed() -> No
     assert item["published_at"] == published_at
 
 
-def test_news_output_keeps_future_event_time_in_utc() -> None:
+def test_news_output_uses_relative_time_for_future_events() -> None:
     published_at = datetime.now(timezone.utc).replace(second=0, microsecond=0) + timedelta(hours=3, minutes=15)
     payload = {
         "success": True,
@@ -297,8 +297,8 @@ def test_news_output_keeps_future_event_time_in_utc() -> None:
 
     item = result["related_news"][0]
     assert item["title"] == "US CPI (USD)"
-    assert item["time_utc"] == published_at.strftime("%Y-%m-%d %H:%M UTC")
-    assert "relative_time" not in item
+    assert item["relative_time"] == "in 3 hours"
+    assert "time_utc" not in item
     assert item["published_at"] == published_at.isoformat()
     assert item["source"] == "Finviz Economic Calendar"
     assert item["kind"] == "economic_event"
@@ -354,16 +354,14 @@ def test_news_output_compacts_upcoming_events_bucket() -> None:
     result = _prepare_news_output(payload, detail="compact")
 
     assert "upcoming_count" not in result
-    assert result["upcoming_events"] == [
-        {
-            "title": "US CPI (USD)",
-            "source": "Finviz Economic Calendar",
-            "kind": "economic_event",
-            "published_at": published_at.isoformat(),
-            "time_utc": published_at.strftime("%Y-%m-%d %H:%M UTC"),
-            "summary": "Expected: 3.2% | Prior: 3.1%",
-        }
-    ]
+    item = result["upcoming_events"][0]
+    assert item["title"] == "US CPI (USD)"
+    assert item["source"] == "Finviz Economic Calendar"
+    assert item["kind"] == "economic_event"
+    assert item["published_at"] == published_at.isoformat()
+    assert item["relative_time"].startswith("in ")
+    assert "time_utc" not in item
+    assert item["summary"] == "Expected: 3.2% | Prior: 3.1%"
 
 
 def test_news_output_compacts_recent_events_bucket() -> None:

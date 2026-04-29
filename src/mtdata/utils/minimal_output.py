@@ -120,7 +120,7 @@ def _render_news_bucket_toon(
     if include_published_at:
         headers.append("published_at")
         if include_relative_time:
-            headers.append("time_relative")
+            headers.append("relative_time")
         elif include_time_utc:
             headers.append("time_utc")
     else:
