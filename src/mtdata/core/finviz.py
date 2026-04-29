@@ -192,6 +192,60 @@ def _snake_finviz_market_key(value: Any) -> str:
     return "_".join(part for part in key.replace(".", "").split() if part)
 
 
+_FOREX_CURRENCY_NAMES = {
+    "AUD": "Australian Dollar",
+    "CAD": "Canadian Dollar",
+    "CHF": "Swiss Franc",
+    "EUR": "Euro",
+    "GBP": "British Pound",
+    "JPY": "Japanese Yen",
+    "NZD": "New Zealand Dollar",
+    "USD": "US Dollar",
+}
+
+_FINVIZ_MARKET_COMPACT_FIELDS = (
+    "symbol",
+    "name",
+    "price",
+    "group",
+    "perf_day",
+    "perf_week",
+    "perf_month",
+    "perf_quart",
+    "perf_year",
+)
+
+
+def _derive_forex_pair_name(symbol: Any) -> Optional[str]:
+    text = str(symbol or "").strip().upper()
+    if "/" in text:
+        left, right = text.split("/", 1)
+    elif len(text) == 6:
+        left, right = text[:3], text[3:]
+    else:
+        return None
+    left_name = _FOREX_CURRENCY_NAMES.get(left)
+    right_name = _FOREX_CURRENCY_NAMES.get(right)
+    if left_name and right_name:
+        return f"{left_name} / {right_name}"
+    return None
+
+
+def _compact_finviz_market_row(row: Dict[str, Any], *, rows_key: str) -> Dict[str, Any]:
+    compact = dict(row)
+    if "perf_day" not in compact and "perf_pct" in compact:
+        compact["perf_day"] = compact["perf_pct"]
+    if rows_key == "pairs" and not compact.get("name"):
+        derived_name = _derive_forex_pair_name(compact.get("symbol"))
+        if derived_name is not None:
+            compact["name"] = derived_name
+    return {
+        field: compact[field]
+        for field in _FINVIZ_MARKET_COMPACT_FIELDS
+        if field in compact and compact[field] not in (None, "")
+    }
+
+
 def _normalize_finviz_market_payload(
     result: Dict[str, Any],
     *,
@@ -215,9 +269,20 @@ def _normalize_finviz_market_payload(
     ]
     limit_value = _coerce_finviz_limit(limit, default=len(normalized_rows))
     limited_rows = normalized_rows[:limit_value]
+    use_market_compact = rows_key in {"pairs", "coins", "futures"}
+    output_rows = (
+        [
+            _compact_finviz_market_row(row, rows_key=rows_key)
+            if isinstance(row, dict)
+            else row
+            for row in limited_rows
+        ]
+        if detail_mode != "full" and use_market_compact
+        else limited_rows
+    )
     out = {key: value for key, value in result.items() if key != rows_key}
-    out["items"] = limited_rows
-    out["count"] = len(limited_rows)
+    out["items"] = output_rows
+    out["count"] = len(output_rows)
     available = len(normalized_rows)
     out["available_count"] = available
     omitted = max(0, available - len(limited_rows))

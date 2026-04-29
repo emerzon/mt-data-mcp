@@ -513,7 +513,7 @@ class TestFinvizTools:
             "success": True,
             "market": "forex",
             "count": 1,
-            "pairs": [{"Pair": "EUR/USD", "Perf 5Min": "0.1%"}],
+            "pairs": [{"Pair": "EUR/USD", "Price": "1.10", "Perf 5Min": "0.1%", "Perf Day": "0.2%"}],
         }
 
         raw = getattr(finviz_forex, "__wrapped__", finviz_forex)
@@ -521,7 +521,14 @@ class TestFinvizTools:
 
         assert "pairs" not in result
         assert result["detail"] == "compact"
-        assert result["items"] == [{"perf_5min": "0.1%", "symbol": "EUR/USD"}]
+        assert result["items"] == [
+            {
+                "symbol": "EUR/USD",
+                "name": "Euro / US Dollar",
+                "price": "1.10",
+                "perf_day": "0.2%",
+            }
+        ]
 
     @patch("mtdata.core.finviz.get_forex_performance")
     def test_finviz_forex_applies_limit(self, mock_get_forex):
@@ -543,7 +550,10 @@ class TestFinvizTools:
         assert result["count"] == 2
         assert result["available_count"] == 3
         assert result["omitted_item_count"] == 1
-        assert result["items"] == [{"symbol": "EUR/USD"}, {"symbol": "GBP/USD"}]
+        assert result["items"] == [
+            {"symbol": "EUR/USD", "name": "Euro / US Dollar"},
+            {"symbol": "GBP/USD", "name": "British Pound / US Dollar"},
+        ]
 
     @patch("mtdata.core.finviz.get_crypto_performance")
     def test_finviz_crypto_uses_items_with_snake_case_rows(self, mock_get_crypto):
@@ -553,7 +563,7 @@ class TestFinvizTools:
             "success": True,
             "market": "crypto",
             "count": 1,
-            "coins": [{"Ticker": "BTC", "Perf WTD": "2.5%"}],
+            "coins": [{"Ticker": "BTC", "Name": "Bitcoin", "Price": "90000", "Perf Day": "2.5%"}],
         }
 
         raw = getattr(finviz_crypto, "__wrapped__", finviz_crypto)
@@ -561,7 +571,9 @@ class TestFinvizTools:
 
         assert "coins" not in result
         assert result["detail"] == "compact"
-        assert result["items"] == [{"perf_wtd": "2.5%", "symbol": "BTC"}]
+        assert result["items"] == [
+            {"symbol": "BTC", "name": "Bitcoin", "price": "90000", "perf_day": "2.5%"}
+        ]
 
     @patch("mtdata.core.finviz.get_futures_performance")
     def test_finviz_futures_uses_items_with_snake_case_rows(self, mock_get_futures):
@@ -579,7 +591,7 @@ class TestFinvizTools:
 
         assert "futures" not in result
         assert result["detail"] == "compact"
-        assert result["items"] == [{"name": "Nasdaq 100", "perf_pct": "0.8%", "symbol": "NQ"}]
+        assert result["items"] == [{"symbol": "NQ", "name": "Nasdaq 100", "perf_day": "0.8%"}]
 
     @patch("mtdata.core.finviz.get_futures_performance")
     def test_finviz_market_tools_accept_full_detail(self, mock_get_futures):
@@ -596,6 +608,7 @@ class TestFinvizTools:
         result = raw(detail="full")
 
         assert result["detail"] == "full"
+        assert result["items"] == [{"symbol": "NQ", "name": "Nasdaq 100", "perf_pct": "0.8%"}]
         assert result["meta"]["tool"] == "finviz_futures"
         assert result["meta"]["request"] == {"limit": 20, "detail": "full"}
 
