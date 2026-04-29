@@ -265,7 +265,7 @@ def symbols_list(  # noqa: C901
                 if only_visible and not symbol.visible:
                     continue
                 symbol_list.append({
-                    "name": symbol.name,
+                    "symbol": symbol.name,
                     "group": _extract_group_path_util(symbol),
                     "description": symbol.description,
                 })
@@ -273,8 +273,8 @@ def symbols_list(  # noqa: C901
             limit_value = _normalize_limit(limit)
             if limit_value:
                 symbol_list = symbol_list[:limit_value]
-            rows = [[s["name"], s["group"], s["description"]] for s in symbol_list]
-            result = _table_from_rows(["name", "group", "description"], rows)
+            rows = [[s["symbol"], s["group"], s["description"]] for s in symbol_list]
+            result = _table_from_rows(["symbol", "group", "description"], rows)
             return attach_collection_contract(
                 result,
                 collection_kind="table",

@@ -70,6 +70,7 @@ class TestSymbolsListNoSearch:
         fn = _get_symbols_list()
         res = fn(search_term=None, limit=25)
         assert "data" in res
+        assert res["headers"] == ["symbol", "group", "description"]
         assert len(res["data"]) == 2
         assert "rows" not in res
         assert "collection_kind" not in res
