@@ -749,7 +749,7 @@ class TestFinvizTools:
         }
 
         raw = getattr(finviz_earnings, "__wrapped__", finviz_earnings)
-        result = raw()
+        result = raw(detail="full")
 
         item = result["items"][0]
         assert item["ticker"] == "APLM"
@@ -762,6 +762,49 @@ class TestFinvizTools:
         assert item["operating_margin"] == "-3.04"
         assert item["profit_margin"] == "-3.67"
         assert "curr_r" not in item
+
+    @patch("mtdata.core.finviz.get_earnings_calendar")
+    def test_finviz_earnings_compact_uses_calendar_focused_rows(self, mock_get_earnings):
+        from mtdata.core.finviz import finviz_earnings
+
+        mock_get_earnings.return_value = {
+            "success": True,
+            "period": "This Week",
+            "earnings": [
+                {
+                    "Ticker": "APLM",
+                    "Market Cap": "14.17M",
+                    "ROA": "-1.365",
+                    "ROE": "-3.8",
+                    "Curr R": "0.97",
+                    "Earnings": "Apr 27/b",
+                    "Price": "12.85",
+                    "Change": "-0.0258",
+                    "Volume": "6593",
+                },
+            ],
+            "count": 1,
+            "total": 12,
+            "page": 1,
+            "pages": 2,
+        }
+
+        raw = getattr(finviz_earnings, "__wrapped__", finviz_earnings)
+        result = raw()
+
+        mock_get_earnings.assert_called_once_with(period="This Week", limit=10, page=1)
+        assert result["detail"] == "compact"
+        assert result["omitted_item_count"] == 11
+        assert result["items"] == [
+            {
+                "ticker": "APLM",
+                "earnings": "Apr 27/b",
+                "market_cap": "14.17M",
+                "price": "12.85",
+                "change_pct": "-0.0258",
+                "volume": "6593",
+            }
+        ]
 
     @patch('mtdata.services.finviz.get_stock_fundamentals')
     def test_finviz_fundamentals_tool(self, mock_get_fundamentals):

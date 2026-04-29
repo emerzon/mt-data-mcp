@@ -530,6 +530,17 @@ _FINVIZ_OUTPUT_KEY_MAP = {
     "Dividend Gr. 5Y": "dividend_growth_5y",
 }
 
+_FINVIZ_EARNINGS_COMPACT_FIELDS = (
+    "ticker",
+    "company",
+    "earnings",
+    "eps_estimate",
+    "market_cap",
+    "price",
+    "change",
+    "volume",
+)
+
 
 def _normalize_finviz_output_key(key: Any) -> str:
     text = str(key).strip()
@@ -551,6 +562,25 @@ def _normalize_finviz_output_rows(rows: Any) -> Any:
     if not isinstance(rows, list):
         return rows
     return [_normalize_finviz_output_row(row) for row in rows]
+
+
+def _compact_finviz_earnings_items(items: Any) -> List[Any]:
+    if not isinstance(items, list):
+        return []
+    compact_rows: List[Any] = []
+    for item in items:
+        if not isinstance(item, dict):
+            compact_rows.append(item)
+            continue
+        row = {
+            field: item[field]
+            for field in _FINVIZ_EARNINGS_COMPACT_FIELDS
+            if field in item
+        }
+        if "change" in row:
+            row["change_pct"] = row.pop("change")
+        compact_rows.append(row)
+    return compact_rows
 
 
 def _normalize_finviz_calendar_payload(result: Dict[str, Any]) -> Dict[str, Any]:
@@ -1489,7 +1519,7 @@ def finviz_calendar(
 @mcp.tool()
 def finviz_earnings(
     period: Literal["This Week", "Next Week", "Previous Week", "This Month"] = "This Week",
-    limit: int = 50,
+    limit: int = 10,
     page: int = 1,
     detail: str = "compact",
 ) -> Dict[str, Any]:
@@ -1504,12 +1534,12 @@ def finviz_earnings(
     period : str
         Calendar period: "This Week", "Next Week", "Previous Week", "This Month"
     limit : int
-        Max items per page (default 50)
+        Max items per page (default 10)
     page : int
         Page number for pagination (default 1)
     detail : str
-        Response detail level. Compact returns normalized top-level rows; full
-        adds the tool metadata block.
+        Response detail level. Compact returns calendar-focused rows; full keeps
+        all normalized provider columns and adds the tool metadata block.
     
     Returns
     -------
@@ -1552,6 +1582,12 @@ def finviz_earnings(
         if not isinstance(items, list):
             items = []
         normalized_items = _normalize_finviz_output_rows(items)
+        detail_mode = normalize_output_verbosity_detail(detail, default="compact")
+        output_items = (
+            normalized_items
+            if detail_mode == "full"
+            else _compact_finviz_earnings_items(normalized_items)
+        )
         pagination = {
             "page": result.get("page"),
             "total": result.get("total"),
@@ -1563,13 +1599,15 @@ def finviz_earnings(
         out: Dict[str, Any] = {
             "success": True,
             "period": result.get("period", period),
-            "detail": normalize_output_verbosity_detail(detail, default="compact"),
-            "items": normalized_items,
-            "count": int(result.get("count") or len(normalized_items)),
+            "detail": detail_mode,
+            "items": output_items,
+            "count": int(result.get("count") or len(output_items)),
             "total": result.get("total"),
             "page": result.get("page"),
             "pages": result.get("pages"),
         }
+        if out["detail"] != "full":
+            out["omitted_item_count"] = max(0, int(out.get("total") or 0) - int(out["count"]))
         if out["detail"] == "full":
             out["meta"] = _build_tool_contract_meta(
                 tool="finviz_earnings",
