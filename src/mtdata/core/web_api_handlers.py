@@ -24,6 +24,15 @@ from .web_api_models import BacktestBody, ForecastPriceBody, ForecastVolBody
 
 logger = logging.getLogger(__name__)
 
+WEB_API_FACADE_ADAPTERS = frozenset(
+    {
+        "get_methods",
+        "get_history",
+        "get_pivots",
+        "get_support_resistance",
+    }
+)
+
 
 def _shape_detail_from_extras(extras: Any) -> str:
     try:

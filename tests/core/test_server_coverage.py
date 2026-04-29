@@ -809,12 +809,17 @@ class TestRecordingToolDecorator:
             assert "verbose" not in sig.parameters
             assert "precision" not in sig.parameters
 
-            compact = wrapped(__cli_raw=True)
-            full = wrapped(__cli_raw=True, extras="metadata,diagnostics")
+            raw = wrapped(__cli_raw=True)
+            compact = wrapped(json=True)
+            full = wrapped(json=True, extras="metadata,diagnostics")
 
-            assert compact == {"value": 1}
+            assert raw["value"] == 1
+            assert raw["meta"]["domain"]["symbol"] == "EURUSD"
+            assert raw["diagnostics"]["source"] == "mt5"
+            assert compact["value"] == 1
+            assert "meta" not in compact
+            assert "diagnostics" not in compact
             assert full["value"] == 1
-            assert full["meta"]["tool"] == "sample_tool"
             assert full["meta"]["domain"]["symbol"] == "EURUSD"
             assert full["diagnostics"]["source"] == "mt5"
         finally:
@@ -845,12 +850,17 @@ class TestRecordingToolDecorator:
             assert "extras" in sig.parameters
             assert "verbose" not in sig.parameters
             assert "precision" not in sig.parameters
-            compact = wrapped(__cli_raw=True)
-            full = wrapped(__cli_raw=True, extras="all")
+            raw = wrapped(__cli_raw=True)
+            compact = wrapped(json=True)
+            full = wrapped(json=True, extras="all")
 
-            assert compact == {"value": 1}
+            assert raw["value"] == 1
+            assert raw["meta"]["domain"]["symbol"] == "EURUSD"
+            assert raw["diagnostics"]["source"] == "mt5"
+            assert compact["value"] == 1
+            assert "meta" not in compact
+            assert "diagnostics" not in compact
             assert full["value"] == 1
-            assert full["meta"]["tool"] == "sample_tool"
             assert full["meta"]["domain"]["symbol"] == "EURUSD"
             assert full["diagnostics"]["source"] == "mt5"
         finally:
@@ -865,20 +875,35 @@ class TestRecordingToolDecorator:
             dec = srv._recording_tool_decorator()
 
             def sample_output_tool(detail: str = "compact"):
-                return {"success": True, "value": 1, "detail_seen": detail}
+                return {
+                    "success": True,
+                    "value": 1,
+                    "detail_seen": detail,
+                    "meta": {"domain": {"symbol": "EURUSD"}},
+                    "diagnostics": {"source": "mt5"},
+                }
 
             wrapped = dec(sample_output_tool)
 
             toon = wrapped()
+            compact_structured = wrapped(json=True)
             structured = wrapped(json=True, extras="metadata")
             legacy_structured = wrapped(json=True, extras="detail=full")
 
             assert isinstance(toon, str)
             assert "success: true" in toon
+            assert compact_structured["success"] is True
+            assert compact_structured["detail_seen"] == "compact"
+            assert "meta" not in compact_structured
+            assert "diagnostics" not in compact_structured
             assert structured["success"] is True
             assert structured["detail_seen"] == "full"
+            assert structured["meta"]["domain"]["symbol"] == "EURUSD"
+            assert structured["diagnostics"]["source"] == "mt5"
             assert legacy_structured["success"] is True
             assert legacy_structured["detail_seen"] == "full"
+            assert legacy_structured["meta"]["domain"]["symbol"] == "EURUSD"
+            assert legacy_structured["diagnostics"]["source"] == "mt5"
             error = wrapped(detail="full")
             assert isinstance(error, str)
             assert "Removed output option(s): detail" in error

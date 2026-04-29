@@ -1,6 +1,6 @@
 import json
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 from ..shared.output_precision import resolve_output_precision
 from ..utils.minimal_output import _is_empty_value
@@ -515,6 +515,15 @@ def _render_mt5_news_cli_compact(result: Any) -> Any:
     return "\n".join(lines)
 
 
+_CLI_PRESENTATION_ADAPTERS: Dict[str, Callable[..., Any]] = {
+    "market_ticker": _normalize_market_ticker_cli_payload,
+    "trade_session_context": _normalize_trade_session_context_cli_payload,
+    "symbols_describe": _normalize_symbols_describe_cli_payload,
+    "market_scan": _normalize_market_scan_cli_payload,
+    "data_fetch_candles": _normalize_candle_cli_payload,
+}
+
+
 def _prepare_cli_payload(
     result: Any,
     *,
@@ -530,28 +539,29 @@ def _prepare_cli_payload(
         fmt=fmt,
         precision=precision,
     ).simplify_numbers
-    if cmd_name == "market_ticker":
-        prepared = _normalize_market_ticker_cli_payload(
+    adapter = _CLI_PRESENTATION_ADAPTERS.get(cmd_name)
+    if adapter is _normalize_market_ticker_cli_payload:
+        prepared = adapter(
             prepared,
             verbose=verbose,
             compact_numbers=compact_numbers,
         )
-    elif cmd_name == "trade_session_context":
-        prepared = _normalize_trade_session_context_cli_payload(
+    elif adapter is _normalize_trade_session_context_cli_payload:
+        prepared = adapter(
             prepared,
             verbose=verbose,
             compact_numbers=compact_numbers,
         )
-    elif cmd_name == "symbols_describe":
-        prepared = _normalize_symbols_describe_cli_payload(prepared, verbose=verbose)
-    elif cmd_name == "market_scan" and fmt == CLI_FORMAT_TOON:
-        prepared = _normalize_market_scan_cli_payload(prepared, verbose=verbose)
+    elif adapter is _normalize_symbols_describe_cli_payload:
+        prepared = adapter(prepared, verbose=verbose)
+    elif adapter is _normalize_market_scan_cli_payload and fmt == CLI_FORMAT_TOON:
+        prepared = adapter(prepared, verbose=verbose)
 
     if fmt == CLI_FORMAT_TOON and cmd_name == "mt5_news" and not verbose:
         return _render_mt5_news_cli_compact(prepared)
 
-    if cmd_name == "data_fetch_candles":
-        prepared = _normalize_candle_cli_payload(prepared, fmt=fmt)
+    if adapter is _normalize_candle_cli_payload:
+        prepared = adapter(prepared, fmt=fmt)
 
     if fmt == CLI_FORMAT_TOON and not verbose:
         prepared = _prune_compact_runtime_meta(prepared)

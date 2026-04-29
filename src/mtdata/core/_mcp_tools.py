@@ -640,40 +640,43 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # n
                 )
 
             if isinstance(out, dict):
-                if getattr(func, "__name__", "").strip().lower() == "news":
-                    from .news import normalize_news_output
-
-                    out = normalize_news_output(
-                        out,
-                        detail=contract_state.detail,
-                    )
                 out = normalize_error_payload(
                     out,
                     default_code="tool_error",
                     operation=getattr(func, "__name__", "tool"),
                 )
-            out = apply_output_verbosity(
-                out,
-                tool_name=getattr(func, "__name__", "tool"),
-                detail=contract_state.shape_detail,
-            )
 
             if raw_output:
                 return out
 
+            fname = getattr(func, "__name__", "")
+            public_out = out
+            if isinstance(public_out, dict):
+                if fname.strip().lower() == "news":
+                    from .news import normalize_news_output
+
+                    public_out = normalize_news_output(
+                        public_out,
+                        detail=contract_state.detail,
+                    )
+                public_out = apply_output_verbosity(
+                    public_out,
+                    tool_name=fname,
+                    detail=contract_state.shape_detail,
+                )
+
             if contract_state.json:
-                return out
+                return public_out
 
             try:
-                fname = getattr(func, "__name__", "")
-                if fname in ("forecast_list_methods", "denoise_list_methods") and isinstance(out, dict):
-                    methods_list = out.get("methods") or []
+                if fname in ("forecast_list_methods", "denoise_list_methods") and isinstance(public_out, dict):
+                    methods_list = public_out.get("methods") or []
                     if _fmt_methods and isinstance(methods_list, list):
                         s = _fmt_methods(cast(List[Dict[str, Any]], methods_list))
                         if s:
                             return s
                 return _fmt_min(
-                    out,
+                    public_out,
                     verbose=contract_state.verbose,
                     precision=precision,
                     tool_name=fname,

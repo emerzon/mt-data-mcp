@@ -447,15 +447,20 @@ def test_data_fetch_candles_wrapper_respects_detail_contract(monkeypatch):
         },
     )
 
-    compact = core_data.data_fetch_candles(
+    raw = core_data.data_fetch_candles(
         request=DataFetchCandlesRequest(symbol="EURUSD", detail="compact"),
         __cli_raw=True,
     )
+    compact = core_data.data_fetch_candles(
+        request=DataFetchCandlesRequest(symbol="EURUSD", detail="compact"),
+        json=True,
+    )
     full = core_data.data_fetch_candles(
         request=DataFetchCandlesRequest(symbol="EURUSD", detail="full"),
-        __cli_raw=True,
+        json=True,
     )
 
+    assert raw["meta"]["diagnostics"]["query"]["requested_bars"] == 50
     assert "meta" not in compact
     assert full["meta"]["tool"] == "data_fetch_candles"
     assert full["meta"]["diagnostics"]["query"]["requested_bars"] == 50
