@@ -541,7 +541,7 @@ def pivot_compute_points(  # noqa: C901
 def support_resistance_levels(
     symbol: str,
     timeframe: AutoTimeframeLiteral = "H1",
-    limit: int = 800,
+    lookback: int = 800,
     tolerance_pct: float = 0.0015,
     min_touches: int = 2,
     max_levels: int = 4,
@@ -555,6 +555,7 @@ def support_resistance_levels(
     """Detect support/resistance plus Fibonacci swing levels around the current price from historical structure.
 
     Set `timeframe="auto"` to merge levels from M15, H1, H4, and D1.
+    `lookback` controls the historical bars used to detect levels.
     Use `detail="compact"` for the nearest-level summary, `detail="standard"`
     for compact actionable supports/resistances/levels, and `detail="full"`
     for the raw diagnostic payload. The default `max_distance_pct=0.05`
@@ -575,7 +576,7 @@ def support_resistance_levels(
                 fetch_history_impl=_fetch_history,
                 symbol=symbol,
                 timeframe=timeframe,
-                limit=int(limit),
+                limit=int(lookback),
                 tolerance_pct=float(tolerance_pct),
                 min_touches=int(min_touches),
                 max_levels=int(max_levels),
@@ -608,7 +609,7 @@ def support_resistance_levels(
         operation="support_resistance_levels",
         symbol=symbol,
         timeframe=timeframe,
-        limit=limit,
+        lookback=lookback,
         tolerance_pct=tolerance_pct,
         min_touches=min_touches,
         max_levels=max_levels,

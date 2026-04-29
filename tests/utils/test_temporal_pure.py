@@ -548,7 +548,7 @@ class TestTemporalAnalyze:
         if rates is None:
             rates = _make_rates(n=n, start_epoch=1704067200, interval=3600)
         mock_fetch.return_value = (rates, None)
-        defaults = dict(symbol="EURUSD", timeframe="H1", limit=1000, group_by="dow", detail="full")
+        defaults = dict(symbol="EURUSD", timeframe="H1", lookback=1000, group_by="dow", detail="full")
         defaults.update(kwargs)
         return _raw_temporal_analyze(**defaults)
 
@@ -564,7 +564,7 @@ class TestTemporalAnalyze:
     def test_default_compact_omits_verbose_overall_stats(self, mock_fetch, *_):
         mock_fetch.return_value = (_make_rates(n=200, start_epoch=1704067200, interval=3600), None)
 
-        r = _raw_temporal_analyze(symbol="EURUSD", timeframe="H1", limit=1000, group_by="dow")
+        r = _raw_temporal_analyze(symbol="EURUSD", timeframe="H1", lookback=1000, group_by="dow")
 
         assert r.get("success") is True
         assert "overall" not in r
@@ -614,7 +614,7 @@ class TestTemporalAnalyze:
     def test_temporal_analyze_logs_finish_event(self, mock_fetch, caplog):
         mock_fetch.return_value = (_make_rates(n=200, start_epoch=1704067200, interval=3600), None)
         with caplog.at_level("DEBUG", logger="mtdata.core.temporal"):
-            r = _raw_temporal_analyze(symbol="EURUSD", timeframe="H1", limit=1000, group_by="dow")
+            r = _raw_temporal_analyze(symbol="EURUSD", timeframe="H1", lookback=1000, group_by="dow")
         assert r.get("success") is True
         assert any(
             "event=finish operation=temporal_analyze success=True" in record.message
@@ -635,7 +635,7 @@ class TestTemporalAnalyze:
         mock_fetch.return_value = (rates, None)
 
         with patch(_P + "_mt5_epoch_to_utc", new=lambda value: float(value) - 7200.0):
-            r = _raw_temporal_analyze(symbol="EURUSD", timeframe="H1", limit=1000, group_by="hour")
+            r = _raw_temporal_analyze(symbol="EURUSD", timeframe="H1", lookback=1000, group_by="hour")
 
         assert r.get("success") is True
         assert [group["group"] for group in r["groups"]] == ["00:00", "01:00", "02:00"]
@@ -741,37 +741,37 @@ class TestTemporalAnalyze:
         assert "win_rate" in overall
 
     @_apply_analyze_patches
-    def test_invalid_limit(self, mock_fetch, *_):
-        r = _raw_temporal_analyze(symbol="EURUSD", timeframe="H1", limit=1, group_by="dow")
+    def test_invalid_lookback(self, mock_fetch, *_):
+        r = _raw_temporal_analyze(symbol="EURUSD", timeframe="H1", lookback=1, group_by="dow")
         assert "error" in r
         assert r["stage"] == "validate"
 
     @_apply_analyze_patches
     def test_invalid_group_by(self, mock_fetch, *_):
-        r = _raw_temporal_analyze(symbol="EURUSD", timeframe="H1", limit=100, group_by="quarter")
+        r = _raw_temporal_analyze(symbol="EURUSD", timeframe="H1", lookback=100, group_by="quarter")
         assert "error" in r
 
     @_apply_analyze_patches
     def test_invalid_day_of_week(self, mock_fetch, *_):
-        r = _raw_temporal_analyze(symbol="EURUSD", limit=100, day_of_week="xyz")
+        r = _raw_temporal_analyze(symbol="EURUSD", lookback=100, day_of_week="xyz")
         assert "error" in r
         assert r["stage"] == "validate"
 
     @_apply_analyze_patches
     def test_invalid_month(self, mock_fetch, *_):
-        r = _raw_temporal_analyze(symbol="EURUSD", limit=100, month="xyz")
+        r = _raw_temporal_analyze(symbol="EURUSD", lookback=100, month="xyz")
         assert "error" in r
         assert r["stage"] == "validate"
 
     @_apply_analyze_patches
     def test_invalid_time_range(self, mock_fetch, *_):
-        r = _raw_temporal_analyze(symbol="EURUSD", limit=100, time_range="bad")
+        r = _raw_temporal_analyze(symbol="EURUSD", lookback=100, time_range="bad")
         assert "error" in r
 
     @_apply_analyze_patches
     def test_fetch_error(self, mock_fetch, *_):
         mock_fetch.return_value = (None, "fetch failed")
-        r = _raw_temporal_analyze(symbol="EURUSD", limit=100)
+        r = _raw_temporal_analyze(symbol="EURUSD", lookback=100)
         assert "error" in r
         assert r["stage"] == "fetch"
 
@@ -779,7 +779,7 @@ class TestTemporalAnalyze:
     def test_insufficient_data(self, mock_fetch, *_):
         rates = _make_rates(n=1)
         mock_fetch.return_value = (rates, None)
-        r = _raw_temporal_analyze(symbol="EURUSD", limit=100)
+        r = _raw_temporal_analyze(symbol="EURUSD", lookback=100)
         assert "error" in r
 
     @_apply_analyze_patches

@@ -346,7 +346,7 @@ def _fetch_rates(
 def temporal_analyze(  # noqa: C901
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
-    limit: int = 1000,
+    lookback: int = 1000,
     start: Optional[str] = None,
     end: Optional[str] = None,
     group_by: Literal[
@@ -370,6 +370,9 @@ def temporal_analyze(  # noqa: C901
 ) -> Dict[str, Any]:
     """Temporal analysis by day-of-week, hour, or month.
 
+    `lookback` controls the number of historical bars used when start/end are
+    omitted.
+
     Filters:
     - day_of_week: 0-6 or names like Mon, Tuesday
     - month: 1-12 or names like Jan, September
@@ -389,7 +392,7 @@ def temporal_analyze(  # noqa: C901
             "timeframe": timeframe,
             "group_by": group_by,
             "return_mode": return_mode,
-            "limit": limit,
+            "lookback": lookback,
             "start": start,
             "end": end,
             "detail": detail,
@@ -402,11 +405,11 @@ def temporal_analyze(  # noqa: C901
                 ensure_connection_impl=ensure_mt5_connection_or_raise,
             )
             mt5_gateway.ensure_connection()
-            effective_limit = 0 if limit is None else int(limit)
-            context["limit"] = effective_limit
-            if effective_limit <= 1 and not (start and end):
+            effective_lookback = 0 if lookback is None else int(lookback)
+            context["lookback"] = effective_lookback
+            if effective_lookback <= 1 and not (start and end):
                 return _error_response(
-                    "limit must be >= 2 for return calculations.",
+                    "lookback must be >= 2 for return calculations.",
                     stage="validate",
                     context=context,
                 )
@@ -493,7 +496,7 @@ def temporal_analyze(  # noqa: C901
                 rates, fetch_err = _fetch_rates(
                     symbol,
                     timeframe,
-                    effective_limit,
+                    effective_lookback,
                     start,
                     end,
                     gateway=mt5_gateway,
@@ -718,6 +721,6 @@ def temporal_analyze(  # noqa: C901
         symbol=symbol,
         timeframe=timeframe,
         group_by=group_by,
-        limit=limit,
+        lookback=lookback,
         func=_run,
     )
