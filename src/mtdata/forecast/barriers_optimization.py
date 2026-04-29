@@ -54,6 +54,7 @@ from .barriers_shared import (
     _safe_float,
     _scale_price_paths_to_reference,
     _sort_candidate_results,
+    _symbol_price_precision,
     normalize_barrier_method,
 )
 from .common import fetch_history as _fetch_history
@@ -1191,6 +1192,7 @@ def forecast_barrier_optimize(  # noqa: C901
         )
         if price_error:
             return {"error": price_error}
+        price_precision = _symbol_price_precision(symbol)
 
         pip_size = _get_pip_size(symbol)
         if mode_val == 'pips' and (pip_size is None or pip_size <= 0):
@@ -1644,6 +1646,8 @@ def forecast_barrier_optimize(  # noqa: C901
                     ),
                 },
             }
+            if price_precision is not None:
+                out["price_precision"] = int(price_precision)
             if objective_changed:
                 out["objective_requested"] = objective_requested
                 out["objective_used"] = objective_val
@@ -2540,6 +2544,8 @@ def forecast_barrier_optimize(  # noqa: C901
             "status_reason": status_reason,
             "no_action": status != "ok",
         }
+        if price_precision is not None:
+            out["price_precision"] = int(price_precision)
         if optuna_meta is not None:
             out["optuna"] = optuna_meta
         if pareto_front is not None:

@@ -753,6 +753,22 @@ def _get_live_reference_price(symbol: str, direction: str) -> Tuple[Optional[flo
     return None, None
 
 
+def _symbol_price_precision(symbol: str) -> Optional[int]:
+    try:
+        from ..utils.mt5 import get_symbol_info_cached
+
+        info = get_symbol_info_cached(symbol)
+    except Exception:
+        return None
+    if info is None:
+        return None
+    try:
+        digits = int(getattr(info, "digits"))
+    except Exception:
+        return None
+    return max(0, digits)
+
+
 def _resolve_reference_prices(
     close_values: Any,
     *,

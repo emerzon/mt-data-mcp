@@ -152,13 +152,6 @@ def _round_barrier_value(value: Any, *, digits: int) -> Any:
     return float(f"{numeric:.{precision}f}")
 
 
-def _format_barrier_price_value(value: Any, *, digits: int) -> Any:
-    numeric = _finite_float(value)
-    if numeric is None:
-        return value
-    return f"{numeric:.{max(0, int(digits))}f}"
-
-
 def _round_barrier_ci(value: Any, *, digits: int) -> Any:
     if not isinstance(value, dict):
         return value
@@ -173,7 +166,7 @@ def _round_barrier_prob_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     out = dict(payload)
     for key in ("last_price", "last_price_close", "tp_price", "sl_price", "barrier"):
         if key in out:
-            out[key] = _format_barrier_price_value(out.get(key), digits=price_digits)
+            out[key] = _round_barrier_value(out.get(key), digits=price_digits)
     for key in (
         "prob_hit",
         "prob_tp_first",

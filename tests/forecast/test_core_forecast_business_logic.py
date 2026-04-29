@@ -11,6 +11,7 @@ import pytest
 from pydantic import ValidationError
 
 from mtdata.core import forecast as cf
+from mtdata.forecast import barriers_shared
 from mtdata.forecast import use_cases as forecast_use_cases
 from mtdata.forecast.exceptions import ForecastError
 from mtdata.forecast.requests import (
@@ -696,6 +697,34 @@ def test_forecast_barrier_optimize_request_rejects_removed_format_field():
 def test_forecast_barrier_optimize_request_rejects_top_level_advanced_params():
     with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
         ForecastBarrierOptimizeRequest(symbol="EURUSD", tp_min=0.5)
+
+
+def test_barrier_prob_price_rounding_uses_numeric_precision_without_padding():
+    out = forecast_use_cases._round_barrier_prob_payload(
+        {
+            "success": True,
+            "price_precision": 5,
+            "last_price": "1.16976000",
+            "tp_price": "1.18170000",
+            "sl_price": "1.16415000",
+            "prob_tp_first": 0.3333333333333,
+        }
+    )
+
+    assert out["last_price"] == 1.16976
+    assert out["tp_price"] == 1.1817
+    assert out["sl_price"] == 1.16415
+    assert isinstance(out["tp_price"], float)
+    assert out["prob_tp_first"] == 0.333333
+
+
+def test_barrier_symbol_price_precision_reads_cached_digits(monkeypatch):
+    monkeypatch.setattr(
+        "mtdata.utils.mt5.get_symbol_info_cached",
+        lambda _symbol: SimpleNamespace(digits=5),
+    )
+
+    assert barriers_shared._symbol_price_precision("EURUSD") == 5
 
 
 def test_forecast_list_library_models_and_list_methods(monkeypatch):
@@ -1622,9 +1651,9 @@ def test_forecast_barrier_prob_detail_rounds_display_values():
         ForecastBarrierProbRequest(symbol="EURUSD", detail="compact"),
     )
 
-    assert out["last_price"] == "1.17201241"
-    assert out["tp_price"] == "1.17801241"
-    assert out["sl_price"] == "1.16901241"
+    assert out["last_price"] == 1.17201241
+    assert out["tp_price"] == 1.17801241
+    assert out["sl_price"] == 1.16901241
     assert out["prob_tp_first"] == 0.512346
     assert out["edge"] == -0.178
     assert out["confidence"]["prob_tp_first_ci95"] == {"low": 0.5, "high": 0.6}

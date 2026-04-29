@@ -29,6 +29,7 @@ from .barriers_shared import (
     _get_live_reference_price,
     _resolve_reference_prices,
     _scale_price_paths_to_reference,
+    _symbol_price_precision,
     normalize_barrier_method,
 )
 from .common import fetch_history as _fetch_history
@@ -376,6 +377,7 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
         # - For long: TP is above last_price, SL is below; prob_tp_first is long win probability.
         # - For short: TP is below last_price, SL is above; prob_tp_first is short win probability.
         edge = float(prob_tp_first - prob_sl_first)
+        price_precision = _symbol_price_precision(symbol)
         out = {
             "success": True,
             "symbol": symbol,
@@ -406,6 +408,8 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
             "time_to_tp_bars": tp_stats,
             "time_to_sl_bars": sl_stats,
         }
+        if price_precision is not None:
+            out["price_precision"] = int(price_precision)
         if method_requested != method_key:
             out["method_requested"] = method_requested
             out["method_used"] = method_key
@@ -512,6 +516,7 @@ def forecast_barrier_closed_form(
             (direction_norm == 'long' and barrier <= s0)
             or (direction_norm == 'short' and barrier >= s0)
         )
+        price_precision = _symbol_price_precision(symbol)
         result = {
             "success": True,
             "symbol": symbol,
@@ -525,6 +530,8 @@ def forecast_barrier_closed_form(
             "sigma_annual": sigma_val,
             "prob_hit": float(prob),
         }
+        if price_precision is not None:
+            result["price_precision"] = int(price_precision)
         if already_hit:
             result["already_hit"] = True
         return result
