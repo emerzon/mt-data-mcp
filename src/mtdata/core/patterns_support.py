@@ -489,17 +489,36 @@ def _compact_patterns_payload(payload: Dict[str, Any]) -> Dict[str, Any]:  # noq
 
     findings = payload.get("findings")
     if isinstance(findings, list):
-        compact["findings"] = findings
+        compact_findings: List[Dict[str, Any]] = []
         tf_summary: List[Dict[str, Any]] = []
         for item in findings:
             if not isinstance(item, dict):
                 continue
+            compact_item = {
+                key: value
+                for key, value in item.items()
+                if key
+                in {
+                    "timeframe",
+                    "n_patterns",
+                    "completed_patterns_hidden",
+                    "completed_patterns_preview",
+                    "diagnostic",
+                    "note",
+                    "warnings",
+                }
+                and value not in (None, "", [], {})
+            }
+            if compact_item:
+                compact_findings.append(compact_item)
             tf_summary.append(
                 {
                     "timeframe": item.get("timeframe"),
                     "n_patterns": item.get("n_patterns"),
                 }
             )
+        if compact_findings:
+            compact["findings"] = compact_findings
         if tf_summary:
             compact["timeframe_findings"] = tf_summary
 
