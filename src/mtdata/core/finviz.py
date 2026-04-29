@@ -1092,7 +1092,7 @@ def finviz_insider(
     symbol: str,
     limit: int = 20,
     page: int = 1,
-    detail: CompactFullDetailLiteral = "full",  # type: ignore
+    detail: CompactFullDetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     """
     Get insider trading activity for a US stock.
@@ -1109,8 +1109,8 @@ def finviz_insider(
     page : int
         Page number for pagination (default 1)
     detail : {"compact", "full"}
-        "full" preserves all returned trades. "compact" returns the first
-        three rows plus aggregate buy/sell counts.
+        "compact" returns the first three rows plus aggregate buy/sell counts.
+        "full" preserves all returned trades.
     
     Returns
     -------

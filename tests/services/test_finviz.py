@@ -783,6 +783,28 @@ class TestFinvizTools:
         assert "roa" not in fundamentals
         assert "curr_r" not in fundamentals
 
+    @patch("mtdata.core.finviz.get_stock_insider_trades")
+    def test_finviz_insider_defaults_to_compact_detail(self, mock_get_trades):
+        from mtdata.core.finviz import finviz_insider
+
+        mock_get_trades.return_value = {
+            "success": True,
+            "symbol": "AAPL",
+            "total": 4,
+            "insider_trades": [
+                {"Owner": f"Owner {i}", "Transaction": "Buy" if i == 0 else "Sale"}
+                for i in range(4)
+            ],
+        }
+
+        raw = getattr(finviz_insider, "__wrapped__", finviz_insider)
+        result = raw("AAPL")
+
+        assert result["detail"] == "compact"
+        assert result["count"] == 3
+        assert result["omitted_item_count"] == 1
+        assert result["summary"]["counts"]["buy_transactions"] == 1
+
     @patch("mtdata.core.finviz.get_earnings_calendar")
     def test_finviz_earnings_expands_cryptic_metric_keys(self, mock_get_earnings):
         from mtdata.core.finviz import finviz_earnings
