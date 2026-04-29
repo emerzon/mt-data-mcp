@@ -108,6 +108,8 @@ def test_news_tool_compact_and_full_detail_contract(monkeypatch) -> None:
 
     assert "instrument" not in compact
     assert "matching" not in compact
+    assert "tool_scope" not in compact
+    assert "timezone" not in compact
     assert compact["general_news"] == [
         {
             "title": "Fed preview",
@@ -118,6 +120,8 @@ def test_news_tool_compact_and_full_detail_contract(monkeypatch) -> None:
 
     assert full["instrument"] == {"symbol": "EURUSD"}
     assert full["matching"] == {"embeddings": {"enabled": True}}
+    assert full["tool_scope"] == "unified_trading_news"
+    assert full["timezone"] == "UTC"
     assert full["general_news"][0]["provider"] == "finviz"
 
 

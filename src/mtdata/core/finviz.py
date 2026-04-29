@@ -487,19 +487,12 @@ def _normalize_finviz_news_item(item: Any) -> Any:
     return out
 
 
-def _normalize_finviz_news_payload(
-    result: Dict[str, Any],
-    *,
-    include_preferred_tool: bool = True,
-) -> Dict[str, Any]:
+def _normalize_finviz_news_payload(result: Dict[str, Any]) -> Dict[str, Any]:
     out = dict(result)
-    out.setdefault("tool_scope", "raw_finviz_provider")
-    if include_preferred_tool:
-        out.setdefault("preferred_tool", "news")
-    else:
-        out.pop("preferred_tool", None)
-    out.setdefault("output_shape", "flat_paginated_items")
-    out.setdefault("timezone", "UTC")
+    out.pop("tool_scope", None)
+    out.pop("preferred_tool", None)
+    out.pop("output_shape", None)
+    out.pop("timezone", None)
 
     news_rows = result.get("news")
     items_rows = result.get("items")
@@ -1351,7 +1344,6 @@ def finviz_market_news(
         {"news_type": news_type, "limit": limit, "page": page},
         lambda: _normalize_finviz_news_payload(
             get_general_news(news_type=news_type, limit=limit, page=page),
-            include_preferred_tool=False,
         ),
     )
 

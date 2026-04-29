@@ -84,9 +84,10 @@ def test_finviz_news_normalizes_stock_results_to_single_items_array() -> None:
             "url": "https://example.test/apple",
         }
     ]
-    assert out["tool_scope"] == "raw_finviz_provider"
-    assert out["preferred_tool"] == "news"
-    assert out["output_shape"] == "flat_paginated_items"
+    assert "tool_scope" not in out
+    assert "preferred_tool" not in out
+    assert "output_shape" not in out
+    assert "timezone" not in out
     assert "news" not in out
 
 
@@ -113,7 +114,7 @@ def test_finviz_news_without_symbol_normalizes_general_items() -> None:
     assert out["items"][0]["source"] == "Finviz"
     assert "T13:30:00+00:00" in out["items"][0]["published_at"]
     assert out["items"][0]["url"] == "https://example.test/news"
-    assert out["preferred_tool"] == "news"
+    assert "preferred_tool" not in out
 
 
 def test_finviz_market_news_normalizes_items() -> None:
@@ -130,8 +131,10 @@ def test_finviz_market_news_normalizes_items() -> None:
     assert out["items"][0]["title"] == "Stocks rise"
     assert out["items"][0]["source"] == "AP"
     assert "T14:00:00+00:00" in out["items"][0]["published_at"]
-    assert out["tool_scope"] == "raw_finviz_provider"
     assert "preferred_tool" not in out
+    assert "tool_scope" not in out
+    assert "output_shape" not in out
+    assert "timezone" not in out
 
 
 def test_finviz_news_helpers_are_registered_tools() -> None:

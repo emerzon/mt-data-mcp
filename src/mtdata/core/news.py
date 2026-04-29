@@ -302,8 +302,9 @@ def news(
             ),
             limit=limit_value,
         )
-        out.setdefault("tool_scope", "unified_trading_news")
-        out.setdefault("timezone", "UTC")
+        if detail_mode == "full":
+            out.setdefault("tool_scope", "unified_trading_news")
+            out.setdefault("timezone", "UTC")
         return out
 
     return run_logged_operation(
