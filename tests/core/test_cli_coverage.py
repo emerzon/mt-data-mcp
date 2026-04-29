@@ -1263,7 +1263,7 @@ class TestFormatResultForCli:
                     "methods_failed": ["wavelet"],
                 },
                 "results": {
-                    "bocpd": {"segments": [{"start": "2025-01-01"}]},
+                    "bocpd": {"regimes": [{"start": "2025-01-01"}]},
                 },
                 "params_used": {
                     "methods_attempted": ["bocpd", "ensemble", "wavelet"],
@@ -1301,8 +1301,8 @@ class TestFormatResultForCli:
                 },
                 "results": {
                     "bocpd": {
-                        "current_segment": {"status": "no_recent_change_detected"},
-                        "segment_context": {"bias": "bullish"},
+                        "current_regime": {"status": "no_recent_change_detected"},
+                        "regime_context": {"bias": "bullish"},
                     },
                     "hmm": {
                         "current_regime": {
@@ -1324,7 +1324,7 @@ class TestFormatResultForCli:
 
         assert "detail: full" in result
         assert "results:" in result
-        assert "current_segment.status: no_recent_change_detected" in result
+        assert "current_regime.status: no_recent_change_detected" in result
         assert "confidence: 0.84" in result
         assert "show_all_hint" not in result
 

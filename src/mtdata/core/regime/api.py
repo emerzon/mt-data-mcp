@@ -191,33 +191,20 @@ def _summarize_current_regime_for_comparison(
         return None
 
     if method == "bocpd":
-        current_segment = result.get("current_segment")
-        if not isinstance(current_segment, dict) or not current_segment:
-            legacy_current = result.get("current_regime")
-            if isinstance(legacy_current, dict) and legacy_current:
-                current_segment = {
-                    "started_at": legacy_current.get("since"),
-                    "bars_since_change": legacy_current.get("bars"),
+        current_regime = result.get("current_regime")
+        if not isinstance(current_regime, dict) or not current_regime:
+            regimes = result.get("regimes")
+            if isinstance(regimes, list) and regimes and isinstance(regimes[-1], dict):
+                last = regimes[-1]
+                current_regime = {
+                    "started_at": last.get("started_at", last.get("start")),
+                    "bars_since_change": last.get("bars"),
                 }
             else:
-                segments = result.get("segments")
-                if not isinstance(segments, list) or not segments:
-                    segments = result.get("regimes")
-                if (
-                    isinstance(segments, list)
-                    and segments
-                    and isinstance(segments[-1], dict)
-                ):
-                    last = segments[-1]
-                    current_segment = {
-                        "started_at": last.get("started_at", last.get("start")),
-                        "bars_since_change": last.get("bars"),
-                    }
-                else:
-                    return None
+                return None
 
         entry = {
-            key: current_segment.get(key)
+            key: current_regime.get(key)
             for key in (
                 "status",
                 "started_at",
@@ -225,7 +212,7 @@ def _summarize_current_regime_for_comparison(
                 "transition_risk",
                 "latest_transition_probability",
             )
-            if current_segment.get(key) is not None
+            if current_regime.get(key) is not None
         }
 
         transition_summary = result.get("transition_summary")
@@ -243,21 +230,21 @@ def _summarize_current_regime_for_comparison(
                 if value is not None:
                     entry[key] = value
 
-        segment_context = result.get("segment_context")
-        if isinstance(segment_context, dict):
+        regime_context = result.get("regime_context")
+        if isinstance(regime_context, dict):
             for key in ("bias", "return_pct", "volatility_pct"):
-                value = segment_context.get(key)
+                value = regime_context.get(key)
                 if value is not None:
                     entry[key] = value
 
         return entry or None
 
     if method == "rule_based":
-        regime = result.get("regime")
-        if not isinstance(regime, dict):
+        current_regime = result.get("current_regime")
+        if not isinstance(current_regime, dict):
             return None
         entry = {
-            key: regime.get(key)
+            key: current_regime.get(key)
             for key in (
                 "state",
                 "direction",
@@ -267,7 +254,7 @@ def _summarize_current_regime_for_comparison(
                 "window_move_pct",
                 "signal_source",
             )
-            if regime.get(key) is not None
+            if current_regime.get(key) is not None
         }
         return entry or None
 
@@ -688,12 +675,11 @@ def regime_detect(  # noqa: C901
         M1: 3000, M5: 2000, M15: 1000, M30: 800, H1: 500, H2: 400, H4: 300, H6-H12: 200-150, D1: 200, W1: 100, MN1: 48
     - min_regime_bars: Merge short state runs (< this many bars) for state-based methods to reduce flicker.
         Default -1 uses timeframe-based defaults: M1: 30, M5: 12, M15-M30: 6-8, H1-H4: 3-4, D1+: 2
-    - max_regimes: Maximum number of regime segments to show in compact mode (default 10).
-        Most recent segments/regimes are shown. Full mode shows all available windows.
+    - max_regimes: Maximum number of regime windows to show in compact mode (default 10).
+        Most recent regimes are shown. Full mode shows all available windows.
     - detail:
-        - 'compact' (default): Returns recent consolidated output. BOCPD uses
-          `current_segment` / `segments`; state-based methods return
-          `current_regime` / `regimes`.
+        - 'compact' (default): Returns recent consolidated output with
+          `current_regime` / `regimes` across methods.
         - 'full': Returns full consolidated output. Raw 'series' included only if include_series=True.
         - 'summary': Returns stats only.
 
@@ -713,7 +699,7 @@ def regime_detect(  # noqa: C901
 
     Method-Specific Notes:
         - 'bocpd': Returns transition-oriented compact/full output:
-          `current_segment`, `transition_summary`, `segment_context`, and `segments`.
+          `current_regime`, `transition_summary`, `regime_context`, and `regimes`.
           These describe whether a new change point has been confirmed, how long the
           current segment has persisted, and derived bias/volatility context from the
           target series. Raw `cp_prob` and `change_points` remain available in `series`
@@ -729,8 +715,9 @@ def regime_detect(  # noqa: C901
             CV ≤ 1.0 → 2 states (low/high) for stable assets (major forex pairs)
           Explicit n_states parameter overrides auto-detection.
           Uses percentile-based classification with volatility characteristics reported in output.
-        - 'rule_based': Returns single 'regime' dict with 'state' (trending/ranging/transition),
-          'direction' (bullish/bearish/neutral), trend_strength, efficiency_ratio.
+        - 'rule_based': Returns `current_regime` and a single-item `regimes` list with
+          state (trending/ranging/transition), direction (bullish/bearish/neutral),
+          trend_strength, and efficiency_ratio.
           Trend metrics use the recent price window so direction/window_move_pct stay coherent
           even when target='return'. Best for quick trend classification.
         - 'wavelet': Returns 'regime_params' with 'energy_profiles' showing frequency distribution.
@@ -2091,7 +2078,10 @@ def regime_detect(  # noqa: C901
                     else t_fmt[0]
                 ),
                 "bars": int(window_bars),
+                "efficiency_ratio": round(efficiency_ratio, 4),
             }
+            if output != "compact":
+                current_regime.update(regime_info)
 
             payload = {
                 "success": True,
@@ -2099,8 +2089,8 @@ def regime_detect(  # noqa: C901
                 "timeframe": timeframe,
                 "method": method,
                 "target": target,
-                "regime": regime_info,
                 "current_regime": current_regime,
+                "regimes": [current_regime],
                 "params_used": {
                     "efficiency_threshold": float(efficiency_threshold),
                     "trend_strength_threshold": float(trend_strength_threshold),
@@ -2109,11 +2099,6 @@ def regime_detect(  # noqa: C901
                 },
             }
             if output == "compact":
-                payload["regime"] = {
-                    key: regime_info[key]
-                    for key in ("state", "direction", "efficiency_ratio")
-                    if key in regime_info
-                }
                 payload.pop("params_used", None)
 
             return _finish(payload)

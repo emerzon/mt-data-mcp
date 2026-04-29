@@ -55,8 +55,8 @@ class TestConsolidatePayload:
         result = _consolidate_payload(payload, "bocpd", "full", include_series=True)
         assert result["symbol"] == "EURUSD"
         assert result["success"] is True
-        assert "segments" in result
-        assert "current_segment" in result
+        assert "regimes" in result
+        assert "current_regime" in result
         assert "transition_summary" in result
 
     def test_compact_mode(self):
@@ -70,8 +70,8 @@ class TestConsolidatePayload:
             "cp_prob": [0.1, 0.1, 0.9],
         }
         result = _consolidate_payload(payload, "bocpd", "compact", include_series=True)
-        assert "segments" in result
-        assert "current_segment" in result
+        assert "regimes" in result
+        assert "current_regime" in result
 
     def test_no_series_when_not_requested(self):
         payload = {
@@ -113,7 +113,7 @@ class TestConsolidatePayload:
 
         result = _consolidate_payload(payload, "bocpd", "full")
 
-        assert [segment["bias"] for segment in result["segments"]] == [
+        assert [regime["bias"] for regime in result["regimes"]] == [
             "bullish",
             "bearish",
         ]

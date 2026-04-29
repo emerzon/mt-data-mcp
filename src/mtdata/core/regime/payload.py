@@ -765,10 +765,9 @@ def _consolidate_payload(  # noqa: C901
             final_segments.append(row)
 
         # Build current segment/regime info for trading (last segment only)
-        current_segment = None
-        transition_summary = None
-        segment_context = None
         current_regime = None
+        transition_summary = None
+        regime_context = None
         if final_segments:
             last_seg = final_segments[-1]
             if method == "bocpd":
@@ -785,7 +784,7 @@ def _consolidate_payload(  # noqa: C901
                     latest_transition_probability,
                     payload.get("threshold"),
                 )
-                current_segment = {
+                current_regime = {
                     "status": _bocpd_segment_status(
                         change_points_count=recent_change_points_count,
                         bars_since_change=last_seg["bars"],
@@ -799,11 +798,11 @@ def _consolidate_payload(  # noqa: C901
                     latest_transition_probability,
                 )
                 if latest_transition_probability_value is not None:
-                    current_segment["latest_transition_probability"] = round(
+                    current_regime["latest_transition_probability"] = round(
                         latest_transition_probability_value,
                         4,
                     )
-                segment_context = {
+                regime_context = {
                     key: last_seg[key]
                     for key in ("source", "bias", "return_pct", "volatility_pct")
                     if key in last_seg
@@ -841,9 +840,6 @@ def _consolidate_payload(  # noqa: C901
                     current_regime["regime_confidence"] = regime_confidence
 
         # Restructure payload:
-        # - BOCPD uses segment/transition-oriented wording.
-        # - State-based methods keep regime/current_regime terminology.
-
         new_payload: Dict[str, Any] = {
             "symbol": payload.get("symbol"),
             "timeframe": payload.get("timeframe"),
@@ -852,22 +848,22 @@ def _consolidate_payload(  # noqa: C901
         }
 
         if method == "bocpd":
-            if current_segment:
-                new_payload["current_segment"] = current_segment
+            if current_regime:
+                new_payload["current_regime"] = current_regime
             if transition_summary:
                 new_payload["transition_summary"] = transition_summary
-            if segment_context:
-                new_payload["segment_context"] = segment_context
+            if regime_context:
+                new_payload["regime_context"] = regime_context
 
-            total_segments = len(final_segments)
-            if output_mode == "compact" and max_regimes > 0 and total_segments > max_regimes:
-                new_payload["segments"] = final_segments[-max_regimes:]
-                new_payload["segments_truncated"] = True
-                new_payload["total_segments"] = total_segments
-                new_payload["showing_segments"] = max_regimes
+            total_regimes = len(final_segments)
+            if output_mode == "compact" and max_regimes > 0 and total_regimes > max_regimes:
+                new_payload["regimes"] = final_segments[-max_regimes:]
+                new_payload["regimes_truncated"] = True
+                new_payload["total_regimes"] = total_regimes
+                new_payload["showing_regimes"] = max_regimes
             else:
-                new_payload["segments"] = final_segments
-                new_payload["total_segments"] = total_segments
+                new_payload["regimes"] = final_segments
+                new_payload["total_regimes"] = total_regimes
         else:
             # Core trading info (compact)
             if current_regime:

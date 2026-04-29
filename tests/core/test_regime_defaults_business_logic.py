@@ -64,9 +64,9 @@ def test_regime_detect_defaults_to_compact_output() -> None:
     assert out.get("success") is True
     assert "summary" not in out
     assert "reliability" in out
-    assert "segments" in out
-    assert "current_segment" in out
-    assert "current_regime" not in out
+    assert "regimes" in out
+    assert "current_regime" in out
+    assert "current_segment" not in out
 
 
 def test_regime_detect_returns_connection_error_payload(monkeypatch) -> None:

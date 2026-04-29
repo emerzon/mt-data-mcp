@@ -42,7 +42,7 @@ def test_build_all_method_comparison_uses_semantic_signals() -> None:
     comparison = _build_all_method_comparison(
         {
             "bocpd": {
-                "current_segment": {
+                "current_regime": {
                     "status": "no_recent_change_detected",
                     "started_at": "T1",
                     "bars_since_change": 500,
@@ -53,7 +53,7 @@ def test_build_all_method_comparison_uses_semantic_signals() -> None:
                     "recent_transition_activity": "none",
                     "calibration_status": "calibrated",
                 },
-                "segment_context": {
+                "regime_context": {
                     "bias": "bullish",
                     "return_pct": 4.2,
                     "volatility_pct": 1.1,
@@ -99,7 +99,7 @@ def test_build_all_method_comparison_uses_semantic_signals() -> None:
                 },
             },
             "rule_based": {
-                "regime": {
+                "current_regime": {
                     "state": "ranging",
                     "direction": "bullish",
                     "trend_strength": 0.1497,
@@ -323,14 +323,14 @@ def test_bocpd_consolidation_uses_segment_language() -> None:
         "compact",
     )
 
-    assert "current_segment" in out
-    assert out["current_segment"]["status"] == "recent_change_detected"
+    assert "current_regime" in out
+    assert out["current_regime"]["status"] == "recent_change_detected"
     assert out["transition_summary"]["recent_change_points_count"] == 1
     assert out["transition_summary"]["calibration_status"] == "calibrated"
-    assert out["segment_context"]["source"] == "derived_from_return_series"
-    assert out["segments"][1]["transition_prob_at_start"] == 0.9
-    assert "current_regime" not in out
-    assert "regimes" not in out
+    assert out["regime_context"]["source"] == "derived_from_return_series"
+    assert out["regimes"][1]["transition_prob_at_start"] == 0.9
+    assert "current_segment" not in out
+    assert "segments" not in out
 
 
 def test_consolidate_payload_uses_regime_confidence_name() -> None:
@@ -381,7 +381,7 @@ def test_rule_based_uses_price_window_metrics_for_return_target() -> None:
             detail="full",
         )
 
-    regime = out["regime"]
+    regime = out["current_regime"]
     assert regime["direction"] == "bearish"
     assert regime["signal_source"] == "price"
     assert regime["window_move_pct"] == expected_move_pct
@@ -405,7 +405,7 @@ def test_rule_based_explains_ranging_direction_bias() -> None:
             detail="full",
         )
 
-    regime = out["regime"]
+    regime = out["current_regime"]
     assert regime["state"] == "ranging"
     assert regime["direction"] == "bearish"
     assert regime["direction_basis"] == "net_window_move"
@@ -430,8 +430,8 @@ def test_rule_based_compact_omits_explanatory_fields() -> None:
             params={"window_bars": 60},
         )
 
-    regime = out["regime"]
-    assert set(regime) == {"state", "direction", "efficiency_ratio"}
+    regime = out["current_regime"]
+    assert {"state", "direction", "efficiency_ratio"}.issubset(regime)
     assert regime["state"] == "ranging"
     assert regime["direction"] == "bearish"
     assert out["current_regime"]["state"] == "ranging"
@@ -441,3 +441,4 @@ def test_rule_based_compact_omits_explanatory_fields() -> None:
     assert "note" not in regime
     assert "signal_source" not in regime
     assert "params_used" not in out
+    assert "regime" not in out

@@ -78,13 +78,13 @@ class TestConsolidatePayloadBOCPD:
         }
         res = _consolidate_payload(payload, "bocpd", "full")
         assert res["success"] is True
-        assert "segments" in res
-        assert len(res["segments"]) == 2
-        assert "current_segment" in res
+        assert "regimes" in res
+        assert len(res["regimes"]) == 2
+        assert "current_regime" in res
         assert "transition_summary" in res
-        assert "avg_conf" not in res["segments"][0]
-        assert "transition_prob_at_start" not in res["segments"][0]
-        assert res["segments"][1]["transition_prob_at_start"] == 0.9
+        assert "avg_conf" not in res["regimes"][0]
+        assert "transition_prob_at_start" not in res["regimes"][0]
+        assert res["regimes"][1]["transition_prob_at_start"] == 0.9
 
     def test_bocpd_no_change_points(self):
         payload = {
@@ -96,8 +96,8 @@ class TestConsolidatePayloadBOCPD:
             "change_points": [],
         }
         res = _consolidate_payload(payload, "bocpd", "full")
-        assert len(res["segments"]) == 1
-        assert res["segments"][0]["bars"] == 3
+        assert len(res["regimes"]) == 1
+        assert res["regimes"][0]["bars"] == 3
 
     def test_bocpd_multiple_change_points(self):
         times = [f"T{i}" for i in range(6)]
@@ -110,7 +110,7 @@ class TestConsolidatePayloadBOCPD:
             "change_points": [{"idx": 2}, {"idx": 4}],
         }
         res = _consolidate_payload(payload, "bocpd", "full")
-        assert len(res["segments"]) == 3
+        assert len(res["regimes"]) == 3
 
     def test_bocpd_cp_prob_not_list(self):
         """When cp_prob is missing, probs default to 0."""
@@ -123,7 +123,7 @@ class TestConsolidatePayloadBOCPD:
             "change_points": [],
         }
         res = _consolidate_payload(payload, "bocpd", "full")
-        assert len(res["segments"]) == 1
+        assert len(res["regimes"]) == 1
 
 
 class TestConsolidatePayloadHMM:
@@ -444,8 +444,8 @@ class TestRegimeDetectBOCPD:
                 threshold=0.5,
                 detail="full",
             )
-        assert "segments" in res
-        assert "current_segment" in res
+        assert "regimes" in res
+        assert "current_regime" in res
         assert "transition_summary" in res
         assert any(
             "event=finish operation=regime_detect success=True" in record.message
@@ -499,7 +499,7 @@ class TestRegimeDetectBOCPD:
                 threshold=0.5,
                 lookback=20,
             )
-        assert "segments" in res or "error" in res
+        assert "regimes" in res or "error" in res
 
     @patch(_FMT, side_effect=_time_fmt_stub)
     @patch(_DENOISE, return_value="close")
