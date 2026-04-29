@@ -76,6 +76,11 @@ class TestParseTableTail:
         assert len(result) == 1
         assert result[0]["x"] == 20
 
+    def test_dict_with_table_bars_key(self):
+        data = {"bars": {"columns": ["time", "close"], "rows": [["t1", "10"], ["t2", "20"]]}}
+        result = parse_table_tail(data, tail=1)
+        assert result == [{"time": "t2", "close": 20}]
+
     def test_tail_zero_returns_all(self):
         rows = [{"v": str(i)} for i in range(5)]
         result = parse_table_tail(rows, tail=0)

@@ -448,6 +448,28 @@ def _normalize_market_scan_cli_payload(result: Any, *, verbose: bool) -> Any:
     return compact_out or result
 
 
+def _rows_to_table(rows: Any) -> Any:
+    if not isinstance(rows, list):
+        return rows
+    columns: list[str] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        for key in row:
+            col = str(key)
+            if col not in columns:
+                columns.append(col)
+    if not columns:
+        return {"columns": [], "rows": []}
+    return {
+        "columns": columns,
+        "rows": [
+            [row.get(col) if isinstance(row, dict) else None for col in columns]
+            for row in rows
+        ],
+    }
+
+
 def _normalize_candle_cli_payload(result: Any, *, fmt: str) -> Any:
     if not isinstance(result, dict):
         return result
@@ -475,8 +497,12 @@ def _normalize_candle_cli_payload(result: Any, *, fmt: str) -> Any:
                 out["meta"] = meta
             else:
                 out.pop("meta", None)
-    if fmt == CLI_FORMAT_JSON and "bars" not in out and isinstance(out.get("data"), list):
-        out["bars"] = out.pop("data")
+    if fmt == CLI_FORMAT_JSON:
+        rows = out.pop("data", None)
+        if rows is None:
+            rows = out.get("bars")
+        if rows is not None:
+            out["bars"] = _rows_to_table(rows)
     return out
 
 

@@ -333,7 +333,12 @@ def test_format_result_for_cli_does_not_mutate_candle_payload() -> None:
         cmd_name="data_fetch_candles",
     )
 
-    assert '"bars"' in rendered
+    rendered_payload = json.loads(rendered)
+    assert rendered_payload["bars"] == {
+        "columns": ["time", "close"],
+        "rows": [["2025-01-01 00:00", 1.1]],
+    }
+    assert "data" not in rendered_payload
     assert payload == original
 
 
@@ -972,7 +977,7 @@ class TestFormatResultForCli:
         assert "time_epoch" not in payload["symbol"]
         assert "meta" not in payload
 
-    def test_candle_json_uses_bars_key(self):
+    def test_candle_json_uses_table_bars(self):
         payload = json.loads(
             _format_result_for_cli(
                 {
@@ -986,7 +991,10 @@ class TestFormatResultForCli:
                 cmd_name="data_fetch_candles",
             )
         )
-        assert payload["bars"] == [{"time": "2023-11-14 22:13", "close": 1.1}]
+        assert payload["bars"] == {
+            "columns": ["time", "close"],
+            "rows": [["2023-11-14 22:13", 1.1]],
+        }
         assert "data" not in payload
         assert "count" not in payload
 

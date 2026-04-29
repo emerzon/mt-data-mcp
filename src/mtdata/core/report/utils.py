@@ -26,12 +26,31 @@ def now_utc_iso() -> str:
 def parse_table_tail(data: Any, tail: int = 1) -> List[Dict[str, Any]]:
     """Return the last N rows from a tabular payload (list[dict] or {data|bars: ...})."""
     try:
+        def _table_dict_to_rows(table: Any) -> List[Dict[str, Any]]:
+            if not isinstance(table, dict):
+                return []
+            columns = table.get('columns')
+            rows = table.get('rows')
+            if not isinstance(columns, list) or not isinstance(rows, list):
+                return []
+            out_rows: List[Dict[str, Any]] = []
+            for row in rows:
+                if not isinstance(row, list):
+                    continue
+                out_rows.append({
+                    str(col): row[idx] if idx < len(row) else None
+                    for idx, col in enumerate(columns)
+                })
+            return out_rows
+
         if isinstance(data, dict):
             rows_obj = data.get('data')
             if not isinstance(rows_obj, list):
                 rows_obj = data.get('bars')
         else:
             rows_obj = data
+        if isinstance(rows_obj, dict):
+            rows_obj = _table_dict_to_rows(rows_obj)
         if not isinstance(rows_obj, list):
             return []
         tail_i = int(tail or 0)
