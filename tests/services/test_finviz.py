@@ -686,6 +686,83 @@ class TestFinvizTools:
         assert result["available_field_count"] == 3
         assert result["omitted_field_count"] == 0
 
+    @patch("mtdata.core.finviz.get_stock_fundamentals")
+    def test_finviz_fundamentals_expands_cryptic_metric_keys(self, mock_get_fundamentals):
+        from mtdata.core.finviz import finviz_fundamentals
+
+        mock_get_fundamentals.return_value = {
+            "success": True,
+            "symbol": "AAPL",
+            "fundamentals": {
+                "ROA": "29.5%",
+                "ROE": "156.0%",
+                "Curr R": "0.87",
+                "Quick R": "0.83",
+                "LT Debt/Eq": "1.26",
+                "Shs Outstand": "14.70B",
+                "Shs Float": "14.66B",
+                "Book/sh": "6.00",
+                "Perf Week": "1.71%",
+            },
+        }
+
+        raw = getattr(finviz_fundamentals, "__wrapped__", finviz_fundamentals)
+        result = raw("AAPL", detail="full")
+
+        fundamentals = result["fundamentals"]
+        assert fundamentals["return_on_assets"] == "29.5%"
+        assert fundamentals["return_on_equity"] == "156.0%"
+        assert fundamentals["current_ratio"] == "0.87"
+        assert fundamentals["quick_ratio"] == "0.83"
+        assert fundamentals["long_term_debt_to_equity"] == "1.26"
+        assert fundamentals["shares_outstanding"] == "14.70B"
+        assert fundamentals["shares_float"] == "14.66B"
+        assert fundamentals["book_value_per_share"] == "6.00"
+        assert fundamentals["performance_week"] == "1.71%"
+        assert "roa" not in fundamentals
+        assert "curr_r" not in fundamentals
+
+    @patch("mtdata.core.finviz.get_earnings_calendar")
+    def test_finviz_earnings_expands_cryptic_metric_keys(self, mock_get_earnings):
+        from mtdata.core.finviz import finviz_earnings
+
+        mock_get_earnings.return_value = {
+            "success": True,
+            "period": "This Week",
+            "earnings": [
+                {
+                    "Ticker": "APLM",
+                    "ROA": "-1.365",
+                    "ROE": "-3.8",
+                    "ROIC": None,
+                    "Curr R": "0.97",
+                    "Debt/Eq": None,
+                    "Gross M": None,
+                    "Oper M": "-3.04",
+                    "Profit M": "-3.67",
+                },
+            ],
+            "count": 1,
+            "total": 1,
+            "page": 1,
+            "pages": 1,
+        }
+
+        raw = getattr(finviz_earnings, "__wrapped__", finviz_earnings)
+        result = raw()
+
+        item = result["items"][0]
+        assert item["ticker"] == "APLM"
+        assert item["return_on_assets"] == "-1.365"
+        assert item["return_on_equity"] == "-3.8"
+        assert item["return_on_invested_capital"] is None
+        assert item["current_ratio"] == "0.97"
+        assert item["debt_to_equity"] is None
+        assert item["gross_margin"] is None
+        assert item["operating_margin"] == "-3.04"
+        assert item["profit_margin"] == "-3.67"
+        assert "curr_r" not in item
+
     @patch('mtdata.services.finviz.get_stock_fundamentals')
     def test_finviz_fundamentals_tool(self, mock_get_fundamentals):
         """Test finviz_fundamentals tool."""
