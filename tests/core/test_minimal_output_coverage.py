@@ -346,6 +346,7 @@ class TestNormalizeForecastPayload:
         assert result["ci"] == {
             "status": "unavailable",
             "ci_alpha": 0.05,
+            "confidence_level": 0.95,
             "hint": (
                 "theta produces point forecasts only. "
                 "Use forecast_conformal_intervals for uncertainty bands."
@@ -358,6 +359,7 @@ class TestNormalizeForecastPayload:
         assert verbose_result["ci"] == {
             "status": "unavailable",
             "ci_alpha": 0.05,
+            "confidence_level": 0.95,
             "hint": "theta produces point forecasts only. Use forecast_conformal_intervals for uncertainty bands.",
         }
         assert verbose_result["warnings"][0].startswith("Point forecast only")
@@ -372,7 +374,7 @@ class TestNormalizeForecastPayload:
             "ci_alpha": 0.05,
         }
         result = _normalize_forecast_payload(payload, verbose=False)
-        assert "ci" not in result
+        assert result["ci"] == {"confidence_level": 0.95}
 
     def test_interval_summary_rendered_when_bounds_are_compacted_away(self):
         payload = {
@@ -396,6 +398,7 @@ class TestNormalizeForecastPayload:
         assert result["ci"] == {
             "status": "available",
             "ci_alpha": 0.05,
+            "confidence_level": 0.95,
             "interval_summary": {
                 "first_low": 98.0,
                 "first_high": 102.0,

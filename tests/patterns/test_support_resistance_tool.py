@@ -47,7 +47,7 @@ def test_support_resistance_tool_returns_weighted_levels():
         result = fn(
             "EURUSD",
             timeframe="H1",
-            limit=200,
+            lookback=200,
             tolerance_pct=0.005,
             min_touches=2,
             max_levels=3,
@@ -158,7 +158,7 @@ def test_support_resistance_tool_compact_exposes_coverage_gap_metadata_with_dist
         result = fn(
             "EURUSD",
             timeframe="H1",
-            limit=200,
+            lookback=200,
             tolerance_pct=0.005,
             min_touches=1,
             max_levels=4,
@@ -185,7 +185,7 @@ def test_support_resistance_tool_compact_exposes_volume_metadata_when_enabled():
         result = fn(
             "EURUSD",
             timeframe="H1",
-            limit=200,
+            lookback=200,
             tolerance_pct=0.005,
             min_touches=1,
             max_levels=4,
@@ -207,7 +207,7 @@ def test_support_resistance_tool_standard_detail_keeps_actionable_lists_without_
         result = fn(
             "EURUSD",
             timeframe="H1",
-            limit=200,
+            lookback=200,
             tolerance_pct=0.005,
             min_touches=2,
             max_levels=3,
@@ -236,7 +236,7 @@ def test_support_resistance_tool_full_detail_keeps_rows_compact_with_structured_
         result = fn(
             "EURUSD",
             timeframe="H1",
-            limit=200,
+            lookback=200,
             tolerance_pct=0.005,
             min_touches=2,
             max_levels=3,
@@ -273,7 +273,7 @@ def test_support_resistance_tool_auto_mode_merges_timeframes():
         result = fn(
             "EURUSD",
             timeframe="auto",
-            limit=200,
+            lookback=200,
             tolerance_pct=0.005,
             min_touches=2,
             max_levels=3,
@@ -307,7 +307,7 @@ def test_support_resistance_tool_full_detail_retains_support_and_resistance_list
         result = fn(
             "EURUSD",
             timeframe="H1",
-            limit=200,
+            lookback=200,
             tolerance_pct=0.005,
             min_touches=2,
             max_levels=3,

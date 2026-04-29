@@ -1107,7 +1107,7 @@ class TestMcpToolSchemas:
         assert props["target"]["type"] == "string"
         assert props["target"]["enum"] == ["return", "price"]
         assert props["detail"]["type"] == "string"
-        assert props["detail"]["enum"] == ["full", "summary", "compact"]
+        assert props["detail"]["enum"] == ["compact", "standard", "summary", "full"]
 
         params_schema = props["params"]
         assert (
