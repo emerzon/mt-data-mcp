@@ -145,6 +145,77 @@ def test_run_data_fetch_candles_compact_omits_default_metadata():
     assert result == {"success": True, "candles": 5, "data": []}
 
 
+def test_run_data_fetch_candles_compact_keeps_freshness_without_meta():
+    request = DataFetchCandlesRequest(symbol="EURUSD", timeframe="H1", limit=5)
+
+    result = run_data_fetch_candles(
+        request,
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_candles_impl=lambda **kwargs: {
+            "success": True,
+            "candles": 5,
+            "data": [],
+            "meta": {
+                "diagnostics": {
+                    "query": {"latency_ms": 12.3, "warmup_bars": 0},
+                    "freshness": {
+                        "data_freshness_seconds": 60.0,
+                        "last_bar_within_policy_window": True,
+                    },
+                },
+            },
+        },
+    )
+
+    assert "meta" not in result
+    assert result["data_freshness_seconds"] == 60.0
+    assert "latency_ms" not in result
+    assert "last_bar_within_policy_window" not in result
+
+
+def test_run_data_fetch_candles_standard_keeps_public_diagnostics_only():
+    request = DataFetchCandlesRequest(
+        symbol="EURUSD",
+        timeframe="H1",
+        limit=5,
+        detail="standard",
+    )
+
+    result = run_data_fetch_candles(
+        request,
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_candles_impl=lambda **kwargs: {
+            "success": True,
+            "symbol": "EURUSD",
+            "timeframe": "H1",
+            "candles": 5,
+            "candles_requested": 5,
+            "data": [],
+            "meta": {
+                "diagnostics": {
+                    "query": {
+                        "latency_ms": 12.3,
+                        "warmup_retry": {"applied": False},
+                        "cache_status": "unknown",
+                    },
+                    "freshness": {
+                        "data_freshness_seconds": 60.0,
+                        "last_bar_within_policy_window": True,
+                    },
+                },
+            },
+        },
+    )
+
+    assert "meta" not in result
+    assert "symbol" not in result
+    assert result["data_freshness_seconds"] == 60.0
+    assert result["latency_ms"] == 12.3
+    assert result["last_bar_within_policy_window"] is True
+    assert "warmup_retry" not in result
+    assert "cache_status" not in result
+
+
 def test_run_data_fetch_candles_compact_keeps_anomaly_metadata():
     request = DataFetchCandlesRequest(symbol="EURUSD", timeframe="H1", limit=5)
 

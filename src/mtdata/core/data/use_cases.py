@@ -171,6 +171,8 @@ def _run_data_fetch_candles_impl(
         _prune_zero_candle_exclusions(result)
         if detail_mode == "compact":
             result = _compact_candles_payload(result)
+        elif detail_mode == "standard":
+            result = _standard_candles_payload(result)
     if isinstance(result, dict) and isinstance(result.get("data"), list):
         out = attach_collection_contract(
             result,
@@ -187,6 +189,7 @@ def _run_data_fetch_candles_impl(
 
 def _compact_candles_payload(result: Dict[str, Any]) -> Dict[str, Any]:
     compact = dict(result)
+    public_diagnostics = _public_candle_diagnostics(result)
     for key in (
         "symbol",
         "timeframe",
@@ -196,11 +199,40 @@ def _compact_candles_payload(result: Dict[str, Any]) -> Dict[str, Any]:
         "hint",
         "incomplete_candles_skipped",
         "last_candle_open",
+        "meta",
     ):
         compact.pop(key, None)
     if not bool(compact.get("has_forming_candle")):
         compact.pop("has_forming_candle", None)
+    if "data_freshness_seconds" in public_diagnostics:
+        compact["data_freshness_seconds"] = public_diagnostics["data_freshness_seconds"]
     return compact
+
+
+def _standard_candles_payload(result: Dict[str, Any]) -> Dict[str, Any]:
+    standard = _compact_candles_payload(result)
+    for key, value in _public_candle_diagnostics(result).items():
+        standard[key] = value
+    return standard
+
+
+def _public_candle_diagnostics(result: Dict[str, Any]) -> Dict[str, Any]:
+    meta = result.get("meta")
+    diagnostics = meta.get("diagnostics") if isinstance(meta, dict) else None
+    if not isinstance(diagnostics, dict):
+        return {}
+
+    public: Dict[str, Any] = {}
+    query = diagnostics.get("query")
+    if isinstance(query, dict) and query.get("latency_ms") is not None:
+        public["latency_ms"] = query["latency_ms"]
+
+    freshness = diagnostics.get("freshness")
+    if isinstance(freshness, dict):
+        for key in ("data_freshness_seconds", "last_bar_within_policy_window"):
+            if freshness.get(key) is not None:
+                public[key] = freshness[key]
+    return public
 
 
 def _prune_zero_candle_exclusions(result: Dict[str, Any]) -> None:
