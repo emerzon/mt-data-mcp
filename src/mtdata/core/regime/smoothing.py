@@ -67,69 +67,78 @@ def _smooth_short_state_runs(
     iterations_run = 0
     for _ in range(iteration_cap):
         runs = _state_runs(state_arr)
-        short_runs = [idx for idx, run in enumerate(runs) if int(run["length"]) < min_bars]
-        if not short_runs:
+        short_candidates = [
+            (idx, run)
+            for idx, run in enumerate(runs)
+            if int(run["length"]) < min_bars and len(runs) > 1
+        ]
+        if not short_candidates:
             break
         iterations_run += 1
-        pass_changed = False
-        for idx in short_runs:
-            run = runs[idx]
-            left = runs[idx - 1] if idx > 0 else None
-            right = runs[idx + 1] if idx + 1 < len(runs) else None
-            if left is None and right is None:
-                continue
-            replacement = None
-            if left is None:
-                replacement = int(right["state"]) if right is not None else None
-            elif right is None:
-                replacement = int(left["state"])
-            else:
-                left_state = int(left["state"])
-                right_state = int(right["state"])
-                if left_state == right_state:
-                    replacement = left_state
-                else:
-                    left_len = int(left["length"])
-                    right_len = int(right["length"])
-                    if left_len > right_len:
-                        replacement = left_state
-                    elif right_len > left_len:
-                        replacement = right_state
-                    else:
-                        left_score = 0.0
-                        right_score = 0.0
-                        if (
-                            probs_arr is not None
-                            and probs_arr.ndim == 2
-                            and probs_arr.shape[0] == state_arr.size
-                        ):
-                            start = int(run["start"])
-                            end = int(run["end"]) + 1
-                            if 0 <= left_state < probs_arr.shape[1]:
-                                left_score = float(np.nanmean(probs_arr[start:end, left_state]))
-                            if 0 <= right_state < probs_arr.shape[1]:
-                                right_score = float(np.nanmean(probs_arr[start:end, right_state]))
-                        replacement = left_state if left_score >= right_score else right_state
-
-            if replacement is None or int(replacement) == int(run["state"]):
-                continue
-            start = int(run["start"])
-            end = int(run["end"]) + 1
-            state_arr[start:end] = int(replacement)
-            if (
-                probs_arr is not None
-                and probs_arr.ndim == 2
-                and probs_arr.shape[0] == state_arr.size
-                and 0 <= int(replacement) < probs_arr.shape[1]
-            ):
-                probs_arr[start:end, :] = 0.0
-                probs_arr[start:end, int(replacement)] = 1.0
-            pass_changed = True
-            changed = True
-        if not pass_changed:
+        idx, run = min(
+            short_candidates,
+            key=lambda item: (int(item[1]["length"]), int(item[1]["start"])),
+        )
+        left = runs[idx - 1] if idx > 0 else None
+        right = runs[idx + 1] if idx + 1 < len(runs) else None
+        if left is None and right is None:
             break
+        replacement = None
+        if left is None:
+            replacement = int(right["state"]) if right is not None else None
+        elif right is None:
+            replacement = int(left["state"])
+        else:
+            left_state = int(left["state"])
+            right_state = int(right["state"])
+            if left_state == right_state:
+                replacement = left_state
+            else:
+                left_len = int(left["length"])
+                right_len = int(right["length"])
+                if left_len > right_len:
+                    replacement = left_state
+                elif right_len > left_len:
+                    replacement = right_state
+                else:
+                    left_score = 0.0
+                    right_score = 0.0
+                    if (
+                        probs_arr is not None
+                        and probs_arr.ndim == 2
+                        and probs_arr.shape[0] == state_arr.size
+                    ):
+                        start = int(run["start"])
+                        end = int(run["end"]) + 1
+                        if 0 <= left_state < probs_arr.shape[1]:
+                            left_score = float(
+                                np.nanmean(probs_arr[start:end, left_state])
+                            )
+                        if 0 <= right_state < probs_arr.shape[1]:
+                            right_score = float(
+                                np.nanmean(probs_arr[start:end, right_state])
+                            )
+                    replacement = left_state if left_score >= right_score else right_state
+
+        if replacement is None or int(replacement) == int(run["state"]):
+            break
+        start = int(run["start"])
+        end = int(run["end"]) + 1
+        state_arr[start:end] = int(replacement)
+        if (
+            probs_arr is not None
+            and probs_arr.ndim == 2
+            and probs_arr.shape[0] == state_arr.size
+            and 0 <= int(replacement) < probs_arr.shape[1]
+        ):
+            probs_arr[start:end, :] = 0.0
+            probs_arr[start:end, int(replacement)] = 1.0
+        changed = True
 
     transitions_after = _count_state_transitions(state_arr)
+    remaining_short_runs = [
+        run for run in _state_runs(state_arr) if int(run["length"]) < min_bars
+    ]
     return state_arr, probs_arr, {
         "min_regime_bars": int(min_bars),
         "smoothing_applied": bool(changed),
@@ -137,6 +146,8 @@ def _smooth_short_state_runs(
         "transitions_after": int(transitions_after),
         "iterations_run": int(iterations_run),
         "iteration_cap": int(iteration_cap),
+        "min_regime_bars_satisfied": len(remaining_short_runs) == 0,
+        "remaining_short_runs": len(remaining_short_runs),
     }
 
 

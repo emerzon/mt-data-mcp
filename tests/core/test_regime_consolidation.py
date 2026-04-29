@@ -1,8 +1,10 @@
 """Tests for core/regime.py — pure consolidation helpers (no MT5)."""
+import numpy as np
 import pytest
 
 from mtdata.core.regime import (
     _consolidate_payload,
+    _smooth_short_state_runs,
     _summary_only_payload,
 )
 
@@ -217,3 +219,78 @@ class TestConsolidatePayload:
         assert result["regime_info"][0]["std_dev"] == pytest.approx(0.01)
         assert "mean_return" not in result["regime_info"][0]
         assert "volatility_pct" not in result["regime_info"][0]
+
+    def test_clustering_regime_info_uses_descriptive_labels(self):
+        payload = {
+            "symbol": "EURUSD",
+            "timeframe": "H1",
+            "method": "clustering",
+            "target": "return",
+            "success": True,
+            "times": ["T1", "T2", "T3"],
+            "state": [0, 1, 2],
+            "state_probabilities": [
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [0.0, 0.0, 1.0],
+            ],
+            "regime_params": {
+                "mean_return": [-0.001, 0.0, 0.001],
+                "volatility": [0.0004, 0.0015, 0.004],
+            },
+        }
+
+        result = _consolidate_payload(payload, "clustering", "compact")
+
+        labels = {entry["label"] for entry in result["regime_info"].values()}
+        assert "regime_0" not in labels
+        assert any(label.startswith("negative_") for label in labels)
+        assert any(label.startswith("positive_") for label in labels)
+
+    def test_ensemble_compact_regime_info_hides_unobserved_states(self):
+        payload = {
+            "symbol": "EURUSD",
+            "timeframe": "H1",
+            "method": "ensemble",
+            "target": "return",
+            "success": True,
+            "times": ["T1", "T2"],
+            "state": [0, 0],
+            "state_probabilities": [[1.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+            "regime_params": {
+                "mean_return": [-0.001, 0.0, 0.0],
+                "volatility": [0.0004, 0.0, 0.0],
+            },
+        }
+
+        result = _consolidate_payload(payload, "ensemble", "compact")
+
+        assert set(result["regime_info"].keys()) == {0}
+
+
+def test_smoothing_satisfies_min_regime_bars_for_alternating_states():
+    state = [idx % 2 for idx in range(12)]
+
+    smoothed, _, meta = _smooth_short_state_runs(
+        np.asarray(state, dtype=int),
+        None,
+        min_regime_bars=4,
+    )
+
+    assert meta["min_regime_bars_satisfied"] is True
+    assert all(run["length"] >= 4 for run in _state_runs_for_test(smoothed))
+
+
+def _state_runs_for_test(state):
+    runs = []
+    start = 0
+    current = int(state[0])
+    for idx in range(1, len(state)):
+        value = int(state[idx])
+        if value == current:
+            continue
+        runs.append({"state": current, "length": idx - start})
+        start = idx
+        current = value
+    runs.append({"state": current, "length": len(state) - start})
+    return runs

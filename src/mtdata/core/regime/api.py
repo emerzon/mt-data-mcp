@@ -10,6 +10,7 @@ import numpy as np
 
 from ...forecast.common import fetch_history as _fetch_history
 from ...forecast.common import log_returns_from_prices as _log_returns_from_prices
+from ...shared.schema import DenoiseSpec, DetailLiteral, TimeframeLiteral
 from ...utils.denoise import _resolve_denoise_base_col
 from ...utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise
 from ...utils.utils import _format_time_minimal
@@ -23,7 +24,6 @@ from ..execution_logging import (
 from ..features import extract_rolling_features
 from ..mt5_gateway import get_mt5_gateway, mt5_connection_error
 from ..output_contract import normalize_output_detail, normalize_output_verbosity_detail
-from ...shared.schema import DenoiseSpec, DetailLiteral, TimeframeLiteral
 from ..tool_calling import call_tool_sync_structured
 from .crypto import (
     _CRYPTO_SYMBOL_HINTS,
@@ -184,6 +184,217 @@ def _normalize_regime_method_name(method: Any) -> str:
     return text
 
 
+def _reliability_label(confidence: Any) -> str:
+    value = _coerce_optional_float(confidence)
+    if value is None:
+        return "unknown"
+    if value >= 0.8:
+        return "high"
+    if value >= 0.6:
+        return "medium"
+    if value >= 0.4:
+        return "low"
+    return "very_low"
+
+
+def _common_reliability(
+    reliability: Optional[Dict[str, Any]],
+    *,
+    source: str,
+    confidence: Any = None,
+) -> Dict[str, Any]:
+    out = dict(reliability or {})
+    if "confidence" not in out:
+        out["confidence"] = round(float(_coerce_optional_float(confidence) or 0.0), 4)
+    out.setdefault("reliability_label", _reliability_label(out.get("confidence")))
+    out.setdefault("source", source)
+    return out
+
+
+def _append_warnings(payload: Dict[str, Any], warnings_to_add: List[str]) -> None:
+    if not warnings_to_add:
+        return
+    existing = payload.get("warnings")
+    warnings_list = list(existing) if isinstance(existing, list) else []
+    for warning_text in warnings_to_add:
+        if warning_text not in warnings_list:
+            warnings_list.append(warning_text)
+    payload["warnings"] = warnings_list
+
+
+def _resolve_state_count_param(
+    params: Dict[str, Any],
+    *,
+    default: int,
+    method: str,
+    aliases: tuple[str, ...] = ("n_states", "k_regimes"),
+    canonical: str = "n_states",
+) -> tuple[Optional[int], Optional[str], str, List[str]]:
+    selected_key = canonical
+    raw_value = params.get(canonical)
+    for alias in aliases:
+        if alias in params and params.get(alias) is not None:
+            if raw_value is None or alias == canonical:
+                selected_key = alias
+                raw_value = params.get(alias)
+            elif str(params.get(alias)) != str(raw_value):
+                return (
+                    None,
+                    f"Conflicting state-count parameters for {method}: "
+                    f"{canonical}={raw_value!r} and {alias}={params.get(alias)!r}.",
+                    selected_key,
+                    [],
+                )
+    if raw_value is None:
+        raw_value = default
+        selected_key = canonical
+    try:
+        value = int(raw_value)
+    except Exception:
+        return None, f"{canonical} must be an integer >= 2 for {method}.", selected_key, []
+    warnings_out: List[str] = []
+    if selected_key != canonical:
+        warnings_out.append(
+            f"Parameter '{selected_key}' is accepted as an alias for '{canonical}' "
+            f"for {method}; prefer '{canonical}'."
+        )
+    return value, None, selected_key, warnings_out
+
+
+def _method_parameter_warnings(
+    method: str,
+    params: Dict[str, Any],
+    *,
+    threshold: float,
+    requested_lookback: int,
+    requested_min_regime_bars: int,
+    include_series: bool,
+    max_regimes: int,
+    output: str,
+) -> List[str]:
+    warnings_out: List[str] = []
+    if method != "bocpd" and (
+        abs(float(threshold) - 0.5) > 1e-12 or "threshold" in params
+    ):
+        warnings_out.append(
+            "threshold only applies to BOCPD change-point detection and is ignored "
+            f"for method='{method}'."
+        )
+    if method == "rule_based":
+        if requested_lookback >= 0 or "lookback" in params:
+            warnings_out.append(
+                "lookback is not used by rule_based; use params.window_bars to control "
+                "the rule-based analysis window."
+            )
+        if requested_min_regime_bars >= 0 or "min_regime_bars" in params:
+            warnings_out.append(
+                "min_regime_bars is not used by rule_based because it emits one "
+                "current-window regime."
+            )
+        if max_regimes != 10:
+            warnings_out.append(
+                "max_regimes has no effect for rule_based because it emits one "
+                "current-window regime."
+            )
+        if include_series and output != "full":
+            warnings_out.append(
+                "include_series is only emitted for rule_based when detail='full'."
+            )
+    return warnings_out
+
+
+def _smoothing_warnings(method: str, smoothing_meta: Dict[str, Any]) -> List[str]:
+    if bool(smoothing_meta.get("min_regime_bars_satisfied", True)):
+        return []
+    return [
+        "min_regime_bars could not be fully satisfied for "
+        f"method='{method}' with the available decoded state sequence; "
+        f"{int(smoothing_meta.get('remaining_short_runs', 0))} short run(s) remain."
+    ]
+
+
+def _summarize_rule_based_current_regime(result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    current_regime = result.get("current_regime")
+    if not isinstance(current_regime, dict):
+        return None
+    regime = result.get("regime")
+    if not isinstance(regime, dict):
+        regime = current_regime
+    entry = {
+        key: regime.get(key)
+        for key in (
+            "state",
+            "direction",
+            "trend_strength",
+            "efficiency_ratio",
+            "window_bars",
+            "window_move_pct",
+            "signal_source",
+        )
+        if regime.get(key) is not None
+    }
+    for key in ("regime_id", "label", "since", "bars"):
+        value = current_regime.get(key)
+        if value is not None:
+            entry[key] = value
+    regime_confidence = current_regime.get("regime_confidence")
+    if regime_confidence is None:
+        regime_confidence = current_regime.get("confidence")
+    if regime_confidence is not None:
+        entry["regime_confidence"] = regime_confidence
+    return entry or None
+
+
+def _summarize_bocpd_current_regime(result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    current_regime = result.get("current_regime")
+    if not isinstance(current_regime, dict) or not current_regime:
+        regimes = result.get("regimes")
+        if isinstance(regimes, list) and regimes and isinstance(regimes[-1], dict):
+            last = regimes[-1]
+            current_regime = {
+                "started_at": last.get("started_at", last.get("start")),
+                "bars_since_change": last.get("bars"),
+            }
+        else:
+            return None
+
+    entry = {
+        key: current_regime.get(key)
+        for key in (
+            "status",
+            "started_at",
+            "bars_since_change",
+            "transition_risk",
+            "latest_transition_probability",
+        )
+        if current_regime.get(key) is not None
+    }
+
+    transition_summary = result.get("transition_summary")
+    if not isinstance(transition_summary, dict):
+        transition_summary = result.get("summary")
+    if isinstance(transition_summary, dict):
+        recent_change_points_count = transition_summary.get(
+            "recent_change_points_count",
+            transition_summary.get("change_points_count"),
+        )
+        if recent_change_points_count is not None:
+            entry["recent_change_points_count"] = recent_change_points_count
+        for key in ("recent_transition_activity", "calibration_status"):
+            value = transition_summary.get(key)
+            if value is not None:
+                entry[key] = value
+
+    regime_context = result.get("regime_context")
+    if isinstance(regime_context, dict):
+        for key in ("bias", "return_pct", "volatility_pct"):
+            value = regime_context.get(key)
+            if value is not None:
+                entry[key] = value
+
+    return entry or None
+
+
 def _summarize_current_regime_for_comparison(
     method: str,
     result: Any,
@@ -192,79 +403,10 @@ def _summarize_current_regime_for_comparison(
         return None
 
     if method == "bocpd":
-        current_regime = result.get("current_regime")
-        if not isinstance(current_regime, dict) or not current_regime:
-            regimes = result.get("regimes")
-            if isinstance(regimes, list) and regimes and isinstance(regimes[-1], dict):
-                last = regimes[-1]
-                current_regime = {
-                    "started_at": last.get("started_at", last.get("start")),
-                    "bars_since_change": last.get("bars"),
-                }
-            else:
-                return None
-
-        entry = {
-            key: current_regime.get(key)
-            for key in (
-                "status",
-                "started_at",
-                "bars_since_change",
-                "transition_risk",
-                "latest_transition_probability",
-            )
-            if current_regime.get(key) is not None
-        }
-
-        transition_summary = result.get("transition_summary")
-        if not isinstance(transition_summary, dict):
-            transition_summary = result.get("summary")
-        if isinstance(transition_summary, dict):
-            recent_change_points_count = transition_summary.get(
-                "recent_change_points_count",
-                transition_summary.get("change_points_count"),
-            )
-            if recent_change_points_count is not None:
-                entry["recent_change_points_count"] = recent_change_points_count
-            for key in ("recent_transition_activity", "calibration_status"):
-                value = transition_summary.get(key)
-                if value is not None:
-                    entry[key] = value
-
-        regime_context = result.get("regime_context")
-        if isinstance(regime_context, dict):
-            for key in ("bias", "return_pct", "volatility_pct"):
-                value = regime_context.get(key)
-                if value is not None:
-                    entry[key] = value
-
-        return entry or None
+        return _summarize_bocpd_current_regime(result)
 
     if method == "rule_based":
-        current_regime = result.get("current_regime")
-        if not isinstance(current_regime, dict):
-            return None
-        regime = result.get("regime")
-        if not isinstance(regime, dict):
-            regime = current_regime
-        entry = {
-            key: regime.get(key)
-            for key in (
-                "state",
-                "direction",
-                "trend_strength",
-                "efficiency_ratio",
-                "window_bars",
-                "window_move_pct",
-                "signal_source",
-            )
-            if current_regime.get(key) is not None
-        }
-        for key in ("label", "confidence", "since", "bars"):
-            value = current_regime.get(key)
-            if value is not None:
-                entry[key] = value
-        return entry or None
+        return _summarize_rule_based_current_regime(result)
 
     current = result.get("current_regime")
     if not isinstance(current, dict) or not current:
@@ -746,6 +888,7 @@ def regime_detect(  # noqa: C901
     requested_method = str(method).strip().lower()
     method = _normalize_regime_method_name(requested_method)
     started_at = time.perf_counter()
+    global_warnings: List[str] = []
     log_operation_start(
         logger,
         operation="regime_detect",
@@ -759,6 +902,9 @@ def regime_detect(  # noqa: C901
 
     def _finish(result: Dict[str, Any]) -> Dict[str, Any]:
         if isinstance(result, dict) and "error" not in result:
+            if requested_method != method:
+                result.setdefault("requested_method", requested_method)
+            _append_warnings(result, global_warnings)
             result.setdefault("timezone", "UTC")
         log_operation_finish(
             logger,
@@ -781,6 +927,8 @@ def regime_detect(  # noqa: C901
         return _finish(connection_error)
     try:
         p = dict(params or {})
+        requested_lookback = lookback
+        requested_min_regime_bars = min_regime_bars
 
         # Apply timeframe-based defaults if not explicitly provided
         tf_defaults = _get_timeframe_defaults(timeframe)
@@ -803,6 +951,16 @@ def regime_detect(  # noqa: C901
 
         # Override lookback with effective value (will be used throughout function)
         lookback = p.get("lookback", effective_lookback)
+        global_warnings = _method_parameter_warnings(
+            method,
+            p,
+            threshold=threshold,
+            requested_lookback=int(requested_lookback),
+            requested_min_regime_bars=int(requested_min_regime_bars),
+            include_series=bool(include_series),
+            max_regimes=int(max_regimes),
+            output=output,
+        )
         df = _fetch_history(symbol, timeframe, int(max(limit, 50)), as_of=None)
         if len(df) < 10:
             return _finish({"error": "Insufficient history"})
@@ -1064,6 +1222,10 @@ def regime_detect(  # noqa: C901
                 calibration_age_bars=int(calibration_age_bars),
                 threshold_calibrated=bool(threshold_calibrated),
             )
+            reliability = _common_reliability(
+                reliability,
+                source="bocpd_calibration",
+            )
             payload = {
                 "success": True,
                 "symbol": symbol,
@@ -1138,7 +1300,18 @@ def regime_detect(  # noqa: C901
                         "details": {"method": "ms_ar", "requires": ["statsmodels"]},
                     }
                 )
-            k_regimes, _ = _coerce_param(p, "k_regimes", default=2, cast=int)
+            k_regimes, k_regimes_error, k_regimes_source, state_count_warnings = (
+                _resolve_state_count_param(
+                    p,
+                    default=2,
+                    method="ms_ar",
+                    aliases=("n_states", "k_regimes"),
+                )
+            )
+            if k_regimes_error is not None:
+                return _finish({"error": k_regimes_error})
+            if k_regimes is None or k_regimes < 2:
+                return _finish({"error": "n_states must be >= 2 for ms_ar."})
             order, _ = _coerce_param(p, "order", default=0, cast=int)
             try:
                 mod = MarkovRegression(
@@ -1203,6 +1376,8 @@ def regime_detect(  # noqa: C901
                 "regime_params": msar_regime_params,
                 "params_used": {
                     "k_regimes": k_regimes,
+                    "n_states": int(k_regimes),
+                    "state_count_param": k_regimes_source,
                     "order": order,
                     "min_regime_bars": int(min_regime_bars_val),
                     "relabeled": bool(canon_meta.get("relabeled", False)),
@@ -1219,6 +1394,8 @@ def regime_detect(  # noqa: C901
             }
             if canon_meta.get("mapping"):
                 payload["params_used"]["label_mapping"] = canon_meta["mapping"]
+            _append_warnings(payload, state_count_warnings)
+            _append_warnings(payload, _smoothing_warnings(method, smoothing_meta))
             if converged is not None:
                 payload["params_used"]["converged"] = bool(converged)
                 if converged is False:
@@ -1230,7 +1407,10 @@ def regime_detect(  # noqa: C901
                 smoothed_probs=probs,
                 params_used=payload["params_used"],
             )
-            payload["reliability"] = reliability
+            payload["reliability"] = _common_reliability(
+                reliability,
+                source="ms_ar_smoothed_probabilities",
+            )
 
             if output in ("summary", "compact"):
                 n = _summary_window_size(lookback, len(state))
@@ -1275,16 +1455,17 @@ def regime_detect(  # noqa: C901
             )
 
         elif method == "hmm":  # 'hmm' (mixture/HMM-lite)
-            n_states, n_states_error = _coerce_param(
-                p,
-                "n_states",
-                default=2,
-                cast=int,
-                error="n_states must be an integer >= 2 for hmm.",
+            n_states, n_states_error, n_states_source, state_count_warnings = (
+                _resolve_state_count_param(
+                    p,
+                    default=2,
+                    method="hmm",
+                    aliases=("n_states", "k_regimes"),
+                )
             )
             if n_states_error is not None:
                 return _finish({"error": n_states_error})
-            if n_states < 2:
+            if n_states is None or n_states < 2:
                 return _finish({"error": "n_states must be >= 2 for hmm."})
             try:
                 from ...forecast.monte_carlo import fit_gaussian_mixture_1d
@@ -1340,6 +1521,7 @@ def regime_detect(  # noqa: C901
                 "params_used": {
                     "n_states": int(n_states),
                     "fitted_n_states": int(len(mu)),
+                    "state_count_param": n_states_source,
                     "min_regime_bars": int(min_regime_bars_val),
                     "relabeled": bool(canon_meta.get("relabeled", False)),
                     "smoothing_applied": bool(
@@ -1355,9 +1537,14 @@ def regime_detect(  # noqa: C901
             }
             if canon_meta.get("mapping"):
                 payload["params_used"]["label_mapping"] = canon_meta["mapping"]
+            _append_warnings(payload, state_count_warnings)
+            _append_warnings(payload, _smoothing_warnings(method, smoothing_meta))
             # Add reliability info
             reliability = _hmm_reliability_from_gamma(gamma_for_payload)
-            payload["reliability"] = reliability
+            payload["reliability"] = _common_reliability(
+                reliability,
+                source="hmm_state_probabilities",
+            )
 
             if output in ("summary", "compact"):
                 n = _summary_window_size(lookback, len(state))
@@ -1430,7 +1617,18 @@ def regime_detect(  # noqa: C901
             except ImportError as ex:
                 return _finish({"error": f"Clustering dependencies missing: {ex}"})
             window_size, _ = _coerce_param(p, "window_size", default=20, cast=int)
-            k_regimes, _ = _coerce_param(p, "k_regimes", default=3, cast=int)
+            k_regimes, k_regimes_error, k_regimes_source, state_count_warnings = (
+                _resolve_state_count_param(
+                    p,
+                    default=3,
+                    method="clustering",
+                    aliases=("n_states", "k_regimes", "n_clusters"),
+                )
+            )
+            if k_regimes_error is not None:
+                return _finish({"error": k_regimes_error})
+            if k_regimes is None or k_regimes < 2:
+                return _finish({"error": "n_states must be >= 2 for clustering."})
             use_pca = bool(p.get("use_pca", True))
             n_components, _ = _coerce_param(p, "n_components", default=3, cast=int)
             clustering_warnings: List[str] = []
@@ -1562,6 +1760,8 @@ def regime_detect(  # noqa: C901
                 "regime_params": clustering_regime_params,
                 "params_used": {
                     "k_regimes": k_regimes,
+                    "n_states": int(k_regimes),
+                    "state_count_param": k_regimes_source,
                     "algorithm": algorithm,
                     "window_size": window_size,
                     "use_pca": use_pca,
@@ -1578,6 +1778,8 @@ def regime_detect(  # noqa: C901
             }
             if clustering_warnings:
                 payload["warnings"] = clustering_warnings
+            _append_warnings(payload, state_count_warnings)
+            _append_warnings(payload, _smoothing_warnings(method, smoothing_meta))
 
             # Summary stats
             if output in ("summary", "compact"):
@@ -1641,6 +1843,10 @@ def regime_detect(  # noqa: C901
                 "variance_ratio": round(variance_ratio, 4),
                 "source": "cluster_separation",
             }
+            payload["reliability"] = _common_reliability(
+                payload["reliability"],
+                source="cluster_separation",
+            )
 
             return _finish(
                 _consolidate_payload(
@@ -1667,6 +1873,13 @@ def regime_detect(  # noqa: C901
             # Auto-detect optimal n_states if not explicitly provided
             # Based on volatility distribution characteristics
             n_states_input = p.get("n_states")
+            state_count_warnings: List[str] = []
+            if n_states_input is None and p.get("k_regimes") is not None:
+                n_states_input = p.get("k_regimes")
+                state_count_warnings.append(
+                    "Parameter 'k_regimes' is accepted as an alias for 'n_states' "
+                    "for garch; prefer 'n_states'."
+                )
 
             if n_states_input is None:
                 # Calculate rolling realized volatility for better characterization
@@ -1717,7 +1930,10 @@ def regime_detect(  # noqa: C901
                 n_states_garch = n_states_auto
                 garch_auto_n_states = True
             else:
-                n_states_garch, _ = _coerce_param(p, "n_states", default=3, cast=int)
+                try:
+                    n_states_garch = int(n_states_input)
+                except Exception:
+                    return _finish({"error": "n_states must be an integer >= 2 for garch."})
                 garch_auto_n_states = False
             garch_p, _ = _coerce_param(p, "p_order", default=1, cast=int)
             garch_q, _ = _coerce_param(p, "q_order", default=1, cast=int)
@@ -1871,6 +2087,8 @@ def regime_detect(  # noqa: C901
                 }
                 if garch_warnings:
                     payload["warnings"] = garch_warnings
+                _append_warnings(payload, state_count_warnings)
+                _append_warnings(payload, _smoothing_warnings(method, smoothing_meta))
 
                 # Add reliability estimate based on model fit
                 if hasattr(res, "aic") and hasattr(res, "bic"):
@@ -1895,6 +2113,10 @@ def regime_detect(  # noqa: C901
                         "bic_per_sample": round(bic_per_sample, 4),
                         "source": "bic_normalized",
                     }
+                    payload["reliability"] = _common_reliability(
+                        payload["reliability"],
+                        source="bic_normalized",
+                    )
 
                 # Add summary for compact/summary output
                 if output in ("summary", "compact"):
@@ -2074,15 +2296,20 @@ def regime_detect(  # noqa: C901
                 )
             except Exception:
                 confidence = 0.0
+            regime_confidence = round(float(confidence), 4)
+            regime_id_by_state = {"ranging": 0, "trending": 1, "transition": 2}
+            regime_id = regime_id_by_state.get(regime_state, 2)
+            regime_since = (
+                t_fmt[-int(window_bars)] if len(t_fmt) >= int(window_bars) else t_fmt[0]
+            )
+            regime_end = t_fmt[-1]
             current_regime = {
+                "regime_id": int(regime_id),
                 "label": regime_state,
-                "confidence": round(float(confidence), 4),
-                "since": (
-                    t_fmt[-int(window_bars)]
-                    if len(t_fmt) >= int(window_bars)
-                    else t_fmt[0]
-                ),
+                "regime_confidence": regime_confidence,
+                "since": regime_since,
                 "bars": int(window_bars),
+                "direction": direction,
             }
             regime_payload = dict(regime_info)
             if output == "compact":
@@ -2099,6 +2326,14 @@ def regime_detect(  # noqa: C901
                     if key in regime_payload
                 }
 
+            reliability = _common_reliability(
+                {
+                    "confidence": regime_confidence,
+                    "trend_strength": round(trend_strength, 4),
+                    "efficiency_ratio": round(efficiency_ratio, 4),
+                },
+                source="rule_based_trend_efficiency",
+            )
             payload = {
                 "success": True,
                 "symbol": symbol,
@@ -2107,6 +2342,28 @@ def regime_detect(  # noqa: C901
                 "target": target,
                 "regime": regime_payload,
                 "current_regime": current_regime,
+                "regimes": [
+                    {
+                        "start": regime_since,
+                        "end": regime_end,
+                        "bars": int(window_bars),
+                        "regime": int(regime_id),
+                        "label": regime_state,
+                        "avg_conf": regime_confidence,
+                        "direction": direction,
+                    }
+                ],
+                "regime_info": {
+                    int(regime_id): {
+                        "label": regime_state,
+                        "direction": direction,
+                        "trend_strength": round(trend_strength, 4),
+                        "efficiency_ratio": round(efficiency_ratio, 4),
+                        "window_move_pct": round((move / base_price) * 100.0, 4),
+                    }
+                },
+                "reliability": reliability,
+                "total_regimes": 1,
                 "params_used": {
                     "efficiency_threshold": float(efficiency_threshold),
                     "trend_strength_threshold": float(trend_strength_threshold),
@@ -2114,6 +2371,20 @@ def regime_detect(  # noqa: C901
                     "signal_source": "price",
                 },
             }
+            if output == "summary":
+                payload["summary"] = {
+                    "lookback": int(window_bars),
+                    "last_state": int(regime_id),
+                    "label": regime_state,
+                    "direction": direction,
+                    "regime_confidence": regime_confidence,
+                }
+                return _finish(_summary_only_payload(payload))
+            if output == "full" and include_series:
+                payload["series"] = {
+                    "times": t_fmt[-int(window_bars) :],
+                    "state": [int(regime_id)] * int(window_bars),
+                }
             if output == "compact":
                 payload.pop("params_used", None)
 
@@ -2135,7 +2406,18 @@ def regime_detect(  # noqa: C901
                 )
 
             wavelet_name = str(p.get("wavelet", "db4")).strip()
-            n_states_wv, _ = _coerce_param(p, "n_states", default=3, cast=int)
+            n_states_wv, n_states_error, n_states_source, state_count_warnings = (
+                _resolve_state_count_param(
+                    p,
+                    default=3,
+                    method="wavelet",
+                    aliases=("n_states", "k_regimes"),
+                )
+            )
+            if n_states_error is not None:
+                return _finish({"error": n_states_error})
+            if n_states_wv is None:
+                n_states_wv = 3
             energy_window, _ = _coerce_param(p, "energy_window", default=30, cast=int)
 
             if n_states_wv < 2:
@@ -2299,11 +2581,26 @@ def regime_detect(  # noqa: C901
                     "wavelet": wavelet_name,
                     "level": level,
                     "n_states": n_states_wv,
+                    "state_count_param": n_states_source,
                     "energy_window": energy_window,
                     "min_regime_bars": int(min_regime_bars_val),
                     "smoothing_applied": smoothing_meta.get("smoothing_applied", False),
                 },
             }
+            _append_warnings(payload, state_count_warnings)
+            _append_warnings(payload, _smoothing_warnings(method, smoothing_meta))
+            max_state_prob = np.max(probs_valid, axis=1) if probs_valid.size else np.array([])
+            payload["reliability"] = _common_reliability(
+                {
+                    "confidence": round(float(np.mean(max_state_prob)), 4)
+                    if max_state_prob.size
+                    else 0.0,
+                    "mean_state_probability": round(float(np.mean(max_state_prob)), 4)
+                    if max_state_prob.size
+                    else 0.0,
+                },
+                source="wavelet_cluster_distance",
+            )
 
             if output in ("summary", "compact"):
                 n_summary = _summary_window_size(lookback, len(full_states))
@@ -2360,6 +2657,15 @@ def regime_detect(  # noqa: C901
 
             # Auto-detect optimal n_states if not explicitly provided
             n_states_input = p.get("n_states")
+            state_count_warnings: List[str] = []
+            n_states_source = "n_states"
+            if n_states_input is None and p.get("k_regimes") is not None:
+                n_states_input = p.get("k_regimes")
+                n_states_source = "k_regimes"
+                state_count_warnings.append(
+                    "Parameter 'k_regimes' is accepted as an alias for 'n_states' "
+                    "for ensemble; prefer 'n_states'."
+                )
             if n_states_input is None:
                 # Analyze return distribution characteristics
                 returns_kurt = (
@@ -2382,7 +2688,12 @@ def regime_detect(  # noqa: C901
                 ens_auto_n_states = True
                 ens_auto_metrics = {"returns_kurtosis": round(returns_kurt, 2)}
             else:
-                n_states_ens, _ = _coerce_param(p, "n_states", default=4, cast=int)
+                try:
+                    n_states_ens = int(n_states_input)
+                except Exception:
+                    return _finish(
+                        {"error": "n_states must be an integer >= 2 for ensemble."}
+                    )
                 ens_auto_n_states = False
                 ens_auto_metrics = {}
 
@@ -2581,6 +2892,7 @@ def regime_detect(  # noqa: C901
                     "methods": method_names,
                     "voting": voting,
                     "n_states": n_states_ens,
+                    "state_count_param": n_states_source,
                     "n_states_auto": bool(ens_auto_n_states),
                     "n_methods_succeeded": len(method_names),
                     "min_regime_bars": int(min_regime_bars_val),
@@ -2591,6 +2903,16 @@ def regime_detect(  # noqa: C901
                 payload["auto_detection"] = ens_auto_metrics
             if sub_errors:
                 payload["warnings"] = [f"Sub-method errors: {'; '.join(sub_errors)}"]
+            _append_warnings(payload, state_count_warnings)
+            _append_warnings(payload, _smoothing_warnings(method, smoothing_meta))
+            payload["reliability"] = _common_reliability(
+                {
+                    "confidence": mean_agreement,
+                    "mean_agreement": mean_agreement,
+                    "methods_considered": method_names,
+                },
+                source="ensemble_agreement",
+            )
 
             if output in ("summary", "compact"):
                 n_summary = _summary_window_size(lookback, len(ensemble_state))

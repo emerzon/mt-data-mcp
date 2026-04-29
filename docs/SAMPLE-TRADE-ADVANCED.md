@@ -48,7 +48,7 @@ mtdata-cli regime_detect EURUSD --timeframe H1 --limit 1500 \
 Optional: MS‑AR(1) (statsmodels)
 ```bash
 mtdata-cli regime_detect EURUSD --timeframe H1 --limit 1500 \
-  --method ms_ar --params "k_regimes=2 order=1" --json
+  --method ms_ar --params "n_states=2 order=1" --json
 ```
 
 ---

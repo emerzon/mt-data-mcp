@@ -82,7 +82,10 @@ class TestConsolidatePayloadBOCPD:
         assert len(res["regimes"]) == 2
         assert "current_regime" in res
         assert "transition_summary" in res
-        assert "avg_conf" not in res["regimes"][0]
+        assert res["regimes"][0]["start"] == "T1"
+        assert res["regimes"][0]["end"] == "T1"
+        assert res["regimes"][0]["avg_conf"] == 0.9
+        assert res["regimes"][0]["label"] == "segment_0"
         assert "transition_prob_at_start" not in res["regimes"][0]
         assert res["regimes"][1]["transition_prob_at_start"] == 0.9
 

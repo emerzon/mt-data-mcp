@@ -7,9 +7,8 @@ import pandas as pd
 import pytest
 
 from mtdata.core import regime as regime_mod
-from mtdata.core.regime import _consolidate_payload
+from mtdata.core.regime import _consolidate_payload, regime_detect
 from mtdata.core.regime import api as regime_api
-from mtdata.core.regime import regime_detect
 from mtdata.core.regime.api import _build_all_method_comparison
 from mtdata.core.regime.payload import _build_regime_descriptions
 
@@ -445,4 +444,72 @@ def test_rule_based_compact_omits_explanatory_fields() -> None:
     assert "note" not in regime
     assert "signal_source" not in regime
     assert "params_used" not in out
-    assert "regimes" not in out
+    assert out["current_regime"]["regime_confidence"] == out["regimes"][0]["avg_conf"]
+    assert out["regimes"][0]["start"] == out["current_regime"]["since"]
+    assert out["regime_info"][out["current_regime"]["regime_id"]]["label"] == "ranging"
+    assert out["total_regimes"] == 1
+
+
+def test_rule_based_warns_for_inapplicable_parameters() -> None:
+    raw = _unwrap(regime_detect)
+
+    with (
+        patch("mtdata.core.regime._fetch_history", return_value=_choppy_bearish_df()),
+        patch("mtdata.core.regime._resolve_denoise_base_col", return_value="close"),
+        patch("mtdata.core.regime._format_time_minimal", side_effect=lambda x: f"T{x}"),
+    ):
+        out = raw(
+            symbol="TEST",
+            timeframe="H1",
+            limit=120,
+            method="rule_based",
+            threshold=0.9,
+            lookback=50,
+            min_regime_bars=5,
+            max_regimes=2,
+            detail="full",
+        )
+
+    warnings = "\n".join(out.get("warnings", []))
+    assert "threshold only applies to BOCPD" in warnings
+    assert "lookback is not used by rule_based" in warnings
+    assert "min_regime_bars is not used by rule_based" in warnings
+    assert "max_regimes has no effect for rule_based" in warnings
+
+
+def test_gmm_alias_reports_requested_method_and_common_reliability() -> None:
+    raw = _unwrap(regime_detect)
+    history = _downtrend_df(40)
+    gamma = np.tile(np.array([[0.9, 0.1], [0.2, 0.8]], dtype=float), (20, 1))[:39]
+    weights = np.array([0.5, 0.5])
+    mu = np.array([-0.001, 0.001])
+    sigma = np.array([0.0004, 0.002])
+
+    with (
+        patch("mtdata.core.regime._fetch_history", return_value=history),
+        patch("mtdata.core.regime._resolve_denoise_base_col", return_value="close"),
+        patch("mtdata.core.regime._format_time_minimal", side_effect=lambda x: f"T{x}"),
+        patch(
+            "mtdata.core.regime.api.fit_gaussian_mixture_1d",
+            return_value=(weights, mu, sigma, gamma, None),
+            create=True,
+        ),
+    ):
+        out = raw(
+            symbol="TEST",
+            timeframe="H1",
+            limit=len(history),
+            method="gmm",
+            params={"n_states": 2},
+            detail="full",
+        )
+
+    assert out["method"] == "hmm"
+    assert out["requested_method"] == "gmm"
+    assert out["reliability"]["reliability_label"] in {
+        "high",
+        "medium",
+        "low",
+        "very_low",
+    }
+    assert out["reliability"]["source"] == "hmm_state_probabilities"

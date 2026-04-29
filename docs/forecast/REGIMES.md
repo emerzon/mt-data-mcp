@@ -63,6 +63,7 @@ summary:
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `n_states` | 2 | Number of regimes to detect |
+| `k_regimes` | alias | Backward-compatible alias for `n_states` |
 
 **When to use:**
 - Ongoing regime classification
@@ -117,8 +118,10 @@ summary:
 
 **Example:**
 ```bash
-mtdata-cli regime_detect EURUSD --timeframe H1 --method ms_ar --params "k_regimes=2 order=1"
+mtdata-cli regime_detect EURUSD --timeframe H1 --method ms_ar --params "n_states=2 order=1"
 ```
+
+`k_regimes` remains accepted as a compatibility alias for `n_states`.
 
 **When to use:**
 - When regime changes affect both mean and autocorrelation structure
@@ -132,8 +135,10 @@ mtdata-cli regime_detect EURUSD --timeframe H1 --method ms_ar --params "k_regime
 
 **Example:**
 ```bash
-mtdata-cli regime_detect EURUSD --timeframe H1 --method clustering --params "n_clusters=3"
+mtdata-cli regime_detect EURUSD --timeframe H1 --method clustering --params "n_states=3"
 ```
+
+`k_regimes` and `n_clusters` remain accepted as compatibility aliases for `n_states`.
 
 **When to use:**
 - Exploratory regime discovery without a parametric model
@@ -201,6 +206,44 @@ mtdata-cli regime_detect EURUSD --timeframe H1 --method hmm --json
 ```
 Returns structured JSON for programmatic use.
 
+Canonical fields for successful compact/full JSON responses:
+
+| Field | Applies to | Notes |
+|-------|------------|-------|
+| `method` | all methods | Normalized implementation method. For example, requesting `gmm` runs the HMM-lite implementation and reports `method: "hmm"`. |
+| `requested_method` | aliases | Present when the requested method differs from `method`, such as `gmm -> hmm`. |
+| `current_regime` | all methods | Uses `regime_id`, `label`, `since`, `bars`, and `regime_confidence` when those concepts apply. BOCPD also includes transition-oriented fields such as `status` and `transition_risk`. |
+| `regimes` | all compact/full methods | Uses `start`, `end`, and `bars` consistently. BOCPD may also include legacy `started_at`/`ended_at` aliases for transition compatibility. |
+| `regime_info` | state/rule methods | Describes regime labels and statistics. Clustering labels are derived from return/volatility when available instead of opaque `regime_N` names. |
+| `reliability` | all methods | Always includes `confidence`, `reliability_label`, and `source`; method-specific diagnostics may add more fields. |
+| `warnings` | as needed | Explains accepted parameters that do not apply to the selected method. |
+
+`current_regime.regime_confidence` is the canonical confidence key. Older method-specific `confidence` values may still appear in compatibility fields, but new consumers should use `regime_confidence`.
+
+### Parameter aliases and applicability
+
+Use `n_states` as the canonical state-count parameter for HMM/GMM, MS-AR, clustering, GARCH, wavelet, and ensemble. Compatibility aliases are still accepted where historically used:
+
+| Alias | Applies to | Preferred |
+|-------|------------|-----------|
+| `k_regimes` | MS-AR, clustering, GARCH, wavelet, ensemble, HMM/GMM compatibility | `n_states` |
+| `n_clusters` | clustering compatibility | `n_states` |
+
+`threshold` only applies to BOCPD change-point detection. If supplied for non-BOCPD methods, the tool reports a warning rather than silently changing confidence filtering.
+
+For `rule_based`, use `params.window_bars` to choose the analysis window. `lookback`, `min_regime_bars`, and `max_regimes` do not change rule-based output because it emits one current-window regime; non-default uses are reported in `warnings`.
+
+### Auto-detected state counts
+
+Some methods infer `n_states` when it is not explicitly supplied:
+
+| Method | Auto-detection basis |
+|--------|----------------------|
+| `garch` | Realized-volatility percentile spread plus return kurtosis |
+| `ensemble` | Return-distribution kurtosis |
+
+These methods can choose different state counts on the same data because they optimize for different regime concepts: volatility tiers for GARCH and consensus return/volatility granularity for ensemble.
+
 ### Richer Sections
 ```bash
 mtdata-cli regime_detect EURUSD --timeframe H1 --method hmm --extras metadata,diagnostics --json
@@ -216,8 +259,8 @@ Adds supported richer sections such as metadata and diagnostics.
 | Classify regimes (2 states) | `mtdata-cli regime_detect EURUSD --method hmm --params "n_states=2"` |
 | Classify regimes (3 states) | `mtdata-cli regime_detect EURUSD --method hmm --params "n_states=3"` |
 | Detect change points | `mtdata-cli regime_detect EURUSD --method bocpd --threshold 0.5` |
-| Markov-switching AR | `mtdata-cli regime_detect EURUSD --method ms_ar --params "k_regimes=2"` |
-| Clustering | `mtdata-cli regime_detect EURUSD --method clustering --params "n_clusters=3"` |
+| Markov-switching AR | `mtdata-cli regime_detect EURUSD --method ms_ar --params "n_states=2"` |
+| Clustering | `mtdata-cli regime_detect EURUSD --method clustering --params "n_states=3"` |
 
 ---
 

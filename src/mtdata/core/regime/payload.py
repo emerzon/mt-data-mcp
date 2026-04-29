@@ -357,7 +357,11 @@ def _interpret_regime_label(
                 return labels[regime_id]
         return f"price_regime_{regime_id}"
 
-    if method in ("hmm", "ms_ar") and mu is not None and sigma is not None:
+    if (
+        method in ("hmm", "ms_ar", "clustering")
+        and mu is not None
+        and sigma is not None
+    ):
         return_level = _return_level_from_mean(float(mu))
         vol_level = _volatility_level_from_sigma(float(sigma))
         return f"{return_level}_{vol_level}"
@@ -729,9 +733,12 @@ def _consolidate_payload(  # noqa: C901
             regime_id = seg["regime"]
             if method == "bocpd":
                 row = {
+                    "start": seg["start"],
+                    "end": seg["end"],
                     "started_at": seg["start"],
                     "ended_at": seg["end"],
                     "bars": seg["duration"],
+                    "regime": regime_id,
                 }
                 if seg.get("transition_conf") is not None:
                     row["transition_prob_at_start"] = round(
@@ -749,6 +756,14 @@ def _consolidate_payload(  # noqa: C901
                                 target=payload.get("target"),
                             )
                         )
+                bias = row.get("bias")
+                if isinstance(bias, str) and bias:
+                    row["label"] = f"{bias}_segment"
+                else:
+                    row["label"] = f"segment_{regime_id}"
+                avg_transition_prob = round(float(seg["confidence"]), 4)
+                row["avg_transition_prob"] = avg_transition_prob
+                row["avg_conf"] = round(max(0.0, min(1.0, 1.0 - avg_transition_prob)), 4)
             else:
                 row = {
                     "start": seg["start"],
@@ -790,8 +805,12 @@ def _consolidate_payload(  # noqa: C901
                         bars_since_change=last_seg["bars"],
                         transition_risk=transition_risk,
                     ),
+                    "regime_id": last_seg.get("regime"),
+                    "label": last_seg.get("label"),
+                    "since": last_seg["start"],
                     "started_at": last_seg["started_at"],
                     "bars_since_change": last_seg["bars"],
+                    "bars": last_seg["bars"],
                     "transition_risk": transition_risk,
                 }
                 latest_transition_probability_value = _finite_float(
@@ -902,9 +921,17 @@ def _consolidate_payload(  # noqa: C901
                         "weight_note",
                         "Model state weight, not necessarily the fraction of displayed bars.",
                     )
+            if method == "ensemble" and output_mode == "compact":
+                regime_descriptions = {
+                    regime_id: description
+                    for regime_id, description in regime_descriptions.items()
+                    if int(regime_id) in observed_regimes
+                }
             new_payload["regime_info"] = regime_descriptions
         if "reliability" in payload:
             new_payload["reliability"] = payload["reliability"]
+        if "warnings" in payload:
+            new_payload["warnings"] = payload["warnings"]
 
         # FULL mode: add technical details
         if output_mode == "full":
@@ -912,8 +939,6 @@ def _consolidate_payload(  # noqa: C901
                 new_payload["threshold"] = payload["threshold"]
             if "tuning_hint" in payload:
                 new_payload["tuning_hint"] = payload["tuning_hint"]
-            if "warnings" in payload:
-                new_payload["warnings"] = payload["warnings"]
             if "params_used" in payload:
                 new_payload["params_used"] = payload["params_used"]
             if "regime_params" in payload:
