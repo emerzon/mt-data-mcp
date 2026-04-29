@@ -69,6 +69,31 @@ def test_regime_detect_defaults_to_compact_output() -> None:
     assert "current_segment" not in out
 
 
+def test_regime_detect_accepts_standard_detail_as_compact() -> None:
+    raw = _unwrap(regime_detect)
+    cp = np.zeros(79, dtype=float)
+
+    with (
+        patch("mtdata.core.regime._fetch_history", return_value=_sample_df(80)),
+        patch("mtdata.core.regime._resolve_denoise_base_col", return_value="close"),
+        patch("mtdata.core.regime._format_time_minimal", side_effect=lambda x: f"T{x}"),
+        patch("mtdata.utils.regime.bocpd_gaussian", return_value={"cp_prob": cp}),
+    ):
+        out = raw(
+            symbol="EURUSD",
+            timeframe="H1",
+            limit=80,
+            method="bocpd",
+            threshold=0.5,
+            detail="standard",
+            lookback=20,
+        )
+
+    assert out.get("success") is True
+    assert "regimes" in out
+    assert "series" not in out
+
+
 def test_regime_detect_returns_connection_error_payload(monkeypatch) -> None:
     raw = _unwrap(regime_detect)
 

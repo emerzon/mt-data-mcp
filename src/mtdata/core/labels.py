@@ -28,7 +28,7 @@ from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
 from .mt5_gateway import get_mt5_gateway
 from .output_contract import normalize_output_detail
-from .schema import DenoiseSpec, SummaryCompactFullDetailLiteral, TimeframeLiteral
+from .schema import DenoiseSpec, DetailLiteral, TimeframeLiteral
 
 logger = logging.getLogger(__name__)
 _COMPACT_LABEL_SAMPLE_SIZE = 10
@@ -215,7 +215,7 @@ def labels_triple_barrier(
     denoise: Optional[DenoiseSpec] = None,
     direction: Literal["long", "short"] = "long",  # type: ignore
     label_on: Literal["close", "high_low"] = "high_low",  # type: ignore
-    detail: SummaryCompactFullDetailLiteral = "compact",
+    detail: DetailLiteral = "compact",
     lookback: int = 300,
 ) -> Dict[str, Any]:
     """Label each bar with triple-barrier outcomes using future path up to `horizon` bars.
@@ -246,7 +246,9 @@ def labels_triple_barrier(
                 output_mode = "compact"
             if output_mode not in {"full", "summary", "compact"}:
                 return {
-                    "error": "Invalid detail level. Use 'compact', 'full', or 'summary'."
+                    "error": (
+                        "Invalid detail level. Use 'compact', 'standard', 'full', or 'summary'."
+                    )
                 }
             barrier_values = {
                 "tp_abs": tp_abs,

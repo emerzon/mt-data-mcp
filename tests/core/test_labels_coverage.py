@@ -306,6 +306,16 @@ class TestLabelsTripleBarrier:
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
     @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
     @patch(f"{_LABELS_MOD}._fetch_history")
+    def test_standard_detail_is_accepted_as_compact(self, mock_hist, mock_den, mock_pip):
+        mock_hist.return_value = _make_df(60)
+        result = _get_raw_fn()("EURUSD", tp_pct=0.5, sl_pct=0.5, horizon=5, detail="standard")
+        assert result["success"] is True
+        assert "summary" in result
+        assert result["sample_size"] <= 12
+
+    @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
+    @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
+    @patch(f"{_LABELS_MOD}._fetch_history")
     def test_summary_only_detail_alias_is_rejected(
         self,
         mock_hist,
@@ -321,7 +331,7 @@ class TestLabelsTripleBarrier:
             detail=" Summary_Only ",
         )
         assert result["error"] == (
-            "Invalid detail level. Use 'compact', 'full', or 'summary'."
+            "Invalid detail level. Use 'compact', 'standard', 'full', or 'summary'."
         )
 
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
