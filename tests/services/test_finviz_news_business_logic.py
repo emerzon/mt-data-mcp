@@ -131,7 +131,7 @@ def test_finviz_market_news_normalizes_items() -> None:
     assert out["items"][0]["source"] == "AP"
     assert "T14:00:00+00:00" in out["items"][0]["published_at"]
     assert out["tool_scope"] == "raw_finviz_provider"
-    assert out["preferred_tool"] == "news"
+    assert "preferred_tool" not in out
 
 
 def test_finviz_news_helpers_are_registered_tools() -> None:
