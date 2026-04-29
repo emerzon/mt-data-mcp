@@ -1107,7 +1107,7 @@ class TestFinvizTools:
         assert result["count"] == 0
         assert result["available_count"] == 0
 
-    def test_finviz_calendar_prefers_start_end_aliases(self):
+    def test_finviz_calendar_uses_start_end_dates(self):
         from mtdata.core.finviz import finviz_calendar
 
         def _run_direct(_logger, operation, func, **fields):
@@ -1128,24 +1128,12 @@ class TestFinvizTools:
             date_to="2026-01-12",
         )
 
-    def test_finviz_calendar_rejects_conflicting_start_and_date_from(self):
+    def test_finviz_calendar_rejects_removed_date_aliases(self):
         from mtdata.core.finviz import finviz_calendar
 
-        def _run_direct(_logger, operation, func, **fields):
-            return func()
-
-        with patch("mtdata.core.finviz.run_logged_operation", side_effect=_run_direct):
-            result = finviz_calendar.__wrapped__(
-                start="2026-01-05",
-                date_from="2026-01-06",
-            )
-
-        assert result["success"] is False
-        assert result["error"] == "Provide either start or date_from, not both with different values."
-        assert result["error_code"] == "finviz_conflicting_text_args"
-        assert result["operation"] == "finviz_calendar"
-        assert result["details"] == {
-            "preferred_name": "start",
-            "legacy_name": "date_from",
-        }
-        assert isinstance(result.get("request_id"), str)
+        try:
+            finviz_calendar.__wrapped__(start="2026-01-05", date_from="2026-01-06")
+        except TypeError as exc:
+            assert "date_from" in str(exc)
+        else:
+            raise AssertionError("date_from should not be accepted")

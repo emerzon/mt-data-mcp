@@ -10,7 +10,6 @@ import logging
 import re
 from datetime import datetime, time as datetime_time, timezone, timedelta
 from typing import Any, Callable, Dict, Literal, Optional, Union
-from urllib.parse import parse_qs
 
 from ..services.finviz import (
     get_crypto_performance,
@@ -379,31 +378,6 @@ def _resolve_finviz_screen_filters(filters: Any) -> tuple[Optional[Dict[str, Any
         if parsed is not None:
             return parsed, None
     return None, _invalid_finviz_screen_filters_error(filters)
-
-
-def _resolve_preferred_text_arg(
-    *,
-    preferred_name: str,
-    preferred_value: Optional[str],
-    legacy_name: str,
-    legacy_value: Optional[str],
-) -> tuple[Optional[str], Optional[Dict[str, Any]]]:
-    preferred = str(preferred_value or "").strip() or None
-    legacy = str(legacy_value or "").strip() or None
-    if preferred and legacy and preferred != legacy:
-        return None, _finviz_error_payload(
-            (
-                f"Provide either {preferred_name} or {legacy_name}, "
-                "not both with different values."
-            ),
-            code="finviz_conflicting_text_args",
-            operation="finviz_calendar",
-            details={
-                "preferred_name": preferred_name,
-                "legacy_name": legacy_name,
-            },
-        )
-    return preferred or legacy, None
 
 
 def _clean_finviz_text_value(value: Any) -> Any:
@@ -1520,10 +1494,6 @@ def finviz_calendar(
     impact: Optional[Literal["low", "medium", "high"]] = None,
     start: Optional[str] = None,
     end: Optional[str] = None,
-    date_from: Optional[str] = None,
-    date_to: Optional[str] = None,
-    params: Optional[str] = None,
-    query: Optional[str] = None,
     limit: int = 20,
     page: int = 1,
 ) -> Dict[str, Any]:
@@ -1537,17 +1507,9 @@ def finviz_calendar(
     impact : str, optional
         Economic only: filter by impact level: "low", "medium", or "high".
     start : str, optional
-        Preferred start date alias in ISO format: YYYY-MM-DD.
+        Start date in ISO format: YYYY-MM-DD.
     end : str, optional
-        Preferred end date alias in ISO format: YYYY-MM-DD.
-    date_from : str, optional
-        Legacy alias for `start`. Maps to the Finviz query param `dateFrom`.
-    date_to : str, optional
-        Legacy alias for `end`. Maps to the Finviz query param `dateTo`.
-    params : str, optional
-        Optional query-string style parameters like `?dateFrom=2026-01-05&dateTo=2026-01-12`.
-    query : str, optional
-        Alias for `params`.
+        End date in ISO format: YYYY-MM-DD.
     limit : int
         Max events per page (default 20)
     page : int
@@ -1568,44 +1530,8 @@ def finviz_calendar(
     }
 
     def _run() -> Dict[str, Any]:
-        nonlocal impact, limit, page
-
-        start_value, start_error = _resolve_preferred_text_arg(
-            preferred_name="start",
-            preferred_value=start,
-            legacy_name="date_from",
-            legacy_value=date_from,
-        )
-        if start_error is not None:
-            return start_error
-        end_value, end_error = _resolve_preferred_text_arg(
-            preferred_name="end",
-            preferred_value=end,
-            legacy_name="date_to",
-            legacy_value=date_to,
-        )
-        if end_error is not None:
-            return end_error
-
-        raw_q = params or query
-        if raw_q:
-            q = raw_q.strip()
-            if q.startswith("?"):
-                q = q[1:]
-            parsed = {k: (v[-1] if v else None) for k, v in parse_qs(q).items()}
-            start_value = start_value or parsed.get("dateFrom")
-            end_value = end_value or parsed.get("dateTo")
-            impact = impact or parsed.get("impact")  # type: ignore[assignment]
-            if parsed.get("page"):
-                try:
-                    page = int(str(parsed["page"]))
-                except ValueError:
-                    pass
-            if parsed.get("pageSize"):
-                try:
-                    limit = int(str(parsed["pageSize"]))
-                except ValueError:
-                    pass
+        start_value = str(start or "").strip() or None
+        end_value = str(end or "").strip() or None
 
         cal = (calendar or "").strip().lower()
         if "?" in cal:
