@@ -40,6 +40,7 @@ from .patterns_support import (
     _build_stock_pattern_frame,
     _compact_patterns_payload,
     _count_patterns_with_status,
+    _dedupe_repeated_regime_context,
     _elliott_completed_preview,
     _elliott_hidden_completed_note,
     _enrich_classic_patterns,
@@ -503,7 +504,7 @@ def _build_pattern_response(
                 }
             }
         return compact_resp
-    return resp
+    return _dedupe_repeated_regime_context(resp)
 
 
 def _format_elliott_patterns(df: pd.DataFrame, cfg: _ElliottCfg) -> List[Dict[str, Any]]:

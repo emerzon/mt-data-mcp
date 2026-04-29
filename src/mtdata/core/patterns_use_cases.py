@@ -7,6 +7,7 @@ from .patterns_requests import PatternsDetectRequest
 from .patterns_support import (
     _build_highlights,
     _compact_all_mode_payload,
+    _dedupe_repeated_regime_context,
     _elliott_completed_preview,
     _elliott_hidden_completed_note,
     _highlights_all_mode_payload,
@@ -277,7 +278,7 @@ def run_patterns_detect(  # noqa: C901
             return deps.compact_patterns_payload(
                 out if isinstance(out, dict) else {"data": out}
             )
-        return out
+        return _dedupe_repeated_regime_context(out)
 
     if mode_value == "classic":
         tf_single = tf_norm or "H1"
@@ -629,7 +630,7 @@ def run_patterns_detect(  # noqa: C901
             resp["series_by_timeframe"] = series_by_timeframe
         if detail_value == "compact":
             return deps.compact_patterns_payload(resp)
-        return resp
+        return _dedupe_repeated_regime_context(resp)
 
     if mode_value == "all":
         timeframes = [tf_norm] if tf_norm else list(_ALL_MODE_TIMEFRAMES)
@@ -884,7 +885,7 @@ def run_patterns_detect(  # noqa: C901
             return _highlights_all_mode_payload(resp)
         if detail_value in ("compact", "standard"):
             return _compact_all_mode_payload(resp)
-        return resp
+        return _dedupe_repeated_regime_context(resp)
 
     return {
         "error": (

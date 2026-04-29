@@ -34,6 +34,14 @@ _STOCK_PATTERN_CODE_TO_NAME = {
 }
 _STOCK_PATTERN_UTILS_CACHE: Dict[str, Any] = {}
 _STOCK_PATTERN_UTILS_CACHE_LOCK = threading.Lock()
+_SHARED_REGIME_CONTEXT_KEYS = (
+    "state",
+    "direction",
+    "window_bars",
+    "trend_strength",
+    "efficiency_ratio",
+    "window_move_pct",
+)
 
 
 def _round_value(x: Any) -> Any:
@@ -537,6 +545,120 @@ def _compact_patterns_payload(payload: Dict[str, Any]) -> Dict[str, Any]:  # noq
         compact["series_by_timeframe"] = payload.get("series_by_timeframe")
 
     return compact
+
+
+def _dedupe_repeated_regime_context(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Hoist repeated market-regime diagnostics out of per-pattern rows."""
+    if not isinstance(payload, dict):
+        return payload
+
+    out = dict(payload)
+    rows = out.get("patterns")
+    if isinstance(rows, list):
+        rows_out, shared_context = _dedupe_rows_regime_context(rows)
+        if shared_context:
+            out["patterns"] = rows_out
+            out["regime_context"] = shared_context
+
+    for section_name in ("candlestick", "classic", "elliott", "fractal"):
+        section = out.get(section_name)
+        if not isinstance(section, dict):
+            continue
+        section_rows = section.get("patterns")
+        if not isinstance(section_rows, list):
+            continue
+        section_rows_out, shared_context = _dedupe_rows_regime_context(section_rows)
+        if shared_context:
+            section_out = dict(section)
+            section_out["patterns"] = section_rows_out
+            section_out["regime_context"] = shared_context
+            out[section_name] = section_out
+
+    findings = out.get("findings")
+    if isinstance(findings, list):
+        findings_out: List[Any] = []
+        changed = False
+        for finding in findings:
+            if not isinstance(finding, dict) or not isinstance(finding.get("patterns"), list):
+                findings_out.append(finding)
+                continue
+            finding_rows, shared_context = _dedupe_rows_regime_context(
+                finding["patterns"]
+            )
+            if shared_context:
+                finding_out = dict(finding)
+                finding_out["patterns"] = finding_rows
+                finding_out["regime_context"] = shared_context
+                findings_out.append(finding_out)
+                changed = True
+            else:
+                findings_out.append(finding)
+        if changed:
+            out["findings"] = findings_out
+
+    return out
+
+
+def _dedupe_rows_regime_context(
+    rows: List[Any],
+) -> Tuple[List[Any], Dict[str, Any]]:
+    contexts: List[Dict[str, Any]] = []
+    for row in rows:
+        context = _row_regime_context(row)
+        if context:
+            contexts.append(context)
+    if len(contexts) < 2:
+        return rows, {}
+
+    shared_context = {
+        key: contexts[0][key]
+        for key in _SHARED_REGIME_CONTEXT_KEYS
+        if key in contexts[0] and all(context.get(key) == contexts[0][key] for context in contexts)
+    }
+    if not shared_context:
+        return rows, {}
+
+    rows_out: List[Any] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            rows_out.append(row)
+            continue
+        context = _row_regime_context(row)
+        if not context:
+            rows_out.append(row)
+            continue
+        row_out = dict(row)
+        trimmed_context = {
+            key: value for key, value in context.items() if key not in shared_context
+        }
+        details = row_out.get("details")
+        if isinstance(details, dict) and isinstance(details.get("regime_context"), dict):
+            details_out = dict(details)
+            if trimmed_context:
+                details_out["regime_context"] = trimmed_context
+            else:
+                details_out.pop("regime_context", None)
+            row_out["details"] = details_out
+        elif isinstance(row_out.get("regime_context"), dict):
+            if trimmed_context:
+                row_out["regime_context"] = trimmed_context
+            else:
+                row_out.pop("regime_context", None)
+        rows_out.append(row_out)
+
+    return rows_out, shared_context
+
+
+def _row_regime_context(row: Any) -> Optional[Dict[str, Any]]:
+    if not isinstance(row, dict):
+        return None
+    context = row.get("regime_context")
+    if isinstance(context, dict):
+        return context
+    details = row.get("details")
+    if isinstance(details, dict) and isinstance(details.get("regime_context"), dict):
+        return details["regime_context"]
+    return None
 
 
 _ALL_COMPACT_CLASSIC_KEYS = (

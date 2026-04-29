@@ -1328,6 +1328,67 @@ def test_build_pattern_response_include_completed_filter_behavior():
     assert with_completed["n_patterns"] == 2
 
 
+def test_build_pattern_response_hoists_repeated_regime_context():
+    df = pd.DataFrame({"time": [1, 2, 3], "close": [10.0, 11.0, 12.0]})
+    shared = {
+        "state": "ranging",
+        "direction": "bearish",
+        "window_bars": 160,
+        "trend_strength": 3.266,
+        "efficiency_ratio": 0.1035,
+        "window_move_pct": -0.706,
+    }
+    patterns = [
+        {
+            "name": "A",
+            "status": "forming",
+            "confidence": 0.5,
+            "details": {
+                "regime_context": {
+                    **shared,
+                    "pattern_bias": "bullish",
+                    "alignment": "neutral",
+                }
+            },
+        },
+        {
+            "name": "B",
+            "status": "forming",
+            "confidence": 0.6,
+            "details": {
+                "regime_context": {
+                    **shared,
+                    "pattern_bias": "bearish",
+                    "alignment": "neutral",
+                }
+            },
+        },
+    ]
+
+    result = _build_pattern_response(
+        "EURUSD",
+        "H1",
+        100,
+        "classic",
+        patterns,
+        include_completed=True,
+        include_series=False,
+        series_time="string",
+        df=df,
+        detail="full",
+    )
+
+    assert result["regime_context"] == shared
+    assert result["patterns"][0]["details"]["regime_context"] == {
+        "pattern_bias": "bullish",
+        "alignment": "neutral",
+    }
+    assert result["patterns"][1]["details"]["regime_context"] == {
+        "pattern_bias": "bearish",
+        "alignment": "neutral",
+    }
+
+
 def test_build_pattern_response_elliott_hidden_completed_preview_is_truthful():
     df = pd.DataFrame({"time": [1, 2, 3, 4], "close": [10.0, 11.0, 12.0, 13.0]})
     patterns = [
