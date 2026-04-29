@@ -91,30 +91,15 @@ def test_finviz_news_normalizes_stock_results_to_single_items_array() -> None:
     assert "news" not in out
 
 
-def test_finviz_news_without_symbol_normalizes_general_items() -> None:
+def test_finviz_news_requires_symbol_for_stock_news() -> None:
     raw = _unwrap(finviz_news)
-    service_result = {
-        "success": True,
-        "type": "news",
-        "count": 1,
-        "items": [
-            {
-                "Title": " Market wrap ",
-                "Source": "Finviz",
-                "Date": "01:30PM",
-                "Link": "https://example.test/news",
-            }
-        ],
-    }
 
-    with patch("mtdata.core.finviz.get_general_news", return_value=service_result):
-        out = raw(symbol=None, limit=5, page=1)
-
-    assert out["items"][0]["title"] == "Market wrap"
-    assert out["items"][0]["source"] == "Finviz"
-    assert "T13:30:00+00:00" in out["items"][0]["published_at"]
-    assert out["items"][0]["url"] == "https://example.test/news"
-    assert "preferred_tool" not in out
+    try:
+        raw(limit=5, page=1)
+    except TypeError as exc:
+        assert "symbol" in str(exc)
+    else:
+        raise AssertionError("finviz_news should require a symbol")
 
 
 def test_finviz_market_news_normalizes_items() -> None:
@@ -146,7 +131,7 @@ def test_news_tool_docstrings_describe_tool_boundaries() -> None:
     from mtdata.core.news import news
 
     assert "preferred trader-facing news tool" in (news.__doc__ or "")
-    assert "Raw Finviz news provider endpoint" in (finviz_news.__doc__ or "")
+    assert "Raw Finviz per-ticker news provider endpoint" in (finviz_news.__doc__ or "")
     assert "Raw Finviz general market news/blog provider endpoint" in (
         finviz_market_news.__doc__ or ""
     )

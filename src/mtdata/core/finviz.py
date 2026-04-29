@@ -1119,19 +1119,20 @@ def finviz_description(symbol: str) -> Dict[str, Any]:
 
 
 @mcp.tool()
-def finviz_news(symbol: Optional[str] = None, limit: int = 20, page: int = 1) -> Dict[str, Any]:
+def finviz_news(symbol: str, limit: int = 20, page: int = 1) -> Dict[str, Any]:
     """
-    Raw Finviz news provider endpoint.
+    Raw Finviz per-ticker news provider endpoint.
 
     Prefer `news` for trading workflows because it merges Finviz with MT5/CNBC
     sources, ranks relevance, and buckets general, related, impact, and event
     news. Use `finviz_news` when you specifically need Finviz pagination, URLs,
-    or the raw flat provider schema.
+    or the raw flat provider schema for one US equity ticker. Use
+    `finviz_market_news` for raw Finviz general market news/blogs.
     
     Parameters
     ----------
-    symbol : str, optional
-        Stock ticker symbol (e.g., NVDA, META). If omitted, returns general market news.
+    symbol : str
+        Stock ticker symbol (e.g., NVDA, META).
     limit : int
         Max news items per page (default 20)
     page : int
@@ -1140,24 +1141,18 @@ def finviz_news(symbol: Optional[str] = None, limit: int = 20, page: int = 1) ->
     Returns
     -------
     dict
-        Stock-specific calls return normalized `items` rows with `title`,
-        `source`, `published_at`, and `url` fields. Top-level metadata marks
-        this as a raw Finviz provider endpoint and points traders to `news` as
-        the preferred unified tool.
+        Stock-specific normalized `items` rows with `title`, `source`,
+        `published_at`, and `url` fields.
     """
     fields = {"symbol": symbol, "limit": limit, "page": page}
 
     def _run() -> Dict[str, Any]:
-        if symbol:
-            symbol_norm, error = _normalize_equity_symbol(symbol, tool_name="finviz_news")
-            if error is not None:
-                return error
-            assert symbol_norm is not None
-            return _normalize_finviz_news_payload(
-                get_stock_news(symbol_norm, limit=limit, page=page)
-            )
+        symbol_norm, error = _normalize_equity_symbol(symbol, tool_name="finviz_news")
+        if error is not None:
+            return error
+        assert symbol_norm is not None
         return _normalize_finviz_news_payload(
-            get_general_news(news_type="news", limit=limit, page=page)
+            get_stock_news(symbol_norm, limit=limit, page=page)
         )
 
     return _run_logged_tool("finviz_news", fields, _run)
