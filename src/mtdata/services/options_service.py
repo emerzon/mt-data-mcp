@@ -24,6 +24,11 @@ _YAHOO_RETRY_STATUS_CODES = {429, 503}
 _YAHOO_MAX_ATTEMPTS = 3
 _YAHOO_BACKOFF_SECONDS = 0.5
 _YAHOO_MIN_REQUEST_INTERVAL_SECONDS = 1.0
+_YAHOO_AUTH_REMEDIATION = (
+    "Yahoo Finance options data is unavailable from the unauthenticated endpoint. "
+    "mtdata has no Yahoo API-key setting to configure; retry later or use another "
+    "options data provider."
+)
 _YAHOO_SESSION: Optional[requests.Session] = None
 _YAHOO_SESSION_LOCK = _threading.Lock()
 _YAHOO_RATE_LIMIT_LOCK = _threading.Lock()
@@ -105,6 +110,15 @@ def _get_yahoo_session() -> requests.Session:
         return _YAHOO_SESSION
 
 
+def _options_error(message: str) -> Dict[str, Any]:
+    out: Dict[str, Any] = {"success": False, "error": str(message)}
+    message_text = str(message)
+    if "Yahoo Finance options endpoint returned 401" in message_text:
+        out["error_code"] = "options_provider_auth"
+        out["remediation"] = _YAHOO_AUTH_REMEDIATION
+    return out
+
+
 def _throttle_yahoo_request() -> None:
     global _YAHOO_LAST_REQUEST_MONOTONIC
     with _YAHOO_RATE_LIMIT_LOCK:
@@ -151,8 +165,9 @@ def _fetch_yahoo_options_payload(symbol: str, expiry_epoch: Optional[int] = None
             # Sanitize 401 errors to avoid exposing API URLs to users
             if response.status_code == 401:
                 raise ValueError(
-                    "Authentication error: Yahoo Finance API returned 401 Unauthorized. "
-                    "This may be temporary or require API key configuration."
+                    "Authentication error: Yahoo Finance options endpoint returned "
+                    "401 Unauthorized. No mtdata API-key setting is available for this "
+                    "Yahoo endpoint."
                 )
             # For other HTTP errors, re-raise as-is
             raise
@@ -190,7 +205,7 @@ def get_options_expirations(symbol: str) -> Dict[str, Any]:
             "expiration_count": int(len(expirations)),
         }
     except Exception as e:
-        return {"error": f"Failed to fetch options expirations: {e}"}
+        return _options_error(f"Failed to fetch options expirations: {e}")
 
 
 def get_options_chain(
@@ -311,4 +326,4 @@ def get_options_chain(
             "options": combined,
         }
     except Exception as e:
-        return {"error": f"Failed to fetch options chain: {e}"}
+        return _options_error(f"Failed to fetch options chain: {e}")

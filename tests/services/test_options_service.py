@@ -269,6 +269,7 @@ def test_fetch_yahoo_options_payload_sanitizes_401_errors(monkeypatch):
     assert "401" in error_msg or "Unauthorized" in error_msg
     # Verify the error is helpful
     assert "Authentication error" in error_msg
+    assert "No mtdata API-key setting" in error_msg
 
 
 def test_get_options_expirations_handles_401_gracefully(monkeypatch):
@@ -296,3 +297,6 @@ def test_get_options_expirations_handles_401_gracefully(monkeypatch):
     assert "query2.finance.yahoo.com" not in result["error"]
     # Verify it mentions 401/auth
     assert "401" in result["error"] or "Unauthorized" in result["error"]
+    assert result["success"] is False
+    assert result["error_code"] == "options_provider_auth"
+    assert "no Yahoo API-key setting" in result["remediation"]
