@@ -413,12 +413,13 @@ class TestNormalizeTripleBarrierPayload:
             "horizon": 3,
             "entries": ["2026-03-17 00:00", "2026-03-17 01:00"],
             "labels": [1, 0],
+            "outcomes": ["tp", "neutral"],
             "holding_bars": [2, 3],
             "tp_time": ["2026-03-17 02:00", None],
             "sl_time": [None, None],
             "summary": {
                 "lookback": 2,
-                "counts": {"pos": 1, "neg": 0, "neut": 1},
+                "counts": {"tp": 1, "sl": 0, "neutral": 1},
             },
             "label_legend": {
                 "1": {"label": "tp_first"},
@@ -438,6 +439,7 @@ class TestNormalizeTripleBarrierPayload:
                 {
                     "entry": "2026-03-17 00:00",
                     "label": 1,
+                    "outcome": "tp",
                     "holding_bars": 2,
                     "tp_time": "2026-03-17 02:00",
                     "sl_time": None,
@@ -445,6 +447,7 @@ class TestNormalizeTripleBarrierPayload:
                 {
                     "entry": "2026-03-17 01:00",
                     "label": 0,
+                    "outcome": "neutral",
                     "holding_bars": 3,
                     "tp_time": None,
                     "sl_time": None,
@@ -452,7 +455,7 @@ class TestNormalizeTripleBarrierPayload:
             ],
             "summary": {
                 "lookback": 2,
-                "counts": {"pos": 1, "neg": 0, "neut": 1},
+                "counts": {"tp": 1, "sl": 0, "neutral": 1},
             },
             "label_legend": {
                 "1": {"label": "tp_first"},
@@ -1125,14 +1128,15 @@ class TestFormatResultMinimal:
             "horizon": 3,
             "entries": ["2026-03-17 00:00", "2026-03-17 01:00"],
             "labels": [1, 0],
+            "outcomes": ["tp", "neutral"],
             "holding_bars": [2, 3],
             "tp_time": ["2026-03-17 02:00", None],
             "sl_time": [None, None],
         }
         result = format_result_minimal(payload, verbose=True)
         lines = result.splitlines()
-        assert "labels[2]{entry,label,holding_bars,tp_time,sl_time}:" in lines
-        assert "  \"2026-03-17 00:00\",1,2,\"2026-03-17 02:00\",null" in lines
+        assert "labels[2]{entry,label,outcome,holding_bars,tp_time,sl_time}:" in lines
+        assert "  \"2026-03-17 00:00\",1,tp,2,\"2026-03-17 02:00\",null" in lines
         assert not any(line.startswith("entries[") for line in lines)
         assert not any(line.startswith("holding_bars[") for line in lines)
         assert not any(line.startswith("tp_time[") for line in lines)

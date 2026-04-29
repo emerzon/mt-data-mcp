@@ -267,9 +267,10 @@ class TestLabelsTripleBarrier:
         )
 
         assert result["success"] is True
-        assert result["summary"]["counts"]["pos"] > 0
+        assert result["summary"]["counts"]["tp"] > 0
         assert result["sample_basis"] == "outcomes"
         assert all(label != 0 for label in result["labels"])
+        assert set(result["outcomes"]) <= {"tp", "sl"}
 
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
     @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
@@ -389,9 +390,9 @@ class TestLabelsTripleBarrier:
             detail="summary",
         )
         summary = result["summary"]
-        assert summary["counts"]["pos"] == 0
-        assert summary["counts"]["neg"] == 0
-        assert summary["counts"]["neut"] > 0
+        assert summary["counts"]["tp"] == 0
+        assert summary["counts"]["sl"] == 0
+        assert summary["counts"]["neutral"] > 0
         assert "no price path hit TP or SL" in summary["explanation"]
         assert summary["max_observed_move_pct"]["favorable"] >= 0.0
         assert summary["max_observed_move_pct"]["adverse"] >= 0.0

@@ -466,16 +466,20 @@ def _normalize_triple_barrier_payload(
 
     tp_times_raw = payload.get("tp_time")
     sl_times_raw = payload.get("sl_time")
+    outcomes_raw = payload.get("outcomes")
     tp_times = list(tp_times_raw) if isinstance(tp_times_raw, list) else []
     sl_times = list(sl_times_raw) if isinstance(sl_times_raw, list) else []
+    outcomes = list(outcomes_raw) if isinstance(outcomes_raw, list) else []
 
     rows: List[Dict[str, Any]] = []
     for idx in range(n):
         row: Dict[str, Any] = {
             "entry": entries[idx],
             "label": labels[idx],
-            "holding_bars": holding_bars[idx],
         }
+        if "outcomes" in payload:
+            row["outcome"] = outcomes[idx] if idx < len(outcomes) else None
+        row["holding_bars"] = holding_bars[idx]
         if "tp_time" in payload:
             row["tp_time"] = tp_times[idx] if idx < len(tp_times) else None
         if "sl_time" in payload:

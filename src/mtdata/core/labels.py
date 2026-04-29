@@ -34,6 +34,14 @@ logger = logging.getLogger(__name__)
 _COMPACT_LABEL_SAMPLE_SIZE = 10
 
 
+def _label_outcome(label: int) -> str:
+    if label == 1:
+        return "tp"
+    if label == -1:
+        return "sl"
+    return "neutral"
+
+
 def _first_true_offsets(mask: np.ndarray) -> np.ndarray:
     if mask.size == 0:
         return np.array([], dtype=int)
@@ -350,6 +358,7 @@ def labels_triple_barrier(
                 "horizon": int(horizon),
                 "entries": t_entry,
                 "labels": labels,
+                "outcomes": [_label_outcome(label) for label in labels],
                 "holding_bars": hold,
                 "tp_time": tp_times,
                 "sl_time": sl_times,
@@ -388,9 +397,9 @@ def labels_triple_barrier(
                 lab_tail = labels[-n:] if n > 0 else labels
                 hold_tail = hold[-n:] if n > 0 else hold
                 counts = {
-                    "pos": int(sum(1 for v in lab_tail if v == 1)),
-                    "neg": int(sum(1 for v in lab_tail if v == -1)),
-                    "neut": int(sum(1 for v in lab_tail if v == 0)),
+                    "tp": int(sum(1 for v in lab_tail if v == 1)),
+                    "sl": int(sum(1 for v in lab_tail if v == -1)),
+                    "neutral": int(sum(1 for v in lab_tail if v == 0)),
                 }
                 med_hold = (
                     float(_np.median(_np.array(hold_tail, dtype=float)))
@@ -409,7 +418,7 @@ def labels_triple_barrier(
                         "favorable": round(float(max(favorable_tail or [0.0])), 6),
                         "adverse": round(float(max(adverse_tail or [0.0])), 6),
                     }
-                if counts["pos"] == 0 and counts["neg"] == 0 and counts["neut"] > 0:
+                if counts["tp"] == 0 and counts["sl"] == 0 and counts["neutral"] > 0:
                     summary["explanation"] = (
                         "All labels are neutral because no price path hit TP or SL within "
                         "the horizon. Label 0 means a timeout/hold outcome, not a "
@@ -458,6 +467,7 @@ def labels_triple_barrier(
                 if sample_indices:
                     payload["entries"] = [t_entry[idx] for idx in sample_indices]
                     payload["labels"] = [labels[idx] for idx in sample_indices]
+                    payload["outcomes"] = [_label_outcome(labels[idx]) for idx in sample_indices]
                     payload["holding_bars"] = [hold[idx] for idx in sample_indices]
                     payload["tp_time"] = [tp_times[idx] for idx in sample_indices]
                     payload["sl_time"] = [sl_times[idx] for idx in sample_indices]
