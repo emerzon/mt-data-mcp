@@ -346,7 +346,7 @@ def _fetch_rates(
 def temporal_analyze(  # noqa: C901
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
-    lookback: int = 1000,
+    lookback: int = 200,
     start: Optional[str] = None,
     end: Optional[str] = None,
     group_by: Literal["dow", "hour", "month", "all"] = "dow",

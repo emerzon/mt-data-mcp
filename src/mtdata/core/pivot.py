@@ -541,7 +541,7 @@ def pivot_compute_points(  # noqa: C901
 def support_resistance_levels(
     symbol: str,
     timeframe: AutoTimeframeLiteral = "H1",
-    lookback: int = 800,
+    lookback: int = 200,
     tolerance_pct: float = 0.0015,
     min_touches: int = 2,
     max_levels: int = 4,

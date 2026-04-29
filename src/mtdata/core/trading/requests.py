@@ -146,7 +146,7 @@ class TradeHistoryRequest(BaseModel):
     deal_ticket: Optional[Union[int, str]] = None
     order_ticket: Optional[Union[int, str]] = None
     minutes_back: Optional[int] = None
-    limit: Optional[int] = 500
+    limit: Optional[int] = 100
 
     @field_validator("side", mode="before")
     @classmethod

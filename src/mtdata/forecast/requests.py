@@ -92,7 +92,7 @@ class StrategyBacktestRequest(BaseModel):
     symbol: str
     timeframe: TimeframeLiteral = "H1"
     strategy: Literal["sma_cross", "ema_cross", "rsi_reversion"] = "sma_cross"
-    lookback: int = Field(500, ge=5)
+    lookback: int = Field(200, ge=5)
     detail: CompactFullDetailLiteral = "compact"
     position_mode: Literal["long_only", "long_short"] = "long_short"
     fast_period: int = Field(10, ge=1)

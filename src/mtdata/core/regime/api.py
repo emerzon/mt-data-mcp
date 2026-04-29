@@ -626,7 +626,7 @@ def _get_timeframe_defaults(timeframe: str) -> Dict[str, int]:
 def regime_detect(  # noqa: C901
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
-    limit: int = 800,
+    limit: int = 100,
     method: Literal[
         "bocpd",
         "hmm",
