@@ -18,7 +18,11 @@ from unittest.mock import MagicMock, call, patch
 import pytest
 
 from mtdata.core.data.requests import DataFetchCandlesRequest
-from mtdata.core.trading.requests import TradeHistoryRequest, TradeRiskAnalyzeRequest
+from mtdata.core.trading.requests import (
+    TradeGetOpenRequest,
+    TradeHistoryRequest,
+    TradeRiskAnalyzeRequest,
+)
 from mtdata.forecast.requests import ForecastGenerateRequest
 
 # ---------------------------------------------------------------------------
@@ -4789,6 +4793,36 @@ class TestMain:
         assert result == 0
         request = mock_fn.call_args.kwargs["request"]
         assert isinstance(request, TradeRiskAnalyzeRequest)
+        assert request.symbol == "EURUSD"
+
+    @patch("mtdata.core.cli.discover_tools")
+    def test_trade_get_open_accepts_optional_positional_symbol(self, mock_discover):
+        mock_fn = MagicMock(return_value={"success": True})
+        mock_fn.__module__ = "mtdata.core.server"
+        mock_fn.__name__ = "trade_get_open"
+        mock_fn.__doc__ = "Get open positions."
+
+        def trade_get_open(request: TradeGetOpenRequest):
+            """Get open positions."""
+            pass
+
+        info = get_function_info(trade_get_open)
+        info["func"] = mock_fn
+
+        mock_discover.return_value = {
+            "trade_get_open": {
+                "func": mock_fn,
+                "meta": {"description": "Get open positions"},
+                "_cli_func_info": info,
+            },
+        }
+
+        with patch("sys.argv", ["cli.py", "trade_get_open", "EURUSD"]):
+            result = main()
+
+        assert result == 0
+        request = mock_fn.call_args.kwargs["request"]
+        assert isinstance(request, TradeGetOpenRequest)
         assert request.symbol == "EURUSD"
 
     @patch("mtdata.core.cli.discover_tools")
