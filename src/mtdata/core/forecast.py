@@ -369,8 +369,8 @@ def forecast_list_methods(
 ) -> Dict[str, Any]:
     """List forecast methods and availability.
 
-    - detail='compact' (default): concise list with availability and `supports_ci` guidance.
-    - detail='full': include full parameter docs and supports metadata.
+    Compact output is the default. Use extras='metadata' to include full
+    parameter docs and supports metadata.
     """
     search_term_value = str(search_term or "").strip() or None
     return _run_forecast_operation(
@@ -1295,7 +1295,7 @@ def _forecast_list_methods_impl(  # noqa: C901
             "methods_shown": int(len(selected_methods)),
             "methods_hidden": int(max(0, len(compact_methods) - len(selected_methods))),
             "barrier_methods": barrier_methods,
-            "note": "Compact view includes all filtered methods with compact columns; set limit to cap rows or detail='full' for complete metadata.",
+            "note": "Compact view includes all filtered methods with compact columns; set limit to cap rows or extras='metadata' for complete metadata.",
             "filters": {
                 "search": search_value or None,
                 "category": category_filter_value or None,

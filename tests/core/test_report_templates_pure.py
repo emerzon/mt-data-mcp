@@ -2,7 +2,7 @@
 
 Covers:
   - mtdata.core.report_templates.basic  (pure helpers + template_basic via mocks)
-  - mtdata.core.report                  (_report_error_text, _report_error_payload)
+  - mtdata.core.report                  (_report_error_payload)
   - mtdata.core.report_templates.scalping (template_scalping via mocks)
   - mtdata.core.report_templates.advanced (template_advanced via mocks)
 
@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from mtdata.core.report import _report_error_payload, _report_error_text
+from mtdata.core.report import _report_error_payload
 from mtdata.core.report_templates.basic import (
     _compute_compact_trend,
     _compute_tr,
@@ -520,32 +520,7 @@ class TestGetRawResult:
         assert "Unexpected" in result["error"]
 
 
-# ===== _report_error_text / _report_error_payload ============================
-
-class TestReportErrorText:
-    def test_normal_message(self):
-        result = _report_error_text("something broke")
-        assert result == "error: something broke\n"
-
-    def test_strips_whitespace(self):
-        result = _report_error_text("  padded  ")
-        assert result == "error: padded\n"
-
-    def test_empty_message(self):
-        result = _report_error_text("")
-        assert result == "error: Unknown error.\n"
-
-    def test_whitespace_only(self):
-        result = _report_error_text("   ")
-        assert result == "error: Unknown error.\n"
-
-    def test_non_string_coerced(self):
-        result = _report_error_text(42)
-        assert result == "error: 42\n"
-
-    def test_none_message(self):
-        result = _report_error_text(None)
-        assert "error:" in result
+# ===== _report_error_payload =================================================
 
 
 class TestReportErrorPayload:

@@ -354,7 +354,7 @@ class TestFinvizProgressiveDisclosure:
         assert result["truncated"] is True
         assert result["summary"]["latest"] == expected_rows[0]
         assert result["summary"]["counts"]["available"] == 5
-        assert result["show_all_hint"] == "Set detail='full' or limit=5 to view all ratings."
+        assert result["show_all_hint"] == "Set extras='metadata' or limit=5 to view all ratings."
 
     @patch("mtdata.core.finviz.get_stock_ratings")
     def test_ratings_limit_controls_returned_rows(self, mock_get):

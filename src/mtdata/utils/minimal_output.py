@@ -1370,11 +1370,11 @@ def _normalize_regime_all_payload(
     if detail_value != "full" and ("results" in payload or "params_used" in payload):
         if detail_value == "summary":
             out["show_all_hint"] = (
-                "Set detail='full' to include per-method details."
+                "Set extras='metadata' to include per-method details."
             )
         else:
             out["show_all_hint"] = (
-                "Set detail='summary' for stats only, or detail='full' to include per-method details."
+                "Compact output is the default; set extras='metadata' to include per-method details."
             )
 
     return out
@@ -1469,7 +1469,7 @@ def _normalize_forecast_methods_payload(
     hidden = payload.get("methods_hidden")
     try:
         if detail_value != "full" and hidden is not None and int(hidden) > 0:
-            out["show_all_hint"] = "Set detail='full' to see complete method metadata."
+            out["show_all_hint"] = "Set extras='metadata' to see complete method metadata."
     except Exception:
         pass
 
@@ -1711,7 +1711,7 @@ def _normalize_support_resistance_payload(
         )
     ):
         out["show_all_hint"] = (
-            "Set detail='full' to include timeframe selection rationale, "
+            "Set extras='metadata' to include timeframe selection rationale, "
             "zone widths, and coverage diagnostics."
         )
 

@@ -970,7 +970,7 @@ for pair in EURUSD GBPUSD USDJPY AUDUSD NZDUSD USDCAD USDCHF; do
   mtdata-cli forecast_barrier_optimize \
     $pair --timeframe H1 --horizon 12 \
     --method auto --mode pct --grid-style volatility \
-    --objective edge --output-mode summary --top_k 1
+    --objective edge --top_k 1
 done
 ```
 

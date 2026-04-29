@@ -23,7 +23,7 @@ mtdata-cli data_fetch_candles EURUSD --timeframe M1 --limit 5000 \
   --simplify lttb --simplify-params "points=500"
 
 # Ticks: simplify only applies when returning raw rows
-mtdata-cli data_fetch_ticks EURUSD --output-mode rows --limit 20000 \
+mtdata-cli data_fetch_ticks EURUSD --limit 20000 \
   --simplify rdp --simplify-params "points=2000"
 ```
 

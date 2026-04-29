@@ -23,16 +23,14 @@ class TestForecastTypedArgs:
         assert args.denoise == "__PRESENT__"
         assert args.params == "__PRESENT__"
 
-    def test_parser_exposes_detail_flag(self):
+    def test_parser_does_not_expose_detail_flag(self):
         parser = argparse.ArgumentParser()
         _add_forecast_generate_args(parser)
 
-        args = parser.parse_args(["BTCUSD", "--detail", "full"])
-
-        assert args.detail == "full"
         help_text = parser.format_help()
-        assert "--detail" in help_text
-        assert "{compact,standard,full}" in help_text
+        assert "--detail" not in help_text
+        with pytest.raises(SystemExit):
+            parser.parse_args(["BTCUSD", "--detail", "full"])
 
     @patch("mtdata.core.cli.discover_tools")
     def test_main_shows_targeted_error_for_bare_denoise(self, mock_discover, capsys):

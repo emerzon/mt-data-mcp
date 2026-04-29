@@ -677,18 +677,17 @@ def regime_detect(  # noqa: C901
         `threshold_target_false_alarm_rate`,
         `cp_confirm_bars` (default `1`, live-oriented),
         `min_cp_distance_bars`, `cp_edge_multiplier`.
-    - include_series: If True, include raw time series data (probs, states) in output even if detail='full'. Default False.
+    - include_series: If True, include raw time series data (probs, states) in output. Default False.
     - lookback: Number of recent bars to include in summary/compact detail. Default -1 uses timeframe-based defaults:
         M1: 3000, M5: 2000, M15: 1000, M30: 800, H1: 500, H2: 400, H4: 300, H6-H12: 200-150, D1: 200, W1: 100, MN1: 48
     - min_regime_bars: Merge short state runs (< this many bars) for state-based methods to reduce flicker.
         Default -1 uses timeframe-based defaults: M1: 30, M5: 12, M15-M30: 6-8, H1-H4: 3-4, D1+: 2
     - max_regimes: Maximum number of regime windows to show in compact mode (default 10).
         Most recent regimes are shown. Full mode shows all available windows.
-    - detail:
-        - 'compact' (default): Returns recent consolidated output with
-          `current_regime` / `regimes` across methods.
-        - 'full': Returns full consolidated output. Raw 'series' included only if include_series=True.
-        - 'summary': Returns stats only.
+    - extras:
+        Compact output is the public default. Use extras such as `metadata`
+        for richer consolidated output. Raw `series` is included only if
+        include_series=True.
 
     Output Structure (state-based methods: hmm, ms_ar, clustering, garch, wavelet, ensemble):
         - success: bool - Whether detection succeeded
@@ -739,8 +738,8 @@ def regime_detect(  # noqa: C901
           with regime statistics. 'ensemble_info' shows voting method and mean_agreement.
           Explicit n_states overrides auto-detection.
         - 'all': Returns a cross-method 'comparison' dict with semantic agreement metrics.
-          `detail='compact'` keeps the comparison view concise, `detail='summary'` omits the
-          per-method `results`, and `detail='full'` includes richer per-method outputs.
+          Compact output keeps the comparison view concise; `extras='metadata'`
+          includes richer per-method outputs.
           Best for method comparison.
     """
     requested_method = str(method).strip().lower()

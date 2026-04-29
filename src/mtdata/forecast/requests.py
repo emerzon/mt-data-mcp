@@ -287,9 +287,9 @@ class ForecastBarrierOptimizeRequest(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _reject_removed_output(cls, values: Any) -> Any:
-        values = _reject_removed_field(values, field_name="output", replacement="detail")
-        values = _reject_removed_field(values, field_name="output_mode", replacement="detail")
-        return _reject_removed_field(values, field_name="format", replacement="detail")
+        values = _reject_removed_field(values, field_name="output", replacement="extras")
+        values = _reject_removed_field(values, field_name="output_mode", replacement="extras")
+        return _reject_removed_field(values, field_name="format", replacement="json")
 
     @field_validator("direction", mode="before")
     @classmethod

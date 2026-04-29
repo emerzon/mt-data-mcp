@@ -8,7 +8,7 @@ from ..execution_logging import run_logged_operation
 from ..mt5_gateway import get_mt5_gateway, mt5_connection_error
 from .requests import ReportGenerateRequest
 from .use_cases import run_report_generate
-from .utils import _get_indicator_value, format_number, render_enhanced_report
+from .utils import _get_indicator_value, format_number
 
 logger = logging.getLogger(__name__)
 
@@ -18,10 +18,6 @@ def _normalize_report_error_message(message: Any) -> str:
     if not text:
         text = 'Unknown error.'
     return text
-
-
-def _report_error_text(message: Any) -> str:
-    return f"error: {_normalize_report_error_message(message)}\n"
 
 
 def _report_error_payload(message: Any) -> Dict[str, Any]:
@@ -57,7 +53,7 @@ def _append_diagnostic_warning(report: Dict[str, Any], message: str) -> None:
 def report_generate(
     request: ReportGenerateRequest,
 ) -> Union[str, Dict[str, Any]]:
-    """Generate a consolidated, information-dense analysis report with compact multi-format output.
+    """Generate a consolidated, information-dense analysis report.
 
     - template: 'basic' (context, pivot, EWMA vol, backtest->best forecast, MC barrier grid, patterns)
                 'minimal' (fast path: context + direct forecast; skips pivot/backtest/barrier optimization/patterns),
@@ -65,21 +61,17 @@ def report_generate(
                 or style-specific ('scalping' | 'intraday' | 'swing' | 'position').
     - params: optional dict to tune steps/spacing, grids, and optionally override timeframe per template via 'timeframe' or methods via 'methods'.
     - denoise: pass-through to candle fetching (e.g., {method:'ema', params:{alpha:0.2}, columns:['close']}).  
-    - format: 'toon' for the structured report payload, or 'markdown' for rendered report text.
     """
     return run_logged_operation(
         logger,
         operation="report_generate",
         symbol=request.symbol,
         template=request.template,
-        format=request.format,
         func=lambda: _report_connection_error()
         or run_report_generate(
             request,
-            render_report=render_enhanced_report,
             format_number=format_number,
             get_indicator_value=_get_indicator_value,
-            report_error_text=_report_error_text,
             report_error_payload=_report_error_payload,
             append_diagnostic_warning=_append_diagnostic_warning,
         ),

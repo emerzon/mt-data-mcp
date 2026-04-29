@@ -4,7 +4,9 @@ from mtdata.core.output_contract import (
     attach_collection_contract,
     ensure_common_meta,
     normalize_output_detail,
+    normalize_output_extras,
     normalize_output_verbosity_detail,
+    output_extras_shape_detail,
     resolve_output_contract,
     resolve_requested_output_verbosity,
 )
@@ -63,6 +65,20 @@ def test_resolve_output_contract_preserves_tool_specific_detail_aliases() -> Non
     assert state.shape_detail == "compact"
     assert state.verbose is False
     assert state.transport_verbose is False
+
+
+def test_normalize_output_extras_accepts_comma_lists_and_full_aliases() -> None:
+    assert normalize_output_extras("metadata, diagnostics") == (
+        "metadata",
+        "diagnostics",
+    )
+    assert set(normalize_output_extras("all")) >= {"metadata", "diagnostics", "raw"}
+
+
+def test_output_extras_shape_detail_is_compact_by_default_and_full_when_requested() -> None:
+    assert output_extras_shape_detail(None) == "compact"
+    assert output_extras_shape_detail("") == "compact"
+    assert output_extras_shape_detail("metadata") == "full"
 
 
 def test_resolve_output_contract_prefers_explicit_verbose_when_detail_is_none() -> None:

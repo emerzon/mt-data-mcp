@@ -118,7 +118,7 @@ In `high_low` mode, if the same bar touches both barriers, the label is resolved
 
 ```bash
 mtdata-cli labels_triple_barrier EURUSD --timeframe H1 --horizon 12 \
-  --tp-pct 0.5 --sl-pct 0.3 --detail compact --json
+  --tp-pct 0.5 --sl-pct 0.3 --json
 ```
 
 **Parameters:**

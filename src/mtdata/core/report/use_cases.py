@@ -190,14 +190,11 @@ def _compact_report_payload(
 def run_report_generate(  # noqa: C901
     request: ReportGenerateRequest,
     *,
-    render_report: Any,
     format_number: Any,
     get_indicator_value: Any,
-    report_error_text: Any,
     report_error_payload: Any,
     append_diagnostic_warning: Any,
 ) -> str | Dict[str, Any]:
-    output_mode = str(request.format or "toon").strip().lower()
     template_name = (request.template or "basic").lower().strip()
     detail_value = _normalize_report_detail(getattr(request, "detail", "compact"))
 
@@ -235,8 +232,6 @@ def run_report_generate(  # noqa: C901
                     template_swing as _t_swing,
                 )
             except Exception as ex:
-                if output_mode == "markdown":
-                    return report_error_text(f"Failed to import report templates: {ex}")
                 return report_error_payload(f"Failed to import report templates: {ex}")
 
             default_horizon = {
@@ -277,8 +272,6 @@ def run_report_generate(  # noqa: C901
                         f"Unknown template: {request.template}. "
                         "Use one of basic, minimal, advanced, scalping, intraday, swing, position."
                     )
-                    if output_mode == "markdown":
-                        return report_error_text(msg)
                     return report_error_payload(msg)
 
             for warning_obj in warning_records:
@@ -293,13 +286,9 @@ def run_report_generate(  # noqa: C901
 
             if not isinstance(rep, dict):
                 msg = "Report template returned an unexpected payload."
-                if output_mode == "markdown":
-                    return report_error_text(msg)
                 return report_error_payload(msg)
             if rep.get("error"):
                 msg = rep.get("error")
-                if output_mode == "markdown":
-                    return report_error_text(msg)
                 return report_error_payload(msg)
             if captured_warnings:
                 for warning_text in captured_warnings:
@@ -638,8 +627,6 @@ def run_report_generate(  # noqa: C901
             rep["detail"] = detail_value
             rep = _prioritize_report_payload(rep)
 
-            if output_mode == "markdown":
-                return render_report(rep)
             if detail_value == "compact":
                 return _compact_report_payload(rep, symbol=request.symbol, template=template_name)
             if detail_value == "standard":
@@ -655,11 +642,8 @@ def run_report_generate(  # noqa: C901
                 exc=exc,
                 symbol=request.symbol,
                 template=template_name,
-                format=output_mode,
             )
             msg = f"Error generating report: {exc}"
-            if output_mode == "markdown":
-                return report_error_text(msg)
             return report_error_payload(msg)
 
     return run_logged_operation(
@@ -667,6 +651,5 @@ def run_report_generate(  # noqa: C901
         operation="report_generate",
         symbol=request.symbol,
         template=template_name,
-        format=output_mode,
         func=_run,
     )

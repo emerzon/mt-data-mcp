@@ -472,7 +472,7 @@ def _compact_patterns_payload(payload: Dict[str, Any]) -> Dict[str, Any]:  # noq
         "summary": summary,
     }
     if summary["more_patterns"] > 0:
-        compact["show_all_hint"] = "Set detail='full' to show all detected patterns."
+        compact["show_all_hint"] = "Set extras='metadata' to show all detected patterns."
     compact["recent_patterns"] = recent_rows
 
     for key in (

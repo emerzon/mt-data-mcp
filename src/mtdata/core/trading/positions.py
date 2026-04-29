@@ -967,7 +967,7 @@ def _resolve_pending_order(
 def trade_get_open(
     request: TradeGetOpenRequest,
 ) -> Dict[str, Any]:
-    """Get open positions. Use detail="compact" to omit echoed request metadata."""
+    """Get open positions. Compact output omits echoed request metadata by default."""
     return run_logged_operation(
         logger,
         operation="trade_get_open",
@@ -994,7 +994,7 @@ def trade_get_open(
 def trade_get_pending(
     request: TradeGetPendingRequest,
 ) -> Dict[str, Any]:
-    """Get pending orders. Use detail="compact" to omit echoed request metadata."""
+    """Get pending orders. Compact output omits echoed request metadata by default."""
     return run_logged_operation(
         logger,
         operation="trade_get_pending",

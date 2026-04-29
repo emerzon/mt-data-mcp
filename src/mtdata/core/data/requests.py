@@ -381,8 +381,8 @@ class DataFetchTicksRequest(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _reject_removed_output(cls, values: Any) -> Any:
-        values = _reject_removed_field(values, field_name="output", replacement="detail")
-        return _reject_removed_field(values, field_name="output_mode", replacement="detail")
+        values = _reject_removed_field(values, field_name="output", replacement="json")
+        return _reject_removed_field(values, field_name="output_mode", replacement="extras")
 
     @field_validator("detail", mode="before")
     @classmethod

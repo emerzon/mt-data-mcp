@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Iterator, Mapping, Optional
+from typing import Any, Iterable, Iterator, Mapping, Optional
 
 from ..shared.schema import CANONICAL_OUTPUT_DETAIL_ALIASES
 from ..utils.utils import _UNPARSED_BOOL, _parse_bool_like
@@ -25,6 +25,8 @@ class OutputContractState:
     """Resolved shared output contract state."""
 
     detail: str
+    json: bool = False
+    extras: tuple[str, ...] = ()
 
     @property
     def shape_detail(self) -> str:
@@ -37,6 +39,24 @@ class OutputContractState:
     @property
     def transport_verbose(self) -> bool:
         return self.shape_detail == "full"
+
+
+OUTPUT_EXTRAS = frozenset(
+    {
+        "metadata",
+        "diagnostics",
+        "request",
+        "raw",
+        "raw_rows",
+        "method_docs",
+    }
+)
+
+_FULL_EXTRA_ALIASES = {
+    "all",
+    "full",
+    "verbose",
+}
 
 
 def _strip_verbose_only_fields(value: Any) -> Any:
@@ -80,6 +100,56 @@ def _coerce_optional_verbose_flag(value: Any) -> Optional[bool]:
     return bool(parsed)
 
 
+def _coerce_json_flag(value: Any) -> bool:
+    parsed = _parse_bool_like(value, allow_none=True)
+    if parsed is _UNPARSED_BOOL:
+        return bool(value)
+    return bool(parsed)
+
+
+def normalize_output_extras(value: Any) -> tuple[str, ...]:
+    """Normalize public richer-output extras into canonical tokens."""
+    if value is _MISSING:
+        return ()
+    if value in (None, "", False):
+        return ()
+    if value is True:
+        return tuple(sorted(OUTPUT_EXTRAS))
+
+    items: list[Any]
+    if isinstance(value, str):
+        raw = value.strip()
+        if not raw:
+            return ()
+        items = [part.strip() for part in raw.replace(";", ",").split(",")]
+    elif isinstance(value, Iterable) and not isinstance(value, (dict, bytes, bytearray)):
+        items = list(value)
+    else:
+        items = [value]
+
+    extras: list[str] = []
+    for item in items:
+        token = str(item or "").strip().lower().replace("-", "_")
+        if not token:
+            continue
+        if token in _FULL_EXTRA_ALIASES:
+            for extra in sorted(OUTPUT_EXTRAS):
+                if extra not in extras:
+                    extras.append(extra)
+            continue
+        if token not in OUTPUT_EXTRAS:
+            allowed = ", ".join(sorted(OUTPUT_EXTRAS | _FULL_EXTRA_ALIASES))
+            raise ValueError(f"Invalid extras value {item!r}. Use one of: {allowed}.")
+        if token not in extras:
+            extras.append(token)
+    return tuple(extras)
+
+
+def output_extras_shape_detail(extras: Any) -> str:
+    """Map richer-output extras to the legacy compact/full shaping contract."""
+    return "full" if normalize_output_extras(extras) else "compact"
+
+
 def _resolve_requested_detail_value(source: Any, *, detail: Any = _MISSING) -> Any:
     if detail is not _MISSING and detail is not None:
         return detail
@@ -118,12 +188,18 @@ def _iter_contract_sources(
     *,
     detail: Any = _MISSING,
     verbose: Any = _MISSING,
+    json: Any = _MISSING,
+    extras: Any = _MISSING,
 ) -> tuple[Any, ...]:
     explicit: dict[str, Any] = {}
     if detail is not _MISSING:
         explicit["detail"] = detail
     if verbose is not _MISSING:
         explicit["verbose"] = verbose
+    if json is not _MISSING:
+        explicit["json"] = json
+    if extras is not _MISSING:
+        explicit["extras"] = extras
 
     candidates: list[Any] = []
     if explicit:
@@ -166,11 +242,21 @@ def resolve_output_contract(
     *,
     detail: Any = _MISSING,
     verbose: Any = _MISSING,
+    json: Any = _MISSING,
+    extras: Any = _MISSING,
     default_detail: str = "compact",
     aliases: Optional[Mapping[str, str]] = None,
 ) -> OutputContractState:
     """Resolve shared detail state."""
-    if detail is not _MISSING and detail is not None:
+    extras_value = extras if extras is not _MISSING else _read_verbosity_field(source, "extras")
+    normalized_extras = normalize_output_extras(extras_value)
+
+    json_value = json if json is not _MISSING else _read_verbosity_field(source, "json")
+    json_output = False if json_value is _MISSING else _coerce_json_flag(json_value)
+
+    if normalized_extras:
+        requested_detail_value = output_extras_shape_detail(normalized_extras)
+    elif detail is not _MISSING and detail is not None:
         requested_detail_value = detail
     elif verbose is not _MISSING:
         verbose_value = _coerce_optional_verbose_flag(verbose)
@@ -183,6 +269,8 @@ def resolve_output_contract(
             default=default_detail,
             aliases=aliases,
         ),
+        json=json_output,
+        extras=normalized_extras,
     )
 
 

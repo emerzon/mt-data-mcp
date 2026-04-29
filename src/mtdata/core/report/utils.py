@@ -754,24 +754,3 @@ def _compact_table_value(value: Any) -> str:
         text = '"' + text.replace('"', '""') + '"'
     return text
 
-
-
-from .rendering import (
-    _build_pivot_context_line,
-    _render_backtest_section,
-    _render_barriers_section,
-    _render_context_section,
-    _render_contexts_multi_section,
-    _render_execution_gates_section,
-    _render_forecast_conformal_section,
-    _render_forecast_section,
-    _render_generic_section,
-    _render_market_section,
-    _render_patterns_section,
-    _render_pivot_multi_section,
-    _render_pivot_section,
-    _render_regime_section,
-    _render_volatility_har_section,
-    _render_volatility_section,
-    render_enhanced_report,
-)

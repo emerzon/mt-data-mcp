@@ -61,6 +61,7 @@ _TRADE_PLACE_STRING_ORDER_TYPES = [
 ]
 
 _SchemaPatcher = Callable[[Dict[str, Any]], None]
+_REMOVED_PUBLIC_OUTPUT_PARAMS = frozenset({"detail", "format", "output_mode", "output"})
 
 
 def _safe_schema_op(operation: str, func, default=None):
@@ -408,6 +409,54 @@ def _compact_schema_shape(schema: Dict[str, Any]) -> Dict[str, Any]:
     return compact
 
 
+def _enforce_public_output_contract(schema: Dict[str, Any]) -> None:
+    params_obj = _schema_obj(schema)
+    props = params_obj.get("properties") if isinstance(params_obj, dict) else None
+    if not isinstance(props, dict):
+        return
+    for name in _REMOVED_PUBLIC_OUTPUT_PARAMS:
+        props.pop(name, None)
+    required = params_obj.get("required")
+    if isinstance(required, list):
+        params_obj["required"] = [name for name in required if name not in _REMOVED_PUBLIC_OUTPUT_PARAMS]
+    props.setdefault(
+        "json",
+        {
+            "type": "boolean",
+            "default": False,
+            "description": "Return structured JSON instead of default TOON text.",
+        },
+    )
+    props.setdefault(
+        "extras",
+        {
+            "anyOf": [
+                {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "enum": [
+                            "metadata",
+                            "diagnostics",
+                            "request",
+                            "raw",
+                            "raw_rows",
+                            "method_docs",
+                        ],
+                    },
+                },
+                {"type": "string"},
+            ],
+            "description": "Optional richer output sections. Use all/full for every supported section.",
+        },
+    )
+    if isinstance(props.get("extras"), dict):
+        props["extras"].setdefault(
+            "description",
+            "Optional richer output sections. Use all/full for every supported section.",
+        )
+
+
 def _collect_schema_refs(value: Any, refs: set[str], *, skip_defs: bool) -> None:
     if isinstance(value, dict):
         for key, item in value.items():
@@ -494,6 +543,10 @@ def attach_schemas_to_tools(mcp: Any, shared_enums: Dict[str, Any]) -> None:
             _safe_schema_op(
                 f"patch_public_params:{name}",
                 lambda: [patcher(public_schema) for patcher in _TOOL_SCHEMA_PATCHERS.get(name, ())],
+            )
+            _safe_schema_op(
+                f"enforce_output_contract:{name}",
+                lambda: _enforce_public_output_contract(public_schema),
             )
 
             public_schema = _compact_schema_shape(public_schema)

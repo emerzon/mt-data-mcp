@@ -309,17 +309,17 @@ class TestGetMethods:
     def test_returns_methods(self):
         data = {"methods": [{"method": "theta", "available": True, "requires": []}]}
         with patch("mtdata.core.web_api._get_methods_impl", return_value=data):
-            res = web_api.get_methods()
+            res = web_api.get_methods(extras="metadata")
         assert res["methods"][0]["method"] == "theta"
 
     def test_returns_empty_on_none(self):
         with patch("mtdata.core.web_api._get_methods_impl", return_value=None):
-            res = web_api.get_methods()
+            res = web_api.get_methods(extras="metadata")
         assert res == {"methods": []}
 
     def test_returns_empty_on_no_methods_key(self):
         with patch("mtdata.core.web_api._get_methods_impl", return_value={"other": 1}):
-            res = web_api.get_methods()
+            res = web_api.get_methods(extras="metadata")
         assert res == {"methods": []}
 
     def test_uses_shared_snapshot_backed_methods_payload(self):
@@ -350,7 +350,7 @@ class TestGetMethods:
                 ]
             },
         ):
-            res = web_api.get_methods()
+            res = web_api.get_methods(extras="metadata")
         assert res["methods"] == [
             {
                 "method": "timesfm",
@@ -374,10 +374,10 @@ class TestGetMethods:
             "mtdata.core.web_api_handlers.get_forecast_methods_payload",
             side_effect=RuntimeError("boom"),
         ):
-            res = web_api.get_methods()
+            res = web_api.get_methods(extras="metadata")
         assert res == data
 
-    def test_compact_detail_filters_snapshot_metadata(self):
+    def test_default_compact_filters_snapshot_metadata(self):
         data = {"methods": [{"method": "theta", "available": True, "requires": []}]}
         with patch("mtdata.core.web_api._get_methods_impl", return_value=data), patch(
             "mtdata.core.web_api_handlers.get_forecast_methods_payload",
@@ -398,7 +398,7 @@ class TestGetMethods:
                 ]
             },
         ):
-            resp = _client.get("/api/methods", params={"detail": "compact"})
+            resp = _client.get("/api/methods")
         assert resp.status_code == 200
         assert resp.json() == {
             "detail": "compact",
@@ -414,7 +414,7 @@ class TestGetMethods:
             ],
         }
 
-    def test_full_detail_keeps_enriched_snapshot_metadata(self):
+    def test_extras_keeps_enriched_snapshot_metadata(self):
         data = {"methods": [{"method": "theta", "available": True, "requires": []}]}
         enriched = {
             "methods": [
@@ -432,12 +432,12 @@ class TestGetMethods:
             "mtdata.core.web_api_handlers.get_forecast_methods_payload",
             return_value=enriched,
         ):
-            resp = _client.get("/api/methods", params={"detail": "full"})
+            resp = _client.get("/api/methods", params={"extras": "metadata"})
         assert resp.status_code == 200
         assert resp.json() == enriched
 
-    def test_rejects_invalid_methods_detail_query(self):
-        resp = _client.get("/api/methods", params={"detail": "verbose"})
+    def test_rejects_invalid_methods_extras_query(self):
+        resp = _client.get("/api/methods", params={"extras": "not_a_section"})
         assert resp.status_code == 422
 
 
@@ -458,7 +458,7 @@ class TestGetModels:
         assert resp.status_code == 200
         assert resp.json() == data
 
-    def test_passes_method_and_detail_to_models_impl(self):
+    def test_passes_method_and_extras_to_models_impl(self):
         data = {
             "success": True,
             "detail": "full",
@@ -472,19 +472,19 @@ class TestGetModels:
             ],
         }
         with patch("mtdata.core.web_api._get_models_impl", return_value=data) as mock_models:
-            resp = _client.get("/api/models", params={"method": "nhits", "detail": "full"})
+            resp = _client.get("/api/models", params={"method": "nhits", "extras": "metadata"})
         assert resp.status_code == 200
         assert resp.json() == data
         mock_models.assert_called_once_with(method="nhits", detail="full")
 
     def test_returns_empty_payload_on_invalid_models_result(self):
         with patch("mtdata.core.web_api._get_models_impl", return_value=None):
-            resp = _client.get("/api/models", params={"detail": "full"})
+            resp = _client.get("/api/models", params={"extras": "metadata"})
         assert resp.status_code == 200
         assert resp.json() == {"success": True, "detail": "full", "count": 0, "models": []}
 
-    def test_rejects_invalid_detail_query(self):
-        resp = _client.get("/api/models", params={"detail": "verbose"})
+    def test_rejects_invalid_extras_query(self):
+        resp = _client.get("/api/models", params={"extras": "not_a_section"})
         assert resp.status_code == 422
 
 
@@ -1212,7 +1212,7 @@ class TestPostBacktest:
                 "denoise": {"method": "wavelet"},
                 "params": {"extra": True}, "features": {"rsi": {}},
                 "dimred_method": "pca", "dimred_params": {"n": 2},
-                "slippage_bps": 1.5, "trade_threshold": 0.01, "detail": "full",
+                "slippage_bps": 1.5, "trade_threshold": 0.01, "extras": ["metadata"],
             })
         request = mock_bt.call_args.args[0]
         assert request.slippage_bps == 1.5
@@ -1515,7 +1515,7 @@ class TestMethodsAvailabilityEdgeCases:
                 ]
             },
         ):
-            res = web_api.get_methods()
+            res = web_api.get_methods(extras="metadata")
         assert res["methods"][0]["available"] is True
         assert res["methods"][0]["requires"] == ["chronos"]
         assert res["methods"][0]["namespace"] == "pretrained"

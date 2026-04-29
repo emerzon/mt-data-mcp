@@ -462,7 +462,7 @@ def test_data_fetch_candles_wrapper_respects_detail_contract(monkeypatch):
 
 
 def test_data_fetch_ticks_request_rejects_removed_output_field():
-    with pytest.raises(ValidationError, match="output was removed; use detail"):
+    with pytest.raises(ValidationError, match="output was removed; use json"):
         DataFetchTicksRequest(symbol="EURUSD", output="rows")
 
 
@@ -481,7 +481,7 @@ def test_data_fetch_ticks_request_uses_detail_control():
 
 
 def test_data_fetch_ticks_request_rejects_removed_output_mode_field():
-    with pytest.raises(ValidationError, match="output_mode was removed; use detail"):
+    with pytest.raises(ValidationError, match="output_mode was removed; use extras"):
         DataFetchTicksRequest(symbol="EURUSD", output_mode="rows")
 
 

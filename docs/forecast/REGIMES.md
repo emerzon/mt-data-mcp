@@ -82,7 +82,7 @@ summary:
 
 **Example:**
 ```bash
-mtdata-cli regime_detect EURUSD --timeframe H1 --method bocpd --threshold 0.5 --detail summary
+mtdata-cli regime_detect EURUSD --timeframe H1 --method bocpd --threshold 0.5
 ```
 
 **Output:**
@@ -187,25 +187,25 @@ mtdata-cli forecast_barrier_optimize EURUSD --timeframe H1 --horizon 12 \
 
 ---
 
-## Output Formats
+## Output Contract
 
-### Compact Output (Default)
+### Compact TOON Output (Default)
 ```bash
-mtdata-cli regime_detect EURUSD --timeframe H1 --method hmm --detail compact
+mtdata-cli regime_detect EURUSD --timeframe H1 --method hmm
 ```
 Shows regime segments: start time, end time, duration, state ID.
 
-### Summary Output
+### JSON Output
 ```bash
-mtdata-cli regime_detect EURUSD --timeframe H1 --method hmm --detail summary
+mtdata-cli regime_detect EURUSD --timeframe H1 --method hmm --json
 ```
-Shows aggregate statistics: current state, state distributions, volatility per state.
+Returns structured JSON for programmatic use.
 
-### Full Output
+### Richer Sections
 ```bash
-mtdata-cli regime_detect EURUSD --timeframe H1 --method hmm --detail full
+mtdata-cli regime_detect EURUSD --timeframe H1 --method hmm --extras metadata,diagnostics --json
 ```
-Shows per-bar state assignments and probabilities.
+Adds supported richer sections such as metadata and diagnostics.
 
 ---
 

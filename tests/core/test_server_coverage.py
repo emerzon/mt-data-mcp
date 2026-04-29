@@ -783,7 +783,7 @@ class TestRecordingToolDecorator:
         finally:
             srv._ORIG_TOOL_DECORATOR = original
 
-    def test_wrapped_function_hides_meta_by_default_and_keeps_it_when_detail_is_compact(self):
+    def test_wrapped_function_hides_meta_by_default_and_exposes_output_contract(self):
         import mtdata.core.server as srv
         from mtdata.core._mcp_tools import _TOOL_REGISTRY
 
@@ -803,12 +803,14 @@ class TestRecordingToolDecorator:
             wrapped = _TOOL_REGISTRY["sample_tool"]
             sig = inspect.signature(wrapped)
 
-            assert "detail" in sig.parameters
+            assert "detail" not in sig.parameters
+            assert "json" in sig.parameters
+            assert "extras" in sig.parameters
             assert "verbose" not in sig.parameters
             assert "precision" not in sig.parameters
 
-            compact = wrapped(__cli_raw=True, detail="compact")
-            full = wrapped(__cli_raw=True, detail="full")
+            compact = wrapped(__cli_raw=True)
+            full = wrapped(__cli_raw=True, extras="metadata,diagnostics")
 
             assert compact == {"value": 1}
             assert full["value"] == 1
@@ -818,7 +820,7 @@ class TestRecordingToolDecorator:
         finally:
             srv._ORIG_TOOL_DECORATOR = original
 
-    def test_wrapped_function_treats_detail_full_as_verbose(self):
+    def test_wrapped_function_treats_extras_as_verbose(self):
         import mtdata.core.server as srv
         from mtdata.core._mcp_tools import _TOOL_REGISTRY
 
@@ -838,17 +840,45 @@ class TestRecordingToolDecorator:
             wrapped = _TOOL_REGISTRY["sample_tool"]
             sig = inspect.signature(wrapped)
 
-            assert "detail" in sig.parameters
+            assert "detail" not in sig.parameters
+            assert "json" in sig.parameters
+            assert "extras" in sig.parameters
             assert "verbose" not in sig.parameters
             assert "precision" not in sig.parameters
-            compact = wrapped(__cli_raw=True, detail="compact")
-            full = wrapped(__cli_raw=True, detail="full")
+            compact = wrapped(__cli_raw=True)
+            full = wrapped(__cli_raw=True, extras="all")
 
             assert compact == {"value": 1}
             assert full["value"] == 1
             assert full["meta"]["tool"] == "sample_tool"
             assert full["meta"]["domain"]["symbol"] == "EURUSD"
             assert full["diagnostics"]["source"] == "mt5"
+        finally:
+            srv._ORIG_TOOL_DECORATOR = original
+
+    def test_public_wrapped_output_is_toon_by_default_and_json_on_flag(self):
+        import mtdata.core.server as srv
+
+        original = srv._ORIG_TOOL_DECORATOR
+        try:
+            srv._ORIG_TOOL_DECORATOR = lambda *a, **k: (lambda fn: fn)
+            dec = srv._recording_tool_decorator()
+
+            def sample_output_tool(detail: str = "compact"):
+                return {"success": True, "value": 1, "detail_seen": detail}
+
+            wrapped = dec(sample_output_tool)
+
+            toon = wrapped()
+            structured = wrapped(json=True, extras="metadata")
+
+            assert isinstance(toon, str)
+            assert "success: true" in toon
+            assert structured["success"] is True
+            assert structured["detail_seen"] == "full"
+            error = wrapped(detail="full")
+            assert isinstance(error, str)
+            assert "Removed output option(s): detail" in error
         finally:
             srv._ORIG_TOOL_DECORATOR = original
 
@@ -989,6 +1019,35 @@ class TestRecordingToolDecorator:
 
 class TestMcpToolSchemas:
 
+    def test_all_list_tools_schemas_use_public_output_contract(self):
+        from mcp import ClientSession
+        from mcp.client.stdio import StdioServerParameters, stdio_client
+
+        async def _run() -> dict[str, dict]:
+            server = StdioServerParameters(
+                command=sys.executable,
+                args=["-c", "from mtdata.core.server import main_stdio; main_stdio()"],
+            )
+            async with stdio_client(server) as streams:
+                async with ClientSession(*streams) as session:
+                    await session.initialize()
+                    tools = await session.list_tools()
+                    items = getattr(tools, "tools", tools)
+                    return {
+                        str(getattr(tool, "name", "")): getattr(tool, "inputSchema", {}) or {}
+                        for tool in items
+                    }
+
+        schemas = asyncio.run(_run())
+        removed = {"detail", "format", "output_mode", "output"}
+
+        assert schemas
+        for name, schema in schemas.items():
+            props = schema.get("properties") or {}
+            assert not (removed & set(props)), name
+            assert props["json"]["type"] == "boolean", name
+            assert "extras" in props, name
+
     def test_wait_event_list_tools_schema_omits_legacy_varargs(self):
         from mcp import ClientSession
         from mcp.client.stdio import StdioServerParameters, stdio_client
@@ -1110,8 +1169,9 @@ class TestMcpToolSchemas:
         ]
         assert props["target"]["type"] == "string"
         assert props["target"]["enum"] == ["return", "price"]
-        assert props["detail"]["type"] == "string"
-        assert props["detail"]["enum"] == ["compact", "standard", "summary", "full"]
+        assert "detail" not in props
+        assert props["json"]["type"] == "boolean"
+        assert "extras" in props
 
         params_schema = props["params"]
         assert (

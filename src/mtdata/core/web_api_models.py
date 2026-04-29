@@ -7,12 +7,18 @@ from typing import Any, Dict, Literal, Optional
 from pydantic import BaseModel, Field, model_validator
 
 from ..forecast.requests import ForecastBacktestRequest, ForecastGenerateRequest
-from .schema import CompactFullDetailLiteral, CompactStandardFullDetailLiteral
+from .output_contract import output_extras_shape_detail
 
 
 def _reject_removed_target(values: Any) -> Any:
     if isinstance(values, dict) and "target" in values:
         raise ValueError("target was removed; use quantity")
+    return values
+
+
+def _reject_removed_output_detail(values: Any) -> Any:
+    if isinstance(values, dict) and "detail" in values:
+        raise ValueError("detail was removed; use extras")
     return values
 
 
@@ -31,12 +37,12 @@ class ForecastPriceBody(BaseModel):
     dimred_method: Optional[str] = None
     dimred_params: Optional[Dict[str, Any]] = None
     target_spec: Optional[Dict[str, Any]] = None
-    detail: CompactStandardFullDetailLiteral = Field("compact")
+    extras: Optional[list[str] | str] = Field(None)
 
     @model_validator(mode="before")
     @classmethod
-    def _reject_removed_target(cls, values: Any) -> Any:
-        return _reject_removed_target(values)
+    def _reject_removed_fields(cls, values: Any) -> Any:
+        return _reject_removed_output_detail(_reject_removed_target(values))
 
     def to_domain_request(self) -> ForecastGenerateRequest:
         return ForecastGenerateRequest(
@@ -55,7 +61,7 @@ class ForecastPriceBody(BaseModel):
             dimred_method=self.dimred_method,
             dimred_params=self.dimred_params,
             target_spec=self.target_spec,
-            detail=self.detail,
+            detail=output_extras_shape_detail(self.extras),
         )
 
 
@@ -86,12 +92,12 @@ class BacktestBody(BaseModel):
     dimred_params: Optional[Dict[str, Any]] = None
     slippage_bps: float = 0.0
     trade_threshold: float = 0.0
-    detail: CompactFullDetailLiteral = Field("compact")
+    extras: Optional[list[str] | str] = Field(None)
 
     @model_validator(mode="before")
     @classmethod
-    def _reject_removed_target(cls, values: Any) -> Any:
-        return _reject_removed_target(values)
+    def _reject_removed_fields(cls, values: Any) -> Any:
+        return _reject_removed_output_detail(_reject_removed_target(values))
 
     def to_domain_request(self) -> ForecastBacktestRequest:
         return ForecastBacktestRequest(
@@ -110,5 +116,5 @@ class BacktestBody(BaseModel):
             dimred_params=self.dimred_params,
             slippage_bps=self.slippage_bps,
             trade_threshold=self.trade_threshold,
-            detail=self.detail,
+            detail=output_extras_shape_detail(self.extras),
         )

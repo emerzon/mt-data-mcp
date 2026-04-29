@@ -19,7 +19,6 @@ from ..forecast.use_cases import (
 from ..forecast.use_cases import (
     run_forecast_generate as _run_forecast_generate_impl,
 )
-from .schema import CompactFullDetailLiteral
 from ..forecast.volatility import (
     forecast_volatility as _forecast_vol_impl,
 )
@@ -206,20 +205,20 @@ def get_instruments(search: Optional[str] = Query(None), limit: Optional[int] = 
 
 @api_router.get("/methods")
 def get_methods(
-    detail: CompactFullDetailLiteral = Query("full"),
+    extras: Optional[str] = None,
 ) -> Dict[str, Any]:
-    return _get_methods_response(get_methods_impl=_get_methods_impl, detail=detail)
+    return _get_methods_response(get_methods_impl=_get_methods_impl, extras=extras)
 
 
 @api_router.get("/models")
 def get_models(
     method: Optional[str] = Query(None),
-    detail: CompactFullDetailLiteral = Query("compact"),
+    extras: Optional[str] = None,
 ) -> Dict[str, Any]:
     return _get_models_response(
         get_models_impl=_get_models_impl,
         method=method,
-        detail=detail,
+        extras=extras,
     )
 
 
@@ -307,7 +306,7 @@ def get_support_resistance(
     tolerance_pct: float = Query(0.0015, ge=0.0, le=0.05),
     min_touches: int = Query(2, ge=1),
     max_levels: int = Query(4, ge=1, le=20),
-    detail: str = Query("compact"),
+    extras: Optional[str] = None,
 ) -> Dict[str, Any]:
     return _get_support_resistance_response(
         symbol=symbol,
@@ -316,7 +315,7 @@ def get_support_resistance(
         tolerance_pct=tolerance_pct,
         min_touches=min_touches,
         max_levels=max_levels,
-        detail=detail,
+        extras=extras,
         fetch_history_impl=_fetch_history_impl,
     )
 

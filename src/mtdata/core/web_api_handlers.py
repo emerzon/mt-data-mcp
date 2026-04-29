@@ -16,13 +16,20 @@ from ..utils.utils import _UNPARSED_BOOL, _parse_bool_like
 from .cli_formatting import _sanitize_json_compat
 from .error_envelope import build_http_error_detail
 from .mt5_gateway import get_default_mt5_gateway
-from .output_contract import ensure_common_meta
+from .output_contract import ensure_common_meta, output_extras_shape_detail
 from .pivot import compute_support_resistance_payload
 from .runtime_metadata import build_runtime_timezone_meta
 from .tool_calling import resolve_sync_tool_result
 from .web_api_models import BacktestBody, ForecastPriceBody, ForecastVolBody
 
 logger = logging.getLogger(__name__)
+
+
+def _shape_detail_from_extras(extras: Any) -> str:
+    try:
+        return output_extras_shape_detail(extras)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 def _http_error(
@@ -220,7 +227,7 @@ def _compact_forecast_method_definition(method_def: Dict[str, Any]) -> Dict[str,
 def get_methods_response(
     *,
     get_methods_impl: Callable[[], Any],
-    detail: str = "full",
+    extras: Any = None,
 ) -> Dict[str, Any]:
     data = get_methods_impl()
     if not isinstance(data, dict) or data.get("methods") is None:
@@ -232,7 +239,8 @@ def get_methods_response(
         payload = get_forecast_methods_payload(method_data=data)
     except Exception:
         return data
-    if str(detail or "full").strip().lower() != "compact":
+    detail = _shape_detail_from_extras(extras)
+    if detail != "compact":
         return payload
     methods_payload = payload.get("methods")
     if not isinstance(methods_payload, list):
@@ -251,8 +259,9 @@ def get_models_response(
     *,
     get_models_impl: Callable[..., Any],
     method: Optional[str],
-    detail: str,
+    extras: Any = None,
 ) -> Dict[str, Any]:
+    detail = _shape_detail_from_extras(extras)
     data = get_models_impl(method=method, detail=detail)
     if not isinstance(data, dict):
         return {"success": True, "detail": detail, "count": 0, "models": []}
@@ -670,7 +679,7 @@ def get_support_resistance_response(
     tolerance_pct: float,
     min_touches: int,
     max_levels: int,
-    detail: str,
+    extras: Any,
     fetch_history_impl: Callable[..., Any],
 ) -> Dict[str, Any]:
     try:
@@ -706,7 +715,7 @@ def get_support_resistance_response(
             code="support_resistance_levels_missing",
             operation="get_support_resistance",
         )
-    if str(detail).strip().lower() == "compact":
+    if _shape_detail_from_extras(extras) == "compact":
         return compact_support_resistance_payload(result)
     return result
 

@@ -1122,7 +1122,7 @@ class TestFormatResultForCli:
                 ],
                 "methods_shown": 2,
                 "methods_hidden": 1,
-                "note": "Use --detail full to see all methods.",
+                "note": "Use --extras metadata to see all methods.",
             },
             fmt="toon",
             verbose=False,
@@ -2946,7 +2946,7 @@ class TestBuildEpilog:
         epilog = _build_epilog(functions)
 
         assert "--summary-only" not in epilog
-        assert "--detail{full,summary,compact}=[compact]" in epilog
+        assert "--detail" not in epilog
         assert "<Literal>" not in epilog
 
 
@@ -2966,7 +2966,7 @@ class TestAddForecastGenerateArgs:
         assert args.method == "theta"
         assert args.timeframe == "H1"
         assert args.horizon == 12
-        assert args.detail == "compact"
+        assert not hasattr(args, "detail")
 
     def test_all_options(self):
         parser = argparse.ArgumentParser()
@@ -2990,8 +2990,6 @@ class TestAddForecastGenerateArgs:
                 "0.1",
                 "--denoise",
                 "wavelet",
-                "--detail",
-                "full",
                 "--print-config",
             ]
         )
@@ -3002,7 +3000,7 @@ class TestAddForecastGenerateArgs:
         assert args.lookback == 200
         assert args.quantity == "return"
         assert args.ci_alpha == 0.1
-        assert args.detail == "full"
+        assert not hasattr(args, "detail")
         assert args.print_config is True
 
     def test_symbol_flag_alias(self):
@@ -3364,14 +3362,10 @@ class TestAddDynamicArguments:
 
         add_dynamic_arguments(parser, func_info, cmd_name="labels_triple_barrier")
 
-        detail_action = next(
-            action for action in parser._actions if action.dest == "detail"
-        )
-        assert detail_action.choices == ["full", "summary", "compact"]
+        assert not any(action.dest == "detail" for action in parser._actions)
         assert not any(action.dest == "summary_only" for action in parser._actions)
-
-        args = parser.parse_args(["--detail", "summary"])
-        assert args.detail == "summary"
+        with pytest.raises(SystemExit):
+            parser.parse_args(["--detail", "summary"])
 
     def test_partial_flag_prefix_is_rejected_when_abbrev_disabled(self, capsys):
         parser = argparse.ArgumentParser(allow_abbrev=False)
@@ -3550,15 +3544,15 @@ class TestResolveParamKwargs:
         assert "Minimum bars a detected regime must span" in min_regime_kwargs["help"]
         assert min_regime_kwargs["help"] != "min_regime_bars parameter"
 
-    def test_report_generate_format_help_is_command_specific(self):
+    def test_report_generate_format_help_is_removed_output_help(self):
         param = {
             "name": "format",
-            "type": Literal["toon", "markdown"],
+            "type": str,
             "required": False,
-            "default": "toon",
+            "default": "legacy",
         }
         kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="report_generate")
-        assert kwargs["help"] == "Output format: formatted text or markdown."
+        assert kwargs["help"] == "Domain-specific shape selector when supported; TOON/JSON selection uses json."
 
     def test_finviz_screen_filters_help_is_command_specific(self):
         param = {
@@ -3846,11 +3840,9 @@ class TestApplyCliOutputModeDefaults:
             }
         }
 
-        out = _apply_cli_output_mode_defaults(
-            args, ["patterns_detect", "--detail", "full"], functions
-        )
+        out = _apply_cli_output_mode_defaults(args, ["patterns_detect"], functions)
 
-        assert out.detail == "full"
+        assert out.detail == "compact"
 
 
 # ========================================================================
@@ -5483,7 +5475,7 @@ class TestForecastGenerateIntegration:
         assert call_kwargs["__cli_raw"] is True
 
     @patch("mtdata.core.cli.discover_tools")
-    def test_forecast_generate_passes_detail(self, mock_discover):
+    def test_forecast_generate_maps_extras_to_internal_detail(self, mock_discover):
         mock_fn = MagicMock(return_value={"forecast": [1.0, 2.0]})
         mock_fn.__module__ = "mtdata.core.server"
         mock_fn.__name__ = "forecast_generate"
@@ -5495,11 +5487,11 @@ class TestForecastGenerateIntegration:
                 "meta": {"description": "Generate forecasts"},
             },
         }
-        with patch("sys.argv", ["cli.py", "forecast_generate", "EURUSD", "--detail", "standard"]):
+        with patch("sys.argv", ["cli.py", "forecast_generate", "EURUSD", "--extras", "metadata"]):
             result = main()
         assert result == 0
         request = mock_fn.call_args[1]["request"]
-        assert request.detail == "standard"
+        assert request.detail == "full"
 
     @patch("mtdata.core.cli.discover_tools")
     def test_forecast_generate_accepts_symbol_flag_alias(self, mock_discover):

@@ -270,7 +270,7 @@ def forecast_task_status(request: ForecastTaskStatusRequest) -> Dict[str, Any]:
     """Get the current status and progress of a forecast training task.
 
     Returns task status, progress, and completion info.
-    Use ``detail='full'`` for expanded task/result metadata.
+    Use ``extras='metadata'`` for expanded task/result metadata.
     """
     def _execute() -> Dict[str, Any]:
         detail_mode = _detail_mode(request.detail)
@@ -353,7 +353,7 @@ def forecast_task_list(
     """List active and recent forecast training tasks.
 
     Optionally filter by status: pending, running, completed, failed, cancelled.
-    Use ``detail='full'`` for expanded progress and result payloads.
+    Use ``extras='metadata'`` for expanded progress and result payloads.
     """
     def _execute() -> Dict[str, Any]:
         detail_mode = _detail_mode(detail)
@@ -389,7 +389,7 @@ def forecast_models_list(
     """List all stored trained forecast models.
 
     Optionally filter by method name (e.g. nhits, tft, mlforecast).
-    Use ``detail='full'`` to include stored model metadata.
+    Use ``extras='metadata'`` to include stored model metadata.
     """
     def _execute() -> Dict[str, Any]:
         detail_mode = _detail_mode(detail)

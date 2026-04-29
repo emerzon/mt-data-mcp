@@ -30,7 +30,7 @@ Detect structural breaks and label regimes so you avoid trading through hostile 
 
 ```bash
 mtdata-cli regime_detect EURUSD --timeframe H1 --limit 1500 \
-  --method bocpd --threshold 0.6 --detail summary --lookback 300 --json
+  --method bocpd --threshold 0.6 --lookback 300 --json
 ```
 
 - Gate: if `max(cp_prob[-24:]) >= 0.6` → stand down or reduce size; retrain/recalibrate models.
@@ -39,7 +39,7 @@ mtdata-cli regime_detect EURUSD --timeframe H1 --limit 1500 \
 
 ```bash
 mtdata-cli regime_detect EURUSD --timeframe H1 --limit 1500 \
-  --method hmm --params "n_states=3" --detail compact --lookback 300 --json
+  --method hmm --params "n_states=3" --lookback 300 --json
 ```
 
 - Derive a simple regime tag: {trend‑lowvol, trend‑highvol, range} from `state` and `state_probabilities`.
@@ -48,7 +48,7 @@ mtdata-cli regime_detect EURUSD --timeframe H1 --limit 1500 \
 Optional: MS‑AR(1) (statsmodels)
 ```bash
 mtdata-cli regime_detect EURUSD --timeframe H1 --limit 1500 \
-  --method ms_ar --params "k_regimes=2 order=1" --detail summary --json
+  --method ms_ar --params "k_regimes=2 order=1" --json
 ```
 
 ---
@@ -104,7 +104,7 @@ mtdata-cli forecast_conformal_intervals EURUSD --timeframe H1 --method fourier_o
 mtdata-cli forecast_barrier_optimize EURUSD --timeframe H1 --horizon 12 \
   --method hmm_mc --mode pct --grid-style volatility --refine true --refine-radius 0.35 \
   --tp-min 0.25 --tp-max 1.5 --tp-steps 7 --sl-min 0.25 --sl-max 2.5 --sl-steps 9 \
-  --params "n_sims=5000 seed=7" --top-k 5 --return-grid false --output-mode summary --json
+  --params "n_sims=5000 seed=7" --top-k 5 --return-grid false --json
 ```
 
 - Choose a combo by objective (edge/kelly/ev/ev_cond/ev_per_bar/prob_resolve/profit_factor/min_loss_prob/utility) subject to constraints:
@@ -135,7 +135,7 @@ Use triple‑barrier labels offline for signal evaluation and meta‑models.
 ```bash
 mtdata-cli labels_triple_barrier EURUSD --timeframe H1 --limit 2000 \
   --horizon 12 --tp-pct 0.4 --sl-pct 0.8 --label-on high_low \
-  --detail summary --lookback 300 --json
+  --lookback 300 --json
 ```
 
 - Compute in‑sample precision/recall for your entry rules; adjust thresholds (edge, cp_prob, RSI, EMA alignment) to reach desired trade quality.

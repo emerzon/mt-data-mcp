@@ -182,13 +182,13 @@ Run a rolling-origin backtest.
   "dimred_params": null,
   "slippage_bps": 0.0,
   "trade_threshold": 0.0,
-  "detail": "compact"
+  "extras": null
 }
 ```
 
-The `detail` field controls response verbosity:
-- `"compact"` (default): aggregate metrics only.
-- `"full"`: includes per-anchor detail records.
+Compact response shape is the default. Use `extras` (for example
+`["metadata"]` or `"all"`) when you need richer sections such as per-anchor
+detail records.
 
 ## Running the Server
 

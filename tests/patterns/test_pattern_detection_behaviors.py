@@ -1665,7 +1665,7 @@ def test_build_pattern_response_compact_adds_hint_when_rows_are_truncated():
 
     assert compact["summary"]["more_patterns"] == 1
     assert (
-        compact["show_all_hint"] == "Set detail='full' to show all detected patterns."
+        compact["show_all_hint"] == "Set extras='metadata' to show all detected patterns."
     )
 
 

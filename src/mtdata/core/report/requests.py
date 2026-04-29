@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel, model_validator
 
 from ..schema import CompactStandardFullDetailLiteral, DenoiseSpec, TimeframeLiteral
-
-ReportFormat = Literal["toon", "markdown"]
 
 
 def _reject_removed_field(values: Any, *, field_name: str, replacement: str) -> Any:
@@ -23,10 +21,10 @@ class ReportGenerateRequest(BaseModel):
     methods: Optional[Union[str, List[str]]] = None
     denoise: Optional[DenoiseSpec] = None
     params: Optional[Dict[str, Any]] = None
-    format: ReportFormat = "toon"
     detail: CompactStandardFullDetailLiteral = "compact"
 
     @model_validator(mode="before")
     @classmethod
     def _reject_removed_output(cls, values: Any) -> Any:
-        return _reject_removed_field(values, field_name="output", replacement="format")
+        values = _reject_removed_field(values, field_name="output", replacement="json")
+        return _reject_removed_field(values, field_name="format", replacement="json")

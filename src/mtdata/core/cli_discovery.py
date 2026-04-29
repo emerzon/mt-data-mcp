@@ -68,7 +68,6 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("labels_triple_barrier", "detail"): "Detail level: full, summary, or compact (summary plus recent sample).",
     ("market_scan", "limit"): "Max matching symbols to return.",
     ("market_depth_fetch", "compact"): "Fail if DOM is unavailable instead of falling back to a ticker snapshot. Alias: --require-dom.",
-    ("report_generate", "format"): "Output format: formatted text or markdown.",
     ("symbols_list", "limit"): "Max symbols or groups to return.",
     ("symbols_top_markets", "limit"): "Max symbols to return for each ranking.",
     ("trade_modify", "expiration"): "Pending order expiration time (dateparser string, UTC epoch seconds, or GTC token).",

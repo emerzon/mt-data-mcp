@@ -251,7 +251,8 @@ def test_wait_event_tool_exposes_minimal_public_contract(monkeypatch) -> None:
         "watch_tick_count_spike",
         "watch_for",
         "end_on",
-        "detail",
+        "json",
+        "extras",
     )
 
     raw = getattr(core_data.wait_event, "__wrapped__", core_data.wait_event)

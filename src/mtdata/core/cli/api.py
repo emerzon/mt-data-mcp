@@ -753,6 +753,18 @@ def add_dynamic_arguments(
     original param name (snake_case) so downstream mapping works.
     Also casts Optional[int|float|bool] to their base types for argparse.
     """
+    if isinstance(param_info, dict) and isinstance(param_info.get("params"), list):
+        param_info = {
+            **param_info,
+            "params": [
+                param
+                for param in param_info["params"]
+                if not (
+                    isinstance(param, dict)
+                    and str(param.get("name") or "").strip() in {"detail", "format", "output_mode", "output"}
+                )
+            ],
+        }
     _add_dynamic_arguments_impl(
         parser,
         param_info,
@@ -1033,14 +1045,6 @@ def _add_forecast_generate_args(cmd_parser: argparse.ArgumentParser) -> None:
         help="Override nested params (method, denoise, features, dimred, target).",
     )
 
-    group_output = cmd_parser.add_argument_group("Output")
-    group_output.add_argument(
-        "--detail",
-        choices=["compact", "standard", "full"],
-        default="compact",
-        help="Response detail level.",
-    )
-
     group_dbg = cmd_parser.add_argument_group("Debug")
     group_dbg.add_argument(
         "--print-config",
@@ -1085,6 +1089,8 @@ def _first_line(text: Optional[str]) -> str:
 
 
 def _should_expose_cli_param(*, cmd_name: str, param_name: str) -> bool:
+    if param_name in {"detail", "format", "output_mode", "output"}:
+        return False
     return _should_expose_cli_param_impl(cmd_name=cmd_name, param_name=param_name)
 
 
@@ -1194,7 +1200,7 @@ _COMMAND_USAGE_EXAMPLES: Dict[str, Tuple[str, Optional[str]]] = {
     ),
     "regime_detect": (
         f"{CLI_PROGRAM} regime_detect BTCUSD --timeframe H1 --method hmm",
-        f"{CLI_PROGRAM} regime_detect BTCUSD --timeframe H1 --method hmm --detail full",
+        f"{CLI_PROGRAM} regime_detect BTCUSD --timeframe H1 --method hmm --extras metadata",
     ),
     "trade_risk_analyze": (
         f"{CLI_PROGRAM} trade_risk_analyze --symbol BTCUSD --direction long --desired-risk-pct 1 --entry 66317 --stop-loss 65000",
@@ -1454,7 +1460,7 @@ def main():
 
     parser = _safe_argument_parser(
         prog=parser_prog,
-        description="Dynamic CLI for MetaTrader5 MCP tools (formatted text output by default)",
+        description="Dynamic CLI for MetaTrader5 MCP tools (TOON output by default)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=_build_epilog(functions),
         allow_abbrev=False,
@@ -1662,7 +1668,7 @@ def main():
                 target_spec=target_spec or None,
                 async_mode=False,
                 model_id=None,
-                detail=args.detail,
+                detail=resolve_output_contract(args).shape_detail,
             )
 
             if getattr(args, "print_config", False):

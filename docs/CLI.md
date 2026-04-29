@@ -37,15 +37,15 @@ mtdata-cli regime_detect --help
 
 ---
 
-## Output Formats
+## Output Contract
 
-### Text (Default)
-Human-readable compact output:
+### TOON (Default)
+Human-readable compact TOON output:
 ```bash
 mtdata-cli symbols_list --limit 5
 ```
 
-The text format includes a quick schema hint:
+TOON includes a quick schema hint:
 ```
 data[5]{name,group,description}:
     EURUSD,Forex\Majors,Euro vs US Dollar
@@ -66,7 +66,7 @@ tools while compacting known large tables such as candles and scans.
 
 Control display precision explicitly:
 ```bash
-# Preserve full numeric precision in formatted text
+# Preserve full numeric precision in TOON text
 mtdata-cli market_ticker EURUSD --precision full
 
 # Compact a large table for token-saving display
@@ -80,14 +80,15 @@ mtdata-cli data_fetch_candles EURUSD --limit 200 --precision compact --decimals 
 as an alias for `compact`. Precision controls only presentation; internal tool
 processing and JSON/raw payloads keep numeric values.
 
-### Full Detail
-For commands that expose a `--detail` flag, request the richer contract:
+### Extras
+Compact output is implicit. For richer sections such as runtime metadata,
+diagnostics, echoed request context, raw rows, or method documentation, use
+`--extras`:
 ```bash
-mtdata-cli market_status --detail full
+mtdata-cli market_status --extras metadata,diagnostics
 ```
 
-Use `compact` (default) for lean output and `full` when you need runtime
-metadata, diagnostics, or echoed request context.
+Use `--extras all` when you need every supported richer section.
 
 ---
 
@@ -130,8 +131,8 @@ mtdata-cli data_fetch_candles EURUSD --timeframe M1 --limit 5000 --simplify
 mtdata-cli data_fetch_candles EURUSD --timeframe M1 --limit 5000 \
   --simplify lttb --simplify-params "points=500"
 
-# Raw ticks (rows output) can also be simplified
-mtdata-cli data_fetch_ticks EURUSD --output-mode rows --limit 20000 \
+# Raw ticks can also be simplified
+mtdata-cli data_fetch_ticks EURUSD --limit 20000 \
   --simplify rdp --simplify-params "points=2000"
 ```
 
@@ -302,7 +303,7 @@ mtdata-cli symbols_top_markets --rank-by spread --limit 10 --universe all --json
 
 # Scan visible majors for strong RSI and price above SMA
 mtdata-cli market_scan --group "Forex\\Majors" --rsi-above 60 --price-vs-sma above \
-  --sma-period 20 --timeframe H1 --lookback 120 --detail compact --json
+  --sma-period 20 --timeframe H1 --lookback 120 --json
 
 # Scan an explicit symbol basket for oversold names with tight spreads
 mtdata-cli market_scan EURUSD,GBPUSD,USDJPY --rsi-below 35 --max-spread-pct 0.03 --json
@@ -408,11 +409,11 @@ mtdata-cli regime_detect EURUSD --method bocpd --threshold 0.5
 ```bash
 # Rank co-moving symbols with transformed-return correlations
 mtdata-cli correlation_matrix "EURUSD,GBPUSD,USDJPY" --timeframe H1 \
-  --limit 500 --method pearson --transform log_return --detail compact --json
+  --limit 500 --method pearson --transform log_return --json
 
 # Use an explicit MT5 group path instead of naming symbols one-by-one
 mtdata-cli correlation_matrix --group "Forex\\Majors" --timeframe H1 \
-  --limit 120 --method pearson --transform log_return --detail full --json
+  --limit 120 --method pearson --transform log_return --extras metadata --json
 
 # Find candidate mean-reverting pairs inside an MT5 group
 mtdata-cli cointegration_test --group "Forex\\Majors" --timeframe H1 \

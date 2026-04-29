@@ -31,6 +31,8 @@ def _get_report_generate():
         from mtdata.core.report.requests import ReportGenerateRequest
 
         with patch.object(report_mod, "ensure_mt5_connection_or_raise", return_value=None):
+            if kwargs.get("format") == "toon":
+                kwargs.pop("format")
             kwargs.setdefault("detail", "full")
             return raw(request=ReportGenerateRequest(symbol=symbol, **kwargs))
 
@@ -50,14 +52,14 @@ def _make_report(sections=None, error=None):
 def test_report_generate_request_rejects_removed_output_field():
     from mtdata.core.report.requests import ReportGenerateRequest
 
-    with pytest.raises(ValidationError, match="output was removed; use format"):
-        ReportGenerateRequest(symbol="EURUSD", output="markdown")
+    with pytest.raises(ValidationError, match="output was removed; use json"):
+        ReportGenerateRequest(symbol="EURUSD", output="json")
 
 
 def test_report_generate_request_rejects_removed_structured_format_alias():
     from mtdata.core.report.requests import ReportGenerateRequest
 
-    with pytest.raises(ValidationError, match="Input should be 'toon' or 'markdown'"):
+    with pytest.raises(ValidationError, match="format was removed; use json"):
         ReportGenerateRequest(symbol="EURUSD", format="structured")
 
 
@@ -109,10 +111,8 @@ def test_run_report_generate_logs_finish_event(caplog):
          caplog.at_level("DEBUG", logger="mtdata.core.report.use_cases"):
         result = run_report_generate(
             ReportGenerateRequest(symbol="EURUSD"),
-            render_report=lambda rep: "# report",
             format_number=lambda value: str(value),
             get_indicator_value=lambda payload, key: payload.get(key),
-            report_error_text=lambda message: f"error: {message}",
             report_error_payload=lambda message: {"error": str(message)},
             append_diagnostic_warning=lambda report, message: None,
         )
@@ -238,7 +238,6 @@ def _make_full_sections():
 
 
 _TEMPLATES_PATH = "mtdata.core.report"
-_RENDER = "mtdata.core.report.render_enhanced_report"
 _FMT_NUM = "mtdata.core.report.format_number"
 _GET_IND = "mtdata.core.report._get_indicator_value"
 
@@ -258,19 +257,10 @@ def _patch_templates():
 # Error helpers
 # ---------------------------------------------------------------------------
 
-from mtdata.core.report import _report_error_payload, _report_error_text
+from mtdata.core.report import _report_error_payload
 
 
 class TestReportErrorHelpers:
-
-    def test_error_text_normal(self):
-        assert _report_error_text("bad thing") == "error: bad thing\n"
-
-    def test_error_text_empty(self):
-        assert _report_error_text("") == "error: Unknown error.\n"
-
-    def test_error_text_whitespace(self):
-        assert _report_error_text("   ") == "error: Unknown error.\n"
 
     def test_error_payload_normal(self):
         result = _report_error_payload("oops")
@@ -314,8 +304,7 @@ class TestReportTemplateDispatch:
              patch(f"{_TEMPLATES_PATH}._t_intraday", mock_templates["intraday"], create=True), \
              patch(f"{_TEMPLATES_PATH}._t_swing", mock_templates["swing"], create=True), \
              patch(f"{_TEMPLATES_PATH}._t_position", mock_templates["position"], create=True), \
-             patch(_FMT_NUM, side_effect=str), \
-             patch(_RENDER, return_value="# Report"):
+             patch(_FMT_NUM, side_effect=str):
             # Patch the import block inside the function
             mock_mod = MagicMock()
             mock_mod.template_basic = mock_templates["basic"]
@@ -387,20 +376,6 @@ class TestReportUnknownTemplate:
             res = fn("EURUSD", template="unknown_xyz", format="toon")
         assert "error" in res
 
-    def test_unknown_markdown(self):
-        fn = _get_report_generate()
-        mock_basic = MagicMock()
-        with patch("mtdata.core.report_templates.template_basic", mock_basic, create=True), \
-             patch("mtdata.core.report_templates.template_minimal", mock_basic, create=True), \
-             patch("mtdata.core.report_templates.template_advanced", mock_basic, create=True), \
-             patch("mtdata.core.report_templates.template_scalping", mock_basic, create=True), \
-             patch("mtdata.core.report_templates.template_intraday", mock_basic, create=True), \
-             patch("mtdata.core.report_templates.template_swing", mock_basic, create=True), \
-             patch("mtdata.core.report_templates.template_position", mock_basic, create=True):
-            res = fn("EURUSD", template="unknown_xyz", format="markdown")
-        assert isinstance(res, str)
-        assert "error:" in res
-
 
 # ---------------------------------------------------------------------------
 # Template import failure
@@ -414,13 +389,6 @@ class TestReportTemplateImportError:
         with patch.dict("sys.modules", {"mtdata.core.report_templates": None}):
             res = fn("EURUSD", template="basic", format="toon")
         assert "error" in res
-
-    def test_import_error_markdown(self):
-        fn = _get_report_generate()
-        with patch.dict("sys.modules", {"mtdata.core.report_templates": None}):
-            res = fn("EURUSD", template="basic", format="markdown")
-        assert isinstance(res, str)
-        assert "error:" in res
 
 
 # ---------------------------------------------------------------------------
@@ -443,19 +411,6 @@ class TestReportBadTemplateReturn:
             res = fn("EURUSD", template="basic", format="toon")
         assert "error" in res
 
-    def test_non_dict_markdown(self):
-        fn = _get_report_generate()
-        mock_basic = MagicMock(return_value="not a dict")
-        with patch("mtdata.core.report_templates.template_basic", mock_basic, create=True), \
-             patch("mtdata.core.report_templates.template_advanced", mock_basic, create=True), \
-             patch("mtdata.core.report_templates.template_scalping", mock_basic, create=True), \
-             patch("mtdata.core.report_templates.template_intraday", mock_basic, create=True), \
-             patch("mtdata.core.report_templates.template_swing", mock_basic, create=True), \
-             patch("mtdata.core.report_templates.template_position", mock_basic, create=True):
-            res = fn("EURUSD", template="basic", format="markdown")
-        assert isinstance(res, str)
-        assert "error:" in res
-
     def test_error_in_report_toon(self):
         fn = _get_report_generate()
         mock_basic = MagicMock(return_value={"error": "data fetch failed"})
@@ -467,19 +422,6 @@ class TestReportBadTemplateReturn:
              patch("mtdata.core.report_templates.template_position", mock_basic, create=True):
             res = fn("EURUSD", template="basic", format="toon")
         assert "error" in res
-
-    def test_error_in_report_markdown(self):
-        fn = _get_report_generate()
-        mock_basic = MagicMock(return_value={"error": "data fetch failed"})
-        with patch("mtdata.core.report_templates.template_basic", mock_basic, create=True), \
-             patch("mtdata.core.report_templates.template_advanced", mock_basic, create=True), \
-             patch("mtdata.core.report_templates.template_scalping", mock_basic, create=True), \
-             patch("mtdata.core.report_templates.template_intraday", mock_basic, create=True), \
-             patch("mtdata.core.report_templates.template_swing", mock_basic, create=True), \
-             patch("mtdata.core.report_templates.template_position", mock_basic, create=True):
-            res = fn("EURUSD", template="basic", format="markdown")
-        assert isinstance(res, str)
-        assert "error:" in res
 
 
 # ---------------------------------------------------------------------------
@@ -776,98 +718,6 @@ class TestReportSummaryBarriers:
         assert "summary" in res
 
 
-# ---------------------------------------------------------------------------
-# Markdown output
-# ---------------------------------------------------------------------------
-
-
-class TestReportMarkdownOutput:
-
-    def test_markdown_renders(self):
-        fn = _get_report_generate()
-        rep = _make_report(sections=_make_full_sections())
-        mock_basic = MagicMock(return_value=rep)
-        with patch("mtdata.core.report_templates.template_basic", mock_basic, create=True), \
-             patch("mtdata.core.report_templates.template_advanced", mock_basic, create=True), \
-             patch("mtdata.core.report_templates.template_scalping", mock_basic, create=True), \
-             patch("mtdata.core.report_templates.template_intraday", mock_basic, create=True), \
-             patch("mtdata.core.report_templates.template_swing", mock_basic, create=True), \
-             patch("mtdata.core.report_templates.template_position", mock_basic, create=True), \
-             patch(_FMT_NUM, side_effect=str), \
-             patch(_RENDER, return_value="# Report\nContent"):
-            res = fn("EURUSD", template="basic", format="markdown")
-        assert isinstance(res, str)
-        assert "Report" in res
-
-    def test_render_enhanced_report_surfaces_freshness_context(self):
-        from mtdata.core.report import render_enhanced_report
-
-        report = _make_report(
-            sections={
-                "context": {
-                    "timeframe": "H1",
-                    "last_snapshot": {
-                        "close": 1.1020,
-                        "EMA_20": 1.1010,
-                        "EMA_50": 1.1000,
-                        "RSI_14": 55.5,
-                    },
-                    "freshness": {
-                        "last_bar_epoch": 1736899200.0,
-                        "expected_end_epoch": 1736902800.0,
-                        "freshness_cutoff_epoch": 1736888400.0,
-                        "data_freshness_seconds": 3600.0,
-                        "last_bar_within_policy_window": True,
-                    },
-                },
-                "contexts_multi": {
-                    "M15": {
-                        "close": 1.1015,
-                        "ema20": 1.1010,
-                        "freshness": {
-                            "data_freshness_seconds": 1800.0,
-                            "last_bar_within_policy_window": False,
-                        },
-                    },
-                },
-            }
-        )
-
-        rendered = render_enhanced_report(report)
-
-        assert "Candle freshness" in rendered
-        assert "within policy window, 3600s" in rendered
-        assert "Freshness basis" in rendered
-        assert "last=1736899200, expected=1736902800, cutoff=1736888400" in rendered
-        assert "Multi-Timeframe Context" in rendered
-        assert "outside policy window, 1800s" in rendered
-
-    def test_render_enhanced_report_surfaces_freshness_context_error(self):
-        from mtdata.core.report import render_enhanced_report
-
-        report = _make_report(
-            sections={
-                "context": {
-                    "error": "No candle data available for context section.",
-                    "freshness": {
-                        "last_bar_epoch": 1736899200.0,
-                        "expected_end_epoch": 1736902800.0,
-                        "freshness_cutoff_epoch": 1736888400.0,
-                        "data_freshness_seconds": 3600.0,
-                        "last_bar_within_policy_window": False,
-                    },
-                },
-            }
-        )
-
-        rendered = render_enhanced_report(report)
-
-        assert "error: No candle data available for context section." in rendered
-        assert "Candle freshness" in rendered
-        assert "outside policy window, 3600s" in rendered
-        assert "Freshness basis" in rendered
-
-
 class TestReportWarnings:
 
     def test_template_warnings_are_captured_in_diagnostics(self):
@@ -1054,13 +904,6 @@ class TestReportTopLevelException:
             # Force a deeper exception
             res = fn("EURUSD", template="basic", format="toon")
         assert isinstance(res, dict)
-
-    def test_exception_markdown(self):
-        fn = _get_report_generate()
-        with patch.dict("sys.modules", {"mtdata.core.report_templates": None}):
-            res = fn("EURUSD", template="basic", format="markdown")
-        assert isinstance(res, str)
-
 
 # ---------------------------------------------------------------------------
 # Params passthrough

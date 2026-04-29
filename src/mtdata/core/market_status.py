@@ -749,7 +749,7 @@ def market_status(
         - `markets_pre_market`: Count of markets in pre-market
         - `markets_lunch_break`: Count of markets in lunch break
         - `markets_closed`: Count of markets currently closed
-        - `upcoming_holidays`: Full holiday rows when `detail='full'`
+        - `upcoming_holidays`: Full holiday rows when `extras='metadata'`
             - `date`: Holiday date (ISO format)
             - `holiday`: Holiday name
             - `markets_affected`: List of market codes that will be closed

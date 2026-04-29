@@ -685,12 +685,12 @@ def test_forecast_barrier_requests_normalize_known_direction_aliases_only():
 
 
 def test_forecast_barrier_optimize_request_rejects_removed_output_field():
-    with pytest.raises(ValidationError, match="output was removed; use detail"):
+    with pytest.raises(ValidationError, match="output was removed; use extras"):
         ForecastBarrierOptimizeRequest(symbol="EURUSD", output="summary")
 
 
 def test_forecast_barrier_optimize_request_rejects_removed_format_field():
-    with pytest.raises(ValidationError, match="format was removed; use detail"):
+    with pytest.raises(ValidationError, match="format was removed; use json"):
         ForecastBarrierOptimizeRequest(symbol="EURUSD", format="full")
 
 

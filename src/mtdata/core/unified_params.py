@@ -37,12 +37,12 @@ def add_global_args_to_parser(
             **timeframe_kwargs,
         )
     
-    # Output format: formatted text by default, JSON when explicitly requested.
+    # Output format: TOON by default, JSON when explicitly requested.
     if 'json' not in exclude_params:
         json_kwargs = {
             "action": "store_true",
             "dest": "json",
-            "help": "Output raw JSON (default output is formatted text).",
+            "help": "Output structured JSON (default output is TOON text).",
         }
         if suppress_defaults:
             json_kwargs["default"] = argparse.SUPPRESS
@@ -50,6 +50,20 @@ def add_global_args_to_parser(
             '--json',
             **json_kwargs,
         )
+
+    if 'extras' not in exclude_params:
+        extras_kwargs = {
+            "dest": "extras",
+            "default": None,
+            "metavar": "EXTRA[,EXTRA...]",
+            "help": (
+                "Include richer output sections in TOON, such as metadata, "
+                "diagnostics, request, raw, raw_rows, or method_docs."
+            ),
+        }
+        if suppress_defaults:
+            extras_kwargs["default"] = argparse.SUPPRESS
+        parser.add_argument("--extras", **extras_kwargs)
 
     if 'precision' not in exclude_params:
         precision_kwargs = {

@@ -949,7 +949,7 @@ def _consolidate_payload(  # noqa: C901
 
 
 def _summary_only_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Return a minimal payload for `detail='summary'` (no regimes/series)."""
+    """Return a minimal summary payload with no regimes or series."""
     out: Dict[str, Any] = {
         "symbol": payload.get("symbol"),
         "timeframe": payload.get("timeframe"),

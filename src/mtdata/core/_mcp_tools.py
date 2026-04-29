@@ -19,7 +19,11 @@ from .error_envelope import (
     log_transport_exception,
     normalize_error_payload,
 )
-from .output_contract import apply_output_verbosity, resolve_output_contract
+from .output_contract import (
+    apply_output_verbosity,
+    normalize_output_extras,
+    resolve_output_contract,
+)
 
 try:
     import annotationlib
@@ -38,6 +42,8 @@ _NO_TIMEOUT_TOOLS = frozenset(
         "forecast_tune_optuna",
     }
 )
+_PUBLIC_OUTPUT_PARAMS = frozenset({"json", "extras"})
+_REMOVED_PUBLIC_OUTPUT_PARAMS = frozenset({"detail", "format", "output_mode", "output"})
 
 
 @dataclass
@@ -407,6 +413,8 @@ def _request_model_signature_fields(func: Any) -> List[inspect.Parameter]:
     if modern_fields:
         flattened: List[inspect.Parameter] = []
         for field_name, field in model_fields.items():
+            if field_name in _REMOVED_PUBLIC_OUTPUT_PARAMS:
+                continue
             annotation = inspect._empty
             rebuild_annotation = getattr(field, "rebuild_annotation", None)
             if callable(rebuild_annotation):
@@ -431,6 +439,8 @@ def _request_model_signature_fields(func: Any) -> List[inspect.Parameter]:
     if model_fields:
         flattened = []
         for field_name, field in model_fields.items():
+            if field_name in _REMOVED_PUBLIC_OUTPUT_PARAMS:
+                continue
             annotation = getattr(field, "outer_type_", getattr(field, "type_", inspect._empty))
             is_required = bool(getattr(field, "required", False))
             default = inspect._empty if is_required else _signature_default_for_model_field(field)
@@ -473,6 +483,30 @@ def _normalize_exposed_annotation(annotation: Any) -> Any:
     return annotation
 
 
+def _append_public_output_params(params: List[inspect.Parameter]) -> List[inspect.Parameter]:
+    names = {param.name for param in params}
+    out = list(params)
+    if "json" not in names:
+        out.append(
+            inspect.Parameter(
+                "json",
+                kind=inspect.Parameter.KEYWORD_ONLY,
+                default=False,
+                annotation=bool,
+            )
+        )
+    if "extras" not in names:
+        out.append(
+            inspect.Parameter(
+                "extras",
+                kind=inspect.Parameter.KEYWORD_ONLY,
+                default=None,
+                annotation=Union[str, List[str], None],
+            )
+        )
+    return out
+
+
 def _callable_accepts_kwarg(func: Any, name: str) -> bool:
     try:
         sig = _get_runtime_signature(func)
@@ -482,6 +516,12 @@ def _callable_accepts_kwarg(func: Any, name: str) -> bool:
     if name in sig.parameters:
         return True
     return any(param.kind == inspect.Parameter.VAR_KEYWORD for param in sig.parameters.values())
+
+
+def _callable_exposes_kwarg(func: Any, name: str) -> bool:
+    if _callable_accepts_kwarg(func, name):
+        return True
+    return any(param.name == name for param in _request_model_signature_fields(func))
 
 
 def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # noqa: C901
@@ -537,11 +577,27 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # n
         def _wrapped(*a, **kw):
             raw_output = kw.pop("__cli_raw", False)
             precision = kw.pop("precision", None)
+            json_output = kw.pop("json", False)
+            extras = kw.pop("extras", None)
             contract_state = resolve_output_contract({})
 
             try:
+                removed_output_args = sorted(_REMOVED_PUBLIC_OUTPUT_PARAMS.intersection(kw))
+                if removed_output_args and not raw_output:
+                    removed = ", ".join(removed_output_args)
+                    raise ValueError(
+                        f"Removed output option(s): {removed}. "
+                        "Use json=true for structured JSON and extras for richer TOON output."
+                    )
+                normalized_extras = normalize_output_extras(extras)
+                if normalized_extras and "detail" not in kw and _callable_exposes_kwarg(func, "detail"):
+                    kw["detail"] = "full"
                 _coerce_kwargs_for_callable(func, kw)
-                contract_state = resolve_output_contract(kw)
+                contract_state = resolve_output_contract(
+                    kw,
+                    json=json_output,
+                    extras=normalized_extras,
+                )
                 try:
                     if "denoise" in kw:
                         from ..utils.denoise import (
@@ -601,6 +657,9 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # n
             if raw_output:
                 return out
 
+            if contract_state.json:
+                return out
+
             try:
                 fname = getattr(func, "__name__", "")
                 if fname in ("forecast_list_methods", "denoise_list_methods") and isinstance(out, dict):
@@ -625,12 +684,15 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # n
             if not params:
                 sig = _get_runtime_signature(func)
                 for name, param in sig.parameters.items():
+                    if name in _REMOVED_PUBLIC_OUTPUT_PARAMS:
+                        continue
                     if param.kind in (
                         inspect.Parameter.VAR_POSITIONAL,
                         inspect.Parameter.VAR_KEYWORD,
                     ):
                         continue
                     params.append(param.replace(annotation=cleaned.get(name)))
+            params = _append_public_output_params(params)
             _wrapped.__annotations__ = cleaned
             return_ann = cleaned.get("return", inspect._empty)
             _wrapped.__signature__ = inspect.Signature(parameters=params, return_annotation=return_ann)

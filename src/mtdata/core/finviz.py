@@ -917,7 +917,7 @@ def _compact_finviz_ratings_payload(
     }
     out["omitted_item_count"] = omitted
     if omitted:
-        out["show_all_hint"] = f"Set detail='full' or limit={len(normalized_rows)} to view all ratings."
+        out["show_all_hint"] = f"Set extras='metadata' or limit={len(normalized_rows)} to view all ratings."
     return out
 
 

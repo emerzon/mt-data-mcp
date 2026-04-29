@@ -216,7 +216,7 @@ When `slippage-bps` or `trade-threshold` is set:
 
 ### Per-Anchor Details
 
-Use full detail to see individual test results:
+Use `extras=metadata` to include individual test results:
 
 ```json
 {
