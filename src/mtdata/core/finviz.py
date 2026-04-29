@@ -794,11 +794,16 @@ def _compact_finviz_ratings_payload(
     normalized_rows = _normalize_finviz_output_rows(rows)
     limit_value = _coerce_finviz_limit(limit, default=len(normalized_rows))
     limited_rows = normalized_rows[:limit_value]
+    omitted = max(0, len(normalized_rows) - len(limited_rows))
     out["ratings"] = limited_rows
+    out["count"] = len(limited_rows)
+    out["available_count"] = len(normalized_rows)
+    out["truncated"] = omitted > 0
     out["detail"] = detail_mode
     if detail_mode == "full":
-        out["available_count"] = len(normalized_rows)
-        out["omitted_item_count"] = max(0, len(normalized_rows) - len(limited_rows))
+        out["omitted_item_count"] = omitted
+        if omitted:
+            out["show_all_hint"] = f"Increase limit to {len(normalized_rows)} to view all ratings."
         return out
     compact_rows = limited_rows
     out["ratings"] = compact_rows
@@ -809,7 +814,9 @@ def _compact_finviz_ratings_payload(
         },
         "latest": compact_rows[0] if compact_rows else None,
     }
-    out["omitted_item_count"] = max(0, len(normalized_rows) - len(compact_rows))
+    out["omitted_item_count"] = omitted
+    if omitted:
+        out["show_all_hint"] = f"Set detail='full' or limit={len(normalized_rows)} to view all ratings."
     return out
 
 
