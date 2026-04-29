@@ -70,10 +70,7 @@ def test_support_resistance_tool_returns_weighted_levels():
     assert "zone_high" in result["nearest"]["support"]
     assert "strength_percentile" in result["nearest"]["support"]
     assert "strength_score_normalized" in result["nearest"]["support"]
-    assert result["fibonacci"]["swing"]["direction"] == "up"
-    assert len(result["fibonacci"]["levels"]) == 7
-    assert result["fibonacci"]["fib_grid_coverage"] == "both_sides"
-    assert result["fibonacci"]["nearest"]["support"]["type"] == "support"
+    assert "fibonacci" not in result
     assert "supports" not in result
     assert "resistances" not in result
 
@@ -89,18 +86,18 @@ def test_support_resistance_tool_applies_near_price_distance_default():
         "supports": [],
         "resistances": [],
         "levels": [],
-        "max_distance_pct": 0.05,
+        "max_distance_pct": 5.0,
     }
 
     with patch("mtdata.core.pivot.get_mt5_gateway", return_value=gateway), \
          patch("mtdata.core.pivot.compute_support_resistance_payload", return_value=payload) as mock_compute:
         result = fn("EURUSD", timeframe="H1")
 
-    assert result["max_distance_pct"] == 0.05
-    assert mock_compute.call_args.kwargs["max_distance_pct"] == 0.05
+    assert result["max_distance_pct"] == 5.0
+    assert mock_compute.call_args.kwargs["max_distance_pct"] == 5.0
 
 
-def test_support_resistance_tool_compact_preserves_zone_overlap_and_fib_grid_metadata():
+def test_support_resistance_tool_compact_preserves_zone_overlap_without_fibonacci():
     fn = _get_support_resistance_fn()
     gateway = type("Gateway", (), {"ensure_connection": lambda self: None})()
     payload = {
@@ -142,8 +139,7 @@ def test_support_resistance_tool_compact_preserves_zone_overlap_and_fib_grid_met
     assert result["detail"] == "compact"
     assert result["zone_overlap"]["current_price_in_overlap"] is True
     assert result["zone_overlap"]["overlap_width"] == 0.156
-    assert result["fibonacci"]["fib_grid_coverage"] == "support_only"
-    assert result["fibonacci"]["fib_grid_counts"] == {"support": 7, "resistance": 0, "total": 7}
+    assert "fibonacci" not in result
     assert {warning["code"] for warning in result["warnings"]} == {
         "overlapping_nearest_zones",
         "fibonacci_grid_support_only",
@@ -290,11 +286,7 @@ def test_support_resistance_tool_auto_mode_merges_timeframes():
     assert result["nearest"]["support"]["source_timeframes"] == ["M15", "H1", "H4", "D1"]
     assert "last_touch" in result["nearest"]["support"]
     assert "strength_percentile" in result["nearest"]["support"]
-    assert result["fibonacci"]["mode"] == "auto"
-    assert result["fibonacci"]["selected_timeframe"] == "D1"
-    assert result["fibonacci"]["available_timeframes"] == ["M15", "H1", "H4", "D1"]
-    assert result["fibonacci"]["selection_summary"]["timeframe_candidate_count"] == 4
-    assert result["fibonacci"]["timeframe_selection_candidates"][0]["selected"] is True
+    assert "fibonacci" not in result
     assert "supports" not in result
     assert "resistances" not in result
 
