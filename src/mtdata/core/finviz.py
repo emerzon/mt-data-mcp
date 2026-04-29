@@ -333,13 +333,7 @@ def _build_tool_contract_meta(
     pagination: Optional[Dict[str, Any]] = None,
     legends: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    out: Dict[str, Any] = {
-        "tool": tool,
-        "request": {
-            key: value for key, value in request.items() if value is not None
-        },
-        "runtime": {},
-    }
+    out: Dict[str, Any] = {"tool": tool}
     if stats:
         out["stats"] = {
             key: value for key, value in stats.items() if value is not None

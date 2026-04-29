@@ -610,7 +610,7 @@ class TestFinvizTools:
         assert result["detail"] == "full"
         assert result["items"] == [{"symbol": "NQ", "name": "Nasdaq 100", "perf_pct": "0.8%"}]
         assert result["meta"]["tool"] == "finviz_futures"
-        assert result["meta"]["request"] == {"limit": 20, "detail": "full"}
+        assert "request" not in result["meta"]
 
     @patch("mtdata.core.finviz.get_stock_fundamentals")
     def test_finviz_fundamentals_rejects_non_equity_symbols_upfront(self, mock_get_fundamentals):

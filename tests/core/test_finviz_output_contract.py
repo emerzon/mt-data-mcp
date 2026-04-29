@@ -70,12 +70,7 @@ class TestFinvizEarningsOutputContract:
         assert result["success"] is True
         assert result["detail"] == "full"
         assert result["meta"]["tool"] == "finviz_earnings"
-        assert result["meta"]["request"] == {
-            "period": "This Week",
-            "limit": 2,
-            "page": 2,
-            "detail": "full",
-        }
+        assert "request" not in result["meta"]
         assert result["meta"]["pagination"] == {
             "page": 2,
             "total": 6,
@@ -94,10 +89,7 @@ class TestFinvizEarningsOutputContract:
         assert result["success"] is False
         assert result["error_code"] == "finviz_earnings_invalid_period"
         assert result["meta"]["tool"] == "finviz_earnings"
-        assert result["meta"]["request"]["period"] == "Bad"
-        assert result["meta"]["request"]["limit"] == 50
-        assert result["meta"]["request"]["page"] == 1
-        assert result["meta"]["request"]["detail"] == "compact"
+        assert "request" not in result["meta"]
         assert "operation" not in result
 
 
