@@ -114,6 +114,7 @@ class TestFinvizCalendarOutputContract:
                     "Release": "CPI",
                     "Impact": "high",
                     "For": "USD",
+                    "Country": "United States",
                     "ReferenceDate": "2025-12",
                 }
             ],
@@ -129,6 +130,7 @@ class TestFinvizCalendarOutputContract:
                 "release": "CPI",
                 "impact": "high",
                 "for_currency": "USD",
+                "country": "United States",
                 "reference_date": "2025-12",
             }
         ]

@@ -301,7 +301,7 @@ class TestFinvizService:
             },
             {
                 "calendarId": 1,
-                "ticker": "USD",
+                "ticker": "UNITEDSTANONFAR",
                 "event": "Nonfarm Payrolls",
                 "category": "Employment",
                 "date": "2026-01-04T08:30:00",
@@ -331,6 +331,8 @@ class TestFinvizService:
         assert result["total"] == 2
         assert len(result["items"]) == 2
         assert "events" not in result
+        assert result["items"][0]["For"] == "USD"
+        assert result["items"][0]["Country"] == "United States"
 
         result_high = get_economic_calendar(
             impact="high",

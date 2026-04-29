@@ -1101,6 +1101,37 @@ def _clean_calendar_item(item: Dict[str, Any]) -> Dict[str, Any]:
     return cleaned
 
 
+_ECONOMIC_CALENDAR_MARKETS: tuple[tuple[str, str, str], ...] = (
+    ("UNITEDSTA", "USD", "United States"),
+    ("EUROZONE", "EUR", "Eurozone"),
+    ("GERMANY", "EUR", "Germany"),
+    ("FRANCE", "EUR", "France"),
+    ("ITALY", "EUR", "Italy"),
+    ("SPAIN", "EUR", "Spain"),
+    ("UNITEDKIN", "GBP", "United Kingdom"),
+    ("JAPAN", "JPY", "Japan"),
+    ("CANADA", "CAD", "Canada"),
+    ("AUSTRALIA", "AUD", "Australia"),
+    ("NEWZEALAND", "NZD", "New Zealand"),
+    ("SWITZERLAND", "CHF", "Switzerland"),
+    ("CHINA", "CNY", "China"),
+    ("BRAZIL", "BRL", "Brazil"),
+)
+
+
+def _normalize_economic_calendar_market(value: Any) -> tuple[str, str]:
+    raw = str(value or "").strip()
+    if not raw:
+        return "", ""
+    upper = raw.upper()
+    if len(upper) == 3 and upper.isalpha():
+        return upper, ""
+    for prefix, currency, country in _ECONOMIC_CALENDAR_MARKETS:
+        if upper.startswith(prefix):
+            return currency, country
+    return raw, ""
+
+
 def _normalize_finviz_economic_calendar_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Normalize Finviz API items to the legacy calendar schema."""
     importance_to_impact: Dict[int, Literal["low", "medium", "high"]] = {
@@ -1113,20 +1144,22 @@ def _normalize_finviz_economic_calendar_items(items: List[Dict[str, Any]]) -> Li
     for item in items:
         importance = item.get("importance")
         impact = importance_to_impact.get(importance) if isinstance(importance, int) else None
+        currency, country = _normalize_economic_calendar_market(item.get("ticker"))
+        event = {
+            "Datetime": item.get("date") or "",
+            "Release": item.get("event") or "",
+            "Impact": impact or "",
+            "For": currency,
+            "Actual": item.get("actual") or "",
+            "Expected": item.get("forecast") or item.get("teforecast") or "",
+            "Prior": item.get("previous") or "",
+            "Category": item.get("category") or "",
+            "Reference": item.get("reference") or "",
+            "ReferenceDate": item.get("referenceDate") or "",
+        }
+        if country:
+            event["Country"] = country
 
-        normalized.append(
-            {
-                "Datetime": item.get("date") or "",
-                "Release": item.get("event") or "",
-                "Impact": impact or "",
-                "For": item.get("ticker") or "",
-                "Actual": item.get("actual") or "",
-                "Expected": item.get("forecast") or item.get("teforecast") or "",
-                "Prior": item.get("previous") or "",
-                "Category": item.get("category") or "",
-                "Reference": item.get("reference") or "",
-                "ReferenceDate": item.get("referenceDate") or "",
-            }
-        )
+        normalized.append(event)
 
     return normalized
