@@ -536,7 +536,7 @@ class TestFinvizTools:
         result = raw()
 
         assert "futures" not in result
-        assert result["items"] == [{"label": "Nasdaq 100", "perf": "0.8%", "symbol": "NQ"}]
+        assert result["items"] == [{"name": "Nasdaq 100", "perf_pct": "0.8%", "symbol": "NQ"}]
 
     @patch("mtdata.core.finviz.get_stock_fundamentals")
     def test_finviz_fundamentals_rejects_non_equity_symbols_upfront(self, mock_get_fundamentals):

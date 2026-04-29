@@ -200,7 +200,7 @@ def _normalize_finviz_market_payload(
         return result
     rows = result.get(rows_key, [])
     normalized_rows = [
-        _canonicalize_finviz_symbol_key(
+        _canonicalize_finviz_market_row(
             {_snake_finviz_market_key(key): value for key, value in row.items()}
         )
         if isinstance(row, dict)
@@ -227,6 +227,15 @@ def _canonicalize_finviz_symbol_key(row: Dict[str, Any]) -> Dict[str, Any]:
             if source_key in out:
                 out["symbol"] = out.pop(source_key)
                 break
+    return out
+
+
+def _canonicalize_finviz_market_row(row: Dict[str, Any]) -> Dict[str, Any]:
+    out = _canonicalize_finviz_symbol_key(row)
+    if "name" not in out and "label" in out:
+        out["name"] = out.pop("label")
+    if "perf" in out and not any(key.startswith("perf_") for key in out):
+        out["perf_pct"] = out.pop("perf")
     return out
 
 
