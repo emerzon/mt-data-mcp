@@ -931,7 +931,10 @@ class TestTradeClose:
     def test_symbol_close_requires_close_all_confirmation(self, mock_close, mock_cancel):
         out = _unwrap_mcp(trade_close(symbol="EURUSD"))
         if isinstance(out, dict):
-            assert "bulk close requires explicit confirmation" in str(out.get("error", "")).lower()
+            error = str(out.get("error", "")).lower()
+            assert "bulk close requires explicit confirmation" in error
+            assert "close_all=true" in error
+            assert "ticket=<ticket>" in error
         else:
             assert "bulk close requires explicit confirmation" in out.lower()
         mock_close.assert_not_called()
@@ -942,9 +945,22 @@ class TestTradeClose:
     def test_global_close_requires_close_all_confirmation(self, mock_close, mock_cancel):
         out = _unwrap_mcp(trade_close())
         if isinstance(out, dict):
-            assert "bulk close requires explicit confirmation" in str(out.get("error", "")).lower()
+            error = str(out.get("error", "")).lower()
+            assert "bulk close requires explicit confirmation" in error
+            assert "close_all=true" in error
         else:
             assert "bulk close requires explicit confirmation" in out.lower()
+        mock_close.assert_not_called()
+        mock_cancel.assert_not_called()
+
+    @patch("mtdata.core.trading._cancel_pending")
+    @patch("mtdata.core.trading._close_positions")
+    def test_symbol_bulk_close_dry_run_previews_without_confirmation(self, mock_close, mock_cancel):
+        out = _unwrap_mcp(trade_close(symbol="EURUSD", dry_run=True, __cli_raw=True))
+        assert out["success"] is True
+        assert out["dry_run"] is True
+        assert out["operation"] == "close_symbol_positions"
+        assert out["symbol"] == "EURUSD"
         mock_close.assert_not_called()
         mock_cancel.assert_not_called()
 

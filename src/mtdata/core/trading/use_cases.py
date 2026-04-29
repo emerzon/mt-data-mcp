@@ -1169,10 +1169,13 @@ def run_trade_close(  # noqa: C901
             scope="ticket",
         )
 
-    if request.ticket is None and not request.close_all:
+    if request.ticket is None and not request.close_all and not request.dry_run:
         return _finish(
             {
-                "error": "Bulk close requires explicit confirmation.",
+                "error": (
+                    "Bulk close requires explicit confirmation: pass close_all=true "
+                    "to close all matching positions, or specify ticket=<ticket>."
+                ),
                 "error_code": "CONFIRMATION_REQUIRED",
                 "suggestion": "Review matching positions before closing (irreversible action).",
                 "alternatives": [
