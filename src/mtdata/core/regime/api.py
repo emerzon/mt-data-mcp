@@ -243,8 +243,11 @@ def _summarize_current_regime_for_comparison(
         current_regime = result.get("current_regime")
         if not isinstance(current_regime, dict):
             return None
+        regime = result.get("regime")
+        if not isinstance(regime, dict):
+            regime = current_regime
         entry = {
-            key: current_regime.get(key)
+            key: regime.get(key)
             for key in (
                 "state",
                 "direction",
@@ -256,6 +259,10 @@ def _summarize_current_regime_for_comparison(
             )
             if current_regime.get(key) is not None
         }
+        for key in ("label", "confidence", "since", "bars"):
+            value = current_regime.get(key)
+            if value is not None:
+                entry[key] = value
         return entry or None
 
     current = result.get("current_regime")
@@ -2069,8 +2076,6 @@ def regime_detect(  # noqa: C901
                 confidence = 0.0
             current_regime = {
                 "label": regime_state,
-                "state": regime_state,
-                "direction": direction,
                 "confidence": round(float(confidence), 4),
                 "since": (
                     t_fmt[-int(window_bars)]
@@ -2078,10 +2083,21 @@ def regime_detect(  # noqa: C901
                     else t_fmt[0]
                 ),
                 "bars": int(window_bars),
-                "efficiency_ratio": round(efficiency_ratio, 4),
             }
-            if output != "compact":
-                current_regime.update(regime_info)
+            regime_payload = dict(regime_info)
+            if output == "compact":
+                regime_payload = {
+                    key: regime_payload[key]
+                    for key in (
+                        "state",
+                        "direction",
+                        "trend_strength",
+                        "efficiency_ratio",
+                        "window_bars",
+                        "window_move_pct",
+                    )
+                    if key in regime_payload
+                }
 
             payload = {
                 "success": True,
@@ -2089,8 +2105,8 @@ def regime_detect(  # noqa: C901
                 "timeframe": timeframe,
                 "method": method,
                 "target": target,
+                "regime": regime_payload,
                 "current_regime": current_regime,
-                "regimes": [current_regime],
                 "params_used": {
                     "efficiency_threshold": float(efficiency_threshold),
                     "trend_strength_threshold": float(trend_strength_threshold),

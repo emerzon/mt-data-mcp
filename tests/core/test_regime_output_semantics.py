@@ -381,10 +381,12 @@ def test_rule_based_uses_price_window_metrics_for_return_target() -> None:
             detail="full",
         )
 
-    regime = out["current_regime"]
+    regime = out["regime"]
     assert regime["direction"] == "bearish"
     assert regime["signal_source"] == "price"
     assert regime["window_move_pct"] == expected_move_pct
+    assert out["current_regime"]["label"] == "trending"
+    assert "state" not in out["current_regime"]
     assert out["params_used"]["signal_source"] == "price"
 
 
@@ -405,13 +407,15 @@ def test_rule_based_explains_ranging_direction_bias() -> None:
             detail="full",
         )
 
-    regime = out["current_regime"]
+    regime = out["regime"]
     assert regime["state"] == "ranging"
     assert regime["direction"] == "bearish"
     assert regime["direction_basis"] == "net_window_move"
     assert "window bias, not a trend classification" in regime["interpretation"]
     assert regime["trend_strength"] >= out["params_used"]["trend_strength_threshold"]
     assert "efficiency_ratio indicates a choppy path" in regime["note"]
+    assert out["current_regime"]["label"] == "ranging"
+    assert "state" not in out["current_regime"]
 
 
 def test_rule_based_compact_omits_explanatory_fields() -> None:
@@ -430,15 +434,15 @@ def test_rule_based_compact_omits_explanatory_fields() -> None:
             params={"window_bars": 60},
         )
 
-    regime = out["current_regime"]
+    regime = out["regime"]
     assert {"state", "direction", "efficiency_ratio"}.issubset(regime)
     assert regime["state"] == "ranging"
     assert regime["direction"] == "bearish"
-    assert out["current_regime"]["state"] == "ranging"
-    assert out["current_regime"]["direction"] == "bearish"
     assert out["current_regime"]["bars"] == 60
+    assert out["current_regime"]["label"] == "ranging"
+    assert "state" not in out["current_regime"]
     assert "interpretation" not in regime
     assert "note" not in regime
     assert "signal_source" not in regime
     assert "params_used" not in out
-    assert "regime" not in out
+    assert "regimes" not in out
