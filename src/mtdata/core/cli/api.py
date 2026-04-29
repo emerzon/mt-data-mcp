@@ -1468,7 +1468,10 @@ def main():
         dest="_global_timeframe",
         default=argparse.SUPPRESS,
         metavar="TIMEFRAME",
-        help=_PARAM_HINTS["timeframe"],
+        help=(
+            "Default MT5 timeframe for commands with a timeframe parameter; "
+            "command-level --timeframe overrides it."
+        ),
     )
 
     subparsers = parser.add_subparsers(

@@ -4902,6 +4902,35 @@ class TestMain:
         assert mock_fn.call_args[1]["timeframe"] == "D1"
 
     @patch("mtdata.core.cli.discover_tools")
+    def test_command_timeframe_overrides_global_timeframe(self, mock_discover):
+        mock_fn = MagicMock(return_value="output text")
+        mock_fn.__module__ = "mtdata.core.server"
+        mock_fn.__name__ = "my_tool"
+        mock_fn.__doc__ = "My tool."
+
+        def my_tool(symbol: str, timeframe: str = "H1"):
+            """My tool."""
+            pass
+
+        info = get_function_info(my_tool)
+        info["func"] = mock_fn
+
+        mock_discover.return_value = {
+            "my_tool": {
+                "func": mock_fn,
+                "meta": {"description": "My tool"},
+                "_cli_func_info": info,
+            },
+        }
+        with patch(
+            "sys.argv",
+            ["cli.py", "--timeframe", "D1", "my_tool", "EURUSD", "--timeframe", "H1"],
+        ):
+            result = main()
+        assert result == 0
+        assert mock_fn.call_args[1]["timeframe"] == "H1"
+
+    @patch("mtdata.core.cli.discover_tools")
     def test_json_output_suppresses_mtdata_logs_in_non_verbose_mode(
         self, mock_discover, capsys
     ):
@@ -5070,6 +5099,33 @@ class TestMain:
             main()
         out = capsys.readouterr().out
         assert "--timeframe" not in out
+
+    @patch("mtdata.core.cli.discover_tools")
+    def test_root_help_documents_global_timeframe_precedence(self, mock_discover, capsys):
+        def my_tool(symbol: str, timeframe: str = "H1"):
+            """My tool."""
+            pass
+
+        mock_fn = MagicMock(return_value={"success": True})
+        mock_fn.__module__ = "mtdata.core.server"
+        mock_fn.__name__ = "my_tool"
+        mock_fn.__doc__ = "My tool."
+        info = get_function_info(my_tool)
+        info["func"] = mock_fn
+        mock_discover.return_value = {
+            "my_tool": {
+                "func": mock_fn,
+                "meta": {"description": "My tool"},
+                "_cli_func_info": info,
+            },
+        }
+
+        with patch("sys.argv", ["cli.py", "--help"]), pytest.raises(SystemExit):
+            main()
+
+        out = " ".join(capsys.readouterr().out.split())
+        assert "Default MT5 timeframe for commands with a timeframe parameter" in out
+        assert "command-level --timeframe overrides it" in out
 
     @patch("mtdata.core.cli.discover_tools")
     def test_help_hides_duplicate_symbol_option_for_required_first_arg(
