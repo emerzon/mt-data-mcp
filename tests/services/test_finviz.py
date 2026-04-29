@@ -971,8 +971,11 @@ class TestFinvizTools:
             view="overview"
         )
         assert result["success"] is True
-        assert result["count"] == 5
-        assert result["stocks"] == [{"symbol": "AAPL", "market_cap": "3.0T", "pe_ratio": "28.5"}]
+        assert result["count"] == 1
+        assert result["available_count"] == 1
+        assert result["detail"] == "compact"
+        assert "stocks" not in result
+        assert result["items"] == [{"symbol": "AAPL", "market_cap": "3.0T", "pe_ratio": "28.5"}]
 
     @patch('mtdata.core.finviz.screen_stocks')
     def test_finviz_screen_tool_accepts_json_string_filters(self, mock_screen):
@@ -998,7 +1001,37 @@ class TestFinvizTools:
             view="overview"
         )
         assert result["success"] is True
-        assert result["count"] == 3
+        assert result["count"] == 0
+        assert result["available_count"] == 0
+        assert result["items"] == []
+
+    @patch('mtdata.core.finviz.screen_stocks')
+    def test_finviz_screen_tool_supports_full_detail_meta_and_omitted_count(self, mock_screen):
+        from mtdata.core.finviz import finviz_screen
+
+        def _run_direct(_logger, operation, func, **fields):
+            return func()
+
+        mock_screen.return_value = {
+            "success": True,
+            "stocks": [
+                {"Ticker": "AAPL", "Market Cap": "3.0T"},
+                {"Ticker": "MSFT", "Market Cap": "2.8T"},
+            ],
+        }
+
+        with patch("mtdata.core.finviz.run_logged_operation", side_effect=_run_direct):
+            result = finviz_screen.__wrapped__(
+                filters={"Exchange": "NASDAQ"},
+                limit=1,
+                detail="full",
+            )
+
+        assert result["items"] == [{"symbol": "AAPL", "market_cap": "3.0T"}]
+        assert result["available_count"] == 2
+        assert result["omitted_item_count"] == 1
+        assert result["detail"] == "full"
+        assert result["meta"]["tool"] == "finviz_screen"
 
     @patch('mtdata.core.finviz.screen_stocks')
     def test_finviz_screen_tool_accepts_finviz_shorthand_filters(self, mock_screen):
@@ -1027,7 +1060,8 @@ class TestFinvizTools:
             view="overview",
         )
         assert result["success"] is True
-        assert result["count"] == 2
+        assert result["count"] == 0
+        assert result["available_count"] == 0
 
     def test_finviz_calendar_prefers_start_end_aliases(self):
         from mtdata.core.finviz import finviz_calendar

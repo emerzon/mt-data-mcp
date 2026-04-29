@@ -248,6 +248,8 @@ def _canonicalize_finviz_market_row(row: Dict[str, Any]) -> Dict[str, Any]:
     out = _canonicalize_finviz_symbol_key(row)
     if "name" not in out and "label" in out:
         out["name"] = out.pop("label")
+    if "p_e" in out and "pe_ratio" not in out:
+        out["pe_ratio"] = out.pop("p_e")
     if "perf" in out and not any(key.startswith("perf_") for key in out):
         out["perf_pct"] = out.pop("perf")
     return out
@@ -1224,6 +1226,7 @@ def finviz_screen(
     limit: int = 50,
     page: int = 1,
     view: Literal["overview", "valuation", "financial", "ownership", "performance", "technical"] = "overview",
+    detail: CompactFullDetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """
     Screen stocks using Finviz screener with filters.
@@ -1263,11 +1266,13 @@ def finviz_screen(
         Page number for pagination (default 1)
     view : str
         Data view: overview, valuation, financial, ownership, performance, technical
+    detail : str
+        Output detail: compact (default) or full. Full includes request/meta.
     
     Returns
     -------
     dict
-        List of stocks matching filters
+        Matching stock rows under `items` with compact market-tool metadata.
     
     Examples
     --------
@@ -1292,7 +1297,7 @@ def finviz_screen(
     - Filter values must match the available options for each filter
     - Visit finviz.com/screener.ashx to see available filters and their values
     """
-    fields = {"limit": limit, "page": page, "view": view, "order": order}
+    fields = {"limit": limit, "page": page, "view": view, "order": order, "detail": detail}
 
     def _run() -> Dict[str, Any]:
         filters_dict, filter_error = _resolve_finviz_screen_filters(filters)
@@ -1301,9 +1306,20 @@ def finviz_screen(
 
         result = screen_stocks(filters=filters_dict, order=order, limit=limit, page=page, view=view)
         if result.get("success") and isinstance(result.get("stocks"), list):
-            out = dict(result)
-            out["stocks"] = _normalize_finviz_output_rows(result["stocks"])
-            return out
+            return _normalize_finviz_market_payload(
+                result,
+                rows_key="stocks",
+                limit=limit,
+                detail=detail,
+                tool="finviz_screen",
+                request={
+                    "filters": filters_dict,
+                    "order": order,
+                    "limit": limit,
+                    "page": page,
+                    "view": view,
+                },
+            )
         return result
 
     return _run_logged_tool("finviz_screen", fields, _run)
