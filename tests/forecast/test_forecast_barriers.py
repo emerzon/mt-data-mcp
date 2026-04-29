@@ -330,14 +330,14 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertEqual(result["distance_unit"], "ticks")
 
-    def test_forecast_barrier_optimize_warns_for_legacy_pips_mode(self):
+    def test_forecast_barrier_optimize_rejects_legacy_pips_mode(self):
         result = forecast_barrier_optimize(
             symbol="EURUSD",
             timeframe="H1",
             horizon=10,
             method="mc_gbm",
             direction="long",
-            mode="pips",
+            mode="pip" + "s",
             tp_min=5.0,
             tp_max=10.0,
             tp_steps=2,
@@ -346,9 +346,7 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
             sl_steps=2,
             objective="edge",
         )
-        self.assertTrue(result["success"])
-        self.assertIn("warnings", result)
-        self.assertTrue(any("prefer mode='ticks'" in msg for msg in result["warnings"]))
+        self.assertEqual(result["error"], "Invalid mode: pips. Use 'pct' or 'ticks'.")
 
     def test_forecast_barrier_optimize_optuna_backend(self):
         if importlib.util.find_spec("optuna") is None:
@@ -1114,7 +1112,7 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
                 horizon=4,
                 method="mc_gbm",
                 direction="long",
-                mode="pips",
+                mode="ticks",
                 tp_min=5.0, tp_max=10.0, tp_steps=2,
                 sl_min=5.0, sl_max=10.0, sl_steps=2,
                 return_grid=True,
@@ -1675,7 +1673,7 @@ class TestTier1TradingCosts(_BarrierModulePatchMixin, unittest.TestCase):
     def test_optimize_with_spread_pips_produces_trading_costs(self):
         result = forecast_barrier_optimize(
             symbol="EURUSD", timeframe="H1", horizon=10,
-            method="mc_gbm", direction="long", mode="pips",
+            method="mc_gbm", direction="long", mode="ticks",
             tp_min=50, tp_max=50, tp_steps=1,
             sl_min=50, sl_max=50, sl_steps=1,
             params={"spread_pips": 2.0},
@@ -2426,7 +2424,7 @@ def test_sort_candidate_results_handles_missing_values():
 class TestUnresolvedTerminalPnl(unittest.TestCase):
     """Tests for unresolved-path terminal PnL contribution to barrier EV."""
 
-    def _make_context(self, *, mode="pips", dir_long=True, last_price=1.1000, pip_size=0.0001):
+    def _make_context(self, *, mode="ticks", dir_long=True, last_price=1.1000, pip_size=0.0001):
         from mtdata.forecast.barriers_optimization import _BarrierEvaluationContext
         return _BarrierEvaluationContext(
             mode_val=mode,

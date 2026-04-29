@@ -1868,7 +1868,6 @@ def test_forecast_barrier_optimize_routes_advanced_grid_params(monkeypatch):
     assert out["ok"] is True
     assert called["params"]["vol_sl_multiplier"] == 2.1
     assert called["vol_sl_multiplier"] == 1.8
-    assert "vol_sl_extra" not in called
 
 
 def test_forecast_barrier_optimize_keeps_grid_default_path(monkeypatch):

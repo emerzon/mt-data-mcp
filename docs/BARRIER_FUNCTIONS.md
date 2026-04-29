@@ -515,7 +515,7 @@ sl_end = sl_start * vol_sl_multiplier
 
 **Use case**: Adapts to current market volatility
 
-`vol_sl_extra` is a legacy alias for `vol_sl_multiplier`.
+Use `vol_sl_multiplier` to control the volatility-grid stop-loss multiplier.
 
 **Example**:
 ```bash
@@ -563,7 +563,7 @@ Pre-configured ranges for trading styles
 
 Note:
 - Presets are stored in percentage terms.
-- In `mode=ticks` (legacy alias: `mode=pips`), the optimizer converts those preset percentages to tick-size distances using the current reference price.
+- In `mode=ticks`, the optimizer converts those preset percentages to tick-size distances using the current reference price.
 - That means named presets in tick mode are not portable across different price levels.
 
 **Example**:

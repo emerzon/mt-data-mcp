@@ -20,7 +20,7 @@ def template_scalping(
         'backtest_spacing': 10,
         'backtest_rmse_tolerance': 0.10,
         'patterns_limit': 200,
-        'mode': 'pips',
+        'mode': 'ticks',
         'grid_style': 'fixed',
         'tp_min': 2.0, 'tp_max': 15.0, 'tp_steps': 6,
         'sl_min': 4.0, 'sl_max': 30.0, 'sl_steps': 7,
@@ -33,7 +33,7 @@ def template_scalping(
     if 'timeframe' not in p:
         p['timeframe'] = 'M5'
     snap = market_snapshot(symbol)
-    if str(p.get('mode', '')).lower() == 'pips':
+    if str(p.get('mode', '')).lower() == 'ticks':
         last_price = None
         spread_ticks = None
         if isinstance(snap, dict) and not snap.get('error'):

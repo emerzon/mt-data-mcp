@@ -944,15 +944,13 @@ def template_basic(  # noqa: C901
     p.setdefault('vol_window', 250)
     p.setdefault('vol_min_mult', 0.6)
     p.setdefault('vol_max_mult', 2.2)
-    if 'vol_sl_extra' in p and 'vol_sl_multiplier' not in p:
-        p['vol_sl_multiplier'] = p.get('vol_sl_extra')
     p.setdefault('vol_sl_multiplier', 1.7)
     p.setdefault('vol_sl_steps', 9)
     # Set floors to avoid too-tight levels depending on mode
     if str(p.get('mode', 'pct')) == 'pct':
         p.setdefault('vol_floor_pct', 0.2)
     else:
-        p.setdefault('vol_floor_pips', 8.0)
+        p.setdefault('vol_floor_ticks', 8.0)
     # Include trading costs to discourage too-tight levels in EV
     base_params = dict(p.get('params') or {})
     base_params.setdefault('spread_bps', 1.0)
@@ -970,7 +968,7 @@ def template_basic(  # noqa: C901
         'vol_sl_multiplier',
         'vol_sl_steps',
         'vol_floor_pct',
-        'vol_floor_pips',
+        'vol_floor_ticks',
     ):
         if barrier_key in p:
             base_params.setdefault(barrier_key, p.get(barrier_key))

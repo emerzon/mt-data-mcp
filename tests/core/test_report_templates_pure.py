@@ -1166,45 +1166,6 @@ class TestTemplateBasic:
     @patch(f"{_BASIC_MODULE}._get_raw_result")
     @patch(f"{_BASIC_MODULE}.now_utc_iso", return_value="2024-01-15T00:00:00Z")
     @patch(f"{_BASIC_MODULE}.parse_table_tail")
-    @patch(f"{_BASIC_MODULE}.pick_best_forecast_method", return_value=None)
-    @patch(f"{_BASIC_MODULE}.summarize_barrier_grid")
-    @patch(f"{_BASIC_MODULE}.attach_multi_timeframes")
-    def test_basic_barriers_normalize_legacy_vol_sl_extra(
-        self, mock_mtf, mock_sum_bar, mock_pick, mock_tail,
-        mock_now, mock_raw,
-    ):
-        candle_rows = _mock_candle_data()["rows"]
-        mock_tail.return_value = candle_rows
-        barrier_params = []
-
-        def raw_side_effect(name, **kwargs):
-            name_text = name.__name__ if callable(name) else str(name)
-            if "fetch_candles" in name_text or "candles" in name_text.lower():
-                return _mock_candle_data()
-            if "barrier" in name_text.lower():
-                barrier_params.append(dict(kwargs.get("params") or {}))
-                return _mock_barrier_data()
-            if "backtest" in name_text.lower():
-                return {"results": {}}
-            if "forecast_generate" in name_text.lower() or "generate" in name_text.lower():
-                return _mock_forecast_data()
-            if "pattern" in name_text.lower():
-                return _mock_patterns_data()
-            return {"data": "ok"}
-
-        mock_raw.side_effect = raw_side_effect
-
-        from mtdata.core.report_templates.basic import template_basic
-        _ = template_basic("EURUSD", 12, None, {"vol_sl_extra": 2.4})
-
-        assert barrier_params
-        for params in barrier_params:
-            assert params["vol_sl_multiplier"] == 2.4
-            assert "vol_sl_extra" not in params
-
-    @patch(f"{_BASIC_MODULE}._get_raw_result")
-    @patch(f"{_BASIC_MODULE}.now_utc_iso", return_value="2024-01-15T00:00:00Z")
-    @patch(f"{_BASIC_MODULE}.parse_table_tail")
     @patch(f"{_BASIC_MODULE}.pick_best_forecast_method")
     @patch(f"{_BASIC_MODULE}.summarize_barrier_grid")
     @patch(f"{_BASIC_MODULE}.attach_multi_timeframes")
@@ -1566,7 +1527,7 @@ class TestTemplateScalping:
     @patch(f"{_SCALP_MODULE}.merge_params")
     @patch(f"{_SCALP_MODULE}._get_pip_size", return_value=0.01)
     def test_scalping_returns_report(self, mock_pip, mock_merge, mock_snap, mock_build):
-        mock_merge.return_value = {"timeframe": "M5", "mode": "pips"}
+        mock_merge.return_value = {"timeframe": "M5", "mode": "ticks"}
         mock_snap.return_value = {"bid": 1.2345, "ask": 1.2347, "spread_ticks": 20}
         mock_build.return_value = {
             "meta": {"symbol": "EURUSD", "template": "scalping"},
@@ -1584,7 +1545,7 @@ class TestTemplateScalping:
     @patch(f"{_SCALP_MODULE}.merge_params")
     @patch(f"{_SCALP_MODULE}._get_pip_size", return_value=0.01)
     def test_scalping_default_timeframe_m5(self, mock_pip, mock_merge, mock_snap, mock_build):
-        mock_merge.return_value = {"mode": "pips"}
+        mock_merge.return_value = {"mode": "ticks"}
         mock_snap.return_value = {"bid": 1.23, "ask": 1.24}
         mock_build.return_value = {"meta": {}, "sections": {}}
 
@@ -1602,7 +1563,7 @@ class TestTemplateScalping:
     @patch(f"{_SCALP_MODULE}.merge_params")
     @patch(f"{_SCALP_MODULE}._get_pip_size", return_value=1.0)
     def test_scalping_high_price_adjusts_pip_levels(self, mock_pip, mock_merge, mock_snap, mock_build):
-        mock_merge.return_value = {"mode": "pips"}
+        mock_merge.return_value = {"mode": "ticks"}
         mock_snap.return_value = {
             "bid": 30000.0, "ask": 30002.0, "spread_ticks": 200,
         }
@@ -1632,7 +1593,7 @@ class TestTemplateScalping:
     @patch(f"{_SCALP_MODULE}.merge_params")
     @patch(f"{_SCALP_MODULE}._get_pip_size", return_value=0.01)
     def test_scalping_snapshot_error_still_runs(self, mock_pip, mock_merge, mock_snap, mock_build):
-        mock_merge.return_value = {"mode": "pips"}
+        mock_merge.return_value = {"mode": "ticks"}
         mock_snap.return_value = {"error": "MT5 offline"}
         mock_build.return_value = {"meta": {}, "sections": {}}
 
@@ -1646,7 +1607,7 @@ class TestTemplateScalping:
     @patch(f"{_SCALP_MODULE}.merge_params")
     @patch(f"{_SCALP_MODULE}._get_pip_size", return_value=1.0)
     def test_scalping_no_spread_ticks_uses_price_based(self, mock_pip, mock_merge, mock_snap, mock_build):
-        mock_merge.return_value = {"mode": "pips"}
+        mock_merge.return_value = {"mode": "ticks"}
         mock_snap.return_value = {"bid": 2000.0, "ask": 2001.0}
         mock_build.return_value = {"meta": {}, "sections": {}}
 

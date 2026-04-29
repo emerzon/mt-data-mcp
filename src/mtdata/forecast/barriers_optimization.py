@@ -760,7 +760,7 @@ def forecast_barrier_optimize(  # noqa: C901
     horizon: int = 12,
     method: Literal['mc_gbm','mc_gbm_bb','hmm_mc','garch','bootstrap','heston','jump_diffusion','auto'] = 'hmm_mc',
     direction: Literal['long','short'] = 'long',
-    mode: Literal['pct','ticks','pips'] = 'pct',
+    mode: Literal['pct','ticks'] = 'pct',
     tp_min: float = 0.25,
     tp_max: float = 1.5,
     tp_steps: Optional[int] = None,
@@ -796,7 +796,6 @@ def forecast_barrier_optimize(  # noqa: C901
     vol_sl_multiplier: float = 1.8,
     vol_floor_pct: float = 0.15,
     vol_floor_ticks: Optional[float] = None,
-    vol_floor_pips: float = 8.0,
     ratio_min: float = 0.5,
     ratio_max: float = 4.0,
     ratio_steps: Optional[int] = None,
@@ -827,11 +826,10 @@ def forecast_barrier_optimize(  # noqa: C901
     Unit conventions:
     - mode="pct": tp/sl are percentage *points* (e.g., tp=0.5 means +0.5%).
     - mode="ticks": tp/sl are ticks (trade_tick_size units).
-    - mode="pips" remains a legacy alias for tick-based distances.
 
     Grid styles:
     - fixed/volatility generate tp/sl directly in the selected `mode`.
-    - preset ranges are defined in pct terms and converted when `mode="ticks"` (or legacy `mode="pips"`).
+    - preset ranges are defined in pct terms and converted when `mode="ticks"`.
     - ratio treats `ratio_min/max` as reward/risk = tp/sl (TP distance divided
       by SL distance), with SL sampled from `sl_min/max`.
 
@@ -870,13 +868,9 @@ def forecast_barrier_optimize(  # noqa: C901
         params_dict = _parse_kv_or_json(params)
         contract_warnings: List[str] = []
         mode_requested = str(mode).lower().strip()
-        if mode_requested not in {'pct', 'ticks', 'pips'}:
-            return {"error": f"Invalid mode: {mode}. Use 'pct' or 'ticks' (legacy alias: 'pips')."}
-        if mode_requested == 'pips':
-            contract_warnings.append(
-                "mode='pips' uses legacy pip terminology; prefer mode='ticks' for trade_tick_size-based distances."
-            )
-        mode_val = 'pips' if mode_requested in {'ticks', 'pips'} else 'pct'
+        if mode_requested not in {'pct', 'ticks'}:
+            return {"error": f"Invalid mode: {mode}. Use 'pct' or 'ticks'."}
+        mode_val = mode_requested
         output_mode = str(output_mode).strip().lower()
         if output_mode not in {'full', 'summary'}:
             output_mode = 'summary'
@@ -1024,22 +1018,14 @@ def forecast_barrier_optimize(  # noqa: C901
             )
         )
         vol_steps_val = max(2, int(params_dict.get('vol_steps', vol_steps_default)))
-        vol_sl_extra_val = float(params_dict.get('vol_sl_extra', vol_sl_multiplier))
-        vol_sl_multiplier_val = float(params_dict.get('vol_sl_multiplier', vol_sl_extra_val))
+        vol_sl_multiplier_val = float(params_dict.get('vol_sl_multiplier', vol_sl_multiplier))
         vol_sl_steps_val = max(vol_steps_val, int(params_dict.get('vol_sl_steps', vol_steps_val + 2)))
         vol_floor_pct_val = float(params_dict.get('vol_floor_pct', vol_floor_pct))
         vol_floor_ticks_raw = params_dict.get(
             'vol_floor_ticks',
-            params_dict.get(
-                'vol_floor_pips',
-                vol_floor_ticks if vol_floor_ticks is not None else vol_floor_pips,
-            ),
+            vol_floor_ticks if vol_floor_ticks is not None else 8.0,
         )
-        vol_floor_pips_val = float(vol_floor_ticks_raw)
-        if 'vol_floor_pips' in params_dict and 'vol_floor_ticks' not in params_dict:
-            contract_warnings.append(
-                "vol_floor_pips uses legacy pip terminology; prefer vol_floor_ticks."
-            )
+        vol_floor_ticks_val = float(vol_floor_ticks_raw)
 
         # Optional risk/reward filter applied across all grid styles
         rr_min_val = params_dict.get('rr_min')
@@ -1195,7 +1181,7 @@ def forecast_barrier_optimize(  # noqa: C901
         price_precision = _symbol_price_precision(symbol)
 
         pip_size = _get_pip_size(symbol)
-        if mode_val == 'pips' and (pip_size is None or pip_size <= 0):
+        if mode_val == 'ticks' and (pip_size is None or pip_size <= 0):
             return {"error": "Tick size unavailable for this symbol; use mode='pct' or provide absolute barriers."}
 
         base_col = 'close'
@@ -1364,7 +1350,7 @@ def forecast_barrier_optimize(  # noqa: C901
                     vol_steps=vol_steps_val,
                     vol_sl_multiplier=vol_sl_multiplier_val,
                     vol_floor_pct=vol_floor_pct_val,
-                    vol_floor_pips=vol_floor_pips_val,
+                    vol_floor_ticks=vol_floor_ticks_val,
                     ratio_min=ratio_min_val,
                     ratio_max=ratio_max_val,
                     ratio_steps=ratio_steps_val,
@@ -1583,7 +1569,7 @@ def forecast_barrier_optimize(  # noqa: C901
                 "horizon": horizon_val,
                 "direction": direction_norm,
                 "mode": mode_val,
-                "distance_unit": "ticks" if mode_val == "pips" else "pct",
+                "distance_unit": mode_val,
                 "optimizer": optimizer_val,
                 "last_price": out_last_price,
                 "last_price_close": out_last_price_close,
@@ -1970,11 +1956,11 @@ def forecast_barrier_optimize(  # noqa: C901
                 sl_start = max(vol_floor_pct_val, vol_pct * vol_min_mult_val * 0.8)
                 _add_fixed(base_candidates, tp_start, tp_end, vol_steps_val, sl_start, sl_start * vol_sl_multiplier_val, vol_sl_steps_val)
             else:
-                # Convert volatility to ticks and apply tick floor when in pips mode
-                vol_pips = (vol_pct / 100.0) * (last_price / float(pip_size))
-                tp_start = max(vol_floor_pips_val, vol_pips * vol_min_mult_val)
-                tp_end = max(tp_start * 1.1, vol_pips * vol_max_mult_val)
-                sl_start = max(vol_floor_pips_val, vol_pips * vol_min_mult_val * 0.8)
+                # Convert volatility to ticks and apply the tick floor.
+                vol_ticks = (vol_pct / 100.0) * (last_price / float(pip_size))
+                tp_start = max(vol_floor_ticks_val, vol_ticks * vol_min_mult_val)
+                tp_end = max(tp_start * 1.1, vol_ticks * vol_max_mult_val)
+                sl_start = max(vol_floor_ticks_val, vol_ticks * vol_min_mult_val * 0.8)
                 _add_fixed(base_candidates, tp_start, tp_end, vol_steps_val, sl_start, sl_start * vol_sl_multiplier_val, vol_sl_steps_val)
             
         elif grid_style_val == 'ratio':
@@ -2501,7 +2487,7 @@ def forecast_barrier_optimize(  # noqa: C901
             "horizon": horizon_val,
             "direction": direction_norm,
             "mode": mode_val,
-            "distance_unit": "ticks" if mode_val == "pips" else "pct",
+            "distance_unit": mode_val,
             "optimizer": optimizer_val,
             "last_price": float(last_price),
             "last_price_close": float(last_price_close),
