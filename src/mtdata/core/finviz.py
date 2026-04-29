@@ -546,6 +546,8 @@ _FINVIZ_OUTPUT_KEY_MAP = {
     "LT Debt/Eq": "long_term_debt_to_equity",
     "LTDebt/Eq": "long_term_debt_to_equity",
     "Debt/Eq": "debt_to_equity",
+    "Outer": "firm",
+    "outer": "firm",
     "Gross M": "gross_margin",
     "Oper M": "operating_margin",
     "Profit M": "profit_margin",

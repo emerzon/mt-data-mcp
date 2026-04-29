@@ -292,12 +292,18 @@ class TestFinvizProgressiveDisclosure:
 
     @patch("mtdata.core.finviz.get_stock_ratings")
     def test_ratings_compact_returns_latest_rows_and_summary(self, mock_get):
-        rows = [{"Date": f"2026-01-0{i}", "Rating": "Buy"} for i in range(1, 6)]
+        rows = [
+            {"Date": f"2026-01-0{i}", "Outer": "UBS", "Rating": "Buy"}
+            for i in range(1, 6)
+        ]
         mock_get.return_value = {"success": True, "symbol": "AAPL", "ratings": rows}
 
         result = _unwrap(finviz_ratings)("AAPL", detail="compact")
 
-        expected_rows = [{"date": f"2026-01-0{i}", "rating": "Buy"} for i in range(1, 4)]
+        expected_rows = [
+            {"date": f"2026-01-0{i}", "firm": "UBS", "rating": "Buy"}
+            for i in range(1, 4)
+        ]
         assert result["detail"] == "compact"
         assert result["ratings"] == expected_rows
         assert result["count"] == 3
