@@ -13,6 +13,10 @@ from typing import Any, Dict, List, Union, cast, get_args, get_origin
 
 from pydantic import BaseModel
 
+from ..shared.parameter_contracts import (
+    PUBLIC_OUTPUT_PARAMS,
+    REMOVED_PUBLIC_OUTPUT_PARAMS,
+)
 from ..utils.utils import _UNPARSED_BOOL, _coerce_scalar, _parse_bool_like
 from .error_envelope import (
     build_error_payload,
@@ -42,8 +46,8 @@ _NO_TIMEOUT_TOOLS = frozenset(
         "forecast_tune_optuna",
     }
 )
-_PUBLIC_OUTPUT_PARAMS = frozenset({"json", "extras"})
-_REMOVED_PUBLIC_OUTPUT_PARAMS = frozenset({"detail", "format", "output_mode", "output"})
+_PUBLIC_OUTPUT_PARAMS = PUBLIC_OUTPUT_PARAMS
+_REMOVED_PUBLIC_OUTPUT_PARAMS = REMOVED_PUBLIC_OUTPUT_PARAMS
 
 
 @dataclass

@@ -4,6 +4,10 @@ from copy import deepcopy
 from types import SimpleNamespace
 
 from mtdata.core import schema_attach as schema_attach_mod
+from mtdata.shared.parameter_contracts import (
+    OUTPUT_EXTRAS,
+    REMOVED_PUBLIC_OUTPUT_PARAMS,
+)
 
 
 def _attach_tool_schema(monkeypatch, tool_name: str, base_schema: dict, *, shared_enums: dict | None = None):
@@ -56,6 +60,30 @@ def test_attach_schemas_to_tools_patches_forecast_generate(monkeypatch) -> None:
     assert params["params"] == {"type": "object"}
     assert tool_func.schema == schema
     assert len(apply_calls) == 1
+
+
+def test_attach_schemas_to_tools_uses_shared_public_output_contract(monkeypatch) -> None:
+    tool_obj, _tool_func, _apply_calls = _attach_tool_schema(
+        monkeypatch,
+        "sample_tool",
+        {
+            "parameters": {
+                "properties": {
+                    "detail": {"type": "string"},
+                    "output": {"type": "string"},
+                },
+                "required": ["detail"],
+            }
+        },
+    )
+
+    params = tool_obj.schema["parameters"]
+    props = params["properties"]
+    for name in REMOVED_PUBLIC_OUTPUT_PARAMS:
+        assert name not in props
+    assert "detail" not in params.get("required", [])
+    assert props["json"]["type"] == "boolean"
+    assert set(props["extras"]["anyOf"][0]["items"]["enum"]) == set(OUTPUT_EXTRAS)
 
 
 def test_attach_schemas_to_tools_patches_indicator_and_data_refs(monkeypatch) -> None:

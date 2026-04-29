@@ -8,8 +8,8 @@ This module provides global parameters that work across all functions.
 import argparse
 from typing import Optional
 
-from ..shared.parameter_contracts import PARAMETER_HELP
 from ..shared.output_precision import PRECISION_CHOICES
+from ..shared.parameter_contracts import OUTPUT_EXTRAS_HELP, PARAMETER_HELP
 from .constants import DEFAULT_TIMEFRAME
 
 
@@ -56,10 +56,7 @@ def add_global_args_to_parser(
             "dest": "extras",
             "default": None,
             "metavar": "EXTRA[,EXTRA...]",
-            "help": (
-                "Include richer output sections in TOON, such as metadata, "
-                "diagnostics, request, raw, raw_rows, or method_docs."
-            ),
+            "help": f"Include richer output sections in TOON. {OUTPUT_EXTRAS_HELP}",
         }
         if suppress_defaults:
             extras_kwargs["default"] = argparse.SUPPRESS

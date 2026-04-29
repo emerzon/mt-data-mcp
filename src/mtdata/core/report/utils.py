@@ -2,9 +2,9 @@ import math
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from ...utils.barriers import get_pip_size as _get_pip_size
 from ...shared.constants import TIME_DISPLAY_FORMAT
-from ..tool_calling import call_tool_sync_raw
+from ...utils.barriers import get_pip_size as _get_pip_size
+from ..tool_calling import call_tool_sync_structured
 from .shared import (
     _as_float,
     _format_decimal,
@@ -277,10 +277,11 @@ def merge_params(base: Optional[Dict[str, Any]], extra: Dict[str, Any], override
 def market_snapshot(symbol: str, timezone: str = 'UTC') -> Dict[str, Any]:
     try:
         from ..market_depth import market_depth_fetch as _fetch_market_depth
-        try:
-            dom = _fetch_market_depth(symbol=symbol, __cli_raw=True)
-        except TypeError:
-            dom = _fetch_market_depth(symbol=symbol)
+        dom = call_tool_sync_structured(
+            _fetch_market_depth,
+            symbol=symbol,
+            raw_tool_output=True,
+        )
         bid = None; ask = None; spread = None
         top_buy_vol = None; top_sell_vol = None; total_buy_vol = None; total_sell_vol = None
         if isinstance(dom, dict) and dom.get('success'):
@@ -415,14 +416,14 @@ def context_for_tf(
         return _fetch_cache[cache_key]
     try:
         from ..data import data_fetch_candles as _fetch_candles
-        res = call_tool_sync_raw(
+        res = call_tool_sync_structured(
             _fetch_candles,
             symbol=symbol,
             timeframe=timeframe,
             limit=int(limit),
             indicators=indicator_spec,
             denoise=denoise,
-            cli_raw=True,
+            raw_tool_output=True,
         )
 
         if not isinstance(res, dict):

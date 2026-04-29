@@ -75,10 +75,19 @@ def test_normalize_output_extras_accepts_comma_lists_and_full_aliases() -> None:
     assert set(normalize_output_extras("all")) >= {"metadata", "diagnostics", "raw"}
 
 
+def test_normalize_output_extras_accepts_legacy_detail_assignments() -> None:
+    full_extras = set(normalize_output_extras("detail=full"))
+
+    assert full_extras >= {"metadata", "diagnostics", "raw"}
+    assert normalize_output_extras("detail=compact") == ()
+    assert set(normalize_output_extras(["metadata", "verbose=true"])) == full_extras
+
+
 def test_output_extras_shape_detail_is_compact_by_default_and_full_when_requested() -> None:
     assert output_extras_shape_detail(None) == "compact"
     assert output_extras_shape_detail("") == "compact"
     assert output_extras_shape_detail("metadata") == "full"
+    assert output_extras_shape_detail("detail=full") == "full"
 
 
 def test_resolve_output_contract_prefers_explicit_verbose_when_detail_is_none() -> None:

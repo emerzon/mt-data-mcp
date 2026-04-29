@@ -6,6 +6,7 @@ and heavy imports are mocked.
 """
 
 import argparse
+import copy
 import json
 import logging
 import os
@@ -314,6 +315,45 @@ class TestJsonDefault:
 
         result = _json_default(BadNT())
         assert isinstance(result, str)
+
+
+def test_format_result_for_cli_does_not_mutate_candle_payload() -> None:
+    payload = {
+        "success": True,
+        "count": 1,
+        "data": [{"time": "2025-01-01 00:00", "close": 1.1}],
+        "meta": {"runtime": {"timezone": {"used": {"tz": "UTC"}}}},
+    }
+    original = copy.deepcopy(payload)
+
+    rendered = _format_result_for_cli(
+        payload,
+        fmt="json",
+        verbose=False,
+        cmd_name="data_fetch_candles",
+    )
+
+    assert '"bars"' in rendered
+    assert payload == original
+
+
+def test_render_cli_result_does_not_mutate_input(capsys) -> None:
+    args = argparse.Namespace(json=True, verbose=False, extras=None, precision=None)
+    result = {
+        "success": True,
+        "symbol": {
+            "name": "EURUSD",
+            "time": "2025-01-01 00:00",
+            "time_epoch": 1735689600,
+        },
+        "meta": {"tool": "symbols_describe"},
+    }
+    original = copy.deepcopy(result)
+
+    _render_cli_result(result, args=args, cmd_name="symbols_describe")
+
+    assert json.loads(capsys.readouterr().out)["symbol"]["name"] == "EURUSD"
+    assert result == original
 
 
 # ========================================================================

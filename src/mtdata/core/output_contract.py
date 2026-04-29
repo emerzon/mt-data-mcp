@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Iterable, Iterator, Mapping, Optional
 
+from ..shared import parameter_contracts as _parameter_contracts
 from ..shared.schema import CANONICAL_OUTPUT_DETAIL_ALIASES
 from ..utils.utils import _UNPARSED_BOOL, _parse_bool_like
 from .runtime_metadata import build_runtime_timezone_meta
@@ -18,6 +19,11 @@ _VERBOSE_ONLY_KEYS = frozenset(
         "collection_contract_version",
     }
 )
+
+OUTPUT_EXTRA_FULL_ALIASES = _parameter_contracts.OUTPUT_EXTRA_FULL_ALIASES
+OUTPUT_EXTRAS = _parameter_contracts.OUTPUT_EXTRAS
+PUBLIC_OUTPUT_PARAMS = _parameter_contracts.PUBLIC_OUTPUT_PARAMS
+REMOVED_PUBLIC_OUTPUT_PARAMS = _parameter_contracts.REMOVED_PUBLIC_OUTPUT_PARAMS
 
 
 @dataclass(frozen=True)
@@ -41,22 +47,47 @@ class OutputContractState:
         return self.shape_detail == "full"
 
 
-OUTPUT_EXTRAS = frozenset(
+_FULL_EXTRA_ALIASES = OUTPUT_EXTRA_FULL_ALIASES
+_DETAIL_ASSIGNMENT_KEYS = frozenset({"detail", "output", "output_mode"})
+_COMPACT_DETAIL_VALUES = frozenset({"compact", "default", "false", "none"})
+
+
+def _append_all_output_extras(extras: list[str]) -> None:
+    for extra in sorted(OUTPUT_EXTRAS):
+        if extra not in extras:
+            extras.append(extra)
+
+
+def _normalize_assignment_style_extra(token: str) -> Optional[str]:
+    key, separator, value = token.partition("=")
+    if not separator:
+        return None
+
+    normalized_key = key.strip().lower().replace("-", "_")
+    normalized_value = value.strip().lower().replace("-", "_")
+
+    if normalized_key in _DETAIL_ASSIGNMENT_KEYS:
+        if normalized_value in _FULL_EXTRA_ALIASES:
+            return "full"
+        if normalized_value in _COMPACT_DETAIL_VALUES or not normalized_value:
+            return "compact"
+
+    if normalized_key == "verbose":
+        parsed = _parse_bool_like(normalized_value, allow_none=True)
+        if parsed is not _UNPARSED_BOOL:
+            return "full" if parsed is True else "compact"
+
+    return None
+
+
+_LEGACY_OUTPUT_ASSIGNMENT_EXAMPLES = frozenset(
     {
-        "metadata",
-        "diagnostics",
-        "request",
-        "raw",
-        "raw_rows",
-        "method_docs",
+        "detail=full",
+        "detail=compact",
+        "verbose=true",
+        "verbose=false",
     }
 )
-
-_FULL_EXTRA_ALIASES = {
-    "all",
-    "full",
-    "verbose",
-}
 
 
 def _strip_verbose_only_fields(value: Any) -> Any:
@@ -132,13 +163,23 @@ def normalize_output_extras(value: Any) -> tuple[str, ...]:
         token = str(item or "").strip().lower().replace("-", "_")
         if not token:
             continue
+        assignment_detail = _normalize_assignment_style_extra(token)
+        if assignment_detail == "full":
+            _append_all_output_extras(extras)
+            continue
+        if assignment_detail == "compact":
+            continue
         if token in _FULL_EXTRA_ALIASES:
-            for extra in sorted(OUTPUT_EXTRAS):
-                if extra not in extras:
-                    extras.append(extra)
+            _append_all_output_extras(extras)
             continue
         if token not in OUTPUT_EXTRAS:
-            allowed = ", ".join(sorted(OUTPUT_EXTRAS | _FULL_EXTRA_ALIASES))
+            allowed = ", ".join(
+                sorted(
+                    OUTPUT_EXTRAS
+                    | _FULL_EXTRA_ALIASES
+                    | _LEGACY_OUTPUT_ASSIGNMENT_EXAMPLES
+                )
+            )
             raise ValueError(f"Invalid extras value {item!r}. Use one of: {allowed}.")
         if token not in extras:
             extras.append(token)

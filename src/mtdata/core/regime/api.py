@@ -24,6 +24,7 @@ from ..features import extract_rolling_features
 from ..mt5_gateway import get_mt5_gateway, mt5_connection_error
 from ..output_contract import normalize_output_detail, normalize_output_verbosity_detail
 from ..schema import DenoiseSpec, DetailLiteral, TimeframeLiteral
+from ..tool_calling import call_tool_sync_structured
 from .crypto import (
     _CRYPTO_SYMBOL_HINTS,
     _is_probably_crypto_symbol,
@@ -2405,7 +2406,8 @@ def regime_detect(  # noqa: C901
                     # For garch, if n_states is already in sub_params, keep it
                     # Otherwise leave it out to trigger auto-detection
                 try:
-                    sr = regime_detect(
+                    sr = call_tool_sync_structured(
+                        regime_detect,
                         symbol=symbol,
                         timeframe=timeframe,
                         limit=limit,
@@ -2418,7 +2420,7 @@ def regime_detect(  # noqa: C901
                         lookback=lookback,
                         include_series=True,
                         min_regime_bars=min_regime_bars,
-                        __cli_raw=True,
+                        raw_tool_output=True,
                     )
                 except Exception as exc:
                     sub_errors.append(f"{sm}: {exc}")
@@ -2657,7 +2659,8 @@ def regime_detect(  # noqa: C901
                         sub_params.setdefault("n_states", 2)
                         sub_params.setdefault("k_regimes", 2)
                     # GARCH: if n_states not explicitly set, leave it out for auto-detection
-                    sr = regime_detect(
+                    sr = call_tool_sync_structured(
+                        regime_detect,
                         symbol=symbol,
                         timeframe=timeframe,
                         limit=limit,
@@ -2670,7 +2673,7 @@ def regime_detect(  # noqa: C901
                         lookback=lookback,
                         include_series=include_series_for_subcalls,
                         min_regime_bars=min_regime_bars,
-                        __cli_raw=True,
+                        raw_tool_output=True,
                     )
                     if isinstance(sr, dict) and not sr.get("error"):
                         # Strip redundant fields that are already at top level
@@ -2733,7 +2736,8 @@ def regime_detect(  # noqa: C901
                 ens_params["methods"] = list(
                     results_by_method.keys()
                 )  # Use methods that succeeded
-                ensemble_result = regime_detect(
+                ensemble_result = call_tool_sync_structured(
+                    regime_detect,
                     symbol=symbol,
                     timeframe=timeframe,
                     limit=limit,
@@ -2746,7 +2750,7 @@ def regime_detect(  # noqa: C901
                     lookback=lookback,
                     include_series=include_series_for_subcalls,
                     min_regime_bars=min_regime_bars,
-                    __cli_raw=True,
+                    raw_tool_output=True,
                 )
                 if isinstance(ensemble_result, dict) and not ensemble_result.get(
                     "error"

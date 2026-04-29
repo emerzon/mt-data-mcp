@@ -871,11 +871,14 @@ class TestRecordingToolDecorator:
 
             toon = wrapped()
             structured = wrapped(json=True, extras="metadata")
+            legacy_structured = wrapped(json=True, extras="detail=full")
 
             assert isinstance(toon, str)
             assert "success: true" in toon
             assert structured["success"] is True
             assert structured["detail_seen"] == "full"
+            assert legacy_structured["success"] is True
+            assert legacy_structured["detail_seen"] == "full"
             error = wrapped(detail="full")
             assert isinstance(error, str)
             assert "Removed output option(s): detail" in error

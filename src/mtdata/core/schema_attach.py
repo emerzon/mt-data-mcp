@@ -9,6 +9,11 @@ import copy
 import logging
 from typing import Any, Callable, Dict, Iterable
 
+from ..shared.parameter_contracts import (
+    OUTPUT_EXTRA_FULL_ALIASES,
+    OUTPUT_EXTRAS,
+    REMOVED_PUBLIC_OUTPUT_PARAMS,
+)
 from .schema import (
     apply_param_hints as _apply_param_hints,
 )
@@ -61,7 +66,6 @@ _TRADE_PLACE_STRING_ORDER_TYPES = [
 ]
 
 _SchemaPatcher = Callable[[Dict[str, Any]], None]
-_REMOVED_PUBLIC_OUTPUT_PARAMS = frozenset({"detail", "format", "output_mode", "output"})
 
 
 def _safe_schema_op(operation: str, func, default=None):
@@ -414,11 +418,11 @@ def _enforce_public_output_contract(schema: Dict[str, Any]) -> None:
     props = params_obj.get("properties") if isinstance(params_obj, dict) else None
     if not isinstance(props, dict):
         return
-    for name in _REMOVED_PUBLIC_OUTPUT_PARAMS:
+    for name in REMOVED_PUBLIC_OUTPUT_PARAMS:
         props.pop(name, None)
     required = params_obj.get("required")
     if isinstance(required, list):
-        params_obj["required"] = [name for name in required if name not in _REMOVED_PUBLIC_OUTPUT_PARAMS]
+        params_obj["required"] = [name for name in required if name not in REMOVED_PUBLIC_OUTPUT_PARAMS]
     props.setdefault(
         "json",
         {
@@ -435,25 +439,24 @@ def _enforce_public_output_contract(schema: Dict[str, Any]) -> None:
                     "type": "array",
                     "items": {
                         "type": "string",
-                        "enum": [
-                            "metadata",
-                            "diagnostics",
-                            "request",
-                            "raw",
-                            "raw_rows",
-                            "method_docs",
-                        ],
+                        "enum": sorted(OUTPUT_EXTRAS),
                     },
                 },
                 {"type": "string"},
             ],
-            "description": "Optional richer output sections. Use all/full for every supported section.",
+            "description": (
+                "Optional richer output sections. Use "
+                f"{'/'.join(sorted(OUTPUT_EXTRA_FULL_ALIASES))} for every supported section."
+            ),
         },
     )
     if isinstance(props.get("extras"), dict):
         props["extras"].setdefault(
             "description",
-            "Optional richer output sections. Use all/full for every supported section.",
+            (
+                "Optional richer output sections. Use "
+                f"{'/'.join(sorted(OUTPUT_EXTRA_FULL_ALIASES))} for every supported section."
+            ),
         )
 
 

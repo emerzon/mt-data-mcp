@@ -3,8 +3,8 @@ from typing import Any, Dict, List, Optional
 
 from ...utils.utils import _safe_float
 from ..report.utils import (
-    attach_multi_timeframes,
     attach_candle_freshness_diagnostics,
+    attach_multi_timeframes,
     now_utc_iso,
     parse_table_tail,
     pick_best_forecast_method,
@@ -12,7 +12,7 @@ from ..report.utils import (
     summarize_barrier_grid,
 )
 from ..schema import DenoiseSpec
-from ..tool_calling import call_tool_sync_raw
+from ..tool_calling import call_tool_sync_structured
 
 _TREND_COMPACT_LEGEND: Dict[str, str] = {
     "slope_atr_scores": "ATR-adjusted slope score (x100) for windows [5, 20, 60] bars.",
@@ -40,7 +40,7 @@ def _get_raw_result(
 ) -> Dict[str, Any]:
     """Call a tool and require a structured payload unless legacy parsing is explicitly enabled."""
     try:
-        result = call_tool_sync_raw(func, *args, cli_raw=True, **kwargs)
+        result = call_tool_sync_structured(func, *args, raw_tool_output=True, **kwargs)
         
         # If it returns a dict, use it directly
         if isinstance(result, dict):

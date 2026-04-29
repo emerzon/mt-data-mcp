@@ -77,6 +77,8 @@ Request flow: `entry point → load_environment() → bootstrap_tools() → mcp.
 - **Python**: PEP 8, 4-space indent, type hints on public functions. `snake_case` functions/modules, `PascalCase` classes, `UPPER_SNAKE_CASE` constants.
 - **Imports**: Import individual modules from `core/` directly — `__init__.py` is intentionally empty to prevent circular deps.
 - **Domain logic**: Lives in `src/mtdata/*` modules, never in entry scripts.
+- **Output layering**: Tool/domain functions return canonical structured payloads. `extras`/detail are resolved through `core/output_contract.py`; TOON/JSON selection is final presentation only.
+- **Transport boundaries**: CLI, MCP, and Web API code should only adapt parsing, protocol/auth/status handling, async resolution, and final serialization. Do not let channel-specific code change canonical payload semantics.
 - **TypeScript**: Strict mode. Components in `webui/src/components/` with `PascalCase` filenames. Hooks prefixed `use`.
 - **Ruff**: Configured in `pyproject.toml` (`target-version = "py314"`, select E/F rules). No ESLint, Prettier, or mypy config files.
 - **Commit style**: `<area>: <imperative summary>` (e.g., `core: dedupe trading query logging`).
@@ -88,6 +90,8 @@ Request flow: `entry point → load_environment() → bootstrap_tools() → mcp.
 - **Never** place real orders without validating account context — `trade_*` tools execute real trades.
 - **Never** re-normalize already-normalized time data (see `forecast/common.py`).
 - **Do not** add domain logic to entry scripts or bootstrap modules — they are thin wrappers.
+- **Do not** import CLI presentation helpers from non-CLI layers — use shared helpers such as `core/output_serialization.py` for JSON-compatible final serialization.
+- **Do not** branch domain/tool behavior on TOON vs JSON or CLI vs MCP vs Web API unless the case is an explicitly documented transport compatibility adapter.
 - **Do not** use `pkg_resources` — deprecated, suppress warnings if unavoidable in dependencies.
 
 ## DEPENDENCY GROUPS

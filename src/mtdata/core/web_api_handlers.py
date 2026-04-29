@@ -13,10 +13,10 @@ from ..forecast.forecast_methods import get_forecast_methods_payload
 from ..utils.mt5 import MT5ConnectionError
 from ..utils.support_resistance import compact_support_resistance_payload
 from ..utils.utils import _UNPARSED_BOOL, _parse_bool_like
-from .cli_formatting import _sanitize_json_compat
 from .error_envelope import build_http_error_detail
 from .mt5_gateway import get_default_mt5_gateway
 from .output_contract import ensure_common_meta, output_extras_shape_detail
+from .output_serialization import sanitize_json_compat
 from .pivot import compute_support_resistance_payload
 from .runtime_metadata import build_runtime_timezone_meta
 from .tool_calling import resolve_sync_tool_result
@@ -756,7 +756,7 @@ def post_forecast_price_response(*, body: ForecastPriceBody, forecast_generate_u
     if isinstance(result, dict) and result.get("error"):
         raise _http_error(400, str(result["error"]), code="forecast_tool_error", operation="post_forecast_price")
     # Sanitize NaN/inf values to null for JSON compatibility
-    return _sanitize_json_compat(result)
+    return sanitize_json_compat(result)
 
 
 def post_forecast_volatility_response(*, body: ForecastVolBody, forecast_vol_impl: Callable[..., Any]) -> Dict[str, Any]:
@@ -791,7 +791,7 @@ def post_forecast_volatility_response(*, body: ForecastVolBody, forecast_vol_imp
     if isinstance(result, dict) and result.get("error"):
         raise _http_error(400, str(result["error"]), code="forecast_volatility_error", operation="post_forecast_volatility")
     # Sanitize NaN/inf values to null for JSON compatibility
-    return _sanitize_json_compat(result)
+    return sanitize_json_compat(result)
 
 
 def post_backtest_response(*, body: BacktestBody, backtest_use_case: Callable[..., Any]) -> Dict[str, Any]:
@@ -812,4 +812,4 @@ def post_backtest_response(*, body: BacktestBody, backtest_use_case: Callable[..
     if isinstance(result, dict) and result.get("error"):
         raise _http_error(400, str(result["error"]), code="backtest_error", operation="post_backtest")
     # Sanitize NaN/inf values to null for JSON compatibility
-    return _sanitize_json_compat(result)
+    return sanitize_json_compat(result)

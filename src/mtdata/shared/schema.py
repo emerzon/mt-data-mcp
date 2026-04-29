@@ -48,10 +48,6 @@ PARAM_HINTS = {
         "price_change_pct, tick_volume, rsi, or spread_pct."
     ),
     "return_mode": "Return calculation mode: pct or log.",
-    "json": "Return structured JSON instead of default TOON text.",
-    "extras": "Comma-separated richer output sections such as metadata, diagnostics, request, raw, raw_rows, or method_docs.",
-    "detail": "Removed output option; compact output is implicit and richer sections use extras.",
-    "format": "Domain-specific shape selector when supported; TOON/JSON selection uses json.",
     "ohlcv": "OHLCV column selector (e.g. 'close', 'high,low').",
     "indicators": "Indicators as compact specs like 'rsi_14', 'rsi(length=14)', 'macd(12,26,9)', or 'macd(fast=12,slow=26,signal=9)', or JSON like '[{\"name\":\"rsi\",\"params\":{\"length\":14}}]'. Bare names such as 'rsi' are also accepted.",
     "denoise": "Denoise preset name or JSON spec. Examples: --denoise kalman or --denoise '{\"method\":\"kalman\",\"params\":{\"lookback\":100}}'.",

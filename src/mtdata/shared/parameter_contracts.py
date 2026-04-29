@@ -2,6 +2,33 @@ from __future__ import annotations
 
 from typing import Final
 
+OUTPUT_EXTRAS: Final[frozenset[str]] = frozenset(
+    {
+        "metadata",
+        "diagnostics",
+        "request",
+        "raw",
+        "raw_rows",
+        "method_docs",
+    }
+)
+OUTPUT_EXTRA_FULL_ALIASES: Final[frozenset[str]] = frozenset(
+    {
+        "all",
+        "full",
+        "verbose",
+    }
+)
+PUBLIC_OUTPUT_PARAMS: Final[frozenset[str]] = frozenset({"json", "extras"})
+REMOVED_PUBLIC_OUTPUT_PARAMS: Final[frozenset[str]] = frozenset(
+    {"detail", "format", "output_mode", "output"}
+)
+OUTPUT_EXTRAS_HELP: Final[str] = (
+    "Comma-separated richer output sections such as "
+    f"{', '.join(sorted(OUTPUT_EXTRAS))}. Use "
+    f"{'/'.join(sorted(OUTPUT_EXTRA_FULL_ALIASES))} for every supported section."
+)
+
 PARAMETER_HELP: Final[dict[str, str]] = {
     "symbol": "Trading symbol (e.g. EURUSD).",
     "symbols": "Comma-separated trading symbols (e.g. EURUSD,GBPUSD).",
@@ -39,4 +66,8 @@ PARAMETER_HELP: Final[dict[str, str]] = {
     "max_prob_no_hit": "Maximum acceptable probability that neither barrier is hit.",
     "max_median_time": "Maximum median time-to-barrier estimate in bars.",
     "output_mode": "Barrier optimization output shape.",
+    "json": "Return structured JSON instead of default TOON text.",
+    "extras": OUTPUT_EXTRAS_HELP,
+    "detail": "Removed output option; compact output is implicit and richer sections use extras.",
+    "format": "Domain-specific shape selector when supported; TOON/JSON selection uses json.",
 }
