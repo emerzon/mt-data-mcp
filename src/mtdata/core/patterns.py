@@ -480,9 +480,9 @@ def _build_pattern_response(
     # Keep this helper's implicit default as full for direct callers that still
     # rely on the legacy shape. The public patterns_detect contract defaults to
     # compact via PatternsDetectRequest.
-    if detail_value in ("compact", "highlights"):
+    if detail_value in ("compact", "summary"):
         compact_resp = _compact_patterns_payload(resp)
-        if detail_value == "highlights":
+        if detail_value == "summary":
             return {
                 key: value
                 for key, value in compact_resp.items()
@@ -1041,7 +1041,7 @@ def patterns_detect(
 
     detail : str, optional (default="compact")
         Output verbosity:
-        - "highlights": quick-read highlights and aggregate bias/counts only.
+        - "summary": quick-read highlights and aggregate bias/counts only.
         - "compact": trader-focused summary with recent patterns and pattern mix.
         - "standard": sectioned all-mode output with trimmed pattern rows.
         - "full": complete pattern rows suitable for research/debugging.

@@ -1511,7 +1511,7 @@ class TestPatternsDetect:
         mock_detect.assert_called_once()
 
     @patch("mtdata.core.patterns._detect_candlestick_patterns")
-    def test_candlestick_highlights_omits_diagnostics(self, mock_detect):
+    def test_candlestick_summary_omits_diagnostics(self, mock_detect):
         mock_detect.return_value = {
             "success": True,
             "data": [
@@ -1531,7 +1531,7 @@ class TestPatternsDetect:
             symbol="EURUSD",
             mode="candlestick",
             timeframe="H1",
-            detail="highlights",
+            detail="summary",
             top_k=3,
         )
 
@@ -2160,7 +2160,7 @@ class TestPatternsDetectAllMode:
     @patch("mtdata.core.patterns._run_classic_engine")
     @patch("mtdata.core.patterns._fetch_pattern_data")
     @patch("mtdata.core.patterns._detect_candlestick_patterns")
-    def test_all_mode_highlights_detail_omits_section_payloads(
+    def test_all_mode_summary_detail_omits_section_payloads(
         self, mock_candle, mock_fetch, mock_engine, mock_elliott
     ):
         df = _make_ohlcv_df(200)
@@ -2189,7 +2189,7 @@ class TestPatternsDetectAllMode:
             symbol="EURUSD",
             mode="all",
             timeframe="H1",
-            detail="highlights",
+            detail="summary",
         )
 
         assert result["success"] is True

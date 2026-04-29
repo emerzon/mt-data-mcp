@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from .schema import DenoiseSpec, TimeframeLiteral
 
 
-PatternsDetailLiteral = Literal["highlights", "compact", "standard", "full"]
+PatternsDetailLiteral = Literal["summary", "compact", "standard", "full"]
 
 
 class PatternsDetectRequest(BaseModel):

@@ -226,12 +226,10 @@ def run_patterns_detect(  # noqa: C901
     if mode_value == "chart":
         mode_value = "classic"
     detail_value = str(request.detail).strip().lower()
-    if detail_value in ("summary", "summary_only"):
-        detail_value = "compact"
-    if detail_value not in ("highlights", "compact", "standard", "full"):
+    if detail_value not in ("summary", "compact", "standard", "full"):
         return {
             "error": (
-                "Invalid detail. Use 'highlights', 'compact', 'standard', or 'full'."
+                "Invalid detail. Use 'summary', 'compact', 'standard', or 'full'."
             )
         }
     if request.whitelist and mode_value != "candlestick":
@@ -259,7 +257,7 @@ def run_patterns_detect(  # noqa: C901
             last_n_bars=last_n_bars_val,
             config=request.config if isinstance(request.config, dict) else None,
         )
-        if detail_value == "highlights":
+        if detail_value == "summary":
             rows = out.get("data") if isinstance(out, dict) else []
             if not isinstance(rows, list):
                 rows = []
@@ -882,7 +880,7 @@ def run_patterns_detect(  # noqa: C901
         # Merged cross-section highlights for quick trader read
         resp["highlights"] = _build_highlights(resp, limit=5)
 
-        if detail_value == "highlights":
+        if detail_value == "summary":
             return _highlights_all_mode_payload(resp)
         if detail_value in ("compact", "standard"):
             return _compact_all_mode_payload(resp)
