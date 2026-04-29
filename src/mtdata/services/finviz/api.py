@@ -876,8 +876,9 @@ def get_earnings_calendar_api(
             page_size=safe_limit,
         )
         items = payload.get("items") or []
+        items = items[:safe_limit]
         total = int(payload.get("totalItemsCount") or len(items))
-        pages = int(payload.get("totalPages") or ((total + safe_limit - 1) // safe_limit if total else 0))
+        pages = (total + safe_limit - 1) // safe_limit if total else 0
         return {
             "success": True,
             "source": "finviz_api",
@@ -916,8 +917,9 @@ def get_dividends_calendar_api(
             page_size=safe_limit,
         )
         items = payload.get("items") or []
+        items = items[:safe_limit]
         total = int(payload.get("totalItemsCount") or len(items))
-        pages = int(payload.get("totalPages") or ((total + safe_limit - 1) // safe_limit if total else 0))
+        pages = (total + safe_limit - 1) // safe_limit if total else 0
         return {
             "success": True,
             "source": "finviz_api",

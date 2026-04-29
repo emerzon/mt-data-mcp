@@ -440,6 +440,25 @@ class TestFinvizService:
         assert "earnings" not in result
 
     @patch("mtdata.services.finviz._fetch_finviz_calendar_paged")
+    def test_get_earnings_calendar_api_applies_client_limit(self, mock_fetch_paged):
+        from mtdata.services.finviz import get_earnings_calendar_api
+
+        mock_fetch_paged.return_value = {
+            "items": [{"ticker": f"SYM{i}", "date": "2026-01-05"} for i in range(5)],
+            "page": 1,
+            "pageSize": 50,
+            "totalItemsCount": 5,
+            "totalPages": 1,
+        }
+
+        result = get_earnings_calendar_api(date_from="2026-01-05", date_to="2026-01-12", limit=3, page=1)
+
+        assert result["count"] == 3
+        assert result["total"] == 5
+        assert result["pages"] == 2
+        assert [item["ticker"] for item in result["items"]] == ["SYM0", "SYM1", "SYM2"]
+
+    @patch("mtdata.services.finviz._fetch_finviz_calendar_paged")
     def test_get_dividends_calendar_api_success(self, mock_fetch_paged):
         """Test dividends calendar API fetch."""
         from mtdata.services.finviz import get_dividends_calendar_api
@@ -461,6 +480,25 @@ class TestFinvizService:
         assert result["count"] == 1
         assert result["total"] == 1
         assert len(result["items"]) == 1
+
+    @patch("mtdata.services.finviz._fetch_finviz_calendar_paged")
+    def test_get_dividends_calendar_api_applies_client_limit(self, mock_fetch_paged):
+        from mtdata.services.finviz import get_dividends_calendar_api
+
+        mock_fetch_paged.return_value = {
+            "items": [{"ticker": f"SYM{i}", "exDate": "2026-01-06"} for i in range(6)],
+            "page": 1,
+            "pageSize": 50,
+            "totalItemsCount": 6,
+            "totalPages": 1,
+        }
+
+        result = get_dividends_calendar_api(date_from="2026-01-05", date_to="2026-01-12", limit=4, page=1)
+
+        assert result["count"] == 4
+        assert result["total"] == 6
+        assert result["pages"] == 2
+        assert [item["ticker"] for item in result["items"]] == ["SYM0", "SYM1", "SYM2", "SYM3"]
         assert "dividends" not in result
 
 
