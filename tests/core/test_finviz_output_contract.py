@@ -40,9 +40,8 @@ class TestFinvizEarningsOutputContract:
 
         assert result["success"] is True
         assert result["items"][0] == {
-            "ticker": "AAPL",
+            "symbol": "AAPL",
             "market_cap": "3T",
-            "date": "2026-01-10",
         }
         assert result["count"] == 2
         assert result["page"] == 2
@@ -172,7 +171,7 @@ class TestFinvizInsiderActivityOutputContract:
         assert result["detail"] == "compact"
         assert "insider_trades" not in result
         assert len(result["items"]) == 5
-        assert result["items"][0]["ticker"] == "AAPL"
+        assert result["items"][0]["symbol"] == "AAPL"
         assert "sec_form_4_link" not in result["items"][0]
         assert result["summary"]["counts"] == {
             "returned": 5,
@@ -181,8 +180,8 @@ class TestFinvizInsiderActivityOutputContract:
             "buy_transactions": 2,
             "sell_transactions": 3,
         }
-        assert result["summary"]["top_tickers"][0] == {
-            "ticker": "AAPL",
+        assert result["summary"]["top_symbols"][0] == {
+            "symbol": "AAPL",
             "transactions": 2,
             "shares": 15.0,
             "value_usd": 1600.0,
@@ -202,7 +201,66 @@ class TestFinvizInsiderActivityOutputContract:
 
         assert result["detail"] == "full"
         assert result["items"] == [
-            {"ticker": "AAPL", "sec_form_4_link": "https://sec.example/a"}
+            {"symbol": "AAPL", "sec_form_4_link": "https://sec.example/a"}
+        ]
+        assert "insider_trades" not in result
+
+
+class TestFinvizInsiderOutputContract:
+    @patch("mtdata.core.finviz.get_stock_insider_trades")
+    def test_compact_normalizes_items(self, mock_get):
+        mock_get.return_value = {
+            "success": True,
+            "symbol": "AAPL",
+            "total": 4,
+            "insider_trades": [
+                {
+                    "Insider Trading": "Parekh Kevan",
+                    "Relationship": "CFO",
+                    "Transaction": "Sale",
+                    "#Shares": "1534",
+                    "Value ($)": "421850",
+                    "SEC Form 4 Link": "https://sec.example/a",
+                    "Insider_id": "123",
+                },
+                {"Insider Trading": "Cook Tim", "Transaction": "Buy"},
+                {"Insider Trading": "Maestri Luca", "Transaction": "Sale"},
+                {"Insider Trading": "Williams Jeff", "Transaction": "Sale"},
+            ],
+        }
+
+        result = _unwrap(finviz_insider)("AAPL", detail="compact")
+
+        assert result["detail"] == "compact"
+        assert "insider_trades" not in result
+        assert result["items"][0] == {
+            "owner": "Parekh Kevan",
+            "relationship": "CFO",
+            "transaction": "Sale",
+            "shares": "1534",
+            "value_usd": "421850",
+            "sec_form_4_link": "https://sec.example/a",
+            "insider_id": "123",
+        }
+        assert result["summary"]["counts"]["returned"] == 3
+        assert result["summary"]["counts"]["sell_transactions"] == 3
+        assert result["omitted_item_count"] == 1
+
+    @patch("mtdata.core.finviz.get_stock_insider_trades")
+    def test_full_normalizes_items(self, mock_get):
+        mock_get.return_value = {
+            "success": True,
+            "symbol": "AAPL",
+            "insider_trades": [
+                {"Insider Trading": "Parekh Kevan", "SEC Form 4": "Apr 27 06:30 PM"}
+            ],
+        }
+
+        result = _unwrap(finviz_insider)("AAPL", detail="full")
+
+        assert result["detail"] == "full"
+        assert result["items"] == [
+            {"owner": "Parekh Kevan", "sec_form_4": "Apr 27 06:30 PM"}
         ]
         assert "insider_trades" not in result
 
@@ -225,7 +283,8 @@ class TestFinvizProgressiveDisclosure:
         result = _unwrap(finviz_insider)("AAPL", detail="compact")
 
         assert result["detail"] == "compact"
-        assert len(result["insider_trades"]) == 3
+        assert len(result["items"]) == 3
+        assert "insider_trades" not in result
         assert result["summary"]["counts"]["available"] == 4
         assert result["summary"]["counts"]["buy_transactions"] == 2
         assert result["summary"]["counts"]["sell_transactions"] == 1

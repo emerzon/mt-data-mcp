@@ -492,6 +492,8 @@ _FINVIZ_OUTPUT_KEY_MAP = {
     "ReferenceDate": "reference_date",
     "SEC Form 4": "sec_form_4",
     "SEC Form 4 Link": "sec_form_4_link",
+    "Insider Trading": "owner",
+    "Insider_id": "insider_id",
     "Ticker": "symbol",
     "ticker": "symbol",
     "Value ($)": "value_usd",
@@ -644,12 +646,12 @@ def _summarize_insider_activity_tickers(rows: List[Any]) -> List[Dict[str, Any]]
     for row in rows:
         if not isinstance(row, dict):
             continue
-        ticker = str(row.get("ticker") or "").strip().upper()
-        if not ticker:
+        symbol = str(row.get("symbol") or row.get("ticker") or "").strip().upper()
+        if not symbol:
             continue
         item = by_ticker.setdefault(
-            ticker,
-            {"ticker": ticker, "transactions": 0, "shares": 0.0, "value_usd": 0.0},
+            symbol,
+            {"symbol": symbol, "transactions": 0, "shares": 0.0, "value_usd": 0.0},
         )
         item["transactions"] += 1
         item["shares"] += abs(_coerce_finviz_number(row.get("shares")))
@@ -661,7 +663,7 @@ def _summarize_insider_activity_tickers(rows: List[Any]) -> List[Dict[str, Any]]
     )
     return [
         {
-            "ticker": item["ticker"],
+            "symbol": item["symbol"],
             "transactions": int(item["transactions"]),
             "shares": round(float(item["shares"]), 2),
             "value_usd": round(float(item["value_usd"]), 2),
@@ -678,25 +680,29 @@ def _compact_finviz_insider_payload(result: Dict[str, Any], *, detail: str) -> D
     rows = result.get("insider_trades")
     if not isinstance(rows, list):
         return result
-    out = dict(result)
+    normalized_rows = _normalize_finviz_output_rows(rows)
+    out = {key: value for key, value in result.items() if key != "insider_trades"}
     out["detail"] = detail_mode
     if detail_mode == "full":
+        out["items"] = normalized_rows
+        out["count"] = len(normalized_rows)
         return out
-    compact_rows = rows[:3]
-    transaction_texts = [_transaction_text(row) for row in rows if isinstance(row, dict)]
+    compact_rows = normalized_rows[:3]
+    transaction_texts = [_transaction_text(row) for row in normalized_rows if isinstance(row, dict)]
     buys = sum(1 for text in transaction_texts if "buy" in text or "purchase" in text)
     sells = sum(1 for text in transaction_texts if "sell" in text or "sale" in text)
-    out["insider_trades"] = compact_rows
+    out["items"] = compact_rows
+    out["count"] = len(compact_rows)
     out["summary"] = {
         "counts": {
             "returned": len(compact_rows),
-            "available": len(rows),
-            "total": result.get("total", len(rows)),
+            "available": len(normalized_rows),
+            "total": result.get("total", len(normalized_rows)),
             "buy_transactions": buys,
             "sell_transactions": sells,
         }
     }
-    out["omitted_item_count"] = max(0, len(rows) - len(compact_rows))
+    out["omitted_item_count"] = max(0, len(normalized_rows) - len(compact_rows))
     return out
 
 
@@ -745,7 +751,7 @@ def _compact_finviz_insider_activity_payload(
             "buy_transactions": buys,
             "sell_transactions": sells,
         },
-        "top_tickers": _summarize_insider_activity_tickers(normalized_rows),
+        "top_symbols": _summarize_insider_activity_tickers(normalized_rows),
     }
     out["omitted_item_count"] = max(0, len(normalized_rows) - len(compact_rows))
     return out
