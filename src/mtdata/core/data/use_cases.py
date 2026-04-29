@@ -20,6 +20,13 @@ from .wait_events import run_wait_event_loop
 
 logger = logging.getLogger(__name__)
 
+_TICK_DETAIL_FORMATS = {
+    "compact": "summary",
+    "summary": "summary",
+    "standard": "stats",
+    "full": "rows",
+}
+
 
 def _ensure_gateway_connection(gateway: Any) -> Dict[str, Any] | None:
     return mt5_connection_error(gateway)
@@ -262,7 +269,7 @@ def _run_data_fetch_ticks_impl(
         start=request.start,
         end=request.end,
         simplify=request.simplify,
-        format=request.detail,
+        format=_TICK_DETAIL_FORMATS.get(request.detail, "summary"),
     )
 
 

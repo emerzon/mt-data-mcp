@@ -16,6 +16,7 @@ from pydantic import (
 from ..output_contract import normalize_output_detail
 from ..schema import (
     CompactFullDetailLiteral,
+    CompactStandardFullDetailLiteral,
     DenoiseSpec,
     IndicatorSpec,
     SimplifySpec,
@@ -368,7 +369,7 @@ class DataFetchTicksRequest(BaseModel):
     start: Optional[str] = None
     end: Optional[str] = None
     simplify: SimplifySpecInput = None
-    detail: Literal["summary", "stats", "rows"] = "summary"
+    detail: CompactStandardFullDetailLiteral = "compact"
 
     @field_validator("symbol")
     @classmethod
@@ -388,7 +389,7 @@ class DataFetchTicksRequest(BaseModel):
     def _normalize_detail(cls, value: Any) -> Any:
         return normalize_output_detail(
             value,
-            default="summary",
+            default="compact",
         )
 
     @field_validator("limit")

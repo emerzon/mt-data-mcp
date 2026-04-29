@@ -356,6 +356,28 @@ def test_run_data_fetch_ticks_logs_connection_error(caplog):
     )
 
 
+@pytest.mark.parametrize(
+    ("detail", "expected_format"),
+    [
+        ("compact", "summary"),
+        ("summary", "summary"),
+        ("standard", "stats"),
+        ("full", "rows"),
+    ],
+)
+def test_run_data_fetch_ticks_maps_standard_detail_to_service_format(detail, expected_format):
+    captured = {}
+
+    result = run_data_fetch_ticks(
+        DataFetchTicksRequest(symbol="EURUSD", limit=5, detail=detail),
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_ticks_impl=lambda **kwargs: captured.update(kwargs) or {"success": True},
+    )
+
+    assert result["success"] is True
+    assert captured["format"] == expected_format
+
+
 def test_data_fetch_candles_logs_finish_event(monkeypatch, caplog):
     monkeypatch.setattr(
         core_data,
@@ -445,9 +467,9 @@ def test_data_fetch_ticks_request_rejects_removed_output_field():
 
 
 def test_data_fetch_ticks_request_uses_detail_control():
-    request = DataFetchTicksRequest(symbol="EURUSD", detail="rows")
+    request = DataFetchTicksRequest(symbol="EURUSD", detail="full")
 
-    assert request.detail == "rows"
+    assert request.detail == "full"
     assert list(DataFetchTicksRequest.model_fields) == [
         "symbol",
         "limit",
@@ -463,7 +485,13 @@ def test_data_fetch_ticks_request_rejects_removed_output_mode_field():
         DataFetchTicksRequest(symbol="EURUSD", output_mode="rows")
 
 
-@pytest.mark.parametrize("raw_detail", ["compact", "full"])
-def test_data_fetch_ticks_request_rejects_candle_detail_values(raw_detail: str):
+def test_data_fetch_ticks_request_defaults_to_compact_detail():
+    request = DataFetchTicksRequest(symbol="EURUSD")
+
+    assert request.detail == "compact"
+
+
+@pytest.mark.parametrize("raw_detail", ["stats", "rows"])
+def test_data_fetch_ticks_request_rejects_legacy_detail_values(raw_detail: str):
     with pytest.raises(ValidationError):
         DataFetchTicksRequest(symbol="EURUSD", detail=raw_detail)
