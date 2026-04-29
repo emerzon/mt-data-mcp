@@ -423,17 +423,17 @@ def test_max_distance_filter_hides_far_levels_but_preserves_coverage_gap_metadat
         tolerance_pct=0.005,
         min_touches=1,
         max_levels=4,
-        max_distance_pct=0.04,
+        max_distance_pct=4.0,
         reaction_bars=4,
     )
 
-    assert result["max_distance_pct"] == 0.04
+    assert result["max_distance_pct"] == 4.0
     assert result["levels"] == []
     assert result["supports"] == []
     assert result["resistances"] == []
-    assert result["coverage_gaps"]["support"]["distance_pct"] > 0.04
+    assert result["coverage_gaps"]["support"]["distance_pct"] > 4.0
     assert result["coverage_gaps"]["support"]["beyond_max_distance_filter"] is True
-    assert result["coverage_gaps"]["resistance"]["distance_pct"] > 0.04
+    assert result["coverage_gaps"]["resistance"]["distance_pct"] > 4.0
     assert result["coverage_gaps"]["resistance"]["beyond_max_distance_filter"] is True
 
 

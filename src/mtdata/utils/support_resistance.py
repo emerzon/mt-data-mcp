@@ -34,7 +34,7 @@ _DEFAULT_BREAKOUT_PENALTY_ATR_MULT = 0.25
 _DEFAULT_ROLE_REVERSAL_BONUS = 0.65
 _DEFAULT_MTF_DEDUPE_FACTOR = 0.35
 _DEFAULT_MTF_CONFIRMATION_BONUS = 0.2
-_DEFAULT_STRUCTURE_GAP_WARNING_PCT = 0.12
+_DEFAULT_STRUCTURE_GAP_WARNING_PCT = 12.0
 _FIBONACCI_RETRACEMENTS = (0.236, 0.382, 0.5, 0.618, 0.786)
 _FIBONACCI_EXTENSIONS = (1.272, 1.618)
 _FIBONACCI_LEVEL_DECIMALS = 6
@@ -927,7 +927,7 @@ def _format_level(cluster: Dict[str, Any], *, current_price: Optional[float], to
     if current_price is not None and math.isfinite(current_price):
         level_type = "support" if value <= current_price else "resistance"
         distance = value - current_price
-        distance_pct = abs(distance) / max(abs(current_price), 1e-9)
+        distance_pct = (abs(distance) / max(abs(current_price), 1e-9)) * 100.0
 
     metric_weight_sum = float(cluster.get("metric_weight_sum", 0.0))
     avg_bounce_atr = None
@@ -1073,7 +1073,7 @@ def _build_fibonacci_level(
     rounded_distance = _round_output_price(distance)
     out["distance"] = rounded_distance if rounded_distance is not None else distance
     if abs(price_value) > 1e-9:
-        distance_pct = distance / price_value
+        distance_pct = (distance / price_value) * 100.0
         rounded_distance_pct = _round_output_price(distance_pct)
         out["distance_pct"] = rounded_distance_pct if rounded_distance_pct is not None else distance_pct
     return out
@@ -1702,7 +1702,7 @@ def _collect_support_resistance_warnings(
                 "distance_pct": float(round(gap_pct, 6)),
                 "level_value": gap.get("level_value"),
                 "message": (
-                    f"Nearest {side} level is {gap_pct:.1%} away; "
+                    f"Nearest {side} level is {gap_pct:.1f}% away; "
                     f"historical structure is sparse on the {side} side of the market.{suffix}"
                 ),
             }
