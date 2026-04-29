@@ -1006,6 +1006,8 @@ def test_trade_journal_analyze_summarizes_realized_exit_deals() -> None:
     assert out["summary"]["losses"] == 1
     assert out["summary"]["net_pnl"] == 13.0
     assert out["summary"]["profit_factor"] == 2.2381
+    assert out["summary"]["expectancy"] == 6.5
+    assert "avg_pnl" not in out["summary"]
     assert out["breakdowns"]["by_symbol"][0]["symbol"] == "EURUSD"
     assert out["best_trades"][0]["ticket"] == 2
     assert out["best_trades"][0]["profit"] == 25.0
@@ -1055,7 +1057,7 @@ def test_trade_journal_analyze_compact_uses_lite_symbol_breakdown() -> None:
         "closed_deals",
         "win_rate",
         "net_pnl",
-        "avg_pnl",
+        "expectancy",
     }
     assert "by_side" not in out["breakdowns"]
     assert "by_exit_trigger" not in out["breakdowns"]

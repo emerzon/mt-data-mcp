@@ -149,7 +149,6 @@ def _trade_journal_metrics(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
         "gross_loss": _round_trade_journal_value(gross_loss, digits=2),
         "profit_factor": _round_trade_journal_value(profit_factor, digits=4),
         "expectancy": _round_trade_journal_value(avg_pnl, digits=4),
-        "avg_pnl": _round_trade_journal_value(avg_pnl, digits=4),
         "avg_win": _round_trade_journal_value(avg_win, digits=2),
         "avg_loss": _round_trade_journal_value(avg_loss, digits=2),
         "best_trade": _round_trade_journal_value(max(pnls), digits=2) if pnls else None,
@@ -190,7 +189,7 @@ def _compact_trade_journal_breakdown(
     *,
     label_name: str,
 ) -> List[Dict[str, Any]]:
-    compact_keys = ("closed_deals", "win_rate", "net_pnl", "avg_pnl")
+    compact_keys = ("closed_deals", "win_rate", "net_pnl", "expectancy")
     output: List[Dict[str, Any]] = []
     for item in items:
         compact_item = {label_name: item.get(label_name)}
