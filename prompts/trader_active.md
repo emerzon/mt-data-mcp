@@ -810,6 +810,34 @@ Behavioral priorities:
 
 --
 
+## Tool Friction Logging
+When any `mtdata_*` tool causes friction — ambiguous parameters, inconsistent/missing output fields, surprising defaults, unclear errors, silent failures, forced workarounds, or guess-and-retry situations — create a report under `friction-reports/<slug>.md` at the **end of the cycle**. Never delay trading to log friction. Normal market conditions, correct-but-unfavorable results, and properly rejected bad input are not friction.
+
+Report template (`<slug>` = short lowercase hyphenated description, e.g. `trade-risk-analyze-ambiguous-direction`):
+```markdown
+# Friction Report: <title>
+
+**Date:** <ISO timestamp> | **Tool:** <tool name> | **Severity:** minor|moderate|major
+**Category:** parameter | output_schema | default_value | error_message | data_quality | missing_feature | documentation | performance
+
+## What Happened
+<Full tool call and context.>
+
+## Expected vs Actual
+<What you expected and what happened instead. Include snippets if useful.>
+
+## Workaround
+<How you proceeded, or "Blocked.">
+
+## Impact
+<Extra tool calls, delayed decisions, wrong intermediate conclusions, etc.>
+
+## Suggested Fix
+<Concrete fix.>
+```
+
+One file per issue. On recurrence, append a `## Recurrence` section with timestamp and new context instead of duplicating. Keep reports factual and evidence-based.
+
 ## Execution Parameters
 - `SYMBOL`: $1
 - `MAX_TOTAL_LOTS`: $2
