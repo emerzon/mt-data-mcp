@@ -191,8 +191,6 @@ def _compact_candles_payload(result: Dict[str, Any]) -> Dict[str, Any]:
     compact = dict(result)
     public_diagnostics = _public_candle_diagnostics(result)
     for key in (
-        "symbol",
-        "timeframe",
         "candles_requested",
         "candle_counts",
         "candles_excluded",

@@ -142,7 +142,13 @@ def test_run_data_fetch_candles_compact_omits_default_metadata():
         },
     )
 
-    assert result == {"success": True, "candles": 5, "data": []}
+    assert result == {
+        "success": True,
+        "symbol": "EURUSD",
+        "timeframe": "H1",
+        "candles": 5,
+        "data": [],
+    }
 
 
 def test_run_data_fetch_candles_compact_keeps_freshness_without_meta():
@@ -208,7 +214,8 @@ def test_run_data_fetch_candles_standard_keeps_public_diagnostics_only():
     )
 
     assert "meta" not in result
-    assert "symbol" not in result
+    assert result["symbol"] == "EURUSD"
+    assert result["timeframe"] == "H1"
     assert result["data_freshness_seconds"] == 60.0
     assert result["latency_ms"] == 12.3
     assert result["last_bar_within_policy_window"] is True
@@ -254,8 +261,8 @@ def test_run_data_fetch_candles_compact_keeps_anomaly_metadata():
     assert "candles_excluded" not in result
     assert "incomplete_candles_skipped" not in result
     assert result["has_forming_candle"] is True
-    assert "symbol" not in result
-    assert "timeframe" not in result
+    assert result["symbol"] == "EURUSD"
+    assert result["timeframe"] == "H1"
     assert "candles_requested" not in result
 
 
