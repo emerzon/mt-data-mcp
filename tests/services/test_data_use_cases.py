@@ -433,27 +433,30 @@ def test_data_fetch_candles_wrapper_respects_detail_contract(monkeypatch):
 
 
 def test_data_fetch_ticks_request_rejects_removed_output_field():
-    with pytest.raises(ValidationError, match="output was removed; use output_mode"):
+    with pytest.raises(ValidationError, match="output was removed; use detail"):
         DataFetchTicksRequest(symbol="EURUSD", output="rows")
 
 
-def test_data_fetch_ticks_request_accepts_format_as_output_mode_alias():
-    request = DataFetchTicksRequest(symbol="EURUSD", format="rows")
+def test_data_fetch_ticks_request_uses_detail_control():
+    request = DataFetchTicksRequest(symbol="EURUSD", detail="rows")
 
-    assert request.output_mode == "rows"
+    assert request.detail == "rows"
     assert list(DataFetchTicksRequest.model_fields) == [
         "symbol",
         "limit",
         "start",
         "end",
         "simplify",
-        "output_mode",
+        "detail",
     ]
 
 
-@pytest.mark.parametrize("raw_output_mode", ["compact", "full"])
-def test_data_fetch_ticks_request_rejects_shared_detail_aliases_as_output_modes(
-    raw_output_mode: str,
-):
+def test_data_fetch_ticks_request_rejects_removed_output_mode_field():
+    with pytest.raises(ValidationError, match="output_mode was removed; use detail"):
+        DataFetchTicksRequest(symbol="EURUSD", output_mode="rows")
+
+
+@pytest.mark.parametrize("raw_detail", ["compact", "full"])
+def test_data_fetch_ticks_request_rejects_candle_detail_values(raw_detail: str):
     with pytest.raises(ValidationError):
-        DataFetchTicksRequest(symbol="EURUSD", output_mode=raw_output_mode)
+        DataFetchTicksRequest(symbol="EURUSD", detail=raw_detail)

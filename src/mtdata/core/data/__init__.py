@@ -439,12 +439,12 @@ def data_fetch_ticks(
 ) -> Dict[str, Any]:
     """Fetch tick data for a symbol.
 
-    By default (`output_mode="summary"`), returns a compact set of descriptive stats
+    By default (`detail="summary"`), returns a compact set of descriptive stats
     over the fetched ticks (bid/ask/mid/spread, plus last and volume; volume uses real
     volume when available, otherwise tick_volume).
 
-    Use `output_mode="stats"` for a more detailed stats payload.
-    Use `output_mode="rows"` to return raw tick rows as structured data.
+    Use `detail="stats"` for a more detailed stats payload.
+    Use `detail="rows"` to return raw tick rows as structured data.
     `simplify` only applies to row output. Use a dict such as
     {"method": "lttb", "points": 100} or pass true/"on"/"default" for
     default simplification; false/"off" disables it.
@@ -454,7 +454,7 @@ def data_fetch_ticks(
         operation="data_fetch_ticks",
         symbol=request.symbol,
         limit=request.limit,
-        output_mode=request.output_mode,
+        detail=request.detail,
         func=lambda: run_data_fetch_ticks(
             request,
             gateway=get_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise),

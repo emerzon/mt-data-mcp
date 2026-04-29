@@ -6,7 +6,6 @@ from typing import Annotated, Any, Dict, List, Literal, Optional, Union
 
 from pydantic import (
     AfterValidator,
-    AliasChoices,
     BaseModel,
     BeforeValidator,
     Field,
@@ -364,17 +363,12 @@ class DataFetchCandlesRequest(BaseModel):
 
 
 class DataFetchTicksRequest(BaseModel):
-    model_config = {"populate_by_name": True}
-
     symbol: str
     limit: int = 500
     start: Optional[str] = None
     end: Optional[str] = None
     simplify: SimplifySpecInput = None
-    output_mode: Literal["summary", "stats", "rows"] = Field(
-        default="summary",
-        validation_alias=AliasChoices("output_mode", "format"),
-    )
+    detail: Literal["summary", "stats", "rows"] = "summary"
 
     @field_validator("symbol")
     @classmethod
@@ -386,11 +380,12 @@ class DataFetchTicksRequest(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _reject_removed_output(cls, values: Any) -> Any:
-        return _reject_removed_field(values, field_name="output", replacement="output_mode")
+        values = _reject_removed_field(values, field_name="output", replacement="detail")
+        return _reject_removed_field(values, field_name="output_mode", replacement="detail")
 
-    @field_validator("output_mode", mode="before")
+    @field_validator("detail", mode="before")
     @classmethod
-    def _normalize_output_mode(cls, value: Any) -> Any:
+    def _normalize_detail(cls, value: Any) -> Any:
         return normalize_output_detail(
             value,
             default="summary",

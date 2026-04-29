@@ -56,7 +56,7 @@ def run_data_fetch_ticks(
         operation="data_fetch_ticks",
         symbol=request.symbol,
         limit=request.limit,
-        output_mode=request.output_mode,
+        detail=request.detail,
         func=lambda: _run_data_fetch_ticks_impl(
             request=request,
             gateway=gateway,
@@ -264,7 +264,7 @@ def _run_data_fetch_ticks_impl(
         start=request.start,
         end=request.end,
         simplify=request.simplify,
-        format=request.output_mode,
+        format=request.detail,
     )
 
 
