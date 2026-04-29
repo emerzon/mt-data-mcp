@@ -480,6 +480,7 @@ class TestFinvizTools:
         result = raw()
 
         assert "pairs" not in result
+        assert result["detail"] == "compact"
         assert result["items"] == [{"perf_5min": "0.1%", "symbol": "EUR/USD"}]
 
     @patch("mtdata.core.finviz.get_forex_performance")
@@ -519,6 +520,7 @@ class TestFinvizTools:
         result = raw()
 
         assert "coins" not in result
+        assert result["detail"] == "compact"
         assert result["items"] == [{"perf_wtd": "2.5%", "symbol": "BTC"}]
 
     @patch("mtdata.core.finviz.get_futures_performance")
@@ -536,7 +538,26 @@ class TestFinvizTools:
         result = raw()
 
         assert "futures" not in result
+        assert result["detail"] == "compact"
         assert result["items"] == [{"name": "Nasdaq 100", "perf_pct": "0.8%", "symbol": "NQ"}]
+
+    @patch("mtdata.core.finviz.get_futures_performance")
+    def test_finviz_market_tools_accept_full_detail(self, mock_get_futures):
+        from mtdata.core.finviz import finviz_futures
+
+        mock_get_futures.return_value = {
+            "success": True,
+            "market": "futures",
+            "count": 1,
+            "futures": [{"ticker": "NQ", "label": "Nasdaq 100", "perf": "0.8%"}],
+        }
+
+        raw = getattr(finviz_futures, "__wrapped__", finviz_futures)
+        result = raw(detail="full")
+
+        assert result["detail"] == "full"
+        assert result["meta"]["tool"] == "finviz_futures"
+        assert result["meta"]["request"] == {"limit": 20, "detail": "full"}
 
     @patch("mtdata.core.finviz.get_stock_fundamentals")
     def test_finviz_fundamentals_rejects_non_equity_symbols_upfront(self, mock_get_fundamentals):

@@ -194,10 +194,17 @@ def _snake_finviz_market_key(value: Any) -> str:
 
 
 def _normalize_finviz_market_payload(
-    result: Dict[str, Any], *, rows_key: str, limit: Optional[int] = None
+    result: Dict[str, Any],
+    *,
+    rows_key: str,
+    limit: Optional[int] = None,
+    detail: str = "compact",
+    tool: str,
+    request: Dict[str, Any],
 ) -> Dict[str, Any]:
     if not isinstance(result, dict) or "error" in result:
         return result
+    detail_mode = normalize_output_verbosity_detail(detail, default="compact")
     rows = result.get(rows_key, [])
     normalized_rows = [
         _canonicalize_finviz_market_row(
@@ -217,6 +224,13 @@ def _normalize_finviz_market_payload(
     omitted = max(0, available - len(limited_rows))
     if omitted:
         out["omitted_item_count"] = omitted
+    out["detail"] = detail_mode
+    if detail_mode == "full":
+        out["meta"] = _build_tool_contract_meta(
+            tool=tool,
+            request=request,
+            stats={"available": available, "returned": len(limited_rows)},
+        )
     return out
 
 
@@ -1342,7 +1356,10 @@ def finviz_insider_activity(
 
 
 @mcp.tool()
-def finviz_forex(limit: int = 20) -> Dict[str, Any]:
+def finviz_forex(
+    limit: int = 20,
+    detail: CompactFullDetailLiteral = "compact",  # type: ignore
+) -> Dict[str, Any]:
     """
     Get forex currency pairs performance from Finviz.
     
@@ -1354,19 +1371,29 @@ def finviz_forex(limit: int = 20) -> Dict[str, Any]:
     dict
         Forex pairs performance data
     """
-    return _run_logged_tool(
-        "finviz_forex",
-        {"limit": limit},
-        lambda: _normalize_finviz_market_payload(
+    request = {"limit": limit, "detail": detail}
+
+    def _run() -> Dict[str, Any]:
+        detail_error = _validate_finviz_detail(detail, operation="finviz_forex")
+        if detail_error is not None:
+            return detail_error
+        return _normalize_finviz_market_payload(
             get_forex_performance(),
             rows_key="pairs",
             limit=limit,
-        ),
-    )
+            detail=detail,
+            tool="finviz_forex",
+            request=request,
+        )
+
+    return _run_logged_tool("finviz_forex", request, _run)
 
 
 @mcp.tool()
-def finviz_crypto(limit: int = 20) -> Dict[str, Any]:
+def finviz_crypto(
+    limit: int = 20,
+    detail: CompactFullDetailLiteral = "compact",  # type: ignore
+) -> Dict[str, Any]:
     """
     Get cryptocurrency performance from Finviz.
     
@@ -1378,19 +1405,29 @@ def finviz_crypto(limit: int = 20) -> Dict[str, Any]:
     dict
         Crypto performance data
     """
-    return _run_logged_tool(
-        "finviz_crypto",
-        {"limit": limit},
-        lambda: _normalize_finviz_market_payload(
+    request = {"limit": limit, "detail": detail}
+
+    def _run() -> Dict[str, Any]:
+        detail_error = _validate_finviz_detail(detail, operation="finviz_crypto")
+        if detail_error is not None:
+            return detail_error
+        return _normalize_finviz_market_payload(
             get_crypto_performance(),
             rows_key="coins",
             limit=limit,
-        ),
-    )
+            detail=detail,
+            tool="finviz_crypto",
+            request=request,
+        )
+
+    return _run_logged_tool("finviz_crypto", request, _run)
 
 
 @mcp.tool()
-def finviz_futures(limit: int = 20) -> Dict[str, Any]:
+def finviz_futures(
+    limit: int = 20,
+    detail: CompactFullDetailLiteral = "compact",  # type: ignore
+) -> Dict[str, Any]:
     """
     Get futures market performance from Finviz.
     
@@ -1402,15 +1439,22 @@ def finviz_futures(limit: int = 20) -> Dict[str, Any]:
     dict
         Futures performance data
     """
-    return _run_logged_tool(
-        "finviz_futures",
-        {"limit": limit},
-        lambda: _normalize_finviz_market_payload(
+    request = {"limit": limit, "detail": detail}
+
+    def _run() -> Dict[str, Any]:
+        detail_error = _validate_finviz_detail(detail, operation="finviz_futures")
+        if detail_error is not None:
+            return detail_error
+        return _normalize_finviz_market_payload(
             get_futures_performance(),
             rows_key="futures",
             limit=limit,
-        ),
-    )
+            detail=detail,
+            tool="finviz_futures",
+            request=request,
+        )
+
+    return _run_logged_tool("finviz_futures", request, _run)
 
 
 @mcp.tool()
