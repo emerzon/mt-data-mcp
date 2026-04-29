@@ -83,7 +83,6 @@ def test_trade_history_deals_normalizes_time_to_utc_string() -> None:
     assert out["items"][0]["time"] == _format_utc_seconds(
         _mt5_epoch_to_utc(1700000000)
     )
-    assert out["items"][0]["timestamp_timezone"] == "UTC"
     assert out["timezone"] == "UTC"
 
 
@@ -158,7 +157,6 @@ def test_trade_history_orders_normalizes_setup_and_done_times() -> None:
     assert out["items"][0]["time_done"] == _format_utc_seconds(
         _mt5_epoch_to_utc(1700003600)
     )
-    assert out["items"][0]["timestamp_timezone"] == "UTC"
     assert out["timezone"] == "UTC"
 
 
@@ -200,11 +198,37 @@ def test_trade_history_orders_backfills_filled_zero_open_price() -> None:
 
 def test_trade_history_compact_omits_parallel_normalized_rows() -> None:
     out = normalize_trade_history_output(
-        [{"ticket": 11, "time": "2024-01-01 12:00:00", "symbol": "EURUSD"}],
+        [
+            {
+                "ticket": 11,
+                "order": 22,
+                "time": "2024-01-01 12:00:00",
+                "time_msc": 1704110400000,
+                "symbol": "EURUSD",
+                "type": "Buy",
+                "entry": "Out",
+                "reason": "Expert",
+                "volume": 0.5,
+                "price": 1.2345,
+                "profit": -1.0,
+                "position_id": 33,
+                "comment_visible_length": 8,
+            }
+        ],
         request=TradeHistoryRequest(history_kind="deals"),
     )
 
-    assert out["items"][0]["ticket"] == 11
+    row = out["items"][0]
+    assert row == {
+        "time": "2024-01-01 12:00:00",
+        "ticket": 11,
+        "symbol": "EURUSD",
+        "type": "Buy",
+        "action": "close",
+        "volume": 0.5,
+        "price": 1.2345,
+        "profit": -1.0,
+    }
     assert "normalized_items" not in out
 
 
@@ -232,14 +256,11 @@ def test_trade_history_full_detail_uses_normalized_deal_items() -> None:
     assert out["item_schema"] == "normalized_trade_history.v2"
     assert out["items"] == [
         {
-            "kind": "deal",
             "ticket": 11,
             "symbol": "EURUSD",
-            "timestamp": "2024-01-01 12:00:00",
-            "created_at": "2024-01-01 12:00:00",
             "volume": 0.5,
             "price": 1.2345,
-            "state": "Out",
+            "action": "close",
             "order": 22,
             "time": "2024-01-01 12:00:00",
             "time_msc": 1704110400000,
@@ -303,14 +324,10 @@ def test_trade_history_full_detail_uses_normalized_order_items() -> None:
     assert "normalized_items" not in out
     assert out["items"] == [
         {
-            "kind": "order",
             "ticket": 33,
             "symbol": "GBPUSD",
-            "timestamp": "2024-01-01 12:05:00",
-            "created_at": "2024-01-01 12:00:00",
             "volume": 1.0,
             "price": 1.251,
-            "state": "Filled",
             "time_setup": "2024-01-01 12:00:00",
             "time_done": "2024-01-01 12:05:00",
             "volume_initial": 1.0,
@@ -442,11 +459,12 @@ def test_trade_history_deals_decodes_enum_codes_to_labels() -> None:
 
     row = out["items"][0]
     assert row["type"] == "Buy"
-    assert row["entry"] == "In"
-    assert row["reason"] == "Client"
-    assert row["type_code"] == 0
-    assert row["entry_code"] == 0
-    assert row["reason_code"] == 0
+    assert row["action"] == "open"
+    assert "entry" not in row
+    assert "reason" not in row
+    assert "type_code" not in row
+    assert "entry_code" not in row
+    assert "reason_code" not in row
 
 
 def test_trade_history_deals_extracts_exit_trigger_from_comment() -> None:
@@ -475,7 +493,8 @@ def test_trade_history_deals_extracts_exit_trigger_from_comment() -> None:
     row = out["items"][0]
     assert row["exit_trigger"] == "SL"
     assert row["exit_trigger_price"] == 64654.92
-    assert row["exit_trigger_source"] == "comment"
+    assert row["action"] == "close"
+    assert row["exit_trigger_source"] == "SL"
 
 
 def test_trade_history_deals_extracts_exit_trigger_from_reason_when_comment_missing() -> (
@@ -505,8 +524,9 @@ def test_trade_history_deals_extracts_exit_trigger_from_reason_when_comment_miss
 
     row = out["items"][0]
     assert row["exit_trigger"] == "TP"
-    assert row["exit_trigger_price"] is None
-    assert row["exit_trigger_source"] == "reason"
+    assert "exit_trigger_price" not in row
+    assert row["action"] == "close"
+    assert row["exit_trigger_source"] == "TP"
 
 
 def test_trade_history_deals_drops_non_informative_noise_columns() -> None:
@@ -607,7 +627,7 @@ def test_trade_history_replaces_non_finite_values_with_none() -> None:
     if prev is not None:
         sys.modules["MetaTrader5"] = prev
 
-    assert out["items"][0]["profit"] is None
+    assert "profit" not in out["items"][0]
 
 
 def test_run_trade_history_logs_finish_event(caplog) -> None:
@@ -717,7 +737,7 @@ def test_trade_history_rejects_invalid_side_filter() -> None:
     assert out["request_echo"]["side"] == "flat"
 
 
-def test_trade_history_surfaces_comment_limit_metadata() -> None:
+def test_trade_history_compact_hides_comment_limit_metadata() -> None:
     mt5, prev = _install_mock_mt5()
     Deal = namedtuple("Deal", ["ticket", "time", "symbol", "comment"])
     mt5.history_deals_get.return_value = [
@@ -730,9 +750,10 @@ def test_trade_history_surfaces_comment_limit_metadata() -> None:
         sys.modules["MetaTrader5"] = prev
 
     row = out["items"][0]
-    assert row["comment_max_length"] == 31
-    assert row["comment_visible_length"] == len("audit short")
-    assert row["comment_may_be_truncated"] is False
+    assert row["comment"] == "audit short"
+    assert "comment_max_length" not in row
+    assert "comment_visible_length" not in row
+    assert "comment_may_be_truncated" not in row
 
 
 def test_trade_history_empty_deals_message_includes_orders_hint() -> None:

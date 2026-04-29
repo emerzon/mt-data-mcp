@@ -320,6 +320,38 @@ _TRADE_HISTORY_ORDER_TOP_LEVEL_FIELDS = (
     "comment",
     "timestamp_timezone",
 )
+_TRADE_HISTORY_COMPACT_DEAL_FIELDS = (
+    "time",
+    "ticket",
+    "symbol",
+    "type",
+    "action",
+    "volume",
+    "price",
+    "profit",
+    "commission",
+    "swap",
+    "fee",
+    "comment",
+    "exit_trigger",
+    "exit_trigger_price",
+    "exit_trigger_source",
+)
+_TRADE_HISTORY_COMPACT_ORDER_FIELDS = (
+    "time_setup",
+    "time_done",
+    "ticket",
+    "symbol",
+    "type",
+    "state",
+    "volume_initial",
+    "volume_current",
+    "price_open",
+    "price_current",
+    "sl",
+    "tp",
+    "comment",
+)
 
 
 def _round_trade_money_value(value: Any) -> Any:
@@ -345,6 +377,46 @@ def _round_trade_money_fields(row: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
+def _trade_history_action(row: Dict[str, Any], *, history_kind: Optional[str]) -> Any:
+    if history_kind == "orders":
+        return None
+    raw_entry = _first_present(row, "entry_label", "entry")
+    entry_text = str(raw_entry or "").strip().lower().replace("_", " ")
+    if not entry_text:
+        return None
+    if "inout" in entry_text or "in out" in entry_text:
+        return "reverse"
+    if "out by" in entry_text:
+        return "close_by"
+    if "out" in entry_text:
+        return "close"
+    if "in" in entry_text:
+        return "open"
+    return None
+
+
+def _compact_trade_history_row(
+    row: Dict[str, Any],
+    *,
+    history_kind: Optional[str],
+) -> Dict[str, Any]:
+    compact = _round_trade_money_fields(row)
+    if history_kind == "orders":
+        fields = _TRADE_HISTORY_COMPACT_ORDER_FIELDS
+    else:
+        action = _trade_history_action(compact, history_kind=history_kind)
+        if action is not None:
+            compact["action"] = action
+        fields = _TRADE_HISTORY_COMPACT_DEAL_FIELDS
+    return {
+        key: compact[key]
+        for key in fields
+        if key in compact
+        and compact[key] is not None
+        and not (isinstance(compact[key], str) and not compact[key].strip())
+    }
+
+
 def _public_trade_history_details(row: Dict[str, Any]) -> Dict[str, Any]:
     return {
         key: value
@@ -361,30 +433,23 @@ def _normalize_trade_history_row(
     row = _round_trade_money_fields(row)
     item_kind = "order" if history_kind == "orders" else "deal"
     if item_kind == "order":
-        timestamp = _first_present(row, "time_done", "time_setup", "time")
-        created_at = _first_present(row, "time_setup", "time")
-        state = _first_present(row, "state_label", "state")
         price = _first_present(row, "price_current", "price_open", "price")
         native_key = "order_details"
         top_level_fields = _TRADE_HISTORY_ORDER_TOP_LEVEL_FIELDS
     else:
-        timestamp = _first_present(row, "time", "time_msc")
-        created_at = timestamp
-        state = _first_present(row, "entry_label", "entry", "type_label", "type")
         price = _first_present(row, "price")
         native_key = "deal_details"
         top_level_fields = _TRADE_HISTORY_DEAL_TOP_LEVEL_FIELDS
 
     normalized: Dict[str, Any] = {
-        "kind": item_kind,
         "ticket": _first_present(row, "ticket", "order", "deal"),
         "symbol": row.get("symbol"),
-        "timestamp": timestamp,
-        "created_at": created_at,
         "volume": _first_present(row, "volume", "volume_initial", "volume_current"),
         "price": price,
-        "state": state,
     }
+    action = _trade_history_action(row, history_kind=history_kind)
+    if action is not None:
+        normalized["action"] = action
     public_details = _public_trade_history_details(row)
     for key in top_level_fields:
         if key in public_details:
@@ -523,7 +588,9 @@ def normalize_trade_history_output(
         else:
             out["items"] = _style_trade_history_items(
                 [
-                    _round_trade_money_fields(item) if isinstance(item, dict) else item
+                    _compact_trade_history_row(item, history_kind=history_kind)
+                    if isinstance(item, dict)
+                    else item
                     for item in raw_items
                 ],
                 column_style=getattr(request, "column_style", "snake_case"),

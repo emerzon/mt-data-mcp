@@ -1621,6 +1621,17 @@ def run_trade_history(  # noqa: C901
                 entry_txt = str(entry or "").strip().lower()
                 if entry_txt and "out" not in entry_txt:
                     return None, None, None
+                reason_trigger = _reason_to_exit_trigger(reason)
+                if reason_trigger:
+                    price: Optional[float] = None
+                    if isinstance(comment, str) and comment:
+                        match = trigger_pattern.search(comment)
+                        if match and str(match.group(1)).upper() == reason_trigger:
+                            try:
+                                price = float(match.group(2))
+                            except Exception:
+                                price = None
+                    return reason_trigger, price, reason_trigger
                 if isinstance(comment, str) and comment:
                     match = trigger_pattern.search(comment)
                     if match:
@@ -1629,10 +1640,7 @@ def run_trade_history(  # noqa: C901
                             price = float(match.group(2))
                         except Exception:
                             price = None
-                        return trigger, price, "comment"
-                reason_trigger = _reason_to_exit_trigger(reason)
-                if reason_trigger:
-                    return reason_trigger, None, "reason"
+                        return trigger, price, trigger
                 return None, None, None
 
             def _filter_by_ticket_columns(
