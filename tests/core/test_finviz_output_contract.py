@@ -188,7 +188,10 @@ class TestFinvizInsiderActivityOutputContract:
             "insider_trades": [
                 {
                     "Ticker": "AAPL",
+                    "SEC Form 4": "Apr 27 06:30 PM",
                     "SEC Form 4 Link": "https://sec.example/a",
+                    "Insider_id": "123",
+                    "#Shares Total": "200",
                     "Transaction": "Sale",
                     "#Shares": "10",
                     "Value ($)": "1000",
@@ -213,7 +216,16 @@ class TestFinvizInsiderActivityOutputContract:
         assert "insider_trades" not in result
         assert len(result["items"]) == 5
         assert result["items"][0]["symbol"] == "AAPL"
+        assert result["items"][0] == {
+            "symbol": "AAPL",
+            "transaction": "Sale",
+            "shares": "10",
+            "value_usd": "1000",
+        }
+        assert "sec_form_4" not in result["items"][0]
         assert "sec_form_4_link" not in result["items"][0]
+        assert "insider_id" not in result["items"][0]
+        assert "shares_total" not in result["items"][0]
         assert result["summary"]["counts"] == {
             "returned": 5,
             "available": 6,
@@ -276,12 +288,9 @@ class TestFinvizInsiderOutputContract:
         assert "insider_trades" not in result
         assert result["items"][0] == {
             "owner": "Parekh Kevan",
-            "relationship": "CFO",
             "transaction": "Sale",
             "shares": "1534",
             "value_usd": "421850",
-            "sec_form_4_link": "https://sec.example/a",
-            "insider_id": "123",
         }
         assert result["summary"]["counts"]["returned"] == 3
         assert result["summary"]["counts"]["sell_transactions"] == 3

@@ -721,6 +721,22 @@ def _summarize_insider_activity_tickers(rows: List[Any]) -> List[Dict[str, Any]]
     ]
 
 
+def _compact_finviz_insider_row(row: Dict[str, Any], *, include_symbol: bool) -> Dict[str, Any]:
+    fields = (
+        ("symbol",)
+        if include_symbol
+        else ()
+    ) + (
+        "owner",
+        "date",
+        "transaction",
+        "cost",
+        "shares",
+        "value_usd",
+    )
+    return {field: row[field] for field in fields if field in row}
+
+
 def _compact_finviz_insider_payload(result: Dict[str, Any], *, detail: str) -> Dict[str, Any]:
     error = _validate_finviz_detail(detail, operation="finviz_insider")
     if error is not None or not result.get("success"):
@@ -736,7 +752,10 @@ def _compact_finviz_insider_payload(result: Dict[str, Any], *, detail: str) -> D
         out["items"] = normalized_rows
         out["count"] = len(normalized_rows)
         return out
-    compact_rows = normalized_rows[:3]
+    compact_rows = [
+        _compact_finviz_insider_row(row, include_symbol=False)
+        for row in normalized_rows[:3]
+    ]
     transaction_texts = [_transaction_text(row) for row in normalized_rows if isinstance(row, dict)]
     buys = sum(1 for text in transaction_texts if "buy" in text or "purchase" in text)
     sells = sum(1 for text in transaction_texts if "sell" in text or "sale" in text)
@@ -779,11 +798,7 @@ def _compact_finviz_insider_activity_payload(
         if not isinstance(row, dict):
             compact_rows.append(row)
             continue
-        item = dict(row)
-        item.pop("sec_form_4_link", None)
-        if str(item.get("sec_form_4") or "").startswith(("http://", "https://")):
-            item.pop("sec_form_4", None)
-        compact_rows.append(item)
+        compact_rows.append(_compact_finviz_insider_row(row, include_symbol=True))
 
     transaction_texts = [
         _transaction_text(row) for row in normalized_rows if isinstance(row, dict)
