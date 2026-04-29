@@ -480,7 +480,7 @@ class TestFinvizTools:
         result = raw()
 
         assert "pairs" not in result
-        assert result["items"] == [{"pair": "EUR/USD", "perf_5min": "0.1%"}]
+        assert result["items"] == [{"perf_5min": "0.1%", "symbol": "EUR/USD"}]
 
     @patch("mtdata.core.finviz.get_forex_performance")
     def test_finviz_forex_applies_limit(self, mock_get_forex):
@@ -502,7 +502,7 @@ class TestFinvizTools:
         assert result["count"] == 2
         assert result["available_count"] == 3
         assert result["omitted_item_count"] == 1
-        assert result["items"] == [{"pair": "EUR/USD"}, {"pair": "GBP/USD"}]
+        assert result["items"] == [{"symbol": "EUR/USD"}, {"symbol": "GBP/USD"}]
 
     @patch("mtdata.core.finviz.get_crypto_performance")
     def test_finviz_crypto_uses_items_with_snake_case_rows(self, mock_get_crypto):
@@ -519,7 +519,7 @@ class TestFinvizTools:
         result = raw()
 
         assert "coins" not in result
-        assert result["items"] == [{"ticker": "BTC", "perf_wtd": "2.5%"}]
+        assert result["items"] == [{"perf_wtd": "2.5%", "symbol": "BTC"}]
 
     @patch("mtdata.core.finviz.get_futures_performance")
     def test_finviz_futures_uses_items_with_snake_case_rows(self, mock_get_futures):
@@ -536,7 +536,7 @@ class TestFinvizTools:
         result = raw()
 
         assert "futures" not in result
-        assert result["items"] == [{"ticker": "NQ", "label": "Nasdaq 100", "perf": "0.8%"}]
+        assert result["items"] == [{"label": "Nasdaq 100", "perf": "0.8%", "symbol": "NQ"}]
 
     @patch("mtdata.core.finviz.get_stock_fundamentals")
     def test_finviz_fundamentals_rejects_non_equity_symbols_upfront(self, mock_get_fundamentals):
@@ -752,7 +752,7 @@ class TestFinvizTools:
         result = raw(detail="full")
 
         item = result["items"][0]
-        assert item["ticker"] == "APLM"
+        assert item["symbol"] == "APLM"
         assert item["return_on_assets"] == "-1.365"
         assert item["return_on_equity"] == "-3.8"
         assert item["return_on_invested_capital"] is None
@@ -797,7 +797,7 @@ class TestFinvizTools:
         assert result["omitted_item_count"] == 11
         assert result["items"] == [
             {
-                "ticker": "APLM",
+                "symbol": "APLM",
                 "earnings": "Apr 27/b",
                 "market_cap": "14.17M",
                 "price": "12.85",
@@ -911,7 +911,7 @@ class TestFinvizTools:
         )
         assert result["success"] is True
         assert result["count"] == 5
-        assert result["stocks"] == [{"ticker": "AAPL", "market_cap": "3.0T", "pe_ratio": "28.5"}]
+        assert result["stocks"] == [{"symbol": "AAPL", "market_cap": "3.0T", "pe_ratio": "28.5"}]
 
     @patch('mtdata.core.finviz.screen_stocks')
     def test_finviz_screen_tool_accepts_json_string_filters(self, mock_screen):

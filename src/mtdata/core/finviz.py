@@ -200,7 +200,9 @@ def _normalize_finviz_market_payload(
         return result
     rows = result.get(rows_key, [])
     normalized_rows = [
-        {_snake_finviz_market_key(key): value for key, value in row.items()}
+        _canonicalize_finviz_symbol_key(
+            {_snake_finviz_market_key(key): value for key, value in row.items()}
+        )
         if isinstance(row, dict)
         else row
         for row in (rows if isinstance(rows, list) else [])
@@ -215,6 +217,16 @@ def _normalize_finviz_market_payload(
     omitted = max(0, available - len(limited_rows))
     if omitted:
         out["omitted_item_count"] = omitted
+    return out
+
+
+def _canonicalize_finviz_symbol_key(row: Dict[str, Any]) -> Dict[str, Any]:
+    out = dict(row)
+    if "symbol" not in out:
+        for source_key in ("ticker", "pair"):
+            if source_key in out:
+                out["symbol"] = out.pop(source_key)
+                break
     return out
 
 
@@ -480,6 +492,8 @@ _FINVIZ_OUTPUT_KEY_MAP = {
     "ReferenceDate": "reference_date",
     "SEC Form 4": "sec_form_4",
     "SEC Form 4 Link": "sec_form_4_link",
+    "Ticker": "symbol",
+    "ticker": "symbol",
     "Value ($)": "value_usd",
     "dateFrom": "date_from",
     "dateTo": "date_to",
@@ -531,7 +545,7 @@ _FINVIZ_OUTPUT_KEY_MAP = {
 }
 
 _FINVIZ_EARNINGS_COMPACT_FIELDS = (
-    "ticker",
+    "symbol",
     "company",
     "earnings",
     "eps_estimate",
