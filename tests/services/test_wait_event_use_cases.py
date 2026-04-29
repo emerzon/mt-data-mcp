@@ -252,7 +252,6 @@ def test_wait_event_tool_exposes_minimal_public_contract(monkeypatch) -> None:
         "watch_for",
         "end_on",
         "detail",
-        "precision",
     )
 
     raw = getattr(core_data.wait_event, "__wrapped__", core_data.wait_event)

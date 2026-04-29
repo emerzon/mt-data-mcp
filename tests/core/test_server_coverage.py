@@ -805,6 +805,7 @@ class TestRecordingToolDecorator:
 
             assert "detail" in sig.parameters
             assert "verbose" not in sig.parameters
+            assert "precision" not in sig.parameters
 
             compact = wrapped(__cli_raw=True, detail="compact")
             full = wrapped(__cli_raw=True, detail="full")
@@ -839,6 +840,7 @@ class TestRecordingToolDecorator:
 
             assert "detail" in sig.parameters
             assert "verbose" not in sig.parameters
+            assert "precision" not in sig.parameters
             compact = wrapped(__cli_raw=True, detail="compact")
             full = wrapped(__cli_raw=True, detail="full")
 
@@ -924,6 +926,7 @@ class TestRecordingToolDecorator:
             assert "args" not in sig.parameters
             assert "foo" in sig.parameters
             assert "verbose" not in sig.parameters
+            assert "precision" not in sig.parameters
 
             result = wrapped("legacy", foo="y", __cli_raw=True)
             assert result["foo"] == "y"
@@ -959,6 +962,7 @@ class TestRecordingToolDecorator:
             assert "timeframe" in sig.parameters
             assert "poll_interval_seconds" in sig.parameters
             assert "verbose" not in sig.parameters
+            assert "precision" not in sig.parameters
 
             flat_result = wrapped(
                 __cli_raw=True,

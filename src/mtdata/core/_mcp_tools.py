@@ -631,16 +631,6 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # n
                     ):
                         continue
                     params.append(param.replace(annotation=cleaned.get(name)))
-            existing_names = {param.name for param in params}
-            if "precision" not in existing_names:
-                params.append(
-                    inspect.Parameter(
-                        "precision",
-                        inspect.Parameter.KEYWORD_ONLY,
-                        default="auto",
-                        annotation=str,
-                    )
-                )
             _wrapped.__annotations__ = cleaned
             return_ann = cleaned.get("return", inspect._empty)
             _wrapped.__signature__ = inspect.Signature(parameters=params, return_annotation=return_ann)

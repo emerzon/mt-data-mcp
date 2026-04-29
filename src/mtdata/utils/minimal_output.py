@@ -973,7 +973,7 @@ _WAIT_EVENT_PRICE_FIELDS = {
 }
 
 
-def _fixed_price_text(value: Any, *, precision: int) -> Any:
+def _fixed_price_text(value: Any, *, digits: int) -> Any:
     if isinstance(value, bool) or not isinstance(value, Number):
         return value
     try:
@@ -982,13 +982,13 @@ def _fixed_price_text(value: Any, *, precision: int) -> Any:
         return value
     if not math.isfinite(numeric):
         return value
-    return f"{numeric:.{max(0, int(precision))}f}"
+    return f"{numeric:.{max(0, int(digits))}f}"
 
 
-def _format_price_fields_with_precision(value: Any, *, precision: int) -> Any:
+def _format_price_fields_with_digits(value: Any, *, digits: int) -> Any:
     if isinstance(value, list):
         return [
-            _format_price_fields_with_precision(item, precision=precision)
+            _format_price_fields_with_digits(item, digits=digits)
             for item in value
         ]
     if not isinstance(value, dict):
@@ -998,9 +998,9 @@ def _format_price_fields_with_precision(value: Any, *, precision: int) -> Any:
         if key == "price_precision":
             continue
         if str(key).lower() in _WAIT_EVENT_PRICE_FIELDS:
-            out[key] = _fixed_price_text(item, precision=precision)
+            out[key] = _fixed_price_text(item, digits=digits)
         else:
-            out[key] = _format_price_fields_with_precision(item, precision=precision)
+            out[key] = _format_price_fields_with_digits(item, digits=digits)
     return out
 
 
@@ -1012,21 +1012,21 @@ def _normalize_wait_event_payload(
     if tool_name != "wait_event":
         return None
     try:
-        precision = payload.get("price_precision")
-        if precision is None:
+        digits = payload.get("price_precision")
+        if digits is None:
             boundary = payload.get("boundary_event")
             if isinstance(boundary, dict):
                 closed = boundary.get("closed_candle")
                 if isinstance(closed, dict):
-                    precision = closed.get("price_precision")
-        if precision is None:
+                    digits = closed.get("price_precision")
+        if digits is None:
             return None
-        precision_i = int(precision)
-        if precision_i < 0 or precision_i > 15:
+        digits_i = int(digits)
+        if digits_i < 0 or digits_i > 15:
             return None
     except Exception:
         return None
-    return _format_price_fields_with_precision(payload, precision=precision_i)
+    return _format_price_fields_with_digits(payload, digits=digits_i)
 
 
 def _compact_barrier_rows(

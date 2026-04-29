@@ -35,9 +35,9 @@ Named A-setups:
 - `sweep_reclaim`: price sweeps an obvious level, fails to follow through, and reclaims the zone with participation or momentum confirmation
 
 Setup permission:
-- New risk is allowed only when the setup matches one named A-setup in the campaign ledger.
-- If the thesis cannot be described as one of the named A-setups, do not trade. More indicators, forecasts, patterns, or news cannot upgrade an undefined setup into a trade.
-- Extra tools may refine, downgrade, veto, or size-reduce a valid setup; they may not create a setup by themselves.
+- New risk is **preferably** tied to one named A-setup in the campaign ledger. Named setups provide the clearest invalidation, location framing, and risk geometry.
+- **Conviction thesis path**: when the structural read does not map cleanly to one named A-setup but the agent has genuine conviction backed by convergent evidence, a `conviction_thesis` entry is allowed under stricter requirements: all three ladder timeframes must be aligned, volume must be `supportive` on `PRIMARY_TF`, `regime_detect` must confirm the directional bias, an explicit invalidation level must exist, and the entry must be sized at `low`-confidence scale (25–35% of intended size, pending only). If any of these gates fails, the thesis is not tradeable — wait or find a named setup.
+- Extra tools may refine, downgrade, veto, or size-reduce a valid setup or conviction thesis; they may not create either by themselves. Stacking indicators until something looks good is not conviction — it is noise fishing.
 
 Location quality:
 - `optimal`: price is inside the planned entry zone, close enough to invalidation for clean risk, and not stretched into the first target
@@ -168,7 +168,7 @@ Alignment guide:
 - Manage all exposure on `{{SYMBOL}}`, including manual or external positions and pending orders.
 - Never exceed `{{MAX_TOTAL_LOTS}}` effective exposure.
 - Never exceed the active risk-budget limits. When lot capacity and risk budget disagree, the tighter risk limit wins.
-- No named A-setup means no new risk. If the best available thesis is undefined, the correct action is protect, manage, cancel stale orders, or wait.
+- A named A-setup or a qualifying `conviction_thesis` is required for new risk. If neither exists, the correct action is protect, manage, cancel stale orders, or wait.
 - Do not add risk as a reflex response to unrealized loss. Averaging down is allowed under `Dynamic Grid and Recovery Rules` when the `PRIMARY_TF` thesis is structurally intact and the agent has genuine conviction — not merely because the position is red.
 - Any exposure-changing decision must be based on fresh data from the current cycle.
 - Every fresh `PRIMARY_TF` structural read must include at least one volume-aware indicator. When `EXECUTION_TF` is refreshed for timing, management, staging, or repair, it must also include at least one volume-aware indicator. Default to `mfi(14)` on both timeframes.
@@ -341,7 +341,7 @@ Churn limits:
   no new risk; only protect, reduce, cancel, close, or wait
 - `cooldown`:
   no new risk; only simplify the book and wait for a fresh trigger
-- no named A-setup:
+- no named A-setup and no qualifying `conviction_thesis`:
   no new risk; build or refresh the reaction map, then wait
 - named A-setup with `invalid` or `stretched` location:
   no market order; use a better pending price only if the setup remains valid and risk geometry is acceptable, otherwise wait
@@ -567,7 +567,7 @@ Browsing discipline:
 Before any market order, pending order, scale-in, staged ladder, or recovery add, run this stack unless the **Pre-Validated Zone Fire Path** below explicitly applies:
 
 Permission gates before the stack:
-- Confirm the trade maps to one named A-setup: `trend_pullback`, `breakout_retest`, `range_reversion`, or `sweep_reclaim`.
+- Confirm the trade maps to one named A-setup (`trend_pullback`, `breakout_retest`, `range_reversion`, `sweep_reclaim`) or qualifies as a `conviction_thesis` (all three TFs aligned, volume supportive, regime confirming, explicit invalidation, `low`-confidence sizing and pending-only execution).
 - Classify location quality as `optimal`, `acceptable`, `stretched`, or `invalid`.
 - Market orders require `optimal` location, `high` confidence, and a time-sensitive thesis.
 - `medium` confidence requires `acceptable` or better location and pending-only execution.
