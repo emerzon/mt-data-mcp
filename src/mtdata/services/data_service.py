@@ -231,7 +231,7 @@ def _is_last_candle_open(
                 return False
             last_epoch = float(rates_or_df['__epoch'].iloc[-1])
         else:
-            if not rates_or_df or len(rates_or_df) == 0:
+            if rates_or_df is None or len(rates_or_df) == 0:
                 return False
             last_epoch = float(rates_or_df[-1]["time"])
         return 0 <= current_time - last_epoch < seconds_per_bar
@@ -1353,6 +1353,16 @@ def fetch_candles(  # noqa: C901
         candles_excluded = max(0, candles_requested - candles_returned)
         incomplete_candles_skipped = int(bool(initial_incomplete_trimmed)) + int(bool(_trimmed_incomplete))
         has_forming_candle = bool(initial_incomplete_trimmed or _trimmed_incomplete or last_candle_open)
+        forming_candle_included = bool(has_forming_candle and include_incomplete and last_candle_open)
+        forming_candle_skipped = bool(incomplete_candles_skipped and not include_incomplete)
+        if forming_candle_included:
+            forming_candle_status = "included"
+        elif forming_candle_skipped:
+            forming_candle_status = "skipped"
+        elif has_forming_candle:
+            forming_candle_status = "detected"
+        else:
+            forming_candle_status = "none"
         remaining_after_forming = max(0, candles_excluded - incomplete_candles_skipped)
         quality_excluded = min(int(quality_rows_removed), remaining_after_forming)
         remaining_excluded = max(0, remaining_after_forming - quality_excluded)
@@ -1381,6 +1391,9 @@ def fetch_candles(  # noqa: C901
             "last_candle_open": last_candle_open,
             "incomplete_candles_skipped": incomplete_candles_skipped,
             "has_forming_candle": has_forming_candle,
+            "forming_candle_status": forming_candle_status,
+            "forming_candle_included": forming_candle_included,
+            "forming_candle_skipped": forming_candle_skipped,
             "meta": {
                 "diagnostics": {
                     "query": {

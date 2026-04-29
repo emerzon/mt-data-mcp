@@ -392,6 +392,9 @@ def data_fetch_candles(
         - candles: int (number of candles returned)
         - last_candle_open: bool (legacy flag on returned rows)
         - has_forming_candle: bool (true when the latest available candle is still forming)
+        - forming_candle_status: str ("included", "skipped", "detected", or "none")
+        - forming_candle_included: bool (true when the forming candle is present in data)
+        - forming_candle_skipped: bool (true when a forming candle was detected but trimmed)
         - incomplete_candles_skipped: int (number of forming candles trimmed because include_incomplete=false)
         - data: list[dict] (tabular candle rows)
     

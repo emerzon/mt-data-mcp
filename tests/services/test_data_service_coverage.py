@@ -74,6 +74,30 @@ def _make_rates(n: int, *, base_ts: float = _NOW_TS, step: int = 60,
     return rates
 
 
+def _make_rates_array(n: int, *, base_ts: float = _NOW_TS, step: int = 60,
+                      tick_vol: int = 100, real_vol: int = 0) -> np.ndarray:
+    """Generate a NumPy structured array like MetaTrader5 copy_rates_* returns."""
+    fields = ("time", "open", "high", "low", "close", "tick_volume", "real_volume", "spread")
+    dtype = [
+        ("time", "f8"),
+        ("open", "f8"),
+        ("high", "f8"),
+        ("low", "f8"),
+        ("close", "f8"),
+        ("tick_volume", "i8"),
+        ("real_volume", "i8"),
+        ("spread", "i4"),
+    ]
+    rows = _make_rates(
+        n,
+        base_ts=base_ts,
+        step=step,
+        tick_vol=tick_vol,
+        real_vol=real_vol,
+    )
+    return np.array([tuple(row[field] for field in fields) for row in rows], dtype=dtype)
+
+
 def _make_ticks(n: int, *, base_ts: float = _NOW_TS, step: float = 1.0) -> list:
     """Generate a list of tick dicts."""
     ticks = []
@@ -781,6 +805,9 @@ class TestFetchCandles(unittest.TestCase):
         self.assertEqual(result['candles_requested'], 5)
         self.assertEqual(result['candles_excluded'], 0)
         self.assertFalse(result['last_candle_open'])
+        self.assertEqual(result['forming_candle_status'], 'skipped')
+        self.assertFalse(result['forming_candle_included'])
+        self.assertTrue(result['forming_candle_skipped'])
         self.assertEqual(len(result['data']), 5)
 
     @patch(_MT5_CONFIG)
@@ -798,6 +825,9 @@ class TestFetchCandles(unittest.TestCase):
         self.assertEqual(result['candles_requested'], 5)
         self.assertEqual(result['candles_excluded'], 0)
         self.assertTrue(result['last_candle_open'])
+        self.assertEqual(result['forming_candle_status'], 'included')
+        self.assertTrue(result['forming_candle_included'])
+        self.assertFalse(result['forming_candle_skipped'])
         self.assertEqual(len(result['data']), 5)
 
     @patch(_MT5_CONFIG)
@@ -819,6 +849,36 @@ class TestFetchCandles(unittest.TestCase):
         self.assertNotIn(base_ts, returned_times)
         self.assertEqual(returned_times[-1], base_ts - 3600)
         self.assertFalse(result['last_candle_open'])
+        self.assertEqual(result['forming_candle_status'], 'skipped')
+        self.assertFalse(result['forming_candle_included'])
+        self.assertTrue(result['forming_candle_skipped'])
+
+    @patch(_MT5_CONFIG)
+    @patch(_RATES_FROM)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=0)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_numpy_rates_trim_live_tail_before_limit_window(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_cfg):
+        base_ts = _NOW_TS
+        mock_cfg.get_server_tz.return_value = None
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        mock_from.return_value = _make_rates_array(6, base_ts=base_ts, step=3600)
+        with patch(f'{_DS}._utc_epoch_seconds', return_value=base_ts - 60), \
+             patch(f'{_DS}.mt5.symbol_info_tick', return_value=SimpleNamespace(time=base_ts + 120)):
+            result = fetch_candles('EURUSD', timeframe='H1', limit=5, time_as_epoch=True)
+        self.assertTrue(result.get('success'))
+        returned_times = [row['time'] for row in result.get('data', [])]
+        self.assertEqual(len(returned_times), 5)
+        self.assertEqual(returned_times[0], base_ts - (5 * 3600))
+        self.assertEqual(returned_times[-1], base_ts - 3600)
+        self.assertEqual(result['candles'], 5)
+        self.assertEqual(result['candles_excluded'], 0)
+        self.assertEqual(result['incomplete_candles_skipped'], 1)
+        self.assertTrue(result['has_forming_candle'])
+        self.assertEqual(result['forming_candle_status'], 'skipped')
+        self.assertFalse(result['forming_candle_included'])
+        self.assertTrue(result['forming_candle_skipped'])
 
     @patch(_MT5_CONFIG)
     @patch(_RATES_FROM)
@@ -846,6 +906,9 @@ class TestFetchCandles(unittest.TestCase):
             },
         )
         self.assertTrue(result['has_forming_candle'])
+        self.assertEqual(result['forming_candle_status'], 'skipped')
+        self.assertFalse(result['forming_candle_included'])
+        self.assertTrue(result['forming_candle_skipped'])
         self.assertIn('include_incomplete=true', result['hint'])
         self.assertFalse(result['last_candle_open'])
 

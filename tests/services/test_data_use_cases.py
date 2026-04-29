@@ -138,6 +138,9 @@ def test_run_data_fetch_candles_compact_omits_default_metadata():
             "last_candle_open": False,
             "incomplete_candles_skipped": 0,
             "has_forming_candle": False,
+            "forming_candle_status": "none",
+            "forming_candle_included": False,
+            "forming_candle_skipped": False,
             "data": [],
         },
     )
@@ -250,6 +253,9 @@ def test_run_data_fetch_candles_compact_keeps_anomaly_metadata():
             "last_candle_open": True,
             "incomplete_candles_skipped": 1,
             "has_forming_candle": True,
+            "forming_candle_status": "skipped",
+            "forming_candle_included": False,
+            "forming_candle_skipped": True,
             "data": [],
         },
     )
@@ -261,6 +267,9 @@ def test_run_data_fetch_candles_compact_keeps_anomaly_metadata():
     assert "candles_excluded" not in result
     assert "incomplete_candles_skipped" not in result
     assert result["has_forming_candle"] is True
+    assert result["forming_candle_status"] == "skipped"
+    assert result["forming_candle_included"] is False
+    assert result["forming_candle_skipped"] is True
     assert result["symbol"] == "EURUSD"
     assert result["timeframe"] == "H1"
     assert "candles_requested" not in result

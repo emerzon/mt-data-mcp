@@ -209,6 +209,9 @@ def _compact_candles_payload(result: Dict[str, Any]) -> Dict[str, Any]:
         compact.pop(key, None)
     if not bool(compact.get("has_forming_candle")):
         compact.pop("has_forming_candle", None)
+        compact.pop("forming_candle_status", None)
+        compact.pop("forming_candle_included", None)
+        compact.pop("forming_candle_skipped", None)
     if "data_freshness_seconds" in public_diagnostics:
         compact["data_freshness_seconds"] = public_diagnostics["data_freshness_seconds"]
     return compact
