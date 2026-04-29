@@ -1,7 +1,9 @@
 """Tests for mtdata.core.temporal pure helper functions and temporal_analyze."""
 
+import inspect
 import math
 from contextlib import contextmanager
+from typing import get_args
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -192,6 +194,11 @@ class TestNormalizeGroupBy:
     def test_empty_string_passthrough(self):
         result = _normalize_group_by("")
         assert result == ""
+
+
+def test_temporal_analyze_group_by_literal_exposes_canonical_modes_only():
+    annotation = inspect.signature(_raw_temporal_analyze).parameters["group_by"].annotation
+    assert set(get_args(annotation)) == {"dow", "hour", "month", "all"}
 
 
 # ===================================================================
