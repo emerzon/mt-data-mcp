@@ -511,6 +511,15 @@ def normalize_market_status_output(
     if detail_mode == "full":
         return out
 
+    markets = out.get("markets")
+    if isinstance(markets, list):
+        compact_markets = []
+        for market in markets:
+            if isinstance(market, dict):
+                market = {key: value for key, value in market.items() if key != "message"}
+            compact_markets.append(market)
+        out["markets"] = compact_markets
+    out.pop("message", None)
     out.pop("upcoming_holidays", None)
     out.pop("upcoming_holidays_count", None)
     out.pop("upcoming_holidays_summary", None)
@@ -695,6 +704,7 @@ def _check_symbol_market_status(
         }
         result["tick"] = tick_status
     else:
+        result.pop("message", None)
         for key in ("tick_available", "last_tick_time", "last_tick_age_seconds"):
             if key in tick_status:
                 result[key] = tick_status[key]
@@ -725,8 +735,8 @@ def market_status(
     timezone_display : str, optional
         Time display format: "local" (market's local time), "utc", or "auto" (default: "local")
     detail : {"compact", "full"}, optional
-        Response detail level. `compact` (default) omits upcoming holiday
-        details, while `full` preserves the complete holiday list.
+        Response detail level. `compact` (default) omits per-market messages
+        and upcoming holiday details, while `full` preserves them.
 
     Returns
     -------
@@ -752,7 +762,7 @@ def market_status(
             - `status`: "open", "closed", "pre_market", "lunch_break"
             - `reason`: Reason if closed ("weekend", "holiday", "after_hours")
             - `local_time`: Current time in market's timezone (HH:MM)
-            - `message`: Human-readable status (e.g., "NYSE: Open (closing in 4h 30mins)")
+            - `message`: Human-readable status in `detail="full"`
             - `next_open` / `next_close`: ISO timestamp of next event
             - `minutes_until`: Minutes until next status change
     """

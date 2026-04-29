@@ -168,7 +168,7 @@ def test_market_status_symbol_mode_blocks_weekend_opening(monkeypatch) -> None:
     assert result["reason"] == "weekend"
     assert result["can_open_new_positions"] is False
     assert result["trade_mode_allows_opening"] is True
-    assert "closed for UTC weekend" in result["message"]
+    assert "message" not in result
 
 
 def test_market_status_symbol_mode_full_includes_diagnostics(monkeypatch) -> None:
@@ -259,9 +259,14 @@ def test_upcoming_holidays_crosses_into_the_next_year(monkeypatch) -> None:
     assert calls == [("US", (2030,)), ("US", (2031,))]
 
 
-def test_normalize_market_status_output_compact_hides_holidays() -> None:
+def test_normalize_market_status_output_compact_hides_messages_and_holidays() -> None:
     payload = {
         "success": True,
+        "message": "human summary",
+        "markets": [
+            {"symbol": "NYSE", "status": "open", "message": "NYSE: Open"},
+            {"symbol": "NASDAQ", "status": "closed", "reason": "weekend"},
+        ],
         "upcoming_holidays": [
             {
                 "date": "2031-01-01",
@@ -287,9 +292,12 @@ def test_normalize_market_status_output_compact_hides_holidays() -> None:
     compact = market_status_mod.normalize_market_status_output(payload, detail="compact")
     full = market_status_mod.normalize_market_status_output(payload, detail="full")
 
+    assert "message" not in compact
+    assert "message" not in compact["markets"][0]
     assert "upcoming_holidays" not in compact
     assert "upcoming_holidays_count" not in compact
     assert "upcoming_holidays_summary" not in compact
     assert "show_all_hint" not in compact
 
     assert full["upcoming_holidays"] == payload["upcoming_holidays"]
+    assert full["markets"][0]["message"] == "NYSE: Open"
