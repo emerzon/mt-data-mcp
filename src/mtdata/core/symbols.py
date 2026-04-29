@@ -18,6 +18,7 @@ from ..utils.symbol import _extract_group_path as _extract_group_path_util
 from ..utils.utils import _format_time_minimal, _normalize_limit, _table_from_rows
 from ._mcp_instance import mcp
 from .constants import DEFAULT_ROW_LIMIT, GROUP_SEARCH_THRESHOLD, TIMEFRAME_MAP
+from .error_envelope import build_error_payload
 from .execution_logging import run_logged_operation
 from .mt5_gateway import get_mt5_gateway
 from .output_contract import (
@@ -384,7 +385,11 @@ def symbols_describe(
             mt5_gateway.ensure_connection()
             symbol_info = mt5_gateway.symbol_info(symbol)
             if symbol_info is None:
-                return {"error": f"Symbol {symbol} not found"}
+                return build_error_payload(
+                    f"Symbol {symbol} not found",
+                    code="symbol_not_found",
+                    operation="symbols_describe",
+                )
 
             enum_specs = {
                 "trade_mode": {"prefixes": ("SYMBOL_TRADE_MODE_",), "bitmask": False},
@@ -461,9 +466,17 @@ def symbols_describe(
                 "symbol": symbol_data,
             }
         except MT5ConnectionError as exc:
-            return {"error": str(exc)}
+            return build_error_payload(
+                str(exc),
+                code="mt5_connection_error",
+                operation="symbols_describe",
+            )
         except Exception as exc:
-            return {"error": f"Error getting symbol info: {str(exc)}"}
+            return build_error_payload(
+                f"Error getting symbol info: {str(exc)}",
+                code="symbols_describe_failed",
+                operation="symbols_describe",
+            )
 
     return run_logged_operation(
         logger,

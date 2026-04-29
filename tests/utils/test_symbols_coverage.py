@@ -385,6 +385,10 @@ class TestSymbolsDescribe:
         res = fn("BAD")
         assert "error" in res
         assert "not found" in res["error"]
+        assert res["success"] is False
+        assert res["error_code"] == "symbol_not_found"
+        assert res["operation"] == "symbols_describe"
+        assert res["request_id"]
 
     @patch(f"{_MT5}.symbol_info")
     def test_basic_describe(self, mock_info):
