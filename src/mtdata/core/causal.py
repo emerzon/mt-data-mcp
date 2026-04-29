@@ -551,6 +551,16 @@ def _pair_highlight_ref(
     return out
 
 
+def _correlation_highlight_ref(
+    item_index: int,
+    row: Dict[str, Any],
+) -> Dict[str, Any]:
+    return {
+        "item": int(item_index),
+        "correlation": row.get("correlation"),
+    }
+
+
 def _build_correlation_summary(
     rows: List[Dict[str, Any]],
     *,
@@ -559,33 +569,37 @@ def _build_correlation_summary(
     limit = max(1, int(top_n))
     if len(rows) <= limit:
         return {}
+    indexed_rows = list(enumerate(rows))
     positive = sorted(
-        [row for row in rows if float(row["correlation"]) > 0.0],
+        [item for item in indexed_rows if float(item[1]["correlation"]) > 0.0],
         key=lambda item: (
-            -float(item["correlation"]),
-            -int(item["samples"]),
-            str(item["left"]),
-            str(item["right"]),
+            -float(item[1]["correlation"]),
+            -int(item[1]["samples"]),
+            str(item[1]["left"]),
+            str(item[1]["right"]),
         ),
     )
     negative = sorted(
-        [row for row in rows if float(row["correlation"]) < 0.0],
+        [item for item in indexed_rows if float(item[1]["correlation"]) < 0.0],
         key=lambda item: (
-            float(item["correlation"]),
-            -int(item["samples"]),
-            str(item["left"]),
-            str(item["right"]),
+            float(item[1]["correlation"]),
+            -int(item[1]["samples"]),
+            str(item[1]["left"]),
+            str(item[1]["right"]),
         ),
     )
     return {
         "strongest_absolute": [
-            _pair_highlight_ref(row, metrics=("correlation",)) for row in rows[:limit]
+            _correlation_highlight_ref(index, row)
+            for index, row in indexed_rows[:limit]
         ],
         "strongest_positive": [
-            _pair_highlight_ref(row, metrics=("correlation",)) for row in positive[:limit]
+            _correlation_highlight_ref(index, row)
+            for index, row in positive[:limit]
         ],
         "strongest_negative": [
-            _pair_highlight_ref(row, metrics=("correlation",)) for row in negative[:limit]
+            _correlation_highlight_ref(index, row)
+            for index, row in negative[:limit]
         ],
     }
 
@@ -1545,8 +1559,8 @@ def correlation_matrix(  # noqa: C901
         method: Correlation method: "pearson" or "spearman".
         transform: Preprocessing transform: "log_return", "pct", "diff", or "level".
         min_overlap: Minimum overlapping transformed samples required per pair.
-        detail: "compact" keeps canonical pair rows plus highlights; "full" also
-            includes the derived matrix view and explanatory legends.
+        detail: "compact" keeps canonical pair rows and counts; "standard" adds
+            highlight indexes; "full" also includes the derived matrix view.
     """
 
     def _run() -> Dict[str, Any]:  # noqa: C901
@@ -1817,6 +1831,11 @@ def correlation_matrix(  # noqa: C901
             )
 
         output_rows = rows if detail_mode == "full" else _compact_correlation_rows(rows)
+        highlights = (
+            _build_correlation_summary(rows)
+            if detail_mode in {"standard", "full"}
+            else {}
+        )
         out: Dict[str, Any] = {
             "success": True,
             "items": output_rows,
@@ -1825,27 +1844,9 @@ def correlation_matrix(  # noqa: C901
                 "counts": {
                     "pairs": int(len(rows)),
                 },
-                "highlights": _build_correlation_summary(rows),
+                "highlights": highlights,
             },
-            "meta": _causal_contract_meta(
-                meta,
-                legends=(
-                    {
-                        "transform": _TRANSFORM_LEGEND,
-                        "correlation_method": _CORRELATION_METHOD_LEGEND,
-                        "relationship": {
-                            "positive": "Symbols tend to move in the same direction",
-                            "negative": "Symbols tend to move in opposite directions",
-                            "flat": "No consistent directional relationship (correlation near zero)",
-                            "strength_weak": "|correlation| < 0.3",
-                            "strength_moderate": "0.3 <= |correlation| < 0.7",
-                            "strength_strong": "|correlation| >= 0.7",
-                        },
-                    }
-                    if detail_mode == "full"
-                    else None
-                ),
-            ),
+            "meta": _causal_contract_meta(meta),
         }
         if detail_mode == "full":
             out["matrix"] = _build_correlation_matrix(symbols_used, rows)

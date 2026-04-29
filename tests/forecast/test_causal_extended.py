@@ -812,7 +812,7 @@ class TestCorrelationMatrix:
         assert result["items"][0]["window_truncated"] is True
         assert result["summary"]["highlights"] == {}
         assert "data" not in result
-        assert "legends" in result["meta"]
+        assert "legends" not in result["meta"]
         assert "not an output-row limit" in result["meta"]["stats"]["limit_interpretation"]
         assert result["meta"]["stats"]["pairs_computed"] == 3
         assert any(

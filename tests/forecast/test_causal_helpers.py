@@ -149,18 +149,11 @@ class TestCorrelationHelpers:
 
         summary = _build_correlation_summary(rows, top_n=1)
 
-        assert summary["strongest_absolute"][0]["left"] == "A"
-        assert summary["strongest_absolute"][0]["right"] == "B"
-        assert summary["strongest_absolute"][0]["pair"] == "A-B"
+        assert summary["strongest_absolute"][0]["item"] == 0
         assert summary["strongest_positive"][0]["correlation"] == pytest.approx(0.91)
         assert summary["strongest_negative"][0]["correlation"] == pytest.approx(-0.87)
-        assert set(summary["strongest_absolute"][0]) == {
-            "pair",
-            "left",
-            "right",
-            "correlation",
-            "samples",
-        }
+        assert summary["strongest_negative"][0]["item"] == 1
+        assert set(summary["strongest_absolute"][0]) == {"item", "correlation"}
 
     def test_build_correlation_summary_omits_duplicate_highlights_for_small_sets(self):
         rows = [
