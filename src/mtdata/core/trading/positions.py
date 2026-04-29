@@ -333,6 +333,7 @@ _TRADE_HISTORY_COMPACT_DEAL_FIELDS = (
     "swap",
     "fee",
     "comment",
+    "comment_truncated",
     "exit_trigger",
     "exit_trigger_price",
     "exit_trigger_source",
@@ -407,6 +408,8 @@ def _compact_trade_history_row(
         action = _trade_history_action(compact, history_kind=history_kind)
         if action is not None:
             compact["action"] = action
+        if compact.get("comment_may_be_truncated") is True:
+            compact["comment_truncated"] = True
         fields = _TRADE_HISTORY_COMPACT_DEAL_FIELDS
     return {
         key: compact[key]

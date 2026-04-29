@@ -756,6 +756,25 @@ def test_trade_history_compact_hides_comment_limit_metadata() -> None:
     assert "comment_may_be_truncated" not in row
 
 
+def test_trade_history_compact_flags_possibly_truncated_comment() -> None:
+    mt5, prev = _install_mock_mt5()
+    Deal = namedtuple("Deal", ["ticket", "time", "symbol", "comment"])
+    mt5.history_deals_get.return_value = [
+        Deal(ticket=1, time=1700000000, symbol="BTCUSD", comment="x" * 31),
+    ]
+
+    with patch("mtdata.core.trading.account._use_client_tz", lambda: False):
+        out = trade_history(history_kind="deals", symbol="BTCUSD", __cli_raw=True)
+    if prev is not None:
+        sys.modules["MetaTrader5"] = prev
+
+    row = out["items"][0]
+    assert row["comment"] == "x" * 31
+    assert row["comment_truncated"] is True
+    assert "comment_max_length" not in row
+    assert "comment_may_be_truncated" not in row
+
+
 def test_trade_history_empty_deals_message_includes_orders_hint() -> None:
     mt5, prev = _install_mock_mt5()
     mt5.history_deals_get.return_value = []
