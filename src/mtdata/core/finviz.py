@@ -605,6 +605,32 @@ def _normalize_finviz_output_rows(rows: Any) -> Any:
     return [_normalize_finviz_output_row(row) for row in rows]
 
 
+def _normalize_finviz_date_value(value: Any) -> Any:
+    if value in (None, ""):
+        return value
+    if hasattr(value, "date") and callable(value.date):
+        try:
+            return value.date().isoformat()
+        except Exception:
+            pass
+    text = str(value).strip()
+    if not text:
+        return text
+    if len(text) >= 10 and text[4:5] == "-" and text[7:8] == "-":
+        return text[:10]
+    return text
+
+
+def _normalize_finviz_rating_rows(rows: Any) -> List[Any]:
+    normalized = _normalize_finviz_output_rows(rows)
+    if not isinstance(normalized, list):
+        return []
+    for row in normalized:
+        if isinstance(row, dict) and "date" in row:
+            row["date"] = _normalize_finviz_date_value(row.get("date"))
+    return normalized
+
+
 def _compact_finviz_earnings_items(items: Any) -> List[Any]:
     if not isinstance(items, list):
         return []
@@ -793,7 +819,7 @@ def _compact_finviz_ratings_payload(
     if not isinstance(rows, list):
         return result
     out = dict(result)
-    normalized_rows = _normalize_finviz_output_rows(rows)
+    normalized_rows = _normalize_finviz_rating_rows(rows)
     limit_value = _coerce_finviz_limit(limit, default=len(normalized_rows))
     limited_rows = normalized_rows[:limit_value]
     omitted = max(0, len(normalized_rows) - len(limited_rows))

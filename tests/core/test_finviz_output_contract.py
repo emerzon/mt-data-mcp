@@ -328,6 +328,24 @@ class TestFinvizProgressiveDisclosure:
         assert result["summary"]["counts"] == {"returned": 2, "available": 5}
         assert result["omitted_item_count"] == 3
 
+    @patch("mtdata.core.finviz.get_stock_ratings")
+    def test_ratings_normalizes_mixed_date_formats(self, mock_get):
+        mock_get.return_value = {
+            "success": True,
+            "symbol": "AAPL",
+            "ratings": [
+                {"Date": "2026-04-28", "Rating": "Neutral"},
+                {"Date": "2026-04-17 00:00:00", "Rating": "Outperform"},
+            ],
+        }
+
+        result = _unwrap(finviz_ratings)("AAPL", detail="compact", limit=2)
+
+        assert [row["date"] for row in result["ratings"]] == [
+            "2026-04-28",
+            "2026-04-17",
+        ]
+
     @patch("mtdata.core.finviz.get_stock_peers")
     def test_peers_compact_returns_top_five_and_counts(self, mock_get):
         peers = ["MSFT", "GOOGL", "META", "AMZN", "NVDA", "ORCL"]
