@@ -498,6 +498,26 @@ _FINVIZ_OUTPUT_KEY_MAP = {
     "Value ($)": "value_usd",
     "dateFrom": "date_from",
     "dateTo": "date_to",
+    "earningsdate": "earnings_date",
+    "EarningsDate": "earnings_date",
+    "isearningdateestimate": "is_earning_date_estimate",
+    "IsEarningDateEstimate": "is_earning_date_estimate",
+    "epsestimate": "eps_estimate",
+    "EPSEstimate": "eps_estimate",
+    "epsactual": "eps_actual",
+    "EPSActual": "eps_actual",
+    "epssurprise": "eps_surprise",
+    "EPSSurprise": "eps_surprise",
+    "epsreportedsurprise": "eps_reported_surprise",
+    "EPSReportedSurprise": "eps_reported_surprise",
+    "salesestimate": "sales_estimate",
+    "SalesEstimate": "sales_estimate",
+    "salesactual": "sales_actual",
+    "SalesActual": "sales_actual",
+    "salessurprise": "sales_surprise",
+    "SalesSurprise": "sales_surprise",
+    "marketcap": "market_cap",
+    "MarketCap": "market_cap",
     "P/E": "pe_ratio",
     "Forward P/E": "forward_pe",
     "P/S": "price_to_sales",
@@ -564,6 +584,8 @@ def _normalize_finviz_output_key(key: Any) -> str:
     mapped = _FINVIZ_OUTPUT_KEY_MAP.get(text)
     if mapped:
         return mapped
+    text = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", text)
+    text = re.sub(r"(?<=[A-Z])(?=[A-Z][a-z])", "_", text)
     text = text.replace("%", " pct ").replace("&", " and ").replace("/", " ")
     text = re.sub(r"[^0-9A-Za-z]+", "_", text).strip("_").lower()
     return text or str(key)
@@ -1498,7 +1520,11 @@ def finviz_calendar(
     page: int = 1,
 ) -> Dict[str, Any]:
     """
-    Get the Finviz calendar (economic, earnings, or dividends).
+    Get detailed Finviz calendar data (economic, earnings, or dividends).
+
+    Use `calendar="earnings"` for date-range EPS/sales estimate, actual, and
+    surprise data. Use `finviz_earnings` for the quick period-based
+    earnings view with price/volume context.
 
     Parameters
     ----------
@@ -1580,10 +1606,11 @@ def finviz_earnings(
     detail: CompactFullDetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     """
-    Get upcoming earnings calendar from Finviz.
+    Get the quick upcoming earnings calendar from Finviz.
     
-    Returns scheduled earnings announcements with date, time,
-    ticker, and expected EPS.
+    This is the period-based price/volume earnings view. Use
+    `finviz_calendar(calendar="earnings")` when you need date-range EPS/sales
+    estimates, actuals, and surprises from the detailed calendar API.
     
     Parameters
     ----------

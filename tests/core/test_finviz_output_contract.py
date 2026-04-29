@@ -135,6 +135,45 @@ class TestFinvizCalendarOutputContract:
             }
         ]
 
+    @patch("mtdata.core.finviz.get_earnings_calendar_api")
+    def test_calendar_earnings_normalizes_api_keys(self, mock_get):
+        mock_get.return_value = {
+            "success": True,
+            "items": [
+                {
+                    "earningsdate": "2026-04-29T08:30:00",
+                    "isearningdateestimate": False,
+                    "symbol": "ABBV",
+                    "marketcap": 357812,
+                    "epsestimate": 2.59,
+                    "epsactual": 2.65,
+                    "epssurprise": 2.23,
+                    "salesestimate": 12900,
+                    "salesactual": 13100,
+                }
+            ],
+        }
+
+        result = _unwrap(finviz_calendar)(
+            calendar="earnings",
+            start="2026-04-29",
+            end="2026-04-30",
+        )
+
+        assert result["items"] == [
+            {
+                "earnings_date": "2026-04-29T08:30:00",
+                "is_earning_date_estimate": False,
+                "symbol": "ABBV",
+                "market_cap": 357812,
+                "eps_estimate": 2.59,
+                "eps_actual": 2.65,
+                "eps_surprise": 2.23,
+                "sales_estimate": 12900,
+                "sales_actual": 13100,
+            }
+        ]
+
 
 class TestFinvizInsiderActivityOutputContract:
     @patch("mtdata.core.finviz.get_insider_activity")
