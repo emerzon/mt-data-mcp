@@ -1122,7 +1122,7 @@ mtdata-cli regime_detect EURUSD --timeframe H1 --method hmm --params "n_states=3
 **Solution**:
 - Reduce TP by spread/2
 - Increase SL by spread/2
-- Or use `tp_ticks`/`sl_ticks` (legacy aliases: `tp_pips`/`sl_pips`) which account for tick size
+- Or use `tp_ticks`/`sl_ticks` which account for tick size
 
 ```bash
 # Example: 20/15 tick-size barriers on EURUSD

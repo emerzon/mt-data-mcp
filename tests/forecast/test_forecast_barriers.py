@@ -133,20 +133,6 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
         )
         self.assertTrue(result["success"])
 
-    def test_forecast_barrier_hit_probabilities_warns_for_legacy_pip_names(self):
-        result = forecast_barrier_hit_probabilities(
-            symbol="EURUSD",
-            timeframe="H1",
-            horizon=10,
-            method="mc_gbm",
-            direction="long",
-            tp_pips=5,
-            sl_pips=5,
-        )
-        self.assertTrue(result["success"])
-        self.assertIn("warnings", result)
-        self.assertTrue(any("prefer tp_ticks/sl_ticks" in msg for msg in result["warnings"]))
-
     def test_forecast_barrier_hit_probabilities_prefers_live_tick_price(self):
         self._set_flat_history(1.0, bars=200)
         paths = self._sample_paths()

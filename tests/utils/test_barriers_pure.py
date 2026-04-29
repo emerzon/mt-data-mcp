@@ -5,7 +5,6 @@ from mtdata.utils.barriers import (
     barrier_prices_are_valid,
     build_barrier_kwargs,
     build_barrier_kwargs_from,
-    normalize_barrier_tick_aliases,
     normalize_trade_direction,
     resolve_barrier_prices,
 )
@@ -26,23 +25,23 @@ class TestResolveBarrierPrices:
         assert tp == pytest.approx(98.0)
         assert sl == pytest.approx(101.0)
 
-    def test_long_pips(self):
+    def test_long_ticks(self):
         tp, sl = resolve_barrier_prices(
             price=1.10000, direction="long",
-            tp_pips=50.0, sl_pips=30.0, pip_size=0.00010,
+            tp_ticks=50.0, sl_ticks=30.0, pip_size=0.00010,
         )
         assert tp == pytest.approx(1.10500)
         assert sl == pytest.approx(1.09700)
 
-    def test_short_pips(self):
+    def test_short_ticks(self):
         tp, sl = resolve_barrier_prices(
             price=1.10000, direction="short",
-            tp_pips=50.0, sl_pips=30.0, pip_size=0.00010,
+            tp_ticks=50.0, sl_ticks=30.0, pip_size=0.00010,
         )
         assert tp == pytest.approx(1.09500)
         assert sl == pytest.approx(1.10300)
 
-    def test_long_ticks_alias(self):
+    def test_long_ticks_with_explicit_names(self):
         tp, sl = resolve_barrier_prices(
             price=1.10000,
             direction="long",
@@ -168,7 +167,6 @@ class TestBuildBarrierKwargs:
             "tp_abs": None, "sl_abs": None,
             "tp_pct": None, "sl_pct": None,
             "tp_ticks": None, "sl_ticks": None,
-            "tp_pips": None, "sl_pips": None,
         }
 
     def test_partial(self):
@@ -190,16 +188,3 @@ class TestBuildBarrierKwargsFrom:
         result = build_barrier_kwargs_from({})
         assert result["tp_abs"] is None
 
-
-class TestNormalizeBarrierTickAliases:
-    def test_fills_canonical_tick_names_from_legacy_pips(self):
-        result = normalize_barrier_tick_aliases({"tp_pips": 12.0, "sl_pips": 8.0})
-        assert result["tp_ticks"] == 12.0
-        assert result["sl_ticks"] == 8.0
-
-    def test_rejects_conflicting_tick_alias_values(self):
-        with pytest.raises(
-            ValueError,
-            match="tp_ticks and tp_pips are aliases for the same tick-based barrier",
-        ):
-            normalize_barrier_tick_aliases({"tp_ticks": 12.0, "tp_pips": 10.0})

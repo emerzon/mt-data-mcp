@@ -210,8 +210,6 @@ def labels_triple_barrier(
     sl_pct: Optional[float] = None,
     tp_ticks: Optional[float] = None,
     sl_ticks: Optional[float] = None,
-    tp_pips: Optional[float] = None,
-    sl_pips: Optional[float] = None,
     denoise: Optional[DenoiseSpec] = None,
     direction: Literal["long", "short"] = "long",  # type: ignore
     label_on: Literal["close", "high_low"] = "high_low",  # type: ignore
@@ -223,7 +221,7 @@ def labels_triple_barrier(
     Barriers:
       - Absolute prices: tp_abs/sl_abs
       - Percent offsets: tp_pct/sl_pct (0.5 => 0.5%)
-      - Ticks: tp_ticks/sl_ticks (legacy aliases: tp_pips/sl_pips; trade_tick_size from symbol info)
+      - Ticks: tp_ticks/sl_ticks (trade_tick_size from symbol info)
 
     label_on='high_low' considers intrabar extremes for barrier hits; 'close' uses closes only.
     When both TP and SL are touched in the same high/low bar, the result is treated
@@ -257,17 +255,11 @@ def labels_triple_barrier(
                 "sl_pct": sl_pct,
                 "tp_ticks": tp_ticks,
                 "sl_ticks": sl_ticks,
-                "tp_pips": tp_pips,
-                "sl_pips": sl_pips,
             }
             try:
                 barrier_values = validate_barrier_unit_family_exclusivity(barrier_values)
             except ValueError as exc:
                 return {"error": str(exc)}
-            if tp_pips is not None or sl_pips is not None:
-                warnings_out.append(
-                    "tp_pips/sl_pips use legacy pip terminology; prefer tp_ticks/sl_ticks for trade_tick_size-based barriers."
-                )
             df = _fetch_history(
                 symbol, timeframe, int(max(limit, horizon + 50)), as_of=None
             )

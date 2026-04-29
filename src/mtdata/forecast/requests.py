@@ -198,30 +198,14 @@ class ForecastBarrierProbRequest(BaseModel):
     sl_abs: Optional[float] = None
     tp_pct: Optional[float] = None
     sl_pct: Optional[float] = None
-    tp_ticks: Optional[float] = Field(
-        None,
-        validation_alias=AliasChoices("tp_ticks", "tp_pips"),
-    )
-    sl_ticks: Optional[float] = Field(
-        None,
-        validation_alias=AliasChoices("sl_ticks", "sl_pips"),
-    )
+    tp_ticks: Optional[float] = None
+    sl_ticks: Optional[float] = None
     params: Optional[Dict[str, Any]] = None
     denoise: Optional[DenoiseSpec] = None
     barrier: float = 0.0
     mu: Optional[float] = None
     sigma: Optional[float] = None
     detail: CompactStandardFullDetailLiteral = "compact"
-
-    @property
-    def tp_pips(self) -> Optional[float]:
-        """Legacy alias for tick-size barrier distance."""
-        return self.tp_ticks
-
-    @property
-    def sl_pips(self) -> Optional[float]:
-        """Legacy alias for tick-size barrier distance."""
-        return self.sl_ticks
 
     @model_validator(mode="before")
     @classmethod

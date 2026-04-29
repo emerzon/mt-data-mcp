@@ -5,57 +5,26 @@ from .mt5 import get_symbol_info_cached
 from .utils import _coerce_finite_float
 
 
-def _values_conflict(left: Any, right: Any) -> bool:
-    left_val = _coerce_finite_float(left)
-    right_val = _coerce_finite_float(right)
-    if left_val is not None and right_val is not None:
-        return not math.isclose(left_val, right_val, rel_tol=0.0, abs_tol=0.0)
-    return left != right
-
-
-def normalize_barrier_tick_aliases(values: Any) -> Any:
-    """Fill canonical tick aliases from legacy pip names after conflict checks."""
-    if not isinstance(values, dict):
-        return values
-    updated = dict(values)
-    for canonical_name, legacy_name in (
-        ("tp_ticks", "tp_pips"),
-        ("sl_ticks", "sl_pips"),
-    ):
-        canonical_value = updated.get(canonical_name)
-        legacy_value = updated.get(legacy_name)
-        if canonical_value is not None and legacy_value is not None and _values_conflict(
-            canonical_value, legacy_value
-        ):
-            raise ValueError(
-                f"{canonical_name} and {legacy_name} are aliases for the same tick-based barrier; provide only one."
-            )
-        if canonical_value is None and legacy_value is not None:
-            updated[canonical_name] = legacy_value
-    return updated
-
-
 def validate_barrier_unit_family_exclusivity(values: Any) -> Any:
     """Reject ambiguous TP/SL inputs when a side mixes unit families."""
     if not isinstance(values, dict):
         return values
-    normalized = normalize_barrier_tick_aliases(values)
     for label, fields, message_fields in (
         (
             "take-profit",
             ("tp_abs", "tp_pct", "tp_ticks"),
-            "tp_abs, tp_pct, tp_ticks (legacy alias: tp_pips)",
+            "tp_abs, tp_pct, tp_ticks",
         ),
         (
             "stop-loss",
             ("sl_abs", "sl_pct", "sl_ticks"),
-            "sl_abs, sl_pct, sl_ticks (legacy alias: sl_pips)",
+            "sl_abs, sl_pct, sl_ticks",
         ),
     ):
-        provided = [field for field in fields if normalized.get(field) is not None]
+        provided = [field for field in fields if values.get(field) is not None]
         if len(provided) > 1:
             raise ValueError(f"Provide only one {label} unit family: {message_fields}")
-    return normalized
+    return values
 
 
 def normalize_trade_direction(direction: Any) -> Tuple[Optional[Literal["long", "short"]], Optional[str]]:
@@ -122,8 +91,6 @@ def resolve_barrier_prices(
     sl_pct: Optional[float] = None,
     tp_ticks: Optional[float] = None,
     sl_ticks: Optional[float] = None,
-    tp_pips: Optional[float] = None,
-    sl_pips: Optional[float] = None,
     pip_size: Optional[float] = None,
     adjust_inverted: bool = True,
 ) -> Tuple[Optional[float], Optional[float]]:
@@ -145,11 +112,7 @@ def resolve_barrier_prices(
     r_tp = _coerce_finite_float(tp_pct)
     r_sl = _coerce_finite_float(sl_pct)
     p_tp = _coerce_finite_float(tp_ticks)
-    if p_tp is None:
-        p_tp = _coerce_finite_float(tp_pips)
     p_sl = _coerce_finite_float(sl_ticks)
-    if p_sl is None:
-        p_sl = _coerce_finite_float(sl_pips)
 
     direction_norm, _ = normalize_trade_direction(direction)
     if direction_norm is None:
@@ -213,8 +176,6 @@ def build_barrier_kwargs(
     sl_pct: Optional[float] = None,
     tp_ticks: Optional[float] = None,
     sl_ticks: Optional[float] = None,
-    tp_pips: Optional[float] = None,
-    sl_pips: Optional[float] = None,
 ) -> Dict[str, Optional[float]]:
     """Collect barrier arguments into a single kwargs dict."""
     return {
@@ -224,21 +185,16 @@ def build_barrier_kwargs(
         "sl_pct": sl_pct,
         "tp_ticks": tp_ticks,
         "sl_ticks": sl_ticks,
-        "tp_pips": tp_pips,
-        "sl_pips": sl_pips,
     }
 
 
 def build_barrier_kwargs_from(values: Dict[str, Any]) -> Dict[str, Optional[float]]:
     """Build barrier kwargs from a dict of values (e.g., locals())."""
-    normalized = normalize_barrier_tick_aliases(values)
     return build_barrier_kwargs(
-        tp_abs=normalized.get("tp_abs"),
-        sl_abs=normalized.get("sl_abs"),
-        tp_pct=normalized.get("tp_pct"),
-        sl_pct=normalized.get("sl_pct"),
-        tp_ticks=normalized.get("tp_ticks"),
-        sl_ticks=normalized.get("sl_ticks"),
-        tp_pips=normalized.get("tp_pips"),
-        sl_pips=normalized.get("sl_pips"),
+        tp_abs=values.get("tp_abs"),
+        sl_abs=values.get("sl_abs"),
+        tp_pct=values.get("tp_pct"),
+        sl_pct=values.get("sl_pct"),
+        tp_ticks=values.get("tp_ticks"),
+        sl_ticks=values.get("sl_ticks"),
     )

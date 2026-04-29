@@ -99,11 +99,10 @@ class TestLabelsTripleBarrier:
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
     @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
     @patch(f"{_LABELS_MOD}._fetch_history")
-    def test_pip_barriers(self, mock_hist, mock_den, mock_pip):
+    def test_tick_barriers(self, mock_hist, mock_den, mock_pip):
         mock_hist.return_value = _make_df(60)
-        result = _get_raw_fn()("EURUSD", tp_pips=50, sl_pips=50, horizon=12)
+        result = _get_raw_fn()("EURUSD", tp_ticks=50, sl_ticks=50, horizon=12)
         assert result["success"] is True
-        assert any("prefer tp_ticks/sl_ticks" in msg for msg in result["warnings"])
 
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
     @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
@@ -136,12 +135,12 @@ class TestLabelsTripleBarrier:
     def test_rejects_multiple_tp_unit_families(self):
         result = _get_raw_fn()("EURUSD", tp_abs=1.11, tp_pct=0.5)
 
-        assert result["error"] == "Provide only one take-profit unit family: tp_abs, tp_pct, tp_ticks (legacy alias: tp_pips)"
+        assert result["error"] == "Provide only one take-profit unit family: tp_abs, tp_pct, tp_ticks"
 
     def test_rejects_multiple_sl_unit_families(self):
-        result = _get_raw_fn()("EURUSD", sl_abs=1.09, sl_pips=15.0)
+        result = _get_raw_fn()("EURUSD", sl_abs=1.09, sl_ticks=15.0)
 
-        assert result["error"] == "Provide only one stop-loss unit family: sl_abs, sl_pct, sl_ticks (legacy alias: sl_pips)"
+        assert result["error"] == "Provide only one stop-loss unit family: sl_abs, sl_pct, sl_ticks"
 
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
     @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
@@ -149,7 +148,7 @@ class TestLabelsTripleBarrier:
     def test_allows_one_unit_family_per_side(self, mock_hist, mock_den, mock_pip):
         mock_hist.return_value = _make_df(60)
 
-        result = _get_raw_fn()("EURUSD", tp_pct=0.5, sl_pips=15.0, horizon=12)
+        result = _get_raw_fn()("EURUSD", tp_pct=0.5, sl_ticks=15.0, horizon=12)
 
         assert result["success"] is True
 

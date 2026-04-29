@@ -180,8 +180,8 @@ def test_attach_schemas_to_tools_keeps_barrier_inputs_flat(monkeypatch) -> None:
                         "sl_abs": {"type": "number"},
                         "tp_pct": {"type": "number"},
                         "sl_pct": {"type": "number"},
-                        "tp_pips": {"type": "number"},
-                        "sl_pips": {"type": "number"},
+                        "tp_ticks": {"type": "number"},
+                        "sl_ticks": {"type": "number"},
                     },
                     "required": [],
                 }

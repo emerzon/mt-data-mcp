@@ -609,8 +609,6 @@ def _closed_form_barrier_input_error(request: ForecastBarrierProbRequest) -> Opt
         "sl_pct",
         "tp_ticks",
         "sl_ticks",
-        "tp_pips",
-        "sl_pips",
     ):
         if getattr(request, field_name, None) is not None:
             return (
