@@ -994,6 +994,33 @@ class TestReportWarnings:
         assert res["completeness"] == "partial"
         assert res["success"] is True
 
+    def test_sections_status_filters_placeholder_error_noise(self):
+        fn = _get_report_generate()
+        sec = _make_full_sections()
+        sec["volatility"] = {
+            "summary": {"realized_vol": 0.12},
+            "error": "Volatility estimation failed.",
+            "estimators": [
+                {"error": "no value"},
+                {"error": ""},
+                {"error": "Volatility estimation failed."},
+            ],
+        }
+        rep = _make_report(sections=sec)
+        mock_basic = MagicMock(return_value=rep)
+        with patch("mtdata.core.report_templates.template_basic", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_advanced", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_scalping", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_intraday", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_swing", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_position", mock_basic, create=True), \
+             patch(_FMT_NUM, side_effect=str):
+            res = fn("EURUSD", template="basic", format="toon")
+
+        errors = res["sections_status"]["details"]["volatility"]["errors"]
+        assert {"path": "error", "message": "Volatility estimation failed."} in errors
+        assert all(item["message"] != "no value" for item in errors)
+
     def test_error_only_section_marks_report_failed(self):
         fn = _get_report_generate()
         sec = _make_full_sections()

@@ -52,12 +52,18 @@ def _has_payload_content(payload: Any) -> bool:
     return payload not in (None, "")
 
 
+def _is_report_error_noise(message: str) -> bool:
+    return message.strip().lower() in {"", "no value", "none", "null"}
+
+
 def _collect_payload_errors(payload: Any, *, path: str = "") -> List[Dict[str, str]]:
     errors: List[Dict[str, str]] = []
     if isinstance(payload, dict):
         err = payload.get("error")
-        if isinstance(err, str) and err.strip():
-            errors.append({"path": path or "error", "message": err.strip()})
+        if isinstance(err, str):
+            message = err.strip()
+            if not _is_report_error_noise(message):
+                errors.append({"path": path or "error", "message": message})
         for key, value in payload.items():
             if key == "error":
                 continue
@@ -67,7 +73,15 @@ def _collect_payload_errors(payload: Any, *, path: str = "") -> List[Dict[str, s
         for index, value in enumerate(payload):
             child_path = f"{path}[{index}]" if path else f"[{index}]"
             errors.extend(_collect_payload_errors(value, path=child_path))
-    return errors
+    deduped: List[Dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for item in errors:
+        key = (item.get("path", ""), item.get("message", ""))
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(item)
+    return deduped
 
 
 def _is_user_facing_report_warning(warning_obj: Any) -> bool:
