@@ -1816,6 +1816,7 @@ def fetch_ticks(  # noqa: C901
             headers.append("volume_real")
         if has_flags:
             headers.append("flags")
+            headers.append("flags_decoded")
 
         # Choose a consistent time format for all rows (strip year if constant).
         # Low-level tick fetch helpers already normalize MT5 times to UTC.
@@ -1857,6 +1858,9 @@ def fetch_ticks(  # noqa: C901
                 df_ticks["volume"] = volumes
             if has_flags:
                 df_ticks["flags"] = flags
+                df_ticks["flags_decoded"] = [
+                    _decode_tick_flags(flag_value) for flag_value in flags
+                ]
             df_ticks["time"] = [_format_tick_time(e) for e in _epochs]
 
         if output_mode in ("summary", "stats"):
@@ -2095,7 +2099,7 @@ def fetch_ticks(  # noqa: C901
             if not _use_ctz:
                 payload["timezone"] = "UTC"
             if has_flags:
-                payload["flags_decoded"] = _observed_tick_flags_decoded(flags)
+                payload["flags_legend"] = _observed_tick_flags_decoded(flags)
             if simplify_meta is not None and original_count > len(rows):
                 payload["simplified"] = True
                 meta = dict(simplify_meta)
@@ -2197,6 +2201,7 @@ def fetch_ticks(  # noqa: C901
                 values.append(volumes_real[i])
             if has_flags:
                 values.append(flags[i])
+                values.append(_decode_tick_flags(flags[i]))
             rows.append(values)
 
         payload = _table_from_rows(headers, rows)
@@ -2208,7 +2213,7 @@ def fetch_ticks(  # noqa: C901
         if not _use_ctz:
             payload["timezone"] = "UTC"
         if has_flags:
-            payload["flags_decoded"] = _observed_tick_flags_decoded(flags)
+            payload["flags_legend"] = _observed_tick_flags_decoded(flags)
         if simplify_present and original_count > len(rows):
             payload["simplified"] = True
             meta = {
