@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel, model_validator
 
-from ..schema import CompactStandardFullDetailLiteral, DenoiseSpec, TimeframeLiteral
+from ...shared.schema import CompactStandardFullDetailLiteral, DenoiseSpec, TimeframeLiteral
 
 
 def _reject_removed_field(values: Any, *, field_name: str, replacement: str) -> Any:

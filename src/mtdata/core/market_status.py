@@ -15,7 +15,7 @@ from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
 from .mt5_gateway import get_mt5_gateway
 from .output_contract import resolve_output_detail
-from .schema import CompactFullDetailLiteral
+from ..shared.schema import CompactFullDetailLiteral
 
 logger = logging.getLogger(__name__)
 

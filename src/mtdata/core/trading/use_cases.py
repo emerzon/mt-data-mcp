@@ -19,7 +19,7 @@ from ...utils.mt5 import (
     _normalize_times_in_struct,
     _to_utc_history_query_dt,
 )
-from ..config import trade_guardrails_config
+from ...bootstrap.settings import trade_guardrails_config
 from ..execution_logging import (
     infer_result_success,
     log_operation_finish,

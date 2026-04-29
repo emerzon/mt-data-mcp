@@ -5,7 +5,7 @@ from typing import get_args, get_origin
 from typing_extensions import TypedDict
 
 from mtdata.core import cli
-from mtdata.core.schema import get_function_info
+from mtdata.shared.schema import get_function_info
 
 
 class ExampleSpec(TypedDict, total=False):

@@ -17,7 +17,7 @@ from ..utils.mt5_enums import decode_mt5_bitmask_labels, decode_mt5_enum_label
 from ..utils.symbol import _extract_group_path as _extract_group_path_util
 from ..utils.utils import _format_time_minimal, _normalize_limit, _table_from_rows
 from ._mcp_instance import mcp
-from .constants import DEFAULT_ROW_LIMIT, GROUP_SEARCH_THRESHOLD, TIMEFRAME_MAP
+from ..shared.constants import DEFAULT_ROW_LIMIT, GROUP_SEARCH_THRESHOLD, TIMEFRAME_MAP
 from .error_envelope import build_error_payload
 from .execution_logging import run_logged_operation
 from .mt5_gateway import get_mt5_gateway

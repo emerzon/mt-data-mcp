@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-from mtdata.core.config import trade_guardrails_config
+from mtdata.bootstrap.settings import trade_guardrails_config
 from mtdata.core.trading.execution import _modify_pending_order
 from mtdata.core.trading.gateway import create_trading_gateway as create_real_trading_gateway
 

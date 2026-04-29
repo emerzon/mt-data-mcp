@@ -8,7 +8,7 @@ import MetaTrader5 as mt5
 import pandas as pd
 import pytest
 
-from src.mtdata.core.constants import TIMEFRAME_MAP
+from src.mtdata.shared.constants import TIMEFRAME_MAP
 from src.mtdata.patterns import candlestick as candlestick_mod
 from src.mtdata.utils.mt5 import _mt5_copy_rates_from, _rates_to_df
 

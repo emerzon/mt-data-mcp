@@ -27,8 +27,8 @@ from ._mcp_tools import (
     _get_runtime_signature,
     _unwrap_optional_annotation,
 )
-from .config import load_environment, mt5_config
-from .constants import (  # re-export for CLI/tests
+from ..bootstrap.settings import load_environment, mt5_config
+from ..shared.constants import (  # re-export for CLI/tests
     SERVICE_NAME,
     TIMEFRAME_MAP,
     TIMEFRAME_SECONDS,

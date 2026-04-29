@@ -10,7 +10,7 @@ from typing import Optional, Tuple, Union
 
 from ...shared.constants import TIMEFRAME_SECONDS
 from ...shared.validators import unsupported_timeframe_seconds_error
-from ..config import mt5_config
+from ...bootstrap.settings import mt5_config
 
 ExpirationValue = Union[int, float, str, datetime]
 _GTC_EXPIRATION_TOKENS = {"GTC", "GOOD_TILL_CANCEL", "GOOD_TILL_CANCELLED", "NONE", "NO_EXPIRATION"}

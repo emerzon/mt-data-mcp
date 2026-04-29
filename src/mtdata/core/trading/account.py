@@ -22,7 +22,7 @@ from ...utils.utils import (
     _use_client_tz,
 )
 from .._mcp_instance import mcp
-from ..config import mt5_config
+from ...bootstrap.settings import mt5_config
 from ..execution_logging import run_logged_operation
 from ..output_contract import (
     ensure_common_meta,

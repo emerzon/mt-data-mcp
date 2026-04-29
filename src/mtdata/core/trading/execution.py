@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Union
 
 from ...utils.mt5 import _to_utc_history_query_dt
-from ..config import trade_guardrails_config
+from ...bootstrap.settings import trade_guardrails_config
 from . import comments, time, validation
 from .gateway import MT5TradingGateway, create_trading_gateway, trading_connection_error
 from .positions import _resolve_open_position, _resolve_pending_order

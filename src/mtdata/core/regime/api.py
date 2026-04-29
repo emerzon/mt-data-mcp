@@ -23,7 +23,7 @@ from ..execution_logging import (
 from ..features import extract_rolling_features
 from ..mt5_gateway import get_mt5_gateway, mt5_connection_error
 from ..output_contract import normalize_output_detail, normalize_output_verbosity_detail
-from ..schema import DenoiseSpec, DetailLiteral, TimeframeLiteral
+from ...shared.schema import DenoiseSpec, DetailLiteral, TimeframeLiteral
 from ..tool_calling import call_tool_sync_structured
 from .crypto import (
     _CRYPTO_SYMBOL_HINTS,

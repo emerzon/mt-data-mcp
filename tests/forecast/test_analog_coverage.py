@@ -513,7 +513,7 @@ class TestAnalogMethodForecast:
                 params={"symbol": "EURUSD", "timeframe": "H1"},
             )
 
-    @patch("mtdata.core.constants.TIMEFRAME_SECONDS", {"H1": 3600, "D1": 86400})
+    @patch("mtdata.shared.constants.TIMEFRAME_SECONDS", {"H1": 3600, "D1": 86400})
     @patch.object(AnalogMethod, "_run_single_timeframe")
     def test_successful_forecast(self, mock_run):
         futures = [np.random.rand(10) * 100 + 50 for _ in range(5)]
@@ -527,7 +527,7 @@ class TestAnalogMethodForecast:
         assert len(res.forecast) == 10
         assert res.ci_values is not None
 
-    @patch("mtdata.core.constants.TIMEFRAME_SECONDS", {"H1": 3600, "D1": 86400})
+    @patch("mtdata.shared.constants.TIMEFRAME_SECONDS", {"H1": 3600, "D1": 86400})
     @patch.object(AnalogMethod, "_run_single_timeframe")
     def test_ci_alpha_default(self, mock_run):
         futures = [np.random.rand(10) * 100 + 50 for _ in range(5)]
@@ -539,7 +539,7 @@ class TestAnalogMethodForecast:
         )
         assert res.params_used["ci_alpha"] == 0.05
 
-    @patch("mtdata.core.constants.TIMEFRAME_SECONDS", {"H1": 3600, "D1": 86400})
+    @patch("mtdata.shared.constants.TIMEFRAME_SECONDS", {"H1": 3600, "D1": 86400})
     @patch.object(AnalogMethod, "_run_single_timeframe")
     def test_ci_alpha_invalid(self, mock_run):
         futures = [np.random.rand(10) * 100 + 50 for _ in range(5)]
@@ -551,7 +551,7 @@ class TestAnalogMethodForecast:
         )
         assert res.params_used["ci_alpha"] == 0.05
 
-    @patch("mtdata.core.constants.TIMEFRAME_SECONDS", {"H1": 3600, "H4": 14400})
+    @patch("mtdata.shared.constants.TIMEFRAME_SECONDS", {"H1": 3600, "H4": 14400})
     @patch.object(AnalogMethod, "_run_single_timeframe")
     def test_secondary_timeframes(self, mock_run):
         futures = [np.random.rand(10) * 100 + 50 for _ in range(5)]

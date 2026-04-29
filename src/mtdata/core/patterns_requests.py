@@ -4,7 +4,7 @@ from typing import Any, Dict, Literal, Optional
 
 from pydantic import BaseModel
 
-from .schema import DenoiseSpec, TimeframeLiteral
+from ..shared.schema import DenoiseSpec, TimeframeLiteral
 
 
 PatternsDetailLiteral = Literal["summary", "compact", "standard", "full"]

@@ -11,7 +11,7 @@ from ..report.utils import (
     resolve_report_context_indicators,
     summarize_barrier_grid,
 )
-from ..schema import DenoiseSpec
+from ...shared.schema import DenoiseSpec
 from ..tool_calling import call_tool_sync_structured
 
 _TREND_COMPACT_LEGEND: Dict[str, str] = {

@@ -9,7 +9,7 @@ from .._mcp_instance import mcp
 from ..execution_logging import run_logged_operation
 from ..mt5_gateway import get_mt5_gateway
 from ..pivot import pivot_compute_points, support_resistance_levels
-from ..schema import CompactFullDetailLiteral, TimeframeLiteral
+from ...shared.schema import CompactFullDetailLiteral, TimeframeLiteral
 from .requests import (
     DataFetchCandlesRequest,
     DataFetchTicksRequest,

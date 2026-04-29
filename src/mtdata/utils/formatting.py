@@ -2,7 +2,7 @@
 import math
 from typing import Any, List, Optional
 
-from .constants import (
+from ..shared.constants import (
     PRECISION_ABS_TOL,
     PRECISION_MAX_DECIMALS,
     PRECISION_MAX_LOSS_PCT,

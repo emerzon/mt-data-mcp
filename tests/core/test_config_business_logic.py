@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone, tzinfo
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
-from mtdata.core import config as cfg
+from mtdata.bootstrap import settings as cfg
 
 
 class _FixedOffsetTZ(tzinfo):
@@ -61,7 +61,7 @@ def test_mt5_config_warns_once_when_timezone_info_missing(monkeypatch, caplog):
     monkeypatch.delenv("MT5_TIME_OFFSET_MINUTES", raising=False)
     monkeypatch.setattr(cfg, "_WARNED_SERVER_TZ", False)
 
-    with caplog.at_level("WARNING", logger="mtdata.core.config"):
+    with caplog.at_level("WARNING", logger="mtdata.bootstrap.settings"):
         cfg.MT5Config()
         cfg.MT5Config()
 

@@ -98,7 +98,7 @@ def build_runtime_timezone_meta(
     cfg = mt5_config
     if cfg is None:
         try:
-            from .config import mt5_config as default_mt5_config
+            from ..bootstrap.settings import mt5_config as default_mt5_config
         except Exception:
             default_mt5_config = None
         cfg = default_mt5_config

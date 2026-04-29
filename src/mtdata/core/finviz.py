@@ -33,7 +33,7 @@ from ._mcp_instance import mcp
 from .error_envelope import build_error_payload
 from .execution_logging import run_logged_operation
 from .output_contract import normalize_output_verbosity_detail
-from .schema import CompactFullDetailLiteral
+from ..shared.schema import CompactFullDetailLiteral
 
 logger = logging.getLogger(__name__)
 

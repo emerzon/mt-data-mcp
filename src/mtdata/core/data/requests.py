@@ -14,7 +14,7 @@ from pydantic import (
 )
 
 from ..output_contract import normalize_output_detail
-from ..schema import (
+from ...shared.schema import (
     CompactFullDetailLiteral,
     CompactStandardFullDetailLiteral,
     DenoiseSpec,

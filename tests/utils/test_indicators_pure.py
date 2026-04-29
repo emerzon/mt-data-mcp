@@ -4,7 +4,7 @@ Covers:
   - mtdata.utils.indicators  (TA indicator helpers)
   - mtdata.core.indicators    (thin wrappers / delegates)
   - mtdata.utils.utils        (utility pure functions)
-  - mtdata.core.schema        (schema validation/parsing)
+  - mtdata.shared.schema      (schema validation/parsing)
 """
 
 import logging
@@ -16,7 +16,7 @@ import pandas as pd
 import pytest
 from typing_extensions import TypedDict
 
-from mtdata.core.schema import (
+from mtdata.shared.schema import (
     _DENOISE_METHODS,
     _PIVOT_METHODS,
     _SIMPLIFY_METHODS,
@@ -896,7 +896,7 @@ class TestUtcEpochSeconds:
 
 
 # ===================================================================
-# 4. mtdata.core.schema
+# 4. mtdata.shared.schema
 # ===================================================================
 class TestSharedDefs:
     def test_returns_timeframe_spec(self):

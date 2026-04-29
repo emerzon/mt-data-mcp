@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from mtdata.core.config import trade_guardrails_config
+from mtdata.bootstrap.settings import trade_guardrails_config
 from mtdata.core.trading.requests import TradePlaceRequest
 from mtdata.core.trading.safety import (
     TradeGuardrailsConfig,

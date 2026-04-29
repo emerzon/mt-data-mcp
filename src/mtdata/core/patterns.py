@@ -31,7 +31,7 @@ from ..utils.ohlcv import validate_and_clean_ohlcv_frame
 from ..utils.utils import _UNPARSED_BOOL, _format_time_minimal, _parse_bool_like
 from ..utils.utils import to_float_np as __to_float_np
 from ._mcp_instance import mcp
-from .constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
+from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from .execution_logging import run_logged_operation
 from .mt5_gateway import get_mt5_gateway, mt5_connection_error
 from .patterns_requests import PatternsDetectRequest, PatternsDetailLiteral

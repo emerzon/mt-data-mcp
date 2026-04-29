@@ -28,7 +28,7 @@ from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
 from .mt5_gateway import get_mt5_gateway
 from .output_contract import normalize_output_detail
-from .schema import DenoiseSpec, DetailLiteral, TimeframeLiteral
+from ..shared.schema import DenoiseSpec, DetailLiteral, TimeframeLiteral
 
 logger = logging.getLogger(__name__)
 _COMPACT_LABEL_SAMPLE_SIZE = 10

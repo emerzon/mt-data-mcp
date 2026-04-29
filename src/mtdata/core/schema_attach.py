@@ -14,19 +14,19 @@ from ..shared.parameter_contracts import (
     OUTPUT_EXTRAS,
     REMOVED_PUBLIC_OUTPUT_PARAMS,
 )
-from .schema import (
+from ..shared.schema import (
     apply_param_hints as _apply_param_hints,
 )
-from .schema import (
+from ..shared.schema import (
     build_minimal_schema as _build_minimal_schema,
 )
-from .schema import (
+from ..shared.schema import (
     complex_defs as _complex_defs,
 )
-from .schema import (
+from ..shared.schema import (
     enrich_schema_with_shared_defs as _enrich_schema_with_shared_defs,
 )
-from .schema import (
+from ..shared.schema import (
     get_function_info as _get_function_info,
 )
 from .server_utils import get_mcp_registry

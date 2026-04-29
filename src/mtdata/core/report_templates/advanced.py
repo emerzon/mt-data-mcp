@@ -1,6 +1,6 @@
 from typing import Any, Dict, Optional
 
-from ..schema import DenoiseSpec
+from ...shared.schema import DenoiseSpec
 from .basic import _get_raw_result, template_basic
 
 

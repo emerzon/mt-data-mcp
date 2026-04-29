@@ -10,7 +10,7 @@ from ..services.unified_news import fetch_unified_news
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
 from .output_contract import resolve_output_detail
-from .schema import CompactFullDetailLiteral
+from ..shared.schema import CompactFullDetailLiteral
 
 logger = logging.getLogger(__name__)
 

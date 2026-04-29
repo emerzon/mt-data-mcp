@@ -1944,7 +1944,7 @@ class TestSafeTzName:
 
 
 class TestBuildCliTimezoneMeta:
-    @patch("mtdata.core.config.mt5_config")
+    @patch("mtdata.bootstrap.settings.mt5_config")
     def test_with_config(self, mock_config):
         mock_config.server_tz_name = "Europe/Nicosia"
         mock_config.client_tz_name = "US/Eastern"
@@ -1961,7 +1961,7 @@ class TestBuildCliTimezoneMeta:
         assert result["server"]["offset_seconds"] == 7200
         assert result["server"]["now"] != result["client"]["now"]
 
-    @patch("mtdata.core.config.mt5_config")
+    @patch("mtdata.bootstrap.settings.mt5_config")
     def test_with_dict_result_containing_timezone(self, mock_config):
         mock_config.server_tz_name = None
         mock_config.client_tz_name = None
@@ -1972,7 +1972,7 @@ class TestBuildCliTimezoneMeta:
         assert result["utc"]["tz"] == "UTC"
         assert "client" not in result or result["client"].get("tz") is None
 
-    @patch("mtdata.core.config.mt5_config")
+    @patch("mtdata.bootstrap.settings.mt5_config")
     def test_with_non_dict_result(self, mock_config):
         mock_config.server_tz_name = None
         mock_config.client_tz_name = None
@@ -1982,7 +1982,7 @@ class TestBuildCliTimezoneMeta:
         result = _build_cli_timezone_meta("some string")
         assert result["utc"]["tz"] == "UTC"
 
-    @patch("mtdata.core.config.mt5_config")
+    @patch("mtdata.bootstrap.settings.mt5_config")
     def test_with_offset_env(self, mock_config, monkeypatch):
         mock_config.server_tz_name = None
         mock_config.client_tz_name = None
@@ -1994,7 +1994,7 @@ class TestBuildCliTimezoneMeta:
         assert result["server"]["offset_seconds"] == 10800
         assert result["server"]["tz"] == "UTC+03:00"
 
-    @patch("mtdata.core.config.mt5_config")
+    @patch("mtdata.bootstrap.settings.mt5_config")
     def test_with_invalid_offset_env(self, mock_config, monkeypatch):
         mock_config.server_tz_name = None
         mock_config.client_tz_name = None
@@ -2022,7 +2022,7 @@ class TestBuildCliTimezoneMeta:
         if result.get("client", {}).get("now") is not None:
             datetime.fromisoformat(result["client"]["now"])
 
-    @patch("mtdata.core.config.mt5_config")
+    @patch("mtdata.bootstrap.settings.mt5_config")
     def test_offset_env_source(self, mock_config, monkeypatch):
         mock_config.server_tz_name = None
         mock_config.client_tz_name = None
@@ -2034,7 +2034,7 @@ class TestBuildCliTimezoneMeta:
         if result["server"].get("tz") == "UTC+01:00":
             assert result["server"]["source"] == "MT5_TIME_OFFSET_MINUTES"
 
-    @patch("mtdata.core.config.mt5_config")
+    @patch("mtdata.bootstrap.settings.mt5_config")
     def test_unknown_server_and_client_now_are_omitted(self, mock_config):
         mock_config.server_tz_name = None
         mock_config.client_tz_name = None

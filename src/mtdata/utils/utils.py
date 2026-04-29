@@ -7,7 +7,7 @@ import dateparser
 import numpy as np
 import pandas as pd
 
-from .constants import (
+from ..shared.constants import (
     PRECISION_ABS_TOL,
     PRECISION_MAX_DECIMALS,
     PRECISION_MAX_LOSS_PCT,

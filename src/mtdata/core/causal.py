@@ -23,7 +23,7 @@ from ..utils.mt5 import (
 )
 from ..utils.symbol import _extract_group_path as _extract_group_path_util
 from ._mcp_instance import mcp
-from .constants import TIMEFRAME_MAP
+from ..shared.constants import TIMEFRAME_MAP
 from .execution_logging import run_logged_operation
 from .mt5_gateway import get_mt5_gateway, mt5_connection_error
 from .output_contract import normalize_output_verbosity_detail

@@ -5,7 +5,7 @@ import math
 import time as _stdlib_time
 from typing import Any, Callable, Dict, List, Optional, TypedDict, Union
 
-from ..config import mt5_config, trade_guardrails_config
+from ...bootstrap.settings import mt5_config, trade_guardrails_config
 from . import comments, common, time, validation
 from .execution import _modify_position
 from .gateway import MT5TradingGateway, create_trading_gateway, trading_connection_error
