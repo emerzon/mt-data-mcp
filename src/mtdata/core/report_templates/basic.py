@@ -35,10 +35,9 @@ _TREND_REGIME_LABELS = {
 def _get_raw_result(
     func: Any,
     *args: Any,
-    allow_formatted_output: bool = False,
     **kwargs: Any,
 ) -> Dict[str, Any]:
-    """Call a tool and require a structured payload unless legacy parsing is explicitly enabled."""
+    """Call a tool and require a structured payload."""
     try:
         result = call_tool_sync_structured(func, *args, raw_tool_output=True, **kwargs)
         
@@ -46,11 +45,7 @@ def _get_raw_result(
         if isinstance(result, dict):
             return result
             
-        # Report templates should consume structured payloads. Keep the string
-        # parser quarantined behind an explicit opt-in for legacy callers/tests.
         if isinstance(result, str):
-            if allow_formatted_output:
-                return _parse_formatted_output(result)
             return {
                 'error': 'Expected structured tool result but received formatted text.',
                 'raw_output': result[:200],
@@ -61,147 +56,6 @@ def _get_raw_result(
     except Exception as e:
         return {'error': f'Function call failed: {str(e)}'}
 
-
-def _parse_formatted_output(output: str) -> Dict[str, Any]:
-    """Legacy parser for quarantined formatted tool output."""
-    try:
-        lines = [line.rstrip() for line in output.split('\n')]  # Keep leading spaces
-        result = {}
-        current_section = None
-        table_lines = []
-        
-        i = 0
-        while i < len(lines):
-            line = lines[i]
-            
-            if not line.strip():
-                i += 1
-                continue
-                
-            # Key-value pairs like "symbol: BTCUSD"
-            if ':' in line and not line.startswith(' ') and ',' not in line:
-                key, val = line.split(':', 1)
-                key = key.strip()
-                val = val.strip()
-                
-                # Handle sections that have subsections
-                if key in ['period', 'best', 'summary', 'levels'] and not val:
-                    current_section = key
-                    result[key] = {}
-                    # Look ahead for table data or nested structure
-                    i += 1
-
-                    if key == 'levels':
-                        # Special handling for levels - expect delimited table rows
-                        table_lines = []
-                        while i < len(lines):
-                            next_line = lines[i]
-                            stripped_line = next_line.strip()
-                            if not stripped_line:
-                                i += 1
-                                continue
-                            # Look for delimited table rows (may be indented)
-                            if ',' in stripped_line and (stripped_line.startswith('level,') or
-                                all(c.isdigit() or c in '.,- ' or c.isalpha() for c in stripped_line[:20])):
-                                table_lines.append(stripped_line)
-                                i += 1
-                            elif stripped_line and not next_line.startswith(' ') and ':' in stripped_line and ',' not in stripped_line:
-                                # New section starting
-                                break
-                            else:
-                                i += 1
-
-                        if table_lines:
-                            result[key] = _parse_table_data(table_lines)
-                        i -= 1  # Back up one since we'll increment at end of loop
-                    else:
-                        # Handle other nested sections
-                        while i < len(lines) and (lines[i].startswith(' ') or not lines[i].strip()):
-                            next_line = lines[i]
-                            if next_line.startswith(' ') and ':' in next_line:
-                                sub_key, sub_val = next_line.strip().split(':', 1)
-                                result[current_section][sub_key.strip()] = _parse_value(sub_val.strip())
-                            i += 1
-                        i -= 1  # Back up one
-                        
-                elif current_section:
-                    # Add to current section
-                    result[current_section][key] = _parse_value(val)
-                else:
-                    result[key] = _parse_value(val)
-
-            # Standalone delimited table data
-            elif ',' in line and not line.startswith(' '):
-                table_lines = [line]
-                i += 1
-                # Collect following delimited rows
-                while i < len(lines) and ',' in lines[i] and not (lines[i].count(':') > lines[i].count(',')):
-                    table_lines.append(lines[i])
-                    i += 1
-
-                if table_lines:
-                    parsed_table = _parse_table_data(table_lines)
-                    if current_section:
-                        result[current_section] = parsed_table
-                    else:
-                        result['data'] = parsed_table
-                i -= 1  # Back up one
-
-            i += 1
-        
-        # If we couldn't parse anything meaningful, return error
-        if not result:
-            result = {'error': 'Could not parse formatted output', 'raw_output': output[:200]}
-            
-        return result
-    except Exception as e:
-        return {'error': f'Failed to parse output: {str(e)}', 'raw_output': output[:200]}
-
-
-def _parse_value(val: str) -> Any:
-    """Parse a string value into appropriate type."""
-    val = val.strip()
-    if not val or val.lower() in ['null', 'none', '']:
-        return None
-    if val.lower() in ['true', 'yes']:
-        return True
-    if val.lower() in ['false', 'no']:
-        return False
-    try:
-        if '.' in val or 'e' in val.lower():
-            return float(val)
-        return int(val)
-    except ValueError:
-        return val
-
-
-def _parse_table_data(table_lines: List[str]) -> Any:
-    """Parse comma-delimited table lines into structured data."""
-    if not table_lines:
-        return None
-
-    try:
-        # First line should be headers
-        headers = [h.strip() for h in table_lines[0].split(',')]
-
-        if len(table_lines) == 1:
-            return {'headers': headers}
-
-        # Parse data rows
-        rows = []
-        for line in table_lines[1:]:
-            if not line.strip():
-                continue
-            values = [v.strip() for v in line.split(',')]
-            row = {}
-            for i, header in enumerate(headers):
-                val = values[i] if i < len(values) else ''
-                row[header] = _parse_value(val) if val else None
-            rows.append(row)
-
-        return rows if rows else {'headers': headers}
-    except Exception:
-        return table_lines
 
 def _ema(values: List[float], length: int) -> List[float]:
     if length <= 1 or not values:

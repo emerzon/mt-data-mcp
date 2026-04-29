@@ -21,9 +21,6 @@ from mtdata.core.report_templates.basic import (
     _ema,
     _get_raw_result,
     _linreg_slope_r2,
-    _parse_formatted_output,
-    _parse_table_data,
-    _parse_value,
     _percentile_rank,
     _safe_float,
 )
@@ -330,140 +327,6 @@ class TestComputeCompactTrend:
         # Flat market should have regime 0 (range)
         assert result['regime_code'] == 0
 
-
-# ===== _parse_value ==========================================================
-
-class TestParseValue:
-    def test_int(self):
-        assert _parse_value("42") == 42
-
-    def test_float(self):
-        assert _parse_value("3.14") == 3.14
-
-    def test_scientific(self):
-        assert _parse_value("1e5") == 1e5
-
-    def test_true_variants(self):
-        assert _parse_value("true") is True
-        assert _parse_value("True") is True
-        assert _parse_value("yes") is True
-        assert _parse_value("Yes") is True
-
-    def test_false_variants(self):
-        assert _parse_value("false") is False
-        assert _parse_value("False") is False
-        assert _parse_value("no") is False
-        assert _parse_value("No") is False
-
-    def test_none_variants(self):
-        assert _parse_value("") is None
-        assert _parse_value("null") is None
-        assert _parse_value("None") is None
-        assert _parse_value("none") is None
-
-    def test_string_passthrough(self):
-        assert _parse_value("hello world") == "hello world"
-
-    def test_whitespace_stripped(self):
-        assert _parse_value("  42  ") == 42
-
-    def test_negative_int(self):
-        assert _parse_value("-7") == -7
-
-    def test_negative_float(self):
-        assert _parse_value("-3.14") == -3.14
-
-
-# ===== _parse_table_data =====================================================
-
-class TestParseTableData:
-    def test_empty(self):
-        assert _parse_table_data([]) is None
-
-    def test_headers_only(self):
-        result = _parse_table_data(["level,classic,fibonacci"])
-        assert result == {"headers": ["level", "classic", "fibonacci"]}
-
-    def test_headers_and_rows(self):
-        lines = ["level,classic", "PP,1.2345", "R1,1.2400"]
-        result = _parse_table_data(lines)
-        assert isinstance(result, list)
-        assert len(result) == 2
-        assert result[0]["level"] == "PP"
-        assert result[0]["classic"] == 1.2345
-        assert result[1]["level"] == "R1"
-
-    def test_numeric_parsing(self):
-        lines = ["name,value", "a,42", "b,3.14"]
-        result = _parse_table_data(lines)
-        assert result[0]["value"] == 42
-        assert result[1]["value"] == 3.14
-
-    def test_empty_cell(self):
-        lines = ["name,value", "a,"]
-        result = _parse_table_data(lines)
-        assert result[0]["value"] is None
-
-    def test_more_headers_than_values(self):
-        lines = ["a,b,c", "1,2"]
-        result = _parse_table_data(lines)
-        assert isinstance(result, list)
-        assert result[0]["c"] is None  # missing value defaults to empty→None
-
-    def test_blank_data_rows_skipped(self):
-        lines = ["h1,h2", "  ", "v1,v2"]
-        result = _parse_table_data(lines)
-        assert isinstance(result, list)
-        assert len(result) == 1
-
-
-# ===== _parse_formatted_output ===============================================
-
-class TestParseFormattedOutput:
-    def test_simple_kv(self):
-        output = "symbol: BTCUSD\ntimeframe: H1\n"
-        result = _parse_formatted_output(output)
-        assert result["symbol"] == "BTCUSD"
-        assert result["timeframe"] == "H1"
-
-    def test_numeric_values(self):
-        output = "price: 1.2345\ncount: 10\n"
-        result = _parse_formatted_output(output)
-        assert result["price"] == 1.2345
-        assert result["count"] == 10
-
-    def test_nested_section(self):
-        output = "period:\n  start: 2024-01-01\n  end: 2024-06-01\n"
-        result = _parse_formatted_output(output)
-        assert "period" in result
-        assert result["period"]["start"] == "2024-01-01"
-
-    def test_empty_output(self):
-        result = _parse_formatted_output("")
-        assert "error" in result
-
-    def test_table_data_inline(self):
-        output = "level,classic\nPP,1.234\nR1,1.250\n"
-        result = _parse_formatted_output(output)
-        assert "data" in result
-        assert isinstance(result["data"], list)
-
-    def test_levels_section_with_table(self):
-        output = "symbol: EURUSD\nlevels:\nlevel,classic\nPP,1.234\nR1,1.250\n"
-        result = _parse_formatted_output(output)
-        assert "levels" in result
-
-    def test_only_blank_lines(self):
-        result = _parse_formatted_output("\n\n\n")
-        assert "error" in result
-
-    def test_mixed_sections(self):
-        output = "name: test\nbest:\n  method: ema\n  score: 0.95\nstatus: ok\n"
-        result = _parse_formatted_output(output)
-        assert result["name"] == "test"
-        assert "best" in result
-
-
 # ===== _get_raw_result =======================================================
 
 class TestGetRawResult:
@@ -485,12 +348,6 @@ class TestGetRawResult:
         assert isinstance(result, dict)
         assert result["error"] == "Expected structured tool result but received formatted text."
         assert "symbol: TEST" in result["raw_output"]
-
-    def test_string_result_can_use_legacy_parser_when_explicitly_enabled(self):
-        fn = MagicMock(return_value="symbol: TEST\nprice: 42\n")
-        result = _get_raw_result(fn, symbol="X", allow_formatted_output=True)
-        assert isinstance(result, dict)
-        assert result.get("symbol") == "TEST"
 
     def test_exception_returns_error(self):
         fn = MagicMock(side_effect=RuntimeError("boom"))
@@ -1682,47 +1539,3 @@ class TestLinregSlopeR2Edge:
         assert abs(slope - 2.0) < 1e-6
         assert abs(r2 - 1.0) < 1e-6
 
-
-class TestParseValueEdge:
-    def test_float_with_exponent(self):
-        assert _parse_value("1.5E3") == 1500.0
-
-    def test_leading_trailing_spaces(self):
-        assert _parse_value("  true  ") is True
-
-    def test_Null_uppercase(self):
-        assert _parse_value("Null") is None
-
-    def test_plain_string_with_dot(self):
-        # "hello.world" can't be parsed as float but has a dot
-        assert _parse_value("hello.world") == "hello.world"
-
-
-class TestParseTableDataEdge:
-    def test_single_column(self):
-        lines = ["name", "alice", "bob"]
-        result = _parse_table_data(lines)
-        assert isinstance(result, list)
-        assert len(result) == 2
-        assert result[0]["name"] == "alice"
-
-    def test_all_empty_data_rows(self):
-        lines = ["h1,h2", "", ""]
-        result = _parse_table_data(lines)
-        # All blank data rows are skipped → headers only
-        assert result == {"headers": ["h1", "h2"]}
-
-
-class TestParseFormattedOutputEdge:
-    def test_colon_in_value(self):
-        output = "time: 2024-01-01T12:00:00\n"
-        result = _parse_formatted_output(output)
-        assert "time" in result
-        # Value includes everything after first colon
-        assert "2024" in str(result["time"])
-
-    def test_summary_nested(self):
-        output = "summary:\n  trend: up\n  confidence: high\n"
-        result = _parse_formatted_output(output)
-        assert "summary" in result
-        assert result["summary"]["trend"] == "up"
