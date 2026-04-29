@@ -2490,11 +2490,6 @@ def compact_support_resistance_payload(payload: Dict[str, Any]) -> Dict[str, Any
     if compact_levels:
         out["levels"] = compact_levels
 
-    fibonacci = payload.get("fibonacci")
-    compact_fibonacci = compact_fibonacci_payload(fibonacci)
-    if isinstance(compact_fibonacci, dict) and compact_fibonacci:
-        out["fibonacci"] = compact_fibonacci
-
     warnings = payload.get("warnings")
     if isinstance(warnings, list) and warnings:
         out["warnings"] = list(warnings)
@@ -2526,6 +2521,11 @@ def standard_support_resistance_payload(payload: Dict[str, Any]) -> Dict[str, An
     resistances = _compact_support_resistance_levels(payload.get("resistances"))
     if resistances:
         out["resistances"] = resistances
+
+    fibonacci = payload.get("fibonacci")
+    compact_fibonacci = compact_fibonacci_payload(fibonacci)
+    if isinstance(compact_fibonacci, dict) and compact_fibonacci:
+        out["fibonacci"] = compact_fibonacci
 
     return out or dict(payload)
 

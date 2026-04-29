@@ -7,8 +7,10 @@ import pytest
 from mtdata.utils.support_resistance import (
     _build_zone_overlap,
     _resolve_adaptive_settings,
+    compact_support_resistance_payload,
     compute_support_resistance_levels,
     merge_support_resistance_results,
+    standard_support_resistance_payload,
 )
 
 
@@ -297,6 +299,26 @@ def test_compute_support_resistance_includes_fibonacci_levels_from_latest_releva
     assert fibonacci["selection_summary"]["candidate_count"] >= 1
     assert fibonacci["selection_candidates"][0]["selected"] is True
     assert fibonacci["selection_candidates"][0]["contains_current_price"] is True
+
+
+def test_compact_support_resistance_payload_omits_fibonacci_until_standard_detail():
+    result = compute_support_resistance_levels(
+        _clustered_levels_frame(),
+        symbol="EURUSD",
+        timeframe="H1",
+        limit=20,
+        tolerance_pct=0.01,
+        min_touches=1,
+        max_levels=4,
+        reaction_bars=2,
+    )
+
+    compact = compact_support_resistance_payload(result)
+    standard = standard_support_resistance_payload(result)
+
+    assert "fibonacci" not in compact
+    assert "fibonacci" in standard
+    assert standard["fibonacci"]["nearest"]["support"]["type"] == "support"
 
 
 def test_recent_stronger_support_scores_above_older_weaker_support():

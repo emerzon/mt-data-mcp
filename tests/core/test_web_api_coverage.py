@@ -1323,9 +1323,7 @@ class TestGetSupportResistance:
         assert len(res["levels"]) > 0
         assert res["symbol"] == "EURUSD"
         assert "window" in res
-        assert "fibonacci" in res
-        assert len(res["fibonacci"]["levels"]) == 7
-        assert res["fibonacci"]["nearest"]["support"]["type"] == "support"
+        assert "fibonacci" not in res
 
     def test_default_timeframe_uses_h1_mode(self):
         import pandas as pd

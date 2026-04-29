@@ -552,14 +552,15 @@ def support_resistance_levels(
     decay_half_life_bars: Optional[int] = None,
     detail: CompactStandardFullDetailLiteral = "compact",
 ) -> Dict[str, Any]:
-    """Detect support/resistance plus Fibonacci swing levels around the current price from historical structure.
+    """Detect support/resistance levels around the current price from historical structure.
 
     Set `timeframe="auto"` to merge levels from M15, H1, H4, and D1.
     `lookback` controls the historical bars used to detect levels.
     Use `detail="compact"` for the nearest-level summary, `detail="standard"`
-    for compact actionable supports/resistances/levels, and `detail="full"`
-    for the raw diagnostic payload. The default `max_distance_pct=5.0`
-    keeps returned levels near current price; pass `None` for all levels.
+    for compact actionable supports/resistances/levels plus Fibonacci swing
+    levels, and `detail="full"` for the raw diagnostic payload. The default
+    `max_distance_pct=5.0` keeps returned levels near current price; pass
+    `None` for all levels.
 
     Score combines:
     - repeated tests of a level
