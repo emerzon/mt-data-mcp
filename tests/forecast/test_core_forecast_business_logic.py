@@ -669,9 +669,11 @@ def test_forecast_barrier_optimize_logs_finish_event(caplog, monkeypatch):
 
 def test_forecast_barrier_optimize_request_defaults_to_summary_output():
     request = ForecastBarrierOptimizeRequest(symbol="EURUSD")
-    assert request.output_mode == "summary"
     assert request.search_profile == "medium"
-    assert list(ForecastBarrierOptimizeRequest.model_fields).count("output_mode") == 1
+    assert len(ForecastBarrierOptimizeRequest.model_fields) == 15
+    assert "output_mode" not in ForecastBarrierOptimizeRequest.model_fields
+    assert "tp_min" not in ForecastBarrierOptimizeRequest.model_fields
+    assert "statistical_robustness" not in ForecastBarrierOptimizeRequest.model_fields
     assert "format" not in ForecastBarrierOptimizeRequest.model_fields
 
 
@@ -682,19 +684,18 @@ def test_forecast_barrier_requests_normalize_known_direction_aliases_only():
 
 
 def test_forecast_barrier_optimize_request_rejects_removed_output_field():
-    with pytest.raises(ValidationError, match="output was removed; use output_mode"):
+    with pytest.raises(ValidationError, match="output was removed; use detail"):
         ForecastBarrierOptimizeRequest(symbol="EURUSD", output="summary")
 
 
 def test_forecast_barrier_optimize_request_rejects_removed_format_field():
-    with pytest.raises(ValidationError, match="format was removed; use output_mode"):
+    with pytest.raises(ValidationError, match="format was removed; use detail"):
         ForecastBarrierOptimizeRequest(symbol="EURUSD", format="full")
 
 
-def test_forecast_barrier_optimize_request_accepts_legacy_vol_sl_extra():
-    request = ForecastBarrierOptimizeRequest(symbol="EURUSD", vol_sl_extra=2.1)
-
-    assert request.vol_sl_multiplier == 2.1
+def test_forecast_barrier_optimize_request_rejects_top_level_advanced_params():
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        ForecastBarrierOptimizeRequest(symbol="EURUSD", tp_min=0.5)
 
 
 def test_forecast_list_library_models_and_list_methods(monkeypatch):
@@ -1749,20 +1750,25 @@ def test_forecast_barrier_optimize_routes_profile_args(monkeypatch):
 
     def fake_optimize(**kwargs):
         called.update(kwargs)
-        return {"ok": True, "search_profile": kwargs.get("search_profile"), "fast_defaults": kwargs.get("fast_defaults")}
+        return {
+            "ok": True,
+            "search_profile": kwargs.get("search_profile"),
+            "fast_defaults_param": kwargs.get("params", {}).get("fast_defaults"),
+        }
 
     monkeypatch.setattr(barriers_mod, "forecast_barrier_optimize", fake_optimize)
     out = raw_opt(
         request=ForecastBarrierOptimizeRequest(
             symbol="EURUSD",
-            fast_defaults=True,
             search_profile="long",
+            params={"fast_defaults": True},
         )
     )
     assert out["ok"] is True
-    assert out["fast_defaults"] is True
+    assert out["fast_defaults_param"] is True
     assert out["search_profile"] == "long"
-    assert called["fast_defaults"] is True
+    assert called["params"]["fast_defaults"] is True
+    assert called["fast_defaults"] is False
     assert called["search_profile"] == "long"
 
 
@@ -1780,36 +1786,39 @@ def test_forecast_barrier_optimize_routes_statistical_robustness_args(monkeypatc
     out = raw_opt(
         request=ForecastBarrierOptimizeRequest(
             symbol="EURUSD",
-            statistical_robustness=True,
-            target_ci_width=0.02,
-            n_seeds_stability=4,
-            enable_bootstrap=True,
-            n_bootstrap=250,
-            enable_convergence_check=False,
-            convergence_window=80,
-            convergence_threshold=0.005,
-            enable_power_analysis=True,
-            power_effect_size=0.02,
-            enable_sensitivity_analysis=True,
-            sensitivity_params=["tp", "sl"],
+            params={
+                "statistical_robustness": True,
+                "target_ci_width": 0.02,
+                "n_seeds_stability": 4,
+                "enable_bootstrap": True,
+                "n_bootstrap": 250,
+                "enable_convergence_check": False,
+                "convergence_window": 80,
+                "convergence_threshold": 0.005,
+                "enable_power_analysis": True,
+                "power_effect_size": 0.02,
+                "enable_sensitivity_analysis": True,
+                "sensitivity_params": ["tp", "sl"],
+            },
         )
     )
     assert out["ok"] is True
-    assert called["statistical_robustness"] is True
-    assert called["target_ci_width"] == 0.02
-    assert called["n_seeds_stability"] == 4
-    assert called["enable_bootstrap"] is True
-    assert called["n_bootstrap"] == 250
-    assert called["enable_convergence_check"] is False
-    assert called["convergence_window"] == 80
-    assert called["convergence_threshold"] == 0.005
-    assert called["enable_power_analysis"] is True
-    assert called["power_effect_size"] == 0.02
-    assert called["enable_sensitivity_analysis"] is True
-    assert called["sensitivity_params"] == ["tp", "sl"]
+    assert called["statistical_robustness"] is False
+    assert called["params"]["statistical_robustness"] is True
+    assert called["params"]["target_ci_width"] == 0.02
+    assert called["params"]["n_seeds_stability"] == 4
+    assert called["params"]["enable_bootstrap"] is True
+    assert called["params"]["n_bootstrap"] == 250
+    assert called["params"]["enable_convergence_check"] is False
+    assert called["params"]["convergence_window"] == 80
+    assert called["params"]["convergence_threshold"] == 0.005
+    assert called["params"]["enable_power_analysis"] is True
+    assert called["params"]["power_effect_size"] == 0.02
+    assert called["params"]["enable_sensitivity_analysis"] is True
+    assert called["params"]["sensitivity_params"] == ["tp", "sl"]
 
 
-def test_forecast_barrier_optimize_routes_canonical_vol_sl_multiplier(monkeypatch):
+def test_forecast_barrier_optimize_routes_advanced_grid_params(monkeypatch):
     raw_opt = _unwrap(cf.forecast_barrier_optimize)
     called = {}
 
@@ -1823,12 +1832,13 @@ def test_forecast_barrier_optimize_routes_canonical_vol_sl_multiplier(monkeypatc
     out = raw_opt(
         request=ForecastBarrierOptimizeRequest(
             symbol="EURUSD",
-            vol_sl_extra=2.1,
+            params={"vol_sl_multiplier": 2.1},
         )
     )
 
     assert out["ok"] is True
-    assert called["vol_sl_multiplier"] == 2.1
+    assert called["params"]["vol_sl_multiplier"] == 2.1
+    assert called["vol_sl_multiplier"] == 1.8
     assert "vol_sl_extra" not in called
 
 

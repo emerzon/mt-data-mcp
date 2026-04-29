@@ -1548,25 +1548,18 @@ def run_forecast_barrier_optimize(
                 params_norm[key] = value
 
     detail_value = _normalize_trader_detail(getattr(request, "detail", "compact"))
-    format_value = request.output_mode
-    concise_value = request.concise
-    return_grid_value = request.return_grid
-    field_set = getattr(request, "model_fields_set", set())
-    if "detail" in field_set or (
-        "output_mode" not in field_set
-        and "concise" not in field_set
-        and "return_grid" not in field_set
-    ):
-        if detail_value == "full":
-            format_value = "full"
-            concise_value = False
-        elif detail_value == "standard":
-            format_value = "summary"
-            concise_value = False
-        else:
-            format_value = "summary"
-            concise_value = True
-            return_grid_value = False
+    if detail_value == "full":
+        format_value = "full"
+        concise_value = False
+        return_grid_value = True
+    elif detail_value == "standard":
+        format_value = "summary"
+        concise_value = False
+        return_grid_value = True
+    else:
+        format_value = "summary"
+        concise_value = True
+        return_grid_value = False
 
     try:
         result = barrier_optimize_impl(
@@ -1576,12 +1569,12 @@ def run_forecast_barrier_optimize(
             method=method_val,
             direction=request.direction,
             mode=request.mode,
-            tp_min=request.tp_min,
-            tp_max=request.tp_max,
-            tp_steps=request.tp_steps,
-            sl_min=request.sl_min,
-            sl_max=request.sl_max,
-            sl_steps=request.sl_steps,
+            tp_min=0.25,
+            tp_max=1.5,
+            tp_steps=None,
+            sl_min=0.25,
+            sl_max=2.5,
+            sl_steps=None,
             params=params_norm,
             denoise=request.denoise,
             objective=request.objective,
@@ -1592,36 +1585,36 @@ def run_forecast_barrier_optimize(
             concise=concise_value,
             grid_style=request.grid_style,
             preset=request.preset,
-            vol_window=request.vol_window,
-            vol_min_mult=request.vol_min_mult,
-            vol_max_mult=request.vol_max_mult,
-            vol_steps=request.vol_steps,
-            vol_sl_multiplier=request.vol_sl_multiplier,
-            vol_floor_pct=request.vol_floor_pct,
-            vol_floor_ticks=request.vol_floor_ticks,
-            ratio_min=request.ratio_min,
-            ratio_max=request.ratio_max,
-            ratio_steps=request.ratio_steps,
-            refine=request.refine,
-            refine_radius=request.refine_radius,
-            refine_steps=request.refine_steps,
-            min_prob_win=request.min_prob_win,
-            max_prob_no_hit=request.max_prob_no_hit,
-            max_median_time=request.max_median_time,
-            fast_defaults=request.fast_defaults,
+            vol_window=250,
+            vol_min_mult=0.5,
+            vol_max_mult=4.0,
+            vol_steps=None,
+            vol_sl_multiplier=1.8,
+            vol_floor_pct=0.15,
+            vol_floor_ticks=8.0,
+            ratio_min=0.5,
+            ratio_max=4.0,
+            ratio_steps=None,
+            refine=None,
+            refine_radius=0.3,
+            refine_steps=5,
+            min_prob_win=None,
+            max_prob_no_hit=None,
+            max_median_time=None,
+            fast_defaults=False,
             search_profile=request.search_profile,
-            statistical_robustness=request.statistical_robustness,
-            target_ci_width=request.target_ci_width,
-            n_seeds_stability=request.n_seeds_stability,
-            enable_bootstrap=request.enable_bootstrap,
-            n_bootstrap=request.n_bootstrap,
-            enable_convergence_check=request.enable_convergence_check,
-            convergence_window=request.convergence_window,
-            convergence_threshold=request.convergence_threshold,
-            enable_power_analysis=request.enable_power_analysis,
-            power_effect_size=request.power_effect_size,
-            enable_sensitivity_analysis=request.enable_sensitivity_analysis,
-            sensitivity_params=request.sensitivity_params,
+            statistical_robustness=False,
+            target_ci_width=0.05,
+            n_seeds_stability=3,
+            enable_bootstrap=False,
+            n_bootstrap=200,
+            enable_convergence_check=True,
+            convergence_window=100,
+            convergence_threshold=0.01,
+            enable_power_analysis=False,
+            power_effect_size=0.05,
+            enable_sensitivity_analysis=False,
+            sensitivity_params=None,
         )
         if isinstance(result, dict) and not result.get("error"):
             result = _round_barrier_optimize_payload(dict(result))
