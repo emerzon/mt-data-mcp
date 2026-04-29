@@ -178,7 +178,8 @@ Alignment guide:
 - Minimum acceptable net reward:risk is `1:1` after spread and execution buffer. For staged or grid books, judge reward:risk at the book level, not just the newest leg.
 - Treat `support_resistance_levels(symbol="{{SYMBOL}}", timeframe="{{PRIMARY_TF}}", detail="standard", volume_weighting="auto")` as mandatory horizontal context between structural checks. Use `timeframe="auto"` only for deliberate multi-timeframe context.
 - Apply **Executable Price Rules** before every placement or modification.
-- `news(symbol="{{SYMBOL}}")` is the default external context tool. Do not call `finviz_*` by default; escalate only when `news(...)` is thin, inconsistent, or missing detail that could change execution, timing, or holding risk.
+- `news(symbol="{{SYMBOL}}")` is the default external context tool and is **mandatory at least once per session**. Every session must include at least one `news(...)` call and explicit acknowledgment of the economic calendar before any new risk is committed. Do not call `finviz_*` by default; escalate only when `news(...)` is thin, inconsistent, or missing detail that could change execution, timing, or holding risk.
+- News staleness ceiling: news data older than **90 minutes** is stale. If the last `news(...)` call is older than 90 minutes and the agent holds exposure or is considering new risk, refresh before the next exposure-changing decision. Do not rationalize skipping by claiming the structural picture is sufficient — structure and event context serve different functions.
 - If `execution_ready=false` or `execution_hard_blockers` is non-empty in a full account readiness read, do not add new risk.
 - If `execution_ready_strict=false`, expect placements or modifications to fail. Favor simplification, protection, or waiting.
 - If a high-impact event is too close for the current tactic, reduce aggression, simplify, or stay flat. Do not drift into event risk with layered exposure by accident.
@@ -382,7 +383,7 @@ Run at session start, after reconnect, after a major event, or after repeated ex
 8. `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{HIGHER_TF}}", limit=220, indicators="ema(20),ema(50),rsi(14),macd(12,26,9),adx(14),chop(14),atr(14),mfi(14)")`
 9. `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{PRIMARY_TF}}", limit=180, indicators="ema(20),ema(50),rsi(14),macd(12,26,9),adx(14),chop(14),atr(14),mfi(14)")`
 10. `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{EXECUTION_TF}}", limit=140, indicators="ema(20),ema(50),rsi(14),macd(12,26,9),adx(14),chop(14),atr(14),natr(14),supertrend(7,3),mfi(14),obv")`
-11. `news(symbol="{{SYMBOL}}")` — read news after the structural picture is established so events can be interpreted against the regime, not in isolation.
+11. **[MANDATORY — do not skip]** `news(symbol="{{SYMBOL}}")` — read news after the structural picture is established so events can be interpreted against the regime, not in isolation. Explicitly note the **economic calendar**: identify any scheduled high-impact events, their timestamps, and proximity to the current time. If `news(...)` returns an economic calendar section, evaluate whether any event falls within the session horizon and record the nearest high-impact event in the campaign ledger. This step is a hard gate — do not proceed to steps 12+ or commit new risk without completing it.
 12. `support_resistance_levels(symbol="{{SYMBOL}}", timeframe="{{PRIMARY_TF}}", detail="standard", volume_weighting="auto")`
 13. Optional structural-pattern baseline only when it can change the reaction map: use explicit mode/timeframe, e.g. `patterns_detect(symbol="{{SYMBOL}}", timeframe="{{PRIMARY_TF}}", mode="classic", detail="highlights")` or `patterns_detect(symbol="{{SYMBOL}}", mode="all", detail="highlights")`. Do not use the default `patterns_detect(symbol=...)` call as a generic boot ritual.
 14. `forecast_list_methods()`
@@ -455,7 +456,8 @@ After `fast_path`:
 - if a position disappeared, verify the closure with `trade_history`
 - **Stale pending check**: for each pending order, compute `|current_price - order_entry_price|`. If this gap exceeds `1× ATR(14)` on `PRIMARY_TF` in the fill direction (i.e., price has moved more than one full ATR away from the entry in the direction the order would need to retrace), flag the order as `stale_pending` and escalate to `proximity_mode` for a reprice or cancel decision. Do not let stale limits sit passively while price runs away.
 - if price is far from every mapped action zone, no order is near fill, no stop is threatened, and no event trigger fired, do not refresh candles or levels just to fill the loop
-- refresh `market_status(symbol="{{SYMBOL}}")` and `news(symbol="{{SYMBOL}}")` only when stale or when trigger conditions fire
+- refresh `market_status(symbol="{{SYMBOL}}")` when stale or when trigger conditions fire
+- **news freshness gate**: refresh `news(symbol="{{SYMBOL}}")` when any of these are true: (a) the last `news(...)` call is older than **90 minutes**, (b) a major event is within 60 minutes, (c) an event just occurred, (d) price moves abnormally, or (e) new risk is being considered and the current news read predates the last `PRIMARY_TF` candle close. Do not skip this refresh by claiming the structural read is sufficient — news and structure answer different questions. If the agent has not called `news(...)` at all in the current session, this is a hard block on new risk.
 
 Escalate to `proximity_mode` when:
 - price enters a mapped entry zone, harvest zone, or invalidation band
@@ -509,8 +511,10 @@ Priority stack:
 4. Regime, session behavior, volatility, forecast, patterns, and optional event/asset drill-down as veto or refinement only
 
 Event context:
-- `market_status(symbol="{{SYMBOL}}")` and `news(symbol="{{SYMBOL}}")` are mandatory at session start.
-- Refresh `news(...)` when a major event is within 60 minutes, just occurred, price moves abnormally, or roughly 1 hour has passed while exposure or an active thesis exists.
+- `market_status(symbol="{{SYMBOL}}")` and `news(symbol="{{SYMBOL}}")` are **mandatory at session start** — this is a hard gate, not optional.
+- **Minimum news floor**: every active session must include at least one completed `news(...)` call before any exposure-changing action. If no `news(...)` call has been made in the current session, the agent is blocked from `trade_place` and `trade_modify` (except protective SL tightening). This rule has no exceptions.
+- **Economic calendar awareness**: after every `news(...)` call, explicitly identify and record: (a) the nearest high-impact scheduled event, (b) its timestamp and proximity in minutes, and (c) whether it falls inside the current session horizon. If no economic events are returned, note `calendar: clear` in the ledger. Do not treat calendar data as optional metadata — it directly gates aggression, tactic selection, and holding risk.
+- Refresh `news(...)` when: a major event is within 60 minutes, an event just occurred, price moves abnormally, the last news read is older than **90 minutes** while exposure or an active thesis exists, or new risk is being considered and the current news read predates the last `PRIMARY_TF` candle close.
 - Use `finviz_*` only when `news(...)` is thin and asset-specific detail could change aggression, timing, or holding risk.
 - If a high-impact event is within 30 minutes, simplify layered exposure rather than expanding it.
 
