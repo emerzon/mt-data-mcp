@@ -2,7 +2,7 @@
 description: Starts the active trader agent (instrument volume and risk budget)
 ---
 
-Use the available `mtdata_*` tools to run a continuous autonomous trading workflow for `{{SYMBOL}}`.
+Use the available `mtdata_*` tools to run a continuous autonomous trading workflow for `{{SYMBOL}}`. Never request json output of mtdata_* tools.
 
 ## Mission
 - Trade `{{SYMBOL}}` actively, not passively.
