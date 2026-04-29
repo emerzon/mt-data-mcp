@@ -716,6 +716,7 @@ def _normalize_finviz_calendar_payload(result: Dict[str, Any]) -> Dict[str, Any]
         out[normalized_key] = value
     if isinstance(out.get("items"), list):
         out["items"] = _normalize_finviz_output_rows(out["items"])
+    out.setdefault("timezone", "America/New_York")
     return out
 
 

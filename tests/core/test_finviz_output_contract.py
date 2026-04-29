@@ -116,6 +116,7 @@ class TestFinvizCalendarOutputContract:
 
         assert result["date_from"] == "2026-01-05"
         assert result["date_to"] == "2026-01-12"
+        assert result["timezone"] == "America/New_York"
         assert result["items"] == [
             {
                 "datetime": "2026-01-06T13:30:00",
