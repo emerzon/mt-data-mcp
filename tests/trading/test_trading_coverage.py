@@ -766,20 +766,37 @@ class TestTradePlace:
         trade_place(symbol="EURUSD", volume=0.01, order_type="BUY_LIMIT", price=1.09)
         mock_pending.assert_called_once()
 
-    @patch("mtdata.core.trading._place_pending_order")
-    def test_dispatches_to_pending_with_price(self, mock_pending):
-        mock_pending.return_value = {"success": True}
-        trade_place(symbol="EURUSD", volume=0.01, order_type="BUY", price=1.09)
-        mock_pending.assert_called_once()
+    def test_rejects_market_order_with_price(self):
+        with patch("mtdata.core.trading._place_market_order") as mock_market, patch(
+            "mtdata.core.trading._place_pending_order"
+        ) as mock_pending:
+            result = trade_place(
+                symbol="EURUSD",
+                volume=0.01,
+                order_type="BUY",
+                price=1.09,
+                __cli_raw=True,
+            )
+        assert "Conflicting arguments" in result["error"]
+        assert "BUY_LIMIT/BUY_STOP" in result["error"]
+        mock_market.assert_not_called()
+        mock_pending.assert_not_called()
 
-    @patch("mtdata.core.trading._place_pending_order")
-    def test_dispatches_to_pending_with_expiration(self, mock_pending):
-        mock_pending.return_value = {"success": True}
-        trade_place(
-            symbol="EURUSD", volume=0.01, order_type="BUY",
-            price=1.09, expiration="GTC",
-        )
-        mock_pending.assert_called_once()
+    def test_rejects_market_order_with_price_and_expiration(self):
+        with patch("mtdata.core.trading._place_market_order") as mock_market, patch(
+            "mtdata.core.trading._place_pending_order"
+        ) as mock_pending:
+            result = trade_place(
+                symbol="EURUSD",
+                volume=0.01,
+                order_type="BUY",
+                price=1.09,
+                expiration="GTC",
+                __cli_raw=True,
+            )
+        assert "Conflicting arguments" in result["error"]
+        mock_market.assert_not_called()
+        mock_pending.assert_not_called()
 
 
 # ===================================================================

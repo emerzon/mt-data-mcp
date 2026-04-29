@@ -683,8 +683,29 @@ def run_trade_place(  # noqa: C901
                 {
                     "error": (
                         "expiration only applies to pending orders placed with a price. "
-                        "For BUY/SELL market orders, omit expiration or provide price to place a pending order."
+                        "For BUY/SELL market orders, omit expiration. "
+                        "For pending orders, use BUY_LIMIT/BUY_STOP/SELL_LIMIT/SELL_STOP with price."
                     )
+                },
+                order_type=order_type_norm,
+                pending=False,
+            )
+
+        if order_type_norm in market_side_types and price_provided:
+            explicit_pending = (
+                "BUY_LIMIT/BUY_STOP"
+                if order_type_norm == "BUY"
+                else "SELL_LIMIT/SELL_STOP"
+            )
+            return _finish(
+                {
+                    "error": (
+                        f"Conflicting arguments: order_type={order_type_norm} is a market order, "
+                        "but price was provided. Omit price for a market order, "
+                        f"or use {explicit_pending} for a pending order."
+                    ),
+                    "order_type": order_type_norm,
+                    "price": request.price,
                 },
                 order_type=order_type_norm,
                 pending=False,
@@ -692,7 +713,6 @@ def run_trade_place(  # noqa: C901
 
         is_pending = (
             order_type_norm in explicit_pending_types
-            or price_provided
             or (expiration_provided and not ignore_market_gtc_expiration)
         )
         if bool(request.require_sl_tp) and not is_pending:

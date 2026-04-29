@@ -264,6 +264,30 @@ def test_trade_place_dry_run_pending_preview_skips_order_send() -> None:
     mock_pending.assert_not_called()
 
 
+def test_trade_place_rejects_market_order_with_price() -> None:
+    with patch("mtdata.core.trading._place_market_order") as mock_market, patch(
+        "mtdata.core.trading._place_pending_order"
+    ) as mock_pending:
+        out = trade_place(
+            symbol="BTCUSD",
+            volume=0.03,
+            order_type="BUY",
+            price=64500,
+            stop_loss=64000,
+            take_profit=68000,
+            __cli_raw=True,
+        )
+
+    assert "Conflicting arguments" in out["error"]
+    assert "order_type=BUY is a market order" in out["error"]
+    assert "BUY_LIMIT/BUY_STOP" in out["error"]
+    assert out.get("pending") is None
+    assert out.get("order_type") == "BUY"
+    assert out.get("price") == 64500
+    mock_market.assert_not_called()
+    mock_pending.assert_not_called()
+
+
 def test_trade_place_require_sl_tp_flags_unprotected_market_fill() -> None:
     with patch(
         "mtdata.core.trading._place_market_order",
