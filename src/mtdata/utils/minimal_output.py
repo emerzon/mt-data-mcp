@@ -1743,18 +1743,28 @@ def _compact_forecast_ci(
             alpha = value
             break
 
-    if ci_status == "available" and has_interval_columns:
-        return {}
-
     if _is_empty_value(ci_status) and alpha is None:
         return {}
 
     out: Dict[str, Any] = {}
+    confidence_level = payload.get("confidence_level")
+    if _is_empty_value(confidence_level) and alpha is not None:
+        try:
+            confidence_level = round(1.0 - float(alpha), 6)
+        except Exception:
+            confidence_level = None
+    if ci_status == "available" and has_interval_columns:
+        if not _is_empty_value(confidence_level):
+            out["confidence_level"] = confidence_level
+        return out
+
     if not _is_empty_value(ci_status):
         out["status"] = ci_status
 
     if alpha is not None:
         out["ci_alpha"] = alpha
+    if not _is_empty_value(confidence_level):
+        out["confidence_level"] = confidence_level
 
     if ci_status == "unavailable":
         method = str(payload.get("method") or "").strip()

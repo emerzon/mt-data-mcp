@@ -1164,6 +1164,7 @@ def run_forecast_conformal_intervals(
         result["lower_price"] = [float(v) for v in lo.tolist()]
         result["upper_price"] = [float(v) for v in hi.tolist()]
         result["ci_alpha"] = float(request.ci_alpha)
+        result["confidence_level"] = round(1.0 - float(request.ci_alpha), 6)
         result["ci_status"] = "available"
         result["ci_available"] = True
         warnings_out = result.get("warnings")

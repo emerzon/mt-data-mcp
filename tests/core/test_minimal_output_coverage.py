@@ -553,12 +553,14 @@ class TestNormalizeTradeTablePayload:
 
 
 class TestCompactForecastCi:
-    def test_omits_available_ci_when_bounds_exist(self):
+    def test_keeps_available_ci_confidence_when_bounds_exist(self):
         payload = {
             "ci_status": "available",
             "ci_alpha": 0.05,
         }
-        assert _compact_forecast_ci(payload, lower=[1.0], upper=[2.0]) == {}
+        assert _compact_forecast_ci(payload, lower=[1.0], upper=[2.0]) == {
+            "confidence_level": 0.95
+        }
 
     def test_compacts_unavailable_ci_to_status_and_ci_alpha(self):
         payload = {
@@ -572,6 +574,7 @@ class TestCompactForecastCi:
         assert _compact_forecast_ci(payload, lower=[], upper=[]) == {
             "status": "unavailable",
             "ci_alpha": 0.1,
+            "confidence_level": 0.9,
             "hint": "theta produces point forecasts only. Use forecast_conformal_intervals for uncertainty bands.",
         }
 

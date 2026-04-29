@@ -1142,6 +1142,7 @@ def test_forecast_conformal_intervals_success_and_errors(monkeypatch):
     )
 
     assert out["ci_alpha"] == 0.1
+    assert out["confidence_level"] == 0.9
     assert out["ci_status"] == "available"
     assert out["ci_available"] is True
     assert out["conformal"]["ci_alpha"] == 0.1
