@@ -118,6 +118,38 @@ def test_trade_session_context_compacts_nested_sections_by_default() -> None:
     assert out["meta"]["runtime"]["timezone"] == timezone_meta
 
 
+def test_trade_session_context_compact_formats_nested_ticker_spread() -> None:
+    ticker_compact = {
+        "success": True,
+        "symbol": "EURUSD",
+        "bid": 1.17071,
+        "ask": 1.17080,
+        "price_precision": 5,
+        "spread": 0.00009,
+        "spread_points": 9.0,
+        "spread_pct": 0.007687,
+        "time": "2026-04-29 02:43",
+    }
+
+    with patch(
+        "mtdata.core.trading.context.trade_account_info",
+        new=lambda: {"success": True, "equity": 10010.0},
+    ), patch(
+        "mtdata.core.trading.context.market_ticker",
+        new=lambda symbol, detail="compact": ticker_compact,
+    ), patch(
+        "mtdata.core.trading.context.trade_get_open",
+        new=lambda request: {"success": True, "kind": "open_positions", "count": 0, "items": []},
+    ), patch(
+        "mtdata.core.trading.context.trade_get_pending",
+        new=lambda request: {"success": True, "kind": "pending_orders", "count": 0, "items": []},
+    ):
+        out = _raw_trade_session_context("EURUSD")
+
+    assert out["ticker"]["spread"] == "0.00009"
+    assert out["ticker"]["price_precision"] == 5
+
+
 def test_trade_session_context_full_detail_keeps_nested_full_payloads() -> None:
     timezone_meta = {"used": {"tz": "UTC"}}
     ticker = {

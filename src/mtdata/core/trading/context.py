@@ -78,6 +78,16 @@ def _round_trade_session_price(value: Any, *, digits: int) -> Any:
     return float(round(numeric, max(0, int(digits))))
 
 
+def _format_trade_session_price(value: Any, *, digits: int) -> Any:
+    try:
+        numeric = float(value)
+    except Exception:
+        return value
+    if not math.isfinite(numeric):
+        return value
+    return f"{numeric:.{max(0, int(digits))}f}"
+
+
 def _round_trade_session_prices(value: Any, *, digits: int, key: Optional[str] = None) -> Any:
     if isinstance(value, dict):
         return {
@@ -175,10 +185,13 @@ def _compact_trade_session_context_payload(payload: Dict[str, Any]) -> Dict[str,
                     "bid",
                     "ask",
                     "last",
+                    "price_precision",
                     "spread",
+                    "spread_display",
                     "spread_points",
                     "spread_pips",
                     "spread_pct",
+                    "spread_pct_display",
                     "spread_usd",
                     "time",
                     "time_display",
@@ -188,6 +201,15 @@ def _compact_trade_session_context_payload(payload: Dict[str, Any]) -> Dict[str,
                 if ticker.get(key) not in (None, "")
             }
             if ticker_summary:
+                if "spread_display" in ticker_summary:
+                    ticker_summary["spread"] = ticker_summary["spread_display"]
+                elif "spread" in ticker_summary and any(
+                    key in ticker for key in ("price_precision", "digits")
+                ):
+                    ticker_summary["spread"] = _format_trade_session_price(
+                        ticker_summary["spread"],
+                        digits=_price_precision_from_ticker(ticker),
+                    )
                 compact["ticker"] = _normalize_nested_ticker_time(
                     ticker_summary,
                     compact=True,
