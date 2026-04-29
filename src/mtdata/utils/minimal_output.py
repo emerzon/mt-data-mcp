@@ -906,6 +906,8 @@ def _normalize_market_ticker_payload(
         "success",
         "symbol",
         "type",
+        "field",
+        "price",
         "price_precision",
         "bid",
         "ask",
@@ -918,7 +920,7 @@ def _normalize_market_ticker_payload(
     ):
         value = payload.get(key)
         if not _is_empty_value(value):
-            if key in {"bid", "ask", "last", "spread"}:
+            if key in {"price", "bid", "ask", "last", "spread"}:
                 value = _price_value(value)
             out[key] = value
 

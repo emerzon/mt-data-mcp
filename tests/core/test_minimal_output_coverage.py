@@ -848,6 +848,22 @@ class TestFormatResultMinimal:
         assert "ask: 7175.50" in result
         assert "spread: 0.50" in result
 
+    def test_market_ticker_price_field_text_includes_field_and_price(self):
+        payload = {
+            "success": True,
+            "symbol": "EURUSD",
+            "type": "price",
+            "field": "bid",
+            "price": 1.17088,
+            "price_precision": 5,
+            "meta": {"tool": "market_ticker"},
+        }
+
+        result = format_result_minimal(payload, verbose=False, tool_name="market_ticker")
+
+        assert "field: bid" in result
+        assert "price: 1.17088" in result
+
     def test_wait_event_text_uses_symbol_price_precision_without_echoing_it(self):
         payload = {
             "success": True,
