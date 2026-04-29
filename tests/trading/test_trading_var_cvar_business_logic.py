@@ -99,14 +99,13 @@ def test_run_trade_var_cvar_calculate_returns_empty_when_no_open_positions() -> 
 
     assert out["success"] is True
     assert out["empty"] is True
-    assert "message" not in out
-    assert "reason" not in out
-    assert "no_action" not in out
+    assert out["status"] == "no_open_positions"
+    assert out["message"] == "No open positions found for VaR/CVaR calculation."
+    assert out["positions"] == 0
     assert "summary" not in out
     assert out["equity"] == 1000.0
     assert out["currency"] == "USD"
     assert "symbol_exposures" not in out
-    assert "positions" not in out
     assert "worst_observations" not in out
 
 

@@ -2549,7 +2549,13 @@ def run_trade_var_cvar_calculate(  # noqa: C901
                 "worst_observations": [],
             }
         else:
-            result = {"success": True, "empty": True}
+            result = {
+                "success": True,
+                "empty": True,
+                "status": "no_open_positions",
+                "message": message,
+                "positions": 0,
+            }
             if "equity" in summary:
                 result["equity"] = summary["equity"]
             if "currency" in summary:
