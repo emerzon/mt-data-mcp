@@ -1369,7 +1369,7 @@ def finviz_insider_activity(
     option: Literal["latest", "top week", "top owner trade", "insider buy", "insider sale"] = "latest",
     limit: int = 50,
     page: int = 1,
-    detail: str = "compact",
+    detail: CompactFullDetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     """
     Get general insider trading activity across the market.
@@ -1387,7 +1387,7 @@ def finviz_insider_activity(
         Max items per page (default 50)
     page : int
         Page number for pagination (default 1)
-    detail : str
+    detail : {"compact", "full"}
         Response detail level. Compact returns a short normalized item list and
         summary; full keeps all normalized rows including SEC link fields.
     
@@ -1396,13 +1396,19 @@ def finviz_insider_activity(
     dict
         List of insider trades with ticker, owner, transaction details
     """
+    def _run() -> Dict[str, Any]:
+        detail_error = _validate_finviz_detail(detail, operation="finviz_insider_activity")
+        if detail_error is not None:
+            return detail_error
+        return _compact_finviz_insider_activity_payload(
+            get_insider_activity(option=option, limit=limit, page=page),
+            detail=detail,
+        )
+
     return _run_logged_tool(
         "finviz_insider_activity",
         {"option": option, "limit": limit, "page": page, "detail": detail},
-        lambda: _compact_finviz_insider_activity_payload(
-            get_insider_activity(option=option, limit=limit, page=page),
-            detail=detail,
-        ),
+        _run,
     )
 
 
@@ -1645,7 +1651,7 @@ def finviz_earnings(
     period: Literal["This Week", "Next Week", "Previous Week", "This Month"] = "This Week",
     limit: int = 10,
     page: int = 1,
-    detail: str = "compact",
+    detail: CompactFullDetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     """
     Get upcoming earnings calendar from Finviz.
@@ -1661,7 +1667,7 @@ def finviz_earnings(
         Max items per page (default 10)
     page : int
         Page number for pagination (default 1)
-    detail : str
+    detail : {"compact", "full"}
         Response detail level. Compact returns calendar-focused rows; full keeps
         all normalized provider columns and adds the tool metadata block.
     

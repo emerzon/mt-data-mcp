@@ -805,6 +805,17 @@ class TestFinvizTools:
         assert result["omitted_item_count"] == 1
         assert result["summary"]["counts"]["buy_transactions"] == 1
 
+    @patch("mtdata.core.finviz.get_insider_activity")
+    def test_finviz_insider_activity_rejects_invalid_detail(self, mock_get_activity):
+        from mtdata.core.finviz import finviz_insider_activity
+
+        raw = getattr(finviz_insider_activity, "__wrapped__", finviz_insider_activity)
+        result = raw(detail="banana")
+
+        assert result["success"] is False
+        assert result["error_code"] == "finviz_insider_activity_invalid_detail"
+        mock_get_activity.assert_not_called()
+
     @patch("mtdata.core.finviz.get_earnings_calendar")
     def test_finviz_earnings_expands_cryptic_metric_keys(self, mock_get_earnings):
         from mtdata.core.finviz import finviz_earnings
@@ -888,6 +899,17 @@ class TestFinvizTools:
                 "volume": "6593",
             }
         ]
+
+    @patch("mtdata.core.finviz.get_earnings_calendar")
+    def test_finviz_earnings_rejects_invalid_detail(self, mock_get_earnings):
+        from mtdata.core.finviz import finviz_earnings
+
+        raw = getattr(finviz_earnings, "__wrapped__", finviz_earnings)
+        result = raw(detail="banana")
+
+        assert result["success"] is False
+        assert result["error_code"] == "finviz_earnings_invalid_detail"
+        mock_get_earnings.assert_not_called()
 
     @patch('mtdata.services.finviz.get_stock_fundamentals')
     def test_finviz_fundamentals_tool(self, mock_get_fundamentals):
