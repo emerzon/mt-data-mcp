@@ -72,7 +72,7 @@ from .methods import neural as _neural_methods
 from .methods import pretrained as _pretrained_methods
 from .methods import sktime as _sktime_methods
 from .methods import statsforecast as _statsforecast_methods
-from .registry import ForecastRegistry
+from .forecast_registry import ForecastRegistry
 from .target_builder import build_target_series, resolve_alias_base
 
 _REGISTERED_METHOD_MODULES = (

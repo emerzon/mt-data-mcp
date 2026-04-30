@@ -23,7 +23,7 @@ def _reject_removed_field(values: Any, *, field_name: str, replacement: str) -> 
     return values
 
 
-def _normalize_direction_alias(value: Optional[str]) -> Optional[str]:
+def _normalize_trade_direction_alias(value: Optional[str]) -> Optional[str]:
     if value is None:
         return None
     normalized, error = normalize_trade_direction(value)
@@ -220,7 +220,7 @@ class ForecastBarrierProbRequest(BaseModel):
     @field_validator("direction", mode="before")
     @classmethod
     def _normalize_direction(cls, value: Optional[str]) -> Optional[str]:
-        return _normalize_direction_alias(value)
+        return _normalize_trade_direction_alias(value)
 
 
 class ForecastOptimizeHintsRequest(BaseModel):
@@ -278,7 +278,7 @@ class ForecastBarrierOptimizeRequest(BaseModel):
     @field_validator("direction", mode="before")
     @classmethod
     def _normalize_direction(cls, value: Optional[str]) -> Optional[str]:
-        return _normalize_direction_alias(value)
+        return _normalize_trade_direction_alias(value)
 
     @field_validator("mode", mode="before")
     @classmethod

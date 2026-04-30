@@ -723,7 +723,7 @@ Enable it with `statistical_robustness=true` in `params` or with the Python keyw
 #### Python Example
 
 ```python
-from mtdata.forecast.barriers import forecast_barrier_optimize
+from mtdata.forecast.barriers_optimization import forecast_barrier_optimize
 
 result = forecast_barrier_optimize(
     symbol="EURUSD",
@@ -1229,7 +1229,7 @@ done
 
 **Tips for speed**:
 1. Start with `mc_gbm` for screening
-2. Use `format=summary` to limit grid output
+2. Use `detail="compact"` to limit grid output
 3. Set `top_k` to limit evaluations
 4. Reduce `n_sims` for initial runs (1000), increase for final (5000+)
 

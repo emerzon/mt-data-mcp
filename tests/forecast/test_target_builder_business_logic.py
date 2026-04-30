@@ -54,7 +54,7 @@ def test_build_target_series_custom_with_indicators_and_transforms(monkeypatch):
     calls = {"parse": 0, "apply": 0}
 
     monkeypatch.setattr(tb, "_parse_ti_specs_util", lambda spec: calls.__setitem__("parse", calls["parse"] + 1) or [{"ti": spec}])
-    monkeypatch.setattr(tb, "_apply_ta_indicators_util", lambda *args, **kwargs: calls.__setitem__("apply", calls["apply"] + 1))
+    monkeypatch.setattr(tb, "_apply_ta_indicators", lambda *args, **kwargs: calls.__setitem__("apply", calls["apply"] + 1))
 
     y_diff, info_diff = tb.build_target_series(
         df,
@@ -124,7 +124,7 @@ def test_build_target_series_indicator_failures_raise_clear_error(monkeypatch, c
     def _raise(*args, **kwargs):
         raise RuntimeError("indicator boom")
 
-    monkeypatch.setattr(tb, "_apply_ta_indicators_util", _raise)
+    monkeypatch.setattr(tb, "_apply_ta_indicators", _raise)
 
     with caplog.at_level("WARNING"):
         with pytest.raises(ValueError, match="Failed to apply target_spec indicators: indicator boom"):

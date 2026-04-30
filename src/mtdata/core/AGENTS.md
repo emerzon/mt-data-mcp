@@ -51,7 +51,6 @@ All 57 MCP tools (+1 conditional), CLI commands, web API endpoints, and server t
 | `report_shared.py` | — | Shared report types |
 | `report_requests.py` | — | Report request models |
 | `report_templates/` | 8 files | Template implementations (basic.py = 1032 lines) |
-| `reports/` | — | Generated report output |
 
 ### Server, CLI, Web API
 
@@ -63,7 +62,6 @@ All 57 MCP tools (+1 conditional), CLI commands, web API endpoints, and server t
 | `web_api_runtime.py` | FastAPI app creation, CORS, uvicorn |
 | `web_api_handlers.py` (697) | REST route handlers |
 | `web_api_models.py` | Request/response Pydantic models |
-| `server_utils.py` | Server helper functions |
 
 ### Infrastructure
 

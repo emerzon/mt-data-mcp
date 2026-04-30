@@ -5,14 +5,6 @@ from typing import Any, Callable, Dict, Optional, Tuple
 ToolInfo = Dict[str, Any]
 
 
-_BAR_LIMIT_ALIAS_COMMANDS: set[str] = {
-    "causal_discover_signals",
-    "data_fetch_candles",
-    "labels_triple_barrier",
-    "patterns_detect",
-    "regime_detect",
-}
-
 _OPTIONAL_FIRST_POSITIONAL_PARAMS: set[tuple[str, str]] = {
     ("finviz_news", "symbol"),
     ("correlation_matrix", "symbols"),
@@ -67,7 +59,7 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("indicators_list", "detail"): "Output detail: compact table or full rows with aliases and descriptions.",
     ("labels_triple_barrier", "detail"): "Detail level: full, summary, or compact (summary plus recent sample).",
     ("market_scan", "limit"): "Max matching symbols to return.",
-    ("market_depth_fetch", "compact"): "Fail if DOM is unavailable instead of falling back to a ticker snapshot. Alias: --require-dom.",
+    ("market_depth_fetch", "require_dom"): "Fail if DOM is unavailable instead of falling back to a ticker snapshot.",
     ("symbols_list", "limit"): "Max symbols or groups to return.",
     ("symbols_top_markets", "limit"): "Max symbols to return for each ranking.",
     ("trade_modify", "expiration"): "Pending order expiration time (dateparser string, UTC epoch seconds, or GTC token).",
@@ -100,13 +92,6 @@ _FORECAST_METHOD_LITERAL_MARKERS = {
 
 
 def _normalize_cli_choice_value(value: Any) -> str:
-    return str(value or "").strip().lower()
-
-
-_COMMAND_PARAM_VALUE_NORMALIZERS: Dict[tuple[str, str], Callable[[Any], str]] = {}
-
-
-def _normalize_bool_choice(value: Any) -> str:
     return str(value or "").strip().lower()
 
 
@@ -339,7 +324,7 @@ def discover_tools(
 
 def _load_forecast_method_choices(debug: Callable[[str], None]) -> Optional[list[str]]:
     try:
-        from mtdata.forecast.registry import ForecastRegistry
+        from mtdata.forecast.forecast_registry import ForecastRegistry
 
         for mod_name in (
             "mtdata.forecast.methods.classical",
@@ -419,7 +404,7 @@ def resolve_param_kwargs(
             if base_type in (int, float, str):
                 kwargs["type"] = base_type
             elif base_type is bool:
-                kwargs["type"] = _normalize_bool_choice
+                kwargs["type"] = _normalize_cli_choice_value
                 kwargs["choices"] = ["true", "false"]
 
             if origin in (list, tuple):
@@ -450,10 +435,7 @@ def resolve_param_kwargs(
     choice_override = _COMMAND_PARAM_CHOICE_OVERRIDES.get(choice_override_key)
     if choice_override:
         kwargs["choices"] = list(choice_override)
-        kwargs["type"] = _COMMAND_PARAM_VALUE_NORMALIZERS.get(
-            choice_override_key,
-            _normalize_cli_choice_value,
-        )
+        kwargs["type"] = _normalize_cli_choice_value
 
     if (str(cmd_name or ""), str(param["name"])) == ("indicators_list", "category"):
         kwargs["type"] = lambda value: str(value or "").strip().lower()
@@ -474,12 +456,8 @@ def add_dynamic_arguments(
 
     def _extra_option_flags(param_name: str, cmd_name_value: Optional[str]) -> tuple[str, ...]:
         extras: list[str] = []
-        if param_name == "limit" and cmd_name_value in _BAR_LIMIT_ALIAS_COMMANDS:
-            extras.append("--bars")
         if cmd_name_value == "trade_history" and param_name == "position_ticket":
             extras.append("--ticket")
-        if cmd_name_value == "market_depth_fetch" and param_name == "compact":
-            extras.extend(["--require-dom", "--require_dom"])
         return tuple(extras)
 
     for param in param_info["params"]:

@@ -140,7 +140,7 @@ class TestWebApiRuntimeSettings:
 class TestUnwrapOptionalAnnotation:
 
     def _call(self, ann):
-        from mtdata.core.server import _unwrap_optional_annotation
+        from mtdata.core._mcp_tools import _unwrap_optional_annotation
         return _unwrap_optional_annotation(ann)
 
     # --- string annotations ---
@@ -242,7 +242,7 @@ class TestUnwrapOptionalAnnotation:
 class TestCoerceBool:
 
     def _call(self, value, *, allow_none=False, name="x"):
-        from mtdata.core.server import _coerce_bool
+        from mtdata.core._mcp_tools import _coerce_bool
         return _coerce_bool(value, allow_none=allow_none, name=name)
 
     def test_true_passthrough(self):
@@ -297,7 +297,7 @@ class TestCoerceBool:
 class TestCoerceInt:
 
     def _call(self, value, *, allow_none=False, name="x"):
-        from mtdata.core.server import _coerce_int
+        from mtdata.core._mcp_tools import _coerce_int
         return _coerce_int(value, allow_none=allow_none, name=name)
 
     def test_int_passthrough(self):
@@ -361,7 +361,7 @@ class TestCoerceInt:
 class TestCoerceFloat:
 
     def _call(self, value, *, allow_none=False, name="x"):
-        from mtdata.core.server import _coerce_float
+        from mtdata.core._mcp_tools import _coerce_float
         return _coerce_float(value, allow_none=allow_none, name=name)
 
     def test_float_passthrough(self):
@@ -421,7 +421,7 @@ class TestCoerceFloat:
 class TestCoerceKwargsForCallable:
 
     def _call(self, func, kwargs):
-        from mtdata.core.server import _coerce_kwargs_for_callable
+        from mtdata.core._mcp_tools import _coerce_kwargs_for_callable
         return _coerce_kwargs_for_callable(func, kwargs)
 
     def test_coerces_bool_kwarg(self):
@@ -549,21 +549,21 @@ class TestCoerceKwargsForCallable:
 class TestRuntimeHelpers:
 
     def test_get_runtime_signature_basic(self):
-        from mtdata.core.server import _get_runtime_signature
+        from mtdata.core._mcp_tools import _get_runtime_signature
         def fn(a: int, b: str = "x"): ...
         sig = _get_runtime_signature(fn)
         assert "a" in sig.parameters
         assert "b" in sig.parameters
 
     def test_get_runtime_annotations_basic(self):
-        from mtdata.core.server import _get_runtime_annotations
+        from mtdata.core._mcp_tools import _get_runtime_annotations
         def fn(a: int, b: str = "x") -> bool: ...
         ann = _get_runtime_annotations(fn)
         assert ann.get("a") is int
         assert ann.get("return") is bool
 
     def test_get_runtime_annotations_no_annotations(self):
-        from mtdata.core.server import _get_runtime_annotations
+        from mtdata.core._mcp_tools import _get_runtime_annotations
         def fn(): ...
         fn.__annotations__ = None  # type: ignore
         ann = _get_runtime_annotations(fn)
@@ -633,22 +633,18 @@ class TestResolveTransport:
 
 class TestToolRegistries:
 
-    @patch("mtdata.core.server.bootstrap_tools")
-    def test_get_tool_registry_returns_dict(self, mock_bootstrap):
-        from mtdata.core.server import get_tool_registry
+    def test_get_tool_registry_returns_dict(self):
+        from mtdata.core._mcp_tools import get_tool_registry
         result = get_tool_registry()
         assert isinstance(result, dict)
-        mock_bootstrap.assert_called_once()
 
-    @patch("mtdata.core.server.bootstrap_tools")
-    def test_get_tool_functions_returns_dict(self, mock_bootstrap):
-        from mtdata.core.server import get_tool_functions
+    def test_get_tool_functions_returns_dict(self):
+        from mtdata.core._mcp_tools import get_tool_functions
         result = get_tool_functions()
         assert isinstance(result, dict)
-        mock_bootstrap.assert_called_once()
 
     def test_registries_are_copies(self):
-        from mtdata.core.server import (
+        from mtdata.core._mcp_tools import (
             _TOOL_REGISTRY,
             get_tool_functions,
             get_tool_registry,
@@ -695,22 +691,22 @@ class TestToolRegistries:
 class TestRecordingToolDecorator:
 
     def test_noop_fallback_when_no_orig(self):
-        import mtdata.core.server as srv
-        from mtdata.core.server import _TOOL_REGISTRY, _recording_tool_decorator
-        orig = srv._ORIG_TOOL_DECORATOR
+        import mtdata.core._mcp_tools as tools
+
+        orig = tools._ORIG_TOOL_DECORATOR
         try:
-            srv._ORIG_TOOL_DECORATOR = None
-            dec = _recording_tool_decorator()
+            tools._ORIG_TOOL_DECORATOR = None
+            dec = tools._recording_tool_decorator()
             def dummy(): return 42
             result = dec(dummy)
             assert result is dummy
-            assert "dummy" in _TOOL_REGISTRY
+            assert "dummy" in tools._TOOL_REGISTRY
         finally:
-            srv._ORIG_TOOL_DECORATOR = orig
+            tools._ORIG_TOOL_DECORATOR = orig
 
     def test_wrapped_function_catches_exceptions(self):
         """Tool wrappers should catch exceptions and return error dicts."""
-        from mtdata.core.server import _TOOL_REGISTRY
+        from mtdata.core._mcp_tools import _TOOL_REGISTRY
         # Find any registered tool and test __cli_raw exception handling
         for name, fn in _TOOL_REGISTRY.items():
             # The wrapper catches exceptions raised by the inner func
@@ -718,19 +714,18 @@ class TestRecordingToolDecorator:
             break
 
     def test_wrapped_function_adds_error_metadata(self):
-        import mtdata.core.server as srv
-        from mtdata.core._mcp_tools import _TOOL_REGISTRY
+        import mtdata.core._mcp_tools as tools
 
-        original = srv._ORIG_TOOL_DECORATOR
+        original = tools._ORIG_TOOL_DECORATOR
         try:
-            srv._ORIG_TOOL_DECORATOR = lambda *a, **k: (lambda fn: fn)
-            dec = srv._recording_tool_decorator()
+            tools._ORIG_TOOL_DECORATOR = lambda *a, **k: (lambda fn: fn)
+            dec = tools._recording_tool_decorator()
 
             def boom():
                 raise RuntimeError("boom")
 
             dec(boom)
-            wrapped = _TOOL_REGISTRY["boom"]
+            wrapped = tools._TOOL_REGISTRY["boom"]
             result = wrapped(__cli_raw=True)
 
             assert result["error"] == "boom"
@@ -740,16 +735,15 @@ class TestRecordingToolDecorator:
             assert isinstance(result.get("request_id"), str)
             assert result["request_id"]
         finally:
-            srv._ORIG_TOOL_DECORATOR = original
+            tools._ORIG_TOOL_DECORATOR = original
 
     def test_wrapped_function_uses_compact_default_text_view(self):
-        import mtdata.core.server as srv
-        from mtdata.core._mcp_tools import _TOOL_REGISTRY
+        import mtdata.core._mcp_tools as tools
 
-        original = srv._ORIG_TOOL_DECORATOR
+        original = tools._ORIG_TOOL_DECORATOR
         try:
-            srv._ORIG_TOOL_DECORATOR = lambda *a, **k: (lambda fn: fn)
-            dec = srv._recording_tool_decorator()
+            tools._ORIG_TOOL_DECORATOR = lambda *a, **k: (lambda fn: fn)
+            dec = tools._recording_tool_decorator()
 
             def trade_place():
                 return {
@@ -771,7 +765,7 @@ class TestRecordingToolDecorator:
                 }
 
             dec(trade_place)
-            wrapped = _TOOL_REGISTRY["trade_place"]
+            wrapped = tools._TOOL_REGISTRY["trade_place"]
             result = wrapped()
 
             assert "retcode_name: TRADE_RETCODE_DONE" in result
@@ -781,16 +775,15 @@ class TestRecordingToolDecorator:
             assert "fill_mode_attempts" not in result
             assert "warnings" not in result
         finally:
-            srv._ORIG_TOOL_DECORATOR = original
+            tools._ORIG_TOOL_DECORATOR = original
 
     def test_wrapped_function_hides_meta_by_default_and_exposes_output_contract(self):
-        import mtdata.core.server as srv
-        from mtdata.core._mcp_tools import _TOOL_REGISTRY
+        import mtdata.core._mcp_tools as tools
 
-        original = srv._ORIG_TOOL_DECORATOR
+        original = tools._ORIG_TOOL_DECORATOR
         try:
-            srv._ORIG_TOOL_DECORATOR = lambda *a, **k: (lambda fn: fn)
-            dec = srv._recording_tool_decorator()
+            tools._ORIG_TOOL_DECORATOR = lambda *a, **k: (lambda fn: fn)
+            dec = tools._recording_tool_decorator()
 
             def sample_tool(detail: str = "compact"):
                 return {
@@ -800,10 +793,10 @@ class TestRecordingToolDecorator:
                 }
 
             dec(sample_tool)
-            wrapped = _TOOL_REGISTRY["sample_tool"]
+            wrapped = tools._TOOL_REGISTRY["sample_tool"]
             sig = inspect.signature(wrapped)
 
-            assert "detail" not in sig.parameters
+            assert "detail" in sig.parameters
             assert "json" in sig.parameters
             assert "extras" in sig.parameters
             assert "verbose" not in sig.parameters
@@ -823,16 +816,15 @@ class TestRecordingToolDecorator:
             assert full["meta"]["domain"]["symbol"] == "EURUSD"
             assert full["diagnostics"]["source"] == "mt5"
         finally:
-            srv._ORIG_TOOL_DECORATOR = original
+            tools._ORIG_TOOL_DECORATOR = original
 
     def test_wrapped_function_treats_extras_as_verbose(self):
-        import mtdata.core.server as srv
-        from mtdata.core._mcp_tools import _TOOL_REGISTRY
+        import mtdata.core._mcp_tools as tools
 
-        original = srv._ORIG_TOOL_DECORATOR
+        original = tools._ORIG_TOOL_DECORATOR
         try:
-            srv._ORIG_TOOL_DECORATOR = lambda *a, **k: (lambda fn: fn)
-            dec = srv._recording_tool_decorator()
+            tools._ORIG_TOOL_DECORATOR = lambda *a, **k: (lambda fn: fn)
+            dec = tools._recording_tool_decorator()
 
             def sample_tool(detail: str = "compact"):
                 return {
@@ -842,10 +834,10 @@ class TestRecordingToolDecorator:
                 }
 
             dec(sample_tool)
-            wrapped = _TOOL_REGISTRY["sample_tool"]
+            wrapped = tools._TOOL_REGISTRY["sample_tool"]
             sig = inspect.signature(wrapped)
 
-            assert "detail" not in sig.parameters
+            assert "detail" in sig.parameters
             assert "json" in sig.parameters
             assert "extras" in sig.parameters
             assert "verbose" not in sig.parameters
@@ -864,15 +856,15 @@ class TestRecordingToolDecorator:
             assert full["meta"]["domain"]["symbol"] == "EURUSD"
             assert full["diagnostics"]["source"] == "mt5"
         finally:
-            srv._ORIG_TOOL_DECORATOR = original
+            tools._ORIG_TOOL_DECORATOR = original
 
     def test_public_wrapped_output_is_toon_by_default_and_json_on_flag(self):
-        import mtdata.core.server as srv
+        import mtdata.core._mcp_tools as tools
 
-        original = srv._ORIG_TOOL_DECORATOR
+        original = tools._ORIG_TOOL_DECORATOR
         try:
-            srv._ORIG_TOOL_DECORATOR = lambda *a, **k: (lambda fn: fn)
-            dec = srv._recording_tool_decorator()
+            tools._ORIG_TOOL_DECORATOR = lambda *a, **k: (lambda fn: fn)
+            dec = tools._recording_tool_decorator()
 
             def sample_output_tool(detail: str = "compact"):
                 return {
@@ -889,6 +881,7 @@ class TestRecordingToolDecorator:
             compact_structured = wrapped(json=True)
             structured = wrapped(json=True, extras="metadata")
             legacy_structured = wrapped(json=True, extras="detail=full")
+            detailed = wrapped(detail="full", json=True)
 
             assert isinstance(toon, str)
             assert "success: true" in toon
@@ -900,25 +893,22 @@ class TestRecordingToolDecorator:
             assert structured["detail_seen"] == "full"
             assert structured["meta"]["domain"]["symbol"] == "EURUSD"
             assert structured["diagnostics"]["source"] == "mt5"
-            assert legacy_structured["success"] is True
-            assert legacy_structured["detail_seen"] == "full"
-            assert legacy_structured["meta"]["domain"]["symbol"] == "EURUSD"
-            assert legacy_structured["diagnostics"]["source"] == "mt5"
-            error = wrapped(detail="full")
-            assert isinstance(error, str)
-            assert "Removed output option(s): detail" in error
+            assert isinstance(legacy_structured, str)
+            assert "Invalid extras value" in legacy_structured
+            assert detailed["detail_seen"] == "full"
+            assert detailed["meta"]["domain"]["symbol"] == "EURUSD"
         finally:
-            srv._ORIG_TOOL_DECORATOR = original
+            tools._ORIG_TOOL_DECORATOR = original
 
     def test_async_wrapped_timeout_returns_structured_error_payload(self):
         import asyncio
 
-        import mtdata.core.server as srv
+        import mtdata.core._mcp_tools as tools
 
-        original = srv._ORIG_TOOL_DECORATOR
+        original = tools._ORIG_TOOL_DECORATOR
         try:
-            srv._ORIG_TOOL_DECORATOR = lambda *a, **k: (lambda fn: fn)
-            dec = srv._recording_tool_decorator()
+            tools._ORIG_TOOL_DECORATOR = lambda *a, **k: (lambda fn: fn)
+            dec = tools._recording_tool_decorator()
 
             def slow_tool():
                 return {"success": True}
@@ -939,17 +929,17 @@ class TestRecordingToolDecorator:
             assert result["operation"] == "slow_tool"
             assert result["details"]["timeout_seconds"] == 120
         finally:
-            srv._ORIG_TOOL_DECORATOR = original
+            tools._ORIG_TOOL_DECORATOR = original
 
     def test_async_wrapped_skips_transport_timeout_for_forecast_tuning_tools(self):
         import asyncio
 
-        import mtdata.core.server as srv
+        import mtdata.core._mcp_tools as tools
 
-        original = srv._ORIG_TOOL_DECORATOR
+        original = tools._ORIG_TOOL_DECORATOR
         try:
-            srv._ORIG_TOOL_DECORATOR = lambda *a, **k: (lambda fn: fn)
-            dec = srv._recording_tool_decorator()
+            tools._ORIG_TOOL_DECORATOR = lambda *a, **k: (lambda fn: fn)
+            dec = tools._recording_tool_decorator()
 
             def forecast_optimize_hints():
                 return {"success": True}
@@ -963,22 +953,21 @@ class TestRecordingToolDecorator:
             assert result == {"success": True}
             wait_for.assert_not_called()
         finally:
-            srv._ORIG_TOOL_DECORATOR = original
+            tools._ORIG_TOOL_DECORATOR = original
 
     def test_skips_variadic_args_in_exposed_signature(self):
-        import mtdata.core.server as srv
-        from mtdata.core._mcp_tools import _TOOL_REGISTRY
+        import mtdata.core._mcp_tools as tools
 
-        original = srv._ORIG_TOOL_DECORATOR
+        original = tools._ORIG_TOOL_DECORATOR
         try:
-            srv._ORIG_TOOL_DECORATOR = lambda *a, **k: (lambda fn: fn)
-            dec = srv._recording_tool_decorator()
+            tools._ORIG_TOOL_DECORATOR = lambda *a, **k: (lambda fn: fn)
+            dec = tools._recording_tool_decorator()
 
             def sample_tool(*args, foo: str = "x"):
                 return {"foo": foo, "arg_count": len(args)}
 
             dec(sample_tool)
-            wrapped = _TOOL_REGISTRY["sample_tool"]
+            wrapped = tools._TOOL_REGISTRY["sample_tool"]
             sig = inspect.signature(wrapped)
 
             assert "args" not in sig.parameters
@@ -990,18 +979,17 @@ class TestRecordingToolDecorator:
             assert result["foo"] == "y"
             assert result["arg_count"] == 1
         finally:
-            srv._ORIG_TOOL_DECORATOR = original
+            tools._ORIG_TOOL_DECORATOR = original
 
     def test_flattens_request_model_signature_for_mcp_and_keeps_nested_request_compat(self):
-        import mtdata.core.server as srv
-        from mtdata.core._mcp_tools import _TOOL_REGISTRY
+        import mtdata.core._mcp_tools as tools
         from mtdata.core.data.requests import WaitEventRequest
 
-        original = srv._ORIG_TOOL_DECORATOR
+        original = tools._ORIG_TOOL_DECORATOR
         calls = []
         try:
-            srv._ORIG_TOOL_DECORATOR = lambda *a, **k: (lambda fn: fn)
-            dec = srv._recording_tool_decorator()
+            tools._ORIG_TOOL_DECORATOR = lambda *a, **k: (lambda fn: fn)
+            dec = tools._recording_tool_decorator()
 
             def sample_tool(request: WaitEventRequest):
                 calls.append(request)
@@ -1012,7 +1000,7 @@ class TestRecordingToolDecorator:
                 }
 
             dec(sample_tool)
-            wrapped = _TOOL_REGISTRY["sample_tool"]
+            wrapped = tools._TOOL_REGISTRY["sample_tool"]
             sig = inspect.signature(wrapped)
 
             assert "request" not in sig.parameters
@@ -1042,7 +1030,7 @@ class TestRecordingToolDecorator:
             assert calls[-1].timeframe == "H1"
             assert nested_result["symbol"] == "ETHUSD"
         finally:
-            srv._ORIG_TOOL_DECORATOR = original
+            tools._ORIG_TOOL_DECORATOR = original
 
 
 class TestMcpToolSchemas:
@@ -1067,12 +1055,10 @@ class TestMcpToolSchemas:
                     }
 
         schemas = asyncio.run(_run())
-        removed = {"detail", "format", "output_mode", "output"}
 
         assert schemas
         for name, schema in schemas.items():
             props = schema.get("properties") or {}
-            assert not (removed & set(props)), name
             assert props["json"]["type"] == "boolean", name
             assert "extras" in props, name
 
@@ -1197,7 +1183,8 @@ class TestMcpToolSchemas:
         ]
         assert props["target"]["type"] == "string"
         assert props["target"]["enum"] == ["return", "price"]
-        assert "detail" not in props
+        assert props["detail"]["type"] == "string"
+        assert "compact" in props["detail"]["enum"]
         assert props["json"]["type"] == "boolean"
         assert "extras" in props
 

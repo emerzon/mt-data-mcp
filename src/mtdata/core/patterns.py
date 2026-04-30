@@ -33,7 +33,7 @@ from ..utils.utils import to_float_np as __to_float_np
 from ._mcp_instance import mcp
 from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from .execution_logging import run_logged_operation
-from .mt5_gateway import get_mt5_gateway, mt5_connection_error
+from .mt5_gateway import create_mt5_gateway, mt5_connection_error
 from .patterns_requests import PatternsDetectRequest, PatternsDetailLiteral
 from .patterns_support import (
     _STOCK_PATTERN_UTILS_CACHE,  # noqa: F401
@@ -100,7 +100,7 @@ def _filter_non_actionable_elliott_warnings(
 
 def _patterns_connection_error() -> Optional[Dict[str, Any]]:
     return mt5_connection_error(
-        get_mt5_gateway(
+        create_mt5_gateway(
             adapter=mt5,
             ensure_connection_impl=ensure_mt5_connection_or_raise,
         )
@@ -136,7 +136,7 @@ def _fetch_pattern_data(
     if timeframe not in TIMEFRAME_MAP:
         return None, {"error": invalid_timeframe_error(timeframe, TIMEFRAME_MAP)}
 
-    mt5_gateway = gateway or get_mt5_gateway(
+    mt5_gateway = gateway or create_mt5_gateway(
         adapter=mt5,
         ensure_connection_impl=ensure_mt5_connection_or_raise,
     )

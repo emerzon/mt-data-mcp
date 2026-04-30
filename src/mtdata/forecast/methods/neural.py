@@ -25,7 +25,7 @@ from ..interface import (
     TrainingProgress,
     TrainResult,
 )
-from ..registry import ForecastRegistry
+from ..forecast_registry import ForecastRegistry
 
 
 def forecast_neural(

@@ -1228,43 +1228,41 @@ class TestPlaceMarketOrder:
         assert sl_tp_result.get("error") is None
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
-    def test_sl_tp_uses_resolved_position_ticket_from_deal_fallback(self):
+    def test_sl_tp_uses_resolved_position_ticket_without_follow_up(self):
         mt5 = sys.modules["MetaTrader5"]
         self._setup_mt5(mt5)
         mt5.order_send.side_effect = [
             _order_result(order=1001, deal=2002),
-            _order_result(),
         ]
         mt5.positions_get.side_effect = [
             [],  # candidate order ticket lookup
             [_position(ticket=3003, deal=2002, sl=1.09, tp=1.12)],  # candidate deal ticket lookup
-            [_position(ticket=3003, deal=2002, sl=1.09, tp=1.12)],  # post-modify verification
         ]
         from mtdata.core.trading import _place_market_order
         result = _place_market_order("EURUSD", 0.01, "BUY", stop_loss=1.09, take_profit=1.12)
         assert (result.get("sl_tp_result") or {}).get("status") == "applied"
         assert result.get("position_ticket") == 3003
-        modify_req = mt5.order_send.call_args_list[1].args[0]
-        assert modify_req.get("position") == 3003
+        assert mt5.order_send.call_count == 1
+        request = mt5.order_send.call_args.args[0]
+        assert request.get("sl") == pytest.approx(1.09)
+        assert request.get("tp") == pytest.approx(1.12)
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
-    def test_sl_tp_modification_fails_gracefully(self):
+    def test_initial_protected_order_failure_returns_error(self):
         mt5 = sys.modules["MetaTrader5"]
         self._setup_mt5(mt5)
-        mt5.order_send.side_effect = [_order_result(), _order_result(retcode=10004)]
+        mt5.order_send.return_value = _order_result(retcode=10016, comment="Invalid stops")
         mt5.positions_get.return_value = [_position()]
         from mtdata.core.trading import _place_market_order
         result = _place_market_order("EURUSD", 0.01, "BUY", stop_loss=1.09, take_profit=1.12)
-        sl_tp_result = result.get("sl_tp_result") or {}
-        assert sl_tp_result.get("error") is None
-        assert sl_tp_result.get("requested") == {"sl": pytest.approx(1.09), "tp": pytest.approx(1.12)}
-        assert sl_tp_result.get("status") == "applied"
-        assert sl_tp_result.get("applied") == {"sl": pytest.approx(1.09), "tp": pytest.approx(1.12)}
-        assert sl_tp_result.get("fallback_used") is True
-        assert result.get("protection_status") == "protected_after_fallback"
+        assert result.get("error") == "Failed to send order"
+        assert result.get("retcode") == 10016
+        assert "sl_tp_result" not in result
+        assert "fallback_used" not in result
+        assert mt5.order_send.call_count == 1
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
-    def test_sl_tp_position_not_found(self):
+    def test_sl_tp_position_not_found_does_not_mark_protected_order_failed(self):
         mt5 = sys.modules["MetaTrader5"]
         self._setup_mt5(mt5)
         mt5.order_send.return_value = _order_result()
@@ -1272,14 +1270,12 @@ class TestPlaceMarketOrder:
         from mtdata.core.trading import _place_market_order
         result = _place_market_order("EURUSD", 0.01, "BUY", stop_loss=1.09)
         sl_tp_result = result.get("sl_tp_result") or {}
-        assert "Position not found" in str(sl_tp_result.get("error") or "")
         assert sl_tp_result.get("requested") == {"sl": pytest.approx(1.09)}
-        assert sl_tp_result.get("status") == "failed"
-        assert sl_tp_result.get("applied") is None
+        assert sl_tp_result.get("status") == "applied"
+        assert sl_tp_result.get("applied") == {"sl": pytest.approx(1.09)}
         assert result.get("position_ticket") is None
         assert result.get("position_ticket_candidates") == [1]
-        assert any("trade_modify 1" in str(w) for w in result.get("warnings", []))
-        assert not any("<position_ticket>" in str(w) for w in result.get("warnings", []))
+        assert not any("trade_modify 1" in str(w) for w in result.get("warnings", []))
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_sl_tp_not_requested_state_is_explicit(self):
@@ -1306,12 +1302,11 @@ class TestPlaceMarketOrder:
         assert any("Comment truncated" in str(w) for w in result.get("warnings", []))
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
-    def test_comment_is_sanitized_and_retried_when_broker_rejects_field(self):
+    def test_comment_rejection_returns_error_without_fallback(self):
         mt5 = sys.modules["MetaTrader5"]
         self._setup_mt5(mt5)
         mt5.order_send.side_effect = [
             _order_result(retcode=10013, comment='Invalid "comment" argument'),
-            _order_result(comment=""),
         ]
         from mtdata.core.trading import _place_market_order
 
@@ -1322,24 +1317,14 @@ class TestPlaceMarketOrder:
             comment="Short: ETS bearish, barrier EV+, R:R 9.65",
         )
 
-        assert "error" not in result
-        assert result["comment_sanitization"]["requested"] == "Short: ETS bearish, barrier EV+, R:R 9.65"
-        assert result["comment_fallback"]["used"] is True
-        assert result["comment_fallback"]["strategy"] == "minimal"
-        assert any("sanitized for broker compatibility" in str(w) for w in result.get("warnings", []))
-        fallback_warnings = [
-            str(w)
-            for w in result.get("warnings", [])
-            if "retried with a minimal MT5-safe comment" in str(w)
-        ]
-        assert len(fallback_warnings) == 1
+        assert "broker rejected the comment field" in result["error"]
+        assert "comment_fallback" not in result
+        assert mt5.order_send.call_count == 1
         first_request = mt5.order_send.call_args_list[0].args[0]
-        second_request = mt5.order_send.call_args_list[1].args[0]
         assert first_request["comment"] == "Short ETS bearish barrier EV R"
-        assert second_request["comment"] == "MCP"
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
-    def test_sl_tp_broker_adjustment_is_reported(self):
+    def test_atomic_sl_tp_result_does_not_report_readback_adjustment(self):
         mt5 = sys.modules["MetaTrader5"]
         self._setup_mt5(mt5)
         mt5.order_send.side_effect = [_order_result(), _order_result()]
@@ -1351,11 +1336,9 @@ class TestPlaceMarketOrder:
         result = _place_market_order("EURUSD", 0.01, "BUY", stop_loss=1.09, take_profit=1.12)
         sl_tp_result = result.get("sl_tp_result") or {}
         assert sl_tp_result.get("status") == "applied"
-        assert sl_tp_result.get("broker_adjusted") is True
-        assert sl_tp_result.get("adjustment") == {
-            "sl": {"requested": pytest.approx(1.09), "applied": pytest.approx(1.0895)},
-            "tp": {"requested": pytest.approx(1.12), "applied": pytest.approx(1.1203)},
-        }
+        assert sl_tp_result.get("broker_adjusted") is None
+        assert sl_tp_result.get("adjustment") is None
+        assert mt5.order_send.call_count == 1
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_pending_type_rejected_for_market(self):

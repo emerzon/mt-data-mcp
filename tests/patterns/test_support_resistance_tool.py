@@ -42,7 +42,7 @@ def _frame() -> pd.DataFrame:
 def test_support_resistance_tool_returns_weighted_levels():
     fn = _get_support_resistance_fn()
     gateway = type("Gateway", (), {"ensure_connection": lambda self: None})()
-    with patch("mtdata.core.pivot.get_mt5_gateway", return_value=gateway) as mock_gateway, \
+    with patch("mtdata.core.pivot.create_mt5_gateway", return_value=gateway) as mock_gateway, \
          patch("mtdata.core.pivot._fetch_history", return_value=_frame()) as mock_fetch:
         result = fn(
             "EURUSD",
@@ -89,7 +89,7 @@ def test_support_resistance_tool_applies_near_price_distance_default():
         "max_distance_pct": 5.0,
     }
 
-    with patch("mtdata.core.pivot.get_mt5_gateway", return_value=gateway), \
+    with patch("mtdata.core.pivot.create_mt5_gateway", return_value=gateway), \
          patch("mtdata.core.pivot.compute_support_resistance_payload", return_value=payload) as mock_compute:
         result = fn("EURUSD", timeframe="H1")
 
@@ -132,7 +132,7 @@ def test_support_resistance_tool_compact_preserves_zone_overlap_without_fibonacc
         ],
     }
 
-    with patch("mtdata.core.pivot.get_mt5_gateway", return_value=gateway), \
+    with patch("mtdata.core.pivot.create_mt5_gateway", return_value=gateway), \
          patch("mtdata.core.pivot.compute_support_resistance_payload", return_value=payload):
         result = fn("USDJPY", timeframe="H1", detail="compact")
 
@@ -149,7 +149,7 @@ def test_support_resistance_tool_compact_preserves_zone_overlap_without_fibonacc
 def test_support_resistance_tool_compact_exposes_coverage_gap_metadata_with_distance_filter():
     fn = _get_support_resistance_fn()
     gateway = type("Gateway", (), {"ensure_connection": lambda self: None})()
-    with patch("mtdata.core.pivot.get_mt5_gateway", return_value=gateway), \
+    with patch("mtdata.core.pivot.create_mt5_gateway", return_value=gateway), \
          patch("mtdata.core.pivot._fetch_history", return_value=_frame()):
         result = fn(
             "EURUSD",
@@ -176,7 +176,7 @@ def test_support_resistance_tool_compact_exposes_volume_metadata_when_enabled():
     frame.loc[2, "tick_volume"] = 40.0
     frame.loc[12, "tick_volume"] = 420.0
     frame["real_volume"] = 0.0
-    with patch("mtdata.core.pivot.get_mt5_gateway", return_value=gateway), \
+    with patch("mtdata.core.pivot.create_mt5_gateway", return_value=gateway), \
          patch("mtdata.core.pivot._fetch_history", return_value=frame):
         result = fn(
             "EURUSD",
@@ -198,7 +198,7 @@ def test_support_resistance_tool_compact_exposes_volume_metadata_when_enabled():
 def test_support_resistance_tool_standard_detail_keeps_actionable_lists_without_full_diagnostics():
     fn = _get_support_resistance_fn()
     gateway = type("Gateway", (), {"ensure_connection": lambda self: None})()
-    with patch("mtdata.core.pivot.get_mt5_gateway", return_value=gateway), \
+    with patch("mtdata.core.pivot.create_mt5_gateway", return_value=gateway), \
          patch("mtdata.core.pivot._fetch_history", return_value=_frame()):
         result = fn(
             "EURUSD",
@@ -227,7 +227,7 @@ def test_support_resistance_tool_standard_detail_keeps_actionable_lists_without_
 def test_support_resistance_tool_full_detail_keeps_rows_compact_with_structured_diagnostics():
     fn = _get_support_resistance_fn()
     gateway = type("Gateway", (), {"ensure_connection": lambda self: None})()
-    with patch("mtdata.core.pivot.get_mt5_gateway", return_value=gateway), \
+    with patch("mtdata.core.pivot.create_mt5_gateway", return_value=gateway), \
          patch("mtdata.core.pivot._fetch_history", return_value=_frame()):
         result = fn(
             "EURUSD",
@@ -264,7 +264,7 @@ def test_support_resistance_tool_auto_mode_merges_timeframes():
         frame["close"] = frame["close"] + (0.1 if timeframe == "D1" else 0.0)
         return frame
 
-    with patch("mtdata.core.pivot.get_mt5_gateway", return_value=gateway), \
+    with patch("mtdata.core.pivot.create_mt5_gateway", return_value=gateway), \
          patch("mtdata.core.pivot._fetch_history", side_effect=_fetch) as mock_fetch:
         result = fn(
             "EURUSD",
@@ -294,7 +294,7 @@ def test_support_resistance_tool_auto_mode_merges_timeframes():
 def test_support_resistance_tool_full_detail_retains_support_and_resistance_lists():
     fn = _get_support_resistance_fn()
     gateway = type("Gateway", (), {"ensure_connection": lambda self: None})()
-    with patch("mtdata.core.pivot.get_mt5_gateway", return_value=gateway), \
+    with patch("mtdata.core.pivot.create_mt5_gateway", return_value=gateway), \
          patch("mtdata.core.pivot._fetch_history", return_value=_frame()):
         result = fn(
             "EURUSD",
@@ -321,7 +321,7 @@ def test_support_resistance_tool_full_detail_retains_support_and_resistance_list
 def test_support_resistance_tool_wraps_fetch_errors():
     fn = _get_support_resistance_fn()
     gateway = type("Gateway", (), {"ensure_connection": lambda self: None})()
-    with patch("mtdata.core.pivot.get_mt5_gateway", return_value=gateway), \
+    with patch("mtdata.core.pivot.create_mt5_gateway", return_value=gateway), \
          patch("mtdata.core.pivot._fetch_history", side_effect=RuntimeError("boom")):
         result = fn("EURUSD", timeframe="H1")
 
@@ -336,7 +336,7 @@ def test_support_resistance_tool_wraps_connection_errors():
         (),
         {"ensure_connection": lambda self: (_ for _ in ()).throw(MT5ConnectionError("No IPC connection"))},
     )()
-    with patch("mtdata.core.pivot.get_mt5_gateway", return_value=gateway):
+    with patch("mtdata.core.pivot.create_mt5_gateway", return_value=gateway):
         result = fn("EURUSD", timeframe="H1")
 
     assert "error" in result

@@ -2,7 +2,7 @@ import math
 from typing import Any, Dict, Literal, Optional, Tuple
 
 from .mt5 import get_symbol_info_cached
-from .utils import _coerce_finite_float
+from .coercion import coerce_finite_float
 
 
 def validate_barrier_unit_family_exclusivity(values: Any) -> Any:
@@ -45,9 +45,9 @@ def barrier_prices_are_valid(
     sl_price: Any,
 ) -> bool:
     """Return True when resolved TP/SL levels are finite and on the correct side."""
-    ref_price = _coerce_finite_float(price)
-    tp_val = _coerce_finite_float(tp_price)
-    sl_val = _coerce_finite_float(sl_price)
+    ref_price = coerce_finite_float(price)
+    tp_val = coerce_finite_float(tp_price)
+    sl_val = coerce_finite_float(sl_price)
     direction_norm, direction_error = normalize_trade_direction(direction)
     if direction_error or direction_norm is None:
         return False
@@ -103,16 +103,16 @@ def resolve_barrier_prices(
     want strict rejection of mis-sided user-supplied levels should pass
     ``adjust_inverted=False`` and validate via :func:`barrier_prices_are_valid`.
     """
-    price_val = _coerce_finite_float(price)
+    price_val = coerce_finite_float(price)
     if price_val is None:
         return None, None
 
-    tp_price = _coerce_finite_float(tp_abs)
-    sl_price = _coerce_finite_float(sl_abs)
-    r_tp = _coerce_finite_float(tp_pct)
-    r_sl = _coerce_finite_float(sl_pct)
-    p_tp = _coerce_finite_float(tp_ticks)
-    p_sl = _coerce_finite_float(sl_ticks)
+    tp_price = coerce_finite_float(tp_abs)
+    sl_price = coerce_finite_float(sl_abs)
+    r_tp = coerce_finite_float(tp_pct)
+    r_sl = coerce_finite_float(sl_pct)
+    p_tp = coerce_finite_float(tp_ticks)
+    p_sl = coerce_finite_float(sl_ticks)
 
     direction_norm, _ = normalize_trade_direction(direction)
     if direction_norm is None:

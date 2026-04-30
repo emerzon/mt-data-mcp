@@ -40,7 +40,9 @@ def test_history_available_on_versioned_route() -> None:
             {"time": 1735689600.0, "close": 1.1},
             {"time": 1735693200.0, "close": 1.2},
         ],
-        "last_candle_open": False,
+        "has_forming_candle": False,
+        "forming_candle_status": "none",
+        "forming_candle_included": False,
     }
 
     with patch("mtdata.core.web_api.mt5_connection._ensure_connection", return_value=True), patch(
@@ -57,11 +59,23 @@ def test_history_available_on_versioned_route() -> None:
     assert response.json() == {
         "success": True,
         "data": payload["data"],
-        "last_candle_open": False,
+        "has_forming_candle": False,
+        "forming_candle_status": "none",
+        "forming_candle_included": False,
         "candles": 2,
         "candles_requested": 2,
         "candles_excluded": 0,
         "meta": {
             "tool": "data_fetch_candles",
+            "runtime": {
+                "timezone": {
+                    "utc": {"tz": "UTC"},
+                    "server": {
+                        "source": "MT5_SERVER_TZ",
+                        "tz": "Europe/Nicosia",
+                        "offset_seconds": 7200,
+                    },
+                }
+            },
         },
     }

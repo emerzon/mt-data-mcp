@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 
 from ..interface import CancelToken, ForecastMethod, ForecastResult, ProgressReporter, TrainResult
-from ..registry import ForecastRegistry
+from ..forecast_registry import ForecastRegistry
 
 _GENERIC_MLFORECAST_ALLOWED_MODELS = {
     "catboost.CatBoostRegressor",

@@ -1,5 +1,7 @@
 from unittest.mock import patch
 
+import pytest
+
 from mtdata.core.output_contract import (
     attach_collection_contract,
     ensure_common_meta,
@@ -8,7 +10,6 @@ from mtdata.core.output_contract import (
     normalize_output_verbosity_detail,
     output_extras_shape_detail,
     resolve_output_contract,
-    resolve_requested_output_verbosity,
 )
 from mtdata.shared.schema import CANONICAL_OUTPUT_DETAIL_ALIASES
 
@@ -40,10 +41,10 @@ def test_normalize_output_verbosity_detail_is_strict_compact_or_full() -> None:
     assert normalize_output_verbosity_detail(" FULL ") == "full"
 
 
-def test_resolve_requested_output_verbosity_tracks_full_detail_only() -> None:
-    assert resolve_requested_output_verbosity({"detail": " summary "}) is False
-    assert resolve_requested_output_verbosity({"detail": " Summary_Only "}) is False
-    assert resolve_requested_output_verbosity({"detail": " full "}) is True
+def test_resolve_output_contract_tracks_full_detail_only() -> None:
+    assert resolve_output_contract({"detail": " summary "}).verbose is False
+    assert resolve_output_contract({"detail": " Summary_Only "}).verbose is False
+    assert resolve_output_contract({"detail": " full "}).verbose is True
 
 
 def test_resolve_output_contract_maps_full_detail_to_full_state() -> None:
@@ -52,7 +53,6 @@ def test_resolve_output_contract_maps_full_detail_to_full_state() -> None:
     assert state.detail == "full"
     assert state.shape_detail == "full"
     assert state.verbose is True
-    assert state.transport_verbose is True
 
 
 def test_resolve_output_contract_preserves_tool_specific_detail_aliases() -> None:
@@ -64,7 +64,6 @@ def test_resolve_output_contract_preserves_tool_specific_detail_aliases() -> Non
     assert state.detail == "summary"
     assert state.shape_detail == "compact"
     assert state.verbose is False
-    assert state.transport_verbose is False
 
 
 def test_normalize_output_extras_accepts_comma_lists_and_full_aliases() -> None:
@@ -75,19 +74,21 @@ def test_normalize_output_extras_accepts_comma_lists_and_full_aliases() -> None:
     assert set(normalize_output_extras("all")) >= {"metadata", "diagnostics", "raw"}
 
 
-def test_normalize_output_extras_accepts_legacy_detail_assignments() -> None:
-    full_extras = set(normalize_output_extras("detail=full"))
-
-    assert full_extras >= {"metadata", "diagnostics", "raw"}
-    assert normalize_output_extras("detail=compact") == ()
-    assert set(normalize_output_extras(["metadata", "verbose=true"])) == full_extras
+def test_normalize_output_extras_rejects_legacy_detail_assignments() -> None:
+    with pytest.raises(ValueError, match="Invalid extras value"):
+        normalize_output_extras("detail=full")
+    with pytest.raises(ValueError, match="Invalid extras value"):
+        normalize_output_extras("detail=compact")
+    with pytest.raises(ValueError, match="Invalid extras value"):
+        normalize_output_extras(["metadata", "verbose=true"])
 
 
 def test_output_extras_shape_detail_is_compact_by_default_and_full_when_requested() -> None:
     assert output_extras_shape_detail(None) == "compact"
     assert output_extras_shape_detail("") == "compact"
     assert output_extras_shape_detail("metadata") == "full"
-    assert output_extras_shape_detail("detail=full") == "full"
+    with pytest.raises(ValueError, match="Invalid extras value"):
+        output_extras_shape_detail("detail=full")
 
 
 def test_resolve_output_contract_prefers_explicit_verbose_when_detail_is_none() -> None:

@@ -43,9 +43,9 @@ from ..utils.denoise import (
     normalize_denoise_spec as _normalize_denoise_spec,
 )
 from ..utils.indicators import (
-    _apply_ta_indicators_util,
-    _estimate_warmup_bars_util,
-    _find_unknown_ta_indicators_util,
+    _apply_ta_indicators,
+    _estimate_warmup_bars,
+    _find_unknown_ta_indicators,
     _parse_ti_specs,
 )
 
@@ -55,7 +55,6 @@ from ..utils.mt5 import (
     _mt5_copy_rates_from_pos,
     _mt5_copy_rates_range,
     _mt5_copy_ticks_range,
-    _mt5_epoch_to_utc as _mt5_epoch_to_utc_compat,
     _rates_to_df,
     _symbol_ready_guard,
     get_cached_mt5_time_alignment,
@@ -87,11 +86,6 @@ from ..utils.utils import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-def _mt5_epoch_to_utc(value: float) -> float:
-    """Backward-compatible patch target; MT5 reads are normalized upstream."""
-    return _mt5_epoch_to_utc_compat(value)
 
 
 _AUTO_TIME_ALIGNMENT_MIN_SHIFT_SECONDS = 1800
@@ -212,7 +206,7 @@ def _resolve_live_bar_reference_epoch(symbol: Optional[str], timeframe: str) -> 
     return float(system_epoch)
 
 
-def _is_last_candle_open(
+def _is_last_bar_forming(
     rates_or_df: Any,
     timeframe: str,
     *,
@@ -249,7 +243,7 @@ def _drop_incomplete_tail(
     if (
         rates is not None
         and len(rates) > 0
-        and _is_last_candle_open(rates, timeframe, current_time_epoch=current_time_epoch)
+        and _is_last_bar_forming(rates, timeframe, current_time_epoch=current_time_epoch)
     ):
         return rates[:-1]
     return rates
@@ -262,7 +256,7 @@ def _drop_incomplete_tail_df(
     current_time_epoch: Optional[float] = None,
 ) -> Tuple[pd.DataFrame, bool]:
     """Drop the last row from *df* if it is still forming.  Returns (df, trimmed)."""
-    if len(df) > 0 and _is_last_candle_open(df, timeframe, current_time_epoch=current_time_epoch):
+    if len(df) > 0 and _is_last_bar_forming(df, timeframe, current_time_epoch=current_time_epoch):
         return df.iloc[:-1], True
     return df, False
 
@@ -405,7 +399,7 @@ def _fetch_rates_with_warmup(
                 not start_datetime
                 and not end_datetime
                 and not include_incomplete
-                and not _is_last_candle_open(
+                and not _is_last_bar_forming(
                     rates,
                     timeframe,
                     current_time_epoch=float(expected_end_ts),
@@ -894,7 +888,7 @@ def _apply_indicator_stage(
     if not ti_spec:
         return ti_cols
 
-    ti_cols = _apply_ta_indicators_util(df, ti_spec)
+    ti_cols = _apply_ta_indicators(df, ti_spec)
     ti_cols = _normalize_indicator_columns_for_display(df, ti_cols)
     _extend_unique_headers(headers, ti_cols)
 
@@ -1124,7 +1118,7 @@ def fetch_candles(  # noqa: C901
             if indicator_syntax_error:
                 return {"error": indicator_syntax_error}
             # Determine warmup bars if technical indicators requested
-            unknown_indicators = _find_unknown_ta_indicators_util(ti_spec or "")
+            unknown_indicators = _find_unknown_ta_indicators(ti_spec or "")
             if unknown_indicators:
                 return {
                     "error": (
@@ -1133,7 +1127,7 @@ def fetch_candles(  # noqa: C901
                         + ". Use indicators_list to view valid indicator names."
                     )
                 }
-            warmup_bars = _estimate_warmup_bars_util(ti_spec)
+            warmup_bars = _estimate_warmup_bars(ti_spec)
             rate_fetch_diagnostics: Dict[str, Any] = {}
             freshness_diagnostics: Optional[Dict[str, Any]] = None
 
@@ -1326,7 +1320,7 @@ def fetch_candles(  # noqa: C901
             headers = [h for h in simplify_meta['headers'] if isinstance(h, str)]
 
         # Assemble rows from (possibly reduced) DataFrame for selected headers
-        last_candle_open = _is_last_candle_open(
+        tail_is_forming = _is_last_bar_forming(
             df,
             timeframe,
             current_time_epoch=live_bar_reference_epoch,
@@ -1352,8 +1346,8 @@ def fetch_candles(  # noqa: C901
         candles_requested = int(candles)
         candles_excluded = max(0, candles_requested - candles_returned)
         incomplete_candles_skipped = int(bool(initial_incomplete_trimmed)) + int(bool(_trimmed_incomplete))
-        has_forming_candle = bool(initial_incomplete_trimmed or _trimmed_incomplete or last_candle_open)
-        forming_candle_included = bool(has_forming_candle and include_incomplete and last_candle_open)
+        has_forming_candle = bool(initial_incomplete_trimmed or _trimmed_incomplete or tail_is_forming)
+        forming_candle_included = bool(include_incomplete and tail_is_forming)
         forming_candle_skipped = bool(incomplete_candles_skipped and not include_incomplete)
         if forming_candle_included:
             forming_candle_status = "included"
@@ -1388,7 +1382,6 @@ def fetch_candles(  # noqa: C901
             "candles_requested": candles_requested,
             "candles_excluded": candles_excluded,
             "candle_counts": candle_counts,
-            "last_candle_open": last_candle_open,
             "incomplete_candles_skipped": incomplete_candles_skipped,
             "has_forming_candle": has_forming_candle,
             "forming_candle_status": forming_candle_status,

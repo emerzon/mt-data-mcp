@@ -7,7 +7,7 @@ from ...utils.denoise import normalize_denoise_spec as _normalize_denoise_spec
 from ...utils.mt5 import _mt5_epoch_to_utc
 from ...utils.patterns import build_index
 from ..interface import ForecastCallContext, ForecastMethod, ForecastResult
-from ..registry import ForecastRegistry
+from ..forecast_registry import ForecastRegistry
 
 
 def _weighted_quantile(values: np.ndarray, weights: np.ndarray, quantile: float) -> float:

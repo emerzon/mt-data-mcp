@@ -230,7 +230,7 @@ def test_wait_event_tool_exposes_minimal_public_contract(monkeypatch) -> None:
         "run_wait_event",
         _mock_run_wait_event,
     )
-    monkeypatch.setattr(core_data, "get_mt5_gateway", lambda ensure_connection_impl=None: object())
+    monkeypatch.setattr(core_data, "create_mt5_gateway", lambda ensure_connection_impl=None: object())
     monkeypatch.setattr(
         core_data,
         "_build_default_wait_event_watchers",
@@ -251,6 +251,7 @@ def test_wait_event_tool_exposes_minimal_public_contract(monkeypatch) -> None:
         "watch_tick_count_spike",
         "watch_for",
         "end_on",
+        "detail",
         "json",
         "extras",
     )
@@ -393,7 +394,7 @@ def test_wait_event_tool_compacts_matched_event_by_default(monkeypatch) -> None:
         }
 
     monkeypatch.setattr(core_data, "run_wait_event", _mock_run_wait_event)
-    monkeypatch.setattr(core_data, "get_mt5_gateway", lambda ensure_connection_impl=None: object())
+    monkeypatch.setattr(core_data, "create_mt5_gateway", lambda ensure_connection_impl=None: object())
 
     raw = getattr(core_data.wait_event, "__wrapped__", core_data.wait_event)
     result = raw(
@@ -457,7 +458,7 @@ def test_wait_event_tool_preserves_shared_account_identity_fields(monkeypatch) -
         }
 
     monkeypatch.setattr(core_data, "run_wait_event", _mock_run_wait_event)
-    monkeypatch.setattr(core_data, "get_mt5_gateway", lambda ensure_connection_impl=None: object())
+    monkeypatch.setattr(core_data, "create_mt5_gateway", lambda ensure_connection_impl=None: object())
 
     raw = getattr(core_data.wait_event, "__wrapped__", core_data.wait_event)
     result = raw(

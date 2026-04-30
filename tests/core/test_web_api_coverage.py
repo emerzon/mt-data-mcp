@@ -214,7 +214,7 @@ class TestWebApiHandlers:
         gateway = MagicMock()
         gateway.ensure_connection.side_effect = MT5ConnectionError("MT5 unavailable")
 
-        with patch("mtdata.core.web_api_handlers.get_default_mt5_gateway", return_value=gateway):
+        with patch("mtdata.core.web_api_handlers.create_mt5_gateway", return_value=gateway):
             with pytest.raises(HTTPException) as exc_info:
                 web_api_handlers._require_mt5_connection()
 
@@ -633,7 +633,7 @@ class TestGetHistory:
         assert resp.status_code == 503
 
     def test_basic_success(self):
-        payload = {"data": [{"time": 1.0, "close": 1.1}], "last_candle_open": False}
+        payload = {"data": [{"time": 1.0, "close": 1.1}], "has_forming_candle": False}
         with patch.object(web_api.mt5_connection, "_ensure_connection", return_value=True), \
              patch("mtdata.core.web_api._fetch_candles_impl", return_value=payload), \
              patch("mtdata.core.web_api.mt5_config") as mock_cfg:
@@ -645,6 +645,7 @@ class TestGetHistory:
             resp = _client.get("/api/history", params={"symbol": "EURUSD", "timeframe": "H1", "limit": 500})
         res = resp.json()
         assert res["data"] == [{"time": 1.0, "close": 1.1}]
+        assert "last_candle_open" not in res
         assert res["candles"] == 1
         assert res["meta"]["tool"] == "data_fetch_candles"
         assert res["meta"]["runtime"]["timezone"] == {
@@ -654,11 +655,10 @@ class TestGetHistory:
                 "tz": "Europe/Nicosia",
                 "offset_seconds": 0,
             },
-            "used": {"tz": "UTC"},
         }
 
-    def test_v1_history_omits_runtime_timezone_meta(self):
-        payload = {"data": [{"time": 1.0, "close": 1.1}], "last_candle_open": False}
+    def test_v1_history_uses_modern_runtime_timezone_meta(self):
+        payload = {"data": [{"time": 1.0, "close": 1.1}], "has_forming_candle": False}
         with patch.object(web_api.mt5_connection, "_ensure_connection", return_value=True), \
              patch("mtdata.core.web_api._fetch_candles_impl", return_value=payload), \
              patch("mtdata.core.web_api.mt5_config") as mock_cfg:
@@ -670,11 +670,24 @@ class TestGetHistory:
             resp = _client.get("/api/v1/history", params={"symbol": "EURUSD"})
         res = resp.json()
         assert res["data"] == [{"time": 1.0, "close": 1.1}]
+        assert "last_candle_open" not in res
         assert res["meta"]["tool"] == "data_fetch_candles"
-        assert "runtime" not in res["meta"]
+        assert res["meta"]["runtime"]["timezone"] == {
+            "utc": {"tz": "UTC"},
+            "server": {
+                "source": "MT5_SERVER_TZ",
+                "tz": "Europe/Nicosia",
+                "offset_seconds": 0,
+            },
+        }
 
     def test_strips_incomplete_candle(self):
-        payload = {"data": [{"time": 1.0}, {"time": 2.0}], "last_candle_open": True}
+        payload = {
+            "data": [{"time": 1.0}, {"time": 2.0}],
+            "has_forming_candle": True,
+            "forming_candle_status": "included",
+            "forming_candle_included": True,
+        }
         with patch.object(web_api.mt5_connection, "_ensure_connection", return_value=True), \
              patch("mtdata.core.web_api._fetch_candles_impl", return_value=payload), \
              patch("mtdata.core.web_api.mt5_config") as mock_cfg:
@@ -682,9 +695,20 @@ class TestGetHistory:
             resp = _client.get("/api/history", params={"symbol": "EURUSD", "include_incomplete": "false"})
         res = resp.json()
         assert len(res["data"]) == 1
+        assert res["has_forming_candle"] is True
+        assert res["forming_candle_status"] == "skipped"
+        assert res["forming_candle_included"] is False
+        assert res["forming_candle_skipped"] is True
+        assert res["incomplete_candles_skipped"] == 1
+        assert "last_candle_open" not in res
 
     def test_keeps_incomplete_candle_when_flag(self):
-        payload = {"data": [{"time": 1.0}, {"time": 2.0}], "last_candle_open": True}
+        payload = {
+            "data": [{"time": 1.0}, {"time": 2.0}],
+            "has_forming_candle": True,
+            "forming_candle_status": "included",
+            "forming_candle_included": True,
+        }
         with patch.object(web_api.mt5_connection, "_ensure_connection", return_value=True), \
              patch("mtdata.core.web_api._fetch_candles_impl", return_value=payload), \
              patch("mtdata.core.web_api.mt5_config") as mock_cfg:
@@ -692,6 +716,8 @@ class TestGetHistory:
             resp = _client.get("/api/history", params={"symbol": "EURUSD", "include_incomplete": "true"})
         res = resp.json()
         assert len(res["data"]) == 2
+        assert res["forming_candle_included"] is True
+        assert "last_candle_open" not in res
 
     def test_fetch_exception(self):
         with patch.object(web_api.mt5_connection, "_ensure_connection", return_value=True), \

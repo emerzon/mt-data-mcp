@@ -661,7 +661,7 @@ def _consolidate_payload(  # noqa: C901
                             "start_index": curr_start_index,
                             "end_index": original_indices[i - 1] if i > 0 else curr_start_index,
                             "regime": curr_state,  # state ID or regime ID
-                            "confidence": avg_prob,  # average prob of being in this state/regime
+                            "regime_confidence": avg_prob,
                             "transition_conf": curr_transition_conf,
                         }
                     )
@@ -693,15 +693,15 @@ def _consolidate_payload(  # noqa: C901
                         "start_index": curr_start_index,
                         "end_index": original_indices[-1],
                         "regime": curr_state,
-                        "confidence": avg_prob,
+                        "regime_confidence": avg_prob,
                         "transition_conf": curr_transition_conf,
                     }
                 )
 
         # Post-process segments for readability
-        # For BOCPD, 'confidence' is avg cp_prob which is usually low except at edges.
+        # For BOCPD, regime_confidence is derived from average transition probability.
         # Maybe we want the PEAK prob? or just drop it.
-        # For HMM, 'confidence' is avg prob of that state.
+        # For HMM, regime_confidence is avg prob of that state.
 
         params_used = payload.get("params_used")
         label_mapping = (
@@ -735,8 +735,6 @@ def _consolidate_payload(  # noqa: C901
                 row = {
                     "start": seg["start"],
                     "end": seg["end"],
-                    "started_at": seg["start"],
-                    "ended_at": seg["end"],
                     "bars": seg["duration"],
                     "regime": regime_id,
                 }
@@ -761,9 +759,12 @@ def _consolidate_payload(  # noqa: C901
                     row["label"] = f"{bias}_segment"
                 else:
                     row["label"] = f"segment_{regime_id}"
-                avg_transition_prob = round(float(seg["confidence"]), 4)
+                avg_transition_prob = round(float(seg["regime_confidence"]), 4)
                 row["avg_transition_prob"] = avg_transition_prob
-                row["avg_conf"] = round(max(0.0, min(1.0, 1.0 - avg_transition_prob)), 4)
+                row["regime_confidence"] = round(
+                    max(0.0, min(1.0, 1.0 - avg_transition_prob)),
+                    4,
+                )
             else:
                 row = {
                     "start": seg["start"],
@@ -776,7 +777,7 @@ def _consolidate_payload(  # noqa: C901
                     row["label"] = regime_descriptions[regime_id].get(
                         "label", f"regime_{regime_id}"
                     )
-                row["avg_conf"] = round(seg["confidence"], 4)
+                row["regime_confidence"] = round(seg["regime_confidence"], 4)
             final_segments.append(row)
 
         # Build current segment/regime info for trading (last segment only)
@@ -808,7 +809,6 @@ def _consolidate_payload(  # noqa: C901
                     "regime_id": last_seg.get("regime"),
                     "label": last_seg.get("label"),
                     "since": last_seg["start"],
-                    "started_at": last_seg["started_at"],
                     "bars_since_change": last_seg["bars"],
                     "bars": last_seg["bars"],
                     "transition_risk": transition_risk,
@@ -852,7 +852,7 @@ def _consolidate_payload(  # noqa: C901
                     "since": last_seg["start"],
                     "bars": last_seg["bars"],
                 }
-                regime_confidence = last_seg.get("avg_conf") or last_seg.get(
+                regime_confidence = last_seg.get("regime_confidence") or last_seg.get(
                     "transition_conf"
                 )
                 if regime_confidence is not None:

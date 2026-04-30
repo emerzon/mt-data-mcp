@@ -12,7 +12,6 @@ from ..shared.validators import (
 from ..utils.mt5 import (
     MT5ConnectionError,
     _mt5_copy_rates_from,
-    _mt5_epoch_to_utc as _mt5_epoch_to_utc_compat,
     _symbol_ready_guard,
     ensure_mt5_connection_or_raise,
     mt5,
@@ -34,7 +33,7 @@ from ..utils.utils import (
 from ._mcp_instance import mcp
 from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from .execution_logging import run_logged_operation
-from .mt5_gateway import get_mt5_gateway
+from .mt5_gateway import create_mt5_gateway
 from ..shared.schema import (
     _PIVOT_METHODS,
     AutoTimeframeLiteral,
@@ -50,11 +49,6 @@ def _pivot_display_timezone(use_client_tz: bool) -> str:
         return "UTC"
     client_tz = _resolve_client_tz()
     return str(getattr(client_tz, "zone", None) or client_tz or "UTC")
-
-
-def _mt5_epoch_to_utc(value: float) -> float:
-    """Backward-compatible patch target; MT5 reads are normalized upstream."""
-    return _mt5_epoch_to_utc_compat(value)
 
 
 # Keep the MT5 adapter in this module namespace for compatibility with tests
@@ -155,7 +149,7 @@ def pivot_compute_points(  # noqa: C901
     """
     def _run() -> Dict[str, Any]:  # noqa: C901
         try:
-            mt5 = get_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise)
+            mt5 = create_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise)
             mt5.ensure_connection()
             if timeframe not in TIMEFRAME_MAP:
                 return {"error": invalid_timeframe_error(timeframe, TIMEFRAME_MAP)}
@@ -572,7 +566,7 @@ def support_resistance_levels(
 
     def _run() -> Dict[str, Any]:
         try:
-            get_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise).ensure_connection()
+            create_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise).ensure_connection()
             result = compute_support_resistance_payload(
                 fetch_history_impl=_fetch_history,
                 symbol=symbol,

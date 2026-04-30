@@ -107,21 +107,18 @@ def test_place_market_order_success(mock_mt5):
     assert res["retcode"] == mock_mt5.TRADE_RETCODE_DONE
     assert res["sl_tp_result"]["status"] == "applied"
     
-    # Check that order_send was called twice (once for deal, once for modifying SL/TP since TRADE_ACTION_DEAL doesn't take SL/TP natively)
-    assert mock_mt5.order_send.call_count == 2
+    # The protected market order is submitted atomically with SL/TP.
+    assert mock_mt5.order_send.call_count == 1
     
-    deal_req = mock_mt5.order_send.call_args_list[0].args[0]
+    deal_req = mock_mt5.order_send.call_args.args[0]
     assert deal_req["action"] == mock_mt5.TRADE_ACTION_DEAL
     assert deal_req["symbol"] == "EURUSD"
     assert deal_req["type"] == mock_mt5.ORDER_TYPE_BUY
     assert deal_req["volume"] == 0.1
-    
-    sltp_req = mock_mt5.order_send.call_args_list[1].args[0]
-    assert sltp_req["action"] == mock_mt5.TRADE_ACTION_SLTP
-    assert sltp_req["symbol"] == "EURUSD"
-    assert math.isclose(sltp_req["sl"], 1.04000)
-    assert math.isclose(sltp_req["tp"], 1.06000)
-    assert sltp_req["position"] == 456  # Matching the 'order' ticket from the mock result
+    assert math.isclose(deal_req["sl"], 1.04000)
+    assert math.isclose(deal_req["tp"], 1.06000)
+    assert "comment_fallback" not in res
+    assert "fallback_used" not in res["sl_tp_result"]
 
 
 def test_place_orders_use_configured_magic_number(mock_mt5, monkeypatch):
@@ -685,7 +682,11 @@ def test_place_market_order_accepts_injected_gateway():
 
     assert "error" not in res
     ensure_connection.assert_called_once_with()
-    assert adapter.order_send.call_count == 2
+    assert adapter.order_send.call_count == 1
+    request = adapter.order_send.call_args.args[0]
+    assert math.isclose(request["sl"], 1.04000)
+    assert math.isclose(request["tp"], 1.06000)
+    assert "comment_fallback" not in res
 
 
 def test_place_market_order_retries_fill_modes_when_first_mode_fails(mock_mt5):
@@ -990,7 +991,7 @@ def test_place_pending_order_accepts_done_partial_without_retry(mock_mt5):
     assert mock_mt5.order_send.call_count == 1
 
 
-def test_place_market_order_preserves_existing_position_magic_on_sltp_follow_up(mock_mt5):
+def test_place_market_order_submits_protection_atomically(mock_mt5):
     mock_mt5.TRADE_ACTION_SLTP = 6
     position = SimpleNamespace(symbol="EURUSD", sl=0.0, tp=0.0, type=0, magic=24680)
 
@@ -1007,23 +1008,21 @@ def test_place_market_order_preserves_existing_position_magic_on_sltp_follow_up(
         )
 
     assert "error" not in res
-    sltp_req = mock_mt5.order_send.call_args_list[1].args[0]
-    assert sltp_req["magic"] == 24680
+    assert mock_mt5.order_send.call_count == 1
+    request = mock_mt5.order_send.call_args.args[0]
+    assert request["action"] == mock_mt5.TRADE_ACTION_DEAL
+    assert math.isclose(request["sl"], 1.04000)
+    assert math.isclose(request["tp"], 1.06000)
+    assert "fallback_used" not in res["sl_tp_result"]
 
 
-def test_place_market_order_waits_for_delayed_position_resolution(mock_mt5):
+def test_place_market_order_records_unmatched_position_resolution_without_retry(mock_mt5):
     mock_mt5.TRADE_ACTION_SLTP = 6
-    position = SimpleNamespace(symbol="EURUSD", sl=0.0, tp=0.0, type=0, magic=24680)
     unresolved = (None, None, {"method": "positions_get", "matched": False})
 
     with patch(
         "src.mtdata.core.trading.orders._resolve_open_position",
-        side_effect=[
-            unresolved,
-            unresolved,
-            unresolved,
-            (position, 456, {"method": "positions_get(ticket)", "candidate": 456}),
-        ],
+        return_value=unresolved,
     ) as mock_resolve, patch("mtdata.core.trading.orders._stdlib_time.sleep") as mock_sleep:
         res = _place_market_order(
             symbol="EURUSD",
@@ -1035,105 +1034,55 @@ def test_place_market_order_waits_for_delayed_position_resolution(mock_mt5):
 
     assert "error" not in res
     assert res["sl_tp_result"]["status"] == "applied"
-    assert res["position_ticket"] == 456
-    assert mock_resolve.call_count == 4
-    assert [call.args[0] for call in mock_sleep.call_args_list[:3]] == [0.15, 0.3, 0.6]
+    assert res["position_ticket"] is None
+    assert res["position_ticket_resolution"]["matched"] is False
+    assert mock_resolve.call_count == 1
+    mock_sleep.assert_not_called()
 
 
-def test_place_market_order_retries_sltp_without_comment_when_comment_is_invalid(mock_mt5):
+def test_place_market_order_returns_invalid_comment_error_without_fallback(mock_mt5):
     mock_mt5.TRADE_ACTION_SLTP = 6
-    position = SimpleNamespace(symbol="EURUSD", sl=0.0, tp=0.0, type=0, magic=24680)
     mock_mt5.last_error.side_effect = [
-        (1, "Success"),
         (-2, 'Invalid "comment" argument'),
-        (-2, 'Invalid "comment" argument'),
-        (1, "Success"),
     ]
     mock_mt5.order_send.side_effect = [
         MagicMock(
-            retcode=10009,
-            deal=123,
-            order=456,
+            retcode=10013,
+            deal=0,
+            order=0,
             volume=0.1,
             price=1.05010,
             bid=1.05000,
             ask=1.05010,
-            comment="",
+            comment='Invalid "comment" argument',
             request_id=789,
         ),
-        None,
-        None,
-        MagicMock(
-            retcode=10009,
-            deal=0,
-            order=456,
-            comment="",
-            request_id=790,
-        ),
     ]
 
-    with patch(
-        "src.mtdata.core.trading.orders._resolve_open_position",
-        return_value=(position, 456, {}),
-    ):
-        res = _place_market_order(
-            symbol="EURUSD",
-            volume=0.1,
-            order_type="BUY",
-            stop_loss=1.04000,
-            take_profit=1.06000,
-            comment="Breakout scalp comment that will be truncated anyway",
-        )
+    res = _place_market_order(
+        symbol="EURUSD",
+        volume=0.1,
+        order_type="BUY",
+        stop_loss=1.04000,
+        take_profit=1.06000,
+        comment="Breakout scalp comment that will be truncated anyway",
+    )
 
-    assert "error" not in res
-    assert res["sl_tp_result"]["status"] == "applied"
-    assert res["sl_tp_result"]["comment_fallback"]["used"] is True
-    assert res["sl_tp_result"]["comment_fallback"]["strategy"] == "none"
-    assert any("TP/SL modification" in str(w) for w in res.get("warnings", []))
-    final_req = mock_mt5.order_send.call_args_list[-1].args[0]
-    assert "comment" not in final_req
+    assert "broker rejected the comment field" in res["error"]
+    assert mock_mt5.order_send.call_count == 1
+    assert "comment_fallback" not in res
 
 
-def test_place_market_order_retries_after_stopiteration_during_sltp(mock_mt5):
+def test_place_market_order_does_not_attempt_sltp_follow_up(mock_mt5):
     mock_mt5.TRADE_ACTION_SLTP = 6
     position = SimpleNamespace(symbol="EURUSD", sl=0.0, tp=0.0, type=0, magic=24680)
-    mock_mt5.positions_get.return_value = [
-        SimpleNamespace(symbol="EURUSD", sl=1.04000, tp=1.06000, type=0, magic=24680)
-    ]
-    market_result = MagicMock(
-        retcode=10009,
-        deal=123,
-        order=456,
-        volume=0.1,
-        price=1.05010,
-        bid=1.05000,
-        ask=1.05010,
-        comment="",
-        request_id=789,
-    )
-    sltp_result = MagicMock(
-        retcode=10009,
-        deal=0,
-        order=456,
-        comment="",
-        request_id=790,
-    )
 
     with patch(
         "src.mtdata.core.trading.orders._resolve_open_position",
         return_value=(position, 456, {}),
     ), patch(
-        "src.mtdata.core.trading.orders._send_order_with_comment_fallback",
-        side_effect=[
-            (market_result, None, (1, "Success")),
-            StopIteration("adapter exhausted"),
-            (sltp_result, None, (1, "Success")),
-        ],
-    ) as send_mock, patch(
-        "src.mtdata.core.trading.orders._modify_position",
-    ) as fallback_modify, patch(
         "src.mtdata.core.trading.orders._stdlib_time.sleep",
-    ):
+    ) as sleep_mock:
         res = _place_market_order(
             symbol="EURUSD",
             volume=0.1,
@@ -1144,13 +1093,12 @@ def test_place_market_order_retries_after_stopiteration_during_sltp(mock_mt5):
 
     assert "error" not in res
     assert res["sl_tp_result"]["status"] == "applied"
-    assert res["sl_tp_result"]["attempts"] == 2
-    assert res["sl_tp_result"].get("fallback_used") is not True
-    assert send_mock.call_count == 3
-    fallback_modify.assert_not_called()
+    assert res["sl_tp_result"]["attempts"] == 1
+    assert mock_mt5.order_send.call_count == 1
+    sleep_mock.assert_not_called()
 
 
-def test_place_market_order_surfaces_sltp_verification_failures(mock_mt5, caplog):
+def test_place_market_order_does_not_verify_protection_with_follow_up(mock_mt5, caplog):
     mock_mt5.TRADE_ACTION_SLTP = 6
     position = SimpleNamespace(symbol="EURUSD", sl=0.0, tp=0.0, type=0, magic=24680)
     mock_mt5.positions_get.side_effect = RuntimeError("readback lost")
@@ -1169,9 +1117,9 @@ def test_place_market_order_surfaces_sltp_verification_failures(mock_mt5, caplog
 
     assert "error" not in res
     assert res["sl_tp_result"]["status"] == "applied"
-    assert res["sl_tp_result"]["verification_failed"] is True
-    assert any("verification readback failed" in str(w) for w in res.get("warnings", []))
-    assert any("SL/TP verification failed for ticket 456" in record.message for record in caplog.records)
+    assert "verification_failed" not in res["sl_tp_result"]
+    assert not any("verification readback failed" in str(w) for w in res.get("warnings", []))
+    assert not any("SL/TP verification failed for ticket 456" in record.message for record in caplog.records)
 
 
 def test_modify_position_preserves_existing_magic(mock_mt5):
@@ -2216,8 +2164,8 @@ def test_attach_protection_success(mock_mt5):
     assert outcome["warnings"] == []
 
 
-def test_attach_protection_fallback_success(mock_mt5):
-    """Direct SLTP fails, _modify_position fallback succeeds."""
+def test_attach_protection_direct_sltp_failure_has_no_fallback(mock_mt5):
+    """Direct SLTP failure is returned without a fallback modify call."""
     gw = _make_protection_gateway(mock_mt5)
     symbol_info = mock_mt5.symbol_info.return_value
     mock_mt5.TRADE_ACTION_SLTP = 6
@@ -2231,31 +2179,27 @@ def test_attach_protection_fallback_success(mock_mt5):
     failed_result = SimpleNamespace(retcode=10006, comment="Rejected")
     mock_mt5.order_send.return_value = failed_result
 
-    with patch(
-        "src.mtdata.core.trading.orders._modify_position",
-        return_value={"success": True, "applied_sl": 1.04, "applied_tp": 1.06},
-    ):
-        outcome = _attach_post_fill_protection(
-            gw,
-            symbol="EURUSD",
-            side="BUY",
-            volume=0.1,
-            position_ticket_candidates=[456],
-            stop_loss=1.04,
-            take_profit=1.06,
-            symbol_info=symbol_info,
-            comment=None,
-            request_comment="MCP order",
-        )
+    outcome = _attach_post_fill_protection(
+        gw,
+        symbol="EURUSD",
+        side="BUY",
+        volume=0.1,
+        position_ticket_candidates=[456],
+        stop_loss=1.04,
+        take_profit=1.06,
+        symbol_info=symbol_info,
+        comment=None,
+        request_comment="MCP order",
+    )
 
-    assert outcome["sl_tp_result"]["status"] == "applied"
-    assert outcome["protection_status"] == "protected_after_fallback"
-    assert outcome["sl_tp_result"]["fallback_used"] is True
-    assert any("fallback" in w.lower() for w in outcome["warnings"])
+    assert outcome["sl_tp_result"]["status"] == "failed"
+    assert outcome["protection_status"] == "unprotected_position"
+    assert "fallback_used" not in outcome["sl_tp_result"]
+    assert any("CRITICAL" in w for w in outcome["warnings"])
 
 
-def test_attach_protection_all_fail(mock_mt5):
-    """Both direct SLTP and fallback fail → unprotected."""
+def test_attach_protection_failure_reports_unprotected(mock_mt5):
+    """Direct SLTP failure reports the position as unprotected."""
     gw = _make_protection_gateway(mock_mt5)
     symbol_info = mock_mt5.symbol_info.return_value
     mock_mt5.TRADE_ACTION_SLTP = 6
@@ -2268,29 +2212,25 @@ def test_attach_protection_all_fail(mock_mt5):
     failed_result = SimpleNamespace(retcode=10006, comment="Rejected")
     mock_mt5.order_send.return_value = failed_result
 
-    with patch(
-        "src.mtdata.core.trading.orders._modify_position",
-        return_value={"error": "Modify also failed"},
-    ):
-        outcome = _attach_post_fill_protection(
-            gw,
-            symbol="EURUSD",
-            side="BUY",
-            volume=0.1,
-            position_ticket_candidates=[456],
-            stop_loss=1.04,
-            take_profit=1.06,
-            symbol_info=symbol_info,
-            comment=None,
-            request_comment="MCP order",
-        )
+    outcome = _attach_post_fill_protection(
+        gw,
+        symbol="EURUSD",
+        side="BUY",
+        volume=0.1,
+        position_ticket_candidates=[456],
+        stop_loss=1.04,
+        take_profit=1.06,
+        symbol_info=symbol_info,
+        comment=None,
+        request_comment="MCP order",
+    )
 
     assert outcome["sl_tp_result"]["status"] == "failed"
     assert outcome["protection_status"] == "unprotected_position"
     assert any("CRITICAL" in w for w in outcome["warnings"])
 
 
-def test_attach_protection_invalid_stops_fails_fast_to_fallback(mock_mt5):
+def test_attach_protection_invalid_stops_fails_fast_without_fallback(mock_mt5):
     gw = _make_protection_gateway(mock_mt5)
     symbol_info = mock_mt5.symbol_info.return_value
     mock_mt5.TRADE_ACTION_SLTP = 6
@@ -2303,29 +2243,24 @@ def test_attach_protection_invalid_stops_fails_fast_to_fallback(mock_mt5):
     ]
     mock_mt5.order_send.return_value = SimpleNamespace(retcode=10016, comment="Invalid stops")
 
-    with patch(
-        "src.mtdata.core.trading.orders._modify_position",
-        return_value={"error": "stop_loss is too close to the live bid for BUY positions."},
-    ) as fallback_modify:
-        outcome = _attach_post_fill_protection(
-            gw,
-            symbol="EURUSD",
-            side="BUY",
-            volume=0.1,
-            position_ticket_candidates=[456],
-            stop_loss=1.04,
-            take_profit=1.06,
-            symbol_info=symbol_info,
-            comment=None,
-            request_comment="MCP order",
-        )
+    outcome = _attach_post_fill_protection(
+        gw,
+        symbol="EURUSD",
+        side="BUY",
+        volume=0.1,
+        position_ticket_candidates=[456],
+        stop_loss=1.04,
+        take_profit=1.06,
+        symbol_info=symbol_info,
+        comment=None,
+        request_comment="MCP order",
+    )
 
     assert mock_mt5.order_send.call_count == 1
-    fallback_modify.assert_called_once()
     assert outcome["sl_tp_result"]["status"] == "failed"
     assert outcome["sl_tp_result"]["attempts"] == 1
     assert outcome["sl_tp_result"]["last_retcode"] == 10016
-    assert outcome["sl_tp_result"]["fallback_used"] is True
+    assert "fallback_used" not in outcome["sl_tp_result"]
 
 
 def test_attach_protection_position_not_found(mock_mt5):

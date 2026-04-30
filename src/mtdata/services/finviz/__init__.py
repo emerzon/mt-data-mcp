@@ -89,7 +89,6 @@ __all__ = [
     "_filter_calendar_events_by_date",
     "_fetch_finviz_economic_calendar_items",
     "_fetch_finviz_calendar_paged",
-    "_normalize_finviz_economic_calendar_items",
     "_FINVIZ_HTTP_TIMEOUT",
     "_FINVIZ_SCREENER_MAX_ROWS",
     "_FINVIZ_PAGE_LIMIT_MAX",

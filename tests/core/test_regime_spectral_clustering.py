@@ -51,7 +51,7 @@ class TestSpectralClustering:
             timeframe="H1",
             limit=800,
             method="clustering",
-            params={"algorithm": "spectral", "k_regimes": 2, "window_size": 20},
+            params={"algorithm": "spectral", "n_states": 2, "window_size": 20},
             detail="full",
             __cli_raw=True,
         )
@@ -68,14 +68,15 @@ class TestSpectralClustering:
             timeframe="H1",
             limit=800,
             method="clustering",
-            params={"algorithm": "spectral", "k_regimes": 3},
+            params={"algorithm": "spectral", "n_states": 3},
             detail="full",
             __cli_raw=True,
         )
         assert isinstance(res, dict)
         params_used = res.get("params_used", {})
         assert params_used.get("algorithm") == "spectral"
-        assert params_used.get("k_regimes") == 3
+        assert params_used.get("n_states") == 3
+        assert "k_regimes" not in params_used
 
     def test_spectral_compact_output(self, _mock):
         res = regime_detect(
@@ -83,7 +84,7 @@ class TestSpectralClustering:
             timeframe="H1",
             limit=800,
             method="clustering",
-            params={"algorithm": "spectral", "k_regimes": 2},
+            params={"algorithm": "spectral", "n_states": 2},
             detail="compact",
             __cli_raw=True,
         )
@@ -96,7 +97,7 @@ class TestSpectralClustering:
             timeframe="H1",
             limit=800,
             method="clustering",
-            params={"algorithm": "spectral", "affinity": "rbf", "k_regimes": 2},
+            params={"algorithm": "spectral", "affinity": "rbf", "n_states": 2},
             detail="full",
             __cli_raw=True,
         )
@@ -111,7 +112,7 @@ class TestSpectralClustering:
             timeframe="H1",
             limit=800,
             method="clustering",
-            params={"k_regimes": 2, "window_size": 20},
+            params={"n_states": 2, "window_size": 20},
             detail="full",
             __cli_raw=True,
         )
@@ -119,3 +120,27 @@ class TestSpectralClustering:
         assert res.get("success") or not res.get("error")
         params_used = res.get("params_used", {})
         assert params_used.get("algorithm") == "kmeans"
+
+    def test_legacy_state_aliases_are_ignored(self, _mock):
+        res = regime_detect(
+            symbol="TEST",
+            timeframe="H1",
+            limit=800,
+            method="clustering",
+            params={
+                "algorithm": "spectral",
+                "k_regimes": 2,
+                "n_clusters": 2,
+                "window_size": 20,
+            },
+            detail="full",
+            __cli_raw=True,
+        )
+        assert isinstance(res, dict)
+        assert res.get("success") or not res.get("error"), f"Error: {res.get('error')}"
+        params_used = res.get("params_used", {})
+        assert params_used.get("n_states") == 3
+        assert "k_regimes" not in params_used
+        warnings = res.get("warnings", [])
+        assert any("Parameter 'k_regimes' is no longer accepted" in w for w in warnings)
+        assert any("Parameter 'n_clusters' is no longer accepted" in w for w in warnings)

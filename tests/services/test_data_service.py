@@ -30,9 +30,8 @@ class TestDataService(unittest.TestCase):
 
         self.assertIsNone(data_service_mod._tick_field_value(None, "bid"))
     @patch('mtdata.services.data_service._mt5_copy_rates_from')
-    @patch('mtdata.services.data_service._mt5_epoch_to_utc', side_effect=AssertionError("unexpected extra UTC conversion"))
     @patch('mtdata.services.data_service._symbol_ready_guard', _mock_symbol_ready_guard)
-    def test_fetch_candles_basic(self, _mock_epoch_to_utc, mock_copy_rates):
+    def test_fetch_candles_basic(self, mock_copy_rates):
         
         # Mock rates data — use H1-spaced bars so the last bar is clearly closed
         now = datetime.now(timezone.utc)
@@ -121,9 +120,8 @@ class TestDataService(unittest.TestCase):
         self.assertTrue(all(isinstance(row.get('time'), (int, float)) for row in data))
 
     @patch('mtdata.services.data_service._mt5_copy_rates_from')
-    @patch('mtdata.services.data_service._mt5_epoch_to_utc', side_effect=AssertionError("unexpected extra UTC conversion"))
     @patch('mtdata.services.data_service._symbol_ready_guard', _mock_symbol_ready_guard)
-    def test_fetch_candles_does_not_double_convert_normalized_times(self, _mock_epoch_to_utc, mock_copy_rates):
+    def test_fetch_candles_does_not_double_convert_normalized_times(self, mock_copy_rates):
         now = datetime.now(timezone.utc)
         rates = [
             {
@@ -212,9 +210,8 @@ class TestDataService(unittest.TestCase):
         )
         
     @patch('mtdata.services.data_service._mt5_copy_ticks_range')
-    @patch('mtdata.services.data_service._mt5_epoch_to_utc', side_effect=AssertionError("unexpected extra UTC conversion"))
     @patch('mtdata.services.data_service._symbol_ready_guard', _mock_symbol_ready_guard)
-    def test_fetch_ticks_basic(self, _mock_epoch_to_utc, mock_copy_ticks):
+    def test_fetch_ticks_basic(self, mock_copy_ticks):
         
         # Mock ticks data
         now = datetime.now(timezone.utc)
@@ -392,9 +389,8 @@ class TestDataService(unittest.TestCase):
         self.assertLessEqual(call_count["value"], expected_max_field_reads)
 
     @patch('mtdata.services.data_service._mt5_copy_ticks_range')
-    @patch('mtdata.services.data_service._mt5_epoch_to_utc', side_effect=AssertionError("unexpected extra UTC conversion"))
     @patch('mtdata.services.data_service._symbol_ready_guard', _mock_symbol_ready_guard)
-    def test_fetch_ticks_does_not_double_convert_normalized_times(self, _mock_epoch_to_utc, mock_copy_ticks):
+    def test_fetch_ticks_does_not_double_convert_normalized_times(self, mock_copy_ticks):
         ticks = [
             {
                 'time': 1704067200.0,

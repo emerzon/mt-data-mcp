@@ -11,6 +11,7 @@ import numpy as np
 from ...forecast.common import fetch_history as _fetch_history
 from ...forecast.common import log_returns_from_prices as _log_returns_from_prices
 from ...shared.schema import DenoiseSpec, DetailLiteral, TimeframeLiteral
+from ...shared.symbols import CRYPTO_SYMBOL_HINTS as _CRYPTO_SYMBOL_HINTS
 from ...utils.denoise import _resolve_denoise_base_col
 from ...utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise
 from ...utils.utils import _format_time_minimal
@@ -22,13 +23,9 @@ from ..execution_logging import (
     log_operation_start,
 )
 from ..features import extract_rolling_features
-from ..mt5_gateway import get_mt5_gateway, mt5_connection_error
+from ..mt5_gateway import create_mt5_gateway, mt5_connection_error
 from ..output_contract import normalize_output_detail, normalize_output_verbosity_detail
 from ..tool_calling import call_tool_sync_structured
-from .crypto import (
-    _CRYPTO_SYMBOL_HINTS,
-    _is_probably_crypto_symbol,
-)
 from .methods.bocpd import (
     _auto_calibrate_bocpd_params,
     _bocpd_reliability_score,
@@ -58,7 +55,7 @@ logger = logging.getLogger(__name__)
 
 def _regime_connection_error() -> Optional[Dict[str, Any]]:
     return mt5_connection_error(
-        get_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise),
+        create_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise),
     )
 
 
@@ -227,38 +224,16 @@ def _resolve_state_count_param(
     *,
     default: int,
     method: str,
-    aliases: tuple[str, ...] = ("n_states", "k_regimes"),
     canonical: str = "n_states",
 ) -> tuple[Optional[int], Optional[str], str, List[str]]:
-    selected_key = canonical
     raw_value = params.get(canonical)
-    for alias in aliases:
-        if alias in params and params.get(alias) is not None:
-            if raw_value is None or alias == canonical:
-                selected_key = alias
-                raw_value = params.get(alias)
-            elif str(params.get(alias)) != str(raw_value):
-                return (
-                    None,
-                    f"Conflicting state-count parameters for {method}: "
-                    f"{canonical}={raw_value!r} and {alias}={params.get(alias)!r}.",
-                    selected_key,
-                    [],
-                )
     if raw_value is None:
         raw_value = default
-        selected_key = canonical
     try:
         value = int(raw_value)
     except Exception:
-        return None, f"{canonical} must be an integer >= 2 for {method}.", selected_key, []
-    warnings_out: List[str] = []
-    if selected_key != canonical:
-        warnings_out.append(
-            f"Parameter '{selected_key}' is accepted as an alias for '{canonical}' "
-            f"for {method}; prefer '{canonical}'."
-        )
-    return value, None, selected_key, warnings_out
+        return None, f"{canonical} must be an integer >= 2 for {method}.", canonical, []
+    return value, None, canonical, []
 
 
 def _method_parameter_warnings(
@@ -273,6 +248,12 @@ def _method_parameter_warnings(
     output: str,
 ) -> List[str]:
     warnings_out: List[str] = []
+    for legacy_key in ("k_regimes", "n_clusters"):
+        if legacy_key in params and params.get(legacy_key) is not None:
+            warnings_out.append(
+                f"Parameter '{legacy_key}' is no longer accepted and is ignored "
+                "for regime detection; use 'n_states'."
+            )
     if method != "bocpd" and (
         abs(float(threshold) - 0.5) > 1e-12 or "threshold" in params
     ):
@@ -338,8 +319,6 @@ def _summarize_rule_based_current_regime(result: Dict[str, Any]) -> Optional[Dic
         if value is not None:
             entry[key] = value
     regime_confidence = current_regime.get("regime_confidence")
-    if regime_confidence is None:
-        regime_confidence = current_regime.get("confidence")
     if regime_confidence is not None:
         entry["regime_confidence"] = regime_confidence
     return entry or None
@@ -352,7 +331,7 @@ def _summarize_bocpd_current_regime(result: Dict[str, Any]) -> Optional[Dict[str
         if isinstance(regimes, list) and regimes and isinstance(regimes[-1], dict):
             last = regimes[-1]
             current_regime = {
-                "started_at": last.get("started_at", last.get("start")),
+                "since": last.get("start"),
                 "bars_since_change": last.get("bars"),
             }
         else:
@@ -362,7 +341,7 @@ def _summarize_bocpd_current_regime(result: Dict[str, Any]) -> Optional[Dict[str
         key: current_regime.get(key)
         for key in (
             "status",
-            "started_at",
+            "since",
             "bars_since_change",
             "transition_risk",
             "latest_transition_probability",
@@ -416,7 +395,7 @@ def _summarize_current_regime_for_comparison(
             current = {
                 "regime_id": last.get("regime"),
                 "label": last.get("label"),
-                "confidence": last.get("avg_conf"),
+                "regime_confidence": last.get("regime_confidence"),
                 "since": last.get("start"),
                 "bars": last.get("bars"),
             }
@@ -438,8 +417,6 @@ def _summarize_current_regime_for_comparison(
         entry["label"] = label
 
     regime_confidence = current.get("regime_confidence")
-    if regime_confidence is None:
-        regime_confidence = current.get("confidence")
     if regime_confidence is not None:
         entry["regime_confidence"] = regime_confidence
 
@@ -838,7 +815,7 @@ def regime_detect(  # noqa: C901
         - timeframe: str - Timeframe used
         - method: str - Method used
         - target: str - 'return' or 'price'
-        - regimes: List[Dict] - Regime segments with start, end, bars, regime ID, label, confidence
+        - regimes: List[Dict] - Regime segments with start, end, bars, regime ID, label, regime_confidence
         - regime_info: Dict - Descriptive info for each regime (label, mean_return, volatility, etc.)
         - summary: Dict - Quick stats including last_state, state_shares, transitions, smoothing status
         - state_probabilities: List[List[float]] - Probability of each regime at each bar (full output only)
@@ -1300,23 +1277,22 @@ def regime_detect(  # noqa: C901
                         "details": {"method": "ms_ar", "requires": ["statsmodels"]},
                     }
                 )
-            k_regimes, k_regimes_error, k_regimes_source, state_count_warnings = (
+            n_states_msar, n_states_error, n_states_source, state_count_warnings = (
                 _resolve_state_count_param(
                     p,
                     default=2,
                     method="ms_ar",
-                    aliases=("n_states", "k_regimes"),
                 )
             )
-            if k_regimes_error is not None:
-                return _finish({"error": k_regimes_error})
-            if k_regimes is None or k_regimes < 2:
+            if n_states_error is not None:
+                return _finish({"error": n_states_error})
+            if n_states_msar is None or n_states_msar < 2:
                 return _finish({"error": "n_states must be >= 2 for ms_ar."})
             order, _ = _coerce_param(p, "order", default=0, cast=int)
             try:
                 mod = MarkovRegression(
                     endog=x,
-                    k_regimes=max(2, k_regimes),
+                    k_regimes=max(2, n_states_msar),
                     trend="c",
                     order=max(0, order),
                     switching_variance=True,
@@ -1353,7 +1329,7 @@ def regime_detect(  # noqa: C901
 
             # Build regime parameters (mean/vol per regime)
             msar_regime_params = {"mean_return": [], "volatility": []}
-            for s in range(k_regimes):
+            for s in range(n_states_msar):
                 mask = state == s
                 if mask.any():
                     msar_regime_params["mean_return"].append(float(np.mean(x[mask])))
@@ -1375,9 +1351,8 @@ def regime_detect(  # noqa: C901
                 ],
                 "regime_params": msar_regime_params,
                 "params_used": {
-                    "k_regimes": k_regimes,
-                    "n_states": int(k_regimes),
-                    "state_count_param": k_regimes_source,
+                    "n_states": int(n_states_msar),
+                    "state_count_param": n_states_source,
                     "order": order,
                     "min_regime_bars": int(min_regime_bars_val),
                     "relabeled": bool(canon_meta.get("relabeled", False)),
@@ -1460,7 +1435,6 @@ def regime_detect(  # noqa: C901
                     p,
                     default=2,
                     method="hmm",
-                    aliases=("n_states", "k_regimes"),
                 )
             )
             if n_states_error is not None:
@@ -1617,17 +1591,16 @@ def regime_detect(  # noqa: C901
             except ImportError as ex:
                 return _finish({"error": f"Clustering dependencies missing: {ex}"})
             window_size, _ = _coerce_param(p, "window_size", default=20, cast=int)
-            k_regimes, k_regimes_error, k_regimes_source, state_count_warnings = (
+            n_states_cluster, n_states_error, n_states_source, state_count_warnings = (
                 _resolve_state_count_param(
                     p,
                     default=3,
                     method="clustering",
-                    aliases=("n_states", "k_regimes", "n_clusters"),
                 )
             )
-            if k_regimes_error is not None:
-                return _finish({"error": k_regimes_error})
-            if k_regimes is None or k_regimes < 2:
+            if n_states_error is not None:
+                return _finish({"error": n_states_error})
+            if n_states_cluster is None or n_states_cluster < 2:
                 return _finish({"error": "n_states must be >= 2 for clustering."})
             use_pca = bool(p.get("use_pca", True))
             n_components, _ = _coerce_param(p, "n_components", default=3, cast=int)
@@ -1673,17 +1646,17 @@ def regime_detect(  # noqa: C901
 
             # Cluster
             n_samples = X_final.shape[0]
-            if n_samples < k_regimes:
+            if n_samples < n_states_cluster:
                 return _finish(
                     {
-                        "error": f"Not enough samples ({n_samples}) for {k_regimes} clusters"
+                        "error": f"Not enough samples ({n_samples}) for {n_states_cluster} clusters"
                     }
                 )
 
             if algorithm == "spectral" and spectral_cls is not None:
                 affinity = str(p.get("affinity", "nearest_neighbors")).strip().lower()
                 sc_kwargs: Dict[str, Any] = {
-                    "n_clusters": k_regimes,
+                    "n_clusters": n_states_cluster,
                     "affinity": affinity,
                     "random_state": 42,
                     "assign_labels": "kmeans",
@@ -1699,9 +1672,9 @@ def regime_detect(  # noqa: C901
                 # KMeans — seed centroids from evenly-spaced rows so KMeans++
                 # init is skipped.  KMeans++ triggers joblib CPU-topology probing
                 # which blocks indefinitely in asyncio.to_thread workers on Windows.
-                idx = np.round(np.linspace(0, n_samples - 1, k_regimes)).astype(int)
+                idx = np.round(np.linspace(0, n_samples - 1, n_states_cluster)).astype(int)
                 kmeans = kmeans_cls(
-                    n_clusters=k_regimes,
+                    n_clusters=n_states_cluster,
                     random_state=42,
                     n_init=1,
                     init=X_final[idx],
@@ -1709,7 +1682,7 @@ def regime_detect(  # noqa: C901
                 labels = kmeans.fit_predict(X_final)
 
             # Smooth short runs and canonicalize on valid slice only
-            valid_probs = np.zeros((int(valid_mask.sum()), k_regimes))
+            valid_probs = np.zeros((int(valid_mask.sum()), n_states_cluster))
             valid_probs[np.arange(len(labels)), labels] = 1.0
             labels, valid_probs, smoothing_meta = _smooth_short_state_runs(
                 state=np.asarray(labels, dtype=int),
@@ -1727,12 +1700,12 @@ def regime_detect(  # noqa: C901
             full_states = np.full(len(x), -1, dtype=int)
             full_states[valid_mask] = labels
 
-            full_probs = np.zeros((len(x), k_regimes))
+            full_probs = np.zeros((len(x), n_states_cluster))
             full_probs[valid_mask] = valid_probs
 
             # Build regime parameters from data
             clustering_regime_params = {"mean_return": [], "volatility": []}
-            for s in range(k_regimes):
+            for s in range(n_states_cluster):
                 mask = full_states == s
                 if mask.any():
                     clustering_regime_params["mean_return"].append(
@@ -1759,9 +1732,8 @@ def regime_detect(  # noqa: C901
                 ],
                 "regime_params": clustering_regime_params,
                 "params_used": {
-                    "k_regimes": k_regimes,
-                    "n_states": int(k_regimes),
-                    "state_count_param": k_regimes_source,
+                    "n_states": int(n_states_cluster),
+                    "state_count_param": n_states_source,
                     "algorithm": algorithm,
                     "window_size": window_size,
                     "use_pca": use_pca,
@@ -1823,7 +1795,7 @@ def regime_detect(  # noqa: C901
             if total_var > 1e-9:
                 between_var = 0.0
                 overall_mean = float(np.mean(x))
-                for s in range(k_regimes):
+                for s in range(n_states_cluster):
                     mask = full_states == s
                     if mask.any():
                         cluster_mean = float(np.mean(x[mask]))
@@ -1874,12 +1846,6 @@ def regime_detect(  # noqa: C901
             # Based on volatility distribution characteristics
             n_states_input = p.get("n_states")
             state_count_warnings: List[str] = []
-            if n_states_input is None and p.get("k_regimes") is not None:
-                n_states_input = p.get("k_regimes")
-                state_count_warnings.append(
-                    "Parameter 'k_regimes' is accepted as an alias for 'n_states' "
-                    "for garch; prefer 'n_states'."
-                )
 
             if n_states_input is None:
                 # Calculate rolling realized volatility for better characterization
@@ -2349,7 +2315,7 @@ def regime_detect(  # noqa: C901
                         "bars": int(window_bars),
                         "regime": int(regime_id),
                         "label": regime_state,
-                        "avg_conf": regime_confidence,
+                        "regime_confidence": regime_confidence,
                         "direction": direction,
                     }
                 ],
@@ -2411,7 +2377,6 @@ def regime_detect(  # noqa: C901
                     p,
                     default=3,
                     method="wavelet",
-                    aliases=("n_states", "k_regimes"),
                 )
             )
             if n_states_error is not None:
@@ -2659,13 +2624,6 @@ def regime_detect(  # noqa: C901
             n_states_input = p.get("n_states")
             state_count_warnings: List[str] = []
             n_states_source = "n_states"
-            if n_states_input is None and p.get("k_regimes") is not None:
-                n_states_input = p.get("k_regimes")
-                n_states_source = "k_regimes"
-                state_count_warnings.append(
-                    "Parameter 'k_regimes' is accepted as an alias for 'n_states' "
-                    "for ensemble; prefer 'n_states'."
-                )
             if n_states_input is None:
                 # Analyze return distribution characteristics
                 returns_kurt = (
@@ -2713,7 +2671,6 @@ def regime_detect(  # noqa: C901
                     # Don't override n_states for garch - let it auto-detect
                     if sm != "garch":
                         sub_params.setdefault("n_states", n_states_ens)
-                        sub_params.setdefault("k_regimes", n_states_ens)
                     # For garch, if n_states is already in sub_params, keep it
                     # Otherwise leave it out to trigger auto-detection
                 try:
@@ -2979,7 +2936,6 @@ def regime_detect(  # noqa: C901
                     # GARCH auto-detects optimal n_states, don't force a default
                     if m in ("hmm", "ms_ar", "clustering"):
                         sub_params.setdefault("n_states", 2)
-                        sub_params.setdefault("k_regimes", 2)
                     # GARCH: if n_states not explicitly set, leave it out for auto-detection
                     sr = call_tool_sync_structured(
                         regime_detect,

@@ -20,9 +20,6 @@ OUTPUT_EXTRA_FULL_ALIASES: Final[frozenset[str]] = frozenset(
     }
 )
 PUBLIC_OUTPUT_PARAMS: Final[frozenset[str]] = frozenset({"json", "extras"})
-REMOVED_PUBLIC_OUTPUT_PARAMS: Final[frozenset[str]] = frozenset(
-    {"detail", "format", "output_mode", "output"}
-)
 OUTPUT_EXTRAS_HELP: Final[str] = (
     "Comma-separated richer output sections such as "
     f"{', '.join(sorted(OUTPUT_EXTRAS))}. Use "
@@ -68,6 +65,6 @@ PARAMETER_HELP: Final[dict[str, str]] = {
     "output_mode": "Barrier optimization output shape.",
     "json": "Return structured JSON instead of default TOON text.",
     "extras": OUTPUT_EXTRAS_HELP,
-    "detail": "Removed output option; compact output is implicit and richer sections use extras.",
+    "detail": "Output detail level when supported by the tool.",
     "format": "Domain-specific shape selector when supported; TOON/JSON selection uses json.",
 }

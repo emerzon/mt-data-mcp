@@ -31,66 +31,62 @@ from pydantic import BaseModel
 from ...bootstrap.settings import load_environment
 from ...bootstrap.tools import bootstrap_tools
 from ...forecast.requests import ForecastGenerateRequest
-from ...shared.output_precision import resolve_output_precision
-from ...utils.minimal_output import format_result_minimal as _shared_minimal
 from .._mcp_instance import mcp
 from .._mcp_tools import _get_pydantic_model_fields
 from .._mcp_tools import get_tool_registry as get_registered_tools
-from ..cli_discovery import (
+from .parsing.discovery import (
     _COMMAND_PARAM_CHOICE_OVERRIDES,
     add_dynamic_arguments as _add_dynamic_arguments_impl,
 )
-from ..cli_discovery import (
+from .parsing.discovery import (
     apply_schema_overrides as _apply_schema_overrides_impl,
 )
-from ..cli_discovery import (
+from .parsing.discovery import (
     discover_tools as _discover_tools_impl,
 )
-from ..cli_discovery import (
+from .parsing.discovery import (
     extract_function_from_tool_obj as _extract_function_from_tool_obj_impl,
 )
-from ..cli_discovery import (
+from .parsing.discovery import (
     extract_metadata_from_tool_obj as _extract_metadata_from_tool_obj_impl,
 )
-from ..cli_discovery import (
+from .parsing.discovery import (
     get_function_info as _get_function_info_impl,
 )
-from ..cli_discovery import (
+from .parsing.discovery import (
     resolve_param_kwargs as _resolve_param_kwargs_impl,
 )
-from ..cli_discovery import (
+from .parsing.discovery import (
     should_expose_cli_param as _should_expose_cli_param_impl,
 )
-from ..cli_formatting import (
+from .formatting import (
     CLI_FORMAT_JSON,
     CLI_FORMAT_TOON,
     _attach_cli_meta,
     _build_cli_timezone_meta,
     _build_cli_timezone_meta_brief,
+    _format_result_for_cli,
     _format_result_minimal,
     _json_default,
-    _normalize_cli_formatter,
-    _prepare_cli_payload,
     _resolve_cli_formatter,
     _safe_tz_name,
-    _sanitize_json_compat,
 )
-from ..cli_runtime import (
+from .runtime.commands import (
     coerce_cli_scalar as _coerce_cli_scalar_impl,
 )
-from ..cli_runtime import (
+from .runtime.commands import (
     create_command_function as _create_command_function_impl,
 )
-from ..cli_runtime import (
+from .runtime.commands import (
     merge_dict as _merge_dict_impl,
 )
-from ..cli_runtime import (
+from .runtime.commands import (
     normalize_cli_list_value as _normalize_cli_list_value_impl,
 )
-from ..cli_runtime import (
+from .runtime.commands import (
     parse_kv_string as _parse_kv_string_impl,
 )
-from ..cli_runtime import (
+from .runtime.commands import (
     parse_set_overrides as _parse_set_overrides_impl,
 )
 from ..output_contract import resolve_output_contract
@@ -185,7 +181,7 @@ def _invoke_cli_tool_function(
 from ...shared.schema import PARAM_HINTS as _PARAM_HINTS
 from ...shared.schema import enrich_schema_with_shared_defs
 from ...shared.schema import get_function_info as _schema_get_function_info
-from ..server_utils import get_mcp_registry
+from .._mcp_tools import get_mcp_registry
 from ..unified_params import add_global_args_to_parser
 
 # Types for discovered metadata
@@ -253,19 +249,6 @@ def _flatten_request_model_param(info: Dict[str, Any]) -> Dict[str, Any]:
     info["request_param_name"] = request_param["name"]
     info["params"] = _iter_request_model_params(request_model)
     return info
-
-
-def _model_dump_compat(model: BaseModel) -> Dict[str, Any]:
-    dump = getattr(model, "model_dump", None)
-    if callable(dump):
-        dumped = dump()
-        if isinstance(dumped, dict):
-            return dumped
-        try:
-            return cast(Dict[str, Any], dict(cast(Any, dumped)))
-        except Exception:
-            return {}
-    return model.dict()
 
 
 def _argv_option_present_after_command(
@@ -440,51 +423,6 @@ def _apply_cli_output_mode_defaults(
             continue
         setattr(args, param_name, selected)
     return args
-
-
-def _format_result_for_cli(
-    result: Any,
-    *,
-    fmt: str,
-    verbose: bool,
-    cmd_name: str,
-    precision: Any = None,
-) -> str:
-    fmt_s = _normalize_cli_formatter(fmt)
-    precision_policy = resolve_output_precision(
-        None,
-        tool_name=cmd_name,
-        fmt=fmt_s,
-        precision=precision,
-    )
-    prepared = _prepare_cli_payload(
-        result,
-        fmt=fmt_s,
-        verbose=verbose,
-        cmd_name=cmd_name,
-        precision=precision_policy.mode,
-    )
-    if fmt_s == CLI_FORMAT_JSON:
-        payload = {"text": prepared} if isinstance(prepared, str) else prepared
-        payload = _sanitize_json_compat(payload)
-        return json.dumps(
-            payload,
-            ensure_ascii=False,
-            indent=2,
-            allow_nan=False,
-            default=_json_default,
-        )
-    if isinstance(prepared, str):
-        return prepared
-    try:
-        return _shared_minimal(
-            prepared,
-            verbose=verbose,
-            precision=precision_policy.mode,
-            tool_name=cmd_name,
-        )
-    except TypeError:
-        return _format_result_minimal(prepared, verbose=verbose)
 
 
 def _normalize_console_text(text: str) -> str:
@@ -671,19 +609,10 @@ def _apply_schema_overrides(
     )
 
 
-def _extract_function_from_tool_obj(tool_obj):
-    """Best-effort extraction of the underlying function from an MCP tool object."""
-    return _extract_function_from_tool_obj_impl(tool_obj)
+_extract_function_from_tool_obj = _extract_function_from_tool_obj_impl
 
 
-def _extract_metadata_from_tool_obj(tool_obj) -> Dict[str, Any]:
-    """Attempt to extract description and parameter docs from an MCP tool object.
-
-    Returns a dict with keys:
-    - description: Optional[str]
-    - param_docs: Dict[str, str]
-    """
-    return _extract_metadata_from_tool_obj_impl(tool_obj)
+_extract_metadata_from_tool_obj = _extract_metadata_from_tool_obj_impl
 
 
 def _is_union_origin(origin: Any) -> bool:
@@ -753,18 +682,6 @@ def add_dynamic_arguments(
     original param name (snake_case) so downstream mapping works.
     Also casts Optional[int|float|bool] to their base types for argparse.
     """
-    if isinstance(param_info, dict) and isinstance(param_info.get("params"), list):
-        param_info = {
-            **param_info,
-            "params": [
-                param
-                for param in param_info["params"]
-                if not (
-                    isinstance(param, dict)
-                    and str(param.get("name") or "").strip() in {"detail", "format", "output_mode", "output"}
-                )
-            ],
-        }
     _add_dynamic_arguments_impl(
         parser,
         param_info,
@@ -790,13 +707,10 @@ def _unwrap_optional_type(ptype: Any) -> Tuple[Any, Any]:
     return ptype, origin
 
 
-def _normalize_cli_list_value(value: Any) -> Any:
-    """Normalize CLI list values from comma/space/JSON forms into a flat list."""
-    return _normalize_cli_list_value_impl(value)
+_normalize_cli_list_value = _normalize_cli_list_value_impl
 
 
-def _coerce_cli_scalar(v: str) -> Any:
-    return _coerce_cli_scalar_impl(v)
+_coerce_cli_scalar = _coerce_cli_scalar_impl
 
 
 def _parse_set_overrides(items: Optional[List[str]]) -> Dict[str, Dict[str, Any]]:
@@ -804,10 +718,7 @@ def _parse_set_overrides(items: Optional[List[str]]) -> Dict[str, Dict[str, Any]
     return _parse_set_overrides_impl(items, coerce_cli_scalar=_coerce_cli_scalar)
 
 
-def _merge_dict(
-    dst: Optional[Dict[str, Any]], src: Optional[Dict[str, Any]]
-) -> Dict[str, Any]:
-    return _merge_dict_impl(dst, src)
+_merge_dict = _merge_dict_impl
 
 
 _FORECAST_TYPED_ARG_SPECS: Dict[str, Dict[str, Any]] = {
@@ -997,6 +908,12 @@ def _add_forecast_generate_args(cmd_parser: argparse.ArgumentParser) -> None:
         default=0.05,
         help="CI alpha (0.05 => 95%%).",
     )
+    group_uncertainty.add_argument(
+        "--detail",
+        choices=["compact", "standard", "full"],
+        default="compact",
+        help="Output detail level.",
+    )
 
     group_pipe = cmd_parser.add_argument_group("Pipeline")
     _add_forecast_typed_arg(
@@ -1089,8 +1006,6 @@ def _first_line(text: Optional[str]) -> str:
 
 
 def _should_expose_cli_param(*, cmd_name: str, param_name: str) -> bool:
-    if param_name in {"detail", "format", "output_mode", "output"}:
-        return False
     return _should_expose_cli_param_impl(cmd_name=cmd_name, param_name=param_name)
 
 
@@ -1674,7 +1589,7 @@ def main():
             if getattr(args, "print_config", False):
                 print(
                     _format_result_minimal(
-                        {"forecast_generate": _model_dump_compat(request)}, verbose=True
+                        {"forecast_generate": request.model_dump(mode="json")}, verbose=True
                     )
                 )
                 return 0

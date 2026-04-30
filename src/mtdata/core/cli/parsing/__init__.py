@@ -3,6 +3,18 @@ from typing import Any, Dict, List, Optional, Tuple, get_args, get_origin, is_ty
 
 from pydantic import BaseModel
 
+from .discovery import (
+    _COMMAND_PARAM_CHOICE_OVERRIDES,
+    add_dynamic_arguments,
+    apply_schema_overrides,
+    discover_tools,
+    extract_function_from_tool_obj,
+    extract_metadata_from_tool_obj,
+    get_function_info,
+    resolve_param_kwargs,
+    should_expose_cli_param,
+)
+
 
 def _is_pydantic_model_type(value: Any) -> bool:
     """Check if value is a Pydantic model type."""
@@ -99,4 +111,13 @@ __all__ = [
     "_command_variants",
     "_find_command_index",
     "_command_aliases",
+    "_COMMAND_PARAM_CHOICE_OVERRIDES",
+    "add_dynamic_arguments",
+    "apply_schema_overrides",
+    "discover_tools",
+    "extract_function_from_tool_obj",
+    "extract_metadata_from_tool_obj",
+    "get_function_info",
+    "resolve_param_kwargs",
+    "should_expose_cli_param",
 ]

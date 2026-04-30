@@ -13,7 +13,6 @@ from ..utils.mt5 import (
     MT5ConnectionError,
     _mt5_copy_rates_from,
     _mt5_copy_rates_range,
-    _mt5_epoch_to_utc as _mt5_epoch_to_utc_compat,
     _symbol_ready_guard,
     ensure_mt5_connection_or_raise,
     get_symbol_info_cached,
@@ -29,16 +28,11 @@ from ..utils.utils import (
 from ._mcp_instance import mcp
 from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from .execution_logging import run_logged_operation
-from .mt5_gateway import get_mt5_gateway
+from .mt5_gateway import create_mt5_gateway
 from .output_contract import normalize_output_verbosity_detail
 from ..shared.schema import CompactFullDetailLiteral, TimeframeLiteral
 
 logger = logging.getLogger(__name__)
-
-
-def _mt5_epoch_to_utc(value: float) -> float:
-    """Backward-compatible patch target; MT5 reads are normalized upstream."""
-    return _mt5_epoch_to_utc_compat(value)
 
 
 
@@ -296,7 +290,7 @@ def _fetch_rates(
     end: Optional[str],
     gateway: Any = None,
 ) -> Tuple[Optional[Any], Optional[str]]:
-    mt5_gateway = gateway or get_mt5_gateway(
+    mt5_gateway = gateway or create_mt5_gateway(
         adapter=mt5,
         ensure_connection_impl=ensure_mt5_connection_or_raise,
     )
@@ -389,7 +383,7 @@ def temporal_analyze(  # noqa: C901
         if min_bars is not None:
             context["min_bars"] = min_bars
         try:
-            mt5_gateway = get_mt5_gateway(
+            mt5_gateway = create_mt5_gateway(
                 adapter=mt5,
                 ensure_connection_impl=ensure_mt5_connection_or_raise,
             )

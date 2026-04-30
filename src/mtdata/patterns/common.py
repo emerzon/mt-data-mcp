@@ -10,10 +10,6 @@ from ..shared.constants import TIMEFRAME_SECONDS
 from ..shared.symbols import is_probably_crypto_symbol
 
 
-def _is_probably_crypto_symbol(symbol: Any) -> bool:
-    return is_probably_crypto_symbol(symbol)
-
-
 @dataclass
 class PatternResultBase:
     confidence: float
@@ -104,7 +100,7 @@ def data_quality_warnings(
         if volume.size >= 5:
             zero_share = float(np.mean(volume <= 0))
             if zero_share >= 0.6:
-                if _is_probably_crypto_symbol(symbol):
+                if is_probably_crypto_symbol(symbol):
                     warnings.append(
                         "Data quality warning: zero-volume bars dominate the sample "
                         "(common for crypto low-volume periods)."

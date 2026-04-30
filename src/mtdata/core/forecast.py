@@ -31,7 +31,7 @@ from ..utils.utils import parse_kv_or_json as _parse_kv_or_json
 from ._mcp_instance import mcp
 from .error_envelope import build_error_payload
 from .execution_logging import run_logged_operation
-from .mt5_gateway import get_mt5_gateway, mt5_connection_error
+from .mt5_gateway import create_mt5_gateway, mt5_connection_error
 from ..shared.schema import CompactFullDetailLiteral
 
 logger = logging.getLogger(__name__)
@@ -199,7 +199,7 @@ def run_forecast_volatility_estimate(*args, **kwargs):
 
 def _forecast_connection_error() -> Optional[Dict[str, Any]]:
     return mt5_connection_error(
-        get_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise),
+        create_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise),
     )
 
 
@@ -790,10 +790,10 @@ def forecast_barrier_prob(
     )
     """
     def _execute() -> Dict[str, Any]:
-        from ..forecast.barriers import (
+        from ..forecast.barriers_probabilities import (
             forecast_barrier_closed_form as _barrier_closed_form_impl,
         )
-        from ..forecast.barriers import (
+        from ..forecast.barriers_probabilities import (
             forecast_barrier_hit_probabilities as _barrier_hit_probabilities_impl,
         )
 
@@ -822,7 +822,7 @@ def forecast_barrier_optimize(
 ) -> Dict[str, Any]:
     """Optimize TP/SL barriers with support for presets, volatility scaling, ratios, and two-stage refinement."""
     def _execute() -> Dict[str, Any]:
-        from ..forecast.barriers import (
+        from ..forecast.barriers_optimization import (
             forecast_barrier_optimize as _barrier_optimize_impl,
         )
 

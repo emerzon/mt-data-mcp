@@ -1516,15 +1516,26 @@ class FinvizNewsSource:
                 return []
             out: List[NewsItem] = []
             for rank, item in enumerate(result.get("items", [])):
-                release = _safe_text(item.get("Release")) or "Economic event"
-                raw_event_for = _safe_text(item.get("For"))
+                release = _safe_text(item.get("event")) or "Economic event"
+                raw_event_for = _safe_text(item.get("ticker"))
                 event_for = _normalize_event_for(raw_event_for)
-                impact = _safe_text(item.get("Impact")).lower()
+                raw_importance = item.get("importance")
+                impact = {
+                    1: "low",
+                    2: "medium",
+                    3: "high",
+                }.get(raw_importance if isinstance(raw_importance, int) else None, "")
                 summary_parts = []
-                for key in ("Actual", "Expected", "Prior", "Category", "Reference"):
-                    value = _safe_text(item.get(key))
+                for display_key, item_key in (
+                    ("Actual", "actual"),
+                    ("Forecast", "forecast"),
+                    ("Previous", "previous"),
+                    ("Category", "category"),
+                    ("Reference", "reference"),
+                ):
+                    value = _safe_text(item.get(item_key))
                     if value:
-                        summary_parts.append(f"{key}: {value}")
+                        summary_parts.append(f"{display_key}: {value}")
                 priority = {
                     "high": NewsPriority.HIGH,
                     "medium": NewsPriority.MEDIUM,
@@ -1536,7 +1547,7 @@ class FinvizNewsSource:
                         provider=self.name,
                         source="Finviz Economic Calendar",
                         kind="economic_event",
-                        published_at=_maybe_parse_datetime(item.get("Datetime")),
+                        published_at=_maybe_parse_datetime(item.get("date")),
                         summary=" | ".join(summary_parts) or None,
                         category="economic_calendar",
                         priority=priority,
@@ -1547,7 +1558,7 @@ class FinvizNewsSource:
                             "source_rank": rank,
                             "search_text": " ".join(
                                 _safe_text(item.get(key))
-                                for key in ("Release", "For", "Category", "Reference")
+                                for key in ("event", "ticker", "category", "reference")
                             ),
                         },
                     )

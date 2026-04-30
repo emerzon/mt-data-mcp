@@ -311,27 +311,21 @@ class TestEstimateWarmupBars:
 
 
 # ===================================================================
-# 2. mtdata.core.indicators  (thin wrappers)
+# 2. mtdata.core.indicators  (canonical utility imports)
 # ===================================================================
 class TestCoreIndicatorsWrappers:
     def test_try_number_delegation(self):
-        """core.indicators._try_number delegates to indicators_docs; verify import path."""
+        """core.indicators._try_number uses the canonical indicators utility."""
         from mtdata.core.indicators import _try_number as core_try
-        try:
-            assert core_try("42") == 42
-            assert core_try("3.14") == pytest.approx(3.14)
-            assert core_try("bad") is None
-        except ImportError:
-            pytest.skip("core.indicators_docs not exposing _try_number")
+        assert core_try("42") == 42
+        assert core_try("3.14") == pytest.approx(3.14)
+        assert core_try("bad") is None
 
     def test_clean_help_text_delegation(self):
-        """core.indicators._clean_help_text delegates to indicators_docs."""
+        """core.indicators._clean_help_text uses the canonical indicators utility."""
         from mtdata.core.indicators import _clean_help_text as core_clean
-        try:
-            assert core_clean("") == ""
-            assert core_clean(None) == ""  # type: ignore[arg-type]
-        except ImportError:
-            pytest.skip("core.indicators_docs not exposing clean_help_text")
+        assert core_clean("") == ""
+        assert core_clean(None) == ""  # type: ignore[arg-type]
 
     def test_indicators_describe_returns_structured_documentation(self, monkeypatch):
         from mtdata.core import indicators as core_indicators

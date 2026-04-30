@@ -49,7 +49,7 @@ def main(_mocked_fetch) -> int:
             timeframe="H1",
             limit=800,
             method="clustering",
-            params={"window_size": 20, "k_regimes": 2},
+            params={"window_size": 20, "n_states": 2},
             detail="full",
             __cli_raw=True,
         )
@@ -61,17 +61,17 @@ def main(_mocked_fetch) -> int:
         print(f"FAILED: {res['error']}")
         return 1
 
-    states = np.asarray(res.get("state", []), dtype=int)
-    if states.size == 0:
-        print("FAILED: missing state output")
+    regimes = res.get("regimes", [])
+    if not regimes:
+        print("FAILED: missing regimes output")
         return 1
 
-    valid = states[states >= 0]
-    if valid.size == 0:
-        print("FAILED: all states undefined (-1)")
+    regime_ids = [row.get("regime") for row in regimes if isinstance(row, dict)]
+    if not regime_ids:
+        print("FAILED: regimes missing IDs")
         return 1
 
-    unique = np.unique(valid)
+    unique = np.unique(np.asarray(regime_ids, dtype=int))
     if unique.size < 2:
         print(f"FAILED: expected >=2 regimes, got {unique.tolist()}")
         return 1

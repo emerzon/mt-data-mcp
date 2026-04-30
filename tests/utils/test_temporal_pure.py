@@ -85,7 +85,7 @@ def _mock_guard_ok():
 
 
 def _epoch_identity(x):
-    """Stand-in for _mt5_epoch_to_utc: returns input unchanged."""
+    """Stand-in for the canonical MT5 epoch normalizer: returns input unchanged."""
     return float(x)
 
 
@@ -540,7 +540,7 @@ def _apply_analyze_patches(func):
     """
     func = patch(_P + "_resolve_client_tz", new=_tz_stub)(func)
     func = patch(_P + "_format_time_minimal", new=_fmt_stub)(func)
-    func = patch(_P + "_mt5_epoch_to_utc", new=_epoch_identity)(func)
+    func = patch("mtdata.utils.mt5._mt5_epoch_to_utc", new=_epoch_identity)(func)
     func = patch(_P + "_symbol_ready_guard", new=_guard_stub)(func)
     func = patch(_P + "ensure_mt5_connection_or_raise", new=lambda: None)(func)
     func = patch(_P + "get_symbol_info_cached", new=_info_stub)(func)
@@ -641,7 +641,7 @@ class TestTemporalAnalyze:
         rates = _make_rates(n=3, start_epoch=1704067200, interval=3600)
         mock_fetch.return_value = (rates, None)
 
-        with patch(_P + "_mt5_epoch_to_utc", new=lambda value: float(value) - 7200.0):
+        with patch("mtdata.utils.mt5._mt5_epoch_to_utc", new=lambda value: float(value) - 7200.0):
             r = _raw_temporal_analyze(symbol="EURUSD", timeframe="H1", lookback=1000, group_by="hour")
 
         assert r.get("success") is True

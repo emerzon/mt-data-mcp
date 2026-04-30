@@ -116,7 +116,7 @@ def test_market_status_symbol_mode_reports_heuristic_status(monkeypatch) -> None
             return SimpleNamespace(time=now_epoch, bid=1.1, ask=1.2)
 
     monkeypatch.setattr(market_status_mod, "datetime", FixedDateTime)
-    monkeypatch.setattr(market_status_mod, "get_mt5_gateway", lambda **kwargs: Gateway())
+    monkeypatch.setattr(market_status_mod, "create_mt5_gateway", lambda **kwargs: Gateway())
 
     result = raw(symbol="eurusd")
 
@@ -160,7 +160,7 @@ def test_market_status_symbol_mode_blocks_weekend_opening(monkeypatch) -> None:
             return SimpleNamespace(time=now_epoch - 60, bid=1.1, ask=1.2)
 
     monkeypatch.setattr(market_status_mod, "datetime", FixedDateTime)
-    monkeypatch.setattr(market_status_mod, "get_mt5_gateway", lambda **kwargs: Gateway())
+    monkeypatch.setattr(market_status_mod, "create_mt5_gateway", lambda **kwargs: Gateway())
 
     result = raw(symbol="EURUSD")
 
@@ -190,7 +190,7 @@ def test_market_status_symbol_mode_full_includes_diagnostics(monkeypatch) -> Non
         def symbol_info_tick(self, symbol: str):
             return None
 
-    monkeypatch.setattr(market_status_mod, "get_mt5_gateway", lambda **kwargs: Gateway())
+    monkeypatch.setattr(market_status_mod, "create_mt5_gateway", lambda **kwargs: Gateway())
 
     result = raw(symbol="BTCUSD", detail="full")
 

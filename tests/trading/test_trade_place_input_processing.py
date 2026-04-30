@@ -366,7 +366,7 @@ def test_trade_place_auto_close_attempts_recovery_on_sl_tp_fail() -> None:
     assert out.get("auto_close_result", {}).get("retcode") == 10009
 
 
-def test_trade_place_preserves_fallback_protection_status_and_warning() -> None:
+def test_trade_place_preserves_atomic_protection_status_without_fallback_fields() -> None:
     with patch(
         "mtdata.core.trading._place_market_order",
         return_value={
@@ -374,12 +374,8 @@ def test_trade_place_preserves_fallback_protection_status_and_warning() -> None:
             "sl_tp_result": {
                 "status": "applied",
                 "requested": {"sl": 64000.0, "tp": 68000.0},
-                "fallback_used": True,
             },
-            "protection_status": "protected_after_fallback",
-            "warnings": [
-                "TP/SL protection required a post-fill fallback modification. Verify the live position is protected."
-            ],
+            "protection_status": "protected",
         },
     ):
         out = trade_place(
@@ -390,8 +386,9 @@ def test_trade_place_preserves_fallback_protection_status_and_warning() -> None:
             take_profit=68000,
             __cli_raw=True,
         )
-    assert out.get("protection_status") == "protected_after_fallback"
-    assert any("fallback modification" in str(w) for w in out.get("warnings", []))
+    assert out.get("protection_status") == "protected"
+    assert "fallback_used" not in out.get("sl_tp_result", {})
+    assert not any("fallback" in str(w).lower() for w in out.get("warnings", []))
 
 
 def test_trade_modify_blank_expiration_keeps_position_path() -> None:

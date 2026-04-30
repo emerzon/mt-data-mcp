@@ -6,7 +6,6 @@ from types import SimpleNamespace
 from mtdata.core import schema_attach as schema_attach_mod
 from mtdata.shared.parameter_contracts import (
     OUTPUT_EXTRAS,
-    REMOVED_PUBLIC_OUTPUT_PARAMS,
 )
 
 
@@ -62,7 +61,7 @@ def test_attach_schemas_to_tools_patches_forecast_generate(monkeypatch) -> None:
     assert len(apply_calls) == 1
 
 
-def test_attach_schemas_to_tools_uses_shared_public_output_contract(monkeypatch) -> None:
+def test_attach_schemas_to_tools_preserves_tool_params_and_adds_public_output_contract(monkeypatch) -> None:
     tool_obj, _tool_func, _apply_calls = _attach_tool_schema(
         monkeypatch,
         "sample_tool",
@@ -79,9 +78,9 @@ def test_attach_schemas_to_tools_uses_shared_public_output_contract(monkeypatch)
 
     params = tool_obj.schema["parameters"]
     props = params["properties"]
-    for name in REMOVED_PUBLIC_OUTPUT_PARAMS:
-        assert name not in props
-    assert "detail" not in params.get("required", [])
+    assert props["detail"]["type"] == "string"
+    assert props["output"]["type"] == "string"
+    assert "detail" in params.get("required", [])
     assert props["json"]["type"] == "boolean"
     assert set(props["extras"]["anyOf"][0]["items"]["enum"]) == set(OUTPUT_EXTRAS)
 

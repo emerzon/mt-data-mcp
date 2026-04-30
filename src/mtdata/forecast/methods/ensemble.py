@@ -18,7 +18,7 @@ from ..ensemble_dispatch import (
     dispatch_callback_with_error as _dispatch_callback_with_error,
 )
 from ..interface import ForecastCallContext, ForecastMethod, ForecastResult
-from ..registry import ForecastRegistry
+from ..forecast_registry import ForecastRegistry
 
 # Canonical type for component dispatch callables.  Every ensemble dispatch
 # route (engine-injected or standalone default) must conform to this

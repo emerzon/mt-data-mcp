@@ -84,7 +84,7 @@ class TestConsolidatePayloadBOCPD:
         assert "transition_summary" in res
         assert res["regimes"][0]["start"] == "T1"
         assert res["regimes"][0]["end"] == "T1"
-        assert res["regimes"][0]["avg_conf"] == 0.9
+        assert res["regimes"][0]["regime_confidence"] == 0.9
         assert res["regimes"][0]["label"] == "segment_0"
         assert "transition_prob_at_start" not in res["regimes"][0]
         assert res["regimes"][1]["transition_prob_at_start"] == 0.9
@@ -143,9 +143,9 @@ class TestConsolidatePayloadHMM:
         }
         res = _consolidate_payload(payload, "hmm", "full")
         assert len(res["regimes"]) == 2
-        # HMM should include avg_conf
+        # HMM should include canonical regime_confidence.
         for seg in res["regimes"]:
-            assert "avg_conf" in seg
+            assert "regime_confidence" in seg
 
     def test_hmm_single_state(self):
         payload = {
@@ -194,7 +194,13 @@ class TestConsolidatePayloadHMM:
         }
         res = _consolidate_payload(payload, "clustering", "full")
         assert res["regimes"] == [
-            {"start": "T2", "end": "T3", "bars": 2, "regime": 2, "avg_conf": 1.0}
+            {
+                "start": "T2",
+                "end": "T3",
+                "bars": 2,
+                "regime": 2,
+                "regime_confidence": 1.0,
+            }
         ]
 
     def test_state_not_list_fallback(self):

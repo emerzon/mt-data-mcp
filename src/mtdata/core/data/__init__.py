@@ -1,15 +1,15 @@
 import logging
 import statistics
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 from ...services.data_service import fetch_candles, fetch_ticks
+from ...shared.schema import CompactFullDetailLiteral, TimeframeLiteral
 from ...utils.mt5 import ensure_mt5_connection_or_raise
 from ...utils.utils import _coerce_finite_float
 from .._mcp_instance import mcp
 from ..execution_logging import run_logged_operation
-from ..mt5_gateway import get_mt5_gateway
+from ..mt5_gateway import create_mt5_gateway
 from ..pivot import pivot_compute_points, support_resistance_levels
-from ...shared.schema import CompactFullDetailLiteral, TimeframeLiteral
 from .requests import (
     DataFetchCandlesRequest,
     DataFetchTicksRequest,
@@ -26,8 +26,6 @@ from .wait_events import _WAIT_EVENT_IDENTITY_FIELDS
 __all__ = ['data_fetch_candles', 'data_fetch_ticks', 'wait_event']
 
 logger = logging.getLogger(__name__)
-
-WaitEventPublicWatchSpec = Union[Dict[str, Any], str]
 
 _COMPACT_WAIT_EVENT_SPEC_FIELDS = (
     "type",
@@ -390,7 +388,6 @@ def data_fetch_candles(
         - symbol: str
         - timeframe: str
         - candles: int (number of candles returned)
-        - last_candle_open: bool (legacy flag on returned rows)
         - has_forming_candle: bool (true when the latest available candle is still forming)
         - forming_candle_status: str ("included", "skipped", "detected", or "none")
         - forming_candle_included: bool (true when the forming candle is present in data)
@@ -431,7 +428,7 @@ def data_fetch_candles(
         limit=request.limit,
         func=lambda: run_data_fetch_candles(
             request,
-            gateway=get_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise),
+            gateway=create_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise),
             fetch_candles_impl=fetch_candles,
         ),
     )
@@ -460,7 +457,7 @@ def data_fetch_ticks(
         detail=request.detail,
         func=lambda: run_data_fetch_ticks(
             request,
-            gateway=get_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise),
+            gateway=create_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise),
             fetch_ticks_impl=fetch_ticks,
         ),
     )
@@ -471,8 +468,8 @@ def wait_event(
     symbol: Optional[str] = None,
     timeframe: TimeframeLiteral = "M1",
     watch_tick_count_spike: bool = True,
-    watch_for: Optional[List[WaitEventPublicWatchSpec]] = None,
-    end_on: Optional[List[Union[Dict[str, Any], str]]] = None,
+    watch_for: Optional[List[Dict[str, Any]]] = None,
+    end_on: Optional[List[Dict[str, Any]]] = None,
     detail: CompactFullDetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """Wait for watch events on a symbol until the next timeframe boundary.
@@ -489,17 +486,15 @@ def wait_event(
     its default watcher set. For boundary-only waits, pass `watch_for=[]` and
     rely on `timeframe` or explicit `end_on` candle-close events.
 
-    Boundary waits belong in `end_on` as `{"type": "candle_close", ...}`;
-    string shorthands such as `"new_bar"` and `"candle_close"` are accepted
-    and normalized to that shape. `watch_for` is for market/account events and
-    accepts event objects or strings like `"order_filled"`; candle-close
-    strings passed in `watch_for` are moved to `end_on`.
+    Boundary waits belong in `end_on` as `{"type": "candle_close", ...}`.
+    `watch_for` is for explicit market/account event objects only; pass
+    candle-close boundary objects in `end_on` instead.
     When a candle boundary is reached and a symbol is known, `boundary_event`
     includes a best-effort `closed_candle` snapshot with OHLCV and basic
     range/body/wick stats for the candle that just closed.
 
     Example: `end_on=[{"type": "candle_close", "timeframe": "H1"}]` or
-    `watch_for=["order_filled", "new_bar"]`.
+    `watch_for=[{"type": "order_filled", "symbol": "EURUSD"}]`.
 
     Advanced callers can pass explicit `watch_for` and `end_on` event specs to
     use the richer wait-event engine directly. When explicit `watch_for` is
@@ -543,7 +538,7 @@ def wait_event(
         )
         result = run_wait_event(
             request,
-            gateway=get_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise),
+            gateway=create_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise),
         )
         if isinstance(result, dict):
             result = _compact_wait_event_public_result(

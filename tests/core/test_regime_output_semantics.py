@@ -43,7 +43,7 @@ def test_build_all_method_comparison_uses_semantic_signals() -> None:
             "bocpd": {
                 "current_regime": {
                     "status": "no_recent_change_detected",
-                    "started_at": "T1",
+                    "since": "T1",
                     "bars_since_change": 500,
                     "transition_risk": "low",
                 },
@@ -62,7 +62,7 @@ def test_build_all_method_comparison_uses_semantic_signals() -> None:
                 "current_regime": {
                     "regime_id": 1,
                     "label": "positive_mod_vol",
-                    "confidence": 0.857,
+                    "regime_confidence": 0.857,
                 },
                 "regime_info": {
                     1: {
@@ -78,14 +78,14 @@ def test_build_all_method_comparison_uses_semantic_signals() -> None:
                 "current_regime": {
                     "regime_id": 1,
                     "label": "regime_bullish",
-                    "confidence": 1.0,
+                    "regime_confidence": 1.0,
                 }
             },
             "garch": {
                 "current_regime": {
                     "regime_id": 0,
                     "label": "low_vol",
-                    "confidence": 1.0,
+                    "regime_confidence": 1.0,
                 },
                 "regime_info": {
                     0: {
@@ -112,7 +112,7 @@ def test_build_all_method_comparison_uses_semantic_signals() -> None:
                 "current_regime": {
                     "regime_id": 1,
                     "label": "negative_mod_vol",
-                    "confidence": 0.3524,
+                    "regime_confidence": 0.3524,
                 },
                 "regime_info": {
                     1: {
@@ -444,7 +444,10 @@ def test_rule_based_compact_omits_explanatory_fields() -> None:
     assert "note" not in regime
     assert "signal_source" not in regime
     assert "params_used" not in out
-    assert out["current_regime"]["regime_confidence"] == out["regimes"][0]["avg_conf"]
+    assert (
+        out["current_regime"]["regime_confidence"]
+        == out["regimes"][0]["regime_confidence"]
+    )
     assert out["regimes"][0]["start"] == out["current_regime"]["since"]
     assert out["regime_info"][out["current_regime"]["regime_id"]]["label"] == "ranging"
     assert out["total_regimes"] == 1

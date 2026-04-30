@@ -12,7 +12,7 @@ import pandas as pd
 from ..common import build_ci_diagnostics as _build_ci_diagnostics
 from ..common import edge_pad_to_length as _edge_pad_to_length
 from ..interface import CancelToken, ForecastMethod, ForecastResult, ProgressReporter, TrainResult
-from ..registry import ForecastRegistry
+from ..forecast_registry import ForecastRegistry
 
 logger = logging.getLogger(__name__)
 

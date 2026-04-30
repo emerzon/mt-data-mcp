@@ -14,7 +14,9 @@ def test_history_uses_start_end_ohlcv_and_drops_open_bar() -> None:
             {"time": 1735693200.0, "close": 1.2},
             {"time": 1735696800.0, "close": 1.3},
         ],
-        "last_candle_open": True,
+        "has_forming_candle": True,
+        "forming_candle_status": "included",
+        "forming_candle_included": True,
     }
     with patch.object(web_api.mt5_connection, "_ensure_connection", return_value=True), patch(
         "mtdata.core.web_api._fetch_candles_impl", return_value=payload
@@ -31,6 +33,12 @@ def test_history_uses_start_end_ohlcv_and_drops_open_bar() -> None:
 
     assert len(res["data"]) == 2
     assert res["candles"] == 2
+    assert res["has_forming_candle"] is True
+    assert res["forming_candle_status"] == "skipped"
+    assert res["forming_candle_included"] is False
+    assert res["forming_candle_skipped"] is True
+    assert res["incomplete_candles_skipped"] == 1
+    assert "last_candle_open" not in res
     kwargs = mock_fetch.call_args.kwargs
     assert kwargs["start"] == "2025-01-01 00:00"
     assert kwargs["end"] == "2025-01-01 03:00"
@@ -46,7 +54,9 @@ def test_history_passes_include_spread() -> None:
         "data": [
             {"time": 1735689600.0, "close": 1.1, "spread": 12},
         ],
-        "last_candle_open": False,
+        "has_forming_candle": False,
+        "forming_candle_status": "none",
+        "forming_candle_included": False,
     }
     with patch.object(web_api.mt5_connection, "_ensure_connection", return_value=True), patch(
         "mtdata.core.web_api._fetch_candles_impl", return_value=payload

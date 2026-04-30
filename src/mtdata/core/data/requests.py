@@ -13,7 +13,6 @@ from pydantic import (
     model_validator,
 )
 
-from ..output_contract import normalize_output_detail
 from ...shared.schema import (
     CompactFullDetailLiteral,
     CompactStandardFullDetailLiteral,
@@ -22,6 +21,8 @@ from ...shared.schema import (
     SimplifySpec,
     TimeframeLiteral,
 )
+from ...utils.coercion import coerce_finite_float
+from ..output_contract import normalize_output_detail
 
 _INDICATOR_FORMAT_HELP = (
     "Use bare names like 'rsi', underscore forms like 'rsi_14', "
@@ -88,13 +89,17 @@ def _parse_indicator_numeric_value(value: Any, *, raw_text: str, source_spec: st
         try:
             parsed = json.loads(text)
         except Exception:
-            try:
-                parsed = float(text)
-            except Exception as exc:
-                raise _indicator_numeric_value_error(raw_text, source_spec) from exc
-    if isinstance(parsed, bool) or not isinstance(parsed, (int, float)):
+            parsed_float = coerce_finite_float(text)
+            if parsed_float is None:
+                try:
+                    raise ValueError(text)
+                except ValueError as exc:
+                    raise _indicator_numeric_value_error(raw_text, source_spec) from exc
+            parsed = parsed_float
+    parsed_float = coerce_finite_float(parsed)
+    if isinstance(parsed, bool) or parsed_float is None:
         raise _indicator_numeric_value_error(raw_text, source_spec)
-    return float(parsed)
+    return parsed_float
 
 
 def _normalize_indicator_param_mapping(params: Dict[Any, Any], *, source_spec: str) -> Dict[str, float]:
@@ -224,32 +229,18 @@ def _validate_positive_limit(value: int) -> int:
 def _validate_non_negative(value: Optional[float], name: str) -> Optional[float]:
     if value is None:
         return None
-    value_f = float(value)
+    value_f = coerce_finite_float(value)
+    if value_f is None:
+        raise ValueError(f"{name} must be finite.")
     if value_f < 0:
         raise ValueError(f"{name} must be greater than or equal to 0.")
     return value_f
 
 
-def _reject_wait_event_price_direction_alias(value: Any) -> Any:
-    if value is None:
-        return value
-    text = str(value).strip().lower()
-    if text in {"above", "below"}:
-        raise ValueError("direction aliases 'above'/'below' were removed; use 'up'/'down'.")
-    return value
-
-
-def _reject_wait_event_account_side_alias(value: Any) -> Any:
-    if value is None:
-        return None
-    text = str(value).strip().lower()
-    if text in {"long", "short"}:
-        raise ValueError("side aliases 'long'/'short' were removed; use 'buy'/'sell'.")
-    return value
-
-
 def _validate_positive_float(value: float, name: str) -> float:
-    value_f = float(value)
+    value_f = coerce_finite_float(value)
+    if value_f is None:
+        raise ValueError(f"{name} must be finite.")
     if value_f <= 0:
         raise ValueError(f"{name} must be greater than 0.")
     return value_f
@@ -444,10 +435,6 @@ class _WaitAccountEventBase(BaseModel):
     def _validate_position_ticket(cls, value: Optional[int]) -> Optional[int]:
         return _validate_optional_ticket(value, "position_ticket")
 
-    @field_validator("side", mode="before")
-    @classmethod
-    def _reject_legacy_side_aliases(cls, value: Optional[str]) -> Optional[str]:
-        return _reject_wait_event_account_side_alias(value)
 
 class CandleCloseEventSpec(BaseModel):
     type: Literal["candle_close"] = "candle_close"
@@ -596,11 +583,6 @@ class PriceTouchLevelEventSpec(BaseModel):
     direction: Literal["up", "down", "either"] = "either"
     tolerance: float = 0.0
 
-    @field_validator("direction", mode="before")
-    @classmethod
-    def _reject_legacy_direction_aliases(cls, value: Any) -> Any:
-        return _reject_wait_event_price_direction_alias(value)
-
     @field_validator("tolerance")
     @classmethod
     def _validate_tolerance(cls, value: float) -> float:
@@ -616,11 +598,6 @@ class PriceBreakLevelEventSpec(BaseModel):
     direction: Literal["up", "down", "either"] = "either"
     tolerance: float = 0.0
     confirm_ticks: int = 1
-
-    @field_validator("direction", mode="before")
-    @classmethod
-    def _reject_legacy_direction_aliases(cls, value: Any) -> Any:
-        return _reject_wait_event_price_direction_alias(value)
 
     @field_validator("tolerance")
     @classmethod
@@ -643,11 +620,6 @@ class PriceEnterZoneEventSpec(BaseModel):
     upper: float
     price_source: Literal["auto", "bid", "ask", "mid", "last"] = "auto"
     direction: Literal["up", "down", "either"] = "either"
-
-    @field_validator("direction", mode="before")
-    @classmethod
-    def _reject_legacy_direction_aliases(cls, value: Any) -> Any:
-        return _reject_wait_event_price_direction_alias(value)
 
     @model_validator(mode="after")
     def _validate_bounds(self) -> "PriceEnterZoneEventSpec":
@@ -680,119 +652,6 @@ class StopThreatEventSpec(_WaitAccountEventBase):
         return 0.0 if validated is None else float(validated)
 
 
-_REMOVED_WAIT_EVENT_TYPE_ALIASES = {
-    "price_level_touch": "price_touch_level",
-}
-
-_WAIT_EVENT_BOUNDARY_STRING_ALIASES = {
-    "new_bar",
-    "candle_close",
-    "bar_close",
-    "candle_closed",
-}
-
-_WAIT_EVENT_WATCH_STRING_TYPES = {
-    "order_created",
-    "order_filled",
-    "order_cancelled",
-    "position_opened",
-    "position_closed",
-    "tp_hit",
-    "sl_hit",
-    "price_change",
-    "volume_spike",
-    "tick_count_spike",
-    "spread_spike",
-    "tick_count_drought",
-    "range_expansion",
-    "pending_near_fill",
-    "stop_threat",
-}
-
-
-def _normalize_wait_event_string(value: str, *, field_name: str) -> Dict[str, Any]:
-    event_type = value.strip().lower()
-    replacement = _REMOVED_WAIT_EVENT_TYPE_ALIASES.get(event_type)
-    if replacement is not None:
-        raise ValueError(f"{event_type} was removed; use {replacement}.")
-    if event_type in _WAIT_EVENT_BOUNDARY_STRING_ALIASES:
-        return {"type": "candle_close"}
-    if field_name == "watch_for" and event_type in _WAIT_EVENT_WATCH_STRING_TYPES:
-        return {"type": event_type}
-    if field_name == "watch_for":
-        raise ValueError(
-            "Unknown wait_event watch_for string. Use an event object or one of: "
-            f"{', '.join(sorted(_WAIT_EVENT_WATCH_STRING_TYPES | _WAIT_EVENT_BOUNDARY_STRING_ALIASES))}."
-        )
-    raise ValueError("end_on only accepts candle_close/new_bar boundary events.")
-
-
-def _normalize_wait_event_bucket(value: Any, *, field_name: str) -> Any:
-    if not isinstance(value, list):
-        return value
-    return [
-        _normalize_wait_event_string(item, field_name=field_name)
-        if isinstance(item, str)
-        else item
-        for item in value
-    ]
-
-
-def _reject_legacy_wait_event_bucket(value: Any, *, field_name: str) -> Any:
-    if not isinstance(value, list):
-        return value
-
-    for item in value:
-        if isinstance(item, str):
-            continue
-        if not isinstance(item, dict):
-            continue
-
-        event_type = str(item.get("type") or "").strip()
-        replacement = _REMOVED_WAIT_EVENT_TYPE_ALIASES.get(event_type)
-        if replacement is not None:
-            raise ValueError(f"{event_type} was removed; use {replacement}.")
-        if field_name == "watch_for" and event_type == "candle_close":
-            raise ValueError("watch_for no longer accepts candle_close; use end_on.")
-        if field_name == "end_on" and event_type and event_type != "candle_close":
-            raise ValueError("end_on only accepts candle_close events.")
-
-
-def _reject_legacy_wait_event_request_payload(value: Any) -> Any:
-    if not isinstance(value, dict):
-        return value
-
-    data = dict(value)
-    if "instrument" in data:
-        raise ValueError("instrument was removed; use symbol")
-
-    if "watch_for" in data:
-        data["watch_for"] = _normalize_wait_event_bucket(
-            data.get("watch_for"),
-            field_name="watch_for",
-        )
-    if "end_on" in data:
-        data["end_on"] = _normalize_wait_event_bucket(
-            data.get("end_on"),
-            field_name="end_on",
-        )
-    if isinstance(data.get("watch_for"), list):
-        watch_for = []
-        end_on = list(data.get("end_on") or [])
-        for item in data["watch_for"]:
-            if isinstance(item, dict) and item.get("type") == "candle_close":
-                end_on.append(item)
-            else:
-                watch_for.append(item)
-        data["watch_for"] = watch_for
-        if end_on:
-            data["end_on"] = end_on
-
-    _reject_legacy_wait_event_bucket(data.get("watch_for"), field_name="watch_for")
-    _reject_legacy_wait_event_bucket(data.get("end_on"), field_name="end_on")
-    return data
-
-
 WaitWatchEventSpec = Annotated[
     OrderCreatedEventSpec
     | OrderFilledEventSpec
@@ -819,6 +678,8 @@ WaitBoundaryEventSpec = CandleCloseEventSpec
 
 
 class WaitEventRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
     watch_for: Optional[List[WaitWatchEventSpec]] = None
     end_on: List[WaitBoundaryEventSpec] = Field(default_factory=list)
     symbol: Optional[str] = None
@@ -831,11 +692,6 @@ class WaitEventRequest(BaseModel):
     poll_interval_seconds: float = 0.5
     max_wait_seconds: Optional[float] = 86400.0
     accept_preexisting: bool = False
-
-    @model_validator(mode="before")
-    @classmethod
-    def _reject_legacy_inputs(cls, value: Any) -> Any:
-        return _reject_legacy_wait_event_request_payload(value)
 
     @field_validator("order_ticket")
     @classmethod
@@ -864,11 +720,6 @@ class WaitEventRequest(BaseModel):
     @classmethod
     def _validate_max_wait_seconds(cls, value: Optional[float]) -> Optional[float]:
         return _validate_non_negative(value, "max_wait_seconds")
-
-    @field_validator("side", mode="before")
-    @classmethod
-    def _reject_legacy_side_aliases(cls, value: Optional[str]) -> Optional[str]:
-        return _reject_wait_event_account_side_alias(value)
 
     @model_validator(mode="after")
     def _validate_explicit_empty_watchers(self) -> "WaitEventRequest":

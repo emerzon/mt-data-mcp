@@ -1,6 +1,6 @@
-"""Extended tests for mtdata.forecast.barriers covering uncovered lines.
+"""Extended tests for forecast barrier shared helpers covering uncovered lines.
 
-Targets: _is_crypto_symbol, _auto_barrier_method, _brownian_bridge_hits,
+Targets: _auto_barrier_method, _brownian_bridge_hits,
          _normalize_trade_direction, and barrier grid preset constants.
          All pure logic – no MT5 calls.
 """
@@ -11,13 +11,13 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from mtdata.forecast.barriers import (
+from mtdata.forecast.barriers_shared import (
     BARRIER_GRID_PRESETS,
     _auto_barrier_method,
     _brownian_bridge_hits,
-    _is_crypto_symbol,
-    _normalize_trade_direction,
 )
+from mtdata.shared.symbols import is_probably_crypto_symbol
+from mtdata.utils.barriers import normalize_trade_direction as _normalize_trade_direction
 
 
 # ---------------------------------------------------------------------------
@@ -47,32 +47,32 @@ def _regime_switch_prices(n: int, seed: int = 10) -> np.ndarray:
 
 
 # ===================================================================
-# _is_crypto_symbol
+# is_probably_crypto_symbol
 # ===================================================================
 class TestIsCryptoSymbol:
     def test_btcusd(self):
-        assert _is_crypto_symbol("BTCUSD") is True
+        assert is_probably_crypto_symbol("BTCUSD") is True
 
     def test_ethusd(self):
-        assert _is_crypto_symbol("ETHUSD") is True
+        assert is_probably_crypto_symbol("ETHUSD") is True
 
     def test_eurusd(self):
-        assert _is_crypto_symbol("EURUSD") is False
+        assert is_probably_crypto_symbol("EURUSD") is False
 
     def test_empty(self):
-        assert _is_crypto_symbol("") is False
+        assert is_probably_crypto_symbol("") is False
 
     def test_none(self):
-        assert _is_crypto_symbol(None) is False
+        assert is_probably_crypto_symbol(None) is False
 
     def test_solusd_lower(self):
-        assert _is_crypto_symbol("solusd") is True
+        assert is_probably_crypto_symbol("solusd") is True
 
     def test_xrp(self):
-        assert _is_crypto_symbol("XRPUSD") is True
+        assert is_probably_crypto_symbol("XRPUSD") is True
 
     def test_aapl(self):
-        assert _is_crypto_symbol("AAPL") is False
+        assert is_probably_crypto_symbol("AAPL") is False
 
 
 # ===================================================================

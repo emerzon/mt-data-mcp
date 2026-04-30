@@ -417,7 +417,7 @@ class TestBarrierOptimizationWithStats(_BarrierOptimizationPatchMixin, unittest.
     
     def test_barrier_optimize_with_statistical_robustness(self):
         """Test barrier optimization with statistical robustness enabled."""
-        from mtdata.forecast.barriers import forecast_barrier_optimize
+        from mtdata.forecast.barriers_optimization import forecast_barrier_optimize
         
         result = forecast_barrier_optimize(
             symbol="EURUSD",
@@ -450,7 +450,7 @@ class TestBarrierOptimizationWithStats(_BarrierOptimizationPatchMixin, unittest.
     
     def test_barrier_optimize_with_convergence_check(self):
         """Test barrier optimization with convergence diagnostics."""
-        from mtdata.forecast.barriers import forecast_barrier_optimize
+        from mtdata.forecast.barriers_optimization import forecast_barrier_optimize
         
         result = forecast_barrier_optimize(
             symbol="EURUSD",
@@ -478,7 +478,7 @@ class TestBarrierOptimizationWithStats(_BarrierOptimizationPatchMixin, unittest.
     
     def test_barrier_optimize_minimum_sims_auto_adjustment(self):
         """Test that n_sims is automatically increased for statistical robustness."""
-        from mtdata.forecast.barriers import forecast_barrier_optimize
+        from mtdata.forecast.barriers_optimization import forecast_barrier_optimize
         
         result = forecast_barrier_optimize(
             symbol="EURUSD",
@@ -506,7 +506,7 @@ class TestBarrierOptimizationWithStats(_BarrierOptimizationPatchMixin, unittest.
         """Cross-seed stability should re-evaluate the selected barrier for each seed."""
         from unittest.mock import patch
 
-        from mtdata.forecast.barriers import forecast_barrier_optimize
+        from mtdata.forecast.barriers_optimization import forecast_barrier_optimize
 
         seen_seeds = []
 
@@ -558,7 +558,7 @@ class TestBarrierOptimizationWithStats(_BarrierOptimizationPatchMixin, unittest.
         """Convergence should track the running estimate for the selected objective."""
         from unittest.mock import patch
 
-        from mtdata.forecast.barriers import forecast_barrier_optimize
+        from mtdata.forecast.barriers_optimization import forecast_barrier_optimize
 
         captured = {}
 
@@ -618,7 +618,7 @@ class TestBarrierOptimizationWithStats(_BarrierOptimizationPatchMixin, unittest.
         """Sensitivity analysis should be present when explicitly enabled."""
         from unittest.mock import patch
 
-        from mtdata.forecast.barriers import forecast_barrier_optimize
+        from mtdata.forecast.barriers_optimization import forecast_barrier_optimize
 
         def fake_sim(prices, horizon, n_sims, seed, **kwargs):
             base = float(prices[-1])

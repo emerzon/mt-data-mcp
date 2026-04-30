@@ -1375,7 +1375,7 @@ def test_forecast_tune_genetic_and_barrier_prob_routing(monkeypatch):
 
     monkeypatch.setattr(cf, "_build_barrier_kwargs_from", lambda _: {"tp_abs": 1.2, "sl_abs": 1.1})
 
-    import mtdata.forecast.barriers as barriers_mod
+    import mtdata.forecast.barriers_probabilities as barriers_mod
 
     called = {}
 
@@ -1542,7 +1542,7 @@ def test_forecast_barrier_prob_wrapper_emits_single_finish_event(caplog, monkeyp
     monkeypatch.setattr(cf, "_forecast_connection_error", lambda: None)
     monkeypatch.setattr(cf, "_build_barrier_kwargs_from", lambda _: {"tp_abs": 1.2, "sl_abs": 1.1})
 
-    import mtdata.forecast.barriers as barriers_mod
+    import mtdata.forecast.barriers_probabilities as barriers_mod
 
     monkeypatch.setattr(
         barriers_mod,
@@ -1572,7 +1572,7 @@ def test_forecast_barrier_prob_standard_hides_curves_only(monkeypatch):
     monkeypatch.setattr(cf, "_forecast_connection_error", lambda: None)
     monkeypatch.setattr(cf, "_build_barrier_kwargs_from", lambda _: {"tp_abs": 1.2, "sl_abs": 1.1})
 
-    import mtdata.forecast.barriers as barriers_mod
+    import mtdata.forecast.barriers_probabilities as barriers_mod
 
     monkeypatch.setattr(
         barriers_mod,
@@ -1775,7 +1775,7 @@ def test_forecast_barrier_optimize_routes_profile_args(monkeypatch):
     raw_opt = _unwrap(cf.forecast_barrier_optimize)
     called = {}
 
-    import mtdata.forecast.barriers as barriers_mod
+    import mtdata.forecast.barriers_optimization as barriers_mod
 
     def fake_optimize(**kwargs):
         called.update(kwargs)
@@ -1805,7 +1805,7 @@ def test_forecast_barrier_optimize_routes_statistical_robustness_args(monkeypatc
     raw_opt = _unwrap(cf.forecast_barrier_optimize)
     called = {}
 
-    import mtdata.forecast.barriers as barriers_mod
+    import mtdata.forecast.barriers_optimization as barriers_mod
 
     def fake_optimize(**kwargs):
         called.update(kwargs)
@@ -1851,7 +1851,7 @@ def test_forecast_barrier_optimize_routes_advanced_grid_params(monkeypatch):
     raw_opt = _unwrap(cf.forecast_barrier_optimize)
     called = {}
 
-    import mtdata.forecast.barriers as barriers_mod
+    import mtdata.forecast.barriers_optimization as barriers_mod
 
     def fake_optimize(**kwargs):
         called.update(kwargs)
@@ -1874,7 +1874,7 @@ def test_forecast_barrier_optimize_keeps_grid_default_path(monkeypatch):
     raw_opt = _unwrap(cf.forecast_barrier_optimize)
     called = {}
 
-    import mtdata.forecast.barriers as barriers_mod
+    import mtdata.forecast.barriers_optimization as barriers_mod
 
     def fake_optimize(**kwargs):
         called.update(kwargs)
@@ -1901,7 +1901,7 @@ def test_forecast_barrier_optimize_standard_disables_concise_only(monkeypatch):
     raw_opt = _unwrap(cf.forecast_barrier_optimize)
     called = {}
 
-    import mtdata.forecast.barriers as barriers_mod
+    import mtdata.forecast.barriers_optimization as barriers_mod
 
     def fake_optimize(**kwargs):
         called.update(kwargs)
@@ -1920,7 +1920,7 @@ def test_forecast_barrier_optimize_applies_optuna_defaults_when_requested(monkey
     raw_opt = _unwrap(cf.forecast_barrier_optimize)
     called = {}
 
-    import mtdata.forecast.barriers as barriers_mod
+    import mtdata.forecast.barriers_optimization as barriers_mod
 
     def fake_optimize(**kwargs):
         called.update(kwargs)
@@ -1939,7 +1939,7 @@ def test_forecast_barrier_optimize_preserves_explicit_seed(monkeypatch):
     raw_opt = _unwrap(cf.forecast_barrier_optimize)
     called = {}
 
-    import mtdata.forecast.barriers as barriers_mod
+    import mtdata.forecast.barriers_optimization as barriers_mod
 
     def fake_optimize(**kwargs):
         called.update(kwargs)

@@ -2,7 +2,9 @@ import logging
 import re
 from typing import Any, Dict, List, Literal, Optional
 
-# Import the actual implementation from utils
+from ..utils.indicators import _try_number
+from ..utils.indicators import clean_help_text as _clean_help_text
+from ..utils.indicators import infer_defaults_from_doc as _infer_defaults_from_doc
 from ..utils.indicators import list_ta_indicators as _list_ta_indicators
 from ..utils.utils import _table_from_rows
 from ._mcp_instance import mcp
@@ -11,22 +13,6 @@ from .execution_logging import run_logged_operation
 from ..shared.schema import CategoryLiteral, CompactFullDetailLiteral, IndicatorNameLiteral
 
 logger = logging.getLogger(__name__)
-
-def _infer_defaults_from_doc(func_name: str, doc_text: str, params: List[Dict[str, Any]]):
-    """Delegate to utils implementation."""
-    from ..core.indicators_docs import infer_defaults_from_doc as _impl
-    return _impl(func_name, doc_text, params)
-
-def _try_number(s: str):
-    """Delegate to utils implementation.""" 
-    from ..core.indicators_docs import _try_number as _impl
-    return _impl(s)
-
-def _clean_help_text(text: str, func_name: Optional[str] = None, func: Optional[Any] = None) -> str:
-    """Delegate to utils implementation."""
-    from ..core.indicators_docs import clean_help_text as _impl
-    return _impl(text, func_name=func_name)
-
 
 _DOC_SECTION_RE = re.compile(r"^([A-Za-z][A-Za-z0-9 _/\-]{1,48})\s*:\s*$")
 _DOC_PARAM_RE = re.compile(r"^[\-\*\u2022]?\s*([A-Za-z_][A-Za-z0-9_]*)\s*(?:\([^)]*\))?\s*:\s*(.+)$")

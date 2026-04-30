@@ -12,9 +12,9 @@ from mtdata.core.market_depth import market_depth_fetch, market_ticker
 from mtdata.utils.mt5 import MT5ConnectionError
 
 
-def _raw_market_depth_fetch(symbol: str, spread: bool = False, compact: bool = False):
+def _raw_market_depth_fetch(symbol: str, spread: bool = False, require_dom: bool = False):
     raw = getattr(market_depth_fetch, "__wrapped__", market_depth_fetch)
-    return raw(symbol, spread=spread, compact=compact)
+    return raw(symbol, spread=spread, require_dom=require_dom)
 
 
 def _raw_market_ticker(symbol: str, *, detail: str = "full", price_field=None):
@@ -188,7 +188,7 @@ def test_market_depth_compact_mode_fails_fast_without_dom() -> None:
         mt5.market_book_get.return_value = []
         mt5.symbol_info_tick.return_value = tick
 
-        out = _raw_market_depth_fetch("BTCUSD", compact=True)
+        out = _raw_market_depth_fetch("BTCUSD", require_dom=True)
 
     assert out["error"] == "DOM not available for BTCUSD. Use market_ticker for bid/ask snapshot instead."
     assert out["recommended_alternative"] == "market_ticker"

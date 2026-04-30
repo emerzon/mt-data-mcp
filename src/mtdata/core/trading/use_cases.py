@@ -128,18 +128,14 @@ def _shape_trade_place_preview(
     return {key: payload[key] for key in keys if key in payload}
 
 
-def _sl_tp_result_details(result: Dict[str, Any]) -> tuple[bool, str, bool]:
+def _sl_tp_result_details(result: Dict[str, Any]) -> tuple[bool, str]:
     sl_tp_result = result.get("sl_tp_result")
     if isinstance(sl_tp_result, dict):
         requested = sl_tp_result.get("requested")
         requested_bool = isinstance(requested, dict) and bool(requested)
         status = str(sl_tp_result.get("status") or "").lower()
-        fallback_used = bool(sl_tp_result.get("fallback_used"))
-        return requested_bool, status, fallback_used
-    requested_bool = bool(result.get("sl_tp_requested"))
-    status = str(result.get("sl_tp_apply_status") or "").lower()
-    fallback_used = bool(result.get("sl_tp_fallback_used"))
-    return requested_bool, status, fallback_used
+        return requested_bool, status
+    return False, ""
 
 
 def _guardrail_order_side(order_type: Optional[str]) -> Optional[str]:
@@ -825,9 +821,7 @@ def run_trade_place(  # noqa: C901
                 deviation=request.deviation,
             )
             if isinstance(result, dict):
-                sl_tp_requested, sl_tp_status, sl_tp_fallback_used = _sl_tp_result_details(
-                    result
-                )
+                sl_tp_requested, sl_tp_status = _sl_tp_result_details(result)
                 sl_tp_failed = sl_tp_status == "failed"
                 if sl_tp_requested and sl_tp_failed:
                     warnings_out: List[str] = list(result.get("warnings") or [])
@@ -917,13 +911,6 @@ def run_trade_place(  # noqa: C901
                     result["protection_status"] = (
                         result.get("protection_status") or "unprotected_position"
                     )
-                elif (
-                    sl_tp_requested
-                    and sl_tp_status == "applied"
-                    and sl_tp_fallback_used
-                    and "protection_status" not in result
-                ):
-                    result["protection_status"] = "protected_after_fallback"
             return _finish(result, order_type=order_type_norm, pending=is_pending)
         if request.price is None:
             return _finish(

@@ -375,7 +375,7 @@ class TestFormatResultMinimal:
         result = _format_result_minimal(None)
         assert result == ""
 
-    @patch("mtdata.core.cli_formatting._shared_minimal", side_effect=Exception("boom"))
+    @patch("mtdata.core.cli.formatting._shared_minimal", side_effect=Exception("boom"))
     def test_fallback_on_exception(self, mock_shared):
         result = _format_result_minimal({"key": "value"})
         assert "key" in result
@@ -402,14 +402,14 @@ class TestFormatResultForCli:
         parsed = json.loads(result)
         assert "2025" in parsed["dt"]
 
-    @patch("mtdata.core.cli._shared_minimal", return_value="minimal output")
+    @patch("mtdata.core.cli.formatting._shared_minimal", return_value="minimal output")
     def test_toon_format(self, mock_shared):
         result = _format_result_for_cli(
             {"a": 1}, fmt="toon", verbose=False, cmd_name="test"
         )
         assert result == "minimal output"
 
-    @patch("mtdata.core.cli._shared_minimal", side_effect=TypeError("bad"))
+    @patch("mtdata.core.cli.formatting._shared_minimal", side_effect=TypeError("bad"))
     def test_toon_format_fallback(self, mock_shared):
         result = _format_result_for_cli(
             {"a": 1}, fmt="toon", verbose=False, cmd_name="test_cmd"
@@ -1355,7 +1355,7 @@ class TestFormatResultForCli:
                     "hmm": {
                         "current_regime": {
                             "label": "positive_mod_vol",
-                            "confidence": 0.84,
+                            "regime_confidence": 0.84,
                         }
                     },
                 },
@@ -1373,7 +1373,7 @@ class TestFormatResultForCli:
         assert "detail: full" in result
         assert "results:" in result
         assert "current_regime.status: no_recent_change_detected" in result
-        assert "confidence: 0.84" in result
+        assert "regime_confidence: 0.84" in result
         assert "show_all_hint" not in result
 
     def test_toon_format_keeps_regime_all_summary_compact(self):
@@ -2077,10 +2077,10 @@ class TestAttachCliMeta:
         assert out["meta"]["tool"] == "my_cmd"
         assert "timezone" in out["meta"]["runtime"]
 
-    def test_converts_existing_cli_meta_to_common_meta(self):
+    def test_preserves_unrecognized_cli_meta_key(self):
         r = {"data": 1, "cli_meta": {"existing": True}}
         out = _attach_cli_meta(r, cmd_name="cmd", verbose=True)
-        assert "cli_meta" not in out
+        assert out["cli_meta"] == {"existing": True}
         assert out["meta"]["tool"] == "cmd"
 
     def test_preserves_existing_common_meta(self):
@@ -2994,7 +2994,7 @@ class TestBuildEpilog:
         epilog = _build_epilog(functions)
 
         assert "--summary-only" not in epilog
-        assert "--detail" not in epilog
+        assert "--detail{full,summary,compact}" in epilog
         assert "<Literal>" not in epilog
 
 
@@ -3014,7 +3014,7 @@ class TestAddForecastGenerateArgs:
         assert args.method == "theta"
         assert args.timeframe == "H1"
         assert args.horizon == 12
-        assert not hasattr(args, "detail")
+        assert args.detail == "compact"
 
     def test_all_options(self):
         parser = argparse.ArgumentParser()
@@ -3048,7 +3048,7 @@ class TestAddForecastGenerateArgs:
         assert args.lookback == 200
         assert args.quantity == "return"
         assert args.ci_alpha == 0.1
-        assert not hasattr(args, "detail")
+        assert args.detail == "compact"
         assert args.print_config is True
 
     def test_symbol_flag_alias(self):
@@ -3272,7 +3272,7 @@ class TestAddDynamicArguments:
         )
         assert ticket_action.option_strings == ["--ticket"]
 
-    def test_limit_accepts_bars_alias(self):
+    def test_limit_exposes_only_canonical_limit_for_bar_command(self):
         parser = argparse.ArgumentParser()
         func_info = {
             "params": [
@@ -3280,17 +3280,8 @@ class TestAddDynamicArguments:
             ]
         }
         add_dynamic_arguments(parser, func_info, cmd_name="data_fetch_candles")
-        args = parser.parse_args(["--bars", "250"])
+        args = parser.parse_args(["--limit", "250"])
         assert args.limit == 250
-
-    def test_limit_does_not_get_bars_alias_for_non_bar_command(self):
-        parser = argparse.ArgumentParser()
-        func_info = {
-            "params": [
-                {"name": "limit", "type": int, "required": False, "default": 100},
-            ]
-        }
-        add_dynamic_arguments(parser, func_info, cmd_name="finviz_news")
         limit_action = next(
             action for action in parser._actions if action.dest == "limit"
         )
@@ -3341,20 +3332,20 @@ class TestAddDynamicArguments:
         args = parser.parse_args(["--ticket", "123456"])
         assert args.position_ticket == 123456
 
-    def test_market_depth_compact_accepts_require_dom_alias(self):
+    def test_market_depth_exposes_require_dom(self):
         parser = argparse.ArgumentParser()
         func_info = {
             "params": [
-                {"name": "compact", "type": bool, "required": False, "default": False},
+                {"name": "require_dom", "type": bool, "required": False, "default": False},
             ]
         }
         add_dynamic_arguments(parser, func_info, cmd_name="market_depth_fetch")
         args = parser.parse_args(["--require-dom"])
-        assert args.compact == "true"
-        compact_action = next(
-            action for action in parser._actions if action.dest == "compact"
+        assert args.require_dom == "true"
+        require_dom_action = next(
+            action for action in parser._actions if action.dest == "require_dom"
         )
-        assert "--require-dom" in compact_action.option_strings
+        assert "--require-dom" in require_dom_action.option_strings
 
     def test_wait_event_exposes_symbol_without_instrument_alias(self):
         parser = argparse.ArgumentParser()
@@ -3410,10 +3401,10 @@ class TestAddDynamicArguments:
 
         add_dynamic_arguments(parser, func_info, cmd_name="labels_triple_barrier")
 
-        assert not any(action.dest == "detail" for action in parser._actions)
+        assert any(action.dest == "detail" for action in parser._actions)
         assert not any(action.dest == "summary_only" for action in parser._actions)
-        with pytest.raises(SystemExit):
-            parser.parse_args(["--detail", "summary"])
+        args = parser.parse_args(["--detail", "summary"])
+        assert args.detail == "summary"
 
     def test_partial_flag_prefix_is_rejected_when_abbrev_disabled(self, capsys):
         parser = argparse.ArgumentParser(allow_abbrev=False)
@@ -4006,7 +3997,7 @@ class TestCreateCommandFunction:
         }
         assert call_kwargs["__cli_raw"] is True
 
-    def test_detail_full_is_not_forwarded_as_transport_verbose_to_tool_wrapper(self, capsys):
+    def test_detail_full_is_forwarded_as_tool_detail(self, capsys):
         mock_fn = MagicMock(return_value={"ok": True})
         func_info = {
             "func": mock_fn,

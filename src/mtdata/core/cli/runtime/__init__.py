@@ -8,6 +8,15 @@ import warnings
 from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from typing import Any, Dict, Iterator, List, Optional, cast
 
+from .commands import (
+    coerce_cli_scalar,
+    create_command_function,
+    merge_dict,
+    normalize_cli_list_value,
+    parse_kv_string,
+    parse_set_overrides,
+)
+
 
 def _debug_enabled() -> bool:
     """Check if CLI debug mode is enabled."""
@@ -130,4 +139,10 @@ __all__ = [
     "_capture_runtime_warnings",
     "_temporary_environment",
     "_suppress_cli_side_output",
+    "coerce_cli_scalar",
+    "create_command_function",
+    "merge_dict",
+    "normalize_cli_list_value",
+    "parse_kv_string",
+    "parse_set_overrides",
 ]

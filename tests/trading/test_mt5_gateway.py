@@ -54,3 +54,31 @@ def test_mt5_connection_error_returns_stage1_envelope():
     assert out["operation"] == "mt5_ensure_connection"
     assert isinstance(out.get("request_id"), str)
     assert out["request_id"]
+
+
+def test_mt5_gateway_exposes_explicit_adapter_methods():
+    calls = []
+
+    class Adapter:
+        ORDER_TYPE_BUY = 0
+
+        def symbol_info(self, symbol):
+            calls.append(("symbol_info", symbol))
+            return {"symbol": symbol}
+
+        def positions_get(self, **kwargs):
+            calls.append(("positions_get", kwargs))
+            return []
+
+    gateway = create_mt5_gateway(
+        adapter=Adapter(),
+        ensure_connection_impl=lambda: None,
+    )
+
+    assert gateway.symbol_info("EURUSD") == {"symbol": "EURUSD"}
+    assert gateway.ORDER_TYPE_BUY == 0
+    assert gateway.positions_get(symbol="EURUSD") == []
+    assert calls == [
+        ("symbol_info", "EURUSD"),
+        ("positions_get", {"symbol": "EURUSD"}),
+    ]

@@ -79,7 +79,7 @@ def _mock_vol_env(n_bars=2000, ensure_err=None, rates_return=_SENTINEL,
     with (
         patch(f"{MOD}._ensure_symbol_ready", return_value=ensure_err) as m_ensure,
         patch(f"{MOD}._mt5_copy_rates_from", **copy_kw) as m_copy,
-        patch(f"{MOD}._mt5_epoch_to_utc", return_value=1704067200.0),
+        patch("mtdata.utils.mt5._mt5_epoch_to_utc", return_value=1704067200.0),
         patch(f"{MOD}._parse_start_datetime",
               return_value=datetime(2024, 1, 1, tzinfo=timezone.utc)),
         patch(f"{MOD}.mt5") as m_mt5,

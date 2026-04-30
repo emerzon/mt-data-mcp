@@ -9,7 +9,7 @@ import pandas as pd
 
 from ..interface import ForecastMethod, ForecastResult
 from ..model_cache import model_cache
-from ..registry import ForecastRegistry
+from ..forecast_registry import ForecastRegistry
 from .pretrained_helpers import (
     adjust_forecast_length,
     build_params_used,

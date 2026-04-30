@@ -26,7 +26,7 @@ from ..utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise
 from ..utils.utils import _format_time_minimal
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
-from .mt5_gateway import get_mt5_gateway
+from .mt5_gateway import create_mt5_gateway
 from .output_contract import normalize_output_detail
 from ..shared.schema import DenoiseSpec, DetailLiteral, TimeframeLiteral
 
@@ -232,7 +232,7 @@ def labels_triple_barrier(
 
     def _run() -> Dict[str, Any]:
         try:
-            get_mt5_gateway(
+            create_mt5_gateway(
                 ensure_connection_impl=ensure_mt5_connection_or_raise
             ).ensure_connection()
             direction_value, direction_error = _normalize_trade_direction(direction)

@@ -43,7 +43,11 @@ export type HistoryResponse = {
   timeframe?: string
   symbol?: string
   success?: boolean
-  last_candle_open?: boolean
+  has_forming_candle?: boolean
+  forming_candle_status?: 'included' | 'skipped' | 'detected' | 'none'
+  forming_candle_included?: boolean
+  forming_candle_skipped?: boolean
+  incomplete_candles_skipped?: number
   meta?: {
     runtime?: {
       timezone?: RuntimeTimezoneMeta

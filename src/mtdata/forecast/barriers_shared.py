@@ -19,7 +19,7 @@ from ..utils.barriers import (
 from ..utils.barriers import (
     resolve_barrier_prices as _resolve_barrier_prices,
 )
-from ..utils.utils import _safe_float
+from ..utils.coercion import safe_float as _safe_float
 from ..utils.utils import parse_kv_or_json as _parse_kv_or_json
 from .barrier_stats import _confidence_interval_wilson_proportion
 from .common import fetch_history as _fetch_history
@@ -566,10 +566,6 @@ def _build_actionability_payload(
     }
 
 
-def _is_crypto_symbol(symbol: str) -> bool:
-    return is_probably_crypto_symbol(symbol)
-
-
 def _auto_barrier_method(
     symbol: str,
     timeframe: str,
@@ -639,7 +635,7 @@ def _auto_barrier_method(
         long_std = float(np.std(rets[-long_n:], ddof=1)) + 1e-12
         vol_ratio = short_std / long_std
 
-    if _is_crypto_symbol(symbol) or (tf_secs and tf_secs <= 900):
+    if is_probably_crypto_symbol(symbol) or (tf_secs and tf_secs <= 900):
         if kurt > 2.0 or jump_ratio > 4.0:
             return "jump_diffusion", "auto: crypto/short-tf with jumpy tails"
 

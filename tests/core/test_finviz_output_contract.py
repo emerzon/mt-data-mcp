@@ -102,12 +102,11 @@ class TestFinvizCalendarOutputContract:
             "dateTo": "2026-01-12",
             "items": [
                 {
-                    "Datetime": "2026-01-06T13:30:00",
-                    "Release": "CPI",
-                    "Impact": "high",
-                    "For": "USD",
-                    "Country": "United States",
-                    "ReferenceDate": "2025-12",
+                    "date": "2026-01-06T13:30:00",
+                    "event": "CPI",
+                    "importance": 3,
+                    "ticker": "USD",
+                    "referenceDate": "2025-12",
                 }
             ],
         }
@@ -119,11 +118,10 @@ class TestFinvizCalendarOutputContract:
         assert result["timezone"] == "America/New_York"
         assert result["items"] == [
             {
-                "datetime": "2026-01-06T13:30:00",
-                "release": "CPI",
-                "impact": "high",
-                "for_currency": "USD",
-                "country": "United States",
+                "date": "2026-01-06T13:30:00",
+                "event": "CPI",
+                "importance": 3,
+                "symbol": "USD",
                 "reference_date": "2025-12",
             }
         ]

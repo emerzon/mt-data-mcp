@@ -3,16 +3,16 @@ from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, get_args
 
 from pydantic import ValidationError
 
-from .data.requests import (
+from ...data.requests import (
     _normalize_indicator_specs as _shared_normalize_indicator_specs,
 )
-from .output_contract import resolve_output_contract
+from ...output_contract import resolve_output_contract
 
 
 def parse_kv_string(s: str, *, debug: Callable[[str], None]) -> Optional[Dict[str, Any]]:
     """Parse 'k=v,k2=v2' or JSON into a dict."""
     try:
-        from ..utils.utils import parse_kv_or_json
+        from ....utils.utils import parse_kv_or_json
 
         result = parse_kv_or_json(s)
         return result if result else None

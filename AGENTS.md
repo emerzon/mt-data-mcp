@@ -52,11 +52,11 @@ mtdata/
 | Change indicators | `src/mtdata/utils/indicators.py` | 100+ technical indicators |
 | Edit denoising filters | `src/mtdata/utils/denoise/` | Package with filters/ subdirectory |
 | Modify web UI | `webui/src/` | App.tsx is main, 4 components, features/, hooks/, lib/ |
-| Server/transport config | `src/mtdata/core/server.py` (+ `server_entrypoints.py`, `server_utils.py`) | SSE, stdio, streamable-HTTP modes |
+| Server/transport config | `src/mtdata/core/server.py` | SSE, stdio, streamable-HTTP modes |
 | Web API routes | `src/mtdata/core/web_api.py` (+ `web_api_runtime.py`, `web_api_handlers.py`, `web_api_models.py`) | Routes mounted under both `/api` and `/api/v1` |
-| CLI changes | `src/mtdata/core/cli/` | Package with `parsing/` and `runtime/` subpackages; legacy helpers (`cli_runtime.py`, `cli_formatting.py`, `cli_discovery.py`) live alongside it |
+| CLI changes | `src/mtdata/core/cli/` | Package with `parsing/`, `runtime/`, and `formatting/` subpackages for CLI helpers |
 | Trading logic | `src/mtdata/core/trading/` | Split into `account.py`, `orders.py`, `positions.py`, `risk.py`, `validation.py`, `safety.py`, etc. |
-| Report generation | `src/mtdata/core/report/` + `report_templates/` (+ `reports/`) | `report/__init__.py` registers `report_generate` |
+| Report generation | `src/mtdata/core/report/` + `report_templates/` | `report/__init__.py` registers `report_generate` |
 | Regime detection | `src/mtdata/core/regime/` | Package with methods/ (HMM, BOCPD, MS-AR) |
 | Shared schemas | `src/mtdata/shared/schema.py` | Pydantic models |
 | Runtime/env setup | `src/mtdata/bootstrap/` | `settings.py`, `runtime.py`, `tools.py` (tool bootstrap) |

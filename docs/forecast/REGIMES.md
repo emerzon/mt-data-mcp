@@ -63,7 +63,6 @@ summary:
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `n_states` | 2 | Number of regimes to detect |
-| `k_regimes` | alias | Backward-compatible alias for `n_states` |
 
 **When to use:**
 - Ongoing regime classification
@@ -121,7 +120,7 @@ summary:
 mtdata-cli regime_detect EURUSD --timeframe H1 --method ms_ar --params "n_states=2 order=1"
 ```
 
-`k_regimes` remains accepted as a compatibility alias for `n_states`.
+Use `n_states` to choose the number of regimes.
 
 **When to use:**
 - When regime changes affect both mean and autocorrelation structure
@@ -138,7 +137,7 @@ mtdata-cli regime_detect EURUSD --timeframe H1 --method ms_ar --params "n_states
 mtdata-cli regime_detect EURUSD --timeframe H1 --method clustering --params "n_states=3"
 ```
 
-`k_regimes` and `n_clusters` remain accepted as compatibility aliases for `n_states`.
+Use `n_states` to choose the number of regimes; legacy aliases are ignored.
 
 **When to use:**
 - Exploratory regime discovery without a parametric model
@@ -213,21 +212,16 @@ Canonical fields for successful compact/full JSON responses:
 | `method` | all methods | Normalized implementation method. For example, requesting `gmm` runs the HMM-lite implementation and reports `method: "hmm"`. |
 | `requested_method` | aliases | Present when the requested method differs from `method`, such as `gmm -> hmm`. |
 | `current_regime` | all methods | Uses `regime_id`, `label`, `since`, `bars`, and `regime_confidence` when those concepts apply. BOCPD also includes transition-oriented fields such as `status` and `transition_risk`. |
-| `regimes` | all compact/full methods | Uses `start`, `end`, and `bars` consistently. BOCPD may also include legacy `started_at`/`ended_at` aliases for transition compatibility. |
+| `regimes` | all compact/full methods | Uses `start`, `end`, `bars`, and `regime_confidence` consistently where regime confidence applies. |
 | `regime_info` | state/rule methods | Describes regime labels and statistics. Clustering labels are derived from return/volatility when available instead of opaque `regime_N` names. |
 | `reliability` | all methods | Always includes `confidence`, `reliability_label`, and `source`; method-specific diagnostics may add more fields. |
 | `warnings` | as needed | Explains accepted parameters that do not apply to the selected method. |
 
-`current_regime.regime_confidence` is the canonical confidence key. Older method-specific `confidence` values may still appear in compatibility fields, but new consumers should use `regime_confidence`.
+`current_regime.regime_confidence` and `regimes[].regime_confidence` are the canonical regime-confidence keys. Reliability diagnostics keep their own `reliability.confidence` field.
 
-### Parameter aliases and applicability
+### Parameter applicability
 
-Use `n_states` as the canonical state-count parameter for HMM/GMM, MS-AR, clustering, GARCH, wavelet, and ensemble. Compatibility aliases are still accepted where historically used:
-
-| Alias | Applies to | Preferred |
-|-------|------------|-----------|
-| `k_regimes` | MS-AR, clustering, GARCH, wavelet, ensemble, HMM/GMM compatibility | `n_states` |
-| `n_clusters` | clustering compatibility | `n_states` |
+Use `n_states` as the canonical state-count parameter for HMM/GMM, MS-AR, clustering, GARCH, wavelet, and ensemble. Requests that include legacy aliases such as `k_regimes` or `n_clusters` fail validation; use `n_states` only.
 
 `threshold` only applies to BOCPD change-point detection. If supplied for non-BOCPD methods, the tool reports a warning rather than silently changing confidence filtering.
 

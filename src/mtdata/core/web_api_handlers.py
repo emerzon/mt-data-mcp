@@ -14,11 +14,10 @@ from ..utils.mt5 import MT5ConnectionError
 from ..utils.support_resistance import compact_support_resistance_payload
 from ..utils.utils import _UNPARSED_BOOL, _parse_bool_like
 from .error_envelope import build_http_error_detail
-from .mt5_gateway import get_default_mt5_gateway
+from .mt5_gateway import create_mt5_gateway
 from .output_contract import ensure_common_meta, output_extras_shape_detail
 from .output_serialization import sanitize_json_compat
 from .pivot import compute_support_resistance_payload
-from .runtime_metadata import build_runtime_timezone_meta
 from .tool_calling import resolve_sync_tool_result
 from .web_api_models import BacktestBody, ForecastPriceBody, ForecastVolBody
 
@@ -96,7 +95,7 @@ def _raise_internal_handler_error(*, operation: str, code: str, message: str) ->
 
 
 def _require_mt5_connection() -> None:
-    mt5 = get_default_mt5_gateway()
+    mt5 = create_mt5_gateway()
     try:
         mt5.ensure_connection()
     except MT5ConnectionError as exc:
@@ -413,7 +412,6 @@ def get_history_response(  # noqa: C901
     get_denoise_methods: Callable[[], Any],
     normalize_denoise_spec: Callable[..., Any],
     mt5_config: Any,
-    include_used_timezone: bool,
 ) -> Dict[str, Any]:
     _require_mt5_connection()
     denoise_method_val = denoise_method.strip() if isinstance(denoise_method, str) else None
@@ -538,10 +536,24 @@ def get_history_response(  # noqa: C901
     rows_raw = result.get("data")
     rows: List[Dict[str, Any]] = rows_raw if isinstance(rows_raw, list) else []
 
-    if not include_incomplete and bool(result.get("last_candle_open")) and rows:
+    forming_status = str(result.get("forming_candle_status") or "").strip().lower()
+    forming_candle_included = bool(result.get("forming_candle_included")) or forming_status == "included"
+    trimmed_forming_candle = False
+    if not include_incomplete and forming_candle_included and rows:
         rows = rows[:-1]
+        trimmed_forming_candle = True
 
     result_out = dict(result)
+    if trimmed_forming_candle:
+        try:
+            skipped_count = int(result_out.get("incomplete_candles_skipped") or 0)
+        except Exception:
+            skipped_count = 0
+        result_out["has_forming_candle"] = True
+        result_out["forming_candle_status"] = "skipped"
+        result_out["forming_candle_included"] = False
+        result_out["forming_candle_skipped"] = True
+        result_out["incomplete_candles_skipped"] = max(1, skipped_count + 1)
     result_out["data"] = rows
     result_out["candles"] = len(rows)
     requested_value = result.get("candles_requested")
@@ -555,55 +567,14 @@ def get_history_response(  # noqa: C901
         candles_excluded = int(excluded_value)
     except Exception:
         candles_excluded = max(0, candles_requested - int(len(rows)))
+    if trimmed_forming_candle:
+        candles_excluded = max(candles_excluded, candles_requested - int(len(rows)))
     result_out["candles_excluded"] = max(0, candles_excluded)
-    response = ensure_common_meta(
+    return ensure_common_meta(
         result_out,
         tool_name="data_fetch_candles",
         mt5_config=mt5_config,
     )
-    meta_in = response.get("meta")
-    if not isinstance(meta_in, dict):
-        return response
-    runtime_in = meta_in.get("runtime")
-    if not isinstance(runtime_in, dict):
-        return response
-    timezone_in = runtime_in.get("timezone")
-    if include_used_timezone:
-        if isinstance(timezone_in, dict) and "used" in timezone_in:
-            return response
-
-        timezone_out = build_runtime_timezone_meta(
-            response,
-            mt5_config=mt5_config,
-            include_local=True,
-            include_now=False,
-        )
-        runtime_out = dict(runtime_in)
-        runtime_out["timezone"] = timezone_out
-        meta_out = dict(meta_in)
-        meta_out["runtime"] = runtime_out
-
-        response_out = dict(response)
-        response_out["meta"] = meta_out
-        return response_out
-
-    if not isinstance(timezone_in, dict):
-        return response
-
-    runtime_out = dict(runtime_in)
-    runtime_out.pop("timezone", None)
-    meta_out = dict(meta_in)
-    if runtime_out:
-        meta_out["runtime"] = runtime_out
-    else:
-        meta_out.pop("runtime", None)
-
-    response_out = dict(response)
-    if meta_out:
-        response_out["meta"] = meta_out
-    else:
-        response_out.pop("meta", None)
-    return response_out
 
 
 def get_pivots_response(

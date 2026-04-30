@@ -25,7 +25,7 @@ from ..utils.symbol import _extract_group_path as _extract_group_path_util
 from ._mcp_instance import mcp
 from ..shared.constants import TIMEFRAME_MAP
 from .execution_logging import run_logged_operation
-from .mt5_gateway import get_mt5_gateway, mt5_connection_error
+from .mt5_gateway import create_mt5_gateway, mt5_connection_error
 from .output_contract import normalize_output_verbosity_detail
 
 logger = logging.getLogger(__name__)
@@ -184,7 +184,7 @@ _COINTEGRATION_REQUEST_KEYS = frozenset(
 
 def _causal_connection_error() -> Dict[str, Any] | None:
     return mt5_connection_error(
-        get_mt5_gateway(
+        create_mt5_gateway(
             adapter=mt5,
             ensure_connection_impl=ensure_mt5_connection_or_raise,
         )
@@ -217,7 +217,7 @@ def _expand_symbols_for_group(
     anchor: str, gateway: Any = None
 ) -> tuple[List[str], str | None, str | None]:
     """Return visible group members for anchor along with the group path."""
-    mt5_gateway = gateway or get_mt5_gateway(
+    mt5_gateway = gateway or create_mt5_gateway(
         adapter=mt5,
         ensure_connection_impl=ensure_mt5_connection_or_raise,
     )
@@ -245,7 +245,7 @@ def _expand_symbols_for_group_path(
     query: str, gateway: Any = None
 ) -> tuple[List[str], str | None, str | None]:
     """Return visible group members for an explicit MT5 group path query."""
-    mt5_gateway = gateway or get_mt5_gateway(
+    mt5_gateway = gateway or create_mt5_gateway(
         adapter=mt5,
         ensure_connection_impl=ensure_mt5_connection_or_raise,
     )
@@ -1152,7 +1152,7 @@ def causal_discover_signals(  # noqa: C901
                 code=str(connection_error.get("error_code") or "mt5_connection_error"),
                 meta=meta,
             )
-        mt5_gateway = get_mt5_gateway(
+        mt5_gateway = create_mt5_gateway(
             adapter=mt5,
             ensure_connection_impl=ensure_mt5_connection_or_raise,
         )
@@ -1581,7 +1581,7 @@ def correlation_matrix(  # noqa: C901
                 code=str(connection_error.get("error_code") or "mt5_connection_error"),
                 meta=meta,
             )
-        mt5_gateway = get_mt5_gateway(
+        mt5_gateway = create_mt5_gateway(
             adapter=mt5,
             ensure_connection_impl=ensure_mt5_connection_or_raise,
         )
@@ -1924,7 +1924,7 @@ def cointegration_test(  # noqa: C901
                 code=str(connection_error.get("error_code") or "mt5_connection_error"),
                 meta=meta,
             )
-        mt5_gateway = get_mt5_gateway(
+        mt5_gateway = create_mt5_gateway(
             adapter=mt5,
             ensure_connection_impl=ensure_mt5_connection_or_raise,
         )

@@ -9,13 +9,12 @@ import math
 import types
 from dataclasses import dataclass
 from functools import wraps as _wraps
-from typing import Any, Dict, List, Union, cast, get_args, get_origin
+from typing import Any, Dict, List, Optional, Union, cast, get_args, get_origin
 
 from pydantic import BaseModel
 
 from ..shared.parameter_contracts import (
     PUBLIC_OUTPUT_PARAMS,
-    REMOVED_PUBLIC_OUTPUT_PARAMS,
 )
 from ..utils.utils import _UNPARSED_BOOL, _coerce_scalar, _parse_bool_like
 from .error_envelope import (
@@ -47,7 +46,6 @@ _NO_TIMEOUT_TOOLS = frozenset(
     }
 )
 _PUBLIC_OUTPUT_PARAMS = PUBLIC_OUTPUT_PARAMS
-_REMOVED_PUBLIC_OUTPUT_PARAMS = REMOVED_PUBLIC_OUTPUT_PARAMS
 
 
 @dataclass
@@ -57,6 +55,15 @@ class _ToolRegistration:
 
 
 _TOOL_METADATA_REGISTRY: Dict[str, _ToolRegistration] = {}
+
+
+def get_mcp_registry(mcp: Any) -> Optional[Dict[str, Any]]:
+    """Return the MCP tool registry if available."""
+    for attr in ("tools", "_tools", "registry", "tool_registry", "_tool_registry"):
+        reg = getattr(mcp, attr, None)
+        if reg and hasattr(reg, "items"):
+            return reg
+    return None
 
 
 def _project_tool_registry(field: str) -> Dict[str, Any]:
@@ -417,8 +424,6 @@ def _request_model_signature_fields(func: Any) -> List[inspect.Parameter]:
     if modern_fields:
         flattened: List[inspect.Parameter] = []
         for field_name, field in model_fields.items():
-            if field_name in _REMOVED_PUBLIC_OUTPUT_PARAMS:
-                continue
             annotation = inspect._empty
             rebuild_annotation = getattr(field, "rebuild_annotation", None)
             if callable(rebuild_annotation):
@@ -443,8 +448,6 @@ def _request_model_signature_fields(func: Any) -> List[inspect.Parameter]:
     if model_fields:
         flattened = []
         for field_name, field in model_fields.items():
-            if field_name in _REMOVED_PUBLIC_OUTPUT_PARAMS:
-                continue
             annotation = getattr(field, "outer_type_", getattr(field, "type_", inspect._empty))
             is_required = bool(getattr(field, "required", False))
             default = inspect._empty if is_required else _signature_default_for_model_field(field)
@@ -586,13 +589,6 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # n
             contract_state = resolve_output_contract({})
 
             try:
-                removed_output_args = sorted(_REMOVED_PUBLIC_OUTPUT_PARAMS.intersection(kw))
-                if removed_output_args and not raw_output:
-                    removed = ", ".join(removed_output_args)
-                    raise ValueError(
-                        f"Removed output option(s): {removed}. "
-                        "Use json=true for structured JSON and extras for richer TOON output."
-                    )
                 normalized_extras = normalize_output_extras(extras)
                 if normalized_extras and "detail" not in kw and _callable_exposes_kwarg(func, "detail"):
                     kw["detail"] = "full"
@@ -691,8 +687,6 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # n
             if not params:
                 sig = _get_runtime_signature(func)
                 for name, param in sig.parameters.items():
-                    if name in _REMOVED_PUBLIC_OUTPUT_PARAMS:
-                        continue
                     if param.kind in (
                         inspect.Parameter.VAR_POSITIONAL,
                         inspect.Parameter.VAR_KEYWORD,

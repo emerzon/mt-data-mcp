@@ -125,8 +125,8 @@ _TICKS_RANGE = f'{_DS}._mt5_copy_ticks_range'
 _CACHED_INFO = f'{_DS}.get_symbol_info_cached'
 _RESOLVE_CTZ = f'{_DS}._resolve_client_tz'
 _PARSE_START = f'{_DS}._parse_start_datetime'
-_ESTIMATE_WARMUP = f'{_DS}._estimate_warmup_bars_util'
-_APPLY_TI = f'{_DS}._apply_ta_indicators_util'
+_ESTIMATE_WARMUP = f'{_DS}._estimate_warmup_bars'
+_APPLY_TI = f'{_DS}._apply_ta_indicators'
 _SIMPLIFY_EXT = f'{_DS}._simplify_dataframe_rows_ext'
 _MT5_CONFIG = f'{_DS}.mt5_config'
 
@@ -782,13 +782,13 @@ class TestFetchCandles(unittest.TestCase):
     @patch(_RESOLVE_CTZ, return_value=None)
     @patch(_ESTIMATE_WARMUP, return_value=0)
     @patch(_GUARD, _mock_symbol_guard)
-    def test_last_candle_open_flag(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_cfg):
+    def test_omits_legacy_last_candle_open_flag(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_cfg):
         mock_cfg.get_time_offset_seconds.return_value = 0
-        # Make the last bar's epoch == now so it should be "open"
         mock_from.return_value = _make_rates(10, step=3600)
         result = fetch_candles('EURUSD', timeframe='H1', limit=5)
         self.assertTrue(result.get('success'))
-        self.assertIn('last_candle_open', result)
+        self.assertNotIn('last_candle_open', result)
+        self.assertTrue(result['has_forming_candle'])
 
     @patch(_MT5_CONFIG)
     @patch(_RATES_FROM)
@@ -804,7 +804,8 @@ class TestFetchCandles(unittest.TestCase):
         self.assertEqual(result['candles'], 5)
         self.assertEqual(result['candles_requested'], 5)
         self.assertEqual(result['candles_excluded'], 0)
-        self.assertFalse(result['last_candle_open'])
+        self.assertNotIn('last_candle_open', result)
+        self.assertTrue(result['has_forming_candle'])
         self.assertEqual(result['forming_candle_status'], 'skipped')
         self.assertFalse(result['forming_candle_included'])
         self.assertTrue(result['forming_candle_skipped'])
@@ -824,7 +825,8 @@ class TestFetchCandles(unittest.TestCase):
         self.assertEqual(result['candles'], 5)
         self.assertEqual(result['candles_requested'], 5)
         self.assertEqual(result['candles_excluded'], 0)
-        self.assertTrue(result['last_candle_open'])
+        self.assertNotIn('last_candle_open', result)
+        self.assertTrue(result['has_forming_candle'])
         self.assertEqual(result['forming_candle_status'], 'included')
         self.assertTrue(result['forming_candle_included'])
         self.assertFalse(result['forming_candle_skipped'])
@@ -848,7 +850,8 @@ class TestFetchCandles(unittest.TestCase):
         returned_times = [row['time'] for row in result.get('data', [])]
         self.assertNotIn(base_ts, returned_times)
         self.assertEqual(returned_times[-1], base_ts - 3600)
-        self.assertFalse(result['last_candle_open'])
+        self.assertNotIn('last_candle_open', result)
+        self.assertTrue(result['has_forming_candle'])
         self.assertEqual(result['forming_candle_status'], 'skipped')
         self.assertFalse(result['forming_candle_included'])
         self.assertTrue(result['forming_candle_skipped'])
@@ -910,7 +913,7 @@ class TestFetchCandles(unittest.TestCase):
         self.assertFalse(result['forming_candle_included'])
         self.assertTrue(result['forming_candle_skipped'])
         self.assertIn('include_incomplete=true', result['hint'])
-        self.assertFalse(result['last_candle_open'])
+        self.assertNotIn('last_candle_open', result)
 
     @patch(_MT5_CONFIG)
     @patch(_RATES_FROM)
@@ -929,7 +932,8 @@ class TestFetchCandles(unittest.TestCase):
         self.assertTrue(result.get('success'))
         returned_times = [row['time'] for row in result.get('data', [])]
         self.assertIn(base_ts, returned_times)
-        self.assertFalse(result['last_candle_open'])
+        self.assertNotIn('last_candle_open', result)
+        self.assertFalse(result['has_forming_candle'])
 
     @patch(_MT5_CONFIG)
     @patch(_RATES_FROM)
@@ -1286,7 +1290,7 @@ class TestFetchCandles(unittest.TestCase):
         mock_cfg.get_time_offset_seconds.return_value = 0
         rates = _make_rates(30)
         mock_from.return_value = rates
-        # _apply_ta_indicators_util is called; it adds column to df in-place
+        # _apply_ta_indicators is called; it adds column to df in-place
         def add_col(df, spec):
             df['rsi_14'] = 50.0
             return ['rsi_14']
@@ -1546,7 +1550,7 @@ class TestFetchCandles(unittest.TestCase):
 
         result = fetch_candles('EURUSD', limit=5, indicators=[{'name': 'rsi', 'params': [14]}])
         self.assertTrue(result.get('success'))
-        # _apply_ta_indicators_util should have been called twice (original + retry)
+        # _apply_ta_indicators should have been called twice (original + retry)
         self.assertGreaterEqual(mock_ti.call_count, 2)
 
     @patch(_MT5_CONFIG)

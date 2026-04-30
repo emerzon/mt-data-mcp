@@ -135,7 +135,6 @@ def test_run_data_fetch_candles_compact_omits_default_metadata():
             "candles": 5,
             "candles_requested": 5,
             "candles_excluded": 0,
-            "last_candle_open": False,
             "incomplete_candles_skipped": 0,
             "has_forming_candle": False,
             "forming_candle_status": "none",
@@ -250,7 +249,6 @@ def test_run_data_fetch_candles_compact_keeps_anomaly_metadata():
                     "total": 1,
                 },
             },
-            "last_candle_open": True,
             "incomplete_candles_skipped": 1,
             "has_forming_candle": True,
             "forming_candle_status": "skipped",
@@ -326,7 +324,7 @@ def test_run_data_fetch_candles_adds_contract_metadata_in_full_detail():
             "symbol": "EURUSD",
             "timeframe": "H1",
             "candles_requested": 10,
-            "last_candle_open": False,
+            "has_forming_candle": False,
             "data": rows,
         },
     )
@@ -335,7 +333,8 @@ def test_run_data_fetch_candles_adds_contract_metadata_in_full_detail():
     assert result["symbol"] == "EURUSD"
     assert result["timeframe"] == "H1"
     assert result["candles_requested"] == 10
-    assert result["last_candle_open"] is False
+    assert "last_candle_open" not in result
+    assert result["has_forming_candle"] is False
     assert "series" not in result
     assert result["collection_kind"] == "time_series"
     assert result["collection_contract_version"] == "collection.v1"

@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 
 from .....shared.constants import TIMEFRAME_SECONDS
-from ...crypto import _is_probably_crypto_symbol
+from .....shared.symbols import is_probably_crypto_symbol
 
 
 # ---------------------------------------------------------------------------
@@ -114,7 +114,7 @@ def _default_bocpd_hazard_lambda(symbol: Any, timeframe: Any) -> int:
     tf = str(timeframe or "H1").upper().strip() or "H1"
     tf_seconds = int(TIMEFRAME_SECONDS.get(tf, 3600))
 
-    if _is_probably_crypto_symbol(symbol):
+    if is_probably_crypto_symbol(symbol):
         if tf_seconds <= 900:   # <= M15
             return 48
         if tf_seconds <= 3600:  # <= H1
@@ -132,7 +132,7 @@ def _default_bocpd_cp_threshold(symbol: Any, timeframe: Any) -> float:
     """Get default CP threshold based on symbol type and timeframe."""
     tf = str(timeframe or "H1").upper().strip() or "H1"
     tf_seconds = int(TIMEFRAME_SECONDS.get(tf, 3600))
-    if _is_probably_crypto_symbol(symbol):
+    if is_probably_crypto_symbol(symbol):
         if tf_seconds <= 3600:  # <= H1
             return 0.35
         if tf_seconds <= 14400:  # <= H4
@@ -233,7 +233,7 @@ def _auto_calibrate_bocpd_params(
         "points": int(r.size),
         "base_hazard_lambda": int(base_lambda),
         "base_cp_threshold": float(base_threshold),
-        "asset_class_hint": "crypto" if _is_probably_crypto_symbol(symbol) else "other",
+        "asset_class_hint": "crypto" if is_probably_crypto_symbol(symbol) else "other",
         "sigma": float(sigma),
         "kurtosis_excess": float(kurt),
         "jump_share_abs_z_ge_2_5": float(jump_share),

@@ -203,7 +203,6 @@ def _compact_candles_payload(result: Dict[str, Any]) -> Dict[str, Any]:
         "candles_excluded",
         "hint",
         "incomplete_candles_skipped",
-        "last_candle_open",
         "meta",
     ):
         compact.pop(key, None)

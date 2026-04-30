@@ -4,63 +4,16 @@ import atexit
 import logging
 from typing import Literal, Optional, cast
 
+from ..bootstrap.settings import load_environment
 from ..bootstrap.runtime import (
     McpRuntimeSettings,
     apply_mcp_runtime_settings,
     load_mcp_runtime_settings,
 )
 from ..bootstrap.tools import bootstrap_tools
-from ..utils.mt5 import _ensure_symbol_ready, mt5_connection
-
-# Lightweight helpers used by tool modules
-from ..utils.utils import _normalize_ohlcv_arg
-from . import _mcp_tools
+from ..shared.constants import SERVICE_NAME
+from ..utils.mt5 import mt5_connection
 from ._mcp_instance import mcp
-from ._mcp_tools import (
-    _TOOL_OBJECT_REGISTRY,
-    _TOOL_REGISTRY,
-    _coerce_bool,
-    _coerce_float,
-    _coerce_int,
-    _coerce_kwargs_for_callable,
-    _get_runtime_annotations,
-    _get_runtime_signature,
-    _unwrap_optional_annotation,
-)
-from ..bootstrap.settings import load_environment, mt5_config
-from ..shared.constants import (  # re-export for CLI/tests
-    SERVICE_NAME,
-    TIMEFRAME_MAP,
-    TIMEFRAME_SECONDS,
-)
-from .server_entrypoints import (
-    main_sse as _main_sse_entrypoint,
-)
-from .server_entrypoints import (
-    main_stdio as _main_stdio_entrypoint,
-)
-from .server_entrypoints import (
-    main_streamable_http as _main_streamable_http_entrypoint,
-)
-
-_ORIG_TOOL_DECORATOR = _mcp_tools._ORIG_TOOL_DECORATOR
-
-
-def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]
-    global _ORIG_TOOL_DECORATOR
-    _mcp_tools._ORIG_TOOL_DECORATOR = _ORIG_TOOL_DECORATOR
-    return _mcp_tools._recording_tool_decorator(*dargs, **dkwargs)
-
-
-def get_tool_registry() -> dict[str, object]:
-    bootstrap_tools()
-    return _mcp_tools.get_tool_registry()
-
-
-def get_tool_functions() -> dict[str, object]:
-    bootstrap_tools()
-    return _mcp_tools.get_tool_functions()
-
 
 
 @atexit.register
@@ -116,17 +69,17 @@ def main(
 
 def main_stdio():
     """Entry point for stdio mode (forced)"""
-    _main_stdio_entrypoint(main)
+    main(transport="stdio")
 
 
 def main_sse():
     """Entry point for SSE mode (forced)"""
-    _main_sse_entrypoint(main)
+    main(transport="sse")
 
 
 def main_streamable_http():
     """Entry point for streamable HTTP mode (forced)."""
-    _main_streamable_http_entrypoint(main)
+    main(transport="streamable-http")
 
 
 if __name__ == "__main__":

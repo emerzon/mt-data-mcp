@@ -23,6 +23,8 @@ from .formatting import (
 from .formatting import (
     optimal_decimals as _optimal_decimals_shared,
 )
+from .coercion import coerce_finite_float as _coerce_finite_float
+from .coercion import safe_float as _safe_float
 
 
 def _coerce_scalar(s: str):
@@ -61,28 +63,6 @@ def _parse_bool_like(value: Any, *, allow_none: bool = False) -> Any:
         if text in ("false", "0", "no", "n", "off"):
             return False
     return _UNPARSED_BOOL
-
-
-def _coerce_finite_float(value: Any) -> Optional[float]:
-    """Best-effort float coercion that rejects NaN and infinity."""
-    try:
-        if value is None:
-            return None
-        out = float(value)
-    except Exception:
-        try:
-            out = float(str(value))
-        except Exception:
-            return None
-    if not math.isfinite(out):
-        return None
-    return float(out)
-
-
-def _safe_float(value: Any, default: Optional[float] = None) -> Optional[float]:
-    """Best-effort finite float coercion with an optional fallback."""
-    out = _coerce_finite_float(value)
-    return default if out is None else out
 
 
 def _normalize_ohlcv_arg(ohlcv: Optional[str]) -> Optional[Set[str]]:

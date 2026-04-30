@@ -31,7 +31,7 @@ def _ms_ar_reliability_from_smoothed(
     return {
         "confidence": round(float(np.clip(avg_confidence, 0.0, 1.0)), 4),
         "notes": notes,
-        "k_regimes": int(params_used.get("k_regimes", k)),
+        "n_states": int(params_used.get("n_states", k)),
         "order": int(params_used.get("order", 0)),
     }
 

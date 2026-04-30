@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 
 from ..interface import ForecastMethod, ForecastResult
-from ..registry import ForecastRegistry
+from ..forecast_registry import ForecastRegistry
 
 
 class ClassicalMethod(ForecastMethod):

@@ -3,7 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Iterable, Iterator, Mapping, Optional
 
-from ..shared import parameter_contracts as _parameter_contracts
+from ..shared.parameter_contracts import (
+    OUTPUT_EXTRA_FULL_ALIASES as _OUTPUT_EXTRA_FULL_ALIASES,
+    OUTPUT_EXTRAS as _OUTPUT_EXTRAS,
+)
 from ..shared.schema import CANONICAL_OUTPUT_DETAIL_ALIASES
 from ..utils.utils import _UNPARSED_BOOL, _parse_bool_like
 from .runtime_metadata import build_runtime_timezone_meta
@@ -19,12 +22,6 @@ _VERBOSE_ONLY_KEYS = frozenset(
         "collection_contract_version",
     }
 )
-
-OUTPUT_EXTRA_FULL_ALIASES = _parameter_contracts.OUTPUT_EXTRA_FULL_ALIASES
-OUTPUT_EXTRAS = _parameter_contracts.OUTPUT_EXTRAS
-PUBLIC_OUTPUT_PARAMS = _parameter_contracts.PUBLIC_OUTPUT_PARAMS
-REMOVED_PUBLIC_OUTPUT_PARAMS = _parameter_contracts.REMOVED_PUBLIC_OUTPUT_PARAMS
-
 
 @dataclass(frozen=True)
 class OutputContractState:
@@ -42,52 +39,14 @@ class OutputContractState:
     def verbose(self) -> bool:
         return self.shape_detail == "full"
 
-    @property
-    def transport_verbose(self) -> bool:
-        return self.shape_detail == "full"
 
-
-_FULL_EXTRA_ALIASES = OUTPUT_EXTRA_FULL_ALIASES
-_DETAIL_ASSIGNMENT_KEYS = frozenset({"detail", "output", "output_mode"})
-_COMPACT_DETAIL_VALUES = frozenset({"compact", "default", "false", "none"})
+_FULL_EXTRA_ALIASES = _OUTPUT_EXTRA_FULL_ALIASES
 
 
 def _append_all_output_extras(extras: list[str]) -> None:
-    for extra in sorted(OUTPUT_EXTRAS):
+    for extra in sorted(_OUTPUT_EXTRAS):
         if extra not in extras:
             extras.append(extra)
-
-
-def _normalize_assignment_style_extra(token: str) -> Optional[str]:
-    key, separator, value = token.partition("=")
-    if not separator:
-        return None
-
-    normalized_key = key.strip().lower().replace("-", "_")
-    normalized_value = value.strip().lower().replace("-", "_")
-
-    if normalized_key in _DETAIL_ASSIGNMENT_KEYS:
-        if normalized_value in _FULL_EXTRA_ALIASES:
-            return "full"
-        if normalized_value in _COMPACT_DETAIL_VALUES or not normalized_value:
-            return "compact"
-
-    if normalized_key == "verbose":
-        parsed = _parse_bool_like(normalized_value, allow_none=True)
-        if parsed is not _UNPARSED_BOOL:
-            return "full" if parsed is True else "compact"
-
-    return None
-
-
-_LEGACY_OUTPUT_ASSIGNMENT_EXAMPLES = frozenset(
-    {
-        "detail=full",
-        "detail=compact",
-        "verbose=true",
-        "verbose=false",
-    }
-)
 
 
 def _strip_verbose_only_fields(value: Any) -> Any:
@@ -145,7 +104,7 @@ def normalize_output_extras(value: Any) -> tuple[str, ...]:
     if value in (None, "", False):
         return ()
     if value is True:
-        return tuple(sorted(OUTPUT_EXTRAS))
+        return tuple(sorted(_OUTPUT_EXTRAS))
 
     items: list[Any]
     if isinstance(value, str):
@@ -163,21 +122,14 @@ def normalize_output_extras(value: Any) -> tuple[str, ...]:
         token = str(item or "").strip().lower().replace("-", "_")
         if not token:
             continue
-        assignment_detail = _normalize_assignment_style_extra(token)
-        if assignment_detail == "full":
-            _append_all_output_extras(extras)
-            continue
-        if assignment_detail == "compact":
-            continue
         if token in _FULL_EXTRA_ALIASES:
             _append_all_output_extras(extras)
             continue
-        if token not in OUTPUT_EXTRAS:
+        if token not in _OUTPUT_EXTRAS:
             allowed = ", ".join(
                 sorted(
-                    OUTPUT_EXTRAS
+                    _OUTPUT_EXTRAS
                     | _FULL_EXTRA_ALIASES
-                    | _LEGACY_OUTPUT_ASSIGNMENT_EXAMPLES
                 )
             )
             raise ValueError(f"Invalid extras value {item!r}. Use one of: {allowed}.")
@@ -269,15 +221,6 @@ def normalize_output_verbosity_detail(value: Any, *, default: str = "compact") -
     return "full" if normalized == "full" else "compact"
 
 
-def resolve_output_detail(
-    *,
-    detail: Any = None,
-    default: str = "compact",
-) -> str:
-    """Resolve the shared compact/full detail mode."""
-    return normalize_output_verbosity_detail(detail, default=default)
-
-
 def resolve_output_contract(
     source: Any = _MISSING,
     *,
@@ -315,11 +258,6 @@ def resolve_output_contract(
     )
 
 
-def resolve_requested_output_verbosity(source: Any, *, default: bool = False) -> bool:
-    """Resolve whether the shared output contract should keep full detail."""
-    return resolve_output_contract(source, default_detail="full" if default else "compact").verbose
-
-
 def ensure_common_meta(
     result: Any,
     *,
@@ -331,7 +269,6 @@ def ensure_common_meta(
         return result
 
     out = dict(result)
-    out.pop("cli_meta", None)
 
     meta_in = out.get("meta")
     meta = dict(meta_in) if isinstance(meta_in, dict) else {}
@@ -433,9 +370,8 @@ def apply_output_verbosity(
         return result
 
     out = dict(result)
-    out.pop("cli_meta", None)
 
-    if resolve_output_detail(detail=detail) != "full":
+    if normalize_output_verbosity_detail(detail) != "full":
         return _strip_verbose_only_fields(out)
 
     return ensure_common_meta(

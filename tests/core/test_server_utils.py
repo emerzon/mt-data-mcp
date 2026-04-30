@@ -1,7 +1,7 @@
-"""Tests for src/mtdata/core/server_utils.py"""
+"""Tests for MCP registry helpers."""
 from types import SimpleNamespace
 
-from mtdata.core.server_utils import get_mcp_registry
+from mtdata.core._mcp_tools import get_mcp_registry
 
 
 class TestGetMcpRegistry:

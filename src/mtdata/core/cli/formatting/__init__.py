@@ -2,15 +2,15 @@ import json
 from datetime import datetime
 from typing import Any, Callable, Dict, Optional
 
-from ..shared.output_precision import resolve_output_precision
-from ..utils.minimal_output import _is_empty_value
-from ..utils.minimal_output import format_result_minimal as _shared_minimal
-from .mt5_gateway import get_default_mt5_gateway
-from .output_contract import apply_output_verbosity
-from .output_serialization import json_default as _json_default
-from .output_serialization import sanitize_json_compat as _sanitize_json_compat
-from .runtime_metadata import _safe_tz_name as _runtime_safe_tz_name
-from .runtime_metadata import build_runtime_timezone_meta
+from ....shared.output_precision import resolve_output_precision
+from ....utils.minimal_output import _is_empty_value
+from ....utils.minimal_output import format_result_minimal as _shared_minimal
+from ...mt5_gateway import create_mt5_gateway
+from ...output_contract import apply_output_verbosity
+from ...output_serialization import json_default as _json_default
+from ...output_serialization import sanitize_json_compat as _sanitize_json_compat
+from ...runtime_metadata import _safe_tz_name as _runtime_safe_tz_name
+from ...runtime_metadata import build_runtime_timezone_meta
 
 CLI_FORMAT_TOON = "toon"
 CLI_FORMAT_JSON = "json"
@@ -153,7 +153,7 @@ def _build_market_ticker_cli_verbose_meta(result: Any) -> Dict[str, Any]:
         if field in result:
             out[field] = result.get(field)
     try:
-        mt5 = get_default_mt5_gateway()
+        mt5 = create_mt5_gateway()
         terminal = mt5.terminal_info() if hasattr(mt5, "terminal_info") else None
         if terminal is not None:
             out["terminal"] = {
@@ -163,17 +163,6 @@ def _build_market_ticker_cli_verbose_meta(result: Any) -> Dict[str, Any]:
             }
     except Exception:
         pass
-    return out
-
-
-def _merge_meta_dict(base: Dict[str, Any], extra: Dict[str, Any]) -> Dict[str, Any]:
-    out = dict(base)
-    for key, value in extra.items():
-        existing = out.get(key)
-        if isinstance(existing, dict) and isinstance(value, dict):
-            out[str(key)] = _merge_meta_dict(existing, value)
-            continue
-        out[str(key)] = value
     return out
 
 
@@ -598,7 +587,7 @@ def _prepare_cli_payload(
 def _attach_cli_meta(result: Any, *, cmd_name: str, verbose: bool) -> Any:
     detail = "full" if verbose else "compact"
     if cmd_name == "news" and isinstance(result, dict):
-        from .news import normalize_news_output
+        from ...news import normalize_news_output
 
         result = normalize_news_output(result, detail=detail)
     return apply_output_verbosity(result, tool_name=cmd_name, detail=detail)

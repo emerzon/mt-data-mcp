@@ -71,7 +71,7 @@ def test_finalize_volatility_output_compact_omits_explanatory_fields():
         "horizon_sigma_return": 0.02,
         "horizon_sigma_annual": 0.8,
         "params_used": {"lookback": 100, "lambda_": 0.94},
-        "params_explained": {"lambda_": "legacy explanation"},
+        "params_explained": {"lambda_": "decay explanation"},
     }
 
     compact = vol._finalize_volatility_output(payload, detail="compact")
@@ -86,10 +86,15 @@ def test_finalize_volatility_output_compact_omits_explanatory_fields():
     assert "volatility_interpretation" not in compact
     assert full["sigma_bar_return"] == pytest.approx(0.01)
     assert full["params_used"]["lookback"] == 100
-    assert "volatility_interpretation" in full
+    assert set(full["volatility_interpretation"]) == {
+        "volatility_per_bar",
+        "volatility_annualized",
+        "volatility_horizon",
+        "volatility_horizon_annualized",
+    }
 
 
-def test_forecast_volatility_estimate_public_output_omits_legacy_sigma_fields():
+def test_forecast_volatility_estimate_preserves_impl_payload_without_public_stripper():
     def fake_forecast_volatility(**_kwargs):
         return {
             "success": True,
@@ -103,7 +108,6 @@ def test_forecast_volatility_estimate_public_output_omits_legacy_sigma_fields():
             "horizon_sigma_annual": 0.8,
             "volatility_interpretation": {
                 "volatility_per_bar": "per bar",
-                "legacy_sigma_fields": "legacy duplicates",
             },
         }
 
@@ -114,11 +118,11 @@ def test_forecast_volatility_estimate_public_output_omits_legacy_sigma_fields():
 
     assert out["volatility_per_bar"] == pytest.approx(0.01)
     assert out["volatility_horizon"] == pytest.approx(0.02)
-    assert "sigma_bar_return" not in out
-    assert "sigma_annual_return" not in out
-    assert "horizon_sigma_return" not in out
-    assert "horizon_sigma_annual" not in out
-    assert "legacy_sigma_fields" not in out["volatility_interpretation"]
+    assert out["sigma_bar_return"] == pytest.approx(0.01)
+    assert out["sigma_annual_return"] == pytest.approx(0.5)
+    assert out["horizon_sigma_return"] == pytest.approx(0.02)
+    assert out["horizon_sigma_annual"] == pytest.approx(0.8)
+    assert out["volatility_interpretation"] == {"volatility_per_bar": "per bar"}
 
 
 def test_forecast_volatility_validations(monkeypatch):
@@ -143,7 +147,7 @@ def test_forecast_volatility_general_theta_and_proxy_errors(monkeypatch):
     monkeypatch.setattr(vol, "_mt5_copy_rates_from", lambda *args, **kwargs: _rates(360))
     monkeypatch.setattr(vol.mt5, "symbol_info", lambda _symbol: SimpleNamespace(visible=False))
     monkeypatch.setattr(vol.mt5, "symbol_info_tick", lambda _symbol: SimpleNamespace(time=1_700_100_000))
-    monkeypatch.setattr(vol, "_mt5_epoch_to_utc", lambda t: float(t))
+    monkeypatch.setattr("mtdata.utils.mt5._mt5_epoch_to_utc", lambda t: float(t))
     monkeypatch.setattr(vol.mt5, "symbol_select", lambda _symbol, _visible: True)
     monkeypatch.setattr(vol.mt5, "last_error", lambda: (0, "ok"))
 
@@ -182,7 +186,7 @@ def test_forecast_volatility_direct_methods_and_short_data(monkeypatch):
     monkeypatch.setattr(vol, "_ensure_symbol_ready", lambda _symbol: None)
     monkeypatch.setattr(vol.mt5, "symbol_info", lambda _symbol: SimpleNamespace(visible=True))
     monkeypatch.setattr(vol.mt5, "symbol_info_tick", lambda _symbol: SimpleNamespace(time=1_700_100_000))
-    monkeypatch.setattr(vol, "_mt5_epoch_to_utc", lambda t: float(t))
+    monkeypatch.setattr("mtdata.utils.mt5._mt5_epoch_to_utc", lambda t: float(t))
     monkeypatch.setattr(vol.mt5, "last_error", lambda: (0, "ok"))
     monkeypatch.setattr(vol, "_mt5_copy_rates_from", lambda *args, **kwargs: _rates(240))
 
@@ -239,7 +243,7 @@ def test_forecast_volatility_yang_zhang_weights_overnight_variance(monkeypatch):
     monkeypatch.setattr(vol, "_ensure_symbol_ready", lambda _symbol: None)
     monkeypatch.setattr(vol.mt5, "symbol_info", lambda _symbol: SimpleNamespace(visible=True))
     monkeypatch.setattr(vol.mt5, "symbol_info_tick", lambda _symbol: SimpleNamespace(time=1_700_100_000))
-    monkeypatch.setattr(vol, "_mt5_epoch_to_utc", lambda t: float(t))
+    monkeypatch.setattr("mtdata.utils.mt5._mt5_epoch_to_utc", lambda t: float(t))
     monkeypatch.setattr(vol.mt5, "last_error", lambda: (0, "ok"))
 
     rows = [
@@ -307,7 +311,7 @@ def test_forecast_volatility_ensemble_aggregates_component_methods(monkeypatch):
     monkeypatch.setattr(vol, "_ensure_symbol_ready", lambda _symbol: None)
     monkeypatch.setattr(vol.mt5, "symbol_info", lambda _symbol: SimpleNamespace(visible=True))
     monkeypatch.setattr(vol.mt5, "symbol_info_tick", lambda _symbol: SimpleNamespace(time=1_700_100_000))
-    monkeypatch.setattr(vol, "_mt5_epoch_to_utc", lambda t: float(t))
+    monkeypatch.setattr("mtdata.utils.mt5._mt5_epoch_to_utc", lambda t: float(t))
     monkeypatch.setattr(vol.mt5, "last_error", lambda: (0, "ok"))
     monkeypatch.setattr(vol, "_mt5_copy_rates_from", lambda *args, **kwargs: _rates(240))
 

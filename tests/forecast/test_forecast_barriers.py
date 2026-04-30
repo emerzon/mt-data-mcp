@@ -12,9 +12,11 @@ import pandas as pd
 # Add src to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
 
-from mtdata.forecast.barriers import (
+from mtdata.forecast.barriers_probabilities import (
     forecast_barrier_closed_form,
     forecast_barrier_hit_probabilities,
+)
+from mtdata.forecast.barriers_optimization import (
     forecast_barrier_optimize,
 )
 from mtdata.forecast.barriers_shared import (
@@ -2329,7 +2331,7 @@ class TestTier1EnsembleDegradation(_BarrierModulePatchMixin, unittest.TestCase):
         """All members succeed → confidence=high, degraded=False."""
         methods = ['mc_gbm', 'garch']
         outputs = {m: self._make_member_output(m) for m in methods}
-        with patch('mtdata.forecast.barriers.forecast_barrier_optimize') as mock_opt:
+        with patch('mtdata.forecast.barriers_optimization.forecast_barrier_optimize') as mock_opt:
             def _side_effect(*args, **kwargs):
                 m = kwargs.get('method', args[3] if len(args) > 3 else 'mc_gbm')
                 return outputs.get(m, {"error": "fail"})

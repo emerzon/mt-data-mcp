@@ -61,6 +61,10 @@ Fetch OHLCV candles for a symbol.
   - `include_incomplete` (bool): Include the latest forming candle.
   - `denoise_method` (string, optional): Apply denoising (e.g., "ema").
   - `denoise_params` (string, optional): JSON or "k=v" params for denoising.    
+- **Response Notes:**
+  - Both `/api/history` and `/api/v1/history` include modern runtime timezone
+    metadata under `meta.runtime.timezone` (`utc`, `server`, and `client` when
+    configured). The legacy `used` timezone compatibility field is not emitted.
 
 #### `GET /api/tick`
 Get the latest real-time tick.

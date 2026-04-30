@@ -69,7 +69,7 @@ def test_regime_detect_text_output_has_no_cli_specific_compaction() -> None:
                 "end": f"2026-03-01 0{i}:59",
                 "bars": 10,
                 "regime": i % 3,
-                "avg_conf": 0.8,
+                "regime_confidence": 0.8,
             }
             for i in range(7)
         ],

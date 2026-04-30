@@ -246,6 +246,12 @@ mtdata-cli finviz_calendar --date-from 2026-03-01 --date-to 2026-03-15 --json
 | `--limit` | 100 | Max events |
 | `--page` | 1 | Pagination page |
 
+Economic calendar data is based on Finviz JSON API fields: `date`, `event`,
+`ticker`, `importance` (`1` low, `2` medium, `3` high), `actual`, `forecast`,
+`previous`, `category`, `reference`, and `referenceDate` when present. The
+`finviz_calendar` tool presents these as normalized keys, including `symbol`
+for Finviz `ticker` and `reference_date` for `referenceDate`.
+
 ### `finviz_earnings`
 
 Get upcoming earnings announcements.

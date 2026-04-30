@@ -44,15 +44,20 @@ def _prettify_constant_name(name: str, prefix: str) -> str:
 
 def _constants_by_prefix(mt5_module: Any, prefix: str) -> Dict[int, str]:
     out: Dict[int, str] = {}
-    for attr in dir(mt5_module):
-        if not str(attr).startswith(prefix):
-            continue
-        try:
-            value = getattr(mt5_module, attr)
-        except Exception:
-            continue
-        if isinstance(value, int):
-            out[int(value)] = str(attr)
+    sources = [mt5_module]
+    adapter = getattr(mt5_module, "adapter", None)
+    if adapter is not None:
+        sources.append(adapter)
+    for source in sources:
+        for attr in dir(source):
+            if not str(attr).startswith(prefix):
+                continue
+            try:
+                value = getattr(source, attr)
+            except Exception:
+                continue
+            if isinstance(value, int):
+                out[int(value)] = str(attr)
     return out
 
 

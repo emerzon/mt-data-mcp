@@ -34,7 +34,7 @@ from ..utils.symbol import _extract_group_path as _extract_group_path_util
 from ..bootstrap.settings import load_environment, mt5_config
 from ..shared.constants import TIMEFRAME_MAP
 from .error_envelope import build_http_error_detail
-from .mt5_gateway import get_web_api_mt5_gateway
+from .mt5_gateway import create_mt5_gateway
 from .pivot import pivot_compute_points
 from .tool_calling import unwrap_tool_callable
 from .web_api_handlers import (
@@ -87,12 +87,6 @@ API_PREFIXES = ("/api", "/api/v1")
 
 logger = logging.getLogger(__name__)
 _bearer_auth = HTTPBearer(auto_error=False)
-
-
-def _history_uses_legacy_timezone_meta(request: Optional[Request]) -> bool:
-    if request is None:
-        return True
-    return not str(request.url.path).startswith("/api/v1/")
 
 
 def _raise_auth_error(status_code: int, message: str, *, code: str, headers: Optional[Dict[str, str]] = None) -> None:
@@ -182,7 +176,7 @@ def _get_models_impl(*, method: Optional[str] = None, detail: str = "compact") -
 
 
 def _web_api_gateway():
-    return get_web_api_mt5_gateway(
+    return create_mt5_gateway(
         adapter=mt5,
         ensure_connection_impl=mt5_connection._ensure_connection,
     )
@@ -249,7 +243,6 @@ def get_wavelets() -> Dict[str, Any]:
 
 @api_router.get("/history")
 def get_history(
-    request: Request = None,
     symbol: str = Query(...),
     timeframe: str = Query("H1"),
     limit: int = Query(500, ge=1, le=20000),
@@ -279,7 +272,6 @@ def get_history(
         get_denoise_methods=_get_denoise_methods,
         normalize_denoise_spec=_norm_dn,
         mt5_config=mt5_config,
-        include_used_timezone=_history_uses_legacy_timezone_meta(request),
     )
 
 

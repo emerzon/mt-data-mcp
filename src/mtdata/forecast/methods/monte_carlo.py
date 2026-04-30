@@ -6,7 +6,7 @@ import pandas as pd
 from ..common import log_returns_from_prices as _log_returns_from_prices
 from ..interface import ForecastMethod, ForecastResult
 from ..monte_carlo import simulate_gbm_mc, simulate_hmm_mc
-from ..registry import ForecastRegistry
+from ..forecast_registry import ForecastRegistry
 
 
 def _ci_from_sims(paths: np.ndarray, alpha: float) -> Tuple[np.ndarray, np.ndarray]:

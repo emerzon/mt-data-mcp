@@ -26,12 +26,30 @@ class TestSafeFloat:
     def test_returns_finite_float(self):
         assert _safe_float("2.5") == 2.5
 
+    @pytest.mark.parametrize(
+        "value",
+        [None, "", "   ", float("nan"), float("inf"), float("-inf"), "nan", "inf"],
+    )
+    def test_rejects_missing_blank_and_non_finite_values(self, value):
+        assert _safe_float(value) is None
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [("2.5", 2.5), (" 2.5 ", 2.5), (3, 3.0), (True, 1.0)],
+    )
+    def test_coerces_numeric_values(self, value, expected):
+        assert _safe_float(value) == expected
+
     def test_rejects_non_finite_values(self):
         assert _safe_float(float("nan")) is None
         assert _safe_float(float("inf")) is None
 
     def test_uses_default_when_conversion_fails(self):
         assert _safe_float("abc", default=1.25) == 1.25
+
+    @pytest.mark.parametrize("value", [None, "", "   ", "nan", float("inf"), "abc"])
+    def test_uses_default_for_all_uncoercible_values(self, value):
+        assert _safe_float(value, default=1.25) == 1.25
 
 
 class TestCoerceScalar:

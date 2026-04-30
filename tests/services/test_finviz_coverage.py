@@ -427,40 +427,40 @@ class TestDatesModuleIsoParsing:
 class TestFilterCalendarEventsByDate:
     def test_filters_by_date_range(self):
         events = [
-            {"Datetime": "2024-06-01T10:00:00Z", "Release": "A"},
-            {"Datetime": "2024-06-10T08:00:00", "Release": "B"},
-            {"Datetime": "2024-07-01T09:00:00", "Release": "C"},
+            {"date": "2024-06-01T10:00:00Z", "event": "A"},
+            {"date": "2024-06-10T08:00:00", "event": "B"},
+            {"date": "2024-07-01T09:00:00", "event": "C"},
         ]
         filtered = svc._filter_calendar_events_by_date(events, date_from="2024-06-01", date_to="2024-06-15")
         assert len(filtered) == 2
 
     def test_handles_date_only(self):
-        events = [{"Datetime": "2024-06-05", "Release": "X"}]
+        events = [{"date": "2024-06-05", "event": "X"}]
         filtered = svc._filter_calendar_events_by_date(events, date_from="2024-06-01", date_to="2024-06-10")
         assert len(filtered) == 1
 
     def test_handles_datetime_object(self):
-        events = [{"Datetime": datetime.datetime(2024, 6, 5, 12, 0)}]
+        events = [{"date": datetime.datetime(2024, 6, 5, 12, 0)}]
         filtered = svc._filter_calendar_events_by_date(events, date_from="2024-06-01", date_to="2024-06-10")
         assert len(filtered) == 1
 
     def test_handles_date_object(self):
-        events = [{"Datetime": datetime.date(2024, 6, 5)}]
+        events = [{"date": datetime.date(2024, 6, 5)}]
         filtered = svc._filter_calendar_events_by_date(events, date_from="2024-06-01", date_to="2024-06-10")
         assert len(filtered) == 1
 
     def test_skips_non_string_non_date(self):
-        events = [{"Datetime": 12345}]
+        events = [{"date": 12345}]
         filtered = svc._filter_calendar_events_by_date(events, date_from="2024-06-01", date_to="2024-06-10")
         assert len(filtered) == 0
 
     def test_skips_missing_datetime(self):
-        events = [{"Release": "no-date"}]
+        events = [{"event": "no-date"}]
         filtered = svc._filter_calendar_events_by_date(events, date_from="2024-06-01", date_to="2024-06-10")
         assert len(filtered) == 0
 
     def test_skips_bad_string(self):
-        events = [{"Datetime": "not-a-date"}]
+        events = [{"date": "not-a-date"}]
         filtered = svc._filter_calendar_events_by_date(events, date_from="2024-06-01", date_to="2024-06-10")
         assert len(filtered) == 0
 
@@ -535,64 +535,14 @@ class TestFetchFinvizCalendarPaged:
 
 
 # ---------------------------------------------------------------------------
-# _normalize_finviz_economic_calendar_items
-# ---------------------------------------------------------------------------
-
-
-class TestNormalizeFinvizEconomicCalendarItems:
-    def test_maps_importance(self):
-        items = [{"importance": 3, "event": "GDP", "date": "2024-06-01T10:00"}]
-        result = svc._normalize_finviz_economic_calendar_items(items)
-        assert result[0]["Impact"] == "high"
-        assert result[0]["Release"] == "GDP"
-
-    def test_importance_1_is_low(self):
-        result = svc._normalize_finviz_economic_calendar_items([{"importance": 1, "event": "X"}])
-        assert result[0]["Impact"] == "low"
-
-    def test_importance_2_is_medium(self):
-        result = svc._normalize_finviz_economic_calendar_items([{"importance": 2, "event": "Y"}])
-        assert result[0]["Impact"] == "medium"
-
-    def test_non_int_importance(self):
-        result = svc._normalize_finviz_economic_calendar_items([{"importance": "high", "event": "Z"}])
-        assert result[0]["Impact"] == ""
-
-    def test_missing_fields_default_empty(self):
-        result = svc._normalize_finviz_economic_calendar_items([{}])
-        assert result[0]["Release"] == ""
-        assert result[0]["Datetime"] == ""
-
-    def test_internal_calendar_fields_are_omitted(self):
-        result = svc._normalize_finviz_economic_calendar_items(
-            [
-                {
-                    "calendarId": 123,
-                    "allDay": True,
-                    "alert": False,
-                    "hasNoDetail": True,
-                    "event": "GDP",
-                    "date": "2024-06-01T10:00",
-                }
-            ]
-        )
-        row = result[0]
-        assert "CalendarId" not in row
-        assert "AllDay" not in row
-        assert "Alert" not in row
-        assert "HasNoDetail" not in row
-
-
-# ---------------------------------------------------------------------------
 # get_economic_calendar (lines 659-663)
 # ---------------------------------------------------------------------------
 
 
 class TestGetEconomicCalendar:
     @patch("mtdata.services.finviz._fetch_finviz_economic_calendar_items", return_value=[])
-    @patch("mtdata.services.finviz._normalize_finviz_economic_calendar_items", return_value=[])
     @patch("mtdata.services.finviz._filter_calendar_events_by_date", return_value=[])
-    def test_success_empty(self, mock_filter, mock_norm, mock_fetch):
+    def test_success_empty(self, mock_filter, mock_fetch):
         result = svc.get_economic_calendar(limit=50, page=1)
         assert result["success"] is True
         assert result["count"] == 0

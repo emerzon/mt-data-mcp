@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-import pytest
 from unittest.mock import patch
+
+import pytest
+from pydantic import ValidationError
 
 from mtdata.core.data import wait_events
 from mtdata.core.data.requests import WaitEventRequest
@@ -120,8 +122,8 @@ def test_wait_event_request_parses_market_event_specs() -> None:
     assert request.end_on[0].type == "candle_close"
 
 
-def test_wait_event_request_rejects_legacy_event_names() -> None:
-    with pytest.raises(ValueError, match="price_level_touch was removed; use price_touch_level"):
+def test_wait_event_request_rejects_unknown_event_names_with_standard_discriminator_error() -> None:
+    with pytest.raises(ValidationError) as exc_info:
         WaitEventRequest.model_validate(
             {
                 "symbol": "EURUSD",
@@ -131,9 +133,13 @@ def test_wait_event_request_rejects_legacy_event_names() -> None:
             }
         )
 
+    error = exc_info.value.errors()[0]
+    assert error["type"] == "union_tag_invalid"
+    assert error["ctx"]["tag"] == "price_level_touch"
 
-def test_wait_event_request_rejects_price_direction_aliases() -> None:
-    with pytest.raises(ValueError, match="direction aliases 'above'/'below' were removed"):
+
+def test_wait_event_request_rejects_invalid_price_direction_with_standard_literal_error() -> None:
+    with pytest.raises(ValidationError) as exc_info:
         WaitEventRequest.model_validate(
             {
                 "symbol": "EURUSD",
@@ -143,9 +149,14 @@ def test_wait_event_request_rejects_price_direction_aliases() -> None:
             }
         )
 
+    error = exc_info.value.errors()[0]
+    assert error["type"] == "literal_error"
+    assert error["loc"] == ("watch_for", 0, "price_touch_level", "direction")
+    assert error["msg"] == "Input should be 'up', 'down' or 'either'"
 
-def test_wait_event_request_rejects_account_side_aliases() -> None:
-    with pytest.raises(ValueError, match="side aliases 'long'/'short' were removed"):
+
+def test_wait_event_request_rejects_invalid_account_side_with_standard_literal_error() -> None:
+    with pytest.raises(ValidationError) as exc_info:
         WaitEventRequest.model_validate(
             {
                 "symbol": "EURUSD",
@@ -155,9 +166,29 @@ def test_wait_event_request_rejects_account_side_aliases() -> None:
             }
         )
 
+    error = exc_info.value.errors()[0]
+    assert error["type"] == "literal_error"
+    assert error["loc"] == ("watch_for", 0, "position_opened", "side")
+    assert error["msg"] == "Input should be 'buy' or 'sell'"
 
-def test_wait_event_request_rejects_request_level_side_aliases() -> None:
-    with pytest.raises(ValueError, match="side aliases 'long'/'short' were removed"):
+
+def test_wait_event_request_accepts_canonical_account_side_values() -> None:
+    request = WaitEventRequest.model_validate(
+        {
+            "symbol": "EURUSD",
+            "side": "buy",
+            "watch_for": [
+                {"type": "position_opened", "symbol": "EURUSD", "side": "sell"},
+            ],
+        }
+    )
+
+    assert request.side == "buy"
+    assert request.watch_for[0].side == "sell"
+
+
+def test_wait_event_request_rejects_request_level_invalid_side_with_standard_literal_error() -> None:
+    with pytest.raises(ValidationError) as exc_info:
         WaitEventRequest.model_validate(
             {
                 "symbol": "EURUSD",
@@ -168,45 +199,57 @@ def test_wait_event_request_rejects_request_level_side_aliases() -> None:
             }
         )
 
+    error = exc_info.value.errors()[0]
+    assert error["type"] == "literal_error"
+    assert error["loc"] == ("side",)
+    assert error["msg"] == "Input should be 'buy' or 'sell'"
 
-def test_wait_event_request_moves_candle_close_from_watch_for_to_end_on() -> None:
-    request = WaitEventRequest.model_validate(
-        {
-            "symbol": "EURUSD",
-            "watch_for": [{"type": "candle_close", "timeframe": "M15"}],
-        }
-    )
 
-    assert request.watch_for == []
-    assert [(item.type, item.timeframe) for item in request.end_on] == [
-        ("candle_close", "M15"),
+def test_wait_event_request_rejects_candle_close_in_watch_for_with_standard_discriminator_error() -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        WaitEventRequest.model_validate(
+            {
+                "symbol": "EURUSD",
+                "watch_for": [{"type": "candle_close", "timeframe": "M15"}],
+            }
+        )
+
+    error = exc_info.value.errors()[0]
+    assert error["type"] == "union_tag_invalid"
+    assert error["ctx"]["tag"] == "candle_close"
+
+
+def test_wait_event_request_rejects_string_shorthands_with_standard_model_errors() -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        WaitEventRequest.model_validate(
+            {
+                "symbol": "EURUSD",
+                "watch_for": ["order_filled", "new_bar"],
+                "end_on": ["candle_close"],
+            }
+        )
+
+    errors = exc_info.value.errors()
+    assert [error["type"] for error in errors] == [
+        "model_attributes_type",
+        "model_attributes_type",
+        "model_type",
     ]
 
 
-def test_wait_event_request_accepts_string_shorthands() -> None:
-    request = WaitEventRequest.model_validate(
-        {
-            "symbol": "EURUSD",
-            "watch_for": ["order_filled", "new_bar"],
-            "end_on": ["candle_close"],
-        }
-    )
-
-    assert [item.type for item in request.watch_for or []] == ["order_filled"]
-    assert [(item.type, item.timeframe) for item in request.end_on] == [
-        ("candle_close", None),
-        ("candle_close", None),
-    ]
-
-
-def test_wait_event_request_rejects_non_boundary_events_in_end_on() -> None:
-    with pytest.raises(ValueError, match="end_on only accepts candle_close events"):
+def test_wait_event_request_rejects_non_boundary_events_in_end_on_with_standard_literal_error() -> None:
+    with pytest.raises(ValidationError) as exc_info:
         WaitEventRequest.model_validate(
             {
                 "symbol": "EURUSD",
                 "end_on": [{"type": "order_created", "symbol": "EURUSD"}],
             }
         )
+
+    error = exc_info.value.errors()[0]
+    assert error["type"] == "literal_error"
+    assert error["loc"] == ("end_on", 0, "type")
+    assert error["msg"] == "Input should be 'candle_close'"
 
 
 def test_wait_event_request_preserves_distinct_candle_close_boundaries() -> None:
@@ -226,7 +269,7 @@ def test_wait_event_request_preserves_distinct_candle_close_boundaries() -> None
     ]
 
 
-@patch("mtdata.core.data.get_mt5_gateway", return_value=object())
+@patch("mtdata.core.data.create_mt5_gateway", return_value=object())
 @patch("mtdata.core.data._compact_wait_event_public_result", side_effect=lambda result, **_: result)
 @patch("mtdata.core.data.run_wait_event", return_value={"success": True})
 def test_wait_event_accepts_explicit_watch_for_objects(
@@ -257,14 +300,18 @@ def test_wait_event_accepts_explicit_watch_for_objects(
     ]
 
 
-def test_wait_event_request_rejects_watch_for_string_without_required_fields() -> None:
-    with pytest.raises(ValueError, match="Unknown wait_event watch_for string"):
+def test_wait_event_request_rejects_watch_for_string_with_standard_model_error() -> None:
+    with pytest.raises(ValidationError) as exc_info:
         WaitEventRequest.model_validate(
             {
                 "symbol": "BTCUSD",
                 "watch_for": ["price_touch_level"],
             }
         )
+
+    error = exc_info.value.errors()[0]
+    assert error["type"] == "model_attributes_type"
+    assert error["loc"] == ("watch_for", 0)
 
 
 def _raw_wait_event():
@@ -273,7 +320,7 @@ def _raw_wait_event():
     return wait_event.__wrapped__
 
 
-@patch("mtdata.core.data.get_mt5_gateway", return_value=object())
+@patch("mtdata.core.data.create_mt5_gateway", return_value=object())
 @patch("mtdata.core.data._compact_wait_event_public_result", side_effect=lambda result, **_: result)
 @patch("mtdata.core.data.run_wait_event", return_value={"success": True})
 def test_wait_event_prefers_public_symbol_name(mock_run_wait, _mock_compact, _mock_gateway) -> None:
@@ -284,11 +331,15 @@ def test_wait_event_prefers_public_symbol_name(mock_run_wait, _mock_compact, _mo
     assert request.symbol == "EURUSD"
 
 
-def test_wait_event_request_rejects_instrument_alias() -> None:
-    with pytest.raises(ValueError, match="instrument was removed; use symbol"):
+def test_wait_event_request_rejects_instrument_as_extra_field() -> None:
+    with pytest.raises(ValidationError) as exc_info:
         WaitEventRequest.model_validate(
             {
                 "instrument": "EURUSD",
-                "watch_for": [],
+                "watch_for": [{"type": "order_created"}],
             }
         )
+
+    error = exc_info.value.errors()[0]
+    assert error["type"] == "extra_forbidden"
+    assert error["loc"] == ("instrument",)

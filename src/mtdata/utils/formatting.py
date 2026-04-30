@@ -8,6 +8,7 @@ from ..shared.constants import (
     PRECISION_MAX_LOSS_PCT,
     PRECISION_REL_TOL,
 )
+from .coercion import coerce_finite_float
 
 
 def _adaptive_decimals(num: float, max_decimals: int = PRECISION_MAX_DECIMALS) -> int:
@@ -43,11 +44,8 @@ def optimal_decimals(
         return 0
     nums: List[float] = []
     for v in values:
-        try:
-            fv = float(v)
-        except Exception:
-            continue
-        if math.isfinite(fv):
+        fv = coerce_finite_float(v)
+        if fv is not None:
             nums.append(fv)
     if not nums:
         return 0
@@ -85,12 +83,15 @@ def format_number(value: Any, decimals: Optional[int] = None) -> str:
         return "null"
     if isinstance(value, bool):
         return "true" if value else "false"
-    try:
-        num = float(value)
-    except (TypeError, ValueError):
+    num = coerce_finite_float(value)
+    if num is None:
+        try:
+            raw = float(value)
+        except (TypeError, ValueError):
+            return str(value)
+        if not math.isfinite(raw):
+            return "null"
         return str(value)
-    if not math.isfinite(num):
-        return "null"
     if decimals is None:
         decimals = _adaptive_decimals(num)
     return format_float(num, int(decimals))

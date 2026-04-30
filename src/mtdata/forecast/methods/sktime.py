@@ -9,7 +9,7 @@ import pandas as pd
 
 from ..common import build_ci_diagnostics as _build_ci_diagnostics
 from ..interface import CancelToken, ForecastMethod, ForecastResult, ProgressReporter, TrainResult
-from ..registry import ForecastRegistry
+from ..forecast_registry import ForecastRegistry
 
 try:
     import importlib.util as _importlib_util

@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 
 from mtdata.forecast.interface import TrainResult
-from mtdata.forecast.registry import ForecastRegistry
+from mtdata.forecast.forecast_registry import ForecastRegistry
 
 
 def _make_series(n: int = 200) -> pd.Series:

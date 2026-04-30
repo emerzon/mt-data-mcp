@@ -18,7 +18,7 @@ from mtdata.forecast.monte_carlo import (
     simulate_gbm_mc,
     simulate_markov_chain,
 )
-from mtdata.forecast.registry import ForecastRegistry
+from mtdata.forecast.forecast_registry import ForecastRegistry
 
 
 class TestMonteCarloSimulationCoherence(unittest.TestCase):

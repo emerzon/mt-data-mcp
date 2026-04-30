@@ -12,7 +12,6 @@ from typing import Any, Callable, Dict, Iterable
 from ..shared.parameter_contracts import (
     OUTPUT_EXTRA_FULL_ALIASES,
     OUTPUT_EXTRAS,
-    REMOVED_PUBLIC_OUTPUT_PARAMS,
 )
 from ..shared.schema import (
     apply_param_hints as _apply_param_hints,
@@ -29,7 +28,7 @@ from ..shared.schema import (
 from ..shared.schema import (
     get_function_info as _get_function_info,
 )
-from .server_utils import get_mcp_registry
+from ._mcp_tools import get_mcp_registry
 
 logger = logging.getLogger(__name__)
 
@@ -418,11 +417,6 @@ def _enforce_public_output_contract(schema: Dict[str, Any]) -> None:
     props = params_obj.get("properties") if isinstance(params_obj, dict) else None
     if not isinstance(props, dict):
         return
-    for name in REMOVED_PUBLIC_OUTPUT_PARAMS:
-        props.pop(name, None)
-    required = params_obj.get("required")
-    if isinstance(required, list):
-        params_obj["required"] = [name for name in required if name not in REMOVED_PUBLIC_OUTPUT_PARAMS]
     props.setdefault(
         "json",
         {

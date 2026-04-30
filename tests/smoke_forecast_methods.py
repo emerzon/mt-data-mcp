@@ -11,7 +11,7 @@ from typing import Dict, List, Tuple
 import numpy as np
 import pandas as pd
 
-from mtdata.forecast.registry import ForecastRegistry
+from mtdata.forecast.forecast_registry import ForecastRegistry
 
 # Ensure method modules are imported so they self-register with ForecastRegistry.
 for _mod in (

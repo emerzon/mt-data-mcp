@@ -331,8 +331,11 @@ class TestFinvizService:
         assert result["total"] == 2
         assert len(result["items"]) == 2
         assert "events" not in result
-        assert result["items"][0]["For"] == "USD"
-        assert result["items"][0]["Country"] == "United States"
+        assert result["items"][0]["ticker"] == "UNITEDSTANONFAR"
+        assert result["items"][0]["event"] == "Nonfarm Payrolls"
+        assert result["items"][0]["importance"] == 3
+        assert "For" not in result["items"][0]
+        assert "Country" not in result["items"][0]
 
         result_high = get_economic_calendar(
             impact="high",

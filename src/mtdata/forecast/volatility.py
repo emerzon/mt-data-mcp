@@ -20,7 +20,6 @@ from ..utils.denoise import normalize_denoise_spec as _normalize_denoise_spec
 from ..utils.mt5 import (
     _ensure_symbol_ready,
     _mt5_copy_rates_from,
-    _mt5_epoch_to_utc as _mt5_epoch_to_utc_compat,
     mt5,
 )
 from ..utils.utils import _parse_start_datetime, parse_kv_or_json
@@ -36,11 +35,6 @@ from .common import (
 from .common import (
     pd_freq_from_timeframe as _pd_freq_from_timeframe,
 )
-
-
-def _mt5_epoch_to_utc(value: float) -> float:
-    """Backward-compatible patch target; MT5 reads are normalized upstream."""
-    return _mt5_epoch_to_utc_compat(value)
 
 
 # Optional availability flags (match server discovery)
@@ -351,7 +345,7 @@ def _finalize_volatility_output(
     *,
     detail: str = "full",
 ) -> Dict[str, Any]:
-    """Add trader-friendly volatility aliases while preserving legacy sigma keys."""
+    """Add trader-friendly volatility aliases and explanatory metadata."""
     if not isinstance(payload, dict) or not payload.get("success"):
         return payload
 
@@ -389,10 +383,6 @@ def _finalize_volatility_output(
         "volatility_annualized": "volatility_per_bar annualized using the timeframe's bars-per-year convention.",
         "volatility_horizon": "Return volatility scaled to the requested horizon in bars.",
         "volatility_horizon_annualized": "volatility_horizon expressed on the annualized return scale.",
-        "legacy_sigma_fields": (
-            "sigma_bar_return, sigma_annual_return, horizon_sigma_return, and "
-            "horizon_sigma_annual are retained for compatibility."
-        ),
     }
     if isinstance(horizon, (int, float)) and int(horizon) == 1:
         interpretation["horizon_note"] = (

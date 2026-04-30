@@ -7,7 +7,6 @@ from typing import Any, Callable, Dict, List, Optional, TypedDict, Union
 
 from ...bootstrap.settings import mt5_config, trade_guardrails_config
 from . import comments, common, time, validation
-from .execution import _modify_position
 from .gateway import MT5TradingGateway, create_trading_gateway, trading_connection_error
 from .positions import _resolve_open_position
 from .safety import evaluate_trade_guardrails
@@ -22,7 +21,6 @@ class _OrderSymbolContext(TypedDict):
 
 class _OrderSubmitOutcome(TypedDict):
     result: Any
-    comment_fallback: Optional[Dict[str, Any]]
     fill_mode_attempts: List[Dict[str, Any]]
     used_request: Dict[str, Any]
 
@@ -65,9 +63,6 @@ def _build_sl_tp_result(
     attempts: int,
     last_retcode: Any,
     last_comment: Any,
-    comment_fallback: Optional[Dict[str, Any]],
-    fallback_used: bool,
-    fallback_result: Optional[Dict[str, Any]],
     verification_failed: bool = False,
 ) -> Dict[str, Any]:
     out: Dict[str, Any] = {"status": status}
@@ -89,12 +84,6 @@ def _build_sl_tp_result(
         out["last_retcode"] = last_retcode
     if last_comment is not None:
         out["last_comment"] = last_comment
-    if comment_fallback is not None:
-        out["comment_fallback"] = comment_fallback
-    if fallback_used:
-        out["fallback_used"] = True
-    if fallback_result is not None:
-        out["fallback_result"] = fallback_result
     if verification_failed:
         out["verification_failed"] = True
     return out
@@ -148,9 +137,6 @@ def _attach_post_fill_protection(
                 attempts=0,
                 last_retcode=None,
                 last_comment=None,
-                comment_fallback=None,
-                fallback_used=False,
-                fallback_result=None,
             ),
             "warnings": [],
         }
@@ -168,9 +154,6 @@ def _attach_post_fill_protection(
     sl_tp_attempts = 0
     sl_tp_last_retcode = None
     sl_tp_last_comment = None
-    sl_tp_comment_fallback: Optional[Dict[str, Any]] = None
-    sl_tp_fallback_used = False
-    sl_tp_fallback_result: Optional[Dict[str, Any]] = None
 
     try:
         # --- Phase 1: Resolve the open position ---
@@ -230,10 +213,8 @@ def _attach_post_fill_protection(
             for modify_try in range(max_modify_attempts):
                 sl_tp_attempts = int(modify_try + 1)
                 try:
-                    modify_result, sl_tp_comment_fallback, _sl_tp_last_error = _send_order_with_comment_fallback(
-                        mt5,
-                        modify_request,
-                    )
+                    modify_result = mt5.order_send(modify_request)
+                    _sl_tp_last_error = validation._safe_last_error(mt5)
                 except Exception as ex:
                     modify_result = None
                     sl_tp_error = f"Error setting TP/SL: {str(ex)}"
@@ -292,66 +273,12 @@ def _attach_post_fill_protection(
                             "applied": float(tp_applied),
                         }
             else:
-                # --- Phase 4: Fallback via _modify_position ---
-                fallback_out: Dict[str, Any] = {}
-                if position_ticket is not None:
-                    sl_tp_fallback_used = True
-                    _stdlib_time.sleep(0.35)
-                    try:
-                        fallback_out = _modify_position(
-                            ticket=position_ticket,
-                            stop_loss=stop_loss,
-                            take_profit=take_profit,
-                            comment=comment,
-                            gateway=mt5,
-                        )
-                    except Exception as ex:
-                        fallback_out = {"error": f"Fallback modify call failed: {str(ex)}"}
-                    sl_tp_fallback_result = fallback_out if isinstance(fallback_out, dict) else {"result": fallback_out}
-                    if isinstance(fallback_out, dict) and bool(fallback_out.get("success")):
-                        sl_tp_apply_status = "applied"
-                        sl_applied = fallback_out.get("applied_sl")
-                        tp_applied = fallback_out.get("applied_tp")
-                        sl_tp_error = None
-                        # Mark when fallback applied broker-adjusted levels.
-                        if stop_loss is not None and sl_applied is not None:
-                            try:
-                                if abs(float(sl_applied) - float(stop_loss)) > (validation._safe_float_attr(symbol_info, "point") or 1e-9):
-                                    sl_tp_broker_adjusted = True
-                                    sl_tp_adjustment["sl"] = {
-                                        "requested": float(stop_loss),
-                                        "applied": float(sl_applied),
-                                    }
-                            except Exception:
-                                pass
-                        if take_profit is not None and tp_applied is not None:
-                            try:
-                                if abs(float(tp_applied) - float(take_profit)) > (validation._safe_float_attr(symbol_info, "point") or 1e-9):
-                                    sl_tp_broker_adjusted = True
-                                    sl_tp_adjustment["tp"] = {
-                                        "requested": float(take_profit),
-                                        "applied": float(tp_applied),
-                                    }
-                            except Exception:
-                                pass
-                    else:
-                        sl_tp_error = (
-                            str(fallback_out.get("error"))
-                            if isinstance(fallback_out, dict) and fallback_out.get("error")
-                            else (
-                                "Failed to set TP/SL"
-                                if sl_tp_error is None
-                                else sl_tp_error
-                            )
-                        )
-                        sl_tp_apply_status = "failed"
-                else:
-                    sl_tp_error = (
-                        "Failed to set TP/SL"
-                        if sl_tp_error is None
-                        else sl_tp_error
-                    )
-                    sl_tp_apply_status = "failed"
+                sl_tp_error = (
+                    "Failed to set TP/SL"
+                    if sl_tp_error is None
+                    else sl_tp_error
+                )
+                sl_tp_apply_status = "failed"
         else:
             checked = ", ".join(str(v) for v in position_ticket_candidates) or "none"
             sl_tp_error = (
@@ -364,10 +291,6 @@ def _attach_post_fill_protection(
         sl_tp_apply_status = "failed"
 
     # --- Build warnings ---
-    if isinstance(sl_tp_comment_fallback, dict) and sl_tp_comment_fallback.get("used"):
-        warnings_out.append(
-            "Broker rejected the comment field on the TP/SL modification; protection was retried without the original comment."
-        )
     if sl_tp_apply_status == "failed":
         if position_ticket is not None:
             action_text = f"Run trade_modify {position_ticket} immediately"
@@ -386,10 +309,6 @@ def _attach_post_fill_protection(
         warnings_out.append(
             "CRITICAL: Order filled but TP/SL could not be applied. "
             f"{action_text}, or close the position."
-        )
-    if sl_tp_fallback_used and sl_tp_apply_status == "applied":
-        warnings_out.append(
-            "TP/SL protection required a post-fill fallback modification. Verify the live position is protected."
         )
     if sl_tp_verification_failed:
         warnings_out.append(
@@ -413,29 +332,16 @@ def _attach_post_fill_protection(
             attempts=sl_tp_attempts,
             last_retcode=sl_tp_last_retcode,
             last_comment=sl_tp_last_comment,
-            comment_fallback=sl_tp_comment_fallback,
-            fallback_used=sl_tp_fallback_used,
-            fallback_result=sl_tp_fallback_result,
             verification_failed=sl_tp_verification_failed,
         ),
         "warnings": warnings_out,
     }
     if sl_tp_apply_status == "applied":
-        outcome["protection_status"] = (
-            "protected_after_fallback"
-            if sl_tp_fallback_used
-            else "protected"
-        )
+        outcome["protection_status"] = "protected"
     elif sl_tp_apply_status == "failed":
         outcome["protection_status"] = "unprotected_position"
     return outcome
 
-
-def _send_order_with_comment_fallback(
-    mt5: Any,
-    request: Dict[str, Any],
-) -> tuple[Any, Optional[Dict[str, Any]], Any]:
-    return comments._send_order_with_comment_fallback(mt5, request)
 
 def _send_order_with_fill_mode_retry(
     mt5: Any,
@@ -444,10 +350,9 @@ def _send_order_with_fill_mode_retry(
     symbol_info: Any = None,
     price_refresh: Optional[Callable[[Dict[str, Any]], bool]] = None,
     max_price_retries: int = 3,
-) -> tuple[Any, Optional[Dict[str, Any]], Any, List[Dict[str, Any]], Dict[str, Any]]:
+) -> tuple[Any, Any, List[Dict[str, Any]], Dict[str, Any]]:
     attempts: List[Dict[str, Any]] = []
     last_result = None
-    last_comment_fallback = None
     last_error = None
     last_request = dict(request)
     price_changed_codes = {
@@ -461,6 +366,7 @@ def _send_order_with_fill_mode_retry(
         validation._safe_int_attr(mt5, "TRADE_RETCODE_NO_MONEY", 10019),
         validation._safe_int_attr(mt5, "TRADE_RETCODE_TOO_MANY_REQUESTS", 10024),
         validation._safe_int_attr(mt5, "TRADE_RETCODE_INVALID_STOPS", 10016),
+        validation._safe_int_attr(mt5, "TRADE_RETCODE_INVALID", 10013),
     }
     for fill_mode in validation._candidate_fill_modes(mt5, symbol_info):
         attempt_request = dict(request)
@@ -468,7 +374,8 @@ def _send_order_with_fill_mode_retry(
         price_retry_count = 0
         while True:
             request_to_send = dict(attempt_request)
-            result, comment_fallback, last_error = _send_order_with_comment_fallback(mt5, request_to_send)
+            result = mt5.order_send(request_to_send)
+            last_error = validation._safe_last_error(mt5)
             attempt: Dict[str, Any] = {"type_filling": int(fill_mode)}
             if price_retry_count > 0:
                 attempt["price_retry"] = int(price_retry_count)
@@ -481,25 +388,18 @@ def _send_order_with_fill_mode_retry(
                 attempt["retcode"] = retcode
                 attempt["retcode_name"] = mt5.retcode_name(retcode)
                 attempt["comment"] = getattr(result, "comment", None)
-            if comment_fallback:
-                attempt["comment_fallback"] = comment_fallback
             attempts.append(attempt)
             last_result = result
-            last_comment_fallback = comment_fallback
-            last_request = (
-                dict(comment_fallback["request"])
-                if isinstance(comment_fallback, dict) and comment_fallback.get("used") and isinstance(comment_fallback.get("request"), dict)
-                else request_to_send
-            )
+            last_request = request_to_send
             try:
                 if result is not None and validation._retcode_is_done(mt5, getattr(result, "retcode", -1)):
-                    return result, comment_fallback, last_error, attempts, last_request
+                    return result, last_error, attempts, last_request
             except Exception:
                 pass
 
             retcode = getattr(result, "retcode", None) if result is not None else None
             if retcode in terminal_retcode_failures:
-                return result, comment_fallback, last_error, attempts, last_request
+                return result, last_error, attempts, last_request
             should_retry_same_fill = (
                 retcode in price_changed_codes
                 and price_retry_count < max(0, int(max_price_retries))
@@ -518,7 +418,7 @@ def _send_order_with_fill_mode_retry(
 
             price_retry_count += 1
             _stdlib_time.sleep(0.15)
-    return last_result, last_comment_fallback, last_error, attempts, last_request
+    return last_result, last_error, attempts, last_request
 
 
 def _prepare_order_gateway(
@@ -626,7 +526,7 @@ def _submit_order_request(
     symbol_info: Any = None,
     price_refresh: Optional[Callable[[Dict[str, Any]], bool]] = None,
 ) -> tuple[Optional[_OrderSubmitOutcome], Optional[Dict[str, Any]]]:
-    result, comment_fallback, last_error, fill_mode_attempts, used_request = _send_order_with_fill_mode_retry(
+    result, last_error, fill_mode_attempts, used_request = _send_order_with_fill_mode_retry(
         mt5,
         request,
         symbol_info=symbol_info,
@@ -636,18 +536,13 @@ def _submit_order_request(
         return None, {
             "error": base_error,
             "last_error": last_error,
-            "comment_fallback": comment_fallback,
             "fill_mode_attempts": fill_mode_attempts,
         }
 
     if not validation._retcode_is_done(mt5, getattr(result, "retcode", None)):
         error_message = base_error
-        invalid_comment = (
-            comment_fallback.get("invalid_comment_error")
-            if isinstance(comment_fallback, dict)
-            else None
-        )
-        if invalid_comment:
+        invalid_comment = comments._invalid_comment_error_text(result, last_error)
+        if invalid_comment is not None:
             error_message = invalid_comment_error
         return None, {
             "error": error_message,
@@ -656,13 +551,11 @@ def _submit_order_request(
             "comment": result.comment,
             "request_id": result.request_id,
             "last_error": last_error,
-            "comment_fallback": comment_fallback,
             "fill_mode_attempts": fill_mode_attempts,
         }
 
     return {
         "result": result,
-        "comment_fallback": comment_fallback,
         "fill_mode_attempts": fill_mode_attempts,
         "used_request": used_request,
     }, None
@@ -674,8 +567,6 @@ def _attach_comment_response_metadata(
     *,
     comment_sanitization: Optional[Dict[str, Any]],
     comment_truncation: Optional[Dict[str, Any]],
-    comment_fallback: Optional[Dict[str, Any]],
-    fallback_warning: str,
 ) -> None:
     if comment_sanitization:
         out["comment_sanitization"] = comment_sanitization
@@ -687,10 +578,6 @@ def _attach_comment_response_metadata(
         warnings_out.append(
             f"Comment truncated to {comment_truncation['max_length']} characters: '{comment_truncation['applied']}'"
         )
-    if comment_fallback:
-        out["comment_fallback"] = comment_fallback
-        if comment_fallback.get("used"):
-            warnings_out.append(fallback_warning)
 
 
 def _place_market_order(  # noqa: C901
@@ -790,8 +677,6 @@ def _place_market_order(  # noqa: C901
             if live_protection_error is not None:
                 return live_protection_error
 
-            # Place market order without TP/SL first (TRADE_ACTION_DEAL doesn't
-            # reliably support them)
             send_tick = mt5.symbol_info_tick(symbol)
             if send_tick is None:
                 return {"error": f"Failed to get fresh price for {symbol}"}
@@ -864,6 +749,10 @@ def _place_market_order(  # noqa: C901
                 "type_time": mt5.ORDER_TIME_GTC,
                 "type_filling": validation._safe_int_attr(mt5, "ORDER_FILLING_IOC", 1),
             }
+            if norm_sl is not None:
+                request["sl"] = float(norm_sl)
+            if norm_tp is not None:
+                request["tp"] = float(norm_tp)
 
             def _refresh_market_order_price(attempt_request: Dict[str, Any]) -> bool:
                 refreshed_tick = mt5.symbol_info_tick(symbol)
@@ -894,11 +783,9 @@ def _place_market_order(  # noqa: C901
             if send_error is not None:
                 return send_error
             result = send_outcome["result"]
-            comment_fallback = send_outcome["comment_fallback"]
             fill_mode_attempts = send_outcome["fill_mode_attempts"]
             used_request = send_outcome["used_request"]
 
-            # Resolve position and attach SL/TP protection
             order_ticket = validation._safe_int_ticket(getattr(result, "order", None))
             deal_ticket = validation._safe_int_ticket(getattr(result, "deal", None))
             position_ticket_candidates: List[int] = []
@@ -906,21 +793,38 @@ def _place_market_order(  # noqa: C901
                 if cand is not None and cand not in position_ticket_candidates:
                     position_ticket_candidates.append(cand)
 
-            protection = _attach_post_fill_protection(
-                mt5,
-                symbol=symbol,
-                side=side,
-                volume=volume_validated,
-                position_ticket_candidates=position_ticket_candidates,
-                stop_loss=norm_sl,
-                take_profit=norm_tp,
-                symbol_info=symbol_info,
-                comment=comment,
-                request_comment=request_comment,
-                magic=validation._safe_int_ticket(request.get("magic")),
+            position_ticket = None
+            position_ticket_resolution = None
+            if position_ticket_candidates:
+                position_obj, resolved_ticket, resolve_info = _resolve_open_position(
+                    mt5,
+                    ticket_candidates=position_ticket_candidates,
+                    symbol=symbol,
+                    side=side,
+                    volume=volume_validated,
+                    magic=validation._safe_int_ticket(request.get("magic")),
+                )
+                position_ticket = resolved_ticket
+                position_ticket_resolution = {
+                    **dict(resolve_info),
+                    "matched": position_obj is not None and resolved_ticket is not None,
+                }
+            sl_tp_requested = bool(norm_sl is not None or norm_tp is not None)
+            sl_tp_result = _build_sl_tp_result(
+                requested_sl=norm_sl,
+                requested_tp=norm_tp,
+                applied_sl=norm_sl if sl_tp_requested else None,
+                applied_tp=norm_tp if sl_tp_requested else None,
+                status="applied" if sl_tp_requested else "not_requested",
+                error=None,
+                broker_adjusted=False,
+                adjustment=None,
+                attempts=1 if sl_tp_requested else 0,
+                last_retcode=getattr(result, "retcode", None) if sl_tp_requested else None,
+                last_comment=getattr(result, "comment", None) if sl_tp_requested else None,
             )
 
-            warnings_out: List[str] = list(protection.get("warnings") or [])
+            warnings_out: List[str] = []
             out: Dict[str, Any] = {
                 "retcode": result.retcode,
                 "retcode_name": mt5.retcode_name(result.retcode),
@@ -932,24 +836,20 @@ def _place_market_order(  # noqa: C901
                 "ask": result.ask,
                 "comment": result.comment,
                 "request_id": result.request_id,
-                "position_ticket": protection.get("position_ticket"),
-                "position_ticket_candidates": protection.get("position_ticket_candidates"),
-                "position_ticket_resolution": protection.get("position_ticket_resolution"),
+                "position_ticket": position_ticket,
+                "position_ticket_candidates": position_ticket_candidates or None,
+                "position_ticket_resolution": position_ticket_resolution,
                 "type_filling_used": used_request.get("type_filling"),
-                "sl_tp_result": protection["sl_tp_result"],
+                "sl_tp_result": sl_tp_result,
             }
             _attach_comment_response_metadata(
                 out,
                 warnings_out,
                 comment_sanitization=comment_sanitization,
                 comment_truncation=comment_truncation,
-                comment_fallback=comment_fallback,
-                fallback_warning=(
-                    "Broker rejected the comment field; order was retried with a minimal MT5-safe comment."
-                ),
             )
-            if "protection_status" in protection:
-                out["protection_status"] = protection["protection_status"]
+            if sl_tp_requested:
+                out["protection_status"] = "protected"
             if fill_mode_attempts:
                 out["fill_mode_attempts"] = fill_mode_attempts
             if warnings_out:
@@ -1127,7 +1027,6 @@ def _place_pending_order(
             if send_error is not None:
                 return send_error
             result = send_outcome["result"]
-            comment_fallback = send_outcome["comment_fallback"]
             fill_mode_attempts = send_outcome["fill_mode_attempts"]
             used_request = send_outcome["used_request"]
 
@@ -1156,10 +1055,6 @@ def _place_pending_order(
                 warnings_out,
                 comment_sanitization=comment_sanitization,
                 comment_truncation=comment_truncation,
-                comment_fallback=comment_fallback,
-                fallback_warning=(
-                    "Broker rejected the comment field; pending order was retried with a minimal MT5-safe comment."
-                ),
             )
             if fill_mode_attempts:
                 out["fill_mode_attempts"] = fill_mode_attempts

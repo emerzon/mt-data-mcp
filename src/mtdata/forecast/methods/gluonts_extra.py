@@ -7,7 +7,7 @@ import pandas as pd
 
 from ..common import edge_pad_to_length as _edge_pad_to_length
 from ..interface import ForecastMethod, ForecastResult
-from ..registry import ForecastRegistry
+from ..forecast_registry import ForecastRegistry
 
 
 def _build_list_dataset(series: np.ndarray, freq: str):

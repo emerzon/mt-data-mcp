@@ -68,7 +68,7 @@ _FMT = "mtdata.core.pivot._format_time_minimal"
 _FMT_LOCAL = "mtdata.core.pivot._format_time_minimal_local"
 _USE_CTZ = "mtdata.core.pivot._use_client_tz"
 _RESOLVE_CTZ = "mtdata.core.pivot._resolve_client_tz"
-_EPOCH = "mtdata.core.pivot._mt5_epoch_to_utc"
+_EPOCH = "mtdata.utils.mt5._mt5_epoch_to_utc"
 _COPY_RATES = "mtdata.core.pivot._mt5_copy_rates_from"
 
 

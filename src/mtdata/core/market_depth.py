@@ -18,8 +18,8 @@ from ..utils.utils import (
 )
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
-from .mt5_gateway import get_mt5_gateway
-from .output_contract import ensure_common_meta, resolve_output_detail
+from .mt5_gateway import create_mt5_gateway
+from .output_contract import ensure_common_meta, normalize_output_verbosity_detail
 from ..shared.schema import CompactFullDetailLiteral
 
 logger = logging.getLogger(__name__)
@@ -147,14 +147,14 @@ def _unregister_market_depth_fetch_tool() -> None:
         pass
 
 
-def _market_depth_fetch_impl(symbol: str, spread: bool = False, compact: bool = False) -> Dict[str, Any]:  # noqa: C901
+def _market_depth_fetch_impl(symbol: str, spread: bool = False, require_dom: bool = False) -> Dict[str, Any]:  # noqa: C901
     """Return DOM if available; otherwise current bid/ask snapshot for `symbol`.
 
     Parameters: symbol
     """
     def _run() -> Dict[str, Any]:  # noqa: C901
         try:
-            mt5_gateway = get_mt5_gateway(
+            mt5_gateway = create_mt5_gateway(
                 adapter=mt5,
                 ensure_connection_impl=ensure_mt5_connection_or_raise,
             )
@@ -292,7 +292,7 @@ def _market_depth_fetch_impl(symbol: str, spread: bool = False, compact: bool = 
             tick = mt5_gateway.symbol_info_tick(symbol)
             if tick is None:
                 return {"error": f"Failed to get tick data for {symbol}"}
-            if compact:
+            if require_dom:
                 return {
                     "error": f"DOM not available for {symbol}. Use market_ticker for bid/ask snapshot instead.",
                     "recommended_alternative": "market_ticker",
@@ -345,30 +345,38 @@ def _market_depth_fetch_impl(symbol: str, spread: bool = False, compact: bool = 
         operation="market_depth_fetch",
         symbol=symbol,
         spread=spread,
-        compact=compact,
+        require_dom=require_dom,
         func=_run,
     )
 
 
-def _market_depth_fetch_disabled(symbol: str, spread: bool = False, compact: bool = False) -> Dict[str, Any]:
+def _market_depth_fetch_disabled(symbol: str, spread: bool = False, require_dom: bool = False) -> Dict[str, Any]:
     """Return DOM if available; otherwise current bid/ask snapshot for `symbol`.
 
     Parameters: symbol
     """
     if _market_depth_fetch_enabled():
-        return _market_depth_fetch_impl(symbol, spread=spread, compact=compact)
+        return _market_depth_fetch_impl(symbol, spread=spread, require_dom=require_dom)
     return run_logged_operation(
         logger,
         operation="market_depth_fetch",
         symbol=symbol,
         spread=spread,
-        compact=compact,
+        require_dom=require_dom,
         func=_market_depth_disabled_payload,
     )
 
 
+def market_depth_fetch(symbol: str, spread: bool = False, require_dom: bool = False) -> Dict[str, Any]:
+    """Return DOM if available; otherwise current bid/ask snapshot for `symbol`.
+
+    Parameters: symbol
+    """
+    return _market_depth_fetch_impl(symbol, spread=spread, require_dom=require_dom)
+
+
 if _market_depth_fetch_enabled():
-    market_depth_fetch = mcp.tool()(_market_depth_fetch_impl)
+    market_depth_fetch = mcp.tool()(market_depth_fetch)
 else:
     _unregister_market_depth_fetch_tool()
     market_depth_fetch = _market_depth_fetch_disabled
@@ -386,14 +394,14 @@ def market_ticker(
     Use `detail="compact"` to keep only the most operational bid/ask/spread fields.
     Set `price_field` to bid, ask, mid, last, or spread for a simple price result.
     """
-    detail_mode = resolve_output_detail(detail=detail, default="full")
+    detail_mode = normalize_output_verbosity_detail(detail, default="full")
 
     def _run() -> Dict[str, Any]:
         def _finalize(payload: Dict[str, Any]) -> Dict[str, Any]:
             return ensure_common_meta(payload, tool_name="market_ticker")
 
         try:
-            mt5_gateway = get_mt5_gateway(
+            mt5_gateway = create_mt5_gateway(
                 adapter=mt5,
                 ensure_connection_impl=ensure_mt5_connection_or_raise,
             )

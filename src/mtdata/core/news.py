@@ -7,10 +7,10 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from ..services.unified_news import fetch_unified_news
+from ..shared.schema import CompactFullDetailLiteral
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
-from .output_contract import resolve_output_detail
-from ..shared.schema import CompactFullDetailLiteral
+from .output_contract import normalize_output_verbosity_detail
 
 logger = logging.getLogger(__name__)
 
@@ -188,7 +188,7 @@ def normalize_news_output(
     if not isinstance(result, dict):
         return dict(result)
 
-    detail_mode = resolve_output_detail(detail=detail)
+    detail_mode = normalize_output_verbosity_detail(detail)
     if detail_mode == "full":
         return dict(result)
 
@@ -282,7 +282,7 @@ def news(
         - `matching`: summary of the relevance model
     """
 
-    detail_mode = resolve_output_detail(detail=detail)
+    detail_mode = normalize_output_verbosity_detail(detail)
     limit_value: Optional[int] = None
     if limit is not None:
         try:

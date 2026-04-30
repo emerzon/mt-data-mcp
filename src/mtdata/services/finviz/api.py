@@ -819,14 +819,18 @@ def get_economic_calendar(
         )
 
         api_date_from = _align_to_next_monday_if_weekend(date_from)
-        raw_items = _fetch_finviz_economic_calendar_items(date_from=api_date_from, date_to=date_to)
-        events = _normalize_finviz_economic_calendar_items(raw_items)
+        events = _fetch_finviz_economic_calendar_items(date_from=api_date_from, date_to=date_to)
         events = _filter_calendar_events_by_date(events, date_from=date_from, date_to=date_to)
 
         if impact_norm is not None:
-            events = [e for e in events if str(e.get("Impact", "")).lower() == impact_norm]
+            impact_value = {"low": 1, "medium": 2, "high": 3}[impact_norm]
+            events = [
+                e
+                for e in events
+                if _calendar_importance_value(e.get("importance")) == impact_value
+            ]
 
-        events.sort(key=lambda e: str(e.get("Datetime", "")))
+        events.sort(key=lambda e: str(e.get("date", "")))
 
         total = len(events)
         start_idx = (safe_page - 1) * safe_limit
@@ -1002,7 +1006,7 @@ def _filter_calendar_events_by_date(
 
     filtered: List[Dict[str, Any]] = []
     for event in events:
-        raw = event.get("Datetime")
+        raw = event.get("date")
         if not raw:
             continue
         try:
@@ -1027,6 +1031,13 @@ def _filter_calendar_events_by_date(
             filtered.append(event)
 
     return filtered
+
+
+def _calendar_importance_value(value: Any) -> Optional[int]:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _fetch_finviz_economic_calendar_items(date_from: str, date_to: str) -> List[Dict[str, Any]]:
@@ -1103,65 +1114,3 @@ def _clean_calendar_item(item: Dict[str, Any]) -> Dict[str, Any]:
     return cleaned
 
 
-_ECONOMIC_CALENDAR_MARKETS: tuple[tuple[str, str, str], ...] = (
-    ("UNITEDSTA", "USD", "United States"),
-    ("EUROZONE", "EUR", "Eurozone"),
-    ("GERMANY", "EUR", "Germany"),
-    ("FRANCE", "EUR", "France"),
-    ("ITALY", "EUR", "Italy"),
-    ("SPAIN", "EUR", "Spain"),
-    ("UNITEDKIN", "GBP", "United Kingdom"),
-    ("JAPAN", "JPY", "Japan"),
-    ("CANADA", "CAD", "Canada"),
-    ("AUSTRALIA", "AUD", "Australia"),
-    ("NEWZEALAND", "NZD", "New Zealand"),
-    ("SWITZERLAND", "CHF", "Switzerland"),
-    ("CHINA", "CNY", "China"),
-    ("BRAZIL", "BRL", "Brazil"),
-)
-
-
-def _normalize_economic_calendar_market(value: Any) -> tuple[str, str]:
-    raw = str(value or "").strip()
-    if not raw:
-        return "", ""
-    upper = raw.upper()
-    if len(upper) == 3 and upper.isalpha():
-        return upper, ""
-    for prefix, currency, country in _ECONOMIC_CALENDAR_MARKETS:
-        if upper.startswith(prefix):
-            return currency, country
-    return raw, ""
-
-
-def _normalize_finviz_economic_calendar_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Normalize Finviz API items to the legacy calendar schema."""
-    importance_to_impact: Dict[int, Literal["low", "medium", "high"]] = {
-        1: "low",
-        2: "medium",
-        3: "high",
-    }
-
-    normalized: List[Dict[str, Any]] = []
-    for item in items:
-        importance = item.get("importance")
-        impact = importance_to_impact.get(importance) if isinstance(importance, int) else None
-        currency, country = _normalize_economic_calendar_market(item.get("ticker"))
-        event = {
-            "Datetime": item.get("date") or "",
-            "Release": item.get("event") or "",
-            "Impact": impact or "",
-            "For": currency,
-            "Actual": item.get("actual") or "",
-            "Expected": item.get("forecast") or item.get("teforecast") or "",
-            "Prior": item.get("previous") or "",
-            "Category": item.get("category") or "",
-            "Reference": item.get("reference") or "",
-            "ReferenceDate": item.get("referenceDate") or "",
-        }
-        if country:
-            event["Country"] = country
-
-        normalized.append(event)
-
-    return normalized

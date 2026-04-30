@@ -92,7 +92,7 @@ def _mock_env(
     with (
         patch(f"{MOD}._ensure_symbol_ready", **ensure_kw) as m_ensure,
         patch(f"{MOD}._mt5_copy_rates_from", **copy_kw) as m_copy,
-        patch(f"{MOD}._mt5_epoch_to_utc", return_value=1_704_067_200.0),
+        patch("mtdata.utils.mt5._mt5_epoch_to_utc", return_value=1_704_067_200.0),
         patch(f"{MOD}._parse_start_datetime", return_value=parse_dt_return),
         patch(f"{MOD}.mt5") as m_mt5,
     ):

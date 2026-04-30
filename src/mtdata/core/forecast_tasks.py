@@ -213,7 +213,7 @@ def _get_model_store():
 
 
 def _get_registry():
-    from ..forecast.registry import ForecastRegistry
+    from ..forecast.forecast_registry import ForecastRegistry
     return ForecastRegistry
 
 

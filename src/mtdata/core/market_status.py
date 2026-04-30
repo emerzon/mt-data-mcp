@@ -11,11 +11,11 @@ import holidays
 
 from ..utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise
 from ..utils.mt5_enums import decode_mt5_enum_label
+from ..shared.schema import CompactFullDetailLiteral
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
-from .mt5_gateway import get_mt5_gateway
-from .output_contract import resolve_output_detail
-from ..shared.schema import CompactFullDetailLiteral
+from .mt5_gateway import create_mt5_gateway
+from .output_contract import normalize_output_verbosity_detail
 
 logger = logging.getLogger(__name__)
 
@@ -506,7 +506,7 @@ def normalize_market_status_output(
     if not isinstance(result, dict):
         return dict(result)
 
-    detail_mode = resolve_output_detail(detail=detail)
+    detail_mode = normalize_output_verbosity_detail(detail)
     out = dict(result)
     if detail_mode == "full":
         return out
@@ -623,7 +623,7 @@ def _check_symbol_market_status(
     if not symbol_name:
         return {"error": "symbol cannot be empty."}
 
-    mt5_gateway = gateway if gateway is not None else get_mt5_gateway(
+    mt5_gateway = gateway if gateway is not None else create_mt5_gateway(
         ensure_connection_impl=ensure_mt5_connection_or_raise,
     )
     try:
@@ -767,7 +767,7 @@ def market_status(
             - `minutes_until`: Minutes until next status change
     """
 
-    detail_mode = resolve_output_detail(detail=detail)
+    detail_mode = normalize_output_verbosity_detail(detail)
     timezone_display_mode = _normalize_timezone_display(timezone_display)
     if timezone_display_mode is None:
         return {"error": "Invalid timezone_display. Use 'local', 'utc', or 'auto'."}

@@ -20,11 +20,11 @@ from ._mcp_instance import mcp
 from ..shared.constants import DEFAULT_ROW_LIMIT, GROUP_SEARCH_THRESHOLD, TIMEFRAME_MAP
 from .error_envelope import build_error_payload
 from .execution_logging import run_logged_operation
-from .mt5_gateway import get_mt5_gateway
+from .mt5_gateway import create_mt5_gateway
 from .output_contract import (
     attach_collection_contract,
+    normalize_output_verbosity_detail,
     resolve_output_contract,
-    resolve_output_detail,
 )
 
 logger = logging.getLogger(__name__)
@@ -188,7 +188,7 @@ def symbols_list(  # noqa: C901
 
     def _run() -> Dict[str, Any]:
         try:
-            mt5_gateway = get_mt5_gateway(
+            mt5_gateway = create_mt5_gateway(
                 adapter=mt5,
                 ensure_connection_impl=ensure_mt5_connection_or_raise,
             )
@@ -303,7 +303,7 @@ def _list_symbol_groups(
 ) -> Dict[str, Any]:
     """List group paths as a tabular result with a single column: group."""
     try:
-        gateway = mt5_gateway or get_mt5_gateway(
+        gateway = mt5_gateway or create_mt5_gateway(
             adapter=mt5,
             ensure_connection_impl=ensure_mt5_connection_or_raise,
         )
@@ -378,7 +378,7 @@ def symbols_describe(
                 detail=detail,
                 default_detail="compact",
             )
-            mt5_gateway = get_mt5_gateway(
+            mt5_gateway = create_mt5_gateway(
                 adapter=mt5,
                 ensure_connection_impl=ensure_mt5_connection_or_raise,
             )
@@ -1201,7 +1201,7 @@ def symbols_top_markets(  # noqa: C901
     you need symbol/group inputs, RSI/SMA filters, or a single flat scanner table.
     """
 
-    detail_mode = resolve_output_detail(detail=detail, default="compact")
+    detail_mode = normalize_output_verbosity_detail(detail, default="compact")
 
     def _run() -> Dict[str, Any]:  # noqa: C901
         try:
@@ -1228,7 +1228,7 @@ def symbols_top_markets(  # noqa: C901
                 return {"error": invalid_timeframe_error(timeframe_value, TIMEFRAME_MAP)}
             mt5_timeframe = TIMEFRAME_MAP.get(timeframe_value)
 
-            mt5_gateway = get_mt5_gateway(
+            mt5_gateway = create_mt5_gateway(
                 adapter=mt5,
                 ensure_connection_impl=ensure_mt5_connection_or_raise,
             )
@@ -1519,7 +1519,7 @@ def market_scan(  # noqa: C901
     all-market overview with separate spread, volume, and mover leaderboards.
     """
 
-    detail_mode = resolve_output_detail(detail=detail, default="compact")
+    detail_mode = normalize_output_verbosity_detail(detail, default="compact")
 
     def _run() -> Dict[str, Any]:  # noqa: C901
         request: Dict[str, Any] = {
@@ -1659,7 +1659,7 @@ def market_scan(  # noqa: C901
                     request=request,
                 )
 
-            mt5_gateway = get_mt5_gateway(
+            mt5_gateway = create_mt5_gateway(
                 adapter=mt5,
                 ensure_connection_impl=ensure_mt5_connection_or_raise,
             )

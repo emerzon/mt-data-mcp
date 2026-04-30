@@ -26,7 +26,7 @@ from .interface import (
 )
 from .job_store import JobRecord, JobStore
 from .model_store import ModelStore
-from .registry import ForecastRegistry
+from .forecast_registry import ForecastRegistry
 
 logger = logging.getLogger(__name__)
 

@@ -38,10 +38,10 @@ def trade_place(request: TradePlaceRequest) -> dict:
     - dry_run: validate routing and preview the order without sending it to MT5.
       Use `preview_detail="compact"|"full"` to control preview depth.
     - require_sl_tp: for market orders, require both SL and TP inputs before order
-      submission, and fail when a filled order cannot apply TP/SL.
+      submission. Requested SL/TP levels are sent atomically with the order.
       Defaults to True for safer automation behavior.
-    - auto_close_on_sl_tp_fail: if TP/SL application fails on a filled market order,
-      attempt to immediately close the unprotected position.
+    - auto_close_on_sl_tp_fail: retained for defensive handling of legacy injected
+      order helpers that report a filled market order without TP/SL protection.
     - Environment guardrails can block orders before MT5 submission based on
       configured symbol policies, volume caps, or wallet/account risk limits.
     - idempotency_key: optional in-process dedupe key for retry-safe clients.

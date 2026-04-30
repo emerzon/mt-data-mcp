@@ -5,7 +5,7 @@ from ...utils.mt5 import ensure_mt5_connection_or_raise
 from .._mcp_instance import mcp
 from ..error_envelope import build_error_payload
 from ..execution_logging import run_logged_operation
-from ..mt5_gateway import get_mt5_gateway, mt5_connection_error
+from ..mt5_gateway import create_mt5_gateway, mt5_connection_error
 from .requests import ReportGenerateRequest
 from .use_cases import run_report_generate
 from .utils import _get_indicator_value, format_number
@@ -29,7 +29,7 @@ def _report_error_payload(message: Any) -> Dict[str, Any]:
 
 def _report_connection_error() -> Dict[str, Any] | None:
     return mt5_connection_error(
-        get_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise),
+        create_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise),
     )
 
 

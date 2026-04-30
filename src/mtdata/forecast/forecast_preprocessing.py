@@ -16,7 +16,7 @@ import pandas as pd
 from ..utils.denoise import _apply_denoise
 from ..utils.denoise import normalize_denoise_spec as _normalize_denoise_spec
 from ..utils.indicators import (
-    _apply_ta_indicators as _apply_ta_indicators_util,
+    _apply_ta_indicators,
 )
 from ..utils.indicators import (
     _parse_ti_specs as _parse_ti_specs_util,
@@ -187,7 +187,7 @@ def _add_technical_indicators(
     fcfg: Dict[str, Any],
     *,
     parse_ti_specs: ParseTiFn = _parse_ti_specs_util,
-    apply_ta_indicators: ApplyTiFn = _apply_ta_indicators_util,
+    apply_ta_indicators: ApplyTiFn = _apply_ta_indicators,
 ) -> List[str]:
     """Apply requested indicators and return numeric indicator columns."""
     ind_specs = fcfg.get("indicators")
@@ -219,7 +219,7 @@ def _apply_features_and_target_spec(
     *,
     parse_kv_or_json: ParseKvFn = _parse_kv_or_json,
     parse_ti_specs: ParseTiFn = _parse_ti_specs_util,
-    apply_ta_indicators: ApplyTiFn = _apply_ta_indicators_util,
+    apply_ta_indicators: ApplyTiFn = _apply_ta_indicators,
 ) -> str:
     """Apply requested indicators and lightweight target transforms."""
     fcfg = _coerce_feature_config(features, parse_kv_or_json=parse_kv_or_json)
@@ -563,7 +563,7 @@ def prepare_features(
     dimred_params: Optional[Dict[str, Any]] = None,
     parse_kv_or_json: ParseKvFn = _parse_kv_or_json,
     parse_ti_specs: ParseTiFn = _parse_ti_specs_util,
-    apply_ta_indicators: ApplyTiFn = _apply_ta_indicators_util,
+    apply_ta_indicators: ApplyTiFn = _apply_ta_indicators,
     reducer_factory: ReducerFactory = _create_dimred_reducer,
 ) -> Tuple[Optional[np.ndarray], Optional[np.ndarray], Dict[str, Any]]:
     """Prepare aligned training and future exogenous features."""

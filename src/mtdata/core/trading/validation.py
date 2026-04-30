@@ -5,7 +5,8 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, Literal, Optional, Tuple
 
-from ...utils.utils import _coerce_finite_float, _coerce_scalar
+from ...utils.coercion import coerce_finite_float
+from ...utils.utils import _coerce_scalar
 from .gateway import MT5TradingGateway, create_trading_gateway, trading_connection_error
 
 MarketOrderTypeLiteral = Literal["BUY", "SELL"]
@@ -92,36 +93,28 @@ def _normalize_trade_side_filter(side: Any) -> Tuple[Optional[str], Optional[str
 
 def _validate_volume(volume: Union[int, float], symbol_info: Any) -> Tuple[Optional[float], Optional[str]]:
     """Validate lot size against symbol constraints."""
-    try:
-        vol = float(volume)
-    except (TypeError, ValueError):
+    vol = coerce_finite_float(volume)
+    if vol is None:
+        try:
+            raw_volume = float(volume)
+        except (TypeError, ValueError):
+            return None, "volume must be numeric"
+        if not math.isfinite(raw_volume):
+            return None, "volume must be positive and finite"
         return None, "volume must be numeric"
 
-    if not math.isfinite(vol) or vol <= 0:
+    if vol <= 0:
         return None, "volume must be positive and finite"
 
-    min_vol = getattr(symbol_info, "volume_min", None)
-    max_vol = getattr(symbol_info, "volume_max", None)
-    step = getattr(symbol_info, "volume_step", None)
-
-    try:
-        min_vol = float(min_vol) if min_vol is not None else None
-    except (TypeError, ValueError):
-        min_vol = None
+    min_vol = coerce_finite_float(getattr(symbol_info, "volume_min", None))
     if min_vol is not None and min_vol <= 0:
         min_vol = None
 
-    try:
-        max_vol = float(max_vol) if max_vol is not None else None
-    except (TypeError, ValueError):
-        max_vol = None
+    max_vol = coerce_finite_float(getattr(symbol_info, "volume_max", None))
     if max_vol is not None and max_vol <= 0:
         max_vol = None
 
-    try:
-        step = float(step) if step is not None else None
-    except (TypeError, ValueError):
-        step = None
+    step = coerce_finite_float(getattr(symbol_info, "volume_step", None))
     if step is not None and step <= 0:
         step = None
 
@@ -182,19 +175,15 @@ def _resolve_slippage_to_deviation(
     if slippage_pips is None:
         return 20, {"source": "default", "deviation": 20}, None
 
-    try:
-        pips = float(slippage_pips)
-    except (TypeError, ValueError):
+    pips = coerce_finite_float(slippage_pips)
+    if pips is None:
         return None, None, "slippage_pips must be numeric."
-    if not math.isfinite(pips) or pips < 0:
+    if pips < 0:
         return None, None, "slippage_pips must be >= 0 and finite."
 
     point = None
     if symbol_info is not None:
-        try:
-            point = float(getattr(symbol_info, "point", None))
-        except (TypeError, ValueError):
-            point = None
+        point = coerce_finite_float(getattr(symbol_info, "point", None))
 
     if point is None or point <= 0:
         return None, None, (
@@ -865,7 +854,7 @@ def _prevalidate_trade_place_market_input(
 def _normalize_ticket_filter(ticket: Any, *, name: str) -> Tuple[Optional[int], Optional[str]]:
     if ticket in (None, ""):
         return None, None
-    value = _coerce_finite_float(ticket)
+    value = coerce_finite_float(ticket)
     if value is None or not float(value).is_integer():
         return None, f"{name} must be an integer ticket."
     return int(value), None
@@ -874,7 +863,7 @@ def _normalize_ticket_filter(ticket: Any, *, name: str) -> Tuple[Optional[int], 
 def _normalize_minutes_back(minutes_back: Any) -> Tuple[Optional[int], Optional[str]]:
     if minutes_back in (None, ""):
         return None, None
-    value = _coerce_finite_float(minutes_back)
+    value = coerce_finite_float(minutes_back)
     if value is None or not float(value).is_integer():
         return None, "minutes_back must be a positive integer."
     minutes = int(value)
