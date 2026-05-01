@@ -190,7 +190,7 @@ def test_deal_history_sort_key_normalizes_millisecond_timestamps():
     assert max([earlier, later], key=_deal_history_sort_key) is later
 
 
-def test_resolve_closed_deal_from_history_queries_recent_window_in_utc():
+def test_resolve_closed_deal_from_history_queries_recent_window_as_mt5_epoch():
     matched_row = SimpleNamespace(
         ticket=101,
         order=202,
@@ -201,16 +201,20 @@ def test_resolve_closed_deal_from_history_queries_recent_window_in_utc():
     )
     mt5 = SimpleNamespace(history_deals_get=MagicMock(return_value=[matched_row]))
 
-    result = _resolve_closed_deal_from_history(
-        mt5,
-        result=SimpleNamespace(deal=101, order=202),
-        position=SimpleNamespace(ticket=303),
-        closed_at_utc=datetime(2026, 3, 1, 11, 0, tzinfo=timezone.utc),
-    )
+    with patch(
+        "mtdata.core.trading.execution._to_mt5_history_epoch_seconds",
+        side_effect=[111.0, 222.0],
+    ):
+        result = _resolve_closed_deal_from_history(
+            mt5,
+            result=SimpleNamespace(deal=101, order=202),
+            position=SimpleNamespace(ticket=303),
+            closed_at_utc=datetime(2026, 3, 1, 11, 0, tzinfo=timezone.utc),
+        )
 
     called_from, called_to = mt5.history_deals_get.call_args.args
-    assert called_from == datetime(2026, 3, 1, 10, 55, tzinfo=timezone.utc)
-    assert called_to == datetime(2026, 3, 1, 11, 1, tzinfo=timezone.utc)
+    assert called_from == 111.0
+    assert called_to == 222.0
     assert result is matched_row
 
 

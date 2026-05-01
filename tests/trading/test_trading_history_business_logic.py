@@ -697,7 +697,7 @@ def test_trade_history_without_range_uses_full_history_start() -> None:
 
     assert out["success"] is True
     from_dt, to_dt = mt5.history_deals_get.call_args.args[:2]
-    assert abs((to_dt - from_dt).total_seconds() - (7 * 24 * 60 * 60)) < 1.0
+    assert abs((to_dt - from_dt) - (7 * 24 * 60 * 60)) < 1.0
     assert to_dt >= from_dt
 
 
@@ -818,7 +818,7 @@ def test_trade_history_minutes_back_empty_deals_message_mentions_window_not_orde
     assert "--history-kind orders" not in out["message"]
 
 
-def test_trade_history_keeps_minutes_back_window_in_utc_before_fetch() -> None:
+def test_trade_history_queries_minutes_back_as_absolute_mt5_epoch_window() -> None:
     captured: dict[str, object] = {}
     parsed_end = datetime(2026, 3, 1, 11, 0, 0)
 
@@ -851,11 +851,19 @@ def test_trade_history_keeps_minutes_back_window_in_utc_before_fetch() -> None:
         normalize_ticket_filter=lambda value, name: (None, None),
         normalize_minutes_back=lambda value: (value, None),
         decode_mt5_enum_label=lambda gateway, value, prefix=None: None,
-        mt5_config=SimpleNamespace(get_client_tz=lambda: "UTC"),
+        mt5_config=SimpleNamespace(
+            get_client_tz=lambda: "UTC",
+            get_time_offset_seconds=lambda at_time=None: 3 * 60 * 60,
+        ),
     )
 
-    assert captured["from_dt"] == datetime(2026, 3, 1, 10, 0, 0, tzinfo=timezone.utc)
-    assert captured["to_dt"] == datetime(2026, 3, 1, 11, 0, 0, tzinfo=timezone.utc)
+    assert captured["from_dt"] == datetime(
+        2026, 3, 1, 13, 0, 0, tzinfo=timezone.utc
+    ).timestamp()
+    assert captured["to_dt"] == datetime(
+        2026, 3, 1, 14, 0, 0, tzinfo=timezone.utc
+    ).timestamp()
+    assert float(captured["to_dt"]) - float(captured["from_dt"]) == 60 * 60
     assert captured["symbol"] == "BTCUSD"
     assert out["message"] == "No deals found for BTCUSD in the last 60 minute(s)"
 

@@ -333,6 +333,30 @@ def _to_utc_history_query_dt(dt: datetime) -> datetime:
     return datetime.fromtimestamp(_utc_epoch_seconds(dt), tz=timezone.utc)
 
 
+def _to_mt5_history_epoch_seconds(dt: datetime, *, config: Any = None) -> float:
+    """Convert an absolute UTC instant to MT5's numeric history time axis.
+
+    MT5 history rows encode timestamps as server-local epoch seconds. Passing
+    numeric query bounds on that same axis avoids Python datetime timezone
+    interpretation while preserving an absolute elapsed-time window.
+    """
+    from .utils import _utc_epoch_seconds
+
+    utc_epoch = float(_utc_epoch_seconds(dt))
+    cfg = config if config is not None else mt5_config
+    try:
+        utc_dt = datetime.fromtimestamp(utc_epoch, tz=timezone.utc)
+        offset_seconds = int(cfg.get_time_offset_seconds(utc_dt))
+    except Exception as exc:
+        logger.warning(
+            "Failed to convert UTC datetime %s to MT5 history epoch; using UTC epoch: %s",
+            dt,
+            exc,
+        )
+        offset_seconds = 0
+    return utc_epoch + float(offset_seconds)
+
+
 def _normalize_times_in_struct(arr: Any):
     """Convert all time fields in a structured array to UTC."""
     try:

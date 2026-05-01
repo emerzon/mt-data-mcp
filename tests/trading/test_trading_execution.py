@@ -1346,7 +1346,7 @@ def test_close_positions_uses_history_deal_profit_when_result_profit_is_missing(
     mock_mt5.history_deals_get.assert_called_once()
 
 
-def test_close_positions_converts_history_lookup_window_to_utc(mock_mt5):
+def test_close_positions_converts_history_lookup_window_to_mt5_epoch(mock_mt5):
     mock_mt5.positions_get.return_value = [
         SimpleNamespace(
             ticket=123,
@@ -1377,14 +1377,14 @@ def test_close_positions_converts_history_lookup_window_to_utc(mock_mt5):
     utc_to = object()
 
     with patch(
-        "src.mtdata.core.trading.execution._to_utc_history_query_dt",
+        "src.mtdata.core.trading.execution._to_mt5_history_epoch_seconds",
         side_effect=[utc_from, utc_to],
-    ) as to_utc:
+    ) as to_mt5_epoch:
         res = _close_positions(ticket=123)
 
     assert "error" not in res
     assert res["pnl"] == pytest.approx(42.5)
-    assert to_utc.call_count == 2
+    assert to_mt5_epoch.call_count == 2
     mock_mt5.history_deals_get.assert_called_once_with(utc_from, utc_to)
 
 
@@ -2297,9 +2297,9 @@ def test_attach_protection_position_not_found(mock_mt5):
 import time as _time_module
 
 from src.mtdata.core.trading.validation import (
+    _DEFAULT_TICK_MAX_AGE_SECONDS,
     _tick_age_seconds,
     _validate_tick_freshness,
-    _DEFAULT_TICK_MAX_AGE_SECONDS,
 )
 
 
