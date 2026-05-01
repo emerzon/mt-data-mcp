@@ -76,12 +76,9 @@ from mtdata.core.trading.comments import (
 )
 from mtdata.core.trading.execution import (
     _deal_history_sort_key,
-    _DEFAULT_TICK_MAX_AGE_SECONDS,
     _execute_single_close,
     _resolve_closed_deal_from_history,
     _sort_close_positions,
-    _tick_age_seconds,
-    _validate_tick_freshness,
 )
 from mtdata.core.trading.requests import (
     TradeCloseRequest,
@@ -96,9 +93,12 @@ from mtdata.core.trading.time import (
     _to_server_time_naive,
 )
 from mtdata.core.trading.validation import (
+    _DEFAULT_TICK_MAX_AGE_SECONDS,
     _SUPPORTED_ORDER_TYPES,
     _normalize_order_type_input,
+    _tick_age_seconds,
     _validate_deviation,
+    _validate_tick_freshness,
     _validate_volume,
 )
 
@@ -1369,7 +1369,7 @@ class TestPlaceMarketOrder:
     def test_accepts_injected_gateway(self):
         """Market order placement accepts an injected MT5TradingGateway."""
         from mtdata.core.trading.gateway import MT5TradingGateway
-        from mtdata.core.trading import _place_market_order, _resolve_open_position
+        from mtdata.core.trading import _place_market_order
 
         adapter = MagicMock()
         adapter.symbol_info.return_value = _sym()
