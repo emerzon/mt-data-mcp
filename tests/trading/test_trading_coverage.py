@@ -76,7 +76,12 @@ from mtdata.core.trading.comments import (
 )
 from mtdata.core.trading.execution import (
     _deal_history_sort_key,
+    _DEFAULT_TICK_MAX_AGE_SECONDS,
+    _execute_single_close,
     _resolve_closed_deal_from_history,
+    _sort_close_positions,
+    _tick_age_seconds,
+    _validate_tick_freshness,
 )
 from mtdata.core.trading.requests import (
     TradeCloseRequest,
@@ -1361,6 +1366,76 @@ class TestPlaceMarketOrder:
         result = _place_market_order("EURUSD", 0.01, "BUY")
         assert "error" in result and "current price" in result["error"]
 
+    def test_accepts_injected_gateway(self):
+        """Market order placement accepts an injected MT5TradingGateway."""
+        from mtdata.core.trading.gateway import MT5TradingGateway
+        from mtdata.core.trading import _place_market_order, _resolve_open_position
+
+        adapter = MagicMock()
+        adapter.symbol_info.return_value = _sym()
+        adapter.symbol_info_tick.side_effect = [
+            _tick(bid=1.05000, ask=1.05010),
+            _tick(bid=1.05000, ask=1.05010),
+        ]
+        adapter.positions_get.return_value = [MagicMock(sl=1.04000, tp=1.06000)]
+        adapter.order_send.side_effect = [
+            MagicMock(
+                retcode=10009,
+                deal=123,
+                order=456,
+                volume=0.1,
+                price=1.05010,
+                bid=1.05000,
+                ask=1.05010,
+                comment="",
+                request_id=789,
+            ),
+            MagicMock(retcode=10009, comment="", request_id=790),
+        ]
+        adapter.ORDER_TYPE_BUY = 0
+        adapter.ORDER_TYPE_SELL = 1
+        adapter.TRADE_ACTION_DEAL = 1
+        adapter.TRADE_ACTION_SLTP = 6
+        adapter.TRADE_RETCODE_DONE = 10009
+        adapter.ORDER_TIME_GTC = 0
+        adapter.ORDER_FILLING_IOC = 1
+        ensure_connection = MagicMock()
+        gateway = MT5TradingGateway(
+            adapter=adapter,
+            ensure_connection_impl=ensure_connection,
+            build_trade_preflight_impl=lambda mt5, **_: {
+                "execution_ready": True,
+                "execution_ready_strict": True,
+            },
+            retcode_name_impl=lambda mt5, retcode: "TRADE_RETCODE_DONE",
+        )
+
+        with patch(
+            "mtdata.core.trading.orders._resolve_open_position",
+            return_value=(MagicMock(sl=0.0, tp=0.0), 456, {}),
+        ), patch("mtdata.core.trading.orders.trade_guardrails_config") as mock_guard_config:
+            mock_guard_config.enabled = False
+            mock_guard_config.trading_enabled = True
+            mock_guard_config.max_volume_by_symbol = {}
+            mock_guard_config.is_enabled.return_value = False
+
+            result = _place_market_order(
+                symbol="EURUSD",
+                volume=0.1,
+                order_type="BUY",
+                stop_loss=1.04000,
+                take_profit=1.06000,
+                gateway=gateway,
+            )
+
+        assert "error" not in result
+        ensure_connection.assert_called_once_with()
+        assert adapter.order_send.call_count == 1
+        request = adapter.order_send.call_args.args[0]
+        assert math.isclose(request["sl"], 1.04000)
+        assert math.isclose(request["tp"], 1.06000)
+        assert "comment_fallback" not in result
+
 
 # ===================================================================
 #  _place_pending_order (MT5 mocked)
@@ -1798,6 +1873,305 @@ class TestClosePositions:
         from mtdata.core.trading import _close_positions
         result = _close_positions(symbol="GBPUSD")
         assert "message" in result
+
+    # -----------------------------------------------------------------
+    # _execute_single_close tests (from consolidated test_trading_business_logic)
+    # -----------------------------------------------------------------
+
+    def test_execute_single_close_success(self):
+        """Successful close returns result with PnL metadata."""
+        from mtdata.core.trading.gateway import create_trading_gateway
+        mt5 = MagicMock()
+        mt5.ORDER_FILLING_IOC = 1
+        mt5.ORDER_TIME_GTC = 0
+        mt5.TRADE_RETCODE_DONE = 10009
+
+        position = SimpleNamespace(
+            ticket=42, symbol="EURUSD", volume=0.1, type=0,
+            price_open=1.04000, time=1700000000, magic=100,
+        )
+        mt5.order_send.return_value = SimpleNamespace(
+            retcode=10009, deal=500, order=600, volume=0.1,
+            price=1.05000, comment="close", profit=10.0,
+        )
+        mt5.symbol_info_tick.return_value = SimpleNamespace(bid=1.05000, ask=1.05010)
+
+        gw = create_trading_gateway(
+            adapter=mt5, include_retcode_name=True,
+            ensure_connection_impl=lambda: None,
+        )
+        fill_modes = [mt5.ORDER_FILLING_IOC]
+
+        result = _execute_single_close(
+            gw, position,
+            requested_volume=None, position_volume_before=0.1,
+            remaining_volume_estimate=None, deviation=20,
+            comment="test", fill_modes=fill_modes,
+        )
+        assert result["ticket"] == 42
+        assert result["retcode"] == 10009
+        assert result.get("error") is None
+        assert result["pnl"] == 10.0
+
+    def test_execute_single_close_retries_same_fill_mode_after_price_change(self):
+        from mtdata.core.trading.gateway import create_trading_gateway
+        mt5 = MagicMock()
+        mt5.ORDER_FILLING_FOK = 0
+        mt5.ORDER_TIME_GTC = 0
+        mt5.TRADE_RETCODE_DONE = 10009
+        mt5.TRADE_RETCODE_PRICE_CHANGED = 10020
+
+        position = SimpleNamespace(
+            ticket=42, symbol="EURUSD", volume=0.1, type=0,
+            price_open=1.04000, time=1700000000, magic=100,
+        )
+        mt5.order_send.side_effect = [
+            SimpleNamespace(
+                retcode=10020, deal=0, order=0, volume=0.1,
+                price=1.05000, comment="price changed", profit=None,
+            ),
+            SimpleNamespace(
+                retcode=10009, deal=500, order=600, volume=0.1,
+                price=1.04990, comment="close", profit=9.0,
+            ),
+        ]
+        mt5.symbol_info_tick.side_effect = [
+            SimpleNamespace(bid=1.05000, ask=1.05010),
+            SimpleNamespace(bid=1.04990, ask=1.05000),
+        ]
+
+        gw = create_trading_gateway(
+            adapter=mt5, include_retcode_name=True,
+            ensure_connection_impl=lambda: None,
+        )
+
+        result = _execute_single_close(
+            gw, position,
+            requested_volume=None, position_volume_before=0.1,
+            remaining_volume_estimate=None, deviation=20,
+            comment="test", fill_modes=[mt5.ORDER_FILLING_FOK],
+        )
+
+        assert result["ticket"] == 42
+        assert result["retcode"] == 10009
+        assert mt5.order_send.call_count == 2
+        first_req = mt5.order_send.call_args_list[0].args[0]
+        second_req = mt5.order_send.call_args_list[1].args[0]
+        assert first_req["type_filling"] == mt5.ORDER_FILLING_FOK
+        assert second_req["type_filling"] == mt5.ORDER_FILLING_FOK
+        assert first_req["price"] == pytest.approx(1.05000)
+        assert second_req["price"] == pytest.approx(1.04990)
+
+    def test_execute_single_close_no_tick(self):
+        """Returns error when tick data unavailable."""
+        from mtdata.core.trading.gateway import create_trading_gateway
+        mt5 = MagicMock()
+        mt5.ORDER_FILLING_IOC = 1
+        mt5.ORDER_TIME_GTC = 0
+
+        position = SimpleNamespace(
+            ticket=42, symbol="XYZUSD", volume=0.1, type=0,
+            price_open=1.0, time=1700000000, magic=100,
+        )
+        mt5.symbol_info_tick.return_value = None
+        mt5.last_error.return_value = (10006, "No tick")
+
+        gw = create_trading_gateway(
+            adapter=mt5, include_retcode_name=True,
+            ensure_connection_impl=lambda: None,
+        )
+        fill_modes = [1]
+
+        result = _execute_single_close(
+            gw, position,
+            requested_volume=None, position_volume_before=0.1,
+            remaining_volume_estimate=None, deviation=20,
+            comment=None, fill_modes=fill_modes,
+        )
+        assert result["ticket"] == 42
+        assert "tick data" in result["error"].lower()
+
+    def test_execute_single_close_unknown_side(self):
+        """Returns error when position side cannot be determined."""
+        from mtdata.core.trading.gateway import create_trading_gateway
+        mt5 = MagicMock()
+        mt5.ORDER_FILLING_IOC = 1
+        mt5.ORDER_TIME_GTC = 0
+
+        # Position with no type attribute at all
+        position = SimpleNamespace(ticket=42, symbol="EURUSD", volume=0.1, magic=100)
+
+        gw = create_trading_gateway(
+            adapter=mt5, include_retcode_name=True,
+            ensure_connection_impl=lambda: None,
+        )
+        fill_modes = [1]
+
+        result = _execute_single_close(
+            gw, position,
+            requested_volume=None, position_volume_before=0.1,
+            remaining_volume_estimate=None, deviation=20,
+            comment=None, fill_modes=fill_modes,
+        )
+        assert result["ticket"] == 42
+        assert "side" in result["error"].lower()
+
+    # -----------------------------------------------------------------
+    # _sort_close_positions tests
+    # -----------------------------------------------------------------
+
+    def test_sort_loss_first(self):
+        """loss_first sorts by ascending profit (most negative first)."""
+        positions = [
+            SimpleNamespace(ticket=1, profit=50.0, volume=0.1),
+            SimpleNamespace(ticket=2, profit=-100.0, volume=0.2),
+            SimpleNamespace(ticket=3, profit=-20.0, volume=0.3),
+        ]
+        result = _sort_close_positions(positions, "loss_first")
+        assert [p.ticket for p in result] == [2, 3, 1]
+
+    def test_sort_profit_first(self):
+        """profit_first sorts by descending profit (most positive first)."""
+        positions = [
+            SimpleNamespace(ticket=1, profit=-10.0, volume=0.1),
+            SimpleNamespace(ticket=2, profit=100.0, volume=0.2),
+            SimpleNamespace(ticket=3, profit=50.0, volume=0.3),
+        ]
+        result = _sort_close_positions(positions, "profit_first")
+        assert [p.ticket for p in result] == [2, 3, 1]
+
+    def test_sort_largest_first(self):
+        """largest_first sorts by descending volume."""
+        positions = [
+            SimpleNamespace(ticket=1, profit=10.0, volume=0.01),
+            SimpleNamespace(ticket=2, profit=20.0, volume=1.0),
+            SimpleNamespace(ticket=3, profit=-5.0, volume=0.5),
+        ]
+        result = _sort_close_positions(positions, "largest_first")
+        assert [p.ticket for p in result] == [2, 3, 1]
+
+    def test_sort_none_preserves_order(self):
+        """None priority preserves discovery order."""
+        positions = [
+            SimpleNamespace(ticket=3, profit=10.0, volume=0.1),
+            SimpleNamespace(ticket=1, profit=-10.0, volume=0.5),
+        ]
+        result = _sort_close_positions(positions, None)
+        assert [p.ticket for p in result] == [3, 1]
+
+    def test_sort_missing_profit(self):
+        """Handles positions with missing profit attribute gracefully."""
+        positions = [
+            SimpleNamespace(ticket=1, volume=0.1),
+            SimpleNamespace(ticket=2, profit=-50.0, volume=0.2),
+        ]
+        result = _sort_close_positions(positions, "loss_first")
+        # Missing profit defaults to 0.0, so -50 sorts first
+        assert [p.ticket for p in result] == [2, 1]
+
+    # -----------------------------------------------------------------
+    # Abort policy tests
+    # -----------------------------------------------------------------
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_aborts_after_consecutive_failures(self):
+        """Bulk close skips remaining positions after 3 consecutive failures."""
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+
+        positions = [
+            SimpleNamespace(ticket=i, symbol="EURUSD", volume=0.1, type=0, profit=1.0, magic=0)
+            for i in range(1, 6)
+        ]
+        mt5.positions_get.return_value = positions
+
+        # All order_sends fail
+        mt5.order_send.return_value = None
+        mt5.last_error.return_value = (10004, "Connection lost")
+        mt5.symbol_info_tick.return_value = _tick()
+
+        # positions_get with ticket= returns the matching position
+        def _positions_get(*args, **kwargs):
+            t = kwargs.get("ticket")
+            if t is not None:
+                return [p for p in positions if p.ticket == t] or None
+            return positions
+        mt5.positions_get.side_effect = _positions_get
+
+        from mtdata.core.trading import _close_positions
+        res = _close_positions(symbol="EURUSD")
+
+        results = res.get("results", [res])
+        aborted = [r for r in results if r.get("aborted")]
+        # Positions 4 and 5 should be aborted (after 3 consecutive failures on 1,2,3)
+        assert len(aborted) == 2
+        assert all("consecutive" in r["error"].lower() for r in aborted)
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_resets_abort_counter_on_success(self):
+        """A successful close resets the consecutive failure counter."""
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+
+        positions = [
+            SimpleNamespace(ticket=i, symbol="EURUSD", volume=0.1, type=0, profit=1.0, magic=0, price_open=1.04, time=1700000000)
+            for i in range(1, 7)
+        ]
+
+        # Position 3 succeeds, all others fail
+        def _order_send(request):
+            if request.get("position") == 3:
+                return _order_result()
+            return None
+
+        mt5.order_send.side_effect = _order_send
+        mt5.last_error.return_value = (10004, "err")
+        mt5.symbol_info_tick.return_value = _tick()
+
+        def _positions_get(*args, **kwargs):
+            t = kwargs.get("ticket")
+            if t is not None:
+                return [p for p in positions if p.ticket == t] or None
+            return positions
+        mt5.positions_get.side_effect = _positions_get
+
+        from mtdata.core.trading import _close_positions
+        res = _close_positions(symbol="EURUSD")
+
+        results = res.get("results", [res])
+        aborted = [r for r in results if r.get("aborted")]
+        # Reset prevents aborts
+        assert len(aborted) == 0
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_loss_first_integration(self):
+        """close_priority=loss_first closes losers before winners."""
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+
+        positions = [
+            SimpleNamespace(ticket=1, symbol="EURUSD", volume=0.1, type=0, profit=100.0, magic=0, price_open=1.04, time=1700000000),
+            SimpleNamespace(ticket=2, symbol="EURUSD", volume=0.1, type=0, profit=-50.0, magic=0, price_open=1.06, time=1700000000),
+            SimpleNamespace(ticket=3, symbol="EURUSD", volume=0.1, type=0, profit=-200.0, magic=0, price_open=1.07, time=1700000000),
+        ]
+
+        mt5.order_send.return_value = _order_result()
+        mt5.symbol_info_tick.return_value = _tick()
+
+        def _positions_get(*args, **kwargs):
+            t = kwargs.get("ticket")
+            if t is not None:
+                return [p for p in positions if p.ticket == t] or None
+            return positions
+        mt5.positions_get.side_effect = _positions_get
+
+        from mtdata.core.trading import _close_positions
+        res = _close_positions(symbol="EURUSD", close_priority="loss_first")
+
+        assert res["close_priority"] == "loss_first"
+        tickets_in_order = [r["ticket"] for r in res["results"]]
+        # Losers closed first (ticket 3, then 2), then winner (ticket 1)
+        assert tickets_in_order == [3, 2, 1]
 
 
 # ===================================================================
@@ -2314,6 +2688,71 @@ class TestTradeRiskAnalyze:
             entry=1.1, stop_loss=1.1,
         ))
         assert "position_sizing_error" in result or "SL distance" in result
+
+
+# ===================================================================
+#  Tick utility tests
+# ===================================================================
+
+class TestTickUtils:
+    """Tests for _tick_age_seconds and _validate_tick_freshness."""
+
+    def test_tick_age_seconds_from_time_msc(self):
+        """Prefers time_msc (millisecond epoch) when available."""
+        import time as _time_module
+        now_ms = _time_module.time() * 1000.0
+        tick = SimpleNamespace(time_msc=now_ms - 5000, time=0)
+        age = _tick_age_seconds(tick)
+        assert age is not None
+        assert 4.5 <= age <= 6.0
+
+    def test_tick_age_seconds_from_time_seconds(self):
+        """Falls back to time (seconds) when time_msc missing."""
+        import time as _time_module
+        now_s = _time_module.time()
+        tick = SimpleNamespace(time=int(now_s) - 10)
+        age = _tick_age_seconds(tick)
+        assert age is not None
+        assert 9.0 <= age <= 12.0
+
+    def test_tick_age_seconds_no_timestamp(self):
+        """Returns None when tick carries no usable timestamp."""
+        tick = SimpleNamespace()
+        assert _tick_age_seconds(tick) is None
+        tick2 = SimpleNamespace(time_msc=None, time=None)
+        assert _tick_age_seconds(tick2) is None
+
+    def test_validate_tick_freshness_fresh(self):
+        """Fresh tick passes validation."""
+        import time as _time_module
+        now_ms = _time_module.time() * 1000.0
+        tick = SimpleNamespace(time_msc=now_ms - 1000)
+        result = _validate_tick_freshness(tick, symbol="EURUSD")
+        assert result is None
+
+    def test_validate_tick_freshness_stale(self):
+        """Stale tick returns error dict with metadata."""
+        import time as _time_module
+        now_ms = _time_module.time() * 1000.0
+        tick = SimpleNamespace(time_msc=now_ms - 60_000)  # 60s old
+        result = _validate_tick_freshness(tick, symbol="EURUSD")
+        assert result is not None
+        assert "stale" in result["error"].lower()
+        assert result["tick_age_seconds"] > 50
+        assert result["tick_max_age_seconds"] == _DEFAULT_TICK_MAX_AGE_SECONDS
+
+    def test_validate_tick_freshness_custom_threshold(self):
+        """Custom threshold narrows acceptance window."""
+        import time as _time_module
+        now_ms = _time_module.time() * 1000.0
+        tick = SimpleNamespace(time_msc=now_ms - 3000)  # 3s old
+        assert _validate_tick_freshness(tick, symbol="GOLD", max_age_seconds=2.0) is not None
+        assert _validate_tick_freshness(tick, symbol="GOLD", max_age_seconds=5.0) is None
+
+    def test_validate_tick_freshness_no_timestamp(self):
+        """Tick without timestamp passes (preserves existing null-tick semantics)."""
+        tick = SimpleNamespace()
+        assert _validate_tick_freshness(tick, symbol="EURUSD") is None
 
 
 # ===================================================================
