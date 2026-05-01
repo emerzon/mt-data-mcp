@@ -26,6 +26,23 @@ def test_run_logged_operation_logs_finish_event(caplog):
     )
 
 
+def test_run_logged_operation_runs_cleanup_after_top_level_success(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        "mtdata.core.execution_logging._run_post_operation_cleanup",
+        lambda logger, *, operation: calls.append(operation),
+    )
+
+    result = run_logged_operation(
+        logging.getLogger("mtdata.test.exec"),
+        operation="sample_op",
+        func=lambda: {"success": True},
+    )
+
+    assert result["success"] is True
+    assert calls == ["sample_op"]
+
+
 def test_run_logged_operation_logs_exception_and_reraises(caplog):
     with caplog.at_level(logging.ERROR, logger="mtdata.test.exec"), pytest.raises(RuntimeError, match="boom"):
         run_logged_operation(
@@ -38,6 +55,23 @@ def test_run_logged_operation_logs_exception_and_reraises(caplog):
         "event=error operation=sample_fail" in record.message
         for record in caplog.records
     )
+
+
+def test_run_logged_operation_runs_cleanup_after_top_level_exception(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        "mtdata.core.execution_logging._run_post_operation_cleanup",
+        lambda logger, *, operation: calls.append(operation),
+    )
+
+    with pytest.raises(RuntimeError, match="boom"):
+        run_logged_operation(
+            logging.getLogger("mtdata.test.exec"),
+            operation="sample_fail",
+            func=lambda: (_ for _ in ()).throw(RuntimeError("boom")),
+        )
+
+    assert calls == ["sample_fail"]
 
 
 def test_nested_same_operation_logs_single_finish_event(caplog):
@@ -61,6 +95,28 @@ def test_nested_same_operation_logs_single_finish_event(caplog):
         if "event=finish operation=sample_op success=True" in record.message
     ]
     assert len(finish_records) == 1
+
+
+def test_nested_operations_run_cleanup_once_for_outer_operation(monkeypatch):
+    logger = logging.getLogger("mtdata.test.exec")
+    calls = []
+    monkeypatch.setattr(
+        "mtdata.core.execution_logging._run_post_operation_cleanup",
+        lambda logger, *, operation: calls.append(operation),
+    )
+
+    result = run_logged_operation(
+        logger,
+        operation="outer_op",
+        func=lambda: run_logged_operation(
+            logger,
+            operation="inner_op",
+            func=lambda: {"success": True},
+        ),
+    )
+
+    assert result["success"] is True
+    assert calls == ["outer_op"]
 
 
 def test_nested_different_operations_still_log_both_finish_events(caplog):

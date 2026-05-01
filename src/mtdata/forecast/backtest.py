@@ -38,6 +38,7 @@ from .contracts import (
 )
 from .exceptions import ForecastError, raise_if_error_result
 from .forecast import forecast
+from .gpu_runtime import cleanup_forecast_gpu_runtime, forecast_methods_may_use_gpu
 from .volatility import forecast_volatility
 
 
@@ -1005,6 +1006,7 @@ def forecast_backtest(  # noqa: C901
     - Picks `steps` anchor points spaced `spacing` bars apart, each with `horizon` future bars for validation.
     - For each method, runs our `forecast` as-of that anchor and reports MAE/RMSE/directional accuracy.
     """
+    cleanup_gpu_after_run = False
     try:
         __stage = 'start'
         detail_mode = _normalize_detail_mode(detail)
@@ -1086,6 +1088,11 @@ def forecast_backtest(  # noqa: C901
                 if not methods:
                     methods = [m for m in ('naive', 'drift', 'theta') if m in avail]
         params_map = dict(params_per_method or {})
+        cleanup_gpu_after_run = forecast_methods_may_use_gpu(
+            methods,
+            params_per_method=params_map,
+            params=params,
+        )
         target_mode = _quantity_to_target(quantity)
 
         # Build ground-truth windows for each anchor
@@ -1449,6 +1456,9 @@ def forecast_backtest(  # noqa: C901
         return result_payload
     except Exception as e:
         return {"error": f"Error in forecast_backtest: {str(e)}"}
+    finally:
+        if cleanup_gpu_after_run:
+            cleanup_forecast_gpu_runtime(clear_model_cache=True)
 
 
 def execute_forecast_backtest(*args: Any, **kwargs: Any) -> Dict[str, Any]:

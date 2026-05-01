@@ -3,15 +3,14 @@ import pytest
 from mtdata.forecast import forecast_registry as fr
 
 
-def test_check_chronos_runtime_support_accepts_public_pipeline_api(monkeypatch):
+def test_check_chronos_runtime_support_does_not_import_runtime(monkeypatch):
     fr._check_chronos_runtime_support.cache_clear()
 
     def fake_import(name):
-        if name == "chronos":
-            return type("ChronosModule", (), {"Chronos2Pipeline": object()})()
         raise AssertionError(f"unexpected import: {name}")
 
     monkeypatch.setattr(fr._importlib, "import_module", fake_import)
+    monkeypatch.setattr(fr._importlib_util, "find_spec", lambda name: object() if name == "chronos" else None)
 
     available, reqs = fr._check_chronos_runtime_support()
 

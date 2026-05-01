@@ -439,6 +439,52 @@ class TestForecastBacktest:
         assert isinstance(result, dict)
 
     @patch("mtdata.forecast.backtest._fetch_history")
+    def test_gpu_cleanup_runs_for_gpu_backtest_method(self, fetch):
+        fetch.return_value = _make_df(500)
+        with patch("mtdata.forecast.backtest.forecast") as fc:
+            fc.return_value = {"forecast_price": [101.0] * 12}
+            with patch("mtdata.forecast.backtest.cleanup_forecast_gpu_runtime") as cleanup:
+                result = forecast_backtest(
+                    "EURUSD",
+                    timeframe="H1",
+                    methods=["chronos2"],
+                )
+
+        assert isinstance(result, dict)
+        cleanup.assert_called_once_with(clear_model_cache=True)
+
+    @patch("mtdata.forecast.backtest._fetch_history")
+    def test_gpu_cleanup_skips_classical_backtest_method(self, fetch):
+        fetch.return_value = _make_df(500)
+        with patch("mtdata.forecast.backtest.forecast") as fc:
+            fc.return_value = {"forecast_price": [101.0] * 12}
+            with patch("mtdata.forecast.backtest.cleanup_forecast_gpu_runtime") as cleanup:
+                result = forecast_backtest(
+                    "EURUSD",
+                    timeframe="H1",
+                    methods=["theta"],
+                )
+
+        assert isinstance(result, dict)
+        cleanup.assert_not_called()
+
+    @patch("mtdata.forecast.backtest._fetch_history")
+    def test_gpu_cleanup_detects_ensemble_gpu_component(self, fetch):
+        fetch.return_value = _make_df(500)
+        with patch("mtdata.forecast.backtest.forecast") as fc:
+            fc.return_value = {"forecast_price": [101.0] * 12}
+            with patch("mtdata.forecast.backtest.cleanup_forecast_gpu_runtime") as cleanup:
+                result = forecast_backtest(
+                    "EURUSD",
+                    timeframe="H1",
+                    methods=["ensemble"],
+                    params_per_method={"ensemble": {"methods": ["theta", "chronos2"]}},
+                )
+
+        assert isinstance(result, dict)
+        cleanup.assert_called_once_with(clear_model_cache=True)
+
+    @patch("mtdata.forecast.backtest._fetch_history")
     def test_top_level_exception(self, fetch):
         fetch.side_effect = TypeError("bad type")
         result = forecast_backtest("EURUSD", timeframe="H1")

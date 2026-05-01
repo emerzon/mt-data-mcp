@@ -273,28 +273,19 @@ def _extract_description(cls: Any, fallback: str) -> str:
 
 @lru_cache(maxsize=1)
 def _check_chronos_runtime_support() -> Tuple[bool, List[str]]:
-    """Verify Chronos exposes the public pipeline APIs required by our adapters."""
-    reqs: List[str] = []
+    """Check Chronos presence without importing GPU-backed runtime modules.
+
+    Forecast metadata is requested by CLI/web UI/backtest defaults, so importing
+    Chronos here can import torch/torchao and initialize GPU state before a
+    Chronos forecast is actually requested. The adapter validates pipeline APIs
+    at execution time, where importing the runtime is expected.
+    """
     try:
-        chronos_mod = _importlib.import_module("chronos")
+        if _importlib_util.find_spec("chronos") is None:
+            return False, ["chronos-forecasting"]
     except Exception:
         return False, ["chronos-forecasting"]
-
-    top_level_pipelines = ("Chronos2Pipeline", "ChronosBoltPipeline", "ChronosPipeline")
-    if any(hasattr(chronos_mod, attr) for attr in top_level_pipelines):
-        return True, reqs
-
-    # Newer Chronos-2 builds may expose the pipeline only from chronos.chronos2.
-    try:
-        chronos2_mod = _importlib.import_module("chronos.chronos2")
-    except Exception:
-        reqs.append("chronos pipeline API")
-        return False, reqs
-
-    if not hasattr(chronos2_mod, "Chronos2Pipeline"):
-        reqs.append("chronos pipeline API")
-
-    return len(reqs) == 0, reqs
+    return True, []
 
 
 def _check_requirements(method: str, requires: List[str]) -> Tuple[bool, List[str]]:
