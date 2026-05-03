@@ -343,7 +343,7 @@ def data_fetch_candles(
         freshness when available. `standard` also includes latency and policy
         freshness signals. `full` preserves the debug `meta` diagnostics block.
     
-    limit : int, optional (default=200)
+    limit : int, optional (default=50)
         Maximum number of candles to return
     
     start : str, optional
