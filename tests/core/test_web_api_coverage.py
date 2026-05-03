@@ -1345,10 +1345,9 @@ class TestGetSupportResistance:
             ))
         res = resp.json()
         assert resp.status_code == 200
-        assert "levels" in res
-        assert len(res["levels"]) > 0
+        assert "supports" in res or "resistances" in res
         assert res["symbol"] == "EURUSD"
-        assert "window" in res
+        assert "window" not in res
         assert "fibonacci" not in res
 
     def test_default_timeframe_uses_h1_mode(self):
@@ -1407,7 +1406,7 @@ class TestGetSupportResistance:
             ))
         res = resp.json()
         assert resp.status_code == 200
-        assert "levels" in res
+        assert "supports" in res or "resistances" in res
 
     def test_datetime_timestamps_in_time(self):
         """Handles datetime objects in the time column."""
@@ -1429,9 +1428,8 @@ class TestGetSupportResistance:
             ))
         res = resp.json()
         assert resp.status_code == 200
-        assert "levels" in res
-        if "window" in res:
-            assert res["window"]["start"] is not None
+        assert "supports" in res or "resistances" in res
+        assert "window" not in res
 
     def test_cluster_with_single_touch_fallback(self):
         """When min_touches is high, falls back to returning first cluster."""
@@ -1451,7 +1449,8 @@ class TestGetSupportResistance:
                 tolerance_pct=0.0001, min_touches=1,
             ))
         assert resp.status_code == 200
-        assert len(resp.json()["levels"]) >= 1
+        body = resp.json()
+        assert body.get("supports") or body.get("resistances")
 
 
 # ===========================================================================

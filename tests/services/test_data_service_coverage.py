@@ -952,7 +952,7 @@ class TestFetchCandles(unittest.TestCase):
         result = fetch_candles('EURUSD', limit=5)
         self.assertIsInstance(result.get('meta'), dict)
         self.assertIsNone(result['meta'].get('runtime'))
-        self.assertEqual(result.get('timezone'), "America/Chicago")
+        self.assertEqual(result.get('timezone'), "UTC")
 
     @patch(_MT5_CONFIG)
     @patch(_RATES_FROM)
@@ -970,6 +970,7 @@ class TestFetchCandles(unittest.TestCase):
         result = fetch_candles('EURUSD', limit=5)
         self.assertIsInstance(result.get('meta'), dict)
         self.assertIsNone(result['meta'].get('runtime'))
+        self.assertEqual(result.get('timezone'), "America/Chicago")
 
     @patch(_MT5_CONFIG)
     @patch(_RATES_FROM)

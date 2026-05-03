@@ -60,19 +60,19 @@ def test_support_resistance_tool_returns_weighted_levels():
     assert result["success"] is True
     assert result["symbol"] == "EURUSD"
     assert result["timeframe"] == "H1"
-    assert result["method"] == "weighted_retests"
-    assert len(result["levels"]) == 2
     assert result["level_counts"] == {"support": 1, "resistance": 1, "total": 2}
-    assert result["nearest"]["support"]["type"] == "support"
-    assert result["nearest"]["resistance"]["type"] == "resistance"
-    assert "last_touch" in result["nearest"]["support"]
-    assert "zone_low" in result["nearest"]["support"]
-    assert "zone_high" in result["nearest"]["support"]
-    assert "strength_percentile" in result["nearest"]["support"]
-    assert "strength_score_normalized" in result["nearest"]["support"]
+    assert len(result["supports"]) == 1
+    assert len(result["resistances"]) == 1
+    assert set(result["supports"][0]).issubset(
+        {"type", "value", "distance_pct", "strength_rank"}
+    )
+    assert set(result["resistances"][0]).issubset(
+        {"type", "value", "distance_pct", "strength_rank"}
+    )
     assert "fibonacci" not in result
-    assert "supports" not in result
-    assert "resistances" not in result
+    assert "levels" not in result
+    assert "nearest" not in result
+    assert "method" not in result
 
 
 def test_support_resistance_tool_applies_near_price_distance_default():
@@ -93,7 +93,7 @@ def test_support_resistance_tool_applies_near_price_distance_default():
          patch("mtdata.core.pivot.compute_support_resistance_payload", return_value=payload) as mock_compute:
         result = fn("EURUSD", timeframe="H1")
 
-    assert result["max_distance_pct"] == 5.0
+    assert "max_distance_pct" not in result
     assert mock_compute.call_args.kwargs["max_distance_pct"] == 5.0
 
 
@@ -137,8 +137,7 @@ def test_support_resistance_tool_compact_preserves_zone_overlap_without_fibonacc
         result = fn("USDJPY", timeframe="H1", detail="compact")
 
     assert result["detail"] == "compact"
-    assert result["zone_overlap"]["current_price_in_overlap"] is True
-    assert result["zone_overlap"]["overlap_width"] == 0.156
+    assert "zone_overlap" not in result
     assert "fibonacci" not in result
     assert {warning["code"] for warning in result["warnings"]} == {
         "overlapping_nearest_zones",
@@ -162,10 +161,9 @@ def test_support_resistance_tool_compact_exposes_coverage_gap_metadata_with_dist
             reaction_bars=4,
     )
 
-    assert result["max_distance_pct"] == 0.04
+    assert "max_distance_pct" not in result
     assert "levels" not in result
-    assert result["coverage_gaps"]["support"]["beyond_max_distance_filter"] is True
-    assert result["coverage_gaps"]["resistance"]["beyond_max_distance_filter"] is True
+    assert "coverage_gaps" not in result
 
 
 def test_support_resistance_tool_compact_exposes_volume_metadata_when_enabled():
@@ -189,10 +187,11 @@ def test_support_resistance_tool_compact_exposes_volume_metadata_when_enabled():
             reaction_bars=4,
         )
 
-    assert result["volume_weighting"] == "auto"
-    assert result["volume_source"] == "tick_volume"
-    assert result["nearest"]["support"]["avg_test_volume_ratio"] is not None
-    assert result["nearest"]["support"]["volume_source"] == "tick_volume"
+    assert "volume_weighting" not in result
+    assert "volume_source" not in result
+    assert set(result["supports"][0]).issubset(
+        {"type", "value", "distance_pct", "strength_rank"}
+    )
 
 
 def test_support_resistance_tool_standard_detail_keeps_actionable_lists_without_full_diagnostics():
@@ -283,12 +282,10 @@ def test_support_resistance_tool_auto_mode_merges_timeframes():
     assert result["mode"] == "auto"
     assert result["timeframes_analyzed"] == ["M15", "H1", "H4", "D1"]
     assert result["level_counts"] == {"support": 1, "resistance": 1, "total": 2}
-    assert result["nearest"]["support"]["source_timeframes"] == ["M15", "H1", "H4", "D1"]
-    assert "last_touch" in result["nearest"]["support"]
-    assert "strength_percentile" in result["nearest"]["support"]
+    assert result["supports"][0]["type"] == "support"
     assert "fibonacci" not in result
-    assert "supports" not in result
-    assert "resistances" not in result
+    assert "levels" not in result
+    assert "nearest" not in result
 
 
 def test_support_resistance_tool_full_detail_retains_support_and_resistance_lists():
