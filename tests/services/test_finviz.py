@@ -578,6 +578,41 @@ class TestFinvizTools:
             {"symbol": "BTC", "name": "Bitcoin", "price": "90000", "perf_day": "2.5%"}
         ]
 
+    @patch("mtdata.core.finviz.get_crypto_performance")
+    def test_finviz_crypto_compact_prefers_perf_wtd_alias(self, mock_get_crypto):
+        from mtdata.core.finviz import finviz_crypto
+
+        mock_get_crypto.return_value = {
+            "success": True,
+            "market": "crypto",
+            "count": 1,
+            "coins": [
+                {
+                    "Ticker": "BTC",
+                    "Name": "Bitcoin",
+                    "Price": "90000",
+                    "Perf Day": "2.5%",
+                    "Perf Week": "2.5%",
+                    "Perf WTD": "2.5%",
+                }
+            ],
+            "warnings": ["added Perf WTD alias"],
+        }
+
+        raw = getattr(finviz_crypto, "__wrapped__", finviz_crypto)
+        result = raw()
+
+        assert result["items"] == [
+            {
+                "symbol": "BTC",
+                "name": "Bitcoin",
+                "price": "90000",
+                "perf_day": "2.5%",
+                "perf_wtd": "2.5%",
+            }
+        ]
+        assert "perf_week" not in result["items"][0]
+
     @patch("mtdata.core.finviz.get_futures_performance")
     def test_finviz_futures_uses_items_with_snake_case_rows(self, mock_get_futures):
         from mtdata.core.finviz import finviz_futures

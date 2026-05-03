@@ -239,9 +239,12 @@ def _compact_finviz_market_row(row: Dict[str, Any], *, rows_key: str) -> Dict[st
         derived_name = _derive_forex_pair_name(compact.get("symbol"))
         if derived_name is not None:
             compact["name"] = derived_name
+    fields = _FINVIZ_MARKET_COMPACT_FIELDS
+    if compact.get("perf_wtd") not in (None, ""):
+        fields = tuple("perf_wtd" if field == "perf_week" else field for field in fields)
     return {
         field: compact[field]
-        for field in _FINVIZ_MARKET_COMPACT_FIELDS
+        for field in fields
         if field in compact and compact[field] not in (None, "")
     }
 
