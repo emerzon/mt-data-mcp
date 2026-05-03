@@ -185,6 +185,13 @@ class TradeRiskAnalyzeRequest(BaseModel):
     model_config = {"populate_by_name": True}
 
     symbol: Optional[str] = None
+    detail: CompactFullDetailLiteral = Field(
+        default="compact",
+        description=(
+            "Response detail level. Compact keeps sizing/action fields; full "
+            "includes broker volume diagnostics and incomplete-sizing context."
+        ),
+    )
     desired_risk_pct: Optional[float] = None
     direction: Optional[str] = None
     entry: Optional[float] = Field(

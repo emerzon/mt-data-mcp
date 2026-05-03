@@ -22,6 +22,8 @@ def trade_risk_analyze(request: TradeRiskAnalyzeRequest) -> dict:
     reward/risk, and optional lot sizing from `desired_risk_pct`, `entry`, and
     `stop_loss`. It is not a portfolio tail-risk model; use
     `trade_var_cvar_calculate` for VaR/CVaR across open positions.
+    Compact detail keeps the sizing decision fields; full detail includes
+    broker volume rounding diagnostics and incomplete-sizing context.
 
     When sizing a proposed trade, pass direction='long' or direction='short' to
     validate that proposed SL/TP are on the correct side of the entry. New-trade

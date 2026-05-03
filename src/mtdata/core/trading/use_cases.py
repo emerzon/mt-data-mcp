@@ -271,6 +271,52 @@ def _validate_trade_risk_levels(
     return None
 
 
+_COMPACT_POSITION_SIZING_FIELDS = (
+    "suggested_volume",
+    "risk_currency",
+    "risk_pct",
+    "risk_compliance",
+    "entry",
+    "sl",
+    "tp",
+    "rr_ratio",
+)
+
+
+def _compact_trade_risk_position_sizing(
+    position_sizing: Dict[str, Any],
+) -> Dict[str, Any]:
+    if not isinstance(position_sizing, dict):
+        return position_sizing
+    if position_sizing.get("status") == "incomplete":
+        return {
+            key: position_sizing[key]
+            for key in ("status", "message", "missing")
+            if key in position_sizing
+        }
+    return {
+        key: position_sizing[key]
+        for key in _COMPACT_POSITION_SIZING_FIELDS
+        if key in position_sizing and position_sizing[key] is not None
+    }
+
+
+def _shape_trade_risk_analyze_payload(
+    result: Dict[str, Any],
+    *,
+    detail: str,
+) -> Dict[str, Any]:
+    if not isinstance(result, dict) or result.get("error"):
+        return result
+    if str(detail).strip().lower() != "compact":
+        return result
+    shaped = dict(result)
+    position_sizing = shaped.get("position_sizing")
+    if isinstance(position_sizing, dict):
+        shaped["position_sizing"] = _compact_trade_risk_position_sizing(position_sizing)
+    return shaped
+
+
 def _floor_volume_steps(raw_volume: float, volume_step: float) -> int:
     step_ratio = raw_volume / volume_step
     step_count = math.floor(step_ratio)
@@ -1914,6 +1960,10 @@ def run_trade_risk_analyze(  # noqa: C901
     )
 
     def _finish(result: Dict[str, Any]) -> Dict[str, Any]:
+        result = _shape_trade_risk_analyze_payload(
+            result,
+            detail=str(getattr(request, "detail", "compact")),
+        )
         log_operation_finish(
             logger,
             operation="trade_risk_analyze",

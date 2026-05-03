@@ -84,6 +84,7 @@ def test_trade_risk_analyze_does_not_round_up_substep_boundary_volume() -> None:
     with _patched_mt5_module(mt5):
         out = trade_risk_analyze(
             symbol="EURUSD",
+            detail="full",
             desired_risk_pct=0.3,
             entry=100.0,
             stop_loss=89.99999999999667,
@@ -106,6 +107,7 @@ def test_trade_risk_analyze_rounds_down_to_step_to_avoid_overshoot() -> None:
     with _patched_mt5_module(mt5):
         out = trade_risk_analyze(
             symbol="EURUSD",
+            detail="full",
             desired_risk_pct=1.0,
             entry=100.0,
             stop_loss=92.06,
@@ -119,6 +121,33 @@ def test_trade_risk_analyze_rounds_down_to_step_to_avoid_overshoot() -> None:
     assert sizing["risk_overshoot_pct"] == 0.0
     assert sizing["risk_pct"] <= 1.0
     assert any("rounded down" in note.lower() for note in sizing["sizing_notes"])
+
+
+def test_trade_risk_analyze_compact_position_sizing_keeps_decision_fields() -> None:
+    mt5 = MagicMock()
+    mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
+    mt5.positions_get.return_value = []
+    mt5.symbol_info.return_value = _make_symbol_info()
+
+    with _patched_mt5_module(mt5):
+        out = trade_risk_analyze(
+            symbol="EURUSD",
+            desired_risk_pct=1.0,
+            entry=100.0,
+            stop_loss=92.0,
+            take_profit=116.0,
+        )
+
+    assert out["position_sizing"] == {
+        "suggested_volume": 1.2,
+        "risk_currency": 9.6,
+        "risk_pct": 0.96,
+        "risk_compliance": "within_requested_risk",
+        "entry": 100.0,
+        "sl": 92.0,
+        "tp": 116.0,
+        "rr_ratio": 2.0,
+    }
 
 
 def test_trade_risk_analyze_marks_position_sizing_incomplete_without_required_inputs() -> None:
@@ -136,13 +165,9 @@ def test_trade_risk_analyze_marks_position_sizing_incomplete_without_required_in
         "entry",
         "stop_loss",
     ]
-    assert out["position_sizing"]["required_for_sizing"] == [
-        "desired_risk_pct",
-        "entry",
-        "stop_loss",
-    ]
     assert "Portfolio risk analysis completed" in out["position_sizing"]["message"]
-    assert "desired_risk_pct" in out["position_sizing"]["note"]
+    assert "note" not in out["position_sizing"]
+    assert "required_for_sizing" not in out["position_sizing"]
 
 
 def test_trade_risk_analyze_keeps_exposure_analysis_with_partial_sizing_params() -> None:
@@ -160,11 +185,11 @@ def test_trade_risk_analyze_keeps_exposure_analysis_with_partial_sizing_params()
     assert "portfolio_risk" in out
     sizing = out["position_sizing"]
     assert sizing["status"] == "incomplete"
-    assert sizing["provided"] == ["desired_risk_pct"]
     assert set(sizing["missing"]) == {"entry", "stop_loss"}
-    assert sizing["required_for_sizing"] == ["desired_risk_pct", "entry", "stop_loss"]
-    assert sizing["proposed_trade_context"] == {"desired_risk_pct": 2.0}
-    assert "requires desired_risk_pct, entry, and stop_loss" in sizing["sizing_not_calculated_reason"]
+    assert "provided" not in sizing
+    assert "required_for_sizing" not in sizing
+    assert "proposed_trade_context" not in sizing
+    assert "sizing_not_calculated_reason" not in sizing
 
 
 def test_trade_risk_analyze_handles_missing_account_fields() -> None:
@@ -189,6 +214,7 @@ def test_trade_risk_analyze_warns_when_min_volume_forces_overshoot() -> None:
     with _patched_mt5_module(mt5):
         out = trade_risk_analyze(
             symbol="EURUSD",
+            detail="full",
             desired_risk_pct=0.1,
             entry=100.0,
             stop_loss=80.0,
@@ -216,6 +242,7 @@ def test_trade_risk_analyze_accepts_explicit_short_direction() -> None:
     with _patched_mt5_module(mt5):
         out = trade_risk_analyze(
             symbol="EURUSD",
+            detail="full",
             direction="short",
             desired_risk_pct=1.0,
             entry=100.0,
@@ -276,6 +303,7 @@ def test_trade_risk_analyze_uses_loss_tick_value_for_position_sizing() -> None:
     with _patched_mt5_module(mt5):
         out = trade_risk_analyze(
             symbol="EURUSD",
+            detail="full",
             desired_risk_pct=1.0,
             entry=100.0,
             stop_loss=90.0,
