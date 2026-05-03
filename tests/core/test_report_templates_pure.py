@@ -986,6 +986,7 @@ class TestTemplateBasic:
         mock_tail.return_value = candle_rows[-40:]
         mock_sum_bar.return_value = {"best": {"tp": 1.0, "sl": 0.5, "edge": 0.3}, "top": []}
         barrier_params = []
+        barrier_call_kwargs = []
 
         def raw_side_effect(func, *args, **kwargs):
             name = func.__name__ if hasattr(func, "__name__") else str(func)
@@ -1000,6 +1001,7 @@ class TestTemplateBasic:
             if "forecast_generate" in name.lower() or "generate" in name.lower():
                 return _mock_forecast_data()
             if "barrier" in name.lower():
+                barrier_call_kwargs.append(dict(kwargs))
                 barrier_params.append(dict(kwargs.get("params") or {}))
                 return _mock_barrier_data()
             if "pattern" in name.lower():
@@ -1013,12 +1015,36 @@ class TestTemplateBasic:
 
         assert len(barrier_params) == 2
         for params in barrier_params:
+            assert params["tp_min"] == 0.25
+            assert params["tp_max"] == 1.5
+            assert params["tp_steps"] == 7
+            assert params["sl_min"] == 0.25
+            assert params["sl_max"] == 2.5
+            assert params["sl_steps"] == 9
             assert params["vol_window"] == 250
             assert params["vol_min_mult"] == 0.6
             assert params["vol_max_mult"] == 2.2
             assert params["vol_sl_multiplier"] == 1.7
             assert params["vol_sl_steps"] == 9
             assert params["vol_floor_pct"] == 0.2
+            assert params["refine"] is False
+            assert params["refine_radius"] == 0.3
+            assert params["refine_steps"] == 5
+        forbidden = {
+            "tp_min",
+            "tp_max",
+            "tp_steps",
+            "sl_min",
+            "sl_max",
+            "sl_steps",
+            "return_grid",
+            "output_mode",
+            "refine",
+            "refine_radius",
+            "refine_steps",
+        }
+        assert barrier_call_kwargs
+        assert all(not forbidden.intersection(call) for call in barrier_call_kwargs)
 
     @patch(f"{_BASIC_MODULE}._get_raw_result")
     @patch(f"{_BASIC_MODULE}.now_utc_iso", return_value="2024-01-15T00:00:00Z")

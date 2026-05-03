@@ -809,12 +809,27 @@ def template_basic(  # noqa: C901
     base_params = dict(p.get('params') or {})
     base_params.setdefault('spread_bps', 1.0)
     base_params.setdefault('slippage_bps', 0.5)
+    base_params.setdefault('tp_min', float(p.get('tp_min', 0.25)))
+    base_params.setdefault('tp_max', float(p.get('tp_max', 1.5)))
+    base_params.setdefault('tp_steps', int(p.get('tp_steps', 7)))
+    base_params.setdefault('sl_min', float(p.get('sl_min', 0.25)))
+    base_params.setdefault('sl_max', float(p.get('sl_max', 2.5)))
+    base_params.setdefault('sl_steps', int(p.get('sl_steps', 9)))
+    base_params.setdefault('refine', bool(p.get('refine', False)))
+    base_params.setdefault('refine_radius', float(p.get('refine_radius', 0.3)))
+    base_params.setdefault('refine_steps', int(p.get('refine_steps', 5)))
     # Reasonable risk/reward filter defaults per template
     rr_min_default = p.get('rr_min', 0.8)
     rr_max_default = p.get('rr_max', 2.0)
     base_params.setdefault('rr_min', rr_min_default)
     base_params.setdefault('rr_max', rr_max_default)
     for barrier_key in (
+        'tp_min',
+        'tp_max',
+        'tp_steps',
+        'sl_min',
+        'sl_max',
+        'sl_steps',
         'vol_window',
         'vol_min_mult',
         'vol_max_mult',
@@ -823,6 +838,9 @@ def template_basic(  # noqa: C901
         'vol_sl_steps',
         'vol_floor_pct',
         'vol_floor_ticks',
+        'refine',
+        'refine_radius',
+        'refine_steps',
     ):
         if barrier_key in p:
             base_params.setdefault(barrier_key, p.get(barrier_key))
@@ -835,22 +853,12 @@ def template_basic(  # noqa: C901
         horizon=int(horizon),
         method='hmm_mc',
         mode=mode_val,
-        tp_min=float(p.get('tp_min', 0.25)),
-        tp_max=float(p.get('tp_max', 1.5)),
-        tp_steps=int(p.get('tp_steps', 7)),
-        sl_min=float(p.get('sl_min', 0.25)),
-        sl_max=float(p.get('sl_max', 2.5)),
-        sl_steps=int(p.get('sl_steps', 9)),
         params=p.get('params'),
         objective=str(p.get('objective','ev')),
-        return_grid=False,
         top_k=int(p.get('top_k', 5)),
-        output_mode='summary',
         grid_style=str(p.get('grid_style', 'fixed')),
         preset=p.get('grid_preset', p.get('preset')),
-        refine=bool(p.get('refine', False)),
-        refine_radius=float(p.get('refine_radius', 0.3)),
-        refine_steps=int(p.get('refine_steps', 5)),
+        search_profile=str(p.get('search_profile', 'medium')),
         direction='long',
     )
     grid_short = _get_raw_result(forecast_barrier_optimize,
@@ -859,22 +867,12 @@ def template_basic(  # noqa: C901
         horizon=int(horizon),
         method='hmm_mc',
         mode=mode_val,
-        tp_min=float(p.get('tp_min', 0.25)),
-        tp_max=float(p.get('tp_max', 1.5)),
-        tp_steps=int(p.get('tp_steps', 7)),
-        sl_min=float(p.get('sl_min', 0.25)),
-        sl_max=float(p.get('sl_max', 2.5)),
-        sl_steps=int(p.get('sl_steps', 9)),
         params=p.get('params'),
         objective=str(p.get('objective','ev')),
-        return_grid=False,
         top_k=int(p.get('top_k', 5)),
-        output_mode='summary',
         grid_style=str(p.get('grid_style', 'fixed')),
         preset=p.get('grid_preset', p.get('preset')),
-        refine=bool(p.get('refine', False)),
-        refine_radius=float(p.get('refine_radius', 0.3)),
-        refine_steps=int(p.get('refine_steps', 5)),
+        search_profile=str(p.get('search_profile', 'medium')),
         direction='short',
     )
     sec_bar: Dict[str, Any] = {}
