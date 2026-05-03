@@ -65,6 +65,34 @@ Availability is environment-dependent:
 
 **Ensemble note:** `ensemble` supports advanced modes (`average`, `bma`, `stacking`). See [forecast/FORECAST_GENERATE.md](forecast/FORECAST_GENERATE.md) for parameters and examples.
 
+---
+
+## Recommended Workflow
+
+Use the forecast tools as separate stages so each result answers one question:
+
+| Stage | Question | Tool |
+|-------|----------|------|
+| 1. Discover | Which methods are available here? | `forecast_list_methods` |
+| 2. Forecast | What is the point forecast? | `forecast_generate` |
+| 3. Uncertainty | How wide is the plausible range? | `forecast_conformal_intervals` |
+| 4. Trade levels | What TP/SL levels fit this horizon? | `forecast_barrier_optimize` |
+| 5. Probability check | How likely is a specific TP/SL pair? | `forecast_barrier_prob` |
+| 6. Validation | Did this method work historically? | `forecast_backtest_run` |
+| 7. Tuning | Can parameters improve validation metrics? | `forecast_tune_optuna` or `forecast_tune_genetic` |
+
+Keep `--symbol`, `--timeframe`, `--horizon`, and `--method` aligned across stages unless you are deliberately comparing alternatives.
+
+```bash
+mtdata-cli forecast_list_methods
+mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 --method theta
+mtdata-cli forecast_conformal_intervals EURUSD --timeframe H1 --horizon 12 --method theta
+mtdata-cli forecast_barrier_optimize EURUSD --timeframe H1 --horizon 12 --direction long
+mtdata-cli forecast_backtest_run EURUSD --timeframe H1 --horizon 12 --methods theta --steps 20 --spacing 12
+```
+
+---
+
 ### Classical Models
 
 **Theta Method** — Decomposes trend and curvature. Robust baseline.
