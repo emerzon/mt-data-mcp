@@ -18,6 +18,11 @@ logger = logging.getLogger(__name__)
 def trade_risk_analyze(request: TradeRiskAnalyzeRequest) -> dict:
     """Analyze risk exposure for existing positions and calculate position sizing for new trades.
 
+    Use this for symbol-level trade planning: current exposure, stop-loss risk,
+    reward/risk, and optional lot sizing from `desired_risk_pct`, `entry`, and
+    `stop_loss`. It is not a portfolio tail-risk model; use
+    `trade_var_cvar_calculate` for VaR/CVaR across open positions.
+
     When sizing a proposed trade, pass direction='long' or direction='short' to
     validate that proposed SL/TP are on the correct side of the entry. New-trade
     sizing is opt-in: provide desired_risk_pct together with entry and stop_loss
@@ -39,7 +44,14 @@ def trade_risk_analyze(request: TradeRiskAnalyzeRequest) -> dict:
 
 @mcp.tool()
 def trade_var_cvar_calculate(request: TradeVarCvarRequest) -> dict:
-    """Estimate portfolio VaR/CVaR for current open MT5 positions."""
+    """Estimate portfolio VaR/CVaR for current open MT5 positions.
+
+    Use this for account-level tail-risk analysis over the current portfolio.
+    For single-symbol stop-loss exposure and new-trade lot sizing, use
+    `trade_risk_analyze`. For a lightweight execution snapshot that includes
+    account, ticker, open positions, and pending orders, use
+    `trade_session_context`.
+    """
     return run_logged_operation(
         logger,
         operation="trade_var_cvar_calculate",

@@ -282,6 +282,12 @@ def _compact_trade_session_context_payload(payload: Dict[str, Any]) -> Dict[str,
 def trade_session_context(request: TradeSessionContextRequest) -> Dict[str, Any]:
     """Get a consolidated session context including account info, open positions, pending orders, ticker, and computed state for a symbol.
 
+    Use this for a fast execution snapshot before deciding what to do next. It
+    intentionally summarizes account/ticker/order state and is not the
+    authoritative risk calculator. Use `trade_risk_analyze` for stop-loss
+    exposure and position sizing, or `trade_var_cvar_calculate` for portfolio
+    VaR/CVaR.
+
     Parameters: symbol, detail, include_account
     """
 
