@@ -45,6 +45,8 @@ def test_forecast_backtest_compact_excludes_request_metadata() -> None:
     assert "resolved_request" not in res_compact, "compact mode should not include 'resolved_request'"
     # But the response should still contain results
     assert res_compact["success"] is True
+    assert res_compact["symbol"] == "EURUSD"
+    assert res_compact["timeframe"] == "H1"
     assert "results" in res_compact
 
 

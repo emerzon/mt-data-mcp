@@ -1448,6 +1448,8 @@ def forecast_backtest(  # noqa: C901
 
         result_payload = {
             "success": True,
+            "symbol": symbol,
+            "timeframe": timeframe,
             "slippage_bps": float(slippage_bps),
             "trade_threshold": float(trade_threshold or 0.0),
             "detail": detail_mode,
