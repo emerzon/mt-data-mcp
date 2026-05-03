@@ -551,6 +551,11 @@ def test_build_pattern_response_compact_keeps_actionable_fields():
     assert "target_price" in recent
     assert "invalidation_price" in recent
     assert compact["summary"]["signal_bias"]["net_bias"] == "bullish"
+    assert compact["summary"]["signal"] == {
+        "status": "bullish",
+        "action": "review_long_setup",
+        "confidence": 1.0,
+    }
 
 
 def test_build_pattern_response_compact_keeps_fractal_breakout_fields():
@@ -1234,6 +1239,48 @@ def test_patterns_detect_classic_adds_signal_summary_and_levels(monkeypatch):
     )
     assert all("target_price" in row for row in rows)
     assert all("invalidation_price" in row for row in rows)
+
+
+def test_build_pattern_response_compact_marks_conflicting_signal_wait():
+    df = pd.DataFrame({"time": [1, 2, 3], "close": [10.0, 10.5, 10.0]})
+    patterns = [
+        {
+            "name": "Double Top",
+            "status": "forming",
+            "confidence": 0.9,
+            "end_index": 2,
+            "bias": "bearish",
+        },
+        {
+            "name": "Bull Pennant",
+            "status": "forming",
+            "confidence": 0.9,
+            "end_index": 2,
+            "bias": "bullish",
+        },
+    ]
+
+    compact = _build_pattern_response(
+        "EURUSD",
+        "H1",
+        100,
+        "classic",
+        patterns,
+        include_completed=False,
+        include_series=False,
+        series_time="string",
+        df=df,
+        detail="compact",
+    )
+
+    assert compact["summary"]["signal_bias"]["conflict"] is True
+    assert compact["summary"]["signal_bias"]["net_bias"] == "mixed"
+    assert compact["summary"]["signal"] == {
+        "status": "conflicting",
+        "action": "wait",
+        "confidence": 0.0,
+        "conflict": "both_bullish_and_bearish_patterns_present",
+    }
 
 
 def test_run_classic_engine_native_multiscale_merges(monkeypatch):

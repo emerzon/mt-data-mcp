@@ -312,6 +312,40 @@ def _summarize_pattern_bias(rows: List[Dict[str, Any]]) -> Optional[Dict[str, An
     return out
 
 
+def _summarize_actionable_pattern_signal(
+    signal_bias: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    net_bias = str(signal_bias.get("net_bias") or "").strip().lower()
+    if net_bias not in {"bullish", "bearish", "neutral", "mixed"}:
+        return None
+
+    try:
+        confidence = float(signal_bias.get("net_confidence") or 0.0)
+    except Exception:
+        confidence = 0.0
+    confidence = float(max(0.0, min(1.0, confidence)))
+    conflict = bool(signal_bias.get("conflict"))
+
+    if net_bias in {"neutral", "mixed"}:
+        status = "conflicting" if conflict else "neutral"
+        action = "wait"
+    elif conflict:
+        status = f"conflicting_{net_bias}"
+        action = "wait"
+    else:
+        status = net_bias
+        action = "review_long_setup" if net_bias == "bullish" else "review_short_setup"
+
+    out: Dict[str, Any] = {
+        "status": status,
+        "action": action,
+        "confidence": confidence,
+    }
+    if conflict:
+        out["conflict"] = "both_bullish_and_bearish_patterns_present"
+    return out
+
+
 def _compact_patterns_payload(payload: Dict[str, Any]) -> Dict[str, Any]:  # noqa: C901
     if not isinstance(payload, dict) or payload.get("error"):
         return payload
@@ -459,6 +493,9 @@ def _compact_patterns_payload(payload: Dict[str, Any]) -> Dict[str, Any]:  # noq
     signal_bias = _summarize_pattern_bias(rows)
     if signal_bias:
         summary["signal_bias"] = signal_bias
+        signal = _summarize_actionable_pattern_signal(signal_bias)
+        if signal:
+            summary["signal"] = signal
     if strongest_pattern:
         summary["strongest_pattern"] = strongest_pattern
 
