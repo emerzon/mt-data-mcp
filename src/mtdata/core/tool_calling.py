@@ -107,12 +107,3 @@ def call_tool_sync_structured(
     except TypeError:
         return resolve_sync_tool_result(target(*args, **coerced_kwargs))
 
-
-def call_tool_sync_raw(func: Any, *args: Any, cli_raw: bool = False, **kwargs: Any) -> Any:
-    """Backward-compatible wrapper for transport-neutral structured tool calls."""
-    return call_tool_sync_structured(
-        func,
-        *args,
-        raw_tool_output=cli_raw,
-        **kwargs,
-    )
