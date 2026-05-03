@@ -339,10 +339,6 @@ def _get_pydantic_model_fields(model_type: Any) -> tuple[Dict[str, Any], bool]:
     if isinstance(model_fields, dict):
         return model_fields, True
 
-    legacy_fields = getattr(model_type, "__fields__", None)
-    if isinstance(legacy_fields, dict):
-        return legacy_fields, False
-
     return {}, False
 
 
@@ -421,7 +417,7 @@ def _request_model_signature_fields(func: Any) -> List[inspect.Parameter]:
         return []
 
     model_fields, modern_fields = _get_pydantic_model_fields(base_ann)
-    if modern_fields:
+    if model_fields and modern_fields:
         flattened: List[inspect.Parameter] = []
         for field_name, field in model_fields.items():
             annotation = inspect._empty
@@ -434,22 +430,6 @@ def _request_model_signature_fields(func: Any) -> List[inspect.Parameter]:
             if annotation is inspect._empty:
                 annotation = getattr(field, "annotation", inspect._empty)
             is_required = bool(getattr(field, "is_required", lambda: False)())
-            default = inspect._empty if is_required else _signature_default_for_model_field(field)
-            flattened.append(
-                inspect.Parameter(
-                    field_name,
-                    kind=inspect.Parameter.KEYWORD_ONLY,
-                    default=default,
-                    annotation=annotation,
-                )
-            )
-        return flattened
-
-    if model_fields:
-        flattened = []
-        for field_name, field in model_fields.items():
-            annotation = getattr(field, "outer_type_", getattr(field, "type_", inspect._empty))
-            is_required = bool(getattr(field, "required", False))
             default = inspect._empty if is_required else _signature_default_for_model_field(field)
             flattened.append(
                 inspect.Parameter(
