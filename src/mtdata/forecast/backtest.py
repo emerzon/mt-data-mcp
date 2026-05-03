@@ -818,7 +818,7 @@ def strategy_backtest(  # noqa: C901
                 "data_preparation": _contract_payload(data_contract),
                 "evaluation": _contract_payload(evaluation_contract),
                 "strategy": {
-                    "kind": "legacy_indicator_strategy",
+                    "kind": "indicator_strategy",
                     "name": strategy_value,
                     "position_mode": position_mode_value,
                     "parameters": dict(_strategy_params),
