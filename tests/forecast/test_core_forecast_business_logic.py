@@ -62,7 +62,7 @@ def test_normalize_forecaster_name_and_resolve_variants(monkeypatch):
 
 
 def test_discover_sktime_forecasters_filters_test_and_non_forecaster_modules(monkeypatch):
-    cf._discover_sktime_forecasters.cache_clear()
+    cf._clear_discover_sktime_forecasters_cache()
 
     class BaseForecaster:
         pass
@@ -118,7 +118,7 @@ def test_discover_sktime_forecasters_filters_test_and_non_forecaster_modules(mon
     assert "thetaforecaster" in mapping
     assert mapping["thetaforecaster"][0] == "ThetaForecaster"
     assert "privateforecaster" not in mapping
-    cf._discover_sktime_forecasters.cache_clear()
+    cf._clear_discover_sktime_forecasters_cache()
 
 
 def test_forecast_generate_routes_by_library_and_validates_inputs(monkeypatch):

@@ -57,32 +57,17 @@ def _attach_timestamp_timezone(result: Dict[str, Any], *, operation: str) -> Dic
     return result
 
 
-def _forecast_module():
-    return import_module("mtdata.forecast.forecast")
+def _lazy_module(module_name: str):
+    return lambda: import_module(module_name)
 
 
-def _forecast_backtest_module():
-    return import_module("mtdata.forecast.backtest")
-
-
-def _forecast_use_cases_module():
-    return import_module("mtdata.forecast.use_cases")
-
-
-def _forecast_methods_module():
-    return import_module("mtdata.forecast.forecast_methods")
-
-
-def _forecast_volatility_module():
-    return import_module("mtdata.forecast.volatility")
-
-
-def _forecast_tune_module():
-    return import_module("mtdata.forecast.tune")
-
-
-def _forecast_capabilities_module():
-    return import_module("mtdata.forecast.capabilities")
+_forecast_module = _lazy_module("mtdata.forecast.forecast")
+_forecast_backtest_module = _lazy_module("mtdata.forecast.backtest")
+_forecast_use_cases_module = _lazy_module("mtdata.forecast.use_cases")
+_forecast_methods_module = _lazy_module("mtdata.forecast.forecast_methods")
+_forecast_volatility_module = _lazy_module("mtdata.forecast.volatility")
+_forecast_tune_module = _lazy_module("mtdata.forecast.tune")
+_forecast_capabilities_module = _lazy_module("mtdata.forecast.capabilities")
 
 
 def _forecast_impl(**kwargs):
@@ -148,10 +133,6 @@ def _clear_discover_sktime_forecasters_cache() -> None:
     cache_clear = getattr(func, "cache_clear", None)
     if callable(cache_clear):
         cache_clear()
-
-
-_discover_sktime_forecasters.cache_clear = _clear_discover_sktime_forecasters_cache
-
 
 def _resolve_sktime_forecaster(*args, **kwargs):
     return _forecast_use_cases_module()._resolve_sktime_forecaster(*args, **kwargs)
