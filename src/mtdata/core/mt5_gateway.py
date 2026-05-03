@@ -17,6 +17,50 @@ from .execution_logging import (
 
 logger = logging.getLogger(__name__)
 
+_MT5_CONSTANT_NAMES = frozenset(
+    {
+        "ORDER_TIME_GTC",
+        "ORDER_TIME_SPECIFIED",
+        "ORDER_FILLING_FOK",
+        "ORDER_FILLING_IOC",
+        "ORDER_FILLING_RETURN",
+        "ORDER_TYPE_BUY",
+        "ORDER_TYPE_BUY_LIMIT",
+        "ORDER_TYPE_BUY_STOP",
+        "ORDER_TYPE_BUY_STOP_LIMIT",
+        "ORDER_TYPE_SELL",
+        "ORDER_TYPE_SELL_LIMIT",
+        "ORDER_TYPE_SELL_STOP",
+        "ORDER_TYPE_SELL_STOP_LIMIT",
+        "POSITION_TYPE_BUY",
+        "POSITION_TYPE_SELL",
+        "DEAL_ENTRY_IN",
+        "DEAL_ENTRY_INOUT",
+        "DEAL_ENTRY_OUT",
+        "DEAL_ENTRY_OUT_BY",
+        "DEAL_REASON_CLIENT",
+        "DEAL_REASON_SL",
+        "DEAL_REASON_TP",
+        "DEAL_TYPE_BUY",
+        "DEAL_TYPE_SELL",
+        "SYMBOL_FILLING_FOK",
+        "SYMBOL_FILLING_IOC",
+        "SYMBOL_FILLING_RETURN",
+        "SYMBOL_TRADE_MODE_CLOSEONLY",
+        "SYMBOL_TRADE_MODE_DISABLED",
+        "SYMBOL_TRADE_MODE_FULL",
+        "SYMBOL_TRADE_MODE_LONGONLY",
+        "SYMBOL_TRADE_MODE_SHORTONLY",
+        "TRADE_ACTION_DEAL",
+        "TRADE_ACTION_MODIFY",
+        "TRADE_ACTION_PENDING",
+        "TRADE_ACTION_REMOVE",
+        "TRADE_ACTION_SLTP",
+        "TRADE_RETCODE_DONE",
+        "TRADE_RETCODE_PRICE_CHANGED",
+    }
+)
+
 
 @dataclass
 class MT5Gateway:
@@ -55,161 +99,10 @@ class MT5Gateway:
     def _adapter_attr(self, name: str) -> Any:
         return getattr(self.adapter, name)
 
-    @property
-    def ORDER_TIME_GTC(self) -> Any:
-        return self._adapter_attr("ORDER_TIME_GTC")
-
-    @property
-    def ORDER_TIME_SPECIFIED(self) -> Any:
-        return self._adapter_attr("ORDER_TIME_SPECIFIED")
-
-    @property
-    def ORDER_FILLING_FOK(self) -> Any:
-        return self._adapter_attr("ORDER_FILLING_FOK")
-
-    @property
-    def ORDER_FILLING_IOC(self) -> Any:
-        return self._adapter_attr("ORDER_FILLING_IOC")
-
-    @property
-    def ORDER_FILLING_RETURN(self) -> Any:
-        return self._adapter_attr("ORDER_FILLING_RETURN")
-
-    @property
-    def ORDER_TYPE_BUY(self) -> Any:
-        return self._adapter_attr("ORDER_TYPE_BUY")
-
-    @property
-    def ORDER_TYPE_BUY_LIMIT(self) -> Any:
-        return self._adapter_attr("ORDER_TYPE_BUY_LIMIT")
-
-    @property
-    def ORDER_TYPE_BUY_STOP(self) -> Any:
-        return self._adapter_attr("ORDER_TYPE_BUY_STOP")
-
-    @property
-    def ORDER_TYPE_BUY_STOP_LIMIT(self) -> Any:
-        return self._adapter_attr("ORDER_TYPE_BUY_STOP_LIMIT")
-
-    @property
-    def ORDER_TYPE_SELL(self) -> Any:
-        return self._adapter_attr("ORDER_TYPE_SELL")
-
-    @property
-    def ORDER_TYPE_SELL_LIMIT(self) -> Any:
-        return self._adapter_attr("ORDER_TYPE_SELL_LIMIT")
-
-    @property
-    def ORDER_TYPE_SELL_STOP(self) -> Any:
-        return self._adapter_attr("ORDER_TYPE_SELL_STOP")
-
-    @property
-    def ORDER_TYPE_SELL_STOP_LIMIT(self) -> Any:
-        return self._adapter_attr("ORDER_TYPE_SELL_STOP_LIMIT")
-
-    @property
-    def POSITION_TYPE_BUY(self) -> Any:
-        return self._adapter_attr("POSITION_TYPE_BUY")
-
-    @property
-    def POSITION_TYPE_SELL(self) -> Any:
-        return self._adapter_attr("POSITION_TYPE_SELL")
-
-    @property
-    def DEAL_ENTRY_IN(self) -> Any:
-        return self._adapter_attr("DEAL_ENTRY_IN")
-
-    @property
-    def DEAL_ENTRY_INOUT(self) -> Any:
-        return self._adapter_attr("DEAL_ENTRY_INOUT")
-
-    @property
-    def DEAL_ENTRY_OUT(self) -> Any:
-        return self._adapter_attr("DEAL_ENTRY_OUT")
-
-    @property
-    def DEAL_ENTRY_OUT_BY(self) -> Any:
-        return self._adapter_attr("DEAL_ENTRY_OUT_BY")
-
-    @property
-    def DEAL_REASON_CLIENT(self) -> Any:
-        return self._adapter_attr("DEAL_REASON_CLIENT")
-
-    @property
-    def DEAL_REASON_SL(self) -> Any:
-        return self._adapter_attr("DEAL_REASON_SL")
-
-    @property
-    def DEAL_REASON_TP(self) -> Any:
-        return self._adapter_attr("DEAL_REASON_TP")
-
-    @property
-    def DEAL_TYPE_BUY(self) -> Any:
-        return self._adapter_attr("DEAL_TYPE_BUY")
-
-    @property
-    def DEAL_TYPE_SELL(self) -> Any:
-        return self._adapter_attr("DEAL_TYPE_SELL")
-
-    @property
-    def SYMBOL_FILLING_FOK(self) -> Any:
-        return self._adapter_attr("SYMBOL_FILLING_FOK")
-
-    @property
-    def SYMBOL_FILLING_IOC(self) -> Any:
-        return self._adapter_attr("SYMBOL_FILLING_IOC")
-
-    @property
-    def SYMBOL_FILLING_RETURN(self) -> Any:
-        return self._adapter_attr("SYMBOL_FILLING_RETURN")
-
-    @property
-    def SYMBOL_TRADE_MODE_CLOSEONLY(self) -> Any:
-        return self._adapter_attr("SYMBOL_TRADE_MODE_CLOSEONLY")
-
-    @property
-    def SYMBOL_TRADE_MODE_DISABLED(self) -> Any:
-        return self._adapter_attr("SYMBOL_TRADE_MODE_DISABLED")
-
-    @property
-    def SYMBOL_TRADE_MODE_FULL(self) -> Any:
-        return self._adapter_attr("SYMBOL_TRADE_MODE_FULL")
-
-    @property
-    def SYMBOL_TRADE_MODE_LONGONLY(self) -> Any:
-        return self._adapter_attr("SYMBOL_TRADE_MODE_LONGONLY")
-
-    @property
-    def SYMBOL_TRADE_MODE_SHORTONLY(self) -> Any:
-        return self._adapter_attr("SYMBOL_TRADE_MODE_SHORTONLY")
-
-    @property
-    def TRADE_ACTION_DEAL(self) -> Any:
-        return self._adapter_attr("TRADE_ACTION_DEAL")
-
-    @property
-    def TRADE_ACTION_MODIFY(self) -> Any:
-        return self._adapter_attr("TRADE_ACTION_MODIFY")
-
-    @property
-    def TRADE_ACTION_PENDING(self) -> Any:
-        return self._adapter_attr("TRADE_ACTION_PENDING")
-
-    @property
-    def TRADE_ACTION_REMOVE(self) -> Any:
-        return self._adapter_attr("TRADE_ACTION_REMOVE")
-
-    @property
-    def TRADE_ACTION_SLTP(self) -> Any:
-        return self._adapter_attr("TRADE_ACTION_SLTP")
-
-    @property
-    def TRADE_RETCODE_DONE(self) -> Any:
-        return self._adapter_attr("TRADE_RETCODE_DONE")
-
-    @property
-    def TRADE_RETCODE_PRICE_CHANGED(self) -> Any:
-        return self._adapter_attr("TRADE_RETCODE_PRICE_CHANGED")
+    def __getattr__(self, name: str) -> Any:
+        if name in _MT5_CONSTANT_NAMES:
+            return self._adapter_attr(name)
+        raise AttributeError(f"{type(self).__name__!r} object has no attribute {name!r}")
 
     def account_info(self) -> Any:
         return self.adapter.account_info()
