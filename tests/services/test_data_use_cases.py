@@ -264,13 +264,43 @@ def test_run_data_fetch_candles_compact_keeps_anomaly_metadata():
     assert "hint" not in result
     assert "candles_excluded" not in result
     assert "incomplete_candles_skipped" not in result
+    assert result["forming_candle_status"] == "skipped"
+    assert "has_forming_candle" not in result
+    assert "forming_candle_included" not in result
+    assert "forming_candle_skipped" not in result
+    assert result["symbol"] == "EURUSD"
+    assert result["timeframe"] == "H1"
+    assert "candles_requested" not in result
+
+
+def test_run_data_fetch_candles_standard_keeps_forming_booleans():
+    request = DataFetchCandlesRequest(
+        symbol="EURUSD",
+        timeframe="H1",
+        limit=5,
+        detail="standard",
+    )
+
+    result = run_data_fetch_candles(
+        request,
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_candles_impl=lambda **kwargs: {
+            "success": True,
+            "symbol": "EURUSD",
+            "timeframe": "H1",
+            "candles": 4,
+            "has_forming_candle": True,
+            "forming_candle_status": "skipped",
+            "forming_candle_included": False,
+            "forming_candle_skipped": True,
+            "data": [],
+        },
+    )
+
     assert result["has_forming_candle"] is True
     assert result["forming_candle_status"] == "skipped"
     assert result["forming_candle_included"] is False
     assert result["forming_candle_skipped"] is True
-    assert result["symbol"] == "EURUSD"
-    assert result["timeframe"] == "H1"
-    assert "candles_requested" not in result
 
 
 def test_run_data_fetch_candles_full_omits_zero_exclusion_categories():

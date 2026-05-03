@@ -194,7 +194,11 @@ def _run_data_fetch_candles_impl(
     return result
 
 
-def _compact_candles_payload(result: Dict[str, Any]) -> Dict[str, Any]:
+def _compact_candles_payload(
+    result: Dict[str, Any],
+    *,
+    include_forming_booleans: bool = False,
+) -> Dict[str, Any]:
     compact = dict(result)
     public_diagnostics = _public_candle_diagnostics(result)
     for key in (
@@ -211,13 +215,17 @@ def _compact_candles_payload(result: Dict[str, Any]) -> Dict[str, Any]:
         compact.pop("forming_candle_status", None)
         compact.pop("forming_candle_included", None)
         compact.pop("forming_candle_skipped", None)
+    elif not include_forming_booleans:
+        compact.pop("has_forming_candle", None)
+        compact.pop("forming_candle_included", None)
+        compact.pop("forming_candle_skipped", None)
     if "data_freshness_seconds" in public_diagnostics:
         compact["data_freshness_seconds"] = public_diagnostics["data_freshness_seconds"]
     return compact
 
 
 def _standard_candles_payload(result: Dict[str, Any]) -> Dict[str, Any]:
-    standard = _compact_candles_payload(result)
+    standard = _compact_candles_payload(result, include_forming_booleans=True)
     for key, value in _public_candle_diagnostics(result).items():
         standard[key] = value
     return standard
