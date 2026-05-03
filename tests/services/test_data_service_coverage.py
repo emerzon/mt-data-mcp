@@ -952,6 +952,7 @@ class TestFetchCandles(unittest.TestCase):
         result = fetch_candles('EURUSD', limit=5)
         self.assertIsInstance(result.get('meta'), dict)
         self.assertIsNone(result['meta'].get('runtime'))
+        self.assertEqual(result.get('timezone'), "America/Chicago")
 
     @patch(_MT5_CONFIG)
     @patch(_RATES_FROM)
@@ -1916,6 +1917,16 @@ class TestFetchTicks(unittest.TestCase):
         self.assertTrue(result.get('success'))
         self.assertEqual(result['count'], 5)
         self.assertEqual(result.get('timezone'), 'UTC')
+
+    @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=ZoneInfo("America/Chicago"))
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_rows_include_client_timezone_label(self, mock_ctz, mock_info, mock_ticks):
+        mock_ticks.return_value = _make_ticks(10)
+        result = fetch_ticks('EURUSD', limit=5, format='rows')
+        self.assertTrue(result.get('success'))
+        self.assertEqual(result.get('timezone'), 'America/Chicago')
 
     @patch(f'{_DS}.FETCH_RETRY_DELAY', 0)
     @patch(f'{_DS}.FETCH_RETRY_ATTEMPTS', 1)

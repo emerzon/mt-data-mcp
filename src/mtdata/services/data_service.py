@@ -551,6 +551,14 @@ def _format_rate_times(epoch_series: pd.Series, *, use_client_tz: bool) -> pd.Se
     return formatted
 
 
+def _timezone_label(*, use_client_tz: bool, client_tz: Any) -> str:
+    if not use_client_tz:
+        return "UTC"
+    if client_tz is None:
+        return "local"
+    return getattr(client_tz, "key", None) or getattr(client_tz, "zone", None) or str(client_tz)
+
+
 def _build_rates_df(rates: Any, use_client_tz: bool) -> pd.DataFrame:
     """Normalize raw MT5 rates into a DataFrame with epoch and display time columns."""
     df = _rates_to_df(rates)
@@ -1432,8 +1440,7 @@ def fetch_candles(  # noqa: C901
             payload["meta"]["diagnostics"]["freshness"] = dict(freshness_diagnostics)
         if session_gap_warning:
             payload["meta"]["diagnostics"]["session_gaps"]["warning"] = session_gap_warning
-        if not _use_ctz:
-            payload["timezone"] = "UTC"
+        payload["timezone"] = _timezone_label(use_client_tz=_use_ctz, client_tz=client_tz)
         if simplify_meta is not None:
             payload["simplified"] = True
             payload["simplify"] = _public_simplify_meta(simplify_meta) or {"applied": True}
@@ -1945,12 +1952,7 @@ def fetch_ticks(  # noqa: C901
                 float(len(df_stats) / duration_seconds) if duration_seconds > 0 else None
             )
 
-            timezone = "UTC"
-            if _use_ctz:
-                try:
-                    timezone = str(client_tz)
-                except Exception:
-                    timezone = "local"
+            timezone = _timezone_label(use_client_tz=_use_ctz, client_tz=client_tz)
 
             out: Dict[str, Any] = {
                 "success": True,
@@ -2107,8 +2109,7 @@ def fetch_ticks(  # noqa: C901
                 "symbol": symbol,
                 "count": len(rows),
             })
-            if not _use_ctz:
-                payload["timezone"] = "UTC"
+            payload["timezone"] = _timezone_label(use_client_tz=_use_ctz, client_tz=client_tz)
             if has_flags:
                 payload["flags_legend"] = _observed_tick_flags_decoded(flags)
             if simplify_meta is not None and original_count > len(rows):
@@ -2221,8 +2222,7 @@ def fetch_ticks(  # noqa: C901
             "symbol": symbol,
             "count": len(rows),
         })
-        if not _use_ctz:
-            payload["timezone"] = "UTC"
+        payload["timezone"] = _timezone_label(use_client_tz=_use_ctz, client_tz=client_tz)
         if has_flags:
             payload["flags_legend"] = _observed_tick_flags_decoded(flags)
         if simplify_present and original_count > len(rows):
