@@ -111,18 +111,18 @@ _SYMBOL_DESCRIBE_COMPACT_DIRECT_FIELDS: tuple[str, ...] = (
     "currency_base",
     "currency_profit",
     "time",
-)
-
-_SYMBOL_DESCRIBE_COMPACT_RENAMED_FIELDS: tuple[tuple[str, str], ...] = (
-    ("digits", "price_precision"),
-    ("point", "point_size"),
-    ("trade_contract_size", "contract_size"),
-    ("trade_tick_size", "tick_size"),
-    ("trade_tick_value", "tick_value"),
-    ("volume_min", "min_volume"),
-    ("volume_max", "max_volume"),
-    ("volume_step", "volume_step"),
-    ("spread_float", "floating_spread"),
+    "digits",
+    "point",
+    "trade_contract_size",
+    "trade_tick_size",
+    "trade_tick_value",
+    "volume_min",
+    "volume_max",
+    "volume_step",
+    "spread_float",
+    "trade_mode",
+    "trade_mode_label",
+    "order_mode_labels",
 )
 
 
@@ -148,29 +148,6 @@ def _compact_symbol_describe_payload(symbol_data: Dict[str, Any]) -> Dict[str, A
     compact: Dict[str, Any] = {}
     for field in _SYMBOL_DESCRIBE_COMPACT_DIRECT_FIELDS:
         _copy_symbol_describe_field(compact, symbol_data, field)
-
-    for source, target in _SYMBOL_DESCRIBE_COMPACT_RENAMED_FIELDS:
-        if source not in symbol_data:
-            continue
-        value = symbol_data.get(source)
-        if value is not None:
-            compact[target] = value
-
-    trade_mode_label = _nonempty_symbol_string(symbol_data.get("trade_mode_label"))
-    if trade_mode_label:
-        compact["trade_mode"] = trade_mode_label
-
-    order_mode_labels = symbol_data.get("order_mode_labels")
-    if isinstance(order_mode_labels, list) and order_mode_labels:
-        compact["allowed_order_types"] = list(order_mode_labels)
-    else:
-        order_mode_label = _nonempty_symbol_string(symbol_data.get("order_mode_label"))
-        if order_mode_label:
-            compact["allowed_order_types"] = [
-                token.strip()
-                for token in order_mode_label.split(",")
-                if token.strip()
-            ]
 
     if "time_epoch" in symbol_data:
         compact["time_epoch"] = symbol_data["time_epoch"]
