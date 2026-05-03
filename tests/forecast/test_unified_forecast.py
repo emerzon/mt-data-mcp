@@ -191,8 +191,7 @@ class TestUnifiedForecast(unittest.TestCase):
             'close': np.linspace(100, 101, 30),
             'volume': np.ones(30) * 1000,
         })
-        with patch('mtdata.forecast.forecast._fetch_history', return_value=df), \
-             patch('mtdata.forecast.forecast_engine._fetch_history', return_value=df):
+        with patch('mtdata.forecast.forecast_engine._fetch_history', return_value=df):
             res = forecast(
                 symbol='X',
                 timeframe='H1',
