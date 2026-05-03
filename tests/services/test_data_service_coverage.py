@@ -654,6 +654,7 @@ class TestFetchCandles(unittest.TestCase):
         self.assertEqual(result['candles'], 5)
         self.assertEqual(result['symbol'], 'EURUSD')
         self.assertEqual(result['timeframe'], 'H1')
+        self.assertEqual(result['volume_type'], 'tick_count')
 
     @patch(_MT5_CONFIG)
     @patch(_RATES_FROM)
@@ -2333,6 +2334,21 @@ class TestEdgeCases(unittest.TestCase):
         row_keys = set(result['data'][0].keys())
         self.assertIn('tick_volume', row_keys)
         self.assertNotIn('open', row_keys)
+        self.assertEqual(result['volume_type'], 'tick_count')
+
+    @patch(_MT5_CONFIG)
+    @patch(_RATES_FROM)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=0)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_candles_real_volume_metadata(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_cfg):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        mock_from.return_value = _make_rates(10, real_vol=50)
+        result = fetch_candles('EURUSD', limit=5)
+        self.assertTrue(result.get('success'))
+        self.assertEqual(result['volume_type'], 'tick_count')
+        self.assertEqual(result['real_volume_type'], 'traded_volume')
 
     def test_build_rates_df_no_tick_volume(self):
         """DataFrame without tick_volume column doesn't crash."""

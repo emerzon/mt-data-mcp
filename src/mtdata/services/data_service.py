@@ -812,6 +812,15 @@ def _build_candle_headers(
     return headers
 
 
+def _candle_volume_metadata(headers: List[str]) -> Dict[str, str]:
+    meta: Dict[str, str] = {}
+    if "tick_volume" in headers:
+        meta["volume_type"] = "tick_count"
+    if "real_volume" in headers:
+        meta["real_volume_type"] = "traded_volume"
+    return meta
+
+
 def _validate_ohlcv_selection(ohlcv: Optional[str]) -> Optional[str]:
     if ohlcv is None or str(ohlcv).strip() == "":
         return None
@@ -1376,6 +1385,7 @@ def fetch_candles(  # noqa: C901
             "symbol": symbol,
             "timeframe": timeframe,
             "candles": candles_returned,
+            **_candle_volume_metadata(headers),
             "candles_requested": candles_requested,
             "candles_excluded": candles_excluded,
             "candle_counts": candle_counts,
