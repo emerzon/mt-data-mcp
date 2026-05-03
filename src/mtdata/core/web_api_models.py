@@ -7,19 +7,8 @@ from typing import Any, Dict, Literal, Optional
 from pydantic import BaseModel, Field, model_validator
 
 from ..forecast.requests import ForecastBacktestRequest, ForecastGenerateRequest
+from ..shared.schema import reject_removed_field
 from .output_contract import output_extras_shape_detail
-
-
-def _reject_removed_target(values: Any) -> Any:
-    if isinstance(values, dict) and "target" in values:
-        raise ValueError("target was removed; use quantity")
-    return values
-
-
-def _reject_removed_output_detail(values: Any) -> Any:
-    if isinstance(values, dict) and "detail" in values:
-        raise ValueError("detail was removed; use extras")
-    return values
 
 
 class ForecastPriceBody(BaseModel):
@@ -42,7 +31,11 @@ class ForecastPriceBody(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _reject_removed_fields(cls, values: Any) -> Any:
-        return _reject_removed_output_detail(_reject_removed_target(values))
+        return reject_removed_field(
+            reject_removed_field(values, field_name="target", replacement="quantity"),
+            field_name="detail",
+            replacement="extras",
+        )
 
     def to_domain_request(self) -> ForecastGenerateRequest:
         return ForecastGenerateRequest(
@@ -97,7 +90,11 @@ class BacktestBody(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _reject_removed_fields(cls, values: Any) -> Any:
-        return _reject_removed_output_detail(_reject_removed_target(values))
+        return reject_removed_field(
+            reject_removed_field(values, field_name="target", replacement="quantity"),
+            field_name="detail",
+            replacement="extras",
+        )
 
     def to_domain_request(self) -> ForecastBacktestRequest:
         return ForecastBacktestRequest(

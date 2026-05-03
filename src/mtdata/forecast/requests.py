@@ -10,17 +10,12 @@ from ..shared.schema import (
     DenoiseSpec,
     ForecastLibraryLiteral,
     TimeframeLiteral,
+    reject_removed_field,
 )
 from ..utils.barriers import (
     normalize_trade_direction,
     validate_barrier_unit_family_exclusivity,
 )
-
-
-def _reject_removed_field(values: Any, *, field_name: str, replacement: str) -> Any:
-    if isinstance(values, dict) and field_name in values:
-        raise ValueError(f"{field_name} was removed; use {replacement}")
-    return values
 
 
 def _normalize_trade_direction_alias(value: Optional[str]) -> Optional[str]:
@@ -61,7 +56,7 @@ class ForecastGenerateRequest(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _reject_removed_target(cls, values: Any) -> Any:
-        return _reject_removed_field(values, field_name="target", replacement="quantity")
+        return reject_removed_field(values, field_name="target", replacement="quantity")
 
 
 class ForecastBacktestRequest(BaseModel):
@@ -85,7 +80,7 @@ class ForecastBacktestRequest(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _reject_removed_target(cls, values: Any) -> Any:
-        return _reject_removed_field(values, field_name="target", replacement="quantity")
+        return reject_removed_field(values, field_name="target", replacement="quantity")
 
 
 class StrategyBacktestRequest(BaseModel):
@@ -210,7 +205,7 @@ class ForecastBarrierProbRequest(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _reject_removed_mc_method(cls, values: Any) -> Any:
-        return _reject_removed_field(values, field_name="mc_method", replacement="method")
+        return reject_removed_field(values, field_name="mc_method", replacement="method")
 
     @model_validator(mode="before")
     @classmethod
@@ -271,9 +266,9 @@ class ForecastBarrierOptimizeRequest(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _reject_removed_output(cls, values: Any) -> Any:
-        values = _reject_removed_field(values, field_name="output", replacement="extras")
-        values = _reject_removed_field(values, field_name="output_mode", replacement="extras")
-        return _reject_removed_field(values, field_name="format", replacement="json")
+        values = reject_removed_field(values, field_name="output", replacement="extras")
+        values = reject_removed_field(values, field_name="output_mode", replacement="extras")
+        return reject_removed_field(values, field_name="format", replacement="json")
 
     @field_validator("direction", mode="before")
     @classmethod

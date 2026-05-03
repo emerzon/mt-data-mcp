@@ -33,6 +33,13 @@ from .parameter_contracts import PARAMETER_HELP
 
 _logger = logging.getLogger(__name__)
 
+
+def reject_removed_field(values: Any, *, field_name: str, replacement: str) -> Any:
+    if isinstance(values, dict) and field_name in values:
+        raise ValueError(f"{field_name} was removed; use {replacement}")
+    return values
+
+
 PARAM_HINTS = {
     **PARAMETER_HELP,
     "direction": "Trade direction (long/short).",

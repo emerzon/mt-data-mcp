@@ -18,6 +18,7 @@ from ...shared.schema import (
     CompactStandardFullDetailLiteral,
     DenoiseSpec,
     IndicatorSpec,
+    reject_removed_field,
     SimplifySpec,
     TimeframeLiteral,
 )
@@ -29,11 +30,6 @@ _INDICATOR_FORMAT_HELP = (
     "compact specs like 'sma(20)' and 'macd(12,26,9)', or named specs like "
     "'rsi(length=14)' and 'macd(fast=12,slow=26,signal=9)'."
 )
-def _reject_removed_field(values: Any, *, field_name: str, replacement: str) -> Any:
-    if isinstance(values, dict) and field_name in values:
-        raise ValueError(f"{field_name} was removed; use {replacement}")
-    return values
-
 
 def _split_indicator_tokens(spec: str) -> List[str]:
     text = str(spec or "").strip()
@@ -372,8 +368,8 @@ class DataFetchTicksRequest(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _reject_removed_output(cls, values: Any) -> Any:
-        values = _reject_removed_field(values, field_name="output", replacement="json")
-        return _reject_removed_field(values, field_name="output_mode", replacement="extras")
+        values = reject_removed_field(values, field_name="output", replacement="json")
+        return reject_removed_field(values, field_name="output_mode", replacement="extras")
 
     @field_validator("detail", mode="before")
     @classmethod

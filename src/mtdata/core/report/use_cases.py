@@ -7,20 +7,10 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List
 
 from ..execution_logging import log_operation_exception, run_logged_operation
+from ..output_contract import normalize_output_detail
 from .requests import ReportGenerateRequest
 
 logger = logging.getLogger(__name__)
-
-
-def _normalize_report_detail(value: Any, *, default: str = "compact") -> str:
-    normalized = str(default if value is None else value).strip().lower()
-    if normalized in {"summary", "summary_only"}:
-        return "compact"
-    if normalized == "full":
-        return "full"
-    if normalized == "standard":
-        return "standard"
-    return "compact"
 
 
 def _report_time_label(value: Any) -> str | None:
@@ -196,7 +186,10 @@ def run_report_generate(  # noqa: C901
     append_diagnostic_warning: Any,
 ) -> str | Dict[str, Any]:
     template_name = (request.template or "basic").lower().strip()
-    detail_value = _normalize_report_detail(getattr(request, "detail", "compact"))
+    detail_value = normalize_output_detail(
+        getattr(request, "detail", "compact"),
+        aliases={"summary": "compact", "summary_only": "compact"},
+    )
 
     def _run() -> str | Dict[str, Any]:  # noqa: C901
         started_at = time.perf_counter()

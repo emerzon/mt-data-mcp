@@ -4,13 +4,12 @@ from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel, model_validator
 
-from ...shared.schema import CompactStandardFullDetailLiteral, DenoiseSpec, TimeframeLiteral
-
-
-def _reject_removed_field(values: Any, *, field_name: str, replacement: str) -> Any:
-    if isinstance(values, dict) and field_name in values:
-        raise ValueError(f"{field_name} was removed; use {replacement}")
-    return values
+from ...shared.schema import (
+    CompactStandardFullDetailLiteral,
+    DenoiseSpec,
+    TimeframeLiteral,
+    reject_removed_field,
+)
 
 
 class ReportGenerateRequest(BaseModel):
@@ -26,5 +25,5 @@ class ReportGenerateRequest(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _reject_removed_output(cls, values: Any) -> Any:
-        values = _reject_removed_field(values, field_name="output", replacement="json")
-        return _reject_removed_field(values, field_name="format", replacement="json")
+        values = reject_removed_field(values, field_name="output", replacement="json")
+        return reject_removed_field(values, field_name="format", replacement="json")
