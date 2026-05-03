@@ -317,7 +317,18 @@ def test_compact_support_resistance_payload_omits_fibonacci_until_standard_detai
     standard = standard_support_resistance_payload(result)
 
     assert "fibonacci" not in compact
+    assert "levels" not in compact
+    assert "coverage_gaps" not in compact
+    assert "zone_overlap" not in compact
+    assert "nearest" not in compact
+    assert compact["current_price"] == result["current_price"]
+    assert compact["supports"]
+    assert set(compact["supports"][0]).issubset(
+        {"type", "value", "distance_pct", "strength_rank"}
+    )
     assert "fibonacci" in standard
+    assert "levels" in standard
+    assert "nearest" in standard
     assert standard["fibonacci"]["nearest"]["support"]["type"] == "support"
 
 

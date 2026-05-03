@@ -2389,6 +2389,22 @@ def compact_support_resistance_level(level: Any) -> Optional[Dict[str, Any]]:
     for key in (
         "type",
         "value",
+        "distance_pct",
+        "strength_rank",
+    ):
+        value = level.get(key)
+        if value is not None:
+            out[str(key)] = value
+    return out or None
+
+
+def _standard_support_resistance_level(level: Any) -> Optional[Dict[str, Any]]:
+    if not isinstance(level, dict):
+        return None
+    out: Dict[str, Any] = {}
+    for key in (
+        "type",
+        "value",
         "distance",
         "distance_pct",
         "touches",
@@ -2421,12 +2437,17 @@ def compact_support_resistance_level(level: Any) -> Optional[Dict[str, Any]]:
     return out or None
 
 
-def _compact_support_resistance_levels(levels: Any) -> List[Dict[str, Any]]:
+def _compact_support_resistance_levels(
+    levels: Any,
+    *,
+    standard: bool = False,
+) -> List[Dict[str, Any]]:
     if not isinstance(levels, list):
         return []
+    formatter = _standard_support_resistance_level if standard else compact_support_resistance_level
     return [
         compacted
-        for compacted in (compact_support_resistance_level(level) for level in levels)
+        for compacted in (formatter(level) for level in levels)
         if compacted
     ]
 
@@ -2441,25 +2462,12 @@ def compact_support_resistance_payload(payload: Dict[str, Any]) -> Dict[str, Any
         "symbol",
         "timeframe",
         "mode",
-        "method",
         "current_price",
         "timeframes_analyzed",
-        "max_distance_pct",
-        "volume_weighting",
-        "volume_source",
     ):
         value = payload.get(key)
         if value is not None:
             out[str(key)] = value
-    volume_sources = payload.get("volume_sources")
-    if isinstance(volume_sources, list) and volume_sources:
-        out["volume_sources"] = list(volume_sources)
-
-    window = payload.get("window")
-    if isinstance(window, dict):
-        window_out = {str(k): v for k, v in window.items() if v is not None}
-        if window_out:
-            out["window"] = window_out
 
     supports = payload.get("supports")
     resistances = payload.get("resistances")
@@ -2473,38 +2481,16 @@ def compact_support_resistance_payload(payload: Dict[str, Any]) -> Dict[str, Any
             counts["total"] = sum(counts.values())
             out["level_counts"] = counts
 
-    nearest: Dict[str, Any] = {}
-    if isinstance(supports, list) and supports:
-        support_compact = compact_support_resistance_level(supports[0])
-        if support_compact:
-            nearest["support"] = support_compact
-    if isinstance(resistances, list) and resistances:
-        resistance_compact = compact_support_resistance_level(resistances[0])
-        if resistance_compact:
-            nearest["resistance"] = resistance_compact
-    if nearest:
-        out["nearest"] = nearest
-
-    levels = payload.get("levels")
-    compact_levels = _compact_support_resistance_levels(levels)
-    if compact_levels:
-        out["levels"] = compact_levels
+    support_levels = _compact_support_resistance_levels(supports)
+    if support_levels:
+        out["supports"] = support_levels
+    resistance_levels = _compact_support_resistance_levels(resistances)
+    if resistance_levels:
+        out["resistances"] = resistance_levels
 
     warnings = payload.get("warnings")
     if isinstance(warnings, list) and warnings:
         out["warnings"] = list(warnings)
-
-    coverage_gaps = payload.get("coverage_gaps")
-    if isinstance(coverage_gaps, dict) and coverage_gaps:
-        out["coverage_gaps"] = dict(coverage_gaps)
-
-    zone_overlap = payload.get("zone_overlap")
-    if isinstance(zone_overlap, dict) and zone_overlap:
-        out["zone_overlap"] = dict(zone_overlap)
-
-    meta = payload.get("meta")
-    if isinstance(meta, dict) and meta:
-        out["meta"] = dict(meta)
     return out or dict(payload)
 
 
@@ -2514,11 +2500,47 @@ def standard_support_resistance_payload(payload: Dict[str, Any]) -> Dict[str, An
 
     out = compact_support_resistance_payload(payload)
 
-    supports = _compact_support_resistance_levels(payload.get("supports"))
+    for key in (
+        "method",
+        "max_distance_pct",
+        "volume_weighting",
+        "volume_source",
+        "coverage_gaps",
+        "zone_overlap",
+        "meta",
+        "window",
+    ):
+        value = payload.get(key)
+        if value not in (None, {}, []):
+            out[key] = value
+
+    volume_sources = payload.get("volume_sources")
+    if isinstance(volume_sources, list) and volume_sources:
+        out["volume_sources"] = list(volume_sources)
+
+    levels = _compact_support_resistance_levels(payload.get("levels"), standard=True)
+    if levels:
+        out["levels"] = levels
+
+    nearest: Dict[str, Any] = {}
+    raw_supports = payload.get("supports")
+    raw_resistances = payload.get("resistances")
+    if isinstance(raw_supports, list) and raw_supports:
+        support_compact = _standard_support_resistance_level(raw_supports[0])
+        if support_compact:
+            nearest["support"] = support_compact
+    if isinstance(raw_resistances, list) and raw_resistances:
+        resistance_compact = _standard_support_resistance_level(raw_resistances[0])
+        if resistance_compact:
+            nearest["resistance"] = resistance_compact
+    if nearest:
+        out["nearest"] = nearest
+
+    supports = _compact_support_resistance_levels(payload.get("supports"), standard=True)
     if supports:
         out["supports"] = supports
 
-    resistances = _compact_support_resistance_levels(payload.get("resistances"))
+    resistances = _compact_support_resistance_levels(payload.get("resistances"), standard=True)
     if resistances:
         out["resistances"] = resistances
 
