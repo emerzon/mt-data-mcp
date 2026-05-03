@@ -36,6 +36,7 @@ logs/
 # IDE/Editor settings
 .vscode/
 .idea/
+.swival/
 
 # OS files
 .DS_Store
