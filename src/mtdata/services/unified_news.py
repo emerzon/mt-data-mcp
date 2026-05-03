@@ -948,7 +948,7 @@ def _has_snapshot_context_evidence(ticker: str, label: str, context: InstrumentC
     return False
 
 
-def _cosine_similarity(lhs_tokens: Iterable[str], rhs_tokens: Iterable[str]) -> float:
+def _token_cosine_similarity(lhs_tokens: Iterable[str], rhs_tokens: Iterable[str]) -> float:
     lhs = Counter(lhs_tokens)
     rhs = Counter(rhs_tokens)
     if not lhs or not rhs:
@@ -1067,7 +1067,7 @@ def _score_relevance(item: NewsItem, context: InstrumentContext) -> tuple[float,
             score += 0.5
             matched_terms.append(term_norm)
 
-    similarity = _cosine_similarity(_tokenize(" ".join(context.terms)), tokens)
+    similarity = _token_cosine_similarity(_tokenize(" ".join(context.terms)), tokens)
     score += similarity * 2.0
 
     matched_terms = _unique_preserve_order(matched_terms)

@@ -3,7 +3,7 @@ from __future__ import annotations
 from mtdata.bootstrap.settings import news_embeddings_config
 from mtdata.services.news_embeddings import (
     NewsEmbeddingService,
-    _cosine_similarity,
+    _embedding_cosine_similarity,
     format_document_text,
     format_query_text,
 )
@@ -100,4 +100,4 @@ def test_embedding_service_caches_vectors(monkeypatch) -> None:
 
 
 def test_cosine_similarity_returns_zero_for_mismatched_lengths() -> None:
-    assert _cosine_similarity([1.0], [1.0, 2.0]) == 0.0
+    assert _embedding_cosine_similarity([1.0], [1.0, 2.0]) == 0.0

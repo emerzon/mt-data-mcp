@@ -34,7 +34,7 @@ def _normalize_text_key(value: str) -> str:
     return " ".join(value.strip().split())
 
 
-def _cosine_similarity(lhs: Sequence[float], rhs: Sequence[float]) -> float:
+def _embedding_cosine_similarity(lhs: Sequence[float], rhs: Sequence[float]) -> float:
     if not lhs or not rhs or len(lhs) != len(rhs):
         return 0.0
     dot = 0.0
@@ -156,7 +156,10 @@ class NewsEmbeddingService:
             document_embedding = self._get_document_embedding(document_text)
             if document_embedding is None:
                 continue
-            scores[item.dedupe_key()] = _cosine_similarity(query_embedding, document_embedding)
+            scores[item.dedupe_key()] = _embedding_cosine_similarity(
+                query_embedding,
+                document_embedding,
+            )
         return scores
 
     def _ensure_model(self) -> Any:
