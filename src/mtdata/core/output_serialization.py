@@ -10,7 +10,7 @@ _JSON_UNSET = object()
 
 def json_default(value: Any) -> Any:
     """Default JSON conversion shared by final presentation/transport layers."""
-    return sanitize_json_compat(value)
+    return sanitize_json(value)
 
 
 def _json_special_value(value: Any) -> Any:
@@ -33,7 +33,7 @@ def _json_special_value(value: Any) -> Any:
         import numpy as np  # type: ignore
 
         if isinstance(value, np.ndarray):
-            return [sanitize_json_compat(v) for v in value.tolist()]
+            return [sanitize_json(v) for v in value.tolist()]
         if isinstance(value, np.integer):
             return int(value.item())
         if isinstance(value, np.bool_):
@@ -47,26 +47,26 @@ def _json_special_value(value: Any) -> Any:
     return _JSON_UNSET
 
 
-def sanitize_json_compat(value: Any) -> Any:
+def sanitize_json(value: Any) -> Any:
     """Return a JSON-compatible presentation copy without requiring CLI imports."""
     if value is None or isinstance(value, (str, int, bool)):
         return value
     if isinstance(value, float):
         return value if math.isfinite(value) else None
     if isinstance(value, dict):
-        return {str(k): sanitize_json_compat(v) for k, v in value.items()}
+        return {str(k): sanitize_json(v) for k, v in value.items()}
     asdict = getattr(value, "_asdict", None)
     if callable(asdict):
         try:
-            return sanitize_json_compat(asdict())
+            return sanitize_json(asdict())
         except Exception:
             pass
     if isinstance(value, (list, tuple, set)):
-        return [sanitize_json_compat(v) for v in value]
+        return [sanitize_json(v) for v in value]
     if isinstance(value, types.GeneratorType):
-        return [sanitize_json_compat(v) for v in value]
+        return [sanitize_json(v) for v in value]
     if isinstance(value, range):
-        return [sanitize_json_compat(v) for v in value]
+        return [sanitize_json(v) for v in value]
     special_value = _json_special_value(value)
     if special_value is not _JSON_UNSET:
         return special_value

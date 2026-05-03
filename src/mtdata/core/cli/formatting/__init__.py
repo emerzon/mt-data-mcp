@@ -8,7 +8,7 @@ from ....utils.minimal_output import format_result_minimal as _shared_minimal
 from ...mt5_gateway import create_mt5_gateway
 from ...output_contract import apply_output_verbosity
 from ...output_serialization import json_default as _json_default
-from ...output_serialization import sanitize_json_compat as _sanitize_json_compat
+from ...output_serialization import sanitize_json as _sanitize_json
 from ...runtime_metadata import _safe_tz_name as _runtime_safe_tz_name
 from ...runtime_metadata import build_runtime_timezone_meta
 
@@ -60,7 +60,7 @@ def _format_result_for_cli(
     )
     if fmt_s == CLI_FORMAT_JSON:
         payload = {"text": prepared} if isinstance(prepared, str) else prepared
-        payload = _sanitize_json_compat(payload)
+        payload = _sanitize_json(payload)
         return json.dumps(payload, ensure_ascii=False, indent=2, allow_nan=False, default=_json_default)
     if isinstance(prepared, str):
         return prepared
