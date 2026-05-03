@@ -181,23 +181,6 @@ def _resolve_client_tz(_: object = None):
     except Exception:
         return None
 
-def _time_format_from_epochs(epochs: List[float]) -> str:
-    """Return the normalized display format regardless of epoch contents."""
-    return TIME_DISPLAY_FORMAT
-
-def _maybe_strip_year(fmt: str, epochs: List[float]) -> str:
-    """No-op when normalization is requested; keep full year for consistency."""
-    return fmt
-
-def _style_time_format(fmt: str) -> str:
-    """No special styling; keep normalized spacing."""
-    try:
-        if 'T' in fmt:
-            return fmt.replace('T', ' ')
-    except Exception:
-        pass
-    return fmt
-
 def _optimal_decimals(
     values: List[float],
     rel_tol: float = PRECISION_REL_TOL,

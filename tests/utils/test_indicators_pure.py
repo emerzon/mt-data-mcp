@@ -56,13 +56,10 @@ from mtdata.utils.utils import (
     _format_float,
     _format_numeric_rows_from_df,
     _format_time_minimal,
-    _maybe_strip_year,
     _normalize_limit,
     _normalize_ohlcv_arg,
     _parse_start_datetime,
-    _style_time_format,
     _table_from_rows,
-    _time_format_from_epochs,
     _utc_epoch_seconds,
     align_finite,
     parse_kv_or_json,
@@ -713,27 +710,6 @@ class TestFormatTimeMinimal:
         # 2020-01-01 00:00 UTC = 1577836800
         result = _format_time_minimal(1577836800)
         assert result == "2020-01-01 00:00"
-
-
-class TestStyleTimeFormat:
-    def test_replaces_T(self):
-        assert _style_time_format("%Y-%m-%dT%H:%M") == "%Y-%m-%d %H:%M"
-
-    def test_no_T(self):
-        fmt = "%Y-%m-%d %H:%M"
-        assert _style_time_format(fmt) == fmt
-
-
-class TestTimeFormatFromEpochs:
-    def test_returns_constant(self):
-        assert _time_format_from_epochs([0, 100]) == "%Y-%m-%d %H:%M"
-
-
-class TestMaybeStripYear:
-    def test_noop(self):
-        fmt = "%Y-%m-%d %H:%M"
-        assert _maybe_strip_year(fmt, [0]) == fmt
-
 
 class TestParseKvOrJson:
     def test_none(self):

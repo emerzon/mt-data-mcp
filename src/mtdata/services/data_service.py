@@ -75,13 +75,10 @@ from ..utils.utils import (
     _format_numeric_rows_from_df,
     _format_time_minimal,
     _format_time_minimal_local,
-    _maybe_strip_year,
     _normalize_ohlcv_arg,
     _parse_start_datetime,
     _resolve_client_tz,
-    _style_time_format,
     _table_from_rows,
-    _time_format_from_epochs,
     _utc_epoch_seconds,
 )
 
@@ -1824,15 +1821,13 @@ def fetch_ticks(  # noqa: C901
             headers.append("flags")
             headers.append("flags_decoded")
 
-        # Choose a consistent time format for all rows (strip year if constant).
+        # Choose a consistent time format for all rows.
         # Low-level tick fetch helpers already normalize MT5 times to UTC.
         client_tz = _resolve_client_tz()
         _use_ctz = client_tz is not None
         fmt: Optional[str] = None
         if not _use_ctz:
-            fmt = _time_format_from_epochs(_epochs)
-            fmt = _maybe_strip_year(fmt, _epochs)
-            fmt = _style_time_format(fmt)
+            fmt = TIME_DISPLAY_FORMAT
 
         def _format_tick_time(epoch: float) -> str:
             if _use_ctz:

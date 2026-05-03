@@ -9,13 +9,10 @@ import pytest
 from mtdata.utils.utils import (
     _coerce_scalar,
     _format_time_minimal,
-    _maybe_strip_year,
     _normalize_limit,
     _normalize_ohlcv_arg,
     _safe_float,
-    _style_time_format,
     _table_from_rows,
-    _time_format_from_epochs,
     _utc_epoch_seconds,
     align_finite,
     to_float_np,
@@ -168,24 +165,6 @@ class TestFormatTimeMinimal:
     def test_known_timestamp(self):
         result = _format_time_minimal(1704067200)  # 2024-01-01 00:00 UTC
         assert "2024-01-01" in result
-
-
-class TestTimeFormatHelpers:
-    def test_time_format_from_epochs(self):
-        result = _time_format_from_epochs([1.0, 2.0])
-        assert "%" in result
-
-    def test_maybe_strip_year_noop(self):
-        fmt = "%Y-%m-%d %H:%M"
-        assert _maybe_strip_year(fmt, [1.0]) == fmt
-
-    def test_style_time_format_with_t(self):
-        assert _style_time_format("%Y-%m-%dT%H:%M") == "%Y-%m-%d %H:%M"
-
-    def test_style_time_format_without_t(self):
-        fmt = "%Y-%m-%d %H:%M"
-        assert _style_time_format(fmt) == fmt
-
 
 class TestToFloatNp:
     def test_list_of_ints(self):

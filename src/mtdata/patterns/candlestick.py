@@ -17,14 +17,11 @@ from ..core.patterns_support import (
     _round_value,
     _volume_window_mean,
 )
-from ..shared.constants import TIMEFRAME_SECONDS
+from ..shared.constants import TIME_DISPLAY_FORMAT, TIMEFRAME_SECONDS
 from ..shared.validators import invalid_timeframe_error
 from ..utils.utils import (
     _format_time_minimal_local,
-    _maybe_strip_year,
-    _style_time_format,
     _table_from_rows,
-    _time_format_from_epochs,
     _use_client_tz,
 )
 from .common import data_quality_warnings, should_drop_last_live_bar
@@ -643,16 +640,13 @@ def detect_candlestick_patterns(  # noqa: C901
         symbol=symbol,
         timeframe_seconds=float(TIMEFRAME_SECONDS.get(timeframe, 0) or 0),
     )
-    epochs = [float(t) for t in df["time"].tolist()] if "time" in df.columns else []
     _use_ctz = _use_client_tz()
     if _use_ctz:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             df["time"] = df["time"].apply(_format_time_minimal_local)
     else:
-        time_fmt = _time_format_from_epochs(epochs) if epochs else "%Y-%m-%d %H:%M"
-        time_fmt = _maybe_strip_year(time_fmt, epochs)
-        time_fmt = _style_time_format(time_fmt)
+        time_fmt = TIME_DISPLAY_FORMAT
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             df["time"] = df["time"].apply(
