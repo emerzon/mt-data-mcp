@@ -274,8 +274,8 @@ class TestToServerTimeNaive:
         dt = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
         result = _to_server_time_naive(dt)
         assert result.tzinfo is None
-        # Should convert to UTC first (12:00 +5 = 07:00 UTC), then add offset 0
-        assert result == datetime(2024, 1, 1, 7, 0, 0)
+        # With no configured server timezone/offset, aware input is normalized to UTC.
+        assert result == datetime(2024, 1, 1, 12, 0, 0)
 
 
 # ===================================================================
