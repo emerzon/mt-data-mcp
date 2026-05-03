@@ -178,6 +178,7 @@ def _run_data_fetch_candles_impl(
         _prune_zero_candle_exclusions(result)
         if detail_mode == "compact":
             result = _compact_candles_payload(result)
+            _drop_redundant_session_gap_warnings(result)
         elif detail_mode == "standard":
             result = _standard_candles_payload(result)
     if isinstance(result, dict) and isinstance(result.get("data"), list):
@@ -248,6 +249,29 @@ def _public_candle_diagnostics(result: Dict[str, Any]) -> Dict[str, Any]:
             if freshness.get(key) is not None:
                 public[key] = freshness[key]
     return public
+
+
+def _drop_redundant_session_gap_warnings(result: Dict[str, Any]) -> None:
+    if not result.get("session_gaps"):
+        return
+    warnings = result.get("warnings")
+    if not isinstance(warnings, list):
+        return
+    filtered = [
+        warning
+        for warning in warnings
+        if not (
+            isinstance(warning, str)
+            and (
+                warning.startswith("Detected session gaps larger than expected bar spacing")
+                or warning.startswith("Example gap:")
+            )
+        )
+    ]
+    if filtered:
+        result["warnings"] = filtered
+    else:
+        result.pop("warnings", None)
 
 
 def _prune_zero_candle_exclusions(result: Dict[str, Any]) -> None:

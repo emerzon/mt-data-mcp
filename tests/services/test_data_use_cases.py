@@ -225,6 +225,68 @@ def test_run_data_fetch_candles_standard_keeps_public_diagnostics_only():
     assert "cache_status" not in result
 
 
+def test_run_data_fetch_candles_compact_drops_redundant_session_gap_warnings():
+    request = DataFetchCandlesRequest(symbol="EURUSD", timeframe="H1", limit=5)
+    session_gap = {
+        "from": "2026-05-01 20:00",
+        "to": "2026-05-03 21:00",
+        "gap_seconds": 176400.0,
+        "expected_bar_seconds": 3600.0,
+        "missing_bars_est": 48,
+        "context": "weekend/session break",
+    }
+
+    result = run_data_fetch_candles(
+        request,
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_candles_impl=lambda **kwargs: {
+            "success": True,
+            "symbol": "EURUSD",
+            "timeframe": "H1",
+            "candles": 5,
+            "data": [],
+            "session_gaps": [session_gap],
+            "warnings": [
+                "Detected session gaps larger than expected bar spacing (3600s).",
+                "Example gap: 2026-05-01 20:00 -> 2026-05-03 21:00 (48 missing bars, likely weekend/session break).",
+                "Other warning",
+            ],
+        },
+    )
+
+    assert result["session_gaps"] == [session_gap]
+    assert result["warnings"] == ["Other warning"]
+
+
+def test_run_data_fetch_candles_standard_keeps_session_gap_warnings():
+    request = DataFetchCandlesRequest(
+        symbol="EURUSD",
+        timeframe="H1",
+        limit=5,
+        detail="standard",
+    )
+    warnings = [
+        "Detected session gaps larger than expected bar spacing (3600s).",
+        "Example gap: 2026-05-01 20:00 -> 2026-05-03 21:00 (48 missing bars, likely weekend/session break).",
+    ]
+
+    result = run_data_fetch_candles(
+        request,
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_candles_impl=lambda **kwargs: {
+            "success": True,
+            "symbol": "EURUSD",
+            "timeframe": "H1",
+            "candles": 5,
+            "data": [],
+            "session_gaps": [{"missing_bars_est": 48}],
+            "warnings": list(warnings),
+        },
+    )
+
+    assert result["warnings"] == warnings
+
+
 def test_run_data_fetch_candles_compact_keeps_anomaly_metadata():
     request = DataFetchCandlesRequest(symbol="EURUSD", timeframe="H1", limit=5)
 
