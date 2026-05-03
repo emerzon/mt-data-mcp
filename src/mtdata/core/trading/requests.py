@@ -5,6 +5,7 @@ from typing import Annotated, Literal, Optional, Union
 from pydantic import AliasChoices, BaseModel, BeforeValidator, Field, field_validator
 
 from ...shared.schema import CompactFullDetailLiteral, TimeframeLiteral
+from ...utils.barriers import normalize_trade_direction
 from .time import ExpirationValue
 from . import validation
 from .validation import OrderTypeInput
@@ -22,10 +23,9 @@ def _normalize_trade_side_alias(value: Optional[str]) -> Optional[str]:
 def _normalize_trade_direction_alias(value: Optional[str]) -> Optional[str]:
     if value is None:
         return None
-    text = str(value)
-    normalized = text.strip().lower()
-    if normalized in {"long", "short", "buy", "sell", "up", "down"}:
-        return "long" if normalized in {"long", "buy", "up"} else "short"
+    normalized, error = normalize_trade_direction(value)
+    if error is None and normalized is not None:
+        return normalized
     return value
 
 
