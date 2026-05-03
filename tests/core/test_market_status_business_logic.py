@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from inspect import signature
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
@@ -169,6 +169,104 @@ def test_market_status_symbol_mode_blocks_weekend_opening(monkeypatch) -> None:
     assert result["can_open_new_positions"] is False
     assert result["trade_mode_allows_opening"] is True
     assert "message" not in result
+
+
+def test_market_status_symbol_mode_allows_crypto_on_weekend(monkeypatch) -> None:
+    raw = _unwrap(market_status_mod.market_status)
+    fixed_now = datetime(2026, 4, 25, 3, 14, tzinfo=timezone.utc)
+    now_epoch = fixed_now.timestamp()
+
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            if tz is None:
+                return fixed_now.replace(tzinfo=None)
+            return fixed_now.astimezone(tz)
+
+    class Gateway:
+        SYMBOL_TRADE_MODE_FULL = 4
+        SYMBOL_TRADE_MODE_DISABLED = 0
+        SYMBOL_TRADE_MODE_CLOSEONLY = 3
+        SYMBOL_TRADE_MODE_LONGONLY = 1
+        SYMBOL_TRADE_MODE_SHORTONLY = 2
+
+        def ensure_connection(self) -> None:
+            return None
+
+        def symbol_info(self, symbol: str):
+            assert symbol == "BTCUSD"
+            return SimpleNamespace(name=symbol, visible=True, trade_mode=4)
+
+        def symbol_info_tick(self, symbol: str):
+            assert symbol == "BTCUSD"
+            return SimpleNamespace(time=now_epoch - 60, bid=65000.0, ask=65001.0)
+
+    monkeypatch.setattr(market_status_mod, "datetime", FixedDateTime)
+    monkeypatch.setattr(market_status_mod, "create_mt5_gateway", lambda **kwargs: Gateway())
+
+    result = raw(symbol="BTCUSD")
+
+    assert result["status"] == "probably_open"
+    assert result["can_open_new_positions"] is True
+    assert result["trade_mode_allows_opening"] is True
+    assert "reason" not in result
+    assert result["tick_freshness"] == "fresh"
+
+
+def test_market_status_symbol_mode_uses_recent_candles_for_weekend_session(
+    monkeypatch,
+) -> None:
+    raw = _unwrap(market_status_mod.market_status)
+    fixed_now = datetime(2026, 4, 25, 3, 14, tzinfo=timezone.utc)
+    now_epoch = fixed_now.timestamp()
+    previous_week_same_hour = fixed_now - timedelta(days=7)
+
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            if tz is None:
+                return fixed_now.replace(tzinfo=None)
+            return fixed_now.astimezone(tz)
+
+    class Gateway:
+        TIMEFRAME_M1 = 1
+        SYMBOL_TRADE_MODE_FULL = 4
+        SYMBOL_TRADE_MODE_DISABLED = 0
+        SYMBOL_TRADE_MODE_CLOSEONLY = 3
+        SYMBOL_TRADE_MODE_LONGONLY = 1
+        SYMBOL_TRADE_MODE_SHORTONLY = 2
+
+        def ensure_connection(self) -> None:
+            return None
+
+        def symbol_info(self, symbol: str):
+            assert symbol == "XAUUSD"
+            return SimpleNamespace(name=symbol, visible=True, trade_mode=4)
+
+        def symbol_info_tick(self, symbol: str):
+            assert symbol == "XAUUSD"
+            return SimpleNamespace(time=now_epoch - 60, bid=2400.0, ask=2400.5)
+
+        def copy_rates_range(self, symbol: str, timeframe: int, start, end):
+            assert symbol == "XAUUSD"
+            assert timeframe == self.TIMEFRAME_M1
+            assert start < end
+            return [{"time": previous_week_same_hour.timestamp()}]
+
+    monkeypatch.setattr(market_status_mod, "datetime", FixedDateTime)
+    monkeypatch.setattr(market_status_mod, "create_mt5_gateway", lambda **kwargs: Gateway())
+
+    result = raw(symbol="XAUUSD", detail="full")
+
+    assert result["status"] == "probably_open"
+    assert result["can_open_new_positions"] is True
+    assert result["current_time_in_recent_session"] is True
+    assert result["trades_on_weekends"] is True
+    assert result["schedule_source"] == "recent_m1_candles"
+    assert result["inferred_schedule"]["active_hours_utc"] == {
+        "saturday": ["03:00-04:00"]
+    }
+    assert "reason" not in result
 
 
 def test_market_status_symbol_mode_full_includes_diagnostics(monkeypatch) -> None:

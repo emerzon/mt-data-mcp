@@ -3,21 +3,35 @@
 from __future__ import annotations
 
 import logging
+import math
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
 import holidays
 
+from ..shared.schema import CompactFullDetailLiteral
+from ..shared.symbols import is_probably_crypto_symbol
 from ..utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise
 from ..utils.mt5_enums import decode_mt5_enum_label
-from ..shared.schema import CompactFullDetailLiteral
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway
 from .output_contract import normalize_output_verbosity_detail
 
 logger = logging.getLogger(__name__)
+
+_SYMBOL_SCHEDULE_LOOKBACK_DAYS = 7
+_M1_TIMEFRAME_FALLBACK = 1
+_WEEKDAY_NAMES = (
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+    "sunday",
+)
 
 
 # Market definitions with trading hours (local time)
@@ -613,6 +627,132 @@ def _symbol_tick_snapshot(tick: Any, *, now_utc: datetime) -> Dict[str, Any]:
     return out
 
 
+def _rate_epoch_seconds(row: Any) -> Optional[float]:
+    value = None
+    if isinstance(row, dict):
+        value = row.get("time")
+    else:
+        try:
+            value = row["time"]
+        except (IndexError, KeyError, TypeError, ValueError):
+            value = getattr(row, "time", None)
+
+    try:
+        epoch = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(epoch):
+        return None
+    return epoch
+
+
+def _hour_ranges(hours: List[int]) -> List[str]:
+    normalized = sorted({int(hour) for hour in hours if 0 <= int(hour) <= 23})
+    if not normalized:
+        return []
+
+    ranges: List[str] = []
+    start = normalized[0]
+    previous = normalized[0]
+    for hour in normalized[1:]:
+        if hour == previous + 1:
+            previous = hour
+            continue
+        ranges.append(f"{start:02d}:00-{previous + 1:02d}:00")
+        start = previous = hour
+    ranges.append(f"{start:02d}:00-{previous + 1:02d}:00")
+    return ranges
+
+
+def _infer_symbol_schedule_from_recent_candles(
+    symbol: str,
+    gateway: Any,
+    *,
+    now_utc: datetime,
+) -> Dict[str, Any]:
+    lookback_days = _SYMBOL_SCHEDULE_LOOKBACK_DAYS
+    base: Dict[str, Any] = {
+        "source": "recent_m1_candles",
+        "lookback_days": lookback_days,
+        "timeframe": "M1",
+    }
+    timeframe = getattr(gateway, "TIMEFRAME_M1", _M1_TIMEFRAME_FALLBACK)
+    start_utc = now_utc - timedelta(days=lookback_days)
+
+    try:
+        rates = gateway.copy_rates_range(symbol, timeframe, start_utc, now_utc)
+    except Exception as exc:
+        logger.warning("Failed to infer market schedule for %s from candles: %s", symbol, exc)
+        return {
+            **base,
+            "confidence": "unavailable",
+            "candles_analyzed": 0,
+            "error": str(exc),
+        }
+
+    if rates is None or len(rates) == 0:
+        return {
+            **base,
+            "confidence": "unavailable",
+            "candles_analyzed": 0,
+        }
+
+    slots: set[Tuple[int, int]] = set()
+    active_weekdays: set[int] = set()
+    weekend_candles = 0
+    candle_count = 0
+    for row in rates:
+        epoch = _rate_epoch_seconds(row)
+        if epoch is None:
+            continue
+        try:
+            candle_time = datetime.fromtimestamp(epoch, tz=timezone.utc)
+        except (OSError, OverflowError, ValueError):
+            continue
+        candle_count += 1
+        weekday = candle_time.weekday()
+        hour = candle_time.hour
+        slots.add((weekday, hour))
+        active_weekdays.add(weekday)
+        if weekday >= 5:
+            weekend_candles += 1
+
+    if candle_count == 0:
+        return {
+            **base,
+            "confidence": "unavailable",
+            "candles_analyzed": 0,
+        }
+
+    current_slot = (now_utc.weekday(), now_utc.hour)
+    active_hours_by_day: Dict[str, List[str]] = {}
+    for weekday in sorted(active_weekdays):
+        hours = [hour for day, hour in slots if day == weekday]
+        active_hours_by_day[_WEEKDAY_NAMES[weekday]] = _hour_ranges(hours)
+
+    active_slot_count = len(slots)
+    active_hour_coverage = active_slot_count / (7 * 24)
+    inferred_24_7 = active_hour_coverage >= 0.90 and all(
+        weekday in active_weekdays for weekday in range(7)
+    )
+    confidence = "medium" if candle_count >= 20 and active_slot_count >= 2 else "low"
+    if inferred_24_7 and candle_count >= 100:
+        confidence = "high"
+
+    return {
+        **base,
+        "confidence": confidence,
+        "candles_analyzed": candle_count,
+        "active_weekdays": [_WEEKDAY_NAMES[weekday] for weekday in sorted(active_weekdays)],
+        "active_hours_utc": active_hours_by_day,
+        "active_hour_coverage": round(active_hour_coverage, 3),
+        "trades_on_weekends": weekend_candles > 0,
+        "weekend_candles": weekend_candles,
+        "current_time_in_active_session": current_slot in slots,
+        "inferred_24_7": inferred_24_7,
+    }
+
+
 def _check_symbol_market_status(
     symbol: str,
     *,
@@ -640,12 +780,26 @@ def _check_symbol_market_status(
     mode_status = _symbol_trade_mode_status(mt5_gateway, trade_mode)
     tick = mt5_gateway.symbol_info_tick(symbol_name)
     tick_status = _symbol_tick_snapshot(tick, now_utc=now_utc)
+    schedule_status = _infer_symbol_schedule_from_recent_candles(
+        symbol_name,
+        mt5_gateway,
+        now_utc=now_utc,
+    )
 
     trade_mode_can_open = mode_status["can_open_new_positions"]
     can_open = trade_mode_can_open
     tick_freshness = tick_status.get("tick_freshness")
     reason = None
-    if can_open is True and now_utc.weekday() >= 5:
+    is_crypto_symbol = is_probably_crypto_symbol(symbol_name)
+    recent_schedule_allows_now = (
+        schedule_status.get("current_time_in_active_session") is True
+    )
+    if (
+        can_open is True
+        and now_utc.weekday() >= 5
+        and not is_crypto_symbol
+        and not recent_schedule_allows_now
+    ):
         open_state = "weekend_closed"
         can_open = False
         reason = "weekend"
@@ -680,6 +834,13 @@ def _check_symbol_market_status(
         "trade_mode_allows_opening": trade_mode_can_open,
         "trade_mode_label": mode_status.get("trade_mode_label"),
         "tick_freshness": tick_freshness,
+        "schedule_source": schedule_status["source"],
+        "schedule_confidence": schedule_status["confidence"],
+        "current_time_in_recent_session": schedule_status.get(
+            "current_time_in_active_session"
+        ),
+        "trades_on_weekends": schedule_status.get("trades_on_weekends"),
+        "inferred_24_7": schedule_status.get("inferred_24_7"),
         "message": message,
         "timestamp": now_utc.isoformat(),
     }
@@ -703,6 +864,7 @@ def _check_symbol_market_status(
             if getattr(info, key, None) is not None
         }
         result["tick"] = tick_status
+        result["inferred_schedule"] = schedule_status
     else:
         result.pop("message", None)
         for key in ("tick_available", "last_tick_time", "last_tick_age_seconds"):
