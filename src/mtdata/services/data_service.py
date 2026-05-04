@@ -1949,25 +1949,66 @@ def fetch_ticks(  # noqa: C901
             else SIMPLIFY_DEFAULT_MODE
         )
 
-        df_ticks: Optional[pd.DataFrame] = None
-        if output_mode in ("summary", "stats") or (
-            simplify_present and simplify_mode in ("approximate", "resample")
-        ):
-            df_ticks = pd.DataFrame({
-                "__epoch": _epochs,
-                "bid": bids,
-                "ask": asks,
-            })
-            if has_last:
-                df_ticks["last"] = lasts
-            if has_volume:
-                df_ticks["volume"] = volumes
-            if has_flags:
-                df_ticks["flags"] = flags
-                df_ticks["flags_decoded"] = [
-                    _decode_tick_flags(flag_value) for flag_value in flags
-                ]
-            df_ticks["time"] = [_format_tick_time(e) for e in _epochs]
+        df_ticks = pd.DataFrame({
+            "__epoch": _epochs,
+            "bid": bids,
+            "ask": asks,
+        })
+        if has_last:
+            df_ticks["last"] = lasts
+        if has_volume:
+            df_ticks["volume"] = volumes
+        if has_flags:
+            df_ticks["flags"] = flags
+            df_ticks["flags_decoded"] = [
+                _decode_tick_flags(flag_value) for flag_value in flags
+            ]
+        df_ticks["time"] = [_format_tick_time(e) for e in _epochs]
+
+        def _compact_summary_from_ticks() -> Dict[str, Any]:
+            df_stats = df_ticks.copy()
+            df_stats["mid"] = (df_stats["bid"] + df_stats["ask"]) / 2.0
+            df_stats["spread"] = df_stats["ask"] - df_stats["bid"]
+            start_epoch = float(df_stats["__epoch"].iloc[0])
+            end_epoch = float(df_stats["__epoch"].iloc[-1])
+            duration_seconds = float(max(0.0, end_epoch - start_epoch))
+            tick_rate_per_second = (
+                float(len(df_stats) / duration_seconds) if duration_seconds > 0 else None
+            )
+            spread = pd.to_numeric(df_stats["spread"], errors="coerce").dropna()
+            out: Dict[str, Any] = {
+                "success": True,
+                "symbol": symbol,
+                "count": int(len(df_stats)),
+                "start": str(df_stats["time"].iloc[0]),
+                "end": str(df_stats["time"].iloc[-1]),
+                "duration_seconds": duration_seconds,
+                "tick_rate_per_second": tick_rate_per_second,
+                "timezone": _timezone_label(use_client_tz=_use_ctz, client_tz=client_tz),
+                "stats": {
+                    "spread": {
+                        "low": float(spread.min()),
+                        "high": float(spread.max()),
+                        "mean": float(spread.mean()),
+                    }
+                },
+                "last_quote": {
+                    "bid": float(df_stats["bid"].iloc[-1]),
+                    "ask": float(df_stats["ask"].iloc[-1]),
+                    "mid": float(df_stats["mid"].iloc[-1]),
+                    "spread": float(df_stats["spread"].iloc[-1]),
+                },
+            }
+            if price_digits > 0:
+                out["price_precision"] = int(price_digits)
+            _round_tick_price_payload(out, price_digits)
+            return _compact_tick_summary(out)
+
+        def _add_tick_summary_fields(payload: Dict[str, Any]) -> None:
+            summary = _compact_summary_from_ticks()
+            for key, value in summary.items():
+                if key not in ("success", "symbol", "count", "timezone"):
+                    payload[key] = value
 
         if output_mode in ("summary", "stats"):
             detailed_stats = output_mode == "stats"
@@ -2205,6 +2246,7 @@ def fetch_ticks(  # noqa: C901
                 "count": len(rows),
             })
             payload["timezone"] = _timezone_label(use_client_tz=_use_ctz, client_tz=client_tz)
+            _add_tick_summary_fields(payload)
             if has_flags:
                 payload["flags_legend"] = _observed_tick_flags_decoded(flags)
             if simplify_meta is not None and original_count > len(rows):
@@ -2322,6 +2364,7 @@ def fetch_ticks(  # noqa: C901
             "count": len(rows),
         })
         payload["timezone"] = _timezone_label(use_client_tz=_use_ctz, client_tz=client_tz)
+        _add_tick_summary_fields(payload)
         if has_flags:
             payload["flags_legend"] = _observed_tick_flags_decoded(flags)
         if simplify_present and original_count > len(rows):

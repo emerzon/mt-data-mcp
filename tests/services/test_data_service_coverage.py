@@ -1954,6 +1954,9 @@ class TestFetchTicks(unittest.TestCase):
         self.assertTrue(result.get('success'))
         self.assertEqual(result['count'], 5)
         self.assertEqual(result.get('timezone'), 'UTC')
+        self.assertIn('stats', result)
+        self.assertIn('spread', result['stats'])
+        self.assertIn('last_quote', result)
 
     @patch(_TICKS_RANGE)
     @patch(_CACHED_INFO, return_value=SimpleNamespace(digits=5))
