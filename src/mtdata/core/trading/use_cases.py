@@ -58,8 +58,6 @@ _TRADE_PLACE_PREVIEW_KEYS = (
     "action",
     "volume",
     "message",
-    "actionability",
-    "preview_scope_summary",
     "require_sl_tp",
     "auto_close_on_sl_tp_fail",
     "magic",

@@ -203,8 +203,8 @@ def test_trade_place_dry_run_market_preview_skips_order_send() -> None:
     assert out.get("no_action") is True
     assert out.get("pending") is False
     assert out.get("action") == "place_market_order"
-    assert out.get("actionability") == "preview_only"
-    assert out.get("preview_scope_summary") == "Routing and local request checks only."
+    assert "actionability" not in out
+    assert "preview_scope_summary" not in out
     assert "validation_not_performed" not in out
     assert "warnings" not in out
     assert "validation_scope" not in out
@@ -228,8 +228,8 @@ def test_trade_place_dry_run_preview_detail_omits_safety_lists() -> None:
 
     assert out.get("success") is True
     assert out.get("dry_run") is True
-    assert out.get("actionability") == "preview_only"
-    assert out.get("preview_scope_summary") == "Routing and local request checks only."
+    assert "actionability" not in out
+    assert "preview_scope_summary" not in out
     assert "warnings" not in out
     assert "validation_not_performed" not in out
     assert "guardrails_preview" not in out
@@ -255,8 +255,8 @@ def test_trade_place_dry_run_pending_preview_skips_order_send() -> None:
     assert out.get("no_action") is True
     assert out.get("pending") is True
     assert out.get("action") == "place_pending_order"
-    assert out.get("actionability") == "preview_only"
-    assert out.get("preview_scope_summary") == "Routing and local request checks only."
+    assert "actionability" not in out
+    assert "preview_scope_summary" not in out
     assert "warnings" not in out
     assert "trade_gate_passed" not in out
     assert out.get("requested_price") == 64500
