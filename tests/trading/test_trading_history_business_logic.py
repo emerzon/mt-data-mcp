@@ -1005,8 +1005,8 @@ def test_trade_journal_analyze_summarizes_realized_exit_deals() -> None:
         )
 
     assert out["success"] is True
-    assert out["period_start"] == "2026-01-01T00:00:00Z"
-    assert out["period_end"] == "2026-01-03T00:00:00Z"
+    assert out["period_start"] == "2026-01-01 00:00:00"
+    assert out["period_end"] == "2026-01-03 00:00:00"
     assert out["period_timezone"] == "UTC"
     assert out["period_source"] == "explicit_range"
     assert out["summary"]["closed_deals"] == 2

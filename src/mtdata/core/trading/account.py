@@ -260,7 +260,7 @@ def _trade_journal_period_context(
             value = value.replace(tzinfo=timezone.utc)
         else:
             value = value.astimezone(timezone.utc)
-        return value.isoformat().replace("+00:00", "Z")
+        return value.strftime("%Y-%m-%d %H:%M:%S")
 
     to_dt = _parse_start_datetime(request.end) if request.end else None
     if to_dt is None:
