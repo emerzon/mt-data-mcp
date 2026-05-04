@@ -83,7 +83,27 @@ class TestCanonicalizeRegimeLabels:
 
         np.testing.assert_array_equal(new_state, np.array([0, 0, 0]))
         assert new_probs is not None
-        np.testing.assert_array_almost_equal(new_probs[:, 0], probs[:, 2])
+        np.testing.assert_array_almost_equal(new_probs[:, 0], np.ones(3))
+        np.testing.assert_array_almost_equal(new_probs[:, 1:], np.zeros((3, 2)))
+
+    def test_gap_renumbering_zeroes_stale_probability_columns(self):
+        state = np.array([0, 0, 3, 3])
+        probs = np.array([
+            [0.80, 0.10, 0.05, 0.05],
+            [0.70, 0.10, 0.10, 0.10],
+            [0.05, 0.10, 0.05, 0.80],
+            [0.05, 0.10, 0.05, 0.80],
+        ])
+        series = np.array([-0.1, -0.2, 0.3, 0.4])
+
+        new_state, new_probs, meta = _canonicalize_regime_labels(state, probs, series)
+
+        np.testing.assert_array_equal(new_state, np.array([0, 0, 1, 1]))
+        assert meta["mapping"] == {"0": 0, "3": 1}
+        assert new_probs is not None
+        np.testing.assert_array_almost_equal(new_probs[:, 2:], np.zeros((4, 2)))
+        np.testing.assert_array_almost_equal(new_probs.sum(axis=1), np.ones(4))
+        assert new_probs[2, 1] > 0.9
 
     def test_gap_renumbering(self):
         """Sparse state IDs (0, 3) are renumbered to (0, 1)."""

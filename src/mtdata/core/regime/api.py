@@ -938,7 +938,57 @@ def regime_detect(  # noqa: C901
             max_regimes=int(max_regimes),
             output=output,
         )
-        df = _fetch_history(symbol, timeframe, int(max(limit, 50)), as_of=None)
+
+        rule_based_config: Optional[Dict[str, Any]] = None
+        fetch_limit = int(max(limit, 50))
+        if method == "rule_based":
+            efficiency_threshold, efficiency_error = _coerce_param(
+                p,
+                "efficiency_threshold",
+                default=0.35,
+                cast=float,
+                error="params.efficiency_threshold must be a positive number.",
+            )
+            if efficiency_error is not None:
+                return _finish({"error": efficiency_error})
+            if not np.isfinite(float(efficiency_threshold)) or float(efficiency_threshold) <= 0.0:
+                return _finish({"error": "params.efficiency_threshold must be > 0."})
+
+            trend_strength_threshold, trend_strength_error = _coerce_param(
+                p,
+                "trend_strength_threshold",
+                default=1.25,
+                cast=float,
+                error="params.trend_strength_threshold must be a positive number.",
+            )
+            if trend_strength_error is not None:
+                return _finish({"error": trend_strength_error})
+            if (
+                not np.isfinite(float(trend_strength_threshold))
+                or float(trend_strength_threshold) <= 0.0
+            ):
+                return _finish({"error": "params.trend_strength_threshold must be > 0."})
+
+            requested_window_bars, window_error = _coerce_param(
+                p,
+                "window_bars",
+                default=160,
+                cast=int,
+                error="params.window_bars must be an integer >= 20.",
+            )
+            if window_error is not None:
+                return _finish({"error": window_error})
+            if int(requested_window_bars) < 20:
+                return _finish({"error": "params.window_bars must be >= 20."})
+
+            rule_based_config = {
+                "efficiency_threshold": float(efficiency_threshold),
+                "trend_strength_threshold": float(trend_strength_threshold),
+                "window_bars": int(requested_window_bars),
+            }
+            fetch_limit = int(max(fetch_limit, int(requested_window_bars)))
+
+        df = _fetch_history(symbol, timeframe, fetch_limit, as_of=None)
         if len(df) < 10:
             return _finish({"error": "Insufficient history"})
         base_col = _resolve_denoise_base_col(
@@ -948,6 +998,7 @@ def regime_detect(  # noqa: C901
         times = df["time"].astype(float).to_numpy()
         price_mask = np.isfinite(y)
         price_series = y[price_mask]
+        price_times = times[price_mask]
         try:
             return_series = _log_returns_from_prices(y)
         except ValueError as exc:
@@ -1833,6 +1884,14 @@ def regime_detect(  # noqa: C901
         elif method == "garch":
             # GARCH-based volatility regime detection
             garch_warnings: List[str] = []
+            if target != "return":
+                return _finish(
+                    {
+                        "error": "GARCH regime detection requires target='return'; price levels are non-stationary for this volatility model.",
+                        "error_code": "invalid_target",
+                        "details": {"method": "garch", "target": target},
+                    }
+                )
             try:
                 from arch import arch_model
             except ImportError:
@@ -2144,19 +2203,20 @@ def regime_detect(  # noqa: C901
         elif method == "rule_based":
             # Rule-based trend/ranging/transition detection
             # Based on the internal _infer_market_regime from patterns_support.py
+            if rule_based_config is None:
+                return _finish({"error": "Internal error resolving rule_based parameters."})
 
-            # Get parameters
-            efficiency_threshold, _ = _coerce_param(
-                p, "efficiency_threshold", default=0.35, cast=float
-            )
-            trend_strength_threshold, _ = _coerce_param(
-                p, "trend_strength_threshold", default=1.25, cast=float
-            )
-            window_bars, _ = _coerce_param(
-                p, "window_bars", default=min(len(price_series), 160), cast=int
-            )
+            efficiency_threshold = float(rule_based_config["efficiency_threshold"])
+            trend_strength_threshold = float(rule_based_config["trend_strength_threshold"])
+            requested_window_bars = int(rule_based_config["window_bars"])
+
             # Ensure window isn't too large
-            window_bars = min(window_bars, len(price_series))
+            window_bars = min(requested_window_bars, len(price_series))
+            if window_bars < requested_window_bars:
+                global_warnings.append(
+                    "params.window_bars exceeded available finite price bars; "
+                    f"requested {requested_window_bars}, using {int(window_bars)}."
+                )
 
             if window_bars < 20:
                 return _finish(
@@ -2185,12 +2245,13 @@ def regime_detect(  # noqa: C901
             efficiency_ratio = float(abs(move) / max(path_length, 1e-9))
 
             # Determine regime
+            ranging_efficiency_threshold = max(0.1, 0.55 * efficiency_threshold)
             if (
                 efficiency_ratio >= efficiency_threshold
                 and trend_strength >= trend_strength_threshold
             ):
                 regime_state = "trending"
-            elif efficiency_ratio <= max(0.1, 0.55 * efficiency_threshold):
+            elif efficiency_ratio <= ranging_efficiency_threshold:
                 regime_state = "ranging"
             else:
                 regime_state = "transition"
@@ -2249,26 +2310,42 @@ def regime_detect(  # noqa: C901
                 regime_info["note"] = state_note
             confidence = 0.0
             try:
-                confidence = min(
-                    1.0,
-                    max(
-                        0.0,
-                        (
-                            efficiency_ratio / max(float(efficiency_threshold), 1e-9)
-                            + trend_strength / max(float(trend_strength_threshold), 1e-9)
+                if regime_state == "trending":
+                    confidence = (
+                        min(1.0, efficiency_ratio / max(float(efficiency_threshold), 1e-9))
+                        + min(
+                            1.0,
+                            trend_strength / max(float(trend_strength_threshold), 1e-9),
                         )
-                        / 2.0,
-                    ),
-                )
+                    ) / 2.0
+                elif regime_state == "ranging":
+                    confidence = (
+                        max(0.0, ranging_efficiency_threshold - efficiency_ratio)
+                        / max(float(ranging_efficiency_threshold), 1e-9)
+                    )
+                else:
+                    transition_span = max(
+                        float(efficiency_threshold - ranging_efficiency_threshold),
+                        1e-9,
+                    )
+                    distance_from_boundary = min(
+                        max(0.0, efficiency_ratio - ranging_efficiency_threshold),
+                        max(0.0, efficiency_threshold - efficiency_ratio),
+                    )
+                    confidence = min(1.0, (distance_from_boundary / transition_span) * 2.0)
+                confidence = min(1.0, max(0.0, float(confidence)))
             except Exception:
                 confidence = 0.0
             regime_confidence = round(float(confidence), 4)
             regime_id_by_state = {"ranging": 0, "trending": 1, "transition": 2}
             regime_id = regime_id_by_state.get(regime_state, 2)
+            rule_t_fmt = [_format_time_minimal(tt) for tt in price_times]
             regime_since = (
-                t_fmt[-int(window_bars)] if len(t_fmt) >= int(window_bars) else t_fmt[0]
+                rule_t_fmt[-int(window_bars)]
+                if len(rule_t_fmt) >= int(window_bars)
+                else rule_t_fmt[0]
             )
-            regime_end = t_fmt[-1]
+            regime_end = rule_t_fmt[-1]
             current_regime = {
                 "regime_id": int(regime_id),
                 "label": regime_state,
@@ -2348,7 +2425,7 @@ def regime_detect(  # noqa: C901
                 return _finish(_summary_only_payload(payload))
             if output == "full" and include_series:
                 payload["series"] = {
-                    "times": t_fmt[-int(window_bars) :],
+                    "times": rule_t_fmt[-int(window_bars) :],
                     "state": [int(regime_id)] * int(window_bars),
                 }
             if output == "compact":
@@ -2387,6 +2464,10 @@ def regime_detect(  # noqa: C901
 
             if n_states_wv < 2:
                 return _finish({"error": "n_states must be >= 2 for wavelet method."})
+            if energy_window < 1:
+                return _finish(
+                    {"error": "params.energy_window must be a positive integer."}
+                )
             if len(x) < energy_window + 10:
                 return _finish(
                     {
@@ -2709,6 +2790,7 @@ def regime_detect(  # noqa: C901
             # For BOCPD (changepoint), convert cp_prob > threshold to binary state
             state_arrays: List[np.ndarray] = []
             prob_arrays: List[np.ndarray] = []  # (n_bars, n_states) per method
+            prob_valid_masks: List[np.ndarray] = []
             method_names: List[str] = []
             ref_len = len(t_fmt)
 
@@ -2720,15 +2802,64 @@ def regime_detect(  # noqa: C901
                 if sm_name == "bocpd":
                     # BOCPD returns cp_prob, not state — convert to binary
                     cp_prob = series.get("cp_prob", sr.get("cp_prob", []))
-                    if cp_prob and len(cp_prob) == ref_len:
-                        cp_arr = np.asarray(cp_prob, dtype=float)
-                        st = np.where(cp_arr > threshold, 1, 0).astype(int)
+                    if cp_prob is not None and len(cp_prob) == ref_len:
+                        cp_arr_raw = np.asarray(cp_prob, dtype=float)
+                        valid_mask = np.isfinite(cp_arr_raw)
+                        cp_arr = np.clip(
+                            np.nan_to_num(
+                                cp_arr_raw,
+                                nan=0.0,
+                                posinf=1.0,
+                                neginf=0.0,
+                            ),
+                            0.0,
+                            1.0,
+                        )
+                        params_used = (
+                            sr.get("params_used") if isinstance(sr, dict) else None
+                        )
+                        bocpd_threshold = _coerce_optional_float(sr.get("threshold"))
+                        if bocpd_threshold is None and isinstance(params_used, dict):
+                            bocpd_threshold = _coerce_optional_float(
+                                params_used.get("cp_threshold")
+                            )
+                        if bocpd_threshold is None:
+                            bocpd_threshold = float(threshold)
+                        if float(bocpd_threshold) <= 0.0:
+                            cp_vote_prob = np.where(cp_arr > 0.0, 1.0, 0.0)
+                        elif float(bocpd_threshold) >= 1.0:
+                            cp_vote_prob = cp_arr
+                        else:
+                            below_threshold = cp_arr < float(bocpd_threshold)
+                            cp_vote_prob = np.empty_like(cp_arr)
+                            cp_vote_prob[below_threshold] = (
+                                cp_arr[below_threshold]
+                                / (2.0 * float(bocpd_threshold))
+                            )
+                            cp_vote_prob[~below_threshold] = 0.5 + (
+                                0.5
+                                * (
+                                    cp_arr[~below_threshold]
+                                    - float(bocpd_threshold)
+                                )
+                                / (1.0 - float(bocpd_threshold))
+                            )
+                            cp_vote_prob = np.clip(cp_vote_prob, 0.0, 1.0)
+                        st = np.full(ref_len, -1, dtype=int)
+                        st[valid_mask] = np.where(
+                            cp_arr[valid_mask] >= float(bocpd_threshold),
+                            1,
+                            0,
+                        ).astype(int)
                         pr = np.zeros((ref_len, n_states_ens))
-                        pr[:, 0] = 1.0 - cp_arr
+                        pr[valid_mask, 0] = 1.0 - cp_vote_prob[valid_mask]
                         if n_states_ens >= 2:
-                            pr[:, 1] = cp_arr
+                            pr[valid_mask, 1] = cp_vote_prob[valid_mask]
+                        if not np.any(valid_mask):
+                            continue
                         state_arrays.append(st)
                         prob_arrays.append(pr)
+                        prob_valid_masks.append(valid_mask)
                         method_names.append(sm_name)
                     continue
 
@@ -2737,26 +2868,43 @@ def regime_detect(  # noqa: C901
                 raw_probs = series.get(
                     "state_probabilities", sr.get("state_probabilities", [])
                 )
-                if not raw_state or len(raw_state) != ref_len:
+                if raw_state is None or len(raw_state) != ref_len:
                     continue
 
                 st = np.asarray(raw_state, dtype=int)
-                if raw_probs and len(raw_probs) == ref_len:
+                if raw_probs is not None and len(raw_probs) == ref_len:
                     pr = np.asarray(raw_probs, dtype=float)
-                    # Pad or trim columns to n_states_ens
-                    if pr.shape[1] < n_states_ens:
-                        pr = np.pad(pr, ((0, 0), (0, n_states_ens - pr.shape[1])))
-                    elif pr.shape[1] > n_states_ens:
-                        pr = pr[:, :n_states_ens]
+                    if pr.ndim != 2:
+                        pr = np.zeros((ref_len, n_states_ens))
+                    else:
+                        pr = np.nan_to_num(pr, nan=0.0, posinf=0.0, neginf=0.0)
+                        # Pad or trim columns to n_states_ens
+                        if pr.shape[1] < n_states_ens:
+                            pr = np.pad(
+                                pr,
+                                ((0, 0), (0, n_states_ens - pr.shape[1])),
+                            )
+                        elif pr.shape[1] > n_states_ens:
+                            pr = pr[:, :n_states_ens]
+                    row_sums = np.sum(pr, axis=1, keepdims=True)
+                    positive_rows = np.isfinite(row_sums[:, 0]) & (row_sums[:, 0] > 0)
+                    if np.any(positive_rows):
+                        pr[positive_rows] = pr[positive_rows] / row_sums[positive_rows]
+                    valid_mask = (st >= 0) & (st < n_states_ens) & positive_rows
+                    pr[~valid_mask] = 0.0
                 else:
                     # Hard assignment fallback
                     pr = np.zeros((ref_len, n_states_ens))
+                    valid_mask = (st >= 0) & (st < n_states_ens)
                     for i, s in enumerate(st):
-                        if 0 <= s < n_states_ens:
+                        if bool(valid_mask[i]):
                             pr[i, s] = 1.0
 
+                if not np.any(valid_mask):
+                    continue
                 state_arrays.append(st)
                 prob_arrays.append(pr)
+                prob_valid_masks.append(valid_mask)
                 method_names.append(sm_name)
 
             if not prob_arrays:
@@ -2764,54 +2912,89 @@ def regime_detect(  # noqa: C901
 
             # Aggregate
             if voting == "hard":
-                # Majority vote
-                stacked = np.stack(state_arrays, axis=0)  # (n_methods, n_bars)
-                from scipy import stats as _sp_stats
-
-                mode_result = _sp_stats.mode(stacked, axis=0, keepdims=False)
-                ensemble_state = np.asarray(mode_result.mode, dtype=int).ravel()
-                # Build probs from vote fractions
-                n_methods = len(state_arrays)
+                # Majority vote over methods that have a valid state for the bar.
+                ensemble_state = np.full(ref_len, -1, dtype=int)
                 ensemble_probs = np.zeros((ref_len, n_states_ens))
-                for mi in range(n_methods):
-                    for t_idx in range(ref_len):
-                        s = state_arrays[mi][t_idx]
-                        if 0 <= s < n_states_ens:
-                            ensemble_probs[t_idx, s] += 1.0
-                ensemble_probs /= max(n_methods, 1)
+                for t_idx in range(ref_len):
+                    votes = [
+                        int(state_arr[t_idx])
+                        for state_arr, valid_mask in zip(
+                            state_arrays, prob_valid_masks
+                        )
+                        if bool(valid_mask[t_idx])
+                        and 0 <= int(state_arr[t_idx]) < n_states_ens
+                    ]
+                    if not votes:
+                        continue
+                    counts = Counter(votes)
+                    majority, _count = counts.most_common(1)[0]
+                    ensemble_state[t_idx] = int(majority)
+                    for state_id, count in counts.items():
+                        ensemble_probs[t_idx, int(state_id)] = float(count) / float(
+                            len(votes)
+                        )
             else:
-                # Soft voting: average probabilities
-                stacked_probs = np.stack(
-                    prob_arrays, axis=0
-                )  # (n_methods, n_bars, n_states)
-                ensemble_probs = np.mean(stacked_probs, axis=0)
-                ensemble_state = np.argmax(ensemble_probs, axis=1).astype(int)
+                # Soft voting: average probabilities across valid methods per bar.
+                ensemble_probs = np.zeros((ref_len, n_states_ens))
+                valid_counts = np.zeros(ref_len, dtype=float)
+                for pr, valid_mask in zip(prob_arrays, prob_valid_masks):
+                    rows = valid_mask & (np.sum(pr, axis=1) > 0)
+                    if not np.any(rows):
+                        continue
+                    ensemble_probs[rows] += pr[rows]
+                    valid_counts[rows] += 1.0
+                valid_rows = valid_counts > 0
+                if np.any(valid_rows):
+                    ensemble_probs[valid_rows] = (
+                        ensemble_probs[valid_rows] / valid_counts[valid_rows, None]
+                    )
+                ensemble_state = np.full(ref_len, -1, dtype=int)
+                ensemble_state[valid_rows] = np.argmax(
+                    ensemble_probs[valid_rows],
+                    axis=1,
+                ).astype(int)
 
             # Smooth and canonicalize
-            ensemble_state, ensemble_probs, smoothing_meta = _smooth_short_state_runs(
-                state=ensemble_state,
-                probs=ensemble_probs,
+            valid_ensemble_mask = (ensemble_state >= 0) & (
+                np.sum(ensemble_probs, axis=1) > 0
+            )
+            if not np.any(valid_ensemble_mask):
+                return _finish({"error": "No valid ensemble state rows after voting."})
+
+            valid_state, valid_probs, smoothing_meta = _smooth_short_state_runs(
+                state=ensemble_state[valid_ensemble_mask],
+                probs=ensemble_probs[valid_ensemble_mask],
                 min_regime_bars=min_regime_bars_val,
             )
-            ensemble_state, ensemble_probs, canon_meta = _canonicalize_regime_labels(
-                ensemble_state,
-                ensemble_probs,
-                x,
+            valid_state, valid_probs, canon_meta = _canonicalize_regime_labels(
+                valid_state,
+                valid_probs,
+                x[valid_ensemble_mask],
             )
+            ensemble_state = np.full(ref_len, -1, dtype=int)
+            ensemble_probs = np.zeros((ref_len, n_states_ens))
+            ensemble_state[valid_ensemble_mask] = valid_state
+            ensemble_probs[valid_ensemble_mask] = valid_probs
             smoothing_meta["relabeled"] = canon_meta.get("relabeled", False)
 
             # Agreement score: fraction of methods that agree per bar
             agreement = np.zeros(ref_len)
             for t_idx in range(ref_len):
                 votes = [
-                    sa[t_idx] for sa in state_arrays if 0 <= sa[t_idx] < n_states_ens
+                    int(state_arr[t_idx])
+                    for state_arr, valid_mask in zip(state_arrays, prob_valid_masks)
+                    if bool(valid_mask[t_idx])
+                    and 0 <= int(state_arr[t_idx]) < n_states_ens
                 ]
                 if votes:
                     most_common = max(set(votes), key=votes.count)
                     agreement[t_idx] = votes.count(most_common) / len(votes)
 
             # Compute regime parameters (mean, vol) for each ensemble state
-            mean_agreement = round(float(np.mean(agreement)), 4)
+            mean_agreement = round(
+                float(np.mean(agreement[valid_ensemble_mask])),
+                4,
+            )
             ensemble_regime_params = {
                 "mean_return": [],
                 "volatility": [],
@@ -2888,7 +3071,7 @@ def regime_detect(  # noqa: C901
                     if len(ensemble_state)
                     else None,
                     "state_shares": shares,
-                    "mean_agreement": round(float(np.mean(agreement)), 4),
+                    "mean_agreement": mean_agreement,
                 }
                 payload = _apply_state_output_mode(
                     payload,

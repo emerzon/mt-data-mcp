@@ -37,6 +37,12 @@ def _choppy_bearish_df(n: int = 120) -> pd.DataFrame:
     return pd.DataFrame({"time": t, "close": close})
 
 
+def _flat_df(n: int = 120) -> pd.DataFrame:
+    t = np.arange(float(n))
+    close = np.full(n, 100.0)
+    return pd.DataFrame({"time": t, "close": close})
+
+
 def test_build_all_method_comparison_uses_semantic_signals() -> None:
     comparison = _build_all_method_comparison(
         {
@@ -389,6 +395,114 @@ def test_rule_based_uses_price_window_metrics_for_return_target() -> None:
     assert out["params_used"]["signal_source"] == "price"
 
 
+def test_rule_based_full_series_uses_price_window_timestamps_for_return_target() -> None:
+    raw = _unwrap(regime_detect)
+
+    with (
+        patch("mtdata.core.regime._fetch_history", return_value=_downtrend_df(100)),
+        patch("mtdata.core.regime._resolve_denoise_base_col", return_value="close"),
+        patch("mtdata.core.regime._format_time_minimal", side_effect=lambda x: f"T{x}"),
+    ):
+        out = raw(
+            symbol="TEST",
+            timeframe="H1",
+            limit=100,
+            method="rule_based",
+            target="return",
+            params={"window_bars": 100},
+            detail="full",
+            include_series=True,
+        )
+
+    series = out["series"]
+    assert out["current_regime"]["since"] == "T0.0"
+    assert out["regimes"][0]["start"] == "T0.0"
+    assert series["times"][0] == "T0.0"
+    assert len(series["times"]) == len(series["state"]) == 100
+
+
+def test_rule_based_window_bars_expands_fetch_limit() -> None:
+    raw = _unwrap(regime_detect)
+    captured: dict[str, int] = {}
+
+    def fake_fetch_history(_symbol: str, _timeframe: str, limit: int, *, as_of=None):
+        captured["limit"] = limit
+        return _downtrend_df(limit)
+
+    with (
+        patch("mtdata.core.regime._fetch_history", side_effect=fake_fetch_history),
+        patch("mtdata.core.regime._resolve_denoise_base_col", return_value="close"),
+        patch("mtdata.core.regime._format_time_minimal", side_effect=lambda x: f"T{x}"),
+    ):
+        out = raw(
+            symbol="TEST",
+            timeframe="H1",
+            limit=100,
+            method="rule_based",
+            params={"window_bars": 160},
+            detail="full",
+        )
+
+    assert captured["limit"] == 160
+    assert out["regime"]["window_bars"] == 160
+    assert out["params_used"]["window_bars"] == 160
+
+
+@pytest.mark.parametrize(
+    ("params", "expected_error"),
+    [
+        ({"window_bars": "bad"}, "params.window_bars must be an integer >= 20."),
+        ({"window_bars": 19}, "params.window_bars must be >= 20."),
+        (
+            {"efficiency_threshold": "bad"},
+            "params.efficiency_threshold must be a positive number.",
+        ),
+        ({"efficiency_threshold": 0}, "params.efficiency_threshold must be > 0."),
+        (
+            {"trend_strength_threshold": "bad"},
+            "params.trend_strength_threshold must be a positive number.",
+        ),
+        (
+            {"trend_strength_threshold": -1},
+            "params.trend_strength_threshold must be > 0.",
+        ),
+    ],
+)
+def test_rule_based_rejects_invalid_params(params: dict, expected_error: str) -> None:
+    raw = _unwrap(regime_detect)
+
+    out = raw(
+        symbol="TEST",
+        timeframe="H1",
+        method="rule_based",
+        params=params,
+    )
+
+    assert out["error"] == expected_error
+
+
+def test_rule_based_ranging_confidence_uses_ranging_evidence() -> None:
+    raw = _unwrap(regime_detect)
+
+    with (
+        patch("mtdata.core.regime._fetch_history", return_value=_flat_df()),
+        patch("mtdata.core.regime._resolve_denoise_base_col", return_value="close"),
+        patch("mtdata.core.regime._format_time_minimal", side_effect=lambda x: f"T{x}"),
+    ):
+        out = raw(
+            symbol="TEST",
+            timeframe="H1",
+            method="rule_based",
+            params={"window_bars": 60},
+            detail="full",
+        )
+
+    assert out["regime"]["state"] == "ranging"
+    assert out["regime"]["efficiency_ratio"] == 0.0
+    assert out["current_regime"]["regime_confidence"] == 1.0
+    assert out["reliability"]["confidence"] == 1.0
+
+
 def test_rule_based_explains_ranging_direction_bias() -> None:
     raw = _unwrap(regime_detect)
 
@@ -516,3 +630,128 @@ def test_gmm_alias_reports_requested_method_and_common_reliability() -> None:
         "very_low",
     }
     assert out["reliability"]["source"] == "hmm_state_probabilities"
+
+
+def test_ensemble_bocpd_uses_submethod_threshold_for_vote() -> None:
+    raw = _unwrap(regime_detect)
+    n = 40
+    history = pd.DataFrame(
+        {
+            "time": np.arange(float(n)),
+            "close": np.linspace(100.0, 120.0, n),
+        }
+    )
+    cp_prob = [0.0] * (n - 1) + [0.45]
+
+    def fake_call_tool(_tool, **_kwargs):
+        return {
+            "success": True,
+            "method": "bocpd",
+            "threshold": 0.4,
+            "series": {"cp_prob": cp_prob},
+            "params_used": {"cp_threshold": 0.4},
+        }
+
+    with (
+        patch("mtdata.core.regime._fetch_history", return_value=history),
+        patch("mtdata.core.regime._resolve_denoise_base_col", return_value="close"),
+        patch("mtdata.core.regime._format_time_minimal", side_effect=lambda x: f"T{x}"),
+        patch("mtdata.core.regime.call_tool_sync_structured", side_effect=fake_call_tool),
+    ):
+        out = raw(
+            symbol="TEST",
+            timeframe="H1",
+            limit=n,
+            method="ensemble",
+            target="price",
+            params={"methods": ["bocpd"], "n_states": 2},
+            threshold=0.5,
+            detail="full",
+            include_series=True,
+            min_regime_bars=1,
+        )
+
+    assert out["series"]["state"][-1] == 1
+    assert out["current_regime"]["regime_id"] == 1
+
+
+def test_ensemble_keeps_invalid_leading_submethod_rows_undefined() -> None:
+    raw = _unwrap(regime_detect)
+    n = 40
+    history = pd.DataFrame(
+        {
+            "time": np.arange(float(n)),
+            "close": np.linspace(100.0, 120.0, n),
+        }
+    )
+    ref_len = n - 1
+    states = [-1, -1] + [1] * (ref_len - 2)
+    probs = [[0.0, 0.0], [0.0, 0.0]] + [[0.1, 0.9]] * (ref_len - 2)
+
+    def fake_call_tool(_tool, **_kwargs):
+        return {
+            "success": True,
+            "method": "hmm",
+            "series": {
+                "state": states,
+                "state_probabilities": probs,
+            },
+        }
+
+    with (
+        patch("mtdata.core.regime._fetch_history", return_value=history),
+        patch("mtdata.core.regime._resolve_denoise_base_col", return_value="close"),
+        patch("mtdata.core.regime._format_time_minimal", side_effect=lambda x: f"T{x}"),
+        patch("mtdata.core.regime.call_tool_sync_structured", side_effect=fake_call_tool),
+    ):
+        out = raw(
+            symbol="TEST",
+            timeframe="H1",
+            limit=n,
+            method="ensemble",
+            params={"methods": ["hmm"], "n_states": 2},
+            detail="full",
+            include_series=True,
+            min_regime_bars=1,
+        )
+
+    assert out["series"]["state"][:2] == [-1, -1]
+    assert out["series"]["state"][2] in {0, 1}
+    assert out["regimes"][0]["start"] == "T3.0"
+
+
+def test_garch_rejects_price_target() -> None:
+    raw = _unwrap(regime_detect)
+
+    with (
+        patch("mtdata.core.regime._fetch_history", return_value=_downtrend_df(80)),
+        patch("mtdata.core.regime._resolve_denoise_base_col", return_value="close"),
+    ):
+        out = raw(
+            symbol="TEST",
+            timeframe="H1",
+            limit=80,
+            method="garch",
+            target="price",
+        )
+
+    assert out["error_code"] == "invalid_target"
+    assert "target='return'" in out["error"]
+
+
+def test_wavelet_rejects_non_positive_energy_window() -> None:
+    raw = _unwrap(regime_detect)
+
+    with (
+        patch("mtdata.core.regime._fetch_history", return_value=_downtrend_df(80)),
+        patch("mtdata.core.regime._resolve_denoise_base_col", return_value="close"),
+    ):
+        out = raw(
+            symbol="TEST",
+            timeframe="H1",
+            limit=80,
+            method="wavelet",
+            params={"energy_window": 0},
+        )
+
+    assert out["error"] == "params.energy_window must be a positive integer."

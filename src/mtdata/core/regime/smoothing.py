@@ -187,17 +187,36 @@ def _canonicalize_regime_labels(
     state_arr = np.asarray(state, dtype=int)
     unique_states = np.unique(state_arr)
 
+    def _remap_probability_columns(
+        probs_value: Any,
+        old_to_new_mapping: Dict[int, int],
+    ) -> np.ndarray:
+        probs_arr = np.asarray(probs_value, dtype=float)
+        if probs_arr.ndim != 2:
+            return probs_arr
+
+        new_probs = np.zeros_like(probs_arr)
+        for old_col, new_col in old_to_new_mapping.items():
+            if 0 <= old_col < probs_arr.shape[1] and 0 <= new_col < probs_arr.shape[1]:
+                new_probs[:, new_col] = probs_arr[:, old_col]
+
+        row_sums = np.sum(new_probs, axis=1, keepdims=True)
+        valid_rows = np.isfinite(row_sums[:, 0]) & (row_sums[:, 0] > 0)
+        if np.any(valid_rows):
+            new_probs[valid_rows] = new_probs[valid_rows] / row_sums[valid_rows]
+        return new_probs
+
     if unique_states.size <= 1:
         # Single state — just ensure it's 0
         if unique_states.size == 1 and unique_states[0] != 0:
             old_state = int(unique_states[0])
             state_arr = np.zeros_like(state_arr)
             if probs is not None:
-                probs_arr = np.asarray(probs, dtype=float)
-                if probs_arr.ndim == 2 and old_state < probs_arr.shape[1]:
-                    probs_arr = probs_arr.copy()
-                    probs_arr[:, 0] = probs_arr[:, old_state]
-                probs = probs_arr
+                probs = _remap_probability_columns(probs, {old_state: 0})
+            return state_arr, probs, {
+                "relabeled": True,
+                "mapping": {str(old_state): 0},
+            }
         return state_arr, probs, {"relabeled": False, "mapping": {}}
 
     series_arr = np.asarray(series, dtype=float)
@@ -230,20 +249,7 @@ def _canonicalize_regime_labels(
 
     new_probs: Optional[np.ndarray] = None
     if probs is not None:
-        probs_arr = np.asarray(probs, dtype=float)
-        if probs_arr.ndim == 2 and probs_arr.shape[1] >= max(unique_states) + 1:
-            new_probs = np.empty_like(probs_arr)
-            col_map = {old: new for old, new in old_to_new.items()}
-            for old_col, new_col in col_map.items():
-                if old_col < probs_arr.shape[1] and new_col < probs_arr.shape[1]:
-                    new_probs[:, new_col] = probs_arr[:, old_col]
-            # Copy any extra columns (shouldn't exist normally)
-            mapped_new = set(old_to_new.values())
-            for c in range(probs_arr.shape[1]):
-                if c not in mapped_new:
-                    new_probs[:, c] = probs_arr[:, c]
-        else:
-            new_probs = probs_arr
+        new_probs = _remap_probability_columns(probs, old_to_new)
 
     mapping_str = {str(old): int(new) for old, new in old_to_new.items()}
     return new_state, new_probs, {"relabeled": True, "mapping": mapping_str}
