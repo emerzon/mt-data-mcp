@@ -306,11 +306,7 @@ def test_forecast_generate_defaults_to_compact_payload(monkeypatch):
         "last_forecast_delta": 0.15,
     }
     assert out["forecast_price"] == [1.0, 1.1, 1.2]
-    assert out["series"] == [
-        {"time": "t1", "forecast_price": 1.0},
-        {"time": "t2", "forecast_price": 1.1},
-        {"time": "t3", "forecast_price": 1.2},
-    ]
+    assert "series" not in out
     assert "collection_kind" not in out
     assert "collection_contract_version" not in out
     assert "forecast_epoch" not in out
@@ -342,10 +338,7 @@ def test_forecast_generate_rounds_price_outputs_to_symbol_digits(monkeypatch):
         "first_forecast_delta_pct": 0.0409,
         "last_forecast_delta": 0.00049,
     }
-    assert out["series"] == [
-        {"time": "t1", "forecast_price": 1.17314},
-        {"time": "t2", "forecast_price": 1.17315},
-    ]
+    assert "series" not in out
 
 
 def test_forecast_generate_compact_marks_unavailable_ci(monkeypatch):

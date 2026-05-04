@@ -366,12 +366,7 @@ def _apply_forecast_generate_detail(
         if ci_unavailable and str(key).startswith("ci_"):
             continue
         compact[key] = value
-    return attach_collection_contract(
-        compact,
-        collection_kind="time_series",
-        series=_forecast_generate_series_rows(compact),
-        include_contract_meta=False,
-    )
+    return compact
 
 
 def _forecast_generate_series_rows(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
