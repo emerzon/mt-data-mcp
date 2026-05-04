@@ -730,6 +730,7 @@ class TestFinvizTools:
                 "Market Cap": "3979.47B",
                 "Price": "270.00",
                 "Change": "1.2%",
+                "52W High": "288.62 -2.94%",
                 "RSI (14)": "62.1",
                 "Insider Own": "0.1%",
             },
@@ -741,8 +742,12 @@ class TestFinvizTools:
         mock_get_fundamentals.assert_called_once_with("AAPL")
         assert result["detail"] == "compact"
         assert result["category"] == "summary"
-        assert result["fundamentals"]["pe_ratio"] == "34.29"
-        assert result["fundamentals"]["market_cap"] == "3979.47B"
+        assert result["fundamentals"]["pe_ratio"] == 34.29
+        assert result["fundamentals"]["market_cap"] == 3_979_470_000_000.0
+        assert result["fundamentals"]["eps_ttm"] == 7.9
+        assert result["fundamentals"]["change"] == 1.2
+        assert result["fundamentals"]["high_52w"] == "288.62 -2.94%"
+        assert result["fundamentals"]["rsi_14"] == 62.1
         assert "insider_own" not in result["fundamentals"]
         assert "fields_returned" not in result
         assert "available_field_count" not in result
@@ -769,12 +774,12 @@ class TestFinvizTools:
 
         assert valuation["category"] == "valuation"
         assert valuation["fundamentals"] == {
-            "pe_ratio": "34.29",
-            "price_to_sales": "8.1",
-            "eps_ttm": "7.90",
+            "pe_ratio": 34.29,
+            "price_to_sales": 8.1,
+            "eps_ttm": 7.9,
         }
         assert custom["category"] == "custom"
-        assert custom["fundamentals"] == {"pe_ratio": "34.29", "rsi_14": "62.1"}
+        assert custom["fundamentals"] == {"pe_ratio": 34.29, "rsi_14": 62.1}
         assert custom["missing_fields"] == ["Missing"]
 
     @patch("mtdata.core.finviz.get_stock_fundamentals")
@@ -822,15 +827,15 @@ class TestFinvizTools:
         result = raw("AAPL", detail="full")
 
         fundamentals = result["fundamentals"]
-        assert fundamentals["return_on_assets"] == "29.5%"
-        assert fundamentals["return_on_equity"] == "156.0%"
-        assert fundamentals["current_ratio"] == "0.87"
-        assert fundamentals["quick_ratio"] == "0.83"
-        assert fundamentals["long_term_debt_to_equity"] == "1.26"
-        assert fundamentals["shares_outstanding"] == "14.70B"
-        assert fundamentals["shares_float"] == "14.66B"
-        assert fundamentals["book_value_per_share"] == "6.00"
-        assert fundamentals["performance_week"] == "1.71%"
+        assert fundamentals["return_on_assets"] == 29.5
+        assert fundamentals["return_on_equity"] == 156.0
+        assert fundamentals["current_ratio"] == 0.87
+        assert fundamentals["quick_ratio"] == 0.83
+        assert fundamentals["long_term_debt_to_equity"] == 1.26
+        assert fundamentals["shares_outstanding"] == 14_700_000_000.0
+        assert fundamentals["shares_float"] == 14_660_000_000.0
+        assert fundamentals["book_value_per_share"] == 6.0
+        assert fundamentals["performance_week"] == 1.71
         assert "roa" not in fundamentals
         assert "curr_r" not in fundamentals
 

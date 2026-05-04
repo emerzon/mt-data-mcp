@@ -629,6 +629,76 @@ _FINVIZ_OUTPUT_KEY_MAP = {
     "Dividend Gr. 5Y": "dividend_growth_5y",
 }
 
+_FINVIZ_FUNDAMENTAL_NUMERIC_KEYS = frozenset(
+    {
+        "market_cap",
+        "price",
+        "change",
+        "pe_ratio",
+        "forward_pe",
+        "peg",
+        "price_to_sales",
+        "price_to_book",
+        "price_to_cash",
+        "price_to_free_cash_flow",
+        "eps_ttm",
+        "eps_next_y",
+        "eps_next_q",
+        "rsi_14",
+        "sma20",
+        "sma50",
+        "sma200",
+        "atr_14",
+        "beta",
+        "volatility_w",
+        "volatility_m",
+        "volume",
+        "avg_volume",
+        "rel_volume",
+        "return_on_assets",
+        "return_on_equity",
+        "return_on_investment",
+        "return_on_invested_capital",
+        "current_ratio",
+        "quick_ratio",
+        "long_term_debt_to_equity",
+        "debt_to_equity",
+        "gross_margin",
+        "operating_margin",
+        "profit_margin",
+        "book_value_per_share",
+        "shares_outstanding",
+        "shares_float",
+        "performance_week",
+        "performance_month",
+        "performance_quarter",
+        "performance_half_year",
+        "performance_year",
+        "performance_ytd",
+        "performance_3y",
+        "performance_5y",
+        "performance_10y",
+        "dividend_yield",
+        "dividend_est",
+        "dividend_ttm",
+        "dividend_growth_3y",
+        "dividend_growth_5y",
+        "payout",
+        "insider_own",
+        "insider_trans",
+        "inst_own",
+        "inst_trans",
+        "short_float",
+        "short_ratio",
+    }
+)
+_FINVIZ_NUMERIC_SUFFIX_MULTIPLIERS = {
+    "K": 1_000.0,
+    "M": 1_000_000.0,
+    "B": 1_000_000_000.0,
+    "T": 1_000_000_000_000.0,
+}
+
 _FINVIZ_EARNINGS_COMPACT_FIELDS = (
     "symbol",
     "company",
@@ -651,6 +721,31 @@ def _normalize_finviz_output_key(key: Any) -> str:
     text = text.replace("%", " pct ").replace("&", " and ").replace("/", " ")
     text = re.sub(r"[^0-9A-Za-z]+", "_", text).strip("_").lower()
     return text or str(key)
+
+
+def _parse_finviz_numeric_value(value: Any) -> Optional[float]:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip().replace(",", "")
+    if not text or text in {"-", "N/A", "n/a", "None", "none", "null"}:
+        return None
+    if text.endswith("%"):
+        text = text[:-1].strip()
+    multiplier = 1.0
+    if text and text[-1].upper() in _FINVIZ_NUMERIC_SUFFIX_MULTIPLIERS:
+        multiplier = _FINVIZ_NUMERIC_SUFFIX_MULTIPLIERS[text[-1].upper()]
+        text = text[:-1].strip()
+    if not re.fullmatch(r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)", text):
+        return None
+    return float(text) * multiplier
+
+
+def _normalize_finviz_fundamental_value(key: str, value: Any) -> Any:
+    if key not in _FINVIZ_FUNDAMENTAL_NUMERIC_KEYS:
+        return value
+    return _parse_finviz_numeric_value(value)
 
 
 def _normalize_finviz_output_row(row: Any) -> Any:
@@ -1012,11 +1107,18 @@ def _filter_finviz_fundamentals_payload(
         selected_fields = list(fundamentals.keys())
         category_out = "all"
 
-    filtered = {
-        _normalize_finviz_output_key(field): fundamentals[field]
-        for field in selected_fields
-        if field in fundamentals and fundamentals[field] not in (None, "")
-    }
+    filtered: Dict[str, Any] = {}
+    for field in selected_fields:
+        if field not in fundamentals:
+            continue
+        value = fundamentals[field]
+        if value in (None, ""):
+            continue
+        output_key = _normalize_finviz_output_key(field)
+        output_value = _normalize_finviz_fundamental_value(output_key, value)
+        if output_value in (None, ""):
+            continue
+        filtered[output_key] = output_value
     out = dict(result)
     out["fundamentals"] = filtered
     out["detail"] = detail_mode
