@@ -188,7 +188,7 @@ Alignment guide:
 - Use `trade_account_info(detail="full")` as an execution gate before adding risk, not just an info call. Compact account output is acceptable for ordinary mode classification only.
 - Refresh `symbols_describe(symbol="{{SYMBOL}}", detail="full")` at session start and after any rejection so you have current `digits`, `point`, `trade_tick_size`, `volume_min`, `volume_max`, `volume_step`, `trade_stops_level`, `trade_freeze_level`, `trade_mode`, `filling_mode`, and `order_mode`.
 - For market `trade_place`, keep `require_sl_tp=true` unless there is a deliberate reason not to.
-- Consider `auto_close_on_sl_tp_fail=true` on urgent market entries where an unprotected fill would be unacceptable.
+- Keep `auto_close_on_sl_tp_fail=true` on urgent market entries where an unprotected fill would be unacceptable; it is already the safer default.
 - `trade_modify` always operates by `ticket`.
 - `trade_close` closes one position or one pending order when called with a specific `ticket`.
 - Bulk symbol cleanup requires `trade_close(symbol="{{SYMBOL}}", close_all=true)`.
@@ -196,11 +196,14 @@ Alignment guide:
 
 ## Executable Price Rules
 - Chart levels, round numbers, zone edges, raw support/resistance, and exact ATR multiples are analysis anchors, not executable prices.
+- Psychological barriers are liquidity magnets, not executable prices. Treat whole/half/quarter handles, round pip/point clusters, zero-heavy decimals, prior session/day highs and lows, pivots, and highly visible swing edges as sweep pools until proven otherwise.
 - Before calling execution tools, translate entry, SL, and TP into broker-valid prices using `symbols_describe` (`digits`, `point`, `trade_tick_size`, stop level, freeze level), the correct bid/ask side, spread, and a small safety buffer.
+- Current spread alone is not enough when fill quality matters. For market entries, scalps, tight stops, pending entries near current price, or any spread-quality doubt, sample recent tick spread with `data_fetch_ticks(symbol="{{SYMBOL}}", limit=200, detail="standard")` and compare live spread against recent median/mean spread before approving execution.
 - Offset final prices by valid tick increments so they are non-obvious and still respect precision, tick size, stop distance, and freeze distance.
-- For SLs, start from the adverse zone edge or swing reference, then pad beyond the visible sweep area. If the required hard stop makes reward:risk unacceptable, reduce size or skip; do not tighten the stop to force the trade.
-- For TPs, place the executable target slightly before the structural target after accounting for the close side: long TPs trigger on Bid, short TPs trigger on Ask.
-- For pending entries, avoid clustering at obvious zone edges or midlines. Use asymmetric, tick-valid offsets; sweep entries may sit slightly outside obvious support/resistance only when the named setup explicitly calls for it.
+- No final entry, SL, TP, or modification price may sit exactly on a psychological barrier, raw pivot, session high/low, obvious swing high/low, zone boundary, or one-tick obvious offset. If the calculated price lands there, adjust by an asymmetric tick-valid anti-sweep buffer or skip the trade if the adjustment breaks risk/reward.
+- For SLs, start from the adverse zone edge or swing reference, then pad beyond the visible sweep area and beyond the nearest psychological barrier in the stop direction. If the required hard stop makes reward:risk unacceptable, reduce size or skip; do not tighten the stop to force the trade.
+- For TPs, place the executable target slightly before the structural target and before nearby psychological barriers after accounting for the close side: long TPs trigger on Bid, short TPs trigger on Ask. Do not require price to touch a round number or crowded liquidity level to take profit.
+- For pending entries, avoid clustering at obvious zone edges, midlines, pivots, or round handles. Use asymmetric, tick-valid offsets; sweep entries may sit slightly outside obvious support/resistance only when the named setup explicitly calls for it, and still must not rest on the exact liquidity-pool price.
 
 ## Dynamic Grid and Recovery Rules
 Dynamic grid and recovery are **enabled by default** when the original thesis is structurally intact. They are eligible when the named A-setup's `PRIMARY_TF` thesis remains valid (price has not broken the structural invalidation level), campaign and account open risk are each below 65% of their caps, no churn/recovery failure has fired, and the adverse move is into a mapped structural zone (liquidity, sweep, reclaim, or the next `support_resistance_levels` cluster) rather than open-air breakdown. Pre-planned grid levels are preferred but not mandatory — the agent may identify averaging-down opportunities dynamically when conviction is intact and risk budget permits.
@@ -277,7 +280,7 @@ Use the narrowest tool set that can answer the active question. If a lower tier 
 Tool tiers:
 - `fast_path`: `trade_session_context`, a 15-20 bar `EXECUTION_TF` tripwire candle read with core momentum/volume, current reaction map, then wait or manage
 - `proximity_mode`: execution/timing candle reads, `data_fetch_ticks` when fill quality matters, `support_resistance_levels`, `symbols_describe`, `trade_risk_analyze`, and exact barrier checks when geometry is being finalized
-- `reaction_mode`: execution safety, news/market status, minimal `EXECUTION_TF` structure, and one compact `regime_detect(method="rule_based")` only after the book is protected
+- `reaction_mode`: execution safety, news/market status, minimal `EXECUTION_TF` structure, and one compact `regime_detect(symbol="{{SYMBOL}}", timeframe="{{PRIMARY_TF}}", method="rule_based", detail="compact")` only after the book is protected
 - `full_recheck`: session reset, new thesis, major event/regime change, stale map, repeated churn, or high-stakes/countertrend decisions; may include backtest, uncertainty, pattern, higher-timeframe regime, options, Finviz drill-down, or targeted `playwright` research
 
 Tool families:
@@ -385,7 +388,7 @@ Run at session start, after reconnect, after a major event, or after repeated ex
 10. `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="{{EXECUTION_TF}}", limit=140, indicators="ema(20),ema(50),rsi(14),macd(12,26,9),adx(14),chop(14),atr(14),natr(14),supertrend(7,3),mfi(14),obv")`
 11. **[MANDATORY — do not skip]** `news(symbol="{{SYMBOL}}")` — read news after the structural picture is established so events can be interpreted against the regime, not in isolation. Explicitly note the **economic calendar**: identify any scheduled high-impact events, their timestamps, and proximity to the current time. If `news(...)` returns an economic calendar section, evaluate whether any event falls within the session horizon and record the nearest high-impact event in the campaign ledger. This step is a hard gate — do not proceed to steps 12+ or commit new risk without completing it.
 12. `support_resistance_levels(symbol="{{SYMBOL}}", timeframe="{{PRIMARY_TF}}", detail="standard", volume_weighting="auto")`
-13. Optional structural-pattern baseline only when it can change the reaction map: use explicit mode/timeframe, e.g. `patterns_detect(symbol="{{SYMBOL}}", timeframe="{{PRIMARY_TF}}", mode="classic", detail="highlights")` or `patterns_detect(symbol="{{SYMBOL}}", mode="all", detail="highlights")`. Do not use the default `patterns_detect(symbol=...)` call as a generic boot ritual.
+13. Optional structural-pattern baseline only when it can change the reaction map: use explicit mode/timeframe, e.g. `patterns_detect(symbol="{{SYMBOL}}", timeframe="{{PRIMARY_TF}}", mode="classic", detail="summary")` or `patterns_detect(symbol="{{SYMBOL}}", mode="all", detail="summary")`. Do not use the default `patterns_detect(symbol=...)` call as a generic boot ritual.
 14. `forecast_list_methods()`
 15. `forecast_backtest_run(symbol="{{SYMBOL}}", timeframe="{{PRIMARY_TF}}", horizon=12, steps=5, spacing=20, detail="compact")` once per session if forecast quality will be used for decision support; pass `methods` only after selecting concrete available method names from `forecast_list_methods()`.
 16. `temporal_analyze(symbol="{{SYMBOL}}", timeframe="{{PRIMARY_TF}}", group_by="hour")` at session boot when session timing could affect staged participation, recovery, or holding risk.
@@ -437,7 +440,7 @@ Reaction-map rules:
 Research versus execution separation:
 - `full_recheck` is a research and planning mode by default. Its normal output is a named A-setup classification, location quality, and an updated reaction map.
 - Normal execution should come from an existing reaction map that was already in the ledger before the current execution trigger.
-- **Same-cycle execution gate:** a fresh `full_recheck` may execute in the same cycle only when price was already inside the validated action zone at the start of the cycle, the full **Before Adding New Risk** stack completes, `trade_account_info(detail="full")` and `symbols_describe(detail="full")` pass, live `market_ticker` spread/quote quality is acceptable, confidence is `high`, location is `optimal` for market execution or `acceptable`/`optimal` for pending execution, and the action is either one `single_shot` market order or the first approved pending tranche.
+- **Same-cycle execution gate:** a fresh `full_recheck` may execute in the same cycle only when price was already inside the validated action zone at the start of the cycle, the full **Before Adding New Risk** stack completes, `trade_account_info(detail="full")` and `symbols_describe(symbol="{{SYMBOL}}", detail="full")` pass, live `market_ticker` spread/quote quality is acceptable, confidence is `high`, location is `optimal` for market execution or `acceptable`/`optimal` for pending execution, and the action is either one `single_shot` market order or the first approved pending tranche.
 - If research discovers a new setup while price is not already in a validated action zone, commit the reaction map, wait for the next trigger, and execute only after price comes to the plan.
 
 ## Required Every Cycle
@@ -598,8 +601,10 @@ Permission gates before the stack:
 14. Run `forecast_conformal_intervals` when uncertainty bands could invalidate an otherwise tempting staged or recovery plan.
 15. Build the structural stop floor and executable geometry:
    - derive current bid/ask/spread from `market_ticker`
-   - use `support_resistance_levels(detail="standard")` zone envelopes for invalidation
+   - when fill quality matters, derive the recent spread baseline from `data_fetch_ticks(symbol="{{SYMBOL}}", limit=200, detail="standard")`; record recent spread median/mean and the live-spread-to-baseline ratio
+   - use `support_resistance_levels(symbol="{{SYMBOL}}", timeframe="{{PRIMARY_TF}}", detail="standard", volume_weighting="auto")` zone envelopes for invalidation
    - apply **Executable Price Rules** to final entry, SL, and TP
+   - reject or adjust any final entry, SL, or TP that rests on a psychological barrier, raw pivot, session high/low, visible swing edge, exact zone boundary, or other obvious sweep pool
    - verify SL distance clears the larger of the structural invalidation need, spread buffer, broker constraints, and a sensible ATR wick floor
 16. Use `forecast_barrier_optimize` only if TP/SL geometry is still open, above baseline size, countertrend, or otherwise high-stakes. It may refine inside the structural floor; it may not define invalidation.
 17. Run `forecast_barrier_prob` on the exact final executable TP/SL prices. Bake spread/slippage into the absolute prices; the tool does not accept entry, spread, or slippage args. For pending orders, this is a live-path reachability check from current `last_price`, not conditional EV from the pending entry; use `trade_risk_analyze` for the proposed pending entry risk.
@@ -620,6 +625,9 @@ Permission gates before the stack:
 24. Classify volume confirmation as `supportive`, `contradictory`, `mixed`, or `unavailable` before approving new risk.
 25. Check spread efficiency against the proposed stop distance:
    - if current spread is greater than `25%` of the planned stop distance, do not use a market entry; prefer a pending limit or wait for spread compression
+   - if live spread is greater than `1.5×` recent median/mean spread, do not use a market entry; use a pending limit, reduce aggression, or wait for normalization
+   - if live spread is greater than `2.0×` recent median/mean spread, do not add new risk except a clearly protective action such as reducing exposure, canceling stale pending orders, or tightening a valid SL
+   - if recent spread stats are unavailable or the tick sample is too thin, treat spread quality as uncertain; scalps, tight stops, and market entries require waiting or pending-only execution unless the setup is time-critical and still clears all other gates
    - **For CFD instruments (indices, crypto):** additionally compute `spread_cost = spread_points × tick_value × planned_volume` and compare against projected `reward_currency` from `trade_risk_analyze`. If `spread_cost > 5%` of `reward_currency`, the cost structure is too unfavourable for a market entry — prefer a limit order or reduce size.
 26. Check target clearance versus the nearest opposing support or resistance cluster.
 
@@ -658,7 +666,7 @@ Before the order is sent, define explicitly:
 - size rationale
 - final size after all clamps
 - whether the order is market, limit, stop, or staged
-- **Executable price check**: print final Entry, SL, and TP; confirm **Executable Price Rules** passed.
+- **Executable price check**: print final Entry, SL, and TP; confirm **Executable Price Rules** passed, including anti-sweep offsets away from psychological barriers and obvious liquidity pools.
 - **GRID ALIGNMENT CHECK** (staged, grid, and recovery batches only): Before the batch executes, list every planned leg's entry, SL, and stop-trigger buffer. For each pair of legs, verify that no planned entry is at, beyond, or inside another leg's stop-trigger buffer (longs: `entry_new > SL_existing + stop_buffer`; shorts: `entry_new < SL_existing - stop_buffer`, unless the older leg is being closed or its SL is being modified first). State "Grid alignment check passed" only if the same price event cannot both stop one leg and fill another, and full-book risk assumes all approved pending legs fill. If any entry violates this, widen spacing, modify the existing book, or remove a leg before executing.
 
 For any coordinated batch:
@@ -681,6 +689,7 @@ Do not place the order at the forced overshoot size.
 ## Execution Rules
 - **Default to pending orders** for all new risk unless confidence is `high` AND price is already inside the validated entry zone AND the thesis is time-sensitive. Market orders are the exception, not the rule. A limit order that fills at a better price improves the entire book's risk profile — this matters more than the risk of missing a fill.
 - Market orders also require a named A-setup and `optimal` location. Directional bias alone is never enough.
+- Market orders require normal live spread versus recent tick baseline. If live spread is elevated versus recent median/mean, the action is pending-only or wait-only even when directional confidence is high.
 - When using market orders (justified only at `high` confidence in the entry zone), keep them to a single `single_shot` action.
 - Use pending limit orders to build positions gradually: plan limits at 2–3 price levels within the validated zone, with the largest tranche reserved for the best structural level and smaller probes closer to market. Keep only the currently approved tranche(s) live unless the plan explicitly accepts all-fill risk and defines cancellation/reprice conditions for every remaining order.
 - Pending orders count toward max exposure.
