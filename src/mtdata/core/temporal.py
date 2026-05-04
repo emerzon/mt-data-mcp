@@ -252,6 +252,44 @@ def _compact_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     }
     groups = payload.get("groups")
     if isinstance(groups, list) and groups:
+        if all(isinstance(row, dict) and "dimension" in row for row in groups):
+            compact_groups = []
+            best_by_dimension: Dict[str, Dict[str, Any]] = {}
+            for item in groups:
+                dimension = str(item.get("dimension") or "")
+                breakdown = item.get("breakdown")
+                if not isinstance(breakdown, list):
+                    continue
+                compact_breakdown = [
+                    _compact_temporal_stats(row)
+                    for row in breakdown
+                    if isinstance(row, dict)
+                ]
+                compact_groups.append(
+                    {
+                        "dimension": dimension,
+                        "breakdown": compact_breakdown,
+                    }
+                )
+                best = max(
+                    (
+                        row
+                        for row in compact_breakdown
+                        if row.get("avg_return") is not None
+                    ),
+                    key=lambda row: float(row.get("avg_return") or 0.0),
+                    default=None,
+                )
+                if best:
+                    best_by_dimension[dimension] = {
+                        key: best[key]
+                        for key in ("group", "avg_return", "win_rate")
+                        if key in best
+                    }
+            out["groups"] = compact_groups
+            if best_by_dimension:
+                out["best"] = best_by_dimension
+            return out
         compact_groups = [
             _compact_temporal_stats(row)
             for row in groups
@@ -578,30 +616,62 @@ def temporal_analyze(  # noqa: C901
                     filters=filters,
                 )
 
-            groups_out: List[Dict[str, Any]] = []
+            def _groups_for_dimension(dimension: str) -> List[Dict[str, Any]]:
+                grouped = df.copy()
+                if dimension == "dow":
+                    grouped["__group"] = grouped["__dt"].dt.weekday
+                elif dimension == "month":
+                    grouped["__group"] = grouped["__dt"].dt.month
+                elif dimension == "hour":
+                    grouped["__group"] = grouped["__dt"].dt.hour
+                else:
+                    return []
 
-            if group_norm == "dow":
-                df["__group"] = df["__dt"].dt.weekday
-                for key, grp in df.groupby("__group", sort=True):
+                out_rows: List[Dict[str, Any]] = []
+                for key, grp in grouped.groupby("__group", sort=True):
                     row = _stats_for_group(grp, volume_col)
-                    row["group"] = _DOW_LABELS[int(key)] if 0 <= int(key) <= 6 else str(key)
-                    row["_group_key"] = int(key)
-                    groups_out.append(row)
-            elif group_norm == "month":
-                df["__group"] = df["__dt"].dt.month
-                for key, grp in df.groupby("__group", sort=True):
-                    label = _MONTH_LABELS[int(key) - 1] if 1 <= int(key) <= 12 else str(key)
-                    row = _stats_for_group(grp, volume_col)
-                    row["group"] = label
-                    row["_group_key"] = int(key)
-                    groups_out.append(row)
-            elif group_norm == "hour":
-                df["__group"] = df["__dt"].dt.hour
-                for key, grp in df.groupby("__group", sort=True):
-                    row = _stats_for_group(grp, volume_col)
-                    row["group"] = f"{int(key):02d}:00"
-                    row["_group_key"] = int(key)
-                    groups_out.append(row)
+                    key_int = int(key)
+                    if dimension == "dow":
+                        row["group"] = (
+                            _DOW_LABELS[key_int] if 0 <= key_int <= 6 else str(key)
+                        )
+                    elif dimension == "month":
+                        row["group"] = (
+                            _MONTH_LABELS[key_int - 1]
+                            if 1 <= key_int <= 12
+                            else str(key)
+                        )
+                    else:
+                        row["group"] = f"{key_int:02d}:00"
+                    row["_group_key"] = key_int
+                    out_rows.append(row)
+                return out_rows
+
+            groups_out: List[Dict[str, Any]] = []
+            grouped_dimensions: List[Dict[str, Any]] = []
+
+            if group_norm in {"dow", "month", "hour"}:
+                groups_out = _groups_for_dimension(group_norm)
+                if groups_out:
+                    if group_norm == "dow":
+                        df["__group"] = df["__dt"].dt.weekday
+                    elif group_norm == "month":
+                        df["__group"] = df["__dt"].dt.month
+                    else:
+                        df["__group"] = df["__dt"].dt.hour
+            elif group_norm == "all":
+                for dimension in ("dow", "hour", "month"):
+                    breakdown = [
+                        {key: value for key, value in row.items() if key != "_group_key"}
+                        for row in _groups_for_dimension(dimension)
+                    ]
+                    if breakdown:
+                        grouped_dimensions.append(
+                            {
+                                "dimension": dimension,
+                                "breakdown": breakdown,
+                            }
+                        )
 
             excluded_groups: List[Dict[str, Any]] = []
             auto_min_bars = False
@@ -684,7 +754,9 @@ def temporal_analyze(  # noqa: C901
                     "Sparse temporal groups below min_bars were excluded from "
                     "grouped results and overall summary."
                 ]
-            if groups_out:
+            if grouped_dimensions:
+                payload["groups"] = grouped_dimensions
+            elif groups_out:
                 payload["groups"] = groups_out
             if detail_mode == "compact":
                 return _compact_temporal_payload(payload)

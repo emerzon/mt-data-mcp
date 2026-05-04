@@ -662,8 +662,28 @@ class TestTemporalAnalyze:
         assert r.get("success") is True
         assert r["group_by"] == "all"
         assert "overall" in r
-        # group_by=all produces no sub-groups
-        assert "groups" not in r
+        assert [group["dimension"] for group in r["groups"]] == ["dow", "hour", "month"]
+        assert all("breakdown" in group for group in r["groups"])
+        assert r["groups"][0]["breakdown"][0]["group"] == "Mon"
+        assert r["groups"][1]["breakdown"][0]["group"] == "00:00"
+        assert r["groups"][2]["breakdown"][0]["group"] == "Jan"
+
+    @_apply_analyze_patches
+    def test_group_by_all_compact_keeps_grouped_breakdowns(self, mock_fetch, *_):
+        mock_fetch.return_value = (_make_rates(n=200, start_epoch=1704067200, interval=3600), None)
+
+        r = _raw_temporal_analyze(
+            symbol="EURUSD",
+            timeframe="H1",
+            lookback=1000,
+            group_by="all",
+        )
+
+        assert r.get("success") is True
+        assert "overall" not in r
+        assert [group["dimension"] for group in r["groups"]] == ["dow", "hour", "month"]
+        assert "avg_range" not in r["groups"][0]["breakdown"][0]
+        assert set(r["best"]) == {"dow", "hour", "month"}
 
     @_apply_analyze_patches
     def test_filter_day_of_week(self, mock_fetch, *_):
