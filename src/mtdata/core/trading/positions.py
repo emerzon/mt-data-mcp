@@ -185,7 +185,10 @@ def _normalize_trade_read_output(
 
         items = rows.get("items")
         if isinstance(items, list):
-            out["items"] = items
+            out["items"] = [
+                _round_trade_money_fields(item) if isinstance(item, dict) else item
+                for item in items
+            ]
             out["count"] = len(items)
             message_text = str(rows.get("message", "")).strip()
             if message_text:
@@ -219,7 +222,9 @@ def _normalize_trade_read_output(
         out["error"] = f"Unexpected {kind} payload type: {type(rows).__name__}"
         return out
 
-    out["items"] = rows
+    out["items"] = [
+        _round_trade_money_fields(row) if isinstance(row, dict) else row for row in rows
+    ]
     out["count"] = len(rows)
     if len(rows) == 0:
         _mark_trade_read_empty(out)

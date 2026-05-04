@@ -53,6 +53,24 @@ def test_normalize_trade_read_output_compact_omits_request_echoes():
     assert "limit" not in out
 
 
+def test_normalize_trade_read_output_rounds_money_fields():
+    out = positions._normalize_trade_read_output(
+        [
+            {
+                "ticket": 1,
+                "symbol": "BTCUSD",
+                "profit": -1.8900000000000001,
+                "swap": 0.07999999999999999,
+            }
+        ],
+        request=SimpleNamespace(detail="compact"),
+        kind="open_positions",
+    )
+
+    assert out["items"][0]["profit"] == -1.89
+    assert out["items"][0]["swap"] == 0.08
+
+
 def test_resolve_open_position_respects_side_filter_when_mt5_constants_are_missing():
     class _NoConstantsMt5:
         def __init__(self, rows):
