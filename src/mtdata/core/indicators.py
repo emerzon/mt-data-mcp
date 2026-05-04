@@ -286,7 +286,7 @@ def indicators_list(
                         [
                             it.get("name", ""),
                             it.get("category", ""),
-                            _extract_short_description(it.get("description", "")),
+                            _extract_short_description(docs.get("description") or it.get("description", "")),
                             len(params),
                             params,
                             ", ".join(str(alias) for alias in (it.get("aliases") or []) if str(alias).strip()),
