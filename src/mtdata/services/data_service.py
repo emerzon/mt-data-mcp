@@ -88,6 +88,23 @@ logger = logging.getLogger(__name__)
 _AUTO_TIME_ALIGNMENT_MIN_SHIFT_SECONDS = 1800
 _AUTO_TIME_ALIGNMENT_MAX_SHIFT_SECONDS = 18 * 3600
 _TICK_SUMMARY_MIN_ANALYTIC_TICKS = 20
+_CANDLE_PRICE_COLUMNS = frozenset({"open", "high", "low", "close"})
+_TICK_PRICE_COLUMNS = frozenset({"bid", "ask", "last"})
+_TICK_PRICE_STAT_KEYS = frozenset(
+    {
+        "first",
+        "last",
+        "low",
+        "high",
+        "mean",
+        "std",
+        "stderr",
+        "change",
+        "median",
+        "q25",
+        "q75",
+    }
+)
 
 
 def _format_mt5_last_error() -> str:
@@ -99,6 +116,76 @@ def _format_mt5_last_error() -> str:
         code, message = err
         return f"({code}, {message!r})"
     return str(err)
+
+
+def _symbol_price_digits(*infos: Any) -> int:
+    for info in infos:
+        try:
+            digits_raw = getattr(info, "digits", None)
+        except Exception:
+            digits_raw = None
+        if isinstance(digits_raw, (int, float)):
+            return max(0, int(digits_raw))
+    return 0
+
+
+def _round_price_value(value: Any, digits: int) -> Any:
+    if digits <= 0 or value is None or isinstance(value, bool):
+        return value
+    if not isinstance(value, (int, float)):
+        return value
+    numeric = float(value)
+    if not math.isfinite(numeric):
+        return value
+    return round(numeric, digits)
+
+
+def _round_row_price_columns(
+    rows: List[List[Any]],
+    headers: List[str],
+    *,
+    digits: int,
+    price_columns: frozenset[str],
+) -> List[List[Any]]:
+    if digits <= 0:
+        return rows
+    price_indexes = [
+        idx for idx, header in enumerate(headers) if str(header) in price_columns
+    ]
+    if not price_indexes:
+        return rows
+    rounded_rows: List[List[Any]] = []
+    for row in rows:
+        rounded = list(row)
+        for idx in price_indexes:
+            if idx < len(rounded):
+                rounded[idx] = _round_price_value(rounded[idx], digits)
+        rounded_rows.append(rounded)
+    return rounded_rows
+
+
+def _round_tick_price_payload(out: Dict[str, Any], digits: int) -> None:
+    if digits <= 0:
+        return
+    stats = out.get("stats")
+    if isinstance(stats, dict):
+        for name in ("bid", "ask", "mid", "spread", "last"):
+            values = stats.get(name)
+            if not isinstance(values, dict):
+                continue
+            for key in _TICK_PRICE_STAT_KEYS:
+                if key in values:
+                    values[key] = _round_price_value(values[key], digits)
+    last_quote = out.get("last_quote")
+    if isinstance(last_quote, dict):
+        for key in ("bid", "ask", "mid", "spread"):
+            if key in last_quote:
+                last_quote[key] = _round_price_value(last_quote[key], digits)
+    volume_stats = stats.get("volume") if isinstance(stats, dict) else None
+    if isinstance(volume_stats, dict):
+        for key in ("vwap_mid", "vwap_last"):
+            if key in volume_stats:
+                volume_stats[key] = _round_price_value(volume_stats[key], digits)
 
 
 def _describe_rate_fetch_error(symbol: str, *, info_before: Any = None) -> str:
@@ -1123,6 +1210,7 @@ def fetch_candles(  # noqa: C901
         with _symbol_ready_guard(symbol, info_before=_info_before) as (err, _info):
             if err:
                 return {"error": err}
+            price_digits = _symbol_price_digits(_info, _info_before)
 
             try:
                 ti_spec = _normalize_indicator_spec(ti)
@@ -1340,6 +1428,12 @@ def fetch_candles(  # noqa: C901
             current_time_epoch=live_bar_reference_epoch,
         )
         rows = _format_numeric_rows_from_df(df, headers, stringify=False)
+        rows = _round_row_price_columns(
+            rows,
+            headers,
+            digits=price_digits,
+            price_columns=_CANDLE_PRICE_COLUMNS,
+        )
         query_latency_ms = round((time.perf_counter() - query_started_at) * 1000.0, 3)
         query_mode = "range" if (start_datetime or end_datetime) else "latest"
         ti_added_cols = [str(c) for c in ti_cols if isinstance(c, str)]
@@ -1729,13 +1823,7 @@ def fetch_ticks(  # noqa: C901
         with _symbol_ready_guard(symbol, info_before=_info_before) as (err, _info):
             if err:
                 return {"error": err}
-            price_digits = 0
-            try:
-                digits_raw = getattr(_info, "digits", None)
-                if isinstance(digits_raw, (int, float)):
-                    price_digits = max(0, int(digits_raw))
-            except Exception:
-                price_digits = 0
+            price_digits = _symbol_price_digits(_info, _info_before)
 
             # Normalized params only. This is an output shape selector, not the
             # shared compact/full detail enum.
@@ -2097,12 +2185,19 @@ def fetch_ticks(  # noqa: C901
                 elif not small_summary_sample:
                     out["stats"]["volume"] = {"kind": volume_kind}
 
+            _round_tick_price_payload(out, price_digits)
             return out if detailed_stats else _compact_tick_summary(out)
 
         # If simplify mode requests approximation or resampling, use shared path
         if simplify_present and simplify_mode in ('approximate', 'resample'):
             df_out, simplify_meta = _simplify_dataframe_rows_ext(df_ticks, headers, simplify_used)
             rows = _format_numeric_rows_from_df(df_out, headers, stringify=False)
+            rows = _round_row_price_columns(
+                rows,
+                headers,
+                digits=price_digits,
+                price_columns=_TICK_PRICE_COLUMNS,
+            )
             payload = _table_from_rows(headers, rows)
             payload.update({
                 "success": True,
@@ -2204,9 +2299,13 @@ def fetch_ticks(  # noqa: C901
         rows = []
         for i in select_indices:
             time_str = _format_tick_time(_epochs[i])
-            values = [time_str, bids[i], asks[i]]
+            values = [
+                time_str,
+                _round_price_value(bids[i], price_digits),
+                _round_price_value(asks[i], price_digits),
+            ]
             if has_last:
-                values.append(lasts[i])
+                values.append(_round_price_value(lasts[i], price_digits))
             if has_volume:
                 values.append(volumes[i])
             if has_real_volume:

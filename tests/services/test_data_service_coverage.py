@@ -658,6 +658,42 @@ class TestFetchCandles(unittest.TestCase):
 
     @patch(_MT5_CONFIG)
     @patch(_RATES_FROM)
+    @patch(_CACHED_INFO, return_value=SimpleNamespace(digits=5))
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=0)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_candle_prices_round_to_symbol_digits(
+        self,
+        mock_warmup,
+        mock_ctz,
+        mock_info,
+        mock_from,
+        mock_cfg,
+    ):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        rates = _make_rates(10, step=3600)
+        for row in rates:
+            row.update(
+                {
+                    "open": 1.1736900000000001,
+                    "high": 1.1745600000000002,
+                    "low": 1.1723400000000002,
+                    "close": 1.1736900000000001,
+                }
+            )
+        mock_from.return_value = rates
+
+        result = fetch_candles('EURUSD', limit=5, ohlcv='OHLC')
+
+        self.assertTrue(result.get('success'))
+        row = result['data'][0]
+        self.assertEqual(row['open'], 1.17369)
+        self.assertEqual(row['high'], 1.17456)
+        self.assertEqual(row['low'], 1.17234)
+        self.assertEqual(row['close'], 1.17369)
+
+    @patch(_MT5_CONFIG)
+    @patch(_RATES_FROM)
     @patch(_CACHED_INFO, return_value=MagicMock())
     @patch(_RESOLVE_CTZ, return_value=None)
     @patch(_ESTIMATE_WARMUP, return_value=0)
@@ -1918,6 +1954,30 @@ class TestFetchTicks(unittest.TestCase):
         self.assertTrue(result.get('success'))
         self.assertEqual(result['count'], 5)
         self.assertEqual(result.get('timezone'), 'UTC')
+
+    @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=SimpleNamespace(digits=5))
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_tick_row_prices_round_to_symbol_digits(self, mock_ctz, mock_info, mock_ticks):
+        ticks = _make_ticks(10)
+        for tick in ticks:
+            tick.update(
+                {
+                    "bid": 1.1736900000000001,
+                    "ask": 1.1745600000000002,
+                    "last": 1.1733300000000002,
+                }
+            )
+        mock_ticks.return_value = ticks
+
+        result = fetch_ticks('EURUSD', limit=5, format='rows')
+
+        self.assertTrue(result.get('success'))
+        row = result['data'][0]
+        self.assertEqual(row['bid'], 1.17369)
+        self.assertEqual(row['ask'], 1.17456)
+        self.assertEqual(row['last'], 1.17333)
 
     @patch(_TICKS_RANGE)
     @patch(_CACHED_INFO, return_value=MagicMock())
