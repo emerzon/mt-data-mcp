@@ -97,6 +97,11 @@ def test_data_fetch_candles_accepts_standard_detail_alias():
     assert DataFetchCandlesRequest(symbol="EURUSD", detail="standard").detail == "standard"
 
 
+def test_data_fetch_candles_rejects_summary_detail():
+    with pytest.raises(ValidationError):
+        DataFetchCandlesRequest(symbol="EURUSD", detail="summary")
+
+
 def test_data_fetch_candles_schema_documents_ohlcv():
     schema = DataFetchCandlesRequest.model_json_schema()
     ohlcv = schema["properties"]["ohlcv"]

@@ -14,7 +14,6 @@ from pydantic import (
 )
 
 from ...shared.schema import (
-    CompactFullDetailLiteral,
     CompactStandardFullDetailLiteral,
     DenoiseSpec,
     IndicatorSpec,
@@ -310,7 +309,7 @@ SimplifySpecInput = Annotated[
 class DataFetchCandlesRequest(BaseModel):
     symbol: str
     timeframe: TimeframeLiteral = "H1"
-    detail: CompactFullDetailLiteral = "compact"
+    detail: Literal["compact", "standard", "full"] = "compact"
     limit: int = 50
     start: Optional[str] = None
     end: Optional[str] = None
