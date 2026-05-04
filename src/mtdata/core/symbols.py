@@ -1490,9 +1490,9 @@ def market_scan(  # noqa: C901
     """Filtered MT5 market scanner with one flat table and technical filters.
 
     Pass `symbol` for one instrument or `symbols` for a comma-separated list.
-    `data.table.rows` is the canonical table payload. Compact detail is the
-    default; use `detail="full"` when you also want the explicit `columns`
-    ordering hint for compatibility. Use `symbols_top_markets` for a quick
+    `data` is the canonical flat row payload. Compact detail is the default;
+    use `detail="full"` when you also want the explicit `columns` ordering
+    hint for compatibility. Use `symbols_top_markets` for a quick
     all-market overview with separate spread, volume, and mover leaderboards.
     """
 
@@ -1834,15 +1834,15 @@ def market_scan(  # noqa: C901
                 "skipped_examples": skipped_examples,
                 "query_latency_ms": round((time.perf_counter() - started_at) * 1000.0, 3),
             }
+            table_payload = _market_scan_contract_table(
+                headers,
+                output_rows,
+                include_columns=detail_mode == "full",
+            )
             out: Dict[str, Any] = {
                 "success": True,
-                "data": {
-                    "table": _market_scan_contract_table(
-                        headers,
-                        output_rows,
-                        include_columns=detail_mode == "full",
-                    ),
-                },
+                "data": table_payload["rows"],
+                "count": table_payload["row_count"],
                 "summary": {
                     "counts": {
                         "scanned_symbols": int(stats["scanned_symbols"]),
@@ -1854,6 +1854,8 @@ def market_scan(  # noqa: C901
                 },
                 "meta": _market_scan_contract_meta(request=request, stats=stats),
             }
+            if "columns" in table_payload:
+                out["columns"] = table_payload["columns"]
             if total_matches == 0:
                 out["summary"]["empty"] = True
                 out["message"] = "No symbols matched the requested market scan filters."

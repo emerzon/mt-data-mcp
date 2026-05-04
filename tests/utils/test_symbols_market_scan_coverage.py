@@ -458,20 +458,18 @@ class TestMarketScan:
         assert result["success"] is True
         assert result["summary"]["counts"]["matched_symbols"] == 1
         assert result["summary"]["counts"]["filtered_out_symbols"] == 1
-        assert result["data"]["table"]["columns"][0] == "symbol"
-        assert set(result["data"]["table"]["rows"][0]).issubset(
-            set(result["data"]["table"]["columns"])
-        )
-        assert "bid" in result["data"]["table"]["columns"]
-        assert "ask" in result["data"]["table"]["columns"]
-        assert "open" in result["data"]["table"]["columns"]
-        assert "real_volume" in result["data"]["table"]["columns"]
-        assert result["data"]["table"]["row_count"] == 1
-        assert result["data"]["table"]["rows"][0]["symbol"] == "EURUSD"
-        assert result["data"]["table"]["rows"][0]["rsi"] == 100.0
-        assert result["data"]["table"]["rows"][0]["sma_value"] == 5.0
+        assert result["columns"][0] == "symbol"
+        assert set(result["data"][0]).issubset(set(result["columns"]))
+        assert "bid" in result["columns"]
+        assert "ask" in result["columns"]
+        assert "open" in result["columns"]
+        assert "real_volume" in result["columns"]
+        assert result["count"] == 1
+        assert result["data"][0]["symbol"] == "EURUSD"
+        assert result["data"][0]["rsi"] == 100.0
+        assert result["data"][0]["sma_value"] == 5.0
         assert result["collection_kind"] == "table"
-        assert result["canonical_source"] == "data.table.rows"
+        assert result["canonical_source"] == "data"
         assert "rows" not in result
         assert result["meta"]["request"]["timeframe"] == "H1"
         assert result["meta"]["request"]["rank_by"] == "abs_price_change_pct"
@@ -497,9 +495,9 @@ class TestMarketScan:
         result = fn(timeframe="H1", lookback=4, limit=5)
 
         assert result["success"] is True
-        assert "columns" not in result["data"]["table"]
-        assert result["data"]["table"]["row_count"] == 1
-        row = result["data"]["table"]["rows"][0]
+        assert "columns" not in result
+        assert result["count"] == 1
+        row = result["data"][0]
         assert row["symbol"] == "EURUSD"
         assert set(row) == {
             "symbol",
@@ -619,7 +617,7 @@ class TestMarketScan:
         assert result["success"] is True
         assert result["meta"]["request"]["symbols_input"] == ["EURUSD"]
         assert result["meta"]["request"]["symbol_alias_used"] is True
-        assert [row["symbol"] for row in result["data"]["table"]["rows"]] == ["EURUSD"]
+        assert [row["symbol"] for row in result["data"]] == ["EURUSD"]
 
     @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
     @patch("mtdata.core.symbols.mt5.symbols_get")
@@ -680,7 +678,7 @@ class TestMarketScan:
         assert result["success"] is True
         assert result["meta"]["request"]["group"] == "Forex"
         assert result["meta"]["request"]["groups"] == ["Forex\\Majors", "Forex\\Minors"]
-        assert {row["symbol"] for row in result["data"]["table"]["rows"]} == {"EURUSD", "AUDCAD"}
+        assert {row["symbol"] for row in result["data"]} == {"EURUSD", "AUDCAD"}
 
     @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
     @patch("mtdata.core.symbols.mt5.symbol_info_tick", return_value=None)
