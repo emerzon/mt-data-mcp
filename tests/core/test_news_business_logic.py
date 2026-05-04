@@ -113,7 +113,6 @@ def test_news_tool_compact_and_full_detail_contract(monkeypatch) -> None:
     assert compact["general_news"] == [
         {
             "title": "Fed preview",
-            "published_at": "2026-03-29T08:00:00Z",
             "relative_time": "9 days ago",
         }
     ]
@@ -185,7 +184,6 @@ def test_news_output_hides_debug_fields_when_not_verbose() -> None:
             "title": "Fed preview",
             "source": "Reuters",
             "kind": "headline",
-            "published_at": "2026-03-29T08:00:00Z",
             "relative_time": "9 days ago",
         }
     ]
@@ -195,7 +193,6 @@ def test_news_output_hides_debug_fields_when_not_verbose() -> None:
             "title": "EUR/USD market snapshot",
             "source": "Finviz Forex",
             "kind": "market_snapshot",
-            "published_at": "2026-03-29T08:05:00Z",
             "relative_time": "9 days ago",
             "summary": "Price: 1.1541",
         }
@@ -266,7 +263,7 @@ def test_news_output_derives_relative_time_from_published_at_when_needed() -> No
     assert item["source"] == "Reuters"
     assert item["kind"] == "headline"
     assert item["relative_time"].endswith("ago")
-    assert item["published_at"] == published_at
+    assert "published_at" not in item
 
 
 def test_news_output_uses_relative_time_for_future_events() -> None:
@@ -299,7 +296,7 @@ def test_news_output_uses_relative_time_for_future_events() -> None:
     assert item["title"] == "US CPI (USD)"
     assert item["relative_time"] == "in 3 hours"
     assert "time_utc" not in item
-    assert item["published_at"] == published_at.isoformat()
+    assert "published_at" not in item
     assert item["source"] == "Finviz Economic Calendar"
     assert item["kind"] == "economic_event"
 
@@ -358,7 +355,7 @@ def test_news_output_compacts_upcoming_events_bucket() -> None:
     assert item["title"] == "US CPI (USD)"
     assert item["source"] == "Finviz Economic Calendar"
     assert item["kind"] == "economic_event"
-    assert item["published_at"] == published_at.isoformat()
+    assert "published_at" not in item
     assert item["relative_time"].startswith("in ")
     assert "time_utc" not in item
     assert item["summary"] == "Expected: 3.2% | Prior: 3.1%"
@@ -399,7 +396,6 @@ def test_news_output_compacts_recent_events_bucket() -> None:
             "title": "US CPI (USD)",
             "source": "Finviz Economic Calendar",
             "kind": "economic_event",
-            "published_at": published_at.isoformat(),
             "relative_time": "2 hours ago",
             "summary": "Actual: 3.2% | Expected: 3.1% | Prior: 3.0%",
         }

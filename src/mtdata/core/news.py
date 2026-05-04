@@ -157,7 +157,7 @@ def _strip_news_compact_item_fields(value: Any, *, bucket_name: Optional[str] = 
     if kind not in (None, ""):
         out["kind"] = kind
     published_at = value.get("published_at")
-    if published_at not in (None, ""):
+    if published_at not in (None, "") and time_field_name != "relative_time":
         out["published_at"] = published_at
     if time_field_name and time_field_value:
         out[time_field_name] = time_field_value
@@ -261,9 +261,10 @@ def news(
         Instrument to contextualize the news for, such as `AAPL`, `EURUSD`, or
         `BTCUSD`.
     detail : {"compact", "full"}, optional
-        Response detail level. `compact` (default) keeps the current concise
-        buckets, while `full` preserves the richer source, matching, and item
-        metadata payloads.
+        Response detail level. `compact` (default) keeps concise buckets with
+        relative-time labels and omits redundant URLs and absolute timestamps
+        when possible, while `full` preserves the richer source, matching, and
+        item metadata payloads.
     limit : int, optional
         Maximum number of items to return per news bucket. Omit to keep the
         source-selected bucket sizes.
