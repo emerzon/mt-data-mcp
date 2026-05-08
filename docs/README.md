@@ -1,8 +1,18 @@
 # Documentation Index
 
-This folder contains user-facing documentation for mtdata. Start with setup, then follow a guided workflow before exploring individual topics.
+This folder contains user-facing documentation for mtdata. Start with setup, run a read-only workflow, then explore the deeper references as you need them.
 
 Safety note: `trade_*` commands can place/modify/close real orders on the account currently logged into MT5 (demo or live). Use a demo account until you're confident in your setup.
+
+## Choose Your Path
+
+| Goal | Start Here | Then Read |
+|------|------------|-----------|
+| Install and confirm MT5 connectivity | [SETUP.md](SETUP.md) | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) if anything fails |
+| Learn the command line safely | [CLI.md](CLI.md) | [GLOSSARY.md](GLOSSARY.md), [SAMPLE-TRADE.md](SAMPLE-TRADE.md) |
+| Build a research workflow | [EXAMPLE.md](EXAMPLE.md) | [FORECAST.md](FORECAST.md), [BARRIER_FUNCTIONS.md](BARRIER_FUNCTIONS.md) |
+| Integrate with an app or agent | [WEB_API.md](WEB_API.md) | [ENV_VARS.md](ENV_VARS.md), [CLI.md](CLI.md) |
+| Prepare for trade execution | [SAMPLE-TRADE-ADVANCED.md](SAMPLE-TRADE-ADVANCED.md) | [ENV_VARS.md](ENV_VARS.md#trade-guardrails), [TROUBLESHOOTING.md](TROUBLESHOOTING.md) |
 
 ## Learning Path
 
@@ -22,6 +32,7 @@ Safety note: `trade_*` commands can place/modify/close real orders on the accoun
 | [ENV_VARS.md](ENV_VARS.md) | Complete `.env` reference (MT5, MCP, Web API, GPU, etc.) |
 | [CLI.md](CLI.md) | Command conventions, output formats, help system |
 | [GLOSSARY.md](GLOSSARY.md) | **Start here** — Explanations of all technical terms |
+| [LIMITATIONS.md](LIMITATIONS.md) | Practical caveats, provider limits, and documentation gaps |
 
 ## Core Topics
 
@@ -85,6 +96,17 @@ $symbols | % { mtdata-cli forecast_volatility_estimate $_ --timeframe H1 --horiz
 | Document | Description |
 |----------|-------------|
 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | Common issues and solutions |
+
+## Documentation Gaps Identified
+
+See [LIMITATIONS.md](LIMITATIONS.md) for the user-facing caveats and gap list. This review pass improved the main onboarding and reference pages, but these areas still deserve dedicated follow-up docs:
+
+- Per-method forecast defaults and reproducibility notes for every forecast model.
+- Response-schema examples for each CLI/MCP tool, especially fields that change by `detail` and `extras`.
+- A single timestamp policy that explains broker server time, UTC, client-local time, and external provider timezones in one place.
+- A trading safety runbook with dry-run examples for `trade_place`, `trade_modify`, `trade_close`, guardrails, and broker-specific order behavior.
+- Options data-provider status and alternatives when Yahoo Finance options endpoints require authentication.
+- Deployment-oriented guidance for running MCP/Web API as a long-lived local service.
 
 ## Quick Reference
 

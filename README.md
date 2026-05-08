@@ -1,8 +1,8 @@
 # mtdata
 
-**mtdata** is a research and automation toolkit for MetaTrader 5 (MT5). It provides tools for forecasting, regime detection, signal processing, risk analysis, and reporting—bridging raw market data with data science.
+**mtdata** is a Windows-first research and automation toolkit for MetaTrader 5 (MT5). It turns a running MT5 terminal into repeatable CLI commands, MCP tools, and a local Web API for market data, forecasting, regime detection, signal processing, risk analysis, and reporting.
 
-It runs as a **Model Context Protocol (MCP)** server or a standalone **CLI**.
+Use it to explore ideas, build repeatable research workflows, and integrate MT5 data with assistants or local applications. It is a toolkit, not a trading strategy or financial advice.
 
 ## Who Is This For?
 
@@ -21,6 +21,7 @@ It runs as a **Model Context Protocol (MCP)** server or a standalone **CLI**.
 - `mtdata` includes `trade_*` commands that can **place/modify/close real orders** on the account currently logged into MT5.
 - Use a **demo account** until you understand the tools and your broker setup.
 - There is no built-in “paper trading” mode in mtdata; use an MT5 demo account for simulated execution.
+- When a trading command supports `--dry-run true`, preview the action before sending anything to MT5.
 - If you only want research, stick to `data_*`, `forecast_*`, `regime_*`, `patterns_*`, and `report_*` commands.
 
 ## Capabilities
@@ -44,6 +45,10 @@ It runs as a **Model Context Protocol (MCP)** server or a standalone **CLI**.
 | **News** | Unified, ranked news + economic calendar relevant to a symbol | `news` |
 | **Fundamentals** | US equity data, screening, news, calendars | `finviz_fundamentals`, `finviz_screen`, `finviz_calendar` |
 | **Options** | Options chains and QuantLib barrier pricing | `options_chain`, `options_barrier_price` |
+
+Notes:
+- `market_depth_fetch` is enabled only when `MTDATA_ENABLE_MARKET_DEPTH_FETCH=1` and your broker provides Level 2/DOM data.
+- Options-chain tools depend on Yahoo Finance endpoint availability. The pure QuantLib calculator `options_barrier_price` works independently of external options-chain data.
 
 ## Quick Start
 
@@ -72,6 +77,8 @@ mtdata-cli data_fetch_candles EURUSD --timeframe H1 --limit 50
 # Generate a baseline price forecast
 mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 --method theta
 ```
+
+After these commands work, move through the docs in the learning path below. Keep the first session read-only unless you are using a demo account and intentionally testing trading commands.
 
 Notes:
 - `pip install -e .` now installs the lean core package only.
@@ -115,6 +122,7 @@ New here? Follow this learning path:
 ### Reference
 - **[Environment Variables](docs/ENV_VARS.md)** — Complete `.env` reference (MT5, MCP, Web API, GPU, etc.)
 - **[Web API](docs/WEB_API.md)** — REST endpoints for the Web UI and integrations
+- **[Known Limitations](docs/LIMITATIONS.md)** — Practical caveats and documentation gaps
 - **[Troubleshooting](docs/TROUBLESHOOTING.md)** — Common issues and fixes
 
 ## Configuration

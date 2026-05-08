@@ -1,6 +1,6 @@
 # Setup & Configuration
 
-Installation and configuration guide for mtdata.
+Use this guide to install mtdata, connect it to MetaTrader 5, and verify a safe read-only workflow before enabling any trading actions.
 
 **Related:**
 - [README.md](../README.md) — Project overview
@@ -19,6 +19,26 @@ Installation and configuration guide for mtdata.
 - **MetaTrader 5:** Installed and running
 - **Windows Build Tools:** Visual Studio Build Tools 2022 with the **Desktop development with C++** workload for `pip install -r requirements.txt`, Git-backed extras, and optional native accelerators
 - **Rust toolchain (optional):** Required only if you opt into the `tsdownsample` source-build path described below
+
+---
+
+## Recommended First-Run Path
+
+1. Install the lean package with `pip install -e .`.
+2. Confirm MT5 connectivity with `mtdata-cli symbols_list --limit 10`.
+3. Set broker timezone configuration before relying on timestamps or backtests.
+4. Run read-only examples first: symbols, candles, forecast, and report commands.
+5. Use a demo account and `--dry-run true` before testing any `trade_*` command that supports it.
+
+Choose the smallest install that fits your current task:
+
+| Need | Install Path |
+|------|--------------|
+| CLI, MT5 data, indicators, core analysis | `pip install -e .` |
+| Validated local research stack used by most docs | `pip install -r requirements.txt` |
+| Web API / Web UI backend only | `pip install -e .[web]` |
+| Heavy forecasting and optimization extras | `pip install -e .[forecast-classical]` and/or `pip install -e .[forecast-foundation]` |
+| Git-backed experimental integrations | Install the specific Git-backed extra only when needed |
 
 ---
 
@@ -435,6 +455,7 @@ See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for more issues.
 - [CLI.md](CLI.md) — Learn command usage
 - [EXAMPLE.md](EXAMPLE.md) — Follow an end-to-end workflow
 - [GLOSSARY.md](GLOSSARY.md) — Understand terminology
+- [LIMITATIONS.md](LIMITATIONS.md) — Review practical caveats before deeper integrations
 - [FINVIZ.md](FINVIZ.md) — Fundamental data and screening
 - [TEMPORAL.md](TEMPORAL.md) — Session and seasonal analysis
 

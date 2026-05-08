@@ -1,6 +1,6 @@
 # Web API Reference
 
-The `mtdata` Web API exposes forecasting, analysis, and data fetching capabilities via REST endpoints. This API powers the Web UI and can be used by other applications.
+The `mtdata` Web API exposes a focused REST surface for market data, forecasting, analysis, and the bundled Web UI. Use it when you want local HTTP access from dashboards, notebooks, scripts, or another application.
 
 **Base URL:** `http://localhost:8000` (default)
 
@@ -8,6 +8,29 @@ Route versioning:
 - Every API route below is available under both `/api/...` and `/api/v1/...`.
 - Prefer `/api/v1` for new integrations.
 - The examples below use `/api` for brevity.
+
+The Web API is intentionally smaller than the full CLI/MCP tool surface. If an endpoint is not listed here, use `mtdata-cli` or an MCP client for that tool.
+
+## Quick Start
+
+Start the local server:
+
+```bash
+mtdata-webapi
+```
+
+Check health and fetch a small candle sample:
+
+```bash
+curl http://127.0.0.1:8000/api/v1/health
+curl "http://127.0.0.1:8000/api/v1/history?symbol=EURUSD&timeframe=H1&limit=50"
+```
+
+Open the bundled UI after building `webui/dist/`:
+
+```text
+http://127.0.0.1:8000/app
+```
 
 ## Authentication
 
@@ -19,6 +42,17 @@ If you want remote access, set `WEBAPI_ALLOW_REMOTE=1`, use a non-loopback `WEBA
 - `X-API-Key: <token>`
 
 Credentialed CORS requests require explicit origins. `CORS_ORIGINS=*` is rejected.
+
+Security checklist for remote access:
+
+- Keep the default local bind (`127.0.0.1`) unless another machine must connect.
+- Set `WEBAPI_AUTH_TOKEN` before using `WEBAPI_ALLOW_REMOTE=1`.
+- Use explicit `CORS_ORIGINS`; do not rely on browser defaults.
+- Treat API access as sensitive because endpoints can expose account, symbol, and market context from the running MT5 terminal.
+
+## Response Style
+
+Responses are JSON. Most endpoints return compact, UI-oriented payloads rather than the full CLI/MCP output contract. For richer historical rows or method diagnostics, prefer the CLI with `--json` and `--extras`.
 
 ## Endpoints
 

@@ -91,6 +91,23 @@ mtdata-cli forecast_barrier_optimize EURUSD --timeframe H1 --horizon 12 --direct
 mtdata-cli forecast_backtest_run EURUSD --timeframe H1 --horizon 12 --methods theta --steps 20 --spacing 12
 ```
 
+### Reproducibility Notes
+
+Forecast defaults vary by method and may change as implementations improve. For any result you plan to compare later, make the run self-describing:
+
+- Save the exact command, including `--symbol`, `--timeframe`, `--horizon`, `--lookback`, `--method`, `--library`, and `--params`.
+- Prefer `--json` for stored results so downstream scripts do not depend on text formatting.
+- Set important method parameters explicitly instead of relying on implicit defaults.
+- Use `forecast_list_methods --json` to confirm which methods are available in the current environment.
+
+Example:
+
+```bash
+mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 \
+  --library native --method arima --lookback 500 \
+  --params "p=2 d=1 q=2" --json
+```
+
 ---
 
 ### Classical Models
@@ -360,4 +377,3 @@ Configuration (see [ENV_VARS.md](ENV_VARS.md#async-training--model-store)):
 - [BARRIER_FUNCTIONS.md](BARRIER_FUNCTIONS.md) — Barrier optimization
 - [TEMPORAL.md](TEMPORAL.md) — Seasonal analysis
 - [OPTIONS_QUANTLIB.md](OPTIONS_QUANTLIB.md) — QuantLib pricing tools
-

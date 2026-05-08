@@ -8,6 +8,29 @@ Common issues when running mtdata and how to resolve them.
 
 ---
 
+## Start Here: Diagnostic Snapshot
+
+When something fails, collect a small read-only snapshot first. It usually separates install, MT5 connection, symbol, and data-history problems quickly.
+
+```bash
+python --version
+mtdata-cli --help
+mtdata-cli symbols_list --limit 10
+mtdata-cli symbols_describe EURUSD --json
+mtdata-cli data_fetch_candles EURUSD --timeframe H1 --limit 5 --json
+```
+
+If the Web API is involved, also check:
+
+```bash
+mtdata-webapi
+curl http://127.0.0.1:8000/api/v1/health
+```
+
+Keep the first troubleshooting pass read-only. Do not use `trade_place`, `trade_modify`, or `trade_close` while diagnosing setup issues unless you are intentionally testing on a demo account.
+
+---
+
 ## Connection Issues
 
 ### "Could not connect to MT5" or Empty Data
@@ -215,6 +238,21 @@ Set `MT5_SERVER_TZ` or `MT5_TIME_OFFSET_MINUTES` explicitly before starting `mtd
 
 **Note:** This is expected for most forex pairs. Use volume-based indicators cautiously.
 
+### Time Range Looks Valid but Still Returns No Rows
+
+**Possible causes:**
+- The market was closed for the requested interval.
+- Your broker has limited historical depth for that symbol/timeframe.
+- The symbol name differs by broker suffix, for example `EURUSD.r` or `EURUSDm`.
+
+**Solution:**
+```bash
+mtdata-cli symbols_list --search-term EURUSD --limit 20
+mtdata-cli data_fetch_candles EURUSD --timeframe H1 --limit 100 --json
+```
+
+If the broker uses a suffix, rerun the command with the exact symbol shown by `symbols_list`.
+
 ---
 
 ## Performance Issues
@@ -239,6 +277,27 @@ Set `MT5_SERVER_TZ` or `MT5_TIME_OFFSET_MINUTES` explicitly before starting `mtd
 - Reduce `--limit`
 - Reduce `n_sims` for barrier analysis
 - Use streaming instead of batch when possible
+
+---
+
+## Trading Safety Issues
+
+### A Trading Command Might Execute Live
+
+**Cause:** `trade_*` commands operate on the MT5 account currently logged into the terminal. Some commands support `--dry-run true`, but live execution is still possible when you omit dry-run.
+
+**Immediate checks:**
+```bash
+mtdata-cli trade_account_info --json
+mtdata-cli trade_get_open --json
+mtdata-cli trade_get_pending --json
+```
+
+**Safer next steps:**
+1. Confirm whether the MT5 terminal is logged into demo or live.
+2. Use exact tickets for `trade_close` and `trade_modify`.
+3. Preview supported actions with `--dry-run true`.
+4. Configure guardrails such as `MTDATA_TRADING_ENABLED=0`, `MTDATA_TRADE_ALLOWED_SYMBOLS`, and `MTDATA_TRADE_MAX_RISK_PCT_OF_EQUITY` in [ENV_VARS.md](ENV_VARS.md#trade-guardrails).
 
 ---
 
@@ -322,7 +381,7 @@ If `hnswlib` fails, leave it out and use `search_engine=ckdtree` instead.
 
 ### QuantLib Import Error
 
-**Symptom:** `ModuleNotFoundError: No module named 'QuantLib'` when using `forecast_quantlib_*` commands.
+**Symptom:** `ModuleNotFoundError: No module named 'QuantLib'` when using `options_barrier_price` or `options_heston_calibrate`.
 
 **Solution:**
 ```bash

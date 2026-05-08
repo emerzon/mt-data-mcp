@@ -50,7 +50,7 @@ mtdata-cli symbols_describe EURUSD --json
 mtdata-cli data_fetch_candles EURUSD --timeframe H1 --limit 300 --json
 ```
 
-Optional (liquidity snapshot):
+Optional liquidity snapshot. This requires `MTDATA_ENABLE_MARKET_DEPTH_FETCH=1` and broker support for Level 2/DOM data:
 
 ```bash
 mtdata-cli market_depth_fetch EURUSD --json

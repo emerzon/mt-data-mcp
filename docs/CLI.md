@@ -15,6 +15,16 @@ The CLI is the quickest way to explore mtdata capabilities. All tools are access
 
 There is no built-in “paper trading” mode in mtdata; for simulated execution use an MT5 demo account and double-check which account is logged in before running any `trade_*` commands.
 
+Use read-only commands for research and reserve execution commands for intentional account operations:
+
+| Safer Research Commands | Live Execution Commands |
+|-------------------------|-------------------------|
+| `symbols_*`, `market_*`, `data_fetch_*` | `trade_place` |
+| `forecast_*`, `regime_detect`, `patterns_detect` | `trade_modify` |
+| `report_generate`, `trade_risk_analyze`, `trade_get_*` | `trade_close` |
+
+When available, add `--dry-run true` first. The CLI expects boolean values as `true` or `false`, for example `--dry-run true`.
+
 ## Getting Help
 
 **List all commands:**
@@ -364,22 +374,43 @@ mtdata-cli forecast_barrier_optimize EURUSD --horizon 12 \
 ### Place Orders
 `trade_place` requires `symbol`, `volume`, and `order_type`.
 
+The examples below intentionally use `--dry-run true`. Remove it, or set `--dry-run false`, only when you are on the intended account and ready to send the order to MT5.
+
 Accepted `order_type` forms:
 - Canonical: `BUY`, `SELL`, `BUY_LIMIT`, `BUY_STOP`, `SELL_LIMIT`, `SELL_STOP`
 - MT5 aliases: `ORDER_TYPE_BUY`, `ORDER_TYPE_BUY_LIMIT`, etc.
 - MT5 numeric constants: `0..5`
 
 ```bash
-# Pending order with canonical order_type
+# Preview a pending order with canonical order_type
 mtdata-cli trade_place BTCUSD --volume 0.03 --order-type BUY_LIMIT --price 68750 \
-  --stop-loss 67500 --take-profit 72000
+  --stop-loss 67500 --take-profit 72000 --dry-run true
 
-# Same order_type using MT5 alias
-mtdata-cli trade_place BTCUSD --volume 0.03 --order-type ORDER_TYPE_BUY_LIMIT --price 68750
+# Same order_type using MT5 alias, still as a dry run
+mtdata-cli trade_place BTCUSD --volume 0.03 --order-type ORDER_TYPE_BUY_LIMIT --price 68750 \
+  --stop-loss 67500 --take-profit 72000 --dry-run true
 
 # Same order_type using MT5 numeric constant
-mtdata-cli trade_place BTCUSD --volume 0.03 --order-type 2 --price 68750
+mtdata-cli trade_place BTCUSD --volume 0.03 --order-type 2 --price 68750 \
+  --stop-loss 67500 --take-profit 72000 --dry-run true
+
+# Preview a market order with explicit protective levels
+mtdata-cli trade_place BTCUSD --volume 0.01 --order-type BUY \
+  --stop-loss 64500 --take-profit 67200 --dry-run true
 ```
+
+For account-level safety, configure trade guardrails in [ENV_VARS.md](ENV_VARS.md#trade-guardrails) before moving from preview to live execution.
+
+### Close or Modify Positions
+Use exact tickets whenever possible. Preview closes before execution when `--dry-run true` is supported:
+
+```bash
+mtdata-cli trade_get_open --json
+mtdata-cli trade_modify 123456789 --stop-loss 60500 --take-profit 62500
+mtdata-cli trade_close --ticket 123456789 --volume 0.05 --dry-run true
+```
+
+Be especially careful with `trade_close --close-all`; it targets every matching open position.
 
 ### Review Trade Journal
 ```bash
