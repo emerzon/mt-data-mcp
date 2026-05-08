@@ -26,8 +26,8 @@ _YAHOO_BACKOFF_SECONDS = 0.5
 _YAHOO_MIN_REQUEST_INTERVAL_SECONDS = 1.0
 _YAHOO_AUTH_REMEDIATION = (
     "Yahoo Finance options data is unavailable from the unauthenticated endpoint. "
-    "mtdata has no Yahoo API-key setting to configure; retry later or use another "
-    "options data provider."
+    "mtdata has no Yahoo API-key setting to configure; use another options data "
+    "provider."
 )
 _YAHOO_SESSION: Optional[requests.Session] = None
 _YAHOO_SESSION_LOCK = _threading.Lock()
