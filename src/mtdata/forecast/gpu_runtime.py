@@ -37,11 +37,16 @@ def _method_tokens(value: Any) -> list[str]:
 
 def forecast_method_may_use_gpu(method: Any, params: Any = None) -> bool:
     method_l = str(method or "").strip().lower()
-    if method_l in GPU_BACKED_FORECAST_METHODS:
+    method_tail = method_l.rsplit(":", 1)[-1]
+    if method_l in GPU_BACKED_FORECAST_METHODS or method_tail in GPU_BACKED_FORECAST_METHODS:
         return True
     if method_l != "ensemble" or not isinstance(params, Mapping):
         return False
-    return any(token in GPU_BACKED_FORECAST_METHODS for token in _method_tokens(params.get("methods")))
+    return any(
+        token in GPU_BACKED_FORECAST_METHODS
+        or token.rsplit(":", 1)[-1] in GPU_BACKED_FORECAST_METHODS
+        for token in _method_tokens(params.get("methods"))
+    )
 
 
 def forecast_methods_may_use_gpu(

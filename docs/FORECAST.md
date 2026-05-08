@@ -146,6 +146,12 @@ mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 24 \
 
 *Requires a manual nonstandard setup (`gluonts[torch]` plus Lag-Llama) and is not part of the supported Python 3.14 environment in this project.*
 
+GPU-backed forecast calls run in a short-lived child process by default
+(`MTDATA_FORECAST_PROCESS_ISOLATION=gpu`). This lets the child exit after
+inference so CUDA context memory is returned instead of staying reserved by a
+long MCP server session. Set `MTDATA_FORECAST_PROCESS_ISOLATION=all` to isolate
+every forecast tool call, or `off` to keep the previous in-process behavior.
+
 ### Monte Carlo Simulation
 
 Generates thousands of possible future paths instead of a single forecast.

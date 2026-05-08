@@ -139,6 +139,8 @@ Configure the HuggingFace model used to rerank MT5 / external news by relevance.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `MTDATA_FORECAST_PROCESS_ISOLATION` | `gpu` | Forecast subprocess isolation policy: `gpu` isolates only GPU-capable forecast calls, `all` isolates every forecast tool call, and `off` keeps in-process execution. Child exit is the reliable way to release CUDA context memory after GPU inference. |
+| `MTDATA_FORECAST_PROCESS_TIMEOUT_SECONDS` | - | Optional wall-clock timeout for isolated forecast child processes. Leave unset or set `0` for no additional process timeout. |
 | `MTDATA_NF_ACCEL` | auto-detect | Accelerator for NeuralForecast models: `gpu` or `cpu` |
 | `CUDA_VISIBLE_DEVICES` | — | Restrict CUDA to specific GPU device(s). Auto-restricted to the first GPU when multiple are detected. |
 
@@ -288,6 +290,8 @@ A starter template with all sections. Uncomment and fill in what you need.
 # FINVIZ_PAGE_LIMIT_MAX=500
 
 # ── Forecasting / GPU ──────────────────────────────────
+# MTDATA_FORECAST_PROCESS_ISOLATION=gpu
+# MTDATA_FORECAST_PROCESS_TIMEOUT_SECONDS=
 # MTDATA_NF_ACCEL=cpu
 # CUDA_VISIBLE_DEVICES=0
 

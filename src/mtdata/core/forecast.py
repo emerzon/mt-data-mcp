@@ -1,4 +1,8 @@
 import logging
+import multiprocessing as mp
+import os
+import time
+import traceback
 from functools import lru_cache
 from importlib import import_module
 from typing import Any, Dict, List, Literal, Optional
@@ -20,6 +24,7 @@ from ..forecast.requests import (
     ForecastVolatilityEstimateRequest,
     StrategyBacktestRequest,
 )
+from ..shared.schema import CompactFullDetailLiteral
 from ..utils.barriers import (
     build_barrier_kwargs_from as _build_barrier_kwargs_from,
 )
@@ -32,9 +37,43 @@ from ._mcp_instance import mcp
 from .error_envelope import build_error_payload
 from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway, mt5_connection_error
-from ..shared.schema import CompactFullDetailLiteral
 
 logger = logging.getLogger(__name__)
+
+_FORECAST_PROCESS_ISOLATION_ENV = "MTDATA_FORECAST_PROCESS_ISOLATION"
+_FORECAST_PROCESS_TIMEOUT_ENV = "MTDATA_FORECAST_PROCESS_TIMEOUT_SECONDS"
+_FORECAST_PROCESS_CHILD_ENV = "MTDATA_FORECAST_PROCESS_CHILD"
+_FORECAST_PROCESS_ISOLATION_DEFAULT = "gpu"
+_FORECAST_ISOLATABLE_OPERATIONS = frozenset(
+    {
+        "forecast_generate",
+        "forecast_list_library_models",
+        "forecast_backtest_run",
+        "strategy_backtest",
+        "forecast_volatility_estimate",
+        "forecast_list_methods",
+        "forecast_conformal_intervals",
+        "forecast_tune_genetic",
+        "forecast_tune_optuna",
+        "forecast_optimize_hints",
+        "forecast_barrier_prob",
+        "forecast_barrier_optimize",
+    }
+)
+_FORECAST_CONNECTION_REQUIRED_OPERATIONS = frozenset(
+    {
+        "forecast_generate",
+        "forecast_backtest_run",
+        "strategy_backtest",
+        "forecast_volatility_estimate",
+        "forecast_conformal_intervals",
+        "forecast_tune_genetic",
+        "forecast_tune_optuna",
+        "forecast_optimize_hints",
+        "forecast_barrier_prob",
+        "forecast_barrier_optimize",
+    }
+)
 
 
 _FORECAST_TIMESTAMP_OPERATIONS = frozenset(
@@ -55,6 +94,354 @@ def _attach_timestamp_timezone(result: Dict[str, Any], *, operation: str) -> Dic
     ):
         result.setdefault("timezone", "UTC")
     return result
+
+
+def _forecast_process_isolation_mode() -> str:
+    raw = os.environ.get(
+        _FORECAST_PROCESS_ISOLATION_ENV,
+        _FORECAST_PROCESS_ISOLATION_DEFAULT,
+    )
+    mode = str(raw or "").strip().lower()
+    if mode in {"", "auto"}:
+        return _FORECAST_PROCESS_ISOLATION_DEFAULT
+    if mode in {"0", "false", "no", "off", "none", "disabled"}:
+        return "off"
+    if mode in {"1", "true", "yes", "on", "all", "always"}:
+        return "all"
+    if mode == "gpu":
+        return "gpu"
+    logger.warning(
+        "Invalid %s=%r; using %s",
+        _FORECAST_PROCESS_ISOLATION_ENV,
+        raw,
+        _FORECAST_PROCESS_ISOLATION_DEFAULT,
+    )
+    return _FORECAST_PROCESS_ISOLATION_DEFAULT
+
+
+def _forecast_process_timeout_seconds() -> Optional[float]:
+    raw = os.environ.get(_FORECAST_PROCESS_TIMEOUT_ENV)
+    if raw is None or str(raw).strip() == "":
+        return None
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        logger.warning("Invalid %s=%r; forecast child processes will not be time-limited", _FORECAST_PROCESS_TIMEOUT_ENV, raw)
+        return None
+    if value <= 0:
+        return None
+    return value
+
+
+def _in_forecast_process_child() -> bool:
+    return os.environ.get(_FORECAST_PROCESS_CHILD_ENV) == "1"
+
+
+def _model_payload(request: Any) -> Dict[str, Any]:
+    dump = getattr(request, "model_dump", None)
+    if callable(dump):
+        return dict(dump(mode="json"))
+    return dict(request or {})
+
+
+def _is_pretrained_gpu_request(payload: Dict[str, Any]) -> bool:
+    library = str(payload.get("library") or "native").strip().lower()
+    method = str(payload.get("method") or "").strip().lower()
+    if library == "pretrained":
+        return True
+    if method.startswith("pretrained:"):
+        return True
+    return False
+
+
+def _forecast_payload_may_use_gpu(operation: str, payload: Dict[str, Any]) -> bool:
+    try:
+        from ..forecast.gpu_runtime import (
+            forecast_method_may_use_gpu,
+            forecast_methods_may_use_gpu,
+        )
+
+        if operation == "forecast_generate":
+            method = payload.get("method")
+            if _is_pretrained_gpu_request(payload):
+                method = method or "chronos2"
+            return forecast_method_may_use_gpu(method, payload.get("params"))
+
+        if operation == "forecast_backtest_run":
+            return forecast_methods_may_use_gpu(
+                payload.get("methods"),
+                params_per_method=payload.get("params_per_method"),
+                params=payload.get("params"),
+            )
+
+        if operation == "forecast_conformal_intervals":
+            return forecast_method_may_use_gpu(payload.get("method"), payload.get("params"))
+
+        if operation in {"forecast_tune_genetic", "forecast_tune_optuna"}:
+            methods = payload.get("methods") or payload.get("method")
+            return forecast_methods_may_use_gpu(methods, params=payload.get("params"))
+
+        if operation == "forecast_optimize_hints":
+            methods = payload.get("methods")
+            if not methods:
+                return True
+            return forecast_methods_may_use_gpu(methods)
+    except Exception as exc:
+        logger.debug("Forecast process-isolation GPU detection failed for %s: %s", operation, exc)
+    return False
+
+
+def _should_isolate_forecast_operation(operation: str, payload: Optional[Dict[str, Any]]) -> bool:
+    if _in_forecast_process_child():
+        return False
+    if operation not in _FORECAST_ISOLATABLE_OPERATIONS:
+        return False
+    mode = _forecast_process_isolation_mode()
+    if mode == "off":
+        return False
+    if mode == "all":
+        return True
+    return _forecast_payload_may_use_gpu(operation, dict(payload or {}))
+
+
+def _send_forecast_process_message(channel: Any, message: Dict[str, Any]) -> None:
+    send = getattr(channel, "send", None)
+    if callable(send):
+        send(message)
+        return
+    put = getattr(channel, "put", None)
+    if callable(put):
+        put(message)
+        return
+    raise RuntimeError("Invalid forecast child result channel")
+
+
+def _forecast_process_entry(operation: str, payload: Dict[str, Any], result_channel: Any) -> None:
+    os.environ[_FORECAST_PROCESS_CHILD_ENV] = "1"
+    try:
+        result = _run_forecast_payload_direct(operation, payload)
+    except ForecastError as exc:
+        _send_forecast_process_message(
+            result_channel,
+            {
+                "status": "forecast_error",
+                "message": str(exc),
+            },
+        )
+    except BaseException as exc:
+        _send_forecast_process_message(
+            result_channel,
+            {
+                "status": "exception",
+                "type": type(exc).__name__,
+                "message": str(exc),
+                "traceback": traceback.format_exc(),
+            },
+        )
+    else:
+        _send_forecast_process_message(result_channel, {"status": "ok", "result": result})
+    finally:
+        try:
+            from ..forecast.gpu_runtime import cleanup_forecast_gpu_runtime
+
+            cleanup_forecast_gpu_runtime(clear_model_cache=True)
+        except Exception:
+            pass
+        try:
+            close = getattr(result_channel, "close", None)
+            if callable(close):
+                close()
+        except Exception:
+            pass
+
+
+def _run_forecast_payload_direct(operation: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    if operation in _FORECAST_CONNECTION_REQUIRED_OPERATIONS:
+        ensure_mt5_connection_or_raise()
+
+    if operation == "forecast_generate":
+        request = ForecastGenerateRequest(**payload)
+        return run_forecast_generate(
+            request,
+            forecast_impl=_forecast_impl,
+            resolve_sktime_forecaster=_resolve_sktime_forecaster,
+            log_events=False,
+        )
+
+    if operation == "forecast_list_library_models":
+        return _forecast_list_library_models_impl(
+            payload["library"],
+            show_unavailable=bool(payload.get("show_unavailable", False)),
+        )
+
+    if operation == "forecast_backtest_run":
+        request = ForecastBacktestRequest(**payload)
+        return run_forecast_backtest(
+            request,
+            backtest_impl=_forecast_backtest_impl,
+        )
+
+    if operation == "strategy_backtest":
+        request = StrategyBacktestRequest(**payload)
+        return run_strategy_backtest(
+            request,
+            strategy_backtest_impl=_strategy_backtest_impl,
+        )
+
+    if operation == "forecast_volatility_estimate":
+        request = ForecastVolatilityEstimateRequest(**payload)
+        return run_forecast_volatility_estimate(
+            request,
+            forecast_volatility_impl=_forecast_volatility_impl,
+        )
+
+    if operation == "forecast_list_methods":
+        return _forecast_list_methods_impl(
+            detail=payload.get("detail", "compact"),
+            limit=payload.get("limit"),
+            search=payload.get("search_term"),
+            category=payload.get("category"),
+            library=payload.get("library"),
+            supports_ci=payload.get("supports_ci"),
+            show_unavailable=bool(payload.get("show_unavailable", False)),
+        )
+
+    if operation == "forecast_conformal_intervals":
+        request = ForecastConformalIntervalsRequest(**payload)
+        return run_forecast_conformal_intervals(
+            request,
+            backtest_impl=_forecast_backtest_impl,
+            forecast_impl=_forecast_impl,
+        )
+
+    if operation == "forecast_tune_genetic":
+        request = ForecastTuneGeneticRequest(**payload)
+        return run_forecast_tune_genetic(
+            request,
+            genetic_search_impl=_genetic_search_impl,
+        )
+
+    if operation == "forecast_tune_optuna":
+        request = ForecastTuneOptunaRequest(**payload)
+        return run_forecast_tune_optuna(
+            request,
+            optuna_search_impl=_optuna_search_impl,
+        )
+
+    if operation == "forecast_optimize_hints":
+        request = ForecastOptimizeHintsRequest(**payload)
+        return run_forecast_optimize_hints(
+            request,
+            optimize_hints_impl=_optimize_hints_impl,
+        )
+
+    if operation == "forecast_barrier_prob":
+        from ..forecast.barriers_probabilities import (
+            forecast_barrier_closed_form as _barrier_closed_form_impl,
+        )
+        from ..forecast.barriers_probabilities import (
+            forecast_barrier_hit_probabilities as _barrier_hit_probabilities_impl,
+        )
+
+        request = ForecastBarrierProbRequest(**payload)
+        return run_forecast_barrier_prob(
+            request,
+            build_barrier_kwargs=_build_barrier_kwargs_from,
+            normalize_trade_direction=normalize_trade_direction,
+            barrier_hit_probabilities_impl=_barrier_hit_probabilities_impl,
+            barrier_closed_form_impl=_barrier_closed_form_impl,
+        )
+
+    if operation == "forecast_barrier_optimize":
+        from ..forecast.barriers_optimization import (
+            forecast_barrier_optimize as _barrier_optimize_impl,
+        )
+
+        request = ForecastBarrierOptimizeRequest(**payload)
+        return run_forecast_barrier_optimize(
+            request,
+            parse_kv_or_json=_parse_kv_or_json,
+            barrier_optimize_impl=_barrier_optimize_impl,
+        )
+
+    raise ValueError(f"Unsupported isolated forecast operation: {operation}")
+
+
+def _run_forecast_payload_in_process(operation: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    ctx = mp.get_context("spawn")
+    parent_conn, child_conn = ctx.Pipe(duplex=False)
+    process = ctx.Process(
+        target=_forecast_process_entry,
+        args=(operation, dict(payload), child_conn),
+        daemon=False,
+    )
+    process.start()
+    try:
+        child_conn.close()
+    except Exception:
+        pass
+    timeout_seconds = _forecast_process_timeout_seconds()
+    deadline = time.monotonic() + timeout_seconds if timeout_seconds is not None else None
+    message: Optional[Dict[str, Any]] = None
+    try:
+        while message is None:
+            if parent_conn.poll(0.1):
+                raw_message = parent_conn.recv()
+                if isinstance(raw_message, dict):
+                    message = raw_message
+                else:
+                    message = {"status": "ok", "result": raw_message}
+                break
+            if not process.is_alive():
+                process.join(timeout=0.1)
+                if parent_conn.poll(0.1):
+                    raw_message = parent_conn.recv()
+                    if isinstance(raw_message, dict):
+                        message = raw_message
+                    else:
+                        message = {"status": "ok", "result": raw_message}
+                    break
+                exit_code = process.exitcode
+                raise RuntimeError(
+                    f"{operation} child process exited without returning a result"
+                    + (f" (exitcode={exit_code})" if exit_code is not None else "")
+                )
+            if deadline is not None and time.monotonic() >= deadline:
+                process.terminate()
+                process.join(timeout=5.0)
+                raise TimeoutError(
+                    f"{operation} child process timed out after {timeout_seconds} seconds"
+                )
+    finally:
+        try:
+            parent_conn.close()
+        except Exception:
+            pass
+        if process.is_alive():
+            if message is not None:
+                process.join(timeout=5.0)
+                if process.is_alive():
+                    process.terminate()
+                    process.join(timeout=5.0)
+            else:
+                process.join(timeout=0.1)
+
+    status = str(message.get("status") or "")
+    if status == "ok":
+        result = message.get("result")
+        if isinstance(result, dict):
+            return result
+        return {"success": True, "result": result}
+    if status == "forecast_error":
+        raise ForecastError(str(message.get("message") or "Forecast child process failed"))
+    if status == "exception":
+        tb = str(message.get("traceback") or "")
+        if tb:
+            logger.debug("Forecast child traceback for %s:\n%s", operation, tb)
+        exc_type = str(message.get("type") or "RuntimeError")
+        exc_message = str(message.get("message") or "Forecast child process failed")
+        raise RuntimeError(f"{operation} child process failed with {exc_type}: {exc_message}")
+    raise RuntimeError(f"{operation} child process returned an invalid status: {status or '<missing>'}")
 
 
 def _lazy_module(module_name: str):
@@ -196,6 +583,7 @@ def _run_forecast_operation(
     operation: str,
     *,
     func,
+    process_payload: Optional[Dict[str, Any]] = None,
     require_connection: bool = False,
     generic_error_prefix: Optional[str] = None,
     catch_forecast_error: bool = False,
@@ -207,7 +595,11 @@ def _run_forecast_operation(
             if connection_error is not None:
                 return connection_error
         try:
-            return _attach_timestamp_timezone(func(), operation=operation)
+            if _should_isolate_forecast_operation(operation, process_payload):
+                result = _run_forecast_payload_in_process(operation, dict(process_payload or {}))
+            else:
+                result = func()
+            return _attach_timestamp_timezone(result, operation=operation)
         except ForecastError as exc:
             if catch_forecast_error:
                 return _forecast_error_payload(exc, operation=operation)
@@ -250,6 +642,7 @@ def forecast_generate(request: ForecastGenerateRequest) -> Dict[str, Any]:
         method=request.method,
         require_connection=True,
         catch_forecast_error=True,
+        process_payload=_model_payload(request),
         func=_execute,
     )
 
@@ -268,6 +661,10 @@ def forecast_list_library_models(
         "forecast_list_library_models",
         library=library,
         show_unavailable=show_unavailable,
+        process_payload={
+            "library": library,
+            "show_unavailable": bool(show_unavailable),
+        },
         func=lambda: _forecast_list_library_models_impl(
             library,
             show_unavailable=show_unavailable,
@@ -291,6 +688,7 @@ def forecast_backtest_run(request: ForecastBacktestRequest) -> Dict[str, Any]:
         horizon=request.horizon,
         detail=request.detail,
         require_connection=True,
+        process_payload=_model_payload(request),
         func=_execute,
     )
 
@@ -310,6 +708,7 @@ def strategy_backtest(request: StrategyBacktestRequest) -> Dict[str, Any]:
         timeframe=request.timeframe,
         strategy=request.strategy,
         require_connection=True,
+        process_payload=_model_payload(request),
         func=_execute,
     )
 
@@ -332,6 +731,7 @@ def forecast_volatility_estimate(
         horizon=request.horizon,
         method=request.method,
         require_connection=True,
+        process_payload=_model_payload(request),
         func=_execute,
     )
 
@@ -363,6 +763,15 @@ def forecast_list_methods(
         library=library,
         supports_ci=supports_ci,
         show_unavailable=show_unavailable,
+        process_payload={
+            "detail": detail,
+            "limit": limit,
+            "search_term": search_term_value,
+            "category": category,
+            "library": library,
+            "supports_ci": supports_ci,
+            "show_unavailable": bool(show_unavailable),
+        },
         func=lambda: _forecast_list_methods_impl(
             detail=detail,
             limit=limit,
@@ -398,6 +807,7 @@ def forecast_conformal_intervals(request: ForecastConformalIntervalsRequest) -> 
         require_connection=True,
         catch_forecast_error=True,
         generic_error_prefix="Error computing conformal forecast: ",
+        process_payload=_model_payload(request),
         func=_execute,
     )
 
@@ -424,6 +834,7 @@ def forecast_tune_genetic(request: ForecastTuneGeneticRequest) -> Dict[str, Any]
         metric=request.metric,
         require_connection=True,
         generic_error_prefix="Error in genetic tuning: ",
+        process_payload=_model_payload(request),
         func=_execute,
     )
 
@@ -445,6 +856,7 @@ def forecast_tune_optuna(request: ForecastTuneOptunaRequest) -> Dict[str, Any]:
         metric=request.metric,
         require_connection=True,
         generic_error_prefix="Error in optuna tuning: ",
+        process_payload=_model_payload(request),
         func=_execute,
     )
 
@@ -551,6 +963,7 @@ def forecast_optimize_hints(request: ForecastOptimizeHintsRequest) -> Dict[str, 
         timeframe=request.timeframe,
         require_connection=True,
         generic_error_prefix="Error in optimize hints search: ",
+        process_payload=_model_payload(request),
         func=_execute,
     )
 
@@ -793,6 +1206,7 @@ def forecast_barrier_prob(
         method=request.method,
         direction=request.direction,
         require_connection=True,
+        process_payload=_model_payload(request),
         func=_execute,
     )
 
@@ -820,6 +1234,7 @@ def forecast_barrier_optimize(
         method=request.method,
         direction=request.direction,
         require_connection=True,
+        process_payload=_model_payload(request),
         func=_execute,
     )
 
