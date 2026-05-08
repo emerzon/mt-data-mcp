@@ -7,9 +7,9 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
+from ..forecast_registry import ForecastRegistry
 from ..interface import ForecastMethod, ForecastResult
 from ..model_cache import model_cache
-from ..forecast_registry import ForecastRegistry
 from .pretrained_helpers import (
     adjust_forecast_length,
     build_params_used,
@@ -98,13 +98,10 @@ def _resolve_chronos_model_defaults(method_name: str, params: Dict[str, Any]) ->
 
     model_name_l = model_name.lower()
     if "chronos-bolt" in model_name_l:
-        family = "bolt"
         pipeline_order = ("ChronosBoltPipeline",)
     elif "chronos-2" in model_name_l:
-        family = "chronos2"
         pipeline_order = ("Chronos2Pipeline",)
     else:
-        family = "t5"
         pipeline_order = ("ChronosPipeline",)
 
     return model_name, pipeline_order
@@ -159,6 +156,14 @@ def _truthy(value: Any) -> bool:
     if value is None:
         return False
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _falsey(value: Any) -> bool:
+    if isinstance(value, bool):
+        return not value
+    if value is None:
+        return False
+    return str(value).strip().lower() in {"0", "false", "no", "off"}
 
 
 def _coerce_feature_tokens(value: Any) -> List[str]:
@@ -837,15 +842,137 @@ class ChronosBoltMethod(PretrainedMethod):
             except Exception:
                 pass
 
+
+def _resolve_timesfm_device(requested: Any, torch_module: Any) -> str:
+    req = str(requested).strip().lower() if requested is not None else ""
+    cuda = getattr(torch_module, "cuda", None)
+    cuda_available = False
+    try:
+        cuda_available = bool(cuda is not None and callable(getattr(cuda, "is_available", None)) and cuda.is_available())
+    except Exception:
+        cuda_available = False
+
+    if not req or req == "auto":
+        return "cuda:0" if cuda_available else "cpu"
+    if req == "gpu":
+        req = "cuda:0"
+    if req == "cuda":
+        req = "cuda:0"
+    if req.startswith("cuda") and not cuda_available:
+        raise RuntimeError("CUDA was requested for timesfm but torch.cuda is not available")
+    return req
+
+
+def _set_timesfm_torch_device(wrapper: Any, torch_module: Any, device_name: str) -> Optional[Any]:
+    model = getattr(wrapper, "model", None)
+    if model is None:
+        return None
+    device = torch_module.device(device_name)
+    try:
+        model.device = device
+    except Exception:
+        pass
+    try:
+        model.device_count = 1
+    except Exception:
+        pass
+    move = getattr(model, "to", None)
+    if callable(move):
+        try:
+            move(device)
+        except Exception:
+            pass
+    return model
+
+
+def _timesfm_checkpoint_path(params: Dict[str, Any]) -> Optional[str]:
+    for key in ("checkpoint_path", "ckpt_path", "checkpoint", "model_path"):
+        value = params.get(key)
+        if value is not None and str(value).strip():
+            return str(value)
+    return None
+
+
+def _download_timesfm_checkpoint(params: Dict[str, Any]) -> str:
+    try:
+        from huggingface_hub import hf_hub_download  # type: ignore
+    except Exception as ex:
+        raise RuntimeError(
+            "timesfm checkpoint auto-download requires huggingface_hub; "
+            "set params.checkpoint_path to a local model.safetensors file."
+        ) from ex
+
+    repo_id = str(
+        params.get("model_name")
+        or params.get("model_id")
+        or "google/timesfm-2.5-200m-pytorch"
+    )
+    filename = str(params.get("filename") or params.get("hf_filename") or "model.safetensors")
+    kwargs: Dict[str, Any] = {
+        "repo_id": repo_id,
+        "filename": filename,
+        "force_download": _truthy(params.get("force_download")),
+        "local_files_only": _truthy(params.get("local_files_only")),
+    }
+    for key in ("revision", "cache_dir", "token"):
+        value = params.get(key)
+        if value is not None and str(value).strip():
+            kwargs[key] = value
+    try:
+        return str(hf_hub_download(**kwargs))
+    except Exception as ex:
+        raise RuntimeError(
+            f"timesfm checkpoint auto-download failed for {repo_id}/{filename}; "
+            "set params.checkpoint_path to a local model.safetensors file or "
+            "check network/cache access."
+        ) from ex
+
+
+def _load_timesfm_checkpoint(wrapper: Any, params: Dict[str, Any]) -> Optional[str]:
+    model = getattr(wrapper, "model", None)
+    nested_load = getattr(model, "load_checkpoint", None)
+    if callable(nested_load):
+        path = _timesfm_checkpoint_path(params) or _download_timesfm_checkpoint(params)
+        torch_compile = False
+        if "torch_compile" in params:
+            torch_compile = _truthy(params.get("torch_compile")) and not _falsey(params.get("torch_compile"))
+        try:
+            nested_load(path, torch_compile=torch_compile)
+        except TypeError:
+            nested_load(path)
+        return path
+
+    wrapper_load = getattr(wrapper, "load_checkpoint", None)
+    if not callable(wrapper_load):
+        return None
+    path = _timesfm_checkpoint_path(params)
+    try:
+        if path:
+            wrapper_load(path)
+        else:
+            wrapper_load()
+    except TypeError:
+        if path:
+            wrapper_load(path)
+        else:
+            raise
+    return path
+
+
 @ForecastRegistry.register("timesfm")
 class TimesFMMethod(PretrainedMethod):
     CAPABILITY_REQUIRES = ("timesfm", "torch")
-    CAPABILITY_NOTES = "Uses timesfm 2.x (GitHub) API; runs without downloading external weights."
+    CAPABILITY_NOTES = "Uses timesfm 2.x (GitHub) API with the TimesFM 2.5 PyTorch checkpoint."
     PARAMS: List[Dict[str, Any]] = [
         {"name": "device", "type": "str|null", "description": "Compute device (cpu/cuda)."},
         {"name": "model_class", "type": "str|null", "description": "TimesFM torch class name override."},
+        {"name": "model_name", "type": "str|null", "description": "Hugging Face repo id (default: google/timesfm-2.5-200m-pytorch)."},
+        {"name": "checkpoint_path", "type": "str|null", "description": "Local model.safetensors checkpoint path."},
         {"name": "context_length", "type": "int|null", "description": "Context window length."},
         {"name": "quantiles", "type": "list|null", "description": "Quantile levels to return."},
+        {"name": "local_files_only", "type": "bool", "description": "Use only cached Hugging Face files when auto-loading the checkpoint."},
+        {"name": "force_download", "type": "bool", "description": "Force Hugging Face checkpoint re-download."},
+        {"name": "torch_compile", "type": "bool", "description": "Enable torch.compile during checkpoint load (default: false)."},
     ]
 
     @property
@@ -988,12 +1115,19 @@ class TimesFMMethod(PretrainedMethod):
 
         _mdl = None
         _cfg = None
+        _device_name = _resolve_timesfm_device(p.get("device"), _torch)
+        _checkpoint_path: Optional[str] = None
         try:
             try:
                 _mdl = _Cls()
             except TypeError:
                 # Some versions accept device/config in constructor.
-                _mdl = _Cls(device=p.get("device"))  # type: ignore[arg-type]
+                _mdl = _Cls(device=_device_name)  # type: ignore[arg-type]
+            _set_timesfm_torch_device(_mdl, _torch, _device_name)
+            try:
+                _checkpoint_path = _load_timesfm_checkpoint(_mdl, p)
+            finally:
+                _set_timesfm_torch_device(_mdl, _torch, _device_name)
             _max_ctx = int(ctx_len) if ctx_len and int(ctx_len) > 0 else None
             _cfg_kwargs: Dict[str, Any] = {
                 'max_context': _max_ctx or min(int(n), 1024),
@@ -1006,15 +1140,11 @@ class TimesFMMethod(PretrainedMethod):
             }
             _cfg = _ForecastConfig(**_cfg_kwargs)
             try:
-                if hasattr(_mdl, "load_checkpoint"):
-                    _mdl.load_checkpoint()
-            except Exception:
-                pass
-            try:
                 if hasattr(_mdl, "compile"):
                     _mdl.compile(_cfg)
             except Exception:
-                pass
+                if getattr(_mdl, "compiled_decode", None) is None:
+                    raise
 
             pf, qf = _call_forecast(_mdl, np.asarray(context, dtype=float), int(horizon))
             if pf is not None:
@@ -1056,8 +1186,14 @@ class TimesFMMethod(PretrainedMethod):
                                 continue
                             col = qarr[0, :horizon, idx]
                             fq[key] = [float(v) for v in np.asarray(col, dtype=float).tolist()]
+            _params_base = {
+                'timesfm_model': str(_cls_name or getattr(_Cls, "__name__", "timesfm")),
+                'device': str(_device_name),
+            }
+            if _checkpoint_path:
+                _params_base['checkpoint_path'] = str(_checkpoint_path)
             params_used = build_params_used(
-                {'timesfm_model': str(_cls_name or getattr(_Cls, "__name__", "timesfm"))},
+                _params_base,
                 quantiles_dict=fq,
                 context_length=int(_max_ctx or n)
             )

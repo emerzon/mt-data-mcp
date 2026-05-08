@@ -48,7 +48,7 @@ mtdata-cli forecast_list_methods
 
 Availability is environment-dependent:
 - On the supported Python 3.14 install path, GluonTS `gt_*` methods are unsupported.
-- NeuralForecast methods (`nhits`, `tft`, `patchtst`, `nbeatsx`) require a separate manual install: `pip install neuralforecast torch`.
+- NeuralForecast methods (`nhits`, `tft`, `patchtst`, `nbeatsx`) require a modern Nixtla `neuralforecast` release plus `torch` in a Python/Torch environment supported by that package. On Python 3.14, current NeuralForecast releases may not resolve cleanly.
 - `forecast_list_methods --json` is the source of truth for what your current environment can actually run.
 
 | Category | Models | When to Use |

@@ -5,27 +5,70 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from ..common import _extract_forecast_values
-from ..common import edge_pad_to_length as _edge_pad_to_length  # type: ignore
-from ..common import nf_setup_and_predict as _nf_setup_and_predict
 from ..common import (
     _NF_ENV_LOCK,
-    _NfEnvGuard,
+    _extract_forecast_values,
     _nf_resolve_accelerator,
+    _NfEnvGuard,
     nf_build_model_kwargs,
     nf_create_and_fit,
     nf_predict_from_fitted,
 )
+from ..common import edge_pad_to_length as _edge_pad_to_length  # noqa: F401
+from ..common import nf_setup_and_predict as _nf_setup_and_predict
+from ..forecast_registry import ForecastRegistry
 from ..interface import (
     CancelToken,
     ForecastMethod,
     ForecastResult,
-    ProgressReporter,
     ProgressCallback,
-    TrainingProgress,
+    ProgressReporter,
     TrainResult,
 )
-from ..forecast_registry import ForecastRegistry
+
+
+def _ensure_pytorch_lightning_distributed_compat() -> None:
+    """Provide the legacy Lightning distributed logger expected by old deps."""
+    try:
+        import logging
+        import sys
+        import types
+
+        import pytorch_lightning as _pl  # type: ignore
+
+        utilities = getattr(_pl, 'utilities', None)
+        if utilities is None or hasattr(utilities, 'distributed'):
+            return
+
+        distributed = types.ModuleType('pytorch_lightning.utilities.distributed')
+        distributed.log = logging.getLogger('pytorch_lightning.utilities.distributed')  # type: ignore[attr-defined]
+        utilities.distributed = distributed
+        sys.modules.setdefault('pytorch_lightning.utilities.distributed', distributed)
+    except Exception:
+        pass
+
+
+def _import_neuralforecast_model_classes() -> Dict[str, Any]:
+    """Import NeuralForecast model classes from the supported Nixtla API."""
+    _ensure_pytorch_lightning_distributed_compat()
+    try:
+        from neuralforecast.models import NHITS as _NF_NHITS  # type: ignore
+        from neuralforecast.models import TFT as _NF_TFT  # type: ignore
+        from neuralforecast.models import NBEATSx as _NF_NBEATSX  # type: ignore
+        from neuralforecast.models import PatchTST as _NF_PATCHTST  # type: ignore
+    except Exception as ex:
+        raise RuntimeError(
+            "Installed neuralforecast package is not compatible with mtdata neural "
+            "methods. Install a modern Nixtla neuralforecast release in a "
+            "Python/Torch environment supported by that package."
+        ) from ex
+
+    return {
+        'nhits': _NF_NHITS,
+        'nbeatsx': _NF_NBEATSX,
+        'tft': _NF_TFT,
+        'patchtst': _NF_PATCHTST,
+    }
 
 
 def forecast_neural(
@@ -46,21 +89,8 @@ def forecast_neural(
 
     Returns (forecast_values, params_used).
     """
-    try:
-        from neuralforecast.models import NHITS as _NF_NHITS  # type: ignore
-        from neuralforecast.models import TFT as _NF_TFT
-        from neuralforecast.models import NBEATSx as _NF_NBEATSX
-        from neuralforecast.models import PatchTST as _NF_PATCHTST
-    except Exception as ex:
-        raise RuntimeError(f"Failed to import neuralforecast models: {ex}")
-
     method_l = str(method).lower().strip()
-    model_map = {
-        'nhits': _NF_NHITS,
-        'nbeatsx': _NF_NBEATSX,
-        'tft': _NF_TFT,
-        'patchtst': _NF_PATCHTST,
-    }
+    model_map = _import_neuralforecast_model_classes()
     model_class = model_map.get(method_l)
     if model_class is None:
         available_models = ", ".join(sorted(model_map))
@@ -112,17 +142,7 @@ def forecast_neural(
 
 def _resolve_nf_model_class(method_name: str):
     """Return the NeuralForecast model class for *method_name*."""
-    try:
-        from neuralforecast.models import NHITS as _NF_NHITS
-        from neuralforecast.models import TFT as _NF_TFT
-        from neuralforecast.models import NBEATSx as _NF_NBEATSX
-        from neuralforecast.models import PatchTST as _NF_PATCHTST
-    except Exception as ex:
-        raise RuntimeError(f"Failed to import neuralforecast models: {ex}")
-    model_map = {
-        'nhits': _NF_NHITS, 'nbeatsx': _NF_NBEATSX,
-        'tft': _NF_TFT, 'patchtst': _NF_PATCHTST,
-    }
+    model_map = _import_neuralforecast_model_classes()
     cls = model_map.get(str(method_name).lower().strip())
     if cls is None:
         raise RuntimeError(f"Unknown neural method: {method_name}")

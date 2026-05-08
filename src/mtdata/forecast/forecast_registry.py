@@ -5,6 +5,7 @@ Centralizes method definitions, requirements, and availability checking.
 """
 
 import importlib as _importlib
+import importlib.metadata as _importlib_metadata
 import importlib.util as _importlib_util
 import sys
 from functools import lru_cache
@@ -288,6 +289,30 @@ def _check_chronos_runtime_support() -> Tuple[bool, List[str]]:
     return True, []
 
 
+@lru_cache(maxsize=1)
+def _check_neuralforecast_runtime_support() -> Tuple[bool, List[str]]:
+    """Check for the modern NeuralForecast API without importing torch."""
+    try:
+        if _importlib_util.find_spec("neuralforecast") is None:
+            return False, ["neuralforecast>=1.0.0"]
+    except Exception:
+        return False, ["neuralforecast>=1.0.0"]
+
+    try:
+        version = _importlib_metadata.version("neuralforecast")
+    except Exception:
+        return True, []
+
+    parts: List[int] = []
+    for token in str(version).replace("-", ".").split("."):
+        if not token.isdigit():
+            break
+        parts.append(int(token))
+    if parts and tuple(parts[:2]) < (1, 0):
+        return False, ["neuralforecast>=1.0.0"]
+    return True, []
+
+
 def _check_requirements(method: str, requires: List[str]) -> Tuple[bool, List[str]]:
     available = True
     reqs = list(requires or [])
@@ -315,6 +340,11 @@ def _check_requirements(method: str, requires: List[str]) -> Tuple[bool, List[st
                 reqs.extend(chronos_reqs)
     if method == "timesfm" and not _TIMESFM_AVAILABLE:
         available = False; reqs.append("timesfm")
+    if method in ("nhits", "nbeatsx", "tft", "patchtst"):
+        neural_ok, neural_reqs = _check_neuralforecast_runtime_support()
+        if not neural_ok:
+            available = False
+            reqs.extend(neural_reqs)
     if method == "lag_llama" and not _LAG_LLAMA_AVAILABLE:
         available = False; reqs.append("lag-llama, gluonts, torch")
     if method == "sktime" and not _SKTIME_AVAILABLE:
