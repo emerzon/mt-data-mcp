@@ -316,7 +316,7 @@ def test_compact_support_resistance_payload_omits_fibonacci_until_standard_detai
     compact = compact_support_resistance_payload(result)
     standard = standard_support_resistance_payload(result)
 
-    assert "fibonacci" in compact
+    assert "fibonacci" not in compact
     assert "levels" not in compact
     assert "coverage_gaps" not in compact
     assert "zone_overlap" not in compact
