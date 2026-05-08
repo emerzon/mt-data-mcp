@@ -355,6 +355,20 @@ class TestAddDynamicArguments:
         assert args.symbol == "AAPL"
         assert args.limit == 5
 
+    def test_news_accepts_optional_positional_symbol(self):
+        parser = argparse.ArgumentParser()
+        func_info = {
+            "params": [
+                {"name": "symbol", "type": str, "required": False, "default": None},
+                {"name": "detail", "type": str, "required": False, "default": "compact"},
+                {"name": "limit", "type": int, "required": False, "default": None},
+            ]
+        }
+        add_dynamic_arguments(parser, func_info, cmd_name="news")
+        args = parser.parse_args(["AAPL", "--limit", "5"])
+        assert args.symbol == "AAPL"
+        assert args.limit == 5
+
     def test_indicators_list_category_accepts_mixed_case(self):
         parser = argparse.ArgumentParser()
         func_info = {
