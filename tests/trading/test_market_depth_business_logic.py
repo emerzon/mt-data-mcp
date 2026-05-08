@@ -317,8 +317,9 @@ def test_market_ticker_compact_detail_omits_verbose_fields() -> None:
     assert out["time_display"] == "2023-11-14 22:13"
     assert out["data_stale"] is True
     assert "Tick data may be stale" in out["warning"]
-    assert "spread_usd" not in out
-    assert "pricing_basis" not in out
+    assert out["spread_usd"] == 100.0
+    assert out["spread_currency"] == "USD"
+    assert out["pricing_basis"] == "per_1_lot_estimate"
     assert "diagnostics" not in out
     assert out["meta"]["tool"] == "market_ticker"
 
