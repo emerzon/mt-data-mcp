@@ -235,13 +235,16 @@ def test_regime_detect_all_reports_runtime_diagnostics_for_partial_results(monke
     result = real("EURUSD", method="all", detail="compact")
 
     assert result["success"] is True
+    assert "results" not in result
+    assert "params_used" not in result
     assert result["runtime"]["partial_results"] is True
     assert "ms_ar" in result["runtime"]["failed_methods"]
     assert result["runtime"]["method_errors"]["ms_ar"] == "simulated slow fit timeout"
-    assert "ms_ar" in result["runtime"]["method_durations_ms"]
-    assert result["runtime"]["method_guidance"]["all"]["speed_tier"] == "slow"
-    assert result["runtime"]["method_guidance"]["rule_based"]["speed_tier"] == "fast"
-    assert result["runtime"]["suggested_faster_methods"]
+    assert "method_durations_ms" not in result["runtime"]
+    assert "method_guidance" not in result["runtime"]
+    assert "suggested_faster_methods" not in result["runtime"]
+    assert "current_regimes" not in result["comparison"]
+    assert result["summary"]["methods_failed"] == 1
 
 
 def test_ensemble_labels_follow_mean_return_sign() -> None:

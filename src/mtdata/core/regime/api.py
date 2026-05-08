@@ -3250,7 +3250,7 @@ def regime_detect(  # noqa: C901
             comparison["methods_failed"] = [e.split(":")[0] for e in all_errors]
 
             summary_payload: Optional[Dict[str, Any]] = None
-            if detail_value == "summary":
+            if detail_value in {"summary", "compact"}:
                 summary_payload = {
                     "methods_attempted": int(len(all_methods)),
                     "methods_succeeded": int(len(results_by_method)),
@@ -3259,14 +3259,28 @@ def regime_detect(  # noqa: C901
                 agreement_summary = comparison.get("agreement")
                 if isinstance(agreement_summary, dict):
                     summary_payload["agreement"] = agreement_summary
-                # True summary mode: keep agreement + methods run/failed,
-                # drop the per-method regime rows and strip params_used to
-                # stay in sync with the single-method summary contract.
+                # Summary/compact mode keeps agreement + method counts only;
+                # full mode keeps per-method regimes and diagnostics.
                 comparison = {
                     "methods_run": comparison.get("methods_run"),
                     "methods_failed": comparison.get("methods_failed"),
                     "agreement": comparison.get("agreement"),
                 }
+            runtime_payload: Dict[str, Any] = {
+                "completed_methods": list(results_by_method.keys()),
+                "failed_methods": list(method_errors.keys()),
+                "partial_results": bool(method_errors),
+            }
+            if method_errors:
+                runtime_payload["method_errors"] = method_errors
+            if detail_value == "full":
+                runtime_payload["method_durations_ms"] = method_durations_ms
+                runtime_payload["suggested_faster_methods"] = (
+                    _suggest_faster_regime_methods(all_methods)
+                )
+                runtime_payload["method_guidance"] = _regime_runtime_guidance(
+                    ["all", *all_methods, "ensemble"]
+                )
 
             payload = {
                 "success": True,
@@ -3276,21 +3290,9 @@ def regime_detect(  # noqa: C901
                 "target": target,
                 "detail": detail_value,
                 "comparison": comparison,
-                "runtime": {
-                    "completed_methods": list(results_by_method.keys()),
-                    "failed_methods": list(method_errors.keys()),
-                    "method_errors": method_errors,
-                    "method_durations_ms": method_durations_ms,
-                    "partial_results": bool(method_errors),
-                    "suggested_faster_methods": _suggest_faster_regime_methods(
-                        all_methods
-                    ),
-                    "method_guidance": _regime_runtime_guidance(
-                        ["all", *all_methods, "ensemble"]
-                    ),
-                },
+                "runtime": runtime_payload,
             }
-            if detail_value != "summary":
+            if detail_value == "full":
                 payload["params_used"] = {
                     "methods_attempted": all_methods,
                     "methods_succeeded": list(results_by_method.keys()),
@@ -3298,7 +3300,7 @@ def regime_detect(  # noqa: C901
                 }
             if summary_payload is not None:
                 payload["summary"] = summary_payload
-            if detail_value != "summary":
+            if detail_value == "full":
                 payload["results"] = results_by_method
             if all_errors:
                 payload["warnings"] = [f"Method errors: {'; '.join(all_errors)}"]
