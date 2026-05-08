@@ -889,7 +889,7 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert compact["filters"]["show_unavailable"] is False
     assert "monte_carlo" in compact["barrier_methods"]["aliases"]
     assert "mc_gbm" in compact["barrier_methods"]["methods"]
-    assert "includes all filtered methods" in compact["note"]
+    assert "caps unfiltered method rows" in compact["note"]
 
     compact_all = _unwrap(cf.forecast_list_methods)(show_unavailable=True)
     unavailable_method = next(row for row in compact_all["methods"] if row["available"] is False)
@@ -992,6 +992,34 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert any(row["available"] is False for row in with_unavailable["methods"])
     unavailable_row = next(row for row in with_unavailable["methods"] if row["available"] is False)
     assert unavailable_row["unavailable_reason"] == "Unavailable in the current environment."
+
+    monkeypatch.setattr(
+        cf,
+        "_get_forecast_methods_data",
+        lambda: {
+            "total": 25,
+            "categories": {"classical": [f"m{i:02d}" for i in range(25)]},
+            "methods": [
+                {
+                    "method": f"m{i:02d}",
+                    "available": True,
+                    "description": f"Method {i:02d}.",
+                    "params": [],
+                    "requires": [],
+                }
+                for i in range(25)
+            ],
+        },
+    )
+    capped = _unwrap(cf.forecast_list_methods)()
+    assert capped["filters"]["limit"] == 20
+    assert capped["methods_shown"] == 20
+    assert capped["methods_hidden"] == 5
+
+    filtered_uncapped = _unwrap(cf.forecast_list_methods)(category="classical")
+    assert filtered_uncapped["filters"]["limit"] is None
+    assert filtered_uncapped["methods_shown"] == 25
+    assert filtered_uncapped["methods_hidden"] == 0
 
     monkeypatch.setattr(cf, "_get_forecast_methods_data", lambda: {"methods": [1]})
     assert _unwrap(cf.forecast_list_methods)() == {"methods": [1]}

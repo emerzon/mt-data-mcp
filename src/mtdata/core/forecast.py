@@ -39,6 +39,7 @@ from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway, mt5_connection_error
 
 logger = logging.getLogger(__name__)
+_FORECAST_LIST_METHODS_DEFAULT_COMPACT_LIMIT = 20
 
 _FORECAST_PROCESS_ISOLATION_ENV = "MTDATA_FORECAST_PROCESS_ISOLATION"
 _FORECAST_PROCESS_TIMEOUT_ENV = "MTDATA_FORECAST_PROCESS_TIMEOUT_SECONDS"
@@ -1492,6 +1493,20 @@ def _forecast_list_methods_impl(  # noqa: C901
                 return {"error": f"Invalid limit: {limit}. Must be a positive integer."}
             if limit_value <= 0:
                 return {"error": f"Invalid limit: {limit_value}. Must be >= 1."}
+        compact_default_limit_applies = (
+            detail_value != "full"
+            and limit_value is None
+            and not search_value
+            and not category_filter_value
+            and not library_value
+            and supports_ci is None
+            and not bool(show_unavailable)
+        )
+        effective_limit_value = (
+            _FORECAST_LIST_METHODS_DEFAULT_COMPACT_LIMIT
+            if compact_default_limit_applies
+            else limit_value
+        )
 
         categories_raw = data.get("categories") if isinstance(data.get("categories"), dict) else {}
         method_to_category = snapshot.get("method_to_category") if isinstance(snapshot, dict) else {}
@@ -1676,8 +1691,8 @@ def _forecast_list_methods_impl(  # noqa: C901
                 str(row.get("method")),
             )
         )
-        if limit_value is not None:
-            selected_methods = selected_methods[:limit_value]
+        if effective_limit_value is not None:
+            selected_methods = selected_methods[:effective_limit_value]
         return {
             "detail": "compact",
             "total": int(data.get("total") or len(compact_methods)),
@@ -1690,11 +1705,11 @@ def _forecast_list_methods_impl(  # noqa: C901
             "methods_shown": int(len(selected_methods)),
             "methods_hidden": int(max(0, len(compact_methods) - len(selected_methods))),
             "barrier_methods": barrier_methods,
-            "note": "Compact view includes all filtered methods with compact columns; set limit to cap rows or extras='metadata' for complete metadata.",
+            "note": "Compact view caps unfiltered method rows by default; use category, library, search_term, or limit to narrow or expand rows.",
             "filters": {
                 "search": search_value or None,
                 "category": category_filter_value or None,
-                "limit": limit_value,
+                "limit": effective_limit_value,
                 "library": library_value or None,
                 "supports_ci": supports_ci,
                 "show_unavailable": bool(show_unavailable),
