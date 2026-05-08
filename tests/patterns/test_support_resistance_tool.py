@@ -69,7 +69,7 @@ def test_support_resistance_tool_returns_weighted_levels():
     assert set(result["resistances"][0]).issubset(
         {"type", "value", "distance_pct", "strength_rank"}
     )
-    assert "fibonacci" in result
+    assert "fibonacci" not in result
     assert "levels" not in result
     assert "nearest" not in result
     assert "method" not in result
@@ -97,7 +97,7 @@ def test_support_resistance_tool_applies_near_price_distance_default():
     assert mock_compute.call_args.kwargs["max_distance_pct"] == 5.0
 
 
-def test_support_resistance_tool_compact_preserves_zone_overlap_without_fibonacci():
+def test_support_resistance_tool_compact_omits_zone_overlap_and_fibonacci():
     fn = _get_support_resistance_fn()
     gateway = type("Gateway", (), {"ensure_connection": lambda self: None})()
     payload = {
@@ -138,7 +138,7 @@ def test_support_resistance_tool_compact_preserves_zone_overlap_without_fibonacc
 
     assert result["detail"] == "compact"
     assert "zone_overlap" not in result
-    assert "fibonacci" in result
+    assert "fibonacci" not in result
     assert {warning["code"] for warning in result["warnings"]} == {
         "overlapping_nearest_zones",
         "fibonacci_grid_support_only",
@@ -283,7 +283,7 @@ def test_support_resistance_tool_auto_mode_merges_timeframes():
     assert result["timeframes_analyzed"] == ["M15", "H1", "H4", "D1"]
     assert result["level_counts"] == {"support": 1, "resistance": 1, "total": 2}
     assert result["supports"][0]["type"] == "support"
-    assert "fibonacci" in result
+    assert "fibonacci" not in result
     assert "levels" not in result
     assert "nearest" not in result
 
