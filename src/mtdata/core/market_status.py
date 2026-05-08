@@ -297,7 +297,7 @@ def _check_market_status(market_id: str, now_local: datetime) -> Dict[str, Any]:
             "local_time": now_local.strftime("%H:%M"),
             "message": f"{market_id}: Closed (opening in {_format_duration(minutes_until)})",
             "next_open": next_open.isoformat(),
-            "minutes_until": minutes_until,
+            "minutes_until_open": minutes_until,
         }
     
     # Check holidays
@@ -320,7 +320,7 @@ def _check_market_status(market_id: str, now_local: datetime) -> Dict[str, Any]:
             "local_time": now_local.strftime("%H:%M"),
             "message": f"{market_id}: Closed - Holiday ({holiday_name}, opening in {_format_duration(minutes_until)})",
             "next_open": next_open.isoformat(),
-            "minutes_until": minutes_until,
+            "minutes_until_open": minutes_until,
         }
     
     open_hour, open_minute = market["open"]
@@ -343,7 +343,7 @@ def _check_market_status(market_id: str, now_local: datetime) -> Dict[str, Any]:
             "local_time": now_local.strftime("%H:%M"),
             "message": f"{market_id}: Pre-market (opening in {_format_duration(minutes_until_open)})",
             "next_open": open_time.isoformat(),
-            "minutes_until": minutes_until_open,
+            "minutes_until_open": minutes_until_open,
         }
     
     # Check if during lunch break
@@ -360,7 +360,7 @@ def _check_market_status(market_id: str, now_local: datetime) -> Dict[str, Any]:
                 "local_time": now_local.strftime("%H:%M"),
                 "message": f"{market_id}: Lunch break (resuming in {_format_duration(minutes_until_resume)})",
                 "next_open": lunch_end.isoformat(),
-                "minutes_until": minutes_until_resume,
+                "minutes_until_open": minutes_until_resume,
             }
     
     # Check if market is open
@@ -373,7 +373,7 @@ def _check_market_status(market_id: str, now_local: datetime) -> Dict[str, Any]:
             "local_time": now_local.strftime("%H:%M"),
             "message": f"{market_id}: Open (closing in {_format_duration(minutes_until_close)})",
             "next_close": close_time.isoformat(),
-            "minutes_until": minutes_until_close,
+            "minutes_until_close": minutes_until_close,
         }
     
     # Market closed for the day
@@ -388,7 +388,7 @@ def _check_market_status(market_id: str, now_local: datetime) -> Dict[str, Any]:
         "local_time": now_local.strftime("%H:%M"),
         "message": f"{market_id}: Closed (opening in {_format_duration(minutes_until)})",
         "next_open": next_open.isoformat(),
-        "minutes_until": minutes_until,
+        "minutes_until_open": minutes_until,
     }
 
 
@@ -926,7 +926,8 @@ def market_status(
             - `local_time`: Current time in market's timezone (HH:MM)
             - `message`: Human-readable status in `detail="full"`
             - `next_open` / `next_close`: ISO timestamp of next event
-            - `minutes_until`: Minutes until next status change
+            - `minutes_until_open` / `minutes_until_close`: Minutes until the
+              named next event.
     """
 
     detail_mode = normalize_output_verbosity_detail(detail)

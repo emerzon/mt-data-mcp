@@ -49,7 +49,7 @@ class TestSameDayEarlyClose:
         result = ms_mod._check_market_status("TEST", now)
         assert result["status"] == "open"
         # Close time should be 13:00, not 16:00
-        assert result["minutes_until"] <= 3 * 60
+        assert result["minutes_until_close"] <= 3 * 60
 
     def test_same_day_full_holiday_still_closed(self, monkeypatch):
         """A holiday NOT in early_close_holidays should still be full closure."""
@@ -101,7 +101,7 @@ class TestDayAfterEarlyClose:
         result = ms_mod._check_market_status("TEST", now)
         assert result["status"] == "open"
         # Should close at 13:00 (3 hours from 10 AM)
-        assert result["minutes_until"] == 180
+        assert result["minutes_until_close"] == 180
 
     def test_day_after_non_matching_holiday_normal_close(self, monkeypatch):
         """Day after a holiday not in early_close_day_after → normal hours."""
@@ -125,7 +125,7 @@ class TestDayAfterEarlyClose:
         now = datetime(2030, 7, 5, 10, 0, tzinfo=timezone.utc)
         result = ms_mod._check_market_status("TEST", now)
         assert result["status"] == "open"
-        assert result["minutes_until"] == 360  # 6 hours to 16:00
+        assert result["minutes_until_close"] == 360  # 6 hours to 16:00
 
 
 # ---- _check_market_status: eve early close ----
@@ -153,7 +153,7 @@ class TestEveEarlyClose:
         now = datetime(2030, 12, 24, 10, 0, tzinfo=timezone.utc)
         result = ms_mod._check_market_status("TEST", now)
         assert result["status"] == "open"
-        assert result["minutes_until"] == 120  # 2 hours to 12:00
+        assert result["minutes_until_close"] == 120  # 2 hours to 12:00
 
     def test_eve_non_matching_holiday_normal_close(self, monkeypatch):
         """Eve of a holiday not in early_close_eves → normal hours."""
@@ -177,7 +177,7 @@ class TestEveEarlyClose:
         now = datetime(2030, 12, 31, 10, 0, tzinfo=timezone.utc)
         result = ms_mod._check_market_status("TEST", now)
         assert result["status"] == "open"
-        assert result["minutes_until"] == 360
+        assert result["minutes_until_close"] == 360
 
 
 class TestNextOpenSkipsAndAllowsHolidaySessions:
