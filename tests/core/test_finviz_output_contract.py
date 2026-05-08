@@ -154,14 +154,70 @@ class TestFinvizCalendarOutputContract:
         assert result["items"] == [
             {
                 "earnings_date": "2026-04-29T08:30:00",
-                "is_earning_date_estimate": False,
                 "symbol": "ABBV",
-                "market_cap": 357812,
                 "eps_estimate": 2.59,
                 "eps_actual": 2.65,
                 "eps_surprise": 2.23,
                 "sales_estimate": 12900,
                 "sales_actual": 13100,
+            }
+        ]
+
+    @patch("mtdata.core.finviz.get_economic_calendar")
+    def test_calendar_compact_drops_internal_fields(self, mock_get):
+        mock_get.return_value = {
+            "success": True,
+            "items": [
+                {
+                    "calendar_id": 419986,
+                    "symbol": "FDTR",
+                    "event": "Fed Cook Speech",
+                    "category": "Interest Rate",
+                    "date": "2026-05-08T05:45:00",
+                    "importance": 2,
+                    "is_higher_positive": 0,
+                    "has_no_detail": False,
+                    "alert": None,
+                    "all_day": False,
+                    "non_emptiness_score": 0,
+                }
+            ],
+        }
+
+        result = _unwrap(finviz_calendar)(limit=1)
+
+        assert result["items"] == [
+            {
+                "symbol": "FDTR",
+                "event": "Fed Cook Speech",
+                "category": "Interest Rate",
+                "date": "2026-05-08T05:45:00",
+                "importance": 2,
+            }
+        ]
+
+    @patch("mtdata.core.finviz.get_economic_calendar")
+    def test_calendar_full_keeps_internal_fields(self, mock_get):
+        mock_get.return_value = {
+            "success": True,
+            "items": [
+                {
+                    "calendar_id": 419986,
+                    "symbol": "FDTR",
+                    "event": "Fed Cook Speech",
+                    "non_emptiness_score": 0,
+                }
+            ],
+        }
+
+        result = _unwrap(finviz_calendar)(limit=1, detail="full")
+
+        assert result["items"] == [
+            {
+                "calendar_id": 419986,
+                "symbol": "FDTR",
+                "event": "Fed Cook Speech",
+                "non_emptiness_score": 0,
             }
         ]
 

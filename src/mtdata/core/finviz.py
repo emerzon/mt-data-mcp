@@ -709,6 +709,29 @@ _FINVIZ_EARNINGS_COMPACT_FIELDS = (
     "change",
     "volume",
 )
+_FINVIZ_CALENDAR_COMPACT_FIELDS = (
+    "symbol",
+    "event",
+    "category",
+    "date",
+    "earnings_date",
+    "ex_dividend_date",
+    "pay_date",
+    "record_date",
+    "reference",
+    "reference_date",
+    "actual",
+    "previous",
+    "forecast",
+    "eps_estimate",
+    "eps_actual",
+    "eps_surprise",
+    "sales_estimate",
+    "sales_actual",
+    "dividend",
+    "amount",
+    "importance",
+)
 
 
 def _normalize_finviz_output_key(key: Any) -> str:
@@ -805,16 +828,36 @@ def _compact_finviz_earnings_items(items: Any) -> List[Any]:
     return compact_rows
 
 
-def _normalize_finviz_calendar_payload(result: Dict[str, Any]) -> Dict[str, Any]:
+def _compact_finviz_calendar_item(item: Any) -> Any:
+    if not isinstance(item, dict):
+        return item
+    return {
+        field: item[field]
+        for field in _FINVIZ_CALENDAR_COMPACT_FIELDS
+        if field in item and item[field] not in (None, "")
+    }
+
+
+def _normalize_finviz_calendar_payload(
+    result: Dict[str, Any],
+    *,
+    detail: str = "compact",
+) -> Dict[str, Any]:
     if not isinstance(result, dict) or result.get("error"):
         return result
+    detail_mode = normalize_output_verbosity_detail(detail, default="compact")
     out: Dict[str, Any] = {}
     for key, value in result.items():
         normalized_key = _normalize_finviz_output_key(key)
         out[normalized_key] = value
     if isinstance(out.get("items"), list):
-        out["items"] = _normalize_finviz_output_rows(out["items"])
+        normalized_items = _normalize_finviz_output_rows(out["items"])
+        if detail_mode == "full":
+            out["items"] = normalized_items
+        else:
+            out["items"] = [_compact_finviz_calendar_item(item) for item in normalized_items]
     out.setdefault("timezone", "America/New_York")
+    out["detail"] = detail_mode
     return out
 
 
@@ -1693,6 +1736,7 @@ def finviz_calendar(
     end: Optional[str] = None,
     limit: int = 20,
     page: int = 1,
+    detail: CompactFullDetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     """
     Get detailed Finviz calendar data (economic, earnings, or dividends).
@@ -1715,6 +1759,8 @@ def finviz_calendar(
         Max events per page (default 20)
     page : int
         Page number for pagination (default 1)
+    detail : str
+        Use "compact" for trader-facing fields or "full" for raw upstream fields.
 
     Returns
     -------
@@ -1728,6 +1774,7 @@ def finviz_calendar(
         "end": end,
         "limit": limit,
         "page": page,
+        "detail": detail,
     }
 
     def _run() -> Dict[str, Any]:
@@ -1748,7 +1795,8 @@ def finviz_calendar(
                     page=page,
                     date_from=start_value,
                     date_to=end_value,
-                )
+                ),
+                detail=detail,
             )
         if cal == "earnings":
             return _normalize_finviz_calendar_payload(
@@ -1757,7 +1805,8 @@ def finviz_calendar(
                     page=page,
                     date_from=start_value,
                     date_to=end_value,
-                )
+                ),
+                detail=detail,
             )
         if cal == "dividends":
             return _normalize_finviz_calendar_payload(
@@ -1766,7 +1815,8 @@ def finviz_calendar(
                     page=page,
                     date_from=start_value,
                     date_to=end_value,
-                )
+                ),
+                detail=detail,
             )
         return {"error": f"Unsupported calendar '{calendar}'. Expected economic, earnings, or dividends."}
 
