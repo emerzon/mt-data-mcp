@@ -1474,6 +1474,56 @@ def test_forecast_barrier_methods_accept_monte_carlo_aliases():
     assert called["optimize_output_mode"] == "summary"
 
 
+def test_forecast_barrier_prob_applies_default_pct_barriers_when_missing():
+    called: dict[str, float] = {}
+
+    def fake_barrier_hit(**kwargs):
+        called["tp_pct"] = kwargs["tp_pct"]
+        called["sl_pct"] = kwargs["sl_pct"]
+        return {
+            "success": True,
+            "symbol": "EURUSD",
+            "prob_tp_first": 0.5,
+            "prob_sl_first": 0.4,
+            "prob_no_hit": 0.1,
+        }
+
+    out = forecast_use_cases.run_forecast_barrier_prob(
+        ForecastBarrierProbRequest(symbol="EURUSD"),
+        build_barrier_kwargs=lambda _values: {},
+        normalize_trade_direction=lambda _direction: ("long", None),
+        barrier_hit_probabilities_impl=fake_barrier_hit,
+        barrier_closed_form_impl=lambda **_kwargs: {"unused": True},
+    )
+
+    assert out["success"] is True
+    assert called == {"tp_pct": 1.0, "sl_pct": 1.0}
+    assert out["warnings"] == [
+        "Default 1% symmetrical barriers applied; pass tp_pct/sl_pct, "
+        "tp_abs/sl_abs, or tp_ticks/sl_ticks to customize."
+    ]
+
+
+def test_forecast_barrier_prob_keeps_partial_barrier_inputs_strict():
+    called: dict[str, object] = {}
+
+    def fake_barrier_hit(**kwargs):
+        called.update(kwargs)
+        return {"error": "Missing barriers."}
+
+    out = forecast_use_cases.run_forecast_barrier_prob(
+        ForecastBarrierProbRequest(symbol="EURUSD", tp_pct=0.5),
+        build_barrier_kwargs=lambda _values: {"tp_pct": 0.5},
+        normalize_trade_direction=lambda _direction: ("long", None),
+        barrier_hit_probabilities_impl=fake_barrier_hit,
+        barrier_closed_form_impl=lambda **_kwargs: {"unused": True},
+    )
+
+    assert out == {"error": "Missing barriers."}
+    assert called["tp_pct"] == 0.5
+    assert "sl_pct" not in called
+
+
 def test_forecast_barrier_optimize_rejects_unknown_method_without_traceback():
     called = False
 

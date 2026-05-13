@@ -565,6 +565,38 @@ def _apply_barrier_prob_detail(
     return compact
 
 
+def _request_has_barrier_inputs(request: ForecastBarrierProbRequest) -> bool:
+    return any(
+        getattr(request, field_name, None) is not None
+        for field_name in (
+            "tp_abs",
+            "sl_abs",
+            "tp_pct",
+            "sl_pct",
+            "tp_ticks",
+            "sl_ticks",
+        )
+    )
+
+
+def _append_default_barrier_warning(payload: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(payload, dict) or payload.get("error"):
+        return payload
+    warning = (
+        "Default 1% symmetrical barriers applied; pass tp_pct/sl_pct, "
+        "tp_abs/sl_abs, or tp_ticks/sl_ticks to customize."
+    )
+    warnings = payload.get("warnings")
+    if isinstance(warnings, list):
+        if warning not in warnings:
+            warnings.append(warning)
+    elif warnings in (None, "", [], {}):
+        payload["warnings"] = [warning]
+    else:
+        payload["warnings"] = [warnings, warning]
+    return payload
+
+
 def _closed_form_barrier_input_error(request: ForecastBarrierProbRequest) -> Optional[str]:
     try:
         barrier_value = float(request.barrier)
@@ -1370,6 +1402,14 @@ def run_forecast_barrier_prob(
     try:
         if method_val in mc_methods:
             barrier_kwargs = build_barrier_kwargs(request.model_dump())
+            default_barriers_applied = False
+            if not _request_has_barrier_inputs(request):
+                barrier_kwargs = {
+                    **barrier_kwargs,
+                    "tp_pct": 1.0,
+                    "sl_pct": 1.0,
+                }
+                default_barriers_applied = True
             result = barrier_hit_probabilities_impl(
                 symbol=request.symbol,
                 timeframe=request.timeframe,
@@ -1380,6 +1420,8 @@ def run_forecast_barrier_prob(
                 params=request.params,
                 denoise=request.denoise,
             )
+            if default_barriers_applied:
+                result = _append_default_barrier_warning(result)
             result = _apply_barrier_prob_detail(result, request)
             log_operation_finish(
                 logger,
