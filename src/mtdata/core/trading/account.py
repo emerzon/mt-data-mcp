@@ -277,7 +277,8 @@ def _trade_journal_period_context(
     elif request.start:
         from_dt = _parse_start_datetime(request.start)
     else:
-        from_dt = to_dt - timedelta(days=_DEFAULT_TRADE_HISTORY_LOOKBACK_DAYS)
+        minutes_back_value = int(_DEFAULT_TRADE_HISTORY_LOOKBACK_DAYS * 24 * 60)
+        from_dt = to_dt - timedelta(minutes=minutes_back_value)
 
     out: Dict[str, Any] = {
         "period_start": _format_period_dt(from_dt),
@@ -285,11 +286,19 @@ def _trade_journal_period_context(
         "period_timezone": "UTC",
     }
     if minutes_back_value is not None:
-        out["period_source"] = "minutes_back"
+        out["minutes_back_effective"] = int(minutes_back_value)
+        if request.minutes_back is not None:
+            out["period_source"] = "minutes_back"
+            out["minutes_back_requested"] = int(minutes_back_value)
+        else:
+            out["period_source"] = "default_lookback"
+            out["note"] = (
+                f"Period limited to default {int(minutes_back_value)}-minute "
+                f"({_DEFAULT_TRADE_HISTORY_LOOKBACK_DAYS}-day) lookback. "
+                "Set minutes_back or start/end to change."
+            )
     elif request.start or request.end:
         out["period_source"] = "explicit_range"
-    else:
-        out["period_source"] = "default_lookback"
     return out
 
 

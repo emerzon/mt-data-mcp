@@ -1009,6 +1009,7 @@ def test_trade_journal_analyze_summarizes_realized_exit_deals() -> None:
     assert out["period_end"] == "2026-01-03 00:00:00"
     assert out["period_timezone"] == "UTC"
     assert out["period_source"] == "explicit_range"
+    assert "minutes_back_effective" not in out
     assert out["summary"]["closed_deals"] == 2
     assert out["summary"]["wins"] == 1
     assert out["summary"]["losses"] == 1
@@ -1059,6 +1060,9 @@ def test_trade_journal_analyze_compact_uses_lite_symbol_breakdown() -> None:
         out = trade_journal_analyze(__cli_raw=True)
 
     assert out["success"] is True
+    assert out["period_source"] == "default_lookback"
+    assert out["minutes_back_effective"] == 10080
+    assert "default 10080-minute (7-day) lookback" in out["note"]
     assert list(out["breakdowns"]) == ["by_symbol"]
     assert set(out["breakdowns"]["by_symbol"][0]) == {
         "symbol",
@@ -1071,6 +1075,24 @@ def test_trade_journal_analyze_compact_uses_lite_symbol_breakdown() -> None:
     assert "by_exit_trigger" not in out["breakdowns"]
     assert "best_trades" not in out
     assert "worst_trades" not in out
+
+
+def test_trade_journal_analyze_reports_explicit_minutes_back_window() -> None:
+    with patch(
+        "mtdata.core.trading.account._run_trade_history_request",
+        return_value={
+            "success": True,
+            "count": 0,
+            "items": [],
+        },
+    ):
+        out = trade_journal_analyze(minutes_back=60, __cli_raw=True)
+
+    assert out["success"] is True
+    assert out["period_source"] == "minutes_back"
+    assert out["minutes_back_requested"] == 60
+    assert out["minutes_back_effective"] == 60
+    assert "note" not in out
 
 
 def test_trade_journal_analyze_filters_best_worst_by_pnl_sign() -> None:
