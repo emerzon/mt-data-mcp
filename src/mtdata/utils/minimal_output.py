@@ -1633,6 +1633,30 @@ def _normalize_support_resistance_payload(
         if nearest_out:
             out["nearest"] = nearest_out
 
+    for side_key in ("supports", "resistances"):
+        side_levels_in = payload.get(side_key)
+        if isinstance(side_levels_in, list):
+            side_levels = [
+                compact
+                for compact in (
+                    _compact_support_resistance_level(
+                        row,
+                        preferred_keys=[
+                            "type",
+                            "value",
+                            "distance_pct",
+                            "touches",
+                            "status",
+                            "strength_rank",
+                        ],
+                    )
+                    for row in side_levels_in
+                )
+                if compact
+            ]
+            if side_levels:
+                out[side_key] = side_levels
+
     levels_in = payload.get("levels")
     if isinstance(levels_in, list):
         compact_levels = [

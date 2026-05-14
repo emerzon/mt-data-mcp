@@ -1301,6 +1301,41 @@ class TestFormatResultForCli:
         assert "zone_overlap" not in result
         assert "show_all_hint" in result
 
+    def test_toon_format_keeps_compact_support_resistance_lists(self):
+        result = _format_result_for_cli(
+            {
+                "success": True,
+                "detail": "compact",
+                "symbol": "EURUSD",
+                "timeframe": "H1",
+                "mode": "single",
+                "current_price": 1.17,
+                "level_counts": {"support": 1, "resistance": 1, "total": 2},
+                "supports": [
+                    {
+                        "type": "support",
+                        "value": 1.168,
+                        "distance_pct": -0.17,
+                        "strength_rank": 1,
+                    },
+                ],
+                "resistances": [
+                    {
+                        "type": "resistance",
+                        "value": 1.172,
+                        "distance_pct": 0.17,
+                        "strength_rank": 1,
+                    },
+                ],
+            },
+            fmt="toon",
+            verbose=False,
+            cmd_name="support_resistance_levels",
+        )
+
+        assert "supports[1]{type,value,distance_pct,strength_rank}" in result
+        assert "resistances[1]{type,value,distance_pct,strength_rank}" in result
+
     def test_toon_format_surfaces_full_support_resistance_fields(self):
         result = _format_result_for_cli(
             {
