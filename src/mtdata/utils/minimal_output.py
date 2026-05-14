@@ -917,6 +917,8 @@ def _normalize_market_ticker_payload(
         "spread_pips",
         "spread_pct",
         "spread_usd",
+        "spread_currency",
+        "pricing_basis",
     ):
         value = payload.get(key)
         if not _is_empty_value(value):

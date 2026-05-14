@@ -836,6 +836,26 @@ class TestFormatResultMinimal:
         assert "time_display" not in result
         assert result["meta"]["tool"] == "market_ticker"
 
+    def test_market_ticker_minimal_keeps_spread_pricing_basis(self):
+        payload = {
+            "success": True,
+            "symbol": "EURUSD",
+            "type": "ticker",
+            "spread_usd": 9.0,
+            "spread_currency": "USD",
+            "pricing_basis": "per_1_lot_estimate",
+        }
+
+        result = _normalize_market_ticker_payload(
+            payload,
+            verbose=False,
+            tool_name="market_ticker",
+        )
+
+        assert result["spread_usd"] == 9.0
+        assert result["spread_currency"] == "USD"
+        assert result["pricing_basis"] == "per_1_lot_estimate"
+
     def test_market_ticker_text_uses_symbol_price_precision(self):
         payload = {
             "success": True,
