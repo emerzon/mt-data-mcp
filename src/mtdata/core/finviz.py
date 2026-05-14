@@ -32,7 +32,7 @@ from ..services.finviz import (
 from ._mcp_instance import mcp
 from .error_envelope import build_error_payload
 from .execution_logging import run_logged_operation
-from .output_contract import normalize_output_verbosity_detail
+from .output_contract import normalize_output_detail, normalize_output_verbosity_detail
 from ..shared.schema import CompactFullDetailLiteral
 
 logger = logging.getLogger(__name__)
@@ -603,12 +603,18 @@ def _normalize_finviz_news_item(item: Any) -> Any:
     return out
 
 
-def _normalize_finviz_news_payload(result: Dict[str, Any]) -> Dict[str, Any]:
+def _normalize_finviz_news_payload(
+    result: Dict[str, Any],
+    *,
+    detail: CompactFullDetailLiteral = "compact",  # type: ignore
+) -> Dict[str, Any]:
     out = dict(result)
     out.pop("tool_scope", None)
     out.pop("preferred_tool", None)
     out.pop("output_shape", None)
     out.pop("timezone", None)
+    detail_mode = normalize_output_detail(detail, default="compact")
+    out["detail"] = detail_mode
 
     news_rows = result.get("news")
     items_rows = result.get("items")
@@ -616,8 +622,26 @@ def _normalize_finviz_news_payload(result: Dict[str, Any]) -> Dict[str, Any]:
         return out
 
     source_rows = news_rows if isinstance(news_rows, list) else items_rows
-    out["items"] = [_normalize_finviz_news_item(item) for item in source_rows]
+    normalized_items = [_normalize_finviz_news_item(item) for item in source_rows]
     out.pop("news", None)
+    if detail_mode == "summary":
+        out.pop("items", None)
+        out["count"] = int(out.get("count") or len(normalized_items))
+        return out
+    if detail_mode == "compact":
+        compact_fields = {"title", "source", "published_at"}
+        out["items"] = [
+            {
+                key: value
+                for key, value in item.items()
+                if key in compact_fields and value not in (None, "")
+            }
+            if isinstance(item, dict)
+            else item
+            for item in normalized_items
+        ]
+    else:
+        out["items"] = normalized_items
     return out
 
 
@@ -1437,7 +1461,12 @@ def finviz_description(symbol: str) -> Dict[str, Any]:
 
 
 @mcp.tool()
-def finviz_news(symbol: str, limit: int = 20, page: int = 1) -> Dict[str, Any]:
+def finviz_news(
+    symbol: str,
+    limit: int = 20,
+    page: int = 1,
+    detail: CompactFullDetailLiteral = "compact",  # type: ignore
+) -> Dict[str, Any]:
     """
     Raw Finviz per-ticker news provider endpoint.
 
@@ -1462,7 +1491,7 @@ def finviz_news(symbol: str, limit: int = 20, page: int = 1) -> Dict[str, Any]:
         Stock-specific normalized `items` rows with `title`, `source`,
         `published_at`, and `url` fields.
     """
-    fields = {"symbol": symbol, "limit": limit, "page": page}
+    fields = {"symbol": symbol, "limit": limit, "page": page, "detail": detail}
 
     def _run() -> Dict[str, Any]:
         symbol_norm, error = _normalize_equity_symbol(symbol, tool_name="finviz_news")
@@ -1470,7 +1499,8 @@ def finviz_news(symbol: str, limit: int = 20, page: int = 1) -> Dict[str, Any]:
             return error
         assert symbol_norm is not None
         return _normalize_finviz_news_payload(
-            get_stock_news(symbol_norm, limit=limit, page=page)
+            get_stock_news(symbol_norm, limit=limit, page=page),
+            detail=detail,
         )
 
     return _run_logged_tool("finviz_news", fields, _run)
@@ -1719,6 +1749,7 @@ def finviz_market_news(
     news_type: Literal["news", "blogs"] = "news",
     limit: int = 20,
     page: int = 1,
+    detail: CompactFullDetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     """
     Raw Finviz general market news/blog provider endpoint.
@@ -1746,9 +1777,10 @@ def finviz_market_news(
     """
     return _run_logged_tool(
         "finviz_market_news",
-        {"news_type": news_type, "limit": limit, "page": page},
+        {"news_type": news_type, "limit": limit, "page": page, "detail": detail},
         lambda: _normalize_finviz_news_payload(
             get_general_news(news_type=news_type, limit=limit, page=page),
+            detail=detail,
         ),
     )
 

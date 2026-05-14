@@ -81,13 +81,56 @@ def test_finviz_news_normalizes_stock_results_to_single_items_array() -> None:
             "title": "Apple launches new chips",
             "source": "Reuters",
             "published_at": "2026-04-18T00:00:00+00:00",
-            "url": "https://example.test/apple",
         }
     ]
+    assert out["detail"] == "compact"
     assert "tool_scope" not in out
     assert "preferred_tool" not in out
     assert "output_shape" not in out
     assert "timezone" not in out
+    assert "news" not in out
+
+
+def test_finviz_news_full_detail_keeps_urls() -> None:
+    raw = _unwrap(finviz_news)
+    service_result = {
+        "success": True,
+        "symbol": "AAPL",
+        "items": [
+            {
+                "Title": "Apple launches new chips",
+                "Source": "Reuters",
+                "Date": "2026-04-18",
+                "Link": "https://example.test/apple",
+            }
+        ],
+    }
+
+    with patch("mtdata.core.finviz.get_stock_news", return_value=service_result):
+        out = raw(symbol="AAPL", limit=5, page=1, detail="full")
+
+    assert out["detail"] == "full"
+    assert out["items"][0]["url"] == "https://example.test/apple"
+
+
+def test_finviz_news_summary_detail_omits_items() -> None:
+    raw = _unwrap(finviz_news)
+    service_result = {
+        "success": True,
+        "symbol": "AAPL",
+        "count": 2,
+        "items": [
+            {"Title": "One", "Source": "AP", "Date": "2026-04-18"},
+            {"Title": "Two", "Source": "Reuters", "Date": "2026-04-18"},
+        ],
+    }
+
+    with patch("mtdata.core.finviz.get_stock_news", return_value=service_result):
+        out = raw(symbol="AAPL", limit=5, page=1, detail="summary")
+
+    assert out["detail"] == "summary"
+    assert out["count"] == 2
+    assert "items" not in out
     assert "news" not in out
 
 
@@ -111,7 +154,7 @@ def test_finviz_market_news_normalizes_items() -> None:
     }
 
     with patch("mtdata.core.finviz.get_general_news", return_value=service_result):
-        out = raw(news_type="news", limit=5, page=1)
+        out = raw(news_type="news", limit=5, page=1, detail="full")
 
     assert out["items"][0]["title"] == "Stocks rise"
     assert out["items"][0]["source"] == "AP"
