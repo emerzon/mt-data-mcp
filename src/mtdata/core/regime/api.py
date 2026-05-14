@@ -155,6 +155,8 @@ def _normalize_volatility_signal(
         return "moderate_vol"
     if "very_low_vol" in text:
         return "very_low_vol"
+    if "quiet" in text:
+        return "low_vol"
     if "high_vol" in text or "volatile" in text:
         return "high_vol"
     if "low_vol" in text or "stable" in text:

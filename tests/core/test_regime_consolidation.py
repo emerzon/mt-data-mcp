@@ -161,8 +161,12 @@ class TestConsolidatePayload:
 
         result = _consolidate_payload(payload, "hmm", "full")
 
-        assert result["regimes"][0]["label"] == "negative_very_low_vol"
-        assert result["regimes"][1]["label"] == "positive_high_vol"
+        assert result["regimes"][0]["label"] == "bearish_quiet"
+        assert result["regimes"][1]["label"] == "bullish_volatile"
+        assert result["regime_info"][0]["label"] == "bearish_quiet"
+        assert result["regime_info"][0]["stat_label"] == "negative_very_low_vol"
+        assert "downward drift" in result["regime_info"][0]["trading_interpretation"]
+        assert result["regime_info"][1]["stat_label"] == "positive_high_vol"
         assert result["regime_info"][0]["mean_return"] == pytest.approx(-0.001)
         assert result["regime_info"][0]["volatility"] == pytest.approx(0.0004)
         assert result["regime_info"][1]["mean_return"] == pytest.approx(0.002)

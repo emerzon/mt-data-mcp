@@ -25,6 +25,50 @@ def _volatility_level_from_sigma(sigma: float) -> str:
     return "high_vol"
 
 
+def _trader_hmm_label(mu: float, sigma: float) -> str:
+    direction = _return_level_from_mean(mu)
+    volatility = _volatility_level_from_sigma(sigma)
+    if volatility in {"very_low_vol", "low_vol"}:
+        tempo = "quiet"
+    elif volatility == "mod_vol":
+        tempo = "steady"
+    else:
+        tempo = "volatile"
+
+    if direction == "positive":
+        return f"bullish_{tempo}"
+    if direction == "negative":
+        return f"bearish_{tempo}"
+    if tempo == "quiet":
+        return "quiet_range"
+    if tempo == "volatile":
+        return "volatile_range"
+    return "range"
+
+
+def _hmm_trading_interpretation(label: str) -> str:
+    direction, _, tempo = label.partition("_")
+    if label == "range":
+        return "Balanced returns with moderate volatility; mean-reversion setups may fit better than breakout trades."
+    if label == "quiet_range":
+        return "Balanced returns with low volatility; expect muted movement until a breakout catalyst appears."
+    if label == "volatile_range":
+        return "Directionless but volatile regime; reduce size or require stronger confirmation."
+    if direction == "bullish":
+        if tempo == "quiet":
+            return "Low-volatility upward drift; favor cautious trend-following or pullback entries."
+        if tempo == "steady":
+            return "Constructive upward regime with normal volatility; trend-following conditions are supportive."
+        return "Upward bias with elevated volatility; trend may persist but risk controls matter."
+    if direction == "bearish":
+        if tempo == "quiet":
+            return "Low-volatility downward drift; avoid assuming strong trend momentum without confirmation."
+        if tempo == "steady":
+            return "Constructive downward regime with normal volatility; bearish trend strategies are better aligned."
+        return "Downward bias with elevated volatility; defensive positioning and tighter risk limits are warranted."
+    return "Statistical regime with mixed directional evidence; inspect mean return and volatility before acting."
+
+
 def _finite_float(value: Any) -> Optional[float]:
     try:
         out = float(value)
@@ -501,6 +545,12 @@ def _build_regime_descriptions(
             )
 
         desc: Dict[str, Any] = {"label": label}
+        if method == "hmm" and target_name != "price" and mu is not None and sigma is not None:
+            stat_label = label
+            label = _trader_hmm_label(float(mu), float(sigma))
+            desc["label"] = label
+            desc["stat_label"] = stat_label
+            desc["trading_interpretation"] = _hmm_trading_interpretation(label)
         if mu is not None:
             if target_name == "price":
                 desc["mean_price"] = round(mu, 6)
