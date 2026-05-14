@@ -70,11 +70,41 @@ class TestSymbolsListNoSearch:
         fn = _get_symbols_list()
         res = fn(search_term=None, limit=25)
         assert "data" in res
-        assert res["headers"] == ["symbol", "group", "description"]
+        assert res["headers"] == ["symbol", "group"]
         assert len(res["data"]) == 2
         assert "rows" not in res
         assert "collection_kind" not in res
         assert "collection_contract_version" not in res
+
+    @patch(_NORM_LIMIT, return_value=25)
+    @patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r})
+    @patch(_GROUP_PATH, return_value="Forex\\Majors")
+    @patch(f"{_MT5}.symbols_get")
+    def test_standard_detail_includes_descriptions(self, mock_get, mock_gp, mock_tbl, mock_lim):
+        mock_get.return_value = [_make_symbol("EURUSD")]
+        fn = _get_symbols_list()
+
+        res = fn(search_term=None, limit=25, detail="standard")
+
+        assert res["headers"] == ["symbol", "group", "description"]
+        assert res["data"] == [["EURUSD", "Forex\\Majors", "Euro vs US Dollar"]]
+
+    @patch(_NORM_LIMIT, return_value=25)
+    @patch(_GROUP_PATH, return_value="Forex\\Majors")
+    @patch(f"{_MT5}.symbols_get")
+    def test_summary_detail_returns_counts_only(self, mock_get, mock_gp, mock_lim):
+        mock_get.return_value = [_make_symbol("EURUSD"), _make_symbol("GBPUSD")]
+        fn = _get_symbols_list()
+
+        res = fn(search_term=None, limit=25, detail="summary")
+
+        assert res == {
+            "success": True,
+            "list_mode": "symbols",
+            "count": 2,
+            "search_term": None,
+            "limit": 25,
+        }
 
     @patch(_NORM_LIMIT, return_value=25)
     @patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r})

@@ -26,6 +26,7 @@ from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway
 from .output_contract import (
     attach_collection_contract,
+    normalize_output_detail,
     normalize_output_verbosity_detail,
     resolve_output_contract,
 )
@@ -162,9 +163,11 @@ def symbols_list(  # noqa: C901
     search_term: Optional[str] = None,
     limit: Optional[int] = DEFAULT_ROW_LIMIT,
     list_mode: Literal["symbols", "groups"] = "symbols",  # type: ignore
+    detail: CompactFullDetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     """List symbols or symbol groups."""
     normalized_search_term = _normalize_symbol_search_term(search_term)
+    detail_mode = normalize_output_detail(detail, default="compact")
 
     def _run() -> Dict[str, Any]:
         try:
@@ -181,6 +184,7 @@ def symbols_list(  # noqa: C901
                     search_term=normalized_search_term,
                     limit=limit,
                     mt5_gateway=mt5_gateway,
+                    detail=detail_mode,
                 )
 
             matched_symbols = []
@@ -249,13 +253,33 @@ def symbols_list(  # noqa: C901
                     "symbol": symbol.name,
                     "group": _extract_group_path_util(symbol),
                     "description": symbol.description,
+                    "visible": bool(getattr(symbol, "visible", False)),
                 })
 
             limit_value = _normalize_limit(limit)
             if limit_value:
                 symbol_list = symbol_list[:limit_value]
-            rows = [[s["symbol"], s["group"], s["description"]] for s in symbol_list]
-            result = _table_from_rows(["symbol", "group", "description"], rows)
+            if detail_mode == "summary":
+                return {
+                    "success": True,
+                    "list_mode": "symbols",
+                    "count": len(symbol_list),
+                    "search_term": normalized_search_term,
+                    "limit": limit_value,
+                }
+            if detail_mode == "compact":
+                headers = ["symbol", "group"]
+                rows = [[s["symbol"], s["group"]] for s in symbol_list]
+            elif detail_mode == "full":
+                headers = ["symbol", "group", "description", "visible"]
+                rows = [
+                    [s["symbol"], s["group"], s["description"], s["visible"]]
+                    for s in symbol_list
+                ]
+            else:
+                headers = ["symbol", "group", "description"]
+                rows = [[s["symbol"], s["group"], s["description"]] for s in symbol_list]
+            result = _table_from_rows(headers, rows)
             return attach_collection_contract(
                 result,
                 collection_kind="table",
@@ -273,6 +297,7 @@ def symbols_list(  # noqa: C901
         search_term=normalized_search_term,
         limit=limit,
         list_mode=list_mode,
+        detail=detail_mode,
         func=_run,
     )
 
@@ -280,6 +305,7 @@ def _list_symbol_groups(
     search_term: Optional[str] = None,
     limit: Optional[int] = DEFAULT_ROW_LIMIT,
     mt5_gateway: Any = None,
+    detail: CompactFullDetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     """List group paths as a tabular result with a single column: group."""
     try:
@@ -319,10 +345,22 @@ def _list_symbol_groups(
         if limit_value:
             filtered_items = filtered_items[:limit_value]
 
-        # Build tabular result with only group names
-        group_names = [name for name, _ in filtered_items]
-        rows = [[g] for g in group_names]
-        result = _table_from_rows(["group"], rows)
+        detail_mode = normalize_output_detail(detail, default="compact")
+        if detail_mode == "summary":
+            return {
+                "success": True,
+                "list_mode": "groups",
+                "count": len(filtered_items),
+                "search_term": search_term,
+                "limit": limit_value,
+            }
+        if detail_mode in {"standard", "full"}:
+            rows = [[name, meta["count"]] for name, meta in filtered_items]
+            result = _table_from_rows(["group", "count"], rows)
+        else:
+            group_names = [name for name, _ in filtered_items]
+            rows = [[g] for g in group_names]
+            result = _table_from_rows(["group"], rows)
         return attach_collection_contract(
             result,
             collection_kind="table",
