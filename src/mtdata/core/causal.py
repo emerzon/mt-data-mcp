@@ -435,6 +435,13 @@ def _build_pairwise_frame(
     return pd.concat(aligned_map, axis=1, join="outer").sort_index()
 
 
+def _format_sample_time(value: Any) -> str:
+    timestamp = pd.Timestamp(value)
+    if timestamp.tzinfo is not None:
+        timestamp = timestamp.tz_convert("UTC")
+    return timestamp.strftime("%Y-%m-%d %H:%M")
+
+
 def _rank_correlation_pairs(
     frame: pd.DataFrame,
     symbols: List[str],
@@ -468,6 +475,8 @@ def _rank_correlation_pairs(
                 skipped["nonfinite"] += 1
                 continue
             corr_f = float(corr)
+            period_start = _format_sample_time(subset.index[0])
+            period_end = _format_sample_time(subset.index[-1])
             rows.append(
                 {
                     "left": left,
@@ -475,6 +484,8 @@ def _rank_correlation_pairs(
                     "correlation": corr_f,
                     "abs_correlation": abs(corr_f),
                     "samples": int(len(subset)),
+                    "period_start": period_start,
+                    "period_end": period_end,
                     "calculation_samples": int(len(subset)),
                     "overlap_rows": overlap_rows,
                     "available_overlap_rows": overlap_rows,
@@ -508,6 +519,9 @@ def _compact_correlation_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]
             "left": row.get("left"),
             "right": row.get("right"),
             "correlation": row.get("correlation"),
+            "samples": row.get("samples"),
+            "period_start": row.get("period_start"),
+            "period_end": row.get("period_end"),
         }
         for row in rows
     ]
@@ -1839,6 +1853,12 @@ def correlation_matrix(  # noqa: C901
             "success": True,
             "items": output_rows,
             "count": int(len(rows)),
+            "context": {
+                "timeframe": str(timeframe),
+                "limit": int(limit),
+                "transform": transform_value,
+                "min_overlap": int(min_overlap),
+            },
             "summary": {
                 "counts": {
                     "pairs": int(len(rows)),

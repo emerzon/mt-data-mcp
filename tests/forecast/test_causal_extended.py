@@ -804,10 +804,19 @@ class TestCorrelationMatrix:
         assert result["success"] is True
         assert result["summary"]["counts"]["pairs"] == 3
         assert result["count"] == 3
+        assert result["context"] == {
+            "timeframe": "H1",
+            "limit": 60,
+            "transform": "log_return",
+            "min_overlap": 30,
+        }
         assert result["matrix"]["A"]["A"] == pytest.approx(1.0)
         assert result["matrix"]["A"]["B"] > 0.95
         assert result["matrix"]["A"]["C"] < -0.95
         assert result["items"][0]["abs_correlation"] >= result["items"][1]["abs_correlation"]
+        assert result["items"][0]["samples"] == 60
+        assert result["items"][0]["period_start"] == "2024-01-01 20:00"
+        assert result["items"][0]["period_end"] == "2024-01-04 07:00"
         assert result["items"][0]["window_requested"] == 60
         assert result["items"][0]["window_actual"] == 60
         assert result["items"][0]["calculation_samples"] == 60
@@ -850,7 +859,17 @@ class TestCorrelationMatrix:
         assert result["meta"]["request"]["detail"] == "compact"
         assert result["items"]
         assert result["count"] == len(result["items"])
-        assert set(result["items"][0]) == {"left", "right", "correlation"}
+        assert set(result["items"][0]) == {
+            "left",
+            "right",
+            "correlation",
+            "samples",
+            "period_start",
+            "period_end",
+        }
+        assert result["items"][0]["samples"] == 60
+        assert result["context"]["transform"] == "log_return"
+        assert result["context"]["min_overlap"] == 30
         assert result["summary"]["highlights"] == {}
 
     @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
