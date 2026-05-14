@@ -1163,6 +1163,35 @@ class TestFinvizTools:
         assert result["count"] == 0
         assert result["available_count"] == 0
 
+    @patch('mtdata.core.finviz.screen_stocks')
+    def test_finviz_screen_tool_accepts_key_value_filters(self, mock_screen):
+        from mtdata.core.finviz import finviz_screen
+
+        def _run_direct(_logger, operation, func, **fields):
+            return func()
+
+        mock_screen.return_value = {"success": True, "count": 2, "stocks": []}
+
+        with patch("mtdata.core.finviz.run_logged_operation", side_effect=_run_direct):
+            result = finviz_screen.__wrapped__(
+                filters="country=USA,marketcap=+mega",
+                limit=5,
+            )
+
+        mock_screen.assert_called_once_with(
+            filters={
+                "Country": "USA",
+                "Market Cap.": "Mega ($200bln and more)",
+            },
+            order=None,
+            limit=5,
+            page=1,
+            view="overview",
+        )
+        assert result["success"] is True
+        assert result["count"] == 0
+        assert result["available_count"] == 0
+
     def test_finviz_calendar_uses_start_end_dates(self):
         from mtdata.core.finviz import finviz_calendar
 

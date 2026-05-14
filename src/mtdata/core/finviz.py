@@ -365,23 +365,26 @@ def _invalid_finviz_screen_filters_error(filters: Any) -> Dict[str, Any]:
         if raw and not raw.startswith("{"):
             message = (
                 "Invalid filters format. Received a string value, but finviz_screen expects a JSON object "
-                "(dict) mapping filter names as keys to filter values or Finviz screener shorthand tokens like "
-                "'cap_largeover,exch_nyse'. Example: "
+                "(dict) with filter names as keys, key=value pairs, or Finviz screener shorthand tokens like "
+                "'cap_largeover,exch_nyse'. Examples: "
+                "'country=USA,marketcap=mega', "
                 "{'Exchange': 'NASDAQ', 'Sector': 'Technology'} or "
                 "'{\"Exchange\": \"NASDAQ\", \"Sector\": \"Technology\"}'. "
                 f"Got: {filters!r}"
             )
         else:
             message = (
-                "Invalid filters format. Provide filters as a JSON object (dict) or JSON string with filter names as keys "
-                "and filter values as values. Example: {'Exchange': 'NASDAQ', 'Sector': 'Technology'} or "
+                "Invalid filters format. Provide filters as key=value pairs, a JSON object (dict), or JSON string "
+                "with filter names as keys and filter values as values. Example: 'country=USA,marketcap=mega', "
+                "{'Exchange': 'NASDAQ', 'Sector': 'Technology'} or "
                 "'{\"Exchange\": \"NASDAQ\", \"Sector\": \"Technology\"}'. "
                 f"Got: {filters}"
             )
     else:
         message = (
-            "Invalid filters format. Provide filters as a JSON object (dict) or JSON string with filter names as keys "
-            "and filter values as values. Example: {'Exchange': 'NASDAQ', 'Sector': 'Technology'} or "
+            "Invalid filters format. Provide filters as key=value pairs, a JSON object (dict), or JSON string "
+            "with filter names as keys and filter values as values. Example: 'country=USA,marketcap=mega', "
+            "{'Exchange': 'NASDAQ', 'Sector': 'Technology'} or "
             "'{\"Exchange\": \"NASDAQ\", \"Sector\": \"Technology\"}'. "
             f"Got: {filters}"
         )
@@ -416,6 +419,59 @@ def _parse_finviz_screen_shorthand(raw: str) -> Optional[Dict[str, Any]]:
     return filters or None
 
 
+def _compact_finviz_filter_token(value: Any, *, keep_sign: bool = False) -> str:
+    text = str(value or "").strip().lower()
+    return "".join(
+        ch for ch in text if ch.isalnum() or (keep_sign and ch in {"+", "-"})
+    )
+
+
+def _resolve_finviz_filter_option(spec: Dict[str, Any], raw_value: str) -> Optional[str]:
+    aliases: Dict[str, str] = {}
+    for option_name, option_code in (spec.get("option") or {}).items():
+        option_name_text = str(option_name)
+        option_code_text = str(option_code)
+        aliases[_compact_finviz_filter_token(option_name_text, keep_sign=True)] = option_name_text
+        aliases[_compact_finviz_filter_token(option_code_text, keep_sign=True)] = option_name_text
+        first_word = option_name_text.split(maxsplit=1)[0]
+        if first_word.startswith(("+", "-")):
+            aliases[_compact_finviz_filter_token(first_word, keep_sign=True)] = option_name_text
+
+    value_key = _compact_finviz_filter_token(raw_value, keep_sign=True)
+    if value_key in aliases:
+        return aliases[value_key]
+    if value_key.startswith(("+", "-")):
+        return aliases.get(value_key[1:])
+    return None
+
+
+def _parse_finviz_screen_key_value_filters(raw: str) -> Optional[Dict[str, Any]]:
+    if "=" not in raw:
+        return None
+    try:
+        from finvizfinance.screener.base import filter_dict
+    except ImportError:
+        return None
+
+    filter_names = {
+        _compact_finviz_filter_token(name): str(name)
+        for name in filter_dict
+    }
+    parsed: Dict[str, Any] = {}
+    for token in [part.strip() for part in raw.split(",") if part.strip()]:
+        if "=" not in token:
+            return None
+        key_raw, value_raw = token.split("=", 1)
+        filter_name = filter_names.get(_compact_finviz_filter_token(key_raw))
+        if filter_name is None:
+            return None
+        option_name = _resolve_finviz_filter_option(filter_dict[filter_name], value_raw)
+        if option_name is None:
+            return None
+        parsed[filter_name] = option_name
+    return parsed or None
+
+
 def _resolve_finviz_screen_filters(filters: Any) -> tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
     if filters is None:
         return None, None
@@ -435,6 +491,10 @@ def _resolve_finviz_screen_filters(filters: Any) -> tuple[Optional[Dict[str, Any
         if not isinstance(parsed, dict):
             return None, _invalid_finviz_screen_filters_error(filters)
         return parsed, None
+    if "=" in raw:
+        parsed = _parse_finviz_screen_key_value_filters(raw)
+        if parsed is not None:
+            return parsed, None
     if "_" in raw:
         parsed = _parse_finviz_screen_shorthand(raw)
         if parsed is not None:
