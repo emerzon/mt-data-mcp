@@ -414,6 +414,7 @@ def _normalize_forecast_payload(
                 "quantity",
                 "detail",
                 "horizon",
+                "timezone",
                 "last_price",
                 "last_price_source",
                 "forecast_vs_last_price",
@@ -421,6 +422,10 @@ def _normalize_forecast_payload(
                 value = payload.get(key)
                 if not _is_empty_value(value):
                     out[key] = value
+            if "timezone" not in out:
+                timestamp_timezone = payload.get("timestamp_timezone")
+                if not _is_empty_value(timestamp_timezone):
+                    out["timezone"] = timestamp_timezone
 
         ci_diag = _compact_forecast_ci(payload, lower=lower, upper=upper)
         if ci_diag:
