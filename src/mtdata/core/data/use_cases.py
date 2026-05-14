@@ -21,7 +21,7 @@ from .wait_events import run_wait_event_loop
 logger = logging.getLogger(__name__)
 
 _TICK_DETAIL_FORMATS = {
-    "compact": "summary",
+    "compact": "rows",
     "summary": "summary",
     "standard": "stats",
     "full": "rows",

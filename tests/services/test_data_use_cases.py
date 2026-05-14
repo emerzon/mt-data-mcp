@@ -497,7 +497,7 @@ def test_run_data_fetch_ticks_logs_connection_error(caplog):
 @pytest.mark.parametrize(
     ("detail", "expected_format"),
     [
-        ("compact", "summary"),
+        ("compact", "rows"),
         ("summary", "summary"),
         ("standard", "stats"),
         ("full", "rows"),

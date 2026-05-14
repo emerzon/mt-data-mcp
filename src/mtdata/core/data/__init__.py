@@ -439,12 +439,11 @@ def data_fetch_ticks(
 ) -> Dict[str, Any]:
     """Fetch tick data for a symbol.
 
-    By default (`detail="compact"`), returns a compact set of descriptive stats
-    over the fetched ticks (bid/ask/mid/spread, plus last and volume; volume uses real
-    volume when available, otherwise tick_volume).
+    By default (`detail="compact"`), returns tick rows plus compact descriptive
+    stats over the fetched ticks.
 
-    Use `detail="stats"` for a more detailed stats payload.
-    Use `detail="rows"` to return raw tick rows as structured data.
+    Use `detail="summary"` or `detail="standard"` for stats-only payloads.
+    Use `detail="full"` to return raw tick rows as structured data.
     `simplify` only applies to row output. Use a dict such as
     {"method": "lttb", "points": 100} or pass true/"on"/"default" for
     default simplification; false/"off" disables it.
