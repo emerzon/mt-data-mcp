@@ -21,7 +21,10 @@ from ..utils.mt5 import (
     ensure_mt5_connection_or_raise,
     mt5,
 )
-from ..utils.symbol import _extract_group_path as _extract_group_path_util
+from ..utils.symbol import (
+    _extract_group_path as _extract_group_path_util,
+    _normalize_group_path_query,
+)
 from ._mcp_instance import mcp
 from ..shared.constants import TIMEFRAME_MAP
 from .execution_logging import run_logged_operation
@@ -269,12 +272,16 @@ def _expand_symbols_for_group_path(
     if not groups:
         return [], "No visible MT5 symbol groups are available.", None
 
-    query_lower = group_query.lower()
+    query_lower = _normalize_group_path_query(group_query).lower()
     exact_matches = [
-        group_path for group_path in groups if group_path.lower() == query_lower
+        group_path
+        for group_path in groups
+        if _normalize_group_path_query(group_path).lower() == query_lower
     ]
     matched_paths = exact_matches or [
-        group_path for group_path in groups if query_lower in group_path.lower()
+        group_path
+        for group_path in groups
+        if query_lower in _normalize_group_path_query(group_path).lower()
     ]
     matched_paths = list(dict.fromkeys(matched_paths))
     if not matched_paths:

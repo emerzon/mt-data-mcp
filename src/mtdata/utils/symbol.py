@@ -5,6 +5,12 @@ def _normalize_symbol_token(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", str(value or "").lower())
 
 
+def _normalize_group_path_query(value: str) -> str:
+    text = str(value or "").strip().replace("/", "\\")
+    text = re.sub(r"\\+", r"\\", text)
+    return text.strip("\\")
+
+
 def _extract_group_path(sym) -> str:
     """Extract pure group path from a symbol, stripping the symbol name if present.
 

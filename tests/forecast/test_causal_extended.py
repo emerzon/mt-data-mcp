@@ -129,6 +129,23 @@ class TestExpandSymbolsForGroupPath:
         assert gp == "Forex\\Majors"
         assert syms == ["EURUSD", "GBPUSD"]
 
+    @patch(
+        "mtdata.core.causal._extract_group_path_util",
+        side_effect=lambda symbol: getattr(symbol, "group_path", None),
+    )
+    def test_exact_match_accepts_doubled_backslash_path(self, _mock_group):
+        gateway = MagicMock()
+        gateway.symbols_get.return_value = [
+            self._symbol("EURUSD", "Forex\\Majors"),
+            self._symbol("GBPUSD", "Forex\\Majors"),
+        ]
+
+        syms, err, gp = _expand_symbols_for_group_path("Forex\\\\Majors", gateway=gateway)
+
+        assert err is None
+        assert gp == "Forex\\Majors"
+        assert syms == ["EURUSD", "GBPUSD"]
+
     @patch("mtdata.core.causal._extract_group_path_util", side_effect=lambda symbol: getattr(symbol, "group_path", None))
     def test_ambiguous_partial_match_returns_error(self, _mock_group):
         gateway = MagicMock()

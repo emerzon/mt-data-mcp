@@ -14,7 +14,10 @@ from ..utils.mt5 import (
     mt5,
 )
 from ..utils.mt5_enums import decode_mt5_bitmask_labels, decode_mt5_enum_label
-from ..utils.symbol import _extract_group_path as _extract_group_path_util
+from ..utils.symbol import (
+    _extract_group_path as _extract_group_path_util,
+    _normalize_group_path_query,
+)
 from ..utils.utils import _format_time_minimal, _normalize_limit, _table_from_rows
 from ._mcp_instance import mcp
 from ..shared.constants import DEFAULT_ROW_LIMIT, GROUP_SEARCH_THRESHOLD, TIMEFRAME_MAP
@@ -813,9 +816,9 @@ def _resolve_market_scan_group_path(
         group_path = str(_extract_group_path_util(symbol) or "").strip()
         if not group_path:
             continue
-        groups.setdefault(group_path.lower(), group_path)
+        groups.setdefault(_normalize_group_path_query(group_path).lower(), group_path)
 
-    requested_lower = requested.lower()
+    requested_lower = _normalize_group_path_query(requested).lower()
     exact = groups.get(requested_lower)
     if exact is not None:
         return [exact], None
@@ -823,7 +826,7 @@ def _resolve_market_scan_group_path(
     partial_matches = sorted(
         (
             value for value in groups.values()
-            if requested_lower in value.lower()
+            if requested_lower in _normalize_group_path_query(value).lower()
         ),
         key=_case_insensitive_sort_key,
     )
@@ -831,6 +834,11 @@ def _resolve_market_scan_group_path(
         return [partial_matches[0]], None
     if partial_matches:
         return partial_matches, None
+    available = sorted(groups.values(), key=_case_insensitive_sort_key)
+    if available:
+        preview = ", ".join(available[:5])
+        suffix = ", ..." if len(available) > 5 else ""
+        return [], f"No symbol group matched '{requested}'. Available groups: {preview}{suffix}"
     return [], f"No symbol group matched '{requested}'."
 
 
@@ -878,11 +886,19 @@ def _select_market_scan_symbols(
         resolved_groups, group_error = _resolve_market_scan_group_path(tradable_symbols, group)
         if group_error or not resolved_groups:
             return [], {}, group_error
-        resolved_group_set = {str(group_path).strip() for group_path in resolved_groups}
+        resolved_group_set = {
+            _normalize_group_path_query(str(group_path).strip()).lower()
+            for group_path in resolved_groups
+        }
         selected = sorted(
             [
                 symbol for symbol in tradable_symbols
-                if str(_extract_group_path_util(symbol) or "").strip() in resolved_group_set
+                if (
+                    _normalize_group_path_query(
+                        str(_extract_group_path_util(symbol) or "").strip()
+                    ).lower()
+                    in resolved_group_set
+                )
                 and (universe == "all" or bool(getattr(symbol, "visible", False)))
             ],
             key=lambda symbol: _case_insensitive_sort_key(getattr(symbol, "name", "")),
