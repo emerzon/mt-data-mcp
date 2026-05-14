@@ -276,7 +276,8 @@ def run_patterns_detect(  # noqa: C901
             }
         if detail_value == "compact":
             return deps.compact_patterns_payload(
-                out if isinstance(out, dict) else {"data": out}
+                out if isinstance(out, dict) else {"data": out},
+                preview_limit=request.top_k,
             )
         return _dedupe_repeated_regime_context(out)
 

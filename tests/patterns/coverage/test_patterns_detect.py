@@ -330,6 +330,28 @@ class TestPatternsDetect:
         assert "volume_confirmation" not in result["highlights"][0]
         assert "regime_context" not in result["highlights"][0]
 
+    @patch("mtdata.core.patterns._detect_candlestick_patterns")
+    def test_candlestick_compact_recent_patterns_respects_top_k(self, mock_detect):
+        mock_detect.return_value = {
+            "success": True,
+            "data": [
+                {"pattern": "Hammer", "end_index": 1, "confidence": 0.8},
+                {"pattern": "Engulfing", "end_index": 2, "confidence": 0.7},
+                {"pattern": "Doji", "end_index": 3, "confidence": 0.6},
+            ],
+        }
+
+        result = _call_patterns_detect(
+            symbol="EURUSD",
+            mode="candlestick",
+            timeframe="H1",
+            detail="compact",
+            top_k=1,
+        )
+
+        assert len(result["recent_patterns"]) == 1
+        assert result["recent_patterns"][0]["pattern"] == "Doji"
+
     def test_unknown_mode(self):
         result = _call_patterns_detect(symbol="EURUSD", mode="unknown_mode")
         assert "error" in result

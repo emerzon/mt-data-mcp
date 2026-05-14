@@ -346,7 +346,11 @@ def _summarize_actionable_pattern_signal(
     return out
 
 
-def _compact_patterns_payload(payload: Dict[str, Any]) -> Dict[str, Any]:  # noqa: C901
+def _compact_patterns_payload(
+    payload: Dict[str, Any],
+    *,
+    preview_limit: int = 8,
+) -> Dict[str, Any]:  # noqa: C901
     if not isinstance(payload, dict) or payload.get("error"):
         return payload
 
@@ -382,7 +386,10 @@ def _compact_patterns_payload(payload: Dict[str, Any]) -> Dict[str, Any]:  # noq
         conf = _safe_float(row.get("confidence")) or 0.0
         return (end_idx if end_idx is not None else float(idx), conf, idx)
 
-    preview_limit = 8
+    try:
+        preview_limit = max(1, int(preview_limit))
+    except Exception:
+        preview_limit = 8
     preview_rows = [
         row
         for _, row in sorted(indexed_rows, key=_sort_key, reverse=True)[:preview_limit]
