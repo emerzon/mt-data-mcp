@@ -319,7 +319,7 @@ def _apply_forecast_generate_detail(
             compact["ci"]["hint"] = ci_payload["hint"]
     for key in (
         "last_observation_time",
-        "timestamp_timezone",
+        "timezone",
         "forecast_time",
         "forecast_price",
         "forecast_return",

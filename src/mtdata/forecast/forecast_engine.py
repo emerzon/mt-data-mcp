@@ -817,7 +817,7 @@ def _merge_engine_diagnostics(metadata: Dict[str, Any], diagnostics: Dict[str, A
     return metadata
 
 
-def _forecast_timestamp_timezone_label(*, use_client_tz: bool, client_tz: Any) -> str:
+def _forecast_timezone_label(*, use_client_tz: bool, client_tz: Any) -> str:
     if not use_client_tz:
         return "UTC"
     if client_tz is None:
@@ -854,7 +854,7 @@ def _format_forecast_output(
     use_client_tz = _use_client_tz()
     client_tz = _resolve_client_tz() if use_client_tz else None
     fmt_time = _format_time_minimal_local if use_client_tz else _format_time_minimal
-    timestamp_timezone = _forecast_timestamp_timezone_label(
+    timezone_label = _forecast_timezone_label(
         use_client_tz=use_client_tz,
         client_tz=client_tz,
     )
@@ -883,7 +883,7 @@ def _format_forecast_output(
         "base_col": base_col,
         "last_observation_epoch": float(last_epoch),
         "last_observation_time": last_observation_time,
-        "timestamp_timezone": timestamp_timezone,
+        "timezone": timezone_label,
         "forecast_from": {
             "time": last_observation_time,
             "anchor": "last_observation",

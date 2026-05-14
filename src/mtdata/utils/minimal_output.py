@@ -422,10 +422,6 @@ def _normalize_forecast_payload(
                 value = payload.get(key)
                 if not _is_empty_value(value):
                     out[key] = value
-            if "timezone" not in out:
-                timestamp_timezone = payload.get("timestamp_timezone")
-                if not _is_empty_value(timestamp_timezone):
-                    out["timezone"] = timestamp_timezone
 
         ci_diag = _compact_forecast_ci(payload, lower=lower, upper=upper)
         if ci_diag:
@@ -639,7 +635,7 @@ def _trade_table_hidden_keys(tool_name: str) -> set[str]:
         }
     if tool_name == "trade_history":
         return {
-            "timestamp_timezone",
+            "timezone",
             "comment_visible_length",
             "comment_max_length",
             "comment_may_be_truncated",

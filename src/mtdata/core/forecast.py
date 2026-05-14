@@ -87,13 +87,14 @@ _FORECAST_TIMESTAMP_OPERATIONS = frozenset(
 )
 
 
-def _attach_timestamp_timezone(result: Dict[str, Any], *, operation: str) -> Dict[str, Any]:
+def _attach_timezone(result: Dict[str, Any], *, operation: str) -> Dict[str, Any]:
     if (
         operation in _FORECAST_TIMESTAMP_OPERATIONS
         and isinstance(result, dict)
         and "error" not in result
     ):
-        result.setdefault("timezone", str(result.get("timestamp_timezone") or "UTC"))
+        result.setdefault("timezone", "UTC")
+        result.pop("timestamp_timezone", None)
     return result
 
 
@@ -600,7 +601,7 @@ def _run_forecast_operation(
                 result = _run_forecast_payload_in_process(operation, dict(process_payload or {}))
             else:
                 result = func()
-            return _attach_timestamp_timezone(result, operation=operation)
+            return _attach_timezone(result, operation=operation)
         except ForecastError as exc:
             if catch_forecast_error:
                 return _forecast_error_payload(exc, operation=operation)

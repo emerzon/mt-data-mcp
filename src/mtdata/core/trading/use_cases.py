@@ -1965,7 +1965,7 @@ def run_trade_history(  # noqa: C901
                     timezone_label = "client_local"
             for row in records:
                 if isinstance(row, dict):
-                    row["timestamp_timezone"] = timezone_label
+                    row["timezone"] = timezone_label
                     row.update(comment_row_metadata(row.get("comment")))
             return records
         except Exception as exc:

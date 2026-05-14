@@ -297,7 +297,7 @@ _TRADE_HISTORY_DEAL_TOP_LEVEL_FIELDS = (
     "fee",
     "symbol",
     "comment",
-    "timestamp_timezone",
+    "timezone",
     "exit_trigger",
     "exit_trigger_price",
     "exit_trigger_source",
@@ -323,7 +323,7 @@ _TRADE_HISTORY_ORDER_TOP_LEVEL_FIELDS = (
     "tp",
     "symbol",
     "comment",
-    "timestamp_timezone",
+    "timezone",
 )
 _TRADE_HISTORY_COMPACT_DEAL_FIELDS = (
     "time",
@@ -553,7 +553,7 @@ def _trade_history_humanized_key(key: str) -> str:
         "fee": "Fee",
         "comment": "Comments",
         "magic": "Magic",
-        "timestamp_timezone": "Timestamp Timezone",
+        "timezone": "Timezone",
         "exit_trigger": "Exit Trigger",
         "exit_trigger_price": "Exit Trigger Price",
         "exit_trigger_source": "Exit Trigger Source",
@@ -585,8 +585,13 @@ def normalize_trade_history_output(
     out = _normalize_trade_read_output(rows, request=request, kind="trade_history")
     history_kind = getattr(request, "history_kind", None)
     include_request_metadata = _include_trade_read_request_metadata(request)
+    timezone_label = "UTC"
     if out.get("success") is True and isinstance(out.get("items"), list):
         raw_items = list(out["items"])
+        for item in raw_items:
+            if isinstance(item, dict) and item.get("timezone"):
+                timezone_label = str(item["timezone"])
+                break
         if include_request_metadata:
             out["items"] = _normalize_trade_history_items(
                 raw_items,
@@ -612,13 +617,6 @@ def normalize_trade_history_output(
     elif history_kind is not None:
         out["history_kind"] = history_kind
     if out.get("success") is True:
-        timezone_label = "UTC"
-        items = out.get("items")
-        if isinstance(items, list):
-            for item in items:
-                if isinstance(item, dict) and item.get("timestamp_timezone"):
-                    timezone_label = str(item["timestamp_timezone"])
-                    break
         out.setdefault("timezone", timezone_label)
     return out
 

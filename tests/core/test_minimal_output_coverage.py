@@ -255,15 +255,6 @@ class TestNormalizeForecastPayload:
         assert result["last_price_source"] == "candle_close"
         assert result["forecast_vs_last_price"] == {"first_forecast_delta": -1.0}
 
-    def test_non_verbose_uses_timestamp_timezone_fallback(self):
-        payload = {
-            "times": ["t1"],
-            "forecast_price": [100.0],
-            "timestamp_timezone": "UTC",
-        }
-        result = _normalize_forecast_payload(payload, verbose=False)
-        assert result["timezone"] == "UTC"
-
     def test_q50_dedup(self):
         payload = {
             "times": ["t1"],

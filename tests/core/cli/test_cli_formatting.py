@@ -1553,7 +1553,7 @@ class TestFormatResultForCli:
                     "type_code": 0,
                     "entry_code": 1,
                     "reason_code": 2,
-                    "timestamp_timezone": "UTC",
+                    "timezone": "UTC",
                     "time_msc": 1700000000000,
                 }
             ],
@@ -1567,7 +1567,7 @@ class TestFormatResultForCli:
         assert "type_code" not in hist_out
         assert "entry_code" not in hist_out
         assert "reason_code" not in hist_out
-        assert "timestamp_timezone" not in hist_out
+        assert "timezone" not in hist_out
         assert "time_msc" in hist_out
 
     def test_toon_format_keeps_trade_metadata_in_verbose_output(self):
@@ -1579,7 +1579,7 @@ class TestFormatResultForCli:
                     "comment_max_length": 31,
                     "comment_may_be_truncated": True,
                     "type_code": 0,
-                    "timestamp_timezone": "UTC",
+                    "timezone": "UTC",
                 }
             ],
             fmt="toon",
@@ -1590,7 +1590,7 @@ class TestFormatResultForCli:
         assert "comment_max_length" in hist_out
         assert "comment_may_be_truncated" in hist_out
         assert "type_code" in hist_out
-        assert "timestamp_timezone" in hist_out
+        assert "timezone" in hist_out
 
     def test_toon_format_hides_trade_history_metadata_inside_envelope(self):
         hist_out = _format_result_for_cli(
@@ -1608,7 +1608,7 @@ class TestFormatResultForCli:
                         "type_code": 0,
                         "entry_code": 1,
                         "reason_code": 2,
-                        "timestamp_timezone": "UTC",
+                        "timezone": "UTC",
                         "time_msc": 1700000000000,
                     }
                 ],
@@ -1623,7 +1623,7 @@ class TestFormatResultForCli:
         assert "type_code" not in hist_out
         assert "entry_code" not in hist_out
         assert "reason_code" not in hist_out
-        assert "timestamp_timezone" not in hist_out
+        assert "timezone" not in hist_out
         assert "time_msc" in hist_out
 
     def test_toon_format_preserves_pending_orders_message_shape(self):

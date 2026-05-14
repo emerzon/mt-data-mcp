@@ -619,13 +619,13 @@ class TestFormatForecastOutput:
         assert result["forecast_start_gap_bars"] == 1.0
         assert result["forecast_step_seconds"] == 300
         assert result["forecast_anchor"] == "next_timeframe_bar_after_last_observation"
-        assert result["timestamp_timezone"] == "UTC"
+        assert result["timezone"] == "UTC"
         assert result["forecast_from"] == {
             "time": _format_time_minimal(1000.0),
             "anchor": "last_observation",
         }
 
-    def test_forecast_timestamp_timezone_uses_resolved_client_zone_label(self):
+    def test_forecast_timezone_uses_resolved_client_zone_label(self):
         vals = np.array([1.0])
 
         class _ClientTz:
@@ -644,7 +644,7 @@ class TestFormatForecastOutput:
                 ci_alpha=None, ci_values=None, method="naive",
                 quantity="price", denoise_used=False,
             )
-        assert result["timestamp_timezone"] == "America/New_York"
+        assert result["timezone"] == "America/New_York"
 
 
 # ===================================================================

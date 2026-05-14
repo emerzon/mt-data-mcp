@@ -39,13 +39,14 @@ def _skip_mt5_connection(monkeypatch):
     monkeypatch.setattr(cf, "ensure_mt5_connection_or_raise", lambda: None)
 
 
-def test_attach_timestamp_timezone_uses_result_timezone_label() -> None:
-    result = cf._attach_timestamp_timezone(
+def test_attach_timezone_removes_legacy_timestamp_timezone() -> None:
+    result = cf._attach_timezone(
         {"success": True, "timestamp_timezone": "America/New_York"},
         operation="forecast_generate",
     )
 
-    assert result["timezone"] == "America/New_York"
+    assert result["timezone"] == "UTC"
+    assert "timestamp_timezone" not in result
 
 
 def test_normalize_forecaster_name_and_resolve_variants(monkeypatch):
@@ -285,7 +286,7 @@ def test_forecast_generate_defaults_to_compact_payload(monkeypatch):
             "method": kwargs["method"],
             "horizon": kwargs["horizon"],
             "quantity": kwargs["quantity"],
-            "timestamp_timezone": "UTC",
+            "timezone": "UTC",
             "forecast_from": {"time": "t0", "anchor": "last_observation"},
             "forecast_anchor": "next_timeframe_bar_after_last_observation",
             "forecast_step_seconds": 3600,
@@ -303,7 +304,7 @@ def test_forecast_generate_defaults_to_compact_payload(monkeypatch):
     assert out["detail"] == "compact"
     assert out["symbol"] == "BTCUSD"
     assert out["timeframe"] == "H1"
-    assert out["timestamp_timezone"] == "UTC"
+    assert out["timezone"] == "UTC"
     assert "forecast_from" not in out
     assert "forecast_anchor" not in out
     assert "forecast_step_seconds" not in out
