@@ -648,6 +648,8 @@ _FINVIZ_OUTPUT_KEY_MAP = {
     "P/FCF": "price_to_free_cash_flow",
     "Price/Cash": "price_to_cash",
     "Price/Free Cash Flow": "price_to_free_cash_flow",
+    "EPS past 3/5Y": "eps_past_3_5_y",
+    "Sales past 3/5Y": "sales_past_3_5_y",
     "EPS (ttm)": "eps_ttm",
     "EPS next Y": "eps_next_y",
     "EPS next Q": "eps_next_q",
@@ -681,12 +683,26 @@ _FINVIZ_OUTPUT_KEY_MAP = {
     "Perf 3Y": "performance_3y",
     "Perf 5Y": "performance_5y",
     "Perf 10Y": "performance_10y",
+    "Volatility W": "volatility_w_pct",
+    "Volatility M": "volatility_m_pct",
     "Dividend %": "dividend_yield",
     "Dividend Est.": "dividend_est",
     "Dividend TTM": "dividend_ttm",
     "Dividend Ex-Date": "dividend_ex_date",
     "Dividend Gr. 3Y": "dividend_growth_3y",
     "Dividend Gr. 5Y": "dividend_growth_5y",
+    "Dividend Gr. 3/5Y": "dividend_growth_3_5_y",
+}
+
+_FINVIZ_52W_COMPOUND_FIELDS = {
+    "high_52w": ("high_52w_price", "high_52w_distance_pct"),
+    "low_52w": ("low_52w_price", "low_52w_distance_pct"),
+}
+_FINVIZ_DUAL_PERIOD_FIELDS = {
+    "eps_past_3_5_y": ("eps_past_3y_cagr_pct", "eps_past_5y_cagr_pct"),
+    "sales_past_3_5_y": ("sales_past_3y_cagr_pct", "sales_past_5y_cagr_pct"),
+    "dividend_gr_3_5_y": ("dividend_growth_3y_cagr_pct", "dividend_growth_5y_cagr_pct"),
+    "dividend_growth_3_5_y": ("dividend_growth_3y_cagr_pct", "dividend_growth_5y_cagr_pct"),
 }
 
 _FINVIZ_FUNDAMENTAL_NUMERIC_KEYS = frozenset(
@@ -710,8 +726,8 @@ _FINVIZ_FUNDAMENTAL_NUMERIC_KEYS = frozenset(
         "sma200",
         "atr_14",
         "beta",
-        "volatility_w",
-        "volatility_m",
+        "volatility_w_pct",
+        "volatility_m_pct",
         "volume",
         "avg_volume",
         "rel_volume",
@@ -743,6 +759,12 @@ _FINVIZ_FUNDAMENTAL_NUMERIC_KEYS = frozenset(
         "dividend_ttm",
         "dividend_growth_3y",
         "dividend_growth_5y",
+        "eps_past_3y_cagr_pct",
+        "eps_past_5y_cagr_pct",
+        "sales_past_3y_cagr_pct",
+        "sales_past_5y_cagr_pct",
+        "dividend_growth_3y_cagr_pct",
+        "dividend_growth_5y_cagr_pct",
         "payout",
         "insider_own",
         "insider_trans",
@@ -823,6 +845,44 @@ def _parse_finviz_numeric_value(value: Any) -> Optional[float]:
     if not re.fullmatch(r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)", text):
         return None
     return float(text) * multiplier
+
+
+def _parse_finviz_numeric_tokens(value: Any) -> list[float]:
+    tokens = re.findall(r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)%?", str(value or ""))
+    parsed: list[float] = []
+    for token in tokens:
+        number = _parse_finviz_numeric_value(token)
+        if number is not None:
+            parsed.append(number)
+    return parsed
+
+
+def _expand_finviz_compound_fundamental(
+    key: str,
+    value: Any,
+) -> Optional[Dict[str, Any]]:
+    values = _parse_finviz_numeric_tokens(value)
+    if key in _FINVIZ_52W_COMPOUND_FIELDS and len(values) >= 2:
+        price_key, distance_key = _FINVIZ_52W_COMPOUND_FIELDS[key]
+        return {
+            price_key: values[0],
+            distance_key: values[1],
+        }
+    if key in _FINVIZ_DUAL_PERIOD_FIELDS and len(values) >= 2:
+        first_key, second_key = _FINVIZ_DUAL_PERIOD_FIELDS[key]
+        return {
+            first_key: values[0],
+            second_key: values[1],
+        }
+    return None
+
+
+def _finviz_compound_output_keys(key: str) -> tuple[str, ...]:
+    if key in _FINVIZ_52W_COMPOUND_FIELDS:
+        return _FINVIZ_52W_COMPOUND_FIELDS[key]
+    if key in _FINVIZ_DUAL_PERIOD_FIELDS:
+        return _FINVIZ_DUAL_PERIOD_FIELDS[key]
+    return ()
 
 
 def _normalize_finviz_fundamental_value(key: str, value: Any) -> Any:
@@ -1218,6 +1278,16 @@ def _filter_finviz_fundamentals_payload(
         if value in (None, ""):
             continue
         output_key = _normalize_finviz_output_key(field)
+        expanded = _expand_finviz_compound_fundamental(output_key, value)
+        if expanded is not None:
+            filtered.update(
+                {
+                    expanded_key: expanded_value
+                    for expanded_key, expanded_value in expanded.items()
+                    if expanded_value not in (None, "")
+                }
+            )
+            continue
         output_value = _normalize_finviz_fundamental_value(output_key, value)
         if output_value in (None, ""):
             continue
@@ -1232,6 +1302,12 @@ def _filter_finviz_fundamentals_payload(
             _normalize_finviz_output_key(field)
             for field in fundamentals
             if _normalize_finviz_output_key(field) not in filtered
+            and not any(
+                expanded_key in filtered
+                for expanded_key in _finviz_compound_output_keys(
+                    _normalize_finviz_output_key(field)
+                )
+            )
         ]
         out["omitted_field_count"] = len(omitted_fields)
         if omitted_fields:

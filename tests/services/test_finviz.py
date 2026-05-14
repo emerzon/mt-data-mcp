@@ -746,7 +746,9 @@ class TestFinvizTools:
         assert result["fundamentals"]["market_cap"] == 3_979_470_000_000.0
         assert result["fundamentals"]["eps_ttm"] == 7.9
         assert result["fundamentals"]["change"] == 1.2
-        assert result["fundamentals"]["high_52w"] == "288.62 -2.94%"
+        assert result["fundamentals"]["high_52w_price"] == 288.62
+        assert result["fundamentals"]["high_52w_distance_pct"] == -2.94
+        assert "high_52w" not in result["fundamentals"]
         assert result["fundamentals"]["rsi_14"] == 62.1
         assert "insider_own" not in result["fundamentals"]
         assert "fields_returned" not in result
@@ -801,6 +803,42 @@ class TestFinvizTools:
 
         assert "fields_returned" not in result
         assert result["available_field_count"] == 3
+        assert result["omitted_field_count"] == 0
+
+    @patch("mtdata.core.finviz.get_stock_fundamentals")
+    def test_finviz_fundamentals_splits_compound_fields(self, mock_get_fundamentals):
+        from mtdata.core.finviz import finviz_fundamentals
+
+        mock_get_fundamentals.return_value = {
+            "success": True,
+            "symbol": "AAPL",
+            "fundamentals": {
+                "52W High": "300.92 -0.90%",
+                "52W Low": "193.46 54.15%",
+                "EPS past 3/5Y": "6.89% 17.91%",
+                "Sales past 3/5Y": "1.81% 8.71%",
+                "Dividend Gr. 3/5Y": "4.26% 4.98%",
+                "Volatility W": "1.72%",
+                "Volatility M": "2.09%",
+            },
+        }
+
+        raw = getattr(finviz_fundamentals, "__wrapped__", finviz_fundamentals)
+        result = raw("AAPL", detail="full")
+
+        fundamentals = result["fundamentals"]
+        assert fundamentals["high_52w_price"] == 300.92
+        assert fundamentals["high_52w_distance_pct"] == -0.9
+        assert fundamentals["low_52w_price"] == 193.46
+        assert fundamentals["low_52w_distance_pct"] == 54.15
+        assert fundamentals["eps_past_3y_cagr_pct"] == 6.89
+        assert fundamentals["eps_past_5y_cagr_pct"] == 17.91
+        assert fundamentals["sales_past_3y_cagr_pct"] == 1.81
+        assert fundamentals["sales_past_5y_cagr_pct"] == 8.71
+        assert fundamentals["dividend_growth_3y_cagr_pct"] == 4.26
+        assert fundamentals["dividend_growth_5y_cagr_pct"] == 4.98
+        assert fundamentals["volatility_w_pct"] == 1.72
+        assert fundamentals["volatility_m_pct"] == 2.09
         assert result["omitted_field_count"] == 0
 
     @patch("mtdata.core.finviz.get_stock_fundamentals")
