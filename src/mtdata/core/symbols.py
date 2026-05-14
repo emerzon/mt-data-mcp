@@ -630,10 +630,6 @@ def _market_scan_table(
     )
 
 
-def _strip_nested_market_scan_meta(table: Dict[str, Any]) -> Dict[str, Any]:
-    return {k: v for k, v in table.items() if k not in ("success", "count")}
-
-
 def _market_scan_contract_table(
     headers: List[str],
     rows: List[Dict[str, Any]],
@@ -785,6 +781,65 @@ def _top_markets_headers(metric: str, *, detail_mode: str) -> List[str]:
     }
     header_map = compact_headers if detail_mode == "compact" else full_headers
     return list(header_map[metric])
+
+
+def _top_markets_all_headers(*, detail_mode: str) -> List[str]:
+    compact_headers = [
+        "rank_category",
+        "rank",
+        "symbol",
+        "group",
+        "timeframe",
+        "bid",
+        "ask",
+        "spread_pct",
+        "spread_points",
+        "tick_volume",
+        "price_change_pct",
+    ]
+    if detail_mode == "compact":
+        return compact_headers
+    return [
+        "rank_category",
+        "rank",
+        "symbol",
+        "group",
+        "description",
+        "timeframe",
+        "bar_time",
+        "data_freshness_seconds",
+        "stale_after_seconds",
+        "bar_age_hours",
+        "freshness_status",
+        "data_stale",
+        "stale_warning",
+        "bid",
+        "ask",
+        "spread",
+        "spread_points",
+        "spread_pct",
+        "spread_usd",
+        "pricing_basis",
+        "open",
+        "close",
+        "tick_volume",
+        "real_volume",
+        "price_change_pct",
+    ]
+
+
+def _ranked_top_market_rows(
+    ranking: str,
+    rows: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    return [
+        {
+            "rank_category": ranking,
+            "rank": rank,
+            **row,
+        }
+        for rank, row in enumerate(rows, start=1)
+    ]
 
 
 def _parse_market_scan_symbols(symbols: Optional[str]) -> List[str]:
@@ -1410,61 +1465,42 @@ def symbols_top_markets(  # noqa: C901
                     include_contract_meta=detail_mode == "full",
                 )
 
-            results = {
-                "lowest_spread": _strip_nested_market_scan_meta(
-                    _market_scan_table(
-                        _top_markets_headers("spread", detail_mode=detail_mode),
-                        spread_rows,
-                        include_contract_meta=detail_mode == "full",
-                    )
-                ),
-                "highest_volume": _strip_nested_market_scan_meta(
-                    _market_scan_table(
-                        _top_markets_headers("volume", detail_mode=detail_mode),
-                        volume_rows,
-                        include_contract_meta=detail_mode == "full",
-                    )
-                ),
-                "highest_price_change": _strip_nested_market_scan_meta(
-                    _market_scan_table(
-                        _top_markets_headers("price_change", detail_mode=detail_mode),
-                        price_change_rows,
-                        include_contract_meta=detail_mode == "full",
-                    )
-                ),
-            }
-            return attach_collection_contract(
-                {
-                    **scan_meta,
-                    "results": results,
-                    **(
-                        {
-                            "scan_stats": {
-                                "spread": {
-                                    "evaluated_symbols": evaluated_counts["spread"],
-                                    "skipped_symbols": metric_skips["spread"],
-                                    "skipped_examples": metric_issues["spread"],
-                                },
-                                "volume": {
-                                    "evaluated_symbols": evaluated_counts["volume"],
-                                    "skipped_symbols": metric_skips["volume"],
-                                    "skipped_examples": metric_issues["volume"],
-                                },
-                                "price_change": {
-                                    "evaluated_symbols": evaluated_counts["price_change"],
-                                    "skipped_symbols": metric_skips["price_change"],
-                                    "skipped_examples": metric_issues["price_change"],
-                                },
-                            },
-                        }
-                        if detail_mode == "full"
-                        else {}
-                    ),
-                },
-                collection_kind="groups",
-                groups=results,
+            all_rows = [
+                *_ranked_top_market_rows("lowest_spread", spread_rows),
+                *_ranked_top_market_rows("highest_volume", volume_rows),
+                *_ranked_top_market_rows("highest_price_change", price_change_rows),
+            ]
+            out = _market_scan_table(
+                _top_markets_all_headers(detail_mode=detail_mode),
+                all_rows,
                 include_contract_meta=detail_mode == "full",
             )
+            out.update(scan_meta)
+            out["ranking"] = "all"
+            out["rank_categories"] = [
+                "lowest_spread",
+                "highest_volume",
+                "highest_price_change",
+            ]
+            if detail_mode == "full":
+                out["scan_stats"] = {
+                    "spread": {
+                        "evaluated_symbols": evaluated_counts["spread"],
+                        "skipped_symbols": metric_skips["spread"],
+                        "skipped_examples": metric_issues["spread"],
+                    },
+                    "volume": {
+                        "evaluated_symbols": evaluated_counts["volume"],
+                        "skipped_symbols": metric_skips["volume"],
+                        "skipped_examples": metric_issues["volume"],
+                    },
+                    "price_change": {
+                        "evaluated_symbols": evaluated_counts["price_change"],
+                        "skipped_symbols": metric_skips["price_change"],
+                        "skipped_examples": metric_issues["price_change"],
+                    },
+                }
+            return out
         except MT5ConnectionError as exc:
             return {"error": str(exc)}
         except Exception as exc:

@@ -183,19 +183,24 @@ class TestSymbolsTopMarkets:
         result = fn(rank_by="all", limit=5, timeframe="H1", detail="full")
 
         assert result["success"] is True
-        assert result["results"]["lowest_spread"]["data"][0]["symbol"] == "EURUSD"
-        assert result["results"]["highest_volume"]["data"][0]["symbol"] == "EURUSD"
-        assert result["results"]["highest_price_change"]["data"][0]["symbol"] == "GBPUSD"
-        assert result["collection_kind"] == "groups"
-        assert result["canonical_source"] == "results"
+        top_by_category = {
+            row["rank_category"]: row
+            for row in result["data"]
+            if row["rank"] == 1
+        }
+        assert top_by_category["lowest_spread"]["symbol"] == "EURUSD"
+        assert top_by_category["highest_volume"]["symbol"] == "EURUSD"
+        assert top_by_category["highest_price_change"]["symbol"] == "GBPUSD"
+        assert result["collection_kind"] == "table"
+        assert result["canonical_source"] == "data"
+        assert result["ranking"] == "all"
+        assert result["rank_categories"] == [
+            "lowest_spread",
+            "highest_volume",
+            "highest_price_change",
+        ]
         assert "groups" not in result
-        assert "rows" not in result["results"]["lowest_spread"]
-        assert "success" not in result["results"]["lowest_spread"]
-        assert "count" not in result["results"]["lowest_spread"]
-        assert "success" not in result["results"]["highest_volume"]
-        assert "count" not in result["results"]["highest_volume"]
-        assert "success" not in result["results"]["highest_price_change"]
-        assert "count" not in result["results"]["highest_price_change"]
+        assert "results" not in result
         assert result["detail"] == "full"
         assert result["timeframe_requested"] == "H1"
         assert result["timeframe_used"] == "H1"
@@ -292,34 +297,27 @@ class TestSymbolsTopMarkets:
         assert "detail" not in result
         assert "scan_stats" not in result
         assert "query_latency_ms" not in result
-        assert list(result["results"]["lowest_spread"]["data"][0].keys()) == [
+        assert result["ranking"] == "all"
+        assert list(result["data"][0].keys()) == [
+            "rank_category",
+            "rank",
             "symbol",
             "group",
+            "timeframe",
             "bid",
             "ask",
             "spread_pct",
             "spread_points",
-        ]
-        assert list(result["results"]["highest_volume"]["data"][0].keys()) == [
-            "symbol",
-            "group",
-            "timeframe",
             "tick_volume",
             "price_change_pct",
         ]
-        assert list(result["results"]["highest_price_change"]["data"][0].keys()) == [
-            "symbol",
-            "group",
-            "timeframe",
-            "price_change_pct",
-            "tick_volume",
+        assert [row["rank_category"] for row in result["data"][:3]] == [
+            "lowest_spread",
+            "lowest_spread",
+            "highest_volume",
         ]
-        assert "success" not in result["results"]["lowest_spread"]
-        assert "count" not in result["results"]["highest_volume"]
         assert "collection_kind" not in result
         assert "collection_contract_version" not in result
-        assert "collection_kind" not in result["results"]["lowest_spread"]
-        assert "collection_contract_version" not in result["results"]["lowest_spread"]
 
     def test_invalid_rank_by_returns_error(self):
         fn = _get_symbols_top_markets()
