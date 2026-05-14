@@ -62,6 +62,9 @@ def test_trade_account_info_includes_execution_preflight_fields() -> None:
     assert out["server"] == "Demo-Server"
     assert out["company"] == "Broker LLC"
     assert out["trade_mode"] == "demo"
+    assert out["account_type"] == "demo"
+    assert out["is_demo"] is True
+    assert out["is_live"] is False
     assert out["terminal_trade_allowed"] is False
     assert out["terminal_tradeapi_disabled"] is False
     assert out["terminal_connected"] is True
@@ -126,6 +129,9 @@ def test_trade_account_info_compact_detail_includes_account_fields_without_diagn
             "server": "Demo-Server",
             "company": "Broker LLC",
             "trade_mode": "demo",
+            "account_type": "demo",
+            "is_demo": True,
+            "is_live": False,
             "execution_ready": True,
             "execution_blockers": [],
         },
@@ -143,6 +149,9 @@ def test_trade_account_info_compact_detail_includes_account_fields_without_diagn
     assert out["server"] == "Demo-Server"
     assert out["company"] == "Broker LLC"
     assert out["trade_mode"] == "demo"
+    assert out["account_type"] == "demo"
+    assert out["is_demo"] is True
+    assert out["is_live"] is False
     assert out["trade_allowed"] is True
     assert out["trade_expert"] is True
     assert "execution_ready" not in out

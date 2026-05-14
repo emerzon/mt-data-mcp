@@ -52,6 +52,9 @@ _TRADE_ACCOUNT_COMPACT_KEYS = (
     "trade_expert",
     "server",
     "company",
+    "account_type",
+    "is_demo",
+    "is_live",
     "trade_mode",
 )
 
@@ -583,6 +586,9 @@ def trade_account_info(
             "trade_expert": info.trade_expert,
             "server": preflight.get("server"),
             "company": preflight.get("company"),
+            "account_type": preflight.get("account_type"),
+            "is_demo": preflight.get("is_demo"),
+            "is_live": preflight.get("is_live"),
             "trade_mode": preflight.get("trade_mode"),
             "terminal_trade_allowed": preflight.get("terminal_trade_allowed"),
             "terminal_tradeapi_disabled": preflight.get("terminal_tradeapi_disabled"),

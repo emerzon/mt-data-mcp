@@ -19,6 +19,21 @@ def _trade_mode_text(mt5: Any, account_info: Any) -> Optional[str]:
     return mapping.get(trade_mode, str(trade_mode))
 
 
+def _account_type_fields(trade_mode: Optional[str]) -> Dict[str, Any]:
+    if trade_mode is None:
+        return {
+            "account_type": None,
+            "is_demo": None,
+            "is_live": None,
+        }
+    account_type = str(trade_mode)
+    return {
+        "account_type": account_type,
+        "is_demo": account_type == "demo",
+        "is_live": account_type == "real",
+    }
+
+
 def _retcode_name(mt5: Any, retcode: Any) -> Optional[str]:
     try:
         ret = int(retcode)
@@ -78,10 +93,13 @@ def _build_trade_preflight(mt5: Any, account_info: Any = None, terminal_info: An
 
     all_blockers = hard_blockers + soft_blockers
 
+    trade_mode = _trade_mode_text(mt5, info) if info is not None else None
+
     return {
         "server": getattr(info, "server", None) if info is not None else None,
         "company": getattr(info, "company", None) if info is not None else None,
-        "trade_mode": _trade_mode_text(mt5, info) if info is not None else None,
+        "trade_mode": trade_mode,
+        **_account_type_fields(trade_mode),
         "trade_mode_raw": getattr(info, "trade_mode", None) if info is not None else None,
         "login": getattr(info, "login", None) if info is not None else None,
         "account_trade_allowed": account_trade_allowed,

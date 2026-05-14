@@ -65,6 +65,9 @@ def test_trade_session_context_compacts_nested_sections_by_default() -> None:
             "margin_level": 250.0,
             "terminal_connected": True,
             "execution_ready": True,
+            "account_type": "demo",
+            "is_demo": True,
+            "is_live": False,
         },
     ), patch(
         "mtdata.core.trading.context.market_ticker",
@@ -87,6 +90,9 @@ def test_trade_session_context_compacts_nested_sections_by_default() -> None:
     assert out["state"] == "open_position"
     assert out["account"] == {
         "equity": 10010.0,
+        "account_type": "demo",
+        "is_demo": True,
+        "is_live": False,
     }
     assert out["ticker"] == {
         "bid": 1.1,
