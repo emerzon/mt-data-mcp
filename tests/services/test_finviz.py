@@ -1092,7 +1092,20 @@ class TestFinvizTools:
         mock_screen.return_value = {
             "success": True,
             "count": 5,
-            "stocks": [{"Ticker": "AAPL", "Market Cap": "3.0T", "P/E": "28.5"}],
+            "stocks": [
+                {
+                    "Ticker": "AAPL",
+                    "Company": "Apple Inc.",
+                    "Sector": "Technology",
+                    "Industry": "Consumer Electronics",
+                    "Country": "USA",
+                    "Market Cap": "3.0T",
+                    "Price": 298.21,
+                    "Change": 0.012,
+                    "Volume": 123456,
+                    "P/E": "28.5",
+                }
+            ],
         }
 
         with patch("mtdata.core.finviz.run_logged_operation", side_effect=_run_direct):
@@ -1113,7 +1126,15 @@ class TestFinvizTools:
         assert result["available_count"] == 1
         assert result["detail"] == "compact"
         assert "stocks" not in result
-        assert result["items"] == [{"symbol": "AAPL", "market_cap": "3.0T", "pe_ratio": "28.5"}]
+        assert result["items"] == [
+            {
+                "symbol": "AAPL",
+                "price": 298.21,
+                "change": 0.012,
+                "volume": 123456,
+                "pe_ratio": "28.5",
+            }
+        ]
 
     @patch('mtdata.core.finviz.screen_stocks')
     def test_finviz_screen_tool_accepts_json_string_filters(self, mock_screen):

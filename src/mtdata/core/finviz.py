@@ -214,6 +214,13 @@ _FINVIZ_MARKET_COMPACT_FIELDS = (
     "perf_quart",
     "perf_year",
 )
+_FINVIZ_SCREEN_COMPACT_FIELDS = (
+    "symbol",
+    "price",
+    "change",
+    "volume",
+    "pe_ratio",
+)
 
 
 def _derive_forex_pair_name(symbol: Any) -> Optional[str]:
@@ -249,6 +256,14 @@ def _compact_finviz_market_row(row: Dict[str, Any], *, rows_key: str) -> Dict[st
     }
 
 
+def _compact_finviz_screen_row(row: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        field: row[field]
+        for field in _FINVIZ_SCREEN_COMPACT_FIELDS
+        if field in row and row[field] not in (None, "")
+    }
+
+
 def _normalize_finviz_market_payload(
     result: Dict[str, Any],
     *,
@@ -272,17 +287,20 @@ def _normalize_finviz_market_payload(
     ]
     limit_value = _coerce_finviz_limit(limit, default=len(normalized_rows))
     limited_rows = normalized_rows[:limit_value]
-    use_market_compact = rows_key in {"pairs", "coins", "futures"}
-    output_rows = (
-        [
+    if detail_mode != "full" and rows_key in {"pairs", "coins", "futures"}:
+        output_rows = [
             _compact_finviz_market_row(row, rows_key=rows_key)
             if isinstance(row, dict)
             else row
             for row in limited_rows
         ]
-        if detail_mode != "full" and use_market_compact
-        else limited_rows
-    )
+    elif detail_mode != "full" and rows_key == "stocks":
+        output_rows = [
+            _compact_finviz_screen_row(row) if isinstance(row, dict) else row
+            for row in limited_rows
+        ]
+    else:
+        output_rows = limited_rows
     out = {key: value for key, value in result.items() if key != rows_key}
     out["items"] = output_rows
     out["count"] = len(output_rows)
