@@ -1653,7 +1653,8 @@ def fetch_candles(  # noqa: C901
                                 data_rows[i] = row_list
                         payload["data"] = data_rows
                         payload.setdefault("warnings", []).append(
-                            "include_spread requested but spread unavailable; estimated mean spread from recent ticks applied."
+                            "include_spread requested but spread unavailable; "
+                            f"estimated mean spread from recent ticks ({est_mean:g}) applied."
                         )
                         payload.setdefault("meta", {}).setdefault("diagnostics", {}).setdefault("spread_estimate", {})["estimated_mean"] = est_mean
                         payload["meta"]["diagnostics"]["spread_estimate"]["source"] = "tick_stats"
@@ -1677,7 +1678,8 @@ def fetch_candles(  # noqa: C901
                                     data_rows[i] = row_list
                             payload["data"] = data_rows
                             payload.setdefault("warnings", []).append(
-                                "include_spread requested but spread unavailable; estimated spread from current live ticker applied."
+                                "include_spread requested but spread unavailable; "
+                                f"estimated spread from current live ticker ({est_mean:g}) applied."
                             )
                             payload.setdefault("meta", {}).setdefault("diagnostics", {}).setdefault("spread_estimate", {})["estimated_mean"] = est_mean
                             payload["meta"]["diagnostics"]["spread_estimate"]["source"] = "live_ticker"

@@ -224,6 +224,8 @@ def _compact_candles_payload(
         compact["query_type"] = public_diagnostics["query_type"]
     if "data_freshness_seconds" in public_diagnostics:
         compact["data_freshness_seconds"] = public_diagnostics["data_freshness_seconds"]
+    if "spread_estimate" in public_diagnostics:
+        compact["spread_estimate"] = public_diagnostics["spread_estimate"]
     return compact
 
 
@@ -249,6 +251,18 @@ def _public_candle_diagnostics(result: Dict[str, Any]) -> Dict[str, Any]:
         public["query_type"] = "latest"
     if isinstance(query, dict) and query.get("latency_ms") is not None:
         public["latency_ms"] = query["latency_ms"]
+
+    spread_estimate = diagnostics.get("spread_estimate")
+    if isinstance(spread_estimate, dict):
+        value = spread_estimate.get("estimated_mean")
+        source = spread_estimate.get("source")
+        if value is not None or source:
+            public_estimate: Dict[str, Any] = {}
+            if value is not None:
+                public_estimate["value"] = value
+            if source:
+                public_estimate["source"] = source
+            public["spread_estimate"] = public_estimate
 
     freshness = diagnostics.get("freshness")
     if isinstance(freshness, dict):

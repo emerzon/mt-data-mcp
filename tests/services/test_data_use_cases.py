@@ -186,6 +186,39 @@ def test_run_data_fetch_candles_compact_keeps_freshness_without_meta():
     assert "last_bar_within_policy_window" not in result
 
 
+def test_run_data_fetch_candles_compact_keeps_spread_estimate_without_meta():
+    request = DataFetchCandlesRequest(
+        symbol="EURUSD",
+        timeframe="H1",
+        limit=5,
+        include_spread=True,
+    )
+
+    result = run_data_fetch_candles(
+        request,
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_candles_impl=lambda **kwargs: {
+            "success": True,
+            "candles": 1,
+            "data": [{"time": 1.0, "close": 1.1, "spread": 0.00009}],
+            "meta": {
+                "diagnostics": {
+                    "spread_estimate": {
+                        "estimated_mean": 0.00009,
+                        "source": "tick_stats",
+                    },
+                },
+            },
+        },
+    )
+
+    assert "meta" not in result
+    assert result["spread_estimate"] == {
+        "value": 0.00009,
+        "source": "tick_stats",
+    }
+
+
 def test_run_data_fetch_candles_compact_omits_historical_freshness():
     request = DataFetchCandlesRequest(
         symbol="EURUSD",
