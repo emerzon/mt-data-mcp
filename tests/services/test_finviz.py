@@ -744,6 +744,7 @@ class TestFinvizTools:
         assert result["category"] == "summary"
         assert result["fundamentals"]["pe_ratio"] == 34.29
         assert result["fundamentals"]["market_cap"] == 3_979_470_000_000.0
+        assert result["fundamentals"]["market_cap_formatted"] == "3.98T"
         assert result["fundamentals"]["eps_ttm"] == 7.9
         assert result["fundamentals"]["change"] == 1.2
         assert result["fundamentals"]["high_52w_price"] == 288.62
@@ -763,6 +764,7 @@ class TestFinvizTools:
             "success": True,
             "symbol": "AAPL",
             "fundamentals": {
+                "Market Cap": "3979.47B",
                 "P/E": "34.29",
                 "P/S": "8.1",
                 "EPS (ttm)": "7.90",
@@ -776,6 +778,8 @@ class TestFinvizTools:
 
         assert valuation["category"] == "valuation"
         assert valuation["fundamentals"] == {
+            "market_cap": 3_979_470_000_000.0,
+            "market_cap_formatted": "3.98T",
             "pe_ratio": 34.29,
             "price_to_sales": 8.1,
             "eps_ttm": 7.9,

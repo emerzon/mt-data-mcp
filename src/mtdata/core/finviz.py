@@ -909,6 +909,23 @@ def _normalize_finviz_fundamental_value(key: str, value: Any) -> Any:
     return _parse_finviz_numeric_value(value)
 
 
+def _format_finviz_large_number(value: Any) -> Optional[str]:
+    number = _parse_finviz_numeric_value(value)
+    if number is None:
+        return None
+    abs_number = abs(float(number))
+    for threshold, suffix in (
+        (1_000_000_000_000.0, "T"),
+        (1_000_000_000.0, "B"),
+        (1_000_000.0, "M"),
+        (1_000.0, "K"),
+    ):
+        if abs_number >= threshold:
+            text = f"{float(number) / threshold:.2f}".rstrip("0").rstrip(".")
+            return f"{text}{suffix}"
+    return f"{float(number):.0f}"
+
+
 def _normalize_finviz_output_row(row: Any) -> Any:
     if not isinstance(row, dict):
         return row
@@ -1310,6 +1327,10 @@ def _filter_finviz_fundamentals_payload(
         if output_value in (None, ""):
             continue
         filtered[output_key] = output_value
+        if output_key == "market_cap":
+            formatted_market_cap = _format_finviz_large_number(output_value)
+            if formatted_market_cap:
+                filtered["market_cap_formatted"] = formatted_market_cap
     out = dict(result)
     out["fundamentals"] = filtered
     out["detail"] = detail_mode
