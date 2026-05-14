@@ -1121,6 +1121,30 @@ def _format_alignment_detail_summary(detail: Dict[str, Any]) -> str:
     return f"pair_overlaps: {pair_str}{suffix}"
 
 
+def _limit_constrained_alignment_message(
+    *,
+    aligned_rows: int,
+    minimum_required: int,
+    limit: int,
+    max_lag: int,
+    pair_overlaps: Dict[str, int],
+) -> Optional[str]:
+    if int(aligned_rows) >= int(minimum_required) or int(limit) >= int(minimum_required):
+        return None
+    if int(aligned_rows) > int(limit):
+        return None
+    if pair_overlaps and not all(
+        int(rows) >= int(minimum_required) for rows in pair_overlaps.values()
+    ):
+        return None
+    return (
+        f"Insufficient aligned observations ({int(aligned_rows)}) after applying "
+        f"limit={int(limit)}; minimum required is {int(minimum_required)}. "
+        f"Increase --limit to at least {int(minimum_required)} or reduce max_lag "
+        f"(currently {int(max_lag)})."
+    )
+
+
 @mcp.tool()
 def causal_discover_signals(  # noqa: C901
     symbols: Optional[str] = None,
@@ -1312,13 +1336,23 @@ def causal_discover_signals(  # noqa: C901
             meta["alignment_detail"] = alignment_detail
         overlap_pruning = None
         if frame.empty or len(frame) <= max_lag + 5:
-            pruned_symbols, pruned_frame, overlap_pruning = _prune_symbols_for_overlap(
-                series_map,
-                symbol_list,
-                limit=limit,
+            limit_message = _limit_constrained_alignment_message(
+                aligned_rows=int(len(frame)),
                 minimum_required=min_required_samples,
-                preserve_symbol=requested_anchor,
+                limit=int(limit),
+                max_lag=int(max_lag),
+                pair_overlaps=pair_overlaps,
             )
+            if limit_message is None:
+                pruned_symbols, pruned_frame, overlap_pruning = _prune_symbols_for_overlap(
+                    series_map,
+                    symbol_list,
+                    limit=limit,
+                    minimum_required=min_required_samples,
+                    preserve_symbol=requested_anchor,
+                )
+            else:
+                pruned_symbols, pruned_frame = symbol_list, frame
             if overlap_pruning is not None:
                 symbol_list = pruned_symbols
                 frame = pruned_frame
@@ -1368,8 +1402,16 @@ def causal_discover_signals(  # noqa: C901
                     "Auto-pruning dropped "
                     f"{dropped_text}; kept {kept_text}; aligned after pruning: {int(len(frame))}."
                 )
+            limit_message = _limit_constrained_alignment_message(
+                aligned_rows=int(len(frame)),
+                minimum_required=min_required_samples,
+                limit=int(limit),
+                max_lag=int(max_lag),
+                pair_overlaps=pair_overlaps,
+            )
             return _causal_error(
-                "Insufficient overlapping data between symbols to run tests.",
+                limit_message
+                or "Insufficient overlapping data between symbols to run tests.",
                 code="insufficient_overlap",
                 meta=meta,
                 warnings=warnings_out,
