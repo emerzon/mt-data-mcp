@@ -1472,7 +1472,17 @@ def _normalize_forecast_methods_payload(
     hidden = payload.get("methods_hidden")
     try:
         if detail_value != "full" and hidden is not None and int(hidden) > 0:
-            out["show_all_hint"] = "Set extras='metadata' to see complete method metadata."
+            total_filtered = payload.get("total_filtered")
+            if total_filtered is not None and int(total_filtered) > 0:
+                out["show_all_hint"] = (
+                    f"Set limit={int(total_filtered)} to show all filtered methods; "
+                    "use extras='metadata' for full method metadata."
+                )
+            else:
+                out["show_all_hint"] = (
+                    "Increase limit to show more methods; use extras='metadata' "
+                    "for full method metadata."
+                )
     except Exception:
         pass
 

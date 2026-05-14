@@ -980,7 +980,10 @@ class TestFormatResultForCli:
         assert "category_summary" not in result
         assert "categories" not in result
         assert "params_count" not in result
-        assert "show_all_hint" in result
+        assert (
+            "show_all_hint: Set limit=3 to show all filtered methods; "
+            "use extras='metadata' for full method metadata."
+        ) in result
 
     def test_toon_format_keeps_richer_columns_for_full_forecast_methods_output(self):
         result = _format_result_for_cli(
