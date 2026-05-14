@@ -26,6 +26,7 @@ sys.modules['MetaTrader5'] = _mt5_mock
 import pandas as pd  # noqa: E402
 
 from mtdata.services.data_service import (  # noqa: E402
+    _build_candle_freshness_diagnostics,
     _build_rates_df,
     _fetch_rates_with_warmup,
     _shift_rate_times,
@@ -42,6 +43,17 @@ _UTC = timezone.utc
 # Keep default fixture data close to the test run so freshness checks remain stable.
 _NOW = datetime.now(_UTC).replace(second=0, microsecond=0)
 _NOW_TS = _NOW.timestamp()
+
+
+def test_candle_freshness_diagnostics_never_reports_negative_freshness() -> None:
+    diagnostics = _build_candle_freshness_diagnostics(
+        last_bar_epoch=200.0,
+        expected_end_epoch=100.0,
+        freshness_cutoff_epoch=50.0,
+    )
+
+    assert diagnostics["data_freshness_seconds"] == 0.0
+    assert diagnostics["last_bar_within_policy_window"] is True
 
 
 @contextmanager

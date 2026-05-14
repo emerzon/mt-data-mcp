@@ -220,6 +220,8 @@ def _compact_candles_payload(
         compact.pop("has_forming_candle", None)
         compact.pop("forming_candle_included", None)
         compact.pop("forming_candle_skipped", None)
+    if "query_type" in public_diagnostics:
+        compact["query_type"] = public_diagnostics["query_type"]
     if "data_freshness_seconds" in public_diagnostics:
         compact["data_freshness_seconds"] = public_diagnostics["data_freshness_seconds"]
     return compact
@@ -240,12 +242,19 @@ def _public_candle_diagnostics(result: Dict[str, Any]) -> Dict[str, Any]:
 
     public: Dict[str, Any] = {}
     query = diagnostics.get("query")
+    query_mode = query.get("mode") if isinstance(query, dict) else None
+    if query_mode == "range":
+        public["query_type"] = "historical"
+    elif query_mode == "latest":
+        public["query_type"] = "latest"
     if isinstance(query, dict) and query.get("latency_ms") is not None:
         public["latency_ms"] = query["latency_ms"]
 
     freshness = diagnostics.get("freshness")
     if isinstance(freshness, dict):
         for key in ("data_freshness_seconds", "last_bar_within_policy_window"):
+            if key == "data_freshness_seconds" and query_mode == "range":
+                continue
             if freshness.get(key) is not None:
                 public[key] = freshness[key]
     return public

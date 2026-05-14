@@ -186,6 +186,39 @@ def test_run_data_fetch_candles_compact_keeps_freshness_without_meta():
     assert "last_bar_within_policy_window" not in result
 
 
+def test_run_data_fetch_candles_compact_omits_historical_freshness():
+    request = DataFetchCandlesRequest(
+        symbol="EURUSD",
+        timeframe="H1",
+        limit=5,
+        start="2 days ago",
+    )
+
+    result = run_data_fetch_candles(
+        request,
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_candles_impl=lambda **kwargs: {
+            "success": True,
+            "symbol": "EURUSD",
+            "timeframe": "H1",
+            "candles": 5,
+            "data": [],
+            "meta": {
+                "diagnostics": {
+                    "query": {"mode": "range"},
+                    "freshness": {
+                        "data_freshness_seconds": -10.0,
+                        "last_bar_within_policy_window": True,
+                    },
+                },
+            },
+        },
+    )
+
+    assert result["query_type"] == "historical"
+    assert "data_freshness_seconds" not in result
+
+
 def test_run_data_fetch_candles_standard_keeps_public_diagnostics_only():
     request = DataFetchCandlesRequest(
         symbol="EURUSD",
