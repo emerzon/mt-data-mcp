@@ -318,8 +318,7 @@ mtdata-cli market_scan --group "Forex\\Majors" --rsi-above 60 --price-vs-sma abo
 # Scan an explicit symbol basket for oversold names with tight spreads
 mtdata-cli market_scan EURUSD,GBPUSD,USDJPY --rsi-below 35 --max-spread-pct 0.03 --json
 
-# Multi-symbol selectors prefer `symbols`, but MCP/Web API calls may also send
-# the compatibility alias `symbol` when only one selector string is available.
+# Multi-symbol selectors use the canonical `symbols` selector.
 ```
 
 ### Fetch Market Data
@@ -459,10 +458,9 @@ mtdata-cli causal_discover_signals EURUSD --timeframe H1 --limit 800
 ```
 
 For `market_scan`, `correlation_matrix`, `cointegration_test`, and
-`causal_discover_signals`, prefer the canonical `symbols` selector for new
-multi-symbol integrations. The compatibility alias `symbol` is also accepted,
-but `symbol`/`symbols` must agree when both are supplied, and `group` remains
-mutually exclusive with explicit symbol selectors.
+`causal_discover_signals`, use the canonical `symbols` selector for
+multi-symbol integrations. `group` remains mutually exclusive with explicit
+symbol selectors.
 
 See [CAUSAL_DISCOVERY.md](CAUSAL_DISCOVERY.md) for interpretation and caveats.
 

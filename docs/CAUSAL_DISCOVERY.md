@@ -112,7 +112,7 @@ Tip: `--json` returns the structured payload instead of default TOON text.
 
 ## Interpretation and Caveats
 
-- `correlation_matrix`, `cointegration_test`, `causal_discover_signals`, and `market_scan` all normalize `symbol` vs `symbols` the same way. Prefer `symbols` for new multi-symbol calls.
+- `correlation_matrix`, `cointegration_test`, `causal_discover_signals`, and `market_scan` all accept `symbols` for explicit multi-symbol calls.
 - `group` remains mutually exclusive with explicit symbol selectors.
 
 - Use **`correlation_matrix`** when you want a fast view of which symbols move together or in opposite directions.

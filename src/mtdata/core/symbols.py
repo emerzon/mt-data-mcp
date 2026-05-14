@@ -1559,7 +1559,6 @@ def symbols_top_markets(  # noqa: C901
 @mcp.tool()
 def market_scan(  # noqa: C901
     symbols: Optional[str] = None,
-    symbol: Optional[str] = None,
     group: Optional[str] = None,
     limit: Optional[int] = 50,
     universe: Literal["visible", "all"] = "visible",  # type: ignore
@@ -1579,18 +1578,17 @@ def market_scan(  # noqa: C901
 ) -> Dict[str, Any]:
     """Filtered MT5 market scanner with one flat table and technical filters.
 
-    Pass `symbol` for one instrument or `symbols` for a comma-separated list.
-    `data` is the canonical flat row payload. Compact detail is the default;
-    use `detail="full"` when you also want the explicit `columns` ordering
-    hint for compatibility. Use `symbols_top_markets` for a quick
-    all-market overview with separate spread, volume, and mover leaderboards.
+    Pass `symbols` for one instrument or a comma-separated list. `data` is
+    the canonical flat row payload. Compact detail is the default; use
+    `detail="full"` when you also want the explicit `columns` ordering hint
+    for compatibility. Use `symbols_top_markets` for a quick all-market
+    overview with separate spread, volume, and mover leaderboards.
     """
 
     detail_mode = normalize_output_verbosity_detail(detail, default="compact")
 
     def _run() -> Dict[str, Any]:  # noqa: C901
         request: Dict[str, Any] = {
-            "symbol": symbol,
             "symbols": symbols,
             "group": group,
             "limit": limit,
@@ -1625,18 +1623,8 @@ def market_scan(  # noqa: C901
                     request=request,
                 )
 
-            symbol_value = str(symbol or "").strip()
             symbols_value = str(symbols or "").strip()
-            if symbol_value and symbols_value:
-                return _market_scan_error(
-                    "Provide either symbol or symbols, not both.",
-                    code="invalid_input",
-                    request=request,
-                )
-            symbols_filter = symbols_value or symbol_value or None
-            if symbol_value:
-                request["symbols"] = symbol_value
-                request["symbol_alias_used"] = True
+            symbols_filter = symbols_value or None
 
             timeframe_value = str(timeframe or "H1").strip().upper()
             request["timeframe"] = timeframe_value

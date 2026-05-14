@@ -618,7 +618,7 @@ class TestMarketScan:
     @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
     @patch("mtdata.core.symbols.mt5.symbol_info_tick")
     @patch("mtdata.core.symbols.mt5.symbols_get")
-    def test_market_scan_symbol_alias_filters_single_symbol(
+    def test_market_scan_symbols_filters_single_symbol(
         self,
         mock_symbols_get,
         mock_tick,
@@ -633,23 +633,11 @@ class TestMarketScan:
         mock_rates.return_value = _make_bars([1.0, 1.01, 1.02, 1.03], tick_volume=50)
 
         fn = _get_market_scan()
-        result = fn(symbol="EURUSD", lookback=4)
+        result = fn(symbols="EURUSD", lookback=4)
 
         assert result["success"] is True
         assert result["meta"]["request"]["symbols_input"] == ["EURUSD"]
-        assert result["meta"]["request"]["symbol_alias_used"] is True
         assert [row["symbol"] for row in result["data"]] == ["EURUSD"]
-
-    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
-    @patch("mtdata.core.symbols.mt5.symbols_get")
-    def test_market_scan_rejects_symbol_and_symbols_together(self, mock_symbols_get, mock_group):
-        mock_symbols_get.return_value = [_make_symbol("EURUSD", description="Euro")]
-
-        fn = _get_market_scan()
-        result = fn(symbol="EURUSD", symbols="GBPUSD")
-
-        assert result["success"] is False
-        assert result["error"] == "Provide either symbol or symbols, not both."
 
     @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
     @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
