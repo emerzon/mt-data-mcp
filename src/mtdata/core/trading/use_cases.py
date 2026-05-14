@@ -57,6 +57,23 @@ _TRADE_PLACE_PREVIEW_KEYS = (
     "pending",
     "action",
     "volume",
+    "bid",
+    "ask",
+    "spread_points",
+    "spread_pct",
+    "estimated_fill_price",
+    "entry_price",
+    "margin_required",
+    "margin_free",
+    "margin_sufficient",
+    "sl_distance_points",
+    "sl_distance_pct",
+    "tp_distance_points",
+    "tp_distance_pct",
+    "min_distance_points",
+    "sl_tp_valid",
+    "sl_tp_error",
+    "preview_error",
     "message",
     "require_sl_tp",
     "auto_close_on_sl_tp_fail",
@@ -517,6 +534,7 @@ def run_trade_place(  # noqa: C901
     place_pending_order: Any,
     close_positions: Any,
     safe_int_ticket: Any,
+    build_dry_run_preview: Any = None,
     idempotency_store: Optional[IdempotencyStore] = _TRADE_IDEMPOTENCY_STORE,
 ) -> Dict[str, Any]:
     started_at = time.perf_counter()
@@ -629,6 +647,18 @@ def run_trade_place(  # noqa: C901
                     side=_guardrail_order_side(order_type),
                 ),
             }
+            if callable(build_dry_run_preview):
+                preview.update(
+                    build_dry_run_preview(
+                        symbol=symbol_norm,
+                        volume=float(request.volume),
+                        order_type=order_type,
+                        pending=pending,
+                        price=request.price,
+                        stop_loss=request.stop_loss,
+                        take_profit=request.take_profit,
+                    )
+                )
             if pending:
                 preview["requested_price"] = request.price
             if request.magic is not None:

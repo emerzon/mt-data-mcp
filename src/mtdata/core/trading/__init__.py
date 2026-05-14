@@ -19,7 +19,11 @@ from .execution import (
     _modify_position,
     _resolve_close_dry_run_target,
 )
-from .orders import _place_market_order, _place_pending_order
+from .orders import (
+    _place_market_order,
+    _place_pending_order,
+    build_trade_place_dry_run_preview,
+)
 from .positions import trade_get_open, trade_get_pending
 from .requests import TradeCloseRequest, TradeModifyRequest, TradePlaceRequest
 from .risk import trade_risk_analyze, trade_var_cvar_calculate
@@ -63,6 +67,7 @@ def trade_place(request: TradePlaceRequest) -> dict:
             place_pending_order=_place_pending_order,
             close_positions=_close_positions,
             safe_int_ticket=validation._safe_int_ticket,
+            build_dry_run_preview=build_trade_place_dry_run_preview,
         ),
     )
 

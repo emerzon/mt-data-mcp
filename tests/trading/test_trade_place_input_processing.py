@@ -187,7 +187,10 @@ def test_trade_place_require_sl_tp_false_allows_market_without_sl_tp() -> None:
 
 
 def test_trade_place_dry_run_market_preview_skips_order_send() -> None:
-    with patch("mtdata.core.trading._place_market_order") as mock_market:
+    with patch("mtdata.core.trading._place_market_order") as mock_market, patch(
+        "mtdata.core.trading.build_trade_place_dry_run_preview",
+        return_value={"bid": 64999.0, "ask": 65001.0, "estimated_fill_price": 65001.0},
+    ) as mock_preview:
         out = trade_place(
             symbol="BTCUSD",
             volume=0.03,
@@ -210,11 +213,18 @@ def test_trade_place_dry_run_market_preview_skips_order_send() -> None:
     assert "validation_scope" not in out
     assert "trade_gate_passed" not in out
     assert out.get("message") == "Dry run only. No order was sent to MT5."
+    assert out.get("bid") == 64999.0
+    assert out.get("ask") == 65001.0
+    assert out.get("estimated_fill_price") == 65001.0
+    mock_preview.assert_called_once()
     mock_market.assert_not_called()
 
 
 def test_trade_place_dry_run_preview_detail_omits_safety_lists() -> None:
-    with patch("mtdata.core.trading._place_market_order") as mock_market:
+    with patch("mtdata.core.trading._place_market_order") as mock_market, patch(
+        "mtdata.core.trading.build_trade_place_dry_run_preview",
+        return_value={"bid": 64999.0, "ask": 65001.0, "estimated_fill_price": 65001.0},
+    ):
         out = trade_place(
             symbol="BTCUSD",
             volume=0.03,
@@ -239,7 +249,10 @@ def test_trade_place_dry_run_preview_detail_omits_safety_lists() -> None:
 
 
 def test_trade_place_dry_run_pending_preview_skips_order_send() -> None:
-    with patch("mtdata.core.trading._place_pending_order") as mock_pending:
+    with patch("mtdata.core.trading._place_pending_order") as mock_pending, patch(
+        "mtdata.core.trading.build_trade_place_dry_run_preview",
+        return_value={"bid": 64999.0, "ask": 65001.0, "entry_price": 64500.0},
+    ):
         out = trade_place(
             symbol="BTCUSD",
             volume=0.03,

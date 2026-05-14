@@ -6,6 +6,7 @@ from mtdata.core.trading.comments import (
     _comment_sanitization_info,
     _normalize_trade_comment,
 )
+from mtdata.core.trading.orders import build_trade_place_dry_run_preview
 from mtdata.core.trading.requests import TradeCloseRequest, TradePlaceRequest
 from mtdata.core.trading.time import _server_time_naive_to_mt5_timestamp
 from mtdata.core.trading.use_cases import run_trade_close, run_trade_place
@@ -307,6 +308,103 @@ def test_run_trade_place_dry_run_returns_preview_without_execution():
     assert result["requested_tp"] == 1.12
     place_market_order.assert_not_called()
     place_pending_order.assert_not_called()
+
+
+def test_run_trade_place_dry_run_includes_quote_preview_when_available():
+    request = TradePlaceRequest(
+        symbol="EURUSD",
+        volume=0.1,
+        order_type="BUY",
+        stop_loss=1.08,
+        take_profit=1.12,
+        dry_run=True,
+    )
+    preview_builder = MagicMock(
+        return_value={
+            "bid": 1.0999,
+            "ask": 1.1001,
+            "spread_points": 2.0,
+            "estimated_fill_price": 1.1001,
+            "margin_required": 110.0,
+            "margin_sufficient": True,
+            "sl_tp_valid": True,
+        }
+    )
+    place_market_order = MagicMock(return_value={"success": True, "path": "market"})
+    place_pending_order = MagicMock(return_value={"success": True, "path": "pending"})
+
+    result = run_trade_place(
+        request,
+        normalize_order_type_input=lambda value: ("BUY", None),
+        normalize_pending_expiration=lambda value: (value, False),
+        prevalidate_trade_place_market_input=lambda symbol, volume: {"error": "should not run"},
+        place_market_order=place_market_order,
+        place_pending_order=place_pending_order,
+        close_positions=lambda **kwargs: {"closed_count": 1},
+        safe_int_ticket=lambda value: value,
+        build_dry_run_preview=preview_builder,
+    )
+
+    assert result["dry_run"] is True
+    assert result["bid"] == 1.0999
+    assert result["ask"] == 1.1001
+    assert result["estimated_fill_price"] == 1.1001
+    assert result["margin_required"] == 110.0
+    assert result["sl_tp_valid"] is True
+    preview_builder.assert_called_once_with(
+        symbol="EURUSD",
+        volume=0.1,
+        order_type="BUY",
+        pending=False,
+        price=None,
+        stop_loss=1.08,
+        take_profit=1.12,
+    )
+    place_market_order.assert_not_called()
+    place_pending_order.assert_not_called()
+
+
+def test_build_trade_place_dry_run_preview_uses_live_quote_and_margin():
+    adapter = SimpleNamespace(
+        ORDER_TYPE_BUY=0,
+        order_calc_margin=MagicMock(return_value=123.45),
+    )
+    gateway = MagicMock()
+    gateway.adapter = adapter
+    gateway.ORDER_TYPE_BUY = 0
+    gateway.symbol_info.return_value = SimpleNamespace(
+        visible=True,
+        volume_min=0.01,
+        volume_max=100.0,
+        volume_step=0.01,
+        point=0.0001,
+        digits=5,
+        trade_stops_level=10,
+        trade_freeze_level=0,
+    )
+    gateway.symbol_info_tick.return_value = SimpleNamespace(bid=1.0999, ask=1.1001)
+    gateway.account_info.return_value = SimpleNamespace(margin_free=1000.0)
+
+    result = build_trade_place_dry_run_preview(
+        symbol="EURUSD",
+        volume=0.1,
+        order_type="BUY",
+        pending=False,
+        price=None,
+        stop_loss=1.08,
+        take_profit=1.12,
+        gateway=gateway,
+    )
+
+    assert result["bid"] == 1.0999
+    assert result["ask"] == 1.1001
+    assert result["estimated_fill_price"] == 1.1001
+    assert result["spread_points"] == 2.0
+    assert result["sl_tp_valid"] is True
+    assert result["margin_required"] == 123.45
+    assert result["margin_free"] == 1000.0
+    assert result["margin_sufficient"] is True
+    adapter.order_calc_margin.assert_called_once_with(0, "EURUSD", 0.1, 1.1001)
 
 
 def test_run_trade_place_uses_candidate_tickets_when_position_ticket_is_missing():

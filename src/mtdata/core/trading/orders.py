@@ -580,6 +580,184 @@ def _attach_comment_response_metadata(
         )
 
 
+def _round_preview_price(value: Optional[float], *, digits: int) -> Optional[float]:
+    if value is None or not math.isfinite(value):
+        return None
+    return round(float(value), max(0, int(digits)))
+
+
+def _order_type_constant(mt5: Any, order_type: str) -> Optional[int]:
+    constant_name = f"ORDER_TYPE_{str(order_type).upper().strip()}"
+    return validation._safe_int_attr(mt5, constant_name, None)
+
+
+def _level_preview_fields(
+    prefix: str,
+    level: Optional[Union[int, float]],
+    *,
+    entry_price: float,
+    point: float,
+) -> Dict[str, Any]:
+    try:
+        level_value = float(level) if level not in (None, 0) else None
+    except (TypeError, ValueError):
+        level_value = None
+    if level_value is None or not math.isfinite(level_value):
+        return {}
+
+    out: Dict[str, Any] = {}
+    if point > 0:
+        out[f"{prefix}_distance_points"] = round(abs(level_value - entry_price) / point, 2)
+    if entry_price:
+        out[f"{prefix}_distance_pct"] = round(
+            ((level_value - entry_price) / entry_price) * 100.0,
+            6,
+        )
+    return out
+
+
+def _margin_preview_fields(
+    mt5: Any,
+    *,
+    order_type_value: Optional[int],
+    symbol: str,
+    volume: float,
+    entry_price: float,
+) -> Dict[str, Any]:
+    if order_type_value is None:
+        return {}
+    order_calc_margin = getattr(getattr(mt5, "adapter", None), "order_calc_margin", None)
+    if not callable(order_calc_margin):
+        return {}
+
+    margin = validation.coerce_finite_float(
+        order_calc_margin(order_type_value, symbol, volume, entry_price)
+    )
+    if margin is None:
+        return {}
+
+    out: Dict[str, Any] = {"margin_required": round(float(margin), 2)}
+    account_info = mt5.account_info()
+    margin_free = validation._safe_float_attr(account_info, "margin_free")
+    if margin_free is not None and math.isfinite(margin_free):
+        out["margin_free"] = round(float(margin_free), 2)
+        out["margin_sufficient"] = float(margin_free) >= float(margin)
+    return out
+
+
+def build_trade_place_dry_run_preview(
+    *,
+    symbol: str,
+    volume: float,
+    order_type: str,
+    pending: bool,
+    price: Optional[Union[int, float]],
+    stop_loss: Optional[Union[int, float]],
+    take_profit: Optional[Union[int, float]],
+    gateway: Optional[MT5TradingGateway] = None,
+) -> Dict[str, Any]:
+    """Build a quote-based order preview without sending or checking an order."""
+    mt5 = create_trading_gateway(gateway=gateway)
+    connection_error = trading_connection_error(mt5)
+    if connection_error is not None:
+        return {"preview_error": connection_error.get("error")}
+
+    symbol_info = mt5.symbol_info(symbol)
+    if symbol_info is None:
+        return {"preview_error": f"Symbol {symbol} not found"}
+    if not getattr(symbol_info, "visible", True) and not mt5.symbol_select(symbol, True):
+        return {"preview_error": f"Failed to select symbol {symbol}"}
+
+    volume_validated, volume_error = validation._validate_volume(volume, symbol_info)
+    if volume_error:
+        return {"preview_error": volume_error}
+
+    tick = mt5.symbol_info_tick(symbol)
+    if tick is None:
+        return {"preview_error": f"Failed to get current price for {symbol}"}
+
+    bid = validation._safe_float_attr(tick, "bid")
+    ask = validation._safe_float_attr(tick, "ask")
+    if bid is None or ask is None or not math.isfinite(bid) or not math.isfinite(ask):
+        return {"preview_error": f"Failed to get valid bid/ask for {symbol}"}
+
+    digits = validation._safe_int_attr(symbol_info, "digits", 6) or 6
+    point = validation._safe_float_attr(symbol_info, "point") or 0.0
+    side = "BUY" if str(order_type).upper().startswith("BUY") else "SELL"
+    order_type_value = _order_type_constant(mt5, order_type)
+    entry_price = float(price) if pending and price not in (None, 0) else (ask if side == "BUY" else bid)
+
+    out: Dict[str, Any] = {
+        "bid": _round_preview_price(bid, digits=digits),
+        "ask": _round_preview_price(ask, digits=digits),
+        "estimated_fill_price": _round_preview_price(entry_price, digits=digits),
+    }
+    if pending:
+        out["entry_price"] = _round_preview_price(entry_price, digits=digits)
+
+    if point > 0:
+        spread_price = ask - bid
+        out["spread_points"] = round(spread_price / point, 2)
+        midpoint = (ask + bid) / 2.0
+        if midpoint:
+            out["spread_pct"] = round((spread_price / midpoint) * 100.0, 6)
+        broker_distance = validation._broker_distance_metadata(symbol_info)
+        out["min_distance_points"] = int(broker_distance["min_distance_points"])
+
+    out.update(
+        _level_preview_fields(
+            "sl",
+            stop_loss,
+            entry_price=entry_price,
+            point=point,
+        )
+    )
+    out.update(
+        _level_preview_fields(
+            "tp",
+            take_profit,
+            entry_price=entry_price,
+            point=point,
+        )
+    )
+
+    validation_error: Optional[Dict[str, Any]] = None
+    if pending:
+        if order_type_value is not None:
+            validation_error = validation._validate_pending_order_levels(
+                symbol_info=symbol_info,
+                tick=tick,
+                order_type_value=order_type_value,
+                price=float(entry_price),
+                stop_loss=float(stop_loss) if stop_loss not in (None, 0) else None,
+                take_profit=float(take_profit) if take_profit not in (None, 0) else None,
+                mt5=mt5,
+            )
+    else:
+        validation_error = validation._validate_live_protection_levels(
+            symbol_info=symbol_info,
+            tick=tick,
+            side=side,
+            stop_loss=float(stop_loss) if stop_loss not in (None, 0) else None,
+            take_profit=float(take_profit) if take_profit not in (None, 0) else None,
+        )
+    if stop_loss not in (None, 0) or take_profit not in (None, 0):
+        out["sl_tp_valid"] = validation_error is None
+        if validation_error is not None:
+            out["sl_tp_error"] = validation_error.get("error")
+
+    out.update(
+        _margin_preview_fields(
+            mt5,
+            order_type_value=order_type_value,
+            symbol=symbol,
+            volume=float(volume_validated),
+            entry_price=float(entry_price),
+        )
+    )
+    return {key: value for key, value in out.items() if value is not None}
+
+
 def _place_market_order(  # noqa: C901
     symbol: str,
     volume: float,
