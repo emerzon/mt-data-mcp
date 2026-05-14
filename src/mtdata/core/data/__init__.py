@@ -338,10 +338,12 @@ def data_fetch_candles(
     timeframe : str, optional (default="H1")
         Candle timeframe: "M1", "M5", "M15", "M30", "H1", "H4", "D1", "W1", "MN1"
 
-    detail : {"compact", "standard", "full"}, optional
+    detail : {"compact", "standard", "summary", "full"}, optional
         Response detail level. `compact` (default) returns rows plus concise
-        freshness when available. `standard` also includes latency and policy
-        freshness signals. `full` preserves the debug `meta` diagnostics block.
+        freshness when available. `summary` returns metadata and diagnostics
+        without candle rows. `standard` also includes latency and policy
+        freshness signals with rows. `full` preserves the debug `meta`
+        diagnostics block.
     
     limit : int, optional (default=50)
         Maximum number of candles to return

@@ -179,6 +179,8 @@ def _run_data_fetch_candles_impl(
         if detail_mode == "compact":
             result = _compact_candles_payload(result)
             _drop_redundant_session_gap_warnings(result)
+        elif detail_mode == "summary":
+            result = _summary_candles_payload(result)
         elif detail_mode == "standard":
             result = _standard_candles_payload(result)
     if isinstance(result, dict) and isinstance(result.get("data"), list):
@@ -234,6 +236,23 @@ def _standard_candles_payload(result: Dict[str, Any]) -> Dict[str, Any]:
     for key, value in _public_candle_diagnostics(result).items():
         standard[key] = value
     return standard
+
+
+def _summary_candles_payload(result: Dict[str, Any]) -> Dict[str, Any]:
+    summary = _standard_candles_payload(result)
+    summary["output"] = "summary"
+    summary.pop("data", None)
+    summary.pop("session_gaps", None)
+    for key in (
+        "candles_requested",
+        "candles_excluded",
+        "candle_counts",
+        "incomplete_candles_skipped",
+    ):
+        value = result.get(key)
+        if value not in (None, 0, [], {}):
+            summary[key] = value
+    return summary
 
 
 def _public_candle_diagnostics(result: Dict[str, Any]) -> Dict[str, Any]:

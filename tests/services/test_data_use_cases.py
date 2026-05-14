@@ -97,9 +97,8 @@ def test_data_fetch_candles_accepts_standard_detail_alias():
     assert DataFetchCandlesRequest(symbol="EURUSD", detail="standard").detail == "standard"
 
 
-def test_data_fetch_candles_rejects_summary_detail():
-    with pytest.raises(ValidationError):
-        DataFetchCandlesRequest(symbol="EURUSD", detail="summary")
+def test_data_fetch_candles_accepts_summary_detail():
+    assert DataFetchCandlesRequest(symbol="EURUSD", detail="summary").detail == "summary"
 
 
 def test_data_fetch_candles_schema_documents_ohlcv():
@@ -294,6 +293,63 @@ def test_run_data_fetch_candles_standard_keeps_public_diagnostics_only():
     assert result["last_bar_within_policy_window"] is True
     assert "warmup_retry" not in result
     assert "cache_status" not in result
+
+
+def test_run_data_fetch_candles_summary_omits_rows_and_keeps_metadata():
+    request = DataFetchCandlesRequest(
+        symbol="EURUSD",
+        timeframe="H1",
+        limit=5,
+        detail="summary",
+    )
+
+    result = run_data_fetch_candles(
+        request,
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_candles_impl=lambda **kwargs: {
+            "success": True,
+            "symbol": "EURUSD",
+            "timeframe": "H1",
+            "candles": 4,
+            "candles_requested": 5,
+            "candles_excluded": 1,
+            "candle_counts": {
+                "requested": 5,
+                "returned": 4,
+                "excluded": {"forming_bar": 1, "total": 1},
+            },
+            "incomplete_candles_skipped": 1,
+            "has_forming_candle": True,
+            "forming_candle_status": "skipped",
+            "forming_candle_included": False,
+            "forming_candle_skipped": True,
+            "timezone": "UTC",
+            "data": [{"time": "2026-05-14 12:00", "close": 1.1}],
+            "meta": {
+                "diagnostics": {
+                    "query": {"mode": "latest", "latency_ms": 12.3},
+                    "freshness": {
+                        "data_freshness_seconds": 60.0,
+                        "last_bar_within_policy_window": True,
+                    },
+                },
+            },
+        },
+    )
+
+    assert result["output"] == "summary"
+    assert result["symbol"] == "EURUSD"
+    assert result["timeframe"] == "H1"
+    assert result["candles"] == 4
+    assert result["candles_requested"] == 5
+    assert result["candles_excluded"] == 1
+    assert result["candle_counts"]["excluded"] == {"forming_bar": 1, "total": 1}
+    assert result["timezone"] == "UTC"
+    assert result["query_type"] == "latest"
+    assert result["latency_ms"] == 12.3
+    assert result["data_freshness_seconds"] == 60.0
+    assert "data" not in result
+    assert "meta" not in result
 
 
 def test_run_data_fetch_candles_compact_drops_redundant_session_gap_warnings():

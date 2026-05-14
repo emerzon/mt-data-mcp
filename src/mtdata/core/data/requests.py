@@ -309,7 +309,7 @@ SimplifySpecInput = Annotated[
 class DataFetchCandlesRequest(BaseModel):
     symbol: str
     timeframe: TimeframeLiteral = "H1"
-    detail: Literal["compact", "standard", "full"] = "compact"
+    detail: CompactStandardFullDetailLiteral = "compact"
     limit: int = 50
     start: Optional[str] = None
     end: Optional[str] = None
