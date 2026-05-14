@@ -1122,7 +1122,7 @@ def causal_discover_signals(  # noqa: C901
         transform: Preprocessing transform: "log_return", "pct", "diff", or "level".
         normalize: Z-score columns before testing to stabilise scale.
         detail: "compact" returns significant links plus top pair summaries; "full"
-            returns every tested pair in data.items.
+            returns every tested pair in items.
     """
 
     def _run() -> Dict[str, Any]:  # noqa: C901
@@ -1480,12 +1480,11 @@ def causal_discover_signals(  # noqa: C901
             warnings_out.append(
                 f"{max(pair_attempts - pair_success, 0)} pairwise Granger tests failed; see meta['pair_failures']."
             )
-        data: Dict[str, Any] = {
-            "items": rows_sorted if detail_mode == "full" else significant_rows,
-        }
+        output_rows = rows_sorted if detail_mode == "full" else significant_rows
         out: Dict[str, Any] = {
             "success": True,
-            "data": data,
+            "items": output_rows,
+            "count": int(len(output_rows)),
             "summary": {
                 "significance": float(significance),
                 "counts": {
@@ -2246,9 +2245,8 @@ def cointegration_test(  # noqa: C901
 
         out: Dict[str, Any] = {
             "success": True,
-            "data": {
-                "items": rows,
-            },
+            "items": rows,
+            "count": int(len(rows)),
             "summary": {
                 "counts": {
                     "pairs": int(len(rows)),

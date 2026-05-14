@@ -51,8 +51,8 @@ It accepts either:
 - an explicit `symbols` list (or compatibility alias `symbol`), or
 - a `group` path that matches the MT5 symbol groups exposed by `symbols_list --list-mode groups`
 
-`data.items` is the canonical compact payload. Use `extras=metadata` when you
-also need derived convenience views such as `data.matrix`; omit `extras` to keep
+`items` is the canonical compact payload. Use `extras=metadata` when you
+also need derived convenience views such as `matrix`; omit `extras` to keep
 only the ranked pair rows plus summary highlights.
 
 ### `cointegration_test`

@@ -508,17 +508,19 @@ class TestCausalDiscoverSignals:
             result = self._unwrapped()("A,B", max_lag=2, transform="diff", normalize=False)
 
         assert result["success"] is True
-        assert "data" in result
+        assert "items" in result
         assert "summary" in result
         assert "meta" in result
         assert result["summary"]["counts"]["pairs_tested"] >= 1
         assert result["summary"]["counts"]["significant_links"] >= 1
-        assert isinstance(result["data"]["items"], list)
-        assert all(item["significant"] is True for item in result["data"]["items"])
+        assert isinstance(result["items"], list)
+        assert result["count"] == len(result["items"])
+        assert all(item["significant"] is True for item in result["items"])
         assert result["meta"]["request"]["detail"] == "compact"
-        assert "links" not in result["data"]
+        assert "data" not in result
+        assert "links" not in result
         assert "pairs" not in result
-        assert "summary_text" not in result["data"]
+        assert "summary_text" not in result
         assert result["meta"]["stats"]["pairs_tested"] >= 1
         assert result["meta"]["stats"]["p_value_correction"] == "bonferroni_across_lags"
         assert result["meta"]["tool"] == "causal_discover_signals"
@@ -558,8 +560,8 @@ class TestCausalDiscoverSignals:
         assert result["meta"]["request"]["detail"] == "full"
         assert result["summary"]["counts"]["pairs_tested"] == 2
         assert result["summary"]["counts"]["significant_links"] == 1
-        assert len(result["data"]["items"]) == 2
-        assert {row["significant"] for row in result["data"]["items"]} == {False, True}
+        assert len(result["items"]) == 2
+        assert {row["significant"] for row in result["items"]} == {False, True}
         assert "pairs" in result
 
     @patch("mtdata.core.causal._causal_connection_error", return_value={"error": "offline"})
@@ -598,7 +600,8 @@ class TestCausalDiscoverSignals:
         result = self._unwrapped()("A,B", max_lag=2, transform="diff", normalize=False)
 
         assert result["success"] is True
-        assert result["data"]["items"] == []
+        assert result["items"] == []
+        assert result["count"] == 0
         assert result["summary"]["counts"] == {
             "pairs_tested": 2,
             "significant_links": 0,
@@ -658,7 +661,7 @@ class TestCausalDiscoverSignals:
         result = self._unwrapped()("A,B", max_lag=2, transform="diff", normalize=False)
 
         assert result["success"] is True
-        link = result["data"]["items"][0]
+        link = result["items"][0]
         assert link["lag"] == 1
         assert link["p_value_raw"] == pytest.approx(0.02)
         assert link["lag_tests_run"] == 2
@@ -1032,7 +1035,8 @@ class TestCointegrationTest:
         assert result["meta"]["request"]["group_resolved"] == "Forex\\Majors"
         assert result["summary"]["counts"]["pairs"] == 1
         assert result["summary"]["counts"]["cointegrated"] == 1
-        pair = result["data"]["items"][0]
+        pair = result["items"][0]
+        assert result["count"] == len(result["items"])
         assert pair["cointegrated"] is True
         assert pair["p_value"] == pytest.approx(0.01)
         assert pair["critical_values"]["5%"] == pytest.approx(-3.3)
@@ -1064,7 +1068,7 @@ class TestCointegrationTest:
         result = self._unwrapped()("A,B", limit=60, min_overlap=40)
 
         assert result["success"] is True
-        pair = result["data"]["items"][0]
+        pair = result["items"][0]
         assert pair["cointegrated"] is True
         assert "calculation_samples" not in pair
         assert "aligned_observations" not in pair
