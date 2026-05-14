@@ -112,6 +112,12 @@ class TestAddForecastGenerateArgs:
         args = parser.parse_args(["--symbol", "GBPUSD"])
         assert args.symbol == "GBPUSD"
 
+    def test_detail_accepts_summary(self):
+        parser = argparse.ArgumentParser()
+        _add_forecast_generate_args(parser)
+        args = parser.parse_args(["EURUSD", "--detail", "summary"])
+        assert args.detail == "summary"
+
 
 # ========================================================================
 # add_dynamic_arguments

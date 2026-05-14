@@ -910,7 +910,7 @@ def _add_forecast_generate_args(cmd_parser: argparse.ArgumentParser) -> None:
     )
     group_uncertainty.add_argument(
         "--detail",
-        choices=["compact", "standard", "full"],
+        choices=["compact", "standard", "summary", "full"],
         default="compact",
         help="Output detail level.",
     )
