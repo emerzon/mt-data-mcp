@@ -93,7 +93,7 @@ def _attach_timestamp_timezone(result: Dict[str, Any], *, operation: str) -> Dic
         and isinstance(result, dict)
         and "error" not in result
     ):
-        result.setdefault("timezone", "UTC")
+        result.setdefault("timezone", str(result.get("timestamp_timezone") or "UTC"))
     return result
 
 

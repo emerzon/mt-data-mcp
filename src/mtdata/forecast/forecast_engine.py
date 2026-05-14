@@ -27,6 +27,7 @@ from ..utils.mt5 import get_cached_mt5_time_alignment, get_symbol_info_cached
 from ..utils.utils import (
     _format_time_minimal,
     _format_time_minimal_local,
+    _resolve_client_tz,
     _use_client_tz,
 )
 from ..utils.utils import (
@@ -816,6 +817,18 @@ def _merge_engine_diagnostics(metadata: Dict[str, Any], diagnostics: Dict[str, A
     return metadata
 
 
+def _forecast_timestamp_timezone_label(*, use_client_tz: bool, client_tz: Any) -> str:
+    if not use_client_tz:
+        return "UTC"
+    if client_tz is None:
+        return "local"
+    return (
+        getattr(client_tz, "key", None)
+        or getattr(client_tz, "zone", None)
+        or str(client_tz)
+    )
+
+
 def _format_forecast_output(
     forecast_values: np.ndarray,
     last_epoch: float,
@@ -839,8 +852,12 @@ def _format_forecast_output(
     # Generate future time indices
     future_epochs = next_times_from_last(last_epoch, tf_secs, horizon)
     use_client_tz = _use_client_tz()
+    client_tz = _resolve_client_tz() if use_client_tz else None
     fmt_time = _format_time_minimal_local if use_client_tz else _format_time_minimal
-    timestamp_timezone = "client" if use_client_tz else "UTC"
+    timestamp_timezone = _forecast_timestamp_timezone_label(
+        use_client_tz=use_client_tz,
+        client_tz=client_tz,
+    )
     forecast_times = [fmt_time(float(epoch)) for epoch in future_epochs]
     last_observation_time = fmt_time(float(last_epoch))
     price_anchor_series = df["close"] if "close" in df.columns else df[base_col]

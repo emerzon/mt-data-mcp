@@ -39,6 +39,15 @@ def _skip_mt5_connection(monkeypatch):
     monkeypatch.setattr(cf, "ensure_mt5_connection_or_raise", lambda: None)
 
 
+def test_attach_timestamp_timezone_uses_result_timezone_label() -> None:
+    result = cf._attach_timestamp_timezone(
+        {"success": True, "timestamp_timezone": "America/New_York"},
+        operation="forecast_generate",
+    )
+
+    assert result["timezone"] == "America/New_York"
+
+
 def test_normalize_forecaster_name_and_resolve_variants(monkeypatch):
     monkeypatch.setattr(
         forecast_use_cases,

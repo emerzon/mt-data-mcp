@@ -625,6 +625,27 @@ class TestFormatForecastOutput:
             "anchor": "last_observation",
         }
 
+    def test_forecast_timestamp_timezone_uses_resolved_client_zone_label(self):
+        vals = np.array([1.0])
+
+        class _ClientTz:
+            key = "America/New_York"
+
+        with (
+            patch("mtdata.forecast.forecast_engine._use_client_tz", return_value=True),
+            patch(
+                "mtdata.forecast.forecast_engine._resolve_client_tz",
+                return_value=_ClientTz(),
+            ),
+        ):
+            result = _format_forecast_output(
+                forecast_values=vals, last_epoch=1000.0, tf_secs=300,
+                horizon=1, base_col="close", df=self._make_df(),
+                ci_alpha=None, ci_values=None, method="naive",
+                quantity="price", denoise_used=False,
+            )
+        assert result["timestamp_timezone"] == "America/New_York"
+
 
 # ===================================================================
 # 12. _bars_per_year
