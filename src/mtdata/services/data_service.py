@@ -1762,6 +1762,24 @@ def _observed_tick_flags_decoded(flags: List[int]) -> Dict[str, List[str]]:
     }
 
 
+def _tick_quote_presence_from_flags(flag_value: int) -> tuple[bool, bool]:
+    labels = set(_decode_tick_flags(flag_value))
+    return "bid" in labels, "ask" in labels
+
+
+def _one_sided_zero_spread_missing_side(bid: float, ask: float, flag_value: int) -> Optional[str]:
+    if not (math.isfinite(bid) and math.isfinite(ask)):
+        return None
+    if bid != ask:
+        return None
+    has_bid, has_ask = _tick_quote_presence_from_flags(flag_value)
+    if has_ask and not has_bid:
+        return "bid"
+    if has_bid and not has_ask:
+        return "ask"
+    return None
+
+
 def _compact_tick_summary(out: Dict[str, Any]) -> Dict[str, Any]:
     spread = out.get("stats", {}).get("spread")
     compact_spread: Dict[str, Any] = {}
@@ -1792,6 +1810,8 @@ def _compact_tick_summary(out: Dict[str, Any]) -> Dict[str, Any]:
         compact["price_precision"] = out.get("price_precision")
     if isinstance(out.get("last_quote"), dict):
         compact["last_quote"] = dict(out["last_quote"])
+    if isinstance(out.get("data_quality"), dict):
+        compact["data_quality"] = dict(out["data_quality"])
     return compact
 
 
@@ -1890,16 +1910,24 @@ def fetch_ticks(  # noqa: C901
         _epochs: List[float] = []
         bids: List[float] = []
         asks: List[float] = []
+        effective_bids: List[Optional[float]] = []
+        effective_asks: List[Optional[float]] = []
         lasts: List[float] = []
         flags: List[int] = []
         volumes: List[float] = []
         volumes_real: List[float] = []
         for tick in ticks:
             _epochs.append(float(_tick_field(tick, "time")))
-            bids.append(float(_tick_field(tick, "bid")))
-            asks.append(float(_tick_field(tick, "ask")))
+            bid = float(_tick_field(tick, "bid"))
+            ask = float(_tick_field(tick, "ask"))
+            flag_value = int(_tick_field(tick, "flags") or 0)
+            bids.append(bid)
+            asks.append(ask)
             lasts.append(float(_tick_field(tick, "last") or 0.0))
-            flags.append(int(_tick_field(tick, "flags") or 0))
+            flags.append(flag_value)
+            missing_side = _one_sided_zero_spread_missing_side(bid, ask, flag_value)
+            effective_bids.append(None if missing_side == "bid" else bid)
+            effective_asks.append(None if missing_side == "ask" else ask)
             try:
                 volumes.append(float(_tick_field(tick, "volume")))
             except (TypeError, ValueError):
@@ -1916,6 +1944,11 @@ def fetch_ticks(  # noqa: C901
         )
         has_flags = len(set(flags)) > 1 or any(v != 0 for v in flags)
         has_real_volume = any(math.isfinite(v) and v != 0.0 for v in volumes_real)
+        one_sided_zero_spread_count = sum(
+            1
+            for bid, ask in zip(effective_bids, effective_asks)
+            if bid is None or ask is None
+        )
 
         full_rows = output_mode == "full_rows"
 
@@ -1961,8 +1994,8 @@ def fetch_ticks(  # noqa: C901
 
         df_ticks = pd.DataFrame({
             "__epoch": _epochs,
-            "bid": bids,
-            "ask": asks,
+            "bid": effective_bids,
+            "ask": effective_asks,
         })
         if full_rows:
             tick_gap_ms: List[Optional[float]] = [None]
@@ -1985,6 +2018,24 @@ def fetch_ticks(  # noqa: C901
                 _decode_tick_flags(flag_value) for flag_value in flags
             ]
         df_ticks["time"] = [_format_tick_time(e) for e in _epochs]
+
+        def _add_tick_data_quality(payload: Dict[str, Any]) -> None:
+            if one_sided_zero_spread_count <= 0:
+                return
+            payload["data_quality"] = {
+                "one_sided_zero_spread_ticks": int(one_sided_zero_spread_count),
+                "spread_ticks_excluded": int(one_sided_zero_spread_count),
+            }
+            warnings_list = payload.get("warnings")
+            if not isinstance(warnings_list, list):
+                warnings_list = []
+            warning = (
+                "Some ticks had identical bid/ask with one-sided quote flags; "
+                "the missing side was set to null and excluded from spread stats."
+            )
+            if warning not in warnings_list:
+                warnings_list.append(warning)
+            payload["warnings"] = warnings_list
 
         def _compact_summary_from_ticks() -> Dict[str, Any]:
             df_stats = df_ticks.copy()
@@ -2022,6 +2073,7 @@ def fetch_ticks(  # noqa: C901
             }
             if price_digits > 0:
                 out["price_precision"] = int(price_digits)
+            _add_tick_data_quality(out)
             _round_tick_price_payload(out, price_digits)
             return _compact_tick_summary(out)
 
@@ -2247,6 +2299,7 @@ def fetch_ticks(  # noqa: C901
                 elif not small_summary_sample:
                     out["stats"]["volume"] = {"kind": volume_kind}
 
+            _add_tick_data_quality(out)
             _round_tick_price_payload(out, price_digits)
             return out if detailed_stats else _compact_tick_summary(out)
 
@@ -2275,6 +2328,7 @@ def fetch_ticks(  # noqa: C901
                 meta = dict(simplify_meta)
                 meta["columns"] = [c for c in ["bid","ask"] + (["last"] if has_last else []) + (["volume"] if has_volume else [])]
                 payload["simplify"] = meta
+            _add_tick_data_quality(payload)
             return payload
         # Optional simplification based on a chosen y-series
         select_indices = list(range(original_count))
@@ -2368,13 +2422,23 @@ def fetch_ticks(  # noqa: C901
                 values.append(int(epoch_value) if float(epoch_value).is_integer() else float(epoch_value))
             values.extend(
                 [
-                    _round_price_value(bids[i], price_digits),
-                    _round_price_value(asks[i], price_digits),
+                    _round_price_value(effective_bids[i], price_digits),
+                    _round_price_value(effective_asks[i], price_digits),
                 ]
             )
             if full_rows:
-                mid = (bids[i] + asks[i]) / 2.0
-                spread = asks[i] - bids[i]
+                bid_value = effective_bids[i]
+                ask_value = effective_asks[i]
+                mid = (
+                    (bid_value + ask_value) / 2.0
+                    if bid_value is not None and ask_value is not None
+                    else None
+                )
+                spread = (
+                    ask_value - bid_value
+                    if bid_value is not None and ask_value is not None
+                    else None
+                )
                 gap_ms = None if i <= 0 else float((_epochs[i] - _epochs[i - 1]) * 1000.0)
                 values.extend(
                     [
@@ -2404,6 +2468,7 @@ def fetch_ticks(  # noqa: C901
         _add_tick_summary_fields(payload)
         if has_flags:
             payload["flags_legend"] = _observed_tick_flags_decoded(flags)
+        _add_tick_data_quality(payload)
         if simplify_present and original_count > len(rows):
             payload["simplified"] = True
             meta = {

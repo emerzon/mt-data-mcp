@@ -2088,6 +2088,29 @@ class TestFetchTicks(unittest.TestCase):
         self.assertEqual(result['data'][1]['tick_gap_ms'], 1000.0)
 
     @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=SimpleNamespace(digits=5))
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_one_sided_zero_spread_ticks_mark_missing_side(self, mock_ctz, mock_info, mock_ticks):
+        ticks = _make_ticks(3)
+        ticks[0].update({"bid": 1.1000, "ask": 1.1000, "flags": 4})
+        ticks[1].update({"bid": 1.1000, "ask": 1.1002, "flags": 6})
+        ticks[2].update({"bid": 1.1003, "ask": 1.1003, "flags": 2})
+        mock_ticks.return_value = ticks
+
+        result = fetch_ticks('EURUSD', limit=3, format='full_rows')
+
+        self.assertTrue(result.get('success'))
+        self.assertIsNone(result['data'][0]['bid'])
+        self.assertEqual(result['data'][0]['ask'], 1.1)
+        self.assertEqual(result['data'][1]['spread'], 0.0002)
+        self.assertEqual(result['data'][2]['bid'], 1.1003)
+        self.assertIsNone(result['data'][2]['ask'])
+        self.assertEqual(result['data_quality']['one_sided_zero_spread_ticks'], 2)
+        self.assertEqual(result['data_quality']['spread_ticks_excluded'], 2)
+        self.assertAlmostEqual(result['stats']['spread']['mean'], 0.0002)
+
+    @patch(_TICKS_RANGE)
     @patch(_CACHED_INFO, return_value=MagicMock())
     @patch(_RESOLVE_CTZ, return_value=None)
     @patch(_GUARD, _mock_symbol_guard)
