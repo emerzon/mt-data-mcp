@@ -582,6 +582,21 @@ class TestFinvizTools:
             {"symbol": "USD/JPY", "name": "US Dollar / Japanese Yen"},
         ]
 
+    @patch("mtdata.core.finviz.get_forex_performance")
+    def test_finviz_market_tools_accept_shared_non_full_details(self, mock_get_forex):
+        from mtdata.core.finviz import finviz_forex
+
+        mock_get_forex.return_value = {
+            "success": True,
+            "market": "forex",
+            "pairs": [{"Pair": "EUR/USD"}],
+        }
+
+        raw = getattr(finviz_forex, "__wrapped__", finviz_forex)
+
+        assert raw(detail="standard")["detail"] == "compact"
+        assert raw(detail="summary")["detail"] == "compact"
+
     @patch("mtdata.core.finviz.get_crypto_performance")
     def test_finviz_crypto_uses_items_with_snake_case_rows(self, mock_get_crypto):
         from mtdata.core.finviz import finviz_crypto
@@ -936,6 +951,7 @@ class TestFinvizTools:
         result = raw(detail="banana")
 
         assert result["success"] is False
+        assert "compact, standard, summary, full" in result["error"]
         assert result["error_code"] == "finviz_insider_activity_invalid_detail"
         mock_get_activity.assert_not_called()
 
@@ -1031,6 +1047,7 @@ class TestFinvizTools:
         result = raw(detail="banana")
 
         assert result["success"] is False
+        assert "compact, standard, summary, full" in result["error"]
         assert result["error_code"] == "finviz_earnings_invalid_detail"
         mock_get_earnings.assert_not_called()
 

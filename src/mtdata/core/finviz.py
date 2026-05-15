@@ -221,6 +221,10 @@ _FINVIZ_SCREEN_COMPACT_FIELDS = (
     "volume",
     "pe_ratio",
 )
+_FINVIZ_DETAIL_ERROR = (
+    "detail must be one of: compact, standard, summary, full. "
+    "Finviz standard/summary output uses the compact shape."
+)
 
 
 def _derive_forex_pair_name(symbol: Any) -> Optional[str]:
@@ -1064,7 +1068,7 @@ def _validate_finviz_detail(detail: str, *, operation: str) -> Optional[Dict[str
     if normalized in {"compact", "standard", "summary", "full"}:
         return None
     return _finviz_error_payload(
-        "detail must be 'compact' or 'full'.",
+        _FINVIZ_DETAIL_ERROR,
         code=f"{operation}_invalid_detail",
         operation=operation,
         details={"detail": detail},
@@ -1314,7 +1318,7 @@ def _filter_finviz_fundamentals_payload(
     category_mode = str(category or "summary").strip().lower()
     if str(detail or "compact").strip().lower() not in {"compact", "standard", "summary", "full"}:
         return _finviz_error_payload(
-            "detail must be 'compact' or 'full'.",
+            _FINVIZ_DETAIL_ERROR,
             code="finviz_fundamentals_invalid_detail",
             operation="finviz_fundamentals",
             details={"detail": detail},
