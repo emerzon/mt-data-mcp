@@ -747,7 +747,7 @@ class TestFinvizTools:
         assert result["fundamentals"]["market_cap"] == 3_979_470_000_000.0
         assert result["fundamentals"]["market_cap_formatted"] == "3.98T"
         assert result["fundamentals"]["eps_ttm"] == 7.9
-        assert result["fundamentals"]["change"] == 1.2
+        assert result["fundamentals"]["change_price"] == 1.2
         assert result["fundamentals"]["high_52w_price"] == 288.62
         assert result["fundamentals"]["high_52w_distance_pct"] == -2.94
         assert "high_52w" not in result["fundamentals"]
@@ -1135,7 +1135,7 @@ class TestFinvizTools:
             {
                 "symbol": "AAPL",
                 "price": 298.21,
-                "change": 0.012,
+                "change_pct": 0.012,
                 "volume": 123456,
                 "pe_ratio": "28.5",
             }

@@ -217,7 +217,7 @@ _FINVIZ_MARKET_COMPACT_FIELDS = (
 _FINVIZ_SCREEN_COMPACT_FIELDS = (
     "symbol",
     "price",
-    "change",
+    "change_pct",
     "volume",
     "pe_ratio",
 )
@@ -339,6 +339,8 @@ def _canonicalize_finviz_market_row(row: Dict[str, Any]) -> Dict[str, Any]:
         out["pe_ratio"] = out.pop("p_e")
     if "perf" in out and not any(key.startswith("perf_") for key in out):
         out["perf_pct"] = out.pop("perf")
+    if "change" in out and "change_pct" not in out:
+        out["change_pct"] = out.pop("change")
     return out
 
 
@@ -753,7 +755,7 @@ _FINVIZ_FUNDAMENTAL_NUMERIC_KEYS = frozenset(
     {
         "market_cap",
         "price",
-        "change",
+        "change_price",
         "pe_ratio",
         "forward_pe",
         "peg",
@@ -1339,6 +1341,8 @@ def _filter_finviz_fundamentals_payload(
         if value in (None, ""):
             continue
         output_key = _normalize_finviz_output_key(field)
+        if output_key == "change":
+            output_key = "change_price"
         expanded = _expand_finviz_compound_fundamental(output_key, value)
         if expanded is not None:
             filtered.update(
