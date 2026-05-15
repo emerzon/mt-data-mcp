@@ -280,6 +280,31 @@ def _forecast_vs_last_price(payload: Dict[str, Any]) -> Optional[Dict[str, float
     return out
 
 
+def _theta_flatness_context(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    if str(payload.get("method") or "").strip().lower() != "theta":
+        return None
+    params_used = payload.get("params_used")
+    if not isinstance(params_used, dict):
+        return None
+    trend_slope = _finite_float(params_used.get("trend_slope"))
+    if trend_slope is None or trend_slope == 0.0:
+        return None
+    prices = payload.get("forecast_price")
+    if not isinstance(prices, list) or len(prices) < 2:
+        return None
+    finite_prices = [_finite_float(value) for value in prices]
+    if any(value is None for value in finite_prices):
+        return None
+    price_values = [float(value) for value in finite_prices if value is not None]
+    drift_per_step = 0.5 * trend_slope
+    digits = _forecast_price_digits(payload)
+    drift_digits = max(8, (digits if digits is not None else 6) + 3)
+    return {
+        "target_drift_per_step": float(round(drift_per_step, drift_digits)),
+        "appears_flat_at_price_precision": len(set(price_values)) == 1,
+    }
+
+
 def _apply_forecast_generate_detail(
     payload: Dict[str, Any],
     request: ForecastGenerateRequest,
@@ -340,6 +365,20 @@ def _apply_forecast_generate_detail(
     price_context = _forecast_vs_last_price(payload)
     if price_context:
         compact["forecast_vs_last_price"] = price_context
+    theta_context = _theta_flatness_context(payload)
+    if theta_context:
+        compact["theta_signal"] = theta_context
+        if theta_context.get("appears_flat_at_price_precision"):
+            warning = (
+                "Native theta forecast is near-flat at displayed price precision; "
+                "theta_signal.target_drift_per_step shows the model drift per step."
+            )
+            warnings_out = compact.get("warnings")
+            if not isinstance(warnings_out, list):
+                warnings_out = []
+            if warning not in warnings_out:
+                warnings_out.append(warning)
+            compact["warnings"] = warnings_out
     for key, value in payload.items():
         if key in compact:
             continue

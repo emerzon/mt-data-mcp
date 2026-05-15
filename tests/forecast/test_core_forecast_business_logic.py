@@ -351,6 +351,35 @@ def test_forecast_generate_rounds_price_outputs_to_symbol_digits(monkeypatch):
     assert "series" not in out
 
 
+def test_forecast_generate_compact_flags_flat_theta_display(monkeypatch):
+    raw = _unwrap(cf.forecast_generate)
+    monkeypatch.setattr(
+        cf,
+        "_forecast_impl",
+        lambda **kwargs: {
+            "success": True,
+            "method": kwargs["method"],
+            "horizon": kwargs["horizon"],
+            "quantity": kwargs["quantity"],
+            "forecast_time": ["t1", "t2", "t3"],
+            "forecast_price": [1.168361, 1.168362, 1.168363],
+            "last_price": 1.16317,
+            "last_price_source": "candle_close",
+            "digits": 5,
+            "params_used": {"alpha": 0.2, "trend_slope": 0.000002},
+        },
+    )
+
+    out = raw(request=ForecastGenerateRequest(symbol="EURUSD", timeframe="H1", method="theta", horizon=3))
+
+    assert out["forecast_price"] == [1.16836, 1.16836, 1.16836]
+    assert out["theta_signal"] == {
+        "target_drift_per_step": 0.000001,
+        "appears_flat_at_price_precision": True,
+    }
+    assert any("near-flat at displayed price precision" in item for item in out["warnings"])
+
+
 def test_forecast_generate_compact_marks_unavailable_ci(monkeypatch):
     raw = _unwrap(cf.forecast_generate)
     monkeypatch.setattr(
