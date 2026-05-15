@@ -579,6 +579,11 @@ class TestTemporalAnalyze:
         assert "avg_range" not in r["groups"][0]
         assert "avg_volume" not in r["groups"][0]
         assert "best" in r
+        assert r["units"] == {
+            "returns": "percentage_points",
+            "win_rate": "fraction",
+            "avg_range_pct": "percentage_points",
+        }
 
     @_apply_analyze_patches
     def test_group_by_day_of_week_alias(self, mock_fetch, *_):
@@ -736,12 +741,14 @@ class TestTemporalAnalyze:
         r = self._call(mock_fetch, return_mode="log")
         assert r.get("success") is True
         assert r["return_mode"] == "log"
+        assert r["units"]["returns"] == "percentage_points"
 
     @_apply_analyze_patches
     def test_return_mode_pct(self, mock_fetch, *_):
         r = self._call(mock_fetch, return_mode="pct")
         assert r.get("success") is True
         assert r["return_mode"] == "pct"
+        assert r["units"]["returns"] == "percentage_points"
 
     @_apply_analyze_patches
     def test_volume_source_tick(self, mock_fetch, *_):
