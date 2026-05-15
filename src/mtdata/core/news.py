@@ -157,7 +157,7 @@ def _strip_news_compact_item_fields(value: Any, *, bucket_name: Optional[str] = 
     if kind not in (None, ""):
         out["kind"] = kind
     published_at = value.get("published_at")
-    if published_at not in (None, "") and time_field_name != "relative_time":
+    if published_at not in (None, ""):
         out["published_at"] = published_at
     if time_field_name and time_field_value:
         out[time_field_name] = time_field_value
@@ -213,13 +213,24 @@ def _apply_news_limit(result: Dict[str, Any], *, limit: Optional[int]) -> Dict[s
     if limit is None:
         return result
     out = dict(result)
+    total_candidates = 0
+    returned = 0
+    truncated = False
     for key in _NEWS_BUCKET_KEYS:
         value = out.get(key)
-        if isinstance(value, list) and len(value) > limit:
-            out[key] = value[:limit]
+        if isinstance(value, list):
+            total_candidates += len(value)
+            if len(value) > limit:
+                out[key] = value[:limit]
+                truncated = True
+                value = out[key]
             count_key = _NEWS_BUCKET_COUNT_KEYS.get(key)
-            if count_key in out:
-                out[count_key] = limit
+            if count_key in out and len(value) <= limit:
+                out[count_key] = len(value)
+            returned += len(value)
+    out["total_candidates"] = total_candidates
+    out["returned"] = returned
+    out["truncated"] = truncated
     return out
 
 
@@ -262,7 +273,7 @@ def news(
         `BTCUSD`.
     detail : {"compact", "full"}, optional
         Response detail level. `compact` (default) keeps concise buckets with
-        relative-time labels and omits redundant URLs and absolute timestamps
+        relative-time labels plus absolute timestamps and omits redundant URLs
         when possible, while `full` preserves the richer source, matching, and
         item metadata payloads.
     limit : int, optional
