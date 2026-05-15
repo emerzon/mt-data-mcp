@@ -241,6 +241,31 @@ class TestFormatResultForCli:
         )
         assert isinstance(result, str)
 
+    def test_forecast_generate_toon_compact_keeps_interval_warnings(self):
+        result = _format_result_for_cli(
+            {
+                "success": True,
+                "symbol": "EURUSD",
+                "timeframe": "H1",
+                "method": "theta",
+                "detail": "compact",
+                "horizon": 1,
+                "ci_status": "unavailable",
+                "warnings": [
+                    "Point forecast only for method 'theta'; confidence intervals are unavailable. "
+                    "Use forecast_conformal_intervals for uncertainty bands."
+                ],
+                "forecast": [{"time": "2026-01-01 00:00", "forecast": 1.1}],
+            },
+            fmt="toon",
+            verbose=False,
+            cmd_name="forecast_generate",
+        )
+
+        assert "warnings[1]" in result
+        assert "confidence intervals are unavailable" in result
+        assert "forecast_conformal_intervals" in result
+
     def test_news_toon_format_omits_null_tail_cells_and_uses_generic_time_header(self):
         result = _format_result_for_cli(
             {
