@@ -156,6 +156,29 @@ def _compact_report_payload(
     symbol: str,
     template: str,
 ) -> Dict[str, Any]:
+    def _barrier_conflict_warnings(summary_structured: Any) -> List[str]:
+        if not isinstance(summary_structured, dict):
+            return []
+        barriers = summary_structured.get("barriers")
+        if not isinstance(barriers, dict):
+            return []
+        directions: List[str] = []
+        for name, entry in barriers.items():
+            if not isinstance(entry, dict) or not bool(entry.get("ev_edge_conflict")):
+                continue
+            direction = entry.get("direction") or name
+            if direction not in (None, ""):
+                directions.append(str(direction))
+        if not directions:
+            return []
+        if len(directions) == 1:
+            joined = directions[0]
+        elif len(directions) == 2:
+            joined = f"{directions[0]} and {directions[1]}"
+        else:
+            joined = ", ".join(directions[:-1]) + f", and {directions[-1]}"
+        return [f"Barrier EV/edge conflict detected for {joined} direction(s)."]
+
     compact: Dict[str, Any] = {
         "success": bool(report.get("success", True)),
         "symbol": symbol,
@@ -165,15 +188,28 @@ def _compact_report_payload(
     completeness = report.get("completeness")
     if completeness not in (None, "", [], {}):
         compact["completeness"] = completeness
-    for key in ("summary_structured", "summary", "sections_status"):
+    for key in ("summary_structured", "sections_status"):
         value = report.get(key)
         if value not in (None, "", [], {}):
             compact[key] = value
+    if "summary_structured" not in compact:
+        summary = report.get("summary")
+        if summary not in (None, "", [], {}):
+            compact["summary"] = summary
     diagnostics = report.get("diagnostics")
+    warnings_out: List[Any] = []
     if isinstance(diagnostics, dict):
         warnings_list = diagnostics.get("warnings")
         if warnings_list not in (None, "", [], {}):
-            compact["warnings"] = warnings_list
+            if isinstance(warnings_list, list):
+                warnings_out.extend(warnings_list)
+            else:
+                warnings_out.append(warnings_list)
+    for warning in _barrier_conflict_warnings(compact.get("summary_structured")):
+        if warning not in warnings_out:
+            warnings_out.append(warning)
+    if warnings_out:
+        compact["warnings"] = warnings_out
     return compact
 
 

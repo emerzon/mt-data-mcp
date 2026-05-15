@@ -171,7 +171,6 @@ def test_report_generate_compact_structured_payload(monkeypatch):
         lambda *args, **kwargs: {
             "success": True,
             "detail": "compact",
-            "summary": ["close=1.10"],
             "summary_structured": {"market": {"close": 1.10}},
             "sections_status": {"summary": {"ok": 1, "partial": 0, "error": 0}},
         },
@@ -180,11 +179,12 @@ def test_report_generate_compact_structured_payload(monkeypatch):
     out = raw(request=report_mod.ReportGenerateRequest(symbol="EURUSD"))
 
     assert out["detail"] == "compact"
-    assert "summary" in out
+    assert out["summary_structured"] == {"market": {"close": 1.10}}
+    assert "summary" not in out
     assert "sections" not in out
 
 
-def test_compact_report_payload_orders_structured_summary_first():
+def test_compact_report_payload_omits_string_summary_when_structured_exists():
     from mtdata.core.report.use_cases import _compact_report_payload
 
     out = _compact_report_payload(
@@ -198,7 +198,34 @@ def test_compact_report_payload_orders_structured_summary_first():
         template="basic",
     )
 
-    assert list(out).index("summary_structured") < list(out).index("summary")
+    assert out["summary_structured"] == {"market": {"close": 1.10}}
+    assert "summary" not in out
+
+
+def test_compact_report_payload_elevates_barrier_conflicts():
+    from mtdata.core.report.use_cases import _compact_report_payload
+
+    out = _compact_report_payload(
+        {
+            "success": True,
+            "summary": ["dense duplicate"],
+            "summary_structured": {
+                "barriers": {
+                    "long": {"ev_edge_conflict": True},
+                    "short": {"ev_edge_conflict": True},
+                }
+            },
+            "diagnostics": {"warnings": ["existing warning"]},
+        },
+        symbol="EURUSD",
+        template="basic",
+    )
+
+    assert "summary" not in out
+    assert out["warnings"] == [
+        "existing warning",
+        "Barrier EV/edge conflict detected for long and short direction(s).",
+    ]
 
 
 def _make_full_sections():
