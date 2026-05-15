@@ -574,6 +574,7 @@ class TestFinvizTools:
 
         assert "coins" not in result
         assert result["detail"] == "compact"
+        assert result["performance_format"] == "fractional_change_when_numeric"
         assert result["items"] == [
             {"symbol": "BTC", "name": "Bitcoin", "price": "90000", "perf_day": "2.5%"}
         ]

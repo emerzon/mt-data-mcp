@@ -310,6 +310,8 @@ def _normalize_finviz_market_payload(
     if omitted:
         out["omitted_item_count"] = omitted
     out["detail"] = detail_mode
+    if detail_mode != "full" and rows_key in {"pairs", "coins", "futures"}:
+        out["performance_format"] = "fractional_change_when_numeric"
     if detail_mode == "full":
         out["meta"] = _build_tool_contract_meta(
             tool=tool,
