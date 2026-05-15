@@ -47,6 +47,7 @@ def _sanitize_error_message(exc: Exception, *, symbol: str | None = None) -> str
         The symbol that was being requested (used for more specific error messages)
     """
     error_str = str(exc)
+    error_lower = error_str.lower()
     
     # Check for HTTP error patterns and replace with user-friendly message
     if "404" in error_str and "Client Error" in error_str:
@@ -57,13 +58,21 @@ def _sanitize_error_message(exc: Exception, *, symbol: str | None = None) -> str
             )
         return "Symbol not found. Please check the ticker symbol and try again."
     if "403" in error_str or "Forbidden" in error_str:
-        return "Access denied. Finviz data is temporarily unavailable."
+        return "Access denied by Finviz. Retry later; the upstream endpoint may be blocking automated access."
+    if "429" in error_str or "too many requests" in error_lower or "rate limit" in error_lower:
+        return "Finviz rate limit encountered. Retry after 60 seconds."
+    if "401" in error_str or "unauthorized" in error_lower or "authentication" in error_lower:
+        return "Finviz rejected the request as unauthorized. The upstream endpoint may now require authentication."
     if "500" in error_str or "Server Error" in error_str:
-        return "Finviz service error. Please try again later."
-    if "timeout" in error_str.lower():
-        return "Request timed out. Please try again."
-    if "connection" in error_str.lower():
-        return "Connection error. Please check your internet connection."
+        return "Finviz service error. Retry later; the upstream service returned a server error."
+    if "timeout" in error_lower:
+        return "Finviz request timed out. Retry later or reduce the requested page size."
+    if "connection" in error_lower:
+        return "Connection error while contacting Finviz. Check internet connectivity and retry."
+    if any(token in error_lower for token in ("parse", "parser", "schema", "column", "html", "json")):
+        return "Finviz response could not be parsed. The upstream page or API may have changed."
+    if "no " in error_lower and "available" in error_lower:
+        return f"{error_str}. Adjust filters or retry later if Finviz data should be available."
     
     # For other errors, return a generic message instead of full exception
     return "Unable to fetch data from Finviz. Please try again later."

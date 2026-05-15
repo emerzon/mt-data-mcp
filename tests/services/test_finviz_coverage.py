@@ -216,8 +216,23 @@ class TestScreenStocks:
             ):
                 result = svc.screen_stocks()
         assert "error" in result
+        assert result["error"] == "Finviz rate limit encountered. Retry after 60 seconds."
         mock_logger.warning.assert_called_once()
         mock_logger.exception.assert_not_called()
+
+    def test_sanitize_error_message_provides_actionable_categories(self):
+        assert (
+            svc._sanitize_error_message(Exception("Read timeout"))
+            == "Finviz request timed out. Retry later or reduce the requested page size."
+        )
+        assert (
+            svc._sanitize_error_message(Exception("HTML parser failed"))
+            == "Finviz response could not be parsed. The upstream page or API may have changed."
+        )
+        assert (
+            svc._sanitize_error_message(Exception("No futures performance data available"))
+            == "No futures performance data available. Adjust filters or retry later if Finviz data should be available."
+        )
 
     @patch("mtdata.services.finviz._apply_finvizfinance_timeout_patch")
     @patch("mtdata.services.finviz._run_screener_view")
