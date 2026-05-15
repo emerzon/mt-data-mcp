@@ -99,7 +99,10 @@ def test_patterns_detect_public_default_is_compact_for_classic_mode(monkeypatch)
     out = patterns_detect(symbol="EURUSD", mode="classic", timeframe="H1")
 
     assert out["n_patterns"] == 1
-    assert "recent_patterns" in out
+    assert out["action"] == "review_long_setup"
+    assert out["bias"] == "bullish"
+    assert out["strongest_pattern"]["pattern"] == "Ascending Triangle"
+    assert "recent_patterns" not in out
     assert "patterns" not in out
 
 
@@ -512,8 +515,9 @@ def test_build_pattern_response_compact_detail_returns_summary():
     )
 
     assert compact["n_patterns"] == 2
-    assert "recent_patterns" in compact
-    assert "summary" in compact
+    assert compact["strongest_pattern"] == {"pattern": "B", "confidence": 0.7}
+    assert "recent_patterns" not in compact
+    assert "summary" not in compact
     assert "patterns" not in compact
 
 
@@ -546,16 +550,16 @@ def test_build_pattern_response_compact_keeps_actionable_fields():
         detail="compact",
     )
 
-    recent = compact["recent_patterns"][0]
-    assert recent["bias"] == "bullish"
-    assert "target_price" in recent
-    assert "invalidation_price" in recent
-    assert compact["summary"]["signal_bias"]["net_bias"] == "bullish"
-    assert compact["summary"]["signal"] == {
-        "status": "bullish",
-        "action": "review_long_setup",
-        "confidence": 1.0,
+    assert compact["bias"] == "bullish"
+    assert compact["action"] == "review_long_setup"
+    assert compact["confidence"] == 1.0
+    assert compact["status"] == "bullish"
+    assert compact["strongest_pattern"] == {
+        "pattern": "Double Bottom",
+        "bias": "bullish",
+        "confidence": 0.85,
     }
+    assert "recent_patterns" not in compact
 
 
 def test_build_pattern_response_compact_keeps_fractal_breakout_fields():
@@ -591,12 +595,15 @@ def test_build_pattern_response_compact_keeps_fractal_breakout_fields():
         detail="compact",
     )
 
-    recent = compact["recent_patterns"][0]
-    assert recent["level_state"] == "broken"
-    assert recent["breakout_direction"] == "bearish"
-    assert recent["breakout_date"] == "2026-03-02 00:00"
-    assert recent["breakout_price"] == 9.7
-    assert compact["summary"]["signal_bias"]["net_bias"] == "bearish"
+    assert compact["bias"] == "bearish"
+    assert compact["action"] == "review_short_setup"
+    assert compact["strongest_pattern"] == {
+        "pattern": "Bullish Fractal",
+        "direction": "bullish",
+        "bias": "bearish",
+        "confidence": 0.82,
+    }
+    assert "recent_patterns" not in compact
 
 
 def test_build_pattern_response_compact_hides_completed_fractal_rows_by_default():
@@ -640,7 +647,7 @@ def test_build_pattern_response_compact_hides_completed_fractal_rows_by_default(
         detail="compact",
     )
 
-    assert [row["pattern"] for row in compact["recent_patterns"]] == ["Active Fractal"]
+    assert compact["strongest_pattern"]["pattern"] == "Active Fractal"
     assert compact["completed_patterns_hidden"] == 1
 
 
@@ -671,9 +678,8 @@ def test_build_pattern_response_compact_adds_hint_when_rows_are_truncated():
         detail="compact",
     )
 
-    assert compact["summary"]["more_patterns"] == 1
     assert (
-        compact["show_all_hint"] == "Set extras='metadata' to show all detected patterns."
+        compact["show_all_hint"] == "Set detail='standard' to show detected patterns."
     )
 
 
@@ -1273,14 +1279,11 @@ def test_build_pattern_response_compact_marks_conflicting_signal_wait():
         detail="compact",
     )
 
-    assert compact["summary"]["signal_bias"]["conflict"] is True
-    assert compact["summary"]["signal_bias"]["net_bias"] == "mixed"
-    assert compact["summary"]["signal"] == {
-        "status": "conflicting",
-        "action": "wait",
-        "confidence": 0.0,
-        "conflict": "both_bullish_and_bearish_patterns_present",
-    }
+    assert compact["bias"] == "mixed"
+    assert compact["status"] == "conflicting"
+    assert compact["action"] == "wait"
+    assert compact["confidence"] == 0.0
+    assert compact["conflict"] == "both_bullish_and_bearish_patterns_present"
 
 
 def test_run_classic_engine_native_multiscale_merges(monkeypatch):

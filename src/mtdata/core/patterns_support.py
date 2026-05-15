@@ -362,23 +362,9 @@ def _compact_patterns_payload(
     if not rows:
         return payload
 
-    counts: Dict[str, int] = {}
-    status_counts: Dict[str, int] = {}
-    tf_counts: Dict[str, int] = {}
     indexed_rows: List[Tuple[int, Dict[str, Any]]] = []
     for idx, row in enumerate(rows):
         indexed_rows.append((idx, row))
-        label = _pattern_label(row)
-        if label:
-            counts[label] = counts.get(label, 0) + 1
-        status = row.get("status")
-        if status not in (None, ""):
-            status_key = str(status)
-            status_counts[status_key] = status_counts.get(status_key, 0) + 1
-        timeframe = row.get("timeframe")
-        if timeframe not in (None, ""):
-            timeframe_key = str(timeframe)
-            tf_counts[timeframe_key] = tf_counts.get(timeframe_key, 0) + 1
 
     def _sort_key(item: Tuple[int, Dict[str, Any]]) -> Tuple[float, float, int]:
         idx, row = item
@@ -394,45 +380,6 @@ def _compact_patterns_payload(
         row
         for _, row in sorted(indexed_rows, key=_sort_key, reverse=True)[:preview_limit]
     ]
-    recent_rows: List[Dict[str, Any]] = []
-    for row in preview_rows:
-        item: Dict[str, Any] = {}
-        if row.get("timeframe") not in (None, ""):
-            item["timeframe"] = row.get("timeframe")
-        label = _pattern_label(row)
-        if label:
-            item["pattern"] = label
-        for key in (
-            "time",
-            "start_date",
-            "end_date",
-            "confirmation_date",
-            "breakout_date",
-            "status",
-            "confidence",
-            "strength",
-            "direction",
-            "bias",
-            "price",
-            "level_price",
-            "level_state",
-            "reference_price",
-            "breakout_direction",
-            "breakout_price",
-            "target_price",
-            "target_stale",
-            "target_reference_age_bars",
-            "invalidation_price",
-            "bars_to_completion",
-            "bars_since_confirmation",
-        ):
-            value = row.get(key)
-            if value not in (None, ""):
-                item[key] = value
-        if not item:
-            item = dict(row)
-        recent_rows.append(item)
-
     strongest_pattern: Optional[Dict[str, Any]] = None
     if preview_rows:
         best = max(
@@ -477,34 +424,19 @@ def _compact_patterns_payload(
     except Exception:
         total_i = len(rows)
 
-    summary: Dict[str, Any] = {
-        "unique_patterns": len(counts),
-        "more_patterns": max(0, total_i - len(recent_rows)),
-    }
-    if counts:
-        summary["pattern_mix"] = [
-            {"pattern": name, "count": count}
-            for name, count in sorted(
-                counts.items(), key=lambda item: (-item[1], item[0])
-            )[:5]
-        ]
-    if status_counts:
-        summary["status_counts"] = status_counts
-    if tf_counts:
-        summary["timeframe_mix"] = [
-            {"timeframe": timeframe, "count": count}
-            for timeframe, count in sorted(
-                tf_counts.items(), key=lambda item: (-item[1], item[0])
-            )
-        ]
     signal_bias = _summarize_pattern_bias(rows)
+    signal: Dict[str, Any] = {}
     if signal_bias:
-        summary["signal_bias"] = signal_bias
-        signal = _summarize_actionable_pattern_signal(signal_bias)
-        if signal:
-            summary["signal"] = signal
+        signal = _summarize_actionable_pattern_signal(signal_bias) or {}
+    strongest_compact: Optional[Dict[str, Any]] = None
     if strongest_pattern:
-        summary["strongest_pattern"] = strongest_pattern
+        strongest_compact = {}
+        for key in ("pattern", "direction", "bias", "confidence"):
+            value = strongest_pattern.get(key)
+            if value not in (None, ""):
+                strongest_compact[key] = value
+        if not strongest_compact:
+            strongest_compact = None
 
     compact: Dict[str, Any] = {
         "success": bool(payload.get("success", True)),
@@ -513,11 +445,19 @@ def _compact_patterns_payload(
         "lookback": payload.get("lookback"),
         "mode": payload.get("mode"),
         "n_patterns": total_i,
-        "summary": summary,
     }
-    if summary["more_patterns"] > 0:
-        compact["show_all_hint"] = "Set extras='metadata' to show all detected patterns."
-    compact["recent_patterns"] = recent_rows
+    if signal:
+        compact["action"] = signal.get("action")
+        compact["confidence"] = signal.get("confidence")
+        compact["status"] = signal.get("status")
+        if signal.get("conflict"):
+            compact["conflict"] = signal.get("conflict")
+    if signal_bias:
+        compact["bias"] = signal_bias.get("net_bias")
+    if strongest_compact:
+        compact["strongest_pattern"] = strongest_compact
+    if total_i > 1:
+        compact["show_all_hint"] = "Set detail='standard' to show detected patterns."
 
     for key in (
         "engine",

@@ -349,8 +349,8 @@ class TestPatternsDetect:
             top_k=1,
         )
 
-        assert len(result["recent_patterns"]) == 1
-        assert result["recent_patterns"][0]["pattern"] == "Doji"
+        assert result["strongest_pattern"]["pattern"] == "Doji"
+        assert "recent_patterns" not in result
 
     def test_unknown_mode(self):
         result = _call_patterns_detect(symbol="EURUSD", mode="unknown_mode")
