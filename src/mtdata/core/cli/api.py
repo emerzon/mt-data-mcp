@@ -1098,7 +1098,7 @@ _EXTENDED_HELP_EXAMPLE_HINTS: Dict[str, Any] = {
     "lookback": "200",
     "steps": "5",
     "spacing": "20",
-    "quantity": "return",
+    "quantity": "price",
     "ci_alpha": "0.1",
     "params": '"max_epochs=20"',
     "features": '"include=open,high future_covariates=hour,dow"',
