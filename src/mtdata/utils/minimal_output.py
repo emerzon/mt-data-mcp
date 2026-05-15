@@ -912,8 +912,8 @@ def _normalize_market_ticker_payload(
         "spread_points",
         "spread_pips",
         "spread_pct",
-        "spread_usd",
-        "spread_currency",
+        "spread_cost_per_lot",
+        "spread_cost_currency",
         "pricing_basis",
     ):
         value = payload.get(key)

@@ -841,8 +841,8 @@ class TestFormatResultMinimal:
             "success": True,
             "symbol": "EURUSD",
             "type": "ticker",
-            "spread_usd": 9.0,
-            "spread_currency": "USD",
+            "spread_cost_per_lot": 9.0,
+            "spread_cost_currency": "USD",
             "pricing_basis": "per_1_lot_estimate",
         }
 
@@ -852,8 +852,8 @@ class TestFormatResultMinimal:
             tool_name="market_ticker",
         )
 
-        assert result["spread_usd"] == 9.0
-        assert result["spread_currency"] == "USD"
+        assert result["spread_cost_per_lot"] == 9.0
+        assert result["spread_cost_currency"] == "USD"
         assert result["pricing_basis"] == "per_1_lot_estimate"
 
     def test_market_ticker_text_uses_symbol_price_precision(self):

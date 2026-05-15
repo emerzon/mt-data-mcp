@@ -27,7 +27,7 @@ _QUOTE_DECIMALS_BY_FIELD = {
     "spread_points": 4,
     "spread_pips": 4,
     "spread_pct": 6,
-    "spread_usd": 6,
+    "spread_cost_per_lot": 6,
     "bidlow": 8,
     "bidhigh": 8,
     "asklow": 8,

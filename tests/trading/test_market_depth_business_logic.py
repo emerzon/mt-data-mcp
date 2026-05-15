@@ -170,7 +170,7 @@ def test_market_depth_tick_fallback_includes_spread_metrics_when_requested() -> 
     assert out["data"]["spread"] == 1.0
     assert out["data"]["spread_points"] == 100.0
     assert abs(out["data"]["spread_pct"] - (100.0 / 100.5)) < 1e-12
-    assert out["data"]["spread_usd"] == 100.0
+    assert out["data"]["spread_cost_per_lot"] == 100.0
     assert out["capabilities"]["spread_overlay_applied"] is True
 
 
@@ -275,7 +275,8 @@ def test_market_ticker_returns_lightweight_spread_snapshot() -> None:
     assert out["last"] == 200.5
     assert out["tick_volume"] == 5
     assert out["pricing_basis"] == "per_1_lot_estimate"
-    assert out["spread_currency"] == "USD"
+    assert out["spread_cost_per_lot"] == 100.0
+    assert out["spread_cost_currency"] == "USD"
     assert out["spread_display"] == "1.00"
     assert out["meta"]["diagnostics"]["cache_used"] is False
     assert out["meta"]["diagnostics"]["source"] == "mt5.symbol_info_tick"
@@ -319,8 +320,8 @@ def test_market_ticker_compact_detail_omits_verbose_fields() -> None:
     assert out["time_display"] == "2023-11-14 22:13"
     assert out["data_stale"] is True
     assert "Tick data may be stale" in out["warning"]
-    assert "spread_usd" not in out
-    assert "spread_currency" not in out
+    assert out["spread_cost_per_lot"] == 100.0
+    assert out["spread_cost_currency"] == "USD"
     assert "pricing_basis" not in out
     assert "diagnostics" not in out
     assert out["meta"]["tool"] == "market_ticker"
@@ -411,7 +412,8 @@ def test_market_ticker_full_detail_preserves_verbose_fields() -> None:
 
     assert out["last"] == 200.5
     assert out["tick_volume"] == 5
-    assert out["spread_usd"] == 100.0
+    assert out["spread_cost_per_lot"] == 100.0
+    assert out["spread_cost_currency"] == "USD"
     assert out["pricing_basis"] == "per_1_lot_estimate"
     assert out["meta"]["diagnostics"]["source"] == "mt5.symbol_info_tick"
 

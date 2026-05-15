@@ -591,10 +591,15 @@ def _build_market_scan_spread_row(
     mid = (ask + bid) / 2.0
     spread_points = (spread_abs / point) if point > 0 else None
     spread_pct = ((spread_abs / mid) * 100.0) if mid > 0 else None
-    spread_usd = None
+    spread_cost_per_lot = None
+    spread_cost_currency = str(
+        getattr(symbol, "currency_profit", None)
+        or getattr(symbol, "currency_margin", None)
+        or ""
+    ).strip() or None
     pricing_basis = "quote_only"
     if tick_size > 0 and tick_value > 0:
-        spread_usd = (spread_abs / tick_size) * tick_value
+        spread_cost_per_lot = (spread_abs / tick_size) * tick_value
         pricing_basis = "per_1_lot_estimate"
 
     row = _market_scan_base_row(symbol)
@@ -605,10 +610,12 @@ def _build_market_scan_spread_row(
             "spread": _market_scan_round(spread_abs, digits=digits),
             "spread_points": _market_scan_round(spread_points, digits=4),
             "spread_pct": _market_scan_round(spread_pct, digits=6),
-            "spread_usd": _market_scan_round(spread_usd, digits=6),
+            "spread_cost_per_lot": _market_scan_round(spread_cost_per_lot, digits=6),
             "pricing_basis": pricing_basis,
         }
     )
+    if spread_cost_per_lot is not None and spread_cost_currency:
+        row["spread_cost_currency"] = spread_cost_currency
     return row, None
 
 
@@ -760,7 +767,8 @@ def _top_markets_headers(metric: str, *, detail_mode: str) -> List[str]:
             "spread",
             "spread_points",
             "spread_pct",
-            "spread_usd",
+            "spread_cost_per_lot",
+            "spread_cost_currency",
             "pricing_basis",
         ],
         "volume": [
@@ -856,7 +864,8 @@ def _top_markets_all_headers(*, detail_mode: str) -> List[str]:
         "spread",
         "spread_points",
         "spread_pct",
-        "spread_usd",
+        "spread_cost_per_lot",
+        "spread_cost_currency",
         "pricing_basis",
         "open",
         "close",

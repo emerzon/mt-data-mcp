@@ -149,7 +149,7 @@ def _build_market_ticker_cli_verbose_meta(result: Any) -> Dict[str, Any]:
                 out["data_freshness_seconds"] = max(0.0, datetime.now().timestamp() - float(tick_epoch))
             except Exception:
                 pass
-    for field in ("bid", "ask", "spread", "spread_points", "spread_usd"):
+    for field in ("bid", "ask", "spread", "spread_points", "spread_cost_per_lot"):
         if field in result:
             out[field] = result.get(field)
     try:
@@ -244,7 +244,7 @@ def _normalize_market_ticker_cli_payload(
             ("spread_points", 4),
             ("spread_pips", 4),
             ("spread_pct", 6),
-            ("spread_usd", 6),
+            ("spread_cost_per_lot", 6),
         ):
             if field in out:
                 out[field] = _round_cli_float(out.get(field), digits=digits)
@@ -312,7 +312,7 @@ def _normalize_trade_session_context_cli_payload(
                     "spread_points",
                     "spread_pips",
                     "spread_pct",
-                    "spread_usd",
+                    "spread_cost_per_lot",
                     "time",
                 )
                 if key in ticker_norm and not _is_empty_value(ticker_norm.get(key))

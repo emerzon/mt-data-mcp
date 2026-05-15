@@ -87,6 +87,8 @@ def _compact_market_ticker_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "tick_volume",
         "spread_points",
         "spread_pct",
+        "spread_cost_per_lot",
+        "spread_cost_currency",
         "data_age_seconds",
         "data_age_hours",
         "data_stale",
@@ -200,15 +202,15 @@ def _market_depth_fetch_impl(symbol: str, spread: bool = False, require_dom: boo
                 mid = (ask_f + bid_f) / 2.0
                 spread_points = (spread_abs / point) if point > 0 else None
                 spread_pct = ((spread_abs / mid) * 100.0) if mid > 0 else None
-                spread_usd = None
+                spread_cost_per_lot = None
                 if tick_size > 0 and tick_value > 0:
-                    spread_usd = (spread_abs / tick_size) * tick_value
+                    spread_cost_per_lot = (spread_abs / tick_size) * tick_value
                 return {
                     "spread": spread_abs,
                     "spread_points": spread_points,
                     "spread_pct": spread_pct,
-                    "spread_usd": spread_usd,
-                    "pricing_basis": "per_1_lot_estimate" if spread_usd is not None else "quote_only",
+                    "spread_cost_per_lot": spread_cost_per_lot,
+                    "pricing_basis": "per_1_lot_estimate" if spread_cost_per_lot is not None else "quote_only",
                 }
 
             def _price_display(value: Any) -> Any:
@@ -462,7 +464,7 @@ def market_ticker(
             point = float(getattr(symbol_info, "point", 0.0) or 0.0)
             tick_size = float(getattr(symbol_info, "trade_tick_size", 0.0) or 0.0)
             tick_value = float(getattr(symbol_info, "trade_tick_value", 0.0) or 0.0)
-            spread_currency = str(
+            spread_cost_currency = str(
                 getattr(symbol_info, "currency_profit", None)
                 or getattr(symbol_info, "currency_margin", None)
                 or ""
@@ -482,7 +484,7 @@ def market_ticker(
             spread_points = None
             spread_pct = None
             spread_pct_display = None
-            spread_usd = None
+            spread_cost_per_lot = None
             pricing_basis = "quote_only"
             if bid is not None and ask is not None and ask >= bid:
                 spread_abs = float(ask - bid)
@@ -494,7 +496,7 @@ def market_ticker(
                 spread_pct = _round_market_ticker_value(spread_pct, digits=6)
                 spread_pct_display = _market_ticker_pct_display(spread_pct)
                 if tick_size > 0 and tick_value > 0:
-                    spread_usd = _round_market_ticker_value(
+                    spread_cost_per_lot = _round_market_ticker_value(
                         (float(spread_abs) / tick_size) * tick_value,
                         digits=6,
                     )
@@ -520,12 +522,12 @@ def market_ticker(
                 "spread_points": spread_points,
                 "spread_pct": spread_pct,
                 "spread_pct_display": spread_pct_display,
-                "spread_usd": spread_usd,
+                "spread_cost_per_lot": spread_cost_per_lot,
                 "pricing_basis": pricing_basis,
                 "time": tick_time,
             }
-            if spread_currency:
-                out["spread_currency"] = spread_currency
+            if spread_cost_per_lot is not None and spread_cost_currency:
+                out["spread_cost_currency"] = spread_cost_currency
             if tick_time is not None:
                 if _use_ctz:
                     out["time_display"] = _format_time_minimal_local(float(tick_time))
