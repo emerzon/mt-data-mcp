@@ -496,6 +496,7 @@ def _normalize_triple_barrier_payload(
     for key in (
         "direction",
         "label_legend",
+        "label_key",
         "sample_size",
         "sample_note",
         "skipped_entries",

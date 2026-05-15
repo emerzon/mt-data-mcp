@@ -354,9 +354,7 @@ class TestNormalizeForecastPayload:
                 "Use forecast_conformal_intervals for uncertainty bands."
             ),
         }
-        # CI unavailable is already conveyed structurally via ci.status, so
-        # the warning text is only surfaced when the user opts into --verbose.
-        assert "warnings" not in result
+        assert result["warnings"][0].startswith("Point forecast only")
         verbose_result = _normalize_forecast_payload(payload, verbose=True)
         assert verbose_result["ci"] == {
             "status": "unavailable",
@@ -1176,11 +1174,16 @@ class TestFormatResultMinimal:
             "holding_bars": [2, 3],
             "tp_time": ["2026-03-17 02:00", None],
             "sl_time": [None, None],
+            "label_key": {"1": "tp_first", "-1": "sl_first", "0": "hold"},
         }
         result = format_result_minimal(payload, verbose=True)
         lines = result.splitlines()
         assert "labels[2]{entry,label,outcome,holding_bars,tp_time,sl_time}:" in lines
         assert "  \"2026-03-17 00:00\",1,tp,2,\"2026-03-17 02:00\",null" in lines
+        assert "label_key:" in lines
+        assert "  1: tp_first" in lines
+        assert "  -1: sl_first" in lines
+        assert "  0: hold" in lines
         assert not any(line.startswith("entries[") for line in lines)
         assert not any(line.startswith("holding_bars[") for line in lines)
         assert not any(line.startswith("tp_time[") for line in lines)
