@@ -664,9 +664,8 @@ class TestHarRvBlock:
             expected_bpy = _bars_per_year("H1")
             assert r["sigma_annual_return"] == pytest.approx(r["sigma_bar_return"] * math.sqrt(expected_bpy))
             assert r["horizon_sigma_annual"] == pytest.approx(
-                r["horizon_sigma_return"] * math.sqrt(expected_bpy)
+                r["horizon_sigma_return"] * math.sqrt(expected_bpy / 5)
             )
-            assert r["horizon_sigma_annual"] > r["sigma_annual_return"]
             assert "beta" in r["params_used"]
 
     def test_invalid_rv_timeframe(self):

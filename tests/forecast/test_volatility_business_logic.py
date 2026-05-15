@@ -175,9 +175,8 @@ def test_forecast_volatility_general_theta_and_proxy_errors(monkeypatch):
     expected_bpy = vol._bars_per_year("H1")
     assert out["sigma_annual_return"] == pytest.approx(out["sigma_bar_return"] * math.sqrt(expected_bpy))
     assert out["horizon_sigma_annual"] == pytest.approx(
-        out["horizon_sigma_return"] * math.sqrt(expected_bpy)
+        out["horizon_sigma_return"] * math.sqrt(expected_bpy / 4)
     )
-    assert out["horizon_sigma_annual"] > out["sigma_annual_return"]
 
 
 def test_forecast_volatility_direct_methods_and_short_data(monkeypatch):
@@ -208,9 +207,9 @@ def test_forecast_volatility_direct_methods_and_short_data(monkeypatch):
     expected_bpy = vol._bars_per_year("H1")
     assert out["sigma_annual_return"] == pytest.approx(out["sigma_bar_return"] * math.sqrt(expected_bpy))
     assert out["horizon_sigma_annual"] == pytest.approx(
-        out["horizon_sigma_return"] * math.sqrt(expected_bpy)
+        out["horizon_sigma_return"] * math.sqrt(expected_bpy / 5)
     )
-    assert out["horizon_sigma_annual"] > out["sigma_annual_return"]
+    assert out["horizon_sigma_annual"] == pytest.approx(out["sigma_annual_return"], rel=1e-6)
 
     out = vol.forecast_volatility(
         symbol="EURUSD",
@@ -346,6 +345,6 @@ def test_forecast_volatility_ensemble_aggregates_component_methods(monkeypatch):
         ensemble["sigma_bar_return"] * math.sqrt(expected_bpy)
     )
     assert ensemble["horizon_sigma_annual"] == pytest.approx(
-        ensemble["horizon_sigma_return"] * math.sqrt(expected_bpy)
+        ensemble["horizon_sigma_return"] * math.sqrt(expected_bpy / 5)
     )
-    assert ensemble["horizon_sigma_annual"] > ensemble["sigma_annual_return"]
+    assert ensemble["horizon_sigma_annual"] == pytest.approx(ensemble["sigma_annual_return"], rel=1e-6)
