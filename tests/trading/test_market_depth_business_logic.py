@@ -308,18 +308,20 @@ def test_market_ticker_compact_detail_omits_verbose_fields() -> None:
     assert out["type"] == "ticker"
     assert out["bid"] == 200.0
     assert out["ask"] == 201.0
-    assert out["spread"] == 1.0
     assert out["spread_points"] == 100.0
+    assert out["spread_pct"] == 0.498753
+    assert "spread" not in out
+    assert "spread_display" not in out
     assert "spread_pips" not in out
-    assert out["spread_pct_display"] == "0.498753%"
+    assert "spread_pct_display" not in out
     assert out["last"] == 200.5
     assert out["tick_volume"] == 5
     assert out["time_display"] == "2023-11-14 22:13"
     assert out["data_stale"] is True
     assert "Tick data may be stale" in out["warning"]
-    assert out["spread_usd"] == 100.0
-    assert out["spread_currency"] == "USD"
-    assert out["pricing_basis"] == "per_1_lot_estimate"
+    assert "spread_usd" not in out
+    assert "spread_currency" not in out
+    assert "pricing_basis" not in out
     assert "diagnostics" not in out
     assert out["meta"]["tool"] == "market_ticker"
 
