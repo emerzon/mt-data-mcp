@@ -17,6 +17,7 @@ from ..utils.utils import (
     _use_client_tz,
 )
 from ._mcp_instance import mcp
+from .error_envelope import build_error_payload
 from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway
 from .output_contract import ensure_common_meta, normalize_output_verbosity_detail
@@ -118,6 +119,22 @@ def _describe_symbol_select_error(symbol: str, error: Any) -> str:
     if text:
         return f"Failed to select symbol {symbol}: {text}"
     return f"Failed to select symbol {symbol}."
+
+
+def _market_ticker_error(
+    message: Any,
+    *,
+    code: str,
+    remediation: Optional[str] = None,
+) -> Dict[str, Any]:
+    payload = build_error_payload(
+        message,
+        code=code,
+        operation="market_ticker",
+    )
+    if remediation:
+        payload["remediation"] = remediation
+    return payload
 
 
 def _market_depth_disabled_payload() -> Dict[str, Any]:
@@ -406,16 +423,40 @@ def market_ticker(
             started = time.perf_counter()
             if not mt5_gateway.symbol_select(symbol, True):
                 return _finalize(
-                    {"error": _describe_symbol_select_error(symbol, mt5_gateway.last_error())}
+                    _market_ticker_error(
+                        _describe_symbol_select_error(symbol, mt5_gateway.last_error()),
+                        code="market_ticker_symbol_unavailable",
+                        remediation=(
+                            "Verify the broker symbol name with symbols_search or symbols_top_markets, "
+                            "then retry with an available MT5 symbol."
+                        ),
+                    )
                 )
 
             symbol_info = mt5_gateway.symbol_info(symbol)
             if symbol_info is None:
-                return _finalize({"error": f"Symbol {symbol} not found"})
+                return _finalize(
+                    _market_ticker_error(
+                        f"Symbol {symbol} not found",
+                        code="market_ticker_symbol_unavailable",
+                        remediation=(
+                            "Verify the broker symbol name with symbols_search or symbols_describe."
+                        ),
+                    )
+                )
 
             tick = mt5_gateway.symbol_info_tick(symbol)
             if tick is None:
-                return _finalize({"error": f"Failed to get tick data for {symbol}"})
+                return _finalize(
+                    _market_ticker_error(
+                        f"Failed to get tick data for {symbol}",
+                        code="market_ticker_tick_unavailable",
+                        remediation=(
+                            "Ensure the symbol is visible in Market Watch and that the market is open "
+                            "or recent ticks are available from the broker."
+                        ),
+                    )
+                )
 
             digits = max(0, int(getattr(symbol_info, "digits", 0) or 0))
             point = float(getattr(symbol_info, "point", 0.0) or 0.0)
@@ -530,16 +571,23 @@ def market_ticker(
                 }
                 if field_value not in price_values:
                     return _finalize(
-                        {
-                            "error": (
-                                "price_field must be one of: bid, ask, mid, last, spread."
-                            )
-                        }
+                        _market_ticker_error(
+                            "price_field must be one of: bid, ask, mid, last, spread.",
+                            code="market_ticker_invalid_price_field",
+                            remediation="Choose one of bid, ask, mid, last, or spread.",
+                        )
                     )
                 price = price_values.get(field_value)
                 if price is None:
                     return _finalize(
-                        {"error": f"{field_value} price is unavailable for {symbol}."}
+                        _market_ticker_error(
+                            f"{field_value} price is unavailable for {symbol}.",
+                            code="market_ticker_price_unavailable",
+                            remediation=(
+                                "Use bid, ask, mid, or spread when the broker does not publish "
+                                "the requested price field for this symbol."
+                            ),
+                        )
                     )
                 simple: Dict[str, Any] = {
                     "success": True,
@@ -557,9 +605,21 @@ def market_ticker(
                 out = _compact_market_ticker_payload(out)
             return _finalize(out)
         except MT5ConnectionError as exc:
-            return _finalize({"error": str(exc)})
+            return _finalize(
+                _market_ticker_error(
+                    str(exc),
+                    code="market_ticker_mt5_connection",
+                    remediation="Ensure MetaTrader 5 is running, logged in, and reachable.",
+                )
+            )
         except Exception as exc:
-            return _finalize({"error": f"Error getting ticker snapshot: {str(exc)}"})
+            return _finalize(
+                _market_ticker_error(
+                    f"Error getting ticker snapshot: {str(exc)}",
+                    code="market_ticker_error",
+                    remediation="Retry after checking the MT5 terminal and symbol availability.",
+                )
+            )
 
     return run_logged_operation(
         logger,

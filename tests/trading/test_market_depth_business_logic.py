@@ -379,6 +379,11 @@ def test_market_ticker_price_field_reports_unavailable_last() -> None:
         out = _raw_market_ticker("EURUSD", price_field="last")
 
     assert out["error"] == "last price is unavailable for EURUSD."
+    assert out["success"] is False
+    assert out["error_code"] == "market_ticker_price_unavailable"
+    assert out["operation"] == "market_ticker"
+    assert out["request_id"]
+    assert "Use bid, ask, mid, or spread" in out["remediation"]
     assert out["meta"]["tool"] == "market_ticker"
 
 
@@ -541,3 +546,8 @@ def test_market_ticker_rewrites_invalid_symbol_selection_error() -> None:
         out = _raw_market_ticker("FAKESYMBOL")
 
     assert out["error"] == "Symbol 'FAKESYMBOL' was not found or is not available in MT5."
+    assert out["success"] is False
+    assert out["error_code"] == "market_ticker_symbol_unavailable"
+    assert out["operation"] == "market_ticker"
+    assert out["request_id"]
+    assert "symbols_search" in out["remediation"]
