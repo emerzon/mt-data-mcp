@@ -3269,13 +3269,14 @@ def regime_detect(  # noqa: C901
                 agreement_summary = comparison.get("agreement")
                 if isinstance(agreement_summary, dict):
                     summary_payload["agreement"] = agreement_summary
-                # Summary/compact mode keeps agreement + method counts only;
-                # full mode keeps per-method regimes and diagnostics.
-                comparison = {
+                # Summary/compact modes drop per-method regimes and diagnostics.
+                compact_comparison = {
                     "methods_run": comparison.get("methods_run"),
                     "methods_failed": comparison.get("methods_failed"),
-                    "agreement": comparison.get("agreement"),
                 }
+                if detail_value == "compact":
+                    compact_comparison["agreement"] = comparison.get("agreement")
+                comparison = compact_comparison
             runtime_payload: Dict[str, Any] = {
                 "completed_methods": list(individual_methods_succeeded),
                 "failed_methods": list(method_errors.keys()),

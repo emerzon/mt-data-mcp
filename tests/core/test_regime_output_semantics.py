@@ -159,7 +159,10 @@ def test_regime_detect_all_respects_full_and_summary_detail(monkeypatch) -> None
     monkeypatch.setattr(
         regime_api,
         "_build_all_method_comparison",
-        lambda results: {"methods": sorted(results.keys())},
+        lambda results: {
+            "methods_run": sorted(results.keys()),
+            "agreement": {"basis": "test"},
+        },
     )
 
     subcall_details: list[tuple[str, str, bool]] = []
@@ -203,9 +206,10 @@ def test_regime_detect_all_respects_full_and_summary_detail(monkeypatch) -> None
     assert summary["summary"]["ensemble_aggregated"] is True
     assert "ensemble" not in summary["runtime"]["completed_methods"]
     assert summary["runtime"]["ensemble_aggregated"] is True
+    assert summary["summary"]["agreement"] == {"basis": "test"}
     comparison = summary.get("comparison", {})
     assert "current_regimes" not in comparison
-    assert "agreement" in comparison
+    assert "agreement" not in comparison
     assert subcall_details
     assert all(detail == "compact" for _, detail, _ in subcall_details)
     assert all(include_series is False for _, _, include_series in subcall_details)
