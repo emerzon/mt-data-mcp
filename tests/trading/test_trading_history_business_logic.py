@@ -340,6 +340,29 @@ def test_trade_history_full_detail_uses_normalized_order_items() -> None:
     assert "state_code" not in out["items"][0]["order_details"]
 
 
+def test_trade_history_normalizes_price_and_millisecond_artifacts() -> None:
+    out = normalize_trade_history_output(
+        [
+            {
+                "ticket": 11,
+                "time": "2024-01-01 12:00:00",
+                "time_msc": 1778822029181.0,
+                "symbol": "EURUSD",
+                "volume": 0.5,
+                "price": 1.1627399999999999,
+                "entry": "Out",
+                "exit_trigger_price": 1.1627399999999999,
+            }
+        ],
+        request=TradeHistoryRequest(history_kind="deals", detail="full"),
+    )
+
+    row = out["items"][0]
+    assert row["price"] == 1.16274
+    assert row["time_msc"] == 1778822029181
+    assert row["exit_trigger_price"] == 1.16274
+
+
 def test_trade_history_compact_humanized_column_style_renames_order_times() -> None:
     out = normalize_trade_history_output(
         [

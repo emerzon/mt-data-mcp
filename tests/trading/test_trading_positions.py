@@ -71,6 +71,31 @@ def test_normalize_trade_read_output_rounds_money_fields():
     assert out["items"][0]["swap"] == 0.08
 
 
+def test_normalize_trade_read_output_trims_price_and_millisecond_artifacts():
+    out = positions._normalize_trade_read_output(
+        [
+            {
+                "ticket": 1,
+                "symbol": "EURUSD",
+                "price_open": 1.1627399999999999,
+                "price_current": 1.1710099999999999,
+                "sl": 1.1600000000000001,
+                "tp": 1.1800000000000002,
+                "time_msc": 1778822029181.0,
+            }
+        ],
+        request=SimpleNamespace(detail="compact"),
+        kind="open_positions",
+    )
+
+    row = out["items"][0]
+    assert row["price_open"] == 1.16274
+    assert row["price_current"] == 1.17101
+    assert row["sl"] == 1.16
+    assert row["tp"] == 1.18
+    assert row["time_msc"] == 1778822029181
+
+
 def test_resolve_open_position_respects_side_filter_when_mt5_constants_are_missing():
     class _NoConstantsMt5:
         def __init__(self, rows):

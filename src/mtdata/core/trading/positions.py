@@ -263,6 +263,21 @@ def _compact_non_empty_mapping(row: Dict[str, Any]) -> Dict[str, Any]:
 
 
 _TRADE_MONEY_FIELDS = {"profit", "commission", "swap", "fee"}
+_TRADE_PRICE_FIELDS = {
+    "price",
+    "price_open",
+    "price_current",
+    "price_stoplimit",
+    "sl",
+    "tp",
+    "exit_trigger_price",
+}
+_TRADE_MILLISECOND_TIME_FIELDS = {
+    "time_msc",
+    "time_setup_msc",
+    "time_done_msc",
+    "time_update_msc",
+}
 _TRADE_HISTORY_DIAGNOSTIC_FIELDS = {
     "comment_visible_length",
     "comment_max_length",
@@ -370,12 +385,41 @@ def _round_trade_money_value(value: Any) -> Any:
     return float(round(numeric, 2))
 
 
+def _round_trade_price_value(value: Any) -> Any:
+    try:
+        numeric = float(value)
+    except Exception:
+        return value
+    if not math.isfinite(numeric):
+        return value
+    return float(f"{numeric:.12g}")
+
+
+def _normalize_trade_millisecond_value(value: Any) -> Any:
+    if isinstance(value, bool):
+        return value
+    try:
+        numeric = float(value)
+    except Exception:
+        return value
+    if not math.isfinite(numeric):
+        return value
+    rounded = round(numeric)
+    if abs(numeric - rounded) <= 1e-6:
+        return int(rounded)
+    return value
+
+
 def _round_trade_money_fields(row: Dict[str, Any]) -> Dict[str, Any]:
     out: Dict[str, Any] = {}
     for key, value in row.items():
         key_text = str(key)
         if key_text in _TRADE_MONEY_FIELDS:
             out[key] = _round_trade_money_value(value)
+        elif key_text in _TRADE_PRICE_FIELDS:
+            out[key] = _round_trade_price_value(value)
+        elif key_text in _TRADE_MILLISECOND_TIME_FIELDS:
+            out[key] = _normalize_trade_millisecond_value(value)
         elif isinstance(value, dict):
             out[key] = _round_trade_money_fields(value)
         else:
