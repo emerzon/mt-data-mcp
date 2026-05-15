@@ -298,24 +298,32 @@ class TestSymbolsTopMarkets:
         assert "scan_stats" not in result
         assert "query_latency_ms" not in result
         assert result["ranking"] == "all"
-        assert list(result["data"][0].keys()) == [
-            "rank_category",
+        assert "data" not in result
+        assert list(result["lowest_spread"][0].keys()) == [
             "rank",
             "symbol",
             "group",
-            "timeframe",
             "bid",
             "ask",
             "spread_pct",
             "spread_points",
+        ]
+        assert list(result["highest_volume"][0].keys()) == [
+            "rank",
+            "symbol",
+            "group",
+            "timeframe",
             "tick_volume",
             "price_change_pct",
         ]
-        assert [row["rank_category"] for row in result["data"][:3]] == [
-            "lowest_spread",
-            "lowest_spread",
-            "highest_volume",
-        ]
+        assert result["lowest_spread"][0]["symbol"] == "EURUSD"
+        assert result["highest_volume"][0]["symbol"] == "EURUSD"
+        assert result["highest_price_change"][0]["symbol"] == "GBPUSD"
+        assert result["data_sources"] == {
+            "lowest_spread": "live_tick",
+            "highest_volume": "H1_bars",
+            "highest_price_change": "H1_bars",
+        }
         assert "collection_kind" not in result
         assert "collection_contract_version" not in result
 

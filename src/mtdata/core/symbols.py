@@ -880,6 +880,26 @@ def _ranked_top_market_rows(
     ]
 
 
+def _compact_top_market_leaderboard_rows(
+    metric: str,
+    rows: List[Dict[str, Any]],
+    *,
+    detail_mode: str,
+) -> List[Dict[str, Any]]:
+    headers = _top_markets_headers(metric, detail_mode=detail_mode)
+    return [
+        {
+            "rank": rank,
+            **{
+                header: row.get(header)
+                for header in headers
+                if row.get(header) is not None
+            },
+        }
+        for rank, row in enumerate(rows, start=1)
+    ]
+
+
 def _parse_market_scan_symbols(symbols: Optional[str]) -> List[str]:
     text = str(symbols or "").replace(";", ",").replace("\n", ",")
     parsed: List[str] = []
@@ -1502,6 +1522,32 @@ def symbols_top_markets(  # noqa: C901
                     rows=out.get("data"),
                     include_contract_meta=detail_mode == "full",
                 )
+
+            if detail_mode == "compact":
+                return {
+                    "success": True,
+                    "ranking": "all",
+                    "lowest_spread": _compact_top_market_leaderboard_rows(
+                        "spread",
+                        spread_rows,
+                        detail_mode=detail_mode,
+                    ),
+                    "highest_volume": _compact_top_market_leaderboard_rows(
+                        "volume",
+                        volume_rows,
+                        detail_mode=detail_mode,
+                    ),
+                    "highest_price_change": _compact_top_market_leaderboard_rows(
+                        "price_change",
+                        price_change_rows,
+                        detail_mode=detail_mode,
+                    ),
+                    "data_sources": {
+                        "lowest_spread": "live_tick",
+                        "highest_volume": f"{timeframe_value}_bars",
+                        "highest_price_change": f"{timeframe_value}_bars",
+                    },
+                }
 
             all_rows = [
                 *_ranked_top_market_rows("lowest_spread", spread_rows),
