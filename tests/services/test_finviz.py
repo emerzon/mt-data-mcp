@@ -558,6 +558,30 @@ class TestFinvizTools:
             {"symbol": "GBP/USD", "name": "British Pound / US Dollar"},
         ]
 
+    @patch("mtdata.core.finviz.get_forex_performance")
+    def test_finviz_forex_filters_non_fiat_pairs(self, mock_get_forex):
+        from mtdata.core.finviz import finviz_forex
+
+        mock_get_forex.return_value = {
+            "success": True,
+            "market": "forex",
+            "pairs": [
+                {"Pair": "EUR/USD"},
+                {"Pair": "BTC/USD", "Name": None},
+                {"Pair": "USD/JPY"},
+            ],
+        }
+
+        raw = getattr(finviz_forex, "__wrapped__", finviz_forex)
+        result = raw(limit=10)
+
+        assert result["count"] == 2
+        assert result["available_count"] == 2
+        assert result["items"] == [
+            {"symbol": "EUR/USD", "name": "Euro / US Dollar"},
+            {"symbol": "USD/JPY", "name": "US Dollar / Japanese Yen"},
+        ]
+
     @patch("mtdata.core.finviz.get_crypto_performance")
     def test_finviz_crypto_uses_items_with_snake_case_rows(self, mock_get_crypto):
         from mtdata.core.finviz import finviz_crypto

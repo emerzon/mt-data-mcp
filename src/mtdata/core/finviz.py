@@ -256,6 +256,12 @@ def _compact_finviz_market_row(row: Dict[str, Any], *, rows_key: str) -> Dict[st
     }
 
 
+def _is_known_forex_pair_row(row: Any) -> bool:
+    if not isinstance(row, dict):
+        return False
+    return _derive_forex_pair_name(row.get("symbol")) is not None
+
+
 def _compact_finviz_screen_row(row: Dict[str, Any]) -> Dict[str, Any]:
     return {
         field: row[field]
@@ -285,6 +291,11 @@ def _normalize_finviz_market_payload(
         else row
         for row in (rows if isinstance(rows, list) else [])
     ]
+    upstream_count = len(normalized_rows)
+    if rows_key == "pairs":
+        normalized_rows = [
+            row for row in normalized_rows if _is_known_forex_pair_row(row)
+        ]
     limit_value = _coerce_finviz_limit(limit, default=len(normalized_rows))
     limited_rows = normalized_rows[:limit_value]
     if detail_mode != "full" and rows_key in {"pairs", "coins", "futures"}:
@@ -316,7 +327,11 @@ def _normalize_finviz_market_payload(
         out["meta"] = _build_tool_contract_meta(
             tool=tool,
             request=request,
-            stats={"available": available, "returned": len(limited_rows)},
+            stats={
+                "available": available,
+                "returned": len(limited_rows),
+                "filtered_non_forex": max(0, upstream_count - available),
+            },
         )
     return out
 
