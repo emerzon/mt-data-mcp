@@ -275,14 +275,6 @@ class ForecastBarrierOptimizeRequest(BaseModel):
     def _normalize_direction(cls, value: Optional[str]) -> Optional[str]:
         return _normalize_trade_direction_alias(value)
 
-    @field_validator("mode", mode="before")
-    @classmethod
-    def _normalize_mode_alias(cls, value: Optional[str]) -> Optional[str]:
-        text = str(value or "").strip().lower()
-        if text == "ticks":
-            return "pips"
-        return value
-
 
 class ForecastVolatilityEstimateRequest(BaseModel):
     symbol: str

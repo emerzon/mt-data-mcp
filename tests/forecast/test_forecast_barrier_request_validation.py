@@ -1,7 +1,10 @@
 import pytest
 from pydantic import ValidationError
 
-from mtdata.forecast.requests import ForecastBarrierProbRequest
+from mtdata.forecast.requests import (
+    ForecastBarrierOptimizeRequest,
+    ForecastBarrierProbRequest,
+)
 
 
 def test_forecast_barrier_prob_request_rejects_multiple_tp_unit_families():
@@ -33,3 +36,9 @@ def test_forecast_barrier_prob_request_uses_tick_fields_as_canonical_names():
     assert request.tp_ticks == 12.0
     assert request.sl_ticks == 9.0
     assert "tp_ticks" in request.model_dump()
+
+
+def test_forecast_barrier_optimize_request_keeps_ticks_mode_canonical():
+    request = ForecastBarrierOptimizeRequest(symbol="EURUSD", mode="ticks")
+
+    assert request.mode == "ticks"
