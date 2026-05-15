@@ -72,6 +72,12 @@ def _compact_metrics_payload(metrics: Optional[Dict[str, Any]]) -> Dict[str, Any
             "trades_observed": out.get("trades_observed"),
             "minimum_trades": out.get("min_trades_for_annualization"),
         }
+        sample_notice = out["sample_notice"]
+    if (
+        isinstance(sample_notice, dict)
+        and sample_notice.get("code") == "annualization_suppressed_low_sample"
+    ):
+        out.pop("trades_per_year", None)
     return out
 
 

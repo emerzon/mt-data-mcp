@@ -106,6 +106,7 @@ def test_strategy_backtest_compact_excludes_request_metadata() -> None:
     assert "sample_warning" not in res_compact.get("metrics", {})
     if res_compact.get("metrics"):
         assert res_compact["metrics"]["sample_notice"]["code"] == "annualization_suppressed_low_sample"
+        assert "trades_per_year" not in res_compact["metrics"]
 
 
 def test_strategy_backtest_full_includes_request_metadata() -> None:
