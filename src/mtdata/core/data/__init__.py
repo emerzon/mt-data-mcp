@@ -345,7 +345,7 @@ def data_fetch_candles(
         freshness signals with rows. `full` preserves the debug `meta`
         diagnostics block.
     
-    limit : int, optional (default=50)
+    limit : int, optional (default=200)
         Maximum number of candles to return
     
     start : str, optional
