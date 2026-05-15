@@ -1,6 +1,7 @@
 
 import logging
 import math
+import re
 import time
 from typing import Any, Dict, List, Literal, Optional
 
@@ -113,6 +114,8 @@ _SYMBOL_DESCRIBE_COMPACT_DIRECT_FIELDS: tuple[str, ...] = (
     "name",
     "description",
     "currency_base",
+    "currency_base_inferred",
+    "currency_base_warning",
     "currency_profit",
     "time",
     "digits",
@@ -127,6 +130,38 @@ _SYMBOL_DESCRIBE_COMPACT_DIRECT_FIELDS: tuple[str, ...] = (
     "trade_mode",
     "trade_mode_label",
     "order_mode_labels",
+)
+
+_COMMON_CRYPTO_BASES = (
+    "BTC",
+    "ETH",
+    "SOL",
+    "XRP",
+    "LTC",
+    "BCH",
+    "ADA",
+    "DOT",
+    "DOGE",
+    "BNB",
+    "AVAX",
+    "LINK",
+    "XLM",
+    "TRX",
+    "UNI",
+    "USDC",
+    "USDT",
+)
+_COMMON_QUOTE_CURRENCIES = (
+    "USD",
+    "USDT",
+    "USDC",
+    "EUR",
+    "GBP",
+    "JPY",
+    "CHF",
+    "AUD",
+    "CAD",
+    "NZD",
 )
 
 
@@ -146,6 +181,34 @@ def _copy_symbol_describe_field(
         return False
     out[field] = value
     return True
+
+
+def _infer_symbol_base_from_name(symbol_name: Any, quote_currency: Any) -> Optional[str]:
+    name = re.sub(r"[^A-Z0-9]", "", str(symbol_name or "").upper())
+    quote = str(quote_currency or "").strip().upper()
+    if not name or quote not in _COMMON_QUOTE_CURRENCIES:
+        return None
+    if not name.endswith(quote):
+        return None
+    base = name[: -len(quote)]
+    for crypto_base in _COMMON_CRYPTO_BASES:
+        if base == crypto_base or base.endswith(crypto_base):
+            return crypto_base
+    return None
+
+
+def _add_symbol_currency_diagnostics(symbol_data: Dict[str, Any]) -> None:
+    currency_base = str(symbol_data.get("currency_base") or "").strip().upper()
+    currency_profit = str(symbol_data.get("currency_profit") or "").strip().upper()
+    if not currency_base or not currency_profit or currency_base != currency_profit:
+        return
+    inferred_base = _infer_symbol_base_from_name(symbol_data.get("name"), currency_profit)
+    if not inferred_base or inferred_base == currency_base:
+        return
+    symbol_data["currency_base_inferred"] = inferred_base
+    symbol_data["currency_base_warning"] = (
+        "MT5 reports identical currency_base and currency_profit; verify broker metadata."
+    )
 
 
 def _compact_symbol_describe_payload(symbol_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -476,6 +539,7 @@ def symbols_describe(
                     if label:
                         symbol_data[f"{attr}_label"] = label
 
+            _add_symbol_currency_diagnostics(symbol_data)
             if contract.shape_detail == "compact":
                 symbol_data = _compact_symbol_describe_payload(symbol_data)
 

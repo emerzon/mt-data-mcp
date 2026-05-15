@@ -559,6 +559,25 @@ class TestSymbolsDescribe:
         assert "time_epoch" not in sd
 
     @patch(f"{_MT5}.symbol_info")
+    def test_describe_warns_when_crypto_base_matches_profit_currency(self, mock_info):
+        info = MagicMock()
+        info.__dir__ = lambda self: ["name", "description", "currency_base", "currency_profit"]
+        info.name = "BTCUSD"
+        info.description = "Bitcoin (USD)"
+        info.currency_base = "USD"
+        info.currency_profit = "USD"
+        mock_info.return_value = info
+
+        fn = _get_symbols_describe()
+        res = fn("BTCUSD")
+        sd = res["symbol"]
+
+        assert sd["currency_base"] == "USD"
+        assert sd["currency_profit"] == "USD"
+        assert sd["currency_base_inferred"] == "BTC"
+        assert "verify broker metadata" in sd["currency_base_warning"]
+
+    @patch(f"{_MT5}.symbol_info")
     def test_full_detail_describe_adds_time_epoch(self, mock_info):
         info = MagicMock()
         info.__dir__ = lambda self: ["name", "time"]
