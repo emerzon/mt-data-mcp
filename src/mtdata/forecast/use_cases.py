@@ -668,19 +668,18 @@ def _compact_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:
         ):
             if key in method_payload:
                 method_out[key] = method_payload[key]
-        for key in (
-            "win_rate",
-            "win_rate_display",
-            "max_drawdown",
-            "avg_return",
-            "avg_return_per_trade",
-            "trades_observed",
-        ):
-            if key in metrics:
-                method_out[key] = metrics[key]
-        if method_out.get("trades_observed") == 0:
-            method_out["no_trades"] = True
-        if isinstance(details, list):
+        if method_out.get("metrics_available") is not False:
+            for key in (
+                "win_rate",
+                "win_rate_display",
+                "max_drawdown",
+                "avg_return",
+                "avg_return_per_trade",
+                "trades_observed",
+            ):
+                if key in metrics:
+                    method_out[key] = metrics[key]
+        if isinstance(details, list) and method_out.get("metrics_available") is not False:
             method_out["details_count"] = len(details)
         ranked_row = dict(method_out)
         ranked_row["_sort_metric"] = _sort_metric(

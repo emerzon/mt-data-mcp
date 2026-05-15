@@ -492,7 +492,7 @@ def test_run_forecast_backtest_strips_per_anchor_details_in_compact_mode():
     assert "metrics" not in result["ranked_methods"][0]
 
 
-def test_run_forecast_backtest_marks_no_trade_compact_rows():
+def test_run_forecast_backtest_omits_trade_metrics_when_unavailable():
     def fake_backtest_impl(**kwargs):
         return {
             "success": True,
@@ -506,6 +506,8 @@ def test_run_forecast_backtest_marks_no_trade_compact_rows():
                     "successful_tests": 3,
                     "num_tests": 3,
                     "trade_status": "flat",
+                    "metrics_available": False,
+                    "metrics_reason": "no_non_flat_trades",
                     "metrics": {
                         "avg_return": None,
                         "avg_return_per_trade": None,
@@ -514,7 +516,7 @@ def test_run_forecast_backtest_marks_no_trade_compact_rows():
                         "max_drawdown": None,
                         "trades_observed": 0,
                     },
-                    "details": [],
+                    "details": [{"position": "flat"}],
                 }
             },
         }
@@ -525,9 +527,11 @@ def test_run_forecast_backtest_marks_no_trade_compact_rows():
     )
 
     row = result["ranked_methods"][0]
-    assert row["no_trades"] is True
     assert row["trade_status"] == "flat"
-    assert row["trades_observed"] == 0
+    assert row["metrics_available"] is False
+    assert row["metrics_reason"] == "no_non_flat_trades"
+    assert "trades_observed" not in row
+    assert "details_count" not in row
     assert "win_rate" not in row
     assert "win_rate_display" not in row
     assert "max_drawdown" not in row
