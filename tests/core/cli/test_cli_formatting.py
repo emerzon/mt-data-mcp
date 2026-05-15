@@ -317,7 +317,7 @@ class TestFormatResultForCli:
             cmd_name="news",
         )
 
-        assert "general_news[1]{title,time}:" in result
+        assert "general_news[1]{title,relative_time}:" in result
         assert '"Fed preview",2 hours ago' in result
         assert "related_news[3]{title,time,kind,summary}:" in result
         assert (
@@ -327,8 +327,8 @@ class TestFormatResultForCli:
         assert '"US CPI (USD)","2026-04-07 12:30 UTC",economic_event,' in result
         assert '"BoJ\'s Ueda warns on FX",8 days ago' in result
         assert '"Oil jumps on war fears",6 hours ago' in result
-        assert "upcoming_events[1]{title,time,kind,summary}:" in result
-        assert "recent_events[1]{title,time,kind,summary}:" in result
+        assert "upcoming_events[1]{title,time_utc,kind,summary}:" in result
+        assert "recent_events[1]{title,relative_time,kind,summary}:" in result
         assert (
             '"US CPI (USD)",2 hours ago,economic_event,"Actual: 3.2% | Expected: 3.1% | Prior: 3.0%"'
             in result

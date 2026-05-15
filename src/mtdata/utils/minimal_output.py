@@ -123,6 +123,13 @@ def _render_news_bucket_toon(
             headers.append("relative_time")
         elif include_time_utc:
             headers.append("time_utc")
+    elif include_time_utc and include_relative_time:
+        headers.append("time")
+    elif include_time_utc or include_relative_time:
+        if include_time_utc:
+            headers.append("time_utc")
+        if include_relative_time:
+            headers.append("relative_time")
     else:
         headers.append("time")
     if include_source:
@@ -154,11 +161,18 @@ def _render_news_bucket_toon(
                 append_value(row.get("relative_time"))
             elif include_time_utc:
                 append_value(row.get("time_utc"))
-        else:
+        elif include_time_utc and include_relative_time:
             display_time = row.get("time_utc")
             if _is_empty_value(display_time):
                 display_time = row.get("relative_time")
             append_value(display_time)
+        elif include_time_utc or include_relative_time:
+            if include_time_utc:
+                append_value(row.get("time_utc"))
+            if include_relative_time:
+                append_value(row.get("relative_time"))
+        else:
+            append_value(row.get("time"))
 
         if include_source:
             append_value(row.get("source"))
