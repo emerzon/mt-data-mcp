@@ -37,6 +37,7 @@ from ._mcp_instance import mcp
 from .error_envelope import build_error_payload
 from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway, mt5_connection_error
+from .output_contract import normalize_output_verbosity_detail
 
 logger = logging.getLogger(__name__)
 _FORECAST_LIST_METHODS_DEFAULT_COMPACT_LIMIT = 20
@@ -75,6 +76,101 @@ _FORECAST_CONNECTION_REQUIRED_OPERATIONS = frozenset(
         "forecast_barrier_optimize",
     }
 )
+
+_OPTIONS_CHAIN_COMPACT_FIELDS = (
+    "side",
+    "contract",
+    "strike",
+    "last",
+    "bid",
+    "ask",
+    "volume",
+    "open_interest",
+)
+
+
+def _options_detail_mode(detail: str) -> str:
+    return normalize_output_verbosity_detail(detail, default="compact")
+
+
+def _compact_option_contract(row: Any) -> Any:
+    if not isinstance(row, dict):
+        return row
+    return {
+        key: row[key]
+        for key in _OPTIONS_CHAIN_COMPACT_FIELDS
+        if key in row and row[key] is not None
+    }
+
+
+def _apply_options_detail(payload: Dict[str, Any], *, detail: str, kind: str) -> Dict[str, Any]:
+    if not isinstance(payload, dict) or not payload.get("success"):
+        return payload
+    detail_mode = _options_detail_mode(detail)
+    out = dict(payload)
+    out["detail"] = detail_mode
+    if detail_mode == "full":
+        return out
+
+    if kind == "expirations":
+        return {
+            key: out[key]
+            for key in ("success", "symbol", "expirations", "expiration_count", "detail")
+            if key in out
+        }
+    if kind == "chain":
+        compact = {
+            key: out[key]
+            for key in (
+                "success",
+                "symbol",
+                "expiration",
+                "underlying_price",
+                "currency",
+                "option_type",
+                "count",
+                "calls_count",
+                "puts_count",
+                "detail",
+            )
+            if key in out
+        }
+        options = out.get("options")
+        if isinstance(options, list):
+            compact["options"] = [_compact_option_contract(row) for row in options]
+        return compact
+    if kind == "barrier_price":
+        compact = {
+            key: out[key]
+            for key in ("success", "price", "detail")
+            if key in out
+        }
+        params = out.get("params_used")
+        if isinstance(params, dict):
+            compact["params"] = {
+                key: params[key]
+                for key in ("option_type", "barrier_type", "maturity_days")
+                if key in params
+            }
+        return compact
+    if kind == "heston_calibrate":
+        compact = {
+            key: out[key]
+            for key in (
+                "success",
+                "symbol",
+                "expiration",
+                "days_to_expiry",
+                "contracts_used",
+                "spot",
+                "calibration_error_rmse",
+                "params",
+                "detail",
+            )
+            if key in out
+        }
+        return compact
+    return out
 
 
 _FORECAST_TIMESTAMP_OPERATIONS = frozenset(
@@ -973,13 +1069,19 @@ def forecast_optimize_hints(request: ForecastOptimizeHintsRequest) -> Dict[str, 
 @mcp.tool()
 def options_expirations(
     symbol: str,
+    detail: CompactFullDetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     """Fetch option expirations via Yahoo Finance; provider availability/auth can change."""
     from ..services.options_service import get_options_expirations as _impl
     return _run_forecast_operation(
         "options_expirations",
         symbol=symbol,
-        func=lambda: _impl(symbol=symbol),
+        detail=detail,
+        func=lambda: _apply_options_detail(
+            _impl(symbol=symbol),
+            detail=detail,
+            kind="expirations",
+        ),
     )
 
 
@@ -991,6 +1093,7 @@ def options_chain(
     min_open_interest: int = 0,
     min_volume: int = 0,
     limit: int = 200,
+    detail: CompactFullDetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     """Fetch option-chain snapshots via Yahoo Finance; provider availability/auth can change."""
     from ..services.options_service import get_options_chain as _impl
@@ -1000,13 +1103,18 @@ def options_chain(
         expiration=expiration,
         option_type=option_type,
         limit=limit,
-        func=lambda: _impl(
-            symbol=symbol,
-            expiration=expiration,
-            option_type=option_type,
-            min_open_interest=int(min_open_interest),
-            min_volume=int(min_volume),
-            limit=int(limit),
+        detail=detail,
+        func=lambda: _apply_options_detail(
+            _impl(
+                symbol=symbol,
+                expiration=expiration,
+                option_type=option_type,
+                min_open_interest=int(min_open_interest),
+                min_volume=int(min_volume),
+                limit=int(limit),
+            ),
+            detail=detail,
+            kind="chain",
         ),
     )
 
@@ -1023,6 +1131,7 @@ def options_barrier_price(
     dividend_yield: float = 0.0,
     volatility: float = 0.2,
     rebate: float = 0.0,
+    detail: CompactFullDetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     """Price a barrier option using QuantLib."""
     from ..forecast.quantlib_tools import price_barrier_option_quantlib as _impl
@@ -1031,17 +1140,22 @@ def options_barrier_price(
         option_type=option_type,
         barrier_type=barrier_type,
         maturity_days=maturity_days,
-        func=lambda: _impl(
-            spot=float(spot),
-            strike=float(strike),
-            barrier=float(barrier),
-            maturity_days=int(maturity_days),
-            option_type=option_type,
-            barrier_type=barrier_type,
-            risk_free_rate=float(risk_free_rate),
-            dividend_yield=float(dividend_yield),
-            volatility=float(volatility),
-            rebate=float(rebate),
+        detail=detail,
+        func=lambda: _apply_options_detail(
+            _impl(
+                spot=float(spot),
+                strike=float(strike),
+                barrier=float(barrier),
+                maturity_days=int(maturity_days),
+                option_type=option_type,
+                barrier_type=barrier_type,
+                risk_free_rate=float(risk_free_rate),
+                dividend_yield=float(dividend_yield),
+                volatility=float(volatility),
+                rebate=float(rebate),
+            ),
+            detail=detail,
+            kind="barrier_price",
         ),
     )
 
@@ -1056,6 +1170,7 @@ def options_heston_calibrate(
     min_open_interest: int = 0,
     min_volume: int = 0,
     max_contracts: int = 25,
+    detail: CompactFullDetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     """Calibrate Heston parameters from an option chain using QuantLib."""
     from ..forecast.quantlib_tools import (
@@ -1067,15 +1182,20 @@ def options_heston_calibrate(
         expiration=expiration,
         option_type=option_type,
         max_contracts=max_contracts,
-        func=lambda: _impl(
-            symbol=symbol,
-            expiration=expiration,
-            option_type=option_type,
-            risk_free_rate=float(risk_free_rate),
-            dividend_yield=float(dividend_yield),
-            min_open_interest=int(min_open_interest),
-            min_volume=int(min_volume),
-            max_contracts=int(max_contracts),
+        detail=detail,
+        func=lambda: _apply_options_detail(
+            _impl(
+                symbol=symbol,
+                expiration=expiration,
+                option_type=option_type,
+                risk_free_rate=float(risk_free_rate),
+                dividend_yield=float(dividend_yield),
+                min_open_interest=int(min_open_interest),
+                min_volume=int(min_volume),
+                max_contracts=int(max_contracts),
+            ),
+            detail=detail,
+            kind="heston_calibrate",
         ),
     )
 

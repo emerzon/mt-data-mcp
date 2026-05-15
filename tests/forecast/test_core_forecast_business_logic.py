@@ -1885,6 +1885,120 @@ def test_options_chain_logs_finish_event(caplog, monkeypatch):
     )
 
 
+def test_options_tools_support_compact_and_full_detail(monkeypatch):
+    raw_exp = _unwrap(cf.options_expirations)
+    raw_chain = _unwrap(cf.options_chain)
+    raw_price = _unwrap(cf.options_barrier_price)
+    raw_cal = _unwrap(cf.options_heston_calibrate)
+
+    import mtdata.forecast.quantlib_tools as quantlib_tools
+    import mtdata.services.options_service as options_service
+
+    monkeypatch.setattr(
+        options_service,
+        "get_options_expirations",
+        lambda **kwargs: {
+            "success": True,
+            "symbol": kwargs["symbol"],
+            "underlying_price": 100.0,
+            "currency": "USD",
+            "expirations": ["2026-06-19"],
+            "expiration_count": 1,
+        },
+    )
+    monkeypatch.setattr(
+        options_service,
+        "get_options_chain",
+        lambda **kwargs: {
+            "success": True,
+            "symbol": kwargs["symbol"],
+            "expiration": "2026-06-19",
+            "underlying_price": 100.0,
+            "currency": "USD",
+            "option_type": kwargs["option_type"],
+            "count": 1,
+            "calls_count": 1,
+            "puts_count": 0,
+            "contract_size": "REGULAR",
+            "expirations": ["2026-06-19"],
+            "options": [
+                {
+                    "side": "call",
+                    "contract": "AAPL260619C00100000",
+                    "strike": 100.0,
+                    "last": 2.0,
+                    "bid": 1.9,
+                    "ask": 2.1,
+                    "implied_volatility": 0.2,
+                    "in_the_money": True,
+                    "last_trade_epoch": 1700000000,
+                    "volume": 10,
+                    "open_interest": 20,
+                }
+            ],
+        },
+    )
+    monkeypatch.setattr(
+        quantlib_tools,
+        "price_barrier_option_quantlib",
+        lambda **kwargs: {
+            "success": True,
+            "price": 1.23,
+            "delta": 0.4,
+            "gamma": 0.01,
+            "vega": 0.2,
+            "params_used": {
+                "option_type": kwargs["option_type"],
+                "barrier_type": kwargs["barrier_type"],
+                "maturity_days": kwargs["maturity_days"],
+                "volatility": kwargs["volatility"],
+            },
+        },
+    )
+    monkeypatch.setattr(
+        quantlib_tools,
+        "calibrate_heston_quantlib_from_options",
+        lambda **kwargs: {
+            "success": True,
+            "symbol": kwargs["symbol"],
+            "expiration": "2026-06-19",
+            "days_to_expiry": 30,
+            "contracts_used": 5,
+            "spot": 100.0,
+            "calibration_error_rmse": 0.01,
+            "params": {"kappa": 1.0},
+            "sample_contracts": [{"strike": 100.0, "iv": 0.2}],
+        },
+    )
+
+    assert "underlying_price" not in raw_exp("AAPL", detail="compact")
+    assert raw_exp("AAPL", detail="full")["underlying_price"] == 100.0
+
+    compact_chain = raw_chain("AAPL", detail="compact")
+    assert compact_chain["detail"] == "compact"
+    assert "contract_size" not in compact_chain
+    assert "implied_volatility" not in compact_chain["options"][0]
+    assert raw_chain("AAPL", detail="full")["options"][0]["implied_volatility"] == 0.2
+
+    compact_price = raw_price(100, 105, 120, 30, detail="compact")
+    assert compact_price == {
+        "success": True,
+        "price": 1.23,
+        "detail": "compact",
+        "params": {
+            "option_type": "call",
+            "barrier_type": "up_out",
+            "maturity_days": 30,
+        },
+    }
+    assert raw_price(100, 105, 120, 30, detail="full")["delta"] == 0.4
+
+    compact_cal = raw_cal("AAPL", detail="compact")
+    assert compact_cal["params"] == {"kappa": 1.0}
+    assert "sample_contracts" not in compact_cal
+    assert raw_cal("AAPL", detail="full")["sample_contracts"] == [{"strike": 100.0, "iv": 0.2}]
+
+
 def test_forecast_barrier_optimize_routes_profile_args(monkeypatch):
     raw_opt = _unwrap(cf.forecast_barrier_optimize)
     called = {}
