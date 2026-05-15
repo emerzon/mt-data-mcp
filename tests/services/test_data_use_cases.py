@@ -589,7 +589,7 @@ def test_run_data_fetch_ticks_logs_connection_error(caplog):
         ("compact", "rows"),
         ("summary", "summary"),
         ("standard", "stats"),
-        ("full", "rows"),
+        ("full", "full_rows"),
     ],
 )
 def test_run_data_fetch_ticks_maps_standard_detail_to_service_format(detail, expected_format):

@@ -2070,6 +2070,24 @@ class TestFetchTicks(unittest.TestCase):
         self.assertIn("Invalid format", result.get("error", ""))
 
     @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=SimpleNamespace(digits=5))
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_full_rows_include_expanded_tick_fields(self, mock_ctz, mock_info, mock_ticks):
+        mock_ticks.return_value = _make_ticks(5)
+
+        result = fetch_ticks('EURUSD', limit=5, format='full_rows')
+
+        self.assertTrue(result.get('success'))
+        row = result['data'][0]
+        self.assertIn('time_epoch', row)
+        self.assertIn('mid', row)
+        self.assertIn('spread', row)
+        self.assertIn('tick_gap_ms', row)
+        self.assertIsNone(row['tick_gap_ms'])
+        self.assertEqual(result['data'][1]['tick_gap_ms'], 1000.0)
+
+    @patch(_TICKS_RANGE)
     @patch(_CACHED_INFO, return_value=MagicMock())
     @patch(_RESOLVE_CTZ, return_value=None)
     @patch(_GUARD, _mock_symbol_guard)

@@ -24,7 +24,7 @@ _TICK_DETAIL_FORMATS = {
     "compact": "rows",
     "summary": "summary",
     "standard": "stats",
-    "full": "rows",
+    "full": "full_rows",
 }
 
 

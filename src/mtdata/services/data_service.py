@@ -89,7 +89,7 @@ _AUTO_TIME_ALIGNMENT_MIN_SHIFT_SECONDS = 1800
 _AUTO_TIME_ALIGNMENT_MAX_SHIFT_SECONDS = 18 * 3600
 _TICK_SUMMARY_MIN_ANALYTIC_TICKS = 20
 _CANDLE_PRICE_COLUMNS = frozenset({"open", "high", "low", "close"})
-_TICK_PRICE_COLUMNS = frozenset({"bid", "ask", "last"})
+_TICK_PRICE_COLUMNS = frozenset({"bid", "ask", "mid", "spread", "last"})
 _TICK_PRICE_STAT_KEYS = frozenset(
     {
         "first",
@@ -1801,13 +1801,13 @@ def fetch_ticks(  # noqa: C901
     start: Optional[str] = None,
     end: Optional[str] = None,
     simplify: Optional[SimplifySpec] = None,
-    format: Literal["summary", "stats", "rows"] = "summary",
+    format: Literal["summary", "stats", "rows", "full_rows"] = "summary",
 ) -> Dict[str, Any]:
     """Fetch tick data and return either a summary (default) or raw rows.
 
     Parameters
     ----------
-    format : {"summary","stats","rows"}
+    format : {"summary","stats","rows","full_rows"}
         - "summary" (default): compact descriptive statistics over the fetched
           ticks. Samples below 20 ticks report spread stats only with a sample
           adequacy note; larger samples include bid/ask/mid, plus last and
@@ -1815,6 +1815,7 @@ def fetch_ticks(  # noqa: C901
         - "stats": more detailed stats (includes extra distribution moments and
           quantiles).
         - "rows": return tick rows as structured data.
+        - "full_rows": return rows with per-tick epoch, mid, spread, and gap fields.
     """
     try:
         effective_limit = int(limit)
@@ -1871,11 +1872,11 @@ def fetch_ticks(  # noqa: C901
         if len(ticks) == 0:
             return {"error": "No tick data available"}
 
-        if output_mode not in ("summary", "stats", "rows"):
+        if output_mode not in ("summary", "stats", "rows", "full_rows"):
             return {
                 "error": (
                     f"Invalid format: {format}. "
-                    "Use 'summary', 'stats', or 'rows'."
+                    "Use 'summary', 'stats', 'rows', or 'full_rows'."
                 )
             }
 
@@ -1916,8 +1917,15 @@ def fetch_ticks(  # noqa: C901
         has_flags = len(set(flags)) > 1 or any(v != 0 for v in flags)
         has_real_volume = any(math.isfinite(v) and v != 0.0 for v in volumes_real)
 
+        full_rows = output_mode == "full_rows"
+
         # Build header dynamically (time, bid, ask are always included)
-        headers = ["time", "bid", "ask"]
+        headers = ["time"]
+        if full_rows:
+            headers.append("time_epoch")
+        headers.extend(["bid", "ask"])
+        if full_rows:
+            headers.extend(["mid", "spread", "tick_gap_ms"])
         if has_last:
             headers.append("last")
         if has_volume:
@@ -1956,6 +1964,17 @@ def fetch_ticks(  # noqa: C901
             "bid": bids,
             "ask": asks,
         })
+        if full_rows:
+            tick_gap_ms: List[Optional[float]] = [None]
+            for idx in range(1, len(_epochs)):
+                tick_gap_ms.append(float((_epochs[idx] - _epochs[idx - 1]) * 1000.0))
+            df_ticks["time_epoch"] = [
+                int(epoch) if float(epoch).is_integer() else float(epoch)
+                for epoch in _epochs
+            ]
+            df_ticks["mid"] = (df_ticks["bid"] + df_ticks["ask"]) / 2.0
+            df_ticks["spread"] = df_ticks["ask"] - df_ticks["bid"]
+            df_ticks["tick_gap_ms"] = tick_gap_ms
         if has_last:
             df_ticks["last"] = lasts
         if has_volume:
@@ -2343,11 +2362,27 @@ def fetch_ticks(  # noqa: C901
         rows = []
         for i in select_indices:
             time_str = _format_tick_time(_epochs[i])
-            values = [
-                time_str,
-                _round_price_value(bids[i], price_digits),
-                _round_price_value(asks[i], price_digits),
-            ]
+            values = [time_str]
+            if full_rows:
+                epoch_value = _epochs[i]
+                values.append(int(epoch_value) if float(epoch_value).is_integer() else float(epoch_value))
+            values.extend(
+                [
+                    _round_price_value(bids[i], price_digits),
+                    _round_price_value(asks[i], price_digits),
+                ]
+            )
+            if full_rows:
+                mid = (bids[i] + asks[i]) / 2.0
+                spread = asks[i] - bids[i]
+                gap_ms = None if i <= 0 else float((_epochs[i] - _epochs[i - 1]) * 1000.0)
+                values.extend(
+                    [
+                        _round_price_value(mid, price_digits),
+                        _round_price_value(spread, price_digits),
+                        gap_ms,
+                    ]
+                )
             if has_last:
                 values.append(_round_price_value(lasts[i], price_digits))
             if has_volume:
