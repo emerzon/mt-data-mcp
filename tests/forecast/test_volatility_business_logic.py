@@ -79,6 +79,7 @@ def test_finalize_volatility_output_compact_omits_explanatory_fields():
 
     assert compact["volatility_per_bar"] == pytest.approx(0.01)
     assert compact["volatility_horizon"] == pytest.approx(0.02)
+    assert compact["volatility_unit"] == "return_fraction"
     assert "sigma_bar_return" not in compact
     assert "horizon_sigma_return" not in compact
     assert "params_used" not in compact
@@ -91,7 +92,9 @@ def test_finalize_volatility_output_compact_omits_explanatory_fields():
         "volatility_annualized",
         "volatility_horizon",
         "volatility_horizon_annualized",
+        "volatility_unit",
     }
+    assert "sqrt-time scaling" in full["volatility_interpretation"]["volatility_horizon_annualized"]
 
 
 def test_forecast_volatility_estimate_preserves_impl_payload_without_public_stripper():

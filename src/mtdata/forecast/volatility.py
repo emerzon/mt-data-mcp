@@ -368,6 +368,7 @@ def _finalize_volatility_output(
         out.setdefault("volatility_horizon", horizon_sigma)
     if horizon_sigma_annual is not None:
         out.setdefault("volatility_horizon_annualized", horizon_sigma_annual)
+    out.setdefault("volatility_unit", "return_fraction")
 
     if detail_mode != "full":
         for key in (
@@ -387,7 +388,11 @@ def _finalize_volatility_output(
         "volatility_per_bar": "Estimated one-bar return volatility for the selected timeframe.",
         "volatility_annualized": "volatility_per_bar annualized using the timeframe's bars-per-year convention.",
         "volatility_horizon": "Return volatility scaled to the requested horizon in bars.",
-        "volatility_horizon_annualized": "volatility_horizon expressed on the annualized return scale.",
+        "volatility_horizon_annualized": (
+            "volatility_horizon expressed on the same annualized return scale. "
+            "With sqrt-time scaling this can equal volatility_annualized for horizon > 1."
+        ),
+        "volatility_unit": "All volatility values are decimal return fractions; 0.0525 means 5.25%.",
     }
     if isinstance(horizon, (int, float)) and int(horizon) == 1:
         interpretation["horizon_note"] = (
