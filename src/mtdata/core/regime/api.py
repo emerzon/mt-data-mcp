@@ -3250,14 +3250,22 @@ def regime_detect(  # noqa: C901
 
             comparison = _build_all_method_comparison(results_by_method)
             comparison["methods_failed"] = [e.split(":")[0] for e in all_errors]
+            individual_methods_succeeded = [
+                method_name
+                for method_name in all_methods
+                if method_name in results_by_method
+            ]
+            ensemble_aggregated = "ensemble" in results_by_method
 
             summary_payload: Optional[Dict[str, Any]] = None
             if detail_value in {"summary", "compact"}:
                 summary_payload = {
                     "methods_attempted": int(len(all_methods)),
-                    "methods_succeeded": int(len(results_by_method)),
+                    "methods_succeeded": int(len(individual_methods_succeeded)),
                     "methods_failed": int(len(all_errors)),
                 }
+                if ensemble_aggregated:
+                    summary_payload["ensemble_aggregated"] = True
                 agreement_summary = comparison.get("agreement")
                 if isinstance(agreement_summary, dict):
                     summary_payload["agreement"] = agreement_summary
@@ -3269,10 +3277,12 @@ def regime_detect(  # noqa: C901
                     "agreement": comparison.get("agreement"),
                 }
             runtime_payload: Dict[str, Any] = {
-                "completed_methods": list(results_by_method.keys()),
+                "completed_methods": list(individual_methods_succeeded),
                 "failed_methods": list(method_errors.keys()),
                 "partial_results": bool(method_errors),
             }
+            if ensemble_aggregated:
+                runtime_payload["ensemble_aggregated"] = True
             if method_errors:
                 runtime_payload["method_errors"] = method_errors
             if detail_value == "full":
@@ -3297,9 +3307,11 @@ def regime_detect(  # noqa: C901
             if detail_value == "full":
                 payload["params_used"] = {
                     "methods_attempted": all_methods,
-                    "methods_succeeded": list(results_by_method.keys()),
+                    "methods_succeeded": list(individual_methods_succeeded),
                     "methods_failed": [e.split(":")[0] for e in all_errors],
                 }
+                if ensemble_aggregated:
+                    payload["params_used"]["ensemble_aggregated"] = True
             if summary_payload is not None:
                 payload["summary"] = summary_payload
             if detail_value == "full":

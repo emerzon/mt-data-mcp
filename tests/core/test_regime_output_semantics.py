@@ -199,6 +199,10 @@ def test_regime_detect_all_respects_full_and_summary_detail(monkeypatch) -> None
     assert "results" not in summary
     # Summary mode must not embed per-method regimes or params_used.
     assert "params_used" not in summary
+    assert summary["summary"]["methods_succeeded"] == summary["summary"]["methods_attempted"]
+    assert summary["summary"]["ensemble_aggregated"] is True
+    assert "ensemble" not in summary["runtime"]["completed_methods"]
+    assert summary["runtime"]["ensemble_aggregated"] is True
     comparison = summary.get("comparison", {})
     assert "current_regimes" not in comparison
     assert "agreement" in comparison
@@ -244,6 +248,7 @@ def test_regime_detect_all_reports_runtime_diagnostics_for_partial_results(monke
     assert "method_guidance" not in result["runtime"]
     assert "suggested_faster_methods" not in result["runtime"]
     assert "current_regimes" not in result["comparison"]
+    assert result["summary"]["methods_succeeded"] < result["summary"]["methods_attempted"]
     assert result["summary"]["methods_failed"] == 1
 
 
