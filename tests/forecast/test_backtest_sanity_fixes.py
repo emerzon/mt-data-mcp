@@ -232,7 +232,7 @@ class TestAnnualizationCadence:
             fc.return_value = {"forecast_price": [200.0] * 12}
             result = forecast_backtest(
                 "EURUSD", timeframe="H1", methods=["naive"],
-                steps=5, spacing=30,
+                steps=5, spacing=30, detail="full",
             )
         r = result["results"]["naive"]
         if "metrics" in r:
