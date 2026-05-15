@@ -91,6 +91,11 @@ def test_forecast_generate_default_horizon_matches_forecast_tooling() -> None:
     assert ForecastGenerateRequest(symbol="EURUSD").horizon == 12
 
 
+def test_forecast_tool_requests_default_to_return_quantity() -> None:
+    assert ForecastGenerateRequest(symbol="EURUSD").quantity == "return"
+    assert ForecastBacktestRequest(symbol="EURUSD").quantity == "return"
+
+
 def test_execution_contract_rejects_multivariate_features_for_univariate_only_model() -> None:
     with pytest.raises(ValidationError):
         ForecastExecutionContract(

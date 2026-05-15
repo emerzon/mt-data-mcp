@@ -37,7 +37,7 @@ class ForecastGenerateRequest(BaseModel):
     as_of: Optional[str] = None
     params: Optional[Dict[str, Any]] = None
     ci_alpha: Optional[float] = Field(0.05, ge=0.0, le=0.5)
-    quantity: Literal["price", "return", "volatility"] = "price"
+    quantity: Literal["price", "return", "volatility"] = "return"
     denoise: Optional[DenoiseSpec] = None
     features: Optional[Dict[str, Any]] = None
     dimred_method: Optional[str] = None
@@ -67,7 +67,7 @@ class ForecastBacktestRequest(BaseModel):
     spacing: int = Field(20, ge=1)
     methods: Optional[List[str]] = None
     params_per_method: Optional[Dict[str, Any]] = None
-    quantity: Literal["price", "return", "volatility"] = "price"
+    quantity: Literal["price", "return", "volatility"] = "return"
     denoise: Optional[DenoiseSpec] = None
     params: Optional[Dict[str, Any]] = None
     features: Optional[Dict[str, Any]] = None
