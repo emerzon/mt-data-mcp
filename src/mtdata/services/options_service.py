@@ -10,6 +10,8 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
+from ..bootstrap.settings import options_data_config
+
 logger = logging.getLogger(__name__)
 
 _YAHOO_OPTIONS_URL = "https://query2.finance.yahoo.com/v7/finance/options/{symbol}"
@@ -26,8 +28,13 @@ _YAHOO_BACKOFF_SECONDS = 0.5
 _YAHOO_MIN_REQUEST_INTERVAL_SECONDS = 1.0
 _YAHOO_AUTH_REMEDIATION = (
     "Yahoo Finance options data is unavailable from the unauthenticated endpoint. "
-    "mtdata has no Yahoo API-key setting to configure; use another options data "
-    "provider."
+    "mtdata has no Yahoo API-key setting to configure. To use an authenticated "
+    "provider, set MTDATA_OPTIONS_PROVIDER=tradier and MTDATA_OPTIONS_API_KEY."
+)
+_TRADIER_AUTH_REMEDIATION = (
+    "Tradier options data requires an API token. Set "
+    "MTDATA_OPTIONS_PROVIDER=tradier and MTDATA_OPTIONS_API_KEY, or set "
+    "MTDATA_OPTIONS_PROVIDER=yahoo to use the unauthenticated Yahoo fallback."
 )
 _YAHOO_SESSION: Optional[requests.Session] = None
 _YAHOO_SESSION_LOCK = _threading.Lock()
@@ -116,7 +123,19 @@ def _options_error(message: str) -> Dict[str, Any]:
     if "Yahoo Finance options endpoint returned 401" in message_text:
         out["error_code"] = "options_provider_auth"
         out["remediation"] = _YAHOO_AUTH_REMEDIATION
+    elif "Tradier options provider" in message_text or "Tradier options endpoint returned 401" in message_text:
+        out["error_code"] = "options_provider_auth"
+        out["remediation"] = _TRADIER_AUTH_REMEDIATION
     return out
+
+
+def _configured_options_provider() -> str:
+    provider = str(getattr(options_data_config, "provider", "yahoo") or "yahoo").strip().lower()
+    if provider == "auto":
+        return "tradier" if getattr(options_data_config, "api_key", None) else "yahoo"
+    if provider not in {"yahoo", "tradier"}:
+        return "yahoo"
+    return provider
 
 
 def _throttle_yahoo_request() -> None:
@@ -184,15 +203,298 @@ def _fetch_yahoo_options_payload(symbol: str, expiry_epoch: Optional[int] = None
     return item
 
 
+def _tradier_http_get(path: str, *, params: Dict[str, Any]) -> Dict[str, Any]:
+    api_key = getattr(options_data_config, "api_key", None)
+    if not api_key:
+        raise ValueError(
+            "Authentication error: Tradier options provider requires "
+            "MTDATA_OPTIONS_API_KEY."
+        )
+    base_url = str(getattr(options_data_config, "base_url", "") or "https://api.tradier.com/v1").rstrip("/")
+    url = f"{base_url}/{str(path).lstrip('/')}"
+    response = requests.get(
+        url,
+        params=params,
+        headers={
+            "Accept": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        },
+        timeout=_HTTP_TIMEOUT,
+    )
+    try:
+        try:
+            response.raise_for_status()
+        except requests.exceptions.HTTPError:
+            if response.status_code == 401:
+                raise ValueError(
+                    "Authentication error: Tradier options endpoint returned "
+                    "401 Unauthorized."
+                )
+            raise
+        payload = response.json()
+    finally:
+        response.close()
+    if not isinstance(payload, dict):
+        raise ValueError("Malformed Tradier options response")
+    return payload
+
+
+def _fetch_tradier_expirations_payload(symbol: str) -> Dict[str, Any]:
+    return _tradier_http_get(
+        "/markets/options/expirations",
+        params={
+            "symbol": str(symbol).upper().strip(),
+            "includeAllRoots": "true",
+            "strikes": "false",
+        },
+    )
+
+
+def _fetch_tradier_chain_payload(symbol: str, expiration: str) -> Dict[str, Any]:
+    return _tradier_http_get(
+        "/markets/options/chains",
+        params={
+            "symbol": str(symbol).upper().strip(),
+            "expiration": str(expiration).strip(),
+            "greeks": "true",
+        },
+    )
+
+
+def _fetch_tradier_quote_payload(symbol: str) -> Dict[str, Any]:
+    return _tradier_http_get(
+        "/markets/quotes",
+        params={"symbols": str(symbol).upper().strip()},
+    )
+
+
+def _extract_tradier_expiration_dates(payload: Dict[str, Any]) -> List[str]:
+    expirations = payload.get("expirations")
+    date_values: Any = None
+    if isinstance(expirations, dict):
+        date_values = expirations.get("date")
+    elif isinstance(expirations, list):
+        date_values = expirations
+    if isinstance(date_values, str):
+        values = [date_values]
+    elif isinstance(date_values, list):
+        values = [str(value).strip() for value in date_values]
+    else:
+        values = []
+    return sorted(value for value in values if value)
+
+
+def _extract_tradier_quote(payload: Dict[str, Any]) -> Dict[str, Any]:
+    quotes = payload.get("quotes")
+    quote = quotes.get("quote") if isinstance(quotes, dict) else None
+    if isinstance(quote, list):
+        quote = quote[0] if quote else {}
+    return quote if isinstance(quote, dict) else {}
+
+
+def _extract_tradier_option_rows(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    options = payload.get("options")
+    rows = options.get("option") if isinstance(options, dict) else None
+    if isinstance(rows, dict):
+        return [rows]
+    if isinstance(rows, list):
+        return [row for row in rows if isinstance(row, dict)]
+    return []
+
+
+def _parse_tradier_epoch(value: Any) -> int:
+    if value in (None, ""):
+        return 0
+    if isinstance(value, (int, float)):
+        return _to_numeric(value, int, 0, field_name="lastTradeDate")
+    text = str(value).strip()
+    try:
+        parsed = _dt.datetime.fromisoformat(text.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=_dt.timezone.utc)
+        return int(parsed.timestamp())
+    except Exception:
+        return 0
+
+
+def _tradier_option_side(row: Dict[str, Any]) -> str:
+    raw = str(row.get("option_type") or row.get("type") or "").strip().lower()
+    if raw in {"call", "put"}:
+        return raw
+    contract = str(row.get("symbol") or row.get("contractSymbol") or "").upper()
+    if "C" in contract[-9:]:
+        return "call"
+    if "P" in contract[-9:]:
+        return "put"
+    return raw or "unknown"
+
+
+def _normalize_tradier_options(
+    rows: List[Dict[str, Any]],
+    *,
+    option_type: str,
+    min_open_interest: int,
+    min_volume: int,
+    limit: int,
+    underlying_price: Any,
+) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    try:
+        underlying = float(underlying_price)
+    except Exception:
+        underlying = float("nan")
+    for row in rows:
+        side = _tradier_option_side(row)
+        if option_type != "both" and side != option_type:
+            continue
+        oi = max(0, _to_numeric(row.get("open_interest"), int, 0, field_name="open_interest"))
+        vol = max(0, _to_numeric(row.get("volume"), int, 0, field_name="volume"))
+        if oi < min_open_interest or vol < min_volume:
+            continue
+        strike = _to_numeric(row.get("strike"), float, float("nan"), field_name="strike")
+        if not (strike == strike and strike > 0):
+            continue
+        greeks = row.get("greeks") if isinstance(row.get("greeks"), dict) else {}
+        implied_volatility = row.get("implied_volatility")
+        if implied_volatility in (None, ""):
+            implied_volatility = greeks.get("mid_iv")
+        in_the_money = False
+        if underlying == underlying:
+            if side == "call":
+                in_the_money = float(strike) < underlying
+            elif side == "put":
+                in_the_money = float(strike) > underlying
+        entry: Dict[str, Any] = {
+            "side": side,
+            "contract": row.get("symbol") or row.get("contractSymbol"),
+            "strike": float(strike),
+            "last": _to_numeric(row.get("last"), float, float("nan"), field_name="last"),
+            "bid": _to_numeric(row.get("bid"), float, float("nan"), field_name="bid"),
+            "ask": _to_numeric(row.get("ask"), float, float("nan"), field_name="ask"),
+            "change": _to_numeric(row.get("change"), float, float("nan"), field_name="change"),
+            "percent_change": _to_numeric(
+                row.get("change_percentage"),
+                float,
+                float("nan"),
+                field_name="change_percentage",
+            ),
+            "volume": int(vol),
+            "open_interest": int(oi),
+            "implied_volatility": _to_numeric(
+                implied_volatility,
+                float,
+                float("nan"),
+                field_name="implied_volatility",
+            ),
+            "in_the_money": bool(in_the_money),
+            "last_trade_epoch": _parse_tradier_epoch(row.get("trade_date") or row.get("last_trade_date")),
+            "currency": row.get("currency") or "USD",
+        }
+        out.append(entry)
+    out.sort(key=lambda item: (item.get("side") != "call", float(item.get("strike", 0.0))))
+    return out[:limit]
+
+
+def _get_tradier_options_expirations(symbol: str) -> Dict[str, Any]:
+    symbol_norm = str(symbol).upper().strip()
+    payload = _fetch_tradier_expirations_payload(symbol_norm)
+    expirations = _extract_tradier_expiration_dates(payload)
+    quote: Dict[str, Any] = {}
+    try:
+        quote = _extract_tradier_quote(_fetch_tradier_quote_payload(symbol_norm))
+    except Exception:
+        quote = {}
+    return {
+        "success": True,
+        "provider": "tradier",
+        "symbol": symbol_norm,
+        "underlying_price": _to_numeric(
+            quote.get("last") or quote.get("close"),
+            float,
+            float("nan"),
+            field_name="quote.last",
+        ),
+        "currency": quote.get("currency") or "USD",
+        "expirations": expirations,
+        "expiration_count": int(len(expirations)),
+    }
+
+
+def _get_tradier_options_chain(
+    *,
+    symbol: str,
+    expiration: Optional[str],
+    option_type: str,
+    min_open_interest: int,
+    min_volume: int,
+    limit: int,
+) -> Dict[str, Any]:
+    symbol_norm = str(symbol).upper().strip()
+    expirations = _extract_tradier_expiration_dates(
+        _fetch_tradier_expirations_payload(symbol_norm)
+    )
+    if not expirations:
+        return {"error": f"No option expirations found for {symbol_norm}"}
+    chosen_expiry = str(expiration).strip() if expiration else expirations[0]
+    if chosen_expiry not in expirations:
+        return {
+            "error": f"Requested expiration {chosen_expiry} not available for {symbol_norm}",
+            "expirations": expirations,
+        }
+    quote: Dict[str, Any] = {}
+    try:
+        quote = _extract_tradier_quote(_fetch_tradier_quote_payload(symbol_norm))
+    except Exception:
+        quote = {}
+    underlying_price = _to_numeric(
+        quote.get("last") or quote.get("close"),
+        float,
+        float("nan"),
+        field_name="quote.last",
+    )
+    rows = _extract_tradier_option_rows(
+        _fetch_tradier_chain_payload(symbol_norm, chosen_expiry)
+    )
+    normalized = _normalize_tradier_options(
+        rows,
+        option_type=option_type,
+        min_open_interest=min_open_interest,
+        min_volume=min_volume,
+        limit=limit,
+        underlying_price=underlying_price,
+    )
+    return {
+        "success": True,
+        "provider": "tradier",
+        "symbol": symbol_norm,
+        "expiration": chosen_expiry,
+        "underlying_price": underlying_price,
+        "currency": quote.get("currency") or "USD",
+        "contract_size": "REGULAR",
+        "expirations": expirations,
+        "option_type": option_type,
+        "min_open_interest": int(min_open_interest),
+        "min_volume": int(min_volume),
+        "count": int(len(normalized)),
+        "calls_count": sum(1 for item in normalized if item.get("side") == "call"),
+        "puts_count": sum(1 for item in normalized if item.get("side") == "put"),
+        "options": normalized,
+    }
+
+
 def get_options_expirations(symbol: str) -> Dict[str, Any]:
     """Return available option expirations for a symbol."""
     try:
+        if _configured_options_provider() == "tradier":
+            return _get_tradier_options_expirations(symbol)
+
         payload = _fetch_yahoo_options_payload(symbol)
         expiration_epochs = _extract_expiration_epochs(payload)
         expirations = [_epoch_to_ymd(v) for v in expiration_epochs]
         quote = payload.get("quote", {}) if isinstance(payload.get("quote"), dict) else {}
         return {
             "success": True,
+            "provider": "yahoo",
             "symbol": str(symbol).upper().strip(),
             "underlying_price": _to_numeric(
                 quote.get("regularMarketPrice"),
@@ -222,6 +524,19 @@ def get_options_chain(
         option_type_norm = str(option_type or "both").lower().strip()
         if option_type_norm not in {"call", "put", "both"}:
             return {"error": f"Invalid option_type: {option_type}. Use call|put|both."}
+        min_oi = max(0, _to_numeric(min_open_interest, int, 0, field_name="min_open_interest"))
+        min_vol = max(0, _to_numeric(min_volume, int, 0, field_name="min_volume"))
+        max_rows = max(1, _to_numeric(limit, int, 200, field_name="limit"))
+
+        if _configured_options_provider() == "tradier":
+            return _get_tradier_options_chain(
+                symbol=symbol_norm,
+                expiration=expiration,
+                option_type=option_type_norm,
+                min_open_interest=min_oi,
+                min_volume=min_vol,
+                limit=max_rows,
+            )
 
         base = _fetch_yahoo_options_payload(symbol_norm)
         expiration_epochs = _extract_expiration_epochs(base)
@@ -253,10 +568,6 @@ def get_options_chain(
         puts_raw = chain.get("puts", []) if isinstance(chain, dict) else []
         calls_raw = calls_raw if isinstance(calls_raw, list) else []
         puts_raw = puts_raw if isinstance(puts_raw, list) else []
-
-        min_oi = max(0, _to_numeric(min_open_interest, int, 0, field_name="min_open_interest"))
-        min_vol = max(0, _to_numeric(min_volume, int, 0, field_name="min_volume"))
-        max_rows = max(1, _to_numeric(limit, int, 200, field_name="limit"))
 
         def _norm(rows: List[Dict[str, Any]], side: str) -> List[Dict[str, Any]]:
             out: List[Dict[str, Any]] = []
@@ -306,6 +617,7 @@ def get_options_chain(
 
         return {
             "success": True,
+            "provider": "yahoo",
             "symbol": symbol_norm,
             "expiration": chosen_expiry_ymd,
             "underlying_price": _to_numeric(

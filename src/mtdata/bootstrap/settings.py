@@ -338,6 +338,12 @@ def load_environment(*, force: bool = False) -> bool:
             guardrails_obj.reload_from_env()
         except Exception as exc:
             _LOGGER.warning("Failed to reload trade guardrails configuration from environment: %s", exc)
+    options_obj = globals().get("options_data_config")
+    if options_obj is not None:
+        try:
+            options_obj.reload_from_env()
+        except Exception as exc:
+            _LOGGER.warning("Failed to reload options data configuration from environment: %s", exc)
     return loaded
 
 class MT5Config:
@@ -509,7 +515,38 @@ class NewsEmbeddingsConfig:
         )
 
 
+class OptionsDataConfig:
+    """Options data provider configuration."""
+
+    def __init__(self) -> None:
+        self.provider = "yahoo"
+        self.api_key: Optional[str] = None
+        self.base_url: Optional[str] = None
+        self.reload_from_env()
+
+    def reload_from_env(self) -> None:
+        provider = os.getenv("MTDATA_OPTIONS_PROVIDER", "yahoo").strip().lower()
+        if provider not in {"auto", "yahoo", "tradier"}:
+            _LOGGER.warning(
+                "Invalid MTDATA_OPTIONS_PROVIDER=%r; using yahoo.",
+                provider,
+            )
+            provider = "yahoo"
+        api_key = (
+            os.getenv("MTDATA_OPTIONS_API_KEY")
+            or os.getenv("TRADIER_TOKEN")
+            or os.getenv("TRADIER_API_KEY")
+        )
+        self.provider = provider
+        self.api_key = api_key.strip() if isinstance(api_key, str) and api_key.strip() else None
+        self.base_url = (
+            os.getenv("MTDATA_OPTIONS_BASE_URL", "https://api.tradier.com/v1").strip()
+            or "https://api.tradier.com/v1"
+        )
+
+
 # Global configuration instance. Entry points call `load_environment()` explicitly.
 mt5_config = MT5Config(warn_if_timezone_missing=False)
 news_embeddings_config = NewsEmbeddingsConfig()
 trade_guardrails_config = TradeGuardrailsRuntimeConfig()
+options_data_config = OptionsDataConfig()

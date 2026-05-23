@@ -231,11 +231,11 @@ class TestParseTiSpecs:
         assert 14 in args or kwargs.get("length") == 14
 
     def test_bollinger_alias_normalizes_to_bbands(self):
-        specs = _parse_ti_specs("bb(20),bollinger_bands(20)")
-        assert [name for name, _args, _kwargs in specs] == ["bbands", "bbands"]
+        specs = _parse_ti_specs("bb(20),boll(20),bollinger_bands(20)")
+        assert [name for name, _args, _kwargs in specs] == ["bbands", "bbands", "bbands"]
 
     def test_bollinger_aliases_are_not_reported_as_unknown(self):
-        assert _find_unknown_ta_indicators("bb(20),bollinger_bands(20)") == []
+        assert _find_unknown_ta_indicators("bb(20),boll(20),bollinger_bands(20)") == []
 
     def test_indicator_lookup_results_are_cached(self, monkeypatch):
         import mtdata.utils.indicators as indicators_mod

@@ -312,6 +312,7 @@ def _apply_forecast_generate_detail(
     if not isinstance(payload, dict) or payload.get("error"):
         return payload
     payload = _round_forecast_generate_payload(payload)
+    training_period = _forecast_training_period(payload)
 
     detail_value = _normalize_trader_detail(getattr(request, "detail", "compact"))
     if detail_value in {"standard", "full"}:
@@ -319,6 +320,8 @@ def _apply_forecast_generate_detail(
         out.pop("ci_available", None)
         out.setdefault("symbol", request.symbol)
         out.setdefault("timeframe", request.timeframe)
+        if training_period:
+            out.setdefault("training_period", training_period)
         out["detail"] = detail_value
         return attach_collection_contract(
             out,
@@ -342,6 +345,8 @@ def _apply_forecast_generate_detail(
         ci_payload = payload.get("ci")
         if isinstance(ci_payload, dict) and ci_payload.get("hint"):
             compact["ci"]["hint"] = ci_payload["hint"]
+    if training_period:
+        compact["training_period"] = training_period
     for key in (
         "last_observation_time",
         "timezone",
@@ -357,6 +362,11 @@ def _apply_forecast_generate_detail(
         if ci_unavailable and key.startswith("ci_"):
             continue
         value = payload.get(key)
+        if key == "warnings":
+            value = _compact_forecast_warnings(
+                value,
+                ci_unavailable=ci_unavailable,
+            )
         if value not in (None, "", [], {}):
             compact[key] = value
     interval_summary = _forecast_interval_summary(payload)
@@ -406,6 +416,30 @@ def _apply_forecast_generate_detail(
             continue
         compact[key] = value
     return compact
+
+
+def _forecast_training_period(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    diagnostics = payload.get("diagnostics")
+    if not isinstance(diagnostics, dict):
+        return None
+    out: Dict[str, Any] = {}
+    for source_key, target_key in (
+        ("history_start_time", "start"),
+        ("history_end_time", "end"),
+        ("history_bars_used", "history_bars_used"),
+        ("target_points_used", "target_points_used"),
+        ("lookback_bars_requested", "lookback_bars_requested"),
+        ("lookback_bars_fetched", "lookback_bars_fetched"),
+    ):
+        value = diagnostics.get(source_key)
+        if value not in (None, "", [], {}):
+            out[target_key] = value
+    if out:
+        out.setdefault(
+            "note",
+            "Forecast was fit on the historical window summarized here.",
+        )
+    return out or None
 
 
 def _forecast_generate_series_rows(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -491,6 +525,7 @@ def _apply_barrier_prob_detail(
     if not isinstance(payload, dict) or payload.get("error"):
         return payload
     payload = _round_barrier_prob_payload(payload)
+    payload = _annotate_barrier_prob_context(payload, request)
 
     def _set_if_present(target: Dict[str, Any], key: str, value: Any) -> None:
         if value not in (None, "", [], {}):
@@ -604,6 +639,35 @@ def _apply_barrier_prob_detail(
     return compact
 
 
+def _annotate_barrier_prob_context(
+    payload: Dict[str, Any],
+    request: ForecastBarrierProbRequest,
+) -> Dict[str, Any]:
+    out = dict(payload)
+    if request.tp_pct is not None:
+        out.setdefault("tp_pct", request.tp_pct)
+    if request.sl_pct is not None:
+        out.setdefault("sl_pct", request.sl_pct)
+    if request.tp_abs is not None:
+        out.setdefault("tp_abs", request.tp_abs)
+    if request.sl_abs is not None:
+        out.setdefault("sl_abs", request.sl_abs)
+    if request.tp_ticks is not None:
+        out.setdefault("tp_ticks", request.tp_ticks)
+    if request.sl_ticks is not None:
+        out.setdefault("sl_ticks", request.sl_ticks)
+
+    if out.get("tp_pct") is not None or out.get("sl_pct") is not None:
+        out.setdefault("barrier_unit", "percent")
+    elif out.get("tp_ticks") is not None or out.get("sl_ticks") is not None:
+        out.setdefault("barrier_unit", "ticks")
+    elif out.get("tp_abs") is not None or out.get("sl_abs") is not None or out.get("barrier") is not None:
+        out.setdefault("barrier_unit", "price")
+    out.setdefault("probability_unit", "fraction")
+    out.setdefault("edge_definition", "prob_tp_first - prob_sl_first")
+    return out
+
+
 def _request_has_barrier_inputs(request: ForecastBarrierProbRequest) -> bool:
     return any(
         getattr(request, field_name, None) is not None
@@ -667,6 +731,25 @@ def _is_interval_unavailable_warning(value: Any) -> bool:
         "forecast_conformal_intervals" in text
         or "confidence intervals are unavailable" in text
     )
+
+
+def _compact_forecast_warnings(
+    warnings: Any,
+    *,
+    ci_unavailable: bool,
+) -> Any:
+    if not ci_unavailable:
+        return warnings
+    if isinstance(warnings, list):
+        filtered = [
+            warning
+            for warning in warnings
+            if not _is_interval_unavailable_warning(warning)
+        ]
+        return filtered
+    if warnings not in (None, "", [], {}) and not _is_interval_unavailable_warning(warnings):
+        return warnings
+    return None
 
 
 def _compact_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:
@@ -1460,6 +1543,9 @@ def run_forecast_barrier_prob(
             )
             if default_barriers_applied:
                 result = _append_default_barrier_warning(result)
+                if isinstance(result, dict) and not result.get("error"):
+                    result.setdefault("tp_pct", 1.0)
+                    result.setdefault("sl_pct", 1.0)
             result = _apply_barrier_prob_detail(result, request)
             log_operation_finish(
                 logger,
@@ -1661,6 +1747,17 @@ def run_forecast_barrier_optimize(
         if isinstance(result, dict) and not result.get("error"):
             result = _round_barrier_optimize_payload(dict(result))
             result["detail"] = detail_value
+            result.setdefault("barrier_unit", "percent")
+            result.setdefault("probability_unit", "fraction")
+            result.setdefault(
+                "edge_definition",
+                "Expected reward/risk edge for the candidate TP/SL barrier pair.",
+            )
+            result.setdefault(
+                "ev_definition",
+                "Expected value uses the optimizer objective and candidate barrier returns; "
+                "probabilities are decimal fractions.",
+            )
     except Exception as exc:
         log_operation_exception(
             logger,

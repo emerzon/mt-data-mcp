@@ -151,6 +151,15 @@ def _mark_trade_read_empty(out: Dict[str, Any], message: Optional[str] = None) -
     out["no_action"] = True
 
 
+def _trade_read_timezone_label(items: Any) -> Optional[str]:
+    if not isinstance(items, list):
+        return None
+    for item in items:
+        if isinstance(item, dict) and item.get("timezone"):
+            return str(item["timezone"])
+    return None
+
+
 def _normalize_trade_read_output(
     rows: Any,
     *,
@@ -190,6 +199,9 @@ def _normalize_trade_read_output(
                 for item in items
             ]
             out["count"] = len(items)
+            timezone_label = _trade_read_timezone_label(out["items"])
+            if timezone_label:
+                out["timezone"] = timezone_label
             message_text = str(rows.get("message", "")).strip()
             if message_text:
                 out["message"] = message_text
@@ -226,6 +238,9 @@ def _normalize_trade_read_output(
         _round_trade_money_fields(row) if isinstance(row, dict) else row for row in rows
     ]
     out["count"] = len(rows)
+    timezone_label = _trade_read_timezone_label(out["items"])
+    if timezone_label:
+        out["timezone"] = timezone_label
     if len(rows) == 0:
         _mark_trade_read_empty(out)
     return _compact_trade_read_output(out, request=request)
@@ -302,6 +317,7 @@ _TRADE_HISTORY_DEAL_TOP_LEVEL_FIELDS = (
     "magic",
     "position_id",
     "position_by_id",
+    "position_ticket",
     "reason",
     "reason_label",
     "volume",
@@ -329,6 +345,7 @@ _TRADE_HISTORY_ORDER_TOP_LEVEL_FIELDS = (
     "magic",
     "position_id",
     "position_by_id",
+    "position_ticket",
     "volume_initial",
     "volume_current",
     "price_open",
@@ -343,6 +360,7 @@ _TRADE_HISTORY_ORDER_TOP_LEVEL_FIELDS = (
 _TRADE_HISTORY_COMPACT_DEAL_FIELDS = (
     "time",
     "ticket",
+    "position_ticket",
     "symbol",
     "type",
     "action",
@@ -362,6 +380,7 @@ _TRADE_HISTORY_COMPACT_ORDER_FIELDS = (
     "time_setup",
     "time_done",
     "ticket",
+    "position_ticket",
     "symbol",
     "type",
     "state",

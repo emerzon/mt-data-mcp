@@ -332,6 +332,31 @@ def test_compact_support_resistance_payload_omits_fibonacci_until_standard_detai
     assert standard["fibonacci"]["nearest"]["support"]["type"] == "support"
 
 
+def test_compact_support_resistance_payload_explains_missing_side():
+    compact = compact_support_resistance_payload(
+        {
+            "success": True,
+            "symbol": "EURUSD",
+            "timeframe": "H1",
+            "current_price": 1.1,
+            "supports": [],
+            "resistances": [{"type": "resistance", "value": 1.2}],
+            "window": {"start": "2026-01-01 00:00", "end": "2026-01-02 00:00"},
+            "limit": 200,
+            "max_distance_pct": 5.0,
+            "min_touches": 2,
+        }
+    )
+
+    assert compact["level_counts"] == {"support": 0, "resistance": 1, "total": 1}
+    assert "No support levels qualified" in compact["level_scan_note"]
+    assert compact["scan_window"] == {
+        "start": "2026-01-01 00:00",
+        "end": "2026-01-02 00:00",
+    }
+    assert compact["limit"] == 200
+
+
 def test_recent_stronger_support_scores_above_older_weaker_support():
     result = compute_support_resistance_levels(
         _weighted_supports_frame(),

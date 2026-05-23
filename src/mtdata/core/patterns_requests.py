@@ -20,7 +20,7 @@ class PatternsDetectRequest(BaseModel):
     min_gap: int = 3
     robust_only: bool = False
     whitelist: Optional[str] = None
-    top_k: int = 1
+    top_k: int = 3
     last_n_bars: Optional[int] = None
     denoise: Optional[DenoiseSpec] = None
     config: Optional[Dict[str, Any]] = None

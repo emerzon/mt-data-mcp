@@ -206,6 +206,12 @@ def _common_reliability(
     if "confidence" not in out:
         out["confidence"] = round(float(_coerce_optional_float(confidence) or 0.0), 4)
     out.setdefault("reliability_label", _reliability_label(out.get("confidence")))
+    confidence_value = _coerce_optional_float(out.get("confidence"))
+    if confidence_value is not None and confidence_value < 0.55:
+        out.setdefault(
+            "confidence_note",
+            "Low-confidence regime classification; use a wider lookback, compare methods, or treat the current regime as tentative.",
+        )
     out.setdefault("source", source)
     return out
 

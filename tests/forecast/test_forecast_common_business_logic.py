@@ -108,6 +108,7 @@ def test_fetch_history_as_of_and_drop_last_live_paths(monkeypatch):
     assert out["time"].tolist() == [200.0, 300.0]
     assert ("EURUSD", False) in symbol_select_calls
 
+    monkeypatch.setattr(fc, "_is_last_bar_forming", lambda rates, timeframe: True)
     out = fc.fetch_history("EURUSD", "H1", need=4, as_of=None, drop_last_live=True)
     assert out["time"].tolist() == [100.0, 200.0, 300.0]
 

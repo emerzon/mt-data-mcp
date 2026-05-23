@@ -426,6 +426,18 @@ class TestFinvizProgressiveDisclosure:
         assert result["omitted_item_count"] == 3
 
     @patch("mtdata.core.finviz.get_stock_ratings")
+    def test_ratings_metadata_extra_returns_full_history(self, mock_get):
+        rows = [{"Date": f"2026-01-0{i}", "Rating": "Buy"} for i in range(1, 6)]
+        mock_get.return_value = {"success": True, "symbol": "AAPL", "ratings": rows}
+
+        result = _unwrap(finviz_ratings)("AAPL", extras="metadata")
+
+        assert result["detail"] == "full"
+        assert result["count"] == 5
+        assert result["available_count"] == 5
+        assert result["truncated"] is False
+
+    @patch("mtdata.core.finviz.get_stock_ratings")
     def test_ratings_normalizes_mixed_date_formats(self, mock_get):
         mock_get.return_value = {
             "success": True,

@@ -27,8 +27,12 @@ _NEWS_COMPACT_TOP_LEVEL_KEYS = frozenset(
         "recent_count",
     }
 )
-_NEWS_BUCKET_KEYS = frozenset(
-    {"general_news", "related_news", "impact_news", "upcoming_events", "recent_events"}
+_NEWS_BUCKET_KEYS = (
+    "related_news",
+    "general_news",
+    "impact_news",
+    "upcoming_events",
+    "recent_events",
 )
 _NEWS_BUCKET_COUNT_KEYS = {
     "general_news": "general_count",
@@ -209,28 +213,42 @@ def normalize_news_output(
     return out
 
 
-def _apply_news_limit(result: Dict[str, Any], *, limit: Optional[int]) -> Dict[str, Any]:
-    if limit is None:
+def _apply_news_limit(
+    result: Dict[str, Any],
+    *,
+    limit: Optional[int],
+    limit_per_bucket: Optional[int] = None,
+) -> Dict[str, Any]:
+    if limit is None and limit_per_bucket is None:
         return result
     out = dict(result)
     total_candidates = 0
     returned = 0
     truncated = False
+    remaining = int(limit) if limit is not None else None
     for key in _NEWS_BUCKET_KEYS:
         value = out.get(key)
         if isinstance(value, list):
             total_candidates += len(value)
-            if len(value) > limit:
-                out[key] = value[:limit]
+            bucket_limit = len(value)
+            if limit_per_bucket is not None:
+                bucket_limit = min(bucket_limit, int(limit_per_bucket))
+            if remaining is not None:
+                bucket_limit = min(bucket_limit, max(0, remaining))
+            if len(value) > bucket_limit:
+                out[key] = value[:bucket_limit]
                 truncated = True
                 value = out[key]
+            if remaining is not None:
+                remaining = max(0, remaining - len(value))
             count_key = _NEWS_BUCKET_COUNT_KEYS.get(key)
-            if count_key in out and len(value) <= limit:
+            if count_key in out:
                 out[count_key] = len(value)
             returned += len(value)
     out["total_candidates"] = total_candidates
     out["returned"] = returned
     out["truncated"] = truncated
+    out["limit_scope"] = "global" if limit is not None else "per_bucket"
     return out
 
 
@@ -239,6 +257,7 @@ def news(
     symbol: Optional[str] = None,
     detail: CompactFullDetailLiteral = "compact",
     limit: Optional[int] = None,
+    limit_per_bucket: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Fetch important general news and, optionally, symbol-relevant news.
@@ -277,8 +296,11 @@ def news(
         when possible, while `full` preserves the richer source, matching, and
         item metadata payloads.
     limit : int, optional
-        Maximum number of items to return per news bucket. Omit to keep the
-        source-selected bucket sizes.
+        Maximum total number of items to return across news buckets. Omit to
+        keep the source-selected bucket sizes.
+    limit_per_bucket : int, optional
+        Maximum number of items to return per news bucket. Use this only when
+        you explicitly want a per-bucket cap.
 
     Returns
     -------
@@ -303,6 +325,14 @@ def news(
             return {"error": "limit must be a positive integer."}
         if limit_value < 1:
             return {"error": "limit must be a positive integer."}
+    limit_per_bucket_value: Optional[int] = None
+    if limit_per_bucket is not None:
+        try:
+            limit_per_bucket_value = int(limit_per_bucket)
+        except (TypeError, ValueError):
+            return {"error": "limit_per_bucket must be a positive integer."}
+        if limit_per_bucket_value < 1:
+            return {"error": "limit_per_bucket must be a positive integer."}
 
     def _run() -> Dict[str, Any]:
         out = _apply_news_limit(
@@ -311,6 +341,7 @@ def news(
                 detail=detail_mode,
             ),
             limit=limit_value,
+            limit_per_bucket=limit_per_bucket_value,
         )
         if detail_mode == "full":
             out.setdefault("tool_scope", "unified_trading_news")
@@ -323,5 +354,6 @@ def news(
         symbol=symbol,
         detail=detail_mode,
         limit=limit_value,
+        limit_per_bucket=limit_per_bucket_value,
         func=_run,
     )

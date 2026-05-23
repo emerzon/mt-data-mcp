@@ -505,8 +505,8 @@ class TestFetchHistory:
         mock_copy.return_value = data
         df = fetch_history("EURUSD", "H1", 10)
         assert not df.empty
-        # drop_last_live default drops last bar
-        assert len(df) == 9
+        # drop_last_live only drops the current forming bar, not a closed historical bar.
+        assert len(df) == 10
 
     def test_invalid_timeframe(self):
         with patch("mtdata.forecast.common.TIMEFRAME_MAP", {}):

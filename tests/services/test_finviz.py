@@ -530,6 +530,7 @@ class TestFinvizTools:
                 "name": "Euro / US Dollar",
                 "price": "1.10",
                 "perf_day": "0.2%",
+                "perf_day_pct": 0.2,
             }
         ]
 
@@ -613,9 +614,15 @@ class TestFinvizTools:
 
         assert "coins" not in result
         assert result["detail"] == "compact"
-        assert result["performance_format"] == "fractional_change_when_numeric"
+        assert result["performance_format"] == "raw_value_with_pct_aliases"
         assert result["items"] == [
-            {"symbol": "BTC", "name": "Bitcoin", "price": "90000", "perf_day": "2.5%"}
+            {
+                "symbol": "BTC",
+                "name": "Bitcoin",
+                "price": "90000",
+                "perf_day": "2.5%",
+                "perf_day_pct": 2.5,
+            }
         ]
 
     @patch("mtdata.core.finviz.get_crypto_performance")
@@ -649,6 +656,8 @@ class TestFinvizTools:
                 "price": "90000",
                 "perf_day": "2.5%",
                 "perf_wtd": "2.5%",
+                "perf_day_pct": 2.5,
+                "perf_wtd_pct": 2.5,
             }
         ]
         assert "perf_week" not in result["items"][0]
@@ -669,7 +678,14 @@ class TestFinvizTools:
 
         assert "futures" not in result
         assert result["detail"] == "compact"
-        assert result["items"] == [{"symbol": "NQ", "name": "Nasdaq 100", "perf_day": "0.8%"}]
+        assert result["items"] == [
+            {
+                "symbol": "NQ",
+                "name": "Nasdaq 100",
+                "perf_day": "0.8%",
+                "perf_day_pct": 0.8,
+            }
+        ]
 
     @patch("mtdata.core.finviz.get_futures_performance")
     def test_finviz_market_tools_accept_full_detail(self, mock_get_futures):
@@ -786,7 +802,7 @@ class TestFinvizTools:
         assert result["fundamentals"]["market_cap"] == 3_979_470_000_000.0
         assert result["fundamentals"]["market_cap_formatted"] == "3.98T"
         assert result["fundamentals"]["eps_ttm"] == 7.9
-        assert result["fundamentals"]["change_price"] == 1.2
+        assert result["fundamentals"]["change_pct"] == 1.2
         assert result["fundamentals"]["high_52w_price"] == 288.62
         assert result["fundamentals"]["high_52w_distance_pct"] == -2.94
         assert "high_52w" not in result["fundamentals"]
@@ -814,6 +830,8 @@ class TestFinvizTools:
 
         raw = getattr(finviz_fundamentals, "__wrapped__", finviz_fundamentals)
         valuation = raw("AAPL", category="valuation")
+        technical = raw("AAPL", category="technical")
+        financial = raw("AAPL", category="financial")
         custom = raw("AAPL", fields="P/E,RSI (14),Missing")
 
         assert valuation["category"] == "valuation"
@@ -827,6 +845,11 @@ class TestFinvizTools:
         assert custom["category"] == "custom"
         assert custom["fundamentals"] == {"pe_ratio": 34.29, "rsi_14": 62.1}
         assert custom["missing_fields"] == ["Missing"]
+        assert technical["category"] == "technicals"
+        assert technical["category_requested"] == "technical"
+        assert technical["fundamentals"] == {"rsi_14": 62.1}
+        assert financial["category"] == "valuation"
+        assert financial["category_requested"] == "financial"
 
     @patch("mtdata.core.finviz.get_stock_fundamentals")
     def test_finviz_fundamentals_full_omits_redundant_field_echo(self, mock_get_fundamentals):
@@ -1035,6 +1058,7 @@ class TestFinvizTools:
                 "market_cap": "14.17M",
                 "price": "12.85",
                 "change_pct": "-0.0258",
+                "change_pct_percent": -2.58,
                 "volume": "6593",
             }
         ]

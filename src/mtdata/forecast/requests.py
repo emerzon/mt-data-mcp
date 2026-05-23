@@ -79,6 +79,21 @@ class ForecastBacktestRequest(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
+    def _normalize_method_alias(cls, values: Any) -> Any:
+        if not isinstance(values, dict):
+            return values
+        if "methods" in values or "method" not in values:
+            return values
+        out = dict(values)
+        method_value = out.pop("method")
+        if isinstance(method_value, str):
+            out["methods"] = [method_value]
+        else:
+            out["methods"] = method_value
+        return out
+
+    @model_validator(mode="before")
+    @classmethod
     def _reject_removed_target(cls, values: Any) -> Any:
         return reject_removed_field(values, field_name="target", replacement="quantity")
 

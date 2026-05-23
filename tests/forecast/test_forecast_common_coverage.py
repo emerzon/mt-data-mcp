@@ -371,8 +371,8 @@ class TestFetchHistory:
         from mtdata.forecast.common import fetch_history
         df = fetch_history("EURUSD", "H1", 50)
         assert isinstance(df, pd.DataFrame)
-        # drop_last_live removes the last bar by default
-        assert len(df) == 59
+        # Closed historical bars are retained, then trimmed to the requested need.
+        assert len(df) == 50
 
     @patch("mtdata.forecast.common._mt5_copy_rates_from_pos")
     @patch("mtdata.forecast.common._ensure_symbol_ready", return_value=None)

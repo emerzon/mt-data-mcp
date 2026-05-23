@@ -18,11 +18,12 @@ def test_market_status_tool_supports_detail_contract() -> None:
     raw = _unwrap(market_status_mod.market_status)
     params = list(signature(raw).parameters.values())
 
-    assert [param.name for param in params] == ["symbol", "region", "timezone_display", "detail"]
+    assert [param.name for param in params] == ["symbol", "region", "timezone_display", "detail", "extras"]
     assert params[0].default is None
     assert params[1].default == "all"
     assert params[2].default == "local"
     assert params[3].default == "compact"
+    assert params[4].default is None
 
 
 def test_market_status_timezone_display_utc_converts_market_times(monkeypatch) -> None:
@@ -399,3 +400,32 @@ def test_normalize_market_status_output_compact_hides_messages_and_holidays() ->
 
     assert full["upcoming_holidays"] == payload["upcoming_holidays"]
     assert full["markets"][0]["message"] == "NYSE: Open"
+
+
+def test_normalize_market_status_output_metadata_extra_keeps_holidays() -> None:
+    payload = {
+        "success": True,
+        "message": "human summary",
+        "markets": [{"symbol": "NYSE", "status": "open", "message": "NYSE: Open"}],
+        "upcoming_holidays": [{"date": "2031-01-01", "holiday": "New Year's Day"}],
+        "upcoming_holidays_count": 1,
+    }
+
+    compact = market_status_mod.normalize_market_status_output(
+        payload,
+        detail="compact",
+        extras="metadata",
+    )
+
+    assert "message" not in compact
+    assert "message" not in compact["markets"][0]
+    assert compact["upcoming_holidays"] == payload["upcoming_holidays"]
+    assert compact["upcoming_holidays_count"] == 1
+
+
+def test_normalize_market_status_output_handles_payload_without_markets() -> None:
+    payload = {"success": True, "message": "human summary"}
+
+    compact = market_status_mod.normalize_market_status_output(payload, detail="compact")
+
+    assert compact == {"success": True}

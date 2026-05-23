@@ -196,15 +196,18 @@ class TradeRiskAnalyzeRequest(BaseModel):
     direction: Optional[str] = None
     entry: Optional[float] = Field(
         default=None,
-        validation_alias="proposed_entry",
+        alias="entry",
+        validation_alias=AliasChoices("entry", "proposed_entry"),
     )
     stop_loss: Optional[float] = Field(
         default=None,
-        validation_alias=AliasChoices("proposed_sl", "sl"),
+        alias="sl",
+        validation_alias=AliasChoices("sl", "proposed_sl"),
     )
     take_profit: Optional[float] = Field(
         default=None,
-        validation_alias=AliasChoices("proposed_tp", "tp"),
+        alias="tp",
+        validation_alias=AliasChoices("tp", "proposed_tp"),
     )
 
     @field_validator("direction", mode="before")

@@ -287,6 +287,7 @@ def _trade_journal_period_context(
         "period_start": _format_period_dt(from_dt),
         "period_end": _format_period_dt(to_dt),
         "period_timezone": "UTC",
+        "timezone": "UTC",
     }
     if minutes_back_value is not None:
         out["minutes_back_effective"] = int(minutes_back_value)
@@ -333,6 +334,7 @@ def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str,
     message = history_result.get("message")
     if isinstance(message, str) and message.strip() and not raw_rows:
         breakdown_limit = int(max(1, int(request.breakdown_limit)))
+        sample_warning = _trade_journal_sample_warning(0)
         return {
             "success": True,
             **period_context,
@@ -348,6 +350,7 @@ def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str,
                 "exit_deals": 0,
                 "breakdown_limit": breakdown_limit,
             },
+            "sample_warning": sample_warning,
         }
 
     rows = [row for row in raw_rows if isinstance(row, dict)]
@@ -378,6 +381,7 @@ def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str,
 
     breakdown_limit = int(max(1, int(request.breakdown_limit)))
     if not analyzed_rows:
+        sample_warning = _trade_journal_sample_warning(len(analyzed_rows))
         return {
             "success": True,
             **period_context,
@@ -393,6 +397,7 @@ def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str,
                 "exit_deals": 0,
                 "breakdown_limit": breakdown_limit,
             },
+            **({"sample_warning": sample_warning} if sample_warning else {}),
         }
 
     # Filter trades by P&L sign: wins have positive P&L, losses have negative P&L
@@ -424,6 +429,9 @@ def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str,
             "breakdown_limit": breakdown_limit,
         },
     }
+    sample_warning = _trade_journal_sample_warning(len(analyzed_rows))
+    if sample_warning:
+        payload["sample_warning"] = sample_warning
     if detail_mode == "full":
         payload["best_trades"] = [
             _trade_journal_trade_snapshot(row)
@@ -434,6 +442,15 @@ def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str,
             for row in ranked_worst[: min(5, len(ranked_worst))]
         ]
     return payload
+
+
+def _trade_journal_sample_warning(exit_deals: int) -> Optional[str]:
+    if int(exit_deals) >= 30:
+        return None
+    return (
+        f"Only {int(exit_deals)} realized exit deal(s) were analyzed; "
+        "journal statistics may be unstable. Increase minutes_back or provide a wider start/end range."
+    )
 
 
 def lookup_trade_ticket_history(ticket: Any) -> Optional[Dict[str, Any]]:

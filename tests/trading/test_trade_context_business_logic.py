@@ -134,7 +134,10 @@ def test_trade_session_context_compact_formats_nested_ticker_spread() -> None:
         "spread": 0.00009,
         "spread_points": 9.0,
         "spread_pct": 0.007687,
+        "spread_cost_currency": "USD",
         "time": "2026-04-29 02:43",
+        "data_stale": True,
+        "stale_warning": "quote is stale",
     }
 
     with patch(
@@ -154,6 +157,9 @@ def test_trade_session_context_compact_formats_nested_ticker_spread() -> None:
 
     assert out["ticker"]["spread"] == "0.00009"
     assert out["ticker"]["price_precision"] == 5
+    assert out["ticker"]["spread_cost_currency"] == "USD"
+    assert out["ticker"]["data_stale"] is True
+    assert out["ticker"]["stale_warning"] == "quote is stale"
 
 
 def test_trade_session_context_full_detail_keeps_nested_full_payloads() -> None:

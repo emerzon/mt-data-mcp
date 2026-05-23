@@ -322,6 +322,48 @@ def test_forecast_generate_defaults_to_compact_payload(monkeypatch):
     assert "forecast_epoch" not in out
 
 
+def test_forecast_backtest_request_accepts_method_alias():
+    request = ForecastBacktestRequest(symbol="EURUSD", method="theta")
+
+    assert request.methods == ["theta"]
+
+
+def test_forecast_generate_compact_includes_training_period(monkeypatch):
+    raw = _unwrap(cf.forecast_generate)
+    monkeypatch.setattr(
+        cf,
+        "_forecast_impl",
+        lambda **kwargs: {
+            "success": True,
+            "method": kwargs["method"],
+            "horizon": kwargs["horizon"],
+            "quantity": kwargs["quantity"],
+            "forecast_time": ["t1"],
+            "forecast_price": [1.0],
+            "diagnostics": {
+                "history_start_time": "2026-01-01 00:00",
+                "history_end_time": "2026-01-10 00:00",
+                "history_bars_used": 200,
+                "target_points_used": 199,
+                "lookback_bars_requested": 250,
+                "lookback_bars_fetched": 240,
+            },
+        },
+    )
+
+    out = raw(request=ForecastGenerateRequest(symbol="EURUSD", timeframe="H1", method="theta"))
+
+    assert out["training_period"] == {
+        "start": "2026-01-01 00:00",
+        "end": "2026-01-10 00:00",
+        "history_bars_used": 200,
+        "target_points_used": 199,
+        "lookback_bars_requested": 250,
+        "lookback_bars_fetched": 240,
+        "note": "Forecast was fit on the historical window summarized here.",
+    }
+
+
 def test_forecast_generate_rounds_price_outputs_to_symbol_digits(monkeypatch):
     raw = _unwrap(cf.forecast_generate)
     monkeypatch.setattr(
@@ -399,6 +441,11 @@ def test_forecast_generate_compact_marks_unavailable_ci(monkeypatch):
                 "status": "unavailable",
                 "hint": "Use forecast_conformal_intervals for uncertainty bands.",
             },
+            "warnings": [
+                "Point forecast only for method 'theta'; confidence intervals are unavailable. "
+                "Use forecast_conformal_intervals for uncertainty bands.",
+                "Native theta fallback used.",
+            ],
         },
     )
 
@@ -419,6 +466,7 @@ def test_forecast_generate_compact_marks_unavailable_ci(monkeypatch):
     assert "ci_status" not in out
     assert "ci_available" not in out
     assert "ci_alpha" not in out
+    assert out["warnings"] == ["Native theta fallback used."]
 
 
 def test_forecast_generate_standard_preserves_full_arrays(monkeypatch):
@@ -1545,6 +1593,11 @@ def test_forecast_barrier_prob_applies_default_pct_barriers_when_missing():
         "Default 1% symmetrical barriers applied; pass tp_pct/sl_pct, "
         "tp_abs/sl_abs, or tp_ticks/sl_ticks to customize."
     ]
+    assert out["tp_pct"] == 1.0
+    assert out["sl_pct"] == 1.0
+    assert out["barrier_unit"] == "percent"
+    assert out["probability_unit"] == "fraction"
+    assert out["edge_definition"] == "prob_tp_first - prob_sl_first"
 
 
 def test_forecast_barrier_prob_keeps_partial_barrier_inputs_strict():
@@ -1622,6 +1675,9 @@ def test_forecast_barrier_optimize_rounds_public_float_artifacts():
     assert out["best"]["profit_factor"] == 0.698284
     assert out["results"][0]["sl_price"] == 1.16817
     assert out["results"][0]["edge_vs_breakeven"] == -0.223441
+    assert out["barrier_unit"] == "percent"
+    assert out["probability_unit"] == "fraction"
+    assert "Expected reward/risk edge" in out["edge_definition"]
 
 
 def test_forecast_barrier_prob_closed_form_rejects_tp_sl_inputs_before_generic_error():

@@ -304,6 +304,11 @@ class TestMergedTools(unittest.TestCase):
                         "Default 1% symmetrical barriers applied; pass tp_pct/sl_pct, "
                         "tp_abs/sl_abs, or tp_ticks/sl_ticks to customize."
                     ],
+                    "tp_pct": 1.0,
+                    "sl_pct": 1.0,
+                    "barrier_unit": "percent",
+                    "probability_unit": "fraction",
+                    "edge_definition": "prob_tp_first - prob_sl_first",
                 },
             )
             self.assertEqual(mock_mc.call_args.kwargs.get("tp_pct"), 1.0)
@@ -312,7 +317,15 @@ class TestMergedTools(unittest.TestCase):
         with patch('src.mtdata.forecast.barriers_probabilities.forecast_barrier_closed_form') as mock_cf:
             mock_cf.return_value = {"success": True}
             res = barrier_prob(symbol="EURUSD", method="closed_form", __cli_raw=True)
-            self.assertEqual(res, {"success": True})
+            self.assertEqual(
+                res,
+                {
+                    "success": True,
+                    "detail": "compact",
+                    "probability_unit": "fraction",
+                    "edge_definition": "prob_tp_first - prob_sl_first",
+                },
+            )
 
     def test_forecast_barrier_prob_direction_normalization(self):
         with patch('src.mtdata.forecast.barriers_probabilities.forecast_barrier_hit_probabilities') as mock_mc:

@@ -23,14 +23,23 @@ def normalize_error_payload(
         return payload
 
     out = dict(payload)
-    out.setdefault("success", False)
-    if default_code and not str(out.get("error_code") or "").strip():
-        out["error_code"] = default_code
+    error_code = str(out.get("error_code") or default_code or "tool_error").strip()
     rid = str(out.get("request_id") or "").strip() or (request_id or new_request_id())
-    out["request_id"] = rid
-    if operation and not str(out.get("operation") or "").strip():
-        out["operation"] = operation
-    return out
+    operation_value = str(out.get("operation") or operation or "").strip()
+
+    normalized: Dict[str, Any] = {
+        "success": False,
+        "error": str(error_text),
+        "error_code": error_code,
+        "request_id": rid,
+    }
+    if operation_value:
+        normalized["operation"] = operation_value
+    for key, value in out.items():
+        if key in normalized or key in {"success", "error", "error_code", "request_id", "operation"}:
+            continue
+        normalized[key] = value
+    return normalized
 
 
 def build_error_payload(

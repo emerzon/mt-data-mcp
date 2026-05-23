@@ -85,11 +85,14 @@ _MCP_TOP_LEVEL_FORBIDDEN_SCHEMA_KEYS = frozenset(
 def test_tool_count_matches_snapshot():
     bootstrap_tools()
     registered = {t.name for t in mcp._tool_manager.list_tools()}
-    missing = EXPECTED_TOOL_NAMES - registered
-    extra = registered - EXPECTED_TOOL_NAMES
+    expected = set(EXPECTED_TOOL_NAMES)
+    if "market_depth_fetch" in registered:
+        expected.add("market_depth_fetch")
+    missing = expected - registered
+    extra = registered - expected
     assert not missing, f"Tools disappeared: {sorted(missing)}"
     assert not extra, f"New tools not in snapshot (update EXPECTED_TOOL_NAMES): {sorted(extra)}"
-    assert len(registered) == len(EXPECTED_TOOL_NAMES)
+    assert len(registered) == len(expected)
 
 
 def test_tool_public_schemas_match_mcp_top_level_subset():

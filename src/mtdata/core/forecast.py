@@ -1071,7 +1071,7 @@ def options_expirations(
     symbol: str,
     detail: CompactFullDetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
-    """Fetch option expirations via Yahoo Finance; provider availability/auth can change."""
+    """Fetch option expirations via the configured options data provider."""
     from ..services.options_service import get_options_expirations as _impl
     return _run_forecast_operation(
         "options_expirations",
@@ -1095,7 +1095,7 @@ def options_chain(
     limit: int = 200,
     detail: CompactFullDetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
-    """Fetch option-chain snapshots via Yahoo Finance; provider availability/auth can change."""
+    """Fetch option-chain snapshots via the configured options data provider."""
     from ..services.options_service import get_options_chain as _impl
     return _run_forecast_operation(
         "options_chain",

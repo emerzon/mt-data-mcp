@@ -2480,6 +2480,28 @@ def compact_support_resistance_payload(payload: Dict[str, Any]) -> Dict[str, Any
         if counts:
             counts["total"] = sum(counts.values())
             out["level_counts"] = counts
+            missing_sides: List[str] = [
+                side for side in ("support", "resistance") if counts.get(side) == 0
+            ]
+            if missing_sides:
+                out["level_scan_note"] = (
+                    "No "
+                    + "/".join(missing_sides)
+                    + " levels qualified inside the scan filters. "
+                    "Try a wider max_distance_pct, lower min_touches, or higher lookback."
+                )
+
+    window = payload.get("window")
+    if isinstance(window, dict) and any(window.get(key) for key in ("start", "end")):
+        out["scan_window"] = {
+            key: window.get(key)
+            for key in ("start", "end")
+            if window.get(key) is not None
+        }
+    for key in ("lookback", "limit", "max_distance_pct", "min_touches"):
+        value = payload.get(key)
+        if value not in (None, "", [], {}):
+            out[key] = value
 
     support_levels = _compact_support_resistance_levels(supports)
     if support_levels:

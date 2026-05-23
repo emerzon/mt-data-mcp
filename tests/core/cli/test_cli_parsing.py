@@ -402,6 +402,22 @@ class TestAddDynamicArguments:
         args = parser.parse_args(["--ticket", "123456"])
         assert args.position_ticket == 123456
 
+    def test_forecast_backtest_methods_accepts_method_alias(self):
+        parser = argparse.ArgumentParser()
+        func_info = {
+            "params": [
+                {
+                    "name": "methods",
+                    "type": Optional[List[str]],
+                    "required": False,
+                    "default": None,
+                },
+            ]
+        }
+        add_dynamic_arguments(parser, func_info, cmd_name="forecast_backtest_run")
+        args = parser.parse_args(["--method", "theta"])
+        assert args.methods == ["theta"]
+
     def test_market_depth_exposes_require_dom(self):
         parser = argparse.ArgumentParser()
         func_info = {

@@ -185,6 +185,63 @@ def test_run_data_fetch_candles_compact_keeps_freshness_without_meta():
     assert "last_bar_within_policy_window" not in result
 
 
+def test_run_data_fetch_candles_compact_flags_stale_latest_data():
+    request = DataFetchCandlesRequest(symbol="EURUSD", timeframe="H1", limit=5)
+
+    result = run_data_fetch_candles(
+        request,
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_candles_impl=lambda **kwargs: {
+            "success": True,
+            "candles": 5,
+            "data": [],
+            "meta": {
+                "diagnostics": {
+                    "query": {"mode": "latest"},
+                    "freshness": {
+                        "data_freshness_seconds": 3661.0,
+                        "last_bar_within_policy_window": False,
+                    },
+                },
+            },
+        },
+    )
+
+    assert result["data_age_seconds"] == 3661.0
+    assert result["data_age"] == "1h 1m"
+    assert result["data_stale"] is True
+    assert "freshness policy" in result["stale_warning"]
+
+
+def test_run_data_fetch_candles_range_applies_limit_cap():
+    rows = [{"time": f"t{i}", "close": i} for i in range(5)]
+    request = DataFetchCandlesRequest(
+        symbol="EURUSD",
+        timeframe="H1",
+        limit=2,
+        start="2026-01-01",
+        end="2026-01-02",
+    )
+
+    result = run_data_fetch_candles(
+        request,
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_candles_impl=lambda **kwargs: {
+            "success": True,
+            "candles": 5,
+            "data": rows,
+            "meta": {"diagnostics": {"query": {"mode": "range"}}},
+        },
+    )
+
+    assert result["data"] == rows[-2:]
+    assert result["candles"] == 2
+    assert result["available_count"] == 5
+    assert result["limit_applied"] == 2
+    assert result["truncated"] is True
+    assert result["query_type"] == "historical"
+
+
 def test_run_data_fetch_candles_compact_keeps_spread_estimate_without_meta():
     request = DataFetchCandlesRequest(
         symbol="EURUSD",
@@ -348,7 +405,13 @@ def test_run_data_fetch_candles_summary_omits_rows_and_keeps_metadata():
     assert result["query_type"] == "latest"
     assert result["latency_ms"] == 12.3
     assert result["data_freshness_seconds"] == 60.0
+    assert result["data_age"] == "1m 0s"
+    assert result["data_stale"] is False
     assert "data" not in result
+    assert result["latest_candle"] == {
+        "time": "2026-05-14 12:00",
+        "close": 1.1,
+    }
     assert "meta" not in result
 
 
@@ -659,7 +722,7 @@ def test_data_fetch_candles_request_defaults_to_compact_detail():
     request = DataFetchCandlesRequest(symbol="EURUSD")
 
     assert request.detail == "compact"
-    assert request.limit == 200
+    assert request.limit == 20
 
 
 def test_data_fetch_candles_wrapper_respects_detail_contract(monkeypatch):
@@ -687,10 +750,10 @@ def test_data_fetch_candles_wrapper_respects_detail_contract(monkeypatch):
         json=True,
     )
 
-    assert raw["meta"]["diagnostics"]["query"]["requested_bars"] == 200
+    assert raw["meta"]["diagnostics"]["query"]["requested_bars"] == 20
     assert "meta" not in compact
     assert full["meta"]["tool"] == "data_fetch_candles"
-    assert full["meta"]["diagnostics"]["query"]["requested_bars"] == 200
+    assert full["meta"]["diagnostics"]["query"]["requested_bars"] == 20
 
 
 def test_data_fetch_ticks_request_rejects_removed_output_field():

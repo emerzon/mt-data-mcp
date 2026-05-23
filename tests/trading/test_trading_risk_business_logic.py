@@ -288,6 +288,15 @@ def test_trade_risk_request_accepts_short_stop_and_target_aliases() -> None:
     assert request.take_profit == 120.0
 
 
+def test_trade_risk_schema_advertises_order_workflow_aliases() -> None:
+    fields = set(TradeRiskAnalyzeRequest.model_json_schema()["properties"])
+
+    assert {"entry", "sl", "tp"}.issubset(fields)
+    assert "proposed_entry" not in fields
+    assert "proposed_sl" not in fields
+    assert "proposed_tp" not in fields
+
+
 def test_trade_risk_analyze_uses_loss_tick_value_for_position_sizing() -> None:
     mt5 = MagicMock()
     mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")

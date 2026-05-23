@@ -32,7 +32,11 @@ from ..services.finviz import (
 from ._mcp_instance import mcp
 from .error_envelope import build_error_payload
 from .execution_logging import run_logged_operation
-from .output_contract import normalize_output_detail, normalize_output_verbosity_detail
+from .output_contract import (
+    normalize_output_detail,
+    normalize_output_extras,
+    normalize_output_verbosity_detail,
+)
 from ..shared.schema import CompactFullDetailLiteral
 
 logger = logging.getLogger(__name__)
@@ -121,6 +125,14 @@ _FINVIZ_FUNDAMENTAL_CATEGORIES: Dict[str, tuple[str, ...]] = {
         "Employees",
         "IPO",
     ),
+}
+_FINVIZ_FUNDAMENTAL_CATEGORY_ALIASES = {
+    "tech": "technicals",
+    "technical": "technicals",
+    "technicals": "technicals",
+    "financial": "valuation",
+    "financials": "valuation",
+    "valuation_metrics": "valuation",
 }
 
 
@@ -242,6 +254,20 @@ def _derive_forex_pair_name(symbol: Any) -> Optional[str]:
     return None
 
 
+def _finviz_percent_value(value: Any) -> Optional[float]:
+    if value is None or value == "":
+        return None
+    parsed = _parse_finviz_numeric_value(value)
+    if parsed is None:
+        return None
+    if isinstance(value, (int, float)) and abs(float(parsed)) <= 1.0:
+        parsed = float(parsed) * 100.0
+    text = str(value).strip()
+    if text and not text.endswith("%") and abs(float(parsed)) <= 1.0:
+        parsed = float(parsed) * 100.0
+    return round(float(parsed), 6)
+
+
 def _compact_finviz_market_row(row: Dict[str, Any], *, rows_key: str) -> Dict[str, Any]:
     compact = dict(row)
     if "perf_day" not in compact and "perf_pct" in compact:
@@ -253,11 +279,17 @@ def _compact_finviz_market_row(row: Dict[str, Any], *, rows_key: str) -> Dict[st
     fields = _FINVIZ_MARKET_COMPACT_FIELDS
     if compact.get("perf_wtd") not in (None, ""):
         fields = tuple("perf_wtd" if field == "perf_week" else field for field in fields)
-    return {
+    out = {
         field: compact[field]
         for field in fields
         if field in compact and compact[field] not in (None, "")
     }
+    for field in tuple(out):
+        if field.startswith("perf_"):
+            pct_value = _finviz_percent_value(out.get(field))
+            if pct_value is not None:
+                out[f"{field}_pct"] = pct_value
+    return out
 
 
 def _is_known_forex_pair_row(row: Any) -> bool:
@@ -326,7 +358,7 @@ def _normalize_finviz_market_payload(
         out["omitted_item_count"] = omitted
     out["detail"] = detail_mode
     if detail_mode != "full" and rows_key in {"pairs", "coins", "futures"}:
-        out["performance_format"] = "fractional_change_when_numeric"
+        out["performance_format"] = "raw_value_with_pct_aliases"
     if detail_mode == "full":
         out["meta"] = _build_tool_contract_meta(
             tool=tool,
@@ -758,6 +790,14 @@ _FINVIZ_OUTPUT_KEY_MAP = {
     "Dividend Gr. 5Y": "dividend_growth_5y",
     "Dividend Gr. 3/5Y": "dividend_growth_3_5_y",
 }
+_FINVIZ_MARKET_CAP_BUCKETS = {
+    "nano",
+    "micro",
+    "small",
+    "mid",
+    "large",
+    "mega",
+}
 
 _FINVIZ_52W_COMPOUND_FIELDS = {
     "high_52w": ("high_52w_price", "high_52w_distance_pct"),
@@ -774,6 +814,7 @@ _FINVIZ_FUNDAMENTAL_NUMERIC_KEYS = frozenset(
     {
         "market_cap",
         "price",
+        "change_pct",
         "change_price",
         "pe_ratio",
         "forward_pe",
@@ -1026,6 +1067,9 @@ def _compact_finviz_earnings_items(items: Any) -> List[Any]:
         }
         if "change" in row:
             row["change_pct"] = row.pop("change")
+        change_pct = _finviz_percent_value(row.get("change_pct"))
+        if change_pct is not None:
+            row["change_pct_percent"] = change_pct
         compact_rows.append(row)
     return compact_rows
 
@@ -1315,7 +1359,11 @@ def _filter_finviz_fundamentals_payload(
         return result
 
     detail_mode = normalize_output_verbosity_detail(detail, default="compact")
-    category_mode = str(category or "summary").strip().lower()
+    category_input = str(category or "summary").strip().lower()
+    category_mode = _FINVIZ_FUNDAMENTAL_CATEGORY_ALIASES.get(
+        category_input,
+        category_input,
+    )
     if str(detail or "compact").strip().lower() not in {"compact", "standard", "summary", "full"}:
         return _finviz_error_payload(
             _FINVIZ_DETAIL_ERROR,
@@ -1361,7 +1409,9 @@ def _filter_finviz_fundamentals_payload(
             continue
         output_key = _normalize_finviz_output_key(field)
         if output_key == "change":
-            output_key = "change_price"
+            output_key = "change_pct"
+        if output_key == "exchange" and str(value).strip().lower() in _FINVIZ_MARKET_CAP_BUCKETS:
+            output_key = "market_cap_category"
         expanded = _expand_finviz_compound_fundamental(output_key, value)
         if expanded is not None:
             filtered.update(
@@ -1384,6 +1434,8 @@ def _filter_finviz_fundamentals_payload(
     out["fundamentals"] = filtered
     out["detail"] = detail_mode
     out["category"] = category_out
+    if category_input != category_mode:
+        out["category_requested"] = category_input
     if detail_mode == "full":
         out["available_field_count"] = len(fundamentals)
         omitted_fields = [
@@ -1583,6 +1635,7 @@ def finviz_ratings(
     symbol: str,
     detail: CompactFullDetailLiteral = "compact",  # type: ignore
     limit: int = 3,
+    extras: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Get analyst ratings for a US stock.
@@ -1599,6 +1652,8 @@ def finviz_ratings(
         latest limited rows plus a latest-rating summary.
     limit : int
         Maximum rating rows to return (default 3).
+    extras : str, optional
+        Set to "metadata" to return the full available rating history.
     
     Returns
     -------
@@ -1610,15 +1665,21 @@ def finviz_ratings(
         if error is not None:
             return error
         assert symbol_norm is not None
+        extras_value = normalize_output_extras(extras)
+        detail_value = detail
+        limit_value: Optional[int] = int(limit)
+        if extras_value:
+            detail_value = "full"  # type: ignore[assignment]
+            limit_value = None
         return _compact_finviz_ratings_payload(
             get_stock_ratings(symbol_norm),
-            detail=detail,
-            limit=limit,
+            detail=detail_value,
+            limit=limit_value,
         )
 
     return _run_logged_tool(
         "finviz_ratings",
-        {"symbol": symbol, "detail": detail, "limit": limit},
+        {"symbol": symbol, "detail": detail, "limit": limit, "extras": extras},
         _run,
     )
 

@@ -851,12 +851,16 @@ class TestCorrelationMatrix:
         assert result["success"] is True
         assert result["summary"]["counts"]["pairs"] == 3
         assert result["count"] == 3
-        assert result["context"] == {
+        assert {
+            key: result["context"][key]
+            for key in ("timeframe", "limit", "transform", "min_overlap")
+        } == {
             "timeframe": "H1",
             "limit": 60,
             "transform": "log_return",
             "min_overlap": 30,
         }
+        assert "Correlation defaults to log_return" in result["context"]["transform_note"]
         assert result["matrix"]["A"]["A"] == pytest.approx(1.0)
         assert result["matrix"]["A"]["B"] > 0.95
         assert result["matrix"]["A"]["C"] < -0.95

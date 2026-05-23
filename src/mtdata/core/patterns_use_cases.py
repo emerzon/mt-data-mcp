@@ -116,6 +116,50 @@ def _unknown_config_keys_for_mode(mode: str, unknown_keys: List[str]) -> List[st
     return list(unknown_keys)
 
 
+def _limit_pattern_payload_rows(payload: Any, *, top_k: Any) -> Any:
+    try:
+        limit = int(top_k)
+    except Exception:
+        return payload
+    if limit <= 0 or not isinstance(payload, dict):
+        return payload
+
+    rows = payload.get("data")
+    rows_key = "data"
+    if not isinstance(rows, list):
+        rows = payload.get("patterns")
+        rows_key = "patterns"
+    if not isinstance(rows, list) or len(rows) <= limit:
+        return payload
+
+    def _rank(item: tuple[int, Any]) -> tuple[float, float, int]:
+        idx, row = item
+        if not isinstance(row, dict):
+            return (0.0, 0.0, -idx)
+        try:
+            confidence = float(row.get("confidence") or 0.0)
+        except Exception:
+            confidence = 0.0
+        end_value = row.get("end_index", row.get("index", idx))
+        try:
+            end_index = float(end_value)
+        except Exception:
+            end_index = float(idx)
+        return (confidence, end_index, -idx)
+
+    limited = [row for _, row in sorted(enumerate(rows), key=_rank, reverse=True)[:limit]]
+    out = dict(payload)
+    out[rows_key] = limited
+    for count_key in ("count", "n_patterns"):
+        if count_key in out:
+            out[count_key] = len(limited)
+    out["available_count"] = len(rows)
+    out["truncated"] = True
+    out["top_k"] = limit
+    out["show_all_hint"] = "Increase top_k to return more detected patterns."
+    return out
+
+
 def _attach_signal_bias_summary(resp: Dict[str, Any], deps: "PatternsDetectDeps") -> None:
     summary = resp.get("summary")
     if isinstance(summary, dict) and summary.get("signal_bias"):
@@ -279,7 +323,9 @@ def run_patterns_detect(  # noqa: C901
                 out if isinstance(out, dict) else {"data": out},
                 preview_limit=request.top_k,
             )
-        return _dedupe_repeated_regime_context(out)
+        return _dedupe_repeated_regime_context(
+            _limit_pattern_payload_rows(out, top_k=request.top_k)
+        )
 
     if mode_value == "classic":
         tf_single = tf_norm or "H1"

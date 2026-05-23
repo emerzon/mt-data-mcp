@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import time
 from datetime import datetime, timezone
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from ...shared.result import Err, Ok, Result, to_dict
 from ..execution_logging import run_logged_operation
@@ -175,6 +175,7 @@ def _run_data_fetch_candles_impl(
                 result["spread_unavailable"] = True
     detail_mode = str(request.detail or "compact").strip().lower()
     if isinstance(result, dict):
+        _apply_range_limit_cap(result, limit=request.limit)
         _prune_zero_candle_exclusions(result)
         if detail_mode == "compact":
             result = _compact_candles_payload(result)
@@ -195,6 +196,66 @@ def _run_data_fetch_candles_impl(
             out.pop("canonical_source", None)
         return out
     return result
+
+
+def _format_age_seconds(seconds: Any) -> Optional[str]:
+    try:
+        value = max(0, int(round(float(seconds))))
+    except Exception:
+        return None
+    days, remainder = divmod(value, 86400)
+    hours, remainder = divmod(remainder, 3600)
+    minutes, secs = divmod(remainder, 60)
+    if days:
+        return f"{days}d {hours}h"
+    if hours:
+        return f"{hours}h {minutes}m"
+    if minutes:
+        return f"{minutes}m {secs}s"
+    return f"{secs}s"
+
+
+def _apply_range_limit_cap(result: Dict[str, Any], *, limit: int) -> None:
+    data = result.get("data")
+    if not isinstance(data, list):
+        return
+    meta = result.get("meta")
+    diagnostics = meta.get("diagnostics") if isinstance(meta, dict) else None
+    query = diagnostics.get("query") if isinstance(diagnostics, dict) else None
+    if not isinstance(query, dict) or query.get("mode") != "range":
+        return
+    try:
+        limit_value = max(1, int(limit))
+    except Exception:
+        return
+    available = len(data)
+    if available <= limit_value:
+        return
+
+    retained = data[-limit_value:]
+    result["data"] = retained
+    result["candles"] = len(retained)
+    result["available_count"] = available
+    result["limit_applied"] = limit_value
+    result["truncated"] = True
+    result["truncation"] = {
+        "reason": "limit",
+        "retained": "last",
+        "available_count": available,
+        "returned_count": len(retained),
+    }
+    candle_counts = result.get("candle_counts")
+    if isinstance(candle_counts, dict):
+        candle_counts["returned"] = len(retained)
+        excluded = candle_counts.get("excluded")
+        if not isinstance(excluded, dict):
+            excluded = {}
+            candle_counts["excluded"] = excluded
+        excluded["limit_truncated"] = max(0, available - len(retained))
+        excluded["total"] = int(excluded.get("total") or 0) + max(0, available - len(retained))
+    query["limit_applied_to_range"] = True
+    query["available_rows_before_limit"] = available
+    query["returned_rows_after_limit"] = len(retained)
 
 
 def _compact_candles_payload(
@@ -224,8 +285,15 @@ def _compact_candles_payload(
         compact.pop("forming_candle_skipped", None)
     if "query_type" in public_diagnostics:
         compact["query_type"] = public_diagnostics["query_type"]
-    if "data_freshness_seconds" in public_diagnostics:
-        compact["data_freshness_seconds"] = public_diagnostics["data_freshness_seconds"]
+    for key in (
+        "data_freshness_seconds",
+        "data_age_seconds",
+        "data_age",
+        "data_stale",
+        "stale_warning",
+    ):
+        if key in public_diagnostics:
+            compact[key] = public_diagnostics[key]
     if "spread_estimate" in public_diagnostics:
         compact["spread_estimate"] = public_diagnostics["spread_estimate"]
     return compact
@@ -241,6 +309,15 @@ def _standard_candles_payload(result: Dict[str, Any]) -> Dict[str, Any]:
 def _summary_candles_payload(result: Dict[str, Any]) -> Dict[str, Any]:
     summary = _standard_candles_payload(result)
     summary["output"] = "summary"
+    rows = result.get("data")
+    if isinstance(rows, list) and rows:
+        latest = rows[-1]
+        if isinstance(latest, dict):
+            summary["latest_candle"] = {
+                key: latest[key]
+                for key in ("time", "open", "high", "low", "close", "tick_volume", "real_volume")
+                if key in latest
+            }
     summary.pop("data", None)
     summary.pop("session_gaps", None)
     for key in (
@@ -275,12 +352,15 @@ def _public_candle_diagnostics(result: Dict[str, Any]) -> Dict[str, Any]:
     if isinstance(spread_estimate, dict):
         value = spread_estimate.get("estimated_mean")
         source = spread_estimate.get("source")
+        unit = spread_estimate.get("unit")
         if value is not None or source:
             public_estimate: Dict[str, Any] = {}
             if value is not None:
                 public_estimate["value"] = value
             if source:
                 public_estimate["source"] = source
+            if unit:
+                public_estimate["unit"] = unit
             public["spread_estimate"] = public_estimate
 
     freshness = diagnostics.get("freshness")
@@ -290,6 +370,19 @@ def _public_candle_diagnostics(result: Dict[str, Any]) -> Dict[str, Any]:
                 continue
             if freshness.get(key) is not None:
                 public[key] = freshness[key]
+        if query_mode != "range" and freshness.get("data_freshness_seconds") is not None:
+            seconds = freshness["data_freshness_seconds"]
+            public.setdefault("data_age_seconds", seconds)
+            age_text = _format_age_seconds(seconds)
+            if age_text is not None:
+                public["data_age"] = age_text
+            stale = freshness.get("last_bar_within_policy_window") is False
+            public["data_stale"] = stale
+            if stale:
+                public["stale_warning"] = (
+                    "Latest completed candle is outside the freshness policy window; "
+                    "market may be closed or broker data may be stale."
+                )
     return public
 
 

@@ -228,7 +228,7 @@ TimeframeLiteral = Literal[_TIMEFRAME_CHOICES]  # type: ignore
 AutoTimeframeLiteral = Union[TimeframeLiteral, Literal["auto"]]
 CANONICAL_OUTPUT_SHAPE_DETAILS = ("compact", "standard", "summary", "full")
 CANONICAL_OUTPUT_DETAIL_ALIASES = types.MappingProxyType(
-    {"summary_only": "summary", "standard": "compact", "summary": "compact"}
+    {"summary_only": "summary"}
 )
 DetailLiteral = Literal["compact", "standard", "summary", "full"]
 CompactFullDetailLiteral = DetailLiteral

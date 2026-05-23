@@ -239,6 +239,30 @@ def test_forecast_volatility_direct_methods_and_short_data(monkeypatch):
     assert "Insufficient returns" in out["error"]
 
 
+def test_finalize_volatility_compact_keeps_units_and_pct_aliases():
+    out = vol._finalize_volatility_output(
+        {
+            "success": True,
+            "horizon": 1,
+            "sigma_bar_return": 0.0123,
+            "sigma_annual_return": 0.1944,
+            "horizon_sigma_return": 0.0123,
+            "horizon_sigma_annual": 0.1944,
+            "volatility_interpretation": {"verbose": "removed"},
+        },
+        detail="compact",
+    )
+
+    assert out["volatility_per_bar"] == 0.0123
+    assert out["volatility_per_bar_pct"] == 1.23
+    assert out["volatility_annualized_pct"] == 19.44
+    assert out["volatility_measure"] == "standard_deviation_of_returns"
+    assert "decimal return fractions" in out["volatility_unit_note"]
+    assert "horizon=1" in out["horizon_note"]
+    assert "volatility_interpretation" not in out
+    assert "sigma_bar_return" not in out
+
+
 def test_forecast_volatility_yang_zhang_weights_overnight_variance(monkeypatch):
     monkeypatch.setattr(vol, "TIMEFRAME_MAP", {"H1": 1})
     monkeypatch.setattr(vol, "TIMEFRAME_SECONDS", {"H1": 3600})

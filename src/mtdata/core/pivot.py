@@ -33,6 +33,7 @@ from ..utils.utils import (
 from ._mcp_instance import mcp
 from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from .execution_logging import run_logged_operation
+from .output_contract import normalize_output_extras
 from .mt5_gateway import create_mt5_gateway
 from ..shared.schema import (
     _PIVOT_METHODS,
@@ -545,6 +546,7 @@ def support_resistance_levels(
     adx_period: int = 14,
     decay_half_life_bars: Optional[int] = None,
     detail: CompactStandardFullDetailLiteral = "compact",
+    extras: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Detect support/resistance levels around the current price from historical structure.
 
@@ -555,6 +557,8 @@ def support_resistance_levels(
     levels, and `detail="full"` for the raw diagnostic payload. The default
     `max_distance_pct=5.0` keeps returned levels near current price; pass
     `None` for all levels.
+    Set `extras="metadata"` to return the full diagnostic payload without
+    changing every command call site to `detail="full"`.
 
     Score combines:
     - repeated tests of a level
@@ -582,6 +586,8 @@ def support_resistance_levels(
                 decay_half_life_bars=None if decay_half_life_bars is None else int(decay_half_life_bars),
             )
             detail_value = str(detail).strip().lower()
+            if normalize_output_extras(extras):
+                detail_value = "full"
             if detail_value in {"summary", "summary_only"}:
                 detail_value = "compact"
             if detail_value == "compact":
@@ -614,6 +620,7 @@ def support_resistance_levels(
         adx_period=adx_period,
         decay_half_life_bars=decay_half_life_bars,
         detail=detail,
+        extras=extras,
         func=_run,
     )
 

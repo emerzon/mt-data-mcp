@@ -11,6 +11,7 @@ import pandas as pd
 
 from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..services.data_service import (
+    _is_last_bar_forming,
     _resolve_live_rate_auto_shift_seconds,
     _shift_rate_times,
 )
@@ -878,7 +879,8 @@ def fetch_history(
         else:
             # Use position-based fetch for "latest" to avoid TZ issues and ensure open candle
             # start_pos=0 includes the current forming bar
-            rates = _mt5_copy_rates_from_pos(symbol, mt5_tf, 0, int(need))
+            fetch_count = int(need) + (1 if drop_last_live else 0)
+            rates = _mt5_copy_rates_from_pos(symbol, mt5_tf, 0, max(fetch_count, 1))
             auto_shift_seconds = _resolve_live_rate_auto_shift_seconds(
                 symbol=symbol,
                 timeframe=timeframe,
@@ -911,6 +913,9 @@ def fetch_history(
                 df = df.iloc[-int(need):]
     
     if as_of is None and drop_last_live and len(df) >= 2:
-        df = df.iloc[:-1]
+        if _is_last_bar_forming(rates, timeframe):
+            df = df.iloc[:-1]
+        if len(df) > need:
+            df = df.iloc[-int(need):]
     return df.reset_index(drop=True)
 

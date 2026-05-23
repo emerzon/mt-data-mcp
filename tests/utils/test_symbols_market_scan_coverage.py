@@ -131,6 +131,8 @@ class TestSymbolsTopMarkets:
         assert list(result["data"][0].keys()) == [
             "symbol",
             "group",
+            "tick_time",
+            "quote_stale",
             "bid",
             "ask",
             "spread_pct",
@@ -240,6 +242,8 @@ class TestSymbolsTopMarkets:
         assert list(result["data"][0].keys()) == [
             "symbol",
             "group",
+            "tick_time",
+            "quote_stale",
             "bid",
             "ask",
             "spread_pct",
@@ -313,6 +317,8 @@ class TestSymbolsTopMarkets:
             "symbol",
             "group",
             "timeframe",
+            "bar_time",
+            "data_stale",
             "tick_volume",
             "price_change_pct",
         ]

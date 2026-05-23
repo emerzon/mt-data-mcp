@@ -9,6 +9,13 @@ import requests
 from mtdata.services import options_service as osvc
 
 
+@pytest.fixture(autouse=True)
+def _default_options_provider(monkeypatch):
+    monkeypatch.setattr(osvc.options_data_config, "provider", "yahoo")
+    monkeypatch.setattr(osvc.options_data_config, "api_key", None)
+    monkeypatch.setattr(osvc.options_data_config, "base_url", "https://api.tradier.com/v1")
+
+
 def test_to_numeric_logs_non_empty_conversion_failures(caplog):
     with caplog.at_level("WARNING"):
         out = osvc._to_numeric("bad-data", float, float("nan"), field_name="strike")
@@ -141,6 +148,109 @@ def test_get_options_chain_rejects_unavailable_expiration(monkeypatch):
     assert "error" in out
     assert "not available" in out["error"]
     assert out["expirations"] == ["2026-04-17"]
+
+
+def test_get_options_expirations_uses_configured_tradier_provider(monkeypatch):
+    monkeypatch.setattr(osvc.options_data_config, "provider", "tradier")
+    monkeypatch.setattr(osvc.options_data_config, "api_key", "token")
+    monkeypatch.setattr(
+        osvc,
+        "_fetch_tradier_expirations_payload",
+        lambda symbol: {"expirations": {"date": ["2026-04-17", "2026-05-15"]}},
+    )
+    monkeypatch.setattr(
+        osvc,
+        "_fetch_tradier_quote_payload",
+        lambda symbol: {"quotes": {"quote": {"last": 212.34, "currency": "USD"}}},
+    )
+
+    out = osvc.get_options_expirations("aapl")
+
+    assert out["success"] is True
+    assert out["provider"] == "tradier"
+    assert out["symbol"] == "AAPL"
+    assert out["underlying_price"] == 212.34
+    assert out["expirations"] == ["2026-04-17", "2026-05-15"]
+
+
+def test_get_options_chain_uses_configured_tradier_provider(monkeypatch):
+    monkeypatch.setattr(osvc.options_data_config, "provider", "tradier")
+    monkeypatch.setattr(osvc.options_data_config, "api_key", "token")
+    monkeypatch.setattr(
+        osvc,
+        "_fetch_tradier_expirations_payload",
+        lambda symbol: {"expirations": {"date": ["2026-04-17"]}},
+    )
+    monkeypatch.setattr(
+        osvc,
+        "_fetch_tradier_quote_payload",
+        lambda symbol: {"quotes": {"quote": {"last": 101.0, "currency": "USD"}}},
+    )
+    monkeypatch.setattr(
+        osvc,
+        "_fetch_tradier_chain_payload",
+        lambda symbol, expiration: {
+            "options": {
+                "option": [
+                    {
+                        "symbol": "AAPL260417C00100000",
+                        "option_type": "call",
+                        "strike": 100.0,
+                        "last": 2.1,
+                        "bid": 2.0,
+                        "ask": 2.2,
+                        "change": 0.1,
+                        "change_percentage": 5.0,
+                        "volume": 15,
+                        "open_interest": 20,
+                        "implied_volatility": 0.25,
+                        "trade_date": "2026-04-16T19:59:00Z",
+                        "currency": "USD",
+                    },
+                    {
+                        "symbol": "AAPL260417P00100000",
+                        "option_type": "put",
+                        "strike": 100.0,
+                        "last": 1.8,
+                        "bid": 1.7,
+                        "ask": 1.9,
+                        "volume": 1,
+                        "open_interest": 1,
+                    },
+                ]
+            }
+        },
+    )
+
+    out = osvc.get_options_chain(
+        symbol="aapl",
+        expiration="2026-04-17",
+        option_type="call",
+        min_open_interest=10,
+        min_volume=10,
+        limit=10,
+    )
+
+    assert out["success"] is True
+    assert out["provider"] == "tradier"
+    assert out["symbol"] == "AAPL"
+    assert out["expiration"] == "2026-04-17"
+    assert out["underlying_price"] == 101.0
+    assert out["count"] == 1
+    assert out["calls_count"] == 1
+    assert out["puts_count"] == 0
+    assert out["options"][0]["contract"] == "AAPL260417C00100000"
+
+
+def test_configured_tradier_provider_without_token_returns_auth_hint(monkeypatch):
+    monkeypatch.setattr(osvc.options_data_config, "provider", "tradier")
+    monkeypatch.setattr(osvc.options_data_config, "api_key", None)
+
+    out = osvc.get_options_expirations("AAPL")
+
+    assert out["success"] is False
+    assert out["error_code"] == "options_provider_auth"
+    assert "MTDATA_OPTIONS_API_KEY" in out["remediation"]
 
 
 def test_get_yahoo_session_reuses_single_session(monkeypatch):

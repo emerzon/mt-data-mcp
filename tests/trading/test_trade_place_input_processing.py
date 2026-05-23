@@ -84,7 +84,7 @@ def test_trade_place_routes_prefixed_market_order_type() -> None:
             require_sl_tp=False,
             __cli_raw=True,
         )
-        assert out == {"ok": True}
+        assert out == {"ok": True, "success": True}
         assert mock_market.call_args.kwargs["order_type"] == "BUY"
 
 
@@ -116,6 +116,9 @@ def test_trade_place_missing_required_fields_returns_friendly_error() -> None:
     out = trade_place(__cli_raw=True)
     assert isinstance(out, dict)
     assert "error" in out
+    assert out.get("success") is False
+    assert out.get("error_code") == "trade_place_error"
+    assert out.get("operation") == "trade_place"
     assert "Missing required field(s): symbol, volume, order_type" in str(out["error"])
     assert out.get("required") == ["symbol", "volume", "order_type"]
 
@@ -132,7 +135,7 @@ def test_trade_place_blank_expiration_keeps_market_routing() -> None:
             require_sl_tp=False,
             __cli_raw=True,
         )
-        assert out == {"ok": True}
+        assert out == {"ok": True, "success": True}
         mock_market.assert_called_once()
         mock_pending.assert_not_called()
 
@@ -245,6 +248,31 @@ def test_trade_place_dry_run_preview_detail_omits_safety_lists() -> None:
     assert "guardrails_preview" not in out
     assert "validation_scope" not in out
     assert "trade_gate_passed" not in out
+    mock_market.assert_not_called()
+
+
+def test_trade_place_dry_run_preview_error_uses_standard_error_shape() -> None:
+    with patch("mtdata.core.trading._place_market_order") as mock_market, patch(
+        "mtdata.core.trading.build_trade_place_dry_run_preview",
+        return_value={"preview_error": "Failed to get current price for BTCUSD"},
+    ):
+        out = trade_place(
+            symbol="BTCUSD",
+            volume=0.03,
+            order_type="BUY",
+            stop_loss=64000,
+            take_profit=68000,
+            dry_run=True,
+            __cli_raw=True,
+        )
+
+    assert out.get("success") is False
+    assert out.get("error") == "Failed to get current price for BTCUSD"
+    assert out.get("error_code") == "trade_preview_error"
+    assert out.get("operation") == "trade_place"
+    assert out.get("preview_error") == out.get("error")
+    assert out.get("no_action") is True
+    assert out.get("no_action_reason") == "dry_run_preview_error"
     mock_market.assert_not_called()
 
 

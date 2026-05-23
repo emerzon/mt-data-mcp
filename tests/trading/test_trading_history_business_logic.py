@@ -704,6 +704,7 @@ def test_trade_history_filters_deals_by_position_ticket() -> None:
     assert out["scope"] == "ticket"
     assert out["count"] == 1
     assert out["items"][0]["ticket"] == 2
+    assert out["items"][0]["position_ticket"] == 222
 
 
 def test_trade_history_without_range_uses_full_history_start() -> None:
@@ -1113,9 +1114,11 @@ def test_trade_journal_analyze_reports_explicit_minutes_back_window() -> None:
 
     assert out["success"] is True
     assert out["period_source"] == "minutes_back"
+    assert out["timezone"] == "UTC"
     assert out["minutes_back_requested"] == 60
     assert out["minutes_back_effective"] == 60
     assert "note" not in out
+    assert "Only 0 realized exit deal" in out["sample_warning"]
 
 
 def test_trade_journal_analyze_filters_best_worst_by_pnl_sign() -> None:
@@ -1268,6 +1271,7 @@ def test_trade_journal_analyze_returns_message_when_no_exit_deals_found() -> Non
     assert out["success"] is True
     assert out["summary"]["closed_deals"] == 0
     assert "No realized exit deals found" in out["message"]
+    assert "Only 0 realized exit deal" in out["sample_warning"]
 
 
 def test_trade_journal_analyze_propagates_history_errors() -> None:

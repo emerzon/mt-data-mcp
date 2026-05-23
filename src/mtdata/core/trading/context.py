@@ -193,10 +193,16 @@ def _compact_trade_session_context_payload(payload: Dict[str, Any]) -> Dict[str,
                     "spread_pct",
                     "spread_pct_display",
                     "spread_cost_per_lot",
+                    "spread_cost_currency",
                     "time",
                     "time_display",
                     "time_epoch",
                     "timezone",
+                    "data_age_seconds",
+                    "data_age",
+                    "data_stale",
+                    "stale_warning",
+                    "warning",
                 )
                 if ticker.get(key) not in (None, "")
             }

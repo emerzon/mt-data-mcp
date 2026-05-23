@@ -26,6 +26,7 @@ from ..execution_logging import (
     log_operation_start,
     run_logged_operation,
 )
+from ..error_envelope import normalize_error_payload
 from ..output_contract import resolve_output_contract
 from . import validation
 from .idempotency import IdempotencyStore
@@ -50,8 +51,11 @@ _TRADE_HISTORY_RANGE_HINT = (
 )
 _TRADE_PLACE_PREVIEW_KEYS = (
     "success",
+    "error",
+    "error_code",
     "dry_run",
     "no_action",
+    "no_action_reason",
     "symbol",
     "order_type",
     "pending",
@@ -141,6 +145,25 @@ def _shape_trade_place_preview(
         return dict(payload)
     keys = _TRADE_PLACE_BASIC_KEYS if detail == "basic" else _TRADE_PLACE_PREVIEW_KEYS
     return {key: payload[key] for key in keys if key in payload}
+
+
+def _standardize_trade_operation_payload(
+    result: Dict[str, Any],
+    *,
+    operation: str,
+    default_error_code: str,
+) -> Dict[str, Any]:
+    if not isinstance(result, dict):
+        return result
+    if str(result.get("error") or "").strip():
+        return normalize_error_payload(
+            result,
+            default_code=default_error_code,
+            operation=operation,
+        )
+    out = dict(result)
+    out.setdefault("success", True)
+    return out
 
 
 def _sl_tp_result_details(result: Dict[str, Any]) -> tuple[bool, str]:
@@ -561,6 +584,11 @@ def run_trade_place(  # noqa: C901
         pending: Optional[bool] = None,
     ) -> Dict[str, Any]:
         nonlocal idempotency_consumed
+        result = _standardize_trade_operation_payload(
+            result,
+            operation="trade_place",
+            default_error_code="trade_place_error",
+        )
         if (
             not idempotency_consumed
             and idempotency_store is not None
@@ -613,6 +641,8 @@ def run_trade_place(  # noqa: C901
                 "success": True,
                 "dry_run": True,
                 "no_action": True,
+                "no_action_reason": "dry_run",
+                "dry_run_simulated": True,
                 "symbol": symbol_norm,
                 "order_type": order_type,
                 "pending": pending,
@@ -659,6 +689,14 @@ def run_trade_place(  # noqa: C901
                         take_profit=request.take_profit,
                     )
                 )
+            preview_error = str(preview.get("preview_error") or "").strip()
+            if preview_error:
+                preview["success"] = False
+                preview["error"] = preview_error
+                preview.setdefault("error_code", "trade_preview_error")
+                preview["actionability"] = "preview_failed"
+                preview["no_action"] = True
+                preview["no_action_reason"] = "dry_run_preview_error"
             if pending:
                 preview["requested_price"] = request.price
             if request.magic is not None:
@@ -1181,6 +1219,12 @@ def run_trade_close(  # noqa: C901
         *,
         scope: Optional[str] = None,
     ) -> Dict[str, Any]:
+        if isinstance(result, dict) and str(result.get("error") or "").strip():
+            result = normalize_error_payload(
+                result,
+                default_code="trade_close_error",
+                operation="trade_close",
+            )
         log_operation_finish(
             logger,
             operation="trade_close",
@@ -1206,6 +1250,7 @@ def run_trade_close(  # noqa: C901
         out: Dict[str, Any] = dict(payload or {})
         if message and not str(out.get("message", "")).strip():
             out["message"] = message
+        out.setdefault("success", True)
         out["no_action"] = True
         return out
 
@@ -1966,6 +2011,12 @@ def run_trade_history(  # noqa: C901
             for row in records:
                 if isinstance(row, dict):
                     row["timezone"] = timezone_label
+                    if "position_ticket" not in row:
+                        position_value = row.get("position_id")
+                        if position_value in (None, ""):
+                            position_value = row.get("position_by_id")
+                        if position_value not in (None, ""):
+                            row["position_ticket"] = position_value
                     row.update(comment_row_metadata(row.get("comment")))
             return records
         except Exception as exc:
@@ -3140,6 +3191,7 @@ def _build_trade_get_open_output(
     request: Any,
     time_txt: Any,
     pd_module: Any,
+    timezone_label: str = "UTC",
     **_kwargs: Any,
 ) -> Any:
     open_df = df.drop(
@@ -3178,6 +3230,7 @@ def _build_trade_get_open_output(
             ).fillna(0.0),
             "comment": _pick_trade_series(open_df, pd_module, "comment"),
             "magic": _pick_trade_series(open_df, pd_module, "magic"),
+            "timezone": timezone_label,
         }
     )
 
@@ -3191,6 +3244,7 @@ def _build_trade_get_pending_output(
     pd_module: Any,
     fmt_time: Any,
     mt5_epoch_to_utc: Any,
+    timezone_label: str = "UTC",
     **_kwargs: Any,
 ) -> Any:
     pending_df = df.copy()
@@ -3269,6 +3323,7 @@ def _build_trade_get_pending_output(
             "price_current": _pick_trade_series(pending_df, pd_module, "price_current"),
             "comment": _pick_trade_series(pending_df, pd_module, "comment"),
             "magic": _pick_trade_series(pending_df, pd_module, "magic"),
+            "timezone": timezone_label,
         }
     )
 
@@ -3297,7 +3352,9 @@ def _run_trade_query_impl(
         return Err(str(exc), code="MT5_CONNECTION")
 
     try:
-        fmt_time = format_time_minimal_local if use_client_tz() else format_time_minimal
+        use_client_tz_value = bool(use_client_tz())
+        fmt_time = format_time_minimal_local if use_client_tz_value else format_time_minimal
+        timezone_label = "client_local" if use_client_tz_value else "UTC"
         rows, empty_response = _fetch_trade_query_rows(
             request,
             fetch_rows=fetch_rows,
@@ -3330,6 +3387,7 @@ def _run_trade_query_impl(
             pd_module=pd_module,
             fmt_time=fmt_time,
             mt5_epoch_to_utc=mt5_epoch_to_utc,
+            timezone_label=timezone_label,
         )
         detail = str(getattr(request, "detail", "compact") or "compact").strip().lower()
         if detail == "full":

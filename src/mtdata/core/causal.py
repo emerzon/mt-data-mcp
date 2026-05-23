@@ -1906,6 +1906,9 @@ def correlation_matrix(  # noqa: C901
                 "timeframe": str(timeframe),
                 "limit": int(limit),
                 "transform": transform_value,
+                "transform_note": (
+                    "Correlation defaults to log_return; cointegration defaults to log_level because it tests price-level relationships."
+                ),
                 "min_overlap": int(min_overlap),
             },
             "summary": {
@@ -2322,6 +2325,16 @@ def cointegration_test(  # noqa: C901
                     "cointegrated": cointegrated_count,
                 },
                 "highlights": _build_cointegration_summary(rows),
+            },
+            "context": {
+                "timeframe": str(timeframe),
+                "limit": int(limit),
+                "transform": transform_value,
+                "transform_note": (
+                    "Cointegration defaults to log_level; correlation defaults to log_return because it measures co-movement in returns."
+                ),
+                "trend": trend_value,
+                "min_overlap": int(min_overlap),
             },
             "meta": _causal_contract_meta(
                 meta,

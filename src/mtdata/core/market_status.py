@@ -17,7 +17,7 @@ from ..utils.mt5_enums import decode_mt5_enum_label
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway
-from .output_contract import normalize_output_verbosity_detail
+from .output_contract import normalize_output_extras, normalize_output_verbosity_detail
 
 logger = logging.getLogger(__name__)
 
@@ -516,11 +516,13 @@ def normalize_market_status_output(
     result: Dict[str, Any],
     *,
     detail: Any = None,
+    extras: Any = None,
 ) -> Dict[str, Any]:
     if not isinstance(result, dict):
         return dict(result)
 
     detail_mode = normalize_output_verbosity_detail(detail)
+    include_metadata = bool(normalize_output_extras(extras))
     out = dict(result)
     if detail_mode == "full":
         return out
@@ -534,9 +536,10 @@ def normalize_market_status_output(
             compact_markets.append(market)
         out["markets"] = compact_markets
     out.pop("message", None)
-    out.pop("upcoming_holidays", None)
-    out.pop("upcoming_holidays_count", None)
-    out.pop("upcoming_holidays_summary", None)
+    if not include_metadata:
+        out.pop("upcoming_holidays", None)
+        out.pop("upcoming_holidays_count", None)
+        out.pop("upcoming_holidays_summary", None)
     return out
 
 
@@ -879,6 +882,7 @@ def market_status(
     region: Optional[Literal["us", "europe", "asia", "all"]] = "all",
     timezone_display: Optional[Literal["local", "utc", "auto"]] = "local",
     detail: CompactFullDetailLiteral = "compact",
+    extras: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Get trading status of major stock markets worldwide.
 
@@ -911,7 +915,8 @@ def market_status(
         - `markets_pre_market`: Count of markets in pre-market
         - `markets_lunch_break`: Count of markets in lunch break
         - `markets_closed`: Count of markets currently closed
-        - `upcoming_holidays`: Full holiday rows when `extras='metadata'`
+        - `upcoming_holidays`: Full holiday rows when `extras='metadata'` or
+          `detail='full'`
             - `date`: Holiday date (ISO format)
             - `holiday`: Holiday name
             - `markets_affected`: List of market codes that will be closed
@@ -931,6 +936,7 @@ def market_status(
     """
 
     detail_mode = normalize_output_verbosity_detail(detail)
+    extras_value = normalize_output_extras(extras)
     timezone_display_mode = _normalize_timezone_display(timezone_display)
     if timezone_display_mode is None:
         return {"error": "Invalid timezone_display. Use 'local', 'utc', or 'auto'."}
@@ -1049,7 +1055,11 @@ def market_status(
             payload["closed_reason_counts"] = reason_counts
         if global_status:
             payload["global_status"] = global_status
-        return normalize_market_status_output(payload, detail=detail_mode)
+        return normalize_market_status_output(
+            payload,
+            detail=detail_mode,
+            extras=extras_value,
+        )
 
     return run_logged_operation(
         logger,
@@ -1058,5 +1068,6 @@ def market_status(
             region=region,
             timezone_display=timezone_display_mode,
             detail=detail_mode,
+            extras=extras,
             func=_run,
         )

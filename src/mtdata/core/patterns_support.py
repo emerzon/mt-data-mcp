@@ -431,7 +431,16 @@ def _compact_patterns_payload(
     strongest_compact: Optional[Dict[str, Any]] = None
     if strongest_pattern:
         strongest_compact = {}
-        for key in ("pattern", "direction", "bias", "confidence"):
+        for key in (
+            "pattern",
+            "direction",
+            "bias",
+            "confidence",
+            "time",
+            "end_date",
+            "price",
+            "end_index",
+        ):
             value = strongest_pattern.get(key)
             if value not in (None, ""):
                 strongest_compact[key] = value

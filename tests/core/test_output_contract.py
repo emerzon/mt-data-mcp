@@ -22,6 +22,13 @@ def test_normalize_output_detail_preserves_summary_mode_aliases() -> None:
         )
         == "summary"
     )
+    assert (
+        normalize_output_detail(
+            " Standard ",
+            aliases=CANONICAL_OUTPUT_DETAIL_ALIASES,
+        )
+        == "standard"
+    )
 
 
 def test_normalize_output_detail_normalizes_alias_mapping_keys_and_values() -> None:

@@ -369,6 +369,24 @@ def _finalize_volatility_output(
     if horizon_sigma_annual is not None:
         out.setdefault("volatility_horizon_annualized", horizon_sigma_annual)
     out.setdefault("volatility_unit", "return_fraction")
+    out.setdefault("volatility_measure", "standard_deviation_of_returns")
+    out.setdefault(
+        "volatility_unit_note",
+        "Volatility values are decimal return fractions; *_pct aliases are percentages.",
+    )
+    for source_key, pct_key in (
+        ("volatility_per_bar", "volatility_per_bar_pct"),
+        ("volatility_annualized", "volatility_annualized_pct"),
+        ("volatility_horizon", "volatility_horizon_pct"),
+        ("volatility_horizon_annualized", "volatility_horizon_annualized_pct"),
+    ):
+        value = out.get(source_key)
+        if value is None:
+            continue
+        try:
+            out.setdefault(pct_key, round(float(value) * 100.0, 6))
+        except Exception:
+            pass
 
     if detail_mode != "full":
         for key in (
@@ -381,6 +399,12 @@ def _finalize_volatility_output(
             "volatility_interpretation",
         ):
             out.pop(key, None)
+        horizon = out.get("horizon")
+        if isinstance(horizon, (int, float)) and int(horizon) == 1:
+            out.setdefault(
+                "horizon_note",
+                "horizon=1, so volatility_horizon equals volatility_per_bar.",
+            )
         return out
 
     horizon = out.get("horizon")

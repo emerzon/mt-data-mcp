@@ -331,16 +331,16 @@ def _apply_global_cli_overrides(args: Any, argv: List[str]) -> Any:
         argv, command, "--timeframe"
     ):
         args.timeframe = global_timeframe
-    if command == "trade_history":
-        history_days = getattr(args, "_trade_history_days", None)
-        if history_days is not None and not (
+    trade_days = getattr(args, "_trade_days", None)
+    if command.startswith("trade_") and trade_days is not None:
+        if not (
             _argv_option_present_after_command(argv, command, "--minutes-back")
             or _argv_option_present_after_command(argv, command, "--minutes_back")
         ):
             try:
-                args.minutes_back = int(round(float(history_days) * 1440.0))
+                args.minutes_back = int(round(float(trade_days) * 1440.0))
             except Exception:
-                args.minutes_back = history_days
+                args.minutes_back = trade_days
     return args
 
 

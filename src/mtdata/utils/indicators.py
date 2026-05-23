@@ -22,6 +22,7 @@ except ModuleNotFoundError:  # fallback for alternate distribution import
 
 _INDICATOR_ALIASES: dict[str, str] = {
     "bb": "bbands",
+    "boll": "bbands",
     "bollinger": "bbands",
     "bollinger_bands": "bbands",
     "bollingerbands": "bbands",

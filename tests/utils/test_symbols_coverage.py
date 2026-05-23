@@ -572,7 +572,9 @@ class TestSymbolsDescribe:
         res = fn("BTCUSD")
         sd = res["symbol"]
 
-        assert sd["currency_base"] == "USD"
+        assert sd["currency_base"] == "BTC"
+        assert sd["currency_base_reported"] == "USD"
+        assert sd["currency_base_source"] == "inferred_from_symbol_name"
         assert sd["currency_profit"] == "USD"
         assert sd["currency_base_inferred"] == "BTC"
         assert "verify broker metadata" in sd["currency_base_warning"]

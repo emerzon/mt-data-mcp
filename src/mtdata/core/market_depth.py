@@ -25,7 +25,7 @@ from ..shared.schema import CompactFullDetailLiteral
 
 logger = logging.getLogger(__name__)
 _MARKET_DEPTH_ENABLE_ENV = "MTDATA_ENABLE_MARKET_DEPTH_FETCH"
-_MARKET_TICKER_STALE_SECONDS = 24 * 60 * 60
+_MARKET_TICKER_STALE_SECONDS = 300
 
 
 def _display_timezone_label(*, use_client_tz: bool) -> str:

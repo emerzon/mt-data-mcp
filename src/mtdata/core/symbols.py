@@ -216,6 +216,13 @@ def _compact_symbol_describe_payload(symbol_data: Dict[str, Any]) -> Dict[str, A
     for field in _SYMBOL_DESCRIBE_COMPACT_DIRECT_FIELDS:
         _copy_symbol_describe_field(compact, symbol_data, field)
 
+    inferred_base = compact.get("currency_base_inferred")
+    reported_base = compact.get("currency_base")
+    if inferred_base and compact.get("currency_base_warning"):
+        compact["currency_base_reported"] = reported_base
+        compact["currency_base"] = inferred_base
+        compact["currency_base_source"] = "inferred_from_symbol_name"
+
     if "time_epoch" in symbol_data:
         compact["time_epoch"] = symbol_data["time_epoch"]
     return compact
@@ -631,6 +638,26 @@ def _market_scan_freshness_fields(bar_time: Optional[float]) -> Dict[str, Any]:
     return fields
 
 
+def _market_scan_quote_freshness_fields(tick_time: Optional[float]) -> Dict[str, Any]:
+    if tick_time is None:
+        return {}
+    try:
+        age_seconds = max(0.0, float(time.time()) - float(tick_time))
+    except Exception:
+        return {}
+    quote_stale = age_seconds > 300.0
+    fields: Dict[str, Any] = {
+        "tick_time": _format_time_minimal(tick_time),
+        "quote_age_seconds": _market_scan_round(age_seconds, digits=3),
+        "quote_stale": quote_stale,
+    }
+    if quote_stale:
+        fields["quote_stale_warning"] = (
+            "Live quote timestamp is older than 300 seconds."
+        )
+    return fields
+
+
 def _build_market_scan_spread_row(
     symbol: Any,
     mt5_gateway: Any,
@@ -641,6 +668,7 @@ def _build_market_scan_spread_row(
 
     bid = _market_scan_float(getattr(tick, "bid", None))
     ask = _market_scan_float(getattr(tick, "ask", None))
+    tick_time = _market_scan_float(getattr(tick, "time", None))
     if bid is None or ask is None:
         return None, "Bid/ask quote is unavailable."
     if ask < bid:
@@ -671,6 +699,7 @@ def _build_market_scan_spread_row(
         {
             "bid": _market_scan_round(bid, digits=digits),
             "ask": _market_scan_round(ask, digits=digits),
+            **_market_scan_quote_freshness_fields(tick_time),
             "spread": _market_scan_round(spread_abs, digits=digits),
             "spread_points": _market_scan_round(spread_points, digits=4),
             "spread_pct": _market_scan_round(spread_pct, digits=6),
@@ -826,6 +855,10 @@ def _top_markets_headers(metric: str, *, detail_mode: str) -> List[str]:
             "symbol",
             "group",
             "description",
+            "tick_time",
+            "quote_age_seconds",
+            "quote_stale",
+            "quote_stale_warning",
             "bid",
             "ask",
             "spread",
@@ -873,11 +906,22 @@ def _top_markets_headers(metric: str, *, detail_mode: str) -> List[str]:
         ],
     }
     compact_headers = {
-        "spread": ["symbol", "group", "bid", "ask", "spread_pct", "spread_points"],
+        "spread": [
+            "symbol",
+            "group",
+            "tick_time",
+            "quote_stale",
+            "bid",
+            "ask",
+            "spread_pct",
+            "spread_points",
+        ],
         "volume": [
             "symbol",
             "group",
             "timeframe",
+            "bar_time",
+            "data_stale",
             "tick_volume",
             "price_change_pct",
         ],
@@ -885,6 +929,8 @@ def _top_markets_headers(metric: str, *, detail_mode: str) -> List[str]:
             "symbol",
             "group",
             "timeframe",
+            "bar_time",
+            "data_stale",
             "price_change_pct",
             "tick_volume",
         ],
@@ -900,6 +946,10 @@ def _top_markets_all_headers(*, detail_mode: str) -> List[str]:
         "symbol",
         "group",
         "timeframe",
+        "tick_time",
+        "quote_stale",
+        "bar_time",
+        "data_stale",
         "bid",
         "ask",
         "spread_pct",
@@ -916,6 +966,10 @@ def _top_markets_all_headers(*, detail_mode: str) -> List[str]:
         "group",
         "description",
         "timeframe",
+        "tick_time",
+        "quote_age_seconds",
+        "quote_stale",
+        "quote_stale_warning",
         "bar_time",
         "data_freshness_seconds",
         "stale_after_seconds",

@@ -93,7 +93,8 @@ def test_support_resistance_tool_applies_near_price_distance_default():
          patch("mtdata.core.pivot.compute_support_resistance_payload", return_value=payload) as mock_compute:
         result = fn("EURUSD", timeframe="H1")
 
-    assert "max_distance_pct" not in result
+    assert result["max_distance_pct"] == 5.0
+    assert "No support/resistance levels qualified" in result["level_scan_note"]
     assert mock_compute.call_args.kwargs["max_distance_pct"] == 5.0
 
 
@@ -161,7 +162,11 @@ def test_support_resistance_tool_compact_exposes_coverage_gap_metadata_with_dist
             reaction_bars=4,
     )
 
-    assert "max_distance_pct" not in result
+    assert result["max_distance_pct"] == 0.04
+    assert set(result["scan_window"]) == {"start", "end"}
+    assert result["limit"] == 200
+    assert result["min_touches"] == 1
+    assert "No support/resistance levels qualified" in result["level_scan_note"]
     assert "levels" not in result
     assert "coverage_gaps" not in result
 

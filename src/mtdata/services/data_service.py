@@ -911,9 +911,25 @@ def _candle_volume_metadata(headers: List[str]) -> Dict[str, str]:
     meta: Dict[str, str] = {}
     if "tick_volume" in headers:
         meta["volume_type"] = "tick_count"
+        meta["volume_note"] = (
+            "MT5 tick_volume is broker tick count for the bar, not exchange traded volume."
+        )
     if "real_volume" in headers:
         meta["real_volume_type"] = "traded_volume"
     return meta
+
+
+def _candle_time_convention_metadata(timeframe: str) -> Dict[str, str]:
+    tf = str(timeframe or "").strip().upper()
+    if tf in {"D1", "W1", "MN1"}:
+        return {
+            "bar_time_convention": "bar_open_time",
+            "bar_time_note": (
+                "MT5 daily, weekly, and monthly candle time is the broker/server "
+                "bar open time; it may not be UTC midnight."
+            ),
+        }
+    return {"bar_time_convention": "bar_open_time"}
 
 
 def _validate_ohlcv_selection(ohlcv: Optional[str]) -> Optional[str]:
@@ -1488,6 +1504,7 @@ def fetch_candles(  # noqa: C901
             "timeframe": timeframe,
             "candles": candles_returned,
             **_candle_volume_metadata(headers),
+            **_candle_time_convention_metadata(timeframe),
             "candles_requested": candles_requested,
             "candles_excluded": candles_excluded,
             "candle_counts": candle_counts,
@@ -1532,6 +1549,12 @@ def fetch_candles(  # noqa: C901
                 payload["hint"] = "Set include_incomplete=true to include the latest forming candle."
         if isinstance(freshness_diagnostics, dict):
             payload["meta"]["diagnostics"]["freshness"] = dict(freshness_diagnostics)
+        if include_spread:
+            payload["spread_unit"] = "broker_points"
+            payload["spread_note"] = (
+                "Native MT5 candle spread is reported in broker points. If a fallback "
+                "estimate is applied, spread_unit is changed to price."
+            )
         if session_gap_warning:
             payload["meta"]["diagnostics"]["session_gaps"]["warning"] = session_gap_warning
         payload["timezone"] = _timezone_label(use_client_tz=_use_ctz, client_tz=client_tz)
@@ -1656,8 +1679,10 @@ def fetch_candles(  # noqa: C901
                             "include_spread requested but spread unavailable; "
                             f"estimated mean spread from recent ticks ({est_mean:g}) applied."
                         )
+                        payload["spread_unit"] = "price"
                         payload.setdefault("meta", {}).setdefault("diagnostics", {}).setdefault("spread_estimate", {})["estimated_mean"] = est_mean
                         payload["meta"]["diagnostics"]["spread_estimate"]["source"] = "tick_stats"
+                        payload["meta"]["diagnostics"]["spread_estimate"]["unit"] = "price"
                         payload["meta"]["diagnostics"]["spread_estimate"]["tick_stats"] = spread_stats
                     else:
                         # Fallback to live ticker
@@ -1681,8 +1706,10 @@ def fetch_candles(  # noqa: C901
                                 "include_spread requested but spread unavailable; "
                                 f"estimated spread from current live ticker ({est_mean:g}) applied."
                             )
+                            payload["spread_unit"] = "price"
                             payload.setdefault("meta", {}).setdefault("diagnostics", {}).setdefault("spread_estimate", {})["estimated_mean"] = est_mean
                             payload["meta"]["diagnostics"]["spread_estimate"]["source"] = "live_ticker"
+                            payload["meta"]["diagnostics"]["spread_estimate"]["unit"] = "price"
                 except Exception:
                     payload.setdefault("warnings", []).append("include_spread requested but spread unavailable; no fallback available.")
 

@@ -486,12 +486,6 @@ def _normalize_candle_cli_payload(result: Any, *, fmt: str) -> Any:
                 out["meta"] = meta
             else:
                 out.pop("meta", None)
-    if fmt == CLI_FORMAT_JSON:
-        rows = out.pop("data", None)
-        if rows is None:
-            rows = out.get("bars")
-        if rows is not None:
-            out["bars"] = _rows_to_table(rows)
     return out
 
 

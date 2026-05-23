@@ -558,6 +558,7 @@ def test_build_pattern_response_compact_keeps_actionable_fields():
         "pattern": "Double Bottom",
         "bias": "bullish",
         "confidence": 0.85,
+        "price": 12.0,
     }
     assert "recent_patterns" not in compact
 
@@ -602,6 +603,7 @@ def test_build_pattern_response_compact_keeps_fractal_breakout_fields():
         "direction": "bullish",
         "bias": "bearish",
         "confidence": 0.82,
+        "price": 9.9,
     }
     assert "recent_patterns" not in compact
 

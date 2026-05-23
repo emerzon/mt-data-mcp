@@ -459,6 +459,8 @@ def add_dynamic_arguments(
         extras: list[str] = []
         if cmd_name_value == "trade_history" and param_name == "position_ticket":
             extras.append("--ticket")
+        if cmd_name_value == "forecast_backtest_run" and param_name == "methods":
+            extras.append("--method")
         return tuple(extras)
 
     for param in param_info["params"]:
@@ -556,10 +558,10 @@ def add_dynamic_arguments(
                     hidden_kwargs = dict(kwargs)
                     hidden_kwargs["help"] = argparse.SUPPRESS
                     parser.add_argument(*hidden_option_flags, **hidden_kwargs)
-        if cmd_name == "trade_history" and param["name"] == "minutes_back":
+        if str(param["name"]) == "minutes_back" and str(cmd_name or "").startswith("trade_"):
             parser.add_argument(
                 "--days",
-                dest="_trade_history_days",
+                dest="_trade_days",
                 type=float,
                 default=argparse.SUPPRESS,
                 metavar="DAYS",
