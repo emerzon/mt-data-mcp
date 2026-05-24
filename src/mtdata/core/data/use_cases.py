@@ -271,6 +271,8 @@ def _compact_candles_payload(
         "candles_excluded",
         "hint",
         "incomplete_candles_skipped",
+        "volume_note",
+        "bar_time_convention",
         "meta",
     ):
         compact.pop(key, None)

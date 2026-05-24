@@ -527,6 +527,9 @@ class TestMarketScan:
         assert result["returned_count"] == 1
         assert result["universe_size"] == 1
         assert "only 1 symbols were available" in result["note"]
+        assert result["units"]["price_change_pct"] == "percentage_points"
+        assert result["units"]["tick_volume"] == "broker_tick_count"
+        assert result["units"]["spread_pct"] == "percentage_points"
         row = result["data"][0]
         assert row["symbol"] == "EURUSD"
         assert set(row) == {

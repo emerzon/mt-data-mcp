@@ -319,6 +319,7 @@ def test_market_ticker_compact_detail_omits_verbose_fields() -> None:
     assert out["tick_volume"] == 5
     assert out["time_display"] == "2023-11-14 22:13"
     assert out["data_stale"] is True
+    assert "data_age" in out
     assert "Tick data may be stale" in out["warning"]
     assert out["spread_cost_per_lot"] == 100.0
     assert out["spread_cost_currency"] == "USD"

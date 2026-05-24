@@ -228,6 +228,66 @@ def test_compact_report_payload_elevates_barrier_conflicts():
     ]
 
 
+def test_report_generate_compact_keeps_actionable_section_summaries():
+    fn = _get_report_generate()
+    sections = _make_full_sections()
+    sections["pivot"] = {
+        "method": "classic",
+        "levels": {"PP": 1.102, "R1": 1.106, "S1": 1.098},
+        "timezone": "UTC",
+    }
+    sections["volatility"] = {
+        "methods": ["ewma"],
+        "matrix": [{"horizon": 3, "ewma": 0.0041, "avg": 0.0041}],
+    }
+    sections["forecast"] = {
+        "method": "EMA",
+        "forecast_price": [1.101, 1.103, 1.104],
+    }
+    sections["backtest"] = {
+        "best_method": {
+            "method": "EMA",
+            "stats": {
+                "avg_rmse": 0.001,
+                "avg_directional_accuracy": 0.61,
+            },
+        }
+    }
+    sections["patterns"] = {
+        "recent": [
+            {"pattern": "hammer", "direction": "bullish", "confidence": 0.8, "debug": "drop"}
+        ]
+    }
+    rep = _make_report(sections=sections)
+    mock_basic = MagicMock(return_value=rep)
+
+    with patch("mtdata.core.report_templates.template_basic", mock_basic, create=True), \
+         patch("mtdata.core.report_templates.template_advanced", mock_basic, create=True), \
+         patch("mtdata.core.report_templates.template_scalping", mock_basic, create=True), \
+         patch("mtdata.core.report_templates.template_intraday", mock_basic, create=True), \
+         patch("mtdata.core.report_templates.template_swing", mock_basic, create=True), \
+         patch("mtdata.core.report_templates.template_position", mock_basic, create=True), \
+         patch(_FMT_NUM, side_effect=str):
+        out = fn("EURUSD", template="basic", horizon=3, detail="compact")
+
+    structured = out["summary_structured"]
+    assert structured["pivot"] == {
+        "method": "classic",
+        "PP": 1.102,
+        "R1": 1.106,
+        "S1": 1.098,
+        "display_timezone": "UTC",
+    }
+    assert structured["volatility"] == {"horizon": 3, "sigma": 0.0041, "method": "ewma"}
+    assert structured["forecast"]["first"] == 1.101
+    assert structured["forecast"]["last"] == 1.104
+    assert structured["backtest"]["best_method"] == "EMA"
+    assert structured["patterns"]["recent"] == [
+        {"pattern": "hammer", "direction": "bullish", "confidence": 0.8}
+    ]
+    assert "sections" not in out
+
+
 def _make_full_sections():
     """Create a rich sections dict to exercise summary extraction."""
     return {

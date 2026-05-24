@@ -67,6 +67,23 @@ def _market_ticker_price_display(value: Any, *, digits: int) -> Optional[str]:
     return f"{numeric:.{max(0, int(digits))}f}"
 
 
+def _market_ticker_age_display(seconds: Any) -> Optional[str]:
+    try:
+        total = max(0, int(round(float(seconds))))
+    except Exception:
+        return None
+    days, remainder = divmod(total, 86400)
+    hours, remainder = divmod(remainder, 3600)
+    minutes, secs = divmod(remainder, 60)
+    if days:
+        return f"{days}d {hours}h"
+    if hours:
+        return f"{hours}h {minutes}m"
+    if minutes:
+        return f"{minutes}m {secs}s"
+    return f"{secs}s"
+
+
 def _market_depth_fetch_enabled() -> bool:
     raw = os.getenv(_MARKET_DEPTH_ENABLE_ENV)
     if raw is None:
@@ -90,6 +107,7 @@ def _compact_market_ticker_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "spread_cost_per_lot",
         "spread_cost_currency",
         "data_age_seconds",
+        "data_age",
         "data_stale",
         "warning",
         "time",
@@ -545,6 +563,9 @@ def market_ticker(
                     age_seconds = None
             if age_seconds is not None:
                 out["data_age_seconds"] = age_seconds
+                age_display = _market_ticker_age_display(age_seconds)
+                if age_display is not None:
+                    out["data_age"] = age_display
                 out["data_age_hours"] = age_seconds / 3600.0
                 out["data_stale"] = age_seconds > _MARKET_TICKER_STALE_SECONDS
                 if out["data_stale"]:

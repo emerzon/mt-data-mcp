@@ -1043,6 +1043,54 @@ def _format_finviz_large_number(value: Any) -> Optional[str]:
     return f"{float(number):.0f}"
 
 
+def _finite_finviz_float(value: Any) -> Optional[float]:
+    parsed = _parse_finviz_numeric_value(value)
+    if parsed is None:
+        return None
+    try:
+        numeric = float(parsed)
+    except Exception:
+        return None
+    if numeric != numeric or numeric in (float("inf"), float("-inf")):
+        return None
+    return numeric
+
+
+def _add_finviz_52w_quality_flags(fundamentals: Dict[str, Any]) -> None:
+    price = _finite_finviz_float(fundamentals.get("price"))
+    if price is None or price <= 0:
+        return
+    warnings_out: List[str] = []
+    high = _finite_finviz_float(fundamentals.get("high_52w_price"))
+    if high is not None and high > 0 and price > high:
+        fundamentals["new_52w_high"] = True
+        fundamentals["high_52w_distance_pct_recomputed"] = round(
+            ((price - high) / high) * 100.0,
+            2,
+        )
+        warnings_out.append(
+            "Current price is above the reported 52-week high; upstream 52-week data may be delayed."
+        )
+    low = _finite_finviz_float(fundamentals.get("low_52w_price"))
+    if low is not None and low > 0 and price < low:
+        fundamentals["new_52w_low"] = True
+        fundamentals["low_52w_distance_pct_recomputed"] = round(
+            ((price - low) / low) * 100.0,
+            2,
+        )
+        warnings_out.append(
+            "Current price is below the reported 52-week low; upstream 52-week data may be delayed."
+        )
+    if warnings_out:
+        existing = fundamentals.get("data_quality_warnings")
+        if not isinstance(existing, list):
+            existing = []
+        for warning in warnings_out:
+            if warning not in existing:
+                existing.append(warning)
+        fundamentals["data_quality_warnings"] = existing
+
+
 def _normalize_finviz_output_row(row: Any) -> Any:
     if not isinstance(row, dict):
         return row
@@ -1585,6 +1633,7 @@ def _filter_finviz_fundamentals_payload(
             if formatted_market_cap:
                 filtered["market_cap_formatted"] = formatted_market_cap
     out = dict(result)
+    _add_finviz_52w_quality_flags(filtered)
     out["fundamentals"] = filtered
     out["detail"] = detail_mode
     out["category"] = category_out

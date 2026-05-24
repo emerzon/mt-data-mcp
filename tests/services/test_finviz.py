@@ -840,6 +840,30 @@ class TestFinvizTools:
         assert "omitted_field_count" not in result
 
     @patch("mtdata.core.finviz.get_stock_fundamentals")
+    def test_finviz_fundamentals_flags_stale_52w_high(self, mock_get_fundamentals):
+        from mtdata.core.finviz import finviz_fundamentals
+
+        mock_get_fundamentals.return_value = {
+            "success": True,
+            "symbol": "AAPL",
+            "fundamentals": {
+                "Company": "Apple Inc",
+                "Market Cap": "3979.47B",
+                "Price": "308.82",
+                "52W High": "305.50 1.07%",
+                "52W Low": "193.50 59.60%",
+            },
+        }
+
+        raw = getattr(finviz_fundamentals, "__wrapped__", finviz_fundamentals)
+        result = raw("AAPL")
+
+        fundamentals = result["fundamentals"]
+        assert fundamentals["new_52w_high"] is True
+        assert fundamentals["high_52w_distance_pct_recomputed"] == 1.09
+        assert "upstream 52-week data may be delayed" in fundamentals["data_quality_warnings"][0]
+
+    @patch("mtdata.core.finviz.get_stock_fundamentals")
     def test_finviz_fundamentals_filters_category_and_fields(self, mock_get_fundamentals):
         from mtdata.core.finviz import finviz_fundamentals
 

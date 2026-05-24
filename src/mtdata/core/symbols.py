@@ -830,6 +830,34 @@ def _project_market_scan_rows(
     return projected
 
 
+_MARKET_SCAN_UNITS = {
+    "close": "price",
+    "price_change_pct": "percentage_points",
+    "tick_volume": "broker_tick_count",
+    "spread_pct": "percentage_points",
+    "rsi": "0_100",
+    "sma_distance_pct": "percentage_points",
+    "data_freshness_seconds": "seconds",
+    "stale_after_seconds": "seconds",
+    "bar_age_hours": "hours",
+}
+
+
+def _market_scan_units_for_rows(rows: List[Dict[str, Any]]) -> Dict[str, str]:
+    seen_fields = {
+        str(key)
+        for row in rows
+        if isinstance(row, dict)
+        for key, value in row.items()
+        if value is not None
+    }
+    return {
+        key: unit
+        for key, unit in _MARKET_SCAN_UNITS.items()
+        if key in seen_fields
+    }
+
+
 def _market_scan_contract_meta(
     *,
     request: Dict[str, Any],
@@ -2188,6 +2216,9 @@ def market_scan(  # noqa: C901
                 },
                 "meta": _market_scan_contract_meta(request=request, stats=stats),
             }
+            units = _market_scan_units_for_rows(table_payload["rows"])
+            if units:
+                out["units"] = units
             if "columns" in table_payload:
                 out["columns"] = table_payload["columns"]
             if len(selected_symbols) < int(limit_value):

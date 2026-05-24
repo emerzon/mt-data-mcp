@@ -213,6 +213,37 @@ def _compact_report_payload(
     return compact
 
 
+def _compact_report_top_patterns(patterns_section: Any, *, limit: int = 3) -> List[Dict[str, Any]]:
+    if not isinstance(patterns_section, dict):
+        return []
+    rows = patterns_section.get("recent")
+    if not isinstance(rows, list):
+        return []
+    compact: List[Dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        item = {
+            key: row[key]
+            for key in (
+                "pattern",
+                "name",
+                "type",
+                "direction",
+                "signal",
+                "confidence",
+                "score",
+                "time",
+            )
+            if row.get(key) not in (None, "", [], {})
+        }
+        if item:
+            compact.append(item)
+        if len(compact) >= max(1, int(limit)):
+            break
+    return compact
+
+
 def run_report_generate(  # noqa: C901
     request: ReportGenerateRequest,
     *,
@@ -383,6 +414,15 @@ def run_report_generate(  # noqa: C901
                 def _pivot_lookup(level_key: str):
                     target = level_key.lower()
                     alt = "pivot" if target == "pp" else None
+                    if isinstance(lev_rows, dict):
+                        for candidate in (level_key, level_key.upper(), level_key.lower()):
+                            if candidate in lev_rows:
+                                return lev_rows.get(candidate)
+                        if alt:
+                            for candidate in (alt, alt.upper(), alt.lower()):
+                                if candidate in lev_rows:
+                                    return lev_rows.get(candidate)
+                        return None
                     if not isinstance(lev_rows, list):
                         return None
                     for row in lev_rows:
@@ -428,12 +468,37 @@ def run_report_generate(  # noqa: C901
                 vol = rep.get("sections", {}).get("volatility", {})
                 if isinstance(vol, dict):
                     hs = vol.get("horizon_sigma_price") or vol.get("horizon_sigma_return")
+                    vol_method = vol.get("method")
+                    if hs is None:
+                        matrix = vol.get("matrix")
+                        if isinstance(matrix, list):
+                            for row in matrix:
+                                if not isinstance(row, dict):
+                                    continue
+                                if int(row.get("horizon") or 0) != int(eff_horizon):
+                                    continue
+                                hs = row.get("avg")
+                                if hs is None:
+                                    for key, value in row.items():
+                                        if key in {"horizon", "avg"} or str(key).endswith(("_bar", "_err", "_note")):
+                                            continue
+                                        if isinstance(value, (int, float)):
+                                            hs = value
+                                            vol_method = str(key)
+                                            break
+                                if hs is not None and vol_method is None:
+                                    methods = vol.get("methods")
+                                    if isinstance(methods, list) and methods:
+                                        vol_method = str(methods[0])
+                                break
                     if hs is not None:
                         summ.append(f"h{eff_horizon} sigma={format_number(hs)}")
                         summary_structured["volatility"] = {
                             "horizon": eff_horizon,
                             "sigma": hs,
                         }
+                        if vol_method:
+                            summary_structured["volatility"]["method"] = vol_method
             except Exception:
                 pass
 
@@ -468,6 +533,10 @@ def run_report_generate(  # noqa: C901
                                     rep,
                                     "Selected forecast appears degenerate (near-constant values across horizon).",
                                 )
+                            forecast_summary["first"] = nums[0]
+                            forecast_summary["last"] = nums[-1]
+                            forecast_summary["min"] = min(nums)
+                            forecast_summary["max"] = max(nums)
                     summ.append(forecast_line)
                     timing_parts: List[str] = []
                     last_obs = _report_time_label(
@@ -536,6 +605,25 @@ def run_report_generate(  # noqa: C901
                             if chosen is not None:
                                 forecast_summary["chosen_method"] = chosen
                     summ.append(line)
+                if isinstance(best_payload, dict):
+                    best_method = best_payload.get("method")
+                    stats = best_payload.get("stats")
+                    backtest_summary: Dict[str, Any] = {}
+                    if best_method not in (None, ""):
+                        backtest_summary["best_method"] = best_method
+                    if isinstance(stats, dict):
+                        backtest_summary["stats"] = {
+                            key: stats[key]
+                            for key in (
+                                "avg_rmse",
+                                "avg_mae",
+                                "avg_directional_accuracy",
+                                "successful_tests",
+                            )
+                            if stats.get(key) is not None
+                        }
+                    if backtest_summary:
+                        summary_structured["backtest"] = backtest_summary
             except Exception:
                 pass
 
@@ -625,6 +713,15 @@ def run_report_generate(  # noqa: C901
                             barriers_summary["best"] = barrier_entry
                 if barriers_summary:
                     summary_structured["barriers"] = barriers_summary
+            except Exception:
+                pass
+
+            try:
+                top_patterns = _compact_report_top_patterns(
+                    rep.get("sections", {}).get("patterns", {})
+                )
+                if top_patterns:
+                    summary_structured["patterns"] = {"recent": top_patterns}
             except Exception:
                 pass
 

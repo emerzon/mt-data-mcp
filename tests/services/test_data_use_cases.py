@@ -144,6 +144,8 @@ def test_run_data_fetch_candles_compact_omits_default_metadata():
             "forming_candle_status": "none",
             "forming_candle_included": False,
             "forming_candle_skipped": False,
+            "volume_note": "MT5 tick_volume is broker tick count.",
+            "bar_time_convention": "bar_open_time",
             "data": [],
         },
     )
