@@ -516,6 +516,10 @@ def test_build_pattern_response_compact_detail_returns_summary():
 
     assert compact["n_patterns"] == 2
     assert compact["strongest_pattern"] == {"pattern": "B", "confidence": 0.7}
+    assert compact["top_patterns"] == [
+        {"pattern": "B", "status": "forming", "confidence": 0.7},
+        {"pattern": "A", "status": "forming", "confidence": 0.5},
+    ]
     assert "recent_patterns" not in compact
     assert "summary" not in compact
     assert "patterns" not in compact
@@ -560,6 +564,15 @@ def test_build_pattern_response_compact_keeps_actionable_fields():
         "confidence": 0.85,
         "price": 12.0,
     }
+    assert compact["top_patterns"] == [
+        {
+            "pattern": "Double Bottom",
+            "direction": "bullish",
+            "status": "forming",
+            "confidence": 0.85,
+            "price": 12.0,
+        }
+    ]
     assert "recent_patterns" not in compact
 
 
@@ -680,8 +693,9 @@ def test_build_pattern_response_compact_adds_hint_when_rows_are_truncated():
         detail="compact",
     )
 
-    assert (
-        compact["show_all_hint"] == "Set detail='standard' to show detected patterns."
+    assert len(compact["top_patterns"]) == 3
+    assert compact["show_all_hint"] == (
+        "Set detail='standard' to show all detected patterns."
     )
 
 

@@ -447,6 +447,47 @@ def _compact_patterns_payload(
         if not strongest_compact:
             strongest_compact = None
 
+    top_patterns: List[Dict[str, Any]] = []
+    for row in sorted(
+        preview_rows,
+        key=lambda r: (
+            _safe_float(r.get("confidence")) or 0.0,
+            _safe_float(r.get("end_index")) or float("-inf"),
+        ),
+        reverse=True,
+    )[:3]:
+        item: Dict[str, Any] = {}
+        label = _pattern_label(row)
+        if label:
+            item["pattern"] = label
+        direction = (
+            row.get("direction") or row.get("bias") or row.get("breakout_direction")
+        )
+        if direction not in (None, ""):
+            item["direction"] = direction
+        for key in ("timeframe", "status", "confidence"):
+            value = row.get(key)
+            if value not in (None, ""):
+                item[key] = value
+        time_value = (
+            row.get("time")
+            or row.get("end_date")
+            or row.get("confirmation_date")
+            or row.get("breakout_date")
+        )
+        if time_value not in (None, ""):
+            item["time"] = time_value
+        price_value = (
+            row.get("price")
+            or row.get("reference_price")
+            or row.get("level_price")
+            or row.get("breakout_price")
+        )
+        if price_value not in (None, ""):
+            item["price"] = price_value
+        if item:
+            top_patterns.append(item)
+
     compact: Dict[str, Any] = {
         "success": bool(payload.get("success", True)),
         "symbol": payload.get("symbol"),
@@ -465,8 +506,10 @@ def _compact_patterns_payload(
         compact["bias"] = signal_bias.get("net_bias")
     if strongest_compact:
         compact["strongest_pattern"] = strongest_compact
-    if total_i > 1:
-        compact["show_all_hint"] = "Set detail='standard' to show detected patterns."
+    if top_patterns:
+        compact["top_patterns"] = top_patterns
+    if total_i > len(top_patterns):
+        compact["show_all_hint"] = "Set detail='standard' to show all detected patterns."
 
     for key in (
         "engine",
