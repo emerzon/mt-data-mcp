@@ -199,6 +199,41 @@ class TestFinvizCalendarOutputContract:
         ]
 
     @patch("mtdata.core.finviz.get_economic_calendar")
+    def test_calendar_economic_filters_by_currency(self, mock_get):
+        mock_get.return_value = {
+            "success": True,
+            "items": [
+                {
+                    "symbol": "USD",
+                    "event": "US CPI",
+                    "date": "2026-05-08T08:30:00",
+                    "importance": 3,
+                },
+                {
+                    "symbol": "EUR",
+                    "event": "Eurozone CPI",
+                    "date": "2026-05-08T09:00:00",
+                    "importance": 3,
+                },
+            ],
+        }
+
+        result = _unwrap(finviz_calendar)(currency="USD")
+
+        assert result["country_filter"] == "US"
+        assert result["count"] == 1
+        assert result["items"] == [
+            {
+                "source_id": "USD",
+                "event": "US CPI",
+                "date": "2026-05-08T08:30:00",
+                "importance": 3,
+                "country": "United States",
+                "country_code": "US",
+            }
+        ]
+
+    @patch("mtdata.core.finviz.get_economic_calendar")
     def test_calendar_full_keeps_internal_fields(self, mock_get):
         mock_get.return_value = {
             "success": True,

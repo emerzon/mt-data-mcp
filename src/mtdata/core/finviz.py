@@ -1127,6 +1127,45 @@ _FINVIZ_CALENDAR_COUNTRY_PREFIXES = (
     ("CHINA", "China", "CN"),
     ("CNY", "China", "CN"),
 )
+_FINVIZ_CALENDAR_CURRENCY_TO_COUNTRY_CODE = {
+    "USD": "US",
+    "EUR": "EU",
+    "GBP": "GB",
+    "JPY": "JP",
+    "CAD": "CA",
+    "AUD": "AU",
+    "NZD": "NZ",
+    "CHF": "CH",
+    "CNY": "CN",
+}
+
+
+def _resolve_finviz_calendar_country_filter(
+    *,
+    country: Optional[str],
+    currency: Optional[str],
+) -> tuple[Optional[str], Optional[str]]:
+    country_text = str(country or "").strip()
+    currency_text = str(currency or "").strip().upper()
+    resolved_code: Optional[str] = None
+    if currency_text:
+        resolved_code = _FINVIZ_CALENDAR_CURRENCY_TO_COUNTRY_CODE.get(currency_text)
+        if resolved_code is None:
+            return None, f"Unsupported currency filter '{currency}'."
+    if country_text:
+        compact_country = re.sub(r"[^A-Za-z]", "", country_text).upper()
+        country_code = None
+        for prefix, country_name, code in _FINVIZ_CALENDAR_COUNTRY_PREFIXES:
+            compact_name = re.sub(r"[^A-Za-z]", "", country_name).upper()
+            if compact_country in {prefix, compact_name, code}:
+                country_code = code
+                break
+        if country_code is None:
+            return None, f"Unsupported country filter '{country}'."
+        if resolved_code is not None and country_code != resolved_code:
+            return None, "country and currency filters refer to different regions."
+        resolved_code = country_code
+    return resolved_code, None
 
 
 def _infer_finviz_calendar_country(item: Dict[str, Any]) -> tuple[Any, Any]:
@@ -1167,11 +1206,22 @@ def _compact_finviz_calendar_item(
     }
 
 
+def _enrich_finviz_calendar_country(item: Dict[str, Any]) -> Dict[str, Any]:
+    normalized = dict(item)
+    country, country_code = _infer_finviz_calendar_country(normalized)
+    if country not in (None, ""):
+        normalized["country"] = country
+    if country_code not in (None, ""):
+        normalized["country_code"] = country_code
+    return normalized
+
+
 def _normalize_finviz_calendar_payload(
     result: Dict[str, Any],
     *,
     detail: str = "compact",
     calendar_type: str = "economic",
+    country_code_filter: Optional[str] = None,
 ) -> Dict[str, Any]:
     if not isinstance(result, dict) or result.get("error"):
         return result
@@ -1181,7 +1231,17 @@ def _normalize_finviz_calendar_payload(
         normalized_key = _normalize_finviz_output_key(key)
         out[normalized_key] = value
     if isinstance(out.get("items"), list):
-        normalized_items = _normalize_finviz_output_rows(out["items"])
+        normalized_items = [
+            _enrich_finviz_calendar_country(item)
+            for item in _normalize_finviz_output_rows(out["items"])
+        ]
+        if country_code_filter:
+            normalized_items = [
+                item
+                for item in normalized_items
+                if str(item.get("country_code") or "").upper()
+                == str(country_code_filter).upper()
+            ]
         if detail_mode == "full":
             out["items"] = normalized_items
         else:
@@ -1193,6 +1253,9 @@ def _normalize_finviz_calendar_payload(
                 )
                 for item in normalized_items
             ]
+        out["count"] = len(out["items"])
+    if country_code_filter:
+        out["country_filter"] = str(country_code_filter).upper()
     out.setdefault("timezone", "America/New_York")
     out["detail"] = detail_mode
     return out
@@ -2116,6 +2179,8 @@ def finviz_futures(
 def finviz_calendar(
     calendar: str = "economic",
     impact: Optional[Literal["low", "medium", "high"]] = None,
+    country: Optional[str] = None,
+    currency: Optional[str] = None,
     start: Optional[str] = None,
     end: Optional[str] = None,
     limit: int = 20,
@@ -2135,6 +2200,10 @@ def finviz_calendar(
         Calendar type: "economic", "earnings", or "dividends" (also accepts paths like "/calendar/economic").
     impact : str, optional
         Economic only: filter by impact level: "low", "medium", or "high".
+    country : str, optional
+        Economic only: filter by country name or code (for example "US").
+    currency : str, optional
+        Economic only: filter by affected currency (for example "USD").
     start : str, optional
         Start date in ISO format: YYYY-MM-DD.
     end : str, optional
@@ -2154,6 +2223,8 @@ def finviz_calendar(
     fields = {
         "calendar": calendar,
         "impact": impact,
+        "country": country,
+        "currency": currency,
         "start": start,
         "end": end,
         "limit": limit,
@@ -2171,6 +2242,17 @@ def finviz_calendar(
         if "/" in cal:
             cal = cal.rstrip("/").split("/")[-1]
 
+        country_filter, filter_error = _resolve_finviz_calendar_country_filter(
+            country=country,
+            currency=currency,
+        )
+        if filter_error:
+            return {"error": filter_error}
+        if cal != "economic" and country_filter:
+            return {
+                "error": "country/currency filters are only supported for economic calendar."
+            }
+
         if cal == "economic":
             return _normalize_finviz_calendar_payload(
                 get_economic_calendar(
@@ -2182,6 +2264,7 @@ def finviz_calendar(
                 ),
                 detail=detail,
                 calendar_type=cal,
+                country_code_filter=country_filter,
             )
         if cal == "earnings":
             return _normalize_finviz_calendar_payload(
