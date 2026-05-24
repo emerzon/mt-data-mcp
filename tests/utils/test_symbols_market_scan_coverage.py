@@ -127,12 +127,17 @@ class TestSymbolsTopMarkets:
         assert "detail" not in result
         assert "timeframe_requested" not in result
         assert "query_latency_ms" not in result
+        assert result["requested_limit"] == 5
+        assert result["returned_count"] == 2
+        assert result["universe_size"] == 2
+        assert result["available_count"] == 2
+        assert "only 2 symbols had usable spread data" in result["note"]
         assert [row["symbol"] for row in result["data"]] == ["EURUSD", "XAUUSD"]
         assert list(result["data"][0].keys()) == [
             "symbol",
             "group",
             "tick_time",
-            "quote_stale",
+            "data_stale",
             "bid",
             "ask",
             "spread_pct",
@@ -243,7 +248,7 @@ class TestSymbolsTopMarkets:
             "symbol",
             "group",
             "tick_time",
-            "quote_stale",
+            "data_stale",
             "bid",
             "ask",
             "spread_pct",
@@ -302,6 +307,15 @@ class TestSymbolsTopMarkets:
         assert "scan_stats" not in result
         assert "query_latency_ms" not in result
         assert result["ranking"] == "all"
+        assert result["requested_limit"] == 5
+        assert result["universe_size"] == 2
+        assert result["returned_counts"] == {
+            "lowest_spread": 2,
+            "highest_volume": 2,
+            "highest_price_change": 2,
+        }
+        assert result["available_counts"] == result["returned_counts"]
+        assert result["notes"]
         assert "data" not in result
         assert list(result["lowest_spread"][0].keys()) == [
             "rank",
@@ -509,6 +523,10 @@ class TestMarketScan:
         assert result["success"] is True
         assert "columns" not in result
         assert result["count"] == 1
+        assert result["requested_limit"] == 5
+        assert result["returned_count"] == 1
+        assert result["universe_size"] == 1
+        assert "only 1 symbols were available" in result["note"]
         row = result["data"][0]
         assert row["symbol"] == "EURUSD"
         assert set(row) == {

@@ -34,6 +34,7 @@ from .output_contract import (
 
 logger = logging.getLogger(__name__)
 _MARKET_SCAN_STALE_BAR_SECONDS = 7 * 24 * 60 * 60
+_MARKET_SCAN_STALE_QUOTE_SECONDS = 300
 
 
 def _case_insensitive_sort_key(value: Any) -> tuple[str, str]:
@@ -118,6 +119,8 @@ _SYMBOL_DESCRIBE_COMPACT_DIRECT_FIELDS: tuple[str, ...] = (
     "currency_base_warning",
     "currency_profit",
     "time",
+    "data_stale",
+    "warning",
     "digits",
     "point",
     "trade_contract_size",
@@ -513,6 +516,15 @@ def symbols_describe(
                         if contract.shape_detail == "full":
                             symbol_data["time_epoch"] = utc_epoch
                         symbol_data["time"] = _format_time_minimal(utc_epoch)
+                        symbol_data.update(
+                            {
+                                key: value
+                                for key, value in _quote_staleness_fields(
+                                    utc_epoch
+                                ).items()
+                                if key in {"data_stale", "warning"}
+                            }
+                        )
                     except Exception:
                         if contract.shape_detail == "full":
                             symbol_data["time_epoch"] = value
@@ -640,24 +652,32 @@ def _market_scan_freshness_fields(bar_time: Optional[float]) -> Dict[str, Any]:
     return fields
 
 
-def _market_scan_quote_freshness_fields(tick_time: Optional[float]) -> Dict[str, Any]:
+def _quote_staleness_fields(tick_time: Optional[float]) -> Dict[str, Any]:
     if tick_time is None:
         return {}
     try:
         age_seconds = max(0.0, float(time.time()) - float(tick_time))
     except Exception:
         return {}
-    quote_stale = age_seconds > 300.0
     fields: Dict[str, Any] = {
-        "tick_time": _format_time_minimal(tick_time),
         "quote_age_seconds": _market_scan_round(age_seconds, digits=3),
-        "quote_stale": quote_stale,
+        "data_stale": age_seconds > float(_MARKET_SCAN_STALE_QUOTE_SECONDS),
     }
-    if quote_stale:
-        fields["quote_stale_warning"] = (
-            "Live quote timestamp is older than 300 seconds."
+    if fields["data_stale"]:
+        fields["warning"] = (
+            "Live quote timestamp is older than "
+            f"{int(_MARKET_SCAN_STALE_QUOTE_SECONDS)} seconds."
         )
     return fields
+
+
+def _market_scan_quote_freshness_fields(tick_time: Optional[float]) -> Dict[str, Any]:
+    if tick_time is None:
+        return {}
+    return {
+        "tick_time": _format_time_minimal(tick_time),
+        **_quote_staleness_fields(tick_time),
+    }
 
 
 def _build_market_scan_spread_row(
@@ -859,8 +879,8 @@ def _top_markets_headers(metric: str, *, detail_mode: str) -> List[str]:
             "description",
             "tick_time",
             "quote_age_seconds",
-            "quote_stale",
-            "quote_stale_warning",
+            "data_stale",
+            "warning",
             "bid",
             "ask",
             "spread",
@@ -912,7 +932,7 @@ def _top_markets_headers(metric: str, *, detail_mode: str) -> List[str]:
             "symbol",
             "group",
             "tick_time",
-            "quote_stale",
+            "data_stale",
             "bid",
             "ask",
             "spread_pct",
@@ -949,9 +969,8 @@ def _top_markets_all_headers(*, detail_mode: str) -> List[str]:
         "group",
         "timeframe",
         "tick_time",
-        "quote_stale",
-        "bar_time",
         "data_stale",
+        "bar_time",
         "bid",
         "ask",
         "spread_pct",
@@ -970,14 +989,13 @@ def _top_markets_all_headers(*, detail_mode: str) -> List[str]:
         "timeframe",
         "tick_time",
         "quote_age_seconds",
-        "quote_stale",
-        "quote_stale_warning",
+        "data_stale",
+        "warning",
         "bar_time",
         "data_freshness_seconds",
         "stale_after_seconds",
         "bar_age_hours",
         "freshness_status",
-        "data_stale",
         "stale_warning",
         "bid",
         "ask",
@@ -1583,6 +1601,26 @@ def symbols_top_markets(  # noqa: C901
             volume_rows = volume_rows[:limit_value]
             price_change_rows = price_change_rows[:limit_value]
 
+            def _scope_fields(
+                metric_name: str,
+                rows: List[Dict[str, Any]],
+            ) -> Dict[str, Any]:
+                available_count = int(evaluated_counts[metric_name])
+                returned_count = int(len(rows))
+                fields: Dict[str, Any] = {
+                    "requested_limit": int(limit_value),
+                    "returned_count": returned_count,
+                    "universe_size": int(len(selected_symbols)),
+                    "available_count": available_count,
+                }
+                if returned_count < int(limit_value):
+                    fields["note"] = (
+                        f"Requested {int(limit_value)} rows but only "
+                        f"{available_count} symbols had usable {metric_name} data "
+                        f"in the {universe_value} universe."
+                    )
+                return fields
+
             scan_meta = {"success": True}
             if detail_mode == "full":
                 scan_meta.update(
@@ -1613,6 +1651,7 @@ def symbols_top_markets(  # noqa: C901
                 )
                 out.update(scan_meta)
                 out["ranking"] = "lowest_spread"
+                out.update(_scope_fields("spread", spread_rows))
                 if detail_mode == "full":
                     out["evaluated_symbols"] = evaluated_counts["spread"]
                     out["skipped_symbols"] = metric_skips["spread"]
@@ -1627,6 +1666,7 @@ def symbols_top_markets(  # noqa: C901
                 )
                 out.update(scan_meta)
                 out["ranking"] = "highest_volume"
+                out.update(_scope_fields("volume", volume_rows))
                 if detail_mode == "full":
                     out["evaluated_symbols"] = evaluated_counts["volume"]
                     out["skipped_symbols"] = metric_skips["volume"]
@@ -1641,6 +1681,7 @@ def symbols_top_markets(  # noqa: C901
                 )
                 out.update(scan_meta)
                 out["ranking"] = "highest_price_change"
+                out.update(_scope_fields("price_change", price_change_rows))
                 if detail_mode == "full":
                     out["evaluated_symbols"] = evaluated_counts["price_change"]
                     out["skipped_symbols"] = metric_skips["price_change"]
@@ -1653,9 +1694,33 @@ def symbols_top_markets(  # noqa: C901
                 )
 
             if detail_mode == "compact":
+                returned_counts = {
+                    "lowest_spread": len(spread_rows),
+                    "highest_volume": len(volume_rows),
+                    "highest_price_change": len(price_change_rows),
+                }
+                available_counts = {
+                    "lowest_spread": evaluated_counts["spread"],
+                    "highest_volume": evaluated_counts["volume"],
+                    "highest_price_change": evaluated_counts["price_change"],
+                }
+                notes = [
+                    fields["note"]
+                    for metric_name, rows in (
+                        ("spread", spread_rows),
+                        ("volume", volume_rows),
+                        ("price_change", price_change_rows),
+                    )
+                    for fields in (_scope_fields(metric_name, rows),)
+                    if fields.get("note")
+                ]
                 return {
                     "success": True,
                     "ranking": "all",
+                    "requested_limit": int(limit_value),
+                    "universe_size": int(len(selected_symbols)),
+                    "returned_counts": returned_counts,
+                    "available_counts": available_counts,
                     "lowest_spread": _compact_top_market_leaderboard_rows(
                         "spread",
                         spread_rows,
@@ -1676,6 +1741,7 @@ def symbols_top_markets(  # noqa: C901
                         "highest_volume": f"{timeframe_value}_bars",
                         "highest_price_change": f"{timeframe_value}_bars",
                     },
+                    **({"notes": notes} if notes else {}),
                 }
 
             all_rows = [
@@ -1695,6 +1761,18 @@ def symbols_top_markets(  # noqa: C901
                 "highest_volume",
                 "highest_price_change",
             ]
+            out["requested_limit"] = int(limit_value)
+            out["universe_size"] = int(len(selected_symbols))
+            out["returned_counts"] = {
+                "lowest_spread": len(spread_rows),
+                "highest_volume": len(volume_rows),
+                "highest_price_change": len(price_change_rows),
+            }
+            out["available_counts"] = {
+                "lowest_spread": evaluated_counts["spread"],
+                "highest_volume": evaluated_counts["volume"],
+                "highest_price_change": evaluated_counts["price_change"],
+            }
             if detail_mode == "full":
                 out["scan_stats"] = {
                     "spread": {
@@ -2096,6 +2174,9 @@ def market_scan(  # noqa: C901
                 "success": True,
                 "data": table_payload["rows"],
                 "count": table_payload["row_count"],
+                "requested_limit": int(limit_value),
+                "returned_count": int(table_payload["row_count"]),
+                "universe_size": int(len(selected_symbols)),
                 "summary": {
                     "counts": {
                         "scanned_symbols": int(stats["scanned_symbols"]),
@@ -2109,6 +2190,12 @@ def market_scan(  # noqa: C901
             }
             if "columns" in table_payload:
                 out["columns"] = table_payload["columns"]
+            if len(selected_symbols) < int(limit_value):
+                out["note"] = (
+                    f"Requested {int(limit_value)} rows but only "
+                    f"{len(selected_symbols)} symbols were available in the "
+                    f"{universe_value} universe."
+                )
             if total_matches == 0:
                 out["summary"]["empty"] = True
                 out["message"] = "No symbols matched the requested market scan filters."

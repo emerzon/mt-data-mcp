@@ -556,6 +556,8 @@ class TestSymbolsDescribe:
         assert res["symbol"] == "EURUSD"
         assert sd["digits"] == 5
         assert sd["point"] == 0.00001
+        assert sd["data_stale"] is True
+        assert "Live quote timestamp" in sd["warning"]
         assert "time_epoch" not in sd
 
     @patch(f"{_MT5}.symbol_info")
