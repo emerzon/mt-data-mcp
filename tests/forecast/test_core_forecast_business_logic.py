@@ -1919,11 +1919,14 @@ def test_forecast_barrier_prob_detail_rounds_display_values():
         ForecastBarrierProbRequest(symbol="EURUSD", detail="compact"),
     )
 
-    assert out["last_price"] == 1.17201241
+    assert out["reference_price"] == 1.17201241
+    assert "last_price" not in out
     assert out["tp_price"] == 1.17801241
     assert out["sl_price"] == 1.16901241
     assert out["prob_tp_first"] == 0.512346
     assert out["edge"] == -0.178
+    assert out["probability_unit"] == "fraction"
+    assert out["edge_definition"] == "prob_tp_first - prob_sl_first"
     assert out["confidence"]["prob_tp_first_ci95"] == {"low": 0.5, "high": 0.6}
 
 
