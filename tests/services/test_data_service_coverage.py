@@ -1254,7 +1254,11 @@ class TestFetchCandles(unittest.TestCase):
         mock_cfg.get_time_offset_seconds.return_value = 0
         _mt5_mock.last_error.return_value = (-1, 'Terminal: Call failed')
         result = fetch_candles('NOTASYMBOL', limit=5)
-        self.assertEqual(result['error'], "Symbol 'NOTASYMBOL' was not found or is not available in MT5.")
+        self.assertEqual(
+            result['error'],
+            "Symbol 'NOTASYMBOL' was not found or is not available in MT5. "
+            "Use symbols_list(search_term='NOTASYMBOL') to find broker-specific names and suffixes.",
+        )
 
     @patch(_MT5_CONFIG)
     @patch(_RATES_FROM, return_value=[])

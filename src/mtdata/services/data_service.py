@@ -197,7 +197,10 @@ def _describe_rate_fetch_error(symbol: str, *, info_before: Any = None) -> str:
 
     error_text = _format_mt5_last_error()
     if info_before is None:
-        return f"Symbol '{symbol}' was not found or is not available in MT5."
+        return (
+            f"Symbol '{symbol}' was not found or is not available in MT5. "
+            f"Use symbols_list(search_term='{symbol}') to find broker-specific names and suffixes."
+        )
     return f"Failed to get rates for {symbol}: {error_text}"
 
 

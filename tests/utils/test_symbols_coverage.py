@@ -157,6 +157,24 @@ class TestSymbolsListSearch:
     @patch(_NORM_LIMIT, return_value=25)
     @patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r})
     @patch(f"{_MT5}.symbols_get")
+    def test_search_stock_suffixes_include_session_type(self, mock_get, mock_tbl, mock_lim):
+        mock_get.return_value = [
+            _make_symbol("AAPL.NAS", path="Stock CFD's\\Nasdaq", description="Apple Inc CFD"),
+            _make_symbol("AAPL.NAS-24", path="Stock CFD's\\Nasdaq\\24HR NAS", description="Apple Inc 24/5 CFD"),
+        ]
+        with patch(_GROUP_PATH, side_effect=lambda s: s.path):
+            fn = _get_symbols_list()
+            res = fn(search_term="AAPL", limit=25)
+
+        assert res["headers"] == ["symbol", "group", "session_type"]
+        assert res["data"] == [
+            ["AAPL.NAS", "Stock CFD's\\Nasdaq", "regular"],
+            ["AAPL.NAS-24", "Stock CFD's\\Nasdaq\\24HR NAS", "extended_24h"],
+        ]
+
+    @patch(_NORM_LIMIT, return_value=25)
+    @patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r})
+    @patch(f"{_MT5}.symbols_get")
     def test_search_trims_padded_symbol_query(self, mock_get, mock_tbl, mock_lim):
         mock_get.return_value = self._setup_syms()
         with patch(_GROUP_PATH, side_effect=lambda s: s.path):
@@ -419,6 +437,34 @@ class TestSymbolsDescribe:
         assert res["error_code"] == "symbol_not_found"
         assert res["operation"] == "symbols_describe"
         assert res["request_id"]
+
+    @patch(f"{_MT5}.symbols_get")
+    @patch(f"{_MT5}.symbol_info")
+    def test_symbol_not_found_includes_suffix_suggestions(self, mock_info, mock_symbols):
+        mock_info.return_value = None
+        mock_symbols.return_value = [
+            _make_symbol("AAPL.NAS", path="Stock CFD's\\Nasdaq", description="Apple Inc CFD"),
+            _make_symbol("AAPL.NAS-24", path="Stock CFD's\\Nasdaq\\24HR NAS", description="Apple Inc 24/5 CFD"),
+        ]
+        fn = _get_symbols_describe()
+
+        res = fn("AAPL")
+
+        assert "symbols_list(search_term='AAPL')" in res["details"]["search_hint"]
+        assert res["details"]["did_you_mean"] == [
+            {
+                "symbol": "AAPL.NAS",
+                "group": "Stock CFD's\\Nasdaq",
+                "description": "Apple Inc CFD",
+                "session_type": "regular",
+            },
+            {
+                "symbol": "AAPL.NAS-24",
+                "group": "Stock CFD's\\Nasdaq\\24HR NAS",
+                "description": "Apple Inc 24/5 CFD",
+                "session_type": "extended_24h",
+            },
+        ]
 
     @patch(f"{_MT5}.symbol_info")
     def test_basic_describe(self, mock_info):

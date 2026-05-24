@@ -761,7 +761,15 @@ def _ensure_symbol_ready(symbol: str) -> Optional[str]:
         info_before = mt5.symbol_info(symbol)
         was_visible = bool(info_before.visible) if info_before is not None else None
         if not mt5.symbol_select(symbol, True):
-            return f"Failed to select symbol {symbol}: {mt5.last_error()}"
+            if info_before is None:
+                return (
+                    f"Symbol '{symbol}' was not found in MT5. "
+                    f"Use symbols_list(search_term='{symbol}') to find broker-specific names and suffixes."
+                )
+            return (
+                f"Symbol '{symbol}' exists but could not be selected in MT5. "
+                f"MT5 error: {mt5.last_error()}"
+            )
         # If we just made it visible, wait briefly for fresh tick data
         if was_visible is False:
             deadline = time.time() + data_ready_timeout
@@ -773,7 +781,11 @@ def _ensure_symbol_ready(symbol: str) -> Optional[str]:
         # Final check
         tick = mt5.symbol_info_tick(symbol)
         if tick is None:
-            return f"Failed to refresh {symbol} data: {mt5.last_error()}"
+            return (
+                f"Symbol '{symbol}' was selected but no tick data is available. "
+                f"The market may be closed or the broker may not be streaming this symbol. "
+                f"MT5 error: {mt5.last_error()}"
+            )
         return None
     except Exception as e:
         return f"Error ensuring symbol readiness: {e}"

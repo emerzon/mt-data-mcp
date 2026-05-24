@@ -231,6 +231,74 @@ def _compact_symbol_describe_payload(symbol_data: Dict[str, Any]) -> Dict[str, A
     return compact
 
 
+def _symbol_session_type(
+    *,
+    name: Any,
+    group: Any = None,
+    description: Any = None,
+) -> Optional[str]:
+    text = " ".join(
+        str(value or "").upper()
+        for value in (name, group, description)
+        if value not in (None, "")
+    )
+    if any(token in text for token in ("-24", "24HR", "24/5", "24H")):
+        return "extended_24h"
+    if "." in str(name or "") and any(token in text for token in ("STOCK", "CFD")):
+        return "regular"
+    return None
+
+
+def _symbol_suggestion_from_info(symbol_info: Any) -> Dict[str, Any]:
+    group = _extract_group_path_util(symbol_info)
+    description = getattr(symbol_info, "description", None)
+    suggestion: Dict[str, Any] = {
+        "symbol": getattr(symbol_info, "name", None),
+        "group": group,
+    }
+    if description not in (None, ""):
+        suggestion["description"] = description
+    session_type = _symbol_session_type(
+        name=getattr(symbol_info, "name", None),
+        group=group,
+        description=description,
+    )
+    if session_type is not None:
+        suggestion["session_type"] = session_type
+    return {key: value for key, value in suggestion.items() if value not in (None, "")}
+
+
+def _find_symbol_suggestions(
+    mt5_gateway: Any,
+    query: str,
+    *,
+    limit: int = 5,
+) -> List[Dict[str, Any]]:
+    text = str(query or "").strip()
+    if not text:
+        return []
+    query_upper = text.upper()
+    try:
+        symbols = list(mt5_gateway.symbols_get() or [])
+    except Exception:
+        return []
+    matches = []
+    for symbol_info in symbols:
+        name = str(getattr(symbol_info, "name", "") or "")
+        description = str(getattr(symbol_info, "description", "") or "")
+        group = str(_extract_group_path_util(symbol_info) or "")
+        searchable = f"{name} {description} {group}".upper()
+        if query_upper in searchable:
+            matches.append(symbol_info)
+    matches.sort(
+        key=lambda info: (
+            not str(getattr(info, "name", "") or "").upper().startswith(query_upper),
+            *_case_insensitive_sort_key(getattr(info, "name", "")),
+        )
+    )
+    return [_symbol_suggestion_from_info(symbol) for symbol in matches[: max(1, int(limit))]]
+
+
 @mcp.tool()
 def symbols_list(  # noqa: C901
     search_term: Optional[str] = None,
@@ -327,6 +395,11 @@ def symbols_list(  # noqa: C901
                     "group": _extract_group_path_util(symbol),
                     "description": symbol.description,
                     "visible": bool(getattr(symbol, "visible", False)),
+                    "session_type": _symbol_session_type(
+                        name=symbol.name,
+                        group=_extract_group_path_util(symbol),
+                        description=symbol.description,
+                    ),
                 })
 
             limit_value = _normalize_limit(limit)
@@ -342,7 +415,9 @@ def symbols_list(  # noqa: C901
                 }
             if detail_mode == "compact":
                 headers = ["symbol", "group"]
-                rows = [[s["symbol"], s["group"]] for s in symbol_list]
+                if any(s.get("session_type") for s in symbol_list):
+                    headers.append("session_type")
+                rows = [[s.get(header) for header in headers] for s in symbol_list]
             elif detail_mode == "full":
                 headers = ["symbol", "group", "description", "visible"]
                 rows = [
@@ -476,10 +551,18 @@ def symbols_describe(
             mt5_gateway.ensure_connection()
             symbol_info = mt5_gateway.symbol_info(symbol)
             if symbol_info is None:
+                suggestions = _find_symbol_suggestions(mt5_gateway, symbol)
+                details: Dict[str, Any] = {
+                    "symbol": symbol,
+                    "search_hint": f"Use symbols_list(search_term='{symbol}') to browse matching broker symbols.",
+                }
+                if suggestions:
+                    details["did_you_mean"] = suggestions
                 return build_error_payload(
-                    f"Symbol {symbol} not found",
+                    f"Symbol '{symbol}' not found in MT5 terminal.",
                     code="symbol_not_found",
                     operation="symbols_describe",
+                    details=details,
                 )
 
             enum_specs = {
