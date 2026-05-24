@@ -8,8 +8,10 @@ Note: Data is delayed 15-20 minutes; US stocks only.
 import json
 import logging
 import re
-from datetime import datetime, time as datetime_time, timezone, timedelta
+from datetime import datetime, timedelta, timezone
+from datetime import time as datetime_time
 from typing import Any, Callable, Dict, List, Literal, Optional, Union
+from zoneinfo import ZoneInfo
 
 from ..services.finviz import (
     get_crypto_performance,
@@ -29,6 +31,7 @@ from ..services.finviz import (
     get_stock_ratings,
     screen_stocks,
 )
+from ..shared.schema import CompactFullDetailLiteral
 from ._mcp_instance import mcp
 from .error_envelope import build_error_payload
 from .execution_logging import run_logged_operation
@@ -37,7 +40,6 @@ from .output_contract import (
     normalize_output_extras,
     normalize_output_verbosity_detail,
 )
-from ..shared.schema import CompactFullDetailLiteral
 
 logger = logging.getLogger(__name__)
 
@@ -237,6 +239,8 @@ _FINVIZ_DETAIL_ERROR = (
     "detail must be one of: compact, standard, summary, full. "
     "Finviz standard/summary output uses the compact shape."
 )
+_FINVIZ_CALENDAR_LOCAL_TIMEZONE = "America/New_York"
+_FINVIZ_CALENDAR_LOCAL_TZ = ZoneInfo(_FINVIZ_CALENDAR_LOCAL_TIMEZONE)
 
 
 def _derive_forex_pair_name(symbol: Any) -> Optional[str]:
@@ -300,11 +304,15 @@ def _is_known_forex_pair_row(row: Any) -> bool:
 
 
 def _compact_finviz_screen_row(row: Dict[str, Any]) -> Dict[str, Any]:
-    return {
+    out = {
         field: row[field]
         for field in _FINVIZ_SCREEN_COMPACT_FIELDS
         if field in row and row[field] not in (None, "")
     }
+    change_pct = _finviz_percent_value(out.get("change_pct"))
+    if change_pct is not None:
+        out["change_pct"] = change_pct
+    return out
 
 
 def _normalize_finviz_market_payload(
@@ -393,6 +401,9 @@ def _canonicalize_finviz_market_row(row: Dict[str, Any]) -> Dict[str, Any]:
         out["perf_pct"] = out.pop("perf")
     if "change" in out and "change_pct" not in out:
         out["change_pct"] = out.pop("change")
+    change_pct = _finviz_percent_value(out.get("change_pct"))
+    if change_pct is not None:
+        out["change_pct"] = change_pct
     return out
 
 
@@ -924,6 +935,8 @@ _FINVIZ_CALENDAR_COMPACT_FIELDS = (
     "event",
     "category",
     "date",
+    "local_time",
+    "local_timezone",
     "earnings_date",
     "ex_dividend_date",
     "pay_date",
@@ -1119,13 +1132,77 @@ def _normalize_finviz_date_value(value: Any) -> Any:
     return text
 
 
+def _finviz_calendar_utc_time(value: Any) -> Optional[str]:
+    if value in (None, ""):
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    normalized = text[:-1] + "+00:00" if text.endswith(("Z", "z")) else text
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=_FINVIZ_CALENDAR_LOCAL_TZ)
+    utc_dt = parsed.astimezone(timezone.utc)
+    return utc_dt.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _normalize_finviz_economic_calendar_time(item: Dict[str, Any]) -> Dict[str, Any]:
+    normalized = dict(item)
+    local_time = normalized.get("date")
+    utc_time = _finviz_calendar_utc_time(local_time)
+    if utc_time is None:
+        return normalized
+    normalized.setdefault("local_time", local_time)
+    normalized.setdefault("local_timezone", _FINVIZ_CALENDAR_LOCAL_TIMEZONE)
+    normalized["date"] = utc_time
+    return normalized
+
+
+def _finviz_price_target_fields(value: Any) -> Dict[str, Any]:
+    if value in (None, ""):
+        return {}
+    display = str(value).strip()
+    if not display:
+        return {}
+    prices = [
+        float(match.group(1).replace(",", ""))
+        for match in re.finditer(
+            r"[$]?\s*([0-9][0-9,]*(?:\.[0-9]+)?)",
+            display,
+        )
+    ]
+    if not prices:
+        return {"price_target_display": display}
+    previous = prices[0] if len(prices) > 1 else None
+    latest = prices[-1]
+    out: Dict[str, Any] = {
+        "price_target_display": display,
+        "price_target_new": latest,
+    }
+    if previous is not None:
+        out["price_target_previous"] = previous
+        if previous > 0:
+            out["price_target_change_pct"] = round(
+                ((latest - previous) / previous) * 100.0,
+                2,
+            )
+    return out
+
+
 def _normalize_finviz_rating_rows(rows: Any) -> List[Any]:
     normalized = _normalize_finviz_output_rows(rows)
     if not isinstance(normalized, list):
         return []
     for row in normalized:
-        if isinstance(row, dict) and "date" in row:
+        if not isinstance(row, dict):
+            continue
+        if "date" in row:
             row["date"] = _normalize_finviz_date_value(row.get("date"))
+        if "price" in row:
+            row.update(_finviz_price_target_fields(row.get("price")))
     return normalized
 
 
@@ -1283,6 +1360,13 @@ def _normalize_finviz_calendar_payload(
             _enrich_finviz_calendar_country(item)
             for item in _normalize_finviz_output_rows(out["items"])
         ]
+        if str(calendar_type or "economic").strip().lower() == "economic":
+            normalized_items = [
+                _normalize_finviz_economic_calendar_time(item)
+                if isinstance(item, dict)
+                else item
+                for item in normalized_items
+            ]
         if country_code_filter:
             normalized_items = [
                 item
@@ -1304,7 +1388,10 @@ def _normalize_finviz_calendar_payload(
         out["count"] = len(out["items"])
     if country_code_filter:
         out["country_filter"] = str(country_code_filter).upper()
-    out.setdefault("timezone", "America/New_York")
+    if str(calendar_type or "economic").strip().lower() == "economic":
+        out["timezone"] = "UTC"
+    else:
+        out.setdefault("timezone", _FINVIZ_CALENDAR_LOCAL_TIMEZONE)
     out["detail"] = detail_mode
     return out
 
@@ -1371,6 +1458,9 @@ def _summarize_insider_activity_tickers(rows: List[Any]) -> List[Dict[str, Any]]
 
 
 def _compact_finviz_insider_row(row: Dict[str, Any], *, include_symbol: bool) -> Dict[str, Any]:
+    normalized = dict(row)
+    if "price_per_share" not in normalized and normalized.get("cost") not in (None, ""):
+        normalized["price_per_share"] = normalized["cost"]
     fields = (
         ("symbol",)
         if include_symbol
@@ -1379,11 +1469,21 @@ def _compact_finviz_insider_row(row: Dict[str, Any], *, include_symbol: bool) ->
         "owner",
         "date",
         "transaction",
-        "cost",
+        "price_per_share",
         "shares",
         "value_usd",
     )
-    return {field: row[field] for field in fields if field in row}
+    return {field: normalized[field] for field in fields if field in normalized}
+
+
+def _normalize_finviz_insider_rows(rows: Any) -> List[Any]:
+    normalized = _normalize_finviz_output_rows(rows)
+    if not isinstance(normalized, list):
+        return []
+    for row in normalized:
+        if isinstance(row, dict) and row.get("cost") not in (None, ""):
+            row.setdefault("price_per_share", row["cost"])
+    return normalized
 
 
 def _compact_finviz_insider_payload(result: Dict[str, Any], *, detail: str) -> Dict[str, Any]:
@@ -1394,7 +1494,7 @@ def _compact_finviz_insider_payload(result: Dict[str, Any], *, detail: str) -> D
     rows = result.get("insider_trades")
     if not isinstance(rows, list):
         return result
-    normalized_rows = _normalize_finviz_output_rows(rows)
+    normalized_rows = _normalize_finviz_insider_rows(rows)
     out = {key: value for key, value in result.items() if key != "insider_trades"}
     out["detail"] = detail_mode
     if detail_mode == "full":
@@ -1434,7 +1534,7 @@ def _compact_finviz_insider_activity_payload(
         return result
 
     detail_mode = normalize_output_verbosity_detail(detail, default="compact")
-    normalized_rows = _normalize_finviz_output_rows(rows)
+    normalized_rows = _normalize_finviz_insider_rows(rows)
     out = {key: value for key, value in result.items() if key != "insider_trades"}
     out["detail"] = detail_mode
     if detail_mode == "full":

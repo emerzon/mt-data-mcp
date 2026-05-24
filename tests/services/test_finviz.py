@@ -1004,7 +1004,12 @@ class TestFinvizTools:
             "symbol": "AAPL",
             "total": 4,
             "insider_trades": [
-                {"Owner": f"Owner {i}", "Transaction": "Buy" if i == 0 else "Sale"}
+                {
+                    "Owner": f"Owner {i}",
+                    "Transaction": "Buy" if i == 0 else "Sale",
+                    "Cost": 411.34,
+                    "Shares": 10,
+                }
                 for i in range(4)
             ],
         }
@@ -1014,8 +1019,37 @@ class TestFinvizTools:
 
         assert result["detail"] == "compact"
         assert result["count"] == 3
+        assert result["items"][0]["price_per_share"] == 411.34
+        assert "cost" not in result["items"][0]
         assert result["omitted_item_count"] == 1
         assert result["summary"]["counts"]["buy_transactions"] == 1
+
+    @patch("mtdata.core.finviz.get_stock_ratings")
+    def test_finviz_ratings_structures_price_targets(self, mock_get_ratings):
+        from mtdata.core.finviz import finviz_ratings
+
+        mock_get_ratings.return_value = {
+            "success": True,
+            "symbol": "TSLA",
+            "ratings": [
+                {
+                    "Date": "2026-04-30",
+                    "Status": "Reiterated",
+                    "Firm": "Wells Fargo",
+                    "Rating": "Overweight",
+                    "Price": "$615 \u2192 $625",
+                }
+            ],
+        }
+
+        raw = getattr(finviz_ratings, "__wrapped__", finviz_ratings)
+        result = raw("TSLA")
+
+        row = result["ratings"][0]
+        assert row["price_target_previous"] == 615.0
+        assert row["price_target_new"] == 625.0
+        assert row["price_target_change_pct"] == 1.63
+        assert row["price_target_display"] == "$615 \u2192 $625"
 
     @patch("mtdata.core.finviz.get_insider_activity")
     def test_finviz_insider_activity_rejects_invalid_detail(self, mock_get_activity):
@@ -1250,7 +1284,7 @@ class TestFinvizTools:
             {
                 "symbol": "AAPL",
                 "price": 298.21,
-                "change_pct": 0.012,
+                "change_pct": 1.2,
                 "volume": 123456,
                 "pe_ratio": "28.5",
             }
@@ -1453,10 +1487,13 @@ class TestFinvizTools:
                 "country_code": "US",
                 "event": "Nonfarm Payrolls",
                 "category": "Employment",
-                "date": "2026-01-04T08:30:00",
+                "date": "2026-01-04T13:30:00Z",
+                "local_time": "2026-01-04T08:30:00",
+                "local_timezone": "America/New_York",
                 "importance": 3,
             }
         ]
+        assert result["timezone"] == "UTC"
         assert "symbol" not in result["items"][0]
 
     def test_finviz_calendar_rejects_removed_date_aliases(self):
