@@ -217,7 +217,7 @@ def _round_barrier_ci(value: Any, *, digits: int) -> Any:
 def _round_barrier_prob_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     price_digits = _forecast_price_digits(payload) or 8
     out = dict(payload)
-    for key in ("last_price", "last_price_close", "tp_price", "sl_price", "barrier"):
+    for key in ("last_price", "last_price_close", "reference_price", "tp_price", "sl_price", "barrier"):
         if key in out:
             out[key] = _round_barrier_value(out.get(key), digits=price_digits)
     for key in (
@@ -248,6 +248,7 @@ def _round_barrier_prob_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
 _BARRIER_OPTIMIZE_PRICE_KEYS = {
     "last_price",
     "last_price_close",
+    "reference_price",
     "tp_price",
     "sl_price",
     "barrier",
@@ -317,6 +318,17 @@ def _round_barrier_optimize_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         )
         for key, value in payload.items()
     }
+
+
+def _with_reference_price_context(payload: Dict[str, Any]) -> Dict[str, Any]:
+    out = dict(payload)
+    reference_price = out.get("reference_price", out.get("last_price"))
+    if reference_price not in (None, "", [], {}):
+        out.setdefault("reference_price", reference_price)
+    reference_source = out.get("reference_price_source", out.get("last_price_source"))
+    if reference_source not in (None, "", [], {}):
+        out.setdefault("reference_price_source", reference_source)
+    return out
 
 
 def _forecast_vs_last_price(payload: Dict[str, Any]) -> Optional[Dict[str, float]]:
@@ -574,7 +586,7 @@ def _apply_barrier_prob_detail(
     if not isinstance(payload, dict) or payload.get("error"):
         return payload
     payload = _round_barrier_prob_payload(payload)
-    payload = _annotate_barrier_prob_context(payload, request)
+    payload = _with_reference_price_context(_annotate_barrier_prob_context(payload, request))
 
     def _set_if_present(target: Dict[str, Any], key: str, value: Any) -> None:
         if value not in (None, "", [], {}):
@@ -597,7 +609,8 @@ def _apply_barrier_prob_detail(
             "direction",
             "horizon",
             "barrier",
-            "last_price",
+            "reference_price",
+            "reference_price_source",
             "prob_hit",
         ):
             _set_if_present(closed_form, key, payload.get(key))
@@ -612,6 +625,9 @@ def _apply_barrier_prob_detail(
 
     if detail_value == "standard":
         out = dict(payload)
+        out.pop("last_price", None)
+        out.pop("last_price_close", None)
+        out.pop("last_price_source", None)
         out.pop("tp_hit_prob_by_t", None)
         out.pop("sl_hit_prob_by_t", None)
         out.pop("sim_meta", None)
@@ -629,7 +645,8 @@ def _apply_barrier_prob_detail(
         "method",
         "direction",
         "horizon",
-        "last_price",
+        "reference_price",
+        "reference_price_source",
         "tp_price",
         "sl_price",
         "prob_tp_first",
@@ -674,6 +691,9 @@ def _apply_barrier_prob_detail(
             "prob_tie_se",
             "prob_no_hit_se",
             "prob_tie_ci95",
+            "last_price",
+            "last_price_close",
+            "last_price_source",
             "tp_hit_prob_by_t",
             "sl_hit_prob_by_t",
             "time_to_tp_bars",
@@ -1817,8 +1837,14 @@ def run_forecast_barrier_optimize(
             sensitivity_params=None,
         )
         if isinstance(result, dict) and not result.get("error"):
-            result = _round_barrier_optimize_payload(dict(result))
+            result = _with_reference_price_context(
+                _round_barrier_optimize_payload(dict(result))
+            )
             result["detail"] = detail_value
+            if detail_value != "full":
+                result.pop("last_price", None)
+                result.pop("last_price_close", None)
+                result.pop("last_price_source", None)
             result.setdefault("barrier_unit", "percent")
             result.setdefault("probability_unit", "fraction")
             result.setdefault(

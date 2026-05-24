@@ -1868,6 +1868,39 @@ def test_forecast_barrier_prob_compact_nests_confidence_intervals_once():
     assert "prob_no_hit_ci95" not in out
 
 
+def test_forecast_barrier_prob_compact_uses_reference_price_context():
+    payload = {
+        "success": True,
+        "symbol": "EURUSD",
+        "last_price": 1.16026,
+        "last_price_close": 1.16016,
+        "last_price_source": "live_tick_ask",
+        "tp_price": 1.16606,
+        "sl_price": 1.15678,
+        "prob_tp_first": 0.55,
+        "prob_sl_first": 0.35,
+        "prob_no_hit": 0.10,
+    }
+
+    out = forecast_use_cases._apply_barrier_prob_detail(
+        payload,
+        ForecastBarrierProbRequest(
+            symbol="EURUSD",
+            detail="compact",
+            tp_pct=0.5,
+            sl_pct=0.3,
+        ),
+    )
+
+    assert out["reference_price"] == 1.16026
+    assert out["reference_price_source"] == "live_tick_ask"
+    assert out["tp_pct"] == 0.5
+    assert out["sl_pct"] == 0.3
+    assert "last_price" not in out
+    assert "last_price_close" not in out
+    assert "last_price_source" not in out
+
+
 def test_forecast_barrier_prob_detail_rounds_display_values():
     payload = {
         "success": True,
@@ -1892,6 +1925,30 @@ def test_forecast_barrier_prob_detail_rounds_display_values():
     assert out["prob_tp_first"] == 0.512346
     assert out["edge"] == -0.178
     assert out["confidence"]["prob_tp_first_ci95"] == {"low": 0.5, "high": 0.6}
+
+
+def test_forecast_barrier_optimize_uses_reference_price_context():
+    def fake_optimize(**_kwargs):
+        return {
+            "success": True,
+            "last_price": 1.16026,
+            "last_price_close": 1.16016,
+            "last_price_source": "live_tick_ask",
+            "best": {"tp": 0.25, "sl": 0.25},
+            "results": [],
+        }
+
+    out = forecast_use_cases.run_forecast_barrier_optimize(
+        ForecastBarrierOptimizeRequest(symbol="EURUSD", method="mc_gbm"),
+        parse_kv_or_json=lambda value: value or {},
+        barrier_optimize_impl=fake_optimize,
+    )
+
+    assert out["reference_price"] == 1.16026
+    assert out["reference_price_source"] == "live_tick_ask"
+    assert "last_price" not in out
+    assert "last_price_close" not in out
+    assert "last_price_source" not in out
 
 
 def test_forecast_tune_optuna_routing(monkeypatch):
