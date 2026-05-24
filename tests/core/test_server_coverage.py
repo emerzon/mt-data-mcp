@@ -1272,6 +1272,21 @@ class TestMainEntryPoints:
         main()  # should not raise
         mock_bootstrap.assert_called_once()
 
+    @patch("mtdata.core.server.bootstrap_tools")
+    def test_main_remote_bind_error_exits_before_bootstrap(self, mock_bootstrap, monkeypatch):
+        monkeypatch.delenv("MCP_TRANSPORT", raising=False)
+        monkeypatch.setenv("FASTMCP_HOST", "0.0.0.0")
+        monkeypatch.delenv("FASTMCP_ALLOW_REMOTE", raising=False)
+        from mtdata.core.server import main
+
+        with pytest.raises(SystemExit) as exc:
+            main()
+
+        message = str(exc.value)
+        assert "FASTMCP_ALLOW_REMOTE=1" in message
+        assert "FASTMCP_HOST=127.0.0.1" in message
+        mock_bootstrap.assert_not_called()
+
 
 # ── mcp instance ──────────────────────────────────────────────────────────
 

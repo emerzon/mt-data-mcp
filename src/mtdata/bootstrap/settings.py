@@ -83,6 +83,15 @@ def _suppress_noisy_third_party_logs() -> None:
             category=ImportWarning,
             module=r"umap(\..*)?$",
         )
+        warnings.filterwarnings(
+            "ignore",
+            message=(
+                r'Field name "json" in "[^"]+Arguments" shadows an attribute '
+                r'in parent "ArgModelBase"'
+            ),
+            category=UserWarning,
+            module=r"pydantic\._internal\._fields",
+        )
     except Exception:
         pass
 
