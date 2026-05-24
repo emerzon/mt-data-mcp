@@ -8,29 +8,22 @@ from __future__ import annotations
 
 import math
 from numbers import Number
-from typing import Any, Dict, Iterable, List, Optional, cast
+from typing import Any, Dict, Iterable, List, Optional
 
 from ..shared.output_precision import resolve_output_precision
 from .minimal_output_toon import (
     _DEFAULT_DELIMITER,
     _INDENT,
-    _column_decimals,
     _encode_expanded_array,
-    _encode_inline_array,
     _encode_tabular,
     _format_to_toon,
     _headers_from_dicts,
     _is_empty_value,
     _is_scalar_value,
-    _minify_number,
-    _quote_if_needed,
     _quote_always,
     _quote_key,
-    _stringify_cell,
-    _stringify_for_toon,
     _stringify_for_toon_value,
     _stringify_scalar,
-    format_table_toon,
 )
 
 
@@ -320,6 +313,11 @@ def _normalize_forecast_payload(
             if isinstance(payload.get(upper_key), list)
             else []
         )
+        market_status = (
+            list(payload.get("forecast_market_status") or [])
+            if isinstance(payload.get("forecast_market_status"), list)
+            else []
+        )
 
         qmap = (
             payload.get("forecast_quantiles")
@@ -368,6 +366,9 @@ def _normalize_forecast_payload(
                 usable_qcols.append(q)
 
         headers = ["time", "forecast"]
+        include_market_status = bool(market_status)
+        if include_market_status:
+            headers.append("market_status")
         if include_interval_columns:
             headers += ["lower", "upper"]
         for q in usable_qcols:
@@ -385,6 +386,8 @@ def _normalize_forecast_payload(
                 "time": times[i],
                 "forecast": val,
             }
+            if include_market_status:
+                row["market_status"] = market_status[i] if i < len(market_status) else None
             if include_interval_columns:
                 low_val = lower[i] if i < len(lower) else None
                 up_val = upper[i] if i < len(upper) else None

@@ -671,6 +671,15 @@ class TestFormatForecastOutput:
             )
 
         assert result["market_hours_note"].startswith("3 of 6 forecast bars")
+        assert result["closed_market_forecast_bars"] == 3
+        assert result["forecast_market_status"] == [
+            "open",
+            "open",
+            "open",
+            "closed_weekend",
+            "closed_weekend",
+            "closed_weekend",
+        ]
         assert any("Saturday/Sunday" in warning for warning in result["warnings"])
 
 

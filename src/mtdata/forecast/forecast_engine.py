@@ -4,6 +4,7 @@ Forecast engine core logic and orchestration.
 
 import logging
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Tuple
 
 import numpy as np
@@ -145,6 +146,14 @@ def _count_weekend_forecast_times(times: List[str]) -> int:
         if timestamp.weekday() >= 5:
             weekend_count += 1
     return weekend_count
+
+
+def _forex_forecast_market_status(epoch: Any) -> str:
+    try:
+        dt_utc = datetime.fromtimestamp(float(epoch), tz=timezone.utc)
+    except Exception:
+        return "unknown"
+    return "closed_weekend" if dt_utc.weekday() >= 5 else "open"
 
 
 @dataclass(frozen=True)
@@ -1015,8 +1024,11 @@ def _format_forecast_output(
         and tf_secs < TIMEFRAME_SECONDS.get("D1", 86400)
         and forecast_times
     ):
-        weekend_count = _count_weekend_forecast_times(forecast_times)
+        market_status = [_forex_forecast_market_status(epoch) for epoch in future_epochs]
+        weekend_count = sum(1 for status in market_status if status == "closed_weekend")
         if weekend_count:
+            result["forecast_market_status"] = market_status
+            result["closed_market_forecast_bars"] = weekend_count
             note = (
                 f"{weekend_count} of {len(forecast_times)} forecast bars fall on "
                 "Saturday/Sunday for a forex symbol; treat those timestamps as "

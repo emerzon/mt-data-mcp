@@ -263,6 +263,27 @@ class TestFormatResultForCli:
         assert "confidence intervals are unavailable" in result
         assert "forecast_conformal_intervals" in result
 
+    def test_forecast_generate_toon_shows_closed_market_status(self):
+        result = _format_result_for_cli(
+            {
+                "success": True,
+                "symbol": "EURUSD",
+                "timeframe": "H1",
+                "method": "theta",
+                "detail": "compact",
+                "horizon": 2,
+                "forecast_time": ["2026-05-22 23:00", "2026-05-23 00:00"],
+                "forecast_price": [1.1, 1.2],
+                "forecast_market_status": ["open", "closed_weekend"],
+            },
+            fmt="toon",
+            verbose=False,
+            cmd_name="forecast_generate",
+        )
+
+        assert "forecast[2]{time,forecast,market_status}" in result
+        assert "closed_weekend" in result
+
     def test_news_toon_format_omits_null_tail_cells_and_uses_generic_time_header(self):
         result = _format_result_for_cli(
             {
