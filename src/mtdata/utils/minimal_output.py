@@ -15,6 +15,7 @@ from .minimal_output_toon import (
     _DEFAULT_DELIMITER,
     _INDENT,
     _encode_expanded_array,
+    _encode_inline_array,  # noqa: F401 - compatibility re-export
     _encode_tabular,
     _format_to_toon,
     _headers_from_dicts,
@@ -22,8 +23,10 @@ from .minimal_output_toon import (
     _is_scalar_value,
     _quote_always,
     _quote_key,
+    _stringify_cell,  # noqa: F401 - compatibility re-export
     _stringify_for_toon_value,
     _stringify_scalar,
+    format_table_toon,  # noqa: F401 - compatibility re-export
 )
 
 

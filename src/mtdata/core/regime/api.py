@@ -95,7 +95,7 @@ _VOLATILITY_SIGNALS = frozenset(
 def _coerce_optional_float(value: Any) -> Optional[float]:
     try:
         out = float(value)
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return None
     if not np.isfinite(out):
         return None
@@ -111,7 +111,7 @@ def _lookup_regime_info_entry(regime_info: Any, regime_id: Any) -> Dict[str, Any
         candidates.append(regime_id)
         try:
             candidates.append(int(regime_id))
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             pass
         candidates.append(str(regime_id))
 

@@ -60,7 +60,7 @@ def _safe_float_attr(obj: Any, name: str) -> Optional[float]:
             return None
         fv = float(val)
         return fv if math.isfinite(fv) else None
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return None
 
 
@@ -178,7 +178,7 @@ def _evaluate_safety_policy(
                 violations.append(
                     f"Volume {volume} exceeds safety limit of {policy.max_volume}."
                 )
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             pass
 
     if policy.require_stop_loss:
@@ -191,7 +191,7 @@ def _evaluate_safety_policy(
                 violations.append(
                     f"Deviation {deviation} exceeds safety limit of {policy.max_deviation}."
                 )
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             pass
 
     if policy.reduce_only and side is not None:

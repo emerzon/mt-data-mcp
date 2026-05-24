@@ -1591,7 +1591,7 @@ def detect_elliott_waves(
     if "time" in df.columns:
         try:
             t = to_float_np(df["time"])
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             t = np.asarray([], dtype=float)
     else:
         t = np.asarray([], dtype=float)

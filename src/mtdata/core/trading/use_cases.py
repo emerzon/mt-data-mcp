@@ -477,7 +477,7 @@ def _normalize_var_cvar_confidence(
 ) -> tuple[Optional[float], Optional[str]]:
     try:
         confidence_value = float(confidence)
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return None, "confidence must be numeric"
     if not math.isfinite(confidence_value):
         return None, "confidence must be finite"
@@ -2710,14 +2710,14 @@ def run_trade_var_cvar_calculate(  # noqa: C901
 
     try:
         lookback = int(request.lookback)
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return _finish({"error": "lookback must be an integer"})
     if lookback < 2:
         return _finish({"error": "lookback must be at least 2"})
 
     try:
         min_observations = int(request.min_observations)
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return _finish({"error": "min_observations must be an integer"})
     if min_observations < 2:
         return _finish({"error": "min_observations must be at least 2"})

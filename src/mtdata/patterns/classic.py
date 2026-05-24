@@ -79,7 +79,7 @@ def _call_detect_pivots_close(
             raise
         try:
             sig = inspect.signature(_detect_pivots_close)
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             return _detect_pivots_close(c, cfg)
         params = list(sig.parameters.values())
         if any(param.kind == inspect.Parameter.VAR_POSITIONAL for param in params):
