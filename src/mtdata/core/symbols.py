@@ -2235,9 +2235,15 @@ def market_scan(  # noqa: C901
             ]
             compact_headers = [
                 "symbol",
+                "group",
+                "timeframe",
+                "bar_time",
+                "freshness_status",
+                "data_stale",
                 "close",
                 "price_change_pct",
                 "tick_volume",
+                "spread_points",
                 "spread_pct",
                 "rsi",
                 "sma_distance_pct",
