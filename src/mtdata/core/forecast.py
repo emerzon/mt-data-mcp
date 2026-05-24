@@ -1071,7 +1071,12 @@ def options_expirations(
     symbol: str,
     detail: CompactFullDetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
-    """Fetch option expirations via the configured options data provider."""
+    """Fetch option expirations via the configured options data provider.
+
+    Yahoo Finance is an unauthenticated fallback and may return 401 responses.
+    For reliable options-chain data, configure Tradier with
+    MTDATA_OPTIONS_PROVIDER=tradier and MTDATA_OPTIONS_API_KEY.
+    """
     from ..services.options_service import get_options_expirations as _impl
     return _run_forecast_operation(
         "options_expirations",
@@ -1095,7 +1100,12 @@ def options_chain(
     limit: int = 200,
     detail: CompactFullDetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
-    """Fetch option-chain snapshots via the configured options data provider."""
+    """Fetch option-chain snapshots via the configured options data provider.
+
+    Yahoo Finance is an unauthenticated fallback and may return 401 responses.
+    For reliable options-chain data, configure Tradier with
+    MTDATA_OPTIONS_PROVIDER=tradier and MTDATA_OPTIONS_API_KEY.
+    """
     from ..services.options_service import get_options_chain as _impl
     return _run_forecast_operation(
         "options_chain",
