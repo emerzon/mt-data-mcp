@@ -83,6 +83,68 @@ def _forecast_interval_summary(payload: Dict[str, Any]) -> Optional[Dict[str, fl
         return None
 
 
+def _forecast_compact_ci(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    ci_status = str(payload.get("ci_status") or "").strip().lower()
+    ci_payload = payload.get("ci")
+    if ci_status == "unavailable":
+        out: Dict[str, Any] = {"status": "unavailable"}
+        if isinstance(ci_payload, dict) and ci_payload.get("hint"):
+            out["hint"] = ci_payload["hint"]
+        return out
+
+    lower_key = next(
+        (
+            key
+            for key in ("lower_price", "lower_return", "lower")
+            if isinstance(payload.get(key), list)
+        ),
+        None,
+    )
+    if lower_key is None:
+        if ci_status:
+            return {"status": ci_status}
+        return None
+
+    upper_key = lower_key.replace("lower", "upper", 1)
+    lower_vals = payload.get(lower_key)
+    upper_vals = payload.get(upper_key)
+    if not isinstance(lower_vals, list) or not isinstance(upper_vals, list):
+        return None
+
+    forecast_key = (
+        "forecast_price"
+        if lower_key.endswith("_price")
+        else "forecast_return"
+        if lower_key.endswith("_return")
+        else "forecast"
+    )
+    forecasts = payload.get(forecast_key)
+    times = payload.get("forecast_time")
+    count = min(len(lower_vals), len(upper_vals))
+    if isinstance(forecasts, list):
+        count = min(count, len(forecasts))
+    intervals: List[Dict[str, Any]] = []
+    for idx in range(count):
+        row: Dict[str, Any] = {}
+        if isinstance(times, list) and idx < len(times):
+            row["time"] = times[idx]
+        if isinstance(forecasts, list):
+            row["forecast"] = forecasts[idx]
+        row["low"] = lower_vals[idx]
+        row["high"] = upper_vals[idx]
+        intervals.append(row)
+
+    out = {"status": ci_status or "available"}
+    if payload.get("ci_alpha") is not None:
+        out["alpha"] = payload.get("ci_alpha")
+    if intervals:
+        out["intervals"] = intervals
+    summary = _forecast_interval_summary(payload)
+    if summary:
+        out["summary"] = summary
+    return out
+
+
 def _finite_float(value: Any) -> Optional[float]:
     try:
         out = float(value)
@@ -338,11 +400,9 @@ def _apply_forecast_generate_detail(
         "quantity": payload.get("quantity"),
     }
     ci_unavailable = str(payload.get("ci_status") or "").strip().lower() == "unavailable"
-    if ci_unavailable:
-        compact["ci"] = {"status": "unavailable"}
-        ci_payload = payload.get("ci")
-        if isinstance(ci_payload, dict) and ci_payload.get("hint"):
-            compact["ci"]["hint"] = ci_payload["hint"]
+    ci_compact = _forecast_compact_ci(payload)
+    if ci_compact:
+        compact["ci"] = ci_compact
     for key in (
         "last_observation_time",
         "timezone",
@@ -351,12 +411,8 @@ def _apply_forecast_generate_detail(
         "forecast_return",
         "last_price",
         "last_price_source",
-        "ci_status",
-        "ci_alpha",
         "warnings",
     ):
-        if ci_unavailable and key.startswith("ci_"):
-            continue
         value = payload.get(key)
         if key == "warnings":
             value = _compact_forecast_warnings(
@@ -365,9 +421,6 @@ def _apply_forecast_generate_detail(
             )
         if value not in (None, "", [], {}):
             compact[key] = value
-    interval_summary = _forecast_interval_summary(payload)
-    if interval_summary:
-        compact["interval_summary"] = interval_summary
     price_context = _forecast_vs_last_price(payload)
     if price_context:
         compact["forecast_vs_last_price"] = price_context
@@ -400,6 +453,8 @@ def _apply_forecast_generate_detail(
             "lower",
             "upper",
             "ci",
+            "ci_status",
+            "ci_alpha",
             "ci_available",
             "diagnostics",
             "params_used",

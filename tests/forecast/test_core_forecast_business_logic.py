@@ -485,6 +485,56 @@ def test_forecast_generate_compact_marks_unavailable_ci(monkeypatch):
     assert out["warnings"] == ["Native theta fallback used."]
 
 
+def test_forecast_generate_compact_nests_available_ci(monkeypatch):
+    raw = _unwrap(cf.forecast_generate)
+    monkeypatch.setattr(
+        cf,
+        "_forecast_impl",
+        lambda **kwargs: {
+            "success": True,
+            "method": kwargs["method"],
+            "horizon": kwargs["horizon"],
+            "quantity": kwargs["quantity"],
+            "forecast_time": ["t1", "t2"],
+            "forecast_price": [100.0, 101.0],
+            "lower_price": [99.0, 99.5],
+            "upper_price": [101.0, 102.5],
+            "ci_status": "available",
+            "ci_alpha": 0.05,
+        },
+    )
+
+    out = raw(
+        request=ForecastGenerateRequest(
+            symbol="BTCUSD",
+            timeframe="H1",
+            method="arima",
+            horizon=2,
+        )
+    )
+
+    assert out["ci"] == {
+        "status": "available",
+        "alpha": 0.05,
+        "intervals": [
+            {"time": "t1", "forecast": 100.0, "low": 99.0, "high": 101.0},
+            {"time": "t2", "forecast": 101.0, "low": 99.5, "high": 102.5},
+        ],
+        "summary": {
+            "first_low": 99.0,
+            "first_high": 101.0,
+            "last_low": 99.5,
+            "last_high": 102.5,
+            "median_width": 3.0,
+        },
+    }
+    assert "ci_status" not in out
+    assert "ci_alpha" not in out
+    assert "interval_summary" not in out
+    assert "lower_price" not in out
+    assert "upper_price" not in out
+
+
 def test_forecast_generate_standard_preserves_full_arrays(monkeypatch):
     raw = _unwrap(cf.forecast_generate)
     monkeypatch.setattr(
