@@ -45,6 +45,9 @@ Thumbs.db
 # Project-specific
 .claude/
 .opencode/
+.antigravity/
+.commandcode/
+
 
 .mtdata_cache/*
 lightning_logs/*
