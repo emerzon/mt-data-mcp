@@ -453,12 +453,12 @@ def symbols_describe(
         Trading symbol (e.g., "EURUSD")
     detail : str, optional (default="compact")
         Output verbosity level:
-        - "compact": Essential fields only (name, bid/ask, volume limits, contract size, tick size/value)
+        - "compact": Essential fields only (identifier, volume limits, contract size, tick size/value)
         - "full": Complete metadata including all trading modes, swap details, and session times
     Returns:
     --------
     dict
-        Symbol information with requested detail level
+        Symbol identifier plus requested detail fields
     """
     def _run() -> Dict[str, Any]:
         try:
@@ -550,9 +550,11 @@ def symbols_describe(
             if contract.shape_detail == "compact":
                 symbol_data = _compact_symbol_describe_payload(symbol_data)
 
+            symbol_name = _nonempty_symbol_string(symbol_data.pop("name", None))
             return {
                 "success": True,
-                "symbol": symbol_data,
+                "symbol": symbol_name or _nonempty_symbol_string(symbol) or symbol,
+                "details": symbol_data,
             }
         except MT5ConnectionError as exc:
             return build_error_payload(

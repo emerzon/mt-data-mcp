@@ -410,6 +410,16 @@ def _normalize_symbols_describe_cli_payload(result: Any, *, verbose: bool) -> An
     if not isinstance(result, dict):
         return result
 
+    details_in = result.get("details")
+    if isinstance(details_in, dict):
+        out = dict(result)
+        details = dict(details_in)
+        if not verbose:
+            details.pop("time_epoch", None)
+            out.pop("meta", None)
+        out["details"] = details
+        return out
+
     symbol_in = result.get("symbol")
     if not isinstance(symbol_in, dict):
         return result

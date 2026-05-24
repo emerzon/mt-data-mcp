@@ -763,8 +763,8 @@ class TestFormatResultForCli:
         result = _format_result_for_cli(
             {
                 "success": True,
-                "symbol": {
-                    "name": "BTCUSD",
+                "symbol": "BTCUSD",
+                "details": {
                     "time_epoch": 1700000000.0,
                     "time": "2023-11-14 22:13",
                 },
@@ -782,8 +782,8 @@ class TestFormatResultForCli:
             _format_result_for_cli(
                 {
                     "success": True,
-                    "symbol": {
-                        "name": "BTCUSD",
+                    "symbol": "BTCUSD",
+                    "details": {
                         "time_epoch": 1700000000.0,
                         "time": "2023-11-14 22:13",
                     },
@@ -795,7 +795,8 @@ class TestFormatResultForCli:
             )
         )
 
-        assert "time_epoch" not in payload["symbol"]
+        assert payload["symbol"] == "BTCUSD"
+        assert "time_epoch" not in payload["details"]
         assert "meta" not in payload
 
     def test_candle_json_preserves_canonical_data_rows(self):
@@ -1750,7 +1751,8 @@ class TestRenderCliResult:
         _render_cli_result(
             {
                 "success": True,
-                "symbol": {"name": "EURUSD", "time_epoch": 1700000000.0},
+                "symbol": "EURUSD",
+                "details": {"time_epoch": 1700000000.0},
             },
             args=args,
             cmd_name="symbols_describe",
@@ -1758,7 +1760,8 @@ class TestRenderCliResult:
 
         payload = json.loads(capsys.readouterr().out)
         assert "meta" not in payload
-        assert "time_epoch" not in payload["symbol"]
+        assert payload["symbol"] == "EURUSD"
+        assert "time_epoch" not in payload["details"]
 
 
 # ========================================================================

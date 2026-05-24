@@ -435,9 +435,8 @@ class TestSymbolsDescribe:
         fn = _get_symbols_describe()
         res = fn("EURUSD", detail="full")
         assert res["success"] is True
-        assert "symbol" in res
-        sd = res["symbol"]
-        assert sd.get("name") == "EURUSD"
+        assert res["symbol"] == "EURUSD"
+        sd = res["details"]
         assert sd.get("digits") == 5
         assert "spread" not in sd  # excluded
 
@@ -450,7 +449,7 @@ class TestSymbolsDescribe:
         mock_info.return_value = info
         fn = _get_symbols_describe()
         res = fn("EURUSD")
-        assert "comment" not in res["symbol"]
+        assert "comment" not in res["details"]
 
     @patch(f"{_MT5}.symbol_info")
     def test_skip_empty_string(self, mock_info):
@@ -461,7 +460,8 @@ class TestSymbolsDescribe:
         mock_info.return_value = info
         fn = _get_symbols_describe()
         res = fn("X")
-        assert "description" not in res["symbol"]
+        assert res["symbol"] == "X"
+        assert "description" not in res["details"]
 
     @patch(f"{_MT5}.symbol_info")
     def test_keeps_zero_numeric(self, mock_info):
@@ -472,7 +472,7 @@ class TestSymbolsDescribe:
         mock_info.return_value = info
         fn = _get_symbols_describe()
         res = fn("X", detail="full")
-        assert res["symbol"]["trade_mode"] == 0
+        assert res["details"]["trade_mode"] == 0
 
     @patch(f"{_MT5}.symbol_info")
     def test_decodes_enum_fields_with_labels(self, mock_info):
@@ -508,7 +508,7 @@ class TestSymbolsDescribe:
 
         fn = _get_symbols_describe()
         res = fn("EURUSD", detail="full")
-        sd = res["symbol"]
+        sd = res["details"]
 
         assert sd.get("trade_exemode_label") == "Market"
         assert "Cfd" in str(sd.get("trade_calc_mode_label"))
@@ -531,7 +531,7 @@ class TestSymbolsDescribe:
 
         fn = _get_symbols_describe()
         res = fn("EURUSD", detail="full")
-        sd = res["symbol"]
+        sd = res["details"]
 
         assert isinstance(sd.get("time"), str)
         assert ":" in sd.get("time")
@@ -551,9 +551,9 @@ class TestSymbolsDescribe:
 
         fn = _get_symbols_describe()
         res = fn("EURUSD")
-        sd = res["symbol"]
+        sd = res["details"]
 
-        assert sd["name"] == "EURUSD"
+        assert res["symbol"] == "EURUSD"
         assert sd["digits"] == 5
         assert sd["point"] == 0.00001
         assert "time_epoch" not in sd
@@ -570,8 +570,9 @@ class TestSymbolsDescribe:
 
         fn = _get_symbols_describe()
         res = fn("BTCUSD")
-        sd = res["symbol"]
+        sd = res["details"]
 
+        assert res["symbol"] == "BTCUSD"
         assert sd["currency_base"] == "BTC"
         assert sd["currency_base_reported"] == "USD"
         assert sd["currency_base_source"] == "inferred_from_symbol_name"
@@ -590,8 +591,8 @@ class TestSymbolsDescribe:
         fn = _get_symbols_describe()
         res = fn("EURUSD", detail="full")
 
-        assert res["symbol"]["time_epoch"] == 1700000000.0
-        assert isinstance(res["symbol"]["time"], str)
+        assert res["details"]["time_epoch"] == 1700000000.0
+        assert isinstance(res["details"]["time"], str)
 
     @patch(f"{_MT5}.symbol_info", side_effect=RuntimeError("fail"))
     def test_exception(self, mock_info):
@@ -620,9 +621,9 @@ class TestSymbolsDescribe:
 
         fn = _get_symbols_describe()
         res = fn("BTCUSD", detail="full")
-        sd = res["symbol"]
+        sd = res["details"]
 
-        assert sd["name"] == "BTCUSD"
+        assert res["symbol"] == "BTCUSD"
         assert sd["digits"] == 2
         assert sd["trade_mode"] == 4
         assert "price_greeks_delta" not in sd
@@ -654,7 +655,7 @@ class TestSymbolsDescribe:
 
         fn = _get_symbols_describe()
         res = fn("XAUUSD", detail="full")
-        sd = res["symbol"]
+        sd = res["details"]
 
         assert sd["bidlow"] == 4744.3
         assert sd["bidhigh"] == 4778.0
@@ -694,9 +695,9 @@ class TestSymbolsDescribe:
 
         fn = _get_symbols_describe()
         res = fn("EURUSD", detail="compact")
-        sd = res["symbol"]
+        sd = res["details"]
 
-        assert sd["name"] == "EURUSD"
+        assert res["symbol"] == "EURUSD"
         assert sd["trade_mode"] == 2
         assert sd["trade_mode_label"] == "Longonly"
         assert "Market" in sd["order_mode_labels"]
@@ -747,8 +748,9 @@ class TestSymbolsDescribe:
 
         fn = _get_symbols_describe()
         res = fn("EURUSD", detail="compact")
-        sd = res["symbol"]
+        sd = res["details"]
 
+        assert res["symbol"] == "EURUSD"
         assert sd["digits"] == 5
         assert sd["point"] == 0.00001
         assert sd["trade_contract_size"] == 100000.0
