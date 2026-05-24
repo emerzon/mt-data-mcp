@@ -145,6 +145,20 @@ def _forecast_compact_ci(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     return out
 
 
+def _strip_volatility_impl_aliases(payload: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(payload, dict):
+        return payload
+    out = dict(payload)
+    for key in (
+        "sigma_bar_return",
+        "sigma_annual_return",
+        "horizon_sigma_return",
+        "horizon_sigma_annual",
+    ):
+        out.pop(key, None)
+    return out
+
+
 def _finite_float(value: Any) -> Optional[float]:
     try:
         out = float(value)
@@ -1929,7 +1943,7 @@ def run_forecast_volatility_estimate(
         method=request.method,
         horizon=request.horizon,
     )
-    return result
+    return _strip_volatility_impl_aliases(result)
 
 
 def run_forecast_optimize_hints(

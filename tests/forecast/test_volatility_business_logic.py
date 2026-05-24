@@ -85,7 +85,11 @@ def test_finalize_volatility_output_compact_omits_explanatory_fields():
     assert "params_used" not in compact
     assert "params_explained" not in compact
     assert "volatility_interpretation" not in compact
-    assert full["sigma_bar_return"] == pytest.approx(0.01)
+    assert "sigma_bar_return" not in full
+    assert "sigma_annual_return" not in full
+    assert "horizon_sigma_return" not in full
+    assert "horizon_sigma_annual" not in full
+    assert full["volatility_per_bar"] == pytest.approx(0.01)
     assert full["params_used"]["lookback"] == 100
     assert set(full["volatility_interpretation"]) == {
         "volatility_per_bar",
@@ -97,7 +101,7 @@ def test_finalize_volatility_output_compact_omits_explanatory_fields():
     assert "sqrt-time scaling" in full["volatility_interpretation"]["volatility_horizon_annualized"]
 
 
-def test_forecast_volatility_estimate_preserves_impl_payload_without_public_stripper():
+def test_forecast_volatility_estimate_strips_duplicate_impl_sigma_fields():
     def fake_forecast_volatility(**_kwargs):
         return {
             "success": True,
@@ -121,10 +125,10 @@ def test_forecast_volatility_estimate_preserves_impl_payload_without_public_stri
 
     assert out["volatility_per_bar"] == pytest.approx(0.01)
     assert out["volatility_horizon"] == pytest.approx(0.02)
-    assert out["sigma_bar_return"] == pytest.approx(0.01)
-    assert out["sigma_annual_return"] == pytest.approx(0.5)
-    assert out["horizon_sigma_return"] == pytest.approx(0.02)
-    assert out["horizon_sigma_annual"] == pytest.approx(0.8)
+    assert "sigma_bar_return" not in out
+    assert "sigma_annual_return" not in out
+    assert "horizon_sigma_return" not in out
+    assert "horizon_sigma_annual" not in out
     assert out["volatility_interpretation"] == {"volatility_per_bar": "per bar"}
 
 

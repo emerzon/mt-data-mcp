@@ -388,12 +388,16 @@ def _finalize_volatility_output(
         except Exception:
             pass
 
+    for key in (
+        "sigma_bar_return",
+        "sigma_annual_return",
+        "horizon_sigma_return",
+        "horizon_sigma_annual",
+    ):
+        out.pop(key, None)
+
     if detail_mode != "full":
         for key in (
-            "sigma_bar_return",
-            "sigma_annual_return",
-            "horizon_sigma_return",
-            "horizon_sigma_annual",
             "params_explained",
             "params_used",
             "volatility_interpretation",
