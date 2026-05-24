@@ -42,6 +42,51 @@ def _label_outcome(label: int) -> str:
     return "neutral"
 
 
+def _triple_barrier_sample_row(
+    *,
+    idx: int,
+    closes: np.ndarray,
+    t_entry: List[str],
+    labels: List[int],
+    hold: List[int],
+    tp_times: List[Optional[str]],
+    sl_times: List[Optional[str]],
+    direction_value: str,
+    pip_size: float,
+    barrier_kwargs: Dict[str, Any],
+) -> Dict[str, Any]:
+    label = int(labels[idx])
+    row: Dict[str, Any] = {
+        "entry_time": t_entry[idx],
+        "label": label,
+        "outcome": _label_outcome(label),
+        "holding_bars": hold[idx],
+        "tp_time": tp_times[idx],
+        "sl_time": sl_times[idx],
+    }
+    try:
+        entry_price = float(closes[idx])
+        if math.isfinite(entry_price):
+            row["entry_price"] = entry_price
+            tp_price, sl_price = _resolve_barrier_prices(
+                price=entry_price,
+                direction=direction_value,
+                pip_size=pip_size,
+                adjust_inverted=False,
+                **barrier_kwargs,
+            )
+            levels: Dict[str, Any] = {}
+            if tp_price is not None:
+                levels["tp"] = tp_price
+            if sl_price is not None:
+                levels["sl"] = sl_price
+            if levels:
+                row["barrier_levels"] = levels
+    except Exception:
+        pass
+    return row
+
+
 def _first_true_offsets(mask: np.ndarray) -> np.ndarray:
     if mask.size == 0:
         return np.array([], dtype=int)
@@ -438,7 +483,9 @@ def labels_triple_barrier(
                     return out
                 payload["summary"] = summary
                 sample_n = n
-                sample_indices = list(range(max(0, len(labels) - sample_n), len(labels)))
+                sample_indices = list(
+                    range(max(0, len(labels) - sample_n), len(labels))
+                )
                 if output_mode == "compact":
                     outcome_indices = [
                         len(labels) - len(lab_tail) + idx
@@ -450,18 +497,46 @@ def labels_triple_barrier(
                         payload["sample_basis"] = "outcomes"
                     else:
                         sample_n = min(n, _COMPACT_LABEL_SAMPLE_SIZE)
-                        sample_indices = list(range(max(0, len(labels) - sample_n), len(labels)))
+                        sample_indices = list(
+                            range(max(0, len(labels) - sample_n), len(labels))
+                        )
                         payload["sample_basis"] = "recent"
                     payload["sample_size"] = int(len(sample_indices))
                     if len(sample_indices) < n:
                         payload["sample_note"] = (
-                            "entries, labels, and timing arrays show non-neutral outcomes in the lookback window when present; "
+                            "data rows show non-neutral outcomes in the lookback window when present; "
                             f"otherwise the most recent {len(sample_indices)} observations."
                         )
-                if sample_indices:
+                    payload["data"] = [
+                        _triple_barrier_sample_row(
+                            idx=idx,
+                            closes=closes,
+                            t_entry=t_entry,
+                            labels=labels,
+                            hold=hold,
+                            tp_times=tp_times,
+                            sl_times=sl_times,
+                            direction_value=direction_value,
+                            pip_size=pip_size,
+                            barrier_kwargs=barrier_kwargs,
+                        )
+                        for idx in sample_indices
+                    ]
+                    for key in (
+                        "entries",
+                        "labels",
+                        "outcomes",
+                        "holding_bars",
+                        "tp_time",
+                        "sl_time",
+                    ):
+                        payload.pop(key, None)
+                elif sample_indices:
                     payload["entries"] = [t_entry[idx] for idx in sample_indices]
                     payload["labels"] = [labels[idx] for idx in sample_indices]
-                    payload["outcomes"] = [_label_outcome(labels[idx]) for idx in sample_indices]
+                    payload["outcomes"] = [
+                        _label_outcome(labels[idx]) for idx in sample_indices
+                    ]
                     payload["holding_bars"] = [hold[idx] for idx in sample_indices]
                     payload["tp_time"] = [tp_times[idx] for idx in sample_indices]
                     payload["sl_time"] = [sl_times[idx] for idx in sample_indices]

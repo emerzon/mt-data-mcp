@@ -76,7 +76,8 @@ class TestLabelsTripleBarrier:
         result = _get_raw_fn()("EURUSD", tp_pct=0.5, sl_pct=0.5, horizon=12)
         assert result["success"] is True
         assert "summary" in result
-        assert len(result["labels"]) > 0
+        assert len(result["data"]) > 0
+        assert "labels" not in result
 
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
     @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
@@ -168,7 +169,14 @@ class TestLabelsTripleBarrier:
         df.loc[0, "close"] = np.nan
         mock_hist.return_value = df
 
-        result = _get_raw_fn()("EURUSD", tp_pct=0.5, sl_pct=0.5, horizon=3, label_on="close")
+        result = _get_raw_fn()(
+            "EURUSD",
+            tp_pct=0.5,
+            sl_pct=0.5,
+            horizon=3,
+            label_on="close",
+            detail="full",
+        )
 
         assert result["success"] is True
         assert result["skipped_entries"] == 1
@@ -225,7 +233,12 @@ class TestLabelsTripleBarrier:
         result = _get_raw_fn()("EURUSD", tp_pct=0.5, sl_pct=0.5, horizon=5, detail="compact", lookback=10)
         assert result["success"] is True
         assert "summary" in result
-        assert len(result["labels"]) <= 10
+        assert len(result["data"]) <= 10
+        assert {"entry_time", "label", "outcome", "holding_bars"}.issubset(
+            result["data"][0]
+        )
+        assert "labels" not in result
+        assert "entries" not in result
         assert result["sample_size"] <= 10
 
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
@@ -245,9 +258,10 @@ class TestLabelsTripleBarrier:
         assert result["success"] is True
         assert result["summary"]["lookback"] == 25
         assert result["sample_size"] == 10
-        assert len(result["labels"]) == 10
+        assert len(result["data"]) == 10
         assert result["sample_basis"] == "recent"
         assert "sample_note" in result
+        assert "data rows show non-neutral outcomes" in result["sample_note"]
         assert "label_legend" not in result
         assert result["label_key"] == {"1": "tp_first", "-1": "sl_first", "0": "hold"}
 
@@ -268,8 +282,8 @@ class TestLabelsTripleBarrier:
         assert result["success"] is True
         assert result["summary"]["counts"]["tp"] > 0
         assert result["sample_basis"] == "outcomes"
-        assert all(label != 0 for label in result["labels"])
-        assert set(result["outcomes"]) <= {"tp", "sl"}
+        assert all(row["label"] != 0 for row in result["data"])
+        assert {row["outcome"] for row in result["data"]} <= {"tp", "sl"}
 
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
     @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
@@ -311,6 +325,7 @@ class TestLabelsTripleBarrier:
         assert result["success"] is True
         assert "summary" in result
         assert result["sample_size"] <= 12
+        assert "data" in result
 
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
     @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
@@ -338,7 +353,9 @@ class TestLabelsTripleBarrier:
     @patch(f"{_LABELS_MOD}._fetch_history")
     def test_flat_price_neutral_labels(self, mock_hist, mock_den, mock_pip):
         mock_hist.return_value = _make_flat_df(60)
-        result = _get_raw_fn()("FLAT", tp_pct=5.0, sl_pct=5.0, horizon=5)
+        result = _get_raw_fn()(
+            "FLAT", tp_pct=5.0, sl_pct=5.0, horizon=5, detail="full"
+        )
         assert result["success"] is True
         assert all(l == 0 for l in result["labels"])
 
@@ -347,7 +364,9 @@ class TestLabelsTripleBarrier:
     @patch(f"{_LABELS_MOD}._fetch_history")
     def test_minimum_history_keeps_last_valid_entry_bar(self, mock_hist, mock_den, mock_pip):
         mock_hist.return_value = _make_flat_df(5)
-        result = _get_raw_fn()("EURUSD", tp_pct=5.0, sl_pct=5.0, horizon=3)
+        result = _get_raw_fn()(
+            "EURUSD", tp_pct=5.0, sl_pct=5.0, horizon=3, detail="full"
+        )
 
         assert result["success"] is True
         assert len(result["labels"]) == 2
@@ -373,7 +392,9 @@ class TestLabelsTripleBarrier:
     @patch(f"{_LABELS_MOD}._fetch_history")
     def test_holding_bars_within_horizon(self, mock_hist, mock_den, mock_pip):
         mock_hist.return_value = _make_df(60)
-        result = _get_raw_fn()("EURUSD", tp_pct=0.5, sl_pct=0.5, horizon=10)
+        result = _get_raw_fn()(
+            "EURUSD", tp_pct=0.5, sl_pct=0.5, horizon=10, detail="full"
+        )
         assert result["success"] is True
         for h in result["holding_bars"]:
             assert 1 <= h <= 10
@@ -418,6 +439,7 @@ class TestLabelsTripleBarrier:
             horizon=3,
             direction="short",
             label_on="close",
+            detail="full",
         )
         assert result["success"] is True
         assert result["direction"] == "short"
@@ -440,6 +462,7 @@ class TestLabelsTripleBarrier:
             sl_pct=1.0,
             horizon=1,
             label_on="high_low",
+            detail="full",
         )
 
         assert result["success"] is True
