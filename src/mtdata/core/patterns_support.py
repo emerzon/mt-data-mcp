@@ -409,6 +409,9 @@ def _compact_patterns_payload(
             "target_price",
             "target_stale",
             "invalidation_price",
+            "wave_count",
+            "validation_status",
+            "candidate_note",
         ):
             value = best.get(key)
             if value not in (None, ""):
@@ -440,6 +443,9 @@ def _compact_patterns_payload(
             "end_date",
             "price",
             "end_index",
+            "wave_count",
+            "validation_status",
+            "candidate_note",
         ):
             value = strongest_pattern.get(key)
             if value not in (None, ""):
@@ -465,7 +471,13 @@ def _compact_patterns_payload(
         )
         if direction not in (None, ""):
             item["direction"] = direction
-        for key in ("timeframe", "status", "confidence"):
+        for key in (
+            "timeframe",
+            "status",
+            "confidence",
+            "wave_count",
+            "candidate_note",
+        ):
             value = row.get(key)
             if value not in (None, ""):
                 item[key] = value

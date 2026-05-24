@@ -207,6 +207,32 @@ class TestFormatElliottPatterns:
         assert result[0]["wave_type"] == "Impulse"
 
     @patch("mtdata.core.patterns._detect_elliott_waves")
+    def test_candidate_rows_include_actionable_context(self, mock_detect):
+        mock_detect.return_value = [
+            _mock_pattern_result(
+                wave_type="Candidate",
+                confidence=0.1,
+                details={
+                    "wave_points_labeled": [
+                        {"label": f"W{i}", "index": i, "price": 1.0 + i}
+                        for i in range(6)
+                    ],
+                    "rule_violations": ["fallback_candidate"],
+                },
+            ),
+        ]
+        df = _make_ohlcv_df(50)
+
+        result = self._call(df, MagicMock())
+
+        row = result[0]
+        assert row["pattern"] == "Elliott impulse-like candidate"
+        assert row["validation_status"] == "fallback_candidate"
+        assert row["wave_count"] == 6
+        assert "Low-confidence fallback candidate" in row["candidate_note"]
+        assert row["validation_issues"] == ["fallback_candidate"]
+
+    @patch("mtdata.core.patterns._detect_elliott_waves")
     def test_forming_status(self, mock_detect):
         df = _make_ohlcv_df(50)
         mock_detect.return_value = [

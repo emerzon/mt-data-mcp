@@ -2,7 +2,7 @@ import copy
 import logging
 import warnings
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Literal, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -526,19 +526,45 @@ def _format_elliott_patterns(df: pd.DataFrame, cfg: _ElliottCfg) -> List[Dict[st
                 n_bars=n_bars,
                 recent_bars=recent_bars,
             )
+            details = {k: _round_value(v) for k, v in (p.details or {}).items()}
+            wave_type = str(p.wave_type or "")
+            row: Dict[str, Any] = {
+                "wave_type": wave_type,
+                "status": status,
+                "confidence": float(max(0.0, min(1.0, p.confidence))),
+                "start_index": int(p.start_index),
+                "end_index": int(p.end_index),
+                "start_date": start_date,
+                "end_date": end_date,
+                "details": details,
+            }
 
-            out_list.append(
-                {
-                    "wave_type": p.wave_type,
-                    "status": status,
-                    "confidence": float(max(0.0, min(1.0, p.confidence))),
-                    "start_index": int(p.start_index),
-                    "end_index": int(p.end_index),
-                    "start_date": start_date,
-                    "end_date": end_date,
-                    "details": {k: _round_value(v) for k, v in (p.details or {}).items()},
-                }
-            )
+            if wave_type.strip().lower() == "candidate":
+                wave_points = details.get("wave_points_labeled") or details.get("wave_points") or []
+                wave_count = len(wave_points) if isinstance(wave_points, list) else None
+                validates_as = str(details.get("candidate_validates_as") or "").strip().lower()
+                if validates_as:
+                    structure = f"{validates_as}-validating"
+                elif wave_count == 6:
+                    structure = "impulse-like"
+                elif wave_count == 4:
+                    structure = "correction-like"
+                elif wave_count:
+                    structure = f"{wave_count}-pivot"
+                else:
+                    structure = "unvalidated"
+                row["pattern"] = f"Elliott {structure} candidate"
+                row["validation_status"] = "fallback_candidate"
+                row["candidate_note"] = (
+                    "Low-confidence fallback candidate; Elliott rules did not validate "
+                    "a specific impulse or correction."
+                )
+                if wave_count:
+                    row["wave_count"] = int(wave_count)
+                violations = details.get("rule_violations")
+                if isinstance(violations, list) and violations:
+                    row["validation_issues"] = [str(item) for item in violations[:3]]
+            out_list.append(row)
         except Exception:
             continue
     return _enrich_elliott_patterns(out_list, df, cfg)

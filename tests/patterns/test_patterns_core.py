@@ -576,6 +576,56 @@ def test_build_pattern_response_compact_keeps_actionable_fields():
     assert "recent_patterns" not in compact
 
 
+def test_build_pattern_response_compact_keeps_elliott_candidate_context():
+    df = pd.DataFrame({"time": [1, 2, 3], "close": [10.0, 11.0, 12.0]})
+    candidate_note = (
+        "Low-confidence fallback candidate; Elliott rules did not validate a "
+        "specific impulse or correction."
+    )
+    patterns = [
+        {
+            "pattern": "Elliott impulse-like candidate",
+            "wave_type": "Candidate",
+            "status": "forming",
+            "confidence": 0.1,
+            "end_index": 2,
+            "wave_count": 6,
+            "validation_status": "fallback_candidate",
+            "candidate_note": candidate_note,
+        }
+    ]
+
+    compact = _build_pattern_response(
+        "EURUSD",
+        "H1",
+        100,
+        "elliott",
+        patterns,
+        include_completed=False,
+        include_series=False,
+        series_time="string",
+        df=df,
+        detail="compact",
+    )
+
+    assert compact["strongest_pattern"] == {
+        "pattern": "Elliott impulse-like candidate",
+        "confidence": 0.1,
+        "wave_count": 6,
+        "validation_status": "fallback_candidate",
+        "candidate_note": candidate_note,
+    }
+    assert compact["top_patterns"] == [
+        {
+            "pattern": "Elliott impulse-like candidate",
+            "status": "forming",
+            "confidence": 0.1,
+            "wave_count": 6,
+            "candidate_note": candidate_note,
+        }
+    ]
+
+
 def test_build_pattern_response_compact_keeps_fractal_breakout_fields():
     df = pd.DataFrame({"time": [1, 2, 3], "close": [10.0, 10.5, 9.8]})
     patterns = [
