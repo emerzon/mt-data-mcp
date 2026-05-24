@@ -725,7 +725,7 @@ def test_data_fetch_candles_request_defaults_to_compact_detail():
     request = DataFetchCandlesRequest(symbol="EURUSD")
 
     assert request.detail == "compact"
-    assert request.limit == 20
+    assert request.limit == 100
 
 
 def test_data_fetch_candles_wrapper_respects_detail_contract(monkeypatch):
@@ -753,10 +753,10 @@ def test_data_fetch_candles_wrapper_respects_detail_contract(monkeypatch):
         json=True,
     )
 
-    assert raw["meta"]["diagnostics"]["query"]["requested_bars"] == 20
+    assert raw["meta"]["diagnostics"]["query"]["requested_bars"] == 100
     assert "meta" not in compact
     assert full["meta"]["tool"] == "data_fetch_candles"
-    assert full["meta"]["diagnostics"]["query"]["requested_bars"] == 20
+    assert full["meta"]["diagnostics"]["query"]["requested_bars"] == 100
 
 
 def test_data_fetch_ticks_request_rejects_removed_output_field():
