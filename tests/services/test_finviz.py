@@ -1084,8 +1084,7 @@ class TestFinvizTools:
                 "earnings": "Apr 27/b",
                 "market_cap": "14.17M",
                 "price": "12.85",
-                "change_pct": "-0.0258",
-                "change_pct_percent": -2.58,
+                "change_pct": -2.58,
                 "volume": "6593",
             }
         ]
@@ -1262,6 +1261,33 @@ class TestFinvizTools:
         assert result["items"] == []
 
     @patch('mtdata.core.finviz.screen_stocks')
+    def test_finviz_screen_tool_accepts_colon_filter_string(self, mock_screen):
+        from mtdata.core.finviz import finviz_screen
+
+        def _run_direct(_logger, operation, func, **fields):
+            return func()
+
+        mock_screen.return_value = {"success": True, "count": 1, "stocks": []}
+        with (
+            patch("mtdata.core.finviz.run_logged_operation", side_effect=_run_direct),
+            patch(
+                "mtdata.core.finviz._parse_finviz_screen_key_value_filters",
+                return_value={"Market Cap.": "Large ($10bln to $200bln)"},
+            ) as mock_parse,
+        ):
+            result = finviz_screen.__wrapped__(filters="marketcap:large", limit=5)
+
+        mock_parse.assert_called_once_with("marketcap:large")
+        mock_screen.assert_called_once_with(
+            filters={"Market Cap.": "Large ($10bln to $200bln)"},
+            order=None,
+            limit=5,
+            page=1,
+            view="overview",
+        )
+        assert result["success"] is True
+
+    @patch('mtdata.core.finviz.screen_stocks')
     def test_finviz_screen_tool_supports_full_detail_meta_and_omitted_count(self, mock_screen):
         from mtdata.core.finviz import finviz_screen
 
@@ -1368,6 +1394,46 @@ class TestFinvizTools:
             date_from="2026-01-05",
             date_to="2026-01-12",
         )
+
+    def test_finviz_calendar_compact_replaces_opaque_symbol_with_country(self):
+        from mtdata.core.finviz import finviz_calendar
+
+        def _run_direct(_logger, operation, func, **fields):
+            return func()
+
+        service_result = {
+            "success": True,
+            "items": [
+                {
+                    "ticker": "UNITEDSTANONFAR",
+                    "event": "Nonfarm Payrolls",
+                    "category": "Employment",
+                    "date": "2026-01-04T08:30:00",
+                    "importance": 3,
+                }
+            ],
+        }
+        with (
+            patch("mtdata.core.finviz.run_logged_operation", side_effect=_run_direct),
+            patch(
+                "mtdata.core.finviz.get_economic_calendar",
+                return_value=service_result,
+            ),
+        ):
+            result = finviz_calendar.__wrapped__()
+
+        assert result["items"] == [
+            {
+                "source_id": "UNITEDSTANONFAR",
+                "country": "United States",
+                "country_code": "US",
+                "event": "Nonfarm Payrolls",
+                "category": "Employment",
+                "date": "2026-01-04T08:30:00",
+                "importance": 3,
+            }
+        ]
+        assert "symbol" not in result["items"][0]
 
     def test_finviz_calendar_rejects_removed_date_aliases(self):
         from mtdata.core.finviz import finviz_calendar

@@ -222,7 +222,7 @@ def test_support_resistance_tool_standard_detail_keeps_actionable_lists_without_
     assert len(result["levels"]) == 2
     assert result["supports"][0]["type"] == "support"
     assert result["resistances"][0]["type"] == "resistance"
-    assert result["nearest"]["support"]["type"] == "support"
+    assert "nearest" not in result
     assert "score_breakdown" not in result["supports"][0]
     assert "source_tests" not in result["supports"][0]
     assert result["fibonacci"]["nearest"]["support"]["type"] == "support"

@@ -190,8 +190,8 @@ class TestCorrelationHelpers:
 
         expected = {
             "pair": "A-B",
-            "left": "A",
-            "right": "B",
+            "symbol1": "A",
+            "symbol2": "B",
             "p_value": 0.01,
             "test_stat": -4.1,
             "cointegrated": True,

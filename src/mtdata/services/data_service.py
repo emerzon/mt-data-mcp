@@ -1930,8 +1930,6 @@ def fetch_ticks(  # noqa: C901
         def _tick_field(tick: Any, name: str) -> Any:
             return _tick_field_value(tick, name)
 
-        needs_stats = output_mode in ("summary", "stats")
-
         # Extract shared tick columns once so summary/stats, simplification,
         # and row rendering can all reuse the same values.
         _epochs: List[float] = []
@@ -2340,12 +2338,13 @@ def fetch_ticks(  # noqa: C901
                 digits=price_digits,
                 price_columns=_TICK_PRICE_COLUMNS,
             )
-            payload = _table_from_rows(headers, rows)
-            payload.update({
+            table_payload = _table_from_rows(headers, rows)
+            payload = {
                 "success": True,
                 "symbol": symbol,
                 "count": len(rows),
-            })
+            }
+            payload.update(table_payload)
             payload["timezone"] = _timezone_label(use_client_tz=_use_ctz, client_tz=client_tz)
             _add_tick_summary_fields(payload)
             if has_flags:
@@ -2485,12 +2484,13 @@ def fetch_ticks(  # noqa: C901
                 values.append(_decode_tick_flags(flags[i]))
             rows.append(values)
 
-        payload = _table_from_rows(headers, rows)
-        payload.update({
+        table_payload = _table_from_rows(headers, rows)
+        payload = {
             "success": True,
             "symbol": symbol,
             "count": len(rows),
-        })
+        }
+        payload.update(table_payload)
         payload["timezone"] = _timezone_label(use_client_tz=_use_ctz, client_tz=client_tz)
         _add_tick_summary_fields(payload)
         if has_flags:

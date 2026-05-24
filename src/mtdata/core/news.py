@@ -204,6 +204,8 @@ def normalize_news_output(
         if key_text == "symbol" and subvalue is None:
             continue
         if key_text in _NEWS_BUCKET_KEYS and isinstance(subvalue, list):
+            if not subvalue:
+                continue
             out[key] = [
                 _strip_news_compact_item_fields(item, bucket_name=key_text)
                 for item in subvalue
@@ -245,6 +247,8 @@ def _apply_news_limit(
             if count_key in out:
                 out[count_key] = len(value)
             returned += len(value)
+            if not value:
+                out.pop(key, None)
     out["total_candidates"] = total_candidates
     out["returned"] = returned
     out["truncated"] = truncated

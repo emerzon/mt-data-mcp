@@ -328,7 +328,7 @@ def test_compact_support_resistance_payload_omits_fibonacci_until_standard_detai
     )
     assert "fibonacci" in standard
     assert "levels" in standard
-    assert "nearest" in standard
+    assert "nearest" not in standard
     assert standard["fibonacci"]["nearest"]["support"]["type"] == "support"
 
 

@@ -911,8 +911,8 @@ class TestCorrelationMatrix:
         assert result["items"]
         assert result["count"] == len(result["items"])
         assert set(result["items"][0]) == {
-            "left",
-            "right",
+            "symbol1",
+            "symbol2",
             "correlation",
             "samples",
             "period_start",

@@ -170,6 +170,44 @@ def test_trade_risk_analyze_marks_position_sizing_incomplete_without_required_in
     assert "required_for_sizing" not in out["position_sizing"]
 
 
+def test_trade_risk_analyze_evaluates_trade_levels_without_desired_risk_pct() -> None:
+    mt5 = MagicMock()
+    mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
+    mt5.positions_get.return_value = []
+    mt5.symbol_info.return_value = _make_symbol_info()
+
+    with _patched_mt5_module(mt5):
+        out = trade_risk_analyze(
+            symbol="EURUSD",
+            direction="long",
+            entry=100.0,
+            stop_loss=95.0,
+            take_profit=112.5,
+        )
+
+    assert out["success"] is True
+    assert out["position_sizing"]["missing"] == ["desired_risk_pct"]
+    assert out["trade_evaluation"] == {
+        "status": "valid",
+        "symbol": "EURUSD",
+        "direction": "long",
+        "direction_source": "explicit",
+        "entry": 100.0,
+        "sl": 95.0,
+        "tp": 112.5,
+        "sl_distance_price": 5.0,
+        "sl_distance_pct": 5.0,
+        "tick_size": 1.0,
+        "sl_distance_ticks": 5.0,
+        "risk_tick_value": 1.0,
+        "risk_per_lot": 5.0,
+        "tp_distance_price": 12.5,
+        "tp_distance_pct": 12.5,
+        "tp_distance_ticks": 12.5,
+        "reward_risk_ratio": 2.5,
+    }
+
+
 def test_trade_risk_analyze_keeps_exposure_analysis_with_partial_sizing_params() -> None:
     mt5 = MagicMock()
     mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")

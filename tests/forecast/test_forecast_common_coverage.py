@@ -646,6 +646,33 @@ class TestFormatForecastOutput:
             )
         assert result["timezone"] == "America/New_York"
 
+    def test_forex_intraday_forecast_warns_when_times_cross_weekend(self):
+        vals = np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+        last_epoch = pd.Timestamp("2026-05-22 20:00", tz="UTC").timestamp()
+
+        with patch(
+            "mtdata.forecast.forecast_engine._use_client_tz",
+            return_value=False,
+        ):
+            result = _format_forecast_output(
+                forecast_values=vals,
+                last_epoch=last_epoch,
+                tf_secs=3600,
+                horizon=6,
+                base_col="close",
+                df=self._make_df(),
+                ci_alpha=None,
+                ci_values=None,
+                method="theta",
+                quantity="price",
+                denoise_used=False,
+                symbol="EURUSD",
+                timeframe="H1",
+            )
+
+        assert result["market_hours_note"].startswith("3 of 6 forecast bars")
+        assert any("Saturday/Sunday" in warning for warning in result["warnings"])
+
 
 # ===================================================================
 # 12. _bars_per_year

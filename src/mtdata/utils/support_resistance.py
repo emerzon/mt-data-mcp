@@ -2549,20 +2549,6 @@ def standard_support_resistance_payload(payload: Dict[str, Any]) -> Dict[str, An
     if isinstance(compact_fibonacci, dict) and compact_fibonacci:
         out["fibonacci"] = compact_fibonacci
 
-    nearest: Dict[str, Any] = {}
-    raw_supports = payload.get("supports")
-    raw_resistances = payload.get("resistances")
-    if isinstance(raw_supports, list) and raw_supports:
-        support_compact = _standard_support_resistance_level(raw_supports[0])
-        if support_compact:
-            nearest["support"] = support_compact
-    if isinstance(raw_resistances, list) and raw_resistances:
-        resistance_compact = _standard_support_resistance_level(raw_resistances[0])
-        if resistance_compact:
-            nearest["resistance"] = resistance_compact
-    if nearest:
-        out["nearest"] = nearest
-
     supports = _compact_support_resistance_levels(payload.get("supports"), standard=True)
     if supports:
         out["supports"] = supports

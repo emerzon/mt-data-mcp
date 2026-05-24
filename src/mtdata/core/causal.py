@@ -523,8 +523,8 @@ def _rank_correlation_pairs(
 def _compact_correlation_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return [
         {
-            "left": row.get("left"),
-            "right": row.get("right"),
+            "symbol1": row.get("left"),
+            "symbol2": row.get("right"),
             "correlation": row.get("correlation"),
             "samples": row.get("samples"),
             "period_start": row.get("period_start"),
@@ -532,6 +532,18 @@ def _compact_correlation_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]
         }
         for row in rows
     ]
+
+
+def _public_pair_row(row: Dict[str, Any]) -> Dict[str, Any]:
+    out: Dict[str, Any] = {}
+    for key, value in row.items():
+        if key == "left":
+            out["symbol1"] = value
+        elif key == "right":
+            out["symbol2"] = value
+        else:
+            out[key] = value
+    return out
 
 
 def _build_correlation_matrix(
@@ -561,8 +573,8 @@ def _pair_highlight_ref(
     right = str(row.get("right") or "")
     out: Dict[str, Any] = {
         "pair": f"{left}-{right}",
-        "left": left,
-        "right": right,
+        "symbol1": left,
+        "symbol2": right,
     }
     for key in metrics:
         if key in row:
@@ -1892,7 +1904,11 @@ def correlation_matrix(  # noqa: C901
                 or None,
             )
 
-        output_rows = rows if detail_mode == "full" else _compact_correlation_rows(rows)
+        output_rows = (
+            [_public_pair_row(row) for row in rows]
+            if detail_mode == "full"
+            else _compact_correlation_rows(rows)
+        )
         highlights = (
             _build_correlation_summary(rows)
             if detail_mode in {"standard", "full"}
@@ -2317,7 +2333,7 @@ def cointegration_test(  # noqa: C901
 
         out: Dict[str, Any] = {
             "success": True,
-            "items": rows,
+            "items": [_public_pair_row(row) for row in rows],
             "count": int(len(rows)),
             "summary": {
                 "counts": {

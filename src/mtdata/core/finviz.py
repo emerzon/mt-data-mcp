@@ -438,26 +438,31 @@ def _invalid_finviz_screen_filters_error(filters: Any) -> Dict[str, Any]:
         raw = filters.strip()
         if raw and not raw.startswith("{"):
             message = (
-                "Invalid filters format. Received a string value, but finviz_screen expects a JSON object "
-                "(dict) with filter names as keys, key=value pairs, or Finviz screener shorthand tokens like "
+                "Invalid filters format. Received a string value, but finviz_screen "
+                "expects a JSON object (dict) with filter names as keys, "
+                "key=value or key:value pairs, or Finviz screener shorthand tokens "
+                "like "
                 "'cap_largeover,exch_nyse'. Examples: "
                 "'country=USA,marketcap=mega', "
+                "'country:USA,marketcap:mega', "
                 "{'Exchange': 'NASDAQ', 'Sector': 'Technology'} or "
                 "'{\"Exchange\": \"NASDAQ\", \"Sector\": \"Technology\"}'. "
                 f"Got: {filters!r}"
             )
         else:
             message = (
-                "Invalid filters format. Provide filters as key=value pairs, a JSON object (dict), or JSON string "
-                "with filter names as keys and filter values as values. Example: 'country=USA,marketcap=mega', "
+                "Invalid filters format. Provide filters as key=value or key:value "
+                "pairs, a JSON object (dict), or JSON string with filter names as keys "
+                "and filter values as values. Example: 'country=USA,marketcap=mega', "
                 "{'Exchange': 'NASDAQ', 'Sector': 'Technology'} or "
                 "'{\"Exchange\": \"NASDAQ\", \"Sector\": \"Technology\"}'. "
                 f"Got: {filters}"
             )
     else:
         message = (
-            "Invalid filters format. Provide filters as key=value pairs, a JSON object (dict), or JSON string "
-            "with filter names as keys and filter values as values. Example: 'country=USA,marketcap=mega', "
+            "Invalid filters format. Provide filters as key=value or key:value pairs, "
+            "a JSON object (dict), or JSON string with filter names as keys and filter "
+            "values as values. Example: 'country=USA,marketcap=mega', "
             "{'Exchange': 'NASDAQ', 'Sector': 'Technology'} or "
             "'{\"Exchange\": \"NASDAQ\", \"Sector\": \"Technology\"}'. "
             f"Got: {filters}"
@@ -520,7 +525,7 @@ def _resolve_finviz_filter_option(spec: Dict[str, Any], raw_value: str) -> Optio
 
 
 def _parse_finviz_screen_key_value_filters(raw: str) -> Optional[Dict[str, Any]]:
-    if "=" not in raw:
+    if "=" not in raw and ":" not in raw:
         return None
     try:
         from finvizfinance.screener.base import filter_dict
@@ -533,9 +538,12 @@ def _parse_finviz_screen_key_value_filters(raw: str) -> Optional[Dict[str, Any]]
     }
     parsed: Dict[str, Any] = {}
     for token in [part.strip() for part in raw.split(",") if part.strip()]:
-        if "=" not in token:
+        if "=" in token:
+            key_raw, value_raw = token.split("=", 1)
+        elif ":" in token:
+            key_raw, value_raw = token.split(":", 1)
+        else:
             return None
-        key_raw, value_raw = token.split("=", 1)
         filter_name = filter_names.get(_compact_finviz_filter_token(key_raw))
         if filter_name is None:
             return None
@@ -565,7 +573,7 @@ def _resolve_finviz_screen_filters(filters: Any) -> tuple[Optional[Dict[str, Any
         if not isinstance(parsed, dict):
             return None, _invalid_finviz_screen_filters_error(filters)
         return parsed, None
-    if "=" in raw:
+    if "=" in raw or ":" in raw:
         parsed = _parse_finviz_screen_key_value_filters(raw)
         if parsed is not None:
             return parsed, None
@@ -909,7 +917,9 @@ _FINVIZ_EARNINGS_COMPACT_FIELDS = (
     "volume",
 )
 _FINVIZ_CALENDAR_COMPACT_FIELDS = (
-    "symbol",
+    "source_id",
+    "country",
+    "country_code",
     "event",
     "category",
     "date",
@@ -1087,18 +1097,67 @@ def _compact_finviz_earnings_items(items: Any) -> List[Any]:
             row["change_pct"] = row.pop("change")
         change_pct = _finviz_percent_value(row.get("change_pct"))
         if change_pct is not None:
-            row["change_pct_percent"] = change_pct
+            row["change_pct"] = change_pct
         compact_rows.append(row)
     return compact_rows
+
+
+_FINVIZ_CALENDAR_COUNTRY_PREFIXES = (
+    ("UNITEDSTA", "United States", "US"),
+    ("USA", "United States", "US"),
+    ("USD", "United States", "US"),
+    ("CANADA", "Canada", "CA"),
+    ("CAD", "Canada", "CA"),
+    ("GERMANY", "Germany", "DE"),
+    ("DEU", "Germany", "DE"),
+    ("EUROZONE", "Eurozone", "EU"),
+    ("EUR", "Eurozone", "EU"),
+    ("JAPAN", "Japan", "JP"),
+    ("JPY", "Japan", "JP"),
+    ("UNITEDKINGDOM", "United Kingdom", "GB"),
+    ("UK", "United Kingdom", "GB"),
+    ("GBP", "United Kingdom", "GB"),
+    ("AUSTRALIA", "Australia", "AU"),
+    ("AUD", "Australia", "AU"),
+    ("NEWZEALAND", "New Zealand", "NZ"),
+    ("NZD", "New Zealand", "NZ"),
+    ("SWITZERLAND", "Switzerland", "CH"),
+    ("CHF", "Switzerland", "CH"),
+    ("CHINA", "China", "CN"),
+    ("CNY", "China", "CN"),
+)
+
+
+def _infer_finviz_calendar_country(item: Dict[str, Any]) -> tuple[Any, Any]:
+    existing_country = item.get("country")
+    existing_code = item.get("country_code")
+    if existing_country not in (None, "") or existing_code not in (None, ""):
+        return existing_country, existing_code
+
+    source_id = str(item.get("symbol") or item.get("source_id") or "").strip()
+    compact_source = re.sub(r"[^A-Za-z]", "", source_id).upper()
+    for prefix, country, code in _FINVIZ_CALENDAR_COUNTRY_PREFIXES:
+        if compact_source.startswith(prefix):
+            return country, code
+    return None, None
 
 
 def _compact_finviz_calendar_item(item: Any) -> Any:
     if not isinstance(item, dict):
         return item
+    normalized = dict(item)
+    source_id = normalized.get("source_id") or normalized.get("symbol")
+    if source_id not in (None, ""):
+        normalized["source_id"] = source_id
+    country, country_code = _infer_finviz_calendar_country(normalized)
+    if country not in (None, ""):
+        normalized["country"] = country
+    if country_code not in (None, ""):
+        normalized["country_code"] = country_code
     return {
-        field: item[field]
+        field: normalized[field]
         for field in _FINVIZ_CALENDAR_COMPACT_FIELDS
-        if field in item and item[field] not in (None, "")
+        if field in normalized and normalized[field] not in (None, "")
     }
 
 

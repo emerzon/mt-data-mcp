@@ -309,6 +309,78 @@ def _validate_trade_risk_levels(
     return None
 
 
+def _build_trade_evaluation(
+    *,
+    symbol: Optional[str],
+    direction: Any,
+    entry: float,
+    stop_loss: float,
+    take_profit: Optional[float],
+    sym_info: Any = None,
+) -> Dict[str, Any]:
+    direction_norm, direction_error, direction_source = _resolve_trade_risk_direction(
+        direction=direction,
+        entry=float(entry),
+        stop_loss=float(stop_loss),
+        take_profit=float(take_profit) if take_profit is not None else None,
+    )
+    out: Dict[str, Any] = {
+        "status": "invalid" if direction_error else "valid",
+        "symbol": symbol,
+        "direction": direction_norm,
+        "direction_source": direction_source,
+        "entry": float(entry),
+        "sl": float(stop_loss),
+        "tp": float(take_profit) if take_profit is not None else None,
+    }
+    if direction_error or direction_norm is None:
+        out["error"] = direction_error or "Unable to resolve trade direction."
+        return out
+
+    level_error = _validate_trade_risk_levels(
+        direction=direction_norm,
+        entry=float(entry),
+        stop_loss=float(stop_loss),
+        take_profit=float(take_profit) if take_profit is not None else None,
+    )
+    if level_error:
+        out["status"] = "invalid"
+        out["error"] = level_error
+
+    sl_distance = abs(float(entry) - float(stop_loss))
+    out["sl_distance_price"] = round(sl_distance, 10)
+    if entry:
+        out["sl_distance_pct"] = round((sl_distance / abs(float(entry))) * 100.0, 4)
+
+    tick_size = validation._safe_float_attr(sym_info, "trade_tick_size")
+    tick_value = validation._safe_float_attr(sym_info, "trade_tick_value")
+    tick_value_loss = validation._safe_float_attr(sym_info, "trade_tick_value_loss")
+    risk_tick_value = _resolve_risk_tick_value(
+        tick_value=tick_value,
+        tick_value_loss=tick_value_loss,
+    )
+    if math.isfinite(tick_size) and tick_size > 0:
+        sl_distance_ticks = sl_distance / tick_size
+        out["tick_size"] = tick_size
+        out["sl_distance_ticks"] = round(sl_distance_ticks, 4)
+        if math.isfinite(risk_tick_value) and risk_tick_value > 0:
+            out["risk_tick_value"] = round(risk_tick_value, 8)
+            out["risk_per_lot"] = round(sl_distance_ticks * risk_tick_value, 2)
+    elif sym_info is not None:
+        out["tick_metadata_warning"] = "Symbol tick size is unavailable or invalid."
+
+    if take_profit is not None:
+        tp_distance = abs(float(take_profit) - float(entry))
+        out["tp_distance_price"] = round(tp_distance, 10)
+        if entry:
+            out["tp_distance_pct"] = round((tp_distance / abs(float(entry))) * 100.0, 4)
+        if math.isfinite(tick_size) and tick_size > 0:
+            out["tp_distance_ticks"] = round(tp_distance / tick_size, 4)
+        if sl_distance > 0:
+            out["reward_risk_ratio"] = round(tp_distance / sl_distance, 4)
+    return out
+
+
 _COMPACT_POSITION_SIZING_FIELDS = (
     "suggested_volume",
     "risk_currency",
@@ -2263,6 +2335,29 @@ def run_trade_risk_analyze(  # noqa: C901
                 result["warning"] = (
                     f"{len(risk_calculation_failures)} position(s) could not be evaluated for risk; "
                     "portfolio risk is incomplete."
+            )
+
+            candidate_symbol_info = None
+            if (
+                request.symbol
+                and request.entry is not None
+                and request.stop_loss is not None
+            ):
+                try:
+                    candidate_symbol_info = gateway.symbol_info(request.symbol)
+                except Exception:
+                    candidate_symbol_info = None
+
+            if request.entry is not None and request.stop_loss is not None:
+                result["trade_evaluation"] = _build_trade_evaluation(
+                    symbol=request.symbol,
+                    direction=request.direction,
+                    entry=float(request.entry),
+                    stop_loss=float(request.stop_loss),
+                    take_profit=float(request.take_profit)
+                    if request.take_profit is not None
+                    else None,
+                    sym_info=candidate_symbol_info,
                 )
 
             position_sizing_missing = [
@@ -2335,7 +2430,7 @@ def run_trade_risk_analyze(  # noqa: C901
                 if not request.symbol:
                     return {"error": "symbol is required for position sizing"}
 
-                sym_info = gateway.symbol_info(request.symbol)
+                sym_info = candidate_symbol_info or gateway.symbol_info(request.symbol)
                 if sym_info is None:
                     return {"error": f"Symbol {request.symbol} not found"}
 

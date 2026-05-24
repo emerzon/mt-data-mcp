@@ -70,9 +70,9 @@ def test_news_tool_limits_globally_without_changing_default(monkeypatch) -> None
     assert len(unlimited["general_news"]) == 2
     assert limited["related_news"] == [{"title": "r1"}, {"title": "r2"}]
     assert limited["general_news"] == [{"title": "g1"}]
-    assert limited["impact_news"] == []
-    assert limited["upcoming_events"] == []
-    assert limited["recent_events"] == []
+    assert "impact_news" not in limited
+    assert "upcoming_events" not in limited
+    assert "recent_events" not in limited
     assert limited["total_candidates"] == 10
     assert limited["returned"] == 3
     assert limited["limit_scope"] == "global"

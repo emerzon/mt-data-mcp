@@ -107,6 +107,45 @@ _ENSEMBLE_BASE_METHODS = (
 logger = logging.getLogger(__name__)
 _normalize_weights = _normalize_weights_impl
 
+_FOREX_CURRENCY_CODES = frozenset(
+    {
+        "AUD",
+        "CAD",
+        "CHF",
+        "CNH",
+        "EUR",
+        "GBP",
+        "JPY",
+        "NOK",
+        "NZD",
+        "SEK",
+        "SGD",
+        "USD",
+        "ZAR",
+    }
+)
+
+
+def _looks_like_forex_symbol(symbol: Optional[str]) -> bool:
+    text = "".join(ch for ch in str(symbol or "").upper() if ch.isalpha())
+    if len(text) < 6:
+        return False
+    base = text[:3]
+    quote = text[3:6]
+    return base in _FOREX_CURRENCY_CODES and quote in _FOREX_CURRENCY_CODES
+
+
+def _count_weekend_forecast_times(times: List[str]) -> int:
+    weekend_count = 0
+    for value in times:
+        try:
+            timestamp = pd.Timestamp(value)
+        except Exception:
+            continue
+        if timestamp.weekday() >= 5:
+            weekend_count += 1
+    return weekend_count
+
 
 @dataclass(frozen=True)
 class TrainingExecutionContext:
@@ -970,6 +1009,26 @@ def _format_forecast_output(
     
     if metadata:
         result.update(metadata)
+
+    if (
+        _looks_like_forex_symbol(symbol)
+        and tf_secs < TIMEFRAME_SECONDS.get("D1", 86400)
+        and forecast_times
+    ):
+        weekend_count = _count_weekend_forecast_times(forecast_times)
+        if weekend_count:
+            note = (
+                f"{weekend_count} of {len(forecast_times)} forecast bars fall on "
+                "Saturday/Sunday for a forex symbol; treat those timestamps as "
+                "closed-market placeholders."
+            )
+            warnings = result.get("warnings")
+            if not isinstance(warnings, list):
+                warnings = [] if warnings in (None, "", [], {}) else [warnings]
+            if note not in warnings:
+                warnings.append(note)
+            result["warnings"] = warnings
+            result["market_hours_note"] = note
 
     return result
 
