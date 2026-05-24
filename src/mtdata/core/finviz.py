@@ -917,6 +917,7 @@ _FINVIZ_EARNINGS_COMPACT_FIELDS = (
     "volume",
 )
 _FINVIZ_CALENDAR_COMPACT_FIELDS = (
+    "symbol",
     "source_id",
     "country",
     "country_code",
@@ -1142,13 +1143,18 @@ def _infer_finviz_calendar_country(item: Dict[str, Any]) -> tuple[Any, Any]:
     return None, None
 
 
-def _compact_finviz_calendar_item(item: Any) -> Any:
+def _compact_finviz_calendar_item(
+    item: Any,
+    *,
+    source_id_only: bool = True,
+) -> Any:
     if not isinstance(item, dict):
         return item
     normalized = dict(item)
     source_id = normalized.get("source_id") or normalized.get("symbol")
-    if source_id not in (None, ""):
+    if source_id_only and source_id not in (None, ""):
         normalized["source_id"] = source_id
+        normalized.pop("symbol", None)
     country, country_code = _infer_finviz_calendar_country(normalized)
     if country not in (None, ""):
         normalized["country"] = country
@@ -1165,6 +1171,7 @@ def _normalize_finviz_calendar_payload(
     result: Dict[str, Any],
     *,
     detail: str = "compact",
+    calendar_type: str = "economic",
 ) -> Dict[str, Any]:
     if not isinstance(result, dict) or result.get("error"):
         return result
@@ -1178,7 +1185,14 @@ def _normalize_finviz_calendar_payload(
         if detail_mode == "full":
             out["items"] = normalized_items
         else:
-            out["items"] = [_compact_finviz_calendar_item(item) for item in normalized_items]
+            out["items"] = [
+                _compact_finviz_calendar_item(
+                    item,
+                    source_id_only=str(calendar_type or "economic").strip().lower()
+                    == "economic",
+                )
+                for item in normalized_items
+            ]
     out.setdefault("timezone", "America/New_York")
     out["detail"] = detail_mode
     return out
@@ -2167,6 +2181,7 @@ def finviz_calendar(
                     date_to=end_value,
                 ),
                 detail=detail,
+                calendar_type=cal,
             )
         if cal == "earnings":
             return _normalize_finviz_calendar_payload(
@@ -2177,6 +2192,7 @@ def finviz_calendar(
                     date_to=end_value,
                 ),
                 detail=detail,
+                calendar_type=cal,
             )
         if cal == "dividends":
             return _normalize_finviz_calendar_payload(
@@ -2187,6 +2203,7 @@ def finviz_calendar(
                     date_to=end_value,
                 ),
                 detail=detail,
+                calendar_type=cal,
             )
         return {"error": f"Unsupported calendar '{calendar}'. Expected economic, earnings, or dividends."}
 

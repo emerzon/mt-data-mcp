@@ -121,7 +121,9 @@ class TestFinvizCalendarOutputContract:
                 "date": "2026-01-06T13:30:00",
                 "event": "CPI",
                 "importance": 3,
-                "symbol": "USD",
+                "source_id": "USD",
+                "country": "United States",
+                "country_code": "US",
                 "reference_date": "2025-12",
             }
         ]
@@ -188,7 +190,7 @@ class TestFinvizCalendarOutputContract:
 
         assert result["items"] == [
             {
-                "symbol": "FDTR",
+                "source_id": "FDTR",
                 "event": "Fed Cook Speech",
                 "category": "Interest Rate",
                 "date": "2026-05-08T05:45:00",
