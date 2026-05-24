@@ -157,7 +157,7 @@ def test_run_data_fetch_candles_compact_omits_default_metadata():
     }
 
 
-def test_run_data_fetch_candles_compact_keeps_freshness_without_meta():
+def test_run_data_fetch_candles_compact_keeps_staleness_without_meta():
     request = DataFetchCandlesRequest(symbol="EURUSD", timeframe="H1", limit=5)
 
     result = run_data_fetch_candles(
@@ -180,7 +180,10 @@ def test_run_data_fetch_candles_compact_keeps_freshness_without_meta():
     )
 
     assert "meta" not in result
-    assert result["data_freshness_seconds"] == 60.0
+    assert result["data_stale"] is False
+    assert "data_freshness_seconds" not in result
+    assert "data_age_seconds" not in result
+    assert "data_age" not in result
     assert "latency_ms" not in result
     assert "last_bar_within_policy_window" not in result
 
@@ -207,10 +210,10 @@ def test_run_data_fetch_candles_compact_flags_stale_latest_data():
         },
     )
 
-    assert result["data_age_seconds"] == 3661.0
-    assert result["data_age"] == "1h 1m"
     assert result["data_stale"] is True
-    assert "freshness policy" in result["stale_warning"]
+    assert "data_age_seconds" not in result
+    assert "data_age" not in result
+    assert "stale_warning" not in result
 
 
 def test_run_data_fetch_candles_range_applies_limit_cap():

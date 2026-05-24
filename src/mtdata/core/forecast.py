@@ -1629,7 +1629,6 @@ def _forecast_list_methods_impl(  # noqa: C901
             else limit_value
         )
 
-        categories_raw = data.get("categories") if isinstance(data.get("categories"), dict) else {}
         method_to_category = snapshot.get("method_to_category") if isinstance(snapshot, dict) else {}
         if not isinstance(method_to_category, dict):
             method_to_category = {}
@@ -1785,24 +1784,11 @@ def _forecast_list_methods_impl(  # noqa: C901
             compact_methods.append(row)
             by_category.setdefault(str(row["category"]), []).append(row)
 
-        category_summary: List[Dict[str, Any]] = []
         selected_methods: List[Dict[str, Any]] = []
         for category in sorted(by_category.keys()):
             rows = list(by_category.get(category, []))
             rows.sort(key=lambda row: (not bool(row.get("available")), str(row.get("method"))))
-            n_total = len(rows)
-            n_available = int(sum(1 for row in rows if bool(row.get("available"))))
             selected_methods.extend(rows)
-            category_summary.append(
-                {
-                    "category": category,
-                    "total": n_total,
-                    "available": n_available,
-                    "unavailable": int(n_total - n_available),
-                    "examples": [str(row.get("method")) for row in rows[:3]],
-                    "hidden": 0,
-                }
-            )
 
         selected_methods.sort(
             key=lambda row: (
@@ -1815,26 +1801,13 @@ def _forecast_list_methods_impl(  # noqa: C901
         if effective_limit_value is not None:
             selected_methods = selected_methods[:effective_limit_value]
         return {
-            "detail": "compact",
             "total": int(data.get("total") or len(compact_methods)),
             "total_filtered": int(len(compact_methods)),
             "available": available_count,
             "unavailable": unavailable_count,
-            "categories": categories_raw,
-            "category_summary": category_summary,
             "methods": selected_methods,
             "methods_shown": int(len(selected_methods)),
             "methods_hidden": int(max(0, len(compact_methods) - len(selected_methods))),
-            "barrier_methods": barrier_methods,
-            "note": "Compact view caps unfiltered method rows by default; use category, library, search_term, or limit to narrow or expand rows.",
-            "filters": {
-                "search": search_value or None,
-                "category": category_filter_value or None,
-                "limit": effective_limit_value,
-                "library": library_value or None,
-                "supports_ci": supports_ci,
-                "show_unavailable": bool(show_unavailable),
-            },
         }
     except Exception as exc:
         return {"error": f"Error listing forecast methods: {exc}"}

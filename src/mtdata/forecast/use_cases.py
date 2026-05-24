@@ -18,7 +18,6 @@ from ..core.execution_logging import (
 )
 from ..core.output_contract import attach_collection_contract
 from .backtest import execute_forecast_backtest as _forecast_backtest_impl
-from .backtest import _compact_metrics_payload
 from .capabilities import resolve_capability_request
 from .barriers_shared import barrier_method_error, normalize_barrier_method
 from .exceptions import ForecastError, raise_if_error_result
@@ -337,7 +336,6 @@ def _apply_forecast_generate_detail(
         "method": payload.get("method"),
         "horizon": payload.get("horizon"),
         "quantity": payload.get("quantity"),
-        "detail": "compact",
     }
     ci_unavailable = str(payload.get("ci_status") or "").strip().lower() == "unavailable"
     if ci_unavailable:
@@ -345,8 +343,6 @@ def _apply_forecast_generate_detail(
         ci_payload = payload.get("ci")
         if isinstance(ci_payload, dict) and ci_payload.get("hint"):
             compact["ci"]["hint"] = ci_payload["hint"]
-    if training_period:
-        compact["training_period"] = training_period
     for key in (
         "last_observation_time",
         "timezone",
@@ -376,19 +372,14 @@ def _apply_forecast_generate_detail(
     if price_context:
         compact["forecast_vs_last_price"] = price_context
     theta_context = _theta_flatness_context(payload)
-    if theta_context:
-        compact["theta_signal"] = theta_context
-        if theta_context.get("appears_flat_at_price_precision"):
-            warning = (
-                "Native theta forecast is near-flat at displayed price precision; "
-                "theta_signal.target_drift_per_step shows the model drift per step."
-            )
-            warnings_out = compact.get("warnings")
-            if not isinstance(warnings_out, list):
-                warnings_out = []
-            if warning not in warnings_out:
-                warnings_out.append(warning)
-            compact["warnings"] = warnings_out
+    if theta_context and theta_context.get("appears_flat_at_price_precision"):
+        warning = "Native theta forecast is near-flat at displayed price precision."
+        warnings_out = compact.get("warnings")
+        if not isinstance(warnings_out, list):
+            warnings_out = []
+        if warning not in warnings_out:
+            warnings_out.append(warning)
+        compact["warnings"] = warnings_out
     for key, value in payload.items():
         if key in compact:
             continue
@@ -410,6 +401,9 @@ def _apply_forecast_generate_detail(
             "upper",
             "ci",
             "ci_available",
+            "diagnostics",
+            "params_used",
+            "detail",
         }:
             continue
         if ci_unavailable and str(key).startswith("ci_"):
@@ -757,6 +751,24 @@ def _compact_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(raw_results, dict):
         return result
 
+    metric_digits = {
+        "avg_rmse": 6,
+        "avg_mae": 6,
+        "avg_directional_accuracy": 4,
+        "win_rate": 4,
+        "max_drawdown": 4,
+        "avg_return": 6,
+        "avg_return_per_trade": 6,
+    }
+
+    def _compact_metric(key: str, value: Any) -> Any:
+        if isinstance(value, bool):
+            return value
+        numeric = _finite_float(value)
+        if numeric is None:
+            return value
+        return float(round(numeric, metric_digits.get(key, 6)))
+
     def _sort_metric(value: Any) -> Optional[float]:
         try:
             value_f = float(value)
@@ -770,7 +782,6 @@ def _compact_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:
             ranked_methods.append({"method": method_name, "result": method_payload})
             continue
         details = method_payload.get("details")
-        details_count = len(details) if isinstance(details, list) else None
         metrics = (
             method_payload.get("metrics")
             if isinstance(method_payload.get("metrics"), dict)
@@ -789,18 +800,17 @@ def _compact_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:
             "metrics_reason",
         ):
             if key in method_payload:
-                method_out[key] = method_payload[key]
+                method_out[key] = _compact_metric(key, method_payload[key])
         if method_out.get("metrics_available") is not False:
             for key in (
                 "win_rate",
-                "win_rate_display",
                 "max_drawdown",
                 "avg_return",
                 "avg_return_per_trade",
                 "trades_observed",
             ):
                 if key in metrics:
-                    method_out[key] = metrics[key]
+                    method_out[key] = _compact_metric(key, metrics[key])
         if isinstance(details, list) and method_out.get("metrics_available") is not False:
             method_out["details_count"] = len(details)
         ranked_row = dict(method_out)
@@ -811,6 +821,13 @@ def _compact_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:
 
     compact_out = dict(result)
     compact_out.pop("results", None)
+    compact_out.pop("request", None)
+    compact_out.pop("resolved_request", None)
+    compact_out.pop("detail", None)
+    if compact_out.get("slippage_bps") in (0, 0.0, None):
+        compact_out.pop("slippage_bps", None)
+    if compact_out.get("trade_threshold") in (0, 0.0, None):
+        compact_out.pop("trade_threshold", None)
     ranked_methods.sort(
         key=lambda row: (
             row.get("_sort_metric") is None,

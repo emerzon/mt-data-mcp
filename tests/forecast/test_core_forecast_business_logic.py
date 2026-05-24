@@ -301,7 +301,7 @@ def test_forecast_generate_defaults_to_compact_payload(monkeypatch):
 
     out = raw(request=ForecastGenerateRequest(symbol="BTCUSD", timeframe="H1", method="theta", horizon=3))
 
-    assert out["detail"] == "compact"
+    assert "detail" not in out
     assert out["symbol"] == "BTCUSD"
     assert out["timeframe"] == "H1"
     assert out["timezone"] == "UTC"
@@ -328,7 +328,7 @@ def test_forecast_backtest_request_accepts_method_alias():
     assert request.methods == ["theta"]
 
 
-def test_forecast_generate_compact_includes_training_period(monkeypatch):
+def test_forecast_generate_compact_omits_training_period(monkeypatch):
     raw = _unwrap(cf.forecast_generate)
     monkeypatch.setattr(
         cf,
@@ -351,9 +351,7 @@ def test_forecast_generate_compact_includes_training_period(monkeypatch):
         },
     )
 
-    out = raw(request=ForecastGenerateRequest(symbol="EURUSD", timeframe="H1", method="theta"))
-
-    assert out["training_period"] == {
+    expected_training_period = {
         "start": "2026-01-01 00:00",
         "end": "2026-01-10 00:00",
         "history_bars_used": 200,
@@ -362,6 +360,26 @@ def test_forecast_generate_compact_includes_training_period(monkeypatch):
         "lookback_bars_fetched": 240,
         "note": "Forecast was fit on the historical window summarized here.",
     }
+
+    out = raw(
+        request=ForecastGenerateRequest(
+            symbol="EURUSD",
+            timeframe="H1",
+            method="theta",
+        )
+    )
+    assert "training_period" not in out
+    assert "diagnostics" not in out
+
+    standard = raw(
+        request=ForecastGenerateRequest(
+            symbol="EURUSD",
+            timeframe="H1",
+            method="theta",
+            detail="standard",
+        )
+    )
+    assert standard["training_period"] == expected_training_period
 
 
 def test_forecast_generate_rounds_price_outputs_to_symbol_digits(monkeypatch):
@@ -415,10 +433,8 @@ def test_forecast_generate_compact_flags_flat_theta_display(monkeypatch):
     out = raw(request=ForecastGenerateRequest(symbol="EURUSD", timeframe="H1", method="theta", horizon=3))
 
     assert out["forecast_price"] == [1.16836, 1.16836, 1.16836]
-    assert out["theta_signal"] == {
-        "target_drift_per_step": 0.000001,
-        "appears_flat_at_price_precision": True,
-    }
+    assert "theta_signal" not in out
+    assert "params_used" not in out
     assert any("near-flat at displayed price precision" in item for item in out["warnings"])
 
 
@@ -458,7 +474,7 @@ def test_forecast_generate_compact_marks_unavailable_ci(monkeypatch):
         )
     )
 
-    assert out["detail"] == "compact"
+    assert "detail" not in out
     assert out["ci"] == {
         "status": "unavailable",
         "hint": "Use forecast_conformal_intervals for uncertainty bands.",
@@ -561,8 +577,8 @@ def test_run_forecast_backtest_strips_per_anchor_details_in_compact_mode():
     )
 
     assert result["success"] is True
-    assert result["request"]["detail"] == "compact"
-    assert result["resolved_request"]["methods"] == ["theta"]
+    assert "request" not in result
+    assert "resolved_request" not in result
     assert "results" not in result
     assert result["ranked_methods"][0]["method"] == "theta"
     assert result["ranked_methods"][0]["details_count"] == 1
@@ -958,12 +974,13 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
         },
     )
     compact = _unwrap(cf.forecast_list_methods)()
-    assert compact["detail"] == "compact"
+    assert "detail" not in compact
     assert compact["total"] == 2
     assert compact["available"] == 1
     assert compact["unavailable"] == 0
     assert compact["methods"][0]["method"] == "theta"
-    assert "category_summary" in compact
+    assert "category_summary" not in compact
+    assert "categories" not in compact
     assert "params_count" in compact["methods"][0]
     assert compact["methods"][0]["description"] == "Theta model."
     assert compact["methods"][0]["supports_ci"] is True
@@ -977,10 +994,9 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert all("requires" not in row for row in compact["methods"])
     assert compact["methods_shown"] == 1
     assert compact["methods_hidden"] == 0
-    assert compact["filters"]["show_unavailable"] is False
-    assert "monte_carlo" in compact["barrier_methods"]["aliases"]
-    assert "mc_gbm" in compact["barrier_methods"]["methods"]
-    assert "caps unfiltered method rows" in compact["note"]
+    assert "filters" not in compact
+    assert "barrier_methods" not in compact
+    assert "note" not in compact
 
     compact_all = _unwrap(cf.forecast_list_methods)(show_unavailable=True)
     unavailable_method = next(row for row in compact_all["methods"] if row["available"] is False)
@@ -1058,25 +1074,24 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
         assert all(str(r.get("namespace")) == "statsforecast" for r in sf_rows)
     assert grouped["methods_hidden"] == 0
     filtered = _unwrap(cf.forecast_list_methods)(search_term="theta", limit=1)
-    assert filtered["filters"]["search"] == "theta"
-    assert filtered["filters"]["limit"] == 1
+    assert "filters" not in filtered
     assert len(filtered["methods"]) == 1
     assert filtered["methods_hidden"] >= 1
     assert "theta" in str(filtered["methods"][0]["method"]).lower()
     sf_only = _unwrap(cf.forecast_list_methods)(library="statsforecast")
-    assert sf_only["filters"]["library"] == "statsforecast"
+    assert "filters" not in sf_only
     assert all(
         row.get("category") == "statsforecast" for row in sf_only["methods"]
     )
     category_only = _unwrap(cf.forecast_list_methods)(category="statsforecast")
-    assert category_only["filters"]["category"] == "statsforecast"
+    assert "filters" not in category_only
     assert all(row.get("category") == "statsforecast" for row in category_only["methods"])
     ci_only = _unwrap(cf.forecast_list_methods)(supports_ci=True)
-    assert ci_only["filters"]["supports_ci"] is True
+    assert "filters" not in ci_only
     assert ci_only["methods"]
     assert all(row.get("supports_ci") is True for row in ci_only["methods"])
     no_ci = _unwrap(cf.forecast_list_methods)(supports_ci=False, show_unavailable=True)
-    assert no_ci["filters"]["supports_ci"] is False
+    assert "filters" not in no_ci
     assert all(row.get("supports_ci") is False for row in no_ci["methods"])
     with_unavailable = _unwrap(cf.forecast_list_methods)(show_unavailable=True)
     assert with_unavailable["unavailable"] == 1
@@ -1103,12 +1118,12 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
         },
     )
     capped = _unwrap(cf.forecast_list_methods)()
-    assert capped["filters"]["limit"] == 20
+    assert "filters" not in capped
     assert capped["methods_shown"] == 20
     assert capped["methods_hidden"] == 5
 
     filtered_uncapped = _unwrap(cf.forecast_list_methods)(category="classical")
-    assert filtered_uncapped["filters"]["limit"] is None
+    assert "filters" not in filtered_uncapped
     assert filtered_uncapped["methods_shown"] == 25
     assert filtered_uncapped["methods_hidden"] == 0
 

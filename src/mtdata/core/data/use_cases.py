@@ -285,15 +285,8 @@ def _compact_candles_payload(
         compact.pop("forming_candle_skipped", None)
     if "query_type" in public_diagnostics:
         compact["query_type"] = public_diagnostics["query_type"]
-    for key in (
-        "data_freshness_seconds",
-        "data_age_seconds",
-        "data_age",
-        "data_stale",
-        "stale_warning",
-    ):
-        if key in public_diagnostics:
-            compact[key] = public_diagnostics[key]
+    if "data_stale" in public_diagnostics:
+        compact["data_stale"] = public_diagnostics["data_stale"]
     if "spread_estimate" in public_diagnostics:
         compact["spread_estimate"] = public_diagnostics["spread_estimate"]
     return compact

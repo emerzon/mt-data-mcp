@@ -122,15 +122,31 @@ def resolve_barrier_prices(
 
     if tp_price is None:
         if r_tp is not None:
-            tp_price = price_val * (1.0 + (r_tp / 100.0)) if dir_long else price_val * (1.0 - (r_tp / 100.0))
+            tp_distance = abs(r_tp) / 100.0
+            if dir_long:
+                tp_price = price_val * (1.0 + tp_distance)
+            else:
+                tp_price = price_val * (1.0 - tp_distance)
         elif p_tp is not None and pip_size is not None and pip_size > 0:
-            tp_price = price_val + p_tp * pip_size if dir_long else price_val - p_tp * pip_size
+            tp_ticks_distance = abs(p_tp)
+            if dir_long:
+                tp_price = price_val + tp_ticks_distance * pip_size
+            else:
+                tp_price = price_val - tp_ticks_distance * pip_size
 
     if sl_price is None:
         if r_sl is not None:
-            sl_price = price_val * (1.0 - (r_sl / 100.0)) if dir_long else price_val * (1.0 + (r_sl / 100.0))
+            sl_distance = abs(r_sl) / 100.0
+            if dir_long:
+                sl_price = price_val * (1.0 - sl_distance)
+            else:
+                sl_price = price_val * (1.0 + sl_distance)
         elif p_sl is not None and pip_size is not None and pip_size > 0:
-            sl_price = price_val - p_sl * pip_size if dir_long else price_val + p_sl * pip_size
+            sl_ticks_distance = abs(p_sl)
+            if dir_long:
+                sl_price = price_val - sl_ticks_distance * pip_size
+            else:
+                sl_price = price_val + sl_ticks_distance * pip_size
 
     if tp_price is None or sl_price is None:
         return None, None

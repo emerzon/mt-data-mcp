@@ -18,9 +18,23 @@ class TestResolveBarrierPrices:
         assert tp == pytest.approx(102.0)
         assert sl == pytest.approx(99.0)
 
+    def test_long_negative_sl_pct_is_distance_below_entry(self):
+        tp, sl = resolve_barrier_prices(
+            price=1.16026, direction="long", tp_pct=2.0, sl_pct=-2.0, pip_size=0.00001,
+        )
+        assert tp == pytest.approx(1.1834652)
+        assert sl == pytest.approx(1.1370548)
+
     def test_short_pct(self):
         tp, sl = resolve_barrier_prices(
             price=100.0, direction="short", tp_pct=2.0, sl_pct=1.0,
+        )
+        assert tp == pytest.approx(98.0)
+        assert sl == pytest.approx(101.0)
+
+    def test_short_negative_sl_pct_is_distance_above_entry(self):
+        tp, sl = resolve_barrier_prices(
+            price=100.0, direction="short", tp_pct=2.0, sl_pct=-1.0,
         )
         assert tp == pytest.approx(98.0)
         assert sl == pytest.approx(101.0)
@@ -29,6 +43,14 @@ class TestResolveBarrierPrices:
         tp, sl = resolve_barrier_prices(
             price=1.10000, direction="long",
             tp_ticks=50.0, sl_ticks=30.0, pip_size=0.00010,
+        )
+        assert tp == pytest.approx(1.10500)
+        assert sl == pytest.approx(1.09700)
+
+    def test_negative_ticks_are_treated_as_distances(self):
+        tp, sl = resolve_barrier_prices(
+            price=1.10000, direction="long",
+            tp_ticks=-50.0, sl_ticks=-30.0, pip_size=0.00010,
         )
         assert tp == pytest.approx(1.10500)
         assert sl == pytest.approx(1.09700)

@@ -64,6 +64,7 @@ def _compact_metrics_payload(metrics: Optional[Dict[str, Any]]) -> Dict[str, Any
         return {}
 
     out = dict(metrics)
+    out.pop("win_rate_display", None)
     sample_warning = out.pop("sample_warning", None)
     sample_notice = out.get("sample_notice")
     if sample_warning and not isinstance(sample_notice, dict):
@@ -78,6 +79,31 @@ def _compact_metrics_payload(metrics: Optional[Dict[str, Any]]) -> Dict[str, Any
         and sample_notice.get("code") == "annualization_suppressed_low_sample"
     ):
         out.pop("trades_per_year", None)
+    return out
+
+
+def _compact_strategy_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:
+    out = dict(result)
+    out.pop("detail", None)
+    out.pop("position_mode", None)
+    out.pop("parameters", None)
+
+    summary = out.get("summary")
+    if isinstance(summary, dict):
+        summary_out = dict(summary)
+        gross_return = summary_out.get("gross_return")
+        net_return = summary_out.get("net_return")
+        try:
+            if gross_return is not None and net_return is not None and math.isclose(
+                float(gross_return),
+                float(net_return),
+                rel_tol=0.0,
+                abs_tol=1e-12,
+            ):
+                summary_out.pop("gross_return", None)
+        except Exception:
+            pass
+        out["summary"] = summary_out
     return out
 
 
@@ -958,6 +984,8 @@ def strategy_backtest(  # noqa: C901
         else:
             result["no_action"] = True
             result["message"] = "The strategy generated no trades on the requested history."
+        if detail_mode == "compact":
+            result = _compact_strategy_backtest_result(result)
         return _attach_request_metadata(
             result,
             request=request_payload,

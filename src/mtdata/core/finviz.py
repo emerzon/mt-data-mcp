@@ -9,7 +9,7 @@ import json
 import logging
 import re
 from datetime import datetime, time as datetime_time, timezone, timedelta
-from typing import Any, Callable, Dict, Literal, Optional, Union
+from typing import Any, Callable, Dict, List, Literal, Optional, Union
 
 from ..services.finviz import (
     get_crypto_performance,
@@ -262,6 +262,7 @@ def _finviz_percent_value(value: Any) -> Optional[float]:
         return None
     if isinstance(value, (int, float)) and abs(float(parsed)) <= 1.0:
         parsed = float(parsed) * 100.0
+        return round(float(parsed), 6)
     text = str(value).strip()
     if text and not text.endswith("%") and abs(float(parsed)) <= 1.0:
         parsed = float(parsed) * 100.0
@@ -886,6 +887,16 @@ _FINVIZ_NUMERIC_SUFFIX_MULTIPLIERS = {
     "B": 1_000_000_000.0,
     "T": 1_000_000_000_000.0,
 }
+_FINVIZ_INTEGER_NUMERIC_KEYS = frozenset(
+    {
+        "market_cap",
+        "volume",
+        "avg_volume",
+        "shares_outstanding",
+        "shares_float",
+        "employees",
+    }
+)
 
 _FINVIZ_EARNINGS_COMPACT_FIELDS = (
     "symbol",
@@ -994,7 +1005,14 @@ def _finviz_compound_output_keys(key: str) -> tuple[str, ...]:
 def _normalize_finviz_fundamental_value(key: str, value: Any) -> Any:
     if key not in _FINVIZ_FUNDAMENTAL_NUMERIC_KEYS:
         return value
-    return _parse_finviz_numeric_value(value)
+    parsed = _parse_finviz_numeric_value(value)
+    if parsed is None:
+        return None
+    if key in _FINVIZ_INTEGER_NUMERIC_KEYS:
+        rounded = round(float(parsed))
+        if abs(float(parsed) - float(rounded)) <= 1e-6 * max(1.0, abs(float(parsed))):
+            return int(rounded)
+    return parsed
 
 
 def _format_finviz_large_number(value: Any) -> Optional[str]:

@@ -90,7 +90,6 @@ def _compact_market_ticker_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "spread_cost_per_lot",
         "spread_cost_currency",
         "data_age_seconds",
-        "data_age_hours",
         "data_stale",
         "warning",
         "time",
@@ -98,6 +97,11 @@ def _compact_market_ticker_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "timezone",
     ):
         value = payload.get(key)
+        if key == "data_age_seconds" and value is not None:
+            try:
+                value = int(round(float(value)))
+            except Exception:
+                pass
         if value is not None:
             out[key] = value
     return out

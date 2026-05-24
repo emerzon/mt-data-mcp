@@ -626,6 +626,33 @@ class TestFinvizTools:
         ]
 
     @patch("mtdata.core.finviz.get_crypto_performance")
+    def test_finviz_crypto_numeric_fraction_perf_pct_is_percentage_points(
+        self,
+        mock_get_crypto,
+    ):
+        from mtdata.core.finviz import finviz_crypto
+
+        mock_get_crypto.return_value = {
+            "success": True,
+            "market": "crypto",
+            "count": 1,
+            "coins": [
+                {
+                    "Ticker": "SOL",
+                    "Name": "Solana",
+                    "Price": "180",
+                    "Perf Day": 0.0091,
+                }
+            ],
+        }
+
+        raw = getattr(finviz_crypto, "__wrapped__", finviz_crypto)
+        result = raw()
+
+        assert result["items"][0]["perf_day"] == 0.0091
+        assert result["items"][0]["perf_day_pct"] == 0.91
+
+    @patch("mtdata.core.finviz.get_crypto_performance")
     def test_finviz_crypto_compact_prefers_perf_wtd_alias(self, mock_get_crypto):
         from mtdata.core.finviz import finviz_crypto
 

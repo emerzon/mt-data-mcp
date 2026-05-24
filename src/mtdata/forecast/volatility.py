@@ -405,6 +405,37 @@ def _finalize_volatility_output(
                 "horizon_note",
                 "horizon=1, so volatility_horizon equals volatility_per_bar.",
             )
+        for key in (
+            "volatility_per_bar",
+            "volatility_annualized",
+            "volatility_horizon",
+            "volatility_horizon_annualized",
+        ):
+            try:
+                out[key] = round(float(out[key]), 6)
+            except Exception:
+                pass
+        for key in (
+            "volatility_per_bar_pct",
+            "volatility_annualized_pct",
+            "volatility_horizon_pct",
+            "volatility_horizon_annualized_pct",
+        ):
+            try:
+                out[key] = round(float(out[key]), 4)
+            except Exception:
+                pass
+        try:
+            if math.isclose(
+                float(out.get("volatility_horizon_annualized")),
+                float(out.get("volatility_annualized")),
+                rel_tol=0.0,
+                abs_tol=1e-12,
+            ):
+                out.pop("volatility_horizon_annualized", None)
+                out.pop("volatility_horizon_annualized_pct", None)
+        except Exception:
+            pass
         return out
 
     horizon = out.get("horizon")
