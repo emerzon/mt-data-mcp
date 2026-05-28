@@ -158,11 +158,24 @@ def _trade_read_timezone_label(items: Any) -> Optional[str]:
     return None
 
 
+def _gateway_account_currency(gateway: Any) -> Optional[str]:
+    account_info = getattr(gateway, "account_info", None)
+    if not callable(account_info):
+        return None
+    try:
+        account = account_info()
+    except Exception:
+        return None
+    currency = str(getattr(account, "currency", "") or "").strip()
+    return currency or None
+
+
 def _normalize_trade_read_output(
     rows: Any,
     *,
     request: Any,
     kind: str,
+    account_currency: Optional[str] = None,
 ) -> Dict[str, Any]:
     out: Dict[str, Any] = {
         "success": True,
@@ -171,6 +184,8 @@ def _normalize_trade_read_output(
         "count": 0,
         "items": [],
     }
+    if account_currency:
+        out["currency"] = account_currency
     if _include_trade_read_request_metadata(request):
         symbol = getattr(request, "symbol", None)
         ticket = getattr(request, "ticket", None)
@@ -1032,15 +1047,12 @@ def trade_get_open(
     request: TradeGetOpenRequest,
 ) -> Dict[str, Any]:
     """Get open positions. Compact output omits echoed request metadata by default."""
-    return run_logged_operation(
-        logger,
-        operation="trade_get_open",
-        symbol=request.symbol,
-        limit=request.limit,
-        func=lambda: _normalize_trade_read_output(
+    def _run() -> Dict[str, Any]:
+        gateway = create_trading_gateway()
+        return _normalize_trade_read_output(
             run_trade_get_open(
                 request,
-                gateway=create_trading_gateway(),
+                gateway=gateway,
                 use_client_tz=lambda: False,
                 format_time_minimal=_format_time_minimal,
                 format_time_minimal_local=_format_time_minimal,
@@ -1050,7 +1062,15 @@ def trade_get_open(
             ),
             request=request,
             kind="open_positions",
-        ),
+            account_currency=_gateway_account_currency(gateway),
+        )
+
+    return run_logged_operation(
+        logger,
+        operation="trade_get_open",
+        symbol=request.symbol,
+        limit=request.limit,
+        func=_run,
     )
 
 
@@ -1059,15 +1079,12 @@ def trade_get_pending(
     request: TradeGetPendingRequest,
 ) -> Dict[str, Any]:
     """Get pending orders. Compact output omits echoed request metadata by default."""
-    return run_logged_operation(
-        logger,
-        operation="trade_get_pending",
-        symbol=request.symbol,
-        limit=request.limit,
-        func=lambda: _normalize_trade_read_output(
+    def _run() -> Dict[str, Any]:
+        gateway = create_trading_gateway()
+        return _normalize_trade_read_output(
             run_trade_get_pending(
                 request,
-                gateway=create_trading_gateway(),
+                gateway=gateway,
                 use_client_tz=lambda: False,
                 format_time_minimal=_format_time_minimal,
                 format_time_minimal_local=_format_time_minimal,
@@ -1077,5 +1094,13 @@ def trade_get_pending(
             ),
             request=request,
             kind="pending_orders",
-        ),
+            account_currency=_gateway_account_currency(gateway),
+        )
+
+    return run_logged_operation(
+        logger,
+        operation="trade_get_pending",
+        symbol=request.symbol,
+        limit=request.limit,
+        func=_run,
     )

@@ -848,6 +848,7 @@ class TestFinvizTools:
         mock_get_fundamentals.assert_called_once_with("AAPL")
         assert result["detail"] == "compact"
         assert result["category"] == "summary"
+        assert result["currency"] == "USD"
         assert result["fundamentals"]["pe_ratio"] == 34.29
         assert result["fundamentals"]["market_cap_formatted"] == "3.98T"
         assert "market_cap" not in result["fundamentals"]

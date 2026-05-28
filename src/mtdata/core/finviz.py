@@ -1806,6 +1806,7 @@ def _filter_finviz_fundamentals_payload(
     if detail_mode == "compact":
         filtered = _compact_finviz_fundamentals(filtered)
     out = dict(result)
+    out["currency"] = "USD"
     _add_finviz_52w_quality_flags(filtered)
     out["fundamentals"] = filtered
     out["detail"] = detail_mode

@@ -849,13 +849,14 @@ def test_run_trade_get_pending_falls_back_to_volume_initial() -> None:
 
 def test_trade_get_open_logs_finish_event(caplog) -> None:
     raw = _unwrap(core_trading_positions.trade_get_open)
+    gateway = SimpleNamespace(account_info=lambda: SimpleNamespace(currency="USD"))
 
     def fake_run_trade_get_open(*args, **kwargs):
         assert kwargs["use_client_tz"]() is False
         assert kwargs["format_time_minimal_local"] is kwargs["format_time_minimal"]
         return [{"ticket": 1, "symbol": "EURUSD", "timezone": "UTC"}]
 
-    with patch.object(core_trading_positions, "create_trading_gateway", return_value=object()), patch.object(
+    with patch.object(core_trading_positions, "create_trading_gateway", return_value=gateway), patch.object(
         core_trading_positions,
         "run_trade_get_open",
         side_effect=fake_run_trade_get_open,
@@ -866,6 +867,7 @@ def test_trade_get_open_logs_finish_event(caplog) -> None:
     assert out["count"] == 1
     assert out["items"][0]["ticket"] == 1
     assert out["timezone"] == "UTC"
+    assert out["currency"] == "USD"
     assert any(
         "event=finish operation=trade_get_open success=True" in record.message
         for record in caplog.records
