@@ -535,14 +535,12 @@ class TestMarketScan:
         assert row["group"] == "Forex\\Majors"
         assert row["timeframe"] == "H1"
         assert row["bar_time"]
-        assert row["freshness_status"] in {"fresh", "stale"}
         assert row["data_stale"] in {False, True}
         assert set(row) == {
             "symbol",
             "group",
             "timeframe",
             "bar_time",
-            "freshness_status",
             "data_stale",
             "close",
             "price_change_pct",
