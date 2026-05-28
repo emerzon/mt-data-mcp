@@ -1036,7 +1036,7 @@ def _apply_config_to_obj(cfg: Any, config: Optional[Dict[str, Any]]) -> List[str
 def patterns_detect(
     request: PatternsDetectRequest,
 ) -> Dict[str, Any]:
-    """Detect chart patterns (candlestick, classic chart patterns, fractals, or Elliott Wave).
+    """Detect chart patterns (candlestick, classic, fractal, or Elliott Wave).
     
     **REQUIRED**: symbol parameter must be provided (e.g., "EURUSD", "BTCUSD")
     

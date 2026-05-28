@@ -42,6 +42,17 @@ _COMMAND_PARAM_CHOICE_OVERRIDES: Dict[tuple[str, str], list[str]] = {
         "summary",
         "compact",
     ],
+    (
+        "patterns_detect",
+        "mode",
+    ): [
+        "all",
+        "candlestick",
+        "classic",
+        "chart",
+        "fractal",
+        "elliott",
+    ],
 }
 
 
@@ -61,6 +72,7 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("labels_triple_barrier", "detail"): "Detail level: full, summary, or compact (summary plus recent sample).",
     ("market_scan", "limit"): "Max matching symbols to return.",
     ("market_depth_fetch", "require_dom"): "Fail if DOM is unavailable instead of falling back to a ticker snapshot.",
+    ("patterns_detect", "mode"): "Pattern mode: all, candlestick, classic, chart, fractal, or elliott.",
     ("symbols_list", "limit"): "Max symbols or groups to return.",
     ("symbols_top_markets", "limit"): "Max symbols to return for each ranking.",
     ("trade_modify", "expiration"): "Pending order expiration time (dateparser string, UTC epoch seconds, or GTC token).",

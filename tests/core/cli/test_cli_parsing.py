@@ -596,6 +596,24 @@ class TestResolveParamKwargs:
         kwargs, is_mapping = _resolve_param_kwargs(param, None)
         assert kwargs["choices"] == ["a", "b", "c"]
 
+    def test_patterns_mode_choices_are_explicit(self):
+        param = {
+            "name": "mode",
+            "type": str,
+            "required": False,
+            "default": "candlestick",
+        }
+        kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="patterns_detect")
+        assert kwargs["choices"] == [
+            "all",
+            "candlestick",
+            "classic",
+            "chart",
+            "fractal",
+            "elliott",
+        ]
+        assert "fractals" not in kwargs["choices"]
+
     def test_list_type(self):
         param = {"name": "items", "type": List[str], "required": False, "default": None}
         kwargs, is_mapping = _resolve_param_kwargs(param, None)
