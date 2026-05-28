@@ -47,6 +47,16 @@ def _round_market_ticker_value(value: Any, *, digits: int) -> Any:
         return value
 
 
+def _market_ticker_age_seconds(value: Any) -> Optional[float]:
+    try:
+        numeric = float(value)
+    except Exception:
+        return None
+    if not math.isfinite(numeric):
+        return None
+    return round(max(0.0, numeric), 1)
+
+
 def _market_ticker_pct_display(value: Any) -> Optional[str]:
     try:
         numeric = float(value)
@@ -562,11 +572,12 @@ def market_ticker(
                 except Exception:
                     age_seconds = None
             if age_seconds is not None:
-                out["data_age_seconds"] = age_seconds
-                age_display = _market_ticker_age_display(age_seconds)
+                rounded_age_seconds = _market_ticker_age_seconds(age_seconds)
+                out["data_age_seconds"] = rounded_age_seconds
+                age_display = _market_ticker_age_display(rounded_age_seconds)
                 if age_display is not None:
                     out["data_age"] = age_display
-                out["data_age_hours"] = age_seconds / 3600.0
+                out["data_age_hours"] = round(age_seconds / 3600.0, 3)
                 out["data_stale"] = age_seconds > _MARKET_TICKER_STALE_SECONDS
                 if out["data_stale"]:
                     out["warning"] = (
@@ -576,7 +587,7 @@ def market_ticker(
             diagnostics = {
                 "source": "mt5.symbol_info_tick",
                 "cache_used": False,
-                "data_freshness_seconds": age_seconds,
+                "data_freshness_seconds": _market_ticker_age_seconds(age_seconds),
                 "query_latency_ms": round((time.perf_counter() - started) * 1000.0, 3),
             }
             meta = out.get("meta")
