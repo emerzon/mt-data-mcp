@@ -81,6 +81,13 @@ def test_check_requirements_marks_gluonts_extra_methods_unsupported_on_python_31
     assert fr._GLUONTS_PYTHON_RUNTIME_REQUIREMENT in reqs
 
 
+def test_registry_get_method_info_loads_methods_on_demand():
+    info = fr.ForecastRegistry.get_method_info("mlf_lightgbm")
+
+    assert info["name"] == "mlf_lightgbm"
+    assert info["supports_training"] is True
+
+
 def test_ensure_registry_loaded_continues_after_one_module_import_failure(monkeypatch):
     imported = []
 

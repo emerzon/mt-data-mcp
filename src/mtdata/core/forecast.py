@@ -1561,6 +1561,10 @@ def _forecast_list_full_row(
         row["supports_ci"] = bool(supports.get("ci"))
     elif isinstance(item.get("supports_ci"), bool):
         row["supports_ci"] = bool(item.get("supports_ci"))
+    if isinstance(item.get("supports_training"), bool):
+        row["supports_training"] = bool(item.get("supports_training"))
+    if row.get("supports_training") is True and item.get("training_category") not in (None, ""):
+        row["training_category"] = item.get("training_category")
     if params:
         row["params"] = params
     requires = item.get("requires")
@@ -1781,6 +1785,8 @@ def _forecast_list_methods_impl(  # noqa: C901
                 row["supports_ci"] = bool(supports.get("ci"))
             elif isinstance(item.get("supports_ci"), bool):
                 row["supports_ci"] = bool(item.get("supports_ci"))
+            if isinstance(item.get("supports_training"), bool):
+                row["supports_training"] = bool(item.get("supports_training"))
             params = item.get("params")
             if isinstance(params, list):
                 row["params_count"] = len(params)

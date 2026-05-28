@@ -30,6 +30,7 @@ class ForecastRegistry:
     @classmethod
     def get(cls, name: str) -> ForecastMethod:
         """Get an instance of a registered forecast method."""
+        _ensure_registry_loaded()
         if name not in cls._methods:
             raise ValueError(f"Unknown method: {name}")
         return cls._methods[name]()
@@ -37,11 +38,13 @@ class ForecastRegistry:
     @classmethod
     def list_available(cls) -> List[str]:
         """List names of all registered methods."""
+        _ensure_registry_loaded()
         return list(cls._methods)
 
     @classmethod
     def get_class(cls, name: str) -> Type[ForecastMethod]:
         """Get the class of a registered forecast method."""
+        _ensure_registry_loaded()
         if name not in cls._methods:
             raise ValueError(f"Unknown method: {name}")
         return cls._methods[name]
@@ -49,6 +52,7 @@ class ForecastRegistry:
     @classmethod
     def get_all_method_names(cls) -> List[str]:
         """Get all available forecast method names from the registered classes."""
+        _ensure_registry_loaded()
         return sorted(cls._methods.keys())
 
     @classmethod
@@ -67,6 +71,7 @@ class ForecastRegistry:
     @classmethod
     def list_trainable(cls) -> List[str]:
         """Return names of methods that support the train/predict lifecycle."""
+        _ensure_registry_loaded()
         return [
             name for name in cls._methods
             if cls._methods[name]().supports_training
@@ -227,6 +232,8 @@ def _build_forecast_methods_snapshot() -> Tuple[List[Dict[str, Any]], Dict[str, 
             "description": desc,
             "params": params,
             "supports": supports,
+            "supports_training": bool(getattr(inst, "supports_training", False)),
+            "training_category": str(getattr(inst, "training_category", "instant") or "instant"),
         }
         methods.append(entry)
         categories.setdefault(cat, []).append(method)

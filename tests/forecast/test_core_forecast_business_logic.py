@@ -1017,6 +1017,7 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
                     "description": "Theta model.",
                     "params": [{"name": "window"}],
                     "requires": [],
+                    "supports_training": False,
                 },
                 {
                     "method": "mlf_rf",
@@ -1024,6 +1025,7 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
                     "description": "RF model.",
                     "params": [{"name": "n_estimators"}, {"name": "max_depth"}],
                     "requires": ["mlforecast", "sklearn"],
+                    "supports_training": False,
                 },
             ],
         },
@@ -1039,6 +1041,7 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert "params_count" in compact["methods"][0]
     assert compact["methods"][0]["description"] == "Theta model."
     assert compact["methods"][0]["supports_ci"] is True
+    assert compact["methods"][0]["supports_training"] is False
     assert "namespace" not in compact["methods"][0]
     assert "method_id" not in compact["methods"][0]
     assert "concept" not in compact["methods"][0]
@@ -1073,7 +1076,9 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert "execution" not in full["methods"][0]
     assert "selector" not in full["methods"][0]
     assert full["methods"][0]["supports_ci"] is True
+    assert full["methods"][0]["supports_training"] is False
     assert full["methods"][1]["supports_ci"] is False
+    assert full["methods"][1]["supports_training"] is False
     assert full["methods"][1]["library"] == "native"
     assert full["barrier_methods"]["optimizer_only_methods"] == ["ensemble"]
 
@@ -1220,6 +1225,8 @@ def test_forecast_list_methods_uses_shared_snapshot(monkeypatch):
                     "description": "StatsForecast theta.",
                     "params": [{"name": "window"}],
                     "supports": {"ci": True},
+                    "supports_training": True,
+                    "training_category": "moderate",
                     "method_id": "statsforecast:theta",
                     "capability_id": "statsforecast:theta",
                     "adapter_method": "statsforecast",
@@ -1239,7 +1246,9 @@ def test_forecast_list_methods_uses_shared_snapshot(monkeypatch):
 
     assert compact["methods"][0]["namespace"] == "statsforecast"
     assert compact["methods"][0]["supports_ci"] is True
+    assert compact["methods"][0]["supports_training"] is True
     assert full["methods"][0]["method_id"] == "statsforecast:theta"
+    assert full["methods"][0]["training_category"] == "moderate"
     assert full["methods"][0]["selector"]["key"] == "model_name"
     assert full["methods"][0]["execution"]["method"] == "statsforecast"
 

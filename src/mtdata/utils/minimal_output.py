@@ -1469,6 +1469,8 @@ def _normalize_forecast_methods_payload(
                             else None,
                             "params_count": params_count,
                             "supports_ci": row.get("supports_ci"),
+                            "supports_training": row.get("supports_training"),
+                            "training_category": row.get("training_category"),
                             "concept": row.get("concept"),
                             "method_id": row.get("method_id"),
                         }.items()
@@ -1477,7 +1479,13 @@ def _normalize_forecast_methods_payload(
                 else:
                     compact = {
                         key: row.get(key)
-                        for key in ("method", "category", "available", "supports_ci")
+                        for key in (
+                            "method",
+                            "category",
+                            "available",
+                            "supports_ci",
+                            "supports_training",
+                        )
                         if key in row and not _is_empty_value(row.get(key))
                     }
                 compact_rows.append(compact or dict(row))

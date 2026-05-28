@@ -1000,6 +1000,7 @@ class TestFormatResultForCli:
                         "category": "native",
                         "available": True,
                         "supports_ci": True,
+                        "supports_training": False,
                         "params_count": 1,
                     },
                     {
@@ -1007,6 +1008,7 @@ class TestFormatResultForCli:
                         "category": "statsforecast",
                         "available": True,
                         "supports_ci": True,
+                        "supports_training": True,
                         "params_count": 0,
                     },
                 ],
@@ -1019,7 +1021,7 @@ class TestFormatResultForCli:
             cmd_name="forecast_list_methods",
         )
 
-        assert "methods[2]{method,category,available,supports_ci}" in result
+        assert "methods[2]{method,category,available,supports_ci,supports_training}" in result
         assert "category_summary" not in result
         assert "categories" not in result
         assert "params_count" not in result
@@ -1048,6 +1050,7 @@ class TestFormatResultForCli:
                         "description": "Classic theta forecast.",
                         "params": [{"name": "window_size"}],
                         "supports_ci": True,
+                        "supports_training": False,
                         "concept": "theta",
                         "method_id": "native:theta",
                     },
@@ -1059,6 +1062,8 @@ class TestFormatResultForCli:
                         "description": "StatsForecast theta.",
                         "params": [],
                         "supports_ci": True,
+                        "supports_training": True,
+                        "training_category": "moderate",
                         "concept": "theta",
                         "method_id": "statsforecast:theta",
                     },
@@ -1071,7 +1076,7 @@ class TestFormatResultForCli:
         )
 
         assert (
-            "methods[2]{method,library,category,available,description,params_count,supports_ci,concept,method_id}"
+            "methods[2]{method,library,category,available,description,params_count,supports_ci,supports_training"
             in result
         )
         assert "Classic theta forecast." in result
