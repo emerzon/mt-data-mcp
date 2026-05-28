@@ -316,6 +316,11 @@ def test_forecast_generate_defaults_to_compact_payload(monkeypatch):
         "last_forecast_delta": 0.15,
     }
     assert out["forecast_price"] == [1.0, 1.1, 1.2]
+    assert out["forecast"] == [
+        {"time": "t1", "forecast": 1.0},
+        {"time": "t2", "forecast": 1.1},
+        {"time": "t3", "forecast": 1.2},
+    ]
     assert "series" not in out
     assert "collection_kind" not in out
     assert "collection_contract_version" not in out

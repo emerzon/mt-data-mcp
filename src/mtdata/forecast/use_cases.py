@@ -367,6 +367,46 @@ def _forecast_vs_last_price(payload: Dict[str, Any]) -> Optional[Dict[str, float
     return out
 
 
+def _forecast_generate_compact_rows(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    times = payload.get("forecast_time")
+    if not isinstance(times, list):
+        return []
+
+    forecast_values = None
+    for key in ("forecast_price", "forecast_return", "forecast"):
+        value = payload.get(key)
+        if isinstance(value, list):
+            forecast_values = value
+            break
+    if not isinstance(forecast_values, list):
+        return []
+
+    lower_key = "lower_price" if isinstance(payload.get("lower_price"), list) else "lower_return"
+    upper_key = "upper_price" if lower_key == "lower_price" else "upper_return"
+    lower_values = payload.get(lower_key)
+    upper_values = payload.get(upper_key)
+    if not isinstance(lower_values, list) or not isinstance(upper_values, list):
+        lower_values = payload.get("lower")
+        upper_values = payload.get("upper")
+    market_status = payload.get("forecast_market_status")
+
+    count = min(len(times), len(forecast_values))
+    rows: List[Dict[str, Any]] = []
+    for idx in range(count):
+        row: Dict[str, Any] = {
+            "time": times[idx],
+            "forecast": forecast_values[idx],
+        }
+        if isinstance(market_status, list) and idx < len(market_status):
+            row["market_status"] = market_status[idx]
+        if isinstance(lower_values, list) and isinstance(upper_values, list):
+            if idx < len(lower_values) and idx < len(upper_values):
+                row["lower"] = lower_values[idx]
+                row["upper"] = upper_values[idx]
+        rows.append(row)
+    return rows
+
+
 def _theta_flatness_context(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     if str(payload.get("method") or "").strip().lower() != "theta":
         return None
@@ -450,6 +490,9 @@ def _apply_forecast_generate_detail(
     price_context = _forecast_vs_last_price(payload)
     if price_context:
         compact["forecast_vs_last_price"] = price_context
+    forecast_rows = _forecast_generate_compact_rows(payload)
+    if forecast_rows:
+        compact["forecast"] = forecast_rows
     theta_context = _theta_flatness_context(payload)
     if theta_context and theta_context.get("appears_flat_at_price_precision"):
         warning = "Native theta forecast is near-flat at displayed price precision."

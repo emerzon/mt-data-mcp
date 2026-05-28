@@ -275,12 +275,14 @@ class TestFormatResultForCli:
                 "forecast_time": ["2026-05-22 23:00", "2026-05-23 00:00"],
                 "forecast_price": [1.1, 1.2],
                 "forecast_market_status": ["open", "closed_weekend"],
+                "forecast_start_gap_bars": 1.0,
             },
             fmt="toon",
             verbose=False,
             cmd_name="forecast_generate",
         )
 
+        assert "forecast_start_gap_bars: 1" in result
         assert "forecast[2]{time,forecast,market_status}" in result
         assert "closed_weekend" in result
 
