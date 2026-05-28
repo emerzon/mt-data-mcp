@@ -929,6 +929,7 @@ def _normalize_market_ticker_payload(
         "bid",
         "ask",
         "last",
+        "tick_volume",
         "spread",
         "spread_points",
         "spread_pips",

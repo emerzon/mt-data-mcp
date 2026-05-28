@@ -482,12 +482,14 @@ class TestFormatResultForCli:
                 "success": True,
                 "time": 1700000000,
                 "time_display": "2023-11-14 22:13",
+                "tick_volume": 0,
             },
             fmt="toon",
             verbose=False,
             cmd_name="market_ticker",
         )
         assert 'time: "2023-11-14 22:13"' in ticker
+        assert "tick_volume: 0" in ticker
         assert "time_display" not in ticker
 
         depth = _format_result_for_cli(
