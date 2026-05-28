@@ -1268,7 +1268,16 @@ def _normalize_patterns_payload(
     if tool_name != "patterns_detect" or verbose:
         return None
     highlights = payload.get("highlights")
-    if _is_empty_value(highlights):
+    rows = payload.get("data")
+    has_nested_pattern_context = isinstance(rows, list) and any(
+        isinstance(row, dict)
+        and (
+            isinstance(row.get("volume_confirmation"), dict)
+            or isinstance(row.get("regime_context"), dict)
+        )
+        for row in rows
+    )
+    if _is_empty_value(highlights) and not has_nested_pattern_context:
         return None
 
     out: Dict[str, Any] = {}
@@ -1280,16 +1289,65 @@ def _normalize_patterns_payload(
         "timeframes",
         "total_patterns",
         "n_patterns",
+        "count",
+        "detail",
     ):
         value = payload.get(key)
         if not _is_empty_value(value):
             out[key] = value
-    out["highlights"] = highlights
-    for key in ("signal_bias", "active_levels", "warnings", "errors"):
+    if not _is_empty_value(highlights):
+        out["highlights"] = highlights
+    if has_nested_pattern_context:
+        out["data"] = [
+            _project_pattern_row_context(row) if isinstance(row, dict) else row
+            for row in rows
+        ]
+    for key in ("summary", "signal_bias", "active_levels", "warnings", "errors"):
         value = payload.get(key)
         if not _is_empty_value(value):
             out[key] = value
     return out
+
+
+def _project_pattern_row_context(row: Dict[str, Any]) -> Dict[str, Any]:
+    compact = {
+        key: value
+        for key, value in row.items()
+        if key not in {"volume_confirmation", "regime_context"}
+    }
+
+    volume = row.get("volume_confirmation")
+    if isinstance(volume, dict):
+        for source_key, out_key in (
+            ("status", "volume_status"),
+            ("signal_to_baseline_ratio", "volume_ratio"),
+            ("confidence_delta", "volume_confidence_delta"),
+        ):
+            value = volume.get(source_key)
+            if not _is_empty_value(value):
+                compact[out_key] = value
+
+    regime = row.get("regime_context")
+    if isinstance(regime, dict):
+        state = None
+        for key in ("state", "label", "status", "regime"):
+            value = regime.get(key)
+            if not _is_empty_value(value):
+                state = value
+                break
+        if not _is_empty_value(state):
+            compact["regime_state"] = state
+        for source_key, out_key in (
+            ("alignment", "regime_alignment"),
+            ("bias", "regime_bias"),
+            ("direction", "regime_direction"),
+            ("regime_confidence", "regime_confidence"),
+            ("confidence", "regime_confidence"),
+        ):
+            value = regime.get(source_key)
+            if not _is_empty_value(value) and _is_empty_value(compact.get(out_key)):
+                compact[out_key] = value
+    return compact
 
 
 def _normalize_analysis_legends_payload(

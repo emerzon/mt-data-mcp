@@ -1162,6 +1162,44 @@ class TestFormatResultMinimal:
         assert "classic:" not in compact
         assert "fractal:" not in compact
 
+    def test_patterns_output_promotes_nested_context_fields(self):
+        payload = {
+            "success": True,
+            "symbol": "EURUSD",
+            "mode": "candlestick",
+            "detail": "standard",
+            "data": [
+                {
+                    "pattern": "Breakout",
+                    "confidence": 0.82,
+                    "volume_confirmation": {
+                        "status": "confirmed",
+                        "signal_to_baseline_ratio": 1.285,
+                        "confidence_delta": 0.08,
+                    },
+                    "regime_context": {
+                        "state": "trending",
+                        "alignment": "aligned",
+                        "regime_confidence": 0.71,
+                    },
+                }
+            ],
+        }
+
+        compact = format_result_minimal(
+            payload,
+            verbose=False,
+            tool_name="patterns_detect",
+        )
+
+        assert "volume_confirmation=" not in compact
+        assert "regime_context=" not in compact
+        assert "volume_status" in compact
+        assert "volume_ratio" in compact
+        assert "regime_alignment" in compact
+        assert "confirmed" in compact
+        assert "aligned" in compact
+
     def test_triple_barrier_output_renders_as_single_table(self):
         payload = {
             "success": True,
