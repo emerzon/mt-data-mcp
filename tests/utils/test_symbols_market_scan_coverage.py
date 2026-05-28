@@ -136,13 +136,15 @@ class TestSymbolsTopMarkets:
         assert list(result["data"][0].keys()) == [
             "symbol",
             "group",
-            "tick_time",
+            "data_source",
+            "data_time",
             "data_stale",
             "bid",
             "ask",
             "spread_pct",
             "spread_points",
         ]
+        assert result["data"][0]["data_source"] == "live_tick"
         assert "pricing_basis" not in result["data"][0]
 
     @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
@@ -247,13 +249,15 @@ class TestSymbolsTopMarkets:
         assert list(result["data"][0].keys()) == [
             "symbol",
             "group",
-            "tick_time",
+            "data_source",
+            "data_time",
             "data_stale",
             "bid",
             "ask",
             "spread_pct",
             "spread_points",
         ]
+        assert result["data"][0]["data_source"] == "live_tick"
         assert "description" not in result["data"][0]
         assert "pricing_basis" not in result["data"][0]
         assert "collection_kind" not in result
@@ -321,6 +325,7 @@ class TestSymbolsTopMarkets:
             "rank",
             "symbol",
             "group",
+            "data_source",
             "bid",
             "ask",
             "spread_pct",
@@ -331,19 +336,18 @@ class TestSymbolsTopMarkets:
             "symbol",
             "group",
             "timeframe",
-            "bar_time",
+            "data_source",
+            "data_time",
             "data_stale",
             "tick_volume",
             "price_change_pct",
         ]
+        assert result["lowest_spread"][0]["data_source"] == "live_tick"
+        assert result["highest_volume"][0]["data_source"] == "H1_bars"
         assert result["lowest_spread"][0]["symbol"] == "EURUSD"
         assert result["highest_volume"][0]["symbol"] == "EURUSD"
         assert result["highest_price_change"][0]["symbol"] == "GBPUSD"
-        assert result["data_sources"] == {
-            "lowest_spread": "live_tick",
-            "highest_volume": "H1_bars",
-            "highest_price_change": "H1_bars",
-        }
+        assert "data_sources" not in result
         assert "collection_kind" not in result
         assert "collection_contract_version" not in result
 

@@ -1040,7 +1040,8 @@ def _top_markets_headers(metric: str, *, detail_mode: str) -> List[str]:
             "symbol",
             "group",
             "description",
-            "tick_time",
+            "data_source",
+            "data_time",
             "data_age_seconds",
             "data_stale",
             "warning",
@@ -1058,7 +1059,8 @@ def _top_markets_headers(metric: str, *, detail_mode: str) -> List[str]:
             "group",
             "description",
             "timeframe",
-            "bar_time",
+            "data_source",
+            "data_time",
             "data_freshness_seconds",
             "stale_after_seconds",
             "bar_age_hours",
@@ -1075,7 +1077,8 @@ def _top_markets_headers(metric: str, *, detail_mode: str) -> List[str]:
             "group",
             "description",
             "timeframe",
-            "bar_time",
+            "data_source",
+            "data_time",
             "data_freshness_seconds",
             "stale_after_seconds",
             "bar_age_hours",
@@ -1092,7 +1095,8 @@ def _top_markets_headers(metric: str, *, detail_mode: str) -> List[str]:
         "spread": [
             "symbol",
             "group",
-            "tick_time",
+            "data_source",
+            "data_time",
             "data_stale",
             "bid",
             "ask",
@@ -1103,7 +1107,8 @@ def _top_markets_headers(metric: str, *, detail_mode: str) -> List[str]:
             "symbol",
             "group",
             "timeframe",
-            "bar_time",
+            "data_source",
+            "data_time",
             "data_stale",
             "tick_volume",
             "price_change_pct",
@@ -1112,7 +1117,8 @@ def _top_markets_headers(metric: str, *, detail_mode: str) -> List[str]:
             "symbol",
             "group",
             "timeframe",
-            "bar_time",
+            "data_source",
+            "data_time",
             "data_stale",
             "price_change_pct",
             "tick_volume",
@@ -1129,9 +1135,9 @@ def _top_markets_all_headers(*, detail_mode: str) -> List[str]:
         "symbol",
         "group",
         "timeframe",
-        "tick_time",
+        "data_source",
+        "data_time",
         "data_stale",
-        "bar_time",
         "bid",
         "ask",
         "spread_pct",
@@ -1148,11 +1154,11 @@ def _top_markets_all_headers(*, detail_mode: str) -> List[str]:
         "group",
         "description",
         "timeframe",
-        "tick_time",
+        "data_source",
+        "data_time",
         "data_age_seconds",
         "data_stale",
         "warning",
-        "bar_time",
         "data_freshness_seconds",
         "stale_after_seconds",
         "bar_age_hours",
@@ -1205,6 +1211,31 @@ def _compact_top_market_leaderboard_rows(
         }
         for rank, row in enumerate(rows, start=1)
     ]
+
+
+def _top_market_data_source(metric: str, timeframe: str) -> str:
+    return "live_tick" if metric == "spread" else f"{timeframe}_bars"
+
+
+def _top_market_data_time_key(metric: str) -> str:
+    return "tick_time" if metric == "spread" else "bar_time"
+
+
+def _top_market_rows_with_data_context(
+    metric: str,
+    rows: List[Dict[str, Any]],
+    *,
+    timeframe: str,
+) -> List[Dict[str, Any]]:
+    data_source = _top_market_data_source(metric, timeframe)
+    data_time_key = _top_market_data_time_key(metric)
+    normalized: List[Dict[str, Any]] = []
+    for row in rows:
+        mapped = dict(row)
+        mapped["data_source"] = data_source
+        mapped["data_time"] = row.get(data_time_key)
+        normalized.append(mapped)
+    return normalized
 
 
 def _parse_market_scan_symbols(symbols: Optional[str]) -> List[str]:
@@ -1757,9 +1788,21 @@ def symbols_top_markets(  # noqa: C901
                 "price_change": len(price_change_rows),
             }
 
-            spread_rows = spread_rows[:limit_value]
-            volume_rows = volume_rows[:limit_value]
-            price_change_rows = price_change_rows[:limit_value]
+            spread_rows = _top_market_rows_with_data_context(
+                "spread",
+                spread_rows[:limit_value],
+                timeframe=timeframe_value,
+            )
+            volume_rows = _top_market_rows_with_data_context(
+                "volume",
+                volume_rows[:limit_value],
+                timeframe=timeframe_value,
+            )
+            price_change_rows = _top_market_rows_with_data_context(
+                "price_change",
+                price_change_rows[:limit_value],
+                timeframe=timeframe_value,
+            )
 
             def _scope_fields(
                 metric_name: str,
@@ -1896,11 +1939,6 @@ def symbols_top_markets(  # noqa: C901
                         price_change_rows,
                         detail_mode=detail_mode,
                     ),
-                    "data_sources": {
-                        "lowest_spread": "live_tick",
-                        "highest_volume": f"{timeframe_value}_bars",
-                        "highest_price_change": f"{timeframe_value}_bars",
-                    },
                     **({"notes": notes} if notes else {}),
                 }
 
