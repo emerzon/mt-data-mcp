@@ -2540,10 +2540,6 @@ def standard_support_resistance_payload(payload: Dict[str, Any]) -> Dict[str, An
     if isinstance(volume_sources, list) and volume_sources:
         out["volume_sources"] = list(volume_sources)
 
-    levels = _compact_support_resistance_levels(payload.get("levels"), standard=True)
-    if levels:
-        out["levels"] = levels
-
     fibonacci = payload.get("fibonacci")
     compact_fibonacci = compact_fibonacci_payload(fibonacci)
     if isinstance(compact_fibonacci, dict) and compact_fibonacci:
@@ -2556,11 +2552,6 @@ def standard_support_resistance_payload(payload: Dict[str, Any]) -> Dict[str, An
     resistances = _compact_support_resistance_levels(payload.get("resistances"), standard=True)
     if resistances:
         out["resistances"] = resistances
-
-    fibonacci = payload.get("fibonacci")
-    compact_fibonacci = compact_fibonacci_payload(fibonacci)
-    if isinstance(compact_fibonacci, dict) and compact_fibonacci:
-        out["fibonacci"] = compact_fibonacci
 
     return out or dict(payload)
 
@@ -2616,7 +2607,7 @@ def full_support_resistance_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     if isinstance(payload.get("fibonacci"), dict):
         out["fibonacci"] = dict(payload["fibonacci"])
     diagnostics: Dict[str, Any] = {}
-    for key in ("supports", "resistances", "levels"):
+    for key in ("supports", "resistances"):
         section = _support_resistance_level_diagnostics(payload.get(key))
         if section:
             diagnostics[key] = section

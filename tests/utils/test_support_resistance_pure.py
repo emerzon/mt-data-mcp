@@ -9,6 +9,7 @@ from mtdata.utils.support_resistance import (
     _resolve_adaptive_settings,
     compact_support_resistance_payload,
     compute_support_resistance_levels,
+    full_support_resistance_payload,
     merge_support_resistance_results,
     standard_support_resistance_payload,
 )
@@ -327,9 +328,31 @@ def test_compact_support_resistance_payload_omits_fibonacci_until_standard_detai
         {"type", "value", "distance_pct", "strength_rank"}
     )
     assert "fibonacci" in standard
-    assert "levels" in standard
+    assert "levels" not in standard
+    assert standard["supports"]
+    assert standard["resistances"]
     assert "nearest" not in standard
     assert standard["fibonacci"]["nearest"]["support"]["type"] == "support"
+
+
+def test_full_support_resistance_payload_omits_duplicate_levels_array():
+    result = compute_support_resistance_levels(
+        _clustered_levels_frame(),
+        symbol="EURUSD",
+        timeframe="H1",
+        limit=20,
+        tolerance_pct=0.01,
+        min_touches=1,
+        max_levels=4,
+        reaction_bars=2,
+    )
+
+    full = full_support_resistance_payload(result)
+
+    assert "levels" not in full
+    assert "levels" not in full.get("diagnostics", {})
+    assert full["supports"]
+    assert full["resistances"]
 
 
 def test_compact_support_resistance_payload_explains_missing_side():
