@@ -150,8 +150,8 @@ def test_trade_account_info_compact_detail_includes_account_fields_without_diagn
     assert out["company"] == "Broker LLC"
     assert out["trade_mode"] == "demo"
     assert out["account_type"] == "demo"
-    assert out["is_demo"] is True
-    assert out["is_live"] is False
+    assert "is_demo" not in out
+    assert "is_live" not in out
     assert out["trade_allowed"] is True
     assert out["trade_expert"] is True
     assert "execution_ready" not in out

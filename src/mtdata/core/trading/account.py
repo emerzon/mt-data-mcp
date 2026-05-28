@@ -53,8 +53,6 @@ _TRADE_ACCOUNT_COMPACT_KEYS = (
     "server",
     "company",
     "account_type",
-    "is_demo",
-    "is_live",
     "trade_mode",
 )
 

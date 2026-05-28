@@ -91,8 +91,6 @@ def test_trade_session_context_compacts_nested_sections_by_default() -> None:
     assert out["account"] == {
         "equity": 10010.0,
         "account_type": "demo",
-        "is_demo": True,
-        "is_live": False,
     }
     assert out["ticker"] == {
         "bid": 1.1,
