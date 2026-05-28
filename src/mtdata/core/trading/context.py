@@ -130,7 +130,7 @@ def _normalize_nested_ticker_time(ticker: Dict[str, Any], *, compact: bool) -> D
 def _compact_trade_session_items(
     section: Any,
     *,
-    field_map: tuple[tuple[str, str], ...],
+    field_map: tuple[tuple[str, ...], ...],
 ) -> Optional[list[Dict[str, Any]]]:
     if not isinstance(section, dict):
         return None
@@ -142,11 +142,12 @@ def _compact_trade_session_items(
     for item in items:
         if not isinstance(item, dict):
             continue
-        compact = {
-            out_key: item.get(in_key)
-            for out_key, in_key in field_map
-            if in_key in item and item.get(in_key) not in (None, "")
-        }
+        compact: Dict[str, Any] = {}
+        for out_key, *input_keys in field_map:
+            for input_key in input_keys:
+                if input_key in item and item.get(input_key) not in (None, ""):
+                    compact[out_key] = item.get(input_key)
+                    break
         if compact:
             rows.append(compact)
     return rows or None
@@ -228,18 +229,24 @@ def _compact_trade_session_context_payload(payload: Dict[str, Any]) -> Dict[str,
             compact_rows = _compact_trade_session_items(
                 open_positions,
                 field_map=(
-                    ("symbol", "Symbol"),
-                    ("ticket", "Ticket"),
-                    ("time", "Time"),
-                    ("type", "Type"),
-                    ("volume", "Volume"),
-                    ("open_price", "Open Price"),
-                    ("current_price", "Current Price"),
-                    ("sl", "SL"),
-                    ("tp", "TP"),
-                    ("profit", "Profit"),
-                    ("comment", "Comments"),
-                    ("magic", "Magic"),
+                    ("symbol", "symbol", "Symbol"),
+                    ("ticket", "ticket", "Ticket"),
+                    ("time", "time", "Time"),
+                    ("type", "type", "Type"),
+                    ("volume", "volume", "Volume"),
+                    ("price_open", "price_open", "open_price", "Open Price"),
+                    (
+                        "price_current",
+                        "price_current",
+                        "current_price",
+                        "Current Price",
+                    ),
+                    ("sl", "sl", "SL"),
+                    ("tp", "tp", "TP"),
+                    ("profit", "profit", "Profit"),
+                    ("comment", "comment", "Comments"),
+                    ("magic", "magic", "Magic"),
+                    ("timezone", "timezone", "Timezone"),
                 ),
             )
             if compact_rows:
@@ -258,18 +265,24 @@ def _compact_trade_session_context_payload(payload: Dict[str, Any]) -> Dict[str,
             compact_rows = _compact_trade_session_items(
                 pending_orders,
                 field_map=(
-                    ("symbol", "Symbol"),
-                    ("ticket", "Ticket"),
-                    ("time", "Time"),
-                    ("expiration", "Expiration"),
-                    ("type", "Type"),
-                    ("volume", "Volume"),
-                    ("open_price", "Open Price"),
-                    ("current_price", "Current Price"),
-                    ("sl", "SL"),
-                    ("tp", "TP"),
-                    ("comment", "Comments"),
-                    ("magic", "Magic"),
+                    ("symbol", "symbol", "Symbol"),
+                    ("ticket", "ticket", "Ticket"),
+                    ("time", "time", "Time"),
+                    ("expiration", "expiration", "Expiration"),
+                    ("type", "type", "Type"),
+                    ("volume", "volume", "Volume"),
+                    ("price_open", "price_open", "open_price", "Open Price"),
+                    (
+                        "price_current",
+                        "price_current",
+                        "current_price",
+                        "Current Price",
+                    ),
+                    ("sl", "sl", "SL"),
+                    ("tp", "tp", "TP"),
+                    ("comment", "comment", "Comments"),
+                    ("magic", "magic", "Magic"),
+                    ("timezone", "timezone", "Timezone"),
                 ),
             )
             if compact_rows:
@@ -277,6 +290,9 @@ def _compact_trade_session_context_payload(payload: Dict[str, Any]) -> Dict[str,
             else:
                 compact["pending"] = int(pending_orders.get("count") or 0)
 
+    compact["show_all_hint"] = (
+        "Use detail='full' for complete account, ticker, positions, and pending orders."
+    )
     return compact
 
 

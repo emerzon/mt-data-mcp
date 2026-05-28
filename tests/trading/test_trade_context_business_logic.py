@@ -37,18 +37,19 @@ def test_trade_session_context_compacts_nested_sections_by_default() -> None:
         "count": 1,
         "items": [
             {
-                "Symbol": "EURUSD",
-                "Ticket": 123456,
-                "Time": "2023-11-14 22:13",
-                "Type": "BUY",
-                "Volume": 0.1,
-                "Open Price": 1.1,
-                "Current Price": 1.1004,
-                "SL": 1.095,
-                "TP": 1.11,
-                "Profit": 4.2,
-                "Comments": "agent-open",
-                "Magic": 77,
+                "symbol": "EURUSD",
+                "ticket": 123456,
+                "time": "2023-11-14 22:13",
+                "type": "BUY",
+                "volume": 0.1,
+                "price_open": 1.1,
+                "price_current": 1.1004,
+                "sl": 1.095,
+                "tp": 1.11,
+                "profit": 4.2,
+                "comment": "agent-open",
+                "magic": 77,
+                "timezone": "UTC",
             }
         ],
     }
@@ -107,17 +108,19 @@ def test_trade_session_context_compacts_nested_sections_by_default() -> None:
             "time": "2023-11-14 22:13",
             "type": "BUY",
             "volume": 0.1,
-            "open_price": 1.1,
-            "current_price": 1.1004,
+            "price_open": 1.1,
+            "price_current": 1.1004,
             "sl": 1.095,
             "tp": 1.11,
             "profit": 4.2,
             "comment": "agent-open",
             "magic": 77,
+            "timezone": "UTC",
         }
     ]
     assert "pending_orders" not in out
     assert out["pending"] == 0
+    assert "show_all_hint" in out
     assert out["meta"]["tool"] == "trade_session_context"
     assert out["meta"]["runtime"]["timezone"] == timezone_meta
 
@@ -329,7 +332,7 @@ def test_trade_session_context_compact_keeps_order_attribution_fields() -> None:
             "ticket": 123,
             "type": "BUY",
             "volume": 0.1,
-            "open_price": 1.1,
+            "price_open": 1.1,
             "comment": "open-agent",
             "magic": 7001,
         }
@@ -340,7 +343,7 @@ def test_trade_session_context_compact_keeps_order_attribution_fields() -> None:
             "ticket": 456,
             "type": "BUY_LIMIT",
             "volume": 0.1,
-            "open_price": 1.095,
+            "price_open": 1.095,
             "comment": "pending-agent",
             "magic": 7002,
         }
