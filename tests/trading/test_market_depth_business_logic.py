@@ -267,17 +267,19 @@ def test_market_ticker_returns_lightweight_spread_snapshot() -> None:
     assert out["ask"] == 201.0
     assert out["spread"] == 1.0
     assert out["spread_points"] == 100.0
+    assert out["spread_pct"] == 0.498753
     assert "spread_pips" not in out
-    assert out["spread_pct_display"] == "0.498753%"
+    assert "spread_pct_display" not in out
     assert out["data_stale"] is True
-    assert out["data_age_hours"] > 0
+    assert out["data_age_seconds"] > 0
+    assert "data_age_hours" not in out
     assert "Tick data may be stale" in out["warning"]
     assert out["last"] == 200.5
     assert out["tick_volume"] == 5
     assert out["pricing_basis"] == "per_1_lot_estimate"
     assert out["spread_cost_per_lot"] == 100.0
     assert out["spread_cost_currency"] == "USD"
-    assert out["spread_display"] == "1.00"
+    assert "spread_display" not in out
     assert out["meta"]["diagnostics"]["cache_used"] is False
     assert out["meta"]["diagnostics"]["source"] == "mt5.symbol_info_tick"
     assert isinstance(out["meta"]["diagnostics"]["query_latency_ms"], float)
@@ -442,7 +444,7 @@ def test_market_ticker_full_detail_rounds_age_fields() -> None:
         out = _raw_market_ticker("EURUSD", detail="full")
 
     assert out["data_age_seconds"] == 34.7
-    assert out["data_age_hours"] == 0.01
+    assert "data_age_hours" not in out
     assert out["meta"]["diagnostics"]["data_freshness_seconds"] == 34.7
 
 
@@ -502,7 +504,7 @@ def test_market_ticker_rounds_tick_precision_noise() -> None:
     assert out["ask"] == 1.1759
     assert out["last"] == 1.17586
     assert out["spread"] == 0.00009
-    assert out["spread_display"] == "0.00009"
+    assert "spread_display" not in out
     assert out["spread_points"] == 9.0
     assert out["spread_pct"] == 0.007654
     assert "spread_pips" not in out

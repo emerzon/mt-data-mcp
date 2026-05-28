@@ -938,7 +938,6 @@ def _normalize_market_ticker_payload(
         "spread_cost_currency",
         "pricing_basis",
         "data_age_seconds",
-        "data_age_hours",
         "data_stale",
         "warning",
     ):

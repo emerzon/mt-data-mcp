@@ -250,6 +250,9 @@ def _normalize_market_ticker_cli_payload(
                 out[field] = _round_cli_float(out.get(field), digits=digits)
 
     out.pop("time_display", None)
+    out.pop("spread_display", None)
+    out.pop("spread_pct_display", None)
+    out.pop("data_age_hours", None)
     if verbose and not _is_empty_value(raw_epoch):
         out["time_epoch"] = raw_epoch
     else:

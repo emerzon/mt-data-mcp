@@ -187,11 +187,9 @@ def _compact_trade_session_context_payload(payload: Dict[str, Any]) -> Dict[str,
                     "last",
                     "price_precision",
                     "spread",
-                    "spread_display",
                     "spread_points",
                     "spread_pips",
                     "spread_pct",
-                    "spread_pct_display",
                     "spread_cost_per_lot",
                     "spread_cost_currency",
                     "time",
@@ -207,9 +205,7 @@ def _compact_trade_session_context_payload(payload: Dict[str, Any]) -> Dict[str,
                 if ticker.get(key) not in (None, "")
             }
             if ticker_summary:
-                if "spread_display" in ticker_summary:
-                    ticker_summary["spread"] = ticker_summary["spread_display"]
-                elif "spread" in ticker_summary and any(
+                if "spread" in ticker_summary and any(
                     key in ticker for key in ("price_precision", "digits")
                 ):
                     ticker_summary["spread"] = _format_trade_session_price(

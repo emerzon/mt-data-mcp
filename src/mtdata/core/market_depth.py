@@ -57,26 +57,6 @@ def _market_ticker_age_seconds(value: Any) -> Optional[float]:
     return round(max(0.0, numeric), 1)
 
 
-def _market_ticker_pct_display(value: Any) -> Optional[str]:
-    try:
-        numeric = float(value)
-    except Exception:
-        return None
-    if not math.isfinite(numeric):
-        return None
-    return f"{round(numeric, 6):g}%"
-
-
-def _market_ticker_price_display(value: Any, *, digits: int) -> Optional[str]:
-    try:
-        numeric = float(value)
-    except Exception:
-        return None
-    if not math.isfinite(numeric):
-        return None
-    return f"{numeric:.{max(0, int(digits))}f}"
-
-
 def _market_ticker_age_display(seconds: Any) -> Optional[str]:
     try:
         total = max(0, int(round(float(seconds))))
@@ -515,7 +495,6 @@ def market_ticker(
             spread_abs = None
             spread_points = None
             spread_pct = None
-            spread_pct_display = None
             spread_cost_per_lot = None
             pricing_basis = "quote_only"
             if bid is not None and ask is not None and ask >= bid:
@@ -526,7 +505,6 @@ def market_ticker(
                 spread_abs = _round_market_ticker_value(spread_abs, digits=digits)
                 spread_points = _round_market_ticker_value(spread_points, digits=4)
                 spread_pct = _round_market_ticker_value(spread_pct, digits=6)
-                spread_pct_display = _market_ticker_pct_display(spread_pct)
                 if tick_size > 0 and tick_value > 0:
                     spread_cost_per_lot = _round_market_ticker_value(
                         (float(spread_abs) / tick_size) * tick_value,
@@ -547,13 +525,8 @@ def market_ticker(
                 "last": _round_market_ticker_value(last, digits=digits),
                 "tick_volume": tick_volume,
                 "spread": spread_abs,
-                "spread_display": _market_ticker_price_display(
-                    spread_abs,
-                    digits=digits,
-                ),
                 "spread_points": spread_points,
                 "spread_pct": spread_pct,
-                "spread_pct_display": spread_pct_display,
                 "spread_cost_per_lot": spread_cost_per_lot,
                 "pricing_basis": pricing_basis,
                 "time": tick_time,
@@ -577,7 +550,6 @@ def market_ticker(
                 age_display = _market_ticker_age_display(rounded_age_seconds)
                 if age_display is not None:
                     out["data_age"] = age_display
-                out["data_age_hours"] = round(age_seconds / 3600.0, 3)
                 out["data_stale"] = age_seconds > _MARKET_TICKER_STALE_SECONDS
                 if out["data_stale"]:
                     out["warning"] = (

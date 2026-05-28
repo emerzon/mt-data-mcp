@@ -550,7 +550,7 @@ class TestFormatResultForCli:
         assert payload["spread_points"] == 8.999999999992347
         assert "spread_pips" not in payload
         assert payload["spread_pct"] == 0.007795818842487513
-        assert payload["spread_pct_display"] == "0.007796%"
+        assert "spread_pct_display" not in payload
         assert "time_display" not in payload
         assert "time_epoch" not in payload
 
