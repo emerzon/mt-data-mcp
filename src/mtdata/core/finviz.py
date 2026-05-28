@@ -1649,6 +1649,47 @@ def _parse_finviz_fields(fields: Optional[Union[str, list[str]]]) -> Optional[li
     return [str(field).strip() for field in fields if str(field).strip()]
 
 
+def _finviz_public_fundamental_keys(field: str) -> tuple[str, ...]:
+    output_key = _normalize_finviz_output_key(field)
+    if output_key == "change":
+        output_key = "change_pct"
+    keys = [output_key]
+    keys.extend(_finviz_compound_output_keys(output_key))
+    if output_key == "market_cap":
+        keys.append("market_cap_formatted")
+    if output_key == "exchange":
+        keys.append("market_cap_category")
+    return tuple(dict.fromkeys(keys))
+
+
+def _resolve_finviz_fundamental_fields(
+    fundamentals: Dict[str, Any],
+    requested_fields: list[str],
+) -> tuple[list[str], list[str]]:
+    lookup: Dict[str, str] = {}
+    for field in fundamentals:
+        for candidate in (field, *_finviz_public_fundamental_keys(field)):
+            text = str(candidate).strip()
+            if text:
+                lookup.setdefault(text.lower(), field)
+
+    selected: list[str] = []
+    seen: set[str] = set()
+    missing: list[str] = []
+    for field in requested_fields:
+        if field in fundamentals:
+            resolved = field
+        else:
+            resolved = lookup.get(str(field).strip().lower())
+        if resolved is None:
+            missing.append(field)
+            continue
+        if resolved not in seen:
+            selected.append(resolved)
+            seen.add(resolved)
+    return selected, missing
+
+
 def _filter_finviz_fundamentals_payload(
     result: Dict[str, Any],
     *,
@@ -1686,8 +1727,12 @@ def _filter_finviz_fundamentals_payload(
         )
 
     requested_fields = _parse_finviz_fields(fields)
+    missing_fields: list[str] = []
     if requested_fields is not None:
-        selected_fields = requested_fields
+        selected_fields, missing_fields = _resolve_finviz_fundamental_fields(
+            fundamentals,
+            requested_fields,
+        )
         category_out = "custom"
     elif category_mode != "all":
         if detail_mode == "compact":
@@ -1756,9 +1801,8 @@ def _filter_finviz_fundamentals_payload(
         if omitted_fields:
             out["omitted_fields"] = omitted_fields
     if requested_fields is not None:
-        missing = [field for field in requested_fields if field not in fundamentals]
-        if missing:
-            out["missing_fields"] = missing
+        if missing_fields:
+            out["missing_fields"] = missing_fields
     return out
 
 

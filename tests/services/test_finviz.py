@@ -884,6 +884,7 @@ class TestFinvizTools:
         technical = raw("AAPL", category="technical")
         financial = raw("AAPL", category="financial")
         custom = raw("AAPL", fields="P/E,RSI (14),Missing")
+        custom_normalized = raw("AAPL", fields="pe_ratio,market_cap,eps_ttm")
 
         assert valuation["category"] == "valuation"
         assert valuation["fundamentals"] == {
@@ -896,6 +897,13 @@ class TestFinvizTools:
         assert custom["category"] == "custom"
         assert custom["fundamentals"] == {"pe_ratio": 34.29, "rsi_14": 62.1}
         assert custom["missing_fields"] == ["Missing"]
+        assert custom_normalized["fundamentals"] == {
+            "pe_ratio": 34.29,
+            "market_cap": 3_979_470_000_000.0,
+            "market_cap_formatted": "3.98T",
+            "eps_ttm": 7.9,
+        }
+        assert "missing_fields" not in custom_normalized
         assert technical["category"] == "technicals"
         assert technical["category_requested"] == "technical"
         assert technical["fundamentals"] == {"rsi_14": 62.1}
