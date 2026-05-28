@@ -81,6 +81,8 @@ def compute_support_resistance_payload(
     decay_half_life_bars: Optional[int],
     max_distance_pct: Optional[float],
     volume_weighting: str,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
 ) -> Dict[str, Any]:
     requested_timeframe, timeframes = _resolve_support_resistance_timeframes(timeframe)
     multi_timeframe = len(timeframes) > 1
@@ -91,7 +93,16 @@ def compute_support_resistance_payload(
 
     for tf in timeframes:
         try:
-            frame = fetch_history_impl(symbol=symbol, timeframe=tf, need=int(limit))
+            history_kwargs: Dict[str, Any] = {
+                "symbol": symbol,
+                "timeframe": tf,
+                "need": int(limit),
+            }
+            if start or end:
+                history_kwargs.update({"start": start, "end": end})
+            frame = fetch_history_impl(**history_kwargs)
+            if len(frame) > int(limit):
+                frame = frame.iloc[-int(limit):].copy()
             result = compute_support_resistance_levels(
                 frame,
                 symbol=symbol,
@@ -537,6 +548,8 @@ def support_resistance_levels(
     symbol: str,
     timeframe: AutoTimeframeLiteral = "H1",
     lookback: int = 200,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
     tolerance_pct: float = 0.0015,
     min_touches: int = 2,
     max_levels: int = 4,
@@ -551,7 +564,8 @@ def support_resistance_levels(
     """Detect support/resistance levels around the current price from historical structure.
 
     Set `timeframe="auto"` to merge levels from M15, H1, H4, and D1.
-    `lookback` controls the historical bars used to detect levels.
+    `lookback` caps the historical bars used to detect levels after applying
+    any optional `start`/`end` time window.
     Use `detail="compact"` for the nearest-level summary, `detail="standard"`
     for compact actionable supports/resistances/levels plus Fibonacci swing
     levels, and `detail="full"` for the raw diagnostic payload. The default
@@ -576,6 +590,8 @@ def support_resistance_levels(
                 symbol=symbol,
                 timeframe=timeframe,
                 limit=int(lookback),
+                start=start,
+                end=end,
                 tolerance_pct=float(tolerance_pct),
                 min_touches=int(min_touches),
                 max_levels=int(max_levels),
@@ -611,6 +627,8 @@ def support_resistance_levels(
         symbol=symbol,
         timeframe=timeframe,
         lookback=lookback,
+        start=start,
+        end=end,
         tolerance_pct=tolerance_pct,
         min_touches=min_touches,
         max_levels=max_levels,

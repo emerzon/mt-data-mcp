@@ -18,6 +18,8 @@ class ForecastPriceBody(BaseModel):
     horizon: int = Field(12, ge=1)
     lookback: Optional[int] = Field(None, ge=1)
     as_of: Optional[str] = None
+    start: Optional[str] = None
+    end: Optional[str] = None
     params: Optional[Dict[str, Any]] = None
     ci_alpha: Optional[float] = Field(0.05, ge=0.0, le=0.5)
     quantity: Literal["price", "return", "volatility"] = Field("price")
@@ -46,6 +48,8 @@ class ForecastPriceBody(BaseModel):
             horizon=self.horizon,
             lookback=self.lookback,
             as_of=self.as_of,
+            start=self.start,
+            end=self.end,
             params=self.params,
             ci_alpha=self.ci_alpha,
             quantity=self.quantity,
@@ -66,6 +70,8 @@ class ForecastVolBody(BaseModel):
     proxy: Optional[str] = None
     params: Optional[Dict[str, Any]] = None
     as_of: Optional[str] = None
+    start: Optional[str] = None
+    end: Optional[str] = None
     denoise: Optional[Dict[str, Any]] = None
 
 

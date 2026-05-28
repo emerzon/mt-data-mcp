@@ -1171,6 +1171,8 @@ def run_forecast_generate(
             horizon=request.horizon,
             lookback=request.lookback,
             as_of=request.as_of,
+            start=request.start,
+            end=request.end,
             params=params,
             ci_alpha=request.ci_alpha,
             quantity=request.quantity,
@@ -1965,6 +1967,8 @@ def run_forecast_volatility_estimate(
             proxy=request.proxy,
             params=request.params,
             as_of=request.as_of,
+            start=request.start,
+            end=request.end,
             denoise=request.denoise,
             detail=request.detail,
         )

@@ -21,6 +21,7 @@ from ..shared.constants import TIME_DISPLAY_FORMAT, TIMEFRAME_SECONDS
 from ..shared.validators import invalid_timeframe_error
 from ..utils.utils import (
     _format_time_minimal_local,
+    _parse_start_datetime,
     _table_from_rows,
     _use_client_tz,
 )
@@ -42,6 +43,7 @@ class CandlestickRuntime:
         "mt5",
         "TIMEFRAME_MAP",
         "_mt5_copy_rates_from",
+        "_mt5_copy_rates_range",
         "_rates_to_df",
         "_symbol_ready_guard",
         "_lock",
@@ -53,6 +55,7 @@ class CandlestickRuntime:
         self.mt5: Any = None
         self.TIMEFRAME_MAP: Optional[Dict[str, Any]] = None
         self._mt5_copy_rates_from: Any = None
+        self._mt5_copy_rates_range: Any = None
         self._rates_to_df: Any = None
         self._symbol_ready_guard: Any = None
         self._lock = Lock()
@@ -97,16 +100,19 @@ class CandlestickRuntime:
 
             if (
                 self._mt5_copy_rates_from is None
+                or self._mt5_copy_rates_range is None
                 or self._rates_to_df is None
                 or self._symbol_ready_guard is None
             ):
                 from ..utils.mt5 import (
                     _mt5_copy_rates_from as copy_rates_from,
+                    _mt5_copy_rates_range as copy_rates_range,
                     _rates_to_df as rates_to_df,
                     _symbol_ready_guard as symbol_ready_guard,
                 )
 
                 self._mt5_copy_rates_from = copy_rates_from
+                self._mt5_copy_rates_range = copy_rates_range
                 self._rates_to_df = rates_to_df
                 self._symbol_ready_guard = symbol_ready_guard
 
@@ -121,6 +127,7 @@ ta: Any = None
 mt5: Any = None
 TIMEFRAME_MAP: Optional[Dict[str, Any]] = None
 _mt5_copy_rates_from: Any = None
+_mt5_copy_rates_range: Any = None
 _rates_to_df: Any = None
 _symbol_ready_guard: Any = None
 _CANDLESTICK_PATTERN_METHOD_CACHE: Optional[Tuple[str, ...]] = None
@@ -261,6 +268,7 @@ def _ensure_candlestick_runtime() -> None:
         mt5, \
         TIMEFRAME_MAP, \
         _mt5_copy_rates_from, \
+        _mt5_copy_rates_range, \
         _rates_to_df, \
         _symbol_ready_guard
 
@@ -269,6 +277,7 @@ def _ensure_candlestick_runtime() -> None:
         and mt5 is not None
         and TIMEFRAME_MAP is not None
         and _mt5_copy_rates_from is not None
+        and _mt5_copy_rates_range is not None
         and _rates_to_df is not None
         and _symbol_ready_guard is not None
     ):
@@ -284,6 +293,8 @@ def _ensure_candlestick_runtime() -> None:
         TIMEFRAME_MAP = _runtime.TIMEFRAME_MAP
     if _mt5_copy_rates_from is None:
         _mt5_copy_rates_from = _runtime._mt5_copy_rates_from
+    if _mt5_copy_rates_range is None:
+        _mt5_copy_rates_range = _runtime._mt5_copy_rates_range
     if _rates_to_df is None:
         _rates_to_df = _runtime._rates_to_df
     if _symbol_ready_guard is None:
@@ -597,6 +608,8 @@ def detect_candlestick_patterns(  # noqa: C901
     top_k: int,
     last_n_bars: Optional[int] = None,
     config: Optional[Dict[str, Any]] = None,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
 ) -> Dict[str, Any]:
     try:
         _ensure_candlestick_runtime()
@@ -610,12 +623,27 @@ def detect_candlestick_patterns(  # noqa: C901
         return {"error": str(exc)}
 
     mt5_timeframe = TIMEFRAME_MAP[timeframe]
+    utc_now = datetime.now(timezone.utc)
+    start_dt = _parse_start_datetime(start) if start else None
+    if start and start_dt is None:
+        return {"error": "Invalid start time."}
+    end_dt = _parse_start_datetime(end) if end else None
+    if end and end_dt is None:
+        return {"error": "Invalid end time."}
+    if start_dt is not None and end_dt is None:
+        end_dt = utc_now.replace(tzinfo=None)
+    if start_dt is not None and end_dt is not None and start_dt > end_dt:
+        return {"error": "start must be before or equal to end."}
 
     with _symbol_ready_guard(symbol) as (err, _info):
         if err:
             return {"error": err}
-        utc_now = datetime.now(timezone.utc)
-        rates = _mt5_copy_rates_from(symbol, mt5_timeframe, utc_now, limit)
+        if start_dt is not None:
+            rates = _mt5_copy_rates_range(symbol, mt5_timeframe, start_dt, end_dt)
+        elif end_dt is not None:
+            rates = _mt5_copy_rates_from(symbol, mt5_timeframe, end_dt, limit)
+        else:
+            rates = _mt5_copy_rates_from(symbol, mt5_timeframe, utc_now, limit)
 
     if rates is None:
         return {"error": f"Failed to get rates for {symbol}: {mt5.last_error()}"}
@@ -626,13 +654,15 @@ def detect_candlestick_patterns(  # noqa: C901
     from ..services.data_service import _resolve_live_bar_reference_epoch
 
     live_bar_reference_epoch = _resolve_live_bar_reference_epoch(symbol, timeframe)
-    if should_drop_last_live_bar(
+    if end_dt is None and should_drop_last_live_bar(
         df,
         timeframe,
         now_utc=utc_now,
         current_time_epoch=live_bar_reference_epoch,
     ):
         df = df.iloc[:-1].copy()
+    if (start_dt is not None or end_dt is not None) and len(df) > int(limit):
+        df = df.iloc[-int(limit):].copy()
     if len(df) == 0:
         return {"error": "No closed candle data available"}
     warnings_out = data_quality_warnings(

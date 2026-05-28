@@ -23,6 +23,7 @@ from mtdata.forecast.requests import (
     ForecastOptimizeHintsRequest,
     ForecastTuneGeneticRequest,
     ForecastTuneOptunaRequest,
+    ForecastVolatilityEstimateRequest,
 )
 from mtdata.utils.mt5 import MT5ConnectionError
 
@@ -707,6 +708,49 @@ def test_run_forecast_backtest_routes_date_range_to_impl():
     assert result["success"] is True
     assert captured["start"] == "2023-01-01"
     assert captured["end"] == "2023-12-31"
+
+
+def test_run_forecast_generate_routes_date_range_to_impl(monkeypatch):
+    captured = {}
+
+    def fake_forecast_impl(**kwargs):
+        captured.update(kwargs)
+        return {"success": True, "forecast_price": [1.0, 1.1]}
+
+    result = forecast_use_cases.run_forecast_generate(
+        ForecastGenerateRequest(
+            symbol="EURUSD",
+            start="2023-01-01",
+            end="2023-03-31",
+        ),
+        forecast_impl=fake_forecast_impl,
+        resolve_sktime_forecaster=lambda _query: None,
+    )
+
+    assert result["success"] is True
+    assert captured["start"] == "2023-01-01"
+    assert captured["end"] == "2023-03-31"
+
+
+def test_run_forecast_volatility_routes_date_range_to_impl():
+    captured = {}
+
+    def fake_volatility_impl(**kwargs):
+        captured.update(kwargs)
+        return {"success": True, "sigma_bar_return": 0.01}
+
+    result = forecast_use_cases.run_forecast_volatility_estimate(
+        ForecastVolatilityEstimateRequest(
+            symbol="EURUSD",
+            start="2023-01-01",
+            end="2023-03-31",
+        ),
+        forecast_volatility_impl=fake_volatility_impl,
+    )
+
+    assert result["success"] is True
+    assert captured["start"] == "2023-01-01"
+    assert captured["end"] == "2023-03-31"
 
 
 def test_forecast_generate_converts_typed_forecast_errors(monkeypatch):

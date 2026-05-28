@@ -18,6 +18,7 @@ from ..shared.schema import CompactFullDetailLiteral, TimeframeLiteral
 from ..utils.mt5 import (
     _ensure_symbol_ready,
     _mt5_copy_rates_from,
+    _mt5_copy_rates_range,
     ensure_mt5_connection_or_raise,
     mt5,
 )
@@ -30,6 +31,7 @@ from ..shared.constants import TIMEFRAME_MAP
 from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway, mt5_connection_error
 from .output_contract import normalize_output_verbosity_detail
+from ..utils.utils import _parse_start_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -146,6 +148,8 @@ _CAUSAL_DISCOVER_REQUEST_KEYS = frozenset(
         "symbols_expanded",
         "timeframe",
         "limit",
+        "start",
+        "end",
         "max_lag",
         "significance",
         "transform",
@@ -162,6 +166,8 @@ _CORRELATION_REQUEST_KEYS = frozenset(
         "group_resolved",
         "timeframe",
         "limit",
+        "start",
+        "end",
         "method",
         "transform",
         "min_overlap",
@@ -177,6 +183,8 @@ _COINTEGRATION_REQUEST_KEYS = frozenset(
         "group_resolved",
         "timeframe",
         "limit",
+        "start",
+        "end",
         "transform",
         "trend",
         "significance",
@@ -313,17 +321,49 @@ def _expand_symbols_for_group_path(
     return members, None, group_path
 
 
+def _resolve_history_window(
+    start: Optional[str],
+    end: Optional[str],
+) -> Tuple[Optional[datetime], Optional[datetime], Optional[str]]:
+    start_dt = _parse_start_datetime(start) if start else None
+    if start and start_dt is None:
+        return None, None, "Invalid start time."
+    end_dt = _parse_start_datetime(end) if end else None
+    if end and end_dt is None:
+        return None, None, "Invalid end time."
+    if start_dt is not None and end_dt is None:
+        end_dt = datetime.now(timezone.utc).replace(tzinfo=None)
+    if start_dt is not None and end_dt is not None and start_dt > end_dt:
+        return None, None, "start must be before or equal to end."
+    return start_dt, end_dt, None
+
+
 def _fetch_series(
-    symbol: str, timeframe, count: int, retries: int = 3, pause: float = 0.25
+    symbol: str,
+    timeframe,
+    count: int,
+    retries: int = 3,
+    pause: float = 0.25,
+    *,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
 ) -> Tuple[pd.Series, str | None]:
     """Fetch recent close prices for a symbol."""
     err = _ensure_symbol_ready(symbol)
     if err:
         return pd.Series(dtype=float), err
+    start_dt, end_dt, window_error = _resolve_history_window(start, end)
+    if window_error:
+        return pd.Series(dtype=float), window_error
 
     for _attempt in range(retries):
-        utc_now = datetime.now(timezone.utc)
-        data = _mt5_copy_rates_from(symbol, timeframe, utc_now, count)
+        if start_dt is not None:
+            data = _mt5_copy_rates_range(symbol, timeframe, start_dt, end_dt)
+        elif end_dt is not None:
+            data = _mt5_copy_rates_from(symbol, timeframe, end_dt, count)
+        else:
+            utc_now = datetime.now(timezone.utc)
+            data = _mt5_copy_rates_from(symbol, timeframe, utc_now, count)
         if data is None or len(data) == 0:
             time.sleep(pause)
             continue
@@ -346,6 +386,19 @@ def _fetch_series(
     return pd.Series(dtype=float), f"Failed to fetch data for {symbol}" + (
         f" after {retries} retries" if retries > 1 else ""
     )
+
+
+def _fetch_series_for_window(
+    symbol: str,
+    timeframe,
+    count: int,
+    *,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+) -> Tuple[pd.Series, str | None]:
+    if start or end:
+        return _fetch_series(symbol, timeframe, count, start=start, end=end)
+    return _fetch_series(symbol, timeframe, count)
 
 
 def _transform_frame(frame: pd.DataFrame, transform: str) -> pd.DataFrame:
@@ -1162,6 +1215,8 @@ def causal_discover_signals(  # noqa: C901
     symbols: Optional[str] = None,
     timeframe: TimeframeLiteral = "H1",
     limit: int = 500,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
     max_lag: int = 5,
     significance: float = 0.05,
     transform: str = "log_return",
@@ -1173,7 +1228,9 @@ def causal_discover_signals(  # noqa: C901
     Args:
         symbols: Comma-separated MT5 symbols; provide one symbol to auto-expand its group.
         timeframe: MT5 timeframe key (e.g. "M15", "H1").
-        limit: Number of recent bars to analyse per symbol.
+        limit: Maximum bars to analyse per symbol after applying any time window.
+        start: Optional UTC-compatible start date/time for the analysis window.
+        end: Optional UTC-compatible end date/time; end-only anchors recent history.
         max_lag: Maximum lag order for tests (>=1).
         significance: Alpha level for reporting causal links.
         transform: Preprocessing transform: "log_return", "pct", "diff", or "level".
@@ -1190,6 +1247,8 @@ def causal_discover_signals(  # noqa: C901
             "_request_keys": _CAUSAL_DISCOVER_REQUEST_KEYS,
             "timeframe": str(timeframe),
             "limit": int(limit),
+            "start": start,
+            "end": end,
             "max_lag": int(max_lag),
             "significance": float(significance),
             "transform": str(transform),
@@ -1276,7 +1335,13 @@ def causal_discover_signals(  # noqa: C901
         series_map: Dict[str, pd.Series] = {}
         errors: List[str] = []
         for symbol_name in symbol_list:
-            series, err = _fetch_series(symbol_name, tf, fetch_count)
+            series, err = _fetch_series_for_window(
+                symbol_name,
+                tf,
+                fetch_count,
+                start=start,
+                end=end,
+            )
             if err:
                 errors.append(err)
             else:
@@ -1597,6 +1662,8 @@ def causal_discover_signals(  # noqa: C901
         symbols=symbols,
         timeframe=timeframe,
         limit=limit,
+        start=start,
+        end=end,
         max_lag=max_lag,
         detail=detail,
         func=_run,
@@ -1609,6 +1676,8 @@ def correlation_matrix(  # noqa: C901
     group: Optional[str] = None,
     timeframe: TimeframeLiteral = "H1",
     limit: int = 500,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
     method: str = "pearson",
     transform: str = "log_return",
     min_overlap: int = 30,
@@ -1629,7 +1698,10 @@ def correlation_matrix(  # noqa: C901
         group: Explicit MT5 group path (for example "Forex\\Majors"). Mutually
             exclusive with `symbols`.
         timeframe: MT5 timeframe key (e.g. "M15", "H1").
-        limit: Maximum number of overlapping transformed samples used per pair.
+        limit: Maximum number of overlapping transformed samples used per pair
+            after applying any time window.
+        start: Optional UTC-compatible start date/time for the analysis window.
+        end: Optional UTC-compatible end date/time; end-only anchors recent history.
         method: Correlation method: "pearson" or "spearman".
         transform: Preprocessing transform: "log_return", "pct", "diff", or "level".
         min_overlap: Minimum overlapping transformed samples required per pair.
@@ -1643,6 +1715,8 @@ def correlation_matrix(  # noqa: C901
             "_request_keys": _CORRELATION_REQUEST_KEYS,
             "timeframe": str(timeframe),
             "limit": int(limit),
+            "start": start,
+            "end": end,
             "method": str(method),
             "transform": str(transform),
             "min_overlap": int(min_overlap),
@@ -1783,7 +1857,13 @@ def correlation_matrix(  # noqa: C901
         series_map: Dict[str, pd.Series] = {}
         errors: List[str] = []
         for symbol_name in symbol_list:
-            series, err = _fetch_series(symbol_name, tf, fetch_count)
+            series, err = _fetch_series_for_window(
+                symbol_name,
+                tf,
+                fetch_count,
+                start=start,
+                end=end,
+            )
             if err:
                 errors.append(err)
             else:
@@ -1921,6 +2001,8 @@ def correlation_matrix(  # noqa: C901
             "context": {
                 "timeframe": str(timeframe),
                 "limit": int(limit),
+                "start": start,
+                "end": end,
                 "transform": transform_value,
                 "transform_note": (
                     "Correlation defaults to log_return; cointegration defaults to log_level because it tests price-level relationships."
@@ -1948,6 +2030,8 @@ def correlation_matrix(  # noqa: C901
         group=group,
         timeframe=timeframe,
         limit=limit,
+        start=start,
+        end=end,
         method=method,
         transform=transform,
         min_overlap=min_overlap,
@@ -1962,6 +2046,8 @@ def cointegration_test(  # noqa: C901
     group: Optional[str] = None,
     timeframe: TimeframeLiteral = "H1",
     limit: int = 500,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
     transform: str = "log_level",
     trend: str = "c",
     significance: float = 0.05,
@@ -1983,7 +2069,10 @@ def cointegration_test(  # noqa: C901
         group: Explicit MT5 group path (for example "Forex\\Majors"). Mutually
             exclusive with `symbols`.
         timeframe: MT5 timeframe key (e.g. "M15", "H1").
-        limit: Maximum number of overlapping transformed samples used per pair.
+        limit: Maximum number of overlapping transformed samples used per pair
+            after applying any time window.
+        start: Optional UTC-compatible start date/time for the analysis window.
+        end: Optional UTC-compatible end date/time; end-only anchors recent history.
         transform: Price transform: "log_level" or "level".
         trend: Deterministic trend term for the test: "c", "ct", "ctt", or "n".
         significance: Alpha threshold for reporting cointegrated pairs.
@@ -1998,6 +2087,8 @@ def cointegration_test(  # noqa: C901
             "_request_keys": _COINTEGRATION_REQUEST_KEYS,
             "timeframe": str(timeframe),
             "limit": int(limit),
+            "start": start,
+            "end": end,
             "transform": str(transform),
             "trend": str(trend),
             "significance": float(significance),
@@ -2146,7 +2237,13 @@ def cointegration_test(  # noqa: C901
         series_map: Dict[str, pd.Series] = {}
         errors: List[str] = []
         for symbol in symbol_list:
-            series, err = _fetch_series(symbol, tf, fetch_count)
+            series, err = _fetch_series_for_window(
+                symbol,
+                tf,
+                fetch_count,
+                start=start,
+                end=end,
+            )
             if err:
                 errors.append(err)
             else:
@@ -2345,6 +2442,8 @@ def cointegration_test(  # noqa: C901
             "context": {
                 "timeframe": str(timeframe),
                 "limit": int(limit),
+                "start": start,
+                "end": end,
                 "transform": transform_value,
                 "transform_note": (
                     "Cointegration defaults to log_level; correlation defaults to log_return because it measures co-movement in returns."
@@ -2387,6 +2486,8 @@ def cointegration_test(  # noqa: C901
         group=group,
         timeframe=timeframe,
         limit=limit,
+        start=start,
+        end=end,
         transform=transform,
         trend=trend,
         significance=significance,

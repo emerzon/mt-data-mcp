@@ -26,9 +26,19 @@ from ..patterns.fractal import (
 from ..shared.validators import invalid_timeframe_error
 from ..utils.denoise import _apply_denoise as _apply_denoise_util
 from ..utils.denoise import normalize_denoise_spec as _normalize_denoise_spec
-from ..utils.mt5 import _mt5_copy_rates_from, ensure_mt5_connection_or_raise, mt5
+from ..utils.mt5 import (
+    _mt5_copy_rates_from,
+    _mt5_copy_rates_range,
+    ensure_mt5_connection_or_raise,
+    mt5,
+)
 from ..utils.ohlcv import validate_and_clean_ohlcv_frame
-from ..utils.utils import _UNPARSED_BOOL, _format_time_minimal, _parse_bool_like
+from ..utils.utils import (
+    _UNPARSED_BOOL,
+    _format_time_minimal,
+    _parse_bool_like,
+    _parse_start_datetime,
+)
 from ..utils.utils import to_float_np as __to_float_np
 from ._mcp_instance import mcp
 from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
@@ -128,6 +138,8 @@ def _fetch_pattern_data(
     limit: int,
     denoise: Optional[Dict[str, Any]] = None,
     gateway: Any = None,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
 ) -> Tuple[Optional[pd.DataFrame], Optional[Dict[str, Any]]]:
     """Fetch and prepare OHLCV data for pattern detection.
     
@@ -154,9 +166,26 @@ def _fetch_pattern_data(
     
     utc_now = datetime.now(timezone.utc)
     count = max(400, int(limit) + 2)
-    rates = _mt5_copy_rates_from(symbol, mt5_tf, utc_now, count)
+    start_dt = _parse_start_datetime(start) if start else None
+    if start and start_dt is None:
+        return None, {"error": "Invalid start time."}
+    end_dt = _parse_start_datetime(end) if end else None
+    if end and end_dt is None:
+        return None, {"error": "Invalid end time."}
+    if start_dt is not None and end_dt is None:
+        end_dt = utc_now.replace(tzinfo=None)
+    if start_dt is not None and end_dt is not None and start_dt > end_dt:
+        return None, {"error": "start must be before or equal to end."}
+
+    if start_dt is not None:
+        rates = _mt5_copy_rates_range(symbol, mt5_tf, start_dt, end_dt)
+    elif end_dt is not None:
+        rates = _mt5_copy_rates_from(symbol, mt5_tf, end_dt, count)
+    else:
+        rates = _mt5_copy_rates_from(symbol, mt5_tf, utc_now, count)
     
-    if rates is None or len(rates) < 100:
+    minimum_bars = 5 if (start_dt is not None or end_dt is not None) else 100
+    if rates is None or len(rates) < minimum_bars:
         return None, {"error": f"Failed to fetch sufficient bars for {symbol}"}
     
     df = pd.DataFrame(rates)
@@ -178,7 +207,7 @@ def _fetch_pattern_data(
     from ..services.data_service import _resolve_live_bar_reference_epoch
 
     live_bar_reference_epoch = _resolve_live_bar_reference_epoch(symbol, timeframe)
-    if _should_drop_last_pattern_bar(
+    if end_dt is None and _should_drop_last_pattern_bar(
         df,
         timeframe,
         now_utc=utc_now,
@@ -1074,7 +1103,11 @@ def patterns_detect(
         - "full": complete pattern rows suitable for research/debugging.
     
     limit : int, optional (default=500)
-        Number of historical bars to analyze
+        Maximum number of historical bars to analyze after applying any time window
+
+    start/end : str, optional
+        UTC-compatible analysis window. If only `end` is supplied, the most recent
+        `limit` bars ending at `end` are used.
     
     Candlestick Mode Parameters:
     ----------------------------

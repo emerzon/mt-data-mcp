@@ -218,6 +218,28 @@ def test_patterns_detect_candlestick_passes_config(monkeypatch):
     assert captured["config"] == {"use_volume_confirmation": False}
 
 
+def test_patterns_detect_passes_date_range_to_candlestick(monkeypatch):
+    captured = {}
+
+    def _fake_detect(**kwargs):
+        captured.update(kwargs)
+        return {"success": True, "patterns": []}
+
+    monkeypatch.setattr(core_patterns, "_detect_candlestick_patterns", _fake_detect)
+
+    patterns_detect(
+        symbol="EURUSD",
+        timeframe="H1",
+        mode="candlestick",
+        start="2023-01-01",
+        end="2023-02-01",
+        detail="full",
+    )
+
+    assert captured["start"] == "2023-01-01"
+    assert captured["end"] == "2023-02-01"
+
+
 def test_patterns_support_config_helpers_read_dict_values():
     config = {
         "use_volume_confirmation": False,

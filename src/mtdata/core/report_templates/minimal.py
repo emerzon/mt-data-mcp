@@ -48,6 +48,8 @@ def template_minimal(
 ) -> Dict[str, Any]:
     p = dict(params or {})
     tf = str(p.get("timeframe", "H1"))
+    start = p.get("start")
+    end = p.get("end")
     forecast_method = _resolve_minimal_forecast_method(p)
     forecast_library = str(p.get("library") or "native").strip() or "native"
 
@@ -75,6 +77,8 @@ def template_minimal(
         symbol=symbol,
         timeframe=tf,
         limit=int(p.get("context_limit", 200)),
+        start=start,
+        end=end,
         indicators=indicators,  # type: ignore[arg-type]
         denoise=denoise,
         simplify={"mode": "select", "method": "lttb", "ratio": 0.2},  # type: ignore[arg-type]
@@ -119,6 +123,8 @@ def template_minimal(
         "library": forecast_library,
         "method": forecast_method,
         "horizon": int(horizon),
+        "start": start,
+        "end": end,
         "denoise": denoise,
     }
     forecast_params = p.get("forecast_params")

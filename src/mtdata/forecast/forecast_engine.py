@@ -297,6 +297,8 @@ def _resolve_history_context(
     timeframe: TimeframeLiteral,
     need: int,
     as_of: Optional[str],
+    start: Optional[str],
+    end: Optional[str],
     prefetched_df: Optional[pd.DataFrame],
     prefetched_base_col: Optional[str],
     prefetched_denoise_spec: Optional[Any],
@@ -323,7 +325,12 @@ def _resolve_history_context(
                 base_col = f"{base_col}_dn"
         return df, base_col, dn_spec_used
 
-    df = _fetch_history(symbol, timeframe, int(need), as_of)
+    history_kwargs: Dict[str, Any] = {}
+    if start or end:
+        history_kwargs.update({"start": start, "end": end})
+    df = _fetch_history(symbol, timeframe, int(need), as_of, **history_kwargs)
+    if (start or end) and len(df) > int(need):
+        df = df.iloc[-int(need):].reset_index(drop=True)
     if len(df) < 3:
         raise ValueError("Not enough closed bars to compute forecast")
 
@@ -500,6 +507,8 @@ def build_training_context(
     horizon: int = 12,
     lookback: Optional[int] = None,
     as_of: Optional[str] = None,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
     params: Optional[Dict[str, Any]] = None,
     quantity: Literal["price", "return", "volatility"] = "price",
     denoise: Optional[DenoiseSpec] = None,
@@ -534,6 +543,8 @@ def build_training_context(
         timeframe=timeframe,
         need=need,
         as_of=as_of,
+        start=start,
+        end=end,
         prefetched_df=prefetched_df,
         prefetched_base_col=prefetched_base_col,
         prefetched_denoise_spec=prefetched_denoise_spec,
@@ -1052,6 +1063,8 @@ def forecast_engine(  # noqa: C901
     horizon: int = 12,
     lookback: Optional[int] = None,
     as_of: Optional[str] = None,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
     params: Optional[Dict[str, Any]] = None,
     ci_alpha: Optional[float] = 0.05,
     quantity: Literal['price','return','volatility'] = 'price',
@@ -1121,6 +1134,8 @@ def forecast_engine(  # noqa: C901
                 timeframe=timeframe,
                 need=need,
                 as_of=as_of,
+                start=start,
+                end=end,
                 prefetched_df=prefetched_df,
                 prefetched_base_col=prefetched_base_col,
                 prefetched_denoise_spec=prefetched_denoise_spec,
@@ -1191,7 +1206,13 @@ def forecast_engine(  # noqa: C901
         broker_time_check_result: Optional[Dict[str, Any]] = None
         broker_time_check_enabled = bool(getattr(mt5_config, "broker_time_check_enabled", False))
         broker_time_check_ttl_seconds = int(getattr(mt5_config, "broker_time_check_ttl_seconds", 60))
-        if broker_time_check_enabled and prefetched_df is None and as_of is None:
+        if (
+            broker_time_check_enabled
+            and prefetched_df is None
+            and as_of is None
+            and start is None
+            and end is None
+        ):
             try:
                 broker_time_check_result = get_cached_mt5_time_alignment(
                     symbol=symbol,

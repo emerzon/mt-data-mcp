@@ -314,6 +314,8 @@ def template_basic(  # noqa: C901
 ) -> Dict[str, Any]:
     p = dict(params or {})
     tf = str(p.get('timeframe', 'H1'))
+    start = p.get('start')
+    end = p.get('end')
     
     report: Dict[str, Any] = {
         'meta': {
@@ -341,6 +343,8 @@ def template_basic(  # noqa: C901
         symbol=symbol,
         timeframe=tf,
         limit=int(p.get('context_limit', 300)),
+        start=start,
+        end=end,
         indicators=indicators,  # type: ignore[arg-type]
         denoise=denoise,
         simplify={'mode': 'select', 'method': 'lttb', 'ratio': 0.2},  # type: ignore[arg-type]
@@ -406,6 +410,8 @@ def template_basic(  # noqa: C901
                 extra_timeframes=['M15','H1','H4','D1'],
                 pivot_timeframes=['H4','D1'],
                 context_indicators=indicators,
+                start=start,
+                end=end,
                 _fetch_cache=_fetch_cache,
             )
         except Exception:
@@ -428,6 +434,8 @@ def template_basic(  # noqa: C901
                     tf_i,
                     denoise,
                     limit=200,
+                    start=start,
+                    end=end,
                     tail=30,
                     indicators=indicators,
                     _fetch_cache=_fetch_cache,
@@ -495,6 +503,8 @@ def template_basic(  # noqa: C901
                 horizon=int(hh),
                 method=m,
                 params={'lambda_': 0.94} if m == 'ewma' else None,
+                start=start,
+                end=end,
                 detail='full',
             )
             if 'error' in vres:
@@ -523,6 +533,8 @@ def template_basic(  # noqa: C901
                     timeframe=tf,
                     horizon=int(hh),
                     method='rolling_std',
+                    start=start,
+                    end=end,
                     detail='full',
                 )
                 psh = proxy_res.get('horizon_sigma_return') or proxy_res.get('horizon_sigma_price')
@@ -601,7 +613,17 @@ def template_basic(  # noqa: C901
             min_dir_acc = max(0.0, min(1.0, float(min_dir_acc)))
     from ..forecast import forecast_backtest_run
     methods = p.get('methods')
-    bt = _get_raw_result(forecast_backtest_run, symbol=symbol, timeframe=tf, horizon=int(horizon), steps=steps, spacing=spacing, methods=methods)
+    bt = _get_raw_result(
+        forecast_backtest_run,
+        symbol=symbol,
+        timeframe=tf,
+        horizon=int(horizon),
+        steps=steps,
+        spacing=spacing,
+        start=start,
+        end=end,
+        methods=methods,
+    )
     sec_bt: Dict[str, Any]
     if 'error' in bt:
         sec_bt = {'error': bt['error']}
@@ -692,6 +714,8 @@ def template_basic(  # noqa: C901
                 timeframe=tf,
                 method=method_name,
                 horizon=int(horizon),
+                start=start,
+                end=end,
             )
             if 'error' in fc:
                 if first_error is None:
@@ -926,6 +950,8 @@ def template_basic(  # noqa: C901
         mode='candlestick',
         detail='compact',
         limit=int(p.get('patterns_limit', 120)),
+        start=start,
+        end=end,
     )
     if 'error' in pats:
         report['sections']['patterns'] = {'error': pats['error']}

@@ -17,6 +17,8 @@ class ReportGenerateRequest(BaseModel):
     horizon: Optional[int] = None
     template: str = "basic"
     timeframe: Optional[TimeframeLiteral] = None
+    start: Optional[str] = None
+    end: Optional[str] = None
     methods: Optional[Union[str, List[str]]] = None
     denoise: Optional[DenoiseSpec] = None
     params: Optional[Dict[str, Any]] = None

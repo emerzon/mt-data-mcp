@@ -20,6 +20,7 @@ from ..utils.denoise import normalize_denoise_spec as _normalize_denoise_spec
 from ..utils.mt5 import (
     _ensure_symbol_ready,
     _mt5_copy_rates_from,
+    _mt5_copy_rates_range,
     mt5,
 )
 from ..utils.utils import _parse_start_datetime, parse_kv_or_json
@@ -480,14 +481,35 @@ def _fetch_mt5_rates_guarded(
     count: int,
     *,
     as_of: Optional[str] = None,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
     timeframe: Optional[str] = None,
 ) -> tuple[Optional[Any], Optional[str]]:
+    if as_of and (start or end):
+        return None, "as_of cannot be combined with start/end."
     info_before = mt5.symbol_info(symbol)
     was_visible = bool(info_before.visible) if info_before is not None else None
     try:
         err = _ensure_symbol_ready(symbol)
         if err:
             return None, str(err)
+        start_dt = _parse_start_datetime(start) if start else None
+        if start and start_dt is None:
+            return None, "Invalid start time."
+        end_dt = _parse_start_datetime(end) if end else None
+        if end and end_dt is None:
+            return None, "Invalid end time."
+        if start_dt is not None and end_dt is None:
+            end_dt = datetime.now(timezone.utc).replace(tzinfo=None)
+        if start_dt is not None and end_dt is not None and start_dt > end_dt:
+            return None, "start must be before or equal to end."
+        if start_dt is not None:
+            rates = _mt5_copy_rates_range(symbol, mt5_timeframe, start_dt, end_dt)
+            if rates is not None and len(rates) > int(count):
+                rates = rates[-int(count):]
+            return rates, None
+        if end_dt is not None:
+            return _mt5_copy_rates_from(symbol, mt5_timeframe, end_dt, count), None
         if as_of:
             to_dt = _parse_start_datetime(as_of)
             if not to_dt:
@@ -528,6 +550,8 @@ def forecast_volatility(  # noqa: C901
     proxy: Optional[Literal['squared_return','abs_return','log_r2']] = None,  # type: ignore
     params: Optional[Dict[str, Any]] = None,
     as_of: Optional[str] = None,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
     denoise: Optional[DenoiseSpec] = None,
     detail: CompactFullDetailLiteral = "full",
 ) -> Dict[str, Any]:
@@ -626,6 +650,8 @@ def forecast_volatility(  # noqa: C901
                     proxy=proxy,
                     params=call_params or None,
                     as_of=as_of,
+                    start=start,
+                    end=end,
                     denoise=denoise,
                     detail="full",
                 )
@@ -711,6 +737,8 @@ def forecast_volatility(  # noqa: C901
                 mt5_tf,
                 need,
                 as_of=as_of,
+                start=start,
+                end=end,
                 timeframe=timeframe,
             )
             if fetch_error:
@@ -718,7 +746,7 @@ def forecast_volatility(  # noqa: C901
             if rates is None or len(rates) < 5:
                 return {"error": f"Failed to get sufficient rates for {symbol}: {mt5.last_error()}"}
             df = pd.DataFrame(rates)
-            if as_of is None and len(df) >= 2:
+            if as_of is None and end is None and len(df) >= 2:
                 df = df.iloc[:-1]
             if len(df) < 5:
                 return {"error": "Not enough closed bars"}
@@ -900,6 +928,8 @@ def forecast_volatility(  # noqa: C901
                     rv_mt5_tf,
                     bars_needed,
                     as_of=as_of,
+                    start=start,
+                    end=end,
                     timeframe=rv_tf,
                 )
                 if fetch_error:
@@ -907,7 +937,7 @@ def forecast_volatility(  # noqa: C901
                 if rates_rv is None or len(rates_rv) < 50:
                     return {"error": f"Failed to get intraday rates for RV: {mt5.last_error()}"}
                 dfrv = pd.DataFrame(rates_rv)
-                if as_of is None and len(dfrv) >= 2:
+                if as_of is None and end is None and len(dfrv) >= 2:
                     dfrv = dfrv.iloc[:-1]
                 if dn_spec_used:
                     try:
@@ -987,6 +1017,8 @@ def forecast_volatility(  # noqa: C901
             mt5_tf,
             need,
             as_of=as_of,
+            start=start,
+            end=end,
             timeframe=timeframe,
         )
         if fetch_error:
@@ -995,7 +1027,7 @@ def forecast_volatility(  # noqa: C901
             return {"error": f"Failed to get sufficient rates for {symbol}: {mt5.last_error()}"}
 
         df = pd.DataFrame(rates)
-        if as_of is None and len(df) >= 2:
+        if as_of is None and end is None and len(df) >= 2:
             df = df.iloc[:-1]
         if len(df) < 3:
             return {"error": "Not enough closed bars"}

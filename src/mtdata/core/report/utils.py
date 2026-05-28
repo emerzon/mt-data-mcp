@@ -427,10 +427,18 @@ def context_for_tf(
     tail: int = 30,
     *,
     indicators: Optional[str] = None,
-    _fetch_cache: Optional[Dict[Tuple[str, str, str], Optional[Dict[str, Any]]]] = None,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    _fetch_cache: Optional[Dict[Tuple[str, ...], Optional[Dict[str, Any]]]] = None,
 ) -> Optional[Dict[str, Any]]:
     indicator_spec = str(indicators or '').strip() or DEFAULT_REPORT_CONTEXT_INDICATORS
-    cache_key = (symbol.upper(), timeframe.upper(), _report_context_cache_key(indicator_spec))
+    cache_key = (
+        symbol.upper(),
+        timeframe.upper(),
+        _report_context_cache_key(indicator_spec),
+        str(start or ""),
+        str(end or ""),
+    )
     if _fetch_cache is not None and cache_key in _fetch_cache:
         return _fetch_cache[cache_key]
     try:
@@ -440,6 +448,8 @@ def context_for_tf(
             symbol=symbol,
             timeframe=timeframe,
             limit=int(limit),
+            start=start,
+            end=end,
             indicators=indicator_spec,
             denoise=denoise,
             raw_tool_output=True,
@@ -547,7 +557,9 @@ def attach_multi_timeframes(
     pivot_timeframes: Optional[List[str]] = None,
     *,
     context_indicators: Optional[str] = None,
-    _fetch_cache: Optional[Dict[Tuple[str, str, str], Optional[Dict[str, Any]]]] = None,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    _fetch_cache: Optional[Dict[Tuple[str, ...], Optional[Dict[str, Any]]]] = None,
 ) -> None:
     sections = report.setdefault('sections', {})
     contexts: Dict[str, Any] = {}
@@ -579,6 +591,8 @@ def attach_multi_timeframes(
                 limit=200,
                 tail=30,
                 indicators=context_indicators,
+                start=start,
+                end=end,
                 _fetch_cache=_fetch_cache,
             )
         if snap:
@@ -661,16 +675,20 @@ def attach_report_timeframes(
     *,
     default_extra: List[str],
     default_pivots: Optional[List[str]] = None,
-    _fetch_cache: Optional[Dict[Tuple[str, str], Optional[Dict[str, Any]]]] = None,
+    _fetch_cache: Optional[Dict[Tuple[str, ...], Optional[Dict[str, Any]]]] = None,
 ) -> None:
     extra = (params or {}).get('extra_timeframes') or default_extra
     pivots = (params or {}).get('pivot_timeframes') or default_pivots
+    start = (params or {}).get('start')
+    end = (params or {}).get('end')
     attach_multi_timeframes(
         report,
         symbol,
         denoise,
         extra_timeframes=extra,
         pivot_timeframes=pivots,
+        start=start,
+        end=end,
         _fetch_cache=_fetch_cache,
     )
 
@@ -684,7 +702,7 @@ def attach_market_and_timeframes(
     default_extra: List[str],
     default_pivots: Optional[List[str]] = None,
     snapshot: Optional[Dict[str, Any]] = None,
-    _fetch_cache: Optional[Dict[Tuple[str, str], Optional[Dict[str, Any]]]] = None,
+    _fetch_cache: Optional[Dict[Tuple[str, ...], Optional[Dict[str, Any]]]] = None,
 ) -> Dict[str, Any]:
     snap = snapshot if snapshot is not None else market_snapshot(symbol)
     report.setdefault('sections', {})['market'] = snap

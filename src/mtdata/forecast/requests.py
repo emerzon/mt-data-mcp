@@ -35,6 +35,8 @@ class ForecastGenerateRequest(BaseModel):
     horizon: int = Field(12, ge=1)
     lookback: Optional[int] = Field(None, ge=1)
     as_of: Optional[str] = None
+    start: Optional[str] = None
+    end: Optional[str] = None
     params: Optional[Dict[str, Any]] = None
     ci_alpha: Optional[float] = Field(0.05, ge=0.0, le=0.5)
     quantity: Literal["price", "return", "volatility"] = "price"
@@ -57,6 +59,12 @@ class ForecastGenerateRequest(BaseModel):
     @classmethod
     def _reject_removed_target(cls, values: Any) -> Any:
         return reject_removed_field(values, field_name="target", replacement="quantity")
+
+    @model_validator(mode="after")
+    def _validate_time_window(self) -> "ForecastGenerateRequest":
+        if self.as_of and (self.start or self.end):
+            raise ValueError("as_of cannot be combined with start/end")
+        return self
 
 
 class ForecastBacktestRequest(BaseModel):
@@ -303,5 +311,13 @@ class ForecastVolatilityEstimateRequest(BaseModel):
     proxy: Optional[str] = None
     params: Optional[Dict[str, Any]] = None
     as_of: Optional[str] = None
+    start: Optional[str] = None
+    end: Optional[str] = None
     denoise: Optional[DenoiseSpec] = None
     detail: CompactFullDetailLiteral = "compact"
+
+    @model_validator(mode="after")
+    def _validate_time_window(self) -> "ForecastVolatilityEstimateRequest":
+        if self.as_of and (self.start or self.end):
+            raise ValueError("as_of cannot be combined with start/end")
+        return self

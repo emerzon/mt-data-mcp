@@ -749,6 +749,8 @@ def post_forecast_volatility_response(*, body: ForecastVolBody, forecast_vol_imp
             proxy=body.proxy,  # type: ignore[arg-type]
             params=body.params,
             as_of=body.as_of,
+            start=body.start,
+            end=body.end,
             denoise=body.denoise,
         )
     except HTTPException:

@@ -13,6 +13,8 @@ def template_advanced(
     # Ensure a timeframe for subcalls
     p = dict(params or {})
     tf = str(p.get('timeframe', 'H1'))
+    start = p.get('start')
+    end = p.get('end')
     p['timeframe'] = tf
     
     base = template_basic(symbol, horizon, denoise, p)
@@ -32,12 +34,16 @@ def template_advanced(
         symbol=symbol,
         timeframe=tf,
         limit=int(p.get('regime_limit', 1500)),
+        start=start,
+        end=end,
         method='bocpd', threshold=float(p.get('cp_threshold', 0.6)), detail='summary', lookback=int(p.get('regime_lookback', 300))
     )
     hmm = _get_raw_result(regime_detect,
         symbol=symbol,
         timeframe=tf,
         limit=int(p.get('regime_limit', 1500)),
+        start=start,
+        end=end,
         method='hmm', params={'n_states': int(p.get('hmm_states', 3))}, detail='compact', lookback=int(p.get('regime_lookback', 300))
     )
     base.setdefault('sections', {})['regime'] = {
@@ -47,7 +53,16 @@ def template_advanced(
 
     # HAR-RV volatility summary
     from ..forecast import forecast_volatility_estimate
-    har = _get_raw_result(forecast_volatility_estimate, symbol=symbol, timeframe=tf, horizon=int(horizon), method='har_rv', params={'rv_timeframe': 'M5', 'days': 150, 'window_w': 5, 'window_m': 22})
+    har = _get_raw_result(
+        forecast_volatility_estimate,
+        symbol=symbol,
+        timeframe=tf,
+        horizon=int(horizon),
+        method='har_rv',
+        start=start,
+        end=end,
+        params={'rv_timeframe': 'M5', 'days': 150, 'window_w': 5, 'window_m': 22},
+    )
     if 'error' in har:
         base['sections']['volatility_har_rv'] = {'error': har['error']}
     else:

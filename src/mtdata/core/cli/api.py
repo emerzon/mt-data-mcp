@@ -897,6 +897,20 @@ def _add_forecast_generate_args(cmd_parser: argparse.ArgumentParser) -> None:
     group_window.add_argument(
         "--as-of", dest="as_of", type=str, default=None, help="Reference time override."
     )
+    group_window.add_argument(
+        "--start",
+        dest="start",
+        type=str,
+        default=None,
+        help="Start of the historical training window.",
+    )
+    group_window.add_argument(
+        "--end",
+        dest="end",
+        type=str,
+        default=None,
+        help="End of the historical training window.",
+    )
 
     group_target = cmd_parser.add_argument_group("Target")
     group_target.add_argument(
@@ -1579,6 +1593,8 @@ def main():
                 horizon=int(args.horizon),
                 lookback=args.lookback,
                 as_of=args.as_of,
+                start=args.start,
+                end=args.end,
                 params=params,
                 ci_alpha=args.ci_alpha,
                 quantity=args.quantity,

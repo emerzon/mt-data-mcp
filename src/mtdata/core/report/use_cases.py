@@ -266,6 +266,10 @@ def run_report_generate(  # noqa: C901
             params = dict(request.params or {})
             if request.timeframe:
                 params["timeframe"] = str(request.timeframe)
+            if request.start:
+                params["start"] = request.start
+            if request.end:
+                params["end"] = request.end
             if request.methods is not None:
                 params["methods"] = request.methods
 

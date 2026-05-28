@@ -762,6 +762,8 @@ def regime_detect(  # noqa: C901
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
     limit: int = 100,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
     method: Literal[
         "bocpd",
         "hmm",
@@ -784,8 +786,11 @@ def regime_detect(  # noqa: C901
     min_regime_bars: int = -1,  # -1 means use timeframe-based default
     max_regimes: int = 10,  # Maximum regimes to show in compact mode
 ) -> Dict[str, Any]:
-    """Detect regimes and/or change-points over the last `limit` bars.
+    """Detect regimes and/or change-points over a bounded history window.
 
+    - start/end: Optional UTC-compatible analysis window. If omitted, the most
+      recent `limit` bars are used. If provided, `limit` caps bars analysed
+      after the window is fetched.
     - method: Default is 'rule_based' (fast trend/ranging/transition classification).
       Other options: 'bocpd' (Bayesian online change-point; Gaussian), 'hmm' / 'gmm' (Gaussian mixture/HMM-lite),
       'ms_ar' (Markov-switching AR), 'clustering' (rolling-feature clustering via tsfresh + KMeans/Spectral),
@@ -883,6 +888,8 @@ def regime_detect(  # noqa: C901
         target=target,
         detail=detail,
         limit=limit,
+        start=start,
+        end=end,
     )
 
     def _finish(result: Dict[str, Any]) -> Dict[str, Any]:
@@ -902,6 +909,8 @@ def regime_detect(  # noqa: C901
             target=target,
             detail=detail,
             limit=limit,
+            start=start,
+            end=end,
         )
         return result
 
@@ -996,7 +1005,12 @@ def regime_detect(  # noqa: C901
             }
             fetch_limit = int(max(fetch_limit, int(requested_window_bars)))
 
-        df = _fetch_history(symbol, timeframe, fetch_limit, as_of=None)
+        history_kwargs: Dict[str, Any] = {"as_of": None}
+        if start or end:
+            history_kwargs.update({"start": start, "end": end})
+        df = _fetch_history(symbol, timeframe, fetch_limit, **history_kwargs)
+        if (start or end) and len(df) > fetch_limit:
+            df = df.iloc[-fetch_limit:].reset_index(drop=True)
         if len(df) < 10:
             return _finish({"error": "Insufficient history"})
         base_col = _resolve_denoise_base_col(

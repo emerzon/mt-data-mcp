@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Literal, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ..shared.schema import DenoiseSpec, TimeframeLiteral
 
@@ -16,6 +16,14 @@ class PatternsDetectRequest(BaseModel):
     mode: str = "candlestick"
     detail: PatternsDetailLiteral = "compact"
     limit: int = 500
+    start: Optional[str] = Field(
+        None,
+        description="Optional UTC-compatible start date/time for the analysis window.",
+    )
+    end: Optional[str] = Field(
+        None,
+        description="Optional UTC-compatible end date/time; end-only anchors recent history.",
+    )
     min_strength: float = 0.70
     min_gap: int = 3
     robust_only: bool = False

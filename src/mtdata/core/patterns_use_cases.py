@@ -280,6 +280,26 @@ def run_patterns_detect(  # noqa: C901
     if request.whitelist and mode_value != "candlestick":
         return {"error": "whitelist applies only to mode='candlestick'."}
 
+    def _fetch_pattern_frame(
+        timeframe: str,
+        limit: int,
+    ) -> tuple[Any, Any]:
+        if request.start or request.end:
+            return deps.fetch_pattern_data(
+                request.symbol,
+                timeframe,
+                limit,
+                request.denoise,
+                start=request.start,
+                end=request.end,
+            )
+        return deps.fetch_pattern_data(
+            request.symbol,
+            timeframe,
+            limit,
+            request.denoise,
+        )
+
     if mode_value == "candlestick":
         tf_single = tf_norm or "H1"
         last_n_bars_val: Optional[int] = None
@@ -301,6 +321,8 @@ def run_patterns_detect(  # noqa: C901
             top_k=request.top_k,
             last_n_bars=last_n_bars_val,
             config=request.config if isinstance(request.config, dict) else None,
+            start=request.start,
+            end=request.end,
         )
         if detail_value == "summary":
             rows = out.get("data") if isinstance(out, dict) else []
@@ -347,9 +369,7 @@ def run_patterns_detect(  # noqa: C901
         if "max_pattern_span_bars" not in user_cfg:
             _, span_bars = _timeframe_aware_age_limits(tf_single, request.limit)
             cfg.max_pattern_span_bars = span_bars
-        df, err = deps.fetch_pattern_data(
-            request.symbol, tf_single, request.limit, request.denoise
-        )
+        df, err = _fetch_pattern_frame(tf_single, request.limit)
         if err:
             return err
         engines, invalid_engines = deps.select_classic_engines(
@@ -461,9 +481,7 @@ def run_patterns_detect(  # noqa: C901
         if config_errors:
             return {"error": f"Invalid fractal config: {config_errors[0]}"}
 
-        df, err = deps.fetch_pattern_data(
-            request.symbol, tf_single, request.limit, request.denoise
-        )
+        df, err = _fetch_pattern_frame(tf_single, request.limit)
         if err:
             return err
 
@@ -505,9 +523,7 @@ def run_patterns_detect(  # noqa: C901
             return {"error": f"Invalid config key(s): {sorted(unknown_cfg)}"}
 
         if tf_norm:
-            df, err = deps.fetch_pattern_data(
-                request.symbol, tf_norm, request.limit, request.denoise
-            )
+            df, err = _fetch_pattern_frame(tf_norm, request.limit)
             if err:
                 return err
 
@@ -535,9 +551,7 @@ def run_patterns_detect(  # noqa: C901
         hidden_completed_rows_total: List[Dict[str, Any]] = []
 
         for tf in scanned_timeframes:
-            df, err = deps.fetch_pattern_data(
-                request.symbol, tf, request.limit, request.denoise
-            )
+            df, err = _fetch_pattern_frame(tf, request.limit)
             if err:
                 failed_timeframes[tf] = str(err.get("error", "Unknown error"))
                 continue
@@ -775,6 +789,8 @@ def run_patterns_detect(  # noqa: C901
                     top_k=effective_top_k,
                     last_n_bars=request.last_n_bars,
                     config=request.config if isinstance(request.config, dict) else None,
+                    start=request.start,
+                    end=request.end,
                 )
                 if isinstance(candle_result, dict) and not candle_result.get("error"):
                     rows = candle_result.get("data", [])
@@ -791,9 +807,7 @@ def run_patterns_detect(  # noqa: C901
                 section_errors.setdefault("candlestick", {})[tf] = str(exc)
 
             # ── Shared data fetch for classic + elliott ──
-            df, fetch_err = deps.fetch_pattern_data(
-                request.symbol, tf, tf_limit, request.denoise
-            )
+            df, fetch_err = _fetch_pattern_frame(tf, tf_limit)
             if fetch_err:
                 err_msg = str(fetch_err.get("error", "data fetch failed"))
                 section_errors.setdefault("classic", {})[tf] = err_msg

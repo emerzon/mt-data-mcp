@@ -19,6 +19,8 @@ def execute_forecast(
     horizon: int = 12,
     lookback: Optional[int] = None,
     as_of: Optional[str] = None,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
     params: Optional[Dict[str, Any]] = None,
     ci_alpha: Optional[float] = 0.05,
     quantity: Literal['price','return','volatility'] = 'price',  # type: ignore
@@ -49,7 +51,9 @@ def execute_forecast(
                 horizon=horizon,
                 method=method,
                 params=params,
-                as_of=as_of
+                as_of=as_of,
+                start=start,
+                end=end,
             )
             return raise_if_error_result(result)
 
@@ -62,6 +66,8 @@ def execute_forecast(
             horizon=horizon,
             lookback=lookback,
             as_of=as_of,
+            start=start,
+            end=end,
             params=params,
             ci_alpha=ci_alpha,
             quantity=quantity,
@@ -90,6 +96,8 @@ def forecast(
     horizon: int = 12,
     lookback: Optional[int] = None,
     as_of: Optional[str] = None,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
     params: Optional[Dict[str, Any]] = None,
     ci_alpha: Optional[float] = 0.05,
     quantity: Literal['price','return','volatility'] = 'price',  # type: ignore
@@ -126,6 +134,8 @@ def forecast(
             horizon=horizon,
             lookback=lookback,
             as_of=as_of,
+            start=start,
+            end=end,
             params=params,
             ci_alpha=ci_alpha,
             quantity=quantity,
