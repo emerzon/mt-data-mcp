@@ -310,7 +310,7 @@ class DataFetchCandlesRequest(BaseModel):
     symbol: str
     timeframe: TimeframeLiteral = "H1"
     detail: CompactStandardFullDetailLiteral = "compact"
-    limit: int = 100
+    limit: int = 20
     start: Optional[str] = None
     end: Optional[str] = None
     ohlcv: Optional[str] = Field(

@@ -345,7 +345,7 @@ def data_fetch_candles(
         freshness signals with rows. `full` preserves the debug `meta`
         diagnostics block.
     
-    limit : int, optional (default=100)
+    limit : int, optional (default=20)
         Maximum number of candles to return
     
     start : str, optional
@@ -399,7 +399,7 @@ def data_fetch_candles(
     
     Examples:
     ---------
-    # Get last 100 H1 candles
+    # Get last 20 H1 candles
     data_fetch_candles(symbol="EURUSD")
     
     # Get 100 M15 candles with RSI indicator
