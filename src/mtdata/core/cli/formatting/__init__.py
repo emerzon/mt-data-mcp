@@ -364,12 +364,18 @@ def _normalize_trade_session_context_cli_payload(
 
     open_positions_in = out.get("open_positions")
     if isinstance(open_positions_in, list):
-        compact_rows = [row for row in open_positions_in if isinstance(row, dict) and row]
-        if compact_rows:
-            compact_out["open_positions"] = compact_rows
+        compact_rows = [
+            row for row in open_positions_in if isinstance(row, dict) and row
+        ]
+        compact_out["open_positions"] = compact_rows
+        compact_out["open_positions_count"] = len(compact_rows)
     if isinstance(open_positions_in, dict):
-        if "error" in open_positions_in and not _is_empty_value(open_positions_in.get("error")):
+        if "error" in open_positions_in and not _is_empty_value(
+            open_positions_in.get("error")
+        ):
             compact_out["open_positions"] = {"error": open_positions_in.get("error")}
+            if not _is_empty_value(open_positions_in.get("count")):
+                compact_out["open_positions_count"] = open_positions_in.get("count")
         else:
             compact_rows = _compact_trade_session_items(
                 open_positions_in,
@@ -392,17 +398,25 @@ def _normalize_trade_session_context_cli_payload(
                     ("timezone", "timezone", "Timezone"),
                 ),
             )
-            if compact_rows:
-                compact_out["open_positions"] = compact_rows
+            compact_out["open_positions"] = compact_rows or []
+            compact_out["open_positions_count"] = int(
+                open_positions_in.get("count") or 0
+            )
 
     pending_orders_in = out.get("pending_orders")
     if isinstance(pending_orders_in, list):
-        compact_rows = [row for row in pending_orders_in if isinstance(row, dict) and row]
-        if compact_rows:
-            compact_out["pending_orders"] = compact_rows
+        compact_rows = [
+            row for row in pending_orders_in if isinstance(row, dict) and row
+        ]
+        compact_out["pending_orders"] = compact_rows
+        compact_out["pending_orders_count"] = len(compact_rows)
     if isinstance(pending_orders_in, dict):
-        if "error" in pending_orders_in and not _is_empty_value(pending_orders_in.get("error")):
+        if "error" in pending_orders_in and not _is_empty_value(
+            pending_orders_in.get("error")
+        ):
             compact_out["pending_orders"] = {"error": pending_orders_in.get("error")}
+            if not _is_empty_value(pending_orders_in.get("count")):
+                compact_out["pending_orders_count"] = pending_orders_in.get("count")
         else:
             compact_rows = _compact_trade_session_items(
                 pending_orders_in,
@@ -425,8 +439,10 @@ def _normalize_trade_session_context_cli_payload(
                     ("timezone", "timezone", "Timezone"),
                 ),
             )
-            if compact_rows:
-                compact_out["pending_orders"] = compact_rows
+            compact_out["pending_orders"] = compact_rows or []
+            compact_out["pending_orders_count"] = int(
+                pending_orders_in.get("count") or 0
+            )
 
     show_all_hint = out.get("show_all_hint")
     if not _is_empty_value(show_all_hint):

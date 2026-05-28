@@ -252,7 +252,8 @@ def _compact_trade_session_context_payload(payload: Dict[str, Any]) -> Dict[str,
             if compact_rows:
                 compact["open_positions"] = compact_rows
             else:
-                compact["positions"] = int(open_positions.get("count") or 0)
+                compact["open_positions"] = []
+            compact["open_positions_count"] = int(open_positions.get("count") or 0)
 
     pending_orders = payload.get("pending_orders")
     if isinstance(pending_orders, dict):
@@ -288,7 +289,8 @@ def _compact_trade_session_context_payload(payload: Dict[str, Any]) -> Dict[str,
             if compact_rows:
                 compact["pending_orders"] = compact_rows
             else:
-                compact["pending"] = int(pending_orders.get("count") or 0)
+                compact["pending_orders"] = []
+            compact["pending_orders_count"] = int(pending_orders.get("count") or 0)
 
     compact["show_all_hint"] = (
         "Use detail='full' for complete account, ticker, positions, and pending orders."

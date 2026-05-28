@@ -118,8 +118,9 @@ def test_trade_session_context_compacts_nested_sections_by_default() -> None:
             "timezone": "UTC",
         }
     ]
-    assert "pending_orders" not in out
-    assert out["pending"] == 0
+    assert out["open_positions_count"] == 1
+    assert out["pending_orders"] == []
+    assert out["pending_orders_count"] == 0
     assert "show_all_hint" in out
     assert out["meta"]["tool"] == "trade_session_context"
     assert out["meta"]["runtime"]["timezone"] == timezone_meta
@@ -161,6 +162,10 @@ def test_trade_session_context_compact_formats_nested_ticker_spread() -> None:
     assert out["ticker"]["spread_cost_currency"] == "USD"
     assert out["ticker"]["data_stale"] is True
     assert out["ticker"]["stale_warning"] == "quote is stale"
+    assert out["open_positions"] == []
+    assert out["open_positions_count"] == 0
+    assert out["pending_orders"] == []
+    assert out["pending_orders_count"] == 0
 
 
 def test_trade_session_context_full_detail_keeps_nested_full_payloads() -> None:

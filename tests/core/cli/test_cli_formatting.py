@@ -702,7 +702,9 @@ class TestFormatResultForCli:
                 "profit": 4.2,
             }
         ]
-        assert "pending_orders" not in payload
+        assert payload["open_positions_count"] == 1
+        assert payload["pending_orders"] == []
+        assert payload["pending_orders_count"] == 0
 
     def test_trade_session_context_verbose_toon_keeps_full_sections_and_ticker_epoch(
         self,
