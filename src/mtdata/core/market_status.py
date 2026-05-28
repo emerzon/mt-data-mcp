@@ -846,6 +846,7 @@ def _check_symbol_market_status(
         "inferred_24_7": schedule_status.get("inferred_24_7"),
         "message": message,
         "timestamp": now_utc.isoformat(),
+        "timezone": "UTC",
     }
     if reason:
         result["reason"] = reason
@@ -1040,6 +1041,7 @@ def market_status(
         payload = {
             "success": True,
             "timestamp": now_utc.isoformat(),
+            "timezone": "UTC",
             "day_of_week": now_utc.strftime("%A"),
             "region": region or "all",
             "summary": "; ".join(summary_messages) if summary_messages else "No market data available",

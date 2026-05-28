@@ -36,6 +36,7 @@ def test_market_status_timezone_display_utc_converts_market_times(monkeypatch) -
     result = raw(region="us", timezone_display="utc", detail="full")
 
     assert result["success"] is True
+    assert result["timezone"] == "UTC"
     assert {market["symbol"] for market in result["markets"]} == {"NYSE", "NASDAQ"}
     for market in result["markets"]:
         assert market["local_time"] == "15:00"
@@ -123,6 +124,7 @@ def test_market_status_symbol_mode_reports_heuristic_status(monkeypatch) -> None
 
     assert result["mode"] == "symbol"
     assert result["symbol"] == "EURUSD"
+    assert result["timezone"] == "UTC"
     assert result["status"] == "probably_open"
     assert result["status_source"] == "trade_mode_and_tick_freshness"
     assert result["status_confidence"] == "heuristic"

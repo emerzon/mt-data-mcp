@@ -700,6 +700,7 @@ def symbols_describe(
             return {
                 "success": True,
                 "symbol": symbol_name or _nonempty_symbol_string(symbol) or symbol,
+                "timezone": "UTC",
                 "details": symbol_data,
             }
         except MT5ConnectionError as exc:

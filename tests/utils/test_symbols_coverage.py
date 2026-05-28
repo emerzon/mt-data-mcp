@@ -647,6 +647,7 @@ class TestSymbolsDescribe:
         sd = res["details"]
 
         assert res["symbol"] == "EURUSD"
+        assert res["timezone"] == "UTC"
         assert sd["digits"] == 5
         assert sd["point"] == 0.00001
         assert sd["data_age_seconds"] == 301.0
