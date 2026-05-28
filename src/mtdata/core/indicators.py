@@ -10,6 +10,7 @@ from ..utils.utils import _table_from_rows
 from ._mcp_instance import mcp
 from ..shared.constants import DEFAULT_ROW_LIMIT
 from .execution_logging import run_logged_operation
+from .output_contract import normalize_output_detail
 from ..shared.schema import CategoryLiteral, CompactFullDetailLiteral, IndicatorNameLiteral
 
 logger = logging.getLogger(__name__)
@@ -235,6 +236,28 @@ def _format_indicator_param_summary(params: List[Dict[str, Any]]) -> str:
             break
     return ",".join(parts)
 
+
+def _describe_indicator_params(
+    params: List[Dict[str, Any]],
+    *,
+    include_descriptions: bool,
+) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    for raw in params or []:
+        if not isinstance(raw, dict):
+            continue
+        name = str(raw.get("name") or "").strip()
+        if not name:
+            continue
+        row: Dict[str, Any] = {"name": name}
+        if "default" in raw:
+            row["default"] = raw.get("default")
+        if include_descriptions and raw.get("description") not in (None, ""):
+            row["description"] = raw.get("description")
+        rows.append(row)
+    return rows
+
+
 @mcp.tool()
 def indicators_list(
     search_term: Optional[str] = None,
@@ -333,13 +356,17 @@ def indicators_list(
 # Note: category annotation is set at definition time above to be captured in the MCP schema
 
 @mcp.tool()
-def indicators_describe(name: IndicatorNameLiteral) -> Dict[str, Any]:  # type: ignore
-    """Return detailed indicator information (name, category, params, description).
+def indicators_describe(
+    name: IndicatorNameLiteral,
+    detail: CompactFullDetailLiteral = "compact",
+) -> Dict[str, Any]:  # type: ignore
+    """Return indicator information with compact, standard, or full detail.
 
-    Parameters: name
+    Parameters: name, detail
     """
     def _run() -> Dict[str, Any]:
         try:
+            detail_mode = normalize_output_detail(detail, default="compact")
             items = _list_ta_indicators(detailed=True)
             target = next(
                 (
@@ -358,14 +385,45 @@ def indicators_describe(name: IndicatorNameLiteral) -> Dict[str, Any]:  # type: 
                 return {"error": f"Indicator '{name}' not found"}
             indicator = dict(target)
             docs = _build_indicator_documentation(indicator)
-            indicator["description"] = docs.get("description") or indicator.get("description") or ""
-            indicator["params"] = docs.get("parameters") or indicator.get("params") or []
+            description = docs.get("description") or indicator.get("description") or ""
+            params = docs.get("parameters") or indicator.get("params") or []
+            compact_indicator: Dict[str, Any] = {
+                "name": indicator.get("name"),
+                "category": indicator.get("category"),
+                "description": _extract_short_description(description) or description,
+                "params": _describe_indicator_params(
+                    params,
+                    include_descriptions=False,
+                ),
+            }
+            if detail_mode in {"compact", "summary"}:
+                return {
+                    "success": True,
+                    "detail": detail_mode,
+                    "indicator": compact_indicator,
+                }
+
+            standard_indicator = dict(compact_indicator)
+            standard_indicator["description"] = description
+            standard_indicator["params"] = _describe_indicator_params(
+                params,
+                include_descriptions=True,
+            )
+            if detail_mode == "standard":
+                return {
+                    "success": True,
+                    "detail": detail_mode,
+                    "indicator": standard_indicator,
+                }
+
+            indicator["description"] = description
+            indicator["params"] = params
             indicator["documentation"] = {
                 "calculation": docs.get("calculation"),
                 "interpretation": docs.get("interpretation"),
                 "sources": docs.get("sources") or [],
             }
-            return {"success": True, "indicator": indicator}
+            return {"success": True, "detail": "full", "indicator": indicator}
         except Exception as exc:
             return {"error": f"Error getting indicator details: {exc}"}
 
@@ -373,6 +431,7 @@ def indicators_describe(name: IndicatorNameLiteral) -> Dict[str, Any]:  # type: 
         logger,
         operation="indicators_describe",
         name=name,
+        detail=detail,
         func=_run,
     )
 

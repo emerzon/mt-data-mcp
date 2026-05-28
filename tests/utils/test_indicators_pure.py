@@ -353,8 +353,9 @@ Values above 70 often indicate overbought conditions.
         )
 
         raw_describe = getattr(core_indicators.indicators_describe, "__wrapped__", core_indicators.indicators_describe)
-        out = raw_describe("rsi")
+        out = raw_describe("rsi", detail="full")
         assert out["success"] is True
+        assert out["detail"] == "full"
         indicator = out["indicator"]
         assert "method of" not in indicator["description"].lower()
         docs = indicator["documentation"]
@@ -401,7 +402,7 @@ Values below 30 often indicate oversold conditions.
         )
 
         raw_describe = getattr(core_indicators.indicators_describe, "__wrapped__", core_indicators.indicators_describe)
-        out = raw_describe("rsi")
+        out = raw_describe("rsi", detail="full")
         indicator = out["indicator"]
         docs = indicator["documentation"]
         assert "parameters" not in docs
@@ -417,6 +418,47 @@ Values below 30 often indicate oversold conditions.
         assert params["talib"]["description"] == (
             "If TA Lib is installed and talib is True, Returns the TA Lib version. Default: True"
         )
+
+    def test_indicators_describe_compact_and_standard_detail(self, monkeypatch):
+        from mtdata.core import indicators as core_indicators
+
+        sample_doc = """Relative Strength Index
+Tracks momentum.
+Parameters:
+length (int): Window length.
+scalar (float): Optional scalar multiplier.
+Interpretation:
+Values above 70 often indicate overbought conditions.
+"""
+        monkeypatch.setattr(
+            core_indicators,
+            "_list_ta_indicators",
+            lambda detailed=True: [
+                {
+                    "name": "rsi",
+                    "category": "momentum",
+                    "params": [{"name": "length", "default": 14}, {"name": "scalar"}],
+                    "description": sample_doc,
+                }
+            ],
+        )
+
+        raw_describe = getattr(core_indicators.indicators_describe, "__wrapped__", core_indicators.indicators_describe)
+        compact = raw_describe("rsi")
+        standard = raw_describe("rsi", detail="standard")
+
+        assert compact["detail"] == "compact"
+        assert compact["indicator"] == {
+            "name": "rsi",
+            "category": "momentum",
+            "description": "Relative Strength Index",
+            "params": [{"name": "length", "default": 14}, {"name": "scalar"}],
+        }
+        assert "documentation" not in compact["indicator"]
+        assert standard["detail"] == "standard"
+        params = {p["name"]: p for p in standard["indicator"]["params"]}
+        assert params["length"]["description"] == "Window length."
+        assert "documentation" not in standard["indicator"]
 
     def test_indicators_describe_logs_finish_event(self, monkeypatch, caplog):
         from mtdata.core import indicators as core_indicators
