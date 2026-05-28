@@ -1,6 +1,7 @@
 """Finviz service implementation."""
 import datetime
 import importlib
+import json
 import logging
 from typing import Any, Dict, List, Literal, Optional
 
@@ -329,6 +330,39 @@ def _fetch_finviz_market_performance_rows(
         raise ValueError(empty_error)
     records = df.to_dict(orient="records")
     return [_sanitize_finviz_row(row) for row in records]
+
+
+def _extract_finviz_futures_performance_rows(html: str) -> List[Dict[str, Any]]:
+    marker = "FinvizInitFuturesPerformance("
+    start = str(html or "").find(marker)
+    if start < 0:
+        raise ValueError("Unable to parse Finviz futures performance data")
+    payload = str(html)[start + len(marker):].lstrip()
+    data, _ = json.JSONDecoder().raw_decode(payload)
+    if not isinstance(data, list):
+        raise TypeError("Unexpected Finviz futures performance payload shape")
+    return [_sanitize_finviz_row(row) for row in data if isinstance(row, dict)]
+
+
+def _fetch_finviz_futures_performance_rows() -> List[Dict[str, Any]]:
+    headers = {
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Referer": "https://finviz.com/futures.ashx",
+    }
+    resp = _finviz_http_get(
+        "https://finviz.com/futures_performance.ashx",
+        headers=headers,
+        params={},
+    )
+    try:
+        resp.raise_for_status()
+        rows = _extract_finviz_futures_performance_rows(resp.text)
+    finally:
+        resp.close()
+    if not rows:
+        raise ValueError("No futures performance data available")
+    return rows
 
 
 def get_stock_fundamentals(symbol: str) -> Dict[str, Any]:
@@ -722,11 +756,7 @@ def get_crypto_performance() -> Dict[str, Any]:
 def get_futures_performance() -> Dict[str, Any]:
     """Get futures market performance data."""
     try:
-        items_list = _fetch_finviz_market_performance_rows(
-            module_name="finvizfinance.future",
-            class_name="Future",
-            empty_error="No futures performance data available",
-        )
+        items_list = _fetch_finviz_futures_performance_rows()
         return {
             "success": True,
             "market": "futures",

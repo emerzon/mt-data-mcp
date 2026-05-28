@@ -246,6 +246,29 @@ class TestFinvizService:
         assert "Perf WTD" not in result["coins"][0]
         assert "Perf WTD" not in result["coins"][1]
 
+    @patch("mtdata.services.finviz._finviz_http_get")
+    def test_get_futures_performance_parses_current_page_payload(self, mock_get):
+        from mtdata.services.finviz import get_futures_performance
+
+        response = MagicMock()
+        response.text = (
+            "<script>FinvizDispatch('FuturesPerformance', () => "
+            'window.FinvizInitFuturesPerformance([{"ticker":"NG","label":"Natural Gas",'
+            '"group":"ENERGY","perf":6.14}]);)</script>'
+        )
+        mock_get.return_value = response
+
+        result = get_futures_performance()
+
+        assert result["success"] is True
+        assert result["market"] == "futures"
+        assert result["count"] == 1
+        assert result["futures"] == [
+            {"ticker": "NG", "label": "Natural Gas", "group": "ENERGY", "perf": 6.14}
+        ]
+        response.raise_for_status.assert_called_once_with()
+        response.close.assert_called_once_with()
+
     @patch("finvizfinance.earnings.Earnings")
     def test_get_earnings_calendar_success(self, mock_earnings_class):
         """Test earnings calendar fetch."""
