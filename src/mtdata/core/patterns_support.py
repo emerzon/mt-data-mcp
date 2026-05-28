@@ -380,44 +380,18 @@ def _compact_patterns_payload(
         row
         for _, row in sorted(indexed_rows, key=_sort_key, reverse=True)[:preview_limit]
     ]
-    strongest_pattern: Optional[Dict[str, Any]] = None
+    def _first_present(row: Dict[str, Any], *keys: str) -> Any:
+        for key in keys:
+            value = row.get(key)
+            if value not in (None, ""):
+                return value
+        return None
+
+    strongest_row: Optional[Dict[str, Any]] = None
     if preview_rows:
-        best = max(
+        strongest_row = max(
             preview_rows, key=lambda row: _safe_float(row.get("confidence")) or 0.0
         )
-        best_label = _pattern_label(best)
-        strongest_pattern = {}
-        if best_label:
-            strongest_pattern["pattern"] = best_label
-        for key in (
-            "timeframe",
-            "time",
-            "end_date",
-            "confirmation_date",
-            "breakout_date",
-            "status",
-            "confidence",
-            "strength",
-            "direction",
-            "bias",
-            "price",
-            "level_price",
-            "level_state",
-            "reference_price",
-            "breakout_direction",
-            "breakout_price",
-            "target_price",
-            "target_stale",
-            "invalidation_price",
-            "wave_count",
-            "validation_status",
-            "candidate_note",
-        ):
-            value = best.get(key)
-            if value not in (None, ""):
-                strongest_pattern[key] = value
-        if not strongest_pattern:
-            strongest_pattern = None
 
     total = payload.get("n_patterns")
     if total in (None, ""):
@@ -432,24 +406,46 @@ def _compact_patterns_payload(
     if signal_bias:
         signal = _summarize_actionable_pattern_signal(signal_bias) or {}
     strongest_compact: Optional[Dict[str, Any]] = None
-    if strongest_pattern:
+    if strongest_row:
         strongest_compact = {}
-        for key in (
-            "pattern",
-            "direction",
+        best_label = _pattern_label(strongest_row)
+        if best_label:
+            strongest_compact["pattern"] = best_label
+        direction = _first_present(
+            strongest_row,
             "bias",
+            "direction",
+            "breakout_direction",
+        )
+        if direction not in (None, ""):
+            strongest_compact["direction"] = direction
+        for key in (
             "confidence",
-            "time",
-            "end_date",
-            "price",
-            "end_index",
             "wave_count",
             "validation_status",
             "candidate_note",
         ):
-            value = strongest_pattern.get(key)
+            value = strongest_row.get(key)
             if value not in (None, ""):
                 strongest_compact[key] = value
+        time_value = _first_present(
+            strongest_row,
+            "time",
+            "end_date",
+            "confirmation_date",
+            "breakout_date",
+        )
+        if time_value not in (None, ""):
+            strongest_compact["time"] = time_value
+        price_value = _first_present(
+            strongest_row,
+            "price",
+            "reference_price",
+            "level_price",
+            "breakout_price",
+        )
+        if price_value not in (None, ""):
+            strongest_compact["price"] = price_value
         if not strongest_compact:
             strongest_compact = None
 

@@ -533,11 +533,11 @@ def test_build_pattern_response_compact_keeps_actionable_fields():
             "status": "forming",
             "confidence": 0.85,
             "end_index": 2,
+            "end_date": "2026-03-02 00:00",
             "bias": "bullish",
             "reference_price": 12.0,
             "target_price": 13.2,
             "invalidation_price": 11.4,
-            "price": 12.0,
         }
     ]
 
@@ -560,8 +560,9 @@ def test_build_pattern_response_compact_keeps_actionable_fields():
     assert compact["status"] == "bullish"
     assert compact["strongest_pattern"] == {
         "pattern": "Double Bottom",
-        "bias": "bullish",
+        "direction": "bullish",
         "confidence": 0.85,
+        "time": "2026-03-02 00:00",
         "price": 12.0,
     }
     assert compact["top_patterns"] == [
@@ -570,6 +571,7 @@ def test_build_pattern_response_compact_keeps_actionable_fields():
             "direction": "bullish",
             "status": "forming",
             "confidence": 0.85,
+            "time": "2026-03-02 00:00",
             "price": 12.0,
         }
     ]
@@ -663,9 +665,9 @@ def test_build_pattern_response_compact_keeps_fractal_breakout_fields():
     assert compact["action"] == "review_short_setup"
     assert compact["strongest_pattern"] == {
         "pattern": "Bullish Fractal",
-        "direction": "bullish",
-        "bias": "bearish",
+        "direction": "bearish",
         "confidence": 0.82,
+        "time": "2026-03-01 00:00",
         "price": 9.9,
     }
     assert "recent_patterns" not in compact
