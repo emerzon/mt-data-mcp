@@ -8,9 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from ...utils.utils import (
     _format_time_minimal,
-    _format_time_minimal_local,
     _normalize_limit,
-    _use_client_tz,
 )
 from .._mcp_instance import mcp
 from ..execution_logging import run_logged_operation
@@ -1043,9 +1041,9 @@ def trade_get_open(
             run_trade_get_open(
                 request,
                 gateway=create_trading_gateway(),
-                use_client_tz=_use_client_tz,
+                use_client_tz=lambda: False,
                 format_time_minimal=_format_time_minimal,
-                format_time_minimal_local=_format_time_minimal_local,
+                format_time_minimal_local=_format_time_minimal,
                 mt5_epoch_to_utc=_utc_epoch_identity,
                 normalize_limit=_normalize_limit,
                 comment_row_metadata=comments._comment_row_metadata,
@@ -1070,9 +1068,9 @@ def trade_get_pending(
             run_trade_get_pending(
                 request,
                 gateway=create_trading_gateway(),
-                use_client_tz=_use_client_tz,
+                use_client_tz=lambda: False,
                 format_time_minimal=_format_time_minimal,
-                format_time_minimal_local=_format_time_minimal_local,
+                format_time_minimal_local=_format_time_minimal,
                 mt5_epoch_to_utc=_utc_epoch_identity,
                 normalize_limit=_normalize_limit,
                 comment_row_metadata=comments._comment_row_metadata,

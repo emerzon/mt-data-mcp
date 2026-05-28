@@ -850,16 +850,22 @@ def test_run_trade_get_pending_falls_back_to_volume_initial() -> None:
 def test_trade_get_open_logs_finish_event(caplog) -> None:
     raw = _unwrap(core_trading_positions.trade_get_open)
 
+    def fake_run_trade_get_open(*args, **kwargs):
+        assert kwargs["use_client_tz"]() is False
+        assert kwargs["format_time_minimal_local"] is kwargs["format_time_minimal"]
+        return [{"ticket": 1, "symbol": "EURUSD", "timezone": "UTC"}]
+
     with patch.object(core_trading_positions, "create_trading_gateway", return_value=object()), patch.object(
         core_trading_positions,
         "run_trade_get_open",
-        return_value=[{"ticket": 1, "symbol": "EURUSD"}],
+        side_effect=fake_run_trade_get_open,
     ), caplog.at_level(logging.DEBUG, logger=core_trading_positions.logger.name):
         out = raw(TradeGetOpenRequest(symbol="EURUSD", limit=10))
 
     assert out["success"] is True
     assert out["count"] == 1
     assert out["items"][0]["ticket"] == 1
+    assert out["timezone"] == "UTC"
     assert any(
         "event=finish operation=trade_get_open success=True" in record.message
         for record in caplog.records
@@ -869,16 +875,22 @@ def test_trade_get_open_logs_finish_event(caplog) -> None:
 def test_trade_get_pending_logs_finish_event(caplog) -> None:
     raw = _unwrap(core_trading_positions.trade_get_pending)
 
+    def fake_run_trade_get_pending(*args, **kwargs):
+        assert kwargs["use_client_tz"]() is False
+        assert kwargs["format_time_minimal_local"] is kwargs["format_time_minimal"]
+        return [{"ticket": 2, "symbol": "EURUSD", "timezone": "UTC"}]
+
     with patch.object(core_trading_positions, "create_trading_gateway", return_value=object()), patch.object(
         core_trading_positions,
         "run_trade_get_pending",
-        return_value=[{"ticket": 2, "symbol": "EURUSD"}],
+        side_effect=fake_run_trade_get_pending,
     ), caplog.at_level(logging.DEBUG, logger=core_trading_positions.logger.name):
         out = raw(TradeGetPendingRequest(symbol="EURUSD", limit=10))
 
     assert out["success"] is True
     assert out["count"] == 1
     assert out["items"][0]["ticket"] == 2
+    assert out["timezone"] == "UTC"
     assert any(
         "event=finish operation=trade_get_pending success=True" in record.message
         for record in caplog.records
