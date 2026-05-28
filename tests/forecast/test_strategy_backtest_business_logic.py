@@ -82,6 +82,37 @@ def test_strategy_backtest_compact_mode_excludes_trades(monkeypatch):
     assert "trade_sample" not in out
 
 
+def test_strategy_backtest_uses_date_range_when_provided(monkeypatch):
+    captured = {}
+
+    def fake_fetch_history(symbol, timeframe, need, **kwargs):
+        captured.update(kwargs)
+        return _history_from_closes(
+            [1.0, 1.0, 1.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]
+        )
+
+    monkeypatch.setattr(forecast_backtest, "_fetch_history", fake_fetch_history)
+
+    out = forecast_backtest.strategy_backtest(
+        symbol="EURUSD",
+        timeframe="H1",
+        strategy="sma_cross",
+        lookback=5,
+        start="2023-01-01",
+        end="2023-12-31",
+        fast_period=2,
+        slow_period=3,
+        detail="full",
+    )
+
+    assert captured["start"] == "2023-01-01"
+    assert captured["end"] == "2023-12-31"
+    assert out["success"] is True
+    assert out["summary"]["bars_used"] == 10
+    assert out["parameters"]["start"] == "2023-01-01"
+    assert out["parameters"]["end"] == "2023-12-31"
+
+
 def test_strategy_backtest_exposes_request_metadata_blocks(monkeypatch):
     monkeypatch.setattr(
         forecast_backtest,
@@ -163,7 +194,13 @@ def test_core_strategy_backtest_wrapper_routes_request(monkeypatch):
     monkeypatch.setattr(
         core_forecast,
         "_strategy_backtest_impl",
-        lambda **kwargs: {"ok": True, "strategy": kwargs["strategy"], "symbol": kwargs["symbol"]},
+        lambda **kwargs: {
+            "ok": True,
+            "strategy": kwargs["strategy"],
+            "symbol": kwargs["symbol"],
+            "start": kwargs["start"],
+            "end": kwargs["end"],
+        },
     )
 
     out = raw(
@@ -171,12 +208,16 @@ def test_core_strategy_backtest_wrapper_routes_request(monkeypatch):
             symbol="EURUSD",
             strategy="ema_cross",
             lookback=50,
+            start="2023-01-01",
+            end="2023-12-31",
         )
     )
 
     assert out["ok"] is True
     assert out["strategy"] == "ema_cross"
     assert out["symbol"] == "EURUSD"
+    assert out["start"] == "2023-01-01"
+    assert out["end"] == "2023-12-31"
 
 
 def test_strategy_backtest_request_rejects_invalid_ma_periods():

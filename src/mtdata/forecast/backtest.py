@@ -607,6 +607,8 @@ def strategy_backtest(  # noqa: C901
     timeframe: TimeframeLiteral = "H1",
     strategy: Literal["sma_cross", "ema_cross", "rsi_reversion"] = "sma_cross",  # type: ignore
     lookback: int = 500,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
     detail: CompactFullDetailLiteral = "compact",
     position_mode: Literal["long_only", "long_short"] = "long_short",  # type: ignore
     fast_period: int = 10,
@@ -623,6 +625,8 @@ def strategy_backtest(  # noqa: C901
             "timeframe": timeframe,
             "strategy": strategy,
             "lookback": lookback,
+            "start": start,
+            "end": end,
             "detail": detail,
             "position_mode": position_mode,
             "fast_period": fast_period,
@@ -655,10 +659,15 @@ def strategy_backtest(  # noqa: C901
             warmup_bars = max(int(rsi_length) + 1, 5)
         need = int(lookback) + int(warmup_bars) + 5
         try:
-            df = _fetch_history(symbol, timeframe, int(need), as_of=None)
+            history_kwargs: Dict[str, Any] = {"as_of": None}
+            if start or end:
+                history_kwargs.update({"start": start, "end": end})
+            df = _fetch_history(symbol, timeframe, int(need), **history_kwargs)
         except Exception as ex:
             return {"error": str(ex)}
-        if len(df) < max(int(lookback), warmup_bars + 5):
+        range_requested = bool(start or end)
+        min_required = warmup_bars + 5 if range_requested else max(int(lookback), warmup_bars + 5)
+        if len(df) < min_required:
             return {"error": "Not enough closed bars for strategy backtest"}
 
         signal_series, diagnostics, signal_warmup = _build_strategy_signal_series(
@@ -672,7 +681,10 @@ def strategy_backtest(  # noqa: C901
             overbought=float(overbought),
         )
 
-        start_signal_idx = max(int(signal_warmup), len(df) - int(lookback))
+        start_signal_idx = max(
+            int(signal_warmup),
+            0 if range_requested else len(df) - int(lookback),
+        )
         times = df["time"].astype(float).to_numpy()
         opens = df["open"].astype(float).to_numpy()
         closes = df["close"].astype(float).to_numpy()
@@ -817,6 +829,11 @@ def strategy_backtest(  # noqa: C901
             "slippage_bps": float(slippage_bps),
             **_strategy_params,
         }
+        if start is not None:
+            _params["start"] = start
+        if end is not None:
+            _params["end"] = end
+        bars_used = len(df) if range_requested else int(lookback)
 
         result: Dict[str, Any] = {
             "success": True,
@@ -827,7 +844,7 @@ def strategy_backtest(  # noqa: C901
             "position_mode": position_mode_value,
             "parameters": _params,
             "summary": {
-                "bars_used": int(lookback),
+                "bars_used": int(bars_used),
                 "warmup_bars": int(signal_warmup),
                 "num_trades": int(len(trades)),
                 "long_trades": long_trades,
@@ -994,6 +1011,8 @@ def strategy_backtest(  # noqa: C901
                 "timeframe": timeframe,
                 "strategy": strategy_value,
                 "lookback": int(lookback),
+                "start": start,
+                "end": end,
                 "detail": detail_mode,
                 "position_mode": position_mode_value,
                 "fast_period": int(fast_period),
@@ -1019,6 +1038,8 @@ def forecast_backtest(  # noqa: C901
     horizon: int = 12,
     steps: int = 5,
     spacing: int = 20,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
     methods: Optional[List[str]] = None,
     params_per_method: Optional[Dict[str, Any]] = None,
     quantity: Literal['price','return','volatility'] = 'price',  # type: ignore
@@ -1062,7 +1083,10 @@ def forecast_backtest(  # noqa: C901
         else:
             need = int(steps) * int(spacing) + int(horizon) + 400
         try:
-            df = _fetch_history(symbol, timeframe, int(need), as_of=None)
+            history_kwargs = {"as_of": None}
+            if start or end:
+                history_kwargs.update({"start": start, "end": end})
+            df = _fetch_history(symbol, timeframe, int(need), **history_kwargs)
         except Exception as ex:
             return {"error": str(ex)}
         if len(df) < (int(horizon) + 50):

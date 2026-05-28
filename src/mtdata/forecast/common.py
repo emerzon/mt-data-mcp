@@ -4,6 +4,7 @@ import math
 import os
 import re
 import threading
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -19,6 +20,7 @@ from ..utils.mt5 import (
     _ensure_symbol_ready,
     _mt5_copy_rates_from,
     _mt5_copy_rates_from_pos,
+    _mt5_copy_rates_range,
     get_symbol_info_cached,
     mt5,
 )
@@ -850,16 +852,21 @@ def fetch_history(
     need: int,
     as_of: Optional[str] = None,
     *,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
     drop_last_live: bool = True,
 ) -> pd.DataFrame:
     """Fetch last `need` bars for symbol/timeframe, normalize times to UTC seconds.
 
     - as_of: optional date/time string. If provided, fetch bars ending at that time. Else uses server time.
+    - start/end: optional date/time range. If start is provided, returns the full range.
     - drop_last_live: when as_of is None, drop the forming last bar.
     Raises RuntimeError on MT5 errors.
     """
     if timeframe not in TIMEFRAME_MAP:
         raise RuntimeError(f"Invalid timeframe: {timeframe}")
+    if as_of and (start or end):
+        raise RuntimeError("as_of cannot be combined with start/end.")
     mt5_tf = TIMEFRAME_MAP[timeframe]
     # Ensure symbol visibility and restore later
     info_before = get_symbol_info_cached(symbol)
@@ -868,10 +875,20 @@ def fetch_history(
     if err:
         raise RuntimeError(err)
     try:
-        if as_of:
-            to_dt = _parse_start_datetime(as_of)
+        if start:
+            from_dt = _parse_start_datetime(start)
+            if not from_dt:
+                raise RuntimeError("Invalid start time.")
+            to_dt = _parse_start_datetime(end) if end else datetime.now(timezone.utc).replace(tzinfo=None)
             if not to_dt:
-                raise RuntimeError("Invalid as_of time.")
+                raise RuntimeError("Invalid end time.")
+            if from_dt > to_dt:
+                raise RuntimeError("start must be before or equal to end.")
+            rates = _mt5_copy_rates_range(symbol, mt5_tf, from_dt, to_dt)
+        elif as_of or end:
+            to_dt = _parse_start_datetime(as_of or end or "")
+            if not to_dt:
+                raise RuntimeError("Invalid as_of time." if as_of else "Invalid end time.")
 
             # Anchor directly at as_of to avoid missing older historical windows.
             fetch_count = max(int(need), 1) + 2
@@ -901,21 +918,21 @@ def fetch_history(
     # Times are already normalized to UTC by _mt5_copy_rates_from_pos via _normalize_times_in_struct
     # DO NOT normalize again.
     
-    # Manual truncation if as_of provided
-    if as_of and not df.empty and 'time' in df.columns:
-        to_dt = _parse_start_datetime(as_of)
+    # Manual truncation if an upper bound was provided.
+    if (as_of or end) and not df.empty and 'time' in df.columns:
+        to_dt = _parse_start_datetime(as_of or end or "")
         if to_dt:
             cutoff = _utc_epoch_seconds(to_dt)
             # Filter: include the bar exactly AT the cutoff if it exists
             df = df[df['time'] <= cutoff]
-            # Take last 'need'
-            if len(df) > need:
+            # Bounded ranges keep the full requested window; end-only mirrors as_of.
+            if not start and len(df) > need:
                 df = df.iloc[-int(need):]
-    
-    if as_of is None and drop_last_live and len(df) >= 2:
+
+    if as_of is None and end is None and drop_last_live and len(df) >= 2:
         if _is_last_bar_forming(rates, timeframe):
             df = df.iloc[:-1]
-        if len(df) > need:
+        if not start and len(df) > need:
             df = df.iloc[-int(need):]
     return df.reset_index(drop=True)
 

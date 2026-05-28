@@ -687,6 +687,28 @@ def test_run_forecast_backtest_omits_trade_metrics_when_unavailable():
     assert "avg_return_per_trade" not in row
 
 
+def test_run_forecast_backtest_routes_date_range_to_impl():
+    captured = {}
+
+    def fake_backtest_impl(**kwargs):
+        captured.update(kwargs)
+        return {"success": True, "results": {}}
+
+    result = forecast_use_cases.run_forecast_backtest(
+        ForecastBacktestRequest(
+            symbol="EURUSD",
+            start="2023-01-01",
+            end="2023-12-31",
+            detail="full",
+        ),
+        backtest_impl=fake_backtest_impl,
+    )
+
+    assert result["success"] is True
+    assert captured["start"] == "2023-01-01"
+    assert captured["end"] == "2023-12-31"
+
+
 def test_forecast_generate_converts_typed_forecast_errors(monkeypatch):
     raw = _unwrap(cf.forecast_generate)
 

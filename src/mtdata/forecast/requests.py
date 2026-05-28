@@ -65,6 +65,8 @@ class ForecastBacktestRequest(BaseModel):
     horizon: int = Field(12, ge=1)
     steps: int = Field(5, ge=1)
     spacing: int = Field(20, ge=1)
+    start: Optional[str] = None
+    end: Optional[str] = None
     methods: Optional[List[str]] = None
     params_per_method: Optional[Dict[str, Any]] = None
     quantity: Literal["price", "return", "volatility"] = "price"
@@ -103,6 +105,8 @@ class StrategyBacktestRequest(BaseModel):
     timeframe: TimeframeLiteral = "H1"
     strategy: Literal["sma_cross", "ema_cross", "rsi_reversion"] = "sma_cross"
     lookback: int = Field(200, ge=5)
+    start: Optional[str] = None
+    end: Optional[str] = None
     detail: CompactFullDetailLiteral = "compact"
     position_mode: Literal["long_only", "long_short"] = "long_short"
     fast_period: int = Field(10, ge=1)

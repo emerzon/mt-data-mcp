@@ -132,6 +132,45 @@ def test_fetch_history_as_of_anchors_directly_not_latest_window(monkeypatch):
     assert out["time"].tolist() == [100.0, 200.0]
 
 
+def test_fetch_history_start_end_uses_range_without_lookback_trim(monkeypatch):
+    monkeypatch.setattr(fc, "TIMEFRAME_MAP", {"H1": 1})
+    monkeypatch.setattr(fc, "_ensure_symbol_ready", lambda _symbol: None)
+    monkeypatch.setattr(fc, "get_symbol_info_cached", lambda _symbol: SimpleNamespace(visible=True))
+    monkeypatch.setattr(fc.mt5, "last_error", lambda: (1, "err"))
+
+    rates = [
+        {"time": 100.0, "open": 1.0},
+        {"time": 200.0, "open": 2.0},
+        {"time": 300.0, "open": 3.0},
+        {"time": 400.0, "open": 4.0},
+    ]
+    captured = {}
+
+    def fake_range(symbol, tf, from_dt, to_dt):
+        captured.update({"symbol": symbol, "tf": tf, "from_dt": from_dt, "to_dt": to_dt})
+        return rates
+
+    monkeypatch.setattr(fc, "_mt5_copy_rates_range", fake_range)
+    monkeypatch.setattr(
+        fc,
+        "_parse_start_datetime",
+        lambda value: datetime(2024, 1, 1) if value == "2024-01-01" else datetime(2024, 1, 2),
+    )
+    monkeypatch.setattr(fc, "_utc_epoch_seconds", lambda _dt: 350.0)
+
+    out = fc.fetch_history(
+        "EURUSD",
+        "H1",
+        need=2,
+        start="2024-01-01",
+        end="2024-01-02",
+    )
+
+    assert captured["symbol"] == "EURUSD"
+    assert captured["tf"] == 1
+    assert out["time"].tolist() == [100.0, 200.0, 300.0]
+
+
 def test_fetch_history_applies_live_auto_shift(monkeypatch):
     monkeypatch.setattr(fc, "TIMEFRAME_MAP", {"H1": 1})
     monkeypatch.setattr(fc, "_ensure_symbol_ready", lambda _symbol: None)
