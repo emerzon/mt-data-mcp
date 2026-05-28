@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import warnings
+
 from mtdata.core import forecast as core_forecast
+from mtdata.forecast import gpu_runtime
 from mtdata.forecast.gpu_runtime import forecast_method_may_use_gpu
 
 
@@ -69,6 +72,23 @@ def test_capability_style_method_names_count_as_gpu_methods():
         "ensemble",
         {"methods": ["theta", "pretrained:timesfm"]},
     )
+
+
+def test_cleanup_forecast_gpu_runtime_suppresses_resource_warnings(monkeypatch):
+    def noisy_collect():
+        warnings.warn(
+            "unclosed database in <sqlite3.Connection object>",
+            ResourceWarning,
+        )
+        return 0
+
+    monkeypatch.setattr(gpu_runtime.gc, "collect", noisy_collect)
+
+    with warnings.catch_warnings(record=True) as records:
+        warnings.simplefilter("always")
+        gpu_runtime.cleanup_forecast_gpu_runtime()
+
+    assert records == []
 
 
 def test_direct_payload_dispatch_rebuilds_forecast_generate_request(monkeypatch):

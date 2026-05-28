@@ -3,6 +3,7 @@ from __future__ import annotations
 import gc
 import logging
 import sys
+import warnings
 from typing import Any, Iterable, Mapping
 
 logger = logging.getLogger(__name__)
@@ -80,7 +81,9 @@ def cleanup_forecast_gpu_runtime(*, clear_model_cache: bool = False) -> None:
             logger.debug("Forecast model cache cleanup failed: %s", exc)
 
     try:
-        gc.collect()
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", ResourceWarning)
+            gc.collect()
     except Exception as exc:
         logger.debug("Forecast garbage collection cleanup failed: %s", exc)
 

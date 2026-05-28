@@ -140,6 +140,8 @@ def _invoke_cli_tool_function(
             category, (DeprecationWarning, PendingDeprecationWarning)
         ):
             continue
+        if isinstance(category, type) and issubclass(category, ResourceWarning):
+            continue
         if isinstance(category, type) and issubclass(category, FutureWarning):
             filename = os.path.normcase(str(getattr(record, "filename", "") or ""))
             if "site-packages" in filename or "dist-packages" in filename:
