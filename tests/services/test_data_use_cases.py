@@ -218,6 +218,42 @@ def test_run_data_fetch_candles_compact_flags_stale_latest_data():
     assert "stale_warning" not in result
 
 
+def test_run_data_fetch_candles_closed_market_relaxation_is_not_stale():
+    request = DataFetchCandlesRequest(symbol="EURUSD", timeframe="H1", limit=5)
+
+    result = run_data_fetch_candles(
+        request,
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_candles_impl=lambda **kwargs: {
+            "success": True,
+            "candles": 5,
+            "data": [],
+            "meta": {
+                "diagnostics": {
+                    "query": {"mode": "latest"},
+                    "freshness": {
+                        "data_freshness_seconds": 149668.6,
+                        "last_bar_within_policy_window": False,
+                        "freshness_policy_relaxed": (
+                            "latest_completed_bar_for_live_request"
+                        ),
+                        "market_session_status": "closed_or_idle",
+                        "freshness_note": (
+                            "Market appears closed or idle; showing the latest "
+                            "completed bar."
+                        ),
+                    },
+                },
+            },
+        },
+    )
+
+    assert result["data_stale"] is False
+    assert result["market_status"] == "closed_or_idle"
+    assert "latest completed bar" in result["note"]
+    assert "stale_warning" not in result
+
+
 def test_run_data_fetch_candles_range_applies_limit_cap():
     rows = [{"time": f"t{i}", "close": i} for i in range(5)]
     request = DataFetchCandlesRequest(

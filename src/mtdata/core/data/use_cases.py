@@ -289,6 +289,9 @@ def _compact_candles_payload(
         compact["query_type"] = public_diagnostics["query_type"]
     if "data_stale" in public_diagnostics:
         compact["data_stale"] = public_diagnostics["data_stale"]
+    for key in ("market_status", "note"):
+        if key in public_diagnostics:
+            compact[key] = public_diagnostics[key]
     if "spread_estimate" in public_diagnostics:
         compact["spread_estimate"] = public_diagnostics["spread_estimate"]
     return compact
@@ -371,7 +374,18 @@ def _public_candle_diagnostics(result: Dict[str, Any]) -> Dict[str, Any]:
             age_text = _format_age_seconds(seconds)
             if age_text is not None:
                 public["data_age"] = age_text
-            stale = freshness.get("last_bar_within_policy_window") is False
+            relaxed_policy = freshness.get("freshness_policy_relaxed")
+            if relaxed_policy:
+                public["market_status"] = (
+                    freshness.get("market_session_status") or "closed_or_idle"
+                )
+                note = freshness.get("freshness_note")
+                if note:
+                    public["note"] = note
+            stale = (
+                freshness.get("last_bar_within_policy_window") is False
+                and not relaxed_policy
+            )
             public["data_stale"] = stale
             if stale:
                 public["stale_warning"] = (

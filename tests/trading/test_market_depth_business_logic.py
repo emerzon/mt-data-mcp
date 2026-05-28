@@ -448,6 +448,35 @@ def test_market_ticker_full_detail_rounds_age_fields() -> None:
     assert out["meta"]["diagnostics"]["data_freshness_seconds"] == 34.7
 
 
+def test_market_ticker_treats_weekend_gap_as_closed_market() -> None:
+    tick = SimpleNamespace(
+        bid=1.17221,
+        ask=1.17237,
+        last=1.17230,
+        volume=5,
+        time=1779483360,
+    )
+    with patch("mtdata.core.market_depth.mt5") as mt5, patch(
+        "mtdata.core.market_depth._use_client_tz", return_value=False
+    ), patch("mtdata.core.market_depth.time.time", return_value=1779656400.0):
+        mt5.symbol_select.return_value = True
+        mt5.symbol_info.return_value = SimpleNamespace(
+            digits=5,
+            point=0.00001,
+            trade_tick_size=0.00001,
+            trade_tick_value=1.0,
+            currency_profit="USD",
+        )
+        mt5.symbol_info_tick.return_value = tick
+        out = _raw_market_ticker("EURUSD", detail="full")
+
+    assert out["data_stale"] is False
+    assert out["market_status"] == "closed"
+    assert out["market_status_reason"] == "weekend"
+    assert "latest completed session tick" in out["note"]
+    assert "warning" not in out
+
+
 def test_market_ticker_includes_shared_meta_without_dropping_timezone_alias() -> None:
     tick = SimpleNamespace(
         bid=200.0,

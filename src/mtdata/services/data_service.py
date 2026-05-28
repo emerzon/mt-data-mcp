@@ -495,6 +495,10 @@ def _fetch_rates_with_warmup(
                 freshness_meta["freshness_policy_relaxed"] = (
                     "latest_completed_bar_for_live_request"
                 )
+                freshness_meta["market_session_status"] = "closed_or_idle"
+                freshness_meta["freshness_note"] = (
+                    "Market appears closed or idle; showing the latest completed bar."
+                )
                 stale_last_t = None
                 break
             stale_last_t = float(last_t)
