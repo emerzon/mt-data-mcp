@@ -5,6 +5,7 @@ import re
 import time
 from typing import Any, Dict, List, Literal, Optional
 
+from ..shared.constants import DEFAULT_ROW_LIMIT, GROUP_SEARCH_THRESHOLD, TIMEFRAME_MAP
 from ..shared.schema import CompactFullDetailLiteral, TimeframeLiteral
 from ..shared.validators import invalid_timeframe_error
 from ..utils.mt5 import (
@@ -21,7 +22,6 @@ from ..utils.symbol import (
 )
 from ..utils.utils import _format_time_minimal, _normalize_limit, _table_from_rows
 from ._mcp_instance import mcp
-from ..shared.constants import DEFAULT_ROW_LIMIT, GROUP_SEARCH_THRESHOLD, TIMEFRAME_MAP
 from .error_envelope import build_error_payload
 from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway
@@ -155,6 +155,77 @@ _COMMON_CRYPTO_BASES = (
     "USDC",
     "USDT",
 )
+
+_SYMBOL_SEARCH_MODES = frozenset(
+    {"auto", "name", "description", "group", "exact", "all"}
+)
+
+
+def _symbols_from_groups(
+    groups: Dict[str, List[Any]],
+    group_names: List[str],
+) -> List[Any]:
+    matched: List[Any] = []
+    for group_name in group_names:
+        matched.extend(groups[group_name])
+    return matched
+
+
+def _match_symbols_for_search(
+    all_symbols: List[Any],
+    search_term: str,
+    search_mode: str,
+) -> List[Any]:
+    search_upper = search_term.upper()
+    groups: Dict[str, List[Any]] = {}
+    symbol_name_matches: List[Any] = []
+    description_matches: List[Any] = []
+    all_field_matches: List[Any] = []
+
+    for symbol in all_symbols:
+        group_path = _extract_group_path_util(symbol)
+        groups.setdefault(group_path, []).append(symbol)
+
+        symbol_name = str(getattr(symbol, "name", "") or "")
+        description = str(getattr(symbol, "description", "") or "")
+        name_hit = search_upper in symbol_name.upper()
+        description_hit = search_upper in description.upper()
+        group_hit = search_upper in str(group_path or "").upper()
+
+        if search_mode == "exact":
+            if symbol_name.upper() == search_upper:
+                symbol_name_matches.append(symbol)
+        elif name_hit:
+            symbol_name_matches.append(symbol)
+        if description_hit:
+            description_matches.append(symbol)
+        if name_hit or description_hit or group_hit:
+            all_field_matches.append(symbol)
+
+    matching_groups = [
+        group_name
+        for group_name in groups.keys()
+        if search_upper in group_name.upper()
+    ]
+
+    if search_mode in {"exact", "name"}:
+        return symbol_name_matches
+    if search_mode == "description":
+        return description_matches
+    if search_mode == "group":
+        return _symbols_from_groups(groups, matching_groups)
+    if search_mode == "all":
+        return all_field_matches
+
+    if matching_groups and len(matching_groups) <= GROUP_SEARCH_THRESHOLD:
+        return _symbols_from_groups(groups, matching_groups)
+    if symbol_name_matches:
+        return symbol_name_matches
+    if matching_groups:
+        return _symbols_from_groups(groups, matching_groups)
+    return all_field_matches
+
+
 _COMMON_QUOTE_CURRENCIES = (
     "USD",
     "USDT",
@@ -305,11 +376,20 @@ def symbols_list(  # noqa: C901
     search_term: Optional[str] = None,
     limit: Optional[int] = DEFAULT_ROW_LIMIT,
     list_mode: Literal["symbols", "groups"] = "symbols",  # type: ignore
+    search_mode: Literal[  # type: ignore
+        "auto",
+        "name",
+        "description",
+        "group",
+        "exact",
+        "all",
+    ] = "auto",
     detail: CompactFullDetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     """List symbols or symbol groups."""
     normalized_search_term = _normalize_symbol_search_term(search_term)
     detail_mode = normalize_output_detail(detail, default="compact")
+    search_mode_value = str(search_mode or "auto").strip().lower()
 
     def _run() -> Dict[str, Any]:
         try:
@@ -321,6 +401,13 @@ def symbols_list(  # noqa: C901
             mode = str(list_mode or "symbols").strip().lower()
             if mode not in ("symbols", "groups"):
                 return {"error": "list_mode must be 'symbols' or 'groups'."}
+            if search_mode_value not in _SYMBOL_SEARCH_MODES:
+                return {
+                    "error": (
+                        "search_mode must be one of auto, name, description, "
+                        "group, exact, or all."
+                    )
+                }
             if mode == "groups":
                 return _list_symbol_groups(
                     search_term=normalized_search_term,
@@ -332,53 +419,14 @@ def symbols_list(  # noqa: C901
             matched_symbols = []
 
             if normalized_search_term:
-                search_upper = normalized_search_term.upper()
-
                 all_symbols = mt5_gateway.symbols_get()
                 if all_symbols is None:
                     return {"error": f"Failed to get symbols: {mt5_gateway.last_error()}"}
-
-                groups = {}
-                for symbol in all_symbols:
-                    group_path = _extract_group_path_util(symbol)
-                    if group_path not in groups:
-                        groups[group_path] = []
-                    groups[group_path].append(symbol)
-
-                matching_groups = []
-                group_search_threshold = GROUP_SEARCH_THRESHOLD
-
-                for group_name in groups.keys():
-                    if search_upper in group_name.upper():
-                        matching_groups.append(group_name)
-
-                if matching_groups and len(matching_groups) <= group_search_threshold:
-                    for group_name in matching_groups:
-                        matched_symbols.extend(groups[group_name])
-                else:
-                    symbol_name_matches = []
-                    for symbol in all_symbols:
-                        if search_upper in symbol.name.upper():
-                            symbol_name_matches.append(symbol)
-
-                    if symbol_name_matches:
-                        matched_symbols = symbol_name_matches
-                    elif matching_groups:
-                        for group_name in matching_groups:
-                            matched_symbols.extend(groups[group_name])
-                    else:
-                        description_matches = []
-                        for symbol in all_symbols:
-                            if hasattr(symbol, "description") and symbol.description:
-                                if search_upper in symbol.description.upper():
-                                    description_matches.append(symbol)
-                                    continue
-
-                            group_path = getattr(symbol, "path", "")
-                            if search_upper in group_path.upper():
-                                description_matches.append(symbol)
-
-                        matched_symbols = description_matches
+                matched_symbols = _match_symbols_for_search(
+                    list(all_symbols),
+                    normalized_search_term,
+                    search_mode_value,
+                )
             else:
                 matched_symbols = list(mt5_gateway.symbols_get() or [])
 
@@ -412,6 +460,7 @@ def symbols_list(  # noqa: C901
                     "list_mode": "symbols",
                     "count": len(symbol_list),
                     "search_term": normalized_search_term,
+                    "search_mode": search_mode_value,
                     "limit": limit_value,
                 }
             if detail_mode == "compact":
@@ -446,6 +495,7 @@ def symbols_list(  # noqa: C901
         search_term=normalized_search_term,
         limit=limit,
         list_mode=list_mode,
+        search_mode=search_mode_value,
         detail=detail_mode,
         func=_run,
     )

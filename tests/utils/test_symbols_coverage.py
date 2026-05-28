@@ -257,6 +257,51 @@ class TestSymbolsListSearch:
     @patch(_NORM_LIMIT, return_value=25)
     @patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r})
     @patch(f"{_MT5}.symbols_get")
+    def test_search_mode_name_ignores_description_and_group(
+        self, mock_get, mock_tbl, mock_lim
+    ):
+        mock_get.return_value = [
+            _make_symbol("SYM1", path="Metals\\Gold", description="Gold Spot"),
+        ]
+        with patch(_GROUP_PATH, side_effect=lambda s: s.path):
+            fn = _get_symbols_list()
+            res = fn(search_term="Gold", search_mode="name", limit=25)
+        assert res["data"] == []
+
+    @patch(_NORM_LIMIT, return_value=25)
+    @patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r})
+    @patch(f"{_MT5}.symbols_get")
+    def test_search_mode_exact_requires_full_symbol_name(
+        self, mock_get, mock_tbl, mock_lim
+    ):
+        mock_get.return_value = [
+            _make_symbol("EURUSD", path="Forex\\Majors"),
+            _make_symbol("EURUSDm", path="Forex\\Majors"),
+        ]
+        with patch(_GROUP_PATH, side_effect=lambda s: s.path):
+            fn = _get_symbols_list()
+            res = fn(search_term="EURUSD", search_mode="exact", limit=25)
+        assert [row[0] for row in res["data"]] == ["EURUSD"]
+
+    @patch(_NORM_LIMIT, return_value=25)
+    @patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r})
+    @patch(f"{_MT5}.symbols_get")
+    def test_search_mode_all_matches_name_description_and_group(
+        self, mock_get, mock_tbl, mock_lim
+    ):
+        mock_get.return_value = [
+            _make_symbol("GOLDMICRO", path="Metals\\Micro", description="Micro future"),
+            _make_symbol("XAUUSD", path="Commodities\\Metals", description="Gold Spot"),
+            _make_symbol("SILVER", path="Commodities\\Gold", description="Silver Spot"),
+        ]
+        with patch(_GROUP_PATH, side_effect=lambda s: s.path):
+            fn = _get_symbols_list()
+            res = fn(search_term="Gold", search_mode="all", limit=25)
+        assert [row[0] for row in res["data"]] == ["GOLDMICRO", "SILVER", "XAUUSD"]
+
+    @patch(_NORM_LIMIT, return_value=25)
+    @patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r})
+    @patch(f"{_MT5}.symbols_get")
     def test_search_no_match(self, mock_get, mock_tbl, mock_lim):
         syms = [_make_symbol("EURUSD", path="Forex\\Majors", description="Euro vs Dollar")]
         mock_get.return_value = syms

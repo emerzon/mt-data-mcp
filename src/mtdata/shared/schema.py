@@ -104,6 +104,7 @@ PARAM_HINTS = {
     "spacing_pct": "Spacing as percent of duration.",
     "history_kind": "History type (deals or orders).",
     "list_mode": "List mode (symbols or groups).",
+    "search_mode": "Symbol search mode: auto, name, description, group, exact, or all.",
     "volume": "Order volume (lots).",
     "comment": "Order comment tag.",
     "deviation": "Max slippage (points).",
