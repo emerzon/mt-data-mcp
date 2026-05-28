@@ -1071,7 +1071,7 @@ def options_expirations(
     symbol: str,
     detail: CompactFullDetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
-    """Fetch option expirations via the configured options data provider.
+    """Fetch option expirations; Tradier requires MTDATA_OPTIONS_API_KEY.
 
     Yahoo Finance is an unauthenticated fallback and may return 401 responses.
     For reliable options-chain data, configure Tradier with
@@ -1100,7 +1100,7 @@ def options_chain(
     limit: int = 200,
     detail: CompactFullDetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
-    """Fetch option-chain snapshots via the configured options data provider.
+    """Fetch option-chain snapshots; Tradier requires MTDATA_OPTIONS_API_KEY.
 
     Yahoo Finance is an unauthenticated fallback and may return 401 responses.
     For reliable options-chain data, configure Tradier with
@@ -1182,7 +1182,12 @@ def options_heston_calibrate(
     max_contracts: int = 25,
     detail: CompactFullDetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
-    """Calibrate Heston parameters from an option chain using QuantLib."""
+    """Calibrate Heston from option-chain data; Tradier requires MTDATA_OPTIONS_API_KEY.
+
+    Yahoo Finance is an unauthenticated fallback and may return 401 responses.
+    For reliable options-chain data, configure Tradier with
+    MTDATA_OPTIONS_PROVIDER=tradier and MTDATA_OPTIONS_API_KEY.
+    """
     from ..forecast.quantlib_tools import (
         calibrate_heston_quantlib_from_options as _impl,
     )
