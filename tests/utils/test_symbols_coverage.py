@@ -585,8 +585,10 @@ class TestSymbolsDescribe:
         assert "n_fields" not in sd
         assert "n_sequence_fields" not in sd
 
+    @patch("mtdata.core.symbols.time.time", return_value=1700000301.0)
     @patch(f"{_MT5}.symbol_info")
-    def test_default_describe_uses_compact_detail(self, mock_info):
+    def test_default_describe_uses_compact_detail(self, mock_info, mock_time):
+        del mock_time
         info = MagicMock()
         info.__dir__ = lambda self: ["name", "time", "digits", "point"]
         info.name = "EURUSD"
@@ -602,8 +604,10 @@ class TestSymbolsDescribe:
         assert res["symbol"] == "EURUSD"
         assert sd["digits"] == 5
         assert sd["point"] == 0.00001
+        assert sd["data_age_seconds"] == 301.0
         assert sd["data_stale"] is True
         assert "Live quote timestamp" in sd["warning"]
+        assert "quote_age_seconds" not in sd
         assert "time_epoch" not in sd
 
     @patch(f"{_MT5}.symbol_info")

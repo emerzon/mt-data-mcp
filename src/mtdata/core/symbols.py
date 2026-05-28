@@ -119,6 +119,7 @@ _SYMBOL_DESCRIBE_COMPACT_DIRECT_FIELDS: tuple[str, ...] = (
     "currency_base_warning",
     "currency_profit",
     "time",
+    "data_age_seconds",
     "data_stale",
     "warning",
     "digits",
@@ -605,7 +606,7 @@ def symbols_describe(
                                 for key, value in _quote_staleness_fields(
                                     utc_epoch
                                 ).items()
-                                if key in {"data_stale", "warning"}
+                                if key in {"data_age_seconds", "data_stale", "warning"}
                             }
                         )
                     except Exception:
@@ -742,7 +743,7 @@ def _quote_staleness_fields(tick_time: Optional[float]) -> Dict[str, Any]:
     except Exception:
         return {}
     fields: Dict[str, Any] = {
-        "quote_age_seconds": _market_scan_round(age_seconds, digits=3),
+        "data_age_seconds": _market_scan_round(age_seconds, digits=3),
         "data_stale": age_seconds > float(_MARKET_SCAN_STALE_QUOTE_SECONDS),
     }
     if fields["data_stale"]:
@@ -919,6 +920,7 @@ _MARKET_SCAN_UNITS = {
     "spread_pct": "percentage_points",
     "rsi": "0_100",
     "sma_distance_pct": "percentage_points",
+    "data_age_seconds": "seconds",
     "data_freshness_seconds": "seconds",
     "stale_after_seconds": "seconds",
     "bar_age_hours": "hours",
@@ -988,7 +990,7 @@ def _top_markets_headers(metric: str, *, detail_mode: str) -> List[str]:
             "group",
             "description",
             "tick_time",
-            "quote_age_seconds",
+            "data_age_seconds",
             "data_stale",
             "warning",
             "bid",
@@ -1096,7 +1098,7 @@ def _top_markets_all_headers(*, detail_mode: str) -> List[str]:
         "description",
         "timeframe",
         "tick_time",
-        "quote_age_seconds",
+        "data_age_seconds",
         "data_stale",
         "warning",
         "bar_time",
