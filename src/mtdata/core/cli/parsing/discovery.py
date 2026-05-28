@@ -69,10 +69,32 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("options_barrier_price", "option_type"): "Option side: call or put.",
     ("forecast_tune_optuna", "search_space"): "Optuna search space (JSON or k=v).",
     ("indicators_list", "detail"): "Output detail: compact table or full rows with aliases and descriptions.",
+    ("causal_discover_signals", "limit"): (
+        "Historical bars per symbol used for causal tests; not an output row limit."
+    ),
+    ("cointegration_test", "limit"): (
+        "Historical bars per symbol used for the cointegration test; "
+        "not an output row limit."
+    ),
+    ("correlation_matrix", "limit"): (
+        "Historical bars per symbol used for correlation; not an output row limit."
+    ),
     ("labels_triple_barrier", "detail"): "Detail level: full, summary, or compact (summary plus recent sample).",
+    ("labels_triple_barrier", "limit"): (
+        "Historical bars fetched for labeling; output size is controlled "
+        "by detail and lookback."
+    ),
     ("market_scan", "limit"): "Max matching symbols to return.",
     ("market_depth_fetch", "require_dom"): "Fail if DOM is unavailable instead of falling back to a ticker snapshot.",
+    ("patterns_detect", "limit"): (
+        "Historical bars fetched for pattern analysis; use top_k for compact "
+        "top-pattern count."
+    ),
     ("patterns_detect", "mode"): "Pattern mode: all, candlestick, classic, chart, fractal, or elliott.",
+    ("regime_detect", "limit"): (
+        "Historical bars fetched for regime detection; use max_regimes for compact "
+        "output count."
+    ),
     ("symbols_list", "limit"): "Max symbols or groups to return.",
     ("symbols_top_markets", "limit"): "Max symbols to return for each ranking.",
     ("trade_modify", "expiration"): "Pending order expiration time (dateparser string, UTC epoch seconds, or GTC token).",
