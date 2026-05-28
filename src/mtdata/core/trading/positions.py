@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 import logging
 import math
 from typing import Any, Dict, List, Optional, Tuple
@@ -9,6 +10,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from ...utils.utils import (
     _format_time_minimal,
     _normalize_limit,
+    _parse_start_datetime,
 )
 from .._mcp_instance import mcp
 from ..execution_logging import run_logged_operation
@@ -16,7 +18,11 @@ from ..output_contract import resolve_output_contract
 from . import comments, validation
 from .gateway import create_trading_gateway
 from .requests import TradeGetOpenRequest, TradeGetPendingRequest
-from .use_cases import run_trade_get_open, run_trade_get_pending
+from .use_cases import (
+    _DEFAULT_TRADE_HISTORY_LOOKBACK_DAYS,
+    run_trade_get_open,
+    run_trade_get_pending,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -652,6 +658,78 @@ def _style_trade_history_items(items: List[Any], *, column_style: Any) -> List[A
     return styled
 
 
+def _trade_history_period_context(request: Any) -> Dict[str, Any]:
+    def _format_period_dt(value: Any) -> Optional[str]:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        else:
+            value = value.astimezone(timezone.utc)
+        return value.strftime("%Y-%m-%d %H:%M:%S")
+
+    end_value = getattr(request, "end", None)
+    to_dt = _parse_start_datetime(end_value) if end_value else None
+    if to_dt is None:
+        to_dt = datetime.now(timezone.utc).replace(tzinfo=None)
+
+    minutes_back_value, minutes_back_error = validation._normalize_minutes_back(
+        getattr(request, "minutes_back", None)
+    )
+    if minutes_back_error:
+        minutes_back_value = None
+
+    start_value = getattr(request, "start", None)
+    if minutes_back_value is not None:
+        from_dt = to_dt - timedelta(minutes=minutes_back_value)
+    elif start_value:
+        from_dt = _parse_start_datetime(start_value)
+    else:
+        minutes_back_value = int(_DEFAULT_TRADE_HISTORY_LOOKBACK_DAYS * 24 * 60)
+        from_dt = to_dt - timedelta(minutes=minutes_back_value)
+
+    out: Dict[str, Any] = {
+        "period_start": _format_period_dt(from_dt),
+        "period_end": _format_period_dt(to_dt),
+        "period_timezone": "UTC",
+    }
+    if minutes_back_value is not None:
+        out["minutes_back_effective"] = int(minutes_back_value)
+        if getattr(request, "minutes_back", None) is not None:
+            out["period_source"] = "minutes_back"
+            out["minutes_back_requested"] = int(minutes_back_value)
+        else:
+            out["period_source"] = "default_lookback"
+            out["note"] = (
+                f"Period limited to default {int(minutes_back_value)}-minute "
+                f"({_DEFAULT_TRADE_HISTORY_LOOKBACK_DAYS}-day) lookback. "
+                "Set minutes_back or start/end to change."
+            )
+    elif start_value or end_value:
+        out["period_source"] = "explicit_range"
+    return out
+
+
+def _insert_trade_history_period_context(
+    out: Dict[str, Any],
+    period_context: Dict[str, Any],
+) -> Dict[str, Any]:
+    if not period_context:
+        return out
+    ordered: Dict[str, Any] = {}
+    inserted = False
+    for key, value in out.items():
+        ordered[key] = value
+        if key == "count":
+            for period_key, period_value in period_context.items():
+                ordered.setdefault(period_key, period_value)
+            inserted = True
+    if not inserted:
+        for period_key, period_value in period_context.items():
+            ordered.setdefault(period_key, period_value)
+    return ordered
+
+
 def normalize_trade_history_output(
     rows: Any,
     *,
@@ -661,6 +739,11 @@ def normalize_trade_history_output(
     out = _normalize_trade_read_output(rows, request=request, kind="trade_history")
     history_kind = getattr(request, "history_kind", None)
     include_request_metadata = _include_trade_read_request_metadata(request)
+    if out.get("success") is True:
+        out = _insert_trade_history_period_context(
+            out,
+            _trade_history_period_context(request),
+        )
     timezone_label = "UTC"
     if out.get("success") is True and isinstance(out.get("items"), list):
         raw_items = list(out["items"])

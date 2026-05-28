@@ -957,6 +957,39 @@ def test_trade_history_compact_detail_omits_echoed_filters() -> None:
     assert "limit" not in out
 
 
+def test_trade_history_default_period_context_precedes_items() -> None:
+    out = normalize_trade_history_output(
+        [{"ticket": 1, "symbol": "EURUSD"}],
+        request=TradeHistoryRequest(history_kind="deals", detail="compact"),
+    )
+
+    assert out["period_source"] == "default_lookback"
+    assert out["minutes_back_effective"] == 10080
+    assert out["period_timezone"] == "UTC"
+    assert "default 10080-minute (7-day) lookback" in out["note"]
+    keys = list(out)
+    assert keys.index("period_start") < keys.index("items")
+
+
+def test_trade_history_reports_explicit_period_context() -> None:
+    out = normalize_trade_history_output(
+        [{"ticket": 1, "symbol": "EURUSD"}],
+        request=TradeHistoryRequest(
+            history_kind="deals",
+            detail="compact",
+            start="2026-01-01 00:00",
+            end="2026-01-03 00:00",
+        ),
+    )
+
+    assert out["period_start"] == "2026-01-01 00:00:00"
+    assert out["period_end"] == "2026-01-03 00:00:00"
+    assert out["period_timezone"] == "UTC"
+    assert out["period_source"] == "explicit_range"
+    assert "minutes_back_effective" not in out
+    assert "note" not in out
+
+
 def test_trade_history_empty_message_uses_enveloped_contract() -> None:
     mt5, prev = _install_mock_mt5()
     mt5.history_deals_get.return_value = []
