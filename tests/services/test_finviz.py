@@ -826,8 +826,8 @@ class TestFinvizTools:
         assert result["detail"] == "compact"
         assert result["category"] == "summary"
         assert result["fundamentals"]["pe_ratio"] == 34.29
-        assert result["fundamentals"]["market_cap"] == 3_979_470_000_000.0
         assert result["fundamentals"]["market_cap_formatted"] == "3.98T"
+        assert "market_cap" not in result["fundamentals"]
         assert result["fundamentals"]["eps_ttm"] == 7.9
         assert result["fundamentals"]["change_pct"] == 1.2
         assert result["fundamentals"]["high_52w_price"] == 288.62
@@ -888,7 +888,6 @@ class TestFinvizTools:
 
         assert valuation["category"] == "valuation"
         assert valuation["fundamentals"] == {
-            "market_cap": 3_979_470_000_000.0,
             "market_cap_formatted": "3.98T",
             "pe_ratio": 34.29,
             "price_to_sales": 8.1,
@@ -899,7 +898,6 @@ class TestFinvizTools:
         assert custom["missing_fields"] == ["Missing"]
         assert custom_normalized["fundamentals"] == {
             "pe_ratio": 34.29,
-            "market_cap": 3_979_470_000_000.0,
             "market_cap_formatted": "3.98T",
             "eps_ttm": 7.9,
         }
@@ -984,6 +982,8 @@ class TestFinvizTools:
                 "Shs Float": "14.66B",
                 "Book/sh": "6.00",
                 "Perf Week": "1.71%",
+                "Volume": "47.38M",
+                "Avg Volume": "43.78M",
             },
         }
 
@@ -997,9 +997,15 @@ class TestFinvizTools:
         assert fundamentals["quick_ratio"] == 0.83
         assert fundamentals["long_term_debt_to_equity"] == 1.26
         assert fundamentals["shares_outstanding"] == 14_700_000_000.0
+        assert fundamentals["shares_outstanding_formatted"] == "14.7B"
         assert fundamentals["shares_float"] == 14_660_000_000.0
+        assert fundamentals["shares_float_formatted"] == "14.66B"
         assert fundamentals["book_value_per_share"] == 6.0
         assert fundamentals["performance_week"] == 1.71
+        assert fundamentals["volume"] == 47_380_000
+        assert fundamentals["volume_formatted"] == "47.38M"
+        assert fundamentals["avg_volume"] == 43_780_000
+        assert fundamentals["avg_volume_formatted"] == "43.78M"
         assert "roa" not in fundamentals
         assert "curr_r" not in fundamentals
 

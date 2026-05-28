@@ -916,6 +916,16 @@ _FINVIZ_INTEGER_NUMERIC_KEYS = frozenset(
         "employees",
     }
 )
+_FINVIZ_LARGE_NUMBER_FORMAT_KEYS = frozenset(
+    {
+        "market_cap",
+        "volume",
+        "avg_volume",
+        "shares_outstanding",
+        "shares_float",
+        "employees",
+    }
+)
 
 _FINVIZ_EARNINGS_COMPACT_FIELDS = (
     "symbol",
@@ -1054,6 +1064,25 @@ def _format_finviz_large_number(value: Any) -> Optional[str]:
             text = f"{float(number) / threshold:.2f}".rstrip("0").rstrip(".")
             return f"{text}{suffix}"
     return f"{float(number):.0f}"
+
+
+def _add_finviz_large_number_formats(fundamentals: Dict[str, Any]) -> None:
+    for key in sorted(_FINVIZ_LARGE_NUMBER_FORMAT_KEYS):
+        if key not in fundamentals:
+            continue
+        formatted_key = f"{key}_formatted"
+        if formatted_key in fundamentals:
+            continue
+        formatted = _format_finviz_large_number(fundamentals.get(key))
+        if formatted:
+            fundamentals[formatted_key] = formatted
+
+
+def _compact_finviz_fundamentals(fundamentals: Dict[str, Any]) -> Dict[str, Any]:
+    compact = dict(fundamentals)
+    if compact.get("market_cap_formatted") not in (None, ""):
+        compact.pop("market_cap", None)
+    return compact
 
 
 def _finite_finviz_float(value: Any) -> Optional[float]:
@@ -1773,10 +1802,9 @@ def _filter_finviz_fundamentals_payload(
         if output_value in (None, ""):
             continue
         filtered[output_key] = output_value
-        if output_key == "market_cap":
-            formatted_market_cap = _format_finviz_large_number(output_value)
-            if formatted_market_cap:
-                filtered["market_cap_formatted"] = formatted_market_cap
+    _add_finviz_large_number_formats(filtered)
+    if detail_mode == "compact":
+        filtered = _compact_finviz_fundamentals(filtered)
     out = dict(result)
     _add_finviz_52w_quality_flags(filtered)
     out["fundamentals"] = filtered
