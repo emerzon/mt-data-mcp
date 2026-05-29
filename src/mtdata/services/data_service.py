@@ -106,6 +106,11 @@ _TICK_PRICE_STAT_KEYS = frozenset(
     }
 )
 _TICK_ROW_UNITS = {
+    "bid": "price",
+    "ask": "price",
+    "last": "price",
+    "mid": "price",
+    "spread": "price",
     "volume": "mt5_tick_volume",
     "volume_real": "traded_volume",
 }

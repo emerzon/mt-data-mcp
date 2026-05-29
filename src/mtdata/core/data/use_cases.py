@@ -33,6 +33,7 @@ _COMPACT_TICK_TOP_LEVEL_FIELDS = (
     "count",
     "data",
     "timezone",
+    "units",
     "data_quality",
     "warnings",
     "simplified",
@@ -482,6 +483,13 @@ def _compact_tick_rows_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     if isinstance(rows, list):
         compact["data"] = [_compact_tick_row(row) for row in rows]
         compact["count"] = len(compact["data"])
+        units = compact.get("units")
+        compact_units = dict(units) if isinstance(units, dict) else {}
+        for field in ("bid", "ask", "spread"):
+            if any(isinstance(row, dict) and field in row for row in compact["data"]):
+                compact_units.setdefault(field, "price")
+        if compact_units:
+            compact["units"] = compact_units
     return compact
 
 

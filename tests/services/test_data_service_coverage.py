@@ -2009,6 +2009,8 @@ class TestFetchTicks(unittest.TestCase):
         self.assertIn('stats', result)
         self.assertIn('spread', result['stats'])
         self.assertIn('last_quote', result)
+        self.assertEqual(result["units"]["bid"], "price")
+        self.assertEqual(result["units"]["ask"], "price")
         self.assertEqual(result["units"]["volume"], "mt5_tick_volume")
 
     @patch(_TICKS_RANGE)

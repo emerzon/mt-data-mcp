@@ -785,6 +785,7 @@ def test_run_data_fetch_ticks_compact_prunes_row_diagnostics():
             },
         ],
         "timezone": "UTC",
+        "units": {"bid": "price", "ask": "price", "spread": "price"},
     }
 
 
