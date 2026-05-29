@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
 import logging
 import math
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from ...utils.utils import (
@@ -25,6 +25,17 @@ from .use_cases import (
 )
 
 logger = logging.getLogger(__name__)
+
+_TRADE_VOLUME_UNITS = {
+    "volume": "lots",
+    "volume_initial": "lots",
+    "volume_current": "lots",
+    "requested_volume": "lots",
+    "remaining_volume": "lots",
+    "Volume": "lots",
+    "Initial Volume": "lots",
+    "Current Volume": "lots",
+}
 
 
 def _utc_epoch_identity(value: Any) -> float:
@@ -164,6 +175,26 @@ def _trade_read_timezone_label(items: Any) -> Optional[str]:
     return None
 
 
+def _attach_trade_volume_units(out: Dict[str, Any]) -> None:
+    items = out.get("items")
+    if not isinstance(items, list):
+        return
+    seen_fields = {
+        str(key)
+        for item in items
+        if isinstance(item, dict)
+        for key, value in item.items()
+        if value is not None
+    }
+    units = {
+        key: unit
+        for key, unit in _TRADE_VOLUME_UNITS.items()
+        if key in seen_fields
+    }
+    if units:
+        out["units"] = units
+
+
 def _gateway_account_currency(gateway: Any) -> Optional[str]:
     account_info = getattr(gateway, "account_info", None)
     if not callable(account_info):
@@ -221,6 +252,7 @@ def _normalize_trade_read_output(
             timezone_label = _trade_read_timezone_label(out["items"])
             if timezone_label:
                 out["timezone"] = timezone_label
+            _attach_trade_volume_units(out)
             message_text = str(rows.get("message", "")).strip()
             if message_text:
                 out["message"] = message_text
@@ -260,6 +292,7 @@ def _normalize_trade_read_output(
     timezone_label = _trade_read_timezone_label(out["items"])
     if timezone_label:
         out["timezone"] = timezone_label
+    _attach_trade_volume_units(out)
     if len(rows) == 0:
         _mark_trade_read_empty(out)
     return _compact_trade_read_output(out, request=request)
@@ -777,6 +810,7 @@ def normalize_trade_history_output(
         out["history_kind"] = history_kind
     if out.get("success") is True:
         out.setdefault("timezone", timezone_label)
+        _attach_trade_volume_units(out)
     return out
 
 

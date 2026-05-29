@@ -105,6 +105,10 @@ _TICK_PRICE_STAT_KEYS = frozenset(
         "q75",
     }
 )
+_TICK_ROW_UNITS = {
+    "volume": "mt5_tick_volume",
+    "volume_real": "traded_volume",
+}
 
 
 def _format_mt5_last_error() -> str:
@@ -186,6 +190,14 @@ def _round_tick_price_payload(out: Dict[str, Any], digits: int) -> None:
         for key in ("vwap_mid", "vwap_last"):
             if key in volume_stats:
                 volume_stats[key] = _round_price_value(volume_stats[key], digits)
+
+
+def _tick_units_for_headers(headers: List[str]) -> Dict[str, str]:
+    return {
+        key: unit
+        for key, unit in _TICK_ROW_UNITS.items()
+        if key in headers
+    }
 
 
 def _describe_rate_fetch_error(symbol: str, *, info_before: Any = None) -> str:
@@ -2044,6 +2056,8 @@ def fetch_ticks(  # noqa: C901
             df_ticks["last"] = lasts
         if has_volume:
             df_ticks["volume"] = volumes
+        if has_real_volume:
+            df_ticks["volume_real"] = volumes_real
         if has_flags:
             df_ticks["flags"] = flags
             df_ticks["flags_decoded"] = [
@@ -2239,6 +2253,9 @@ def fetch_ticks(  # noqa: C901
                     pass
             if price_digits > 0:
                 out["price_precision"] = int(price_digits)
+            units = _tick_units_for_headers(headers)
+            if units and detailed_stats:
+                out["units"] = units
             if has_last and not small_summary_sample:
                 out["stats"]["last"] = _series_stats(df_stats["last"], total_count=len(df_stats))
 
@@ -2353,13 +2370,22 @@ def fetch_ticks(  # noqa: C901
             }
             payload.update(table_payload)
             payload["timezone"] = _timezone_label(use_client_tz=_use_ctz, client_tz=client_tz)
+            units = _tick_units_for_headers(headers)
+            if units:
+                payload["units"] = units
             _add_tick_summary_fields(payload)
             if has_flags:
                 payload["flags_legend"] = _observed_tick_flags_decoded(flags)
             if simplify_meta is not None and original_count > len(rows):
                 payload["simplified"] = True
                 meta = dict(simplify_meta)
-                meta["columns"] = [c for c in ["bid","ask"] + (["last"] if has_last else []) + (["volume"] if has_volume else [])]
+                meta["columns"] = [
+                    c
+                    for c in ["bid", "ask"]
+                    + (["last"] if has_last else [])
+                    + (["volume"] if has_volume else [])
+                    + (["volume_real"] if has_real_volume else [])
+                ]
                 payload["simplify"] = meta
             _add_tick_data_quality(payload)
             return payload
@@ -2369,12 +2395,14 @@ def fetch_ticks(  # noqa: C901
         _simp_params_meta: Optional[Dict[str, Any]] = None
         if simplify_present and original_count > 3:
             try:
-                # Always represent all available numeric columns (bid/ask/(last)/(volume))
+                # Always represent available bid/ask/last and volume columns.
                 cols: List[str] = ['bid', 'ask']
                 if has_last:
                     cols.append('last')
                 if has_volume:
                     cols.append('volume')
+                if has_real_volume:
+                    cols.append('volume_real')
                 n_out = _choose_simplify_points(original_count, simplify_used)
                 per = max(3, int(round(n_out / max(1, len(cols)))))
                 idx_set: set = set([0, original_count - 1])
@@ -2385,6 +2413,7 @@ def fetch_ticks(  # noqa: C901
                     "ask": asks,
                     "last": lasts,
                     "volume": volumes,
+                    "volume_real": volumes_real,
                 }
                 series_by_col: Dict[str, List[float]] = {c: extracted_columns[c] for c in cols}
                 for c in cols:
@@ -2499,6 +2528,9 @@ def fetch_ticks(  # noqa: C901
         }
         payload.update(table_payload)
         payload["timezone"] = _timezone_label(use_client_tz=_use_ctz, client_tz=client_tz)
+        units = _tick_units_for_headers(headers)
+        if units:
+            payload["units"] = units
         _add_tick_summary_fields(payload)
         if has_flags:
             payload["flags_legend"] = _observed_tick_flags_decoded(flags)
@@ -2509,7 +2541,13 @@ def fetch_ticks(  # noqa: C901
                 "method": (_simp_method_used or str((simplify_used or {}).get('method', SIMPLIFY_DEFAULT_METHOD)).lower()),
                 "original_rows": original_count,
                 "multi_column": True,
-                "columns": [c for c in ["bid","ask"] + (["last"] if has_last else []) + (["volume"] if has_volume else [])],
+                "columns": [
+                    c
+                    for c in ["bid", "ask"]
+                    + (["last"] if has_last else [])
+                    + (["volume"] if has_volume else [])
+                    + (["volume_real"] if has_real_volume else [])
+                ],
             }
             try:
                 if _simp_params_meta:

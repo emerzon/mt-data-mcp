@@ -28,6 +28,11 @@ from .output_contract import ensure_common_meta, normalize_output_verbosity_deta
 logger = logging.getLogger(__name__)
 _MARKET_DEPTH_ENABLE_ENV = "MTDATA_ENABLE_MARKET_DEPTH_FETCH"
 _MARKET_TICKER_STALE_SECONDS = 300
+_MARKET_DEPTH_BOOK_UNITS = {
+    "volume": "book_volume",
+    "volume_real": "book_volume_real",
+}
+_MARKET_DEPTH_TICK_UNITS = {"volume": "mt5_tick_volume"}
 
 
 def _display_timezone_label(*, use_client_tz: bool) -> str:
@@ -113,6 +118,21 @@ def _market_depth_fetch_enabled() -> bool:
     if raw is None:
         return False
     return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _market_depth_level_field(level: Any, *names: str) -> Any:
+    for name in names:
+        if isinstance(level, dict) and name in level:
+            return level.get(name)
+        try:
+            return level[name]  # type: ignore[index]
+        except Exception:
+            pass
+        try:
+            return getattr(level, name)
+        except Exception:
+            pass
+    return None
 
 
 def _compact_market_ticker_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -293,10 +313,16 @@ def _market_depth_fetch_impl(symbol: str, spread: bool = False, require_dom: boo
 
                 for level in depth:
                     try:
-                        price = float(level["price"])
-                        volume = float(level["volume"])
-                        volume_real = float(level["volume_real"])
-                        level_type = int(level["type"])
+                        price = float(_market_depth_level_field(level, "price"))
+                        volume = float(_market_depth_level_field(level, "volume"))
+                        volume_real = float(
+                            _market_depth_level_field(
+                                level,
+                                "volume_real",
+                                "volume_dbl",
+                            )
+                        )
+                        level_type = int(_market_depth_level_field(level, "type"))
                     except (KeyError, TypeError, ValueError):
                         continue
                     order_data = {
@@ -330,6 +356,7 @@ def _market_depth_fetch_impl(symbol: str, spread: bool = False, require_dom: boo
                             "total": int(len(buy_orders) + len(sell_orders)),
                         },
                     },
+                    "units": dict(_MARKET_DEPTH_BOOK_UNITS),
                 }
                 if spread and buy_orders and sell_orders:
                     valid_buy_prices = [
@@ -383,6 +410,7 @@ def _market_depth_fetch_impl(symbol: str, spread: bool = False, require_dom: boo
                     "note": "Full market depth not available, showing current bid/ask snapshot.",
                     "recommended_alternative": "market_ticker",
                 },
+                "units": dict(_MARKET_DEPTH_TICK_UNITS),
             }
             if spread:
                 spread_metrics = _compute_spread_metrics(

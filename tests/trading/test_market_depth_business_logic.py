@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+from collections import namedtuple
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -53,6 +54,7 @@ def test_market_depth_tick_fallback_includes_price_display() -> None:
     assert out["data"]["bid"] == 65601.0
     assert out["data"]["ask"] == 65601.5
     assert out["data"]["last"] == 65601.0
+    assert out["units"] == {"volume": "mt5_tick_volume"}
     assert isinstance(out.get("query_latency_ms"), float)
 
 
@@ -98,6 +100,27 @@ def test_market_depth_full_depth_includes_price_display() -> None:
     assert out["price_precision"] == 2
     assert out["data"]["buy_orders"][0]["price_display"] == "65601.00"
     assert out["data"]["sell_orders"][0]["price_display"] == "65602.50"
+    assert out["units"]["volume"] == "book_volume"
+
+
+def test_market_depth_full_depth_accepts_mt5_bookinfo_volume_dbl() -> None:
+    BookInfo = namedtuple("BookInfo", ["type", "price", "volume", "volume_dbl"])
+    depth = [
+        BookInfo(type=0, price=65601.0, volume=1, volume_dbl=1.25),
+        BookInfo(type=1, price=65602.5, volume=2, volume_dbl=2.5),
+    ]
+    with patch("mtdata.core.market_depth.mt5") as mt5:
+        mt5.symbol_select.return_value = True
+        mt5.symbol_info.return_value = SimpleNamespace(digits=2)
+        mt5.market_book_get.return_value = depth
+
+        out = _raw_market_depth_fetch("BTCUSD")
+
+    assert out["success"] is True
+    assert out["data"]["depth_levels"]["total"] == 2
+    assert out["data"]["buy_orders"][0]["volume"] == 1.0
+    assert out["data"]["buy_orders"][0]["volume_real"] == 1.25
+    assert out["data"]["sell_orders"][0]["volume_real"] == 2.5
 
 
 def test_market_depth_subscribes_and_releases_book_snapshot() -> None:

@@ -10,7 +10,11 @@ from ..market_depth import market_ticker
 from ..output_contract import ensure_common_meta
 from .account import trade_account_info
 from .positions import trade_get_open, trade_get_pending
-from .requests import TradeGetOpenRequest, TradeGetPendingRequest, TradeSessionContextRequest
+from .requests import (
+    TradeGetOpenRequest,
+    TradeGetPendingRequest,
+    TradeSessionContextRequest,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -219,6 +223,7 @@ def _compact_trade_session_context_payload(payload: Dict[str, Any]) -> Dict[str,
                 )
 
     open_positions = payload.get("open_positions")
+    volume_units: Dict[str, str] = {}
     if isinstance(open_positions, dict):
         if open_positions.get("error") not in (None, ""):
             open_error = {"error": open_positions.get("error")}
@@ -254,6 +259,8 @@ def _compact_trade_session_context_payload(payload: Dict[str, Any]) -> Dict[str,
             else:
                 compact["open_positions"] = []
             compact["open_positions_count"] = int(open_positions.get("count") or 0)
+            if compact["open_positions_count"] > 0:
+                volume_units["volume"] = "lots"
 
     pending_orders = payload.get("pending_orders")
     if isinstance(pending_orders, dict):
@@ -291,6 +298,11 @@ def _compact_trade_session_context_payload(payload: Dict[str, Any]) -> Dict[str,
             else:
                 compact["pending_orders"] = []
             compact["pending_orders_count"] = int(pending_orders.get("count") or 0)
+            if compact["pending_orders_count"] > 0:
+                volume_units["volume"] = "lots"
+
+    if volume_units:
+        compact["units"] = volume_units
 
     compact["show_all_hint"] = (
         "Use detail='full' for complete account, ticker, positions, and pending orders."

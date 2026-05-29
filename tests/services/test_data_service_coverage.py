@@ -1973,6 +1973,7 @@ class TestFetchTicks(unittest.TestCase):
         self.assertIn('stats', result)
         self.assertIn('spread', result['stats'])
         self.assertIn('last_quote', result)
+        self.assertEqual(result["units"]["volume"], "mt5_tick_volume")
 
     @patch(_TICKS_RANGE)
     @patch(_CACHED_INFO, return_value=SimpleNamespace(digits=5))
@@ -2338,6 +2339,7 @@ class TestFetchTicks(unittest.TestCase):
         self.assertEqual(vol['kind'], 'real_volume')
         self.assertIn('sum', vol)
         self.assertIn('per_second', vol)
+        self.assertEqual(result["units"]["volume_real"], "traded_volume")
 
     @patch(_TICKS_RANGE)
     @patch(_CACHED_INFO, return_value=MagicMock())
@@ -2375,6 +2377,7 @@ class TestFetchTicks(unittest.TestCase):
         vol = result['stats']['volume']
         self.assertEqual(vol['kind'], 'tick_volume')
         self.assertIn('sum', vol)
+        self.assertEqual(result["units"]["volume"], "mt5_tick_volume")
 
     # -- Simplify for ticks --------------------------------------------------
 

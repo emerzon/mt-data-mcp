@@ -362,6 +362,7 @@ def _normalize_trade_session_context_cli_payload(
     if "ticker" in out:
         compact_out["ticker"] = out["ticker"]
 
+    volume_units: Dict[str, str] = {}
     open_positions_in = out.get("open_positions")
     if isinstance(open_positions_in, list):
         compact_rows = [
@@ -369,6 +370,8 @@ def _normalize_trade_session_context_cli_payload(
         ]
         compact_out["open_positions"] = compact_rows
         compact_out["open_positions_count"] = len(compact_rows)
+        if compact_rows:
+            volume_units["volume"] = "lots"
     if isinstance(open_positions_in, dict):
         if "error" in open_positions_in and not _is_empty_value(
             open_positions_in.get("error")
@@ -402,6 +405,8 @@ def _normalize_trade_session_context_cli_payload(
             compact_out["open_positions_count"] = int(
                 open_positions_in.get("count") or 0
             )
+            if compact_out["open_positions_count"] > 0:
+                volume_units["volume"] = "lots"
 
     pending_orders_in = out.get("pending_orders")
     if isinstance(pending_orders_in, list):
@@ -410,6 +415,8 @@ def _normalize_trade_session_context_cli_payload(
         ]
         compact_out["pending_orders"] = compact_rows
         compact_out["pending_orders_count"] = len(compact_rows)
+        if compact_rows:
+            volume_units["volume"] = "lots"
     if isinstance(pending_orders_in, dict):
         if "error" in pending_orders_in and not _is_empty_value(
             pending_orders_in.get("error")
@@ -443,6 +450,11 @@ def _normalize_trade_session_context_cli_payload(
             compact_out["pending_orders_count"] = int(
                 pending_orders_in.get("count") or 0
             )
+            if compact_out["pending_orders_count"] > 0:
+                volume_units["volume"] = "lots"
+
+    if volume_units:
+        compact_out["units"] = volume_units
 
     show_all_hint = out.get("show_all_hint")
     if not _is_empty_value(show_all_hint):
