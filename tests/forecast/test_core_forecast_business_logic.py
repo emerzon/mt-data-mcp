@@ -1440,6 +1440,7 @@ def test_forecast_conformal_intervals_success_and_errors(monkeypatch):
     assert out["confidence_level"] == 0.9
     assert out["ci_status"] == "available"
     assert out["ci_available"] is True
+    assert out["detail"] == "compact"
     assert out["conformal"]["ci_alpha"] == 0.1
     assert len(out["lower_price"]) == 2
     assert len(out["upper_price"]) == 2
@@ -1468,6 +1469,7 @@ def test_forecast_conformal_intervals_request_defaults_and_spacing_validation():
 
     assert request.horizon == 12
     assert request.spacing == 20
+    assert request.detail == "compact"
 
     with pytest.raises(ValidationError, match="spacing must be greater than or equal to horizon when steps > 1"):
         ForecastConformalIntervalsRequest(
@@ -1505,6 +1507,7 @@ def test_run_forecast_conformal_intervals_routes_method_params_consistently():
             steps=1,
             spacing=1,
             params={"seasonality": 24},
+            detail="full",
         ),
         backtest_impl=fake_backtest,
         forecast_impl=fake_forecast,
@@ -1513,6 +1516,8 @@ def test_run_forecast_conformal_intervals_routes_method_params_consistently():
     assert captured["backtest"]["params_per_method"] == {"theta": {"seasonality": 24}}
     assert "params" not in captured["backtest"]
     assert captured["forecast"]["params"] == {"seasonality": 24}
+    assert captured["forecast"]["detail"] == "full"
+    assert result["detail"] == "full"
 
 
 def test_run_forecast_conformal_intervals_uses_finite_sample_quantile():

@@ -1379,6 +1379,7 @@ def run_forecast_conformal_intervals(
     forecast_impl: Any = _forecast_impl,
 ) -> Dict[str, Any]:
     started_at = time.perf_counter()
+    detail_value = _normalize_trader_detail(getattr(request, "detail", "compact"))
     log_operation_start(
         logger,
         operation="forecast_conformal_intervals",
@@ -1434,6 +1435,7 @@ def run_forecast_conformal_intervals(
             horizon=int(request.horizon),
             params=request.params,
             denoise=request.denoise,
+            detail=detail_value,
         ))
         yhat = out.get("forecast_price") or []
         if not yhat:
@@ -1448,6 +1450,7 @@ def run_forecast_conformal_intervals(
             hi[i] = yhat_arr[i] + err
 
         result = dict(out)
+        result["detail"] = detail_value
         result["conformal"] = {
             "ci_alpha": float(request.ci_alpha),
             "calibration_steps": int(request.steps),

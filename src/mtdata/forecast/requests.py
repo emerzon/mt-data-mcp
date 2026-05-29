@@ -144,6 +144,7 @@ class ForecastConformalIntervalsRequest(BaseModel):
     ci_alpha: float = Field(0.1, gt=0.0, lt=1.0)
     denoise: Optional[DenoiseSpec] = None
     params: Optional[Dict[str, Any]] = None
+    detail: CompactFullDetailLiteral = "compact"
 
     @model_validator(mode="after")
     def _validate_spacing(self) -> "ForecastConformalIntervalsRequest":
