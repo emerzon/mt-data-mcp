@@ -967,6 +967,7 @@ def test_trade_history_default_period_context_precedes_items() -> None:
 
     assert out["period_source"] == "default_lookback"
     assert out["minutes_back_effective"] == 10080
+    assert out["defaults_applied"] == {"lookback_minutes": 10080}
     assert out["period_timezone"] == "UTC"
     assert "default 10080-minute (7-day) lookback" in out["note"]
     keys = list(out)

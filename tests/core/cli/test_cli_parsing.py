@@ -705,6 +705,16 @@ class TestResolveParamKwargs:
         assert "Historical bars per symbol" in correlation_window_kwargs["help"]
         assert "max_regimes" in regime_limit_kwargs["help"]
 
+    def test_trade_history_minutes_back_help_mentions_default_lookback(self):
+        kwargs, _ = _resolve_param_kwargs(
+            {"name": "minutes_back", "type": int, "required": False, "default": None},
+            None,
+            cmd_name="trade_history",
+        )
+
+        assert "Defaults to 10080 minutes" in kwargs["help"]
+        assert "7 days" in kwargs["help"]
+
     def test_report_generate_format_help_is_removed_output_help(self):
         param = {
             "name": "format",

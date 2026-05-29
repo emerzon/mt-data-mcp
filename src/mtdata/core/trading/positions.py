@@ -739,6 +739,7 @@ def _trade_history_period_context(request: Any) -> Dict[str, Any]:
             out["minutes_back_requested"] = int(minutes_back_value)
         else:
             out["period_source"] = "default_lookback"
+            out["defaults_applied"] = {"lookback_minutes": int(minutes_back_value)}
             out["note"] = (
                 f"Period limited to default {int(minutes_back_value)}-minute "
                 f"({_DEFAULT_TRADE_HISTORY_LOOKBACK_DAYS}-day) lookback. "
