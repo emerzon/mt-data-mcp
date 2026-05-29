@@ -294,6 +294,8 @@ def _compact_candles_payload(
             compact[key] = public_diagnostics[key]
     if "spread_estimate" in public_diagnostics:
         compact["spread_estimate"] = public_diagnostics["spread_estimate"]
+    if result.get("volume_type") == "tick_count" and result.get("volume_note"):
+        compact["volume_note"] = result["volume_note"]
     return compact
 
 

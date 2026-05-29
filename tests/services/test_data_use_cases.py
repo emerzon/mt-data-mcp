@@ -159,6 +159,27 @@ def test_run_data_fetch_candles_compact_omits_default_metadata():
     }
 
 
+def test_run_data_fetch_candles_compact_keeps_tick_volume_note():
+    request = DataFetchCandlesRequest(symbol="EURUSD", timeframe="H1", limit=5)
+
+    result = run_data_fetch_candles(
+        request,
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_candles_impl=lambda **kwargs: {
+            "success": True,
+            "symbol": "EURUSD",
+            "timeframe": "H1",
+            "candles": 5,
+            "volume_type": "tick_count",
+            "volume_note": "MT5 tick_volume is broker tick count.",
+            "data": [{"time": 1, "close": 1.1, "tick_volume": 20}],
+        },
+    )
+
+    assert result["volume_type"] == "tick_count"
+    assert result["volume_note"] == "MT5 tick_volume is broker tick count."
+
+
 def test_run_data_fetch_candles_compact_keeps_staleness_without_meta():
     request = DataFetchCandlesRequest(symbol="EURUSD", timeframe="H1", limit=5)
 
