@@ -733,6 +733,23 @@ class TestResolveParamKwargs:
         assert "Historical bars per symbol" in correlation_window_kwargs["help"]
         assert "max_regimes" in regime_limit_kwargs["help"]
 
+    def test_labels_triple_barrier_limit_and_lookback_help_distinguish_roles(self):
+        limit_kwargs, _ = _resolve_param_kwargs(
+            {"name": "limit", "type": int, "required": False, "default": 1200},
+            None,
+            cmd_name="labels_triple_barrier",
+        )
+        lookback_kwargs, _ = _resolve_param_kwargs(
+            {"name": "lookback", "type": int, "required": False, "default": 300},
+            None,
+            cmd_name="labels_triple_barrier",
+        )
+
+        assert "fetched for labeling" in limit_kwargs["help"]
+        assert "not an output row limit" in limit_kwargs["help"]
+        assert "Recent labeled entries" in lookback_kwargs["help"]
+        assert "limit controls fetched history" in lookback_kwargs["help"]
+
     def test_trade_history_minutes_back_help_mentions_default_lookback(self):
         kwargs, _ = _resolve_param_kwargs(
             {"name": "minutes_back", "type": int, "required": False, "default": None},

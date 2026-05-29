@@ -83,8 +83,11 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ),
     ("labels_triple_barrier", "detail"): "Detail level: full, standard, summary, or compact (summary plus recent sample).",
     ("labels_triple_barrier", "limit"): (
-        "Historical bars fetched for labeling; output size is controlled "
-        "by detail and lookback."
+        "Historical bars fetched for labeling; not an output row limit."
+    ),
+    ("labels_triple_barrier", "lookback"): (
+        "Recent labeled entries used for compact/summary stats and samples; "
+        "limit controls fetched history."
     ),
     ("market_scan", "limit"): "Max matching symbols to return.",
     ("market_depth_fetch", "require_dom"): "Fail if DOM is unavailable instead of falling back to a ticker snapshot.",
