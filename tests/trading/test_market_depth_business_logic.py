@@ -344,6 +344,7 @@ def test_market_ticker_compact_detail_omits_verbose_fields() -> None:
     assert out["tick_volume"] == 5
     assert out["time_display"] == "2023-11-14 22:13"
     assert out["data_stale"] is True
+    assert out["stale_after_seconds"] == 300
     assert out["freshness_basis"] == "absolute_300s"
     assert "data_age" in out
     assert "Tick data may be stale" in out["warning"]
@@ -497,6 +498,7 @@ def test_market_ticker_full_detail_rounds_age_fields() -> None:
         out = _raw_market_ticker("EURUSD", detail="full")
 
     assert out["data_age_seconds"] == 34.7
+    assert out["stale_after_seconds"] == 300
     assert "data_age_hours" not in out
     assert out["meta"]["diagnostics"]["data_freshness_seconds"] == 34.7
 

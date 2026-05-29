@@ -938,7 +938,13 @@ def _normalize_market_ticker_payload(
         "spread_cost_currency",
         "pricing_basis",
         "data_age_seconds",
+        "data_age",
         "data_stale",
+        "stale_after_seconds",
+        "freshness_basis",
+        "market_status",
+        "market_status_reason",
+        "note",
         "warning",
     ):
         value = payload.get(key)

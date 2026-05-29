@@ -856,6 +856,33 @@ class TestFormatResultMinimal:
         assert result["spread_cost_currency"] == "USD"
         assert result["pricing_basis"] == "per_1_lot_estimate"
 
+    def test_market_ticker_minimal_keeps_freshness_context(self):
+        payload = {
+            "success": True,
+            "symbol": "EURUSD",
+            "type": "ticker",
+            "data_age_seconds": 5735,
+            "data_age": "1h 36m",
+            "data_stale": False,
+            "stale_after_seconds": 300,
+            "freshness_basis": "absolute_300s",
+            "market_status": "closed",
+            "market_status_reason": "weekend",
+            "note": "Market is closed; showing the latest completed session tick.",
+        }
+
+        result = _normalize_market_ticker_payload(
+            payload,
+            verbose=False,
+            tool_name="market_ticker",
+        )
+
+        assert result["data_stale"] is False
+        assert result["stale_after_seconds"] == 300
+        assert result["market_status"] == "closed"
+        assert result["market_status_reason"] == "weekend"
+        assert "latest completed session tick" in result["note"]
+
     def test_market_ticker_text_uses_symbol_price_precision(self):
         payload = {
             "success": True,

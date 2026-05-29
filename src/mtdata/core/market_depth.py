@@ -3,11 +3,9 @@ import logging
 import math
 import os
 import time
-from datetime import datetime, timezone
 from typing import Any, Dict, Literal, Optional
 
 from ..shared.schema import CompactFullDetailLiteral
-from ..shared.symbols import is_probably_crypto_symbol
 from ..utils.mt5 import (
     MT5ConnectionError,
     ensure_mt5_connection_or_raise,
@@ -24,10 +22,11 @@ from .error_envelope import build_error_payload
 from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway
 from .output_contract import ensure_common_meta, normalize_output_verbosity_detail
+from .quote_freshness import QUOTE_STALE_SECONDS, quote_closed_session_context
 
 logger = logging.getLogger(__name__)
 _MARKET_DEPTH_ENABLE_ENV = "MTDATA_ENABLE_MARKET_DEPTH_FETCH"
-_MARKET_TICKER_STALE_SECONDS = 300
+_MARKET_TICKER_STALE_SECONDS = QUOTE_STALE_SECONDS
 _MARKET_DEPTH_BOOK_UNITS = {
     "volume": "book_volume",
     "volume_real": "book_volume_real",
@@ -81,38 +80,6 @@ def _market_ticker_age_display(seconds: Any) -> Optional[str]:
     return f"{secs}s"
 
 
-def _is_standard_weekend_closure(now_utc: datetime) -> bool:
-    weekday = now_utc.weekday()
-    if weekday == 5:
-        return True
-    if weekday == 6 and now_utc.hour < 22:
-        return True
-    if weekday == 4 and now_utc.hour >= 22:
-        return True
-    return False
-
-
-def _market_ticker_closed_session_context(
-    symbol: Any,
-    *,
-    now_epoch: Any,
-) -> Optional[Dict[str, Any]]:
-    if is_probably_crypto_symbol(symbol):
-        return None
-    try:
-        now_utc = datetime.fromtimestamp(float(now_epoch), tz=timezone.utc)
-    except Exception:
-        return None
-    if not _is_standard_weekend_closure(now_utc):
-        return None
-    return {
-        "market_status": "closed",
-        "market_status_reason": "weekend",
-        "market_status_source": "standard_weekend_hours",
-        "note": "Market is closed; showing the latest completed session tick.",
-    }
-
-
 def _market_depth_fetch_enabled() -> bool:
     raw = os.getenv(_MARKET_DEPTH_ENABLE_ENV)
     if raw is None:
@@ -153,6 +120,7 @@ def _compact_market_ticker_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "data_age_seconds",
         "data_age",
         "data_stale",
+        "stale_after_seconds",
         "freshness_basis",
         "market_status",
         "market_status_reason",
@@ -618,7 +586,8 @@ def market_ticker(
                 age_display = _market_ticker_age_display(rounded_age_seconds)
                 if age_display is not None:
                     out["data_age"] = age_display
-                closed_session = _market_ticker_closed_session_context(
+                out["stale_after_seconds"] = int(_MARKET_TICKER_STALE_SECONDS)
+                closed_session = quote_closed_session_context(
                     symbol,
                     now_epoch=now_epoch,
                 )

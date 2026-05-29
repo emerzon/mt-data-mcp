@@ -31,10 +31,11 @@ from .output_contract import (
     normalize_output_verbosity_detail,
     resolve_output_contract,
 )
+from .quote_freshness import QUOTE_STALE_SECONDS, quote_closed_session_context
 
 logger = logging.getLogger(__name__)
 _MARKET_SCAN_STALE_BAR_SECONDS = 7 * 24 * 60 * 60
-_MARKET_SCAN_STALE_QUOTE_SECONDS = 300
+_MARKET_SCAN_STALE_QUOTE_SECONDS = QUOTE_STALE_SECONDS
 
 
 def _case_insensitive_sort_key(value: Any) -> tuple[str, str]:
@@ -121,6 +122,10 @@ _SYMBOL_DESCRIBE_COMPACT_DIRECT_FIELDS: tuple[str, ...] = (
     "time",
     "data_age_seconds",
     "data_stale",
+    "stale_after_seconds",
+    "market_status",
+    "market_status_reason",
+    "note",
     "warning",
     "digits",
     "point",
@@ -654,9 +659,25 @@ def symbols_describe(
                             {
                                 key: value
                                 for key, value in _quote_staleness_fields(
-                                    utc_epoch
+                                    utc_epoch,
+                                    symbol=(
+                                        _nonempty_symbol_string(
+                                            getattr(symbol_info, "name", None)
+                                        )
+                                        or symbol
+                                    ),
                                 ).items()
-                                if key in {"data_age_seconds", "data_stale", "warning"}
+                                if key
+                                in {
+                                    "data_age_seconds",
+                                    "data_stale",
+                                    "stale_after_seconds",
+                                    "market_status",
+                                    "market_status_reason",
+                                    "market_status_source",
+                                    "note",
+                                    "warning",
+                                }
                             }
                         )
                     except Exception:
@@ -786,17 +807,28 @@ def _market_scan_freshness_fields(bar_time: Optional[float]) -> Dict[str, Any]:
     return fields
 
 
-def _quote_staleness_fields(tick_time: Optional[float]) -> Dict[str, Any]:
+def _quote_staleness_fields(
+    tick_time: Optional[float],
+    *,
+    symbol: Any = None,
+) -> Dict[str, Any]:
     if tick_time is None:
         return {}
     try:
-        age_seconds = max(0.0, float(time.time()) - float(tick_time))
+        now_epoch = float(time.time())
+        age_seconds = max(0.0, now_epoch - float(tick_time))
     except Exception:
         return {}
     fields: Dict[str, Any] = {
         "data_age_seconds": _market_scan_round(age_seconds, digits=3),
-        "data_stale": age_seconds > float(_MARKET_SCAN_STALE_QUOTE_SECONDS),
+        "stale_after_seconds": int(_MARKET_SCAN_STALE_QUOTE_SECONDS),
     }
+    closed_session = quote_closed_session_context(symbol, now_epoch=now_epoch)
+    if closed_session:
+        fields["data_stale"] = False
+        fields.update(closed_session)
+        return fields
+    fields["data_stale"] = age_seconds > float(_MARKET_SCAN_STALE_QUOTE_SECONDS)
     if fields["data_stale"]:
         fields["warning"] = (
             "Live quote timestamp is older than "
@@ -805,12 +837,16 @@ def _quote_staleness_fields(tick_time: Optional[float]) -> Dict[str, Any]:
     return fields
 
 
-def _market_scan_quote_freshness_fields(tick_time: Optional[float]) -> Dict[str, Any]:
+def _market_scan_quote_freshness_fields(
+    tick_time: Optional[float],
+    *,
+    symbol: Any = None,
+) -> Dict[str, Any]:
     if tick_time is None:
         return {}
     return {
         "tick_time": _format_time_minimal(tick_time),
-        **_quote_staleness_fields(tick_time),
+        **_quote_staleness_fields(tick_time, symbol=symbol),
     }
 
 
@@ -855,7 +891,7 @@ def _build_market_scan_spread_row(
         {
             "bid": _market_scan_round(bid, digits=digits),
             "ask": _market_scan_round(ask, digits=digits),
-            **_market_scan_quote_freshness_fields(tick_time),
+            **_market_scan_quote_freshness_fields(tick_time, symbol=symbol.name),
             "spread": _market_scan_round(spread_abs, digits=digits),
             "spread_points": _market_scan_round(spread_points, digits=4),
             "spread_pct": _market_scan_round(spread_pct, digits=6),
@@ -1043,6 +1079,7 @@ def _top_markets_headers(metric: str, *, detail_mode: str) -> List[str]:
             "data_source",
             "data_time",
             "data_age_seconds",
+            "stale_after_seconds",
             "data_stale",
             "warning",
             "bid",

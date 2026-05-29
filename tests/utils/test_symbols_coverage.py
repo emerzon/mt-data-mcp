@@ -652,9 +652,33 @@ class TestSymbolsDescribe:
         assert sd["point"] == 0.00001
         assert sd["data_age_seconds"] == 301.0
         assert sd["data_stale"] is True
+        assert sd["stale_after_seconds"] == 300
         assert "Live quote timestamp" in sd["warning"]
         assert "quote_age_seconds" not in sd
         assert "time_epoch" not in sd
+
+    @patch("mtdata.core.symbols.time.time", return_value=1779656400.0)
+    @patch(f"{_MT5}.symbol_info")
+    def test_describe_treats_weekend_gap_as_closed_market(self, mock_info, mock_time):
+        del mock_time
+        info = MagicMock()
+        info.__dir__ = lambda self: ["name", "time", "digits", "point"]
+        info.name = "EURUSD"
+        info.time = 1779483360
+        info.digits = 5
+        info.point = 0.00001
+        mock_info.return_value = info
+
+        fn = _get_symbols_describe()
+        res = fn("EURUSD")
+        sd = res["details"]
+
+        assert sd["data_stale"] is False
+        assert sd["stale_after_seconds"] == 300
+        assert sd["market_status"] == "closed"
+        assert sd["market_status_reason"] == "weekend"
+        assert "latest completed session tick" in sd["note"]
+        assert "warning" not in sd
 
     @patch(f"{_MT5}.symbol_info")
     def test_describe_warns_when_crypto_base_matches_profit_currency(self, mock_info):
