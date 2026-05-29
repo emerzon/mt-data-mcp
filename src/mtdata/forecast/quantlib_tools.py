@@ -26,11 +26,6 @@ def price_barrier_option_quantlib(
 ) -> Dict[str, Any]:
     """Price a European barrier option with QuantLib."""
     try:
-        import QuantLib as ql
-    except Exception as ex:
-        return {"error": f"QuantLib is required: {ex}"}
-
-    try:
         spot_val = float(spot)
         strike_val = float(strike)
         barrier_val = float(barrier)
@@ -47,6 +42,41 @@ def price_barrier_option_quantlib(
 
     option_type_norm = str(option_type).strip().lower()
     barrier_type_norm = str(barrier_type).strip().lower()
+    opt_choices = {"call", "put"}
+    barrier_choices = {"up_in", "up_out", "down_in", "down_out"}
+    if option_type_norm not in opt_choices:
+        return {"error": f"Invalid option_type: {option_type}. Use call|put."}
+    if barrier_type_norm not in barrier_choices:
+        return {"error": f"Invalid barrier_type: {barrier_type}. Use up_in|up_out|down_in|down_out."}
+
+    geometry_error = _barrier_option_geometry_error(
+        barrier_type=barrier_type_norm,
+        spot=spot_val,
+        barrier=barrier_val,
+    )
+    if geometry_error is not None:
+        return {
+            "error": geometry_error,
+            "error_code": "invalid_barrier_geometry",
+            "params_used": _barrier_option_params(
+                spot=spot_val,
+                strike=strike_val,
+                barrier=barrier_val,
+                maturity_days=maturity_val,
+                option_type=option_type_norm,
+                barrier_type=barrier_type_norm,
+                risk_free_rate=rf,
+                dividend_yield=div,
+                volatility=vol,
+                rebate=rebate_val,
+            ),
+        }
+
+    try:
+        import QuantLib as ql
+    except Exception as ex:
+        return {"error": f"QuantLib is required: {ex}"}
+
     opt_map = {"call": ql.Option.Call, "put": ql.Option.Put}
     barrier_map = {
         "up_in": ql.Barrier.UpIn,
@@ -54,10 +84,6 @@ def price_barrier_option_quantlib(
         "down_in": ql.Barrier.DownIn,
         "down_out": ql.Barrier.DownOut,
     }
-    if option_type_norm not in opt_map:
-        return {"error": f"Invalid option_type: {option_type}. Use call|put."}
-    if barrier_type_norm not in barrier_map:
-        return {"error": f"Invalid barrier_type: {barrier_type}. Use up_in|up_out|down_in|down_out."}
 
     ql_today = ql.Date.todaysDate()
     ql.Settings.instance().evaluationDate = ql_today
@@ -111,18 +137,58 @@ def price_barrier_option_quantlib(
         "delta": float(delta) if math.isfinite(delta) else None,
         "gamma": float(gamma) if math.isfinite(gamma) else None,
         "vega": float(vega) if math.isfinite(vega) else None,
-        "params_used": {
-            "spot": float(spot_val),
-            "strike": float(strike_val),
-            "barrier": float(barrier_val),
-            "maturity_days": int(maturity_val),
-            "option_type": option_type_norm,
-            "barrier_type": barrier_type_norm,
-            "risk_free_rate": float(rf),
-            "dividend_yield": float(div),
-            "volatility": float(vol),
-            "rebate": float(rebate_val),
-        },
+        "params_used": _barrier_option_params(
+            spot=spot_val,
+            strike=strike_val,
+            barrier=barrier_val,
+            maturity_days=maturity_val,
+            option_type=option_type_norm,
+            barrier_type=barrier_type_norm,
+            risk_free_rate=rf,
+            dividend_yield=div,
+            volatility=vol,
+            rebate=rebate_val,
+        ),
+    }
+
+
+def _barrier_option_geometry_error(
+    *,
+    barrier_type: str,
+    spot: float,
+    barrier: float,
+) -> Optional[str]:
+    if str(barrier_type).startswith("up_") and barrier <= spot:
+        return "For an up barrier option, barrier must be above spot."
+    if str(barrier_type).startswith("down_") and barrier >= spot:
+        return "For a down barrier option, barrier must be below spot."
+    return None
+
+
+def _barrier_option_params(
+    *,
+    spot: float,
+    strike: float,
+    barrier: float,
+    maturity_days: int,
+    option_type: str,
+    barrier_type: str,
+    risk_free_rate: float,
+    dividend_yield: float,
+    volatility: float,
+    rebate: float,
+) -> Dict[str, Any]:
+    return {
+        "spot": float(spot),
+        "strike": float(strike),
+        "barrier": float(barrier),
+        "maturity_days": int(maturity_days),
+        "option_type": str(option_type),
+        "barrier_type": str(barrier_type),
+        "risk_free_rate": float(risk_free_rate),
+        "dividend_yield": float(dividend_yield),
+        "volatility": float(volatility),
+        "rebate": float(rebate),
     }
 
 

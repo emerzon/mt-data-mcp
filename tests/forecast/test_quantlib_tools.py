@@ -206,6 +206,26 @@ def test_price_barrier_option_quantlib_with_fake_backend(monkeypatch):
     assert out["params_used"]["barrier_type"] == "up_out"
 
 
+def test_price_barrier_option_quantlib_validates_touched_down_barrier():
+    out = qtools.price_barrier_option_quantlib(
+        spot=100.0,
+        strike=100.0,
+        barrier=100.0,
+        maturity_days=30,
+        option_type="call",
+        barrier_type="down_in",
+        risk_free_rate=0.02,
+        dividend_yield=0.0,
+        volatility=0.2,
+        rebate=0.0,
+    )
+
+    assert out["error_code"] == "invalid_barrier_geometry"
+    assert out["error"] == "For a down barrier option, barrier must be below spot."
+    assert out["params_used"]["spot"] == 100.0
+    assert out["params_used"]["barrier_type"] == "down_in"
+
+
 def test_calibrate_heston_quantlib_from_options_with_fake_backend(monkeypatch):
     monkeypatch.setitem(__import__("sys").modules, "QuantLib", _make_fake_quantlib())
     monkeypatch.setattr(
