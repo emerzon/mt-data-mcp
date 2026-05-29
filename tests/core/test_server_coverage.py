@@ -928,6 +928,39 @@ class TestRecordingToolDecorator:
             assert result["error_code"] == "tool_timeout"
             assert result["operation"] == "slow_tool"
             assert result["details"]["timeout_seconds"] == 120
+            assert "reduce history/window" in result["remediation"].lower()
+        finally:
+            tools._ORIG_TOOL_DECORATOR = original
+
+    def test_async_wrapped_market_scan_timeout_has_actionable_guidance(self):
+        import asyncio
+
+        import mtdata.core._mcp_tools as tools
+
+        original = tools._ORIG_TOOL_DECORATOR
+        try:
+            tools._ORIG_TOOL_DECORATOR = lambda *a, **k: (lambda fn: fn)
+            dec = tools._recording_tool_decorator()
+
+            def market_scan():
+                return {"success": True}
+
+            wrapped = dec(market_scan)
+            async_wrapped = wrapped._mcp_async_wrapper
+
+            async def _raise_timeout(coro, timeout):
+                if hasattr(coro, "close"):
+                    coro.close()
+                raise asyncio.TimeoutError
+
+            with patch("mtdata.core._mcp_tools.asyncio.wait_for", side_effect=_raise_timeout):
+                result = asyncio.run(async_wrapped())
+
+            assert result["success"] is False
+            assert result["error_code"] == "tool_timeout"
+            assert result["operation"] == "market_scan"
+            assert "symbols or group" in result["remediation"]
+            assert result["related_tools"] == ["symbols_top_markets", "symbols_list"]
         finally:
             tools._ORIG_TOOL_DECORATOR = original
 
