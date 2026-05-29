@@ -1293,7 +1293,7 @@ class TestFinvizTools:
                     "Country": "USA",
                     "Market Cap": "3.0T",
                     "Price": 298.21,
-                    "Change": 0.012,
+                    "Change": 0.0087,
                     "Volume": 123456,
                     "P/E": "28.5",
                 }
@@ -1322,7 +1322,7 @@ class TestFinvizTools:
             {
                 "symbol": "AAPL",
                 "price": 298.21,
-                "change_pct": 1.2,
+                "change_pct": 0.87,
                 "volume": 123456,
                 "pe_ratio": "28.5",
             }

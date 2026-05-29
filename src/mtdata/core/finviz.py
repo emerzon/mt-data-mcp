@@ -304,15 +304,11 @@ def _is_known_forex_pair_row(row: Any) -> bool:
 
 
 def _compact_finviz_screen_row(row: Dict[str, Any]) -> Dict[str, Any]:
-    out = {
+    return {
         field: row[field]
         for field in _FINVIZ_SCREEN_COMPACT_FIELDS
         if field in row and row[field] not in (None, "")
     }
-    change_pct = _finviz_percent_value(out.get("change_pct"))
-    if change_pct is not None:
-        out["change_pct"] = change_pct
-    return out
 
 
 def _normalize_finviz_market_payload(
