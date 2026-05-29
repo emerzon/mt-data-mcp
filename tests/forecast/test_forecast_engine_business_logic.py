@@ -157,6 +157,27 @@ def test_preprocessing_helpers_and_output_format():
     assert no_ci["last_price_source"] == "candle_close"
 
 
+def test_last_price_freshness_fields_mark_stale_anchor():
+    fresh = fe._last_price_freshness_fields(
+        last_epoch=1_000.0,
+        tf_secs=60,
+        now_epoch=1_120.0,
+    )
+    assert fresh["last_price_age_seconds"] == 120
+    assert fresh["last_price_age"] == "2m 0s"
+    assert fresh["last_price_stale"] is False
+    assert fresh["freshness_basis"] == "bar_policy"
+    assert fresh["stale_after_seconds"] == 60 * fe.SANITY_BARS_TOLERANCE
+
+    stale = fe._last_price_freshness_fields(
+        last_epoch=1_000.0,
+        tf_secs=60,
+        now_epoch=1_301.0,
+    )
+    assert stale["last_price_stale"] is True
+    assert "stale_warning" in stale
+
+
 def test_prepare_ensemble_cv_uses_valid_rows_only(monkeypatch):
     series = pd.Series(np.arange(1.0, 21.0))
 

@@ -484,6 +484,12 @@ def _apply_forecast_generate_detail(
         "forecast_return",
         "last_price",
         "last_price_source",
+        "last_price_age_seconds",
+        "last_price_age",
+        "last_price_stale",
+        "freshness_basis",
+        "stale_after_seconds",
+        "stale_warning",
         "warnings",
     ):
         value = payload.get(key)

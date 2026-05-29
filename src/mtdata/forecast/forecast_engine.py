@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 
 from ..bootstrap.settings import mt5_config
-from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
+from ..shared.constants import SANITY_BARS_TOLERANCE, TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..shared.schema import DenoiseSpec, ForecastMethodLiteral, TimeframeLiteral
 from ..shared.validators import (
     invalid_timeframe_error,
@@ -902,6 +902,59 @@ def _forecast_timezone_label(*, use_client_tz: bool, client_tz: Any) -> str:
     )
 
 
+def _format_age_seconds(seconds: Any) -> Optional[str]:
+    try:
+        value = max(0, int(round(float(seconds))))
+    except Exception:
+        return None
+    days, remainder = divmod(value, 86400)
+    hours, remainder = divmod(remainder, 3600)
+    minutes, secs = divmod(remainder, 60)
+    if days:
+        return f"{days}d {hours}h"
+    if hours:
+        return f"{hours}h {minutes}m"
+    if minutes:
+        return f"{minutes}m {secs}s"
+    return f"{secs}s"
+
+
+def _last_price_freshness_fields(
+    *,
+    last_epoch: float,
+    tf_secs: int,
+    now_epoch: Optional[float] = None,
+) -> Dict[str, Any]:
+    try:
+        last_value = float(last_epoch)
+        step_seconds = max(1, int(tf_secs))
+    except Exception:
+        return {}
+    if now_epoch is None:
+        now_epoch = datetime.now(timezone.utc).timestamp()
+    try:
+        age_seconds = max(0.0, float(now_epoch) - last_value)
+    except Exception:
+        return {}
+    stale_after = int(step_seconds * max(1, int(SANITY_BARS_TOLERANCE)))
+    rounded_age = int(round(age_seconds))
+    out: Dict[str, Any] = {
+        "last_price_age_seconds": rounded_age,
+        "last_price_stale": age_seconds > float(stale_after),
+        "freshness_basis": "bar_policy",
+        "stale_after_seconds": stale_after,
+    }
+    age_text = _format_age_seconds(rounded_age)
+    if age_text:
+        out["last_price_age"] = age_text
+    if out["last_price_stale"]:
+        out["stale_warning"] = (
+            "Last forecast anchor is older than the bar freshness policy; "
+            "market may be closed or broker data may be stale."
+        )
+    return out
+
+
 def _format_forecast_output(
     forecast_values: np.ndarray,
     last_epoch: float,
@@ -1343,6 +1396,13 @@ def forecast_engine(  # noqa: C901
                     warnings.append(warning_text)
             if warnings:
                 result["warnings"] = warnings
+        if as_of is None and start is None and end is None:
+            result.update(
+                _last_price_freshness_fields(
+                    last_epoch=last_epoch,
+                    tf_secs=int(tf_secs),
+                )
+            )
         if method_l == 'ensemble' and metadata:
             result['ensemble'] = metadata
         return result

@@ -296,6 +296,11 @@ def test_forecast_generate_defaults_to_compact_payload(monkeypatch):
             "forecast_epoch": [1.0, 2.0, 3.0],
             "last_price": 1.05,
             "last_price_source": "candle_close",
+            "last_price_age_seconds": 3600,
+            "last_price_age": "1h 0m",
+            "last_price_stale": False,
+            "freshness_basis": "bar_policy",
+            "stale_after_seconds": 10800,
             "digits": 5,
         },
     )
@@ -311,6 +316,10 @@ def test_forecast_generate_defaults_to_compact_payload(monkeypatch):
     assert "forecast_step_seconds" not in out
     assert out["last_price"] == 1.05
     assert out["last_price_source"] == "candle_close"
+    assert out["last_price_age_seconds"] == 3600
+    assert out["last_price_age"] == "1h 0m"
+    assert out["last_price_stale"] is False
+    assert out["freshness_basis"] == "bar_policy"
     assert out["forecast_vs_last_price"] == {
         "first_forecast_delta": -0.05,
         "first_forecast_delta_pct": -4.7619,
