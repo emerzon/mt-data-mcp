@@ -513,6 +513,7 @@ def forecast_barrier_closed_form(
             "horizon": int(horizon),
             "direction": direction_norm,
             "last_price": s0,
+            "last_price_source": "candle_close",
             "barrier": float(barrier),
             "mu_annual": float(gbm_drift),
             "log_drift_annual": float(log_drift),

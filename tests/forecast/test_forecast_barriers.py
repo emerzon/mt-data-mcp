@@ -249,6 +249,7 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
         self.assertIn("success", result)
         self.assertTrue(result["success"])
         self.assertIn("prob_hit", result)
+        self.assertEqual(result["last_price_source"], "candle_close")
 
     def test_gbm_single_barrier_upcross_prob_returns_one_when_barrier_below_start(self):
         self.assertAlmostEqual(

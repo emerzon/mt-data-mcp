@@ -2009,6 +2009,33 @@ def test_forecast_barrier_prob_compact_uses_reference_price_context():
     assert "last_price_source" not in out
 
 
+def test_forecast_barrier_prob_closed_form_compact_keeps_reference_source():
+    payload = {
+        "success": True,
+        "symbol": "EURUSD",
+        "last_price": 1.16594,
+        "last_price_source": "candle_close",
+        "barrier": 1.18,
+        "prob_hit": 0.15,
+    }
+
+    out = forecast_use_cases._apply_barrier_prob_detail(
+        payload,
+        ForecastBarrierProbRequest(
+            symbol="EURUSD",
+            method="closed_form",
+            barrier=1.18,
+            detail="compact",
+        ),
+    )
+
+    assert out["reference_price"] == 1.16594
+    assert out["reference_price_source"] == "candle_close"
+    assert out["prob_hit"] == 0.15
+    assert "last_price" not in out
+    assert "last_price_source" not in out
+
+
 def test_forecast_barrier_prob_detail_rounds_display_values():
     payload = {
         "success": True,
