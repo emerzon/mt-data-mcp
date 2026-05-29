@@ -552,7 +552,6 @@ class TestFinvizTools:
                 "symbol": "EUR/USD",
                 "name": "Euro / US Dollar",
                 "price": "1.10",
-                "perf_day": "0.2%",
                 "perf_day_pct": 0.2,
             }
         ]
@@ -637,13 +636,12 @@ class TestFinvizTools:
 
         assert "coins" not in result
         assert result["detail"] == "compact"
-        assert result["performance_format"] == "raw_value_with_pct_aliases"
+        assert result["performance_format"] == "percentage_points"
         assert result["items"] == [
             {
                 "symbol": "BTC",
                 "name": "Bitcoin",
                 "price": "90000",
-                "perf_day": "2.5%",
                 "perf_day_pct": 2.5,
             }
         ]
@@ -672,7 +670,6 @@ class TestFinvizTools:
         raw = getattr(finviz_crypto, "__wrapped__", finviz_crypto)
         result = raw()
 
-        assert result["items"][0]["perf_day"] == 0.0091
         assert result["items"][0]["perf_day_pct"] == 0.91
 
     @patch("mtdata.core.finviz.get_crypto_performance")
@@ -704,8 +701,6 @@ class TestFinvizTools:
                 "symbol": "BTC",
                 "name": "Bitcoin",
                 "price": "90000",
-                "perf_day": "2.5%",
-                "perf_wtd": "2.5%",
                 "perf_day_pct": 2.5,
                 "perf_wtd_pct": 2.5,
             }
@@ -732,7 +727,6 @@ class TestFinvizTools:
             {
                 "symbol": "NQ",
                 "name": "Nasdaq 100",
-                "perf_day": "0.8%",
                 "perf_day_pct": 0.8,
             }
         ]
@@ -754,7 +748,6 @@ class TestFinvizTools:
         raw = getattr(finviz_futures, "__wrapped__", finviz_futures)
         result = raw()
 
-        assert result["items"][0]["perf_day"] == 0.93
         assert result["items"][0]["perf_day_pct"] == 0.93
 
     @patch("mtdata.core.finviz.get_futures_performance")

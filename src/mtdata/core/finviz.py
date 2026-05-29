@@ -303,6 +303,7 @@ def _compact_finviz_market_row(row: Dict[str, Any], *, rows_key: str) -> Dict[st
             )
             if pct_value is not None:
                 out[f"{field}_pct"] = pct_value
+            out.pop(field, None)
     return out
 
 
@@ -372,7 +373,7 @@ def _normalize_finviz_market_payload(
         out["omitted_item_count"] = omitted
     out["detail"] = detail_mode
     if detail_mode != "full" and rows_key in {"pairs", "coins", "futures"}:
-        out["performance_format"] = "raw_value_with_pct_aliases"
+        out["performance_format"] = "percentage_points"
     if detail_mode == "full":
         out["meta"] = _build_tool_contract_meta(
             tool=tool,
