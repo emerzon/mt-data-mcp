@@ -827,27 +827,38 @@ def _append_default_barrier_warning(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _closed_form_barrier_input_error(request: ForecastBarrierProbRequest) -> Optional[str]:
+    supplied_tp_sl_fields = [
+        field_name
+        for field_name in (
+            "tp_abs",
+            "sl_abs",
+            "tp_pct",
+            "sl_pct",
+            "tp_ticks",
+            "sl_ticks",
+        )
+        if getattr(request, field_name, None) is not None
+    ]
     try:
         barrier_value = float(request.barrier)
     except (TypeError, ValueError):
         barrier_value = 0.0
     if barrier_value > 0.0:
-        return None
-    for field_name in (
-        "tp_abs",
-        "sl_abs",
-        "tp_pct",
-        "sl_pct",
-        "tp_ticks",
-        "sl_ticks",
-    ):
-        if getattr(request, field_name, None) is not None:
+        if supplied_tp_sl_fields:
             return (
-                "The closed_form method uses the absolute barrier parameter and "
-                "does not consume TP/SL inputs such as tp_pct/sl_pct, tp_abs/sl_abs, "
-                "or tick-based barriers. Provide barrier as a positive price, or use "
-                "a Monte Carlo method such as mc_gbm for TP/SL barrier inputs."
+                "The closed_form method uses the absolute barrier parameter only "
+                "and does not consume TP/SL inputs. Remove "
+                f"{', '.join(supplied_tp_sl_fields)} or use a Monte Carlo method "
+                "such as mc_gbm for TP/SL barrier inputs."
             )
+        return None
+    if supplied_tp_sl_fields:
+        return (
+            "The closed_form method uses the absolute barrier parameter and "
+            "does not consume TP/SL inputs such as tp_pct/sl_pct, tp_abs/sl_abs, "
+            "or tick-based barriers. Provide barrier as a positive price, or use "
+            "a Monte Carlo method such as mc_gbm for TP/SL barrier inputs."
+        )
     return None
 
 
