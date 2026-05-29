@@ -53,6 +53,7 @@ from .barriers_shared import (
     _resolve_reference_prices,
     _safe_float,
     _scale_price_paths_to_reference,
+    _stable_barrier_seed,
     _sort_candidate_results,
     _symbol_price_precision,
     normalize_barrier_method,
@@ -1199,14 +1200,6 @@ def forecast_barrier_optimize(  # noqa: C901
         sims = int(params_dict.get('n_sims', params_dict.get('sims', sims_default)) or sims_default)
         if sims <= 0:
             return {"error": f"Invalid n_sims: {sims}. Must be >= 1."}
-        seed_raw = params_dict.get('seed')
-        seed = int(seed_raw) if seed_raw is not None else None
-        request_seed_base = (
-            int(seed)
-            if seed is not None
-            else int(np.random.default_rng().integers(0, np.iinfo(np.int32).max))
-        )
-        optuna_seed = int(request_seed_base)
         n_seeds = int(params_dict.get('n_seeds', 1) or 1)
         if n_seeds <= 0:
             return {"error": f"Invalid n_seeds: {n_seeds}. Must be >= 1."}
@@ -1732,6 +1725,32 @@ def forecast_barrier_optimize(  # noqa: C901
             method_name, auto_reason = _auto_barrier_method(
                 symbol, timeframe, prices, horizon=horizon_val
             )
+        seed_raw = params_dict.get('seed')
+        seed_provided = seed_raw is not None
+        seed = int(seed_raw) if seed_provided else None
+        request_seed_base = (
+            int(seed)
+            if seed_provided
+            else _stable_barrier_seed(
+                "forecast_barrier_optimize",
+                symbol,
+                timeframe,
+                horizon_val,
+                method_name,
+                direction_norm,
+                mode_val,
+                objective_val,
+                optimizer_val,
+                search_profile_val,
+                float(last_price),
+                int(sims),
+                int(n_seeds),
+                int(len(prices)),
+                float(prices[-1]),
+                {k: v for k, v in params_dict.items() if k != "seed"},
+            )
+        )
+        optuna_seed = int(request_seed_base)
 
         def _simulate_paths_for_seed_range(
             seed_base: Optional[int],
@@ -2498,6 +2517,8 @@ def forecast_barrier_optimize(  # noqa: C901
             "compute_profile": {
                 "profile": search_profile_val,
                 "n_sims": int(sims),
+                "seed": int(request_seed_base),
+                "seed_source": "params" if seed_provided else "request",
                 "n_trials": int(optuna_trials_val) if optimizer_val == 'optuna' else None,
                 "tp_steps": int(tp_steps_val),
                 "sl_steps": int(sl_steps_val),

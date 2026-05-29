@@ -1,3 +1,5 @@
+import hashlib
+import json
 import math
 import warnings
 from typing import Any, Dict, List, Literal, Optional, Set, Tuple
@@ -78,6 +80,19 @@ BARRIER_MONTE_CARLO_METHODS: Tuple[BarrierMethodLiteral, ...] = (
     "jump_diffusion",
     "auto",
 )
+
+
+def _stable_barrier_seed(*parts: Any) -> int:
+    payload = json.dumps(
+        parts,
+        sort_keys=True,
+        default=str,
+        separators=(",", ":"),
+    )
+    digest = hashlib.sha256(payload.encode("utf-8")).digest()
+    return int.from_bytes(digest[:4], "big") & int(np.iinfo(np.int32).max)
+
+
 BARRIER_METHOD_ALIASES: Dict[str, str] = {
     "mc": "hmm_mc",
     "gbm": "mc_gbm",

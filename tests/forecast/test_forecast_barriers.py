@@ -123,6 +123,33 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
         self.assertIn("prob_tp_first_se", result)
         self.assertIn("prob_sl_first_se", result)
 
+    def test_forecast_barrier_hit_probabilities_default_seed_is_deterministic(self):
+        dates = pd.date_range(start='2023-01-01', periods=500, freq='h')
+        prices = np.linspace(1.0, 1.05, 500)
+        self._set_barrier_history(pd.DataFrame({'time': dates, 'close': prices}))
+
+        kwargs = {
+            "symbol": "EURUSD",
+            "timeframe": "H1",
+            "horizon": 5,
+            "method": "mc_gbm",
+            "direction": "long",
+            "tp_pct": 0.5,
+            "sl_pct": 0.5,
+            "params": {"n_sims": 50},
+        }
+        with patch(f'{_BARRIER_PROB_ROOT}._get_live_reference_price', return_value=(None, None)):
+            first = forecast_barrier_hit_probabilities(**kwargs)
+            second = forecast_barrier_hit_probabilities(**kwargs)
+
+        self.assertTrue(first["success"])
+        self.assertEqual(first["seed"], second["seed"])
+        self.assertEqual(first["seed_source"], "request")
+        self.assertEqual(first["n_sims"], 50)
+        self.assertEqual(first["prob_tp_first"], second["prob_tp_first"])
+        self.assertEqual(first["prob_sl_first"], second["prob_sl_first"])
+        self.assertEqual(first["prob_no_hit"], second["prob_no_hit"])
+
     def test_forecast_barrier_hit_probabilities_accepts_tick_aliases(self):
         result = forecast_barrier_hit_probabilities(
             symbol="EURUSD",

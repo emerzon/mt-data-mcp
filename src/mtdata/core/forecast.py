@@ -1283,6 +1283,10 @@ def forecast_barrier_prob(
     
     sigma : float, optional
         Volatility parameter (calculated if not provided)
+
+    params : dict, optional
+        Monte Carlo controls such as seed and n_sims. If seed is omitted, a
+        deterministic seed is derived from the request inputs and returned.
     
     Returns:
     --------

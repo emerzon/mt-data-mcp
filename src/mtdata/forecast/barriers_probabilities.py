@@ -29,6 +29,7 @@ from .barriers_shared import (
     _get_live_reference_price,
     _resolve_reference_prices,
     _scale_price_paths_to_reference,
+    _stable_barrier_seed,
     _symbol_price_precision,
     normalize_barrier_method,
 )
@@ -158,13 +159,6 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
         sims = int(p.get('n_sims', p.get('sims', 2000)) or 2000)
         if sims <= 0:
             return {"error": f"Invalid n_sims: {sims}. Must be >= 1."}
-        seed_raw = p.get('seed')
-        seed = int(seed_raw) if seed_raw is not None else None
-        request_seed_base = (
-            int(seed)
-            if seed is not None
-            else int(np.random.default_rng().integers(0, np.iinfo(np.int32).max))
-        )
         method_key = normalize_barrier_method(method)
         if method_key is None:
             return {"error": barrier_method_error(method)}
@@ -175,6 +169,28 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
                 symbol, timeframe, prices, horizon=horizon_val
             )
         bb_enabled = method_key == 'mc_gbm_bb'
+        seed_raw = p.get('seed')
+        seed_provided = seed_raw is not None
+        seed = int(seed_raw) if seed_provided else None
+        request_seed_base = (
+            int(seed)
+            if seed_provided
+            else _stable_barrier_seed(
+                "forecast_barrier_prob",
+                symbol,
+                timeframe,
+                horizon_val,
+                method_key,
+                direction_norm,
+                float(last_price),
+                float(tp_price),
+                float(sl_price),
+                int(sims),
+                int(len(prices)),
+                float(prices[-1]),
+                {k: v for k, v in p.items() if k != "seed"},
+            )
+        )
         
         try:
             if method_key in ('mc_gbm', 'mc_gbm_bb'):
@@ -379,6 +395,9 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
             "last_price_source": last_price_source,
             "tp_price": float(tp_price),
             "sl_price": float(sl_price),
+            "n_sims": int(S),
+            "seed": int(request_seed_base),
+            "seed_source": "params" if seed_provided else "request",
             "prob_tp_first": float(prob_tp_first),
             "prob_sl_first": float(prob_sl_first),
             "prob_tie": float(prob_tie),
