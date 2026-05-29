@@ -481,14 +481,15 @@ def test_forecast_generate_compact_marks_unavailable_ci(monkeypatch):
     )
 
     assert "detail" not in out
-    assert out["ci"] == {
-        "status": "unavailable",
-        "hint": "Use forecast_conformal_intervals for uncertainty bands.",
-    }
+    assert "ci" not in out
     assert "ci_status" not in out
     assert "ci_available" not in out
     assert "ci_alpha" not in out
-    assert out["warnings"] == ["Native theta fallback used."]
+    assert out["warnings"] == [
+        "Point forecast only for method 'theta'; confidence intervals are unavailable. "
+        "Use forecast_conformal_intervals for uncertainty bands.",
+        "Native theta fallback used.",
+    ]
 
 
 def test_forecast_generate_compact_nests_available_ci(monkeypatch):

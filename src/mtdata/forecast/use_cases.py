@@ -92,12 +92,8 @@ def _forecast_interval_summary(payload: Dict[str, Any]) -> Optional[Dict[str, fl
 
 def _forecast_compact_ci(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     ci_status = str(payload.get("ci_status") or "").strip().lower()
-    ci_payload = payload.get("ci")
     if ci_status == "unavailable":
-        out: Dict[str, Any] = {"status": "unavailable"}
-        if isinstance(ci_payload, dict) and ci_payload.get("hint"):
-            out["hint"] = ci_payload["hint"]
-        return out
+        return None
 
     lower_key = next(
         (
@@ -476,6 +472,10 @@ def _apply_forecast_generate_detail(
     ci_compact = _forecast_compact_ci(payload)
     if ci_compact:
         compact["ci"] = ci_compact
+    ci_warning_dedup = (
+        isinstance(ci_compact, dict)
+        and str(ci_compact.get("status") or "").strip().lower() == "unavailable"
+    )
     for key in (
         "last_observation_time",
         "timezone",
@@ -490,7 +490,7 @@ def _apply_forecast_generate_detail(
         if key == "warnings":
             value = _compact_forecast_warnings(
                 value,
-                ci_unavailable=ci_unavailable,
+                ci_unavailable=ci_warning_dedup,
             )
         if value not in (None, "", [], {}):
             compact[key] = value
