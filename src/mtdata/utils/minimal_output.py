@@ -1490,6 +1490,7 @@ def _normalize_forecast_methods_payload(
         "unavailable",
         "methods_shown",
         "methods_hidden",
+        "truncation_reason",
     ):
         value = payload.get(key)
         if not _is_empty_value(value):

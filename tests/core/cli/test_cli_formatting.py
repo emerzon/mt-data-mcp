@@ -1018,6 +1018,7 @@ class TestFormatResultForCli:
                 ],
                 "methods_shown": 2,
                 "methods_hidden": 1,
+                "truncation_reason": "Default compact limit 20; set limit=3 for all filtered methods.",
                 "note": "Use --extras metadata to see all methods.",
             },
             fmt="toon",
@@ -1032,6 +1033,10 @@ class TestFormatResultForCli:
         assert (
             "show_all_hint: Set limit=3 to show all filtered methods; "
             "use extras='metadata' for full method metadata."
+        ) in result
+        assert (
+            "truncation_reason: Default compact limit 20; "
+            "set limit=3 for all filtered methods."
         ) in result
 
     def test_toon_format_keeps_richer_columns_for_full_forecast_methods_output(self):

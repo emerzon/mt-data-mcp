@@ -1251,11 +1251,15 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert "filters" not in capped
     assert capped["methods_shown"] == 20
     assert capped["methods_hidden"] == 5
+    assert capped["truncation_reason"] == (
+        "Default compact limit 20; set limit=25 for all filtered methods."
+    )
 
     filtered_uncapped = _unwrap(cf.forecast_list_methods)(category="classical")
     assert "filters" not in filtered_uncapped
     assert filtered_uncapped["methods_shown"] == 25
     assert filtered_uncapped["methods_hidden"] == 0
+    assert "truncation_reason" not in filtered_uncapped
 
     monkeypatch.setattr(cf, "_get_forecast_methods_data", lambda: {"methods": [1]})
     assert _unwrap(cf.forecast_list_methods)() == {"methods": [1]}

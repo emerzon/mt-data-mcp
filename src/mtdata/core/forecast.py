@@ -1739,6 +1739,10 @@ def _forecast_list_methods_impl(  # noqa: C901
             out_full["unavailable"] = int(len(filtered_full) - available_count)
             out_full["methods_shown"] = int(len(filtered_full))
             out_full["methods_hidden"] = int(max(0, total_filtered - len(filtered_full)))
+            if out_full["methods_hidden"] > 0 and limit_value is not None:
+                out_full["truncation_reason"] = (
+                    f"Limit {limit_value}; set limit={total_filtered} for all filtered methods."
+                )
             out_full["filters"] = {
                 "search": search_value or None,
                 "category": category_filter_value or None,
@@ -1825,14 +1829,30 @@ def _forecast_list_methods_impl(  # noqa: C901
         )
         if effective_limit_value is not None:
             selected_methods = selected_methods[:effective_limit_value]
-        return {
+        hidden_count = int(max(0, len(compact_methods) - len(selected_methods)))
+        truncation_reason = None
+        if hidden_count > 0 and effective_limit_value is not None:
+            if compact_default_limit_applies:
+                truncation_reason = (
+                    f"Default compact limit {_FORECAST_LIST_METHODS_DEFAULT_COMPACT_LIMIT}; "
+                    f"set limit={len(compact_methods)} for all filtered methods."
+                )
+            else:
+                truncation_reason = (
+                    f"Limit {effective_limit_value}; set limit={len(compact_methods)} "
+                    "for all filtered methods."
+                )
+        out = {
             "total": int(data.get("total") or len(compact_methods)),
             "total_filtered": int(len(compact_methods)),
             "available": available_count,
             "unavailable": unavailable_count,
             "methods": selected_methods,
             "methods_shown": int(len(selected_methods)),
-            "methods_hidden": int(max(0, len(compact_methods) - len(selected_methods))),
+            "methods_hidden": hidden_count,
         }
+        if truncation_reason:
+            out["truncation_reason"] = truncation_reason
+        return out
     except Exception as exc:
         return {"error": f"Error listing forecast methods: {exc}"}
