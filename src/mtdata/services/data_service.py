@@ -1682,23 +1682,20 @@ def fetch_candles(  # noqa: C901
                         est_mean = spread_stats.get("mean") or spread_stats.get("median") or spread_stats.get("first")
                     if est_mean is not None:
                         est_mean = float(est_mean)
-                        # Apply estimated spread to rows
-                        for i, row in enumerate(data_rows):
-                            if isinstance(row, dict):
-                                row["spread"] = est_mean
-                            else:
-                                row_list = list(row)
-                                if spread_idx is not None:
-                                    if spread_idx >= len(row_list):
-                                        row_list += [None] * (spread_idx - len(row_list) + 1)
-                                    row_list[spread_idx] = est_mean
-                                data_rows[i] = row_list
+                        data_rows = _apply_estimated_spread_to_candle_rows(
+                            data_rows,
+                            spread_idx=spread_idx,
+                            estimated_spread=est_mean,
+                            source="tick_stats",
+                        )
                         payload["data"] = data_rows
                         payload.setdefault("warnings", []).append(
                             "include_spread requested but spread unavailable; "
                             f"estimated mean spread from recent ticks ({est_mean:g}) applied."
                         )
                         payload["spread_unit"] = "price"
+                        payload["spread_estimated"] = True
+                        payload["spread_source"] = "tick_stats"
                         payload.setdefault("meta", {}).setdefault("diagnostics", {}).setdefault("spread_estimate", {})["estimated_mean"] = est_mean
                         payload["meta"]["diagnostics"]["spread_estimate"]["source"] = "tick_stats"
                         payload["meta"]["diagnostics"]["spread_estimate"]["unit"] = "price"
@@ -1710,22 +1707,20 @@ def fetch_candles(  # noqa: C901
                         ask = getattr(tick, "ask", None) if tick is not None else None
                         if bid is not None and ask is not None:
                             est_mean = float(max(0.0, (ask - bid)))
-                            for i, row in enumerate(data_rows):
-                                if isinstance(row, dict):
-                                    row["spread"] = est_mean
-                                else:
-                                    row_list = list(row)
-                                    if spread_idx is not None:
-                                        if spread_idx >= len(row_list):
-                                            row_list += [None] * (spread_idx - len(row_list) + 1)
-                                        row_list[spread_idx] = est_mean
-                                    data_rows[i] = row_list
+                            data_rows = _apply_estimated_spread_to_candle_rows(
+                                data_rows,
+                                spread_idx=spread_idx,
+                                estimated_spread=est_mean,
+                                source="live_ticker",
+                            )
                             payload["data"] = data_rows
                             payload.setdefault("warnings", []).append(
                                 "include_spread requested but spread unavailable; "
                                 f"estimated spread from current live ticker ({est_mean:g}) applied."
                             )
                             payload["spread_unit"] = "price"
+                            payload["spread_estimated"] = True
+                            payload["spread_source"] = "live_ticker"
                             payload.setdefault("meta", {}).setdefault("diagnostics", {}).setdefault("spread_estimate", {})["estimated_mean"] = est_mean
                             payload["meta"]["diagnostics"]["spread_estimate"]["source"] = "live_ticker"
                             payload["meta"]["diagnostics"]["spread_estimate"]["unit"] = "price"
@@ -1735,6 +1730,27 @@ def fetch_candles(  # noqa: C901
         return payload
     except Exception as e:
         return {"error": f"Error getting rates: {str(e)}"}
+
+
+def _apply_estimated_spread_to_candle_rows(
+    data_rows: list[Any],
+    *,
+    spread_idx: int | None,
+    estimated_spread: float,
+    source: str,
+) -> list[Any]:
+    for i, row in enumerate(data_rows):
+        if isinstance(row, dict):
+            row["spread"] = estimated_spread
+            row["spread_source"] = source
+        else:
+            row_list = list(row)
+            if spread_idx is not None:
+                if spread_idx >= len(row_list):
+                    row_list += [None] * (spread_idx - len(row_list) + 1)
+                row_list[spread_idx] = estimated_spread
+            data_rows[i] = row_list
+    return data_rows
 
 
 def _mt5_tick_flag_value(name: str, default: int) -> int:

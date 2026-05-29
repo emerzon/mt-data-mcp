@@ -69,7 +69,7 @@ def _mock_symbol_guard_error(*args: Any, **kwargs: Any) -> Iterator[Tuple[str, N
 
 
 def _make_rates(n: int, *, base_ts: float = _NOW_TS, step: int = 60,
-                tick_vol: int = 100, real_vol: int = 0) -> list:
+                tick_vol: int = 100, real_vol: int = 0, spread: int = 1) -> list:
     """Generate a list of rate dicts mimicking MT5 structured array rows."""
     rates = []
     for i in range(n):
@@ -81,7 +81,7 @@ def _make_rates(n: int, *, base_ts: float = _NOW_TS, step: int = 60,
             'close': 1.1500 + i * 0.001,
             'tick_volume': tick_vol,
             'real_volume': real_vol,
-            'spread': 1,
+            'spread': spread,
         })
     return rates
 
@@ -796,6 +796,42 @@ class TestFetchCandles(unittest.TestCase):
         self.assertTrue(result.get('success'))
         row_keys = list(result['data'][0].keys())
         self.assertEqual(row_keys, ['time', 'close', 'spread'])
+
+    @patch(f'{_DS}.fetch_ticks')
+    @patch(_MT5_CONFIG)
+    @patch(_RATES_FROM)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=0)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_estimated_spread_marks_row_and_payload_source(
+        self,
+        mock_warmup,
+        mock_ctz,
+        mock_info,
+        mock_from,
+        mock_cfg,
+        mock_fetch_ticks,
+    ):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        mock_from.return_value = _make_rates(10, spread=0)
+        mock_fetch_ticks.return_value = {
+            'stats': {
+                'spread': {
+                    'mean': 0.00009,
+                },
+            },
+        }
+
+        result = fetch_candles('EURUSD', limit=5, ohlcv='C', include_spread=True)
+
+        self.assertTrue(result.get('success'))
+        row = result['data'][0]
+        self.assertEqual(row['spread'], 0.00009)
+        self.assertEqual(row['spread_source'], 'tick_stats')
+        self.assertTrue(result['spread_estimated'])
+        self.assertEqual(result['spread_source'], 'tick_stats')
+        self.assertEqual(result['spread_unit'], 'price')
 
     @patch(_MT5_CONFIG)
     @patch(_RATES_FROM)
