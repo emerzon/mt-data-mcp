@@ -682,7 +682,12 @@ class TestResolveParamKwargs:
             cmd_name="regime_detect",
         )
         correlation_limit_kwargs, _ = _resolve_param_kwargs(
-            {"name": "limit", "type": int, "required": False, "default": 500},
+            {"name": "limit", "type": int, "required": False, "default": None},
+            None,
+            cmd_name="correlation_matrix",
+        )
+        correlation_window_kwargs, _ = _resolve_param_kwargs(
+            {"name": "window_bars", "type": int, "required": False, "default": 500},
             None,
             cmd_name="correlation_matrix",
         )
@@ -696,8 +701,8 @@ class TestResolveParamKwargs:
         assert transform_kwargs["help"] != "transform parameter"
         assert "Minimum bars a detected regime must span" in min_regime_kwargs["help"]
         assert min_regime_kwargs["help"] != "min_regime_bars parameter"
-        assert "Historical bars per symbol" in correlation_limit_kwargs["help"]
-        assert "not an output row limit" in correlation_limit_kwargs["help"]
+        assert "Max correlation pair rows" in correlation_limit_kwargs["help"]
+        assert "Historical bars per symbol" in correlation_window_kwargs["help"]
         assert "max_regimes" in regime_limit_kwargs["help"]
 
     def test_report_generate_format_help_is_removed_output_help(self):

@@ -767,8 +767,8 @@ class TestCorrelationMatrix:
         assert "min_overlap" in result["error"]
 
     @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
-    def test_limit_must_cover_minimum_overlap_window(self):
-        result = self._unwrapped()("A,B", limit=3, min_overlap=30)
+    def test_window_bars_must_cover_minimum_overlap_window(self):
+        result = self._unwrapped()("A,B", window_bars=3, min_overlap=30)
         assert result["success"] is False
         assert result["error_code"] == "invalid_input"
         assert "calculation window" in result["error"]
@@ -843,7 +843,7 @@ class TestCorrelationMatrix:
                 "A,B,C",
                 method="pearson",
                 transform="log_return",
-                limit=60,
+                window_bars=60,
                 min_overlap=30,
                 detail="full",
             )
@@ -853,10 +853,11 @@ class TestCorrelationMatrix:
         assert result["count"] == 3
         assert {
             key: result["context"][key]
-            for key in ("timeframe", "limit", "transform", "min_overlap")
+            for key in ("timeframe", "limit", "window_bars", "transform", "min_overlap")
         } == {
             "timeframe": "H1",
-            "limit": 60,
+            "limit": None,
+            "window_bars": 60,
             "transform": "log_return",
             "min_overlap": 30,
         }
@@ -876,7 +877,6 @@ class TestCorrelationMatrix:
         assert result["summary"]["highlights"] == {}
         assert "data" not in result
         assert "legends" not in result["meta"]
-        assert "not an output-row limit" in result["meta"]["stats"]["limit_interpretation"]
         assert result["meta"]["stats"]["pairs_computed"] == 3
         assert any(
             "event=finish operation=correlation_matrix success=True" in record.message
@@ -900,7 +900,7 @@ class TestCorrelationMatrix:
             "A,B,C",
             method="pearson",
             transform="log_return",
-            limit=60,
+            window_bars=60,
             min_overlap=30,
         )
 
@@ -922,6 +922,31 @@ class TestCorrelationMatrix:
         assert result["context"]["transform"] == "log_return"
         assert result["context"]["min_overlap"] == 30
         assert result["summary"]["highlights"] == {}
+
+    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal._fetch_series")
+    def test_limit_caps_output_rows_not_window(self, mock_fetch):
+        idx = pd.date_range("2024-01-01", periods=80, freq="h")
+        rets = np.linspace(-0.01, 0.015, 80)
+        series_map = {
+            "A": pd.Series(100.0 * np.exp(np.cumsum(rets)), index=idx),
+            "B": pd.Series(80.0 * np.exp(np.cumsum((rets * 0.95) + 0.0005)), index=idx),
+            "C": pd.Series(120.0 * np.exp(np.cumsum(-rets)), index=idx),
+        }
+        mock_fetch.side_effect = lambda symbol, timeframe, count: (series_map[symbol], None)
+
+        result = self._unwrapped()(
+            "A,B,C",
+            limit=2,
+            window_bars=60,
+            min_overlap=30,
+        )
+
+        assert result["success"] is True
+        assert result["count"] == 2
+        assert len(result["items"]) == 2
+        assert result["truncated"] is True
+        assert result["meta"]["stats"]["pairs_computed"] == 3
 
     @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
     @patch("mtdata.core.causal._fetch_series")
@@ -1096,7 +1121,7 @@ class TestCointegrationTest:
 
         result = self._unwrapped()(
             group="Forex\\Majors",
-            limit=60,
+            window_bars=60,
             min_overlap=40,
             detail="full",
         )
@@ -1135,7 +1160,7 @@ class TestCointegrationTest:
 
         mock_fetch.side_effect = _fetch_side_effect
 
-        result = self._unwrapped()("A,B", limit=60, min_overlap=40)
+        result = self._unwrapped()("A,B", window_bars=60, min_overlap=40)
 
         assert result["success"] is True
         pair = result["items"][0]

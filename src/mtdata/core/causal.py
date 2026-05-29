@@ -166,6 +166,7 @@ _CORRELATION_REQUEST_KEYS = frozenset(
         "group_resolved",
         "timeframe",
         "limit",
+        "window_bars",
         "start",
         "end",
         "method",
@@ -183,6 +184,7 @@ _COINTEGRATION_REQUEST_KEYS = frozenset(
         "group_resolved",
         "timeframe",
         "limit",
+        "window_bars",
         "start",
         "end",
         "transform",
@@ -507,7 +509,7 @@ def _rank_correlation_pairs(
     symbols: List[str],
     *,
     method: str,
-    limit: int,
+    window_bars: int,
     min_overlap: int,
 ) -> tuple[List[Dict[str, Any]], Dict[str, int], Dict[str, int]]:
     rows: List[Dict[str, Any]] = []
@@ -529,7 +531,7 @@ def _rank_correlation_pairs(
             if overlap_rows < min_overlap:
                 skipped["min_overlap"] += 1
                 continue
-            subset = subset_all.tail(limit)
+            subset = subset_all.tail(window_bars)
             corr = subset[left].corr(subset[right], method=method)
             if corr is None or not math.isfinite(float(corr)):
                 skipped["nonfinite"] += 1
@@ -549,7 +551,7 @@ def _rank_correlation_pairs(
                     "calculation_samples": int(len(subset)),
                     "overlap_rows": overlap_rows,
                     "available_overlap_rows": overlap_rows,
-                    "window_requested": int(limit),
+                    "window_requested": int(window_bars),
                     "window_actual": int(len(subset)),
                     "window_truncated": bool(len(subset) < overlap_rows),
                     "relationship": (
@@ -585,6 +587,27 @@ def _compact_correlation_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]
         }
         for row in rows
     ]
+
+
+def _normalize_output_limit(limit: Optional[int]) -> tuple[int | None, str | None]:
+    if limit is None:
+        return None, None
+    try:
+        value = int(limit)
+    except (TypeError, ValueError):
+        return None, "limit must be a positive integer."
+    if value < 1:
+        return None, "limit must be a positive integer."
+    return value, None
+
+
+def _limit_pair_rows(
+    rows: List[Dict[str, Any]],
+    limit: int | None,
+) -> tuple[List[Dict[str, Any]], bool]:
+    if limit is None or len(rows) <= limit:
+        return rows, False
+    return rows[:limit], True
 
 
 def _public_pair_row(row: Dict[str, Any]) -> Dict[str, Any]:
@@ -1675,7 +1698,8 @@ def correlation_matrix(  # noqa: C901
     symbols: Optional[str] = None,
     group: Optional[str] = None,
     timeframe: TimeframeLiteral = "H1",
-    limit: int = 500,
+    limit: Optional[int] = None,
+    window_bars: int = 500,
     start: Optional[str] = None,
     end: Optional[str] = None,
     method: str = "pearson",
@@ -1698,8 +1722,9 @@ def correlation_matrix(  # noqa: C901
         group: Explicit MT5 group path (for example "Forex\\Majors"). Mutually
             exclusive with `symbols`.
         timeframe: MT5 timeframe key (e.g. "M15", "H1").
-        limit: Maximum number of overlapping transformed samples used per pair
-            after applying any time window.
+        limit: Optional maximum number of ranked pair rows returned.
+        window_bars: Maximum number of overlapping transformed samples used per
+            pair after applying any time window.
         start: Optional UTC-compatible start date/time for the analysis window.
         end: Optional UTC-compatible end date/time; end-only anchors recent history.
         method: Correlation method: "pearson" or "spearman".
@@ -1714,7 +1739,8 @@ def correlation_matrix(  # noqa: C901
             "_tool": "correlation_matrix",
             "_request_keys": _CORRELATION_REQUEST_KEYS,
             "timeframe": str(timeframe),
-            "limit": int(limit),
+            "limit": limit,
+            "window_bars": int(window_bars),
             "start": start,
             "end": end,
             "method": str(method),
@@ -1801,9 +1827,17 @@ def correlation_matrix(  # noqa: C901
                 meta=meta,
             )
 
-        if limit < 2:
+        output_limit, limit_error = _normalize_output_limit(limit)
+        if limit_error is not None:
             return _causal_error(
-                "limit must be at least 2.",
+                limit_error,
+                code="invalid_input",
+                meta=meta,
+            )
+
+        if window_bars < 2:
+            return _causal_error(
+                "window_bars must be at least 2.",
                 code="invalid_input",
                 meta=meta,
             )
@@ -1814,9 +1848,9 @@ def correlation_matrix(  # noqa: C901
                 code="invalid_input",
                 meta=meta,
             )
-        if limit < min_overlap:
+        if window_bars < min_overlap:
             return _causal_error(
-                "limit must be at least min_overlap because limit controls the correlation calculation window.",
+                "window_bars must be at least min_overlap because it controls the correlation calculation window.",
                 code="invalid_input",
                 meta=meta,
             )
@@ -1847,12 +1881,8 @@ def correlation_matrix(  # noqa: C901
                 meta=meta,
             )
         meta["detail"] = detail_mode
-        meta["limit_interpretation"] = (
-            "limit controls the maximum overlapping transformed samples used for each correlation calculation; "
-            "it is not an output-row limit."
-        )
 
-        fetch_count = max(int(limit) + 10, int(min_overlap) + 10, 200)
+        fetch_count = max(int(window_bars) + 10, int(min_overlap) + 10, 200)
         meta["fetch_count"] = int(fetch_count)
         series_map: Dict[str, pd.Series] = {}
         errors: List[str] = []
@@ -1959,15 +1989,17 @@ def correlation_matrix(  # noqa: C901
             transformed,
             symbols_used,
             method=method_value,
-            limit=int(limit),
+            window_bars=int(window_bars),
             min_overlap=int(min_overlap),
         )
+        output_rows_raw, output_truncated = _limit_pair_rows(rows, output_limit)
         meta.update(
             {
                 "pairs_attempted": int(
                     max(len(symbols_used) * (len(symbols_used) - 1) // 2, 0)
                 ),
                 "pairs_computed": int(len(rows)),
+                "output_truncated": output_truncated,
                 "pairs_skipped_min_overlap": int(skipped["min_overlap"]),
                 "pairs_skipped_nonfinite": int(skipped["nonfinite"]),
                 "pair_overlaps": pair_overlaps,
@@ -1985,22 +2017,23 @@ def correlation_matrix(  # noqa: C901
             )
 
         output_rows = (
-            [_public_pair_row(row) for row in rows]
+            [_public_pair_row(row) for row in output_rows_raw]
             if detail_mode == "full"
-            else _compact_correlation_rows(rows)
+            else _compact_correlation_rows(output_rows_raw)
         )
         highlights = (
-            _build_correlation_summary(rows)
+            _build_correlation_summary(output_rows_raw)
             if detail_mode in {"standard", "full"}
             else {}
         )
         out: Dict[str, Any] = {
             "success": True,
             "items": output_rows,
-            "count": int(len(rows)),
+            "count": int(len(output_rows_raw)),
             "context": {
                 "timeframe": str(timeframe),
-                "limit": int(limit),
+                "limit": output_limit,
+                "window_bars": int(window_bars),
                 "start": start,
                 "end": end,
                 "transform": transform_value,
@@ -2011,14 +2044,16 @@ def correlation_matrix(  # noqa: C901
             },
             "summary": {
                 "counts": {
-                    "pairs": int(len(rows)),
+                    "pairs": int(len(output_rows_raw)),
                 },
                 "highlights": highlights,
             },
             "meta": _causal_contract_meta(meta),
         }
+        if output_truncated:
+            out["truncated"] = True
         if detail_mode == "full":
-            out["matrix"] = _build_correlation_matrix(symbols_used, rows)
+            out["matrix"] = _build_correlation_matrix(symbols_used, output_rows_raw)
         if warnings_out:
             out["warnings"] = warnings_out
         return out
@@ -2030,6 +2065,7 @@ def correlation_matrix(  # noqa: C901
         group=group,
         timeframe=timeframe,
         limit=limit,
+        window_bars=window_bars,
         start=start,
         end=end,
         method=method,
@@ -2045,7 +2081,8 @@ def cointegration_test(  # noqa: C901
     symbols: Optional[str] = None,
     group: Optional[str] = None,
     timeframe: TimeframeLiteral = "H1",
-    limit: int = 500,
+    limit: Optional[int] = None,
+    window_bars: int = 500,
     start: Optional[str] = None,
     end: Optional[str] = None,
     transform: str = "log_level",
@@ -2069,8 +2106,9 @@ def cointegration_test(  # noqa: C901
         group: Explicit MT5 group path (for example "Forex\\Majors"). Mutually
             exclusive with `symbols`.
         timeframe: MT5 timeframe key (e.g. "M15", "H1").
-        limit: Maximum number of overlapping transformed samples used per pair
-            after applying any time window.
+        limit: Optional maximum number of ranked pair rows returned.
+        window_bars: Maximum number of overlapping transformed samples used per
+            pair after applying any time window.
         start: Optional UTC-compatible start date/time for the analysis window.
         end: Optional UTC-compatible end date/time; end-only anchors recent history.
         transform: Price transform: "log_level" or "level".
@@ -2086,7 +2124,8 @@ def cointegration_test(  # noqa: C901
             "_tool": "cointegration_test",
             "_request_keys": _COINTEGRATION_REQUEST_KEYS,
             "timeframe": str(timeframe),
-            "limit": int(limit),
+            "limit": limit,
+            "window_bars": int(window_bars),
             "start": start,
             "end": end,
             "transform": str(transform),
@@ -2183,9 +2222,17 @@ def cointegration_test(  # noqa: C901
                 meta=meta,
             )
 
-        if limit < 2:
+        output_limit, limit_error = _normalize_output_limit(limit)
+        if limit_error is not None:
             return _causal_error(
-                "limit must be at least 2.",
+                limit_error,
+                code="invalid_input",
+                meta=meta,
+            )
+
+        if window_bars < 2:
+            return _causal_error(
+                "window_bars must be at least 2.",
                 code="invalid_input",
                 meta=meta,
             )
@@ -2193,6 +2240,12 @@ def cointegration_test(  # noqa: C901
         if min_overlap < 2:
             return _causal_error(
                 "min_overlap must be at least 2.",
+                code="invalid_input",
+                meta=meta,
+            )
+        if window_bars < min_overlap:
+            return _causal_error(
+                "window_bars must be at least min_overlap because it controls the cointegration calculation window.",
                 code="invalid_input",
                 meta=meta,
             )
@@ -2232,7 +2285,7 @@ def cointegration_test(  # noqa: C901
             )
         meta["trend"] = trend_value
 
-        fetch_count = max(int(limit) + 10, int(min_overlap) + 10, 200)
+        fetch_count = max(int(window_bars) + 10, int(min_overlap) + 10, 200)
         meta["fetch_count"] = int(fetch_count)
         series_map: Dict[str, pd.Series] = {}
         errors: List[str] = []
@@ -2339,7 +2392,7 @@ def cointegration_test(  # noqa: C901
                 if overlap_rows < int(min_overlap):
                     pairs_skipped_min_overlap += 1
                     continue
-                subset = subset_all.tail(int(limit))
+                subset = subset_all.tail(int(window_bars))
                 row, failures = _evaluate_cointegration_pair(
                     subset,
                     left,
@@ -2354,7 +2407,7 @@ def cointegration_test(  # noqa: C901
                         row["aligned_observations"] = overlap_rows
                         row["available_overlap_rows"] = overlap_rows
                         row["calculation_samples"] = int(len(subset))
-                        row["window_requested"] = int(limit)
+                        row["window_requested"] = int(window_bars)
                         row["window_actual"] = int(len(subset))
                         row["window_truncated"] = bool(len(subset) < overlap_rows)
                     rows.append(row)
@@ -2371,12 +2424,14 @@ def cointegration_test(  # noqa: C901
                 str(item["right"]),
             )
         )
+        output_rows_raw, output_truncated = _limit_pair_rows(rows, output_limit)
         meta.update(
             {
                 "pairs_attempted": int(
                     max(len(symbols_used) * (len(symbols_used) - 1) // 2, 0)
                 ),
                 "pairs_tested": int(len(rows)),
+                "output_truncated": output_truncated,
                 "pairs_failed": int(len(pair_failures)),
                 "pairs_skipped_min_overlap": int(pairs_skipped_min_overlap),
             }
@@ -2430,18 +2485,21 @@ def cointegration_test(  # noqa: C901
 
         out: Dict[str, Any] = {
             "success": True,
-            "items": [_public_pair_row(row) for row in rows],
-            "count": int(len(rows)),
+            "items": [_public_pair_row(row) for row in output_rows_raw],
+            "count": int(len(output_rows_raw)),
             "summary": {
                 "counts": {
-                    "pairs": int(len(rows)),
-                    "cointegrated": cointegrated_count,
+                    "pairs": int(len(output_rows_raw)),
+                    "cointegrated": int(
+                        sum(1 for row in output_rows_raw if bool(row.get("cointegrated")))
+                    ),
                 },
-                "highlights": _build_cointegration_summary(rows),
+                "highlights": _build_cointegration_summary(output_rows_raw),
             },
             "context": {
                 "timeframe": str(timeframe),
-                "limit": int(limit),
+                "limit": output_limit,
+                "window_bars": int(window_bars),
                 "start": start,
                 "end": end,
                 "transform": transform_value,
@@ -2471,6 +2529,8 @@ def cointegration_test(  # noqa: C901
                 ),
             ),
         }
+        if output_truncated:
+            out["truncated"] = True
         if warnings_out:
             out["warnings"] = warnings_out
         if cointegrated_count == 0:
@@ -2486,6 +2546,7 @@ def cointegration_test(  # noqa: C901
         group=group,
         timeframe=timeframe,
         limit=limit,
+        window_bars=window_bars,
         start=start,
         end=end,
         transform=transform,

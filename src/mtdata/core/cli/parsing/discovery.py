@@ -72,12 +72,13 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("causal_discover_signals", "limit"): (
         "Historical bars per symbol used for causal tests; not an output row limit."
     ),
-    ("cointegration_test", "limit"): (
-        "Historical bars per symbol used for the cointegration test; "
-        "not an output row limit."
+    ("cointegration_test", "limit"): "Max cointegration pair rows to return.",
+    ("cointegration_test", "window_bars"): (
+        "Historical bars per symbol used for the cointegration test window."
     ),
-    ("correlation_matrix", "limit"): (
-        "Historical bars per symbol used for correlation; not an output row limit."
+    ("correlation_matrix", "limit"): "Max correlation pair rows to return.",
+    ("correlation_matrix", "window_bars"): (
+        "Historical bars per symbol used for the correlation window."
     ),
     ("labels_triple_barrier", "detail"): "Detail level: full, summary, or compact (summary plus recent sample).",
     ("labels_triple_barrier", "limit"): (
