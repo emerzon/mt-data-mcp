@@ -18,7 +18,7 @@ mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 --method theta
 
 **Output:**
 ```
-forecast[12]{time,forecast}:
+forecast[12]{time,value}:
     "2026-01-01 18:00",1.17569
     "2026-01-01 19:00",1.17570
     ...
@@ -295,8 +295,9 @@ mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 \
 
 | Field | Description |
 |-------|-------------|
-| `forecast` | Array of predicted values |
-| `time` | Timestamps for each forecast point |
+| `forecast` | Compact rows for forecast points; each row uses `time` and `value` |
+| `forecast_price` | Predicted price values |
+| `forecast_return` | Predicted return values when `quantity=return` |
 | `lower` | Lower confidence bound (if `--ci-alpha`) |
 | `upper` | Upper confidence bound (if `--ci-alpha`) |
 | `trend` | Detected trend direction (if available) |

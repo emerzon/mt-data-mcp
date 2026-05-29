@@ -398,7 +398,7 @@ def _forecast_generate_compact_rows(payload: Dict[str, Any]) -> List[Dict[str, A
     for idx in range(count):
         row: Dict[str, Any] = {
             "time": times[idx],
-            "forecast": forecast_values[idx],
+            "value": forecast_values[idx],
         }
         if isinstance(market_status, list) and idx < len(market_status):
             row["market_status"] = market_status[idx]
