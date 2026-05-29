@@ -361,6 +361,20 @@ class TestRunRegisteredForecastMethodIntegration:
         np.testing.assert_array_equal(forecast_arr, np.array([1.0, 1.0, 1.0]))
         assert metadata.get("src") == "non_trainable"
 
+    def test_model_id_rejects_non_trainable_method(self):
+        non_trainable = _StubNonTrainable()
+
+        class FakeReg:
+            @staticmethod
+            def get(name):
+                return non_trainable
+
+        with patch.object(fe, "ForecastRegistry", FakeReg):
+            with pytest.raises(ValueError, match="does not support stored model prediction"):
+                fe._run_registered_forecast_method(
+                    **_common_call_kwargs(model_id="missing_model"),
+                )
+
     def test_trainable_no_stored_model_falls_to_sync(self):
         """Trainable method with no stored model, sync mode → falls through to forecast()."""
         stub = _StubTrainable(category="heavy")
@@ -380,6 +394,30 @@ class TestRunRegisteredForecastMethodIntegration:
         forecast_arr, ci, metadata = result
         # Falls through to forecast() because async_mode=False
         assert metadata.get("src") == "forecast"
+
+    def test_explicit_model_id_missing_raises(self):
+        stub = _StubTrainable(category="heavy")
+
+        class FakeReg:
+            @staticmethod
+            def get(name):
+                return stub
+
+        mock_store = MagicMock()
+        mock_store.find.return_value = None
+
+        with patch.object(fe, "ForecastRegistry", FakeReg), \
+             patch(_PATCH_MODEL_STORE, mock_store):
+            with pytest.raises(ValueError, match="was not found in the model store"):
+                fe._run_registered_forecast_method(
+                    **_common_call_kwargs(model_id="missing_model"),
+                )
+
+        mock_store.find.assert_called_once_with(
+            "stub_trainable",
+            "EURUSD_H1",
+            "missing_model",
+        )
 
     def test_trainable_with_stored_model_uses_predict(self):
         """Trainable method with stored model → uses predict_with_model."""

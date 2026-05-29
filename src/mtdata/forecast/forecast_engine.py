@@ -785,6 +785,14 @@ def _run_registered_forecast_method(
     method_params = dict(params)
     if ci_alpha is not None and 'ci_alpha' not in method_params:
         method_params['ci_alpha'] = ci_alpha
+    requested_model_id = str(model_id or "").strip()
+    supports_training = bool(getattr(forecaster, 'supports_training', False))
+    if requested_model_id and not supports_training:
+        raise ValueError(
+            f"model_id '{requested_model_id}' was provided, but method "
+            f"'{method_l}' does not support stored model prediction. "
+            "Use forecast_models_list to inspect stored trainable models, or omit model_id."
+        )
 
     call_kwargs: Dict[str, Any] = {
         'ci_alpha': ci_alpha,
@@ -821,12 +829,12 @@ def _run_registered_forecast_method(
         )
 
     # --- Model store fast path ---
-    if getattr(forecaster, 'supports_training', False):
+    if supports_training:
         data_scope = f"{symbol}_{timeframe}"
         has_exog = X is not None
         training_params = dict(method_params)
         training_params["quantity"] = quantity_l
-        params_hash = model_id or _compute_model_key(
+        params_hash = requested_model_id or _compute_model_key(
             forecaster, method_l, horizon, seasonality,
             training_params, str(timeframe), has_exog,
         )
@@ -838,6 +846,12 @@ def _run_registered_forecast_method(
         )
         if stored_result is not None:
             return stored_result
+        if requested_model_id:
+            raise ValueError(
+                f"Model with ID or params_hash '{requested_model_id}' was not found "
+                "in the model store or could not be loaded. Use forecast_models_list "
+                "to see available models, or omit model_id for an on-the-fly forecast."
+            )
 
         # No stored model — async route for any trainable method when requested
         if async_mode:
