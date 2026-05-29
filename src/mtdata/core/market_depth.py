@@ -487,7 +487,7 @@ def market_ticker(
     Use `detail="compact"` to keep only the most operational bid/ask/spread fields.
     Set `price_field` to bid, ask, mid, last, or spread for a simple price result.
     """
-    detail_mode = normalize_output_verbosity_detail(detail, default="full")
+    detail_mode = normalize_output_verbosity_detail(detail, default="compact")
 
     def _run() -> Dict[str, Any]:
         def _finalize(payload: Dict[str, Any]) -> Dict[str, Any]:

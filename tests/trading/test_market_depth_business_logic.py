@@ -353,6 +353,35 @@ def test_market_ticker_compact_detail_omits_verbose_fields() -> None:
     assert out["meta"]["tool"] == "market_ticker"
 
 
+def test_market_ticker_none_detail_uses_compact_output() -> None:
+    tick = SimpleNamespace(
+        bid=200.0,
+        ask=201.0,
+        last=200.5,
+        volume=5,
+        time=1700000000,
+    )
+    with patch("mtdata.core.market_depth.mt5") as mt5, patch(
+        "mtdata.core.market_depth._use_client_tz", return_value=False
+    ):
+        mt5.symbol_select.return_value = True
+        mt5.symbol_info.return_value = SimpleNamespace(
+            digits=2,
+            point=0.01,
+            trade_tick_size=0.01,
+            trade_tick_value=1.0,
+            currency_profit="USD",
+        )
+        mt5.symbol_info_tick.return_value = tick
+        out = _raw_market_ticker("BTCUSD", detail=None)
+
+    assert out["success"] is True
+    assert "spread" not in out
+    assert "pricing_basis" not in out
+    assert "diagnostics" not in out
+    assert out["spread_cost_per_lot"] == 100.0
+
+
 def test_market_ticker_price_field_returns_simple_price() -> None:
     tick = SimpleNamespace(
         bid=1.17221,
