@@ -187,6 +187,23 @@ def _normalize_equity_symbol(symbol: str, *, tool_name: str) -> tuple[Optional[s
     return symbol_norm, None
 
 
+def _finviz_data_fetched_at() -> str:
+    return (
+        datetime.now(timezone.utc)
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
+
+
+def _attach_finviz_fetch_timestamp(payload: Dict[str, Any]) -> Dict[str, Any]:
+    if "error" in payload or payload.get("success") is False:
+        return payload
+    out = dict(payload)
+    out.setdefault("data_fetched_at", _finviz_data_fetched_at())
+    return out
+
+
 def _run_logged_tool(
     operation: str,
     fields: Dict[str, Any],
@@ -195,7 +212,7 @@ def _run_logged_tool(
     return run_logged_operation(
         logger,
         operation=operation,
-        func=fn,
+        func=lambda: _attach_finviz_fetch_timestamp(fn()),
         **fields,
     )
 

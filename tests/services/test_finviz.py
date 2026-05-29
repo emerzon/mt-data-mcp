@@ -769,6 +769,7 @@ class TestFinvizTools:
         result = raw(detail="full")
 
         assert result["detail"] == "full"
+        assert result["data_fetched_at"].endswith("Z")
         assert result["items"] == [{"symbol": "NQ", "name": "Nasdaq 100", "perf_pct": "0.8%"}]
         assert result["meta"]["tool"] == "finviz_futures"
         assert "request" not in result["meta"]
@@ -868,6 +869,7 @@ class TestFinvizTools:
         assert result["currency"] == "USD"
         assert result["price_source"] == "finviz_delayed"
         assert result["freshness_basis"] == "finviz_delayed_no_timestamp"
+        assert result["data_fetched_at"].endswith("Z")
         assert result["fundamentals"]["pe_ratio"] == 34.29
         assert result["fundamentals"]["market_cap_formatted"] == "3.98T"
         assert "market_cap" not in result["fundamentals"]
