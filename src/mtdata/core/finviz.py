@@ -1836,6 +1836,9 @@ def _filter_finviz_fundamentals_payload(
     out["fundamentals"] = filtered
     out["detail"] = detail_mode
     out["category"] = category_out
+    if "price" in filtered:
+        out["price_source"] = "finviz_delayed"
+        out["freshness_basis"] = "finviz_delayed_no_timestamp"
     if category_input != category_mode:
         out["category_requested"] = category_input
     if detail_mode == "full":

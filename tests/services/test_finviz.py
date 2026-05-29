@@ -863,6 +863,8 @@ class TestFinvizTools:
         assert result["detail"] == "compact"
         assert result["category"] == "summary"
         assert result["currency"] == "USD"
+        assert result["price_source"] == "finviz_delayed"
+        assert result["freshness_basis"] == "finviz_delayed_no_timestamp"
         assert result["fundamentals"]["pe_ratio"] == 34.29
         assert result["fundamentals"]["market_cap_formatted"] == "3.98T"
         assert "market_cap" not in result["fundamentals"]
