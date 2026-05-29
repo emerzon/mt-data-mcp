@@ -204,6 +204,7 @@ def test_run_data_fetch_candles_compact_keeps_staleness_without_meta():
 
     assert "meta" not in result
     assert result["data_stale"] is False
+    assert result["freshness_basis"] == "bar_policy"
     assert "data_freshness_seconds" not in result
     assert "data_age_seconds" not in result
     assert "data_age" not in result
@@ -234,6 +235,7 @@ def test_run_data_fetch_candles_compact_flags_stale_latest_data():
     )
 
     assert result["data_stale"] is True
+    assert result["freshness_basis"] == "bar_policy"
     assert "data_age_seconds" not in result
     assert "data_age" not in result
     assert "stale_warning" not in result

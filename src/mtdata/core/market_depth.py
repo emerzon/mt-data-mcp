@@ -153,6 +153,7 @@ def _compact_market_ticker_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "data_age_seconds",
         "data_age",
         "data_stale",
+        "freshness_basis",
         "market_status",
         "market_status_reason",
         "note",
@@ -626,6 +627,7 @@ def market_ticker(
                     out.update(closed_session)
                 else:
                     out["data_stale"] = age_seconds > _MARKET_TICKER_STALE_SECONDS
+                out["freshness_basis"] = "absolute_300s"
                 if out["data_stale"]:
                     out["warning"] = (
                         "Tick data may be stale; last tick time is "

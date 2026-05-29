@@ -287,8 +287,9 @@ def _compact_candles_payload(
         compact.pop("forming_candle_skipped", None)
     if "query_type" in public_diagnostics:
         compact["query_type"] = public_diagnostics["query_type"]
-    if "data_stale" in public_diagnostics:
-        compact["data_stale"] = public_diagnostics["data_stale"]
+    for key in ("data_stale", "freshness_basis"):
+        if key in public_diagnostics:
+            compact[key] = public_diagnostics[key]
     for key in ("market_status", "note"):
         if key in public_diagnostics:
             compact[key] = public_diagnostics[key]
@@ -365,6 +366,7 @@ def _public_candle_diagnostics(result: Dict[str, Any]) -> Dict[str, Any]:
 
     freshness = diagnostics.get("freshness")
     if isinstance(freshness, dict):
+        public["freshness_basis"] = "bar_policy"
         for key in ("data_freshness_seconds", "last_bar_within_policy_window"):
             if key == "data_freshness_seconds" and query_mode == "range":
                 continue
