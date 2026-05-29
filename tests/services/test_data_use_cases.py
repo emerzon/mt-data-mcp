@@ -732,6 +732,62 @@ def test_run_data_fetch_ticks_maps_standard_detail_to_service_format(detail, exp
     assert captured["format"] == expected_format
 
 
+def test_run_data_fetch_ticks_compact_prunes_row_diagnostics():
+    result = run_data_fetch_ticks(
+        DataFetchTicksRequest(symbol="EURUSD", limit=2, detail="compact"),
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_ticks_impl=lambda **_kwargs: {
+            "success": True,
+            "symbol": "EURUSD",
+            "count": 2,
+            "data": [
+                {
+                    "time": "2026-05-29 20:56",
+                    "bid": 1.1659,
+                    "ask": 1.16596,
+                    "flags": 1026,
+                    "flags_decoded": ["bid", "volume_real"],
+                },
+                {
+                    "time": "2026-05-29 20:57",
+                    "bid": 1.16591,
+                    "ask": 1.16599,
+                    "flags": 1030,
+                    "flags_decoded": ["bid", "ask", "volume_real"],
+                },
+            ],
+            "timezone": "UTC",
+            "stats": {"spread": {"low": 0.00006, "high": 0.00008}},
+            "last_quote": {"bid": 1.16591, "ask": 1.16599},
+            "flags_legend": {"1026": ["bid", "volume_real"]},
+            "duration_seconds": 1,
+            "tick_rate_per_second": 2,
+            "price_precision": 5,
+        },
+    )
+
+    assert result == {
+        "success": True,
+        "symbol": "EURUSD",
+        "count": 2,
+        "data": [
+            {
+                "time": "2026-05-29 20:56",
+                "bid": 1.1659,
+                "ask": 1.16596,
+                "spread": 0.00006,
+            },
+            {
+                "time": "2026-05-29 20:57",
+                "bid": 1.16591,
+                "ask": 1.16599,
+                "spread": 0.00008,
+            },
+        ],
+        "timezone": "UTC",
+    }
+
+
 def test_data_fetch_candles_logs_finish_event(monkeypatch, caplog):
     monkeypatch.setattr(
         core_data,

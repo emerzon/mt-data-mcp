@@ -27,6 +27,18 @@ _TICK_DETAIL_FORMATS = {
     "full": "full_rows",
 }
 
+_COMPACT_TICK_TOP_LEVEL_FIELDS = (
+    "success",
+    "symbol",
+    "count",
+    "data",
+    "timezone",
+    "data_quality",
+    "warnings",
+    "simplified",
+    "simplify",
+)
+
 
 def _ensure_gateway_connection(gateway: Any) -> Dict[str, Any] | None:
     return mt5_connection_error(gateway)
@@ -445,7 +457,7 @@ def _run_data_fetch_ticks_impl(
     connection_error = _ensure_gateway_connection(gateway)
     if connection_error is not None:
         return connection_error
-    return fetch_ticks_impl(
+    result = fetch_ticks_impl(
         symbol=request.symbol,
         limit=request.limit,
         start=request.start,
@@ -453,6 +465,49 @@ def _run_data_fetch_ticks_impl(
         simplify=request.simplify,
         format=_TICK_DETAIL_FORMATS.get(request.detail, "summary"),
     )
+    if str(request.detail or "compact").strip().lower() == "compact":
+        return _compact_tick_rows_payload(result)
+    return result
+
+
+def _compact_tick_rows_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(payload, dict) or payload.get("error"):
+        return payload
+    compact = {
+        key: payload[key]
+        for key in _COMPACT_TICK_TOP_LEVEL_FIELDS
+        if key in payload and payload[key] not in (None, "", [], {})
+    }
+    rows = compact.get("data")
+    if isinstance(rows, list):
+        compact["data"] = [_compact_tick_row(row) for row in rows]
+        compact["count"] = len(compact["data"])
+    return compact
+
+
+def _compact_tick_row(row: Any) -> Any:
+    if not isinstance(row, dict):
+        return row
+    compact = {
+        key: row[key]
+        for key in ("time", "bid", "ask")
+        if key in row and row[key] not in (None, "")
+    }
+    spread = row.get("spread")
+    if spread in (None, ""):
+        spread = _tick_row_spread(row.get("bid"), row.get("ask"))
+    if spread not in (None, ""):
+        compact["spread"] = spread
+    return compact
+
+
+def _tick_row_spread(bid: Any, ask: Any) -> Optional[float]:
+    try:
+        if bid in (None, "") or ask in (None, ""):
+            return None
+        return round(float(ask) - float(bid), 10)
+    except (TypeError, ValueError):
+        return None
 
 
 def _run_wait_candle_impl(
