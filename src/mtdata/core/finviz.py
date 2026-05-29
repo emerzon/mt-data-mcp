@@ -1172,7 +1172,7 @@ def _normalize_finviz_date_value(value: Any) -> Any:
     return text
 
 
-def _finviz_calendar_utc_time(value: Any) -> Optional[str]:
+def _parse_finviz_calendar_time(value: Any) -> Optional[datetime]:
     if value in (None, ""):
         return None
     text = str(value).strip()
@@ -1185,19 +1185,29 @@ def _finviz_calendar_utc_time(value: Any) -> Optional[str]:
         return None
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=_FINVIZ_CALENDAR_LOCAL_TZ)
+    return parsed
+
+
+def _finviz_calendar_utc_time(value: Any) -> Optional[str]:
+    parsed = _parse_finviz_calendar_time(value)
+    if parsed is None:
+        return None
     utc_dt = parsed.astimezone(timezone.utc)
     return utc_dt.replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def _normalize_finviz_economic_calendar_time(item: Dict[str, Any]) -> Dict[str, Any]:
     normalized = dict(item)
-    local_time = normalized.get("date")
-    utc_time = _finviz_calendar_utc_time(local_time)
-    if utc_time is None:
+    parsed = _parse_finviz_calendar_time(normalized.get("date"))
+    if parsed is None:
         return normalized
-    normalized.setdefault("local_time", local_time)
-    normalized.setdefault("local_timezone", _FINVIZ_CALENDAR_LOCAL_TIMEZONE)
-    normalized["date"] = utc_time
+    local_dt = parsed.astimezone(_FINVIZ_CALENDAR_LOCAL_TZ)
+    normalized["local_time"] = local_dt.replace(microsecond=0).isoformat()
+    normalized["local_timezone"] = _FINVIZ_CALENDAR_LOCAL_TIMEZONE
+    utc_time = parsed.astimezone(timezone.utc)
+    normalized["date"] = (
+        utc_time.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    )
     return normalized
 
 
