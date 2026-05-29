@@ -39,6 +39,7 @@ _COMMAND_PARAM_CHOICE_OVERRIDES: Dict[tuple[str, str], list[str]] = {
         "detail",
     ): [
         "full",
+        "standard",
         "summary",
         "compact",
     ],
@@ -80,7 +81,7 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("correlation_matrix", "window_bars"): (
         "Historical bars per symbol used for the correlation window."
     ),
-    ("labels_triple_barrier", "detail"): "Detail level: full, summary, or compact (summary plus recent sample).",
+    ("labels_triple_barrier", "detail"): "Detail level: full, standard, summary, or compact (summary plus recent sample).",
     ("labels_triple_barrier", "limit"): (
         "Historical bars fetched for labeling; output size is controlled "
         "by detail and lookback."

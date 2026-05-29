@@ -489,8 +489,8 @@ class TestAddDynamicArguments:
 
         assert any(action.dest == "detail" for action in parser._actions)
         assert not any(action.dest == "summary_only" for action in parser._actions)
-        args = parser.parse_args(["--detail", "summary"])
-        assert args.detail == "summary"
+        args = parser.parse_args(["--detail", "standard"])
+        assert args.detail == "standard"
 
     def test_partial_flag_prefix_is_rejected_when_abbrev_disabled(self, capsys):
         parser = argparse.ArgumentParser(allow_abbrev=False)

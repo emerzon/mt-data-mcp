@@ -1634,7 +1634,7 @@ class TestBuildEpilog:
         epilog = _build_epilog(functions)
 
         assert "--summary-only" not in epilog
-        assert "--detail{full,summary,compact}" in epilog
+        assert "--detail{full,standard,summary,compact}" in epilog
         assert "<Literal>" not in epilog
 
 
