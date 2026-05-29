@@ -37,6 +37,13 @@ from .requests import (
 
 logger = logging.getLogger(__name__)
 
+_BACKTEST_METRICS_REASON_NOTES = {
+    "no_non_flat_trades": (
+        "No active long/short trades; win_rate and drawdown need at least one trade."
+    ),
+}
+
+
 def _normalize_trader_detail(value: Any, *, default: str = "compact") -> str:
     normalized = str(default if value is None else value).strip().lower()
     if normalized in {"summary", "summary_only"}:
@@ -944,6 +951,11 @@ def _compact_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:
         ):
             if key in method_payload:
                 method_out[key] = _compact_metric(key, method_payload[key])
+        metrics_reason = str(method_out.get("metrics_reason") or "").strip()
+        if method_out.get("metrics_available") is False and metrics_reason:
+            metrics_note = _BACKTEST_METRICS_REASON_NOTES.get(metrics_reason)
+            if metrics_note:
+                method_out["metrics_note"] = metrics_note
         if method_out.get("metrics_available") is not False:
             for key in (
                 "win_rate",

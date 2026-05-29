@@ -679,6 +679,9 @@ def test_run_forecast_backtest_omits_trade_metrics_when_unavailable():
     assert row["trade_status"] == "flat"
     assert row["metrics_available"] is False
     assert row["metrics_reason"] == "no_non_flat_trades"
+    assert row["metrics_note"] == (
+        "No active long/short trades; win_rate and drawdown need at least one trade."
+    )
     assert "trades_observed" not in row
     assert "details_count" not in row
     assert "win_rate" not in row
