@@ -738,6 +738,26 @@ class TestFinvizTools:
         ]
 
     @patch("mtdata.core.finviz.get_futures_performance")
+    def test_finviz_futures_numeric_perf_is_already_percentage_points(
+        self,
+        mock_get_futures,
+    ):
+        from mtdata.core.finviz import finviz_futures
+
+        mock_get_futures.return_value = {
+            "success": True,
+            "market": "futures",
+            "count": 1,
+            "futures": [{"ticker": "SB", "label": "Sugar", "perf": 0.93}],
+        }
+
+        raw = getattr(finviz_futures, "__wrapped__", finviz_futures)
+        result = raw()
+
+        assert result["items"][0]["perf_day"] == 0.93
+        assert result["items"][0]["perf_day_pct"] == 0.93
+
+    @patch("mtdata.core.finviz.get_futures_performance")
     def test_finviz_market_tools_accept_full_detail(self, mock_get_futures):
         from mtdata.core.finviz import finviz_futures
 

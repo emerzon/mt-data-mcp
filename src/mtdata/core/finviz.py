@@ -258,12 +258,18 @@ def _derive_forex_pair_name(symbol: Any) -> Optional[str]:
     return None
 
 
-def _finviz_percent_value(value: Any) -> Optional[float]:
+def _finviz_percent_value(
+    value: Any,
+    *,
+    fraction_input: bool = True,
+) -> Optional[float]:
     if value is None or value == "":
         return None
     parsed = _parse_finviz_numeric_value(value)
     if parsed is None:
         return None
+    if not fraction_input:
+        return round(float(parsed), 6)
     if isinstance(value, (int, float)) and abs(float(parsed)) <= 1.0:
         parsed = float(parsed) * 100.0
         return round(float(parsed), 6)
@@ -291,7 +297,10 @@ def _compact_finviz_market_row(row: Dict[str, Any], *, rows_key: str) -> Dict[st
     }
     for field in tuple(out):
         if field.startswith("perf_"):
-            pct_value = _finviz_percent_value(out.get(field))
+            pct_value = _finviz_percent_value(
+                out.get(field),
+                fraction_input=rows_key != "futures",
+            )
             if pct_value is not None:
                 out[f"{field}_pct"] = pct_value
     return out
