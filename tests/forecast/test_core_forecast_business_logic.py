@@ -615,6 +615,23 @@ def test_run_forecast_backtest_derives_target_from_quantity():
     assert "target" not in captured
 
 
+def test_run_forecast_backtest_preserves_requested_noncompact_detail():
+    def fake_backtest_impl(**kwargs):
+        return {"success": True, "detail": "compact", "results": {}}
+
+    standard = forecast_use_cases.run_forecast_backtest(
+        ForecastBacktestRequest(symbol="EURUSD", detail="standard"),
+        backtest_impl=fake_backtest_impl,
+    )
+    summary = forecast_use_cases.run_forecast_backtest(
+        ForecastBacktestRequest(symbol="EURUSD", detail="summary"),
+        backtest_impl=fake_backtest_impl,
+    )
+
+    assert standard["detail"] == "standard"
+    assert summary["detail"] == "summary"
+
+
 def test_run_forecast_backtest_strips_per_anchor_details_in_compact_mode():
     def fake_backtest_impl(**kwargs):
         return {
@@ -855,6 +872,7 @@ def test_forecast_tune_detail_compacts_history_tail():
         ForecastTuneGeneticRequest(symbol="EURUSD", method="theta"),
         genetic_search_impl=fake_genetic,
     )
+    assert compact["detail"] == "compact"
     assert "history_tail" not in compact
     assert compact["history_tail_count"] == 2
     assert compact["history_count"] == 2
@@ -863,6 +881,7 @@ def test_forecast_tune_detail_compacts_history_tail():
         ForecastTuneGeneticRequest(symbol="EURUSD", method="theta", detail="full"),
         genetic_search_impl=fake_genetic,
     )
+    assert full["detail"] == "full"
     assert full["history_tail"] == [{"score": 1.0}, {"score": 0.9}]
     assert "history_tail_count" not in full
 
@@ -875,17 +894,20 @@ def test_forecast_tune_optuna_and_optimize_hints_accept_detail():
         return {"success": True, "history_count": 1, "history_tail": [{"best_score": 0.5}]}
 
     optuna = forecast_use_cases.run_forecast_tune_optuna(
-        ForecastTuneOptunaRequest(symbol="EURUSD", method="theta"),
+        ForecastTuneOptunaRequest(symbol="EURUSD", method="theta", detail="standard"),
         optuna_search_impl=fake_optuna,
     )
+    assert optuna["detail"] == "standard"
     assert "history_tail" not in optuna
     assert optuna["history_tail_count"] == 1
 
     hints = forecast_use_cases.run_forecast_optimize_hints(
-        ForecastOptimizeHintsRequest(symbol="EURUSD", timeframe="H1", detail="full"),
+        ForecastOptimizeHintsRequest(symbol="EURUSD", timeframe="H1", detail="summary"),
         optimize_hints_impl=fake_hints,
     )
-    assert hints["history_tail"] == [{"best_score": 0.5}]
+    assert hints["detail"] == "summary"
+    assert "history_tail" not in hints
+    assert hints["history_tail_count"] == 1
 
 
 def test_forecast_barrier_optimize_logs_finish_event(caplog, monkeypatch):
@@ -1632,7 +1654,7 @@ def test_forecast_tune_genetic_and_barrier_prob_routing(monkeypatch):
 
     monkeypatch.setattr(tune_mod, "default_search_space", fake_default_search_space)
     out = raw_tune(request=ForecastTuneGeneticRequest(symbol="EURUSD", method="theta", search_space=None))
-    assert out == {"ok": True}
+    assert out == {"ok": True, "detail": "compact"}
     assert captured["method"] == "theta"
     assert ss_calls["method"] == "theta"
     assert ss_calls["methods"] is None
@@ -1646,7 +1668,7 @@ def test_forecast_tune_genetic_and_barrier_prob_routing(monkeypatch):
             search_space={"x": {"type": "int"}},
         )
     )
-    assert out == {"ok": True}
+    assert out == {"ok": True, "detail": "compact"}
     assert captured["method"] is None
 
     monkeypatch.setattr(cf, "_genetic_search_impl", lambda **kwargs: (_ for _ in ()).throw(RuntimeError("fail")))
@@ -2131,7 +2153,7 @@ def test_forecast_tune_optuna_routing(monkeypatch):
 
     monkeypatch.setattr(tune_mod, "default_search_space", fake_default_search_space)
     out = raw_tune(request=ForecastTuneOptunaRequest(symbol="EURUSD", method="theta", search_space=None))
-    assert out == {"ok": True}
+    assert out == {"ok": True, "detail": "compact"}
     assert captured["method"] == "theta"
     assert ss_calls["method"] == "theta"
     assert ss_calls["methods"] is None
@@ -2145,7 +2167,7 @@ def test_forecast_tune_optuna_routing(monkeypatch):
             search_space={"x": {"type": "int"}},
         )
     )
-    assert out == {"ok": True}
+    assert out == {"ok": True, "detail": "compact"}
     assert captured["method"] is None
 
     monkeypatch.setattr(cf, "_optuna_search_impl", lambda **kwargs: (_ for _ in ()).throw(RuntimeError("fail")))

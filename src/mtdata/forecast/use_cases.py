@@ -55,6 +55,15 @@ def _normalize_trader_detail(value: Any, *, default: str = "compact") -> str:
     return "compact"
 
 
+def _requested_detail_label(value: Any, *, default: str = "compact") -> str:
+    normalized = str(default if value is None else value).strip().lower()
+    if normalized == "summary_only":
+        return "summary"
+    if normalized in {"compact", "standard", "summary", "full"}:
+        return normalized
+    return str(default)
+
+
 def _forecast_interval_summary(payload: Dict[str, Any]) -> Optional[Dict[str, float]]:
     lower_key = next(
         (
@@ -1317,8 +1326,12 @@ def run_forecast_backtest(
         horizon=request.horizon,
         methods=len(request.methods or []),
     )
+    requested_detail = _requested_detail_label(request.detail)
     if str(request.detail or "compact").strip().lower() == "compact":
         return _compact_backtest_result(result)
+    if isinstance(result, dict) and not result.get("error"):
+        result = dict(result)
+        result["detail"] = requested_detail
     return result
 
 
@@ -1520,9 +1533,11 @@ def _resolve_tuning_search_space(
 
 
 def _apply_tuning_detail(result: Dict[str, Any], detail: str) -> Dict[str, Any]:
-    if str(detail or "compact").strip().lower() == "full":
-        return result
+    detail_value = _requested_detail_label(detail)
     out = dict(result)
+    out["detail"] = detail_value
+    if detail_value == "full":
+        return out
     if "history_tail" in out:
         out["history_tail_count"] = len(out.get("history_tail") or [])
         out.pop("history_tail", None)
