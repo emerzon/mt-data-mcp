@@ -82,6 +82,27 @@ class TestLabelsTripleBarrier:
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
     @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
     @patch(f"{_LABELS_MOD}._fetch_history")
+    def test_compact_rows_keep_barrier_prices_structured(self, mock_hist, mock_den, mock_pip):
+        del mock_den, mock_pip
+        mock_hist.return_value = _make_flat_df(40, price=1.16479)
+
+        result = _get_raw_fn()(
+            "EURUSD",
+            tp_pct=1.0,
+            sl_pct=0.5,
+            horizon=12,
+            lookback=5,
+        )
+        row = result["data"][0]
+
+        assert row["entry_price"] == pytest.approx(1.16479)
+        assert row["barrier_tp"] == pytest.approx(1.1764379)
+        assert row["barrier_sl"] == pytest.approx(1.15896605)
+        assert "barrier_levels" not in row
+
+    @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
+    @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
+    @patch(f"{_LABELS_MOD}._fetch_history")
     def test_abs_barriers(self, mock_hist, mock_den, mock_pip):
         mock_hist.return_value = _make_df(60, base=100.0, step=0.5)
         result = _get_raw_fn()("SPX", tp_abs=110.0, sl_abs=90.0, horizon=10)

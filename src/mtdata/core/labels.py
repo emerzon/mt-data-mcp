@@ -75,13 +75,10 @@ def _triple_barrier_sample_row(
                 adjust_inverted=False,
                 **barrier_kwargs,
             )
-            levels: Dict[str, Any] = {}
             if tp_price is not None:
-                levels["tp"] = tp_price
+                row["barrier_tp"] = float(tp_price)
             if sl_price is not None:
-                levels["sl"] = sl_price
-            if levels:
-                row["barrier_levels"] = levels
+                row["barrier_sl"] = float(sl_price)
     except Exception:
         pass
     return row
