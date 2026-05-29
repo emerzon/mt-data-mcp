@@ -53,6 +53,7 @@ def _make_symbol(
     point: float = 0.0001,
     trade_tick_size: float = 0.0001,
     trade_tick_value: float = 10.0,
+    currency_profit=None,
 ):
     return SimpleNamespace(
         name=name,
@@ -63,6 +64,7 @@ def _make_symbol(
         point=point,
         trade_tick_size=trade_tick_size,
         trade_tick_value=trade_tick_value,
+        currency_profit=currency_profit,
     )
 
 
@@ -517,7 +519,9 @@ class TestMarketScan:
         mock_rates,
         mock_group,
     ):
-        mock_symbols_get.return_value = [_make_symbol("EURUSD", description="Euro")]
+        mock_symbols_get.return_value = [
+            _make_symbol("EURUSD", description="Euro", currency_profit="USD")
+        ]
         mock_tick.return_value = _make_tick(bid=1.1000, ask=1.1001)
         mock_rates.return_value = _make_bars([1.0, 2.0, 3.0, 4.0], tick_volume=120)
 
@@ -534,6 +538,7 @@ class TestMarketScan:
         assert result["units"]["price_change_pct"] == "percentage_points"
         assert result["units"]["tick_volume"] == "broker_tick_count"
         assert result["units"]["spread_pct"] == "percentage_points"
+        assert result["units"]["spread_cost_per_lot"] == "currency_per_lot_estimate"
         row = result["data"][0]
         assert row["symbol"] == "EURUSD"
         assert row["group"] == "Forex\\Majors"
@@ -551,7 +556,11 @@ class TestMarketScan:
             "tick_volume",
             "spread_points",
             "spread_pct",
+            "spread_cost_per_lot",
+            "spread_cost_currency",
         }
+        assert row["spread_cost_per_lot"] == 10.0
+        assert row["spread_cost_currency"] == "USD"
         assert "real_volume" not in row
         assert "rows" not in result
         assert result["meta"]["request"]["detail"] == "compact"
