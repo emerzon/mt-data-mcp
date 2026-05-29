@@ -723,7 +723,10 @@ class TestFinvizTools:
 
         assert "futures" not in result
         assert result["detail"] == "compact"
-        assert result["data_limitations"] == {"performance_periods": "day_only"}
+        assert result["data_limitations"] == {
+            "performance_periods": "day_only",
+            "price": "not_available_from_source",
+        }
         assert result["items"] == [
             {
                 "symbol": "NQ",
