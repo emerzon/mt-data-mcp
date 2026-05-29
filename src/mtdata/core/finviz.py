@@ -374,6 +374,8 @@ def _normalize_finviz_market_payload(
     out["detail"] = detail_mode
     if detail_mode != "full" and rows_key in {"pairs", "coins", "futures"}:
         out["performance_format"] = "percentage_points"
+    if rows_key == "futures":
+        out["data_limitations"] = {"performance_periods": "day_only"}
     if detail_mode == "full":
         out["meta"] = _build_tool_contract_meta(
             tool=tool,
