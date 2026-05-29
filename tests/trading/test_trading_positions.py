@@ -53,6 +53,22 @@ def test_normalize_trade_read_output_compact_omits_request_echoes():
     assert "limit" not in out
 
 
+def test_normalize_trade_read_output_compact_empty_keeps_contract_shape():
+    out = positions._normalize_trade_read_output(
+        [],
+        request=SimpleNamespace(detail="compact"),
+        kind="open_positions",
+    )
+
+    assert out == {
+        "success": True,
+        "kind": "open_positions",
+        "count": 0,
+        "items": [],
+        "empty": True,
+    }
+
+
 def test_normalize_trade_read_output_adds_volume_units():
     out = positions._normalize_trade_read_output(
         [{"ticket": 1, "symbol": "EURUSD", "volume": 0.1}],

@@ -306,7 +306,13 @@ def _compact_trade_read_output(out: Dict[str, Any], *, request: Any) -> Dict[str
     ):
         return out
     if int(out.get("count") or 0) == 0:
-        return {"success": True, "count": 0}
+        return {
+            "success": True,
+            "kind": out.get("kind"),
+            "count": 0,
+            "items": [],
+            "empty": True,
+        }
     compact = dict(out)
     for key in ("kind", "scope", "empty", "no_action"):
         compact.pop(key, None)
