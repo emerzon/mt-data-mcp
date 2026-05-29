@@ -667,3 +667,25 @@ def test_market_ticker_rewrites_invalid_symbol_selection_error() -> None:
     assert out["operation"] == "market_ticker"
     assert out["request_id"]
     assert "symbols_search" in out["remediation"]
+
+
+def test_market_ticker_rejects_empty_quote_snapshot() -> None:
+    tick = SimpleNamespace(bid=0.0, ask=0.0, last=0.0, volume=0, time=0)
+    with patch("mtdata.core.market_depth.mt5") as mt5:
+        mt5.symbol_select.return_value = True
+        mt5.symbol_info.return_value = SimpleNamespace(
+            digits=5,
+            point=0.00001,
+            trade_tick_size=0.00001,
+            trade_tick_value=1.0,
+            currency_profit="USD",
+        )
+        mt5.symbol_info_tick.return_value = tick
+
+        out = _raw_market_ticker("AAPL")
+
+    assert out["success"] is False
+    assert out["error_code"] == "market_ticker_quote_unavailable"
+    assert "No usable quote data for AAPL" in out["error"]
+    assert "symbols_list(search_term='AAPL')" in out["error"]
+    assert out["operation"] == "market_ticker"

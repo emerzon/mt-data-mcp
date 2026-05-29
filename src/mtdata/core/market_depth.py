@@ -519,6 +519,21 @@ def market_ticker(
             bid = float(tick.bid) if tick.bid else None
             ask = float(tick.ask) if tick.ask else None
             last = float(tick.last) if tick.last else None
+            tick_time = int(float(tick.time)) if tick.time else None
+            if bid is None and ask is None and last is None and tick_time is None:
+                return _finalize(
+                    _market_ticker_error(
+                        (
+                            f"No usable quote data for {symbol}. "
+                            f"Use symbols_list(search_term='{symbol}') to find broker-specific names and suffixes."
+                        ),
+                        code="market_ticker_quote_unavailable",
+                        remediation=(
+                            "Verify the broker symbol name and ensure the symbol has a recent tick "
+                            "in Market Watch."
+                        ),
+                    )
+                )
             tick_volume = getattr(tick, "volume", None)
             if tick_volume is not None:
                 try:
@@ -546,7 +561,6 @@ def market_ticker(
                     )
                     pricing_basis = "per_1_lot_estimate"
 
-            tick_time = int(float(tick.time)) if tick.time else None
             _use_ctz = _use_client_tz()
 
             out: Dict[str, Any] = {
