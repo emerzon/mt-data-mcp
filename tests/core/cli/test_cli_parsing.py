@@ -827,6 +827,19 @@ class TestResolveParamKwargs:
         kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="symbols_top_markets")
         assert kwargs["help"] == "Max symbols to return for each ranking."
 
+    def test_symbols_top_markets_rank_by_help_lists_actual_options(self):
+        param = {
+            "name": "rank_by",
+            "type": Optional[str],
+            "required": False,
+            "default": "all",
+        }
+        kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="symbols_top_markets")
+        assert "all, spread/spread_pct" in kwargs["help"]
+        assert "volume/tick_volume" in kwargs["help"]
+        assert "price_change/price_change_pct/abs_price_change_pct" in kwargs["help"]
+        assert "rsi" not in kwargs["help"]
+
     def test_finviz_news_limit_help_is_command_specific(self):
         param = {"name": "limit", "type": int, "required": False, "default": 20}
         kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="finviz_news")
