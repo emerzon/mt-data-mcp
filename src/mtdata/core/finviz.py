@@ -1274,6 +1274,10 @@ def _compact_finviz_earnings_items(items: Any) -> List[Any]:
         change_pct = _finviz_percent_value(row.get("change_pct"))
         if change_pct is not None:
             row["change_pct"] = change_pct
+        market_cap_formatted = _format_finviz_large_number(row.get("market_cap"))
+        if market_cap_formatted:
+            row["market_cap_formatted"] = market_cap_formatted
+            row.pop("market_cap", None)
         compact_rows.append(row)
     return compact_rows
 

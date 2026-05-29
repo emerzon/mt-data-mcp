@@ -1182,7 +1182,7 @@ class TestFinvizTools:
             "earnings": [
                 {
                     "Ticker": "APLM",
-                    "Market Cap": "14.17M",
+                    "Market Cap": 14170000,
                     "ROA": "-1.365",
                     "ROE": "-3.8",
                     "Curr R": "0.97",
@@ -1208,7 +1208,7 @@ class TestFinvizTools:
             {
                 "symbol": "APLM",
                 "earnings": "Apr 27/b",
-                "market_cap": "14.17M",
+                "market_cap_formatted": "14.17M",
                 "price": "12.85",
                 "change_pct": -2.58,
                 "volume": "6593",
