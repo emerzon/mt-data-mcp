@@ -129,6 +129,7 @@ _FINVIZ_FUNDAMENTAL_CATEGORIES: Dict[str, tuple[str, ...]] = {
     ),
 }
 _FINVIZ_FUNDAMENTAL_CATEGORY_ALIASES = {
+    "overview": "summary",
     "tech": "technicals",
     "technical": "technicals",
     "technicals": "technicals",

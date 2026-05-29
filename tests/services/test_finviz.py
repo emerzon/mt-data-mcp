@@ -875,6 +875,10 @@ class TestFinvizTools:
         assert "high_52w" not in result["fundamentals"]
         assert result["fundamentals"]["rsi_14"] == 62.1
         assert "insider_own" not in result["fundamentals"]
+
+        overview = raw("AAPL", category="overview")
+        assert overview["category"] == "summary"
+        assert overview["category_requested"] == "overview"
         assert "fields_returned" not in result
         assert "available_field_count" not in result
         assert "omitted_field_count" not in result
