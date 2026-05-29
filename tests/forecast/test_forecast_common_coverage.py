@@ -671,6 +671,7 @@ class TestFormatForecastOutput:
             )
 
         assert result["market_hours_note"].startswith("3 of 6 forecast bars")
+        assert result["open_market_forecast_bars"] == 3
         assert result["closed_market_forecast_bars"] == 3
         assert result["forecast_market_status"] == [
             "open",

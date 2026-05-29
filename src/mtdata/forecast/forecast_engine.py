@@ -1053,6 +1053,7 @@ def _format_forecast_output(
         weekend_count = sum(1 for status in market_status if status == "closed_weekend")
         if weekend_count:
             result["forecast_market_status"] = market_status
+            result["open_market_forecast_bars"] = int(len(forecast_times) - weekend_count)
             result["closed_market_forecast_bars"] = weekend_count
             note = (
                 f"{weekend_count} of {len(forecast_times)} forecast bars fall on "
