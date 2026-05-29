@@ -1,3 +1,5 @@
+"""Internal rolling-window feature extraction utilities; not an MCP tool module."""
+
 import numbers
 import warnings
 

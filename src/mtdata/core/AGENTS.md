@@ -20,7 +20,6 @@ All 57 MCP tools (+1 conditional), CLI commands, web API endpoints, and server t
 | `market_depth.py` | — | Market depth tools |
 | `symbols.py` | — | Symbol listing/search tools |
 | `labels.py` | — | Labeling tools |
-| `features.py` | — | Feature extraction tools |
 | `pivot.py` | — | Pivot point tools |
 
 ### Trading (split by concern)
@@ -76,6 +75,7 @@ All 57 MCP tools (+1 conditional), CLI commands, web API endpoints, and server t
 | `error_envelope.py` | Standardized error response format |
 | `execution_logging.py` | Execution/query logging |
 | `unified_params.py` | Shared parameter definitions |
+| `features.py` | Internal rolling feature extraction helper used by forecast/regime code |
 | `patterns_support.py` (896) | Complex pattern detection helpers |
 | `patterns_requests.py` | Pattern request models |
 | `patterns_use_cases.py` | Pattern detection orchestration |
