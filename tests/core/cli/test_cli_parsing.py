@@ -172,6 +172,34 @@ class TestAddDynamicArguments:
         assert "--flag [{true,false}]" in help_text
         assert "[bool]" not in help_text
 
+    def test_data_fetch_candle_bool_help_mentions_defaults(self):
+        parser = argparse.ArgumentParser()
+        func_info = {
+            "params": [
+                {
+                    "name": "include_spread",
+                    "type": bool,
+                    "required": False,
+                    "default": False,
+                },
+                {
+                    "name": "allow_stale",
+                    "type": bool,
+                    "required": False,
+                    "default": False,
+                },
+            ]
+        }
+        add_dynamic_arguments(parser, func_info, cmd_name="data_fetch_candles")
+
+        help_text = parser.format_help()
+
+        assert "--include-spread [{true,false}]" in help_text
+        assert "defaults to false" in help_text
+        assert "--allow-stale [{true,false}]" in help_text
+        assert "freshness" in help_text
+        assert "checks would otherwise fail" in help_text
+
     def test_include_incomplete_bool_param_uses_canonical_hyphen_flag(self):
         parser = argparse.ArgumentParser()
         func_info = {
