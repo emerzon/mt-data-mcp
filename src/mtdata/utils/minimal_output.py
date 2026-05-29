@@ -1467,7 +1467,11 @@ def _normalize_forecast_methods_payload(
     verbose: bool,
     tool_name: str,
 ) -> Optional[Dict[str, Any]]:
-    if tool_name != "forecast_list_methods" or verbose:
+    if tool_name != "forecast_list_methods":
+        return None
+
+    detail_value = str(payload.get("detail") or "compact").strip().lower()
+    if verbose and detail_value != "full":
         return None
 
     if "error" in payload and not _is_empty_value(payload.get("error")):
@@ -1501,12 +1505,12 @@ def _normalize_forecast_methods_payload(
         if filters_out:
             out["filters"] = filters_out
 
-    detail_value = str(payload.get("detail") or "compact").strip().lower()
     methods = payload.get("methods")
     if isinstance(methods, list):
         dict_rows = [row for row in methods if isinstance(row, dict)]
         if len(dict_rows) == len(methods):
             compact_rows: List[Dict[str, Any]] = []
+            params_by_method: Dict[str, Any] = {}
             for row in dict_rows:
                 if detail_value == "full":
                     params_count = row.get("params_count")
@@ -1531,9 +1535,20 @@ def _normalize_forecast_methods_payload(
                             "training_category": row.get("training_category"),
                             "concept": row.get("concept"),
                             "method_id": row.get("method_id"),
+                            "capability_id": row.get("capability_id"),
+                            "adapter_method": row.get("adapter_method"),
                         }.items()
                         if not _is_empty_value(value)
                     }
+                    params = row.get("params")
+                    method_name = str(row.get("method") or "").strip()
+                    if (
+                        verbose
+                        and method_name
+                        and isinstance(params, list)
+                        and not _is_empty_value(params)
+                    ):
+                        params_by_method[method_name] = params
                 else:
                     compact = {
                         key: row.get(key)
@@ -1548,6 +1563,8 @@ def _normalize_forecast_methods_payload(
                     }
                 compact_rows.append(compact or dict(row))
             out["methods"] = compact_rows
+            if params_by_method:
+                out["params"] = params_by_method
         else:
             out["methods"] = methods
 

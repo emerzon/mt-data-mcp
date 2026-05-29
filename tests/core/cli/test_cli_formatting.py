@@ -1088,6 +1088,52 @@ class TestFormatResultForCli:
         assert "statsforecast:theta" in result
         assert "show_all_hint" not in result
 
+    def test_toon_format_structures_full_forecast_method_params(self):
+        result = _format_result_for_cli(
+            {
+                "detail": "full",
+                "total": 1,
+                "total_filtered": 1,
+                "available": 1,
+                "unavailable": 0,
+                "methods_shown": 1,
+                "methods_hidden": 0,
+                "methods": [
+                    {
+                        "method": "analog",
+                        "category": "native",
+                        "available": True,
+                        "description": "Nearest-neighbor analog forecast.",
+                        "params": [
+                            {
+                                "name": "window_size",
+                                "type": "int",
+                                "default": 64,
+                                "description": "Length of pattern window.",
+                            },
+                            {
+                                "name": "search_depth",
+                                "type": "int",
+                                "default": 5000,
+                                "description": "Candidate windows to scan.",
+                            },
+                        ],
+                        "supports_ci": False,
+                        "supports_training": False,
+                    }
+                ],
+            },
+            fmt="toon",
+            verbose=True,
+            cmd_name="forecast_list_methods",
+        )
+
+        assert "methods[1]{method,library,category,available,description,params_count" in result
+        assert "params.analog[2]{name,type,default,description}:" in result
+        assert "window_size,int,64,Length of pattern window." in result
+        assert "name=window_size" not in result
+        assert "description=Length of pattern window." not in result
+
     def test_toon_format_compacts_forecast_list_library_models_output(self):
         result = _format_result_for_cli(
             {

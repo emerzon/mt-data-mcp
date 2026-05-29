@@ -645,7 +645,11 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # n
                 return public_out
 
             try:
-                if fname in ("forecast_list_methods", "denoise_list_methods") and isinstance(public_out, dict):
+                if (
+                    fname in ("forecast_list_methods", "denoise_list_methods")
+                    and isinstance(public_out, dict)
+                    and not contract_state.verbose
+                ):
                     methods_list = public_out.get("methods") or []
                     if _fmt_methods and isinstance(methods_list, list):
                         s = _fmt_methods(cast(List[Dict[str, Any]], methods_list))
