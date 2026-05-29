@@ -914,6 +914,9 @@ class TestFinvizTools:
                 "P/S": "8.1",
                 "EPS (ttm)": "7.90",
                 "RSI (14)": "62.1",
+                "SMA20": "4.54%",
+                "SMA50": "12.98%",
+                "SMA200": "18.15%",
             },
         }
 
@@ -921,8 +924,11 @@ class TestFinvizTools:
         valuation = raw("AAPL", category="valuation")
         technical = raw("AAPL", category="technical")
         financial = raw("AAPL", category="financial")
-        custom = raw("AAPL", fields="P/E,RSI (14),Missing")
-        custom_normalized = raw("AAPL", fields="pe_ratio,market_cap,eps_ttm")
+        custom = raw("AAPL", fields="P/E,RSI (14),SMA20,Missing")
+        custom_normalized = raw(
+            "AAPL",
+            fields="pe_ratio,market_cap,eps_ttm,sma20_distance_pct",
+        )
 
         assert valuation["category"] == "valuation"
         assert valuation["fundamentals"] == {
@@ -932,17 +938,27 @@ class TestFinvizTools:
             "eps_ttm": 7.9,
         }
         assert custom["category"] == "custom"
-        assert custom["fundamentals"] == {"pe_ratio": 34.29, "rsi_14": 62.1}
+        assert custom["fundamentals"] == {
+            "pe_ratio": 34.29,
+            "rsi_14": 62.1,
+            "sma20_distance_pct": 4.54,
+        }
         assert custom["missing_fields"] == ["Missing"]
         assert custom_normalized["fundamentals"] == {
             "pe_ratio": 34.29,
             "market_cap_formatted": "3.98T",
             "eps_ttm": 7.9,
+            "sma20_distance_pct": 4.54,
         }
         assert "missing_fields" not in custom_normalized
         assert technical["category"] == "technicals"
         assert technical["category_requested"] == "technical"
-        assert technical["fundamentals"] == {"rsi_14": 62.1}
+        assert technical["fundamentals"] == {
+            "rsi_14": 62.1,
+            "sma20_distance_pct": 4.54,
+            "sma50_distance_pct": 12.98,
+            "sma200_distance_pct": 18.15,
+        }
         assert financial["category"] == "valuation"
         assert financial["category_requested"] == "financial"
 
