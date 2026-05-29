@@ -76,9 +76,9 @@ def _triple_barrier_sample_row(
                 **barrier_kwargs,
             )
             if tp_price is not None:
-                row["barrier_tp"] = float(tp_price)
+                row["tp_price"] = float(tp_price)
             if sl_price is not None:
-                row["barrier_sl"] = float(sl_price)
+                row["sl_price"] = float(sl_price)
     except Exception:
         pass
     return row

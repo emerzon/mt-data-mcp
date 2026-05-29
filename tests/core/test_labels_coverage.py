@@ -96,8 +96,8 @@ class TestLabelsTripleBarrier:
         row = result["data"][0]
 
         assert row["entry_price"] == pytest.approx(1.16479)
-        assert row["barrier_tp"] == pytest.approx(1.1764379)
-        assert row["barrier_sl"] == pytest.approx(1.15896605)
+        assert row["tp_price"] == pytest.approx(1.1764379)
+        assert row["sl_price"] == pytest.approx(1.15896605)
         assert "barrier_levels" not in row
 
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
