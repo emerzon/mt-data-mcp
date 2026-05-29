@@ -16,10 +16,10 @@ The `temporal_analyze` command computes grouped statistics (returns, volatility,
 mtdata-cli temporal_analyze EURUSD --group-by dow --json
 
 # Volatility by hour of day
-mtdata-cli temporal_analyze EURUSD --group-by hour --limit 2000 --json
+mtdata-cli temporal_analyze EURUSD --group-by hour --lookback 2000 --json
 
 # Monthly seasonality
-mtdata-cli temporal_analyze EURUSD --timeframe D1 --group-by month --limit 1000 --json
+mtdata-cli temporal_analyze EURUSD --timeframe D1 --group-by month --lookback 1000 --json
 ```
 
 ---
@@ -30,7 +30,7 @@ mtdata-cli temporal_analyze EURUSD --timeframe D1 --group-by month --limit 1000 
 |-----------|---------|-------------|
 | `symbol` | (required) | Trading symbol |
 | `--timeframe` | `H1` | Candle timeframe |
-| `--limit` | 1000 | Number of bars to analyze |
+| `--lookback` | 200 | Number of bars to analyze when `--start`/`--end` are omitted |
 | `--start` | (optional) | Start date (ISO or flexible format) |
 | `--end` | (optional) | End date (ISO or flexible format) |
 | `--group-by` | `dow` | Grouping: `dow` (day of week), `hour`, `month`, `all` |
@@ -48,7 +48,7 @@ mtdata-cli temporal_analyze EURUSD --timeframe D1 --group-by month --limit 1000 
 Shows performance by weekday. Useful for detecting day-of-week effects.
 
 ```bash
-mtdata-cli temporal_analyze EURUSD --group-by dow --limit 2000 --json
+mtdata-cli temporal_analyze EURUSD --group-by dow --lookback 2000 --json
 ```
 
 **Example output (simplified):**
@@ -66,7 +66,7 @@ Fri     400    0.005%     0.062%      50.5%     1100
 Shows performance by hour. Reveals session activity patterns.
 
 ```bash
-mtdata-cli temporal_analyze EURUSD --group-by hour --limit 5000 --json
+mtdata-cli temporal_analyze EURUSD --group-by hour --lookback 5000 --json
 ```
 
 Use `--time-range` to focus on a specific session:
@@ -85,7 +85,7 @@ mtdata-cli temporal_analyze EURUSD --group-by hour --time-range "22:00-07:00" --
 Shows seasonal effects across months. Best with daily data and a long history.
 
 ```bash
-mtdata-cli temporal_analyze EURUSD --timeframe D1 --group-by month --limit 2000 --json
+mtdata-cli temporal_analyze EURUSD --timeframe D1 --group-by month --lookback 2000 --json
 ```
 
 ### Overall Summary (`--group-by all`)
@@ -130,7 +130,7 @@ Combine grouping with filters to drill down:
 mtdata-cli temporal_analyze EURUSD --group-by hour --day-of-week Mon --json
 
 # Only January, grouped by day of week
-mtdata-cli temporal_analyze EURUSD --timeframe D1 --group-by dow --month Jan --limit 2000 --json
+mtdata-cli temporal_analyze EURUSD --timeframe D1 --group-by dow --month Jan --lookback 2000 --json
 
 # London session hours, grouped by day of week
 mtdata-cli temporal_analyze EURUSD --group-by dow --time-range "08:00-16:00" --json
@@ -142,19 +142,19 @@ mtdata-cli temporal_analyze EURUSD --group-by dow --time-range "08:00-16:00" --j
 
 ### Find Best Trading Days
 ```bash
-mtdata-cli temporal_analyze EURUSD --group-by dow --limit 5000 --json
+mtdata-cli temporal_analyze EURUSD --group-by dow --lookback 5000 --json
 # Look for days with highest win_rate and positive avg_return
 ```
 
 ### Find Active Trading Hours
 ```bash
-mtdata-cli temporal_analyze EURUSD --group-by hour --limit 5000 --json
+mtdata-cli temporal_analyze EURUSD --group-by hour --lookback 5000 --json
 # Look for hours with highest avg_range_pct and avg_volume
 ```
 
 ### Seasonal Patterns
 ```bash
-mtdata-cli temporal_analyze SPX500 --timeframe D1 --group-by month --limit 3000 --json
+mtdata-cli temporal_analyze SPX500 --timeframe D1 --group-by month --lookback 3000 --json
 # Compare monthly avg_return and volatility
 ```
 
