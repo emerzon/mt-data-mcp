@@ -121,6 +121,7 @@ def test_trade_session_context_compacts_nested_sections_by_default() -> None:
     assert out["open_positions_count"] == 1
     assert out["pending_orders"] == []
     assert out["pending_orders_count"] == 0
+    assert out["hints"] == {"set": {"detail": "full"}}
     assert "show_all_hint" in out
     assert out["meta"]["tool"] == "trade_session_context"
     assert out["meta"]["runtime"]["timezone"] == timezone_meta

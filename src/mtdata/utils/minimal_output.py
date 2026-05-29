@@ -1833,6 +1833,7 @@ def _normalize_support_resistance_payload(
             "window",
         )
     ):
+        out["hints"] = {"set": {"extras": "metadata"}}
         out["show_all_hint"] = (
             "Set extras='metadata' to include timeframe selection rationale, "
             "zone widths, and coverage diagnostics."

@@ -517,6 +517,7 @@ def _compact_patterns_payload(
     if top_patterns:
         compact["top_patterns"] = top_patterns
     if total_i > len(top_patterns):
+        compact["hints"] = {"set": {"detail": "standard"}}
         compact["show_all_hint"] = "Set detail='standard' to show all detected patterns."
 
     for key in (

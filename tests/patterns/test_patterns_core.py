@@ -768,6 +768,7 @@ def test_build_pattern_response_compact_adds_hint_when_rows_are_truncated():
     )
 
     assert len(compact["top_patterns"]) == 3
+    assert compact["hints"] == {"set": {"detail": "standard"}}
     assert compact["show_all_hint"] == (
         "Set detail='standard' to show all detected patterns."
     )
