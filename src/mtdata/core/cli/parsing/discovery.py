@@ -97,8 +97,8 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ),
     ("patterns_detect", "mode"): "Pattern mode: all, candlestick, classic, chart, fractal, or elliott.",
     ("regime_detect", "limit"): (
-        "Historical bars fetched for regime detection; use max_regimes for compact "
-        "output count."
+        "Historical bars fetched for regime detection. Defaults to the effective "
+        "lookback plus warmup bars; use max_regimes for compact output count."
     ),
     ("symbols_list", "limit"): "Max symbols or groups to return.",
     ("symbols_top_markets", "rank_by"): (

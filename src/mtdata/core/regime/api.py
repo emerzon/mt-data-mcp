@@ -86,6 +86,12 @@ def _summary_window_size(lookback: int, size: int) -> int:
     return min(max(lookback_i, 0), int(size))
 
 
+def _history_fetch_limit(limit: Optional[int], lookback: int) -> int:
+    if limit is not None and int(limit) >= 0:
+        return int(max(int(limit), 50))
+    return int(max(int(lookback), 50)) + 20
+
+
 _DIRECTION_SIGNALS = frozenset({"bullish", "bearish", "neutral"})
 _VOLATILITY_SIGNALS = frozenset(
     {"very_low_vol", "low_vol", "moderate_vol", "high_vol", "very_high_vol"}
@@ -761,7 +767,7 @@ def _get_timeframe_defaults(timeframe: str) -> Dict[str, int]:
 def regime_detect(  # noqa: C901
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
-    limit: int = 100,
+    limit: Optional[int] = None,
     start: Optional[str] = None,
     end: Optional[str] = None,
     method: Literal[
@@ -788,9 +794,11 @@ def regime_detect(  # noqa: C901
 ) -> Dict[str, Any]:
     """Detect regimes and/or change-points over a bounded history window.
 
-    - start/end: Optional UTC-compatible analysis window. If omitted, the most
-      recent `limit` bars are used. If provided, `limit` caps bars analysed
-      after the window is fetched.
+    - limit: Optional bars to fetch/analyze. If omitted, the fetch window tracks
+      the effective lookback plus warmup bars.
+    - start/end: Optional UTC-compatible analysis window. If provided, `limit`
+      caps bars analysed after the window is fetched; omitted limit uses the
+      effective lookback cap.
     - method: Default is 'rule_based' (fast trend/ranging/transition classification).
       Other options: 'bocpd' (Bayesian online change-point; Gaussian), 'hmm' / 'gmm' (Gaussian mixture/HMM-lite),
       'ms_ar' (Markov-switching AR), 'clustering' (rolling-feature clustering via tsfresh + KMeans/Spectral),
@@ -957,7 +965,7 @@ def regime_detect(  # noqa: C901
         )
 
         rule_based_config: Optional[Dict[str, Any]] = None
-        fetch_limit = int(max(limit, 50))
+        fetch_limit = _history_fetch_limit(limit, lookback)
         if method == "rule_based":
             efficiency_threshold, efficiency_error = _coerce_param(
                 p,

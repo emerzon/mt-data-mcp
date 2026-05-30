@@ -371,6 +371,50 @@ def test_regime_detect_default_min_regime_bars_is_dynamic() -> None:
         )
 
 
+def test_regime_detect_default_fetch_limit_tracks_timeframe_lookback() -> None:
+    raw = _unwrap(regime_detect)
+    captured: list[int] = []
+
+    def fake_fetch_history(symbol: str, timeframe: str, limit: int, **kwargs):
+        captured.append(limit)
+        return _sample_df(limit)
+
+    with (
+        patch("mtdata.core.regime._fetch_history", side_effect=fake_fetch_history),
+        patch("mtdata.core.regime._resolve_denoise_base_col", return_value="close"),
+        patch("mtdata.core.regime._format_time_minimal", side_effect=lambda x: f"T{x}"),
+    ):
+        out = raw(symbol="TEST", timeframe="H1", method="rule_based")
+
+    assert out.get("success") is True
+    assert captured == [520]
+
+
+def test_regime_detect_explicit_limit_still_caps_fetch_history() -> None:
+    raw = _unwrap(regime_detect)
+    captured: list[int] = []
+
+    def fake_fetch_history(symbol: str, timeframe: str, limit: int, **kwargs):
+        captured.append(limit)
+        return _sample_df(limit)
+
+    with (
+        patch("mtdata.core.regime._fetch_history", side_effect=fake_fetch_history),
+        patch("mtdata.core.regime._resolve_denoise_base_col", return_value="close"),
+        patch("mtdata.core.regime._format_time_minimal", side_effect=lambda x: f"T{x}"),
+    ):
+        out = raw(
+            symbol="TEST",
+            timeframe="H1",
+            limit=100,
+            method="rule_based",
+            params={"window_bars": 20},
+        )
+
+    assert out.get("success") is True
+    assert captured == [100]
+
+
 def test_bocpd_zero_change_points_includes_tuning_hint() -> None:
     raw = _unwrap(regime_detect)
     cp = np.zeros(79, dtype=float)
