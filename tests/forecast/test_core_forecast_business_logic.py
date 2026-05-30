@@ -1232,6 +1232,7 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert "library" in params
     assert "supports_ci" in params
     assert "show_unavailable" in params
+    assert "all" in params
     sf_rows = [r for r in grouped["methods"] if r.get("category") == "statsforecast"]
     assert len(sf_rows) == 3
     if sf_rows:
@@ -1288,6 +1289,16 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert capped["truncation_reason"] == (
         "Default compact limit 20; set limit=25 for all filtered methods."
     )
+
+    uncapped = _unwrap(cf.forecast_list_methods)(all=True)
+    assert uncapped["methods_shown"] == 25
+    assert uncapped["methods_hidden"] == 0
+    assert "has_more" not in uncapped
+    assert "truncation_reason" not in uncapped
+
+    uncapped_ignores_limit = _unwrap(cf.forecast_list_methods)(all=True, limit=5)
+    assert uncapped_ignores_limit["methods_shown"] == 25
+    assert uncapped_ignores_limit["methods_hidden"] == 0
 
     page = _unwrap(cf.forecast_list_methods)(limit=5, offset=5)
     assert [row["method"] for row in page["methods"]] == [

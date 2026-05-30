@@ -300,11 +300,13 @@ def _run_forecast_payload_direct(operation: str, payload: Dict[str, Any]) -> Dic
         return _forecast_list_methods_impl(
             detail=payload.get("detail", "compact"),
             limit=payload.get("limit"),
+            offset=payload.get("offset", 0),
             search=payload.get("search_term"),
             category=payload.get("category"),
             library=payload.get("library"),
             supports_ci=payload.get("supports_ci"),
             show_unavailable=bool(payload.get("show_unavailable", False)),
+            include_all=bool(payload.get("all", False)),
         )
 
     if operation == "forecast_conformal_intervals":
@@ -742,6 +744,7 @@ def forecast_list_methods(
     detail: CompactFullDetailLiteral = "compact",  # type: ignore
     limit: Optional[int] = None,
     offset: int = 0,
+    all: bool = False,
     search_term: Optional[str] = None,
     category: Optional[str] = None,
     library: Optional[
@@ -753,7 +756,8 @@ def forecast_list_methods(
     """List forecast methods and availability.
 
     Compact output is the default. Use extras='metadata' to include full
-    parameter docs and supports metadata.
+    parameter docs and supports metadata. Set all=true to return every
+    matching method in one response.
     """
     search_term_value = str(search_term or "").strip() or None
     return _run_forecast_operation(
@@ -761,6 +765,7 @@ def forecast_list_methods(
         detail=detail,
         limit=limit,
         offset=offset,
+        all=bool(all),
         search_term=search_term_value,
         category=category,
         library=library,
@@ -770,6 +775,7 @@ def forecast_list_methods(
             "detail": detail,
             "limit": limit,
             "offset": offset,
+            "all": bool(all),
             "search_term": search_term_value,
             "category": category,
             "library": library,
@@ -785,6 +791,7 @@ def forecast_list_methods(
             library=library,
             supports_ci=supports_ci,
             show_unavailable=show_unavailable,
+            include_all=bool(all),
         ),
     )
 
@@ -1364,6 +1371,7 @@ def _forecast_list_methods_impl(  # noqa: C901
     library: Optional[str] = None,
     supports_ci: Optional[bool] = None,
     show_unavailable: bool = False,
+    include_all: bool = False,
 ) -> Dict[str, Any]:
     try:
         snapshot = _get_forecast_methods_snapshot()
@@ -1389,7 +1397,7 @@ def _forecast_list_methods_impl(  # noqa: C901
                 )
             }
         limit_value: Optional[int] = None
-        if limit is not None:
+        if limit is not None and not include_all:
             try:
                 limit_value = int(limit)
             except Exception:
@@ -1405,6 +1413,7 @@ def _forecast_list_methods_impl(  # noqa: C901
         compact_default_limit_applies = (
             detail_value != "full"
             and limit_value is None
+            and not include_all
             and not search_value
             and not category_filter_value
             and not library_value

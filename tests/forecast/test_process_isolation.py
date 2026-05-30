@@ -122,6 +122,33 @@ def test_direct_payload_dispatch_rebuilds_forecast_generate_request(monkeypatch)
     }
 
 
+def test_direct_payload_dispatch_preserves_forecast_list_pagination(monkeypatch):
+    captured = {}
+
+    def fake_list_methods(**kwargs):
+        captured.update(kwargs)
+        return {"success": True}
+
+    monkeypatch.setattr(core_forecast, "_forecast_list_methods_impl", fake_list_methods)
+
+    result = core_forecast._run_forecast_payload_direct(
+        "forecast_list_methods",
+        {
+            "detail": "compact",
+            "limit": 5,
+            "offset": 10,
+            "all": True,
+            "search_term": "theta",
+        },
+    )
+
+    assert result == {"success": True}
+    assert captured["limit"] == 5
+    assert captured["offset"] == 10
+    assert captured["include_all"] is True
+    assert captured["search"] == "theta"
+
+
 def test_child_entry_returns_ok_message(monkeypatch):
     monkeypatch.setattr(
         core_forecast,
