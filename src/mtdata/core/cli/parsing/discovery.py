@@ -68,6 +68,15 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("finviz_calendar", "end"): "End date (YYYY-MM-DD).",
     ("forecast_barrier_optimize", "method"): "Barrier simulation method: mc_gbm, mc_gbm_bb, hmm_mc, garch, bootstrap, heston, jump_diffusion, or auto.",
     ("options_barrier_price", "option_type"): "Option side: call or put.",
+    ("options_chain", "symbol"): (
+        "Underlying symbol for listed options, e.g. AAPL or SPX."
+    ),
+    ("options_expirations", "symbol"): (
+        "Underlying symbol for listed options, e.g. AAPL or SPX."
+    ),
+    ("options_heston_calibrate", "symbol"): (
+        "Underlying symbol for listed options, e.g. AAPL or SPX."
+    ),
     ("forecast_tune_optuna", "search_space"): "Optuna search space (JSON or k=v).",
     ("indicators_list", "detail"): "Output detail: compact table or full rows with aliases and descriptions.",
     ("causal_discover_signals", "limit"): (

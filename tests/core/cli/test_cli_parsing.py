@@ -51,11 +51,10 @@ from mtdata.core.cli import (
     _normalize_cli_list_value,
     _parse_kv_string,
     _parse_set_overrides,
-    get_function_info,
     _resolve_param_kwargs,
     add_dynamic_arguments,
+    get_function_info,
 )
-
 
 # ========================================================================
 # _add_forecast_generate_args
@@ -923,6 +922,12 @@ class TestResolveParamKwargs:
         }
         kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="finviz_calendar")
         assert kwargs["help"].startswith("End date")
+
+    def test_options_symbol_help_is_underlying_specific(self):
+        param = {"name": "symbol", "type": str, "required": True, "default": None}
+        kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="options_chain")
+        assert "Underlying symbol" in kwargs["help"]
+        assert "EURUSD" not in kwargs["help"]
 
     def test_forecast_tune_optuna_search_space_help_is_command_specific(self):
         param = {

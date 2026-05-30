@@ -17,6 +17,7 @@ TOOL_MODULE_NAMES: Final[tuple[str, ...]] = (
     "mtdata.core.causal",
     "mtdata.core.indicators",
     "mtdata.core.market_depth",
+    "mtdata.core.options",
     "mtdata.core.patterns",
     "mtdata.core.pivot",
     "mtdata.core.symbols",

@@ -1,0 +1,283 @@
+"""Options chain, expiration, and pricing tools."""
+
+from __future__ import annotations
+
+import logging
+from typing import Any, Dict, Literal, Optional
+
+from ..shared.schema import CompactFullDetailLiteral
+from ._mcp_instance import mcp
+from .execution_logging import run_logged_operation
+from .output_contract import normalize_output_verbosity_detail
+
+logger = logging.getLogger(__name__)
+
+_OPTIONS_CHAIN_COMPACT_FIELDS = (
+    "side",
+    "contract",
+    "strike",
+    "last",
+    "bid",
+    "ask",
+    "volume",
+    "open_interest",
+)
+
+
+def _run_options_operation(
+    operation: str,
+    *,
+    func,
+    **fields: Any,
+) -> Dict[str, Any]:
+    return run_logged_operation(
+        logger,
+        operation=operation,
+        func=func,
+        **fields,
+    )
+
+
+def _options_detail_mode(detail: str) -> str:
+    return normalize_output_verbosity_detail(detail, default="compact")
+
+
+def _compact_option_contract(row: Any) -> Any:
+    if not isinstance(row, dict):
+        return row
+    return {
+        key: row[key]
+        for key in _OPTIONS_CHAIN_COMPACT_FIELDS
+        if key in row and row[key] is not None
+    }
+
+
+def _apply_options_detail(
+    payload: Dict[str, Any],
+    *,
+    detail: str,
+    kind: str,
+) -> Dict[str, Any]:
+    if not isinstance(payload, dict) or not payload.get("success"):
+        return payload
+    detail_mode = _options_detail_mode(detail)
+    out = dict(payload)
+    out["detail"] = detail_mode
+    if detail_mode == "full":
+        return out
+
+    if kind == "expirations":
+        return {
+            key: out[key]
+            for key in ("success", "symbol", "expirations", "expiration_count", "detail")
+            if key in out
+        }
+    if kind == "chain":
+        compact = {
+            key: out[key]
+            for key in (
+                "success",
+                "symbol",
+                "expiration",
+                "underlying_price",
+                "currency",
+                "option_type",
+                "count",
+                "calls_count",
+                "puts_count",
+                "detail",
+            )
+            if key in out
+        }
+        options = out.get("options")
+        if isinstance(options, list):
+            compact["options"] = [_compact_option_contract(row) for row in options]
+        return compact
+    if kind == "barrier_price":
+        compact = {
+            key: out[key]
+            for key in ("success", "price", "detail")
+            if key in out
+        }
+        params = out.get("params_used")
+        if isinstance(params, dict):
+            compact["params"] = {
+                key: params[key]
+                for key in ("option_type", "barrier_type", "maturity_days")
+                if key in params
+            }
+        return compact
+    if kind == "heston_calibrate":
+        compact = {
+            key: out[key]
+            for key in (
+                "success",
+                "symbol",
+                "expiration",
+                "days_to_expiry",
+                "contracts_used",
+                "spot",
+                "calibration_error_rmse",
+                "params",
+                "detail",
+            )
+            if key in out
+        }
+        return compact
+    return out
+
+
+@mcp.tool()
+def options_expirations(
+    symbol: str,
+    detail: CompactFullDetailLiteral = "compact",  # type: ignore
+) -> Dict[str, Any]:
+    """Fetch option expirations for an equity or index underlying.
+
+    Tradier requires MTDATA_OPTIONS_API_KEY. Yahoo Finance is an unauthenticated
+    fallback and may return 401 responses. For reliable options-chain data,
+    configure Tradier with MTDATA_OPTIONS_PROVIDER=tradier and
+    MTDATA_OPTIONS_API_KEY. Tradier API tokens: https://documentation.tradier.com/.
+    """
+    from ..services.options_service import get_options_expirations as _impl
+
+    return _run_options_operation(
+        "options_expirations",
+        symbol=symbol,
+        detail=detail,
+        func=lambda: _apply_options_detail(
+            _impl(symbol=symbol),
+            detail=detail,
+            kind="expirations",
+        ),
+    )
+
+
+@mcp.tool()
+def options_chain(
+    symbol: str,
+    expiration: Optional[str] = None,
+    option_type: Literal["call", "put", "both"] = "both",  # type: ignore
+    min_open_interest: int = 0,
+    min_volume: int = 0,
+    limit: int = 200,
+    detail: CompactFullDetailLiteral = "compact",  # type: ignore
+) -> Dict[str, Any]:
+    """Fetch option-chain snapshots for an equity or index underlying.
+
+    Tradier requires MTDATA_OPTIONS_API_KEY. Yahoo Finance is an unauthenticated
+    fallback and may return 401 responses. For reliable options-chain data,
+    configure Tradier with MTDATA_OPTIONS_PROVIDER=tradier and
+    MTDATA_OPTIONS_API_KEY. Tradier API tokens: https://documentation.tradier.com/.
+    """
+    from ..services.options_service import get_options_chain as _impl
+
+    return _run_options_operation(
+        "options_chain",
+        symbol=symbol,
+        expiration=expiration,
+        option_type=option_type,
+        limit=limit,
+        detail=detail,
+        func=lambda: _apply_options_detail(
+            _impl(
+                symbol=symbol,
+                expiration=expiration,
+                option_type=option_type,
+                min_open_interest=int(min_open_interest),
+                min_volume=int(min_volume),
+                limit=int(limit),
+            ),
+            detail=detail,
+            kind="chain",
+        ),
+    )
+
+
+@mcp.tool()
+def options_barrier_price(
+    spot: float,
+    strike: float,
+    barrier: float,
+    maturity_days: int,
+    option_type: Literal["call", "put"] = "call",  # type: ignore
+    barrier_type: Literal["up_in", "up_out", "down_in", "down_out"] = "up_out",  # type: ignore
+    risk_free_rate: float = 0.02,
+    dividend_yield: float = 0.0,
+    volatility: float = 0.2,
+    rebate: float = 0.0,
+    detail: CompactFullDetailLiteral = "compact",  # type: ignore
+) -> Dict[str, Any]:
+    """Price a barrier option using QuantLib."""
+    from ..forecast.quantlib_tools import price_barrier_option_quantlib as _impl
+
+    return _run_options_operation(
+        "options_barrier_price",
+        option_type=option_type,
+        barrier_type=barrier_type,
+        maturity_days=maturity_days,
+        detail=detail,
+        func=lambda: _apply_options_detail(
+            _impl(
+                spot=float(spot),
+                strike=float(strike),
+                barrier=float(barrier),
+                maturity_days=int(maturity_days),
+                option_type=option_type,
+                barrier_type=barrier_type,
+                risk_free_rate=float(risk_free_rate),
+                dividend_yield=float(dividend_yield),
+                volatility=float(volatility),
+                rebate=float(rebate),
+            ),
+            detail=detail,
+            kind="barrier_price",
+        ),
+    )
+
+
+@mcp.tool()
+def options_heston_calibrate(
+    symbol: str,
+    expiration: Optional[str] = None,
+    option_type: Literal["call", "put", "both"] = "call",  # type: ignore
+    risk_free_rate: float = 0.02,
+    dividend_yield: float = 0.0,
+    min_open_interest: int = 0,
+    min_volume: int = 0,
+    max_contracts: int = 25,
+    detail: CompactFullDetailLiteral = "compact",  # type: ignore
+) -> Dict[str, Any]:
+    """Calibrate Heston from option-chain data for an equity or index underlying.
+
+    Tradier requires MTDATA_OPTIONS_API_KEY. Yahoo Finance is an unauthenticated
+    fallback and may return 401 responses. For reliable options-chain data,
+    configure Tradier with MTDATA_OPTIONS_PROVIDER=tradier and
+    MTDATA_OPTIONS_API_KEY. Tradier API tokens: https://documentation.tradier.com/.
+    """
+    from ..forecast.quantlib_tools import (
+        calibrate_heston_quantlib_from_options as _impl,
+    )
+
+    return _run_options_operation(
+        "options_heston_calibrate",
+        symbol=symbol,
+        expiration=expiration,
+        option_type=option_type,
+        max_contracts=max_contracts,
+        detail=detail,
+        func=lambda: _apply_options_detail(
+            _impl(
+                symbol=symbol,
+                expiration=expiration,
+                option_type=option_type,
+                risk_free_rate=float(risk_free_rate),
+                dividend_yield=float(dividend_yield),
+                min_open_interest=int(min_open_interest),
+                min_volume=int(min_volume),
+                max_contracts=int(max_contracts),
+            ),
+            detail=detail,
+            kind="heston_calibrate",
+        ),
+    )

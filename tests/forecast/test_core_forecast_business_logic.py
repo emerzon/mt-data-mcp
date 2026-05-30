@@ -11,6 +11,7 @@ import pytest
 from pydantic import ValidationError
 
 from mtdata.core import forecast as cf
+from mtdata.core import options as opt
 from mtdata.forecast import barriers_shared
 from mtdata.forecast import use_cases as forecast_use_cases
 from mtdata.forecast.exceptions import ForecastError
@@ -2195,10 +2196,10 @@ def test_forecast_tune_optuna_routing(monkeypatch):
 
 
 def test_options_and_quantlib_tool_routing(monkeypatch):
-    raw_exp = _unwrap(cf.options_expirations)
-    raw_chain = _unwrap(cf.options_chain)
-    raw_price = _unwrap(cf.options_barrier_price)
-    raw_cal = _unwrap(cf.options_heston_calibrate)
+    raw_exp = _unwrap(opt.options_expirations)
+    raw_chain = _unwrap(opt.options_chain)
+    raw_price = _unwrap(opt.options_barrier_price)
+    raw_cal = _unwrap(opt.options_heston_calibrate)
 
     import mtdata.forecast.quantlib_tools as quantlib_tools
     import mtdata.services.options_service as options_service
@@ -2249,13 +2250,13 @@ def test_options_and_quantlib_tool_routing(monkeypatch):
 
 
 def test_options_chain_logs_finish_event(caplog, monkeypatch):
-    raw_chain = _unwrap(cf.options_chain)
+    raw_chain = _unwrap(opt.options_chain)
 
     import mtdata.services.options_service as options_service
 
     monkeypatch.setattr(options_service, "get_options_chain", lambda **kwargs: {"success": True, **kwargs})
 
-    with caplog.at_level(logging.DEBUG, logger=cf.logger.name):
+    with caplog.at_level(logging.DEBUG, logger=opt.logger.name):
         out = raw_chain(symbol="AAPL", expiration="2026-06-19", option_type="call", limit=25)
 
     assert out["success"] is True
@@ -2266,10 +2267,10 @@ def test_options_chain_logs_finish_event(caplog, monkeypatch):
 
 
 def test_options_tools_support_compact_and_full_detail(monkeypatch):
-    raw_exp = _unwrap(cf.options_expirations)
-    raw_chain = _unwrap(cf.options_chain)
-    raw_price = _unwrap(cf.options_barrier_price)
-    raw_cal = _unwrap(cf.options_heston_calibrate)
+    raw_exp = _unwrap(opt.options_expirations)
+    raw_chain = _unwrap(opt.options_chain)
+    raw_price = _unwrap(opt.options_barrier_price)
+    raw_cal = _unwrap(opt.options_heston_calibrate)
 
     import mtdata.forecast.quantlib_tools as quantlib_tools
     import mtdata.services.options_service as options_service
