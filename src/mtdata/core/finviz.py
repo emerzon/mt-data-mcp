@@ -1497,7 +1497,7 @@ def _normalize_finviz_calendar_payload(
 
 
 def _validate_finviz_detail(detail: str, *, operation: str) -> Optional[Dict[str, Any]]:
-    normalized = str(detail or "full").strip().lower()
+    normalized = str(detail or "compact").strip().lower()
     if normalized in {"compact", "standard", "summary", "full"}:
         return None
     return _finviz_error_payload(
@@ -1590,7 +1590,7 @@ def _compact_finviz_insider_payload(result: Dict[str, Any], *, detail: str) -> D
     error = _validate_finviz_detail(detail, operation="finviz_insider")
     if error is not None or not result.get("success"):
         return error or result
-    detail_mode = normalize_output_verbosity_detail(detail, default="full")
+    detail_mode = normalize_output_verbosity_detail(detail, default="compact")
     rows = result.get("insider_trades")
     if not isinstance(rows, list):
         return result
@@ -1676,7 +1676,7 @@ def _compact_finviz_ratings_payload(
     error = _validate_finviz_detail(detail, operation="finviz_ratings")
     if error is not None or not result.get("success"):
         return error or result
-    detail_mode = normalize_output_verbosity_detail(detail, default="full")
+    detail_mode = normalize_output_verbosity_detail(detail, default="compact")
     rows = result.get("ratings")
     if not isinstance(rows, list):
         return result
@@ -1716,7 +1716,7 @@ def _compact_finviz_peers_payload(
     error = _validate_finviz_detail(detail, operation="finviz_peers")
     if error is not None or not result.get("success"):
         return error or result
-    detail_mode = normalize_output_verbosity_detail(detail, default="full")
+    detail_mode = normalize_output_verbosity_detail(detail, default="compact")
     peers = result.get("peers")
     if not isinstance(peers, list):
         return result

@@ -1123,6 +1123,27 @@ class TestFinvizTools:
         assert result["omitted_item_count"] == 1
         assert result["summary"]["counts"]["buy_transactions"] == 1
 
+    @patch("mtdata.core.finviz.get_stock_insider_trades")
+    def test_finviz_insider_none_detail_uses_compact(self, mock_get_trades):
+        from mtdata.core.finviz import finviz_insider
+
+        mock_get_trades.return_value = {
+            "success": True,
+            "symbol": "AAPL",
+            "total": 4,
+            "insider_trades": [
+                {"Owner": f"Owner {i}", "Transaction": "Sale", "Shares": 10}
+                for i in range(4)
+            ],
+        }
+
+        raw = getattr(finviz_insider, "__wrapped__", finviz_insider)
+        result = raw("AAPL", detail=None)
+
+        assert result["detail"] == "compact"
+        assert result["count"] == 3
+        assert result["omitted_item_count"] == 1
+
     @patch("mtdata.core.finviz.get_stock_ratings")
     def test_finviz_ratings_structures_price_targets(self, mock_get_ratings):
         from mtdata.core.finviz import finviz_ratings
@@ -1149,6 +1170,43 @@ class TestFinvizTools:
         assert row["price_target_new"] == 625.0
         assert row["price_target_change_pct"] == 1.63
         assert row["price_target_display"] == "$615 \u2192 $625"
+
+    @patch("mtdata.core.finviz.get_stock_ratings")
+    def test_finviz_ratings_none_detail_uses_compact(self, mock_get_ratings):
+        from mtdata.core.finviz import finviz_ratings
+
+        mock_get_ratings.return_value = {
+            "success": True,
+            "symbol": "AAPL",
+            "ratings": [
+                {"Date": "2026-04-30", "Firm": "Firm A", "Rating": "Buy"},
+                {"Date": "2026-04-29", "Firm": "Firm B", "Rating": "Hold"},
+            ],
+        }
+
+        raw = getattr(finviz_ratings, "__wrapped__", finviz_ratings)
+        result = raw("AAPL", detail=None)
+
+        assert result["detail"] == "compact"
+        assert result["summary"]["counts"] == {"returned": 2, "available": 2}
+        assert "meta" not in result
+
+    @patch("mtdata.core.finviz.get_stock_peers")
+    def test_finviz_peers_empty_detail_uses_compact(self, mock_get_peers):
+        from mtdata.core.finviz import finviz_peers
+
+        mock_get_peers.return_value = {
+            "success": True,
+            "symbol": "AAPL",
+            "peers": ["MSFT", "GOOGL", "META"],
+        }
+
+        raw = getattr(finviz_peers, "__wrapped__", finviz_peers)
+        result = raw("AAPL", detail="")
+
+        assert result["detail"] == "compact"
+        assert result["summary"]["counts"] == {"returned": 3, "available": 3}
+        assert "meta" not in result
 
     @patch("mtdata.core.finviz.get_insider_activity")
     def test_finviz_insider_activity_rejects_invalid_detail(self, mock_get_activity):
