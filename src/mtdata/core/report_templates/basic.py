@@ -57,6 +57,14 @@ def _get_raw_result(
         return {'error': f'Function call failed: {str(e)}'}
 
 
+def _first_volatility_value(payload: Dict[str, Any], keys: tuple[str, ...]) -> Any:
+    for key in keys:
+        value = payload.get(key)
+        if value is not None:
+            return value
+    return None
+
+
 def _ema(values: List[float], length: int) -> List[float]:
     if length <= 1 or not values:
         return list(values)
@@ -516,8 +524,14 @@ def template_basic(  # noqa: C901
                     'error': error_text,
                 })
                 continue
-            sh = vres.get('horizon_sigma_return') or vres.get('horizon_sigma_price')
-            sb = vres.get('sigma_bar_return') or vres.get('sigma_bar_price')
+            sh = _first_volatility_value(
+                vres,
+                ('volatility_horizon', 'horizon_sigma_return', 'horizon_sigma_price'),
+            )
+            sb = _first_volatility_value(
+                vres,
+                ('volatility_per_bar', 'sigma_bar_return', 'sigma_bar_price'),
+            )
             use_val = None
             try:
                 fv = float(sh) if sh is not None else None
@@ -537,7 +551,10 @@ def template_basic(  # noqa: C901
                     end=end,
                     detail='full',
                 )
-                psh = proxy_res.get('horizon_sigma_return') or proxy_res.get('horizon_sigma_price')
+                psh = _first_volatility_value(
+                    proxy_res,
+                    ('volatility_horizon', 'horizon_sigma_return', 'horizon_sigma_price'),
+                )
                 try:
                     pf = float(psh) if psh is not None else None
                     if pf is not None and pf == pf and pf >= 0.0:

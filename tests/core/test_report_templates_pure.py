@@ -448,9 +448,8 @@ def _mock_pivot_data():
 
 def _mock_vol_data():
     return {
-        "horizon_sigma_return": 0.02,
-        "sigma_bar_return": 0.005,
-        "horizon_sigma_price": 2.5,
+        "volatility_horizon": 0.02,
+        "volatility_per_bar": 0.005,
     }
 
 
@@ -1285,15 +1284,16 @@ class TestTemplateAdvanced:
             "sections": {"backtest": {}},
         }
         mock_raw.return_value = {
-            "sigma_bar_return": 0.005,
-            "horizon_sigma_return": 0.02,
+            "volatility_per_bar": 0.005,
+            "volatility_horizon": 0.02,
         }
 
         from mtdata.core.report_templates.advanced import template_advanced
         report = template_advanced("EURUSD", 12, None, {})
 
         har = report["sections"].get("volatility_har_rv", {})
-        assert "sigma_bar_return" in har or "error" in har
+        assert har.get("volatility_per_bar") == 0.005
+        assert har.get("volatility_horizon") == 0.02
 
     @patch(f"{_ADV_MODULE}.template_basic")
     @patch(f"{_ADV_MODULE}._get_raw_result")

@@ -1,7 +1,7 @@
 from typing import Any, Dict, Optional
 
 from ...shared.schema import DenoiseSpec
-from .basic import _get_raw_result, template_basic
+from .basic import _first_volatility_value, _get_raw_result, template_basic
 
 
 def template_advanced(
@@ -67,8 +67,14 @@ def template_advanced(
         base['sections']['volatility_har_rv'] = {'error': har['error']}
     else:
         base['sections']['volatility_har_rv'] = {
-            'sigma_bar_return': har.get('sigma_bar_return'),
-            'horizon_sigma_return': har.get('horizon_sigma_return'),
+            'volatility_per_bar': _first_volatility_value(
+                har,
+                ('volatility_per_bar', 'sigma_bar_return', 'sigma_bar_price'),
+            ),
+            'volatility_horizon': _first_volatility_value(
+                har,
+                ('volatility_horizon', 'horizon_sigma_return', 'horizon_sigma_price'),
+            ),
         }
 
     # Conformal intervals around chosen method
