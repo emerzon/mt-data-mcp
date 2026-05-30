@@ -154,7 +154,7 @@ def test_run_data_fetch_candles_compact_omits_default_metadata():
         "success": True,
         "symbol": "EURUSD",
         "timeframe": "H1",
-        "candles": 5,
+        "count": 5,
         "data": [],
     }
 
@@ -302,7 +302,8 @@ def test_run_data_fetch_candles_range_applies_limit_cap():
     )
 
     assert result["data"] == rows[-2:]
-    assert result["candles"] == 2
+    assert result["count"] == 2
+    assert "candles" not in result
     assert result["available_count"] == 5
     assert result["limit_applied"] == 2
     assert result["truncated"] is True
@@ -464,7 +465,8 @@ def test_run_data_fetch_candles_summary_omits_rows_and_keeps_metadata():
     assert result["output"] == "summary"
     assert result["symbol"] == "EURUSD"
     assert result["timeframe"] == "H1"
-    assert result["candles"] == 4
+    assert result["count"] == 4
+    assert "candles" not in result
     assert result["candles_requested"] == 5
     assert result["candles_excluded"] == 1
     assert result["candle_counts"]["excluded"] == {"forming_bar": 1, "total": 1}
@@ -577,7 +579,8 @@ def test_run_data_fetch_candles_compact_keeps_anomaly_metadata():
         },
     )
 
-    assert result["candles"] == 4
+    assert result["count"] == 4
+    assert "candles" not in result
     assert "candle_counts" not in result
     assert "last_candle_open" not in result
     assert "hint" not in result

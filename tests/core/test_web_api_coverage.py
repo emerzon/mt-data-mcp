@@ -646,7 +646,8 @@ class TestGetHistory:
         res = resp.json()
         assert res["data"] == [{"time": 1.0, "close": 1.1}]
         assert "last_candle_open" not in res
-        assert res["candles"] == 1
+        assert res["count"] == 1
+        assert "candles" not in res
         assert res["meta"]["tool"] == "data_fetch_candles"
         assert res["meta"]["runtime"]["timezone"] == {
             "utc": {"tz": "UTC"},

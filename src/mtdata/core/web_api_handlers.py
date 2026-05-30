@@ -555,7 +555,8 @@ def get_history_response(  # noqa: C901
         result_out["forming_candle_skipped"] = True
         result_out["incomplete_candles_skipped"] = max(1, skipped_count + 1)
     result_out["data"] = rows
-    result_out["candles"] = len(rows)
+    result_out.pop("candles", None)
+    result_out["count"] = len(rows)
     requested_value = result.get("candles_requested")
     try:
         candles_requested = int(requested_value)

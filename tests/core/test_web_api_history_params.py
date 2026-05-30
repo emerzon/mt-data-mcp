@@ -32,7 +32,8 @@ def test_history_uses_start_end_ohlcv_and_drops_open_bar() -> None:
         )
 
     assert len(res["data"]) == 2
-    assert res["candles"] == 2
+    assert res["count"] == 2
+    assert "candles" not in res
     assert res["has_forming_candle"] is True
     assert res["forming_candle_status"] == "skipped"
     assert res["forming_candle_included"] is False

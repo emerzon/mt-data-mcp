@@ -191,6 +191,7 @@ def _run_data_fetch_candles_impl(
     detail_mode = str(request.detail or "compact").strip().lower()
     if isinstance(result, dict):
         _apply_range_limit_cap(result, limit=request.limit)
+        _normalize_candle_count_field(result)
         _prune_zero_candle_exclusions(result)
         if detail_mode == "compact":
             result = _compact_candles_payload(result)
@@ -232,7 +233,7 @@ def _apply_range_limit_cap(result: Dict[str, Any], *, limit: int) -> None:
 
     retained = data[-limit_value:]
     result["data"] = retained
-    result["candles"] = len(retained)
+    result["count"] = len(retained)
     result["available_count"] = available
     result["limit_applied"] = limit_value
     result["truncated"] = True
@@ -254,6 +255,18 @@ def _apply_range_limit_cap(result: Dict[str, Any], *, limit: int) -> None:
     query["limit_applied_to_range"] = True
     query["available_rows_before_limit"] = available
     query["returned_rows_after_limit"] = len(retained)
+
+
+def _normalize_candle_count_field(result: Dict[str, Any]) -> None:
+    candles_value = result.pop("candles", None)
+    if "count" in result:
+        return
+    if candles_value is not None:
+        result["count"] = candles_value
+        return
+    data = result.get("data")
+    if isinstance(data, list):
+        result["count"] = len(data)
 
 
 def _compact_candles_payload(
