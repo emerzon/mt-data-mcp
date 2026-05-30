@@ -146,6 +146,8 @@ _CAUSAL_DISCOVER_REQUEST_KEYS = frozenset(
     {
         "symbols_input",
         "symbols_expanded",
+        "group_input",
+        "group_resolved",
         "timeframe",
         "limit",
         "start",
@@ -1236,6 +1238,7 @@ def _limit_constrained_alignment_message(
 @mcp.tool()
 def causal_discover_signals(  # noqa: C901
     symbols: Optional[str] = None,
+    group: Optional[str] = None,
     timeframe: TimeframeLiteral = "H1",
     limit: int = 500,
     start: Optional[str] = None,
@@ -1249,7 +1252,10 @@ def causal_discover_signals(  # noqa: C901
     """Run Granger-style causal discovery on MT5 symbols.
 
     Args:
-        symbols: Comma-separated MT5 symbols; provide one symbol to auto-expand its group.
+        symbols: Comma-separated MT5 symbols; provide one symbol to auto-expand
+            its group. Optional when using `group`.
+        group: Explicit MT5 group path (for example "Forex\\Majors"). Mutually
+            exclusive with `symbols`.
         timeframe: MT5 timeframe key (e.g. "M15", "H1").
         limit: Maximum bars to analyse per symbol after applying any time window.
         start: Optional UTC-compatible start date/time for the analysis window.
@@ -1308,15 +1314,40 @@ def causal_discover_signals(  # noqa: C901
         symbol_list = _parse_symbols(symbols)
         if symbol_list:
             meta["symbols_input"] = list(symbol_list)
+        if group is not None:
+            meta["group_input"] = str(group)
         group_hint: str | None = None
-        requested_anchor = symbol_list[0] if len(symbol_list) == 1 else None
-        if not symbol_list:
+        requested_anchor = (
+            symbol_list[0] if group is None and len(symbol_list) == 1 else None
+        )
+        if group and symbol_list:
             return _causal_error(
-                "Provide at least one symbol for causal discovery (e.g. 'EURUSD' or 'EURUSD,GBPUSD').",
+                "Provide either symbols or group for causal discovery, not both.",
                 code="invalid_input",
                 meta=meta,
             )
-        if len(symbol_list) == 1:
+        if group:
+            expanded, err, group_path = _expand_symbols_for_group_path(
+                group,
+                gateway=mt5_gateway,
+            )
+            if err:
+                return _causal_error(
+                    err,
+                    code="symbol_group_error",
+                    meta=meta,
+                )
+            symbol_list = expanded
+            group_hint = group_path
+            meta["group_resolved"] = group_path
+            meta["symbols_expanded"] = list(symbol_list)
+        elif not symbol_list:
+            return _causal_error(
+                "Provide at least one symbol or MT5 group for causal discovery.",
+                code="invalid_input",
+                meta=meta,
+            )
+        elif len(symbol_list) == 1:
             expanded, err, group_path = _expand_symbols_for_group(
                 symbol_list[0], gateway=mt5_gateway
             )
@@ -1683,6 +1714,7 @@ def causal_discover_signals(  # noqa: C901
         logger,
         operation="causal_discover_signals",
         symbols=symbols,
+        group=group,
         timeframe=timeframe,
         limit=limit,
         start=start,

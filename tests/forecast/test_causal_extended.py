@@ -581,6 +581,54 @@ class TestCausalDiscoverSignals:
 
     @patch("statsmodels.tsa.stattools.grangercausalitytests")
     @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
+    @patch(
+        "mtdata.core.causal._expand_symbols_for_group_path",
+        return_value=(["A", "B"], None, "Forex\\Majors"),
+    )
+    @patch("mtdata.core.causal._fetch_series")
+    def test_group_argument_expands_symbols(
+        self,
+        mock_fetch,
+        mock_expand,
+        mock_granger,
+    ):
+        idx = pd.date_range("2024-01-01", periods=80, freq="h")
+        series_map = {
+            "A": pd.Series(np.linspace(1.0, 2.0, 80), index=idx),
+            "B": pd.Series(np.linspace(2.0, 3.0, 80), index=idx),
+        }
+
+        mock_fetch.side_effect = lambda symbol, timeframe, count: (
+            series_map[symbol],
+            None,
+        )
+        mock_granger.return_value = {
+            1: ({"ssr_ftest": (1.0, 0.02, 10, 1)}, None),
+        }
+
+        result = self._unwrapped()(
+            group="Forex\\Majors",
+            max_lag=1,
+            transform="diff",
+            normalize=False,
+        )
+
+        assert result["success"] is True
+        request = result["meta"]["request"]
+        assert request["group_input"] == "Forex\\Majors"
+        assert request["group_resolved"] == "Forex\\Majors"
+        assert request["symbols_expanded"] == ["A", "B"]
+        mock_expand.assert_called_once()
+
+    def test_symbols_and_group_are_mutually_exclusive(self):
+        result = self._unwrapped()("A,B", group="Forex\\Majors")
+
+        assert result["success"] is False
+        assert result["error_code"] == "invalid_input"
+        assert "either symbols or group" in result["error"]
+
+    @patch("statsmodels.tsa.stattools.grangercausalitytests")
+    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
     @patch("mtdata.core.causal._fetch_series")
     def test_full_detail_returns_all_tested_pairs(self, mock_fetch, mock_granger):
         idx = pd.date_range("2024-01-01", periods=80, freq="h")

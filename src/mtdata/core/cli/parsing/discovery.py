@@ -272,7 +272,6 @@ def apply_schema_overrides(
 ) -> Dict[str, Any]:
     """Apply JSON schema defaults and required flags to CLI parameter metadata."""
     meta = tool.setdefault("meta", {})
-    tool_name = str(func_info.get("name") or "").strip()
     schema = meta.get("schema") or {}
     schema = enrich_schema_with_shared_defs(schema, func_info)
     meta["schema"] = schema
@@ -284,8 +283,6 @@ def apply_schema_overrides(
         if isinstance(prop, dict) and "default" in prop and param.get("default") is None:
             param["default"] = prop["default"]
         if param["name"] in schema_required:
-            param["required"] = True
-        if tool_name == "causal_discover_signals" and param["name"] == "symbols":
             param["required"] = True
     return schema
 
