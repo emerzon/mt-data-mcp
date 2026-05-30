@@ -178,7 +178,6 @@ class ForecastTuneGeneticRequest(BaseModel):
     dimred_method: Optional[str] = None
     dimred_params: Optional[Dict[str, Any]] = None
     detail: CompactFullDetailLiteral = "compact"
-    detail: CompactFullDetailLiteral = "compact"
 
 
 class ForecastTuneOptunaRequest(BaseModel):
@@ -205,7 +204,6 @@ class ForecastTuneOptunaRequest(BaseModel):
     features: Optional[Dict[str, Any]] = None
     dimred_method: Optional[str] = None
     dimred_params: Optional[Dict[str, Any]] = None
-    detail: CompactFullDetailLiteral = "compact"
     detail: CompactFullDetailLiteral = "compact"
 
 
@@ -268,7 +266,6 @@ class ForecastOptimizeHintsRequest(BaseModel):
     top_n: int = Field(5, ge=1, le=20)
     dimred_method: Optional[str] = None
     dimred_params: Optional[Dict[str, Any]] = None
-    detail: CompactFullDetailLiteral = "compact"
     detail: CompactFullDetailLiteral = "compact"
 
 
