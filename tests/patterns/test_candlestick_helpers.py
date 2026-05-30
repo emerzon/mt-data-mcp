@@ -30,6 +30,12 @@ class TestNormalizeCandlestickName:
     def test_remove_spaces(self):
         assert _normalize_candlestick_name("morning star") == "morningstar"
 
+    def test_strip_display_direction(self):
+        assert _normalize_candlestick_name("Bullish BELTHOLD") == "belthold"
+
+    def test_strip_display_direction_with_cdl_prefix(self):
+        assert _normalize_candlestick_name("Bearish CDL_BELT_HOLD") == "belthold"
+
     def test_empty_string(self):
         assert _normalize_candlestick_name("") == ""
 

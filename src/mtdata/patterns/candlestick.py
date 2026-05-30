@@ -205,9 +205,40 @@ _CANDLESTICK_REDUNDANCY_SUPPRESSORS = {
 
 def _normalize_candlestick_name(pattern_name: str) -> str:
     nm = str(pattern_name).strip()
-    if nm.lower().startswith("cdl_"):
-        nm = nm[len("cdl_") :]
-    return nm.replace("_", "").replace(" ", "").lower()
+    while nm:
+        parts = nm.replace("_", " ").replace("-", " ").split()
+        if len(parts) > 1 and parts[0].lower() in {"bullish", "bearish", "neutral"}:
+            nm = " ".join(parts[1:])
+            continue
+        if len(parts) > 1 and parts[0].lower() == "cdl":
+            nm = " ".join(parts[1:])
+            continue
+        if nm.lower().startswith("cdl_"):
+            nm = nm[len("cdl_") :]
+            continue
+        break
+    return "".join(ch for ch in nm.lower() if ch.isalnum())
+
+
+def _candlestick_detector_label(pattern_name: str) -> str:
+    return _normalize_candlestick_name(pattern_name).upper()
+
+
+def _format_candlestick_detector_labels(
+    pattern_methods: List[str], *, limit: int = 40
+) -> str:
+    labels = sorted(
+        {
+            label
+            for method in pattern_methods
+            if (label := _candlestick_detector_label(method))
+        }
+    )
+    if not labels:
+        return ""
+    shown = labels[:limit]
+    suffix = f", ... (+{len(labels) - limit})" if len(labels) > limit else ""
+    return ", ".join(shown) + suffix
 
 
 def _parse_min_strength(min_strength: float) -> float:
@@ -701,22 +732,47 @@ def detect_candlestick_patterns(  # noqa: C901
         return {"error": "No candlestick pattern detectors (cdl_*) found in pandas_ta."}
 
     parsed_whitelist: Optional[set[str]] = None
+    whitelist_parts: List[str] = []
     if whitelist and isinstance(whitelist, str):
         try:
-            parts = [p.strip() for p in whitelist.split(",") if p.strip()]
-            if parts:
-                parsed_whitelist = {_normalize_candlestick_name(p) for p in parts}
+            whitelist_parts = [p.strip() for p in whitelist.split(",") if p.strip()]
+            if whitelist_parts:
+                parsed_whitelist = {
+                    _normalize_candlestick_name(p) for p in whitelist_parts
+                }
         except Exception:
             pass
 
-    pattern_methods = _filter_candlestick_pattern_methods(
+    available_pattern_methods = _filter_candlestick_pattern_methods(
         pattern_methods,
+        robust_only=bool(robust_only),
+        robust_set=_ROBUST_CANDLESTICK_WHITELIST,
+        whitelist_set=None,
+    )
+    pattern_methods = _filter_candlestick_pattern_methods(
+        available_pattern_methods,
         robust_only=bool(robust_only),
         robust_set=_ROBUST_CANDLESTICK_WHITELIST,
         whitelist_set=parsed_whitelist,
     )
     if not pattern_methods:
-        return {"error": "No candlestick detectors match the requested filters."}
+        available = _format_candlestick_detector_labels(available_pattern_methods)
+        if parsed_whitelist is not None:
+            requested = (
+                ", ".join(whitelist_parts) if whitelist_parts else str(whitelist)
+            )
+            return {
+                "error": (
+                    "No candlestick detectors match whitelist "
+                    f"'{requested}'. Available detectors: {available}"
+                )
+            }
+        return {
+            "error": (
+                "No candlestick detectors match the requested filters. "
+                f"Available detectors: {available}"
+            )
+        }
 
     before_cols = set(temp.columns)
     for name in sorted(pattern_methods):

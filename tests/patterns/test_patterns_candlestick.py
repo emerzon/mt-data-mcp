@@ -311,6 +311,123 @@ def test_detect_candlestick_patterns_prefilters_methods_by_whitelist(monkeypatch
     assert res["signal_scale"] == "pandas_ta_signal_x100"
 
 
+def test_detect_candlestick_patterns_whitelist_accepts_display_names(monkeypatch):
+    calls = []
+
+    class _FakeFrame(pd.DataFrame):
+        _metadata = ["_calls"]
+
+        @property
+        def _constructor(self):
+            return _FakeFrame
+
+        @property
+        def ta(self):
+            frame = self
+
+            class _Accessor:
+                def cdl_belthold(self, append=True):
+                    _ = append
+                    frame._calls.append("cdl_belthold")
+                    frame["cdl_belthold"] = [0.0, 200.0]
+
+                def cdl_doji(self, append=True):
+                    _ = append
+                    frame._calls.append("cdl_doji")
+                    frame["cdl_doji"] = [0.0, 200.0]
+
+            return _Accessor()
+
+    monkeypatch.setattr(candlestick_mod, "_ensure_candlestick_runtime", lambda: None)
+    monkeypatch.setattr(candlestick_mod, "TIMEFRAME_MAP", {"H1": 1})
+    monkeypatch.setattr(candlestick_mod, "_symbol_ready_guard", _always_ready_guard)
+    monkeypatch.setattr(
+        candlestick_mod, "_mt5_copy_rates_from", lambda *_a, **_k: [object(), object()]
+    )
+    monkeypatch.setattr(
+        candlestick_mod,
+        "_get_candlestick_pattern_methods",
+        lambda _temp: ["cdl_belthold", "cdl_doji"],
+    )
+
+    def _fake_rates_to_df(_rates):
+        frame = _FakeFrame(
+            {
+                "time": [1_700_000_000.0, 1_700_003_600.0],
+                "open": [100.0, 101.0],
+                "high": [101.0, 102.0],
+                "low": [99.0, 100.0],
+                "close": [100.5, 101.5],
+            }
+        )
+        frame._calls = calls
+        return frame
+
+    monkeypatch.setattr(candlestick_mod, "_rates_to_df", _fake_rates_to_df)
+
+    res = candlestick_mod.detect_candlestick_patterns(
+        symbol="EURUSD",
+        timeframe="H1",
+        limit=10,
+        min_strength=0.75,
+        min_gap=0,
+        robust_only=False,
+        whitelist="Bullish BELTHOLD",
+        top_k=1,
+    )
+
+    assert res["success"] is True
+    assert calls == ["cdl_belthold"]
+    assert [row["pattern"] for row in res["data"]] == ["Bullish BELTHOLD"]
+
+
+def test_detect_candlestick_patterns_whitelist_error_lists_detectors(monkeypatch):
+    class _FakeFrame(pd.DataFrame):
+        @property
+        def _constructor(self):
+            return _FakeFrame
+
+    monkeypatch.setattr(candlestick_mod, "_ensure_candlestick_runtime", lambda: None)
+    monkeypatch.setattr(candlestick_mod, "TIMEFRAME_MAP", {"H1": 1})
+    monkeypatch.setattr(candlestick_mod, "_symbol_ready_guard", _always_ready_guard)
+    monkeypatch.setattr(
+        candlestick_mod, "_mt5_copy_rates_from", lambda *_a, **_k: [object(), object()]
+    )
+    monkeypatch.setattr(
+        candlestick_mod,
+        "_get_candlestick_pattern_methods",
+        lambda _temp: ["cdl_doji", "cdl_hammer"],
+    )
+    monkeypatch.setattr(
+        candlestick_mod,
+        "_rates_to_df",
+        lambda _rates: _FakeFrame(
+            {
+                "time": [1_700_000_000.0, 1_700_003_600.0],
+                "open": [100.0, 101.0],
+                "high": [101.0, 102.0],
+                "low": [99.0, 100.0],
+                "close": [100.5, 101.5],
+            }
+        ),
+    )
+
+    res = candlestick_mod.detect_candlestick_patterns(
+        symbol="EURUSD",
+        timeframe="H1",
+        limit=10,
+        min_strength=0.75,
+        min_gap=0,
+        robust_only=False,
+        whitelist="foo",
+        top_k=1,
+    )
+
+    assert "No candlestick detectors match whitelist 'foo'" in res["error"]
+    assert "DOJI" in res["error"]
+    assert "HAMMER" in res["error"]
+
+
 def test_detect_candlestick_patterns_top_k_uses_semantic_strength(monkeypatch):
     class _FakeFrame(pd.DataFrame):
         @property
