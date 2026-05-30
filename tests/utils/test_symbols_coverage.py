@@ -70,7 +70,7 @@ class TestSymbolsListNoSearch:
         fn = _get_symbols_list()
         res = fn(search_term=None, limit=25)
         assert "data" in res
-        assert res["headers"] == ["symbol", "group"]
+        assert res["headers"] == ["symbol", "group", "description"]
         assert len(res["data"]) == 2
         assert "rows" not in res
         assert "collection_kind" not in res
@@ -88,6 +88,36 @@ class TestSymbolsListNoSearch:
 
         assert res["headers"] == ["symbol", "group", "description"]
         assert res["data"] == [["EURUSD", "Forex\\Majors", "Euro vs US Dollar"]]
+
+    @patch(_NORM_LIMIT, return_value=25)
+    @patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r})
+    @patch(_GROUP_PATH, return_value="Forex\\Majors")
+    @patch(f"{_MT5}.symbols_get")
+    def test_compact_detail_includes_static_identification_fields(
+        self, mock_get, mock_gp, mock_tbl, mock_lim
+    ):
+        symbol = _make_symbol("EURUSD")
+        symbol.currency_base = "EUR"
+        symbol.currency_profit = "USD"
+        symbol.digits = 5
+        symbol.spread_float = True
+        mock_get.return_value = [symbol]
+        fn = _get_symbols_list()
+
+        res = fn(search_term=None, limit=25)
+
+        assert res["headers"] == [
+            "symbol",
+            "group",
+            "description",
+            "currency_base",
+            "currency_profit",
+            "digits",
+            "spread_float",
+        ]
+        assert res["data"] == [
+            ["EURUSD", "Forex\\Majors", "Euro vs US Dollar", "EUR", "USD", 5, True]
+        ]
 
     @patch(_NORM_LIMIT, return_value=2)
     @patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r})
@@ -124,6 +154,7 @@ class TestSymbolsListNoSearch:
             "list_mode": "symbols",
             "count": 2,
             "search_term": None,
+            "search_mode": "auto",
             "limit": 25,
         }
 
@@ -187,10 +218,15 @@ class TestSymbolsListSearch:
             fn = _get_symbols_list()
             res = fn(search_term="AAPL", limit=25)
 
-        assert res["headers"] == ["symbol", "group", "session_type"]
+        assert res["headers"] == ["symbol", "group", "description", "session_type"]
         assert res["data"] == [
-            ["AAPL.NAS", "Stock CFD's\\Nasdaq", "regular"],
-            ["AAPL.NAS-24", "Stock CFD's\\Nasdaq\\24HR NAS", "extended_24h"],
+            ["AAPL.NAS", "Stock CFD's\\Nasdaq", "Apple Inc CFD", "regular"],
+            [
+                "AAPL.NAS-24",
+                "Stock CFD's\\Nasdaq\\24HR NAS",
+                "Apple Inc 24/5 CFD",
+                "extended_24h",
+            ],
         ]
 
     @patch(_NORM_LIMIT, return_value=25)

@@ -344,6 +344,20 @@ def _symbol_suggestion_from_info(symbol_info: Any) -> Dict[str, Any]:
     return {key: value for key, value in suggestion.items() if value not in (None, "")}
 
 
+def _symbol_list_optional_attr(symbol_info: Any, attr: str) -> Any:
+    try:
+        if attr not in dir(symbol_info):
+            return None
+        value = getattr(symbol_info, attr)
+    except Exception:
+        return None
+    if callable(value) or value is None:
+        return None
+    if isinstance(value, str) and not value.strip():
+        return None
+    return value
+
+
 def _find_symbol_suggestions(
     mt5_gateway: Any,
     query: str,
@@ -445,7 +459,7 @@ def symbols_list(  # noqa: C901
             for symbol in matched_symbols:
                 if only_visible and not symbol.visible:
                     continue
-                symbol_list.append({
+                row = {
                     "symbol": symbol.name,
                     "group": _extract_group_path_util(symbol),
                     "description": symbol.description,
@@ -455,7 +469,17 @@ def symbols_list(  # noqa: C901
                         group=_extract_group_path_util(symbol),
                         description=symbol.description,
                     ),
-                })
+                }
+                for attr in (
+                    "currency_base",
+                    "currency_profit",
+                    "digits",
+                    "spread_float",
+                ):
+                    value = _symbol_list_optional_attr(symbol, attr)
+                    if value is not None:
+                        row[attr] = value
+                symbol_list.append(row)
 
             limit_value = _normalize_limit(limit)
             try:
@@ -485,7 +509,15 @@ def symbols_list(  # noqa: C901
                     out["has_more"] = has_more
                 return out
             if detail_mode == "compact":
-                headers = ["symbol", "group"]
+                headers = ["symbol", "group", "description"]
+                for optional_header in (
+                    "currency_base",
+                    "currency_profit",
+                    "digits",
+                    "spread_float",
+                ):
+                    if any(s.get(optional_header) is not None for s in symbol_list):
+                        headers.append(optional_header)
                 if any(s.get("session_type") for s in symbol_list):
                     headers.append("session_type")
                 rows = [[s.get(header) for header in headers] for s in symbol_list]
