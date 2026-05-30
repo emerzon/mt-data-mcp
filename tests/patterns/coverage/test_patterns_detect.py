@@ -356,6 +356,14 @@ class TestPatternsDetect:
         result = _call_patterns_detect(symbol="EURUSD", mode="unknown_mode")
         assert "error" in result
 
+    def test_ensemble_rejected_outside_classic_mode(self):
+        result = _call_patterns_detect(
+            symbol="EURUSD",
+            mode="candlestick",
+            ensemble=True,
+        )
+        assert result == {"error": "ensemble applies only to mode='classic'."}
+
     @patch("mtdata.core.patterns._fetch_pattern_data")
     def test_classic_mode_fetch_error(self, mock_fetch):
         mock_fetch.return_value = (None, {"error": "Failed to fetch"})

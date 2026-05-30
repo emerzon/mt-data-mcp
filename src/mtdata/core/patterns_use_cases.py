@@ -279,6 +279,10 @@ def run_patterns_detect(  # noqa: C901
         }
     if request.whitelist and mode_value != "candlestick":
         return {"error": "whitelist applies only to mode='candlestick'."}
+    if (
+        bool(request.ensemble) or request.ensemble_weights is not None
+    ) and mode_value != "classic":
+        return {"error": "ensemble applies only to mode='classic'."}
 
     def _fetch_pattern_frame(
         timeframe: str,
