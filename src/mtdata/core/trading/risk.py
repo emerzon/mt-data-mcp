@@ -19,17 +19,19 @@ def trade_risk_analyze(request: TradeRiskAnalyzeRequest) -> dict:
     """Analyze risk exposure for existing positions and calculate position sizing for new trades.
 
     Use this for symbol-level trade planning: current exposure, stop-loss risk,
-    reward/risk, and optional lot sizing from `desired_risk_pct`, `entry`, and
-    `stop_loss`. It is not a portfolio tail-risk model; use
+    reward/risk, and optional lot sizing from `desired_risk_pct`, `stop_loss`,
+    and an optional `entry`. When entry is omitted with symbol and stop_loss,
+    it defaults to the live tick price: ask for long, bid for short, or mid
+    when direction is omitted. It is not a portfolio tail-risk model; use
     `trade_var_cvar_calculate` for VaR/CVaR across open positions.
     Compact detail keeps the sizing decision fields; full detail includes
     broker volume rounding diagnostics and incomplete-sizing context.
 
     When sizing a proposed trade, pass direction='long' or direction='short' to
     validate that proposed SL/TP are on the correct side of the entry. New-trade
-    sizing is opt-in: provide desired_risk_pct together with entry and stop_loss
-    to calculate lot size. strict_risk=True blocks positive suggested volume when
-    broker minimum volume would exceed the requested risk.
+    sizing is opt-in: provide desired_risk_pct and stop_loss to calculate lot
+    size. strict_risk=True blocks positive suggested volume when broker minimum
+    volume would exceed the requested risk.
     """
     return run_logged_operation(
         logger,

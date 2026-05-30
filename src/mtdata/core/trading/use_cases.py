@@ -289,6 +289,57 @@ def _resolve_trade_risk_direction(
     )
 
 
+def _positive_trade_price(value: Any) -> float | None:
+    try:
+        price = float(value)
+    except (TypeError, ValueError):
+        return None
+    if math.isfinite(price) and price > 0.0:
+        return price
+    return None
+
+
+def _resolve_live_trade_risk_entry(
+    *,
+    gateway: Any,
+    symbol: str,
+    direction: Any,
+) -> tuple[float | None, str | None]:
+    try:
+        tick = gateway.symbol_info_tick(symbol)
+    except Exception:
+        return None, None
+    if tick is None:
+        return None, None
+
+    bid = _positive_trade_price(getattr(tick, "bid", None))
+    ask = _positive_trade_price(getattr(tick, "ask", None))
+    direction_norm = None
+    if direction is not None:
+        direction_norm, direction_error = normalize_trade_direction(str(direction))
+        if direction_error:
+            direction_norm = None
+
+    if direction_norm == "long":
+        if ask is not None:
+            return ask, "live_tick_ask"
+        if bid is not None:
+            return bid, "live_tick_bid_fallback"
+    elif direction_norm == "short":
+        if bid is not None:
+            return bid, "live_tick_bid"
+        if ask is not None:
+            return ask, "live_tick_ask_fallback"
+
+    if bid is not None and ask is not None:
+        return (bid + ask) / 2.0, "live_tick_mid"
+    if bid is not None:
+        return bid, "live_tick_bid_only"
+    if ask is not None:
+        return ask, "live_tick_ask_only"
+    return None, None
+
+
 def _validate_trade_risk_levels(
     *,
     direction: str,
@@ -317,6 +368,7 @@ def _build_trade_evaluation(
     stop_loss: float,
     take_profit: Optional[float],
     sym_info: Any = None,
+    entry_source: str | None = None,
 ) -> Dict[str, Any]:
     direction_norm, direction_error, direction_source = _resolve_trade_risk_direction(
         direction=direction,
@@ -333,6 +385,8 @@ def _build_trade_evaluation(
         "sl": float(stop_loss),
         "tp": float(take_profit) if take_profit is not None else None,
     }
+    if entry_source:
+        out["entry_source"] = entry_source
     if direction_error or direction_norm is None:
         out["error"] = direction_error or "Unable to resolve trade direction."
         return out
@@ -391,6 +445,7 @@ _COMPACT_POSITION_SIZING_FIELDS = (
     "min_viable_risk_currency",
     "min_viable_risk_pct",
     "entry",
+    "entry_source",
     "sl",
     "tp",
     "rr_ratio",
@@ -2385,6 +2440,21 @@ def run_trade_risk_analyze(  # noqa: C901
                     "portfolio risk is incomplete."
             )
 
+            entry_source = None
+            if (
+                request.entry is None
+                and request.symbol
+                and request.stop_loss is not None
+            ):
+                live_entry, live_entry_source = _resolve_live_trade_risk_entry(
+                    gateway=gateway,
+                    symbol=request.symbol,
+                    direction=request.direction,
+                )
+                if live_entry is not None:
+                    request.entry = float(live_entry)
+                    entry_source = live_entry_source or "live_tick"
+
             candidate_symbol_info = None
             if (
                 request.symbol
@@ -2406,6 +2476,7 @@ def run_trade_risk_analyze(  # noqa: C901
                     if request.take_profit is not None
                     else None,
                     sym_info=candidate_symbol_info,
+                    entry_source=entry_source,
                 )
 
             position_sizing_missing = [
@@ -2682,6 +2753,7 @@ def run_trade_risk_analyze(  # noqa: C901
                         "requested_risk_pct": float(request.desired_risk_pct),
                         "strict_risk": bool(getattr(request, "strict_risk", True)),
                         "entry": request.entry,
+                        **({"entry_source": entry_source} if entry_source else {}),
                         "sl": request.stop_loss,
                         "tp": request.take_profit,
                         "risk_currency": round(actual_risk, 2),

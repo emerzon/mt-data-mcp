@@ -207,6 +207,11 @@ class TradeRiskAnalyzeRequest(BaseModel):
         default=None,
         alias="entry",
         validation_alias=AliasChoices("entry", "proposed_entry"),
+        description=(
+            "Proposed entry price. When omitted with symbol and stop_loss, "
+            "trade_risk_analyze resolves it from the live tick: ask for long, "
+            "bid for short, or mid when direction is not specified."
+        ),
     )
     stop_loss: Optional[float] = Field(
         default=None,
