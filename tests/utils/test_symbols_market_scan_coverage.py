@@ -643,6 +643,8 @@ class TestMarketScan:
         assert "only 1 symbols were available" in result["note"]
         assert result["units"]["price_change_pct"] == "percentage_points"
         assert result["units"]["tick_volume"] == "broker_tick_count"
+        assert result["units"]["spread_points"] == "broker_points"
+        assert result["units"]["spread_pips"] == "pips"
         row = result["data"][0]
         assert row["symbol"] == "EURUSD"
         assert set(row) == {
@@ -651,7 +653,9 @@ class TestMarketScan:
             "price_change_pct",
             "tick_volume",
             "spread_points",
+            "spread_pips",
         }
+        assert row["spread_pips"] == 1.0
         assert "real_volume" not in row
         assert "rows" not in result
         assert result["meta"]["request"]["detail"] == "compact"

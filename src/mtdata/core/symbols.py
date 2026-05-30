@@ -39,6 +39,16 @@ from .quote_freshness import QUOTE_STALE_SECONDS, quote_closed_session_context
 logger = logging.getLogger(__name__)
 _MARKET_SCAN_STALE_BAR_SECONDS = 7 * 24 * 60 * 60
 _MARKET_SCAN_STALE_QUOTE_SECONDS = QUOTE_STALE_SECONDS
+_FOREX_CURRENCY_CODES = {
+    "AUD",
+    "CAD",
+    "CHF",
+    "EUR",
+    "GBP",
+    "JPY",
+    "NZD",
+    "USD",
+}
 
 
 def _case_insensitive_sort_key(value: Any) -> tuple[str, str]:
@@ -980,6 +990,29 @@ def _market_scan_quote_freshness_fields(
     }
 
 
+def _market_scan_points_per_pip(symbol: Any, *, point: float, digits: int) -> Optional[float]:
+    path = str(getattr(symbol, "path", "") or "").casefold()
+    name_letters = re.sub(r"[^A-Z]", "", str(getattr(symbol, "name", "") or "").upper())
+    pair_prefix = name_letters[:6]
+    is_currency_pair = (
+        len(pair_prefix) == 6
+        and pair_prefix[:3] in _FOREX_CURRENCY_CODES
+        and pair_prefix[3:] in _FOREX_CURRENCY_CODES
+    )
+    if not is_currency_pair and "forex" not in path and "\\fx" not in path and "/fx" not in path:
+        return None
+
+    if digits in {3, 5}:
+        return 10.0
+    if digits in {2, 4}:
+        return 1.0
+    if point in {0.00001, 0.001}:
+        return 10.0
+    if point in {0.0001, 0.01}:
+        return 1.0
+    return None
+
+
 def _build_market_scan_spread_row(
     symbol: Any,
     mt5_gateway: Any,
@@ -1004,6 +1037,12 @@ def _build_market_scan_spread_row(
     spread_abs = float(ask - bid)
     mid = (ask + bid) / 2.0
     spread_points = (spread_abs / point) if point > 0 else None
+    points_per_pip = _market_scan_points_per_pip(symbol, point=point, digits=digits)
+    spread_pips = (
+        (spread_points / points_per_pip)
+        if spread_points is not None and points_per_pip is not None and points_per_pip > 0
+        else None
+    )
     spread_pct = ((spread_abs / mid) * 100.0) if mid > 0 else None
     spread_cost_per_lot = None
     spread_cost_currency = str(
@@ -1024,6 +1063,7 @@ def _build_market_scan_spread_row(
             **_market_scan_quote_freshness_fields(tick_time, symbol=symbol.name),
             "spread": _market_scan_round(spread_abs, digits=digits),
             "spread_points": _market_scan_round(spread_points, digits=4),
+            "spread_pips": _market_scan_round(spread_pips, digits=4),
             "spread_pct": _market_scan_round(spread_pct, digits=6),
             "spread_cost_per_lot": _market_scan_round(spread_cost_per_lot, digits=6),
             "pricing_basis": pricing_basis,
@@ -1134,6 +1174,8 @@ _MARKET_SCAN_UNITS = {
     "close": "price",
     "price_change_pct": "percentage_points",
     "tick_volume": "broker_tick_count",
+    "spread_points": "broker_points",
+    "spread_pips": "pips",
     "spread_pct": "percentage_points",
     "spread_cost_per_lot": "currency_per_lot_estimate",
     "rsi": "0_100",
@@ -2473,6 +2515,7 @@ def market_scan(  # noqa: C901
                 "price_change_pct",
                 "tick_volume",
                 "spread_points",
+                "spread_pips",
                 "rsi",
             ]
             headers = compact_headers if detail_mode == "compact" else full_headers
