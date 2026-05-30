@@ -210,7 +210,7 @@ def _run_screener_view(
     screener: Any,
     *,
     order: str = "Ticker",
-    limit: int = 50,
+    limit: int = 20,
     page: int = 1,
 ) -> Any:
     """Run screener_view with bounded rows and no inter-page sleep."""
@@ -544,7 +544,7 @@ def get_stock_peers(symbol: str) -> Dict[str, Any]:
 def screen_stocks(
     filters: Optional[Dict[str, str]] = None,
     order: Optional[str] = None,
-    limit: int = 50,
+    limit: int = 20,
     page: int = 1,
     view: str = "overview",
 ) -> Dict[str, Any]:
@@ -572,7 +572,7 @@ def screen_stocks(
     order : str, optional
         Sort order, e.g. "-marketcap" for descending market cap
     limit : int
-        Max results per page (default 50)
+        Max results per page (default 20)
     page : int
         Page number (default 1)
     view : str

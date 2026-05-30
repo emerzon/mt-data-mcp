@@ -2211,7 +2211,7 @@ def finviz_peers(
 def finviz_screen(
     filters: Optional[Union[str, Dict[str, Any]]] = None,
     order: Optional[str] = None,
-    limit: int = 50,
+    limit: int = 20,
     page: int = 1,
     view: Literal["overview", "valuation", "financial", "ownership", "performance", "technical"] = "overview",
     detail: CompactFullDetailLiteral = "compact",
@@ -2249,7 +2249,7 @@ def finviz_screen(
     order : str, optional
         Sort order, e.g. "-marketcap" (descending), "price" (ascending)
     limit : int
-        Max results per page (default 50)
+        Max results per page (default 20)
     page : int
         Page number for pagination (default 1)
     view : str

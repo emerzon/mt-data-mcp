@@ -113,7 +113,7 @@ def run_screener_view(
     screener: Any,
     *,
     order: str = "Ticker",
-    limit: int = 50,
+    limit: int = 20,
     page: int = 1,
     screener_max_rows: Optional[int] = None,
     page_limit_max: Optional[int] = None,

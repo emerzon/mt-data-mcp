@@ -1488,6 +1488,27 @@ class TestFinvizTools:
         ]
 
     @patch('mtdata.core.finviz.screen_stocks')
+    def test_finviz_screen_tool_defaults_to_20_rows(self, mock_screen):
+        from mtdata.core.finviz import finviz_screen
+
+        def _run_direct(_logger, operation, func, **fields):
+            return func()
+
+        mock_screen.return_value = {"success": True, "count": 0, "stocks": []}
+
+        with patch("mtdata.core.finviz.run_logged_operation", side_effect=_run_direct):
+            result = finviz_screen.__wrapped__(filters={"Exchange": "NASDAQ"})
+
+        mock_screen.assert_called_once_with(
+            filters={"Exchange": "NASDAQ"},
+            order=None,
+            limit=20,
+            page=1,
+            view="overview",
+        )
+        assert result["detail"] == "compact"
+
+    @patch('mtdata.core.finviz.screen_stocks')
     def test_finviz_screen_tool_accepts_json_string_filters(self, mock_screen):
         """Test finviz_screen tool still accepts JSON string filters."""
         from mtdata.core.finviz import finviz_screen
