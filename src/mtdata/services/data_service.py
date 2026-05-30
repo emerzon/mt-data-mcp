@@ -106,11 +106,13 @@ _TICK_PRICE_STAT_KEYS = frozenset(
     }
 )
 _TICK_ROW_UNITS = {
+    "time_epoch": "unix_seconds",
     "bid": "price",
     "ask": "price",
     "last": "price",
     "mid": "price",
     "spread": "price",
+    "tick_gap_ms": "milliseconds",
     "volume": "mt5_tick_volume",
     "volume_real": "traded_volume",
 }
@@ -2000,6 +2002,16 @@ def fetch_ticks(  # noqa: C901
         def _tick_field(tick: Any, name: str) -> Any:
             return _tick_field_value(tick, name)
 
+        def _tick_epoch_seconds(tick: Any) -> float:
+            time_msc = _tick_field(tick, "time_msc")
+            try:
+                time_msc_value = float(time_msc)
+            except (TypeError, ValueError):
+                time_msc_value = float("nan")
+            if math.isfinite(time_msc_value) and time_msc_value > 0.0:
+                return time_msc_value / 1000.0
+            return float(_tick_field(tick, "time"))
+
         # Extract shared tick columns once so summary/stats, simplification,
         # and row rendering can all reuse the same values.
         _epochs: List[float] = []
@@ -2012,7 +2024,7 @@ def fetch_ticks(  # noqa: C901
         volumes: List[float] = []
         volumes_real: List[float] = []
         for tick in ticks:
-            _epochs.append(float(_tick_field(tick, "time")))
+            _epochs.append(_tick_epoch_seconds(tick))
             bid = float(_tick_field(tick, "bid"))
             ask = float(_tick_field(tick, "ask"))
             flag_value = int(_tick_field(tick, "flags") or 0)
@@ -2056,18 +2068,26 @@ def fetch_ticks(  # noqa: C901
             headers.extend(["mid", "spread", "tick_gap_ms"])
         headers.extend(["last", "volume", "volume_real", "flags", "flags_decoded"])
 
-        # Choose a consistent time format for all rows.
+        # Choose a consistent millisecond time format for tick rows.
         # Low-level tick fetch helpers already normalize MT5 times to UTC.
         client_tz = _resolve_client_tz()
         _use_ctz = client_tz is not None
-        fmt: Optional[str] = None
-        if not _use_ctz:
-            fmt = TIME_DISPLAY_FORMAT
 
         def _format_tick_time(epoch: float) -> str:
+            try:
+                dt = datetime.fromtimestamp(float(epoch), tz=dt_timezone.utc)
+            except Exception:
+                return str(epoch)
             if _use_ctz:
-                return _format_time_minimal_local(epoch)
-            return datetime.fromtimestamp(epoch, tz=dt_timezone.utc).strftime(fmt)
+                try:
+                    dt = dt.astimezone(client_tz)
+                except Exception:
+                    dt = dt.astimezone()
+            millis = int(round(float(dt.microsecond) / 1000.0))
+            if millis >= 1000:
+                dt = dt + timedelta(seconds=1)
+                millis = 0
+            return f"{dt.strftime('%Y-%m-%d %H:%M:%S')}.{millis:03d}"
 
         original_count = len(ticks)
         simplify_eff = _normalize_simplify_spec(simplify, limit=limit, fallback_rows=original_count)

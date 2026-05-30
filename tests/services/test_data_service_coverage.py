@@ -2165,6 +2165,28 @@ class TestFetchTicks(unittest.TestCase):
     @patch(_CACHED_INFO, return_value=SimpleNamespace(digits=5))
     @patch(_RESOLVE_CTZ, return_value=None)
     @patch(_GUARD, _mock_symbol_guard)
+    def test_full_rows_use_tick_millisecond_times(self, mock_ctz, mock_info, mock_ticks):
+        ticks = _make_ticks(3, base_ts=1_700_000_000.0, step=0.0)
+        ticks[0]["time_msc"] = 1_700_000_000_000
+        ticks[1]["time_msc"] = 1_700_000_000_123
+        ticks[2]["time_msc"] = 1_700_000_000_456
+        mock_ticks.return_value = ticks
+
+        result = fetch_ticks('EURUSD', limit=3, format='full_rows')
+
+        self.assertTrue(result.get('success'))
+        self.assertEqual(result["data"][0]["time"], "2023-11-14 22:13:20.000")
+        self.assertEqual(result["data"][1]["time"], "2023-11-14 22:13:20.123")
+        self.assertAlmostEqual(result["data"][1]["time_epoch"], 1700000000.123, places=3)
+        self.assertAlmostEqual(result["data"][1]["tick_gap_ms"], 123.0, places=3)
+        self.assertAlmostEqual(result["data"][2]["tick_gap_ms"], 333.0, places=3)
+        self.assertEqual(result["units"]["time_epoch"], "unix_seconds")
+        self.assertEqual(result["units"]["tick_gap_ms"], "milliseconds")
+
+    @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=SimpleNamespace(digits=5))
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
     def test_tick_rows_keep_optional_columns_when_values_absent(self, mock_ctz, mock_info, mock_ticks):
         ticks = _make_ticks(2)
         for tick in ticks:
