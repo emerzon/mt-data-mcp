@@ -861,7 +861,7 @@ class TestSymbolsDescribe:
         sd = res["details"]
 
         assert res["symbol"] == "EURUSD"
-        assert sd["trade_mode"] == 2
+        assert "trade_mode" not in sd
         assert sd["trade_mode_label"] == "Longonly"
         assert "Market" in sd["order_mode_labels"]
         assert "Limit" in sd["order_mode_labels"]

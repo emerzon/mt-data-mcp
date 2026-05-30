@@ -136,7 +136,6 @@ _SYMBOL_DESCRIBE_COMPACT_DIRECT_FIELDS: tuple[str, ...] = (
     "volume_max",
     "volume_step",
     "spread_float",
-    "trade_mode",
     "trade_mode_label",
     "order_mode_labels",
 )
