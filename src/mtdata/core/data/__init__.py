@@ -468,12 +468,16 @@ def data_fetch_ticks(
 def wait_event(
     symbol: Optional[str] = None,
     timeframe: TimeframeLiteral = "M1",
+    wait_next_bar: bool = False,
     watch_tick_count_spike: bool = True,
     watch_for: Optional[List[Dict[str, Any]]] = None,
     end_on: Optional[List[Dict[str, Any]]] = None,
     detail: CompactFullDetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """Wait for watch events on a symbol until the next timeframe boundary.
+
+    Set `wait_next_bar=true` for the common shortcut: wait only for the next
+    candle close on `timeframe` and skip inferred market/account watchers.
 
     If `watch_for` is omitted, the public default watches the full event set:
     order/position lifecycle events, pending/stop proximity, volatility/activity
@@ -504,11 +508,13 @@ def wait_event(
     echo in the response.
     """
     symbol_value = str(symbol or "").strip() or None
-    explicit_watch_for = watch_for is not None
+    explicit_watch_for = watch_for is not None or bool(wait_next_bar)
     explicit_end_on = end_on is not None
     symbol_error: Optional[str] = None
     if symbol_value is None and not explicit_watch_for:
         symbol_error = "symbol is required when watch_for is omitted."
+    if wait_next_bar and watch_for not in (None, []):
+        symbol_error = "wait_next_bar cannot be combined with explicit watch_for events."
 
     def _run() -> Dict[str, Any]:
         if symbol_error is not None:
@@ -524,15 +530,18 @@ def wait_event(
             request_kwargs["end_on"] = [
                 {"type": "candle_close", "timeframe": timeframe},
             ]
-        resolved_watch_for = (
-            list(watch_for)
-            if explicit_watch_for
-            else _build_default_wait_event_watchers(
-                symbol=symbol_value,
-                timeframe=timeframe,
-                watch_tick_count_spike=watch_tick_count_spike,
+        if wait_next_bar:
+            resolved_watch_for = []
+        else:
+            resolved_watch_for = (
+                list(watch_for)
+                if watch_for is not None
+                else _build_default_wait_event_watchers(
+                    symbol=symbol_value,
+                    timeframe=timeframe,
+                    watch_tick_count_spike=watch_tick_count_spike,
+                )
             )
-        )
         request = WaitEventRequest(
             **request_kwargs,
             watch_for=resolved_watch_for,
@@ -555,6 +564,7 @@ def wait_event(
         operation="wait_event",
         symbol=symbol_value,
         timeframe=timeframe,
+        wait_next_bar=wait_next_bar,
         watch_tick_count_spike=watch_tick_count_spike,
         detail=detail,
         explicit_watch_for=explicit_watch_for,

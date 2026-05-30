@@ -331,6 +331,26 @@ def test_wait_event_prefers_public_symbol_name(mock_run_wait, _mock_compact, _mo
     assert request.symbol == "EURUSD"
 
 
+@patch("mtdata.core.data.create_mt5_gateway", return_value=object())
+@patch("mtdata.core.data._compact_wait_event_public_result", side_effect=lambda result, **_: result)
+@patch("mtdata.core.data.run_wait_event", return_value={"success": True})
+def test_wait_event_wait_next_bar_builds_boundary_only_request(
+    mock_run_wait,
+    _mock_compact,
+    _mock_gateway,
+) -> None:
+    result = _raw_wait_event()(symbol="EURUSD", timeframe="H1", wait_next_bar=True)
+
+    assert result == {"success": True}
+    request = mock_run_wait.call_args.args[0]
+    assert request.symbol == "EURUSD"
+    assert request.timeframe == "H1"
+    assert request.watch_for == []
+    assert [(item.type, item.timeframe) for item in request.end_on] == [
+        ("candle_close", "H1")
+    ]
+
+
 def test_wait_event_request_rejects_instrument_as_extra_field() -> None:
     with pytest.raises(ValidationError) as exc_info:
         WaitEventRequest.model_validate(
