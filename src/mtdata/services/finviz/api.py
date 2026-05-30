@@ -20,6 +20,19 @@ _FINVIZ_PAGE_LIMIT_MAX = get_finviz_page_limit_max()
 
 # Non-equity suffixes (forex pairs)
 _PAIR_SUFFIXES = {"USD", "EUR", "GBP", "JPY", "AUD", "CAD", "CHF", "NZD"}
+_MT5_EQUITY_SUFFIXES = {
+    "AMEX",
+    "ARCA",
+    "ASE",
+    "BATS",
+    "NAS",
+    "NASDAQ",
+    "NQ",
+    "NYSE",
+    "NYS",
+    "NYQ",
+    "US",
+}
 
 
 def _looks_like_non_equity_symbol(symbol: str) -> bool:
@@ -32,6 +45,27 @@ def _looks_like_non_equity_symbol(symbol: str) -> bool:
     if len(s) == 6 and s[:3].isalpha() and s[3:].isalpha() and s[3:] in _PAIR_SUFFIXES:
         return True
     return False
+
+
+def _normalize_finviz_equity_symbol(symbol: str) -> str:
+    normalized = str(symbol or "").strip().upper()
+    if not normalized:
+        return normalized
+
+    for separator in (".", "_", "-"):
+        if separator not in normalized:
+            continue
+        base, suffix = normalized.split(separator, 1)
+        suffix_token = suffix.split(".", 1)[0].split("_", 1)[0].split("-", 1)[0]
+        if (
+            base
+            and len(base) <= 6
+            and base.replace(".", "").isalnum()
+            and not _looks_like_non_equity_symbol(base)
+            and suffix_token in _MT5_EQUITY_SUFFIXES
+        ):
+            return base
+    return normalized
 
 
 def _sanitize_error_message(exc: Exception, *, symbol: str | None = None) -> str:
@@ -303,7 +337,7 @@ def _load_finviz_attr(module_name: str, attr_name: str) -> Any:
 def _get_finviz_stock_quote(symbol: str) -> tuple[str, Any]:
     _apply_finvizfinance_timeout_patch()
     finvizfinance = _load_finviz_attr("finvizfinance.quote", "finvizfinance")
-    symbol_norm = str(symbol).upper()
+    symbol_norm = _normalize_finviz_equity_symbol(symbol)
     return symbol_norm, finvizfinance(symbol_norm)
 
 

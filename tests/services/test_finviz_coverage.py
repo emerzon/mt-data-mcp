@@ -86,6 +86,24 @@ class TestGetStockDescription:
         assert result["description"] == "Foo Corp builds things."
 
     @patch("mtdata.services.finviz._apply_finvizfinance_timeout_patch")
+    def test_mt5_equity_suffix_is_stripped(self, mock_patch):
+        stock_cls = MagicMock(return_value=_mock_finviz_stock(description="Apple Inc."))
+        with patch.dict("sys.modules", {"finvizfinance.quote": MagicMock(finvizfinance=stock_cls)}):
+            result = svc.get_stock_description("AAPL.NAS-24")
+        stock_cls.assert_called_once_with("AAPL")
+        assert result["success"] is True
+        assert result["symbol"] == "AAPL"
+
+    @patch("mtdata.services.finviz._apply_finvizfinance_timeout_patch")
+    def test_real_dotted_ticker_is_preserved(self, mock_patch):
+        stock_cls = MagicMock(return_value=_mock_finviz_stock(description="Berkshire Hathaway."))
+        with patch.dict("sys.modules", {"finvizfinance.quote": MagicMock(finvizfinance=stock_cls)}):
+            result = svc.get_stock_description("BRK.B")
+        stock_cls.assert_called_once_with("BRK.B")
+        assert result["success"] is True
+        assert result["symbol"] == "BRK.B"
+
+    @patch("mtdata.services.finviz._apply_finvizfinance_timeout_patch")
     def test_empty_description(self, mock_patch):
         mock_stock = _mock_finviz_stock(description="")
         with patch.dict("sys.modules", {"finvizfinance.quote": MagicMock(finvizfinance=MagicMock(return_value=mock_stock))}):
