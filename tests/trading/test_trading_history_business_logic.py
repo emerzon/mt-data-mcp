@@ -297,6 +297,26 @@ def test_trade_history_full_detail_uses_normalized_deal_items() -> None:
     assert out["units"] == {"volume": "lots"}
 
 
+def test_trade_history_full_detail_uses_top_level_timezone_only() -> None:
+    out = normalize_trade_history_output(
+        [
+            {
+                "ticket": 11,
+                "time": "2024-01-01 12:00:00",
+                "symbol": "EURUSD",
+                "volume": 0.5,
+                "price": 1.2345,
+                "timezone": "UTC",
+            }
+        ],
+        request=TradeHistoryRequest(history_kind="deals", detail="full"),
+    )
+
+    assert out["timezone"] == "UTC"
+    assert "timezone" not in out["items"][0]
+    assert "deal_details" not in out["items"][0]
+
+
 def test_trade_history_full_detail_ignores_humanized_style_for_canonical_items() -> None:
     out = normalize_trade_history_output(
         [

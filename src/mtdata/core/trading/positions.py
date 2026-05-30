@@ -366,6 +366,7 @@ _TRADE_HISTORY_DIAGNOSTIC_FIELDS = {
     "type_filling_code",
     "external_id",
 }
+_TRADE_HISTORY_ROW_METADATA_FIELDS = {"timezone"}
 _TRADE_HISTORY_DEAL_TOP_LEVEL_FIELDS = (
     "ticket",
     "order",
@@ -389,7 +390,6 @@ _TRADE_HISTORY_DEAL_TOP_LEVEL_FIELDS = (
     "fee",
     "symbol",
     "comment",
-    "timezone",
     "exit_trigger",
     "exit_trigger_price",
     "exit_trigger_source",
@@ -416,7 +416,6 @@ _TRADE_HISTORY_ORDER_TOP_LEVEL_FIELDS = (
     "tp",
     "symbol",
     "comment",
-    "timezone",
 )
 _TRADE_HISTORY_COMPACT_DEAL_FIELDS = (
     "time",
@@ -553,6 +552,7 @@ def _public_trade_history_details(row: Dict[str, Any]) -> Dict[str, Any]:
         key: value
         for key, value in _compact_non_empty_mapping(row).items()
         if str(key) not in _TRADE_HISTORY_DIAGNOSTIC_FIELDS
+        and str(key) not in _TRADE_HISTORY_ROW_METADATA_FIELDS
     }
 
 
@@ -677,7 +677,6 @@ def _trade_history_humanized_key(key: str) -> str:
         "fee": "Fee",
         "comment": "Comments",
         "magic": "Magic",
-        "timezone": "Timezone",
         "exit_trigger": "Exit Trigger",
         "exit_trigger_price": "Exit Trigger Price",
         "exit_trigger_source": "Exit Trigger Source",
