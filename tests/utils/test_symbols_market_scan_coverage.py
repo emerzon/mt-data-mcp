@@ -755,7 +755,7 @@ class TestMarketScan:
         mock_rates.return_value = _make_bars([1.0, 1.01, 1.02, 1.03], tick_volume=50)
 
         fn = _get_market_scan()
-        result = fn(symbols="EURUSD", lookback=4)
+        result = fn(symbol="EURUSD", lookback=4)
 
         assert result["success"] is True
         assert result["meta"]["request"]["symbols_input"] == ["EURUSD"]
@@ -779,7 +779,7 @@ class TestMarketScan:
         mock_rates.return_value = _make_bars([1.0, 1.01, 1.02, 1.03], tick_volume=50)
 
         fn = _get_market_scan()
-        result = fn(symbols="EURUSD", lookback=4)
+        result = fn(symbol="EURUSD", lookback=4)
 
         assert result["success"] is True
         assert result["meta"]["request"]["symbols_input"] == ["EURUSD"]

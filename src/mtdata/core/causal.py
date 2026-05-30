@@ -1237,7 +1237,7 @@ def _limit_constrained_alignment_message(
 
 @mcp.tool()
 def causal_discover_signals(  # noqa: C901
-    symbols: Optional[str] = None,
+    symbol: Optional[str] = None,
     group: Optional[str] = None,
     timeframe: TimeframeLiteral = "H1",
     limit: int = 500,
@@ -1252,10 +1252,10 @@ def causal_discover_signals(  # noqa: C901
     """Run Granger-style causal discovery on MT5 symbols.
 
     Args:
-        symbols: Comma-separated MT5 symbols; provide one symbol to auto-expand
+        symbol: Comma-separated MT5 symbols; provide one symbol to auto-expand
             its group. Optional when using `group`.
         group: Explicit MT5 group path (for example "Forex\\Majors"). Mutually
-            exclusive with `symbols`.
+            exclusive with `symbol`.
         timeframe: MT5 timeframe key (e.g. "M15", "H1").
         limit: Maximum bars to analyse per symbol after applying any time window.
         start: Optional UTC-compatible start date/time for the analysis window.
@@ -1311,7 +1311,7 @@ def causal_discover_signals(  # noqa: C901
                 meta=meta,
             )
 
-        symbol_list = _parse_symbols(symbols)
+        symbol_list = _parse_symbols(symbol)
         if symbol_list:
             meta["symbols_input"] = list(symbol_list)
         if group is not None:
@@ -1713,7 +1713,7 @@ def causal_discover_signals(  # noqa: C901
     return run_logged_operation(
         logger,
         operation="causal_discover_signals",
-        symbols=symbols,
+        symbol=symbol,
         group=group,
         timeframe=timeframe,
         limit=limit,
@@ -1727,7 +1727,7 @@ def causal_discover_signals(  # noqa: C901
 
 @mcp.tool()
 def correlation_matrix(  # noqa: C901
-    symbols: Optional[str] = None,
+    symbol: Optional[str] = None,
     group: Optional[str] = None,
     timeframe: TimeframeLiteral = "H1",
     limit: Optional[int] = None,
@@ -1748,11 +1748,11 @@ def correlation_matrix(  # noqa: C901
     multiple symbols explicitly or use the `group` parameter.
 
     Args:
-        symbols: Comma-separated MT5 symbols; a single symbol auto-expands to
+        symbol: Comma-separated MT5 symbols; a single symbol auto-expands to
             its entire MT5 group (e.g. "EURUSD" → all Forex majors).
             Optional when using `group`.
         group: Explicit MT5 group path (for example "Forex\\Majors"). Mutually
-            exclusive with `symbols`.
+            exclusive with `symbol`.
         timeframe: MT5 timeframe key (e.g. "M15", "H1").
         limit: Optional maximum number of ranked pair rows returned.
         window_bars: Maximum number of overlapping transformed samples used per
@@ -1792,7 +1792,7 @@ def correlation_matrix(  # noqa: C901
             ensure_connection_impl=ensure_mt5_connection_or_raise,
         )
 
-        symbol_list = _parse_symbols(symbols)
+        symbol_list = _parse_symbols(symbol)
         if symbol_list:
             meta["symbols_input"] = list(symbol_list)
         if group is not None:
@@ -2093,7 +2093,7 @@ def correlation_matrix(  # noqa: C901
     return run_logged_operation(
         logger,
         operation="correlation_matrix",
-        symbols=symbols,
+        symbol=symbol,
         group=group,
         timeframe=timeframe,
         limit=limit,
@@ -2110,7 +2110,7 @@ def correlation_matrix(  # noqa: C901
 
 @mcp.tool()
 def cointegration_test(  # noqa: C901
-    symbols: Optional[str] = None,
+    symbol: Optional[str] = None,
     group: Optional[str] = None,
     timeframe: TimeframeLiteral = "H1",
     limit: Optional[int] = None,
@@ -2132,11 +2132,11 @@ def cointegration_test(  # noqa: C901
     multiple symbols explicitly or use the `group` parameter.
 
     Args:
-        symbols: Comma-separated MT5 symbols; a single symbol auto-expands to
+        symbol: Comma-separated MT5 symbols; a single symbol auto-expands to
             its entire MT5 group (e.g. "EURUSD" → all Forex majors).
             Optional when using `group`.
         group: Explicit MT5 group path (for example "Forex\\Majors"). Mutually
-            exclusive with `symbols`.
+            exclusive with `symbol`.
         timeframe: MT5 timeframe key (e.g. "M15", "H1").
         limit: Optional maximum number of ranked pair rows returned.
         window_bars: Maximum number of overlapping transformed samples used per
@@ -2187,7 +2187,7 @@ def cointegration_test(  # noqa: C901
                 meta=meta,
             )
 
-        symbol_list = _parse_symbols(symbols)
+        symbol_list = _parse_symbols(symbol)
         if symbol_list:
             meta["symbols_input"] = list(symbol_list)
         if group is not None:
@@ -2321,9 +2321,9 @@ def cointegration_test(  # noqa: C901
         meta["fetch_count"] = int(fetch_count)
         series_map: Dict[str, pd.Series] = {}
         errors: List[str] = []
-        for symbol in symbol_list:
+        for symbol_name in symbol_list:
             series, err = _fetch_series_for_window(
-                symbol,
+                symbol_name,
                 tf,
                 fetch_count,
                 start=start,
@@ -2332,7 +2332,7 @@ def cointegration_test(  # noqa: C901
             if err:
                 errors.append(err)
             else:
-                series_map[symbol] = series
+                series_map[symbol_name] = series
 
         if errors and not series_map:
             return _causal_error(
@@ -2574,7 +2574,7 @@ def cointegration_test(  # noqa: C901
     return run_logged_operation(
         logger,
         operation="cointegration_test",
-        symbols=symbols,
+        symbol=symbol,
         group=group,
         timeframe=timeframe,
         limit=limit,

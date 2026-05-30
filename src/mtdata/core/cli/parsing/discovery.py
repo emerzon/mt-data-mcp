@@ -8,9 +8,10 @@ ToolInfo = Dict[str, Any]
 _OPTIONAL_FIRST_POSITIONAL_PARAMS: set[tuple[str, str]] = {
     ("finviz_news", "symbol"),
     ("news", "symbol"),
-    ("correlation_matrix", "symbols"),
-    ("cointegration_test", "symbols"),
-    ("market_scan", "symbols"),
+    ("correlation_matrix", "symbol"),
+    ("cointegration_test", "symbol"),
+    ("market_scan", "symbol"),
+    ("causal_discover_signals", "symbol"),
     ("market_status", "symbol"),
     ("trade_get_open", "symbol"),
     ("trade_get_pending", "symbol"),
@@ -230,13 +231,6 @@ def _split_visible_and_hidden_flags(*flags: str) -> tuple[tuple[str, ...], tuple
 
 def should_expose_cli_param(*, cmd_name: Optional[str], param_name: str) -> bool:
     """Return whether a function parameter should surface as a user CLI argument."""
-    hidden_symbol_alias_tools = {
-        "causal_discover_signals",
-        "correlation_matrix",
-        "cointegration_test",
-    }
-    if str(param_name or "") == "symbol" and str(cmd_name or "") in hidden_symbol_alias_tools:
-        return False
     if str(cmd_name or "") == "finviz_calendar" and str(param_name or "") in {"date_from", "date_to"}:
         return False
     if str(cmd_name or "") == "wait_event" and str(param_name or "") == "instrument":

@@ -243,12 +243,12 @@ class TestAddDynamicArguments:
             parser.parse_args(["--no_include_incomplete"]).include_incomplete == "false"
         )
 
-    def test_market_scan_help_omits_singular_symbol_alias(self):
+    def test_market_scan_help_uses_singular_symbol_parameter(self):
         parser = argparse.ArgumentParser()
         func_info = {
             "params": [
                 {
-                    "name": "symbols",
+                    "name": "symbol",
                     "type": Optional[str],
                     "required": False,
                     "default": None,
@@ -259,8 +259,8 @@ class TestAddDynamicArguments:
 
         help_text = parser.format_help()
 
-        assert "--symbol" not in help_text
-        assert "symbols" in help_text
+        assert "--symbols" not in help_text
+        assert "symbol" in help_text
 
     def test_list_param(self):
         parser = argparse.ArgumentParser()
