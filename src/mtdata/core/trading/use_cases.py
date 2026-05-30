@@ -652,6 +652,23 @@ def _format_var_cvar_timestamp(value: Any) -> str:
     return text.replace("+00:00", "Z")
 
 
+def _format_var_cvar_observation_error(
+    *,
+    observation_name: str,
+    available: int,
+    required: int,
+    lookback: int,
+) -> str:
+    message = (
+        f"Not enough {observation_name} observations for VaR/CVaR calculation: "
+        f"lookback={int(lookback)} yielded {int(available)}, need {int(required)}. "
+        "Increase lookback"
+    )
+    if int(available) >= 2:
+        return f"{message} or lower min_observations to <= {int(available)}."
+    return f"{message}."
+
+
 def _epoch_series_to_utc_and_text(
     raw_series: Any,
     *,
@@ -3152,11 +3169,15 @@ def run_trade_var_cvar_calculate(  # noqa: C901
     ).dropna(how="any")
     if len(aligned_returns) < min_observations:
         result = {
-            "error": (
-                f"Not enough aligned return observations for VaR/CVaR calculation "
-                f"({len(aligned_returns)} available, {min_observations} required)."
+            "error": _format_var_cvar_observation_error(
+                observation_name="aligned return",
+                available=len(aligned_returns),
+                required=min_observations,
+                lookback=lookback,
             ),
             "available_observations": int(len(aligned_returns)),
+            "min_observations": int(min_observations),
+            "lookback": int(lookback),
         }
         if history_failures:
             result["history_failures"] = history_failures
@@ -3179,10 +3200,15 @@ def run_trade_var_cvar_calculate(  # noqa: C901
     if len(pnl_values) < min_observations:
         return _finish(
             {
-                "error": (
-                    f"Not enough finite portfolio PnL observations for VaR/CVaR calculation "
-                    f"({len(pnl_values)} available, {min_observations} required)."
-                )
+                "error": _format_var_cvar_observation_error(
+                    observation_name="finite portfolio PnL",
+                    available=len(pnl_values),
+                    required=min_observations,
+                    lookback=lookback,
+                ),
+                "available_observations": int(len(pnl_values)),
+                "min_observations": int(min_observations),
+                "lookback": int(lookback),
             }
         )
 

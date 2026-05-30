@@ -85,6 +85,52 @@ def test_run_trade_var_cvar_calculate_summarizes_open_position_portfolio() -> No
     assert out["worst_observations"][0]["simulated_pnl"] == -14.29
 
 
+def test_run_trade_var_cvar_calculate_low_sample_error_mentions_override() -> None:
+    position = SimpleNamespace(
+        ticket=11,
+        symbol="BTCUSD",
+        type=0,
+        volume=1.0,
+        price_current=100.0,
+        price_open=99.0,
+        profit=1.0,
+    )
+    rates = [
+        {"time": index + 1, "close": 100.0 + index}
+        for index in range(49)
+    ]
+    gateway = SimpleNamespace(
+        ensure_connection=lambda: None,
+        account_info=lambda: SimpleNamespace(equity=1000.0, currency="USD"),
+        positions_get=lambda symbol=None: [position],
+        symbol_info=lambda symbol: SimpleNamespace(trade_contract_size=1.0),
+        copy_rates_from_pos=lambda symbol, timeframe, start, count: rates[:count],
+        POSITION_TYPE_BUY=0,
+        POSITION_TYPE_SELL=1,
+        ORDER_TYPE_BUY=0,
+        ORDER_TYPE_SELL=1,
+    )
+
+    out = run_trade_var_cvar_calculate(
+        TradeVarCvarRequest(
+            symbol="BTCUSD",
+            timeframe="H1",
+            lookback=49,
+            transform="pct",
+        ),
+        gateway=gateway,
+    )
+
+    assert out["error"] == (
+        "Not enough aligned return observations for VaR/CVaR calculation: "
+        "lookback=49 yielded 48, need 50. Increase lookback or lower "
+        "min_observations to <= 48."
+    )
+    assert out["available_observations"] == 48
+    assert out["min_observations"] == 50
+    assert out["lookback"] == 49
+
+
 def test_run_trade_var_cvar_calculate_returns_empty_when_no_open_positions() -> None:
     gateway = SimpleNamespace(
         ensure_connection=lambda: None,
