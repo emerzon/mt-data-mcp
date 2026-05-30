@@ -298,6 +298,7 @@ def test_run_trade_place_dry_run_returns_preview_without_execution():
     assert result["dry_run"] is True
     assert result["no_action"] is True
     assert result["no_action_reason"] == "dry_run"
+    assert result["would_send_order"] is False
     assert result["dry_run_simulated"] is True
     assert result["pending"] is False
     assert result["action"] == "place_market_order"

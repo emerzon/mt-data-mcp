@@ -213,6 +213,7 @@ def test_trade_place_dry_run_market_preview_skips_order_send() -> None:
     assert out.get("success") is True
     assert out.get("dry_run") is True
     assert out.get("no_action") is True
+    assert out.get("would_send_order") is False
     assert out.get("pending") is False
     assert out.get("action") == "place_market_order"
     assert "actionability" not in out
@@ -247,6 +248,7 @@ def test_trade_place_dry_run_preview_detail_omits_safety_lists() -> None:
 
     assert out.get("success") is True
     assert out.get("dry_run") is True
+    assert out.get("would_send_order") is False
     assert "actionability" not in out
     assert "preview_scope_summary" not in out
     assert "warnings" not in out
@@ -306,6 +308,7 @@ def test_trade_place_dry_run_preview_error_uses_standard_error_shape() -> None:
     assert out.get("preview_error") == out.get("error")
     assert out.get("no_action") is True
     assert out.get("no_action_reason") == "dry_run_preview_error"
+    assert out.get("would_send_order") is False
     mock_market.assert_not_called()
 
 
