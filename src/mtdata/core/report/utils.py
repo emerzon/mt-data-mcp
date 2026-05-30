@@ -200,6 +200,7 @@ def summarize_barrier_grid(grid: Dict[str, Any], top_k: int = 3) -> Dict[str, An
                 'sl': best.get('sl'),
                 'objective': best.get('objective') or grid.get('objective'),
                 'edge': best.get('edge'),
+                'edge_vs_breakeven': best.get('edge_vs_breakeven'),
                 'kelly': best.get('kelly'),
                 'ev': best.get('ev'),
                 'prob_tp_first': best.get('prob_tp_first'),
@@ -211,13 +212,17 @@ def summarize_barrier_grid(grid: Dict[str, Any], top_k: int = 3) -> Dict[str, An
             }
             try:
                 ev_val = best_out.get('ev')
-                edge_val = best_out.get('edge')
+                edge_metric = "edge_vs_breakeven"
+                edge_val = best_out.get(edge_metric)
+                if edge_val is None:
+                    edge_metric = "edge"
+                    edge_val = best_out.get(edge_metric)
                 if ev_val is not None and edge_val is not None:
                     ev_f = float(ev_val)
                     edge_f = float(edge_val)
                     if (ev_f > 0.0 and edge_f < 0.0) or (ev_f < 0.0 and edge_f > 0.0):
                         best_out['ev_edge_conflict'] = True
-                        best_out['ev_edge_conflict_reason'] = "ev and edge have opposite signs"
+                        best_out['ev_edge_conflict_reason'] = f"ev and {edge_metric} have opposite signs"
             except Exception:
                 pass
             out['best'] = best_out
@@ -225,10 +230,13 @@ def summarize_barrier_grid(grid: Dict[str, Any], top_k: int = 3) -> Dict[str, An
                 out['direction'] = direction
             if bool(best_out.get('ev_edge_conflict')):
                 out['ev_edge_conflict'] = True
-                out['ev_edge_conflict_reason'] = "ev and edge have opposite signs"
+                out['ev_edge_conflict_reason'] = best_out.get(
+                    'ev_edge_conflict_reason',
+                    "ev and edge have opposite signs",
+                )
                 out['caution'] = (
-                    "EV and edge signs conflict for the selected candidate; inspect win probability "
-                    "and break-even threshold before trading."
+                    "EV and edge signs conflict for the selected candidate; inspect "
+                    "win probability and break-even threshold before trading."
                 )
         if isinstance(top, list):
             def _round_metric(value: Any, decimals: int) -> Any:
@@ -249,6 +257,7 @@ def summarize_barrier_grid(grid: Dict[str, Any], top_k: int = 3) -> Dict[str, An
                     _round_metric(row.get('tp_price'), 6),
                     _round_metric(row.get('sl_price'), 6),
                     _round_metric(row.get('edge'), 4),
+                    _round_metric(row.get('edge_vs_breakeven'), 4),
                     _round_metric(row.get('kelly'), 4),
                     _round_metric(row.get('ev'), 4),
                     _round_metric(row.get('prob_tp_first'), 4),
@@ -268,7 +277,8 @@ def summarize_barrier_grid(grid: Dict[str, Any], top_k: int = 3) -> Dict[str, An
                 trimmed.append({
                     'tp': it.get('tp'), 'sl': it.get('sl'),
                     'tp_price': it.get('tp_price'), 'sl_price': it.get('sl_price'),
-                    'edge': it.get('edge'), 'kelly': it.get('kelly'), 'ev': it.get('ev'),
+                    'edge': it.get('edge'), 'edge_vs_breakeven': it.get('edge_vs_breakeven'),
+                    'kelly': it.get('kelly'), 'ev': it.get('ev'),
                     'prob_tp_first': it.get('prob_tp_first'), 'prob_sl_first': it.get('prob_sl_first'), 'prob_no_hit': it.get('prob_no_hit'),
                 })
                 if len(trimmed) >= int(top_k):

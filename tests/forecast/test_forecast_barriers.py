@@ -1289,6 +1289,10 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
         self.assertTrue(result.get("mathematically_viable"))
         self.assertIn("EV screen", result.get("viability_note", ""))
         self.assertIn("metric_interpretation", result)
+        self.assertIn(
+            "edge_vs_breakeven=prob_tp_first-breakeven_win_rate",
+            result["metric_interpretation"],
+        )
         self.assertTrue(result.get("no_action"))
         self.assertIn("ev_edge_conflict", result.get("actionability_flags", []))
 

@@ -226,7 +226,7 @@ def test_compact_report_payload_elevates_barrier_conflicts():
         "existing warning",
         "Barrier EV/edge conflict detected for long and short direction(s).",
     ]
-    assert "Expected-value and historical edge disagree" in (
+    assert "Expected value and break-even edge disagree" in (
         out["summary_structured"]["barriers"]["long"]["trading_note"]
     )
 
@@ -789,18 +789,21 @@ class TestReportSummaryBarriers:
         sec = _make_full_sections()
         sec["barriers"]["long"]["best"]["ev"] = 0.03
         sec["barriers"]["long"]["best"]["edge"] = -0.1
+        sec["barriers"]["long"]["best"]["edge_vs_breakeven"] = -0.2
         res = self._run_report(sec)
         long_line = [s for s in res.get("summary", []) if "barrier best" in s and "dir=long" in s][0]
         assert "ev=" in long_line
         assert "edge=" in long_line
+        assert "edge_vs_breakeven=" in long_line
         assert "ev_edge_conflict=true" in long_line
         assert "ev_edge_conflict_reason=" in long_line
         structured = res["summary_structured"]["barriers"]["long"]
         assert structured["ev"] == 0.03
         assert structured["edge"] == -0.1
+        assert structured["edge_vs_breakeven"] == -0.2
         assert structured["ev_edge_conflict"] is True
-        assert structured["conflict_reason"] == "ev and edge have opposite signs"
-        assert "Expected-value and historical edge disagree" in structured["trading_note"]
+        assert structured["conflict_reason"] == "ev and edge_vs_breakeven have opposite signs"
+        assert "Expected value and break-even edge disagree" in structured["trading_note"]
 
     def test_no_barriers_section(self):
         sec = _make_full_sections()

@@ -479,6 +479,22 @@ class TestSummarizeBarrierGrid:
         assert result["ev_edge_conflict"] is True
         assert "caution" in result
 
+    def test_best_flags_ev_edge_conflict_from_breakeven_edge(self):
+        grid = {
+            "best": {
+                "tp": 1.0,
+                "sl": 0.5,
+                "ev": 0.1,
+                "edge": 0.2,
+                "edge_vs_breakeven": -0.1,
+            }
+        }
+        result = summarize_barrier_grid(grid)
+        assert result["best"]["ev_edge_conflict"] is True
+        assert result["best"]["ev_edge_conflict_reason"] == (
+            "ev and edge_vs_breakeven have opposite signs"
+        )
+
     def test_copies_optimizer_level_caution_fields(self):
         grid = {
             "best": {"tp": 1.0, "sl": 0.5, "ev": 0.1, "edge": -0.2},

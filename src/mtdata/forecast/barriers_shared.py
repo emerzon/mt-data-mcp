@@ -58,6 +58,11 @@ PHANTOM_PROFIT_LOSS_THRESHOLD = 0.01
 DEGENERATE_OBJECTIVE_MIN_RESOLVE = 0.20
 LOW_CONFIDENCE_CI_THRESHOLD = 0.10
 LOW_PRACTICAL_WIN_PROB_THRESHOLD = 0.05
+BARRIER_METRIC_BASIS_NOTE = (
+    "ev=mean simulated payoff in distance_unit, net of supplied costs; "
+    "edge=prob_win-prob_loss; edge_vs_breakeven=prob_tp_first-breakeven_win_rate; "
+    "profit_factor=resolved reward/loss; higher is better, positive ev/edge is favorable."
+)
 
 BarrierMethodLiteral = Literal[
     "mc_gbm",
@@ -458,7 +463,7 @@ def _build_selection_diagnostics(row: Optional[Dict[str, Any]], cost_per_trade: 
         out["low_practical_win_probability"] = True
         out["low_practical_win_probability_threshold"] = LOW_PRACTICAL_WIN_PROB_THRESHOLD
     if best_ev is not None and row.get("profit_factor") is not None:
-        out["metric_interpretation"] = out_metric_note
+        out["metric_interpretation"] = f"{out_metric_note} {BARRIER_METRIC_BASIS_NOTE}"
     if caution:
         out["caution"] = caution
     if bool(row.get("low_confidence")):

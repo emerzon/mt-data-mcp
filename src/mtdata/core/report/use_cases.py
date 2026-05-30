@@ -13,8 +13,8 @@ from .requests import ReportGenerateRequest
 logger = logging.getLogger(__name__)
 
 _BARRIER_EV_EDGE_CONFLICT_NOTE = (
-    "Expected-value and historical edge disagree; treat this barrier setup as "
-    "lower-confidence and wait for confirmation or reduce size."
+    "Expected value and break-even edge disagree; treat this barrier setup as "
+    "lower-confidence and review win probability, payoff skew, and no-hit share."
 )
 
 
@@ -676,6 +676,7 @@ def run_report_generate(  # noqa: C901
                         sl = best.get("sl")
                         ev = best.get("ev")
                         edge = best.get("edge")
+                        edge_vs_breakeven = best.get("edge_vs_breakeven")
                         details: List[str] = [f"dir={dname}"]
                         barrier_entry: Dict[str, Any] = {}
                         if tp is not None:
@@ -690,15 +691,25 @@ def run_report_generate(  # noqa: C901
                         if edge is not None:
                             details.append(f"edge={format_number(edge)}")
                             barrier_entry["edge"] = edge
+                        if edge_vs_breakeven is not None:
+                            details.append(
+                                f"edge_vs_breakeven={format_number(edge_vs_breakeven)}"
+                            )
+                            barrier_entry["edge_vs_breakeven"] = edge_vs_breakeven
                         try:
-                            if ev is not None and edge is not None:
+                            conflict_metric = (
+                                "edge_vs_breakeven" if edge_vs_breakeven is not None else "edge"
+                            )
+                            conflict_value = edge_vs_breakeven if edge_vs_breakeven is not None else edge
+                            if ev is not None and conflict_value is not None:
                                 ev_num = float(ev)
-                                edge_num = float(edge)
+                                edge_num = float(conflict_value)
                                 if (ev_num > 0 and edge_num < 0) or (ev_num < 0 and edge_num > 0):
+                                    reason = f"ev and {conflict_metric} have opposite signs"
                                     details.append("ev_edge_conflict=true")
-                                    details.append("ev_edge_conflict_reason=ev and edge have opposite signs")
+                                    details.append(f"ev_edge_conflict_reason={reason}")
                                     barrier_entry["ev_edge_conflict"] = True
-                                    barrier_entry["conflict_reason"] = "ev and edge have opposite signs"
+                                    barrier_entry["conflict_reason"] = reason
                                     barrier_entry["trading_note"] = _BARRIER_EV_EDGE_CONFLICT_NOTE
                         except Exception:
                             pass
@@ -714,6 +725,7 @@ def run_report_generate(  # noqa: C901
                         sl = best.get("sl")
                         ev = best.get("ev")
                         edge = best.get("edge")
+                        edge_vs_breakeven = best.get("edge_vs_breakeven")
                         details: List[str] = []
                         barrier_entry: Dict[str, Any] = {}
                         if direction:
@@ -731,15 +743,25 @@ def run_report_generate(  # noqa: C901
                         if edge is not None:
                             details.append(f"edge={format_number(edge)}")
                             barrier_entry["edge"] = edge
+                        if edge_vs_breakeven is not None:
+                            details.append(
+                                f"edge_vs_breakeven={format_number(edge_vs_breakeven)}"
+                            )
+                            barrier_entry["edge_vs_breakeven"] = edge_vs_breakeven
                         try:
-                            if ev is not None and edge is not None:
+                            conflict_metric = (
+                                "edge_vs_breakeven" if edge_vs_breakeven is not None else "edge"
+                            )
+                            conflict_value = edge_vs_breakeven if edge_vs_breakeven is not None else edge
+                            if ev is not None and conflict_value is not None:
                                 ev_num = float(ev)
-                                edge_num = float(edge)
+                                edge_num = float(conflict_value)
                                 if (ev_num > 0 and edge_num < 0) or (ev_num < 0 and edge_num > 0):
+                                    reason = f"ev and {conflict_metric} have opposite signs"
                                     details.append("ev_edge_conflict=true")
-                                    details.append("ev_edge_conflict_reason=ev and edge have opposite signs")
+                                    details.append(f"ev_edge_conflict_reason={reason}")
                                     barrier_entry["ev_edge_conflict"] = True
-                                    barrier_entry["conflict_reason"] = "ev and edge have opposite signs"
+                                    barrier_entry["conflict_reason"] = reason
                                     barrier_entry["trading_note"] = _BARRIER_EV_EDGE_CONFLICT_NOTE
                         except Exception:
                             pass
