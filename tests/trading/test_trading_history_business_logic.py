@@ -1170,7 +1170,7 @@ def test_trade_journal_analyze_summarizes_realized_exit_deals() -> None:
     assert out["worst_trades"][0]["ticket"] == 3
 
 
-def test_trade_journal_analyze_compact_uses_lite_symbol_breakdown() -> None:
+def test_trade_journal_analyze_compact_returns_summary_only() -> None:
     history_rows = [
         {
             "ticket": 1,
@@ -1211,6 +1211,48 @@ def test_trade_journal_analyze_compact_uses_lite_symbol_breakdown() -> None:
     assert "minutes_back_effective" not in out
     assert "note" not in out
     assert out["timezone"] == "UTC"
+    assert out["summary"]["closed_deals"] == 2
+    assert "breakdowns" not in out
+    assert "best_trades" not in out
+    assert "worst_trades" not in out
+
+
+def test_trade_journal_analyze_standard_uses_lite_symbol_breakdown() -> None:
+    history_rows = [
+        {
+            "ticket": 1,
+            "symbol": "EURUSD",
+            "entry": "Out",
+            "type": "Buy",
+            "profit": 25.0,
+            "commission": -1.0,
+            "swap": -0.5,
+            "exit_trigger": "TP",
+            "time": "2026-01-01 12:00",
+        },
+        {
+            "ticket": 2,
+            "symbol": "GBPUSD",
+            "entry": "Out",
+            "type": "Sell",
+            "profit": -10.0,
+            "commission": -0.5,
+            "swap": 0.0,
+            "exit_trigger": "SL",
+            "time": "2026-01-02 09:00",
+        },
+    ]
+
+    with patch(
+        "mtdata.core.trading.account._run_trade_history_request",
+        return_value={
+            "success": True,
+            "count": len(history_rows),
+            "items": history_rows,
+        },
+    ):
+        out = trade_journal_analyze(detail="standard", __cli_raw=True)
+
     assert list(out["breakdowns"]) == ["by_symbol"]
     assert set(out["breakdowns"]["by_symbol"][0]) == {
         "symbol",
@@ -1220,6 +1262,55 @@ def test_trade_journal_analyze_compact_uses_lite_symbol_breakdown() -> None:
         "expectancy",
     }
     assert "by_side" not in out["breakdowns"]
+    assert "by_exit_trigger" not in out["breakdowns"]
+    assert "best_trades" not in out
+    assert "worst_trades" not in out
+
+
+def test_trade_journal_analyze_summary_adds_lite_side_breakdown() -> None:
+    history_rows = [
+        {
+            "ticket": 1,
+            "symbol": "EURUSD",
+            "entry": "Out",
+            "type": "Buy",
+            "profit": 25.0,
+            "commission": -1.0,
+            "swap": -0.5,
+            "exit_trigger": "TP",
+            "time": "2026-01-01 12:00",
+        },
+        {
+            "ticket": 2,
+            "symbol": "GBPUSD",
+            "entry": "Out",
+            "type": "Sell",
+            "profit": -10.0,
+            "commission": -0.5,
+            "swap": 0.0,
+            "exit_trigger": "SL",
+            "time": "2026-01-02 09:00",
+        },
+    ]
+
+    with patch(
+        "mtdata.core.trading.account._run_trade_history_request",
+        return_value={
+            "success": True,
+            "count": len(history_rows),
+            "items": history_rows,
+        },
+    ):
+        out = trade_journal_analyze(detail="summary", __cli_raw=True)
+
+    assert list(out["breakdowns"]) == ["by_symbol", "by_side"]
+    assert set(out["breakdowns"]["by_side"][0]) == {
+        "side",
+        "closed_deals",
+        "win_rate",
+        "net_pnl",
+        "expectancy",
+    }
     assert "by_exit_trigger" not in out["breakdowns"]
     assert "best_trades" not in out
     assert "worst_trades" not in out

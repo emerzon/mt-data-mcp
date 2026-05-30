@@ -207,8 +207,9 @@ class TradeJournalAnalyzeRequest(BaseModel):
     detail: CompactFullDetailLiteral = Field(
         default="compact",
         description=(
-            "Response detail level. Compact returns summary plus a concise "
-            "symbol breakdown; full includes all breakdowns and trade lists."
+            "Response detail level. Compact returns summary only; standard adds "
+            "symbol aggregates; summary adds symbol and side aggregates; full "
+            "includes expanded breakdowns and trade lists."
         ),
     )
     start: Optional[str] = None

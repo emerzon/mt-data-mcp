@@ -205,19 +205,35 @@ def _trade_journal_breakdowns(
     limit: int,
     detail: str,
 ) -> Dict[str, List[Dict[str, Any]]]:
+    if detail == "compact":
+        return {}
+
     by_symbol = _build_trade_journal_breakdown(
         rows,
         key_name="symbol",
         label_name="symbol",
         limit=limit,
     )
-    if detail != "full":
-        return {
+    if detail in {"standard", "summary"}:
+        breakdowns = {
             "by_symbol": _compact_trade_journal_breakdown(
                 by_symbol,
                 label_name="symbol",
             )
         }
+        if detail == "summary":
+            by_side = _build_trade_journal_breakdown(
+                rows,
+                key_name="side",
+                label_name="side",
+                limit=limit,
+            )
+            breakdowns["by_side"] = _compact_trade_journal_breakdown(
+                by_side,
+                label_name="side",
+            )
+        return breakdowns
+
     return {
         "by_symbol": by_symbol,
         "by_side": _build_trade_journal_breakdown(
@@ -335,15 +351,15 @@ def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str,
     if isinstance(message, str) and message.strip() and not raw_rows:
         breakdown_limit = int(max(1, int(request.breakdown_limit)))
         sample_warning = _trade_journal_sample_warning(0)
-        return {
+        breakdowns = _trade_journal_breakdowns(
+            [],
+            limit=breakdown_limit,
+            detail=detail_mode,
+        )
+        payload = {
             "success": True,
             **period_context,
             "summary": _trade_journal_metrics([]),
-            "breakdowns": _trade_journal_breakdowns(
-                [],
-                limit=breakdown_limit,
-                detail=detail_mode,
-            ),
             "message": message,
             "meta": {
                 "history_rows": 0,
@@ -352,6 +368,9 @@ def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str,
             },
             "sample_warning": sample_warning,
         }
+        if breakdowns:
+            payload["breakdowns"] = breakdowns
+        return payload
 
     rows = [row for row in raw_rows if isinstance(row, dict)]
     analyzed_rows: List[Dict[str, Any]] = []
@@ -382,15 +401,15 @@ def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str,
     breakdown_limit = int(max(1, int(request.breakdown_limit)))
     if not analyzed_rows:
         sample_warning = _trade_journal_sample_warning(len(analyzed_rows))
-        return {
+        breakdowns = _trade_journal_breakdowns(
+            [],
+            limit=breakdown_limit,
+            detail=detail_mode,
+        )
+        payload = {
             "success": True,
             **period_context,
             "summary": _trade_journal_metrics([]),
-            "breakdowns": _trade_journal_breakdowns(
-                [],
-                limit=breakdown_limit,
-                detail=detail_mode,
-            ),
             "message": "No realized exit deals found in the requested trade history.",
             "meta": {
                 "history_rows": int(len(rows)),
@@ -399,6 +418,9 @@ def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str,
             },
             **({"sample_warning": sample_warning} if sample_warning else {}),
         }
+        if breakdowns:
+            payload["breakdowns"] = breakdowns
+        return payload
 
     # Filter trades by P&L sign: wins have positive P&L, losses have negative P&L
     wins = [row for row in analyzed_rows if float(row.get("net_pnl") or 0.0) > 0.0]
@@ -414,21 +436,23 @@ def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str,
         losses,
         key=lambda row: float(row.get("net_pnl") or 0.0),
     )
+    breakdowns = _trade_journal_breakdowns(
+        analyzed_rows,
+        limit=breakdown_limit,
+        detail=detail_mode,
+    )
     payload = {
         "success": True,
         **period_context,
         "summary": _trade_journal_metrics(analyzed_rows),
-        "breakdowns": _trade_journal_breakdowns(
-            analyzed_rows,
-            limit=breakdown_limit,
-            detail=detail_mode,
-        ),
         "meta": {
             "history_rows": int(len(rows)),
             "exit_deals": int(len(analyzed_rows)),
             "breakdown_limit": breakdown_limit,
         },
     }
+    if breakdowns:
+        payload["breakdowns"] = breakdowns
     sample_warning = _trade_journal_sample_warning(len(analyzed_rows))
     if sample_warning:
         payload["sample_warning"] = sample_warning
