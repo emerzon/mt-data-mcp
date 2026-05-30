@@ -1474,7 +1474,10 @@ def test_forecast_conformal_intervals_success_and_errors(monkeypatch):
             }
         },
     )
-    monkeypatch.setattr(cf, "_forecast_impl", lambda **kwargs: {"forecast_price": [100.0, 101.0]})
+    def fake_forecast_impl(symbol, timeframe, method, horizon, params=None, denoise=None):
+        return {"forecast_price": [100.0, 101.0]}
+
+    monkeypatch.setattr(cf, "_forecast_impl", fake_forecast_impl)
 
     out = raw(
         request=ForecastConformalIntervalsRequest(
@@ -1566,7 +1569,7 @@ def test_run_forecast_conformal_intervals_routes_method_params_consistently():
     assert captured["backtest"]["params_per_method"] == {"theta": {"seasonality": 24}}
     assert "params" not in captured["backtest"]
     assert captured["forecast"]["params"] == {"seasonality": 24}
-    assert captured["forecast"]["detail"] == "full"
+    assert "detail" not in captured["forecast"]
     assert result["detail"] == "full"
 
 

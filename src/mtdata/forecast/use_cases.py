@@ -1486,7 +1486,6 @@ def run_forecast_conformal_intervals(
             horizon=int(request.horizon),
             params=request.params,
             denoise=request.denoise,
-            detail=detail_value,
         ))
         yhat = out.get("forecast_price") or []
         if not yhat:
