@@ -132,10 +132,10 @@ pip install statsforecast              # For StatsForecast models
 pip install arch                       # For GARCH
 pip install statsmodels                # For ARIMA/ETS + causal_discover_signals
 pip install umap-learn                 # For UMAP dimred (Web UI / analysis)
-pip install gluonts[torch]             # For Lag-Llama (pretrained)
+pip install gluonts[torch]             # For Lag-Llama (manual/nonstandard)
 pip install QuantLib                   # For barrier option pricing & Heston calibration
 pip install optuna                     # For Bayesian hyperparameter tuning
-pip install neuralforecast torch       # For NHiTS, TFT, PatchTST, NBEATSx
+pip install neuralforecast torch       # For neural models; may not resolve on Windows Python 3.14
 pip install -e .[forecast-timesfm]     # From the repo root; installs the TimesFM Git-backed extra
 # Lag-Llama may require a separate Python env due to upstream pins (see `requirements.txt`).
 ```
@@ -353,31 +353,24 @@ MTDATA_CLI_DEBUG=1 mtdata-cli forecast_generate EURUSD --horizon 12
 
 If a Git-backed extra still fails, leave it out and use the rest of mtdata without that integration. For pretrained forecasts, `chronos2` and `chronos_bolt` remain available from the stable install path.
 
-### Optional Native Accelerator Source Build Fails
+### Optional hnswlib Source Build Fails
 
-**Symptom:** `pip install -r requirements-optional-src.txt` fails while building `hnswlib` or `tsdownsample` on Python 3.14.
+**Symptom:** `pip install -r requirements-optional-src.txt` fails while building `hnswlib` on Python 3.14.
 
 **What this path is for:**
 - `hnswlib`: optional accelerator for `search_engine=hnsw`
-- `tsdownsample`: optional accelerator for faster LTTB simplification
 
 **Requirements by package:**
-1. `hnswlib`
-   - Visual Studio Build Tools 2022 with the **Desktop development with C++** workload
-2. `tsdownsample`
-   - Visual Studio Build Tools 2022 with the **Desktop development with C++** workload
-   - Rust toolchain installed via `rustup`
+- Visual Studio Build Tools 2022 with the **Desktop development with C++** workload
 
 **Recommended recovery steps:**
 ```bash
-# Install only the package you need first
 pip install hnswlib==0.8.0
-pip install tsdownsample==0.1.4.1
 ```
 
-If `tsdownsample` fails and you do not want to install Rust, leave it out. mtdata already falls back to the built-in Python simplification path.
-
 If `hnswlib` fails, leave it out and use `search_engine=ckdtree` instead.
+
+`tsdownsample` is no longer part of this source-build helper. It is included in the full package-index install path and can also be installed directly with `pip install "tsdownsample>=0.1.5"`. If it is absent, mtdata falls back to the built-in Python simplification path.
 
 ### QuantLib Import Error
 
@@ -416,7 +409,7 @@ pip install optuna
 ```bash
 pip install neuralforecast torch
 ```
-These models require PyTorch. GPU is recommended for training speed but not required.
+These models require PyTorch and a NeuralForecast dependency stack compatible with your Python version. On Windows Python 3.14, current releases may fail to resolve because some transitive dependencies do not publish compatible wheels.
 
 ---
 
@@ -434,7 +427,7 @@ These models require PyTorch. GPU is recommended for training speed but not requ
 | QuantLib import error | `pip install QuantLib` |
 | Finviz empty data | Check network / firewall (finvizfinance is pre-installed) |
 | Optuna not found | `pip install optuna` |
-| Neural models unavailable | `pip install neuralforecast torch` |
+| Neural models unavailable | Use `forecast_list_methods --json`; NeuralForecast is manual/nonstandard on Windows Python 3.14 |
 
 ---
 

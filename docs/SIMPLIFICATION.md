@@ -64,7 +64,7 @@ Notes:
 
 ### LTTB (`method=lttb`)
 **Largest-Triangle-Three-Buckets** downsampling preserves visual shape well for plotting.
-mtdata uses `tsdownsample` when available and falls back to the built-in Python implementation otherwise. The default Python 3.14 environment uses the fallback path. If you want the optional accelerator on 3.14, use the opt-in native/source-build path in [SETUP.md](SETUP.md).
+mtdata uses `tsdownsample` when available and falls back to the built-in Python implementation otherwise. The full Python 3.14 package-index install path includes `tsdownsample>=0.1.5`; lean installs can add it directly with `pip install "tsdownsample>=0.1.5"`.
 
 Recommended parameters:
 - `points` (or `ratio`)

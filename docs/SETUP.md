@@ -18,7 +18,6 @@ Use this guide to install mtdata, connect it to MetaTrader 5, and verify a safe 
 - **Python:** 3.14
 - **MetaTrader 5:** Installed and running
 - **Windows Build Tools:** Visual Studio Build Tools 2022 with the **Desktop development with C++** workload for `pip install -r requirements.txt`, Git-backed extras, and optional native accelerators
-- **Rust toolchain (optional):** Required only if you opt into the `tsdownsample` source-build path described below
 
 ---
 
@@ -73,7 +72,7 @@ pip install -r requirements.txt
 ```
 
 This path intentionally stays on package-index releases. Git-backed add-ons such as TimesFM, `stock-pattern`, and `ycnbc` stay opt-in so the default install does not depend on Git checkouts.
-NeuralForecast-based models are also kept out of this default path; if you want `nhits`, `tft`, `patchtst`, or `nbeatsx`, install them manually with `pip install neuralforecast torch`.
+NeuralForecast-based models are also kept out of this default path; current Windows Python 3.14 resolution can fail on transitive dependencies, so treat `nhits`, `tft`, `patchtst`, and `nbeatsx` as manual/nonstandard setup.
 
 ### 4. Optional Dependencies
 
@@ -111,17 +110,17 @@ Feature notes:
   - Lag-Llama (`lag_llama`): documented for completeness, but not part of the supported Python 3.14 environment because `gluonts`/Lag-Llama are still constrained by upstream compatibility
 - Forecasting libraries: `statsforecast`, `sktime`, `mlforecast` (plus `lightgbm` for GBMs)
 - Volatility (GARCH/ARCH): `arch`
-- Optional pattern/simplification accelerators omitted from the default Python 3.14 install: `hnswlib`, `tsdownsample` (see the opt-in helper file `requirements-optional-src.txt` below)
+- Simplification accelerator: `tsdownsample` is included in the full package-index install path (`requirements.txt` / `[all]`) and remains optional for lean installs
+- Optional pattern-search accelerator omitted from the default Python 3.14 install: `hnswlib` (see the opt-in helper file `requirements-optional-src.txt` below)
 - Barrier option pricing & Heston calibration: `QuantLib`
 - Bayesian hyperparameter optimization: `optuna`
-- Neural network forecasters (`nhits`, `tft`, `patchtst`, `nbeatsx`): manual install only via `pip install neuralforecast torch`; not included in `requirements.txt` or a package extra
+- Neural network forecasters (`nhits`, `tft`, `patchtst`, `nbeatsx`): manual/nonstandard setup only; not included in `requirements.txt` or a package extra
 
 ### 5. Optional Native Accelerator Source-Build Path
 
-Use this only if you explicitly want the extra accelerators that are omitted from the validated default Python 3.14 stack:
+Use this only if you explicitly want the extra accelerator that is omitted from the validated default Python 3.14 stack:
 
 - `hnswlib` for the `hnsw` analog-search engine
-- `tsdownsample` for faster LTTB simplification
 
 Helper file:
 
@@ -132,12 +131,11 @@ pip install -r requirements-optional-src.txt
 Notes:
 
 - This path is opt-in and not part of the project's supported default Python 3.14 environment.
-- On Python 3.14, pip may build these packages from source when a compatible wheel is unavailable.
+- On Python 3.14, pip builds `hnswlib` from source because a compatible Windows wheel is unavailable.
 - `hnswlib` is a C++ extension build. On Windows, install Visual Studio Build Tools 2022 with the **Desktop development with C++** workload first.
-- `tsdownsample` is a Rust/maturin build. On Windows, install both the Visual Studio C/C++ build tools and a Rust toolchain via `rustup`.
-- If you only want one accelerator, install it directly instead of the helper file:
+- If you only want this accelerator, install it directly instead of the helper file:
   - `pip install hnswlib==0.8.0`
-  - `pip install tsdownsample==0.1.4.1`
+- If you want the LTTB simplification accelerator without the full `[all]` extra, install it directly with `pip install "tsdownsample>=0.1.5"`.
 
 Tip: `mtdata-cli forecast_list_methods --json` shows `available` and `requires` per method.
 
