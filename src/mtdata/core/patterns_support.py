@@ -401,6 +401,17 @@ def _compact_patterns_payload(
     except Exception:
         total_i = len(rows)
 
+    confidence_values = [
+        float(conf)
+        for conf in (_safe_float(row.get("confidence")) for row in rows)
+        if conf is not None and np.isfinite(conf)
+    ]
+    strong_patterns = int(sum(1 for conf in confidence_values if conf >= 0.7))
+    avg_confidence = (
+        _round_value(sum(confidence_values) / len(confidence_values))
+        if confidence_values
+        else None
+    )
     signal_bias = _summarize_pattern_bias(rows)
     signal: Dict[str, Any] = {}
     if signal_bias:
@@ -517,6 +528,18 @@ def _compact_patterns_payload(
     if top_patterns:
         compact["top_patterns"] = top_patterns
     if total_i > len(top_patterns):
+        compact["patterns_shown"] = len(top_patterns)
+        compact["patterns_omitted"] = max(0, total_i - len(top_patterns))
+        compact["strong_patterns"] = strong_patterns
+        if signal_bias:
+            distribution = {
+                "bullish": int(signal_bias.get("bullish_patterns") or 0),
+                "bearish": int(signal_bias.get("bearish_patterns") or 0),
+                "neutral": int(signal_bias.get("neutral_patterns") or 0),
+            }
+            if avg_confidence is not None:
+                distribution["avg_confidence"] = avg_confidence
+            compact["pattern_distribution"] = distribution
         compact["hints"] = {"set": {"detail": "standard"}}
         compact["show_all_hint"] = "Set detail='standard' to show all detected patterns."
 

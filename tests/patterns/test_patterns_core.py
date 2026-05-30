@@ -749,6 +749,7 @@ def test_build_pattern_response_compact_adds_hint_when_rows_are_truncated():
             "name": f"Pattern {i}",
             "status": "forming",
             "confidence": 0.9 - (i * 0.01),
+            "bias": "bullish" if i < 4 else "bearish",
             "end_index": min(i, len(df) - 1),
         }
         for i in range(9)
@@ -768,6 +769,14 @@ def test_build_pattern_response_compact_adds_hint_when_rows_are_truncated():
     )
 
     assert len(compact["top_patterns"]) == 3
+    assert compact["patterns_shown"] == 3
+    assert compact["patterns_omitted"] == 6
+    assert compact["strong_patterns"] == 9
+    distribution = compact["pattern_distribution"]
+    assert distribution["bullish"] == 4
+    assert distribution["bearish"] == 5
+    assert distribution["neutral"] == 0
+    assert distribution["avg_confidence"] == pytest.approx(0.86)
     assert compact["hints"] == {"set": {"detail": "standard"}}
     assert compact["show_all_hint"] == (
         "Set detail='standard' to show all detected patterns."
