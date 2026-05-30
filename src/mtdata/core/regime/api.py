@@ -2325,15 +2325,18 @@ def regime_detect(  # noqa: C901
                 )
 
             # Build payload - single regime for the window
+            trend_strength_out = round(trend_strength, 4)
+            efficiency_ratio_out = round(efficiency_ratio, 4)
+            window_move_pct = round((move / base_price) * 100.0, 4)
             regime_info = {
                 "state": regime_state,
                 "direction": direction,
                 "direction_basis": "net_window_move",
                 "interpretation": interpretation,
-                "trend_strength": round(trend_strength, 4),
-                "efficiency_ratio": round(efficiency_ratio, 4),
+                "trend_strength": trend_strength_out,
+                "efficiency_ratio": efficiency_ratio_out,
                 "window_bars": int(window_bars),
-                "window_move_pct": round((move / base_price) * 100.0, 4),
+                "window_move_pct": window_move_pct,
                 "signal_source": "price",
             }
             if state_note:
@@ -2385,25 +2388,12 @@ def regime_detect(  # noqa: C901
                 "direction": direction,
             }
             regime_payload = dict(regime_info)
-            if output == "compact":
-                regime_payload = {
-                    key: regime_payload[key]
-                    for key in (
-                        "state",
-                        "direction",
-                        "trend_strength",
-                        "efficiency_ratio",
-                        "window_bars",
-                        "window_move_pct",
-                    )
-                    if key in regime_payload
-                }
 
             reliability = _common_reliability(
                 {
                     "confidence": regime_confidence,
-                    "trend_strength": round(trend_strength, 4),
-                    "efficiency_ratio": round(efficiency_ratio, 4),
+                    "trend_strength": trend_strength_out,
+                    "efficiency_ratio": efficiency_ratio_out,
                 },
                 source="rule_based_trend_efficiency",
             )
@@ -2430,9 +2420,9 @@ def regime_detect(  # noqa: C901
                     int(regime_id): {
                         "label": regime_state,
                         "direction": direction,
-                        "trend_strength": round(trend_strength, 4),
-                        "efficiency_ratio": round(efficiency_ratio, 4),
-                        "window_move_pct": round((move / base_price) * 100.0, 4),
+                        "trend_strength": trend_strength_out,
+                        "efficiency_ratio": efficiency_ratio_out,
+                        "window_move_pct": window_move_pct,
                     }
                 },
                 "reliability": reliability,
@@ -2459,7 +2449,22 @@ def regime_detect(  # noqa: C901
                     "state": [int(regime_id)] * int(window_bars),
                 }
             if output == "compact":
-                payload.pop("params_used", None)
+                compact_current_regime = dict(current_regime)
+                compact_current_regime.update(
+                    {
+                        "trend_strength": trend_strength_out,
+                        "efficiency_ratio": efficiency_ratio_out,
+                        "window_move_pct": window_move_pct,
+                    }
+                )
+                payload = {
+                    "success": True,
+                    "symbol": symbol,
+                    "timeframe": timeframe,
+                    "method": method,
+                    "target": target,
+                    "current_regime": compact_current_regime,
+                }
 
             return _finish(payload)
 

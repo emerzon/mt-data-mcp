@@ -559,24 +559,22 @@ def test_rule_based_compact_omits_explanatory_fields() -> None:
             params={"window_bars": 60},
         )
 
-    regime = out["regime"]
-    assert {"state", "direction", "efficiency_ratio"}.issubset(regime)
-    assert regime["state"] == "ranging"
-    assert regime["direction"] == "bearish"
-    assert out["current_regime"]["bars"] == 60
-    assert out["current_regime"]["label"] == "ranging"
-    assert "state" not in out["current_regime"]
-    assert "interpretation" not in regime
-    assert "note" not in regime
-    assert "signal_source" not in regime
+    current_regime = out["current_regime"]
+    assert len(out) <= 7
+    assert current_regime["bars"] == 60
+    assert current_regime["label"] == "ranging"
+    assert current_regime["direction"] == "bearish"
+    assert current_regime["regime_confidence"] == pytest.approx(0.8029)
+    assert "state" not in current_regime
+    assert "efficiency_ratio" in current_regime
+    assert "trend_strength" in current_regime
+    assert "window_move_pct" in current_regime
+    assert "regime" not in out
+    assert "regimes" not in out
+    assert "regime_info" not in out
+    assert "reliability" not in out
+    assert "total_regimes" not in out
     assert "params_used" not in out
-    assert (
-        out["current_regime"]["regime_confidence"]
-        == out["regimes"][0]["regime_confidence"]
-    )
-    assert out["regimes"][0]["start"] == out["current_regime"]["since"]
-    assert out["regime_info"][out["current_regime"]["regime_id"]]["label"] == "ranging"
-    assert out["total_regimes"] == 1
 
 
 def test_rule_based_warns_for_inapplicable_parameters() -> None:
