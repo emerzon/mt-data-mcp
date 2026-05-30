@@ -14,7 +14,6 @@ from ..shared.schema import CompactFullDetailLiteral
 from ..shared.symbols import is_probably_crypto_symbol
 from ..utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise
 from ..utils.mt5_enums import decode_mt5_enum_label
-from ..utils.utils import _format_time_minimal
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway
@@ -165,6 +164,21 @@ def _normalize_time(dt: datetime) -> datetime:
     return dt.replace(second=0, microsecond=0)
 
 
+def _format_utc_iso_z(dt: datetime) -> str:
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return (
+        dt.astimezone(timezone.utc)
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
+
+
+def _format_local_iso(dt: datetime) -> str:
+    return dt.replace(second=0, microsecond=0).isoformat()
+
+
 def _format_duration(minutes: int) -> str:
     """Format minutes into human-readable duration."""
     if minutes < 60:
@@ -196,7 +210,7 @@ def _format_market_time(value: Any, display: str) -> Any:
         return value
     if dt.tzinfo is None:
         return value
-    return dt.astimezone(timezone.utc).isoformat()
+    return _format_utc_iso_z(dt)
 
 
 def _apply_market_timezone_display(
@@ -208,7 +222,7 @@ def _apply_market_timezone_display(
     if display != "utc":
         return status
     out = dict(status)
-    out["display_time"] = now_local.astimezone(timezone.utc).strftime("%H:%M")
+    out["display_time"] = _format_utc_iso_z(now_local)
     for key in ("next_open", "next_close"):
         if key in out:
             out[key] = _format_market_time(out[key], display)
@@ -295,7 +309,7 @@ def _check_market_status(market_id: str, now_local: datetime) -> Dict[str, Any]:
             "name": market["name"],
             "status": "closed",
             "reason": "weekend",
-            "local_time": now_local.strftime("%H:%M"),
+            "local_time": _format_local_iso(now_local),
             "message": f"{market_id}: Closed (opening in {_format_duration(minutes_until)})",
             "next_open": next_open.isoformat(),
             "minutes_until_open": minutes_until,
@@ -318,7 +332,7 @@ def _check_market_status(market_id: str, now_local: datetime) -> Dict[str, Any]:
             "status": "closed",
             "reason": "holiday",
             "holiday": holiday_name,
-            "local_time": now_local.strftime("%H:%M"),
+            "local_time": _format_local_iso(now_local),
             "message": f"{market_id}: Closed - Holiday ({holiday_name}, opening in {_format_duration(minutes_until)})",
             "next_open": next_open.isoformat(),
             "minutes_until_open": minutes_until,
@@ -341,7 +355,7 @@ def _check_market_status(market_id: str, now_local: datetime) -> Dict[str, Any]:
             "symbol": market_id,
             "name": market["name"],
             "status": "pre_market",
-            "local_time": now_local.strftime("%H:%M"),
+            "local_time": _format_local_iso(now_local),
             "message": f"{market_id}: Pre-market (opening in {_format_duration(minutes_until_open)})",
             "next_open": open_time.isoformat(),
             "minutes_until_open": minutes_until_open,
@@ -358,7 +372,7 @@ def _check_market_status(market_id: str, now_local: datetime) -> Dict[str, Any]:
                 "symbol": market_id,
                 "name": market["name"],
                 "status": "lunch_break",
-                "local_time": now_local.strftime("%H:%M"),
+                "local_time": _format_local_iso(now_local),
                 "message": f"{market_id}: Lunch break (resuming in {_format_duration(minutes_until_resume)})",
                 "next_open": lunch_end.isoformat(),
                 "minutes_until_open": minutes_until_resume,
@@ -371,7 +385,7 @@ def _check_market_status(market_id: str, now_local: datetime) -> Dict[str, Any]:
             "symbol": market_id,
             "name": market["name"],
             "status": "open",
-            "local_time": now_local.strftime("%H:%M"),
+            "local_time": _format_local_iso(now_local),
             "message": f"{market_id}: Open (closing in {_format_duration(minutes_until_close)})",
             "next_close": close_time.isoformat(),
             "minutes_until_close": minutes_until_close,
@@ -386,7 +400,7 @@ def _check_market_status(market_id: str, now_local: datetime) -> Dict[str, Any]:
         "name": market["name"],
         "status": "closed",
         "reason": "after_hours",
-        "local_time": now_local.strftime("%H:%M"),
+        "local_time": _format_local_iso(now_local),
         "message": f"{market_id}: Closed (opening in {_format_duration(minutes_until)})",
         "next_open": next_open.isoformat(),
         "minutes_until_open": minutes_until,
@@ -613,7 +627,9 @@ def _symbol_tick_snapshot(tick: Any, *, now_utc: datetime) -> Dict[str, Any]:
         try:
             tick_epoch = float(tick_time)
             age_seconds = max(0.0, now_utc.timestamp() - tick_epoch)
-            out["last_tick_time"] = _format_time_minimal(tick_epoch)
+            out["last_tick_time"] = _format_utc_iso_z(
+                datetime.fromtimestamp(tick_epoch, tz=timezone.utc)
+            )
             out["last_tick_age_seconds"] = round(age_seconds, 3)
             out["tick_freshness"] = "fresh" if age_seconds <= 300.0 else "stale"
         except (OSError, OverflowError, TypeError, ValueError):
@@ -843,7 +859,7 @@ def _check_symbol_market_status(
         "trades_on_weekends": schedule_status.get("trades_on_weekends"),
         "inferred_24_7": schedule_status.get("inferred_24_7"),
         "message": message,
-        "timestamp": _format_time_minimal(now_utc.timestamp()),
+        "data_fetched_at": _format_utc_iso_z(now_utc),
         "timezone": "UTC",
     }
     if reason:
@@ -908,7 +924,7 @@ def market_status(
     -------
     dict
         Response containing:
-        - `timestamp`: Current UTC time (`YYYY-MM-DD HH:MM`)
+        - `data_fetched_at`: Current UTC time (ISO 8601, `Z` suffix)
         - `day_of_week`: Current day name (e.g., "Tuesday")
         - `summary`: Human-readable summary of market statuses (e.g., "1 market open: NYSE; 3 pre-market: LSE, XETRA, EURONEXT; 5 closed")
         - `markets_open`: Count of markets currently open
@@ -928,8 +944,8 @@ def market_status(
             - `name`: Full market name
             - `status`: "open", "closed", "pre_market", "lunch_break"
             - `reason`: Reason if closed ("weekend", "holiday", "after_hours")
-            - `local_time`: Current time in market's timezone (HH:MM)
-            - `display_time`: Current display time (HH:MM) when
+            - `local_time`: Current time in market's timezone (ISO 8601)
+            - `display_time`: Current display time (ISO 8601) when
               `timezone_display="utc"`
             - `message`: Human-readable status in `detail="full"`
             - `next_open` / `next_close`: ISO timestamp of next event
@@ -1041,7 +1057,7 @@ def market_status(
 
         payload = {
             "success": True,
-            "timestamp": _format_time_minimal(now_utc.timestamp()),
+            "data_fetched_at": _format_utc_iso_z(now_utc),
             "timezone": "UTC",
             "day_of_week": now_utc.strftime("%A"),
             "region": region or "all",

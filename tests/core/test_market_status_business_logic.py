@@ -39,9 +39,9 @@ def test_market_status_timezone_display_utc_converts_market_times(monkeypatch) -
     assert result["timezone"] == "UTC"
     assert {market["symbol"] for market in result["markets"]} == {"NYSE", "NASDAQ"}
     for market in result["markets"]:
-        assert market["local_time"] == "10:00"
-        assert market["display_time"] == "15:00"
-        assert market["next_close"] == "2024-01-02T21:00:00+00:00"
+        assert market["local_time"] == "2024-01-02T10:00:00-05:00"
+        assert market["display_time"] == "2024-01-02T15:00:00Z"
+        assert market["next_close"] == "2024-01-02T21:00:00Z"
 
 
 def test_market_status_uses_utc_weekend_for_closed_reason(monkeypatch) -> None:
@@ -66,7 +66,7 @@ def test_market_status_uses_utc_weekend_for_closed_reason(monkeypatch) -> None:
     result = raw(region="all", detail="full")
 
     assert result["success"] is True
-    assert result["timestamp"] == "2026-04-25 03:18"
+    assert result["data_fetched_at"] == "2026-04-25T03:18:00Z"
     assert result["global_status"] == "weekend"
     assert result["closed_reason_counts"] == {"weekend": 9}
     reasons_by_symbol = {
@@ -134,8 +134,8 @@ def test_market_status_symbol_mode_reports_heuristic_status(monkeypatch) -> None
     assert result["trade_mode_allows_opening"] is True
     assert result["tick_freshness"] == "fresh"
     assert result["tick_available"] is True
-    assert result["timestamp"] == "2024-01-02 12:00"
-    assert result["last_tick_time"] == "2024-01-02 12:00"
+    assert result["data_fetched_at"] == "2024-01-02T12:00:00Z"
+    assert result["last_tick_time"] == "2024-01-02T12:00:00Z"
 
 
 def test_market_status_symbol_mode_blocks_weekend_opening(monkeypatch) -> None:
