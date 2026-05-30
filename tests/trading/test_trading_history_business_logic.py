@@ -542,7 +542,36 @@ def test_trade_history_deals_extracts_exit_trigger_from_comment() -> None:
     assert row["exit_trigger"] == "SL"
     assert row["exit_trigger_price"] == 64654.92
     assert row["action"] == "close"
-    assert row["exit_trigger_source"] == "SL"
+    assert "exit_trigger_source" not in row
+
+
+def test_trade_history_full_reports_comment_exit_trigger_source() -> None:
+    mt5, prev = _install_mock_mt5()
+    mt5.DEAL_ENTRY_OUT = 1
+    mt5.DEAL_REASON_CLIENT = 0
+    Deal = namedtuple(
+        "Deal", ["ticket", "time", "symbol", "entry", "reason", "comment"]
+    )
+    mt5.history_deals_get.return_value = [
+        Deal(
+            ticket=1,
+            time=1700000000,
+            symbol="EURUSD",
+            entry=1,
+            reason=0,
+            comment="[tp 1.12345]",
+        )
+    ]
+
+    with patch("mtdata.core.trading.account._use_client_tz", lambda: False):
+        out = trade_history(history_kind="deals", detail="full", __cli_raw=True)
+    if prev is not None:
+        sys.modules["MetaTrader5"] = prev
+
+    row = out["items"][0]
+    assert row["exit_trigger"] == "TP"
+    assert row["exit_trigger_price"] == 1.12345
+    assert row["exit_trigger_source"] == "comment_tag"
 
 
 def test_trade_history_deals_extracts_exit_trigger_from_reason_when_comment_missing() -> (
@@ -566,7 +595,7 @@ def test_trade_history_deals_extracts_exit_trigger_from_reason_when_comment_miss
     ]
 
     with patch("mtdata.core.trading.account._use_client_tz", lambda: False):
-        out = trade_history(history_kind="deals", __cli_raw=True)
+        out = trade_history(history_kind="deals", detail="full", __cli_raw=True)
     if prev is not None:
         sys.modules["MetaTrader5"] = prev
 
@@ -574,7 +603,7 @@ def test_trade_history_deals_extracts_exit_trigger_from_reason_when_comment_miss
     assert row["exit_trigger"] == "TP"
     assert "exit_trigger_price" not in row
     assert row["action"] == "close"
-    assert row["exit_trigger_source"] == "TP"
+    assert row["exit_trigger_source"] == "mt5_reason"
 
 
 def test_trade_history_deals_drops_non_informative_noise_columns() -> None:

@@ -435,7 +435,6 @@ _TRADE_HISTORY_COMPACT_DEAL_FIELDS = (
     "comment_truncated",
     "exit_trigger",
     "exit_trigger_price",
-    "exit_trigger_source",
 )
 _TRADE_HISTORY_COMPACT_ORDER_FIELDS = (
     "time_setup",

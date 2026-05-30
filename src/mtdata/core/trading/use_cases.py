@@ -1916,7 +1916,7 @@ def run_trade_history(  # noqa: C901
                                 price = float(match.group(2))
                             except Exception:
                                 price = None
-                    return reason_trigger, price, reason_trigger
+                    return reason_trigger, price, "mt5_reason"
                 if isinstance(comment, str) and comment:
                     match = trigger_pattern.search(comment)
                     if match:
@@ -1925,7 +1925,7 @@ def run_trade_history(  # noqa: C901
                             price = float(match.group(2))
                         except Exception:
                             price = None
-                        return trigger, price, trigger
+                        return trigger, price, "comment_tag"
                 return None, None, None
 
             def _filter_by_ticket_columns(
