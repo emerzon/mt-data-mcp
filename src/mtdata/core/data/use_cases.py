@@ -483,7 +483,21 @@ def _compact_tick_rows_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         compact["data"] = [_compact_tick_row(row) for row in rows]
         compact["count"] = len(compact["data"])
         units = compact.get("units")
-        compact_units = dict(units) if isinstance(units, dict) else {}
+        present_fields = {
+            key
+            for row in compact["data"]
+            if isinstance(row, dict)
+            for key in row.keys()
+        }
+        compact_units = (
+            {
+                key: value
+                for key, value in units.items()
+                if key in present_fields
+            }
+            if isinstance(units, dict)
+            else {}
+        )
         for field in ("bid", "ask", "spread"):
             if any(isinstance(row, dict) and field in row for row in compact["data"]):
                 compact_units.setdefault(field, "price")

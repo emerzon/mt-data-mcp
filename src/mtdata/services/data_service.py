@@ -1862,6 +1862,16 @@ def _one_sided_zero_spread_missing_side(bid: float, ask: float, flag_value: int)
     return None
 
 
+def _finite_or_none(value: Any) -> Optional[float]:
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(numeric):
+        return None
+    return numeric
+
+
 def _compact_tick_summary(out: Dict[str, Any]) -> Dict[str, Any]:
     spread = out.get("stats", {}).get("spread")
     compact_spread: Dict[str, Any] = {}
@@ -2035,22 +2045,14 @@ def fetch_ticks(  # noqa: C901
 
         full_rows = output_mode == "full_rows"
 
-        # Build header dynamically (time, bid, ask are always included)
+        # Keep row schemas stable; compact public output prunes unused fields.
         headers = ["time"]
         if full_rows:
             headers.append("time_epoch")
         headers.extend(["bid", "ask"])
         if full_rows:
             headers.extend(["mid", "spread", "tick_gap_ms"])
-        if has_last:
-            headers.append("last")
-        if has_volume:
-            headers.append("volume")
-        if has_real_volume:
-            headers.append("volume_real")
-        if has_flags:
-            headers.append("flags")
-            headers.append("flags_decoded")
+        headers.extend(["last", "volume", "volume_real", "flags", "flags_decoded"])
 
         # Choose a consistent time format for all rows.
         # Low-level tick fetch helpers already normalize MT5 times to UTC.
@@ -2091,17 +2093,13 @@ def fetch_ticks(  # noqa: C901
             df_ticks["mid"] = (df_ticks["bid"] + df_ticks["ask"]) / 2.0
             df_ticks["spread"] = df_ticks["ask"] - df_ticks["bid"]
             df_ticks["tick_gap_ms"] = tick_gap_ms
-        if has_last:
-            df_ticks["last"] = lasts
-        if has_volume:
-            df_ticks["volume"] = volumes
-        if has_real_volume:
-            df_ticks["volume_real"] = volumes_real
-        if has_flags:
-            df_ticks["flags"] = flags
-            df_ticks["flags_decoded"] = [
-                _decode_tick_flags(flag_value) for flag_value in flags
-            ]
+        df_ticks["last"] = lasts
+        df_ticks["volume"] = volumes
+        df_ticks["volume_real"] = volumes_real
+        df_ticks["flags"] = flags
+        df_ticks["flags_decoded"] = [
+            _decode_tick_flags(flag_value) for flag_value in flags
+        ]
         df_ticks["time"] = [_format_tick_time(e) for e in _epochs]
 
         def _add_tick_data_quality(payload: Dict[str, Any]) -> None:
@@ -2554,15 +2552,11 @@ def fetch_ticks(  # noqa: C901
                         gap_ms,
                     ]
                 )
-            if has_last:
-                values.append(_round_price_value(lasts[i], price_digits))
-            if has_volume:
-                values.append(volumes[i])
-            if has_real_volume:
-                values.append(volumes_real[i])
-            if has_flags:
-                values.append(flags[i])
-                values.append(_decode_tick_flags(flags[i]))
+            values.append(_round_price_value(_finite_or_none(lasts[i]), price_digits))
+            values.append(_finite_or_none(volumes[i]))
+            values.append(_finite_or_none(volumes_real[i]))
+            values.append(int(flags[i]) if flags[i] is not None else 0)
+            values.append(_decode_tick_flags(flags[i]))
             rows.append(values)
 
         table_payload = _table_from_rows(headers, rows)

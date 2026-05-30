@@ -2161,6 +2161,28 @@ class TestFetchTicks(unittest.TestCase):
     @patch(_CACHED_INFO, return_value=SimpleNamespace(digits=5))
     @patch(_RESOLVE_CTZ, return_value=None)
     @patch(_GUARD, _mock_symbol_guard)
+    def test_tick_rows_keep_optional_columns_when_values_absent(self, mock_ctz, mock_info, mock_ticks):
+        ticks = _make_ticks(2)
+        for tick in ticks:
+            tick.update({"last": 0.0, "volume": 0.0, "volume_real": 0.0, "flags": 1028})
+        mock_ticks.return_value = ticks
+
+        result = fetch_ticks('EURUSD', limit=2, format='full_rows')
+
+        self.assertTrue(result.get('success'))
+        row = result["data"][0]
+        for key in ("last", "volume", "volume_real", "flags", "flags_decoded"):
+            self.assertIn(key, row)
+        self.assertEqual(row["last"], 0.0)
+        self.assertEqual(row["volume"], 0.0)
+        self.assertEqual(row["volume_real"], 0.0)
+        self.assertEqual(row["flags"], 1028)
+        self.assertIn("volume_real", row["flags_decoded"])
+
+    @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=SimpleNamespace(digits=5))
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
     def test_one_sided_zero_spread_ticks_mark_missing_side(self, mock_ctz, mock_info, mock_ticks):
         ticks = _make_ticks(3)
         ticks[0].update({"bid": 1.1000, "ask": 1.1000, "flags": 4})
