@@ -3407,6 +3407,50 @@ def _filter_trade_query_magic(df: Any, request: Any) -> Any:
     return df.loc[mask].copy()
 
 
+def _filter_trade_query_profit(df: Any, request: Any, pd_module: Any) -> Any:
+    profit_only = bool(getattr(request, "profit_only", False))
+    loss_only = bool(getattr(request, "loss_only", False))
+    if not profit_only and not loss_only:
+        return df
+    profit = pd_module.to_numeric(
+        _pick_trade_series(df, pd_module, "profit"),
+        errors="coerce",
+    ).fillna(0.0)
+    if profit_only:
+        return df.loc[profit > 0.0].copy()
+    return df.loc[profit < 0.0].copy()
+
+
+def _sort_trade_query_close_priority(df: Any, request: Any, pd_module: Any) -> Any:
+    priority = str(getattr(request, "close_priority", "") or "").strip().lower()
+    if priority not in {"loss_first", "profit_first", "largest_first"}:
+        return df
+    sort_field = "volume" if priority == "largest_first" else "profit"
+    values = pd_module.to_numeric(
+        _pick_trade_series(df, pd_module, sort_field),
+        errors="coerce",
+    ).fillna(0.0)
+    out = df.copy()
+    out["__trade_query_sort"] = values
+    out = out.sort_values(
+        "__trade_query_sort",
+        ascending=priority == "loss_first",
+        kind="stable",
+    )
+    return out.drop(columns=["__trade_query_sort"])
+
+
+def _trade_query_empty_filter_message(request: Any) -> Optional[str]:
+    if bool(getattr(request, "profit_only", False)):
+        return "No rows matched profit_only=true"
+    if bool(getattr(request, "loss_only", False)):
+        return "No rows matched loss_only=true"
+    magic = getattr(request, "magic", None)
+    if magic is not None:
+        return f"No rows matched magic={magic}"
+    return None
+
+
 def _fetch_trade_query_rows(
     request: Any,
     *,
@@ -3488,10 +3532,13 @@ def _apply_trade_query_limit(
     time_utc: Any,
     limit: Any,
     normalize_limit: Any,
+    preserve_order: bool = False,
 ) -> Any:
     limit_value = normalize_limit(limit)
     if not limit_value or len(out_df) <= limit_value:
         return out_df
+    if preserve_order:
+        return out_df.head(limit_value).copy()
     sorted_index = (
         time_utc.sort_values(
             kind="stable",
@@ -3684,12 +3731,19 @@ def _run_trade_query_impl(
         if empty_response is not None:
             return Ok(empty_response)
 
+        if bool(getattr(request, "profit_only", False)) and bool(
+            getattr(request, "loss_only", False)
+        ):
+            return Err("profit_only and loss_only cannot both be true.")
+
         df = _trade_rows_to_dataframe(rows, pd_module=pd_module)
         df = _filter_trade_query_magic(df, request)
+        df = _filter_trade_query_profit(df, request, pd_module)
+        df = _sort_trade_query_close_priority(df, request, pd_module)
         if len(df) == 0:
-            magic = getattr(request, "magic", None)
-            if magic is not None:
-                return Ok([{"message": f"No rows matched magic={magic}"}])
+            message = _trade_query_empty_filter_message(request)
+            if message is not None:
+                return Ok([{"message": message}])
         time_utc, time_txt = _build_trade_time_columns(
             df,
             time_source_fields=time_source_fields,
@@ -3720,6 +3774,7 @@ def _run_trade_query_impl(
             time_utc=time_utc,
             limit=request.limit,
             normalize_limit=normalize_limit,
+            preserve_order=bool(getattr(request, "close_priority", None)),
         )
         return Ok(out_df.to_dict(orient="records"))
     except Exception as exc:

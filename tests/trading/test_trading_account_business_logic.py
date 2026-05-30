@@ -413,6 +413,114 @@ def test_run_trade_get_open_filters_by_magic() -> None:
     assert out[0]["magic"] == 9
 
 
+def test_run_trade_get_open_filters_losses_and_orders_by_close_priority() -> None:
+    rows = [
+        SimpleNamespace(
+            ticket=1,
+            symbol="EURUSD",
+            time_update=1700000000,
+            type=0,
+            volume=0.1,
+            price_open=1.1,
+            sl=1.0,
+            tp=1.2,
+            price_current=1.15,
+            swap=0.0,
+            profit=5.0,
+            comment="winner",
+            magic=7,
+        ),
+        SimpleNamespace(
+            ticket=2,
+            symbol="EURUSD",
+            time_update=1700000060,
+            type=0,
+            volume=0.2,
+            price_open=1.2,
+            sl=1.1,
+            tp=1.3,
+            price_current=1.15,
+            swap=0.0,
+            profit=-7.0,
+            comment="larger loss",
+            magic=7,
+        ),
+        SimpleNamespace(
+            ticket=3,
+            symbol="EURUSD",
+            time_update=1700000120,
+            type=0,
+            volume=0.1,
+            price_open=1.3,
+            sl=1.2,
+            tp=1.4,
+            price_current=1.25,
+            swap=0.0,
+            profit=-1.0,
+            comment="smaller loss",
+            magic=7,
+        ),
+    ]
+    gateway = SimpleNamespace(
+        ensure_connection=lambda: None,
+        positions_get=lambda ticket=None, symbol=None: rows,
+        POSITION_TYPE_BUY=0,
+        POSITION_TYPE_SELL=1,
+    )
+
+    out = run_trade_get_open(
+        TradeGetOpenRequest(loss_only=True, close_priority="loss_first"),
+        gateway=gateway,
+        use_client_tz=lambda: False,
+        format_time_minimal=lambda ts: f"t{int(ts)}",
+        format_time_minimal_local=lambda ts: f"lt{int(ts)}",
+        mt5_epoch_to_utc=lambda ts: ts,
+        normalize_limit=lambda value: value,
+        comment_row_metadata=lambda comment: {},
+    )
+
+    assert [row["ticket"] for row in out] == [2, 3]
+    assert [row["profit"] for row in out] == [-7.0, -1.0]
+
+
+def test_run_trade_get_open_rejects_conflicting_profit_filters() -> None:
+    gateway = SimpleNamespace(
+        ensure_connection=lambda: None,
+        positions_get=lambda ticket=None, symbol=None: [
+            SimpleNamespace(
+                ticket=1,
+                symbol="EURUSD",
+                time_update=1700000000,
+                type=0,
+                volume=0.1,
+                price_open=1.1,
+                sl=1.0,
+                tp=1.2,
+                price_current=1.15,
+                swap=0.0,
+                profit=5.0,
+                comment="note",
+                magic=7,
+            )
+        ],
+        POSITION_TYPE_BUY=0,
+        POSITION_TYPE_SELL=1,
+    )
+
+    out = run_trade_get_open(
+        TradeGetOpenRequest(profit_only=True, loss_only=True),
+        gateway=gateway,
+        use_client_tz=lambda: False,
+        format_time_minimal=lambda ts: f"t{int(ts)}",
+        format_time_minimal_local=lambda ts: f"lt{int(ts)}",
+        mt5_epoch_to_utc=lambda ts: ts,
+        normalize_limit=lambda value: value,
+        comment_row_metadata=lambda comment: {},
+    )
+
+    assert out[0]["error"] == "profit_only and loss_only cannot both be true."
+
+
 def test_run_trade_get_pending_logs_finish_event(caplog) -> None:
     Order = namedtuple(
         "Order",

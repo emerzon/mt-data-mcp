@@ -291,6 +291,23 @@ class TradeGetOpenRequest(BaseModel):
     symbol: Optional[str] = None
     ticket: Optional[Union[int, str]] = None
     magic: Optional[int] = None
+    profit_only: bool = Field(
+        default=False,
+        description="Only return currently profitable open positions.",
+    )
+    loss_only: bool = Field(
+        default=False,
+        description="Only return currently losing open positions.",
+    )
+    close_priority: Optional[
+        Literal["loss_first", "profit_first", "largest_first"]
+    ] = Field(
+        default=None,
+        description=(
+            "Order matching open positions as trade_close would process them: "
+            "loss_first, profit_first, or largest_first."
+        ),
+    )
     limit: Optional[int] = 200
     detail: CompactFullDetailLiteral = Field(
         default="compact",
