@@ -234,7 +234,15 @@ def _stats_for_group(df: pd.DataFrame, volume_col: Optional[str]) -> Dict[str, A
 
 
 def _compact_temporal_stats(row: Dict[str, Any]) -> Dict[str, Any]:
-    keys = ("group", "bars", "avg_return", "median_return", "win_rate", "volatility")
+    keys = (
+        "group",
+        "group_label",
+        "bars",
+        "avg_return",
+        "median_return",
+        "win_rate",
+        "volatility",
+    )
     return {key: row.get(key) for key in keys if row.get(key) is not None}
 
 
@@ -288,7 +296,7 @@ def _compact_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
                 if best:
                     best_by_dimension[dimension] = {
                         key: best[key]
-                        for key in ("group", "avg_return", "win_rate")
+                        for key in ("group", "group_label", "avg_return", "win_rate")
                         if key in best
                     }
             out["groups"] = compact_groups
@@ -313,7 +321,7 @@ def _compact_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         if best:
             out["best"] = {
                 key: best[key]
-                for key in ("group", "avg_return", "win_rate")
+                for key in ("group", "group_label", "avg_return", "win_rate")
                 if key in best
             }
     elif isinstance(payload.get("overall"), dict):
@@ -420,6 +428,8 @@ def temporal_analyze(  # noqa: C901
     - volume: uses real_volume when available and non-zero, else tick_volume
 
     Returns grouped averages for returns and volatility plus simple extras.
+    Group keys are numeric: dow=1..7 (Mon..Sun), hour=0..23, month=1..12;
+    group_label contains the display label.
     Example: temporal_analyze(symbol="EURUSD", group_by="dow")
     Use group_by='all' for a single overall summary.
     """
@@ -648,17 +658,20 @@ def temporal_analyze(  # noqa: C901
                     row = _stats_for_group(grp, volume_col)
                     key_int = int(key)
                     if dimension == "dow":
-                        row["group"] = (
+                        row["group"] = key_int + 1
+                        row["group_label"] = (
                             _DOW_LABELS[key_int] if 0 <= key_int <= 6 else str(key)
                         )
                     elif dimension == "month":
-                        row["group"] = (
+                        row["group"] = key_int
+                        row["group_label"] = (
                             _MONTH_LABELS[key_int - 1]
                             if 1 <= key_int <= 12
                             else str(key)
                         )
                     else:
-                        row["group"] = f"{key_int:02d}:00"
+                        row["group"] = key_int
+                        row["group_label"] = f"{key_int:02d}:00"
                     row["_group_key"] = key_int
                     out_rows.append(row)
                 return out_rows
@@ -719,6 +732,7 @@ def temporal_analyze(  # noqa: C901
                     excluded_groups = [
                         {
                             "group": row.get("group"),
+                            "group_label": row.get("group_label"),
                             "bars": int(row.get("bars", 0) or 0),
                             "min_bars": int(min_bars_value),
                             "auto": bool(auto_min_bars),
