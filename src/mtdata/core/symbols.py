@@ -1204,149 +1204,70 @@ def _market_scan_freshness_summary(rows: List[Dict[str, Any]]) -> Dict[str, Any]
     return out
 
 
+_TOP_MARKETS_COMPACT_HEADERS = [
+    "symbol",
+    "group",
+    "timeframe",
+    "data_source",
+    "time",
+    "data_stale",
+    "bid",
+    "ask",
+    "spread_pct",
+    "spread_points",
+    "tick_volume",
+    "price_change_pct",
+]
+
+_TOP_MARKETS_FULL_HEADERS = [
+    "symbol",
+    "group",
+    "description",
+    "timeframe",
+    "data_source",
+    "time",
+    "data_age_seconds",
+    "data_freshness_seconds",
+    "stale_after_seconds",
+    "bar_age_hours",
+    "data_stale",
+    "warning",
+    "stale_warning",
+    "bid",
+    "ask",
+    "spread",
+    "spread_points",
+    "spread_pct",
+    "spread_cost_per_lot",
+    "spread_cost_currency",
+    "pricing_basis",
+    "open",
+    "close",
+    "tick_volume",
+    "real_volume",
+    "price_change_pct",
+]
+
+
 def _top_markets_headers(metric: str, *, detail_mode: str) -> List[str]:
-    full_headers = {
-        "spread": [
-            "symbol",
-            "group",
-            "description",
-            "data_source",
-            "time",
-            "data_age_seconds",
-            "stale_after_seconds",
-            "data_stale",
-            "warning",
-            "bid",
-            "ask",
-            "spread",
-            "spread_points",
-            "spread_pct",
-            "spread_cost_per_lot",
-            "spread_cost_currency",
-            "pricing_basis",
-        ],
-        "volume": [
-            "symbol",
-            "group",
-            "description",
-            "timeframe",
-            "data_source",
-            "time",
-            "data_freshness_seconds",
-            "stale_after_seconds",
-            "bar_age_hours",
-            "data_stale",
-            "stale_warning",
-            "tick_volume",
-            "real_volume",
-            "open",
-            "close",
-            "price_change_pct",
-        ],
-        "price_change": [
-            "symbol",
-            "group",
-            "description",
-            "timeframe",
-            "data_source",
-            "time",
-            "data_freshness_seconds",
-            "stale_after_seconds",
-            "bar_age_hours",
-            "data_stale",
-            "stale_warning",
-            "open",
-            "close",
-            "price_change_pct",
-            "tick_volume",
-            "real_volume",
-        ],
-    }
-    compact_headers = {
-        "spread": [
-            "symbol",
-            "group",
-            "data_source",
-            "time",
-            "data_stale",
-            "bid",
-            "ask",
-            "spread_pct",
-            "spread_points",
-        ],
-        "volume": [
-            "symbol",
-            "group",
-            "timeframe",
-            "data_source",
-            "time",
-            "data_stale",
-            "tick_volume",
-            "price_change_pct",
-        ],
-        "price_change": [
-            "symbol",
-            "group",
-            "timeframe",
-            "data_source",
-            "time",
-            "data_stale",
-            "price_change_pct",
-            "tick_volume",
-        ],
-    }
-    header_map = compact_headers if detail_mode == "compact" else full_headers
-    return list(header_map[metric])
+    _ = metric
+    if detail_mode == "compact":
+        return list(_TOP_MARKETS_COMPACT_HEADERS)
+    return list(_TOP_MARKETS_FULL_HEADERS)
 
 
 def _top_markets_all_headers(*, detail_mode: str) -> List[str]:
     compact_headers = [
         "rank_category",
         "rank",
-        "symbol",
-        "group",
-        "timeframe",
-        "data_source",
-        "time",
-        "data_stale",
-        "bid",
-        "ask",
-        "spread_pct",
-        "spread_points",
-        "tick_volume",
-        "price_change_pct",
+        *_TOP_MARKETS_COMPACT_HEADERS,
     ]
     if detail_mode == "compact":
         return compact_headers
     return [
         "rank_category",
         "rank",
-        "symbol",
-        "group",
-        "description",
-        "timeframe",
-        "data_source",
-        "time",
-        "data_age_seconds",
-        "data_stale",
-        "warning",
-        "data_freshness_seconds",
-        "stale_after_seconds",
-        "bar_age_hours",
-        "stale_warning",
-        "bid",
-        "ask",
-        "spread",
-        "spread_points",
-        "spread_pct",
-        "spread_cost_per_lot",
-        "spread_cost_currency",
-        "pricing_basis",
-        "open",
-        "close",
-        "tick_volume",
-        "real_volume",
-        "price_change_pct",
+        *_TOP_MARKETS_FULL_HEADERS,
     ]
 
 
@@ -1377,7 +1298,6 @@ def _compact_top_market_leaderboard_rows(
             **{
                 header: row.get(header)
                 for header in headers
-                if row.get(header) is not None
             },
         }
         for rank, row in enumerate(rows, start=1)

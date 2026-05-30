@@ -102,6 +102,16 @@ def _set_disabled_trade_mode(monkeypatch):
 
 
 class TestSymbolsTopMarkets:
+    def test_top_market_headers_are_stable_across_rankings(self):
+        from mtdata.core.symbols import _top_markets_headers
+
+        compact_headers = _top_markets_headers("spread", detail_mode="compact")
+        assert compact_headers == _top_markets_headers("volume", detail_mode="compact")
+        assert compact_headers == _top_markets_headers("price_change", detail_mode="compact")
+        full_headers = _top_markets_headers("spread", detail_mode="full")
+        assert full_headers == _top_markets_headers("volume", detail_mode="full")
+        assert full_headers == _top_markets_headers("price_change", detail_mode="full")
+
     @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
     @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
     @patch("mtdata.core.symbols.mt5.symbols_get")
@@ -185,6 +195,7 @@ class TestSymbolsTopMarkets:
         assert list(result["data"][0].keys()) == [
             "symbol",
             "group",
+            "timeframe",
             "data_source",
             "time",
             "data_stale",
@@ -192,8 +203,11 @@ class TestSymbolsTopMarkets:
             "ask",
             "spread_pct",
             "spread_points",
+            "tick_volume",
+            "price_change_pct",
         ]
         assert result["data"][0]["data_source"] == "live_tick"
+        assert result["data"][0]["tick_volume"] is None
         assert "pricing_basis" not in result["data"][0]
 
     @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
@@ -298,6 +312,7 @@ class TestSymbolsTopMarkets:
         assert list(result["data"][0].keys()) == [
             "symbol",
             "group",
+            "timeframe",
             "data_source",
             "time",
             "data_stale",
@@ -305,8 +320,11 @@ class TestSymbolsTopMarkets:
             "ask",
             "spread_pct",
             "spread_points",
+            "tick_volume",
+            "price_change_pct",
         ]
         assert result["data"][0]["data_source"] == "live_tick"
+        assert result["data"][0]["tick_volume"] is None
         assert "description" not in result["data"][0]
         assert "pricing_basis" not in result["data"][0]
         assert "collection_kind" not in result
@@ -374,11 +392,16 @@ class TestSymbolsTopMarkets:
             "rank",
             "symbol",
             "group",
+            "timeframe",
             "data_source",
+            "time",
+            "data_stale",
             "bid",
             "ask",
             "spread_pct",
             "spread_points",
+            "tick_volume",
+            "price_change_pct",
         ]
         assert list(result["highest_volume"][0].keys()) == [
             "rank",
@@ -388,10 +411,16 @@ class TestSymbolsTopMarkets:
             "data_source",
             "time",
             "data_stale",
+            "bid",
+            "ask",
+            "spread_pct",
+            "spread_points",
             "tick_volume",
             "price_change_pct",
         ]
         assert result["lowest_spread"][0]["data_source"] == "live_tick"
+        assert result["lowest_spread"][0]["tick_volume"] is None
+        assert result["highest_volume"][0]["bid"] is None
         assert result["highest_volume"][0]["data_source"] == "H1_bars"
         assert result["lowest_spread"][0]["symbol"] == "EURUSD"
         assert result["highest_volume"][0]["symbol"] == "EURUSD"
