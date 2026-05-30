@@ -1741,28 +1741,30 @@ def symbols_top_markets(  # noqa: C901
         "tick_volume",
         "price_change_pct",
         "abs_price_change_pct",
-    ] = "all",  # type: ignore
+    ] = "price_change",  # type: ignore
     limit: Optional[int] = 10,
     universe: Literal["visible", "all"] = "visible",  # type: ignore
     timeframe: TimeframeLiteral = "H1",
     detail: CompactFullDetailLiteral = "compact",
 ) -> Dict[str, Any]:
-    """Quick MT5 market overview with leaderboards for spread, volume, or price change.
+    """Quick MT5 market overview ranked by spread, volume, or price change.
 
     Defaults to visible tradable symbols for responsiveness. Set `universe="all"` to
     include hidden tradable symbols too; that mode is slower because MT5 may need to
-    activate quotes for instruments that are not already visible. Volume and
-    price-change rankings use the most recent completed bar on `timeframe`.
-    Uses compact leaderboard rows by default. Set `detail="full"` for the
-    expanded row shape and collection metadata. Use `market_scan` instead when
-    you need symbol/group inputs, RSI/SMA filters, or a single flat scanner table.
+    activate quotes for instruments that are not already visible. Defaults to a
+    single highest-price-change leaderboard; set `rank_by="all"` for spread,
+    volume, and price-change leaderboards. Volume and price-change rankings use
+    the most recent completed bar on `timeframe`. Uses compact leaderboard rows
+    by default. Set `detail="full"` for the expanded row shape and collection
+    metadata. Use `market_scan` instead when you need symbol/group inputs,
+    RSI/SMA filters, or a single flat scanner table.
     """
 
     detail_mode = normalize_output_verbosity_detail(detail, default="compact")
 
     def _run() -> Dict[str, Any]:  # noqa: C901
         try:
-            raw_rank_by_value = str(rank_by or "all").strip().lower()
+            raw_rank_by_value = str(rank_by or "price_change").strip().lower()
             rank_by_value = _SYMBOLS_TOP_MARKETS_RANK_BY_ALIASES.get(
                 raw_rank_by_value,
                 raw_rank_by_value,

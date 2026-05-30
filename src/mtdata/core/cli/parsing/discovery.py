@@ -105,7 +105,9 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "Leaderboard to compute: all, spread/spread_pct, volume/tick_volume, "
         "or price_change/price_change_pct/abs_price_change_pct."
     ),
-    ("symbols_top_markets", "limit"): "Max symbols to return for each ranking.",
+    ("symbols_top_markets", "limit"): (
+        "Max symbols for the selected ranking; per leaderboard when rank_by=all."
+    ),
     ("trade_history", "minutes_back"): (
         "History lookback in minutes. Defaults to 10080 minutes (7 days) when "
         "start/end and minutes_back are omitted."

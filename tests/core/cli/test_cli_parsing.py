@@ -825,7 +825,9 @@ class TestResolveParamKwargs:
             "default": 10,
         }
         kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="symbols_top_markets")
-        assert kwargs["help"] == "Max symbols to return for each ranking."
+        assert kwargs["help"] == (
+            "Max symbols for the selected ranking; per leaderboard when rank_by=all."
+        )
 
     def test_symbols_top_markets_rank_by_help_lists_actual_options(self):
         param = {

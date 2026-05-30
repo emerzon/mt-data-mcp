@@ -103,6 +103,53 @@ def _set_disabled_trade_mode(monkeypatch):
 
 class TestSymbolsTopMarkets:
     @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
+    @patch("mtdata.core.symbols.mt5.symbols_get")
+    def test_default_returns_single_price_change_leaderboard(
+        self,
+        mock_symbols_get,
+        mock_rates,
+        mock_group,
+    ):
+        mock_symbols_get.return_value = [
+            _make_symbol("EURUSD", description="Euro"),
+            _make_symbol("GBPUSD", description="Pound"),
+        ]
+        mock_rates.side_effect = lambda symbol, timeframe, start_pos, count: {
+            "EURUSD": [
+                {
+                    "time": 1700000000.0,
+                    "open": 1.1000,
+                    "close": 1.1010,
+                    "tick_volume": 100,
+                    "real_volume": 0,
+                }
+            ],
+            "GBPUSD": [
+                {
+                    "time": 1700000000.0,
+                    "open": 1.3000,
+                    "close": 1.3300,
+                    "tick_volume": 50,
+                    "real_volume": 0,
+                }
+            ],
+        }[symbol]
+
+        fn = _get_symbols_top_markets()
+        result = fn(limit=1, timeframe="H1")
+
+        assert result["success"] is True
+        assert result["ranking"] == "highest_price_change"
+        assert result["requested_limit"] == 1
+        assert result["returned_count"] == 1
+        assert len(result["data"]) == 1
+        assert result["data"][0]["symbol"] == "GBPUSD"
+        assert "lowest_spread" not in result
+        assert "highest_volume" not in result
+        assert "highest_price_change" not in result
+
+    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
     @patch("mtdata.core.symbols.mt5.symbol_info_tick")
     @patch("mtdata.core.symbols.mt5.symbols_get")
     def test_spread_ranks_lowest_first_visible_default(self, mock_symbols_get, mock_tick, mock_group):
