@@ -150,6 +150,38 @@ def test_trade_risk_analyze_compact_position_sizing_keeps_decision_fields() -> N
     }
 
 
+def test_trade_risk_analyze_compact_keeps_blocked_sizing_context() -> None:
+    mt5 = MagicMock()
+    mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
+    mt5.positions_get.return_value = []
+    mt5.symbol_info.return_value = _make_symbol_info(
+        volume_min=0.1,
+        volume_step=0.1,
+        volume_max=10.0,
+    )
+
+    with _patched_mt5_module(mt5):
+        out = trade_risk_analyze(
+            symbol="EURUSD",
+            desired_risk_pct=0.1,
+            entry=100.0,
+            stop_loss=80.0,
+        )
+
+    assert out["position_sizing"] == {
+        "status": "blocked",
+        "suggested_volume": 0.0,
+        "risk_currency": 0.0,
+        "risk_pct": 0.0,
+        "risk_compliance": "blocked_min_volume_exceeds_requested_risk",
+        "min_viable_volume": 0.1,
+        "min_viable_risk_currency": 2.0,
+        "min_viable_risk_pct": 0.2,
+        "entry": 100.0,
+        "sl": 80.0,
+    }
+
+
 def test_trade_risk_analyze_marks_position_sizing_incomplete_without_required_inputs() -> None:
     mt5 = MagicMock()
     mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
@@ -243,7 +275,7 @@ def test_trade_risk_analyze_handles_missing_account_fields() -> None:
     assert out["account"]["currency"] is None
 
 
-def test_trade_risk_analyze_warns_when_min_volume_forces_overshoot() -> None:
+def test_trade_risk_analyze_blocks_min_volume_risk_overshoot_by_default() -> None:
     mt5 = MagicMock()
     mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
     mt5.positions_get.return_value = []
@@ -259,16 +291,45 @@ def test_trade_risk_analyze_warns_when_min_volume_forces_overshoot() -> None:
         )
 
     sizing = out["position_sizing"]
-    assert sizing["suggested_volume"] == 0.1
-    assert sizing["volume_rounding"] == "clamped_to_min_volume"
+    assert sizing["status"] == "blocked"
+    assert sizing["suggested_volume"] == 0.0
+    assert sizing["min_viable_volume"] == 0.1
+    assert sizing["min_viable_risk_pct"] > sizing["requested_risk_pct"]
+    assert sizing["volume_rounding"] == "blocked_by_min_volume_risk"
     assert sizing["risk_over_target"] is True
-    assert sizing["risk_compliance"] == "exceeds_requested_risk"
+    assert sizing["risk_compliance"] == "blocked_min_volume_exceeds_requested_risk"
     assert sizing["risk_overshoot_pct"] > 0.0
     assert sizing["risk_over_target_reason"] == "min_volume_constraint"
     assert "position_sizing_warning" in out
     assert "risk_alert" in out
-    assert out["risk_alert"]["code"] == "risk_overshoot_after_volume_constraints"
+    assert out["risk_alert"]["severity"] == "block"
+    assert out["risk_alert"]["code"] == "min_volume_exceeds_requested_risk"
     assert any("minimum trade volume" in note.lower() for note in sizing["sizing_notes"])
+    assert any("strict risk" in note.lower() for note in sizing["sizing_notes"])
+
+
+def test_trade_risk_analyze_can_allow_min_volume_risk_overshoot() -> None:
+    mt5 = MagicMock()
+    mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
+    mt5.positions_get.return_value = []
+    mt5.symbol_info.return_value = _make_symbol_info(volume_min=0.1, volume_step=0.1, volume_max=10.0)
+
+    with _patched_mt5_module(mt5):
+        out = trade_risk_analyze(
+            symbol="EURUSD",
+            detail="full",
+            desired_risk_pct=0.1,
+            strict_risk=False,
+            entry=100.0,
+            stop_loss=80.0,
+        )
+
+    sizing = out["position_sizing"]
+    assert sizing["suggested_volume"] == 0.1
+    assert sizing["volume_rounding"] == "clamped_to_min_volume"
+    assert sizing["risk_compliance"] == "exceeds_requested_risk"
+    assert "min_viable_volume" not in sizing
+    assert out["risk_alert"]["severity"] == "warning"
 
 
 def test_trade_risk_analyze_accepts_explicit_short_direction() -> None:

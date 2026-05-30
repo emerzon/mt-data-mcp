@@ -195,6 +195,13 @@ class TradeRiskAnalyzeRequest(BaseModel):
         ),
     )
     desired_risk_pct: Optional[float] = None
+    strict_risk: bool = Field(
+        default=True,
+        description=(
+            "When true, return suggested_volume=0.0 if the broker minimum "
+            "volume would exceed desired_risk_pct."
+        ),
+    )
     direction: Optional[str] = None
     entry: Optional[float] = Field(
         default=None,

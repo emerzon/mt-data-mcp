@@ -382,10 +382,14 @@ def _build_trade_evaluation(
 
 
 _COMPACT_POSITION_SIZING_FIELDS = (
+    "status",
     "suggested_volume",
     "risk_currency",
     "risk_pct",
     "risk_compliance",
+    "min_viable_volume",
+    "min_viable_risk_currency",
+    "min_viable_risk_pct",
     "entry",
     "sl",
     "tp",
@@ -2618,9 +2622,33 @@ def run_trade_risk_analyze(  # noqa: C901
                             "Actual risk still exceeds the requested level after broker volume constraints."
                         )
 
+                    strict_risk_blocked = bool(
+                        risk_over_target
+                        and rounding_mode == "clamped_to_min_volume"
+                        and getattr(request, "strict_risk", True)
+                    )
+                    min_viable_volume = None
+                    min_viable_risk_currency = None
+                    min_viable_risk_pct = None
+                    min_viable_overshoot_pct = None
+                    min_viable_overshoot_currency = None
+                    if strict_risk_blocked:
+                        min_viable_volume = suggested_volume
+                        min_viable_risk_currency = actual_risk
+                        min_viable_risk_pct = actual_risk_pct
+                        min_viable_overshoot_pct = overshoot_pct
+                        min_viable_overshoot_currency = overshoot_currency
+                        suggested_volume = 0.0
+                        actual_risk = 0.0
+                        actual_risk_pct = 0.0
+                        rounding_mode = "blocked_by_min_volume_risk"
+                        sizing_notes.append(
+                            "Strict risk is enabled; no broker-accepted volume fits the requested risk."
+                        )
+
                     rr_ratio = None
                     reward_currency = None
-                    if request.take_profit is not None:
+                    if request.take_profit is not None and not strict_risk_blocked:
                         if direction_norm == "long":
                             tp_distance_ticks = (
                                 request.take_profit - request.entry
@@ -2635,13 +2663,24 @@ def run_trade_risk_analyze(  # noqa: C901
                         if actual_risk > 0:
                             rr_ratio = reward_currency / actual_risk
 
+                    risk_compliance = (
+                        "blocked_min_volume_exceeds_requested_risk"
+                        if strict_risk_blocked
+                        else (
+                            "exceeds_requested_risk"
+                            if risk_over_target
+                            else "within_requested_risk"
+                        )
+                    )
                     result["position_sizing"] = {
                         "symbol": request.symbol,
                         "direction": direction_norm,
                         "direction_source": direction_source,
+                        **({"status": "blocked"} if strict_risk_blocked else {}),
                         "suggested_volume": suggested_volume,
                         "requested_risk_currency": round(risk_amount, 2),
                         "requested_risk_pct": float(request.desired_risk_pct),
+                        "strict_risk": bool(getattr(request, "strict_risk", True)),
                         "entry": request.entry,
                         "sl": request.stop_loss,
                         "tp": request.take_profit,
@@ -2649,11 +2688,7 @@ def run_trade_risk_analyze(  # noqa: C901
                         "risk_pct": round(actual_risk_pct, 2),
                         "risk_pct_diff": round(risk_pct_diff, 2),
                         "risk_over_target": risk_over_target,
-                        "risk_compliance": (
-                            "exceeds_requested_risk"
-                            if risk_over_target
-                            else "within_requested_risk"
-                        ),
+                        "risk_compliance": risk_compliance,
                         "risk_overshoot_pct": round(overshoot_pct, 2),
                         "risk_overshoot_currency": round(overshoot_currency, 2),
                         "risk_over_target_reason": overshoot_reason,
@@ -2668,20 +2703,53 @@ def run_trade_risk_analyze(  # noqa: C901
                         "rr_ratio": round(rr_ratio, 2) if rr_ratio else None,
                         "sizing_notes": sizing_notes,
                     }
-                    if risk_over_target:
-                        result["position_sizing_warning"] = (
-                            f"Requested risk {float(request.desired_risk_pct):.2f}% but actual risk is "
-                            f"{float(actual_risk_pct):.2f}% (+{overshoot_pct:.2f}%) after broker volume constraints."
+                    if strict_risk_blocked:
+                        result["position_sizing"].update(
+                            {
+                                "min_viable_volume": min_viable_volume,
+                                "min_viable_risk_currency": round(
+                                    float(min_viable_risk_currency or 0.0), 2
+                                ),
+                                "min_viable_risk_pct": round(
+                                    float(min_viable_risk_pct or 0.0), 2
+                                ),
+                                "min_viable_risk_overshoot_pct": round(
+                                    float(min_viable_overshoot_pct or 0.0), 2
+                                ),
+                                "min_viable_risk_overshoot_currency": round(
+                                    float(min_viable_overshoot_currency or 0.0), 2
+                                ),
+                            }
                         )
+                    if risk_over_target:
+                        if strict_risk_blocked:
+                            result["position_sizing_warning"] = (
+                                f"Requested risk {float(request.desired_risk_pct):.2f}% but minimum tradable volume risks "
+                                f"{float(min_viable_risk_pct or 0.0):.2f}% (+{overshoot_pct:.2f}%); "
+                                "suggested_volume is 0.0 because strict_risk is enabled."
+                            )
+                        else:
+                            result["position_sizing_warning"] = (
+                                f"Requested risk {float(request.desired_risk_pct):.2f}% but actual risk is "
+                                f"{float(actual_risk_pct):.2f}% (+{overshoot_pct:.2f}%) after broker volume constraints."
+                            )
                         result["risk_alert"] = {
-                            "severity": "warning",
-                            "code": "risk_overshoot_after_volume_constraints",
+                            "severity": "block" if strict_risk_blocked else "warning",
+                            "code": (
+                                "min_volume_exceeds_requested_risk"
+                                if strict_risk_blocked
+                                else "risk_overshoot_after_volume_constraints"
+                            ),
                             "reason": overshoot_reason,
                             "requested_risk_pct": float(request.desired_risk_pct),
-                            "actual_risk_pct": round(actual_risk_pct, 2),
+                            "actual_risk_pct": round(
+                                float(min_viable_risk_pct or actual_risk_pct), 2
+                            ),
                             "overshoot_pct": round(overshoot_pct, 2),
                             "requested_risk_currency": round(risk_amount, 2),
-                            "actual_risk_currency": round(actual_risk, 2),
+                            "actual_risk_currency": round(
+                                float(min_viable_risk_currency or actual_risk), 2
+                            ),
                             "overshoot_currency": round(overshoot_currency, 2),
                         }
                 else:

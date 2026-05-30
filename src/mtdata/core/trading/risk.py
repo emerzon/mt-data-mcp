@@ -28,7 +28,8 @@ def trade_risk_analyze(request: TradeRiskAnalyzeRequest) -> dict:
     When sizing a proposed trade, pass direction='long' or direction='short' to
     validate that proposed SL/TP are on the correct side of the entry. New-trade
     sizing is opt-in: provide desired_risk_pct together with entry and stop_loss
-    to calculate lot size.
+    to calculate lot size. strict_risk=True blocks positive suggested volume when
+    broker minimum volume would exceed the requested risk.
     """
     return run_logged_operation(
         logger,

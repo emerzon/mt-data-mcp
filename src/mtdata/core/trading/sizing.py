@@ -57,6 +57,7 @@ def compute_risk_based_volume(
     volume_min: float,
     volume_max: float,
     volume_step: float,
+    strict_risk: bool = True,
 ) -> Tuple[Optional[float], Dict[str, Any]]:
     """Compute position volume from risk parameters.
 
@@ -149,7 +150,42 @@ def compute_risk_based_volume(
             "Actual risk still exceeds the requested level after broker volume constraints."
         )
 
-    return suggested, {
+    strict_risk_blocked = bool(
+        strict_risk
+        and risk_over_target
+        and rounding_mode == "clamped_to_min_volume"
+    )
+    min_viable_volume = None
+    min_viable_risk = None
+    min_viable_risk_pct = None
+    min_viable_overshoot_pct = None
+    min_viable_overshoot_currency = None
+    if strict_risk_blocked:
+        min_viable_volume = suggested
+        min_viable_risk = actual_risk
+        min_viable_risk_pct = actual_risk_pct
+        min_viable_overshoot_pct = overshoot_pct
+        min_viable_overshoot_currency = overshoot_currency
+        suggested = 0.0
+        actual_risk = 0.0
+        actual_risk_pct = 0.0
+        rounding_mode = "blocked_by_min_volume_risk"
+        notes.append(
+            "Strict risk is enabled; no broker-accepted volume fits the requested risk."
+        )
+
+    risk_compliance = (
+        "blocked_min_volume_exceeds_requested_risk"
+        if strict_risk_blocked
+        else (
+            "exceeds_requested_risk"
+            if risk_over_target
+            else "within_requested_risk"
+        )
+    )
+    meta: Dict[str, Any] = {
+        **({"status": "blocked"} if strict_risk_blocked else {}),
+        "strict_risk": bool(strict_risk),
         "suggested_volume": suggested,
         "raw_volume": round(raw_volume, 8),
         "risk_amount": round(risk_amount, 2),
@@ -158,11 +194,7 @@ def compute_risk_based_volume(
         "requested_risk_pct": requested_risk_pct,
         "risk_pct_diff": round(risk_pct_diff, 4),
         "risk_over_target": risk_over_target,
-        "risk_compliance": (
-            "exceeds_requested_risk"
-            if risk_over_target
-            else "within_requested_risk"
-        ),
+        "risk_compliance": risk_compliance,
         "risk_overshoot_pct": round(overshoot_pct, 4),
         "risk_overshoot_currency": round(overshoot_currency, 2),
         "risk_over_target_reason": risk_over_target_reason,
@@ -171,3 +203,20 @@ def compute_risk_based_volume(
         "volume_rounding": rounding_mode,
         "notes": notes,
     }
+    if strict_risk_blocked:
+        meta.update(
+            {
+                "min_viable_volume": min_viable_volume,
+                "min_viable_risk": round(float(min_viable_risk or 0.0), 2),
+                "min_viable_risk_pct": round(
+                    float(min_viable_risk_pct or 0.0), 4
+                ),
+                "min_viable_risk_overshoot_pct": round(
+                    float(min_viable_overshoot_pct or 0.0), 4
+                ),
+                "min_viable_risk_overshoot_currency": round(
+                    float(min_viable_overshoot_currency or 0.0), 2
+                ),
+            }
+        )
+    return suggested, meta
