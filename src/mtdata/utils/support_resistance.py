@@ -948,7 +948,7 @@ def _format_level(cluster: Dict[str, Any], *, current_price: Optional[float], to
     total_score = max(0.0, base_score - breakout_penalty + role_reversal_bonus + mtf_confirmation_bonus)
     last_break_time = cluster.get("last_break_time")
 
-    return {
+    level = {
         "type": level_type,
         "value": float(round(value, 6)),
         "touches": int(cluster["touches"]),
@@ -997,6 +997,13 @@ def _format_level(cluster: Dict[str, Any], *, current_price: Optional[float], to
             "total": float(round(total_score, 4)),
         },
     }
+    if (
+        level_type in {"support", "resistance"}
+        and dominant_source in {"support", "resistance"}
+        and level_type != dominant_source
+    ):
+        level["role_transition"] = True
+    return level
 
 
 def _timeframe_weight(timeframe: Any) -> float:
@@ -2393,6 +2400,7 @@ def compact_support_resistance_level(level: Any) -> Optional[Dict[str, Any]]:
         "touches",
         "score",
         "strength_rank",
+        "role_transition",
     ):
         value = level.get(key)
         if value is not None:
@@ -2420,6 +2428,7 @@ def _standard_support_resistance_level(level: Any) -> Optional[Dict[str, Any]]:
         "status",
         "score",
         "strength_rank",
+        "role_transition",
         "strength_percentile",
         "strength_score_normalized",
         "last_touch",

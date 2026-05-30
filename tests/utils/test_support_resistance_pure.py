@@ -332,6 +332,7 @@ def test_compact_support_resistance_payload_omits_fibonacci_until_standard_detai
             "touches",
             "score",
             "strength_rank",
+            "role_transition",
             "source_timeframes",
             "dominant_source",
         }
@@ -707,6 +708,7 @@ def test_role_reversal_levels_gain_bonus_after_break_and_retest():
     )
     assert role_reversed["dominant_source"] == "resistance"
     assert role_reversed["type"] == "support"
+    assert role_reversed["role_transition"] is True
     assert role_reversed["breakout_analysis"]["decisive_break_count"] >= 1
     assert role_reversed["breakout_analysis"]["role_reversal_count"] >= 1
     assert role_reversed["score_breakdown"]["breakout_penalty"] > 0.0
@@ -714,6 +716,13 @@ def test_role_reversal_levels_gain_bonus_after_break_and_retest():
     assert role_reversed["score_breakdown"]["total"] > (
         role_reversed["score_breakdown"]["base"] - role_reversed["score_breakdown"]["breakout_penalty"]
     )
+    compact = compact_support_resistance_payload(result)
+    compact_role_reversed = next(
+        level
+        for level in compact["supports"]
+        if level.get("dominant_source") == "resistance"
+    )
+    assert compact_role_reversed["role_transition"] is True
 
 
 def test_merge_support_resistance_results_combines_multiple_timeframes():
