@@ -42,6 +42,7 @@ _SHARED_REGIME_CONTEXT_KEYS = (
     "efficiency_ratio",
     "window_move_pct",
 )
+_ACTIONABLE_SIGNAL_MIN_CONFIDENCE = 0.5
 
 
 def _round_value(x: Any) -> Any:
@@ -281,11 +282,18 @@ def _summarize_pattern_bias(rows: List[Dict[str, Any]]) -> Optional[Dict[str, An
     if bullish_count == 0 and bearish_count == 0 and neutral_count == 0:
         return None
 
+    directional_count = bullish_count + bearish_count
     directional_total = bullish_score + bearish_score
     net_score = bullish_score - bearish_score
-    net_conf = (
-        float(abs(net_score) / directional_total) if directional_total > 1e-9 else 0.0
+    agreement = (
+        float(abs(net_score) / directional_total)
+        if directional_total > 1e-9
+        else 0.0
     )
+    evidence_strength = (
+        float(directional_total / directional_count) if directional_count > 0 else 0.0
+    )
+    net_conf = agreement * evidence_strength
     conflict = bool(bullish_count > 0 and bearish_count > 0)
     if directional_total <= 1e-9:
         net_bias = "neutral"
@@ -328,6 +336,9 @@ def _summarize_actionable_pattern_signal(
 
     if net_bias in {"neutral", "mixed"}:
         status = "conflicting" if conflict else "neutral"
+        action = "wait"
+    elif confidence < _ACTIONABLE_SIGNAL_MIN_CONFIDENCE:
+        status = "uncertain"
         action = "wait"
     elif conflict:
         status = f"conflicting_{net_bias}"

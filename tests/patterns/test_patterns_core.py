@@ -578,7 +578,7 @@ def test_build_pattern_response_compact_keeps_actionable_fields():
 
     assert compact["bias"] == "bullish"
     assert compact["action"] == "review_long_setup"
-    assert compact["confidence"] == 1.0
+    assert compact["confidence"] == 0.85
     assert compact["status"] == "bullish"
     assert compact["strongest_pattern"] == {
         "pattern": "Double Bottom",
@@ -616,6 +616,7 @@ def test_build_pattern_response_compact_keeps_elliott_candidate_context():
             "wave_count": 6,
             "validation_status": "fallback_candidate",
             "candidate_note": candidate_note,
+            "details": {"sequence_direction": "bullish"},
         }
     ]
 
@@ -632,6 +633,10 @@ def test_build_pattern_response_compact_keeps_elliott_candidate_context():
         detail="compact",
     )
 
+    assert compact["bias"] == "bullish"
+    assert compact["status"] == "uncertain"
+    assert compact["action"] == "wait"
+    assert compact["confidence"] == 0.1
     assert compact["strongest_pattern"] == {
         "pattern": "Elliott impulse-like candidate",
         "confidence": 0.1,
