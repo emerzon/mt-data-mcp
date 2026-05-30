@@ -308,7 +308,7 @@ def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str,
     period_context = _trade_journal_period_context(request)
     detail_mode = str(request.detail or "compact").strip().lower()
     if detail_mode == "compact":
-        period_context.pop("note", None)
+        period_context = {"timezone": "UTC"}
     history_result = _run_trade_history_request(
         TradeHistoryRequest(
             history_kind="deals",
@@ -638,9 +638,9 @@ def trade_account_info(
 def trade_history(request: TradeHistoryRequest) -> Dict[str, Any]:
     """Get deal or order history as tabular data.
 
-    Use `detail="compact"` (default) to suppress echoed request filters while
-    keeping the standard trade-history envelope. Use `detail="full"` to retain
-    the request echo fields.
+    Use `detail="compact"` (default) for rows plus minimal envelope metadata.
+    Use `detail="standard"` or `detail="full"` to include period context, and
+    `detail="full"` to retain request echo fields.
     """
     return run_logged_operation(
         logger,

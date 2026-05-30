@@ -982,17 +982,32 @@ def test_trade_history_compact_detail_omits_echoed_filters() -> None:
     assert "limit" not in out
 
 
-def test_trade_history_default_period_context_precedes_items() -> None:
+def test_trade_history_compact_omits_period_context() -> None:
     out = normalize_trade_history_output(
         [{"ticket": 1, "symbol": "EURUSD"}],
         request=TradeHistoryRequest(history_kind="deals", detail="compact"),
+    )
+
+    assert "period_source" not in out
+    assert "period_start" not in out
+    assert "period_end" not in out
+    assert "minutes_back_effective" not in out
+    assert "defaults_applied" not in out
+    keys = list(out)
+    assert keys.index("items") < len(keys)
+
+
+def test_trade_history_standard_period_context_precedes_items() -> None:
+    out = normalize_trade_history_output(
+        [{"ticket": 1, "symbol": "EURUSD"}],
+        request=TradeHistoryRequest(history_kind="deals", detail="standard"),
     )
 
     assert out["period_source"] == "default_lookback"
     assert out["minutes_back_effective"] == 10080
     assert out["defaults_applied"] == {"lookback_minutes": 10080}
     assert out["period_timezone"] == "UTC"
-    assert "note" not in out
+    assert "note" in out
     keys = list(out)
     assert keys.index("period_start") < keys.index("items")
 
@@ -1002,7 +1017,7 @@ def test_trade_history_reports_explicit_period_context() -> None:
         [{"ticket": 1, "symbol": "EURUSD"}],
         request=TradeHistoryRequest(
             history_kind="deals",
-            detail="compact",
+            detail="standard",
             start="2026-01-01 00:00",
             end="2026-01-03 00:00",
         ),
@@ -1143,9 +1158,10 @@ def test_trade_journal_analyze_compact_uses_lite_symbol_breakdown() -> None:
         out = trade_journal_analyze(__cli_raw=True)
 
     assert out["success"] is True
-    assert out["period_source"] == "default_lookback"
-    assert out["minutes_back_effective"] == 10080
+    assert "period_source" not in out
+    assert "minutes_back_effective" not in out
     assert "note" not in out
+    assert out["timezone"] == "UTC"
     assert list(out["breakdowns"]) == ["by_symbol"]
     assert set(out["breakdowns"]["by_symbol"][0]) == {
         "symbol",
@@ -1169,7 +1185,7 @@ def test_trade_journal_analyze_reports_explicit_minutes_back_window() -> None:
             "items": [],
         },
     ):
-        out = trade_journal_analyze(minutes_back=60, __cli_raw=True)
+        out = trade_journal_analyze(minutes_back=60, detail="full", __cli_raw=True)
 
     assert out["success"] is True
     assert out["period_source"] == "minutes_back"
