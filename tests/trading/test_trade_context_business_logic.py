@@ -89,6 +89,7 @@ def test_trade_session_context_compacts_nested_sections_by_default() -> None:
         out = _raw_trade_session_context("EURUSD")
 
     assert out["state"] == "open_position"
+    assert out["state_scope"] == "symbol"
     assert out["account"] == {
         "equity": 10010.0,
         "account_type": "demo",
@@ -125,6 +126,54 @@ def test_trade_session_context_compacts_nested_sections_by_default() -> None:
     assert "show_all_hint" in out
     assert out["meta"]["tool"] == "trade_session_context"
     assert out["meta"]["runtime"]["timezone"] == timezone_meta
+
+
+def test_trade_session_context_compact_surfaces_portfolio_exposure_elsewhere() -> None:
+    def open_positions_for_request(request):
+        if request.symbol == "EURUSD":
+            return {"success": True, "kind": "open_positions", "count": 0, "items": []}
+        return {
+            "success": True,
+            "kind": "open_positions",
+            "count": 1,
+            "items": [{"symbol": "BTCUSD", "ticket": 77, "profit": -1.73}],
+        }
+
+    with patch(
+        "mtdata.core.trading.context.trade_account_info",
+        new=lambda: {
+            "success": True,
+            "equity": 998.27,
+            "profit": -1.73,
+            "account_type": "demo",
+        },
+    ), patch(
+        "mtdata.core.trading.context.market_ticker",
+        new=lambda symbol, detail="compact": {
+            "success": True,
+            "bid": 1.1,
+            "ask": 1.1002,
+        },
+    ), patch(
+        "mtdata.core.trading.context.trade_get_open",
+        new=open_positions_for_request,
+    ), patch(
+        "mtdata.core.trading.context.trade_get_pending",
+        new=lambda request: {
+            "success": True,
+            "kind": "pending_orders",
+            "count": 0,
+            "items": [],
+        },
+    ):
+        out = _raw_trade_session_context("EURUSD")
+
+    assert out["state"] == "flat"
+    assert out["state_scope"] == "symbol"
+    assert out["open_positions_count"] == 0
+    assert out["portfolio_positions_count"] == 1
+    assert out["other_positions_count"] == 1
+    assert out["account"]["profit"] == -1.73
 
 
 def test_trade_session_context_compact_formats_nested_ticker_spread() -> None:

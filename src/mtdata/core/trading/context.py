@@ -44,6 +44,22 @@ def _strip_nested_envelope(section: Any) -> Any:
     return {k: v for k, v in section.items() if k not in ("success", "meta")}
 
 
+def _trade_session_section_count(section: Any) -> Optional[int]:
+    if isinstance(section, dict):
+        count = section.get("count")
+        if count not in (None, ""):
+            try:
+                return max(0, int(count))
+            except Exception:
+                return None
+        items = section.get("items")
+        if isinstance(items, list):
+            return len(items)
+    if isinstance(section, list):
+        return len(section)
+    return None
+
+
 _TRADE_SESSION_PRICE_KEYS = {
     "price",
     "price_open",
@@ -160,7 +176,15 @@ def _compact_trade_session_items(
 def _compact_trade_session_context_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     compact: Dict[str, Any] = {
         key: payload.get(key)
-        for key in ("success", "symbol", "state", "partial_failure")
+        for key in (
+            "success",
+            "symbol",
+            "state",
+            "state_scope",
+            "portfolio_positions_count",
+            "other_positions_count",
+            "partial_failure",
+        )
         if payload.get(key) not in (None, "")
     }
 
@@ -171,7 +195,7 @@ def _compact_trade_session_context_payload(payload: Dict[str, Any]) -> Dict[str,
         else:
             account_summary = {
                 key: account.get(key)
-                for key in ("equity", "margin_free", "account_type")
+                for key in ("equity", "profit", "margin_free", "account_type")
                 if account.get(key) not in (None, "")
             }
             if account.get("execution_ready") is False:
@@ -337,6 +361,12 @@ def trade_session_context(request: TradeSessionContextRequest) -> Dict[str, Any]
         open_req = TradeGetOpenRequest(symbol=request.symbol)
         open_res = open_func(request=open_req)
 
+        portfolio_open_res = None
+        try:
+            portfolio_open_res = open_func(request=TradeGetOpenRequest())
+        except Exception:
+            portfolio_open_res = None
+
         pending_req = TradeGetPendingRequest(symbol=request.symbol)
         pending_res = pending_func(request=pending_req)
 
@@ -378,14 +408,28 @@ def trade_session_context(request: TradeSessionContextRequest) -> Dict[str, Any]
         else:
             state = "flat"
 
+        symbol_positions_count = _trade_session_section_count(open_res)
+        portfolio_positions_count = _trade_session_section_count(portfolio_open_res)
+        other_positions_count = None
+        if (
+            portfolio_positions_count is not None
+            and symbol_positions_count is not None
+            and portfolio_positions_count > symbol_positions_count
+        ):
+            other_positions_count = portfolio_positions_count - symbol_positions_count
+
         payload = {
             "success": True,
             "symbol": request.symbol,
             "state": state,
+            "state_scope": "symbol",
             "open_positions": open_res,
             "pending_orders": pending_res,
             "ticker": ticker_res,
         }
+        if other_positions_count is not None:
+            payload["portfolio_positions_count"] = portfolio_positions_count
+            payload["other_positions_count"] = other_positions_count
         if request.include_account:
             payload["account"] = account_res
         if partial_failure:

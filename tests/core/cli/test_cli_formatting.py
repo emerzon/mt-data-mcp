@@ -744,9 +744,13 @@ class TestFormatResultForCli:
                     "success": True,
                     "symbol": "EURUSD",
                     "state": "pending_only",
+                    "state_scope": "symbol",
+                    "portfolio_positions_count": 2,
+                    "other_positions_count": 1,
                     "account": {
                         "balance": 10000.0,
                         "equity": 10010.0,
+                        "profit": -1.73,
                         "margin_level": 250.0,
                     },
                     "open_positions": [
@@ -774,8 +778,12 @@ class TestFormatResultForCli:
         assert payload["account"] == {
             "balance": 10000.0,
             "equity": 10010.0,
+            "profit": -1.73,
             "margin_level": 250.0,
         }
+        assert payload["state_scope"] == "symbol"
+        assert payload["portfolio_positions_count"] == 2
+        assert payload["other_positions_count"] == 1
         assert payload["open_positions"] == [
             {
                 "ticket": 123456,

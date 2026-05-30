@@ -339,7 +339,15 @@ def _normalize_trade_session_context_cli_payload(
         return out
 
     compact_out: Dict[str, Any] = {}
-    for key in ("success", "symbol", "state"):
+    for key in (
+        "success",
+        "symbol",
+        "state",
+        "state_scope",
+        "portfolio_positions_count",
+        "other_positions_count",
+        "partial_failure",
+    ):
         value = out.get(key)
         if not _is_empty_value(value):
             compact_out[key] = value
@@ -351,7 +359,7 @@ def _normalize_trade_session_context_cli_payload(
         else:
             account_out = {
                 key: account_in.get(key)
-                for key in ("balance", "equity", "margin_level")
+                for key in ("balance", "equity", "profit", "margin_level")
                 if key in account_in and not _is_empty_value(account_in.get(key))
             }
             if account_in.get("execution_ready") is False:
