@@ -756,6 +756,24 @@ class TestResolveParamKwargs:
         assert "Historical bars per symbol" in correlation_window_kwargs["help"]
         assert "max_regimes" in regime_limit_kwargs["help"]
 
+    @pytest.mark.parametrize(
+        "cmd_name",
+        [
+            "causal_discover_signals",
+            "cointegration_test",
+            "correlation_matrix",
+        ],
+    )
+    def test_pairwise_symbol_help_describes_comma_separated_symbols(self, cmd_name):
+        kwargs, _ = _resolve_param_kwargs(
+            {"name": "symbol", "type": str, "required": False, "default": None},
+            None,
+            cmd_name=cmd_name,
+        )
+
+        assert "Comma-separated MT5 symbols" in kwargs["help"]
+        assert "Optional with --group" in kwargs["help"]
+
     def test_labels_triple_barrier_limit_and_lookback_help_distinguish_roles(self):
         limit_kwargs, _ = _resolve_param_kwargs(
             {"name": "limit", "type": int, "required": False, "default": 1200},

@@ -68,6 +68,10 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("finviz_calendar", "start"): "Start date (YYYY-MM-DD).",
     ("finviz_calendar", "end"): "End date (YYYY-MM-DD).",
     ("forecast_barrier_optimize", "method"): "Barrier simulation method: mc_gbm, mc_gbm_bb, hmm_mc, garch, bootstrap, heston, jump_diffusion, or auto.",
+    ("causal_discover_signals", "symbol"): (
+        "Comma-separated MT5 symbols (e.g. EURUSD,GBPUSD); one symbol auto-expands "
+        "to its MT5 group. Optional with --group."
+    ),
     ("options_barrier_price", "option_type"): "Option side: call or put.",
     ("options_chain", "symbol"): (
         "Underlying symbol for listed options, e.g. AAPL or SPX."
@@ -83,6 +87,10 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("causal_discover_signals", "limit"): (
         "Historical bars per symbol used for causal tests; not an output row limit."
     ),
+    ("cointegration_test", "symbol"): (
+        "Comma-separated MT5 symbols (e.g. EURUSD,GBPUSD); one symbol auto-expands "
+        "to its MT5 group. Optional with --group."
+    ),
     ("cointegration_test", "limit"): "Max cointegration pair rows to return.",
     ("cointegration_test", "window_bars"): (
         "Historical bars per symbol used for the cointegration test window."
@@ -90,6 +98,10 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("correlation_matrix", "limit"): "Max correlation pair rows to return.",
     ("correlation_matrix", "window_bars"): (
         "Historical bars per symbol used for the correlation window."
+    ),
+    ("correlation_matrix", "symbol"): (
+        "Comma-separated MT5 symbols (e.g. EURUSD,GBPUSD); one symbol auto-expands "
+        "to its MT5 group. Optional with --group."
     ),
     ("labels_triple_barrier", "detail"): "Detail level: full, standard, summary, or compact (summary plus recent sample).",
     ("labels_triple_barrier", "limit"): (
