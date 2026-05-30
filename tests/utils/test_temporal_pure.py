@@ -12,6 +12,7 @@ import pytest
 
 from mtdata.core.temporal import (
     _error_response,
+    _fetch_rates,
     _normalize_group_by,
     _parse_month,
     _parse_time_range,
@@ -526,6 +527,44 @@ class TestStatsForGroup:
         df = self._make_df([1.0, -3.0])
         out = _stats_for_group(df, None)
         assert out["avg_abs_return"] == pytest.approx(2.0)
+
+
+# ===================================================================
+# _fetch_rates
+# ===================================================================
+
+class TestFetchRates:
+    @patch(_P + "_shift_rate_times", side_effect=lambda rates, shift: ("shifted", rates, shift))
+    @patch(_P + "_resolve_live_rate_auto_shift_seconds", return_value=-10800)
+    @patch(_P + "_mt5_copy_rates_from", return_value="rates")
+    def test_applies_live_auto_shift_to_open_ended_fetch(
+        self,
+        mock_rates_from,
+        mock_resolve_shift,
+        mock_shift,
+    ):
+        gateway = MagicMock()
+        gateway.symbol_info_tick.return_value = MagicMock(time=1704067200)
+
+        rates, error = _fetch_rates(
+            "EURUSD",
+            "H1",
+            10,
+            start=None,
+            end=None,
+            gateway=gateway,
+        )
+
+        assert error is None
+        assert rates == ("shifted", "rates", -10800)
+        mock_resolve_shift.assert_called_once_with(
+            symbol="EURUSD",
+            timeframe="H1",
+            start_datetime=None,
+            end_datetime=None,
+        )
+        mock_shift.assert_called_once_with("rates", -10800)
+        mock_rates_from.assert_called_once()
 
 
 # ===================================================================
