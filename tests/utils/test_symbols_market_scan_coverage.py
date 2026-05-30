@@ -581,6 +581,9 @@ class TestMarketScan:
         assert result["requested_limit"] == 5
         assert result["returned_count"] == 1
         assert result["universe_size"] == 1
+        assert result["freshness"] in {"fresh", "stale"}
+        assert result["stale_rows"] in {0, 1}
+        assert result["data_as_of"]
         assert "only 1 symbols were available" in result["note"]
         assert result["units"]["price_change_pct"] == "percentage_points"
         assert result["units"]["tick_volume"] == "broker_tick_count"
@@ -591,13 +594,13 @@ class TestMarketScan:
         assert row["group"] == "Forex\\Majors"
         assert row["timeframe"] == "H1"
         assert row["time"]
-        assert row["data_stale"] in {False, True}
+        assert row["freshness"].startswith(("fresh", "stale"))
         assert set(row) == {
             "symbol",
             "group",
             "timeframe",
             "time",
-            "data_stale",
+            "freshness",
             "close",
             "price_change_pct",
             "tick_volume",

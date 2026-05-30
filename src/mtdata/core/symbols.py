@@ -876,6 +876,11 @@ def _market_scan_freshness_fields(bar_time: Optional[float]) -> Dict[str, Any]:
         "stale_after_seconds": int(_MARKET_SCAN_STALE_BAR_SECONDS),
         "bar_age_hours": _market_scan_round(age_seconds / 3600.0, digits=3),
         "data_stale": data_stale,
+        "freshness": format_freshness_label(
+            data_stale=data_stale,
+            age_seconds=age_seconds,
+            item="bar",
+        ),
     }
     if fields["data_stale"]:
         fields["stale_warning"] = (
@@ -1159,6 +1164,43 @@ def _market_scan_error(
         out["details"] = details
     if warnings:
         out["warnings"] = warnings
+    return out
+
+
+def _market_scan_freshness_summary(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    if not rows:
+        return {}
+    stale_count = sum(1 for row in rows if row.get("data_stale") is True)
+    row_count = len(rows)
+    if stale_count == row_count:
+        freshness = "stale"
+    elif stale_count:
+        freshness = f"mixed, {stale_count}/{row_count} stale"
+    else:
+        freshness = "fresh"
+
+    out: Dict[str, Any] = {
+        "freshness": freshness,
+        "stale_rows": int(stale_count),
+    }
+    row_times = [
+        str(row.get("time") or "").strip()
+        for row in rows
+        if str(row.get("time") or "").strip()
+    ]
+    if row_times:
+        out["data_as_of"] = max(row_times)
+
+    now_epoch = time.time()
+    closed_count = sum(
+        1
+        for row in rows
+        if quote_closed_session_context(row.get("symbol"), now_epoch=now_epoch)
+    )
+    if closed_count == row_count:
+        out["session_status"] = "closed_weekend"
+    elif closed_count:
+        out["session_status"] = f"mixed, {closed_count}/{row_count} closed_weekend"
     return out
 
 
@@ -2474,7 +2516,7 @@ def market_scan(  # noqa: C901
                 "group",
                 "timeframe",
                 "time",
-                "data_stale",
+                "freshness",
                 "close",
                 "price_change_pct",
                 "tick_volume",
@@ -2524,6 +2566,7 @@ def market_scan(  # noqa: C901
                 output_rows,
                 include_columns=detail_mode == "full",
             )
+            freshness_summary = _market_scan_freshness_summary(limited_rows)
             out: Dict[str, Any] = {
                 "success": True,
                 "data": table_payload["rows"],
@@ -2545,6 +2588,7 @@ def market_scan(  # noqa: C901
                 },
                 "meta": _market_scan_contract_meta(request=request, stats=stats),
             }
+            out.update(freshness_summary)
             units = _market_scan_units_for_rows(table_payload["rows"])
             if units:
                 out["units"] = units
