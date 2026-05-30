@@ -71,6 +71,14 @@ def test_report_generate_request_defaults_to_compact_detail():
     assert request.detail == "compact"
 
 
+def test_report_generate_request_template_choices_are_validated():
+    from mtdata.core.report.requests import ReportGenerateRequest
+
+    assert ReportGenerateRequest(symbol="EURUSD", template="SCALPING").template == "scalping"
+    with pytest.raises(ValidationError, match="template"):
+        ReportGenerateRequest(symbol="EURUSD", template="unknown_xyz")
+
+
 def test_basic_report_volatility_failure_keeps_method_errors(monkeypatch):
     from mtdata.core.report_templates import basic as template_basic_mod
 
@@ -479,17 +487,8 @@ class TestReportUnknownTemplate:
 
     def test_unknown_toon(self):
         fn = _get_report_generate()
-        # Patch the import block to succeed
-        mock_basic = MagicMock()
-        with patch("mtdata.core.report_templates.template_basic", mock_basic, create=True), \
-             patch("mtdata.core.report_templates.template_minimal", mock_basic, create=True), \
-             patch("mtdata.core.report_templates.template_advanced", mock_basic, create=True), \
-             patch("mtdata.core.report_templates.template_scalping", mock_basic, create=True), \
-             patch("mtdata.core.report_templates.template_intraday", mock_basic, create=True), \
-             patch("mtdata.core.report_templates.template_swing", mock_basic, create=True), \
-             patch("mtdata.core.report_templates.template_position", mock_basic, create=True):
-            res = fn("EURUSD", template="unknown_xyz", format="toon")
-        assert "error" in res
+        with pytest.raises(ValidationError, match="template"):
+            fn("EURUSD", template="unknown_xyz", format="toon")
 
 
 # ---------------------------------------------------------------------------

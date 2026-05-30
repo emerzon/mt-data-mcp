@@ -72,6 +72,11 @@ PARAM_HINTS = {
     "ensemble_weights": "Optional JSON weight map used when ensemble aggregation is weighted.",
     "library": "Forecast library/group (e.g. native, statsforecast, sktime).",
     "model": "Model identifier for this tool.",
+    "template": (
+        "Report template: minimal fast context+forecast, basic balanced default, "
+        "advanced regimes/HAR/conformal, scalping M5, intraday H1, swing H4/D1, "
+        "or position D1/W1."
+    ),
     "horizon": "Forecast horizon in bars.",
     "steps": "Number of backtest anchors or steps to run.",
     "spacing": "Spacing between backtest anchors (in bars).",

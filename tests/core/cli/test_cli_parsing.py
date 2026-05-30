@@ -665,6 +665,28 @@ class TestResolveParamKwargs:
         ]
         assert "fractals" not in kwargs["choices"]
 
+    def test_report_template_choices_are_explicit(self):
+        from mtdata.core.report.requests import ReportTemplateLiteral
+
+        param = {
+            "name": "template",
+            "type": ReportTemplateLiteral,
+            "required": False,
+            "default": "basic",
+        }
+        kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="report_generate")
+        assert kwargs["choices"] == [
+            "minimal",
+            "basic",
+            "advanced",
+            "scalping",
+            "intraday",
+            "swing",
+            "position",
+        ]
+        assert "Report template" in kwargs["help"]
+        assert "scalping" in kwargs["help"]
+
     def test_list_type(self):
         param = {"name": "items", "type": List[str], "required": False, "default": None}
         kwargs, is_mapping = _resolve_param_kwargs(param, None)

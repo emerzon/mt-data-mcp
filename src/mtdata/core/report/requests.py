@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Union
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 from ...shared.schema import (
     CompactStandardFullDetailLiteral,
@@ -11,11 +11,27 @@ from ...shared.schema import (
     reject_removed_field,
 )
 
+ReportTemplateLiteral = Literal[
+    "minimal",
+    "basic",
+    "advanced",
+    "scalping",
+    "intraday",
+    "swing",
+    "position",
+]
+
+_REPORT_TEMPLATE_HELP = (
+    "Report template: minimal fast context+forecast, basic balanced default, "
+    "advanced adds regimes/HAR/conformal, scalping M5 short-term setup, "
+    "intraday H1 setup, swing H4/D1 setup, position D1/W1 setup."
+)
+
 
 class ReportGenerateRequest(BaseModel):
     symbol: str
     horizon: Optional[int] = None
-    template: str = "basic"
+    template: ReportTemplateLiteral = Field("basic", description=_REPORT_TEMPLATE_HELP)
     timeframe: Optional[TimeframeLiteral] = None
     start: Optional[str] = None
     end: Optional[str] = None
@@ -28,4 +44,8 @@ class ReportGenerateRequest(BaseModel):
     @classmethod
     def _reject_removed_output(cls, values: Any) -> Any:
         values = reject_removed_field(values, field_name="output", replacement="json")
-        return reject_removed_field(values, field_name="format", replacement="json")
+        values = reject_removed_field(values, field_name="format", replacement="json")
+        if isinstance(values, dict) and isinstance(values.get("template"), str):
+            values = dict(values)
+            values["template"] = values["template"].strip().lower()
+        return values
