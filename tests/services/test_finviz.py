@@ -814,6 +814,45 @@ class TestFinvizTools:
         }
         assert isinstance(result.get("request_id"), str)
 
+    def test_finviz_equity_symbol_normalization_strips_mt5_suffixes(self):
+        from mtdata.core.finviz import _normalize_equity_symbol
+
+        for raw_symbol, finviz_symbol in (
+            ("AAPL.NAS", "AAPL"),
+            ("MSFT.O", "MSFT"),
+            ("NVDA.TQ", "NVDA"),
+            ("AAPL.L", "AAPL"),
+        ):
+            symbol, error = _normalize_equity_symbol(
+                raw_symbol,
+                tool_name="finviz_fundamentals",
+            )
+            assert error is None
+            assert symbol == finviz_symbol
+
+        symbol, error = _normalize_equity_symbol(
+            "BRK.B",
+            tool_name="finviz_fundamentals",
+        )
+        assert error is None
+        assert symbol == "BRK.B"
+
+    @patch("mtdata.core.finviz.get_stock_fundamentals")
+    def test_finviz_fundamentals_strips_mt5_equity_suffix(self, mock_get_fundamentals):
+        from mtdata.core.finviz import finviz_fundamentals
+
+        mock_get_fundamentals.return_value = {
+            "success": True,
+            "symbol": "AAPL",
+            "fundamentals": {"Company": "Apple Inc."},
+        }
+
+        raw = getattr(finviz_fundamentals, "__wrapped__", finviz_fundamentals)
+        result = raw("AAPL.NAS")
+
+        mock_get_fundamentals.assert_called_once_with("AAPL")
+        assert result["symbol"] == "AAPL"
+
     @patch("mtdata.core.finviz.get_stock_description")
     def test_finviz_description_normalizes_equity_symbols(self, mock_get_description):
         from mtdata.core.finviz import finviz_description
