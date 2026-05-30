@@ -98,16 +98,6 @@ def _round_trade_session_price(value: Any, *, digits: int) -> Any:
     return float(round(numeric, max(0, int(digits))))
 
 
-def _format_trade_session_price(value: Any, *, digits: int) -> Any:
-    try:
-        numeric = float(value)
-    except Exception:
-        return value
-    if not math.isfinite(numeric):
-        return value
-    return f"{numeric:.{max(0, int(digits))}f}"
-
-
 def _round_trade_session_prices(value: Any, *, digits: int, key: Optional[str] = None) -> Any:
     if isinstance(value, dict):
         return {
@@ -240,13 +230,6 @@ def _compact_trade_session_context_payload(payload: Dict[str, Any]) -> Dict[str,
                 if quote.get(key) not in (None, "")
             }
             if quote_summary:
-                if "spread" in quote_summary and any(
-                    key in quote for key in ("price_precision", "digits")
-                ):
-                    quote_summary["spread"] = _format_trade_session_price(
-                        quote_summary["spread"],
-                        digits=_price_precision_from_quote(quote),
-                    )
                 compact["quote"] = _normalize_nested_quote_time(
                     quote_summary,
                     compact=True,

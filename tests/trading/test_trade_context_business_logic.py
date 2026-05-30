@@ -178,7 +178,7 @@ def test_trade_session_context_compact_surfaces_portfolio_exposure_elsewhere() -
     assert out["account"]["profit"] == -1.73
 
 
-def test_trade_session_context_compact_formats_nested_quote_spread() -> None:
+def test_trade_session_context_compact_keeps_nested_quote_spread_numeric() -> None:
     ticker_compact = {
         "success": True,
         "symbol": "EURUSD",
@@ -209,7 +209,7 @@ def test_trade_session_context_compact_formats_nested_quote_spread() -> None:
     ):
         out = _raw_trade_session_context("EURUSD")
 
-    assert out["quote"]["spread"] == "0.00009"
+    assert out["quote"]["spread"] == 0.00009
     assert out["quote"]["price_precision"] == 5
     assert out["quote"]["spread_cost_currency"] == "USD"
     assert out["quote"]["data_stale"] is True

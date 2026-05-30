@@ -686,6 +686,7 @@ class TestFormatResultForCli:
             "margin_level": 250.0,
         }
         assert payload["quote"]["time"] == "2023-11-14 22:13"
+        assert payload["quote"]["spread"] == 0.0002
         assert payload["quote"]["spread_points"] == 20.0
         assert "time_display" not in payload["quote"]
         assert "time_epoch" not in payload["quote"]
