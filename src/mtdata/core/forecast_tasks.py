@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 
 from ..shared.schema import CompactFullDetailLiteral, TimeframeLiteral
 from ._mcp_instance import mcp
+from .error_envelope import build_error_payload
 from .execution_logging import run_logged_operation
 
 logger = logging.getLogger(__name__)
@@ -277,11 +278,14 @@ def forecast_task_status(request: ForecastTaskStatusRequest) -> Dict[str, Any]:
         tm = _get_task_manager()
         task = tm.get_status(request.task_id)
         if task is None:
-            return {
-                "success": False,
-                "detail": detail_mode,
-                "error": f"Task '{request.task_id}' not found.",
-            }
+            out = build_error_payload(
+                f"Task '{request.task_id}' not found.",
+                code="forecast_task_not_found",
+                operation="forecast_task_status",
+            )
+            out["detail"] = detail_mode
+            out["task_id"] = request.task_id
+            return out
         return _task_status_payload(task, detail=detail_mode)
 
     return run_logged_operation(
@@ -307,7 +311,15 @@ def forecast_task_cancel(request: ForecastTaskCancelRequest) -> Dict[str, Any]:
                 else "Task cancellation requested and worker terminated."
             )
         else:
-            result["message"] = "Task could not be cancelled."
+            out = build_error_payload(
+                "Task could not be cancelled.",
+                code="forecast_task_cancel_failed",
+                operation="forecast_task_cancel",
+            )
+            for key in ("task_id", "cancel_requested", "terminated", "status"):
+                if key in result:
+                    out[key] = result[key]
+            return out
         return result
 
     return run_logged_operation(
@@ -326,11 +338,14 @@ def forecast_task_wait(request: ForecastTaskWaitRequest) -> Dict[str, Any]:
         tm = _get_task_manager()
         task = tm.wait_for_status(request.task_id, timeout_seconds=request.timeout_seconds)
         if task is None:
-            return {
-                "success": False,
-                "detail": detail_mode,
-                "error": f"Task '{request.task_id}' not found.",
-            }
+            out = build_error_payload(
+                f"Task '{request.task_id}' not found.",
+                code="forecast_task_not_found",
+                operation="forecast_task_wait",
+            )
+            out["detail"] = detail_mode
+            out["task_id"] = request.task_id
+            return out
         payload = _task_status_payload(task, detail=detail_mode)
         payload["wait_timeout_seconds"] = request.timeout_seconds
         return payload
@@ -428,12 +443,14 @@ def forecast_models_delete(request: ForecastModelsDeleteRequest) -> Dict[str, An
                 "deleted": True,
                 "message": f"Model '{request.model_id}' deleted.",
             }
-        return {
-            "success": False,
-            "model_id": request.model_id,
-            "deleted": False,
-            "message": f"Model '{request.model_id}' not found.",
-        }
+        out = build_error_payload(
+            f"Model '{request.model_id}' not found.",
+            code="forecast_model_not_found",
+            operation="forecast_models_delete",
+        )
+        out["model_id"] = request.model_id
+        out["deleted"] = False
+        return out
 
     return run_logged_operation(
         logger,

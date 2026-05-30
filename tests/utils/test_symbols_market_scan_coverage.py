@@ -43,6 +43,26 @@ def _get_select_market_scan_symbols():
     return _select_market_scan_symbols
 
 
+def test_market_scan_error_uses_standard_error_envelope():
+    from mtdata.core.symbols import _market_scan_error
+
+    result = _market_scan_error(
+        "Timed out.",
+        code="tool_timeout",
+        request={"group": "Forex"},
+        stats={"processed": 10},
+    )
+
+    assert result["success"] is False
+    assert result["error"] == "Timed out."
+    assert result["error_code"] == "tool_timeout"
+    assert result["operation"] == "market_scan"
+    assert isinstance(result.get("request_id"), str)
+    assert result["meta"]["request"] == {"group": "Forex"}
+    assert result["meta"]["stats"] == {"processed": 10}
+    assert "symbols_top_markets" in result["related_tools"]
+
+
 def _make_symbol(
     name: str,
     *,

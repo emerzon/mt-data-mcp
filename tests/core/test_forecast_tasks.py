@@ -137,6 +137,24 @@ class TestForecastTaskStatus:
         assert result["result"]["metadata"] == {"epochs": 12}
         assert result["cancel_requested"] is True
 
+    def test_missing_task_uses_error_envelope(self):
+        from src.mtdata.core.forecast_tasks import forecast_task_status
+
+        mock_tm = MagicMock()
+        mock_tm.get_status.return_value = None
+
+        with patch(_PATCH_TM, return_value=mock_tm):
+            result = _unwrap(forecast_task_status)(
+                ForecastTaskStatusRequest(task_id="missing")
+            )
+
+        assert result["success"] is False
+        assert result["error"] == "Task 'missing' not found."
+        assert result["error_code"] == "forecast_task_not_found"
+        assert result["operation"] == "forecast_task_status"
+        assert result["task_id"] == "missing"
+        assert isinstance(result.get("request_id"), str)
+
 
 class TestForecastTaskCancel:
     def test_successful_cancel(self):
@@ -173,6 +191,11 @@ class TestForecastTaskCancel:
 
         assert result["success"] is False
         assert result["status"] == "not_found"
+        assert result["error"] == "Task could not be cancelled."
+        assert result["error_code"] == "forecast_task_cancel_failed"
+        assert result["operation"] == "forecast_task_cancel"
+        assert isinstance(result.get("request_id"), str)
+        assert "message" not in result
 
 
 class TestForecastTaskWait:
@@ -269,6 +292,11 @@ class TestForecastModels:
 
         assert result["success"] is False
         assert result["deleted"] is False
+        assert result["error"] == "Model 'nhits/EURUSD_H1/missing' not found."
+        assert result["error_code"] == "forecast_model_not_found"
+        assert result["operation"] == "forecast_models_delete"
+        assert isinstance(result.get("request_id"), str)
+        assert "message" not in result
 
 
 class TestForecastTrain:

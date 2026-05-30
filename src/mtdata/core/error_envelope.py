@@ -41,6 +41,23 @@ _ERROR_GUIDANCE: Dict[str, Dict[str, Any]] = {
             "Increase the lookback, request more bars, or use a longer timeframe."
         ),
     },
+    "forecast_task_not_found": {
+        "remediation": (
+            "Use forecast_task_list to inspect active and recent forecast tasks."
+        ),
+        "related_tools": ["forecast_task_list"],
+    },
+    "forecast_task_cancel_failed": {
+        "remediation": (
+            "Use forecast_task_status to verify the task state, or forecast_task_list "
+            "to inspect active tasks."
+        ),
+        "related_tools": ["forecast_task_status", "forecast_task_list"],
+    },
+    "forecast_model_not_found": {
+        "remediation": "Use forecast_models_list to inspect stored forecast models.",
+        "related_tools": ["forecast_models_list"],
+    },
 }
 
 

@@ -1154,12 +1154,12 @@ def _market_scan_error(
     details: Any = None,
     warnings: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
-    out: Dict[str, Any] = {
-        "success": False,
-        "error": str(message),
-        "error_code": str(code),
-        "meta": _market_scan_contract_meta(request=request, stats=stats),
-    }
+    out = build_error_payload(
+        message,
+        code=str(code),
+        operation="market_scan",
+    )
+    out["meta"] = _market_scan_contract_meta(request=request, stats=stats)
     if details not in (None, [], {}):
         out["details"] = details
     if warnings:
