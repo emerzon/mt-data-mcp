@@ -7,6 +7,7 @@ import math
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
+from ...bootstrap.settings import mt5_config
 from ...shared.schema import CompactFullDetailLiteral
 from ...utils.mt5 import (
     MT5ConnectionError,
@@ -22,7 +23,6 @@ from ...utils.utils import (
     _use_client_tz,
 )
 from .._mcp_instance import mcp
-from ...bootstrap.settings import mt5_config
 from ..execution_logging import run_logged_operation
 from ..output_contract import (
     ensure_common_meta,
@@ -39,6 +39,7 @@ logger = logging.getLogger(__name__)
 
 _TRADE_ACCOUNT_COMPACT_KEYS = (
     "success",
+    "login",
     "balance",
     "equity",
     "profit",
@@ -598,6 +599,9 @@ def trade_account_info(
         if info is None:
             return {"error": "Failed to get account info"}
         preflight = mt5.build_trade_preflight(account_info=info)
+        login = preflight.get("login")
+        if login is None:
+            login = getattr(info, "login", None)
         margin_level: Optional[float] = getattr(info, "margin_level", None)
         margin_level_note: Optional[str] = None
         try:
@@ -615,6 +619,7 @@ def trade_account_info(
 
         payload = {
             "success": True,
+            "login": login,
             "balance": info.balance,
             "equity": info.equity,
             "profit": info.profit,
@@ -641,6 +646,8 @@ def trade_account_info(
             "execution_soft_blockers": preflight.get("execution_soft_blockers"),
             "execution_blockers": preflight.get("execution_blockers"),
         }
+        if login is None:
+            payload.pop("login", None)
         if margin_level_note:
             payload["margin_level_note"] = margin_level_note
         payload = _trade_account_payload_for_mode(payload, mode=requested_mode)

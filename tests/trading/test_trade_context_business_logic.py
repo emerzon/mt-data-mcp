@@ -61,6 +61,7 @@ def test_trade_session_context_compacts_nested_sections_by_default() -> None:
         "mtdata.core.trading.context.trade_account_info",
         new=lambda: {
             "success": True,
+            "login": 123456,
             "balance": 10000.0,
             "equity": 10010.0,
             "margin_level": 250.0,
@@ -91,6 +92,7 @@ def test_trade_session_context_compacts_nested_sections_by_default() -> None:
     assert out["state"] == "open_position"
     assert out["state_scope"] == "symbol"
     assert out["account"] == {
+        "login": 123456,
         "equity": 10010.0,
         "account_type": "demo",
     }
@@ -240,7 +242,7 @@ def test_trade_session_context_full_detail_keeps_nested_full_payloads() -> None:
         return_value=timezone_meta,
     ), patch(
         "mtdata.core.trading.context.trade_account_info",
-        new=lambda: {"success": True, "balance": 10000.0},
+        new=lambda: {"success": True, "login": 123456, "balance": 10000.0},
     ), patch(
         "mtdata.core.trading.context.market_ticker",
         new=lambda symbol, detail="compact": ticker,
@@ -272,6 +274,7 @@ def test_trade_session_context_full_detail_keeps_nested_full_payloads() -> None:
     assert out["ticker"]["time_epoch"] == 1700000000
     assert "time_display" not in out["ticker"]
     assert out["account"]["balance"] == 10000.0
+    assert out["account"]["login"] == 123456
     assert "success" not in out["account"]
     assert "meta" not in out["account"]
     assert out["pending_orders"]["count"] == 1

@@ -184,13 +184,18 @@ def test_trade_risk_analyze_compact_keeps_blocked_sizing_context() -> None:
 
 def test_trade_risk_analyze_marks_position_sizing_incomplete_without_required_inputs() -> None:
     mt5 = MagicMock()
-    mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
+    mt5.account_info.return_value = SimpleNamespace(
+        login=123456,
+        equity=1000.0,
+        currency="USD",
+    )
     mt5.positions_get.return_value = []
 
     with _patched_mt5_module(mt5):
         out = trade_risk_analyze(symbol="EURUSD")
 
     assert out["success"] is True
+    assert out["account"]["login"] == 123456
     assert out["position_sizing"]["status"] == "incomplete"
     assert out["position_sizing"]["missing"] == [
         "desired_risk_pct",

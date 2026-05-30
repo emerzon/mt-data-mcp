@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import logging
 import sys
-from inspect import signature
 from collections import namedtuple
+from inspect import signature
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -59,6 +59,7 @@ def test_trade_account_info_includes_execution_preflight_fields() -> None:
         sys.modules["MetaTrader5"] = prev
 
     assert out["success"] is True
+    assert out["login"] == 123456
     assert out["server"] == "Demo-Server"
     assert out["company"] == "Broker LLC"
     assert out["trade_mode"] == "demo"
@@ -124,8 +125,10 @@ def test_trade_account_info_compact_detail_includes_account_fields_without_diagn
             leverage=100,
             trade_allowed=True,
             trade_expert=True,
+            login=123456,
         ),
         build_trade_preflight=lambda account_info=None: {
+            "login": 123456,
             "server": "Demo-Server",
             "company": "Broker LLC",
             "trade_mode": "demo",
@@ -142,6 +145,7 @@ def test_trade_account_info_compact_detail_includes_account_fields_without_diagn
         out = raw(detail="compact")
 
     assert out["balance"] == 10000.0
+    assert out["login"] == 123456
     assert out["profit"] == 50.0
     assert out["margin"] == 100.0
     assert out["margin_free"] == 9950.0

@@ -20,13 +20,13 @@ from ...utils.mt5 import (
     _normalize_times_in_struct,
     _to_mt5_history_epoch_seconds,
 )
+from ..error_envelope import normalize_error_payload
 from ..execution_logging import (
     infer_result_success,
     log_operation_finish,
     log_operation_start,
     run_logged_operation,
 )
-from ..error_envelope import normalize_error_payload
 from ..output_contract import resolve_output_contract
 from . import validation
 from .idempotency import IdempotencyStore
@@ -2414,9 +2414,17 @@ def run_trade_risk_analyze(  # noqa: C901
             else:
                 overall_risk_status = "defined"
 
+            account_payload: Dict[str, Any] = {
+                "equity": round(equity, 2),
+                "currency": currency,
+            }
+            account_login = getattr(account, "login", None)
+            if account_login is not None:
+                account_payload = {"login": account_login, **account_payload}
+
             result: Dict[str, Any] = {
                 "success": True,
-                "account": {"equity": round(equity, 2), "currency": currency},
+                "account": account_payload,
                 "portfolio_risk": {
                     "overall_risk_status": overall_risk_status,
                     "quantified_risk_level": quantified_risk_level,
