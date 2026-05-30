@@ -656,6 +656,46 @@ _BARRIER_CONCISE_DROP_KEYS = frozenset(
     }
 )
 
+_BARRIER_CONCISE_CANDIDATE_KEYS = (
+    "tp",
+    "sl",
+    "rr",
+    "tp_price",
+    "sl_price",
+    "prob_win",
+    "prob_loss",
+    "prob_tp_first",
+    "prob_sl_first",
+    "prob_no_hit",
+    "prob_resolve",
+    "breakeven_win_rate",
+    "breakeven_win_rate_net",
+    "edge",
+    "edge_vs_breakeven",
+    "ev",
+    "kelly",
+    "profit_factor",
+    "profit_factor_note",
+    "phantom_profit_risk",
+    "low_confidence",
+    "low_practical_win_probability",
+    "member_method",
+    "member_method_used",
+    "warning",
+)
+
+
+def _compact_barrier_candidate(row: Any) -> Any:
+    if not isinstance(row, dict):
+        return row
+    compact: Dict[str, Any] = {}
+    for key in _BARRIER_CONCISE_CANDIDATE_KEYS:
+        value = row.get(key)
+        if value is None or value == [] or value == {}:
+            continue
+        compact[key] = value
+    return compact
+
 
 def _resolved_barrier_output_mode(*, output_mode: str, concise_val: bool) -> str:
     if concise_val:
@@ -729,6 +769,18 @@ def _finalize_barrier_output(
     if resolved_mode == "concise":
         for key in _BARRIER_CONCISE_DROP_KEYS:
             out.pop(key, None)
+        if isinstance(out.get("best"), dict):
+            out["best"] = _compact_barrier_candidate(out["best"])
+        if top_k_val is None:
+            out.pop("results", None)
+        elif isinstance(out.get("results"), list):
+            out["results"] = [
+                _compact_barrier_candidate(row)
+                for row in out["results"]
+            ]
+        for key in ("grid", "least_negative"):
+            if out.get(key) is None:
+                out.pop(key, None)
     if out.get("status") != "ok":
         out["diagnostics"] = _minimal_barrier_diagnostics(
             ranked_candidates=ranked_candidates,

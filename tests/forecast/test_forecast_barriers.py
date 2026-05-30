@@ -574,6 +574,15 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
         self.assertEqual(result.get("output_mode"), "concise")
         self.assertNotIn("compute_profile", result)
         self.assertNotIn("diagnostics", result)
+        self.assertNotIn("results", result)
+        best = result.get("best")
+        self.assertIsInstance(best, dict)
+        self.assertIn("tp_price", best)
+        self.assertIn("ev", best)
+        self.assertNotIn("prob_win_ci95", best)
+        self.assertNotIn("prob_win_se", best)
+        self.assertNotIn("ev_gross", best)
+        self.assertNotIn("t_hit_resolve_mean_all", best)
 
     def test_forecast_barrier_optimize_search_profile_long(self):
         self._set_flat_history(1.0)
