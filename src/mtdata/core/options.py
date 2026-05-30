@@ -96,15 +96,23 @@ def _apply_options_detail(
     if kind == "barrier_price":
         compact = {
             key: out[key]
-            for key in ("success", "price", "detail")
+            for key in ("success", "price", "delta", "detail")
             if key in out
         }
         params = out.get("params_used")
         if isinstance(params, dict):
             compact["params"] = {
                 key: params[key]
-                for key in ("option_type", "barrier_type", "maturity_days")
-                if key in params
+                for key in (
+                    "spot",
+                    "strike",
+                    "barrier",
+                    "option_type",
+                    "barrier_type",
+                    "maturity_days",
+                    "volatility",
+                )
+                if key in params and params[key] is not None
             }
         return compact
     if kind == "heston_calibrate":

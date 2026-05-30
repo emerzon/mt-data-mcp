@@ -2343,6 +2343,9 @@ def test_options_tools_support_compact_and_full_detail(monkeypatch):
             "gamma": 0.01,
             "vega": 0.2,
             "params_used": {
+                "spot": kwargs["spot"],
+                "strike": kwargs["strike"],
+                "barrier": kwargs["barrier"],
                 "option_type": kwargs["option_type"],
                 "barrier_type": kwargs["barrier_type"],
                 "maturity_days": kwargs["maturity_days"],
@@ -2379,11 +2382,16 @@ def test_options_tools_support_compact_and_full_detail(monkeypatch):
     assert compact_price == {
         "success": True,
         "price": 1.23,
+        "delta": 0.4,
         "detail": "compact",
         "params": {
+            "spot": 100,
+            "strike": 105,
+            "barrier": 120,
             "option_type": "call",
             "barrier_type": "up_out",
             "maturity_days": 30,
+            "volatility": 0.2,
         },
     }
     assert raw_price(100, 105, 120, 30, detail="full")["delta"] == 0.4
