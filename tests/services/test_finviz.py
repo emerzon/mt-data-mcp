@@ -550,6 +550,7 @@ class TestFinvizTools:
         assert result["items"] == [
             {
                 "symbol": "EUR/USD",
+                "mt5_symbol": "EURUSD",
                 "name": "Euro / US Dollar",
                 "price": "1.10",
                 "perf_day_pct": 0.2,
@@ -577,8 +578,16 @@ class TestFinvizTools:
         assert result["available_count"] == 3
         assert result["omitted_item_count"] == 1
         assert result["items"] == [
-            {"symbol": "EUR/USD", "name": "Euro / US Dollar"},
-            {"symbol": "GBP/USD", "name": "British Pound / US Dollar"},
+            {
+                "symbol": "EUR/USD",
+                "mt5_symbol": "EURUSD",
+                "name": "Euro / US Dollar",
+            },
+            {
+                "symbol": "GBP/USD",
+                "mt5_symbol": "GBPUSD",
+                "name": "British Pound / US Dollar",
+            },
         ]
 
     @patch("mtdata.core.finviz.get_forex_performance")
@@ -601,8 +610,16 @@ class TestFinvizTools:
         assert result["count"] == 2
         assert result["available_count"] == 2
         assert result["items"] == [
-            {"symbol": "EUR/USD", "name": "Euro / US Dollar"},
-            {"symbol": "USD/JPY", "name": "US Dollar / Japanese Yen"},
+            {
+                "symbol": "EUR/USD",
+                "mt5_symbol": "EURUSD",
+                "name": "Euro / US Dollar",
+            },
+            {
+                "symbol": "USD/JPY",
+                "mt5_symbol": "USDJPY",
+                "name": "US Dollar / Japanese Yen",
+            },
         ]
 
     @patch("mtdata.core.finviz.get_forex_performance")

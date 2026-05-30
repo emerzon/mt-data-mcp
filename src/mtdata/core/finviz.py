@@ -32,6 +32,7 @@ from ..services.finviz import (
     screen_stocks,
 )
 from ..shared.schema import CompactFullDetailLiteral
+from ..shared.symbols import finviz_forex_symbol_to_mt5
 from ._mcp_instance import mcp
 from .error_envelope import build_error_payload
 from .execution_logging import run_logged_operation
@@ -237,6 +238,7 @@ _FOREX_CURRENCY_NAMES = {
 
 _FINVIZ_MARKET_COMPACT_FIELDS = (
     "symbol",
+    "mt5_symbol",
     "name",
     "price",
     "group",
@@ -274,6 +276,15 @@ def _derive_forex_pair_name(symbol: Any) -> Optional[str]:
     if left_name and right_name:
         return f"{left_name} / {right_name}"
     return None
+
+
+def _attach_finviz_forex_mt5_symbol(row: Dict[str, Any]) -> Dict[str, Any]:
+    mt5_symbol = finviz_forex_symbol_to_mt5(row.get("symbol"))
+    if mt5_symbol is None:
+        return row
+    out = dict(row)
+    out["mt5_symbol"] = mt5_symbol
+    return out
 
 
 def _finviz_percent_value(
@@ -437,6 +448,8 @@ def _canonicalize_finviz_market_row(row: Dict[str, Any]) -> Dict[str, Any]:
     change_pct = _finviz_percent_value(out.get("change_pct"))
     if change_pct is not None:
         out["change_pct"] = change_pct
+    if _is_known_forex_pair_row(out):
+        out = _attach_finviz_forex_mt5_symbol(out)
     return out
 
 
