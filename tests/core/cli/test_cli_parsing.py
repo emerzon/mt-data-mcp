@@ -760,6 +760,39 @@ class TestResolveParamKwargs:
         assert "Defaults to 10080 minutes" in kwargs["help"]
         assert "7 days" in kwargs["help"]
 
+    def test_trading_execution_flags_have_actionable_help(self):
+        place_dry_run_kwargs, _ = _resolve_param_kwargs(
+            {"name": "dry_run", "type": bool, "required": False, "default": False},
+            None,
+            cmd_name="trade_place",
+        )
+        require_sl_tp_kwargs, _ = _resolve_param_kwargs(
+            {"name": "require_sl_tp", "type": bool, "required": False, "default": True},
+            None,
+            cmd_name="trade_place",
+        )
+        close_all_kwargs, _ = _resolve_param_kwargs(
+            {"name": "close_all", "type": bool, "required": False, "default": False},
+            None,
+            cmd_name="trade_close",
+        )
+        modify_key_kwargs, _ = _resolve_param_kwargs(
+            {
+                "name": "idempotency_key",
+                "type": str,
+                "required": False,
+                "default": None,
+            },
+            None,
+            cmd_name="trade_modify",
+        )
+
+        assert "without sending it to the broker" in place_dry_run_kwargs["help"]
+        assert "require_sl_tp parameter" != require_sl_tp_kwargs["help"]
+        assert "stop_loss and take_profit" in require_sl_tp_kwargs["help"]
+        assert "Close all matching open positions" in close_all_kwargs["help"]
+        assert "dedupe key" in modify_key_kwargs["help"]
+
     def test_report_generate_format_help_is_removed_output_help(self):
         param = {
             "name": "format",

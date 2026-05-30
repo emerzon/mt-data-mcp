@@ -108,6 +108,35 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("symbols_top_markets", "limit"): (
         "Max symbols for the selected ranking; per leaderboard when rank_by=all."
     ),
+    ("trade_close", "close_all"): (
+        "Close all matching open positions instead of a single ticket."
+    ),
+    ("trade_close", "dry_run"): (
+        "Preview the close request without sending it to the broker."
+    ),
+    ("trade_close", "profit_only"): "Only close positions currently in profit.",
+    ("trade_close", "loss_only"): "Only close positions currently at a loss.",
+    ("trade_close", "close_priority"): (
+        "When multiple positions match, close loss_first, profit_first, or largest_first."
+    ),
+    ("trade_modify", "dry_run"): (
+        "Preview the modification without sending it to the broker."
+    ),
+    ("trade_modify", "idempotency_key"): (
+        "Optional in-process dedupe key; replays the prior matching modify result."
+    ),
+    ("trade_place", "dry_run"): (
+        "Preview the order without sending it to the broker."
+    ),
+    ("trade_place", "preview_detail"): (
+        "Dry-run preview detail: compact for key checks, full for execution diagnostics."
+    ),
+    ("trade_place", "require_sl_tp"): (
+        "Require both stop_loss and take_profit for market orders."
+    ),
+    ("trade_place", "auto_close_on_sl_tp_fail"): (
+        "If TP/SL attachment fails after a market fill, try to close the unprotected position."
+    ),
     ("trade_history", "minutes_back"): (
         "History lookback in minutes. Defaults to 10080 minutes (7 days) when "
         "start/end and minutes_back are omitted."

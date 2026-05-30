@@ -49,7 +49,13 @@ class TradePlaceRequest(BaseModel):
 
     symbol: Optional[str] = None
     volume: Optional[float] = None
-    order_type: Optional[OrderTypeInput] = None
+    order_type: Optional[OrderTypeInput] = Field(
+        default=None,
+        description=(
+            "Order type: BUY/SELL for market orders, or "
+            "BUY_LIMIT/BUY_STOP/SELL_LIMIT/SELL_STOP for pending orders."
+        ),
+    )
     price: Optional[Union[int, float]] = None
     stop_loss: Optional[Union[int, float]] = Field(
         default=None,
@@ -65,8 +71,14 @@ class TradePlaceRequest(BaseModel):
         default=None,
         description="Optional MT5 magic number. Defaults to configured order_magic when omitted.",
     )
-    deviation: int = 20
-    dry_run: bool = False
+    deviation: int = Field(
+        default=20,
+        description="Maximum allowed execution slippage in points.",
+    )
+    dry_run: bool = Field(
+        default=False,
+        description="Preview the order without sending it to the broker.",
+    )
     preview_detail: TradePlacePreviewDetail = Field(
         default="compact",
         validation_alias=AliasChoices("preview_detail", "detail"),
@@ -76,8 +88,20 @@ class TradePlaceRequest(BaseModel):
             "summary values normalize to compact."
         ),
     )
-    require_sl_tp: bool = True
-    auto_close_on_sl_tp_fail: bool = True
+    require_sl_tp: bool = Field(
+        default=True,
+        description=(
+            "Require both stop_loss and take_profit for market orders and fail "
+            "if protection cannot be attached."
+        ),
+    )
+    auto_close_on_sl_tp_fail: bool = Field(
+        default=True,
+        description=(
+            "If a filled market order cannot attach TP/SL, immediately try to "
+            "close the unprotected position."
+        ),
+    )
     idempotency_key: Optional[str] = Field(
         default=None,
         description=(
@@ -102,7 +126,10 @@ class TradeModifyRequest(BaseModel):
     )
     expiration: Optional[ExpirationValue] = None
     comment: Optional[str] = None
-    dry_run: bool = False
+    dry_run: bool = Field(
+        default=False,
+        description="Preview the modification without sending it to the broker.",
+    )
     idempotency_key: Optional[str] = Field(
         default=None,
         description=(
@@ -114,14 +141,34 @@ class TradeModifyRequest(BaseModel):
 
 class TradeCloseRequest(BaseModel):
     ticket: Optional[Union[int, str]] = None
-    close_all: bool = False
+    close_all: bool = Field(
+        default=False,
+        description="Close all matching open positions instead of a single ticket.",
+    )
     symbol: Optional[str] = None
     magic: Optional[int] = None
     volume: Optional[float] = None
-    dry_run: bool = False
-    profit_only: bool = False
-    loss_only: bool = False
-    close_priority: Optional[Literal["loss_first", "profit_first", "largest_first"]] = None
+    dry_run: bool = Field(
+        default=False,
+        description="Preview the close request without sending it to the broker.",
+    )
+    profit_only: bool = Field(
+        default=False,
+        description="Only close positions that are currently profitable.",
+    )
+    loss_only: bool = Field(
+        default=False,
+        description="Only close positions that are currently losing.",
+    )
+    close_priority: Optional[
+        Literal["loss_first", "profit_first", "largest_first"]
+    ] = Field(
+        default=None,
+        description=(
+            "When multiple positions match, choose close order by loss_first, "
+            "profit_first, or largest_first."
+        ),
+    )
     comment: Optional[str] = None
     deviation: int = 20
 
