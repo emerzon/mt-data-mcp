@@ -277,13 +277,64 @@ _FINVIZ_MARKET_COMPACT_FIELDS = (
     "perf_quart",
     "perf_year",
 )
-_FINVIZ_SCREEN_COMPACT_FIELDS = (
-    "symbol",
-    "price",
-    "change_pct",
-    "volume",
-    "pe_ratio",
-)
+_FINVIZ_SCREEN_COMPACT_FIELDS_BY_VIEW = {
+    "overview": (
+        "symbol",
+        "price",
+        "change_pct",
+        "volume",
+        "pe_ratio",
+    ),
+    "valuation": (
+        "symbol",
+        "price",
+        "market_cap",
+        "pe_ratio",
+        "forward_pe",
+        "peg",
+        "price_to_sales",
+        "price_to_book",
+    ),
+    "financial": (
+        "symbol",
+        "profit_margin",
+        "operating_margin",
+        "gross_margin",
+        "return_on_assets",
+        "return_on_equity",
+        "current_ratio",
+        "debt_to_equity",
+    ),
+    "ownership": (
+        "symbol",
+        "insider_own",
+        "insider_trans",
+        "inst_own",
+        "inst_trans",
+        "short_float",
+        "short_ratio",
+    ),
+    "performance": (
+        "symbol",
+        "performance_week",
+        "performance_month",
+        "performance_quarter",
+        "performance_half_year",
+        "performance_year",
+        "performance_ytd",
+    ),
+    "technical": (
+        "symbol",
+        "price",
+        "change_pct",
+        "volume",
+        "rsi_14",
+        "sma20_distance_pct",
+        "sma50_distance_pct",
+        "atr_14",
+        "beta",
+    ),
+}
 _FINVIZ_DETAIL_ERROR = (
     "detail must be one of: compact, standard, summary, full. "
     "Finviz standard/summary output uses the compact shape."
@@ -371,10 +422,22 @@ def _is_known_forex_pair_row(row: Any) -> bool:
     return _derive_forex_pair_name(row.get("symbol")) is not None
 
 
-def _compact_finviz_screen_row(row: Dict[str, Any]) -> Dict[str, Any]:
+def _finviz_screen_compact_fields(view: Any) -> tuple[str, ...]:
+    view_key = str(view or "overview").strip().lower()
+    return _FINVIZ_SCREEN_COMPACT_FIELDS_BY_VIEW.get(
+        view_key,
+        _FINVIZ_SCREEN_COMPACT_FIELDS_BY_VIEW["overview"],
+    )
+
+
+def _compact_finviz_screen_row(
+    row: Dict[str, Any],
+    *,
+    view: str = "overview",
+) -> Dict[str, Any]:
     return {
         field: row[field]
-        for field in _FINVIZ_SCREEN_COMPACT_FIELDS
+        for field in _finviz_screen_compact_fields(view)
         if field in row and row[field] not in (None, "")
     }
 
@@ -392,9 +455,14 @@ def _normalize_finviz_market_payload(
         return result
     detail_mode = normalize_output_verbosity_detail(detail, default="compact")
     rows = result.get(rows_key, [])
+    key_normalizer = (
+        _normalize_finviz_output_key
+        if rows_key == "stocks"
+        else _snake_finviz_market_key
+    )
     normalized_rows = [
         _canonicalize_finviz_market_row(
-            {_snake_finviz_market_key(key): value for key, value in row.items()}
+            {key_normalizer(key): value for key, value in row.items()}
         )
         if isinstance(row, dict)
         else row
@@ -415,8 +483,11 @@ def _normalize_finviz_market_payload(
             for row in limited_rows
         ]
     elif detail_mode != "full" and rows_key == "stocks":
+        view = str(request.get("view") or result.get("view") or "overview")
         output_rows = [
-            _compact_finviz_screen_row(row) if isinstance(row, dict) else row
+            _compact_finviz_screen_row(row, view=view)
+            if isinstance(row, dict)
+            else row
             for row in limited_rows
         ]
     else:

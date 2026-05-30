@@ -1509,6 +1509,104 @@ class TestFinvizTools:
         ]
 
     @patch('mtdata.core.finviz.screen_stocks')
+    def test_finviz_screen_compact_uses_selected_view_fields(self, mock_screen):
+        from mtdata.core.finviz import finviz_screen
+
+        def _run_direct(_logger, operation, func, **fields):
+            return func()
+
+        mock_screen.return_value = {
+            "success": True,
+            "count": 1,
+            "stocks": [
+                {
+                    "Ticker": "AAPL",
+                    "Price": 298.21,
+                    "Change": 0.0087,
+                    "Volume": 123456,
+                    "P/E": "28.5",
+                    "RSI (14)": "45.1",
+                    "SMA20": "2.0%",
+                    "SMA50": "-1.2%",
+                    "ATR (14)": "3.4",
+                    "Beta": "1.2",
+                }
+            ],
+        }
+
+        with patch("mtdata.core.finviz.run_logged_operation", side_effect=_run_direct):
+            result = finviz_screen.__wrapped__(
+                filters={"Exchange": "NASDAQ"},
+                view="technical",
+            )
+
+        mock_screen.assert_called_once_with(
+            filters={"Exchange": "NASDAQ"},
+            order=None,
+            limit=20,
+            page=1,
+            view="technical",
+        )
+        assert result["detail"] == "compact"
+        assert result["items"] == [
+            {
+                "symbol": "AAPL",
+                "price": 298.21,
+                "change_pct": 0.87,
+                "volume": 123456,
+                "rsi_14": "45.1",
+                "sma20_distance_pct": "2.0%",
+                "sma50_distance_pct": "-1.2%",
+                "atr_14": "3.4",
+                "beta": "1.2",
+            }
+        ]
+
+    @patch('mtdata.core.finviz.screen_stocks')
+    def test_finviz_screen_compact_uses_valuation_fields(self, mock_screen):
+        from mtdata.core.finviz import finviz_screen
+
+        def _run_direct(_logger, operation, func, **fields):
+            return func()
+
+        mock_screen.return_value = {
+            "success": True,
+            "count": 1,
+            "stocks": [
+                {
+                    "Ticker": "AAPL",
+                    "Price": 298.21,
+                    "Market Cap": "3.0T",
+                    "P/E": "28.5",
+                    "Forward P/E": "26.1",
+                    "PEG": "2.3",
+                    "P/S": "8.1",
+                    "P/B": "36.2",
+                    "RSI (14)": "45.1",
+                }
+            ],
+        }
+
+        with patch("mtdata.core.finviz.run_logged_operation", side_effect=_run_direct):
+            result = finviz_screen.__wrapped__(
+                filters={"Exchange": "NASDAQ"},
+                view="valuation",
+            )
+
+        assert result["items"] == [
+            {
+                "symbol": "AAPL",
+                "price": 298.21,
+                "market_cap": "3.0T",
+                "pe_ratio": "28.5",
+                "forward_pe": "26.1",
+                "peg": "2.3",
+                "price_to_sales": "8.1",
+                "price_to_book": "36.2",
+            }
+        ]
+
+    @patch('mtdata.core.finviz.screen_stocks')
     def test_finviz_screen_tool_defaults_to_20_rows(self, mock_screen):
         from mtdata.core.finviz import finviz_screen
 
