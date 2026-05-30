@@ -141,6 +141,25 @@ class TestNextTimesFromLast:
         result = next_times_from_last(0.0, 3600, 1)
         assert result == [3600.0]
 
+    def test_skip_weekends_moves_to_sunday_open(self):
+        last_epoch = pd.Timestamp("2026-05-22 21:00", tz="UTC").timestamp()
+        result = next_times_from_last(
+            last_epoch,
+            3600,
+            4,
+            skip_weekends=True,
+        )
+
+        assert [
+            pd.Timestamp(epoch, unit="s", tz="UTC").strftime("%Y-%m-%d %H:%M")
+            for epoch in result
+        ] == [
+            "2026-05-24 22:00",
+            "2026-05-24 23:00",
+            "2026-05-25 00:00",
+            "2026-05-25 01:00",
+        ]
+
 
 class TestPdFreqFromTimeframe:
     def test_m1(self):

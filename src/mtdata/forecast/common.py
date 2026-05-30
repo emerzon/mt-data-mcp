@@ -4,7 +4,7 @@ import math
 import os
 import re
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -299,10 +299,66 @@ def quantity_to_target(quantity: str) -> str:
     return "return" if str(quantity).strip().lower() == "return" else "price"
 
 
-def next_times_from_last(last_epoch: float, tf_secs: int, horizon: int) -> List[float]:
+def is_standard_weekend_closed_epoch(epoch: Any) -> bool:
+    try:
+        dt_utc = datetime.fromtimestamp(float(epoch), tz=timezone.utc)
+    except Exception:
+        return False
+    weekday = dt_utc.weekday()
+    if weekday == 5:
+        return True
+    if weekday == 6 and dt_utc.hour < 22:
+        return True
+    if weekday == 4 and dt_utc.hour >= 22:
+        return True
+    return False
+
+
+def _next_standard_weekend_open_epoch(epoch: float) -> float:
+    dt_utc = datetime.fromtimestamp(float(epoch), tz=timezone.utc)
+    weekday = dt_utc.weekday()
+    if weekday == 6:
+        open_dt = dt_utc.replace(hour=22, minute=0, second=0, microsecond=0)
+    else:
+        days_until_sunday = (6 - weekday) % 7
+        open_date = (dt_utc + timedelta(days=days_until_sunday)).date()
+        open_dt = datetime(
+            open_date.year,
+            open_date.month,
+            open_date.day,
+            22,
+            0,
+            0,
+            tzinfo=timezone.utc,
+        )
+    open_epoch = float(open_dt.timestamp())
+    return open_epoch if open_epoch > float(epoch) else float(epoch)
+
+
+def next_times_from_last(
+    last_epoch: float,
+    tf_secs: int,
+    horizon: int,
+    *,
+    skip_weekends: bool = False,
+) -> List[float]:
     base = float(last_epoch)
     step = float(tf_secs)
-    return [base + step * (i + 1) for i in range(int(horizon))]
+    if not skip_weekends:
+        return [base + step * (i + 1) for i in range(int(horizon))]
+    out: List[float] = []
+    current = base
+    for _ in range(int(horizon)):
+        current += step
+        guard = 0
+        while is_standard_weekend_closed_epoch(current) and guard < 8:
+            next_open = _next_standard_weekend_open_epoch(current)
+            if next_open <= current:
+                break
+            current = next_open
+            guard += 1
+        out.append(current)
+    return out
 
 
 def pd_freq_from_timeframe(tf: str) -> str:

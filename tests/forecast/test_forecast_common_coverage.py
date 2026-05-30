@@ -646,7 +646,7 @@ class TestFormatForecastOutput:
             )
         assert result["timezone"] == "America/New_York"
 
-    def test_forex_intraday_forecast_warns_when_times_cross_weekend(self):
+    def test_forex_intraday_forecast_skips_weekend_gap(self):
         vals = np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
         last_epoch = pd.Timestamp("2026-05-22 20:00", tz="UTC").timestamp()
 
@@ -670,18 +670,17 @@ class TestFormatForecastOutput:
                 timeframe="H1",
             )
 
-        assert result["market_hours_note"].startswith("3 of 6 forecast bars")
-        assert result["open_market_forecast_bars"] == 3
-        assert result["closed_market_forecast_bars"] == 3
-        assert result["forecast_market_status"] == [
-            "open",
-            "open",
-            "open",
-            "closed_weekend",
-            "closed_weekend",
-            "closed_weekend",
+        assert result["forecast_time"] == [
+            "2026-05-22 21:00",
+            "2026-05-24 22:00",
+            "2026-05-24 23:00",
+            "2026-05-25 00:00",
+            "2026-05-25 01:00",
+            "2026-05-25 02:00",
         ]
-        assert any("Saturday/Sunday" in warning for warning in result["warnings"])
+        assert "market_hours_note" not in result
+        assert "forecast_market_status" not in result
+        assert "warnings" not in result
 
 
 # ===================================================================

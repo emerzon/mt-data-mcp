@@ -38,6 +38,7 @@ from . import forecast_preprocessing as _forecast_preprocessing
 from .common import _normalize_weights as _normalize_weights_impl
 from .common import (
     default_seasonality,
+    is_standard_weekend_closed_epoch,
     next_times_from_last,
 )
 from .common import (
@@ -148,12 +149,19 @@ def _count_weekend_forecast_times(times: List[str]) -> int:
     return weekend_count
 
 
+def _uses_standard_weekend_projection(symbol: Optional[str], tf_secs: int) -> bool:
+    return (
+        _looks_like_forex_symbol(symbol)
+        and int(tf_secs) < TIMEFRAME_SECONDS.get("D1", 86400)
+    )
+
+
 def _forex_forecast_market_status(epoch: Any) -> str:
     try:
-        dt_utc = datetime.fromtimestamp(float(epoch), tz=timezone.utc)
+        float(epoch)
     except Exception:
         return "unknown"
-    return "closed_weekend" if dt_utc.weekday() >= 5 else "open"
+    return "closed_weekend" if is_standard_weekend_closed_epoch(epoch) else "open"
 
 
 @dataclass(frozen=True)
@@ -473,13 +481,19 @@ def _prepare_feature_context(
     target_series: pd.Series,
     dimred_method: Optional[str],
     dimred_params: Optional[Dict[str, Any]],
+    symbol: Optional[str] = None,
 ) -> Tuple[Optional[np.ndarray], Optional[np.ndarray], Dict[str, Any]]:
     """Prepare training and future exogenous features if requested."""
     X = exog_used
     future_exog = exog_future
     feat_info: Dict[str, Any] = {}
     if X is None and features:
-        future_times = next_times_from_last(float(df['time'].iloc[-1]), int(tf_secs), int(horizon))
+        future_times = next_times_from_last(
+            float(df['time'].iloc[-1]),
+            int(tf_secs),
+            int(horizon),
+            skip_weekends=_uses_standard_weekend_projection(symbol, int(tf_secs)),
+        )
         try:
             X, built_future_exog, feat_info = _forecast_preprocessing.prepare_features(
                 df,
@@ -569,6 +583,7 @@ def build_training_context(
         target_series=target_series,
         dimred_method=dimred_method,
         dimred_params=dimred_params,
+        symbol=symbol,
     )
     return TrainingExecutionContext(
         method_l=method_l,
@@ -976,7 +991,12 @@ def _format_forecast_output(
 ) -> Dict[str, Any]:
     """Format forecast output with proper structure."""
     # Generate future time indices
-    future_epochs = next_times_from_last(last_epoch, tf_secs, horizon)
+    future_epochs = next_times_from_last(
+        last_epoch,
+        tf_secs,
+        horizon,
+        skip_weekends=_uses_standard_weekend_projection(symbol, tf_secs),
+    )
     use_client_tz = _use_client_tz()
     client_tz = _resolve_client_tz() if use_client_tz else None
     fmt_time = _format_time_minimal_local if use_client_tz else _format_time_minimal
@@ -1098,8 +1118,7 @@ def _format_forecast_output(
         result.update(metadata)
 
     if (
-        _looks_like_forex_symbol(symbol)
-        and tf_secs < TIMEFRAME_SECONDS.get("D1", 86400)
+        _uses_standard_weekend_projection(symbol, tf_secs)
         and forecast_times
     ):
         market_status = [_forex_forecast_market_status(epoch) for epoch in future_epochs]
@@ -1254,6 +1273,7 @@ def forecast_engine(  # noqa: C901
             target_series=target_series,
             dimred_method=dimred_method,
             dimred_params=dimred_params,
+            symbol=symbol,
         )
 
         # Get last timestamp and values
