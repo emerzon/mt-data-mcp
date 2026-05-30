@@ -2469,19 +2469,11 @@ def market_scan(  # noqa: C901
             ]
             compact_headers = [
                 "symbol",
-                "group",
-                "timeframe",
-                "time",
-                "freshness",
                 "close",
                 "price_change_pct",
                 "tick_volume",
                 "spread_points",
-                "spread_pct",
-                "spread_cost_per_lot",
-                "spread_cost_currency",
                 "rsi",
-                "sma_distance_pct",
             ]
             headers = compact_headers if detail_mode == "compact" else full_headers
             output_rows = (
