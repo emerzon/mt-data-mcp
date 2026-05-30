@@ -945,9 +945,11 @@ class TestResolveParamKwargs:
             "default": "all",
         }
         kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="symbols_top_markets")
+        assert "abs_price_change_pct (default)" in kwargs["help"]
         assert "all, spread/spread_pct" in kwargs["help"]
         assert "volume/tick_volume" in kwargs["help"]
-        assert "price_change/price_change_pct/abs_price_change_pct" in kwargs["help"]
+        assert "price_change/price_change_pct" in kwargs["help"]
+        assert "abs_price_change/abs_price_change_pct" in kwargs["help"]
         assert "rsi" not in kwargs["help"]
 
     def test_finviz_news_limit_help_is_command_specific(self):

@@ -1767,8 +1767,8 @@ _SYMBOLS_TOP_MARKETS_RANK_BY_ALIASES = {
     "spread_pct": "spread",
     "tick_volume": "volume",
     "price_change_pct": "price_change",
-    "abs_price_change_pct": "price_change",
-    "abs_price_change": "price_change",
+    "abs_price_change_pct": "abs_price_change",
+    "abs_price_change": "abs_price_change",
 }
 
 
@@ -1800,8 +1800,9 @@ def symbols_top_markets(  # noqa: C901
         "spread_pct",
         "tick_volume",
         "price_change_pct",
+        "abs_price_change",
         "abs_price_change_pct",
-    ] = "price_change",  # type: ignore
+    ] = "abs_price_change_pct",  # type: ignore
     limit: Optional[int] = 10,
     universe: Literal["visible", "all"] = "visible",  # type: ignore
     timeframe: TimeframeLiteral = "H1",
@@ -1812,28 +1813,36 @@ def symbols_top_markets(  # noqa: C901
     Defaults to visible tradable symbols for responsiveness. Set `universe="all"` to
     include hidden tradable symbols too; that mode is slower because MT5 may need to
     activate quotes for instruments that are not already visible. Defaults to a
-    single highest-price-change leaderboard; set `rank_by="all"` for spread,
-    volume, and price-change leaderboards. Volume and price-change rankings use
-    the most recent completed bar on `timeframe`. Uses compact leaderboard rows
-    by default. Set `detail="full"` for the expanded row shape and collection
-    metadata. Use `market_scan` instead when you need symbol/group inputs,
-    RSI/SMA filters, or a single flat scanner table.
+    single absolute-price-change leaderboard; set `rank_by="price_change"` for
+    gainers only or `rank_by="all"` for spread, volume, and signed price-change
+    leaderboards. Volume and price-change rankings use the most recent completed
+    bar on `timeframe`. Uses compact leaderboard rows by default. Set
+    `detail="full"` for the expanded row shape and collection metadata. Use
+    `market_scan` instead when you need symbol/group inputs, RSI/SMA filters, or
+    a single flat scanner table.
     """
 
     detail_mode = normalize_output_verbosity_detail(detail, default="compact")
 
     def _run() -> Dict[str, Any]:  # noqa: C901
         try:
-            raw_rank_by_value = str(rank_by or "price_change").strip().lower()
+            raw_rank_by_value = str(rank_by or "abs_price_change_pct").strip().lower()
             rank_by_value = _SYMBOLS_TOP_MARKETS_RANK_BY_ALIASES.get(
                 raw_rank_by_value,
                 raw_rank_by_value,
             )
-            if rank_by_value not in {"all", "spread", "volume", "price_change"}:
+            if rank_by_value not in {
+                "all",
+                "spread",
+                "volume",
+                "price_change",
+                "abs_price_change",
+            }:
                 return {
                     "error": (
                         "rank_by must be one of: all, spread/spread_pct, "
-                        "volume/tick_volume, price_change/price_change_pct."
+                        "volume/tick_volume, price_change/price_change_pct, "
+                        "abs_price_change/abs_price_change_pct."
                     )
                 }
 
@@ -1842,7 +1851,12 @@ def symbols_top_markets(  # noqa: C901
                 return {"error": "universe must be 'visible' or 'all'."}
 
             timeframe_value = str(timeframe or "H1").strip().upper()
-            needs_bar_data = rank_by_value in {"all", "volume", "price_change"}
+            needs_bar_data = rank_by_value in {
+                "all",
+                "volume",
+                "price_change",
+                "abs_price_change",
+            }
             if needs_bar_data and timeframe_value not in TIMEFRAME_MAP:
                 return {"error": invalid_timeframe_error(timeframe_value, TIMEFRAME_MAP)}
             mt5_timeframe = TIMEFRAME_MAP.get(timeframe_value)
@@ -1910,12 +1924,20 @@ def symbols_top_markets(  # noqa: C901
                     if bar_error:
                         if rank_by_value in {"all", "volume"}:
                             _record_issue("volume", symbol_name, bar_error)
-                        if rank_by_value in {"all", "price_change"}:
+                        if rank_by_value in {
+                            "all",
+                            "price_change",
+                            "abs_price_change",
+                        }:
                             _record_issue("price_change", symbol_name, bar_error)
                     elif bar_row is not None:
                         if rank_by_value in {"all", "volume"}:
                             volume_rows.append(dict(bar_row))
-                        if rank_by_value in {"all", "price_change"}:
+                        if rank_by_value in {
+                            "all",
+                            "price_change",
+                            "abs_price_change",
+                        }:
                             price_change_rows.append(dict(bar_row))
 
             for symbol in selected_symbols:
@@ -1928,7 +1950,11 @@ def symbols_top_markets(  # noqa: C901
                                 _record_issue("spread", symbol_name, err)
                             if rank_by_value in {"all", "volume"}:
                                 _record_issue("volume", symbol_name, err)
-                            if rank_by_value in {"all", "price_change"}:
+                            if rank_by_value in {
+                                "all",
+                                "price_change",
+                                "abs_price_change",
+                            }:
                                 _record_issue("price_change", symbol_name, err)
                             continue
                         _collect_for_symbol(symbol)
@@ -1952,7 +1978,11 @@ def symbols_top_markets(  # noqa: C901
             price_change_rows.sort(
                 key=lambda row: (
                     row.get("price_change_pct") is None,
-                    -(row.get("price_change_pct") or 0.0),
+                    (
+                        -abs(float(row.get("price_change_pct") or 0.0))
+                        if rank_by_value == "abs_price_change"
+                        else -(row.get("price_change_pct") or 0.0)
+                    ),
                     row.get("symbol") or "",
                 )
             )
@@ -2051,14 +2081,18 @@ def symbols_top_markets(  # noqa: C901
                     out["skipped_examples"] = metric_issues["volume"]
                 return out
 
-            if rank_by_value == "price_change":
+            if rank_by_value in {"price_change", "abs_price_change"}:
                 out = _market_scan_table(
                     _top_markets_headers("price_change", detail_mode=detail_mode),
                     price_change_rows,
                     include_contract_meta=detail_mode == "full",
                 )
                 out.update(scan_meta)
-                out["ranking"] = "highest_price_change"
+                out["ranking"] = (
+                    "largest_abs_price_change"
+                    if rank_by_value == "abs_price_change"
+                    else "highest_price_change"
+                )
                 out.update(_scope_fields("price_change", price_change_rows))
                 if detail_mode == "full":
                     out["evaluated_symbols"] = evaluated_counts["price_change"]

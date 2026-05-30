@@ -135,7 +135,7 @@ class TestSymbolsTopMarkets:
     @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
     @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
     @patch("mtdata.core.symbols.mt5.symbols_get")
-    def test_default_returns_single_price_change_leaderboard(
+    def test_default_returns_single_abs_price_change_leaderboard(
         self,
         mock_symbols_get,
         mock_rates,
@@ -150,7 +150,7 @@ class TestSymbolsTopMarkets:
                 {
                     "time": 1700000000.0,
                     "open": 1.1000,
-                    "close": 1.1010,
+                    "close": 1.0450,
                     "tick_volume": 100,
                     "real_volume": 0,
                 }
@@ -170,11 +170,11 @@ class TestSymbolsTopMarkets:
         result = fn(limit=1, timeframe="H1")
 
         assert result["success"] is True
-        assert result["ranking"] == "highest_price_change"
+        assert result["ranking"] == "largest_abs_price_change"
         assert result["requested_limit"] == 1
         assert result["returned_count"] == 1
         assert len(result["data"]) == 1
-        assert result["data"][0]["symbol"] == "GBPUSD"
+        assert result["data"][0]["symbol"] == "EURUSD"
         assert "lowest_spread" not in result
         assert "highest_volume" not in result
         assert "highest_price_change" not in result
@@ -464,7 +464,7 @@ class TestSymbolsTopMarkets:
         assert result == {
             "error": (
                 "rank_by must be one of: all, spread/spread_pct, volume/tick_volume, "
-                "price_change/price_change_pct."
+                "price_change/price_change_pct, abs_price_change/abs_price_change_pct."
             )
         }
 
