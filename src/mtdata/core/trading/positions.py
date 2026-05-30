@@ -256,6 +256,9 @@ def _normalize_trade_read_output(
             message_text = str(rows.get("message", "")).strip()
             if message_text:
                 out["message"] = message_text
+            for key in ("total_count", "offset", "limit", "has_more"):
+                if key in rows:
+                    out[key] = rows.get(key)
             if len(items) == 0:
                 _mark_trade_read_empty(out, message_text or None)
             return _compact_trade_read_output(out, request=request)
@@ -628,6 +631,7 @@ def _trade_history_request_echo(request: Any, *, history_kind: Any) -> Dict[str,
         "order_ticket",
         "symbol",
         "limit",
+        "offset",
     ):
         value = getattr(request, field, None)
         if value is None:
@@ -808,8 +812,10 @@ def normalize_trade_history_output(
                 column_style=getattr(request, "column_style", "snake_case"),
             )
     if include_request_metadata:
-        for key in ("symbol", "ticket", "limit"):
+        for key in ("symbol", "ticket"):
             out.pop(key, None)
+        if "total_count" not in out:
+            out.pop("limit", None)
         request_echo = _trade_history_request_echo(request, history_kind=history_kind)
         if request_echo:
             out["request_echo"] = request_echo

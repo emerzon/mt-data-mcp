@@ -86,6 +86,29 @@ def test_trade_history_deals_normalizes_time_to_utc_string() -> None:
     assert out["timezone"] == "UTC"
 
 
+def test_trade_history_supports_offset_pagination() -> None:
+    mt5, prev = _install_mock_mt5()
+    Deal = namedtuple("Deal", ["ticket", "time", "symbol"])
+    mt5.history_deals_get.return_value = [
+        Deal(ticket=1, time=1700000000, symbol="EURUSD"),
+        Deal(ticket=2, time=1700000060, symbol="EURUSD"),
+        Deal(ticket=3, time=1700000120, symbol="EURUSD"),
+        Deal(ticket=4, time=1700000180, symbol="EURUSD"),
+    ]
+
+    with patch("mtdata.core.trading.account._use_client_tz", lambda: False):
+        out = trade_history(history_kind="deals", limit=2, offset=1, __cli_raw=True)
+    if prev is not None:
+        sys.modules["MetaTrader5"] = prev
+
+    assert out["success"] is True
+    assert [item["ticket"] for item in out["items"]] == [2, 3]
+    assert out["total_count"] == 4
+    assert out["offset"] == 1
+    assert out["limit"] == 2
+    assert out["has_more"] is True
+
+
 def test_trade_history_rounds_money_fields_for_display() -> None:
     out = normalize_trade_history_output(
         [

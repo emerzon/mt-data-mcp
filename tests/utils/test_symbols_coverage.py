@@ -89,6 +89,27 @@ class TestSymbolsListNoSearch:
         assert res["headers"] == ["symbol", "group", "description"]
         assert res["data"] == [["EURUSD", "Forex\\Majors", "Euro vs US Dollar"]]
 
+    @patch(_NORM_LIMIT, return_value=2)
+    @patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r})
+    @patch(_GROUP_PATH, return_value="Forex\\Majors")
+    @patch(f"{_MT5}.symbols_get")
+    def test_offset_pages_symbol_rows(self, mock_get, mock_gp, mock_tbl, mock_lim):
+        mock_get.return_value = [
+            _make_symbol("AUDUSD"),
+            _make_symbol("EURUSD"),
+            _make_symbol("GBPUSD"),
+            _make_symbol("USDJPY"),
+        ]
+        fn = _get_symbols_list()
+
+        res = fn(search_term=None, limit=2, offset=1)
+
+        assert [row[0] for row in res["data"]] == ["EURUSD", "GBPUSD"]
+        assert res["total_count"] == 4
+        assert res["offset"] == 1
+        assert res["limit"] == 2
+        assert res["has_more"] is True
+
     @patch(_NORM_LIMIT, return_value=25)
     @patch(_GROUP_PATH, return_value="Forex\\Majors")
     @patch(f"{_MT5}.symbols_get")
@@ -445,6 +466,26 @@ class TestListSymbolGroups:
         mock_get.return_value = syms
         res = _list_symbol_groups(limit=1)
         assert len(res["data"]) == 1
+
+    @patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r})
+    @patch(_NORM_LIMIT, return_value=1)
+    @patch(_GROUP_PATH, side_effect=lambda s: s.path)
+    @patch(f"{_MT5}.symbols_get")
+    def test_offset_pages_group_rows(self, mock_get, mock_gp, mock_lim, mock_tbl):
+        mock_get.return_value = [
+            _make_symbol("A1", path="G1"),
+            _make_symbol("A2", path="G1"),
+            _make_symbol("B1", path="G2"),
+            _make_symbol("C1", path="G3"),
+        ]
+
+        res = _list_symbol_groups(limit=1, offset=1)
+
+        assert res["data"] == [["G2"]]
+        assert res["total_count"] == 3
+        assert res["offset"] == 1
+        assert res["limit"] == 1
+        assert res["has_more"] is True
 
     @patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r})
     @patch(_NORM_LIMIT, return_value=25)

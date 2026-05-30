@@ -25,11 +25,12 @@ def test_news_tool_has_only_optional_symbol_parameter() -> None:
     raw = _unwrap(news)
     params = list(signature(raw).parameters.values())
 
-    assert [param.name for param in params] == ["symbol", "detail", "limit", "limit_per_bucket"]
+    assert [param.name for param in params] == ["symbol", "detail", "limit", "offset", "limit_per_bucket"]
     assert params[0].default is None
     assert params[1].default == "compact"
     assert params[2].default is None
-    assert params[3].default is None
+    assert params[3].default == 0
+    assert params[4].default is None
 
 
 def test_news_tool_forwards_symbol(monkeypatch) -> None:
@@ -77,6 +78,30 @@ def test_news_tool_limits_globally_without_changing_default(monkeypatch) -> None
     assert limited["returned"] == 3
     assert limited["limit_scope"] == "global"
     assert limited["truncated"] is True
+    assert limited["has_more"] is True
+
+
+def test_news_tool_supports_global_offset(monkeypatch) -> None:
+    raw = _unwrap(news)
+
+    payload = {
+        "success": True,
+        "general_news": [{"title": "g1"}, {"title": "g2"}],
+        "related_news": [{"title": "r1"}, {"title": "r2"}],
+        "impact_news": [{"title": "i1"}, {"title": "i2"}],
+    }
+    monkeypatch.setattr("mtdata.core.news.fetch_unified_news", lambda symbol=None: payload)
+
+    page = raw(limit=2, offset=2)
+
+    assert page["general_news"] == [{"title": "g1"}, {"title": "g2"}]
+    assert "related_news" not in page
+    assert "impact_news" not in page
+    assert page["total_candidates"] == 6
+    assert page["returned"] == 2
+    assert page["offset"] == 2
+    assert page["has_more"] is True
+    assert page["limit_scope"] == "global"
 
 
 def test_news_tool_keeps_per_bucket_limit_mode(monkeypatch) -> None:
@@ -109,6 +134,7 @@ def test_news_tool_rejects_invalid_limit() -> None:
     raw = _unwrap(news)
 
     assert raw(limit=0)["error"] == "limit must be a positive integer."
+    assert raw(offset=-1)["error"] == "offset must be >= 0."
     assert raw(limit_per_bucket=0)["error"] == "limit_per_bucket must be a positive integer."
 
 

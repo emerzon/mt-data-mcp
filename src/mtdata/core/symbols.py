@@ -380,6 +380,7 @@ def _find_symbol_suggestions(
 def symbols_list(  # noqa: C901
     search_term: Optional[str] = None,
     limit: Optional[int] = DEFAULT_ROW_LIMIT,
+    offset: int = 0,
     list_mode: Literal["symbols", "groups"] = "symbols",  # type: ignore
     search_mode: Literal[  # type: ignore
         "auto",
@@ -417,6 +418,7 @@ def symbols_list(  # noqa: C901
                 return _list_symbol_groups(
                     search_term=normalized_search_term,
                     limit=limit,
+                    offset=offset,
                     mt5_gateway=mt5_gateway,
                     detail=detail_mode,
                 )
@@ -457,10 +459,20 @@ def symbols_list(  # noqa: C901
                 })
 
             limit_value = _normalize_limit(limit)
+            try:
+                offset_value = int(offset or 0)
+            except Exception:
+                return {"error": "offset must be a non-negative integer."}
+            if offset_value < 0:
+                return {"error": "offset must be >= 0."}
+            total_count = len(symbol_list)
+            if offset_value:
+                symbol_list = symbol_list[offset_value:]
             if limit_value:
                 symbol_list = symbol_list[:limit_value]
+            has_more = offset_value + len(symbol_list) < total_count
             if detail_mode == "summary":
-                return {
+                out = {
                     "success": True,
                     "list_mode": "symbols",
                     "count": len(symbol_list),
@@ -468,6 +480,11 @@ def symbols_list(  # noqa: C901
                     "search_mode": search_mode_value,
                     "limit": limit_value,
                 }
+                if offset_value or has_more:
+                    out["total_count"] = total_count
+                    out["offset"] = offset_value
+                    out["has_more"] = has_more
+                return out
             if detail_mode == "compact":
                 headers = ["symbol", "group"]
                 if any(s.get("session_type") for s in symbol_list):
@@ -483,6 +500,11 @@ def symbols_list(  # noqa: C901
                 headers = ["symbol", "group", "description"]
                 rows = [[s["symbol"], s["group"], s["description"]] for s in symbol_list]
             result = _table_from_rows(headers, rows)
+            if offset_value or has_more:
+                result["total_count"] = total_count
+                result["offset"] = offset_value
+                result["limit"] = limit_value
+                result["has_more"] = has_more
             return attach_collection_contract(
                 result,
                 collection_kind="table",
@@ -499,6 +521,7 @@ def symbols_list(  # noqa: C901
         operation="symbols_list",
         search_term=normalized_search_term,
         limit=limit,
+        offset=offset,
         list_mode=list_mode,
         search_mode=search_mode_value,
         detail=detail_mode,
@@ -508,6 +531,7 @@ def symbols_list(  # noqa: C901
 def _list_symbol_groups(
     search_term: Optional[str] = None,
     limit: Optional[int] = DEFAULT_ROW_LIMIT,
+    offset: int = 0,
     mt5_gateway: Any = None,
     detail: CompactFullDetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
@@ -546,18 +570,33 @@ def _list_symbol_groups(
 
         # Apply limit
         limit_value = _normalize_limit(limit)
+        try:
+            offset_value = int(offset or 0)
+        except Exception:
+            return {"error": "offset must be a non-negative integer."}
+        if offset_value < 0:
+            return {"error": "offset must be >= 0."}
+        total_count = len(filtered_items)
+        if offset_value:
+            filtered_items = filtered_items[offset_value:]
         if limit_value:
             filtered_items = filtered_items[:limit_value]
+        has_more = offset_value + len(filtered_items) < total_count
 
         detail_mode = normalize_output_detail(detail, default="compact")
         if detail_mode == "summary":
-            return {
+            out = {
                 "success": True,
                 "list_mode": "groups",
                 "count": len(filtered_items),
                 "search_term": search_term,
                 "limit": limit_value,
             }
+            if offset_value or has_more:
+                out["total_count"] = total_count
+                out["offset"] = offset_value
+                out["has_more"] = has_more
+            return out
         if detail_mode in {"standard", "full"}:
             rows = [[name, meta["count"]] for name, meta in filtered_items]
             result = _table_from_rows(["group", "count"], rows)
@@ -565,6 +604,11 @@ def _list_symbol_groups(
             group_names = [name for name, _ in filtered_items]
             rows = [[g] for g in group_names]
             result = _table_from_rows(["group"], rows)
+        if offset_value or has_more:
+            result["total_count"] = total_count
+            result["offset"] = offset_value
+            result["limit"] = limit_value
+            result["has_more"] = has_more
         return attach_collection_contract(
             result,
             collection_kind="table",

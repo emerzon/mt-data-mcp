@@ -1663,6 +1663,7 @@ def run_trade_history(  # noqa: C901
         symbol=request.symbol,
         history_kind=request.history_kind,
         limit=request.limit,
+        offset=request.offset,
     )
 
     def _finish(result: Any) -> Any:
@@ -1685,6 +1686,7 @@ def run_trade_history(  # noqa: C901
             symbol=request.symbol,
             history_kind=request.history_kind,
             limit=request.limit,
+            offset=request.offset,
             record_count=record_count,
         )
         return result
@@ -2081,9 +2083,21 @@ def run_trade_history(  # noqa: C901
             )
 
             limit_value = normalize_limit(request.limit)
+            try:
+                offset_value = int(getattr(request, "offset", 0) or 0)
+            except Exception:
+                return {"error": "offset must be a non-negative integer."}
+            if offset_value < 0:
+                return {"error": "offset must be >= 0."}
+            total_count = int(len(df))
+            if (limit_value or offset_value) and "__sort_utc" in df.columns:
+                df = df.sort_values("__sort_utc")
+            if offset_value:
+                end_idx = max(0, len(df) - offset_value)
+                df = df.iloc[:end_idx]
             if limit_value and len(df) > limit_value:
                 if "__sort_utc" in df.columns:
-                    df = df.sort_values("__sort_utc").tail(limit_value)
+                    df = df.tail(limit_value)
                 else:
                     df = df.tail(limit_value)
             if "__sort_utc" in df.columns:
@@ -2112,6 +2126,14 @@ def run_trade_history(  # noqa: C901
                         if position_value not in (None, ""):
                             row["position_ticket"] = position_value
                     row.update(comment_row_metadata(row.get("comment")))
+            if offset_value or (limit_value and total_count > len(records)):
+                return {
+                    "items": records,
+                    "total_count": total_count,
+                    "offset": offset_value,
+                    "limit": limit_value,
+                    "has_more": offset_value + len(records) < total_count,
+                }
             return records
         except Exception as exc:
             return {"error": str(exc)}

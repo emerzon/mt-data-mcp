@@ -148,6 +148,7 @@ class TradeHistoryRequest(BaseModel):
     order_ticket: Optional[Union[int, str]] = None
     minutes_back: Optional[int] = None
     limit: Optional[int] = 100
+    offset: int = 0
 
     @field_validator("side", mode="before")
     @classmethod

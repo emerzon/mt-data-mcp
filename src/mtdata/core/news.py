@@ -220,18 +220,25 @@ def _apply_news_limit(
     *,
     limit: Optional[int],
     limit_per_bucket: Optional[int] = None,
+    offset: int = 0,
 ) -> Dict[str, Any]:
-    if limit is None and limit_per_bucket is None:
+    if limit is None and limit_per_bucket is None and not offset:
         return result
     out = dict(result)
     total_candidates = 0
     returned = 0
     truncated = False
     remaining = int(limit) if limit is not None else None
+    remaining_offset = max(0, int(offset or 0))
     for key in _NEWS_BUCKET_KEYS:
         value = out.get(key)
         if isinstance(value, list):
             total_candidates += len(value)
+            if remaining_offset:
+                skip_count = min(remaining_offset, len(value))
+                value = value[skip_count:]
+                remaining_offset -= skip_count
+                truncated = truncated or skip_count > 0
             bucket_limit = len(value)
             if limit_per_bucket is not None:
                 bucket_limit = min(bucket_limit, int(limit_per_bucket))
@@ -249,10 +256,16 @@ def _apply_news_limit(
             returned += len(value)
             if not value:
                 out.pop(key, None)
+            else:
+                out[key] = value
     out["total_candidates"] = total_candidates
     out["returned"] = returned
     out["truncated"] = truncated
-    out["limit_scope"] = "global" if limit is not None else "per_bucket"
+    out["offset"] = int(offset or 0)
+    out["has_more"] = bool(max(0, total_candidates - int(offset or 0) - returned) > 0)
+    out["limit_scope"] = (
+        "global" if limit is not None else "per_bucket" if limit_per_bucket is not None else "offset"
+    )
     return out
 
 
@@ -261,6 +274,7 @@ def news(
     symbol: Optional[str] = None,
     detail: CompactFullDetailLiteral = "compact",
     limit: Optional[int] = None,
+    offset: int = 0,
     limit_per_bucket: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
@@ -305,6 +319,8 @@ def news(
     limit_per_bucket : int, optional
         Maximum number of items to return per news bucket. Use this only when
         you explicitly want a per-bucket cap.
+    offset : int, optional
+        Number of ranked bucket-order items to skip before applying limit.
 
     Returns
     -------
@@ -337,6 +353,12 @@ def news(
             return {"error": "limit_per_bucket must be a positive integer."}
         if limit_per_bucket_value < 1:
             return {"error": "limit_per_bucket must be a positive integer."}
+    try:
+        offset_value = int(offset or 0)
+    except (TypeError, ValueError):
+        return {"error": "offset must be a non-negative integer."}
+    if offset_value < 0:
+        return {"error": "offset must be >= 0."}
 
     def _run() -> Dict[str, Any]:
         out = _apply_news_limit(
@@ -346,6 +368,7 @@ def news(
             ),
             limit=limit_value,
             limit_per_bucket=limit_per_bucket_value,
+            offset=offset_value,
         )
         if detail_mode == "full":
             out.setdefault("tool_scope", "unified_trading_news")
@@ -358,6 +381,7 @@ def news(
         symbol=symbol,
         detail=detail_mode,
         limit=limit_value,
+        offset=offset_value,
         limit_per_bucket=limit_per_bucket_value,
         func=_run,
     )
