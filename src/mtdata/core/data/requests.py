@@ -31,6 +31,15 @@ _INDICATOR_FORMAT_HELP = (
     "'rsi(length=14)' and 'macd(fast=12,slow=26,signal=9)'."
 )
 
+
+def _normalize_data_detail(value: Any) -> str:
+    return normalize_output_detail(
+        value,
+        default="compact",
+        aliases={"summary_only": "summary"},
+    )
+
+
 def _split_indicator_tokens(spec: str) -> List[str]:
     text = str(spec or "").strip()
     if not text:
@@ -391,6 +400,11 @@ class DataFetchCandlesRequest(BaseModel):
     def _validate_limit(cls, value: int) -> int:
         return _validate_positive_limit(value)
 
+    @field_validator("detail", mode="before")
+    @classmethod
+    def _normalize_detail(cls, value: Any) -> str:
+        return _normalize_data_detail(value)
+
 
 class DataFetchTicksRequest(BaseModel):
     symbol: str
@@ -415,11 +429,8 @@ class DataFetchTicksRequest(BaseModel):
 
     @field_validator("detail", mode="before")
     @classmethod
-    def _normalize_detail(cls, value: Any) -> Any:
-        return normalize_output_detail(
-            value,
-            default="compact",
-        )
+    def _normalize_detail(cls, value: Any) -> str:
+        return _normalize_data_detail(value)
 
     @field_validator("limit")
     @classmethod
