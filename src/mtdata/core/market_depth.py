@@ -80,6 +80,29 @@ def _market_ticker_age_display(seconds: Any) -> Optional[str]:
     return f"{secs}s"
 
 
+def _market_ticker_freshness_label(payload: Dict[str, Any]) -> Optional[str]:
+    status = str(payload.get("market_status") or "").strip().lower()
+    reason = str(payload.get("market_status_reason") or "").strip().lower()
+    if status == "closed":
+        label = "closed"
+        if reason:
+            label = f"{label}_{reason.replace(' ', '_')}"
+    elif payload.get("data_stale") is True:
+        label = "stale"
+    elif payload.get("data_stale") is False:
+        label = "fresh"
+    else:
+        return None
+
+    age_seconds = payload.get("data_age_seconds")
+    if age_seconds is None:
+        return label
+    try:
+        return f"{label}_{int(round(float(age_seconds)))}s"
+    except Exception:
+        return label
+
+
 def _market_depth_fetch_enabled() -> bool:
     raw = os.getenv(_MARKET_DEPTH_ENABLE_ENV)
     if raw is None:
@@ -111,31 +134,18 @@ def _compact_market_ticker_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "price_precision",
         "bid",
         "ask",
-        "last",
-        "tick_volume",
-        "spread_points",
-        "spread_pct",
-        "spread_cost_per_lot",
-        "spread_cost_currency",
-        "data_age_seconds",
-        "data_age",
-        "data_stale",
-        "stale_after_seconds",
-        "freshness_basis",
-        "market_status",
+        "spread",
+        "freshness",
         "market_status_reason",
-        "note",
-        "warning",
         "time",
-        "time_display",
         "timezone",
     ):
-        value = payload.get(key)
-        if key == "data_age_seconds" and value is not None:
-            try:
-                value = int(round(float(value)))
-            except Exception:
-                pass
+        if key == "freshness":
+            value = _market_ticker_freshness_label(payload)
+        elif key == "time":
+            value = payload.get("time_display") or payload.get("time")
+        else:
+            value = payload.get(key)
         if value is not None:
             out[key] = value
     return out

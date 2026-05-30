@@ -919,7 +919,31 @@ def _normalize_market_ticker_payload(
         except Exception:
             return value
 
-    for key in (
+    def _freshness_label() -> Any:
+        existing = payload.get("freshness")
+        if not _is_empty_value(existing):
+            return existing
+        status = str(payload.get("market_status") or "").strip().lower()
+        reason = str(payload.get("market_status_reason") or "").strip().lower()
+        if status == "closed":
+            label = "closed"
+            if reason:
+                label = f"{label}_{reason.replace(' ', '_')}"
+        elif payload.get("data_stale") is True:
+            label = "stale"
+        elif payload.get("data_stale") is False:
+            label = "fresh"
+        else:
+            return None
+        age_seconds = payload.get("data_age_seconds")
+        if age_seconds is None:
+            return label
+        try:
+            return f"{label}_{int(round(float(age_seconds)))}s"
+        except Exception:
+            return label
+
+    rich_keys = (
         "success",
         "symbol",
         "type",
@@ -946,8 +970,21 @@ def _normalize_market_ticker_payload(
         "market_status_reason",
         "note",
         "warning",
-    ):
-        value = payload.get(key)
+    )
+    compact_keys = (
+        "success",
+        "symbol",
+        "type",
+        "field",
+        "price",
+        "bid",
+        "ask",
+        "spread",
+        "freshness",
+        "market_status_reason",
+    )
+    for key in (rich_keys if verbose else compact_keys):
+        value = _freshness_label() if key == "freshness" else payload.get(key)
         if not _is_empty_value(value):
             if key in {"price", "bid", "ask", "last", "spread"}:
                 value = _price_value(value)

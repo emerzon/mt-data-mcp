@@ -282,30 +282,31 @@ def test_market_ticker_returns_lightweight_spread_snapshot() -> None:
             currency_profit="USD",
         )
         mt5.symbol_info_tick.return_value = tick
-        out = _raw_market_ticker("BTCUSD")
+        out = _raw_market_ticker("BTCUSD", detail="compact")
 
     assert out["success"] is True
     assert out["type"] == "ticker"
     assert out["bid"] == 200.0
     assert out["ask"] == 201.0
     assert out["spread"] == 1.0
-    assert out["spread_points"] == 100.0
-    assert out["spread_pct"] == 0.498753
+    assert out["freshness"].startswith("stale_")
+    assert out["time"] == "2023-11-14 22:13"
+    assert "spread_points" not in out
+    assert "spread_pct" not in out
     assert "spread_pips" not in out
     assert "spread_pct_display" not in out
-    assert out["data_stale"] is True
-    assert out["data_age_seconds"] > 0
+    assert "data_stale" not in out
+    assert "data_age_seconds" not in out
     assert "data_age_hours" not in out
-    assert "Tick data may be stale" in out["warning"]
-    assert out["last"] == 200.5
-    assert out["tick_volume"] == 5
-    assert out["pricing_basis"] == "per_1_lot_estimate"
-    assert out["spread_cost_per_lot"] == 100.0
-    assert out["spread_cost_currency"] == "USD"
+    assert "warning" not in out
+    assert "last" not in out
+    assert "tick_volume" not in out
+    assert "pricing_basis" not in out
+    assert "spread_cost_per_lot" not in out
+    assert "spread_cost_currency" not in out
     assert "spread_display" not in out
-    assert out["meta"]["diagnostics"]["cache_used"] is False
-    assert out["meta"]["diagnostics"]["source"] == "mt5.symbol_info_tick"
-    assert isinstance(out["meta"]["diagnostics"]["query_latency_ms"], float)
+    assert out["meta"]["tool"] == "market_ticker"
+    assert "diagnostics" not in out["meta"]
 
 
 def test_market_ticker_compact_detail_omits_verbose_fields() -> None:
@@ -334,22 +335,24 @@ def test_market_ticker_compact_detail_omits_verbose_fields() -> None:
     assert out["type"] == "ticker"
     assert out["bid"] == 200.0
     assert out["ask"] == 201.0
-    assert out["spread_points"] == 100.0
-    assert out["spread_pct"] == 0.498753
-    assert "spread" not in out
+    assert out["spread"] == 1.0
+    assert out["freshness"].startswith("stale_")
+    assert "spread_points" not in out
+    assert "spread_pct" not in out
     assert "spread_display" not in out
     assert "spread_pips" not in out
     assert "spread_pct_display" not in out
-    assert out["last"] == 200.5
-    assert out["tick_volume"] == 5
-    assert out["time_display"] == "2023-11-14 22:13"
-    assert out["data_stale"] is True
-    assert out["stale_after_seconds"] == 300
-    assert out["freshness_basis"] == "absolute_300s"
-    assert "data_age" in out
-    assert "Tick data may be stale" in out["warning"]
-    assert out["spread_cost_per_lot"] == 100.0
-    assert out["spread_cost_currency"] == "USD"
+    assert "last" not in out
+    assert "tick_volume" not in out
+    assert out["time"] == "2023-11-14 22:13"
+    assert "time_display" not in out
+    assert "data_stale" not in out
+    assert "stale_after_seconds" not in out
+    assert "freshness_basis" not in out
+    assert "data_age" not in out
+    assert "warning" not in out
+    assert "spread_cost_per_lot" not in out
+    assert "spread_cost_currency" not in out
     assert "pricing_basis" not in out
     assert "diagnostics" not in out
     assert out["meta"]["tool"] == "market_ticker"
@@ -378,10 +381,10 @@ def test_market_ticker_none_detail_uses_compact_output() -> None:
         out = _raw_market_ticker("BTCUSD", detail=None)
 
     assert out["success"] is True
-    assert "spread" not in out
+    assert out["spread"] == 1.0
     assert "pricing_basis" not in out
     assert "diagnostics" not in out
-    assert out["spread_cost_per_lot"] == 100.0
+    assert "spread_cost_per_lot" not in out
 
 
 def test_market_ticker_price_field_returns_simple_price() -> None:
@@ -582,15 +585,15 @@ def test_market_ticker_rounds_tick_precision_noise() -> None:
             currency_profit="USD",
         )
         mt5.symbol_info_tick.return_value = tick
-        out = _raw_market_ticker("EURUSD")
+        out = _raw_market_ticker("EURUSD", detail="compact")
 
     assert out["bid"] == 1.17581
     assert out["ask"] == 1.1759
-    assert out["last"] == 1.17586
     assert out["spread"] == 0.00009
+    assert "last" not in out
     assert "spread_display" not in out
-    assert out["spread_points"] == 9.0
-    assert out["spread_pct"] == 0.007654
+    assert "spread_points" not in out
+    assert "spread_pct" not in out
     assert "spread_pips" not in out
 
 

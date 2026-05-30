@@ -836,7 +836,7 @@ class TestFormatResultMinimal:
         assert "time_display" not in result
         assert result["meta"]["tool"] == "market_ticker"
 
-    def test_market_ticker_minimal_keeps_spread_pricing_basis(self):
+    def test_market_ticker_minimal_hides_spread_pricing_basis(self):
         payload = {
             "success": True,
             "symbol": "EURUSD",
@@ -852,11 +852,11 @@ class TestFormatResultMinimal:
             tool_name="market_ticker",
         )
 
-        assert result["spread_cost_per_lot"] == 9.0
-        assert result["spread_cost_currency"] == "USD"
-        assert result["pricing_basis"] == "per_1_lot_estimate"
+        assert "spread_cost_per_lot" not in result
+        assert "spread_cost_currency" not in result
+        assert "pricing_basis" not in result
 
-    def test_market_ticker_minimal_keeps_freshness_context(self):
+    def test_market_ticker_minimal_condenses_freshness_context(self):
         payload = {
             "success": True,
             "symbol": "EURUSD",
@@ -877,11 +877,12 @@ class TestFormatResultMinimal:
             tool_name="market_ticker",
         )
 
-        assert result["data_stale"] is False
-        assert result["stale_after_seconds"] == 300
-        assert result["market_status"] == "closed"
+        assert result["freshness"] == "closed_weekend_5735s"
+        assert "data_stale" not in result
+        assert "stale_after_seconds" not in result
+        assert "market_status" not in result
         assert result["market_status_reason"] == "weekend"
-        assert "latest completed session tick" in result["note"]
+        assert "note" not in result
 
     def test_market_ticker_text_uses_symbol_price_precision(self):
         payload = {
