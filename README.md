@@ -48,7 +48,7 @@ Use it to explore ideas, build repeatable research workflows, and integrate MT5 
 
 Notes:
 - `market_depth_fetch` is enabled only when `MTDATA_ENABLE_MARKET_DEPTH_FETCH=1` and your broker provides Level 2/DOM data.
-- Options-chain tools depend on Yahoo Finance endpoint availability. The pure QuantLib calculator `options_barrier_price` works independently of external options-chain data.
+- Options-chain tools use Yahoo Finance by default and support Tradier with `MTDATA_OPTIONS_PROVIDER=tradier` plus `MTDATA_OPTIONS_API_KEY`. The pure QuantLib calculator `options_barrier_price` works independently of external options-chain data.
 
 ## Quick Start
 

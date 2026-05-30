@@ -9,13 +9,20 @@ mtdata includes tools for fetching US equity options data and pricing exotic opt
 
 ---
 
-> **Dependencies:** Options chain data uses Yahoo Finance endpoints, so availability can change and authentication/rate-limit failures may occur without a configurable mtdata API-key workaround. QuantLib tools require `pip install QuantLib` and are independent of both MT5 and Yahoo Finance.
+> **Dependencies:** Options chain data uses Yahoo Finance by default and may fail with unauthenticated 401/429 responses. For reliable chain data, set `MTDATA_OPTIONS_PROVIDER=tradier` and `MTDATA_OPTIONS_API_KEY`. QuantLib tools require `pip install QuantLib` and are independent of both MT5 and chain-provider access.
 
 ---
 
 ## Options Data
 
-The options data tools are best treated as opportunistic external-data helpers. If Yahoo Finance returns `401 Unauthorized`, there is currently no mtdata environment variable that can fix that provider-side authentication requirement. In that case, use another options data provider for chains and continue using `options_barrier_price` for local pricing calculations.
+The options data tools are external-data helpers. Yahoo Finance is the zero-config fallback, but it can reject unauthenticated requests. To use Tradier instead, add these values to `.env`:
+
+```bash
+MTDATA_OPTIONS_PROVIDER=tradier
+MTDATA_OPTIONS_API_KEY=your_tradier_token
+```
+
+`options_barrier_price` is a local QuantLib calculator and still works without options-chain provider access when you supply spot, strike, barrier, maturity, and volatility.
 
 ### `options_expirations`
 
