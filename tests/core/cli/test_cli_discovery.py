@@ -579,6 +579,39 @@ class TestCreateCommandFunction:
             {"name": "macd", "params": [12.0, 26.0, 9.0]},
         ]
 
+    def test_indicator_key_value_string_reconstructed(self):
+        mock_fn = MagicMock(return_value={"ok": True})
+        func_info = {
+            "func": mock_fn,
+            "request_model": DataFetchCandlesRequest,
+            "request_param_name": "request",
+            "params": [
+                {"name": "symbol", "type": str, "required": True, "default": None},
+                {
+                    "name": "indicators",
+                    "type": Optional[List[Dict[str, Any]]],
+                    "required": False,
+                    "default": None,
+                },
+            ],
+        }
+        cmd_fn = create_command_function(func_info, cmd_name="data_fetch_candles")
+        args = argparse.Namespace(
+            symbol="EURUSD",
+            indicators="sma=20,bbands=20,2,rsi=14",
+            indicators_params=None,
+            json=False,
+            verbose=False,
+        )
+        status = cmd_fn(args)
+        assert status == 0
+        request = mock_fn.call_args[1]["request"]
+        assert request.indicators == [
+            {"name": "sma", "params": [20.0]},
+            {"name": "bbands", "params": [20.0, 2.0]},
+            {"name": "rsi", "params": [14.0]},
+        ]
+
     def test_indicator_params_dict_are_accepted(self):
         mock_fn = MagicMock(return_value={"ok": True})
         func_info = {

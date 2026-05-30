@@ -950,6 +950,7 @@ class TestResolveParamKwargs:
         }
         kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="data_fetch_candles")
         assert "rsi_14" in kwargs["help"]
+        assert "sma=20" in kwargs["help"]
         assert "rsi(length=14)" in kwargs["help"]
 
     def test_denoise_help_mentions_json_example(self):

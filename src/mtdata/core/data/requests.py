@@ -26,7 +26,8 @@ from ..output_contract import normalize_output_detail
 
 _INDICATOR_FORMAT_HELP = (
     "Use bare names like 'rsi', underscore forms like 'rsi_14', "
-    "compact specs like 'sma(20)' and 'macd(12,26,9)', or named specs like "
+    "key-value specs like 'sma=20', compact specs like 'sma(20)' "
+    "and 'macd(12,26,9)', or named specs like "
     "'rsi(length=14)' and 'macd(fast=12,slow=26,signal=9)'."
 )
 
@@ -67,6 +68,29 @@ def _split_indicator_tokens(spec: str) -> List[str]:
     if token:
         parts.append(token)
     return parts
+
+
+def _looks_like_indicator_token_start(token: str) -> bool:
+    return bool(re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*(?:\s*=.*|\(.*\))?", token.strip()))
+
+
+def _split_indicator_spec_tokens(spec: str) -> List[str]:
+    parts = _split_indicator_tokens(spec)
+    if len(parts) <= 1:
+        return parts
+
+    combined: List[str] = []
+    for part in parts:
+        if (
+            combined
+            and "=" in combined[-1]
+            and "(" not in combined[-1]
+            and not _looks_like_indicator_token_start(part)
+        ):
+            combined[-1] = f"{combined[-1]},{part.strip()}"
+            continue
+        combined.append(part)
+    return combined
 
 
 def _indicator_numeric_value_error(raw_text: str, source_spec: str) -> ValueError:
@@ -152,6 +176,25 @@ def _normalize_indicator_entry(value: Any) -> Dict[str, Any]:
             raise ValueError("Indicator JSON entries must be objects with 'name' and optional 'params'.")
         return _normalize_indicator_entry(parsed)
 
+    key_value_match = re.fullmatch(r"([A-Za-z0-9_]+)\s*=\s*(.+)", stripped)
+    if key_value_match:
+        name = key_value_match.group(1)
+        params_blob = key_value_match.group(2).strip()
+        if not params_blob:
+            raise ValueError(f"Invalid indicator format. {_INDICATOR_FORMAT_HELP}")
+        params = [
+            _parse_indicator_numeric_value(
+                part.strip(),
+                raw_text=part.strip(),
+                source_spec=stripped,
+            )
+            for part in _split_indicator_tokens(params_blob)
+            if part.strip()
+        ]
+        if not params:
+            raise ValueError(f"Invalid indicator format. {_INDICATOR_FORMAT_HELP}")
+        return {"name": name, "params": params}
+
     match = re.fullmatch(r"([A-Za-z0-9_]+)(?:\((.*)\))?", stripped)
     if not match:
         raise ValueError(f"Invalid indicator format. {_INDICATOR_FORMAT_HELP}")
@@ -209,7 +252,7 @@ def _normalize_indicator_specs(value: Any) -> Any:
                 parsed = None
             if isinstance(parsed, list):
                 return [_normalize_indicator_entry(item) for item in parsed]
-        return [_normalize_indicator_entry(token) for token in _split_indicator_tokens(stripped)]
+        return [_normalize_indicator_entry(token) for token in _split_indicator_spec_tokens(stripped)]
     if isinstance(value, list):
         return [_normalize_indicator_entry(item) for item in value]
     return value

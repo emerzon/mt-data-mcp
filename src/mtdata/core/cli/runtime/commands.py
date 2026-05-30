@@ -7,7 +7,6 @@ from pydantic import ValidationError
 from ...data.requests import (
     _normalize_indicator_specs as _shared_normalize_indicator_specs,
 )
-from ...output_contract import resolve_output_contract
 
 
 def parse_kv_string(s: str, *, debug: Callable[[str], None]) -> Optional[Dict[str, Any]]:
@@ -222,8 +221,6 @@ def create_command_function(  # noqa: C901
     def _normalize_indicator_specs(value: Any) -> Any:
         if value is None:
             return None
-        if isinstance(value, str):
-            value = normalize_cli_list_value(value)
         return _shared_normalize_indicator_specs(value)
 
     def _friendly_validation_error(exc: ValidationError) -> str:
@@ -320,13 +317,14 @@ def create_command_function(  # noqa: C901
             if is_mapping and arg_value == "__PRESENT__":
                 arg_value = {}
             if is_list_like:
-                arg_value = normalize_cli_list_value(arg_value)
                 if param_name == "indicators":
                     try:
                         arg_value = _normalize_indicator_specs(arg_value)
                     except ValueError as exc:
                         render_cli_result(_build_cli_error(str(exc)), args=args, cmd_name=cmd_name)
                         return 1
+                else:
+                    arg_value = normalize_cli_list_value(arg_value)
             if is_mapping:
                 if isinstance(arg_value, str) and arg_value.strip():
                     if arg_value.strip().startswith("{"):
