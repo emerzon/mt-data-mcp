@@ -1156,6 +1156,7 @@ def run_trade_modify(
         logger,
         operation="trade_modify",
         ticket=request.ticket,
+        dry_run=request.dry_run,
     )
 
     def _finish(
@@ -1182,6 +1183,7 @@ def run_trade_modify(
             success=infer_result_success(result),
             ticket=request.ticket,
             pending=pending,
+            dry_run=request.dry_run,
         )
         return result
 
@@ -1202,13 +1204,18 @@ def run_trade_modify(
             return _finish({"error": str(ex)})
 
         if price_val is not None or expiration_specified:
+            pending_kwargs = {
+                "ticket": request.ticket,
+                "price": price_val,
+                "stop_loss": request.stop_loss,
+                "take_profit": request.take_profit,
+                "expiration": request.expiration,
+                "comment": request.comment,
+            }
+            if request.dry_run:
+                pending_kwargs["dry_run"] = True
             result = modify_pending_order(
-                ticket=request.ticket,
-                price=price_val,
-                stop_loss=request.stop_loss,
-                take_profit=request.take_profit,
-                expiration=request.expiration,
-                comment=request.comment,
+                **pending_kwargs,
             )
             if result.get("error") == f"Pending order {request.ticket} not found":
                 return _finish(
@@ -1226,22 +1233,32 @@ def run_trade_modify(
                 )
             return _finish(result, pending=True)
 
+        position_kwargs = {
+            "ticket": request.ticket,
+            "stop_loss": request.stop_loss,
+            "take_profit": request.take_profit,
+            "comment": request.comment,
+        }
+        if request.dry_run:
+            position_kwargs["dry_run"] = True
         position_result = modify_position(
-            ticket=request.ticket,
-            stop_loss=request.stop_loss,
-            take_profit=request.take_profit,
-            comment=request.comment,
+            **position_kwargs,
         )
         if position_result.get("success"):
             return _finish(position_result, pending=False)
         if position_result.get("error") == f"Position {request.ticket} not found":
+            pending_kwargs = {
+                "ticket": request.ticket,
+                "price": None,
+                "stop_loss": request.stop_loss,
+                "take_profit": request.take_profit,
+                "expiration": None,
+                "comment": request.comment,
+            }
+            if request.dry_run:
+                pending_kwargs["dry_run"] = True
             pending_result = modify_pending_order(
-                ticket=request.ticket,
-                price=None,
-                stop_loss=request.stop_loss,
-                take_profit=request.take_profit,
-                expiration=None,
-                comment=request.comment,
+                **pending_kwargs,
             )
             if pending_result.get("error") == f"Pending order {request.ticket} not found":
                 return _finish(

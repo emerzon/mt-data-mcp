@@ -172,6 +172,11 @@ def _bypass_auto_connect(monkeypatch):
 
 class TestTradeModify:
 
+    def test_request_accepts_dry_run(self):
+        request = TradeModifyRequest(ticket=100, stop_loss=1.08, dry_run=True)
+
+        assert request.dry_run is True
+
     @patch("mtdata.core.trading._modify_pending_order")
     def test_price_routes_to_pending(self, mock_pending):
         mock_pending.return_value = {"success": True}
@@ -189,6 +194,29 @@ class TestTradeModify:
         mock_pos.return_value = {"success": True}
         trade_modify(ticket=100, stop_loss=1.08)
         mock_pos.assert_called_once()
+
+    @patch("mtdata.core.trading._modify_pending_order")
+    @patch("mtdata.core.trading._modify_position")
+    def test_dry_run_position_preview_skips_execution(self, mock_pos, mock_pend):
+        mock_pos.return_value = {
+            "success": True,
+            "dry_run": True,
+            "actionability": "preview_only",
+        }
+
+        out = trade_modify(ticket=100, stop_loss=1.08, dry_run=True, __cli_raw=True)
+
+        assert out["success"] is True
+        assert out["dry_run"] is True
+        assert out["actionability"] == "preview_only"
+        mock_pos.assert_called_once_with(
+            ticket=100,
+            stop_loss=1.08,
+            take_profit=None,
+            comment=None,
+            dry_run=True,
+        )
+        mock_pend.assert_not_called()
 
     @patch("mtdata.core.trading._modify_pending_order")
     @patch("mtdata.core.trading._modify_position")
@@ -247,6 +275,30 @@ class TestModifyPosition:
         from mtdata.core.trading import _modify_position
         result = _modify_position(ticket=1, stop_loss=1.08, take_profit=1.13)
         assert result.get("success") is True
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_dry_run_validates_and_skips_order_send(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.positions_get.return_value = [_position()]
+        mt5.symbol_info.return_value = _sym()
+        from mtdata.core.trading import _modify_position
+
+        result = _modify_position(
+            ticket=1,
+            stop_loss=1.08,
+            take_profit=1.13,
+            dry_run=True,
+        )
+
+        assert result["success"] is True
+        assert result["dry_run"] is True
+        assert result["operation"] == "modify_position"
+        assert result["would_send_order"] is False
+        assert result["position_ticket"] == 1
+        assert result["applied_sl"] == 1.08
+        assert result["applied_tp"] == pytest.approx(1.13)
+        mt5.order_send.assert_not_called()
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_no_changes_returns_success_when_levels_already_match(self):
@@ -446,6 +498,31 @@ class TestModifyPendingOrder:
         from mtdata.core.trading import _modify_pending_order
         result = _modify_pending_order(ticket=100, price=1.095)
         assert result.get("success") is True
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_dry_run_validates_and_skips_order_send(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.orders_get.return_value = [_pending_order()]
+        from mtdata.core.trading import _modify_pending_order
+
+        result = _modify_pending_order(
+            ticket=100,
+            price=1.09,
+            stop_loss=1.08,
+            take_profit=1.11,
+            dry_run=True,
+        )
+
+        assert result["success"] is True
+        assert result["dry_run"] is True
+        assert result["operation"] == "modify_pending_order"
+        assert result["would_send_order"] is False
+        assert result["pending_order_ticket"] == 100
+        assert result["applied_price"] == 1.09
+        assert result["applied_sl"] == 1.08
+        assert result["applied_tp"] == 1.11
+        mt5.order_send.assert_not_called()
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_gtc_expiration_sets_type_time(self):

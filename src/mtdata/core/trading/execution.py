@@ -144,6 +144,7 @@ def _modify_position(
     stop_loss: Optional[Union[int, float]] = None,
     take_profit: Optional[Union[int, float]] = None,
     comment: Optional[str] = None,
+    dry_run: bool = False,
     gateway: Optional[MT5TradingGateway] = None,
 ) -> dict:
     """Internal helper to modify a position by ticket."""
@@ -237,7 +238,7 @@ def _modify_position(
 
             if _protection_levels_match(current_sl, desired_sl, tol=price_tol) and _protection_levels_match(current_tp, desired_tp, tol=price_tol):
                 no_change_code = validation._safe_int_attr(mt5, "TRADE_RETCODE_NO_CHANGES", 10025)
-                return {
+                out = {
                     "success": True,
                     "retcode": no_change_code,
                     "retcode_name": mt5.retcode_name(no_change_code),
@@ -251,6 +252,17 @@ def _modify_position(
                     "no_change": True,
                     "message": "Requested SL/TP already match the live position.",
                 }
+                if dry_run:
+                    out.update(
+                        {
+                            "dry_run": True,
+                            "actionability": "preview_only",
+                            "operation": "modify_position",
+                            "scope": "positions",
+                            "would_send_order": False,
+                        }
+                    )
+                return out
 
             side = _resolve_position_side(position, mt5)
             if side is None:
@@ -279,6 +291,30 @@ def _modify_position(
             request_magic = validation._safe_int_ticket(getattr(position, "magic", None))
             if request_magic is not None:
                 request["magic"] = request_magic
+
+            if dry_run:
+                return {
+                    "success": True,
+                    "dry_run": True,
+                    "actionability": "preview_only",
+                    "operation": "modify_position",
+                    "scope": "positions",
+                    "ticket": ticket_id,
+                    "position_ticket": resolved_ticket,
+                    "ticket_requested": ticket_id,
+                    "ticket_resolution": ticket_resolution,
+                    "symbol": position.symbol,
+                    "would_send_order": False,
+                    "preview_scope_summary": (
+                        "Validated position routing and protection levels; no modify request was sent to MT5."
+                    ),
+                    "applied_sl": desired_sl,
+                    "applied_tp": desired_tp,
+                    "not_estimated": [
+                        "broker_acceptance",
+                        "execution_latency",
+                    ],
+                }
 
             result, comment_fallback, last_error = comments._send_order_with_comment_fallback(
                 mt5,
@@ -403,6 +439,7 @@ def _modify_pending_order(
     take_profit: Optional[Union[int, float]] = None,
     expiration: Optional[ExpirationValue] = None,
     comment: Optional[str] = None,
+    dry_run: bool = False,
     gateway: Optional[MT5TradingGateway] = None,
 ) -> dict:
     """Internal helper to modify a pending order by ticket."""
@@ -580,6 +617,32 @@ def _modify_pending_order(
                             if isinstance(current_expiration, datetime):
                                 server_dt = time._to_server_time_naive(current_expiration)
                                 request["expiration"] = time._server_time_naive_to_mt5_timestamp(server_dt)
+
+            if dry_run:
+                return {
+                    "success": True,
+                    "dry_run": True,
+                    "actionability": "preview_only",
+                    "operation": "modify_pending_order",
+                    "scope": "pending_orders",
+                    "ticket": ticket_id,
+                    "pending_order_ticket": resolved_ticket,
+                    "ticket_requested": ticket_id,
+                    "ticket_resolution": ticket_resolution,
+                    "symbol": order.symbol,
+                    "would_send_order": False,
+                    "preview_scope_summary": (
+                        "Validated pending-order routing and price levels; no modify request was sent to MT5."
+                    ),
+                    "applied_price": request.get("price"),
+                    "applied_sl": request.get("sl"),
+                    "applied_tp": request.get("tp"),
+                    "applied_expiration": request.get("expiration"),
+                    "not_estimated": [
+                        "broker_acceptance",
+                        "execution_latency",
+                    ],
+                }
 
             result, comment_fallback, last_error = comments._send_order_with_comment_fallback(
                 mt5,

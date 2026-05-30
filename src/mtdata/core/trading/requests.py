@@ -102,6 +102,7 @@ class TradeModifyRequest(BaseModel):
     )
     expiration: Optional[ExpirationValue] = None
     comment: Optional[str] = None
+    dry_run: bool = False
     idempotency_key: Optional[str] = Field(
         default=None,
         description=(
