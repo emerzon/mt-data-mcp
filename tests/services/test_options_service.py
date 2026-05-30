@@ -251,6 +251,7 @@ def test_configured_tradier_provider_without_token_returns_auth_hint(monkeypatch
     assert out["success"] is False
     assert out["error_code"] == "options_provider_auth"
     assert "MTDATA_OPTIONS_API_KEY" in out["remediation"]
+    assert "https://documentation.tradier.com/" in out["remediation"]
 
 
 def test_get_yahoo_session_reuses_single_session(monkeypatch):
@@ -410,4 +411,5 @@ def test_get_options_expirations_handles_401_gracefully(monkeypatch):
     assert result["success"] is False
     assert result["error_code"] == "options_provider_auth"
     assert "no Yahoo API-key setting" in result["remediation"]
+    assert "https://documentation.tradier.com/" in result["remediation"]
     assert "retry later" not in result["remediation"].lower()

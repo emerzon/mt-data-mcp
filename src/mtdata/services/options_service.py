@@ -26,15 +26,18 @@ _YAHOO_RETRY_STATUS_CODES = {429, 503}
 _YAHOO_MAX_ATTEMPTS = 3
 _YAHOO_BACKOFF_SECONDS = 0.5
 _YAHOO_MIN_REQUEST_INTERVAL_SECONDS = 1.0
+_TRADIER_DOCS_URL = "https://documentation.tradier.com/"
 _YAHOO_AUTH_REMEDIATION = (
     "Yahoo Finance options data is unavailable from the unauthenticated endpoint. "
     "mtdata has no Yahoo API-key setting to configure. To use an authenticated "
-    "provider, set MTDATA_OPTIONS_PROVIDER=tradier and MTDATA_OPTIONS_API_KEY."
+    "provider, set MTDATA_OPTIONS_PROVIDER=tradier and MTDATA_OPTIONS_API_KEY. "
+    f"Get a Tradier API token at {_TRADIER_DOCS_URL}."
 )
 _TRADIER_AUTH_REMEDIATION = (
     "Tradier options data requires an API token. Set "
     "MTDATA_OPTIONS_PROVIDER=tradier and MTDATA_OPTIONS_API_KEY, or set "
-    "MTDATA_OPTIONS_PROVIDER=yahoo to use the unauthenticated Yahoo fallback."
+    "MTDATA_OPTIONS_PROVIDER=yahoo to use the unauthenticated Yahoo fallback. "
+    f"Get a Tradier API token at {_TRADIER_DOCS_URL}."
 )
 _YAHOO_SESSION: Optional[requests.Session] = None
 _YAHOO_SESSION_LOCK = _threading.Lock()

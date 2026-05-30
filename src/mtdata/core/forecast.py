@@ -1079,7 +1079,8 @@ def options_expirations(
 
     Yahoo Finance is an unauthenticated fallback and may return 401 responses.
     For reliable options-chain data, configure Tradier with
-    MTDATA_OPTIONS_PROVIDER=tradier and MTDATA_OPTIONS_API_KEY.
+    MTDATA_OPTIONS_PROVIDER=tradier and MTDATA_OPTIONS_API_KEY. Tradier API
+    tokens: https://documentation.tradier.com/.
     """
     from ..services.options_service import get_options_expirations as _impl
     return _run_forecast_operation(
@@ -1108,7 +1109,8 @@ def options_chain(
 
     Yahoo Finance is an unauthenticated fallback and may return 401 responses.
     For reliable options-chain data, configure Tradier with
-    MTDATA_OPTIONS_PROVIDER=tradier and MTDATA_OPTIONS_API_KEY.
+    MTDATA_OPTIONS_PROVIDER=tradier and MTDATA_OPTIONS_API_KEY. Tradier API
+    tokens: https://documentation.tradier.com/.
     """
     from ..services.options_service import get_options_chain as _impl
     return _run_forecast_operation(
@@ -1190,7 +1192,8 @@ def options_heston_calibrate(
 
     Yahoo Finance is an unauthenticated fallback and may return 401 responses.
     For reliable options-chain data, configure Tradier with
-    MTDATA_OPTIONS_PROVIDER=tradier and MTDATA_OPTIONS_API_KEY.
+    MTDATA_OPTIONS_PROVIDER=tradier and MTDATA_OPTIONS_API_KEY. Tradier API
+    tokens: https://documentation.tradier.com/.
     """
     from ..forecast.quantlib_tools import (
         calibrate_heston_quantlib_from_options as _impl,
