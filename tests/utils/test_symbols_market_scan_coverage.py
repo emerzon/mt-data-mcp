@@ -199,6 +199,7 @@ class TestSymbolsTopMarkets:
             "data_source",
             "time",
             "data_stale",
+            "freshness",
             "bid",
             "ask",
             "spread_pct",
@@ -207,6 +208,7 @@ class TestSymbolsTopMarkets:
             "price_change_pct",
         ]
         assert result["data"][0]["data_source"] == "live_tick"
+        assert result["data"][0]["freshness"] is None
         assert result["data"][0]["tick_volume"] is None
         assert "pricing_basis" not in result["data"][0]
 
@@ -316,6 +318,7 @@ class TestSymbolsTopMarkets:
             "data_source",
             "time",
             "data_stale",
+            "freshness",
             "bid",
             "ask",
             "spread_pct",
@@ -324,6 +327,7 @@ class TestSymbolsTopMarkets:
             "price_change_pct",
         ]
         assert result["data"][0]["data_source"] == "live_tick"
+        assert result["data"][0]["freshness"] is None
         assert result["data"][0]["tick_volume"] is None
         assert "description" not in result["data"][0]
         assert "pricing_basis" not in result["data"][0]
@@ -396,6 +400,7 @@ class TestSymbolsTopMarkets:
             "data_source",
             "time",
             "data_stale",
+            "freshness",
             "bid",
             "ask",
             "spread_pct",
@@ -411,6 +416,7 @@ class TestSymbolsTopMarkets:
             "data_source",
             "time",
             "data_stale",
+            "freshness",
             "bid",
             "ask",
             "spread_pct",
@@ -419,6 +425,7 @@ class TestSymbolsTopMarkets:
             "price_change_pct",
         ]
         assert result["lowest_spread"][0]["data_source"] == "live_tick"
+        assert result["lowest_spread"][0]["freshness"] is None
         assert result["lowest_spread"][0]["tick_volume"] is None
         assert result["highest_volume"][0]["bid"] is None
         assert result["highest_volume"][0]["data_source"] == "H1_bars"
