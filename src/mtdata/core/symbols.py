@@ -141,6 +141,23 @@ _SYMBOL_DESCRIBE_COMPACT_DIRECT_FIELDS: tuple[str, ...] = (
     "order_mode_labels",
 )
 
+_SYMBOL_DESCRIBE_SUMMARY_DIRECT_FIELDS: tuple[str, ...] = (
+    "name",
+    "description",
+    "currency_base",
+    "currency_base_inferred",
+    "currency_base_warning",
+    "currency_profit",
+    "time",
+    "freshness",
+    "market_status",
+    "market_status_reason",
+    "note",
+    "warning",
+    "trade_mode_label",
+    "order_mode_labels",
+)
+
 _COMMON_CRYPTO_BASES = (
     "BTC",
     "ETH",
@@ -296,16 +313,29 @@ def _compact_symbol_describe_payload(symbol_data: Dict[str, Any]) -> Dict[str, A
     for field in _SYMBOL_DESCRIBE_COMPACT_DIRECT_FIELDS:
         _copy_symbol_describe_field(compact, symbol_data, field)
 
-    inferred_base = compact.get("currency_base_inferred")
-    reported_base = compact.get("currency_base")
-    if inferred_base and compact.get("currency_base_warning"):
-        compact["currency_base_reported"] = reported_base
-        compact["currency_base"] = inferred_base
-        compact["currency_base_source"] = "inferred_from_symbol_name"
+    _apply_symbol_currency_diagnostics(compact)
 
     if "time_epoch" in symbol_data:
         compact["time_epoch"] = symbol_data["time_epoch"]
     return compact
+
+
+def _summary_symbol_describe_payload(symbol_data: Dict[str, Any]) -> Dict[str, Any]:
+    summary: Dict[str, Any] = {}
+    for field in _SYMBOL_DESCRIBE_SUMMARY_DIRECT_FIELDS:
+        _copy_symbol_describe_field(summary, symbol_data, field)
+
+    _apply_symbol_currency_diagnostics(summary)
+    return summary
+
+
+def _apply_symbol_currency_diagnostics(payload: Dict[str, Any]) -> None:
+    inferred_base = payload.get("currency_base_inferred")
+    reported_base = payload.get("currency_base")
+    if inferred_base and payload.get("currency_base_warning"):
+        payload["currency_base_reported"] = reported_base
+        payload["currency_base"] = inferred_base
+        payload["currency_base_source"] = "inferred_from_symbol_name"
 
 
 def _symbol_session_type(
@@ -663,7 +693,9 @@ def symbols_describe(
         Trading symbol (e.g., "EURUSD")
     detail : str, optional (default="compact")
         Output verbosity level:
+        - "summary": Symbol identity, currencies, quote freshness, and session/trade labels
         - "compact": Essential fields only (identifier, volume limits, contract size, tick size/value)
+        - "standard": Same concise field set as compact for this single-symbol metadata tool
         - "full": Complete metadata including all trading modes, swap details, and session times
     Returns:
     --------
@@ -792,7 +824,9 @@ def symbols_describe(
                         symbol_data[f"{attr}_label"] = label
 
             _add_symbol_currency_diagnostics(symbol_data)
-            if contract.shape_detail == "compact":
+            if contract.detail == "summary":
+                symbol_data = _summary_symbol_describe_payload(symbol_data)
+            elif contract.shape_detail == "compact":
                 symbol_data = _compact_symbol_describe_payload(symbol_data)
 
             symbol_name = _nonempty_symbol_string(symbol_data.pop("name", None))

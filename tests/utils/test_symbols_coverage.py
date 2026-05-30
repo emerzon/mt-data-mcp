@@ -907,6 +907,63 @@ class TestSymbolsDescribe:
         assert "trade_tick_value_profit" not in sd
         assert "time_epoch" not in sd
 
+    @patch("mtdata.core.symbols.time.time", return_value=1700000301.0)
+    @patch(f"{_MT5}.symbol_info")
+    def test_summary_detail_omits_trading_specs(self, mock_info, mock_time):
+        del mock_time
+        info = MagicMock()
+        info.__dir__ = lambda self: [
+            "name",
+            "description",
+            "currency_base",
+            "currency_profit",
+            "digits",
+            "point",
+            "trade_contract_size",
+            "trade_tick_size",
+            "trade_tick_value",
+            "volume_min",
+            "volume_max",
+            "volume_step",
+            "time",
+        ]
+        info.name = "EURUSD"
+        info.description = "Euro vs Dollar"
+        info.currency_base = "EUR"
+        info.currency_profit = "USD"
+        info.digits = 5
+        info.point = 0.00001
+        info.trade_contract_size = 100000.0
+        info.trade_tick_size = 0.00001
+        info.trade_tick_value = 1.0
+        info.volume_min = 0.01
+        info.volume_max = 100.0
+        info.volume_step = 0.01
+        info.time = 1700000000
+        mock_info.return_value = info
+
+        fn = _get_symbols_describe()
+        res = fn("EURUSD", detail="summary")
+        sd = res["details"]
+
+        assert res["symbol"] == "EURUSD"
+        assert sd["description"] == "Euro vs Dollar"
+        assert sd["currency_base"] == "EUR"
+        assert sd["currency_profit"] == "USD"
+        assert sd["freshness"] == "stale, tick 5m 1s ago"
+        for trading_key in (
+            "digits",
+            "point",
+            "trade_contract_size",
+            "trade_tick_size",
+            "trade_tick_value",
+            "volume_min",
+            "volume_max",
+            "volume_step",
+            "time_epoch",
+        ):
+            assert trading_key not in sd
+
     @patch(f"{_MT5}.symbol_info")
     def test_compact_detail_uses_full_detail_field_names(self, mock_info):
         info = MagicMock()
