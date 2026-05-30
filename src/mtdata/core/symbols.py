@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Literal, Optional
 from ..shared.constants import DEFAULT_ROW_LIMIT, GROUP_SEARCH_THRESHOLD, TIMEFRAME_MAP
 from ..shared.schema import CompactFullDetailLiteral, TimeframeLiteral
 from ..shared.validators import invalid_timeframe_error
+from ..utils.freshness import format_age_seconds, format_freshness_label
 from ..utils.mt5 import (
     MT5ConnectionError,
     _mt5_copy_rates_from_pos,
@@ -18,6 +19,8 @@ from ..utils.mt5 import (
 from ..utils.mt5_enums import decode_mt5_bitmask_labels, decode_mt5_enum_label
 from ..utils.symbol import (
     _extract_group_path as _extract_group_path_util,
+)
+from ..utils.symbol import (
     _normalize_group_path_query,
 )
 from ..utils.utils import _format_time_minimal, _normalize_limit, _table_from_rows
@@ -120,9 +123,7 @@ _SYMBOL_DESCRIBE_COMPACT_DIRECT_FIELDS: tuple[str, ...] = (
     "currency_base_warning",
     "currency_profit",
     "time",
-    "data_age_seconds",
-    "data_stale",
-    "stale_after_seconds",
+    "freshness",
     "market_status",
     "market_status_reason",
     "note",
@@ -745,7 +746,9 @@ def symbols_describe(
                                 if key
                                 in {
                                     "data_age_seconds",
+                                    "data_age",
                                     "data_stale",
+                                    "freshness",
                                     "stale_after_seconds",
                                     "market_status",
                                     "market_status_reason",
@@ -896,14 +899,27 @@ def _quote_staleness_fields(
         return {}
     fields: Dict[str, Any] = {
         "data_age_seconds": _market_scan_round(age_seconds, digits=3),
+        "data_age": format_age_seconds(age_seconds),
         "stale_after_seconds": int(_MARKET_SCAN_STALE_QUOTE_SECONDS),
     }
     closed_session = quote_closed_session_context(symbol, now_epoch=now_epoch)
     if closed_session:
         fields["data_stale"] = False
         fields.update(closed_session)
+        fields["freshness"] = format_freshness_label(
+            data_stale=False,
+            market_status=fields.get("market_status"),
+            market_status_reason=fields.get("market_status_reason"),
+            age_seconds=age_seconds,
+            item="tick",
+        )
         return fields
     fields["data_stale"] = age_seconds > float(_MARKET_SCAN_STALE_QUOTE_SECONDS)
+    fields["freshness"] = format_freshness_label(
+        data_stale=fields["data_stale"],
+        age_seconds=age_seconds,
+        item="tick",
+    )
     if fields["data_stale"]:
         fields["warning"] = (
             "Live quote timestamp is older than "

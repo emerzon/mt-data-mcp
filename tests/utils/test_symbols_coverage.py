@@ -727,9 +727,10 @@ class TestSymbolsDescribe:
         assert res["timezone"] == "UTC"
         assert sd["digits"] == 5
         assert sd["point"] == 0.00001
-        assert sd["data_age_seconds"] == 301.0
-        assert sd["data_stale"] is True
-        assert sd["stale_after_seconds"] == 300
+        assert sd["freshness"] == "stale, tick 5m 1s ago"
+        assert "data_age_seconds" not in sd
+        assert "data_stale" not in sd
+        assert "stale_after_seconds" not in sd
         assert "Live quote timestamp" in sd["warning"]
         assert "quote_age_seconds" not in sd
         assert "time_epoch" not in sd
@@ -750,8 +751,9 @@ class TestSymbolsDescribe:
         res = fn("EURUSD")
         sd = res["details"]
 
-        assert sd["data_stale"] is False
-        assert sd["stale_after_seconds"] == 300
+        assert sd["freshness"].startswith("closed weekend, tick ")
+        assert "data_stale" not in sd
+        assert "stale_after_seconds" not in sd
         assert sd["market_status"] == "closed"
         assert sd["market_status_reason"] == "weekend"
         assert "latest completed session tick" in sd["note"]

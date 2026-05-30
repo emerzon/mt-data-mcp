@@ -11,6 +11,7 @@ from numbers import Number
 from typing import Any, Dict, Iterable, List, Optional
 
 from ..shared.output_precision import resolve_output_precision
+from .freshness import format_freshness_label
 from .minimal_output_toon import (
     _DEFAULT_DELIMITER,
     _INDENT,
@@ -923,25 +924,14 @@ def _normalize_market_ticker_payload(
         existing = payload.get("freshness")
         if not _is_empty_value(existing):
             return existing
-        status = str(payload.get("market_status") or "").strip().lower()
-        reason = str(payload.get("market_status_reason") or "").strip().lower()
-        if status == "closed":
-            label = "closed"
-            if reason:
-                label = f"{label}_{reason.replace(' ', '_')}"
-        elif payload.get("data_stale") is True:
-            label = "stale"
-        elif payload.get("data_stale") is False:
-            label = "fresh"
-        else:
-            return None
-        age_seconds = payload.get("data_age_seconds")
-        if age_seconds is None:
-            return label
-        try:
-            return f"{label}_{int(round(float(age_seconds)))}s"
-        except Exception:
-            return label
+        return format_freshness_label(
+            data_stale=payload.get("data_stale"),
+            market_status=payload.get("market_status"),
+            market_status_reason=payload.get("market_status_reason"),
+            age_seconds=payload.get("data_age_seconds"),
+            age_text=payload.get("data_age"),
+            item="tick",
+        )
 
     rich_keys = (
         "success",

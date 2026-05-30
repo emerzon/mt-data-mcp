@@ -6,6 +6,7 @@ import time
 from typing import Any, Dict, Literal, Optional
 
 from ..shared.schema import CompactFullDetailLiteral
+from ..utils.freshness import format_age_seconds, format_freshness_label
 from ..utils.mt5 import (
     MT5ConnectionError,
     ensure_mt5_connection_or_raise,
@@ -64,43 +65,18 @@ def _market_ticker_age_seconds(value: Any) -> Optional[float]:
 
 
 def _market_ticker_age_display(seconds: Any) -> Optional[str]:
-    try:
-        total = max(0, int(round(float(seconds))))
-    except Exception:
-        return None
-    days, remainder = divmod(total, 86400)
-    hours, remainder = divmod(remainder, 3600)
-    minutes, secs = divmod(remainder, 60)
-    if days:
-        return f"{days}d {hours}h"
-    if hours:
-        return f"{hours}h {minutes}m"
-    if minutes:
-        return f"{minutes}m {secs}s"
-    return f"{secs}s"
+    return format_age_seconds(seconds)
 
 
 def _market_ticker_freshness_label(payload: Dict[str, Any]) -> Optional[str]:
-    status = str(payload.get("market_status") or "").strip().lower()
-    reason = str(payload.get("market_status_reason") or "").strip().lower()
-    if status == "closed":
-        label = "closed"
-        if reason:
-            label = f"{label}_{reason.replace(' ', '_')}"
-    elif payload.get("data_stale") is True:
-        label = "stale"
-    elif payload.get("data_stale") is False:
-        label = "fresh"
-    else:
-        return None
-
-    age_seconds = payload.get("data_age_seconds")
-    if age_seconds is None:
-        return label
-    try:
-        return f"{label}_{int(round(float(age_seconds)))}s"
-    except Exception:
-        return label
+    return format_freshness_label(
+        data_stale=payload.get("data_stale"),
+        market_status=payload.get("market_status"),
+        market_status_reason=payload.get("market_status_reason"),
+        age_seconds=payload.get("data_age_seconds"),
+        age_text=payload.get("data_age"),
+        item="tick",
+    )
 
 
 def _market_depth_fetch_enabled() -> bool:

@@ -290,7 +290,7 @@ def test_market_ticker_returns_lightweight_spread_snapshot() -> None:
     assert out["bid"] == 200.0
     assert out["ask"] == 201.0
     assert out["spread"] == 1.0
-    assert out["freshness"].startswith("stale_")
+    assert out["freshness"].startswith("stale, tick ")
     assert out["time"] == "2023-11-14 22:13"
     assert "spread_points" not in out
     assert "spread_pct" not in out
@@ -338,7 +338,7 @@ def test_market_ticker_compact_detail_omits_verbose_fields() -> None:
     assert out["bid"] == 200.0
     assert out["ask"] == 201.0
     assert out["spread"] == 1.0
-    assert out["freshness"].startswith("stale_")
+    assert out["freshness"].startswith("stale, tick ")
     assert "spread_points" not in out
     assert "spread_pct" not in out
     assert "spread_display" not in out

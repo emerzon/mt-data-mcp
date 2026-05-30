@@ -203,8 +203,9 @@ def test_run_data_fetch_candles_compact_keeps_staleness_without_meta():
     )
 
     assert "meta" not in result
-    assert result["data_stale"] is False
-    assert result["freshness_basis"] == "bar_policy"
+    assert result["freshness"] == "fresh, bar 1m 0s ago"
+    assert "data_stale" not in result
+    assert "freshness_basis" not in result
     assert "data_freshness_seconds" not in result
     assert "data_age_seconds" not in result
     assert "data_age" not in result
@@ -234,8 +235,9 @@ def test_run_data_fetch_candles_compact_flags_stale_latest_data():
         },
     )
 
-    assert result["data_stale"] is True
-    assert result["freshness_basis"] == "bar_policy"
+    assert result["freshness"] == "stale, bar 1h 1m ago"
+    assert "data_stale" not in result
+    assert "freshness_basis" not in result
     assert "data_age_seconds" not in result
     assert "data_age" not in result
     assert "stale_warning" not in result
@@ -271,9 +273,10 @@ def test_run_data_fetch_candles_closed_market_relaxation_is_not_stale():
         },
     )
 
-    assert result["data_stale"] is False
-    assert result["market_status"] == "closed_or_idle"
-    assert "latest completed bar" in result["note"]
+    assert result["freshness"].startswith("closed or idle, bar ")
+    assert "data_stale" not in result
+    assert "market_status" not in result
+    assert "note" not in result
     assert "stale_warning" not in result
 
 

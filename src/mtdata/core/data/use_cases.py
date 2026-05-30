@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from ...shared.result import Err, Ok, Result, to_dict
+from ...utils.freshness import format_age_seconds as _format_age_seconds
+from ...utils.freshness import format_freshness_label
 from ..execution_logging import run_logged_operation
 from ..mt5_gateway import mt5_connection_error
 from ..output_contract import attach_collection_contract
@@ -211,23 +213,6 @@ def _run_data_fetch_candles_impl(
     return result
 
 
-def _format_age_seconds(seconds: Any) -> Optional[str]:
-    try:
-        value = max(0, int(round(float(seconds))))
-    except Exception:
-        return None
-    days, remainder = divmod(value, 86400)
-    hours, remainder = divmod(remainder, 3600)
-    minutes, secs = divmod(remainder, 60)
-    if days:
-        return f"{days}d {hours}h"
-    if hours:
-        return f"{hours}h {minutes}m"
-    if minutes:
-        return f"{minutes}m {secs}s"
-    return f"{secs}s"
-
-
 def _apply_range_limit_cap(result: Dict[str, Any], *, limit: int) -> None:
     data = result.get("data")
     if not isinstance(data, list):
@@ -301,10 +286,7 @@ def _compact_candles_payload(
         compact.pop("forming_candle_skipped", None)
     if "query_type" in public_diagnostics:
         compact["query_type"] = public_diagnostics["query_type"]
-    for key in ("data_stale", "freshness_basis"):
-        if key in public_diagnostics:
-            compact[key] = public_diagnostics[key]
-    for key in ("market_status", "note"):
+    for key in ("freshness",):
         if key in public_diagnostics:
             compact[key] = public_diagnostics[key]
     if "spread_estimate" in public_diagnostics:
@@ -403,6 +385,14 @@ def _public_candle_diagnostics(result: Dict[str, Any]) -> Dict[str, Any]:
                 and not relaxed_policy
             )
             public["data_stale"] = stale
+            freshness_label = format_freshness_label(
+                data_stale=stale,
+                market_status=public.get("market_status"),
+                age_seconds=seconds,
+                item="bar",
+            )
+            if freshness_label:
+                public["freshness"] = freshness_label
             if stale:
                 public["stale_warning"] = (
                     "Latest completed candle is outside the freshness policy window; "

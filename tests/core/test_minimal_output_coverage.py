@@ -877,7 +877,7 @@ class TestFormatResultMinimal:
             tool_name="market_ticker",
         )
 
-        assert result["freshness"] == "closed_weekend_5735s"
+        assert result["freshness"] == "closed weekend, tick 1h 36m ago"
         assert "data_stale" not in result
         assert "stale_after_seconds" not in result
         assert "market_status" not in result

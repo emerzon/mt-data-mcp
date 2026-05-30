@@ -33,6 +33,7 @@ from ..services.finviz import (
 )
 from ..shared.schema import CompactFullDetailLiteral
 from ..shared.symbols import finviz_forex_symbol_to_mt5
+from ..utils.freshness import format_freshness_label
 from ._mcp_instance import mcp
 from .error_envelope import build_error_payload
 from .execution_logging import run_logged_operation
@@ -1876,7 +1877,12 @@ def _filter_finviz_fundamentals_payload(
     out["category"] = category_out
     if "price" in filtered:
         out["price_source"] = "finviz_delayed"
-        out["freshness_basis"] = "finviz_delayed_no_timestamp"
+        out["freshness"] = format_freshness_label(
+            delayed=True,
+            timestamp_available=False,
+        )
+        if detail_mode == "full":
+            out["freshness_basis"] = "finviz_delayed_no_timestamp"
     if category_input != category_mode:
         out["category_requested"] = category_input
     if detail_mode == "full":
