@@ -819,7 +819,10 @@ class TestCorrelationMatrix:
         result = self._unwrapped()("A,B", window_bars=3, min_overlap=30)
         assert result["success"] is False
         assert result["error_code"] == "invalid_input"
-        assert "calculation window" in result["error"]
+        assert result["error"] == (
+            "min_overlap (30) cannot exceed window_bars (3). "
+            "Reduce min_overlap or increase window_bars."
+        )
 
     def test_symbols_and_group_are_mutually_exclusive(self):
         result = self._unwrapped()("A,B", group="Forex\\Majors")
@@ -1149,6 +1152,16 @@ class TestCointegrationTest:
         assert result["success"] is False
         assert result["error_code"] == "invalid_input"
         assert "either symbols or group" in result["error"]
+
+    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
+    def test_window_bars_must_cover_minimum_overlap_window(self):
+        result = self._unwrapped()("A,B", window_bars=50, min_overlap=80)
+        assert result["success"] is False
+        assert result["error_code"] == "invalid_input"
+        assert result["error"] == (
+            "min_overlap (80) cannot exceed window_bars (50). "
+            "Reduce min_overlap or increase window_bars."
+        )
 
     @patch("statsmodels.tsa.stattools.coint", return_value=(-4.5, 0.01, [-3.9, -3.3, -3.0]))
     @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})

@@ -197,6 +197,14 @@ _COINTEGRATION_REQUEST_KEYS = frozenset(
     }
 )
 
+
+def _min_overlap_exceeds_window_message(*, min_overlap: int, window_bars: int) -> str:
+    return (
+        f"min_overlap ({int(min_overlap)}) cannot exceed window_bars ({int(window_bars)}). "
+        "Reduce min_overlap or increase window_bars."
+    )
+
+
 def _causal_connection_error() -> Dict[str, Any] | None:
     return mt5_connection_error(
         create_mt5_gateway(
@@ -1882,7 +1890,10 @@ def correlation_matrix(  # noqa: C901
             )
         if window_bars < min_overlap:
             return _causal_error(
-                "window_bars must be at least min_overlap because it controls the correlation calculation window.",
+                _min_overlap_exceeds_window_message(
+                    min_overlap=min_overlap,
+                    window_bars=window_bars,
+                ),
                 code="invalid_input",
                 meta=meta,
             )
@@ -2277,7 +2288,10 @@ def cointegration_test(  # noqa: C901
             )
         if window_bars < min_overlap:
             return _causal_error(
-                "window_bars must be at least min_overlap because it controls the cointegration calculation window.",
+                _min_overlap_exceeds_window_message(
+                    min_overlap=min_overlap,
+                    window_bars=window_bars,
+                ),
                 code="invalid_input",
                 meta=meta,
             )
