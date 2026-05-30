@@ -1574,6 +1574,8 @@ def _build_market_scan_signal_row(
     lookback: int,
     rsi_length: int,
     sma_period: int,
+    include_rsi: bool,
+    include_sma: bool,
 ) -> tuple[Optional[Dict[str, Any]], Optional[str]]:
     rates = _mt5_copy_rates_from_pos(symbol.name, mt5_timeframe, 1, lookback)
     if rates is None or len(rates) < 1:
@@ -1598,10 +1600,10 @@ def _build_market_scan_signal_row(
     tick_volume = _market_scan_bar_int(latest_bar["tick_volume"])
     real_volume = _market_scan_bar_int(latest_bar["real_volume"])
     sma_value = None
-    if len(close_values) >= max(1, int(sma_period)):
+    if include_sma and len(close_values) >= max(1, int(sma_period)):
         sma_window = close_values[-int(sma_period):]
         sma_value = float(sum(sma_window) / len(sma_window))
-    rsi_value = _market_scan_compute_rsi(close_values, int(rsi_length))
+    rsi_value = _market_scan_compute_rsi(close_values, int(rsi_length)) if include_rsi else None
     sma_distance_pct = None
     if sma_value is not None and sma_value != 0:
         sma_distance_pct = ((close_price - sma_value) / sma_value) * 100.0
@@ -1620,11 +1622,13 @@ def _build_market_scan_signal_row(
                 ((close_price - open_price) / open_price) * 100.0,
                 digits=6,
             ),
-            "rsi": _market_scan_round(rsi_value, digits=4),
-            "sma_value": _market_scan_round(sma_value, digits=digits),
-            "sma_distance_pct": _market_scan_round(sma_distance_pct, digits=6),
         }
     )
+    if include_rsi:
+        row["rsi"] = _market_scan_round(rsi_value, digits=4)
+    if include_sma:
+        row["sma_value"] = _market_scan_round(sma_value, digits=digits)
+        row["sma_distance_pct"] = _market_scan_round(sma_distance_pct, digits=6)
     return row, None
 
 
@@ -2338,6 +2342,15 @@ def market_scan(  # noqa: C901
                     request=request,
                 )
 
+            include_rsi = (
+                detail_mode != "compact"
+                or rank_by_value == "rsi"
+                or rsi_above is not None
+                or rsi_below is not None
+            )
+            include_sma = detail_mode != "compact" or price_vs_sma_value is not None
+            signal_lookback = lookback_value if (include_rsi or include_sma) else 1
+
             mt5_gateway = create_mt5_gateway(
                 adapter=mt5,
                 ensure_connection_impl=ensure_mt5_connection_or_raise,
@@ -2426,9 +2439,11 @@ def market_scan(  # noqa: C901
                     symbol_obj,
                     timeframe=timeframe_value,
                     mt5_timeframe=mt5_timeframe,
-                    lookback=lookback_value,
+                    lookback=signal_lookback,
                     rsi_length=rsi_length_value,
                     sma_period=sma_period_value,
+                    include_rsi=include_rsi,
+                    include_sma=include_sma,
                 )
                 if signal_error or signal_row is None:
                     _record_issue(symbol_name, signal_error or "Bar data is unavailable.")
@@ -2516,8 +2531,11 @@ def market_scan(  # noqa: C901
                 "tick_volume",
                 "spread_points",
                 "spread_pips",
-                "rsi",
             ]
+            if include_rsi:
+                compact_headers.append("rsi")
+            if include_sma:
+                compact_headers.append("sma_distance_pct")
             headers = compact_headers if detail_mode == "compact" else full_headers
             output_rows = (
                 _project_market_scan_rows(headers, limited_rows)

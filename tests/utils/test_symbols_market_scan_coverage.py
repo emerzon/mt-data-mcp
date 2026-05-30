@@ -656,6 +656,7 @@ class TestMarketScan:
             "spread_pips",
         }
         assert row["spread_pips"] == 1.0
+        assert mock_rates.call_args.args[3] == 1
         assert "real_volume" not in row
         assert "rows" not in result
         assert result["meta"]["request"]["detail"] == "compact"
