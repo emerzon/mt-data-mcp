@@ -53,6 +53,9 @@ def test_strategy_backtest_sma_cross_generates_long_trade(monkeypatch):
     assert out["success"] is True
     assert out["summary"]["num_trades"] == 1
     assert out["summary"]["long_trades"] == 1
+    assert out["units"]["returns"] == "return_fraction"
+    assert out["units"]["drawdown"] == "return_fraction"
+    assert out["units"]["win_rate"] == "fraction"
     assert out["trades"][0]["direction"] == "long"
     assert out["summary"]["net_return"] > 0.0
 
@@ -78,6 +81,7 @@ def test_strategy_backtest_compact_mode_excludes_trades(monkeypatch):
 
     assert out["success"] is True
     assert out["summary"]["num_trades"] == 1
+    assert out["units"]["returns"] == "return_fraction"
     assert "trades" not in out, "compact mode should not include trades array"
     assert "trade_sample" not in out
 

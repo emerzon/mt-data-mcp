@@ -169,6 +169,24 @@ def _get_forecast_methods_data_safe() -> Dict[str, Any]:
     }
 _MIN_ANNUALIZATION_TRADES = 30
 _MIN_ANNUALIZATION_YEARS = 0.25
+_TRADE_BACKTEST_UNITS = {
+    "returns": "return_fraction",
+    "drawdown": "return_fraction",
+    "win_rate": "fraction",
+    "slippage_bps": "basis_points",
+}
+_FORECAST_ERROR_UNITS = {
+    "price": "price",
+    "return": "log_return",
+    "volatility": "return_fraction",
+}
+
+
+def _backtest_units(quantity: Optional[str] = None) -> Dict[str, str]:
+    units = dict(_TRADE_BACKTEST_UNITS)
+    if quantity is not None:
+        units["forecast_error"] = _FORECAST_ERROR_UNITS.get(str(quantity), str(quantity))
+    return units
 
 
 def _compute_performance_metrics(
@@ -842,6 +860,7 @@ def strategy_backtest(  # noqa: C901
             "strategy": strategy_value,
             "detail": detail_mode,
             "position_mode": position_mode_value,
+            "units": _backtest_units(),
             "parameters": _params,
             "summary": {
                 "bars_used": int(bars_used),
@@ -1508,6 +1527,7 @@ def forecast_backtest(  # noqa: C901
             "success": True,
             "symbol": symbol,
             "timeframe": timeframe,
+            "units": _backtest_units(quantity),
             "slippage_bps": float(slippage_bps),
             "trade_threshold": float(trade_threshold or 0.0),
             "detail": detail_mode,

@@ -47,6 +47,8 @@ def test_forecast_backtest_compact_excludes_request_metadata() -> None:
     assert res_compact["success"] is True
     assert res_compact["symbol"] == "EURUSD"
     assert res_compact["timeframe"] == "H1"
+    assert res_compact["units"]["returns"] == "return_fraction"
+    assert res_compact["units"]["forecast_error"] == "price"
     assert "results" in res_compact
 
 
@@ -75,6 +77,7 @@ def test_forecast_backtest_full_excludes_request_metadata() -> None:
     assert "request" not in res_full, "full mode should not include 'request'"
     assert "resolved_request" not in res_full, "full mode should not include 'resolved_request'"
     assert res_full["success"] is True
+    assert res_full["units"]["forecast_error"] == "price"
 
 
 def test_strategy_backtest_compact_excludes_request_metadata() -> None:
@@ -102,6 +105,7 @@ def test_strategy_backtest_compact_excludes_request_metadata() -> None:
     assert "resolved_request" not in res_compact, "compact mode should not include 'resolved_request'"
     # But the response should still contain results
     assert res_compact["success"] is True
+    assert res_compact["units"]["drawdown"] == "return_fraction"
     assert "summary" in res_compact
     assert "sample_warning" not in res_compact.get("metrics", {})
     if res_compact.get("metrics"):
