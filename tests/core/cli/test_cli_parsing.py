@@ -1093,6 +1093,11 @@ class TestCoerceCliScalar:
     def test_json_array(self):
         assert _coerce_cli_scalar("[1, 2]") == [1, 2]
 
+    def test_python_literal_array(self):
+        assert _coerce_cli_scalar("[{'type': 'candle_close'}]") == [
+            {"type": "candle_close"}
+        ]
+
     def test_plain_string(self):
         assert _coerce_cli_scalar("hello") == "hello"
 
@@ -1129,6 +1134,11 @@ class TestNormalizeCliListValue:
 
     def test_json_array(self):
         assert _normalize_cli_list_value('["x","y"]') == ["x", "y"]
+
+    def test_python_literal_array(self):
+        assert _normalize_cli_list_value(
+            "[{'type':'price_change','threshold_value':0.1}]"
+        ) == [{"type": "price_change", "threshold_value": 0.1}]
 
     def test_list_passthrough(self):
         assert _normalize_cli_list_value(["a", "b"]) == ["a", "b"]

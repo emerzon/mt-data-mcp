@@ -1,3 +1,4 @@
+import ast
 import json
 from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, get_args
 
@@ -73,19 +74,22 @@ def normalize_cli_list_value(value: Any) -> Any:  # noqa: C901
         if not s:
             return
         if s.startswith("[") and s.endswith("]"):
-            try:
-                parsed = json.loads(s)
-                if isinstance(parsed, list):
-                    for item in parsed:
-                        if isinstance(item, str):
-                            token = item.strip()
-                            if token:
-                                out.append(token)
-                        elif item is not None:
-                            out.append(item)
-                    return
-            except Exception:
-                pass
+            parsed: Any = None
+            for parser in (json.loads, ast.literal_eval):
+                try:
+                    parsed = parser(s)
+                    break
+                except Exception:
+                    parsed = None
+            if isinstance(parsed, list):
+                for item in parsed:
+                    if isinstance(item, str):
+                        token = item.strip()
+                        if token:
+                            out.append(token)
+                    elif item is not None:
+                        out.append(item)
+                return
         for token in _split_compact_tokens(s):
             value_token = token.strip()
             if value_token:
@@ -120,6 +124,11 @@ def coerce_cli_scalar(v: str) -> Any:
             return json.loads(s)
         except Exception:
             pass
+        if s[0] in ("{", "["):
+            try:
+                return ast.literal_eval(s)
+            except Exception:
+                pass
     try:
         if "." in s:
             return float(s)
@@ -226,6 +235,13 @@ def create_command_function(  # noqa: C901
         for item in errors:
             loc = ".".join(str(part) for part in item.get("loc", ()))
             msg = str(item.get("msg") or "Invalid value.")
+            if cmd_name == "wait_event" and loc.split(".", 1)[0] in {"watch_for", "end_on"}:
+                return (
+                    "wait_event watch_for/end_on must be arrays of event objects. "
+                    "Example: --watch-for '[{\"type\":\"price_change\","
+                    "\"threshold_value\":0.1,\"threshold_mode\":\"fixed_pct\"}]' "
+                    "--end-on '[{\"type\":\"candle_close\",\"timeframe\":\"M1\"}]'."
+                )
             if "indicators" in loc and "params" in loc and any(
                 marker in msg.lower() for marker in ("list", "dict", "dictionary", "mapping", "valid")
             ):
