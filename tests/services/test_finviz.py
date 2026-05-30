@@ -547,6 +547,7 @@ class TestFinvizTools:
 
         assert "pairs" not in result
         assert result["detail"] == "compact"
+        assert result["data_limitations"] == {"performance_periods": "day_only"}
         assert result["items"] == [
             {
                 "symbol": "EUR/USD",
@@ -654,6 +655,7 @@ class TestFinvizTools:
         assert "coins" not in result
         assert result["detail"] == "compact"
         assert result["performance_format"] == "percentage_points"
+        assert result["data_limitations"] == {"performance_periods": "day_only"}
         assert result["items"] == [
             {
                 "symbol": "BTC",

@@ -404,14 +404,15 @@ def _normalize_finviz_market_payload(
     out["detail"] = detail_mode
     if detail_mode != "full" and rows_key in {"pairs", "coins", "futures"}:
         out["performance_format"] = "percentage_points"
-    if rows_key == "futures":
+    if rows_key in {"pairs", "coins", "futures"}:
         limitations = {"performance_periods": "day_only"}
-        has_price = any(
-            isinstance(row, dict) and row.get("price") not in (None, "")
-            for row in normalized_rows
-        )
-        if not has_price:
-            limitations["price"] = "not_available_from_source"
+        if rows_key == "futures":
+            has_price = any(
+                isinstance(row, dict) and row.get("price") not in (None, "")
+                for row in normalized_rows
+            )
+            if not has_price:
+                limitations["price"] = "not_available_from_source"
         out["data_limitations"] = limitations
     if detail_mode == "full":
         out["meta"] = _build_tool_contract_meta(
