@@ -37,6 +37,17 @@ from .common import (
     pd_freq_from_timeframe as _pd_freq_from_timeframe,
 )
 
+_VOLATILITY_METHOD_HINTS = (
+    "ewma",
+    "garch",
+    "har_rv",
+    "arima",
+    "sarima",
+    "ets",
+    "theta",
+    "ensemble",
+)
+
 
 # Optional availability flags (match server discovery)
 try:
@@ -232,6 +243,79 @@ def get_volatility_methods_data() -> Dict[str, Any]:
     })
 
     return {"methods": methods}
+
+
+def _forecast_method_supports(method: str) -> Dict[str, bool]:
+    try:
+        from .forecast_methods import get_method_supports
+
+        supports = get_method_supports(method)
+    except Exception:
+        return {}
+    if not isinstance(supports, dict) or not any(bool(v) for v in supports.values()):
+        return {}
+    return {
+        str(key): bool(value)
+        for key, value in supports.items()
+        if key in {"price", "return", "volatility", "ci"}
+    }
+
+
+def _invalid_volatility_method_error(
+    method: Any,
+    *,
+    valid_methods: set[str],
+) -> Dict[str, Any]:
+    method_text = str(method).strip()
+    method_l = method_text.lower()
+    valid_method_list = sorted(valid_methods)
+    supports = _forecast_method_supports(method_l)
+    supported_quantities = [
+        quantity
+        for quantity in ("price", "return", "volatility")
+        if supports.get(quantity)
+    ]
+
+    if supports and not supports.get("volatility"):
+        supported_text = ", ".join(supported_quantities) or "none"
+        hints = ", ".join(_VOLATILITY_METHOD_HINTS)
+        return {
+            "error": (
+                f"Method '{method_text}' does not support quantity='volatility'. "
+                f"Supported quantities: {supported_text}. Use "
+                f"forecast_volatility_estimate with a volatility method such as {hints}."
+            ),
+            "error_code": "unsupported_quantity_method",
+            "method": method_l,
+            "quantity": "volatility",
+            "supported_quantities": supported_quantities,
+            "valid_volatility_methods": valid_method_list,
+        }
+
+    if supports:
+        return {
+            "error": (
+                f"Method '{method_text}' is registered for forecast_generate but is "
+                "not a forecast_volatility_estimate method. Use one of: "
+                f"{', '.join(valid_method_list)}."
+            ),
+            "error_code": "unsupported_volatility_method",
+            "method": method_l,
+            "quantity": "volatility",
+            "supported_quantities": supported_quantities,
+            "valid_volatility_methods": valid_method_list,
+        }
+
+    return {
+        "error": (
+            f"Invalid volatility method: {method_text}. Use one of: "
+            f"{', '.join(valid_method_list)}."
+        ),
+        "error_code": "invalid_volatility_method",
+        "valid_volatility_methods": valid_method_list,
+    }
+
+
 # --- Range-based variance helpers -------------------------------------------------
 
 def _parkinson_sigma_sq(high: np.ndarray, low: np.ndarray) -> np.ndarray:
@@ -576,7 +660,7 @@ def forecast_volatility(  # noqa: C901
         valid_meta = {'ensemble'}
         valid_methods = valid_direct.union(valid_general).union(valid_meta)
         if method_l not in valid_methods:
-            return {"error": f"Invalid method: {method}"}
+            return _invalid_volatility_method_error(method, valid_methods=valid_methods)
         if method_l in garch_family and not _ARCH_AVAILABLE:
             return {"error": f"{method_l} requires 'arch' package."}
 

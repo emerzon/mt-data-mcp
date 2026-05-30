@@ -60,6 +60,33 @@ def test_forecast_routes_to_volatility_endpoint(monkeypatch):
     assert out == {"volatility": True, "method": "vol_garch"}
 
 
+def test_forecast_volatility_quantity_rejects_known_non_volatility_method(monkeypatch):
+    monkeypatch.setattr(ff, "TIMEFRAME_MAP", {"H1": 1})
+    monkeypatch.setattr(ff, "TIMEFRAME_SECONDS", {"H1": 3600})
+    monkeypatch.setattr(fv, "TIMEFRAME_MAP", {"H1": 1})
+    monkeypatch.setattr(fv, "TIMEFRAME_SECONDS", {"H1": 3600})
+    monkeypatch.setattr(
+        fv,
+        "_forecast_method_supports",
+        lambda method: {
+            "price": True,
+            "return": False,
+            "volatility": False,
+            "ci": True,
+        } if method == "analog" else {},
+    )
+
+    out = ff.forecast(
+        symbol="EURUSD",
+        timeframe="H1",
+        quantity="volatility",
+        method="analog",
+    )
+
+    assert "does not support quantity='volatility'" in out["error"]
+    assert "forecast_volatility_estimate" in out["error"]
+
+
 def test_forecast_handles_fetch_errors_and_short_history(monkeypatch):
     monkeypatch.setattr(fe, "TIMEFRAME_MAP", {"H1": 1})
     monkeypatch.setattr(fe, "TIMEFRAME_SECONDS", {"H1": 3600})

@@ -841,7 +841,7 @@ class TestScatteredBranches:
         """Line 341-342: method not in valid_direct ∪ valid_general."""
         with _mock_env():
             r = forecast_volatility("EURUSD", "H1", 1, method="bogus")
-            assert "error" in r and "Invalid method" in r["error"]
+            assert "error" in r and "Invalid volatility method" in r["error"]
 
     def test_invalid_timeframe(self):
         """Line 331-332: timeframe not in TIMEFRAME_MAP."""

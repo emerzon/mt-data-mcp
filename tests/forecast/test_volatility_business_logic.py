@@ -140,11 +140,38 @@ def test_forecast_volatility_validations(monkeypatch):
     assert "Invalid timeframe" in out["error"]
 
     out = vol.forecast_volatility(symbol="EURUSD", timeframe="H1", method="nope")  # type: ignore[arg-type]
-    assert out["error"] == "Invalid method: nope"
+    assert out["error_code"] == "invalid_volatility_method"
+    assert out["error"].startswith("Invalid volatility method: nope")
 
     monkeypatch.setattr(vol, "_ARCH_AVAILABLE", False)
     out = vol.forecast_volatility(symbol="EURUSD", timeframe="H1", method="garch")
     assert "requires 'arch' package" in out["error"]
+
+
+def test_forecast_volatility_rejects_known_non_volatility_method(monkeypatch):
+    monkeypatch.setattr(vol, "TIMEFRAME_MAP", {"H1": 1})
+    monkeypatch.setattr(vol, "TIMEFRAME_SECONDS", {"H1": 3600})
+    monkeypatch.setattr(
+        vol,
+        "_forecast_method_supports",
+        lambda method: {
+            "price": True,
+            "return": False,
+            "volatility": False,
+            "ci": True,
+        } if method == "analog" else {},
+    )
+
+    out = vol.forecast_volatility(
+        symbol="EURUSD",
+        timeframe="H1",
+        method="analog",  # type: ignore[arg-type]
+    )
+
+    assert out["error_code"] == "unsupported_quantity_method"
+    assert "does not support quantity='volatility'" in out["error"]
+    assert "forecast_volatility_estimate" in out["error"]
+    assert out["supported_quantities"] == ["price"]
 
 
 def test_forecast_volatility_general_theta_and_proxy_errors(monkeypatch):
