@@ -1180,7 +1180,7 @@ class TestFinvizTools:
         assert result["items"][0]["price_per_share"] == 411.34
         assert "cost" not in result["items"][0]
         assert result["omitted_item_count"] == 1
-        assert result["summary"]["counts"]["buy_transactions"] == 1
+        assert result["summary"]["buy_transactions"] == 1
 
     @patch("mtdata.core.finviz.get_stock_insider_trades")
     def test_finviz_insider_none_detail_uses_compact(self, mock_get_trades):
@@ -1247,7 +1247,8 @@ class TestFinvizTools:
         result = raw("AAPL", detail=None)
 
         assert result["detail"] == "compact"
-        assert result["summary"]["counts"] == {"returned": 2, "available": 2}
+        assert result["count"] == 2
+        assert result["available_count"] == 2
         assert "meta" not in result
 
     @patch("mtdata.core.finviz.get_stock_peers")
@@ -1264,7 +1265,8 @@ class TestFinvizTools:
         result = raw("AAPL", detail="")
 
         assert result["detail"] == "compact"
-        assert result["summary"]["counts"] == {"returned": 3, "available": 3}
+        assert result["count"] == 3
+        assert result["available_count"] == 3
         assert "meta" not in result
 
     @patch("mtdata.core.finviz.get_insider_activity")
@@ -1515,7 +1517,7 @@ class TestFinvizTools:
         )
         assert result["success"] is True
         assert result["count"] == 1
-        assert result["available_count"] == 1
+        assert "available_count" not in result
         assert result["detail"] == "compact"
         assert "stocks" not in result
         assert result["items"] == [
@@ -1672,7 +1674,7 @@ class TestFinvizTools:
         )
         assert result["success"] is True
         assert result["count"] == 0
-        assert result["available_count"] == 0
+        assert "available_count" not in result
         assert result["items"] == []
 
     @patch('mtdata.core.finviz.screen_stocks')
@@ -1725,7 +1727,7 @@ class TestFinvizTools:
             )
 
         assert result["items"] == [{"symbol": "AAPL", "market_cap": "3.0T"}]
-        assert result["available_count"] == 2
+        assert "available_count" not in result
         assert result["omitted_item_count"] == 1
         assert result["detail"] == "full"
         assert result["meta"]["tool"] == "finviz_screen"
@@ -1758,7 +1760,7 @@ class TestFinvizTools:
         )
         assert result["success"] is True
         assert result["count"] == 0
-        assert result["available_count"] == 0
+        assert "available_count" not in result
 
     @patch('mtdata.core.finviz.screen_stocks')
     def test_finviz_screen_tool_accepts_key_value_filters(self, mock_screen):
@@ -1787,7 +1789,7 @@ class TestFinvizTools:
         )
         assert result["success"] is True
         assert result["count"] == 0
-        assert result["available_count"] == 0
+        assert "available_count" not in result
 
     @patch('mtdata.core.finviz.screen_stocks')
     def test_finviz_screen_tool_accepts_operator_key_value_filters(self, mock_screen):

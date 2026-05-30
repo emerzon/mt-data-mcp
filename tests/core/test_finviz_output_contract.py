@@ -322,13 +322,8 @@ class TestFinvizInsiderActivityOutputContract:
         assert "sec_form_4_link" not in result["items"][0]
         assert "insider_id" not in result["items"][0]
         assert "shares_total" not in result["items"][0]
-        assert result["summary"]["counts"] == {
-            "returned": 5,
-            "available": 6,
-            "total": 6,
-            "buy_transactions": 2,
-            "sell_transactions": 3,
-        }
+        assert result["summary"]["buy_transactions"] == 2
+        assert result["summary"]["sell_transactions"] == 3
         assert result["summary"]["top_symbols"][0] == {
             "symbol": "AAPL",
             "transactions": 2,
@@ -388,8 +383,7 @@ class TestFinvizInsiderOutputContract:
             "shares": "1534",
             "value_usd": "421850",
         }
-        assert result["summary"]["counts"]["returned"] == 3
-        assert result["summary"]["counts"]["sell_transactions"] == 3
+        assert result["summary"]["sell_transactions"] == 3
         assert result["omitted_item_count"] == 1
 
     @patch("mtdata.core.finviz.get_stock_insider_trades")
@@ -431,9 +425,8 @@ class TestFinvizProgressiveDisclosure:
         assert result["detail"] == "compact"
         assert len(result["items"]) == 3
         assert "insider_trades" not in result
-        assert result["summary"]["counts"]["available"] == 4
-        assert result["summary"]["counts"]["buy_transactions"] == 2
-        assert result["summary"]["counts"]["sell_transactions"] == 1
+        assert result["summary"]["buy_transactions"] == 2
+        assert result["summary"]["sell_transactions"] == 1
         assert result["omitted_item_count"] == 1
 
     @patch("mtdata.core.finviz.get_stock_ratings")
@@ -456,7 +449,6 @@ class TestFinvizProgressiveDisclosure:
         assert result["available_count"] == 5
         assert result["truncated"] is True
         assert result["summary"]["latest"] == expected_rows[0]
-        assert result["summary"]["counts"]["available"] == 5
         assert result["show_all_hint"] == "Set extras='metadata' or limit=5 to view all ratings."
 
     @patch("mtdata.core.finviz.get_stock_ratings")
@@ -471,7 +463,6 @@ class TestFinvizProgressiveDisclosure:
         assert result["count"] == 2
         assert result["available_count"] == 5
         assert result["truncated"] is True
-        assert result["summary"]["counts"] == {"returned": 2, "available": 5}
         assert result["omitted_item_count"] == 3
 
     @patch("mtdata.core.finviz.get_stock_ratings")
@@ -513,7 +504,8 @@ class TestFinvizProgressiveDisclosure:
 
         assert result["detail"] == "compact"
         assert result["peers"] == peers[:5]
-        assert result["summary"]["counts"]["available"] == 6
+        assert result["count"] == 5
+        assert result["available_count"] == 6
         assert result["omitted_item_count"] == 1
 
     @patch("mtdata.core.finviz.get_stock_peers")
@@ -524,7 +516,8 @@ class TestFinvizProgressiveDisclosure:
         result = _unwrap(finviz_peers)("AAPL", limit=2)
 
         assert result["peers"] == ["MSFT", "GOOGL"]
-        assert result["summary"]["counts"] == {"returned": 2, "available": 3}
+        assert result["count"] == 2
+        assert result["available_count"] == 3
         assert result["omitted_item_count"] == 1
 
     @patch("mtdata.core.finviz.get_stock_ratings")

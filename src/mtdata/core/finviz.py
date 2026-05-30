@@ -496,8 +496,12 @@ def _normalize_finviz_market_payload(
     out["items"] = output_rows
     out["count"] = len(output_rows)
     available = len(normalized_rows)
-    out["available_count"] = available
-    omitted = max(0, available - len(limited_rows))
+    if rows_key != "stocks":
+        out["available_count"] = available
+    if rows_key == "stocks" and out.get("total") not in (None, ""):
+        omitted = max(0, int(out.get("total") or 0) - int(out["count"]))
+    else:
+        omitted = max(0, available - len(limited_rows))
     if omitted:
         out["omitted_item_count"] = omitted
     out["detail"] = detail_mode
@@ -1815,13 +1819,8 @@ def _compact_finviz_insider_payload(result: Dict[str, Any], *, detail: str) -> D
     out["items"] = compact_rows
     out["count"] = len(compact_rows)
     out["summary"] = {
-        "counts": {
-            "returned": len(compact_rows),
-            "available": len(normalized_rows),
-            "total": result.get("total", len(normalized_rows)),
-            "buy_transactions": buys,
-            "sell_transactions": sells,
-        }
+        "buy_transactions": buys,
+        "sell_transactions": sells,
     }
     out["omitted_item_count"] = max(0, len(normalized_rows) - len(compact_rows))
     return out
@@ -1861,13 +1860,8 @@ def _compact_finviz_insider_activity_payload(
     out["items"] = compact_rows
     out["count"] = len(compact_rows)
     out["summary"] = {
-        "counts": {
-            "returned": len(compact_rows),
-            "available": len(normalized_rows),
-            "total": result.get("total", len(normalized_rows)),
-            "buy_transactions": buys,
-            "sell_transactions": sells,
-        },
+        "buy_transactions": buys,
+        "sell_transactions": sells,
         "top_symbols": _summarize_insider_activity_tickers(normalized_rows),
     }
     out["omitted_item_count"] = max(0, len(normalized_rows) - len(compact_rows))
@@ -1902,10 +1896,6 @@ def _compact_finviz_ratings_payload(
     compact_rows = limited_rows
     out["ratings"] = compact_rows
     out["summary"] = {
-        "counts": {
-            "returned": len(compact_rows),
-            "available": len(normalized_rows),
-        },
         "latest": compact_rows[0] if compact_rows else None,
     }
     out["omitted_item_count"] = omitted
@@ -1930,17 +1920,14 @@ def _compact_finviz_peers_payload(
     out["detail"] = detail_mode
     if detail_mode == "full":
         out["peers"] = limited_peers
+        out["count"] = len(limited_peers)
         out["available_count"] = len(peers)
         out["omitted_item_count"] = max(0, len(peers) - len(limited_peers))
         return out
     compact_peers = limited_peers
     out["peers"] = compact_peers
-    out["summary"] = {
-        "counts": {
-            "returned": len(compact_peers),
-            "available": len(peers),
-        }
-    }
+    out["count"] = len(compact_peers)
+    out["available_count"] = len(peers)
     out["omitted_item_count"] = max(0, len(peers) - len(compact_peers))
     return out
 
