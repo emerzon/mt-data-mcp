@@ -179,6 +179,8 @@ class TestSymbolsTopMarkets:
         assert len(result["data"]) == 1
         assert result["data"][0]["symbol"] == "EURUSD"
         assert result["data"][0]["close"] == 1.045
+        assert result["units"]["tick_volume"] == "broker_tick_count"
+        assert result["units"]["close"] == "price"
         assert "lowest_spread" not in result
         assert "highest_volume" not in result
         assert "highest_price_change" not in result
@@ -460,6 +462,8 @@ class TestSymbolsTopMarkets:
         assert result["lowest_spread"][0]["symbol"] == "EURUSD"
         assert result["highest_volume"][0]["symbol"] == "EURUSD"
         assert result["highest_price_change"][0]["symbol"] == "GBPUSD"
+        assert result["units"]["tick_volume"] == "broker_tick_count"
+        assert result["units"]["close"] == "price"
         assert "data_sources" not in result
         assert "collection_kind" not in result
         assert "collection_contract_version" not in result

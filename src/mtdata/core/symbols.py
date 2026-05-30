@@ -1174,6 +1174,7 @@ _MARKET_SCAN_UNITS = {
     "close": "price",
     "price_change_pct": "percentage_points",
     "tick_volume": "broker_tick_count",
+    "real_volume": "traded_volume",
     "spread_points": "broker_points",
     "spread_pips": "pips",
     "spread_pct": "percentage_points",
@@ -1200,6 +1201,21 @@ def _market_scan_units_for_rows(rows: List[Dict[str, Any]]) -> Dict[str, str]:
         for key, unit in _MARKET_SCAN_UNITS.items()
         if key in seen_fields
     }
+
+
+def _attach_top_markets_units(
+    out: Dict[str, Any],
+    *row_groups: List[Dict[str, Any]],
+) -> None:
+    rows = [
+        row
+        for group in row_groups
+        for row in group
+        if isinstance(row, dict)
+    ]
+    units = _market_scan_units_for_rows(rows)
+    if units:
+        out["units"] = units
 
 
 def _market_scan_contract_meta(
@@ -2061,6 +2077,7 @@ def symbols_top_markets(  # noqa: C901
                 out.update(scan_meta)
                 out["ranking"] = "lowest_spread"
                 out.update(_scope_fields("spread", spread_rows))
+                _attach_top_markets_units(out, spread_rows)
                 if detail_mode == "full":
                     out["evaluated_symbols"] = evaluated_counts["spread"]
                     out["skipped_symbols"] = metric_skips["spread"]
@@ -2076,6 +2093,7 @@ def symbols_top_markets(  # noqa: C901
                 out.update(scan_meta)
                 out["ranking"] = "highest_volume"
                 out.update(_scope_fields("volume", volume_rows))
+                _attach_top_markets_units(out, volume_rows)
                 if detail_mode == "full":
                     out["evaluated_symbols"] = evaluated_counts["volume"]
                     out["skipped_symbols"] = metric_skips["volume"]
@@ -2095,6 +2113,7 @@ def symbols_top_markets(  # noqa: C901
                     else "highest_price_change"
                 )
                 out.update(_scope_fields("price_change", price_change_rows))
+                _attach_top_markets_units(out, price_change_rows)
                 if detail_mode == "full":
                     out["evaluated_symbols"] = evaluated_counts["price_change"]
                     out["skipped_symbols"] = metric_skips["price_change"]
@@ -2127,7 +2146,7 @@ def symbols_top_markets(  # noqa: C901
                     for fields in (_scope_fields(metric_name, rows),)
                     if fields.get("note")
                 ]
-                return {
+                out = {
                     "success": True,
                     "ranking": "all",
                     "requested_limit": int(limit_value),
@@ -2151,6 +2170,8 @@ def symbols_top_markets(  # noqa: C901
                     ),
                     **({"notes": notes} if notes else {}),
                 }
+                _attach_top_markets_units(out, spread_rows, volume_rows, price_change_rows)
+                return out
 
             all_rows = [
                 *_ranked_top_market_rows("lowest_spread", spread_rows),
@@ -2199,6 +2220,7 @@ def symbols_top_markets(  # noqa: C901
                         "skipped_examples": metric_issues["price_change"],
                     },
                 }
+            _attach_top_markets_units(out, all_rows)
             return out
         except MT5ConnectionError as exc:
             return {"error": str(exc)}
