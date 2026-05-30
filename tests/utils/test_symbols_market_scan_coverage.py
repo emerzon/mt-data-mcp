@@ -74,6 +74,7 @@ def _make_symbol(
     trade_tick_size: float = 0.0001,
     trade_tick_value: float = 10.0,
     currency_profit=None,
+    digits: int = 0,
 ):
     return SimpleNamespace(
         name=name,
@@ -81,6 +82,7 @@ def _make_symbol(
         description=description,
         visible=visible,
         trade_mode=trade_mode,
+        digits=digits,
         point=point,
         trade_tick_size=trade_tick_size,
         trade_tick_value=trade_tick_value,
@@ -128,6 +130,7 @@ class TestSymbolsTopMarkets:
         compact_headers = _top_markets_headers("spread", detail_mode="compact")
         assert compact_headers == _top_markets_headers("volume", detail_mode="compact")
         assert compact_headers == _top_markets_headers("price_change", detail_mode="compact")
+        assert "close" in compact_headers
         full_headers = _top_markets_headers("spread", detail_mode="full")
         assert full_headers == _top_markets_headers("volume", detail_mode="full")
         assert full_headers == _top_markets_headers("price_change", detail_mode="full")
@@ -142,8 +145,8 @@ class TestSymbolsTopMarkets:
         mock_group,
     ):
         mock_symbols_get.return_value = [
-            _make_symbol("EURUSD", description="Euro"),
-            _make_symbol("GBPUSD", description="Pound"),
+            _make_symbol("EURUSD", description="Euro", digits=4),
+            _make_symbol("GBPUSD", description="Pound", digits=4),
         ]
         mock_rates.side_effect = lambda symbol, timeframe, start_pos, count: {
             "EURUSD": [
@@ -175,6 +178,7 @@ class TestSymbolsTopMarkets:
         assert result["returned_count"] == 1
         assert len(result["data"]) == 1
         assert result["data"][0]["symbol"] == "EURUSD"
+        assert result["data"][0]["close"] == 1.045
         assert "lowest_spread" not in result
         assert "highest_volume" not in result
         assert "highest_price_change" not in result
@@ -220,6 +224,7 @@ class TestSymbolsTopMarkets:
             "time",
             "data_stale",
             "freshness",
+            "close",
             "bid",
             "ask",
             "spread_pct",
@@ -339,6 +344,7 @@ class TestSymbolsTopMarkets:
             "time",
             "data_stale",
             "freshness",
+            "close",
             "bid",
             "ask",
             "spread_pct",
@@ -421,6 +427,7 @@ class TestSymbolsTopMarkets:
             "time",
             "data_stale",
             "freshness",
+            "close",
             "bid",
             "ask",
             "spread_pct",
@@ -437,6 +444,7 @@ class TestSymbolsTopMarkets:
             "time",
             "data_stale",
             "freshness",
+            "close",
             "bid",
             "ask",
             "spread_pct",

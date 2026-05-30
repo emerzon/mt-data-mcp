@@ -1288,6 +1288,7 @@ _TOP_MARKETS_COMPACT_HEADERS = [
     "time",
     "data_stale",
     "freshness",
+    "close",
     "bid",
     "ask",
     "spread_pct",
