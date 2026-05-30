@@ -112,6 +112,7 @@ def _compact_market_ticker_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "bid",
         "ask",
         "spread",
+        "spread_points",
         "freshness",
         "market_status_reason",
         "time",
