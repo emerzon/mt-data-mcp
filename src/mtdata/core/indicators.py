@@ -352,7 +352,6 @@ def indicators_list(
                 result["more_available"] = more_available
                 if more_available > 0:
                     result["truncated"] = True
-                    result["show_all_hint"] = "Set limit to a higher value to view more matching indicators."
             return result
         except Exception as exc:
             return {"error": f"Error listing indicators: {exc}"}

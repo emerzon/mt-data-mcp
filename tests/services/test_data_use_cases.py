@@ -159,7 +159,7 @@ def test_run_data_fetch_candles_compact_omits_default_metadata():
     }
 
 
-def test_run_data_fetch_candles_compact_keeps_tick_volume_note():
+def test_run_data_fetch_candles_compact_omits_tick_volume_note():
     request = DataFetchCandlesRequest(symbol="EURUSD", timeframe="H1", limit=5)
 
     result = run_data_fetch_candles(
@@ -177,7 +177,7 @@ def test_run_data_fetch_candles_compact_keeps_tick_volume_note():
     )
 
     assert result["volume_type"] == "tick_count"
-    assert result["volume_note"] == "MT5 tick_volume is broker tick count."
+    assert "volume_note" not in result
 
 
 def test_run_data_fetch_candles_compact_keeps_staleness_without_meta():

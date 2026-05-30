@@ -784,10 +784,11 @@ def normalize_trade_history_output(
     history_kind = getattr(request, "history_kind", None)
     include_request_metadata = _include_trade_read_request_metadata(request)
     if out.get("success") is True:
-        out = _insert_trade_history_period_context(
-            out,
-            _trade_history_period_context(request),
-        )
+        period_context = _trade_history_period_context(request)
+        detail_value = str(getattr(request, "detail", "compact") or "compact").lower()
+        if detail_value == "compact":
+            period_context.pop("note", None)
+        out = _insert_trade_history_period_context(out, period_context)
     timezone_label = "UTC"
     if out.get("success") is True and isinstance(out.get("items"), list):
         raw_items = list(out["items"])

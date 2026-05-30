@@ -540,8 +540,6 @@ def _compact_patterns_payload(
             if avg_confidence is not None:
                 distribution["avg_confidence"] = avg_confidence
             compact["pattern_distribution"] = distribution
-        compact["hints"] = {"set": {"detail": "standard"}}
-        compact["show_all_hint"] = "Set detail='standard' to show all detected patterns."
 
     for key in (
         "engine",

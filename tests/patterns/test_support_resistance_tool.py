@@ -140,7 +140,7 @@ def test_support_resistance_tool_compact_omits_zone_overlap_and_fibonacci():
     assert result["detail"] == "compact"
     assert "zone_overlap" not in result
     assert "fibonacci" not in result
-    assert result["hints"] == {"set": {"extras": "metadata"}}
+    assert "hints" not in result
     assert {warning["code"] for warning in result["warnings"]} == {
         "overlapping_nearest_zones",
         "fibonacci_grid_support_only",

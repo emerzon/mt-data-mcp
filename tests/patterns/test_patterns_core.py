@@ -740,7 +740,7 @@ def test_build_pattern_response_compact_hides_completed_fractal_rows_by_default(
     assert compact["completed_patterns_hidden"] == 1
 
 
-def test_build_pattern_response_compact_adds_hint_when_rows_are_truncated():
+def test_build_pattern_response_compact_counts_omitted_rows_when_truncated():
     df = pd.DataFrame(
         {"time": list(range(12)), "close": [100.0 + i for i in range(12)]}
     )
@@ -777,10 +777,8 @@ def test_build_pattern_response_compact_adds_hint_when_rows_are_truncated():
     assert distribution["bearish"] == 5
     assert distribution["neutral"] == 0
     assert distribution["avg_confidence"] == pytest.approx(0.86)
-    assert compact["hints"] == {"set": {"detail": "standard"}}
-    assert compact["show_all_hint"] == (
-        "Set detail='standard' to show all detected patterns."
-    )
+    assert "hints" not in compact
+    assert "show_all_hint" not in compact
 
 
 def test_patterns_detect_elliott_without_timeframe_scans_default_subset(monkeypatch):

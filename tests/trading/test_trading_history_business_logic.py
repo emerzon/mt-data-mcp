@@ -992,7 +992,7 @@ def test_trade_history_default_period_context_precedes_items() -> None:
     assert out["minutes_back_effective"] == 10080
     assert out["defaults_applied"] == {"lookback_minutes": 10080}
     assert out["period_timezone"] == "UTC"
-    assert "default 10080-minute (7-day) lookback" in out["note"]
+    assert "note" not in out
     keys = list(out)
     assert keys.index("period_start") < keys.index("items")
 
@@ -1145,7 +1145,7 @@ def test_trade_journal_analyze_compact_uses_lite_symbol_breakdown() -> None:
     assert out["success"] is True
     assert out["period_source"] == "default_lookback"
     assert out["minutes_back_effective"] == 10080
-    assert "default 10080-minute (7-day) lookback" in out["note"]
+    assert "note" not in out
     assert list(out["breakdowns"]) == ["by_symbol"]
     assert set(out["breakdowns"]["by_symbol"][0]) == {
         "symbol",

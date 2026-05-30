@@ -328,10 +328,6 @@ def _compact_trade_session_context_payload(payload: Dict[str, Any]) -> Dict[str,
     if volume_units:
         compact["units"] = volume_units
 
-    compact["hints"] = {"set": {"detail": "full"}}
-    compact["show_all_hint"] = (
-        "Use detail='full' for complete account, ticker, positions, and pending orders."
-    )
     return compact
 
 

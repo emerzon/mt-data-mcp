@@ -307,6 +307,8 @@ def _trade_journal_period_context(
 def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str, Any]:
     period_context = _trade_journal_period_context(request)
     detail_mode = str(request.detail or "compact").strip().lower()
+    if detail_mode == "compact":
+        period_context.pop("note", None)
     history_result = _run_trade_history_request(
         TradeHistoryRequest(
             history_kind="deals",

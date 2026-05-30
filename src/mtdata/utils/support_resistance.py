@@ -2513,17 +2513,6 @@ def compact_support_resistance_payload(payload: Dict[str, Any]) -> Dict[str, Any
     warnings = payload.get("warnings")
     if isinstance(warnings, list) and warnings:
         out["warnings"] = list(warnings)
-    if any(
-        key in payload
-        for key in (
-            "coverage_gaps",
-            "zone_overlap",
-            "meta",
-            "window",
-            "fibonacci",
-        )
-    ):
-        out["hints"] = {"set": {"extras": "metadata"}}
     return out or dict(payload)
 
 

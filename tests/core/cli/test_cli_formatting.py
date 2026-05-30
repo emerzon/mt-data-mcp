@@ -1038,10 +1038,8 @@ class TestFormatResultForCli:
         assert "category_summary" not in result
         assert "categories" not in result
         assert "params_count" not in result
-        assert (
-            "show_all_hint: Set limit=3 to show all filtered methods; "
-            "use extras='metadata' for full method metadata."
-        ) in result
+        assert "show_all_hint" not in result
+        assert "truncated: true" in result
         assert (
             "truncation_reason: Default compact limit 20; "
             "set limit=3 for all filtered methods."
@@ -1413,7 +1411,7 @@ class TestFormatResultForCli:
         assert "zone_high" not in result
         assert "coverage_gaps" not in result
         assert "zone_overlap" not in result
-        assert "show_all_hint" in result
+        assert "show_all_hint" not in result
 
     def test_toon_format_keeps_compact_support_resistance_lists(self):
         result = _format_result_for_cli(

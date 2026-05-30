@@ -513,7 +513,7 @@ Values above 70 often indicate overbought conditions.
         assert out["total_count"] == 30
         assert out["more_available"] == 5
         assert out["truncated"] is True
-        assert out["show_all_hint"] == "Set limit to a higher value to view more matching indicators."
+        assert "show_all_hint" not in out
 
     def test_indicators_list_supports_offset_pagination(self, monkeypatch):
         from mtdata.core import indicators as core_indicators

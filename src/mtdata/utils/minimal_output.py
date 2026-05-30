@@ -1621,17 +1621,7 @@ def _normalize_forecast_methods_payload(
     hidden = payload.get("methods_hidden")
     try:
         if detail_value != "full" and hidden is not None and int(hidden) > 0:
-            total_filtered = payload.get("total_filtered")
-            if total_filtered is not None and int(total_filtered) > 0:
-                out["show_all_hint"] = (
-                    f"Set limit={int(total_filtered)} to show all filtered methods; "
-                    "use extras='metadata' for full method metadata."
-                )
-            else:
-                out["show_all_hint"] = (
-                    "Increase limit to show more methods; use extras='metadata' "
-                    "for full method metadata."
-                )
+            out["truncated"] = True
     except Exception:
         pass
 
@@ -1885,22 +1875,6 @@ def _normalize_support_resistance_payload(
     warnings_out = payload.get("warnings")
     if isinstance(warnings_out, list) and warnings_out:
         out["warnings"] = warnings_out
-
-    if any(
-        key in payload
-        for key in (
-            "coverage_gaps",
-            "zone_overlap",
-            "meta",
-            "timeframes_analyzed",
-            "window",
-        )
-    ):
-        out["hints"] = {"set": {"extras": "metadata"}}
-        out["show_all_hint"] = (
-            "Set extras='metadata' to include timeframe selection rationale, "
-            "zone widths, and coverage diagnostics."
-        )
 
     return out
 
