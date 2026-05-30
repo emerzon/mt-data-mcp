@@ -1778,7 +1778,7 @@ def _normalize_support_resistance_payload(
         for side in ("support", "resistance"):
             compact = _compact_support_resistance_level(
                 nearest_in.get(side),
-                preferred_keys=["value", "distance_pct", "touches", "status"],
+                preferred_keys=["value", "distance_pct", "touches", "score", "status"],
             )
             if compact:
                 nearest_out[side] = compact
@@ -1798,8 +1798,11 @@ def _normalize_support_resistance_payload(
                             "value",
                             "distance_pct",
                             "touches",
+                            "score",
                             "status",
                             "strength_rank",
+                            "source_timeframes",
+                            "dominant_source",
                         ],
                     )
                     for row in side_levels_in
@@ -1821,6 +1824,7 @@ def _normalize_support_resistance_payload(
                         "value",
                         "distance_pct",
                         "touches",
+                        "score",
                         "status",
                     ],
                 )

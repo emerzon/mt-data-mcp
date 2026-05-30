@@ -2390,11 +2390,19 @@ def compact_support_resistance_level(level: Any) -> Optional[Dict[str, Any]]:
         "type",
         "value",
         "distance_pct",
+        "touches",
+        "score",
         "strength_rank",
     ):
         value = level.get(key)
         if value is not None:
             out[str(key)] = value
+    source_timeframes = level.get("source_timeframes")
+    if isinstance(source_timeframes, list) and source_timeframes:
+        out["source_timeframes"] = list(source_timeframes)
+    dominant_source = level.get("dominant_source")
+    if isinstance(dominant_source, str) and dominant_source.strip():
+        out["dominant_source"] = dominant_source
     return out or None
 
 

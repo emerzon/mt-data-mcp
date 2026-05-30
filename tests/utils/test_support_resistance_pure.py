@@ -325,7 +325,16 @@ def test_compact_support_resistance_payload_omits_fibonacci_until_standard_detai
     assert compact["current_price"] == result["current_price"]
     assert compact["supports"]
     assert set(compact["supports"][0]).issubset(
-        {"type", "value", "distance_pct", "strength_rank"}
+        {
+            "type",
+            "value",
+            "distance_pct",
+            "touches",
+            "score",
+            "strength_rank",
+            "source_timeframes",
+            "dominant_source",
+        }
     )
     assert "fibonacci" in standard
     assert "levels" not in standard
@@ -333,6 +342,47 @@ def test_compact_support_resistance_payload_omits_fibonacci_until_standard_detai
     assert standard["resistances"]
     assert "nearest" not in standard
     assert standard["fibonacci"]["nearest"]["support"]["type"] == "support"
+
+
+def test_compact_support_resistance_levels_keep_strength_context() -> None:
+    compact = compact_support_resistance_payload(
+        {
+            "success": True,
+            "symbol": "EURUSD",
+            "timeframe": "auto",
+            "mode": "auto",
+            "current_price": 1.1,
+            "supports": [
+                {
+                    "type": "support",
+                    "value": 1.095,
+                    "distance_pct": 0.45,
+                    "touches": 5,
+                    "score": 8.25,
+                    "strength_rank": 1,
+                    "source_timeframes": ["H1", "H4"],
+                    "dominant_source": "H4",
+                    "score_breakdown": {"base": 8.25},
+                }
+            ],
+            "resistances": [],
+            "limit": 200,
+            "max_distance_pct": 5.0,
+            "min_touches": 2,
+        }
+    )
+
+    level = compact["supports"][0]
+    assert level == {
+        "type": "support",
+        "value": 1.095,
+        "distance_pct": 0.45,
+        "touches": 5,
+        "score": 8.25,
+        "strength_rank": 1,
+        "source_timeframes": ["H1", "H4"],
+        "dominant_source": "H4",
+    }
 
 
 def test_full_support_resistance_payload_omits_duplicate_levels_array():
