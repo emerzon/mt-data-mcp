@@ -285,7 +285,7 @@ def test_market_ticker_returns_lightweight_spread_snapshot() -> None:
         out = _raw_market_ticker("BTCUSD", detail="compact")
 
     assert out["success"] is True
-    assert out["type"] == "ticker"
+    assert out["type"] == "quote"
     assert out["price_currency"] == "USD"
     assert out["bid"] == 200.0
     assert out["ask"] == 201.0
@@ -333,7 +333,7 @@ def test_market_ticker_compact_detail_omits_verbose_fields() -> None:
         out = _raw_market_ticker("BTCUSD", detail="compact")
 
     assert out["success"] is True
-    assert out["type"] == "ticker"
+    assert out["type"] == "quote"
     assert out["price_currency"] == "USD"
     assert out["bid"] == 200.0
     assert out["ask"] == 201.0

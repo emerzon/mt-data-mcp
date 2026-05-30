@@ -113,7 +113,7 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "limit controls fetched history."
     ),
     ("market_scan", "limit"): "Max matching symbols to return.",
-    ("market_depth_fetch", "require_dom"): "Fail if DOM is unavailable instead of falling back to a ticker snapshot.",
+    ("market_depth_fetch", "require_dom"): "Fail if DOM is unavailable instead of falling back to a quote snapshot.",
     ("patterns_detect", "limit"): (
         "Historical bars fetched for pattern analysis; use top_k for compact "
         "top-pattern count."

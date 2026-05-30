@@ -438,7 +438,7 @@ def market_ticker(
     detail: CompactFullDetailLiteral = "compact",
     price_field: Optional[Literal["bid", "ask", "mid", "last", "spread"]] = None,
 ) -> Dict[str, Any]:
-    """Return a lightweight ticker snapshot with bid/ask/spread for `symbol`.
+    """Return a lightweight quote snapshot with bid/ask/spread for `symbol`.
 
     Parameters: symbol
     Use `detail="compact"` to keep only the most operational bid/ask/spread fields.
@@ -555,7 +555,7 @@ def market_ticker(
             out: Dict[str, Any] = {
                 "success": True,
                 "symbol": symbol,
-                "type": "ticker",
+                "type": "quote",
                 "price_precision": digits,
                 "price_currency": price_currency,
                 "bid": _round_market_ticker_value(bid, digits=digits),
@@ -676,7 +676,7 @@ def market_ticker(
         except Exception as exc:
             return _finalize(
                 _market_ticker_error(
-                    f"Error getting ticker snapshot: {str(exc)}",
+                    f"Error getting quote snapshot: {str(exc)}",
                     code="market_ticker_error",
                     remediation="Retry after checking the MT5 terminal and symbol availability.",
                 )

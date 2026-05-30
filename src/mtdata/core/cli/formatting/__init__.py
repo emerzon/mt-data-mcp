@@ -296,18 +296,18 @@ def _normalize_trade_session_context_cli_payload(
         return result
 
     out = dict(result)
-    ticker_in = out.get("ticker")
-    if isinstance(ticker_in, dict):
-        ticker_norm = _normalize_market_ticker_cli_payload(
-            ticker_in,
+    quote_in = out.get("quote")
+    if isinstance(quote_in, dict):
+        quote_norm = _normalize_market_ticker_cli_payload(
+            quote_in,
             verbose=verbose,
             compact_numbers=compact_numbers,
         )
         if verbose:
-            out["ticker"] = ticker_norm
+            out["quote"] = quote_norm
         else:
-            compact_ticker = {
-                key: ticker_norm.get(key)
+            compact_quote = {
+                key: quote_norm.get(key)
                 for key in (
                     "bid",
                     "ask",
@@ -326,14 +326,14 @@ def _normalize_trade_session_context_cli_payload(
                     "stale_warning",
                     "warning",
                 )
-                if key in ticker_norm and not _is_empty_value(ticker_norm.get(key))
+                if key in quote_norm and not _is_empty_value(quote_norm.get(key))
             }
-            if "error" in ticker_norm and not _is_empty_value(ticker_norm.get("error")):
-                compact_ticker = {"error": ticker_norm.get("error")}
-            if compact_ticker:
-                out["ticker"] = compact_ticker
+            if "error" in quote_norm and not _is_empty_value(quote_norm.get("error")):
+                compact_quote = {"error": quote_norm.get("error")}
+            if compact_quote:
+                out["quote"] = compact_quote
             else:
-                out.pop("ticker", None)
+                out.pop("quote", None)
 
     if verbose:
         return out
@@ -367,8 +367,8 @@ def _normalize_trade_session_context_cli_payload(
             if account_out:
                 compact_out["account"] = account_out
 
-    if "ticker" in out:
-        compact_out["ticker"] = out["ticker"]
+    if "quote" in out:
+        compact_out["quote"] = out["quote"]
 
     volume_units: Dict[str, str] = {}
     open_positions_in = out.get("open_positions")

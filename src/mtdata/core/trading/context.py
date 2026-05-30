@@ -78,11 +78,11 @@ _TRADE_SESSION_PRICE_KEYS = {
 }
 
 
-def _price_precision_from_ticker(ticker: Any) -> int:
-    if isinstance(ticker, dict):
+def _price_precision_from_quote(quote: Any) -> int:
+    if isinstance(quote, dict):
         for key in ("price_precision", "digits"):
             try:
-                return max(0, int(ticker.get(key)))
+                return max(0, int(quote.get(key)))
             except Exception:
                 continue
     return 6
@@ -128,8 +128,8 @@ def _round_trade_session_prices(value: Any, *, digits: int, key: Optional[str] =
     return value
 
 
-def _normalize_nested_ticker_time(ticker: Dict[str, Any], *, compact: bool) -> Dict[str, Any]:
-    normalized = dict(ticker)
+def _normalize_nested_quote_time(quote: Dict[str, Any], *, compact: bool) -> Dict[str, Any]:
+    normalized = dict(quote)
     raw_time = normalized.get("time_epoch")
     if raw_time in (None, "") and isinstance(normalized.get("time"), (int, float)):
         raw_time = normalized.get("time")
@@ -209,13 +209,13 @@ def _compact_trade_session_context_payload(payload: Dict[str, Any]) -> Dict[str,
             if account_summary:
                 compact["account"] = account_summary
 
-    ticker = payload.get("ticker")
-    if isinstance(ticker, dict):
-        if ticker.get("error") not in (None, ""):
-            compact["ticker"] = {"error": ticker.get("error")}
+    quote = payload.get("quote")
+    if isinstance(quote, dict):
+        if quote.get("error") not in (None, ""):
+            compact["quote"] = {"error": quote.get("error")}
         else:
-            ticker_summary = {
-                key: ticker.get(key)
+            quote_summary = {
+                key: quote.get(key)
                 for key in (
                     "bid",
                     "ask",
@@ -237,18 +237,18 @@ def _compact_trade_session_context_payload(payload: Dict[str, Any]) -> Dict[str,
                     "stale_warning",
                     "warning",
                 )
-                if ticker.get(key) not in (None, "")
+                if quote.get(key) not in (None, "")
             }
-            if ticker_summary:
-                if "spread" in ticker_summary and any(
-                    key in ticker for key in ("price_precision", "digits")
+            if quote_summary:
+                if "spread" in quote_summary and any(
+                    key in quote for key in ("price_precision", "digits")
                 ):
-                    ticker_summary["spread"] = _format_trade_session_price(
-                        ticker_summary["spread"],
-                        digits=_price_precision_from_ticker(ticker),
+                    quote_summary["spread"] = _format_trade_session_price(
+                        quote_summary["spread"],
+                        digits=_price_precision_from_quote(quote),
                     )
-                compact["ticker"] = _normalize_nested_ticker_time(
-                    ticker_summary,
+                compact["quote"] = _normalize_nested_quote_time(
+                    quote_summary,
                     compact=True,
                 )
 
@@ -339,10 +339,10 @@ def _compact_trade_session_context_payload(payload: Dict[str, Any]) -> Dict[str,
 
 @mcp.tool()
 def trade_session_context(request: TradeSessionContextRequest) -> Dict[str, Any]:
-    """Get a consolidated session context including account info, open positions, pending orders, ticker, and computed state for a symbol.
+    """Get a consolidated session context including account info, open positions, pending orders, quote, and computed state for a symbol.
 
     Use this for a fast execution snapshot before deciding what to do next. It
-    intentionally summarizes account/ticker/order state and is not the
+    intentionally summarizes account/quote/order state and is not the
     authoritative risk calculator. Use `trade_risk_analyze` for stop-loss
     exposure and position sizing, or `trade_var_cvar_calculate` for portfolio
     VaR/CVaR.
@@ -353,12 +353,12 @@ def trade_session_context(request: TradeSessionContextRequest) -> Dict[str, Any]
     def _run() -> Dict[str, Any]:
         # Un-wrap original functions if necessary to bypass double-logging or async mcp wrappers
         acc_func = getattr(trade_account_info, "__wrapped__", trade_account_info)
-        ticker_func = getattr(market_ticker, "__wrapped__", market_ticker)
+        quote_func = getattr(market_ticker, "__wrapped__", market_ticker)
         open_func = getattr(trade_get_open, "__wrapped__", trade_get_open)
         pending_func = getattr(trade_get_pending, "__wrapped__", trade_get_pending)
 
         account_res = acc_func() if request.include_account else None
-        ticker_res = ticker_func(symbol=request.symbol, detail=request.detail)
+        quote_res = quote_func(symbol=request.symbol, detail=request.detail)
 
         open_req = TradeGetOpenRequest(symbol=request.symbol)
         open_res = open_func(request=open_req)
@@ -379,9 +379,9 @@ def trade_session_context(request: TradeSessionContextRequest) -> Dict[str, Any]
             )
         else:
             account_failed = False
-        ticker_res, ticker_failed = _sanitize_trade_session_section_error(
-            ticker_res,
-            label="ticker data",
+        quote_res, quote_failed = _sanitize_trade_session_section_error(
+            quote_res,
+            label="quote data",
         )
         open_res, open_failed = _sanitize_trade_session_section_error(
             open_res,
@@ -394,7 +394,7 @@ def trade_session_context(request: TradeSessionContextRequest) -> Dict[str, Any]
             include_count=True,
         )
         partial_failure = any(
-            (account_failed, ticker_failed, open_failed, pending_failed)
+            (account_failed, quote_failed, open_failed, pending_failed)
         )
 
         # Determine internal book state
@@ -427,7 +427,7 @@ def trade_session_context(request: TradeSessionContextRequest) -> Dict[str, Any]
             "state_scope": "symbol",
             "open_positions": open_res,
             "pending_orders": pending_res,
-            "ticker": ticker_res,
+            "quote": quote_res,
         }
         if other_positions_count is not None:
             payload["portfolio_positions_count"] = portfolio_positions_count
@@ -444,8 +444,8 @@ def trade_session_context(request: TradeSessionContextRequest) -> Dict[str, Any]
                 payload["account"] = _strip_nested_envelope(payload["account"])
             payload["open_positions"] = _strip_nested_envelope(payload["open_positions"])
             payload["pending_orders"] = _strip_nested_envelope(payload["pending_orders"])
-            payload["ticker"] = _strip_nested_envelope(payload["ticker"])
-            price_digits = _price_precision_from_ticker(payload.get("ticker"))
+            payload["quote"] = _strip_nested_envelope(payload["quote"])
+            price_digits = _price_precision_from_quote(payload.get("quote"))
             payload["open_positions"] = _round_trade_session_prices(
                 payload["open_positions"],
                 digits=price_digits,
@@ -454,9 +454,9 @@ def trade_session_context(request: TradeSessionContextRequest) -> Dict[str, Any]
                 payload["pending_orders"],
                 digits=price_digits,
             )
-            if isinstance(payload["ticker"], dict):
-                payload["ticker"] = _normalize_nested_ticker_time(
-                    payload["ticker"],
+            if isinstance(payload["quote"], dict):
+                payload["quote"] = _normalize_nested_quote_time(
+                    payload["quote"],
                     compact=False,
                 )
         return ensure_common_meta(payload, tool_name="trade_session_context")

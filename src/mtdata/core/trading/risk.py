@@ -54,7 +54,7 @@ def trade_var_cvar_calculate(request: TradeVarCvarRequest) -> dict:
     Use this for account-level tail-risk analysis over the current portfolio.
     For single-symbol stop-loss exposure and new-trade lot sizing, use
     `trade_risk_analyze`. For a lightweight execution snapshot that includes
-    account, ticker, open positions, and pending orders, use
+    account, quote, open positions, and pending orders, use
     `trade_session_context`.
     """
     return run_logged_operation(

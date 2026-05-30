@@ -96,7 +96,7 @@ def test_trade_session_context_compacts_nested_sections_by_default() -> None:
         "equity": 10010.0,
         "account_type": "demo",
     }
-    assert out["ticker"] == {
+    assert out["quote"] == {
         "bid": 1.1,
         "ask": 1.1002,
         "spread": 0.0002,
@@ -178,7 +178,7 @@ def test_trade_session_context_compact_surfaces_portfolio_exposure_elsewhere() -
     assert out["account"]["profit"] == -1.73
 
 
-def test_trade_session_context_compact_formats_nested_ticker_spread() -> None:
+def test_trade_session_context_compact_formats_nested_quote_spread() -> None:
     ticker_compact = {
         "success": True,
         "symbol": "EURUSD",
@@ -209,11 +209,11 @@ def test_trade_session_context_compact_formats_nested_ticker_spread() -> None:
     ):
         out = _raw_trade_session_context("EURUSD")
 
-    assert out["ticker"]["spread"] == "0.00009"
-    assert out["ticker"]["price_precision"] == 5
-    assert out["ticker"]["spread_cost_currency"] == "USD"
-    assert out["ticker"]["data_stale"] is True
-    assert out["ticker"]["stale_warning"] == "quote is stale"
+    assert out["quote"]["spread"] == "0.00009"
+    assert out["quote"]["price_precision"] == 5
+    assert out["quote"]["spread_cost_currency"] == "USD"
+    assert out["quote"]["data_stale"] is True
+    assert out["quote"]["stale_warning"] == "quote is stale"
     assert out["open_positions"] == []
     assert out["open_positions_count"] == 0
     assert out["pending_orders"] == []
@@ -267,12 +267,12 @@ def test_trade_session_context_full_detail_keeps_nested_full_payloads() -> None:
 
     assert out["state"] == "pending_only"
     # With the fix, nested success and meta are stripped
-    assert "success" not in out["ticker"]
-    assert "meta" not in out["ticker"]
-    assert out["ticker"]["bid"] == 1.1  # data is preserved
-    assert out["ticker"]["time"] == "2023-11-14 22:13"
-    assert out["ticker"]["time_epoch"] == 1700000000
-    assert "time_display" not in out["ticker"]
+    assert "success" not in out["quote"]
+    assert "meta" not in out["quote"]
+    assert out["quote"]["bid"] == 1.1  # data is preserved
+    assert out["quote"]["time"] == "2023-11-14 22:13"
+    assert out["quote"]["time_epoch"] == 1700000000
+    assert "time_display" not in out["quote"]
     assert out["account"]["balance"] == 10000.0
     assert out["account"]["login"] == 123456
     assert "success" not in out["account"]

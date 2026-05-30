@@ -663,7 +663,7 @@ class TestFormatResultForCli:
                         "message": "No pending orders for EURUSD",
                         "no_action": True,
                     },
-                    "ticker": {
+                    "quote": {
                         "success": True,
                         "symbol": "EURUSD",
                         "time": 1700000000,
@@ -685,10 +685,10 @@ class TestFormatResultForCli:
             "equity": 10010.0,
             "margin_level": 250.0,
         }
-        assert payload["ticker"]["time"] == "2023-11-14 22:13"
-        assert payload["ticker"]["spread_points"] == 20.0
-        assert "time_display" not in payload["ticker"]
-        assert "time_epoch" not in payload["ticker"]
+        assert payload["quote"]["time"] == "2023-11-14 22:13"
+        assert payload["quote"]["spread_points"] == 20.0
+        assert "time_display" not in payload["quote"]
+        assert "time_epoch" not in payload["quote"]
         assert payload["open_positions"] == [
             {
                 "ticket": 123456,
@@ -706,7 +706,7 @@ class TestFormatResultForCli:
         assert payload["pending_orders"] == []
         assert payload["pending_orders_count"] == 0
 
-    def test_trade_session_context_verbose_toon_keeps_full_sections_and_ticker_epoch(
+    def test_trade_session_context_verbose_toon_keeps_full_sections_and_quote_epoch(
         self,
     ):
         result = _format_result_for_cli(
@@ -721,7 +721,7 @@ class TestFormatResultForCli:
                     "message": "No open positions for EURUSD",
                     "no_action": True,
                 },
-                "ticker": {
+                "quote": {
                     "success": True,
                     "time": 1700000000,
                     "time_display": "2023-11-14 22:13",
@@ -761,7 +761,7 @@ class TestFormatResultForCli:
                             "volume": 0.1,
                         }
                     ],
-                    "ticker": {
+                    "quote": {
                         "success": True,
                         "bid": 1.1,
                         "ask": 1.1002,
@@ -792,7 +792,7 @@ class TestFormatResultForCli:
                 "volume": 0.1,
             }
         ]
-        assert payload["ticker"]["time"] == "2023-11-14 22:13"
+        assert payload["quote"]["time"] == "2023-11-14 22:13"
 
     def test_symbols_describe_compact_view_hides_time_epoch(self):
         result = _format_result_for_cli(
