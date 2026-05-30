@@ -15,7 +15,7 @@ class PatternsDetectRequest(BaseModel):
     timeframe: Optional[TimeframeLiteral] = None
     mode: str = "candlestick"
     detail: PatternsDetailLiteral = "compact"
-    limit: int = 500
+    limit: int = 150
     start: Optional[str] = Field(
         None,
         description="Optional UTC-compatible start date/time for the analysis window.",

@@ -1102,7 +1102,7 @@ def patterns_detect(
         - "standard": sectioned all-mode output with trimmed pattern rows.
         - "full": complete pattern rows suitable for research/debugging.
     
-    limit : int, optional (default=500)
+    limit : int, optional (default=150)
         Maximum number of historical bars to analyze after applying any time window
 
     start/end : str, optional
@@ -1127,7 +1127,7 @@ def patterns_detect(
         Candlestick mode only. Comma-separated list of specific candlestick
         patterns to detect (e.g., "doji,hammer,engulfing").
     
-    top_k : int, optional (default=1)
+    top_k : int, optional (default=3)
         Return only the top K strongest patterns
 
     last_n_bars : int, optional
