@@ -515,6 +515,35 @@ Values above 70 often indicate overbought conditions.
         assert out["truncated"] is True
         assert out["show_all_hint"] == "Set limit to a higher value to view more matching indicators."
 
+    def test_indicators_list_supports_offset_pagination(self, monkeypatch):
+        from mtdata.core import indicators as core_indicators
+
+        monkeypatch.setattr(
+            core_indicators,
+            "_list_ta_indicators",
+            lambda detailed=False: [
+                {
+                    "name": f"ind_{i:02d}",
+                    "category": "momentum",
+                    "description": "",
+                    "params": [],
+                }
+                for i in range(10)
+            ],
+        )
+
+        raw_list = getattr(core_indicators.indicators_list, "__wrapped__", core_indicators.indicators_list)
+        out = raw_list(category="momentum", limit=3, offset=4)
+
+        assert out["success"] is True
+        assert out["count"] == 3
+        assert [row["name"] for row in out["data"]] == ["ind_04", "ind_05", "ind_06"]
+        assert out["total_count"] == 10
+        assert out["offset"] == 4
+        assert out["limit"] == 3
+        assert out["has_more"] is True
+        assert out["more_available"] == 3
+
     def test_indicators_list_full_detail_includes_aliases_and_descriptions(self, monkeypatch):
         from mtdata.core import indicators as core_indicators
 

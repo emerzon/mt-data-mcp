@@ -571,6 +571,46 @@ class TestMarketScan:
     @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
     @patch("mtdata.core.symbols.mt5.symbol_info_tick")
     @patch("mtdata.core.symbols.mt5.symbols_get")
+    def test_market_scan_supports_offset_pagination(
+        self,
+        mock_symbols_get,
+        mock_tick,
+        mock_rates,
+        mock_group,
+    ):
+        mock_symbols_get.return_value = [
+            _make_symbol("EURUSD", description="Euro"),
+            _make_symbol("GBPUSD", description="Pound"),
+            _make_symbol("USDJPY", description="Yen"),
+        ]
+        mock_tick.side_effect = lambda symbol: {
+            "EURUSD": _make_tick(bid=1.1000, ask=1.1001),
+            "GBPUSD": _make_tick(bid=1.3000, ask=1.3002),
+            "USDJPY": _make_tick(bid=150.00, ask=150.03),
+        }[symbol]
+        mock_rates.side_effect = lambda symbol, timeframe, start_pos, count: {
+            "EURUSD": _make_bars([1.0, 1.01, 1.02, 1.03], tick_volume=300),
+            "GBPUSD": _make_bars([1.0, 1.01, 1.02, 1.03], tick_volume=200),
+            "USDJPY": _make_bars([1.0, 1.01, 1.02, 1.03], tick_volume=100),
+        }[symbol]
+
+        fn = _get_market_scan()
+        result = fn(lookback=4, rank_by="tick_volume", limit=1, offset=1)
+
+        assert result["success"] is True
+        assert result["count"] == 1
+        assert result["data"][0]["symbol"] == "GBPUSD"
+        assert result["offset"] == 1
+        assert result["requested_limit"] == 1
+        assert result["returned_count"] == 1
+        assert result["total_count"] == 3
+        assert result["has_more"] is True
+        assert result["meta"]["request"]["offset"] == 1
+
+    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
+    @patch("mtdata.core.symbols.mt5.symbol_info_tick")
+    @patch("mtdata.core.symbols.mt5.symbols_get")
     def test_market_scan_accepts_rank_by_aliases(
         self,
         mock_symbols_get,

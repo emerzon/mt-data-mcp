@@ -838,6 +838,7 @@ def forecast_volatility_estimate(
 def forecast_list_methods(
     detail: CompactFullDetailLiteral = "compact",  # type: ignore
     limit: Optional[int] = None,
+    offset: int = 0,
     search_term: Optional[str] = None,
     category: Optional[str] = None,
     library: Optional[
@@ -856,6 +857,7 @@ def forecast_list_methods(
         "forecast_list_methods",
         detail=detail,
         limit=limit,
+        offset=offset,
         search_term=search_term_value,
         category=category,
         library=library,
@@ -864,6 +866,7 @@ def forecast_list_methods(
         process_payload={
             "detail": detail,
             "limit": limit,
+            "offset": offset,
             "search_term": search_term_value,
             "category": category,
             "library": library,
@@ -873,6 +876,7 @@ def forecast_list_methods(
         func=lambda: _forecast_list_methods_impl(
             detail=detail,
             limit=limit,
+            offset=offset,
             search=search_term_value,
             category=category,
             library=library,
@@ -1600,6 +1604,7 @@ def _forecast_list_methods_impl(  # noqa: C901
     *,
     detail: CompactFullDetailLiteral = "compact",
     limit: Optional[int] = None,
+    offset: int = 0,
     search: Optional[str] = None,
     category: Optional[str] = None,
     library: Optional[str] = None,
@@ -1637,6 +1642,12 @@ def _forecast_list_methods_impl(  # noqa: C901
                 return {"error": f"Invalid limit: {limit}. Must be a positive integer."}
             if limit_value <= 0:
                 return {"error": f"Invalid limit: {limit_value}. Must be >= 1."}
+        try:
+            offset_value = int(offset or 0)
+        except Exception:
+            return {"error": f"Invalid offset: {offset}. Must be a non-negative integer."}
+        if offset_value < 0:
+            return {"error": f"Invalid offset: {offset_value}. Must be >= 0."}
         compact_default_limit_applies = (
             detail_value != "full"
             and limit_value is None
@@ -1727,6 +1738,8 @@ def _forecast_list_methods_impl(  # noqa: C901
                 if isinstance(row, dict) and _method_matches(row)
             ]
             total_filtered = len(filtered_full)
+            if offset_value:
+                filtered_full = filtered_full[offset_value:]
             if limit_value is not None:
                 filtered_full = filtered_full[:limit_value]
             available_count = int(sum(1 for row in filtered_full if bool(row.get("available"))))
@@ -1738,15 +1751,31 @@ def _forecast_list_methods_impl(  # noqa: C901
             out_full["available"] = available_count
             out_full["unavailable"] = int(len(filtered_full) - available_count)
             out_full["methods_shown"] = int(len(filtered_full))
-            out_full["methods_hidden"] = int(max(0, total_filtered - len(filtered_full)))
-            if out_full["methods_hidden"] > 0 and limit_value is not None:
-                out_full["truncation_reason"] = (
-                    f"Limit {limit_value}; set limit={total_filtered} for all filtered methods."
+            out_full["methods_hidden"] = int(
+                max(0, total_filtered - offset_value - len(filtered_full))
+            )
+            if offset_value:
+                out_full["methods_before"] = int(min(offset_value, total_filtered))
+                out_full["offset"] = int(offset_value)
+            if out_full["methods_hidden"] > 0 or offset_value:
+                out_full["has_more"] = bool(
+                    offset_value + len(filtered_full) < total_filtered
                 )
+            if out_full["methods_hidden"] > 0 and limit_value is not None:
+                if offset_value:
+                    out_full["truncation_reason"] = (
+                        f"Limit {limit_value} at offset {offset_value}; "
+                        f"set offset={offset_value + len(filtered_full)} for more filtered methods."
+                    )
+                else:
+                    out_full["truncation_reason"] = (
+                        f"Limit {limit_value}; set limit={total_filtered} for all filtered methods."
+                    )
             out_full["filters"] = {
                 "search": search_value or None,
                 "category": category_filter_value or None,
                 "limit": limit_value,
+                "offset": offset_value,
                 "library": library_value or None,
                 "supports_ci": supports_ci,
                 "show_unavailable": bool(show_unavailable),
@@ -1828,11 +1857,24 @@ def _forecast_list_methods_impl(  # noqa: C901
             )
         )
         if effective_limit_value is not None:
+            if offset_value:
+                selected_methods = selected_methods[offset_value:]
             selected_methods = selected_methods[:effective_limit_value]
+        elif offset_value:
+            selected_methods = selected_methods[offset_value:]
         hidden_count = int(max(0, len(compact_methods) - len(selected_methods)))
+        if offset_value:
+            hidden_count = int(
+                max(0, len(compact_methods) - offset_value - len(selected_methods))
+            )
         truncation_reason = None
         if hidden_count > 0 and effective_limit_value is not None:
-            if compact_default_limit_applies:
+            if offset_value:
+                truncation_reason = (
+                    f"Limit {effective_limit_value} at offset {offset_value}; "
+                    f"set offset={offset_value + len(selected_methods)} for more filtered methods."
+                )
+            elif compact_default_limit_applies:
                 truncation_reason = (
                     f"Default compact limit {_FORECAST_LIST_METHODS_DEFAULT_COMPACT_LIMIT}; "
                     f"set limit={len(compact_methods)} for all filtered methods."
@@ -1851,6 +1893,13 @@ def _forecast_list_methods_impl(  # noqa: C901
             "methods_shown": int(len(selected_methods)),
             "methods_hidden": hidden_count,
         }
+        if offset_value:
+            out["methods_before"] = int(min(offset_value, len(compact_methods)))
+            out["offset"] = int(offset_value)
+        if hidden_count > 0 or offset_value:
+            out["has_more"] = bool(
+                offset_value + len(selected_methods) < len(compact_methods)
+            )
         if truncation_reason:
             out["truncation_reason"] = truncation_reason
         return out

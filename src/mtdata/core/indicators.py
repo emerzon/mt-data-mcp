@@ -263,11 +263,12 @@ def indicators_list(
     search_term: Optional[str] = None,
     category: Optional[CategoryLiteral] = None,
     limit: Optional[int] = DEFAULT_ROW_LIMIT,
+    offset: int = 0,
     detail: CompactFullDetailLiteral = "compact",
 ) -> Dict[str, Any]:  # type: ignore
     """List indicators as a tabular result with optional search, category, and detail filters.
 
-    Parameters: search_term?, category?, limit?, detail?
+    Parameters: search_term?, category?, limit?, offset?, detail?
     """
     def _run() -> Dict[str, Any]:
         try:
@@ -298,6 +299,14 @@ def indicators_list(
                     limit_value = int(float(limit))
             except Exception:
                 limit_value = None
+            try:
+                offset_value = int(float(offset or 0))
+            except Exception:
+                return {"error": f"Invalid offset: {offset}. Must be a non-negative integer."}
+            if offset_value < 0:
+                return {"error": f"Invalid offset: {offset_value}. Must be >= 0."}
+            if offset_value:
+                items = items[offset_value:]
             if limit_value and limit_value > 0:
                 items = items[:limit_value]
             if detailed:
@@ -333,11 +342,17 @@ def indicators_list(
                 ]
                 result = _table_from_rows(["name", "category", "description", "params_count", "params"], rows)
             result["detail"] = detail_mode
-            if total_matches > len(items):
+            more_available = max(0, total_matches - offset_value - len(items))
+            if total_matches > len(items) or offset_value:
                 result["total_count"] = total_matches
-                result["more_available"] = total_matches - len(items)
-                result["truncated"] = True
-                result["show_all_hint"] = "Set limit to a higher value to view more matching indicators."
+                result["offset"] = offset_value
+                if limit_value and limit_value > 0:
+                    result["limit"] = limit_value
+                result["has_more"] = more_available > 0
+                result["more_available"] = more_available
+                if more_available > 0:
+                    result["truncated"] = True
+                    result["show_all_hint"] = "Set limit to a higher value to view more matching indicators."
             return result
         except Exception as exc:
             return {"error": f"Error listing indicators: {exc}"}
@@ -348,6 +363,7 @@ def indicators_list(
         search_term=search_term,
         category=category,
         limit=limit,
+        offset=offset,
         detail=detail,
         func=_run,
     )

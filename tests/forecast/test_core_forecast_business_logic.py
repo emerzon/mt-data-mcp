@@ -1288,6 +1288,22 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
         "Default compact limit 20; set limit=25 for all filtered methods."
     )
 
+    page = _unwrap(cf.forecast_list_methods)(limit=5, offset=5)
+    assert [row["method"] for row in page["methods"]] == [
+        "m05",
+        "m06",
+        "m07",
+        "m08",
+        "m09",
+    ]
+    assert page["methods_before"] == 5
+    assert page["methods_hidden"] == 15
+    assert page["offset"] == 5
+    assert page["has_more"] is True
+    assert page["truncation_reason"] == (
+        "Limit 5 at offset 5; set offset=10 for more filtered methods."
+    )
+
     filtered_uncapped = _unwrap(cf.forecast_list_methods)(category="classical")
     assert "filters" not in filtered_uncapped
     assert filtered_uncapped["methods_shown"] == 25

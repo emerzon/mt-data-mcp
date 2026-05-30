@@ -2050,6 +2050,7 @@ def market_scan(  # noqa: C901
     symbols: Optional[str] = None,
     group: Optional[str] = None,
     limit: Optional[int] = 50,
+    offset: int = 0,
     universe: Literal["visible", "all"] = "visible",  # type: ignore
     timeframe: TimeframeLiteral = "H1",
     detail: CompactFullDetailLiteral = "compact",
@@ -2081,6 +2082,7 @@ def market_scan(  # noqa: C901
             "symbols": symbols,
             "group": group,
             "limit": limit,
+            "offset": offset,
             "universe": universe,
             "timeframe": timeframe,
             "detail": detail_mode,
@@ -2236,6 +2238,21 @@ def market_scan(  # noqa: C901
 
             limit_value = _normalize_limit(limit) or 50
             request["limit"] = limit_value
+            try:
+                offset_value = int(offset or 0)
+            except Exception:
+                return _market_scan_error(
+                    "offset must be a non-negative integer.",
+                    code="invalid_input",
+                    request=request,
+                )
+            if offset_value < 0:
+                return _market_scan_error(
+                    "offset must be >= 0.",
+                    code="invalid_input",
+                    request=request,
+                )
+            request["offset"] = offset_value
             if selection_meta.get("symbols_input") is not None:
                 request["symbols_input"] = selection_meta.get("symbols_input")
             request["scope"] = selection_meta.get("scope")
@@ -2336,7 +2353,7 @@ def market_scan(  # noqa: C901
                 rsi_below=rsi_below,
             )
             total_matches = len(matched_rows)
-            limited_rows = matched_rows[:limit_value]
+            limited_rows = matched_rows[offset_value : offset_value + limit_value]
 
             full_headers = [
                 "symbol",
@@ -2419,7 +2436,10 @@ def market_scan(  # noqa: C901
                 "data": table_payload["rows"],
                 "count": table_payload["row_count"],
                 "requested_limit": int(limit_value),
+                "offset": int(offset_value),
                 "returned_count": int(table_payload["row_count"]),
+                "total_count": int(total_matches),
+                "has_more": bool(offset_value + table_payload["row_count"] < total_matches),
                 "universe_size": int(len(selected_symbols)),
                 "summary": {
                     "counts": {
@@ -2471,6 +2491,7 @@ def market_scan(  # noqa: C901
         symbols=symbols,
         group=group,
         limit=limit,
+        offset=offset,
         universe=universe,
         timeframe=timeframe,
         func=_run,
