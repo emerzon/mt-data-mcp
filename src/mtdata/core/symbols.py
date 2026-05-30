@@ -929,7 +929,7 @@ def _build_market_scan_bar_row(
     row.update(
         {
             "timeframe": timeframe,
-            "bar_time": _format_time_minimal(bar_time) if bar_time is not None else None,
+            "time": _format_time_minimal(bar_time) if bar_time is not None else None,
             **_market_scan_freshness_fields(bar_time),
             "open": _market_scan_round(open_price, digits=digits),
             "close": _market_scan_round(close_price, digits=digits),
@@ -1078,7 +1078,7 @@ def _top_markets_headers(metric: str, *, detail_mode: str) -> List[str]:
             "group",
             "description",
             "data_source",
-            "data_time",
+            "time",
             "data_age_seconds",
             "stale_after_seconds",
             "data_stale",
@@ -1098,7 +1098,7 @@ def _top_markets_headers(metric: str, *, detail_mode: str) -> List[str]:
             "description",
             "timeframe",
             "data_source",
-            "data_time",
+            "time",
             "data_freshness_seconds",
             "stale_after_seconds",
             "bar_age_hours",
@@ -1116,7 +1116,7 @@ def _top_markets_headers(metric: str, *, detail_mode: str) -> List[str]:
             "description",
             "timeframe",
             "data_source",
-            "data_time",
+            "time",
             "data_freshness_seconds",
             "stale_after_seconds",
             "bar_age_hours",
@@ -1134,7 +1134,7 @@ def _top_markets_headers(metric: str, *, detail_mode: str) -> List[str]:
             "symbol",
             "group",
             "data_source",
-            "data_time",
+            "time",
             "data_stale",
             "bid",
             "ask",
@@ -1146,7 +1146,7 @@ def _top_markets_headers(metric: str, *, detail_mode: str) -> List[str]:
             "group",
             "timeframe",
             "data_source",
-            "data_time",
+            "time",
             "data_stale",
             "tick_volume",
             "price_change_pct",
@@ -1156,7 +1156,7 @@ def _top_markets_headers(metric: str, *, detail_mode: str) -> List[str]:
             "group",
             "timeframe",
             "data_source",
-            "data_time",
+            "time",
             "data_stale",
             "price_change_pct",
             "tick_volume",
@@ -1174,7 +1174,7 @@ def _top_markets_all_headers(*, detail_mode: str) -> List[str]:
         "group",
         "timeframe",
         "data_source",
-        "data_time",
+        "time",
         "data_stale",
         "bid",
         "ask",
@@ -1193,7 +1193,7 @@ def _top_markets_all_headers(*, detail_mode: str) -> List[str]:
         "description",
         "timeframe",
         "data_source",
-        "data_time",
+        "time",
         "data_age_seconds",
         "data_stale",
         "warning",
@@ -1256,7 +1256,7 @@ def _top_market_data_source(metric: str, timeframe: str) -> str:
 
 
 def _top_market_data_time_key(metric: str) -> str:
-    return "tick_time" if metric == "spread" else "bar_time"
+    return "tick_time" if metric == "spread" else "time"
 
 
 def _top_market_rows_with_data_context(
@@ -1271,7 +1271,7 @@ def _top_market_rows_with_data_context(
     for row in rows:
         mapped = dict(row)
         mapped["data_source"] = data_source
-        mapped["data_time"] = row.get(data_time_key)
+        mapped["time"] = row.get(data_time_key)
         normalized.append(mapped)
     return normalized
 
@@ -1479,7 +1479,7 @@ def _build_market_scan_signal_row(
     row.update(
         {
             "timeframe": timeframe,
-            "bar_time": _format_time_minimal(bar_time) if bar_time is not None else None,
+            "time": _format_time_minimal(bar_time) if bar_time is not None else None,
             **_market_scan_freshness_fields(bar_time),
             "open": _market_scan_round(open_price, digits=digits),
             "close": _market_scan_round(close_price, digits=digits),
@@ -2343,7 +2343,7 @@ def market_scan(  # noqa: C901
                 "group",
                 "description",
                 "timeframe",
-                "bar_time",
+                "time",
                 "data_freshness_seconds",
                 "stale_after_seconds",
                 "bar_age_hours",
@@ -2363,7 +2363,7 @@ def market_scan(  # noqa: C901
                 "symbol",
                 "group",
                 "timeframe",
-                "bar_time",
+                "time",
                 "data_stale",
                 "close",
                 "price_change_pct",

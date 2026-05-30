@@ -139,7 +139,7 @@ class TestSymbolsTopMarkets:
             "symbol",
             "group",
             "data_source",
-            "data_time",
+            "time",
             "data_stale",
             "bid",
             "ask",
@@ -252,7 +252,7 @@ class TestSymbolsTopMarkets:
             "symbol",
             "group",
             "data_source",
-            "data_time",
+            "time",
             "data_stale",
             "bid",
             "ask",
@@ -339,7 +339,7 @@ class TestSymbolsTopMarkets:
             "group",
             "timeframe",
             "data_source",
-            "data_time",
+            "time",
             "data_stale",
             "tick_volume",
             "price_change_pct",
@@ -543,13 +543,13 @@ class TestMarketScan:
         assert row["symbol"] == "EURUSD"
         assert row["group"] == "Forex\\Majors"
         assert row["timeframe"] == "H1"
-        assert row["bar_time"]
+        assert row["time"]
         assert row["data_stale"] in {False, True}
         assert set(row) == {
             "symbol",
             "group",
             "timeframe",
-            "bar_time",
+            "time",
             "data_stale",
             "close",
             "price_change_pct",
