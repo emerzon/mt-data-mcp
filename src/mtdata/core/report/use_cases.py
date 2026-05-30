@@ -139,6 +139,7 @@ def _prioritize_report_payload(report: Dict[str, Any]) -> Dict[str, Any]:
     preferred_keys = (
         "success",
         "completeness",
+        "timezone",
         "summary_structured",
         "summary",
         "sections_status",
@@ -153,6 +154,73 @@ def _prioritize_report_payload(report: Dict[str, Any]) -> Dict[str, Any]:
         if key not in ordered:
             ordered[key] = value
     return ordered
+
+
+def _valid_timezone_label(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    label = value.strip()
+    return label or None
+
+
+def _infer_report_timezone(report: Dict[str, Any]) -> str:
+    for value in (
+        report.get("timezone"),
+        report.get("display_timezone"),
+        (report.get("meta") or {}).get("timezone")
+        if isinstance(report.get("meta"), dict)
+        else None,
+        (report.get("meta") or {}).get("display_timezone")
+        if isinstance(report.get("meta"), dict)
+        else None,
+    ):
+        label = _valid_timezone_label(value)
+        if label:
+            return label
+
+    sections = report.get("sections")
+    if isinstance(sections, dict):
+        for section_name in ("context", "forecast", "market", "pivot"):
+            section = sections.get(section_name)
+            if not isinstance(section, dict):
+                continue
+            for key in ("timezone", "display_timezone"):
+                label = _valid_timezone_label(section.get(key))
+                if label:
+                    return label
+            calc_basis = section.get("calculation_basis")
+            if isinstance(calc_basis, dict):
+                label = _valid_timezone_label(calc_basis.get("display_timezone"))
+                if label:
+                    return label
+
+        for section_name in ("contexts_multi", "pivot_multi"):
+            section = sections.get(section_name)
+            if not isinstance(section, dict):
+                continue
+            for item in section.values():
+                if not isinstance(item, dict):
+                    continue
+                for key in ("timezone", "display_timezone"):
+                    label = _valid_timezone_label(item.get(key))
+                    if label:
+                        return label
+                calc_basis = item.get("calculation_basis")
+                if isinstance(calc_basis, dict):
+                    label = _valid_timezone_label(calc_basis.get("display_timezone"))
+                    if label:
+                        return label
+    return "UTC"
+
+
+def _attach_report_timezone(report: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(report, dict) or report.get("error"):
+        return report
+    if _valid_timezone_label(report.get("timezone")):
+        return report
+    out = dict(report)
+    out["timezone"] = _infer_report_timezone(out)
+    return out
 
 
 def _add_barrier_conflict_notes(summary_structured: Any) -> Any:
@@ -213,6 +281,9 @@ def _compact_report_payload(
         "template": template,
         "detail": "compact",
     }
+    timezone_label = _valid_timezone_label(report.get("timezone"))
+    if timezone_label:
+        compact["timezone"] = timezone_label
     completeness = report.get("completeness")
     if completeness not in (None, "", [], {}):
         compact["completeness"] = completeness
@@ -809,6 +880,7 @@ def run_report_generate(  # noqa: C901
             rep["symbol"] = request.symbol
             rep["template"] = template_name
             rep["detail"] = detail_value
+            rep = _attach_report_timezone(rep)
             rep = _prioritize_report_payload(rep)
 
             if detail_value == "compact":

@@ -387,6 +387,9 @@ def template_basic(  # noqa: C901
                 'last_snapshot': last,
                 'notes': f'Indicators included: {indicators}.',
             }
+            timezone_label = ctx.get('timezone') if isinstance(ctx, dict) else None
+            if timezone_label not in (None, '', [], {}):
+                ctx_obj['timezone'] = timezone_label
             if compact:
                 ctx_obj['trend_compact'] = compact
                 ctx_obj['trend_compact_legend'] = dict(_TREND_COMPACT_LEGEND)
@@ -768,6 +771,7 @@ def template_basic(  # noqa: C901
                 'upper_price': selected_forecast.get('upper_price'),
                 'trend': selected_forecast.get('trend'),
                 'ci_alpha': selected_forecast.get('ci_alpha'),
+                'timezone': selected_forecast.get('timezone'),
                 'last_observation_epoch': selected_forecast.get('last_observation_epoch'),
                 'forecast_start_epoch': selected_forecast.get('forecast_start_epoch'),
                 'forecast_anchor': selected_forecast.get('forecast_anchor'),

@@ -288,7 +288,32 @@ def test_report_generate_compact_keeps_actionable_section_summaries():
     assert structured["patterns"]["recent"] == [
         {"pattern": "hammer", "direction": "bullish", "confidence": 0.8}
     ]
+    assert out["timezone"] == "UTC"
     assert "sections" not in out
+
+
+def test_report_generate_standard_infers_root_timezone_from_sections():
+    fn = _get_report_generate()
+    rep = _make_report(
+        sections={
+            "context": {
+                "timezone": "America/Chicago",
+                "last_snapshot": {"time": "2026-03-29 10:00", "close": 1.1},
+            }
+        }
+    )
+    mock_basic = MagicMock(return_value=rep)
+
+    with patch("mtdata.core.report_templates.template_basic", mock_basic, create=True), \
+         patch("mtdata.core.report_templates.template_advanced", mock_basic, create=True), \
+         patch("mtdata.core.report_templates.template_scalping", mock_basic, create=True), \
+         patch("mtdata.core.report_templates.template_intraday", mock_basic, create=True), \
+         patch("mtdata.core.report_templates.template_swing", mock_basic, create=True), \
+         patch("mtdata.core.report_templates.template_position", mock_basic, create=True):
+        out = fn("EURUSD", template="basic", horizon=3, detail="standard")
+
+    assert out["timezone"] == "America/Chicago"
+    assert out["sections"]["context"]["timezone"] == "America/Chicago"
 
 
 def _make_full_sections():

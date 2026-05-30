@@ -110,6 +110,9 @@ def template_minimal(
                 "last_snapshot": last,
                 "notes": "Minimal template keeps only candle context plus a direct forecast.",
             }
+            timezone_label = ctx.get("timezone") if isinstance(ctx, dict) else None
+            if timezone_label not in (None, "", [], {}):
+                ctx_obj["timezone"] = timezone_label
             if compact:
                 ctx_obj["trend_compact"] = compact
                 ctx_obj["trend_compact_legend"] = dict(_TREND_COMPACT_LEGEND)
@@ -155,6 +158,7 @@ def template_minimal(
         "trend": fc.get("trend"),
         "ci_alpha": fc.get("ci_alpha"),
         "quantity": fc.get("quantity"),
+        "timezone": fc.get("timezone"),
         "last_observation_epoch": fc.get("last_observation_epoch"),
         "forecast_start_epoch": fc.get("forecast_start_epoch"),
         "forecast_anchor": fc.get("forecast_anchor"),

@@ -25,7 +25,7 @@ def test_template_minimal_builds_fast_path_without_basic_template() -> None:
     def _fake_get_raw_result(func, *args, **kwargs):
         func_name = getattr(func, "__name__", "")
         if func_name == "data_fetch_candles":
-            return {"bars": _make_context_bars()}
+            return {"bars": _make_context_bars(), "timezone": "UTC"}
         if func_name == "forecast_generate":
             assert kwargs["method"] == "arima"
             return {
@@ -34,6 +34,7 @@ def test_template_minimal_builds_fast_path_without_basic_template() -> None:
                 "upper_price": [1.1100, 1.1110, 1.1120],
                 "trend": "up",
                 "ci_alpha": 0.05,
+                "timezone": "UTC",
             }
         raise AssertionError(f"Unexpected tool call: {func_name}")
 
@@ -51,8 +52,10 @@ def test_template_minimal_builds_fast_path_without_basic_template() -> None:
     assert "barriers" in report["meta"]["skipped_sections"]
     assert list(report["sections"].keys()) == ["context", "forecast"]
     assert report["sections"]["forecast"]["method"] == "arima"
+    assert report["sections"]["forecast"]["timezone"] == "UTC"
     assert report["sections"]["forecast"]["selection_mode"] == "direct"
     assert "skips backtest ranking" in report["sections"]["forecast"]["selection_note"]
+    assert report["sections"]["context"]["timezone"] == "UTC"
     assert "trend_compact" in report["sections"]["context"]
 
 
