@@ -765,6 +765,51 @@ def test_run_forecast_generate_routes_date_range_to_impl(monkeypatch):
     assert captured["end"] == "2023-03-31"
 
 
+def test_run_forecast_generate_routes_volatility_proxy_to_impl():
+    captured = {}
+
+    def fake_forecast_impl(**kwargs):
+        captured.update(kwargs)
+        return {"success": True, "method": kwargs["method"], "proxy": kwargs.get("proxy")}
+
+    result = forecast_use_cases.run_forecast_generate(
+        ForecastGenerateRequest(
+            symbol="EURUSD",
+            method="theta",
+            quantity="volatility",
+            proxy="abs_return",
+        ),
+        forecast_impl=fake_forecast_impl,
+        resolve_sktime_forecaster=lambda _query: None,
+    )
+
+    assert result["success"] is True
+    assert captured["quantity"] == "volatility"
+    assert captured["proxy"] == "abs_return"
+
+
+def test_run_forecast_generate_defaults_general_volatility_proxy():
+    captured = {}
+
+    def fake_forecast_impl(**kwargs):
+        captured.update(kwargs)
+        return {"success": True, "method": kwargs["method"], "proxy": kwargs.get("proxy")}
+
+    result = forecast_use_cases.run_forecast_generate(
+        ForecastGenerateRequest(
+            symbol="EURUSD",
+            method="theta",
+            quantity="volatility",
+        ),
+        forecast_impl=fake_forecast_impl,
+        resolve_sktime_forecaster=lambda _query: None,
+    )
+
+    assert result["success"] is True
+    assert captured["proxy"] == "squared_return"
+    assert any("defaulted proxy=squared_return" in item for item in result["warnings"])
+
+
 def test_run_forecast_volatility_routes_date_range_to_impl():
     captured = {}
 

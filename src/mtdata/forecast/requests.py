@@ -40,6 +40,7 @@ class ForecastGenerateRequest(BaseModel):
     params: Optional[Dict[str, Any]] = None
     ci_alpha: Optional[float] = Field(0.05, ge=0.0, le=0.5)
     quantity: Literal["price", "return", "volatility"] = "price"
+    proxy: Optional[Literal["squared_return", "abs_return", "log_r2"]] = None
     denoise: Optional[DenoiseSpec] = None
     features: Optional[Dict[str, Any]] = None
     dimred_method: Optional[str] = None

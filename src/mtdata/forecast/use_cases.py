@@ -42,6 +42,8 @@ _BACKTEST_METRICS_REASON_NOTES = {
         "No active long/short trades; win_rate and drawdown need at least one trade."
     ),
 }
+_VOLATILITY_PROXY_METHODS = {"arima", "sarima", "ets", "theta"}
+_DEFAULT_VOLATILITY_PROXY = "squared_return"
 
 
 def _normalize_trader_detail(value: Any, *, default: str = "compact") -> str:
@@ -1233,6 +1235,21 @@ def run_forecast_generate(
         else:
             raise ForecastError(f"Unsupported library: {request.library}")
 
+        proxy_value = request.proxy
+        proxy_defaulted = False
+        if str(request.quantity).strip().lower() == "volatility":
+            if proxy_value is None and isinstance(params, dict):
+                proxy_candidate = params.get("proxy")
+                if proxy_candidate not in (None, ""):
+                    proxy_value = str(proxy_candidate).strip().lower()
+                    params.pop("proxy", None)
+            if (
+                proxy_value is None
+                and str(resolved_method).strip().lower() in _VOLATILITY_PROXY_METHODS
+            ):
+                proxy_value = _DEFAULT_VOLATILITY_PROXY
+                proxy_defaulted = True
+
         out = forecast_impl(
             symbol=request.symbol,
             timeframe=request.timeframe,
@@ -1245,6 +1262,7 @@ def run_forecast_generate(
             params=params,
             ci_alpha=request.ci_alpha,
             quantity=request.quantity,
+            proxy=proxy_value,
             denoise=request.denoise,
             features=request.features or {},
             dimred_method=request.dimred_method,
@@ -1255,6 +1273,17 @@ def run_forecast_generate(
         )
         if isinstance(out, dict) and "success" not in out and infer_result_success(out):
             out["success"] = True
+        if proxy_defaulted and isinstance(out, dict) and not out.get("error"):
+            warnings_out = out.get("warnings")
+            if not isinstance(warnings_out, list):
+                warnings_out = []
+            default_warning = (
+                "quantity=volatility defaulted proxy=squared_return; set proxy "
+                "explicitly to use abs_return or log_r2."
+            )
+            if default_warning not in warnings_out:
+                warnings_out.append(default_warning)
+            out["warnings"] = warnings_out
 
         if (
             isinstance(out, dict)

@@ -24,6 +24,7 @@ def execute_forecast(
     params: Optional[Dict[str, Any]] = None,
     ci_alpha: Optional[float] = 0.05,
     quantity: Literal['price','return','volatility'] = 'price',  # type: ignore
+    proxy: Optional[Literal['squared_return','abs_return','log_r2']] = None,  # type: ignore
     denoise: Optional[DenoiseSpec] = None,
     # Feature engineering for exogenous/multivariate models
     features: Optional[Dict[str, Any]] = None,
@@ -45,12 +46,19 @@ def execute_forecast(
 
         if quantity_l == 'volatility' or method_l.startswith('vol_'):
             from .volatility import forecast_volatility
+            params_for_volatility = dict(params or {})
+            proxy_value = proxy
+            if proxy_value is None and isinstance(params, dict):
+                proxy_candidate = params_for_volatility.pop("proxy", None)
+                if proxy_candidate not in (None, ""):
+                    proxy_value = str(proxy_candidate).strip().lower()  # type: ignore[assignment]
             result = forecast_volatility(
                 symbol=symbol,
                 timeframe=timeframe,
                 horizon=horizon,
                 method=method,
-                params=params,
+                proxy=proxy_value,
+                params=params_for_volatility,
                 as_of=as_of,
                 start=start,
                 end=end,
@@ -101,6 +109,7 @@ def forecast(
     params: Optional[Dict[str, Any]] = None,
     ci_alpha: Optional[float] = 0.05,
     quantity: Literal['price','return','volatility'] = 'price',  # type: ignore
+    proxy: Optional[Literal['squared_return','abs_return','log_r2']] = None,  # type: ignore
     denoise: Optional[DenoiseSpec] = None,
     features: Optional[Dict[str, Any]] = None,
     dimred_method: Optional[str] = None,
@@ -139,6 +148,7 @@ def forecast(
             params=params,
             ci_alpha=ci_alpha,
             quantity=quantity,
+            proxy=proxy,
             denoise=denoise,
             features=features,
             dimred_method=dimred_method,
