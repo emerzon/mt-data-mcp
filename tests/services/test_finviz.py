@@ -1671,6 +1671,54 @@ class TestFinvizTools:
         assert result["count"] == 0
         assert result["available_count"] == 0
 
+    @patch('mtdata.core.finviz.screen_stocks')
+    def test_finviz_screen_tool_accepts_operator_key_value_filters(self, mock_screen):
+        from mtdata.core.finviz import finviz_screen
+
+        def _run_direct(_logger, operation, func, **fields):
+            return func()
+
+        mock_screen.return_value = {"success": True, "count": 2, "stocks": []}
+
+        with patch("mtdata.core.finviz.run_logged_operation", side_effect=_run_direct):
+            result = finviz_screen.__wrapped__(
+                filters="pe_under=15,beta_under=1",
+                limit=5,
+            )
+
+        mock_screen.assert_called_once_with(
+            filters={
+                "P/E": "Under 15",
+                "Beta": "Under 1",
+            },
+            order=None,
+            limit=5,
+            page=1,
+            view="overview",
+        )
+        assert result["success"] is True
+
+    def test_finviz_screen_unsupported_key_value_filter_explains_discrete_filters(self):
+        from mtdata.core.finviz import finviz_screen
+
+        def _run_direct(_logger, operation, func, **fields):
+            return func()
+
+        with patch("mtdata.core.finviz.run_logged_operation", side_effect=_run_direct):
+            result = finviz_screen.__wrapped__(
+                filters="sharpe_above=2,beta_under=1",
+                limit=5,
+            )
+
+        assert result["success"] is False
+        assert result["error_code"] == "finviz_screen_filters_invalid"
+        assert "Unsupported Finviz key=value filter or option" in result["error"]
+        assert "beta_under=1" in result["error"]
+        assert result["details"]["invalid_tokens"] == [
+            "sharpe_above=2",
+            "beta_under=1",
+        ]
+
     def test_finviz_calendar_uses_start_end_dates(self):
         from mtdata.core.finviz import finviz_calendar
 

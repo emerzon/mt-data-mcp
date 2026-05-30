@@ -636,6 +636,24 @@ def _resolve_finviz_filter_option(spec: Dict[str, Any], raw_value: str) -> Optio
     return None
 
 
+def _split_finviz_filter_operator_key(raw_key: str) -> tuple[str, Optional[str]]:
+    key = str(raw_key or "").strip()
+    compact_key = _compact_finviz_filter_token(key)
+    for suffix, option_prefix in (
+        ("under", "Under"),
+        ("below", "Under"),
+        ("over", "Over"),
+        ("above", "Over"),
+    ):
+        marker = f"_{suffix}"
+        if key.lower().endswith(marker):
+            return key[: -len(marker)], option_prefix
+        compact_marker = suffix
+        if compact_key.endswith(compact_marker) and len(compact_key) > len(compact_marker):
+            return compact_key[: -len(compact_marker)], option_prefix
+    return key, None
+
+
 def _parse_finviz_screen_key_value_filters(raw: str) -> Optional[Dict[str, Any]]:
     if "=" not in raw and ":" not in raw:
         return None
@@ -657,9 +675,21 @@ def _parse_finviz_screen_key_value_filters(raw: str) -> Optional[Dict[str, Any]]
         else:
             return None
         filter_name = filter_names.get(_compact_finviz_filter_token(key_raw))
+        option_prefix = None
+        if filter_name is None:
+            base_key, option_prefix = _split_finviz_filter_operator_key(key_raw)
+            filter_name = filter_names.get(_compact_finviz_filter_token(base_key))
         if filter_name is None:
             return None
-        option_name = _resolve_finviz_filter_option(filter_dict[filter_name], value_raw)
+        option_value = (
+            f"{option_prefix} {value_raw}".strip()
+            if option_prefix
+            else value_raw
+        )
+        option_name = _resolve_finviz_filter_option(
+            filter_dict[filter_name],
+            option_value,
+        )
         if option_name is None:
             return None
         parsed[filter_name] = option_name
@@ -689,6 +719,16 @@ def _resolve_finviz_screen_filters(filters: Any) -> tuple[Optional[Dict[str, Any
         parsed = _parse_finviz_screen_key_value_filters(raw)
         if parsed is not None:
             return parsed, None
+        invalid_tokens = [part.strip() for part in raw.split(",") if part.strip()]
+        return None, _invalid_finviz_screen_filters_error(
+            filters,
+            reason=(
+                "Unsupported Finviz key=value filter or option. Use Finviz "
+                "discrete filters such as beta_under=1, pe_under=15, "
+                "country=USA, or native shorthand like cap_largeover."
+            ),
+            invalid_tokens=invalid_tokens,
+        )
     if "_" in raw:
         parsed = _parse_finviz_screen_shorthand(raw)
         if parsed is not None:
