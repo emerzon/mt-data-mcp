@@ -66,6 +66,7 @@ def test_market_status_uses_utc_weekend_for_closed_reason(monkeypatch) -> None:
     result = raw(region="all", detail="full")
 
     assert result["success"] is True
+    assert result["timestamp"] == "2026-04-25 03:18"
     assert result["global_status"] == "weekend"
     assert result["closed_reason_counts"] == {"weekend": 9}
     reasons_by_symbol = {
@@ -133,6 +134,8 @@ def test_market_status_symbol_mode_reports_heuristic_status(monkeypatch) -> None
     assert result["trade_mode_allows_opening"] is True
     assert result["tick_freshness"] == "fresh"
     assert result["tick_available"] is True
+    assert result["timestamp"] == "2024-01-02 12:00"
+    assert result["last_tick_time"] == "2024-01-02 12:00"
 
 
 def test_market_status_symbol_mode_blocks_weekend_opening(monkeypatch) -> None:

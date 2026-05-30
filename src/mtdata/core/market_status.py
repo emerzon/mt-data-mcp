@@ -14,6 +14,7 @@ from ..shared.schema import CompactFullDetailLiteral
 from ..shared.symbols import is_probably_crypto_symbol
 from ..utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise
 from ..utils.mt5_enums import decode_mt5_enum_label
+from ..utils.utils import _format_time_minimal
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway
@@ -612,10 +613,7 @@ def _symbol_tick_snapshot(tick: Any, *, now_utc: datetime) -> Dict[str, Any]:
         try:
             tick_epoch = float(tick_time)
             age_seconds = max(0.0, now_utc.timestamp() - tick_epoch)
-            out["last_tick_time"] = datetime.fromtimestamp(
-                tick_epoch,
-                tz=timezone.utc,
-            ).isoformat()
+            out["last_tick_time"] = _format_time_minimal(tick_epoch)
             out["last_tick_age_seconds"] = round(age_seconds, 3)
             out["tick_freshness"] = "fresh" if age_seconds <= 300.0 else "stale"
         except (OSError, OverflowError, TypeError, ValueError):
@@ -845,7 +843,7 @@ def _check_symbol_market_status(
         "trades_on_weekends": schedule_status.get("trades_on_weekends"),
         "inferred_24_7": schedule_status.get("inferred_24_7"),
         "message": message,
-        "timestamp": now_utc.isoformat(),
+        "timestamp": _format_time_minimal(now_utc.timestamp()),
         "timezone": "UTC",
     }
     if reason:
@@ -910,7 +908,7 @@ def market_status(
     -------
     dict
         Response containing:
-        - `timestamp`: Current UTC timestamp
+        - `timestamp`: Current UTC time (`YYYY-MM-DD HH:MM`)
         - `day_of_week`: Current day name (e.g., "Tuesday")
         - `summary`: Human-readable summary of market statuses (e.g., "1 market open: NYSE; 3 pre-market: LSE, XETRA, EURONEXT; 5 closed")
         - `markets_open`: Count of markets currently open
@@ -1043,7 +1041,7 @@ def market_status(
 
         payload = {
             "success": True,
-            "timestamp": now_utc.isoformat(),
+            "timestamp": _format_time_minimal(now_utc.timestamp()),
             "timezone": "UTC",
             "day_of_week": now_utc.strftime("%A"),
             "region": region or "all",
