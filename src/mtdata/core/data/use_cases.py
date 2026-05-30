@@ -42,6 +42,8 @@ _COMPACT_TICK_TOP_LEVEL_FIELDS = (
     "simplify",
 )
 
+_ANALYSIS_CANDLE_DEFAULT_LIMIT = 100
+
 
 def _ensure_gateway_connection(gateway: Any) -> Dict[str, Any] | None:
     return mt5_connection_error(gateway)
@@ -53,16 +55,18 @@ def run_data_fetch_candles(
     gateway: Any,
     fetch_candles_impl: Any,
 ) -> Dict[str, Any]:
+    effective_limit = _effective_candle_limit(request)
     return run_logged_operation(
         logger,
         operation="data_fetch_candles",
         symbol=request.symbol,
         timeframe=request.timeframe,
-        limit=request.limit,
+        limit=effective_limit,
         func=lambda: _run_data_fetch_candles_impl(
             request=request,
             gateway=gateway,
             fetch_candles_impl=fetch_candles_impl,
+            effective_limit=effective_limit,
         ),
     )
 
@@ -138,6 +142,7 @@ def _run_data_fetch_candles_impl(
     request: DataFetchCandlesRequest,
     gateway: Any,
     fetch_candles_impl: Any,
+    effective_limit: Optional[int] = None,
 ) -> Dict[str, Any]:
     connection_error = _ensure_gateway_connection(gateway)
     if connection_error is not None:
@@ -145,7 +150,7 @@ def _run_data_fetch_candles_impl(
     result = fetch_candles_impl(
         symbol=request.symbol,
         timeframe=request.timeframe,
-        limit=request.limit,
+        limit=effective_limit if effective_limit is not None else request.limit,
         start=request.start,
         end=request.end,
         ohlcv=request.ohlcv,
@@ -190,7 +195,10 @@ def _run_data_fetch_candles_impl(
                 result["spread_unavailable"] = True
     detail_mode = str(request.detail or "compact").strip().lower()
     if isinstance(result, dict):
-        _apply_range_limit_cap(result, limit=request.limit)
+        _apply_range_limit_cap(
+            result,
+            limit=effective_limit if effective_limit is not None else request.limit,
+        )
         _normalize_candle_count_field(result)
         _prune_zero_candle_exclusions(result)
         if detail_mode == "compact":
@@ -212,6 +220,19 @@ def _run_data_fetch_candles_impl(
             out.pop("canonical_source", None)
         return out
     return result
+
+
+def _effective_candle_limit(request: DataFetchCandlesRequest) -> int:
+    try:
+        limit = max(1, int(request.limit))
+    except Exception:
+        limit = 20
+    fields_set = getattr(request, "model_fields_set", set())
+    limit_explicit = "limit" in fields_set
+    has_indicators = request.indicators not in (None, "", [], {})
+    if has_indicators and not limit_explicit:
+        return max(limit, _ANALYSIS_CANDLE_DEFAULT_LIMIT)
+    return limit
 
 
 def _apply_range_limit_cap(result: Dict[str, Any], *, limit: int) -> None:

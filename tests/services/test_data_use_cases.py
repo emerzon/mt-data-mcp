@@ -72,6 +72,42 @@ def test_run_data_fetch_candles_passes_include_spread_to_service():
     assert captured["kwargs"]["include_spread"] is True
 
 
+def test_run_data_fetch_candles_expands_default_limit_for_indicators():
+    captured = {}
+    request = DataFetchCandlesRequest(symbol="EURUSD", indicators="rsi(14)")
+
+    def _fetch(**kwargs):
+        captured["kwargs"] = kwargs
+        return {"success": True, "count": 100, "data": []}
+
+    result = run_data_fetch_candles(
+        request,
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_candles_impl=_fetch,
+    )
+
+    assert result["success"] is True
+    assert captured["kwargs"]["limit"] == 100
+
+
+def test_run_data_fetch_candles_honors_explicit_indicator_limit():
+    captured = {}
+    request = DataFetchCandlesRequest(symbol="EURUSD", indicators="rsi(14)", limit=20)
+
+    def _fetch(**kwargs):
+        captured["kwargs"] = kwargs
+        return {"success": True, "count": 20, "data": []}
+
+    result = run_data_fetch_candles(
+        request,
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_candles_impl=_fetch,
+    )
+
+    assert result["success"] is True
+    assert captured["kwargs"]["limit"] == 20
+
+
 def test_data_fetch_requests_accept_simplify_boolean_and_modes():
     candles_on = DataFetchCandlesRequest(symbol="EURUSD", simplify=True)
     ticks_on = DataFetchTicksRequest(symbol="EURUSD", simplify="auto")
