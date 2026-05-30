@@ -39,7 +39,8 @@ def test_market_status_timezone_display_utc_converts_market_times(monkeypatch) -
     assert result["timezone"] == "UTC"
     assert {market["symbol"] for market in result["markets"]} == {"NYSE", "NASDAQ"}
     for market in result["markets"]:
-        assert market["local_time"] == "15:00"
+        assert market["local_time"] == "10:00"
+        assert market["display_time"] == "15:00"
         assert market["next_close"] == "2024-01-02T21:00:00+00:00"
 
 

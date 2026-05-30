@@ -207,7 +207,7 @@ def _apply_market_timezone_display(
     if display != "utc":
         return status
     out = dict(status)
-    out["local_time"] = now_local.astimezone(timezone.utc).strftime("%H:%M")
+    out["display_time"] = now_local.astimezone(timezone.utc).strftime("%H:%M")
     for key in ("next_open", "next_close"):
         if key in out:
             out[key] = _format_market_time(out[key], display)
@@ -901,6 +901,7 @@ def market_status(
         Filter by region: "us", "europe", "asia", or "all" (default: "all")
     timezone_display : str, optional
         Time display format: "local" (market's local time), "utc", or "auto" (default: "local")
+        UTC display preserves `local_time` and adds `display_time` in UTC.
     detail : {"compact", "full"}, optional
         Response detail level. `compact` (default) omits per-market messages
         and upcoming holiday details, while `full` preserves them.
@@ -930,6 +931,8 @@ def market_status(
             - `status`: "open", "closed", "pre_market", "lunch_break"
             - `reason`: Reason if closed ("weekend", "holiday", "after_hours")
             - `local_time`: Current time in market's timezone (HH:MM)
+            - `display_time`: Current display time (HH:MM) when
+              `timezone_display="utc"`
             - `message`: Human-readable status in `detail="full"`
             - `next_open` / `next_close`: ISO timestamp of next event
             - `minutes_until_open` / `minutes_until_close`: Minutes until the
