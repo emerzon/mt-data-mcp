@@ -84,8 +84,9 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ),
     ("forecast_tune_optuna", "search_space"): "Optuna search space (JSON or k=v).",
     ("indicators_list", "detail"): "Output detail: compact table or full rows with aliases and descriptions.",
-    ("causal_discover_signals", "limit"): (
-        "Historical bars per symbol used for causal tests; not an output row limit."
+    ("causal_discover_signals", "limit"): "Max causal link rows to return.",
+    ("causal_discover_signals", "window_bars"): (
+        "Historical bars per symbol used for causal tests."
     ),
     ("cointegration_test", "symbol"): (
         "Comma-separated MT5 symbols (e.g. EURUSD,GBPUSD); one symbol auto-expands "

@@ -742,6 +742,16 @@ class TestResolveParamKwargs:
             None,
             cmd_name="correlation_matrix",
         )
+        causal_limit_kwargs, _ = _resolve_param_kwargs(
+            {"name": "limit", "type": int, "required": False, "default": None},
+            None,
+            cmd_name="causal_discover_signals",
+        )
+        causal_window_kwargs, _ = _resolve_param_kwargs(
+            {"name": "window_bars", "type": int, "required": False, "default": 500},
+            None,
+            cmd_name="causal_discover_signals",
+        )
         regime_limit_kwargs, _ = _resolve_param_kwargs(
             {"name": "limit", "type": int, "required": False, "default": 100},
             None,
@@ -754,6 +764,8 @@ class TestResolveParamKwargs:
         assert min_regime_kwargs["help"] != "min_regime_bars parameter"
         assert "Max correlation pair rows" in correlation_limit_kwargs["help"]
         assert "Historical bars per symbol" in correlation_window_kwargs["help"]
+        assert causal_limit_kwargs["help"] == "Max causal link rows to return."
+        assert "Historical bars per symbol" in causal_window_kwargs["help"]
         assert "max_regimes" in regime_limit_kwargs["help"]
 
     @pytest.mark.parametrize(

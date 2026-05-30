@@ -373,7 +373,7 @@ class TestCausalDiscoverSignals:
 
     @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
     @patch("mtdata.core.causal._fetch_series")
-    def test_low_limit_error_points_to_aligned_window_not_pair_overlap(self, mock_fetch):
+    def test_low_window_bars_error_points_to_aligned_window_not_pair_overlap(self, mock_fetch):
         idx = pd.date_range("2024-01-01", periods=200, freq="h")
         series_map = {
             "EURUSD": pd.Series(np.linspace(1.0, 2.0, 200), index=idx),
@@ -387,7 +387,7 @@ class TestCausalDiscoverSignals:
         mock_fetch.side_effect = _fetch_side_effect
         result = self._unwrapped()(
             "EURUSD,GBPUSD,USDJPY",
-            limit=5,
+            window_bars=5,
             max_lag=5,
             transform="diff",
             normalize=False,
@@ -395,11 +395,49 @@ class TestCausalDiscoverSignals:
 
         assert result["success"] is False
         assert result["error_code"] == "insufficient_overlap"
-        assert "after applying limit=5" in result["error"]
-        assert "Increase --limit to at least 11" in result["error"]
+        assert "after applying window_bars=5" in result["error"]
+        assert "Increase --window-bars to at least 11" in result["error"]
         assert "Dropped" not in " ".join(result.get("warnings", []))
         details_text = " ".join(str(x) for x in result.get("details", []))
         assert "pair_overlaps: EURUSD-GBPUSD: 200" in details_text
+
+    @patch("statsmodels.tsa.stattools.grangercausalitytests")
+    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal._fetch_series")
+    def test_limit_caps_returned_causal_rows(self, mock_fetch, mock_granger):
+        idx = pd.date_range("2024-01-01", periods=80, freq="h")
+        series_map = {
+            "A": pd.Series(np.linspace(1.0, 2.0, 80), index=idx),
+            "B": pd.Series(np.linspace(2.0, 3.0, 80), index=idx),
+            "C": pd.Series(np.linspace(3.0, 4.0, 80), index=idx),
+        }
+
+        mock_fetch.side_effect = lambda symbol, timeframe, count: (
+            series_map[symbol],
+            None,
+        )
+        mock_granger.return_value = {
+            1: ({"ssr_ftest": (1.0, 0.01, 10, 1)}, None),
+        }
+
+        result = self._unwrapped()(
+            "A,B,C",
+            limit=2,
+            max_lag=1,
+            transform="diff",
+            normalize=False,
+        )
+
+        assert result["success"] is True
+        assert result["count"] == 2
+        assert len(result["items"]) == 2
+        assert result["truncated"] is True
+        assert result["summary"]["counts"] == {
+            "pairs_tested": 6,
+            "significant_links": 6,
+        }
+        assert result["meta"]["request"]["limit"] == 2
+        assert result["meta"]["request"]["window_bars"] == 500
 
     @patch("statsmodels.tsa.stattools.grangercausalitytests")
     @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})

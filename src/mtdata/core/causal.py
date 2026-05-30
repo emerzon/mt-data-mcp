@@ -150,6 +150,7 @@ _CAUSAL_DISCOVER_REQUEST_KEYS = frozenset(
         "group_resolved",
         "timeframe",
         "limit",
+        "window_bars",
         "start",
         "end",
         "max_lag",
@@ -1223,13 +1224,13 @@ def _limit_constrained_alignment_message(
     *,
     aligned_rows: int,
     minimum_required: int,
-    limit: int,
+    window_bars: int,
     max_lag: int,
     pair_overlaps: Dict[str, int],
 ) -> Optional[str]:
-    if int(aligned_rows) >= int(minimum_required) or int(limit) >= int(minimum_required):
+    if int(aligned_rows) >= int(minimum_required) or int(window_bars) >= int(minimum_required):
         return None
-    if int(aligned_rows) > int(limit):
+    if int(aligned_rows) > int(window_bars):
         return None
     if pair_overlaps and not all(
         int(rows) >= int(minimum_required) for rows in pair_overlaps.values()
@@ -1237,8 +1238,8 @@ def _limit_constrained_alignment_message(
         return None
     return (
         f"Insufficient aligned observations ({int(aligned_rows)}) after applying "
-        f"limit={int(limit)}; minimum required is {int(minimum_required)}. "
-        f"Increase --limit to at least {int(minimum_required)} or reduce max_lag "
+        f"window_bars={int(window_bars)}; minimum required is {int(minimum_required)}. "
+        f"Increase --window-bars to at least {int(minimum_required)} or reduce max_lag "
         f"(currently {int(max_lag)})."
     )
 
@@ -1248,7 +1249,8 @@ def causal_discover_signals(  # noqa: C901
     symbol: Optional[str] = None,
     group: Optional[str] = None,
     timeframe: TimeframeLiteral = "H1",
-    limit: int = 500,
+    limit: Optional[int] = None,
+    window_bars: int = 500,
     start: Optional[str] = None,
     end: Optional[str] = None,
     max_lag: int = 5,
@@ -1265,7 +1267,9 @@ def causal_discover_signals(  # noqa: C901
         group: Explicit MT5 group path (for example "Forex\\Majors"). Mutually
             exclusive with `symbol`.
         timeframe: MT5 timeframe key (e.g. "M15", "H1").
-        limit: Maximum bars to analyse per symbol after applying any time window.
+        limit: Optional maximum number of returned causal rows.
+        window_bars: Maximum overlapping transformed samples analysed after
+            applying any time window.
         start: Optional UTC-compatible start date/time for the analysis window.
         end: Optional UTC-compatible end date/time; end-only anchors recent history.
         max_lag: Maximum lag order for tests (>=1).
@@ -1283,7 +1287,8 @@ def causal_discover_signals(  # noqa: C901
             "_tool": "causal_discover_signals",
             "_request_keys": _CAUSAL_DISCOVER_REQUEST_KEYS,
             "timeframe": str(timeframe),
-            "limit": int(limit),
+            "limit": limit,
+            "window_bars": int(window_bars),
             "start": start,
             "end": end,
             "max_lag": int(max_lag),
@@ -1392,7 +1397,21 @@ def causal_discover_signals(  # noqa: C901
                 meta=meta,
             )
 
-        fetch_count = max(limit + max_lag + 10, 200)
+        output_limit, limit_error = _normalize_output_limit(limit)
+        if limit_error is not None:
+            return _causal_error(
+                limit_error,
+                code="invalid_input",
+                meta=meta,
+            )
+        if window_bars < 2:
+            return _causal_error(
+                "window_bars must be at least 2.",
+                code="invalid_input",
+                meta=meta,
+            )
+
+        fetch_count = max(int(window_bars) + max_lag + 10, 200)
         meta["fetch_count"] = int(fetch_count)
         series_map: Dict[str, pd.Series] = {}
         errors: List[str] = []
@@ -1456,7 +1475,7 @@ def causal_discover_signals(  # noqa: C901
         if pair_overlaps:
             meta["pair_overlaps"] = pair_overlaps
 
-        frame = _build_overlap_frame(series_map, symbol_list, limit)
+        frame = _build_overlap_frame(series_map, symbol_list, int(window_bars))
         meta["symbols_used"] = (
             list(frame.columns)
             if isinstance(frame, pd.DataFrame)
@@ -1478,7 +1497,7 @@ def causal_discover_signals(  # noqa: C901
             limit_message = _limit_constrained_alignment_message(
                 aligned_rows=int(len(frame)),
                 minimum_required=min_required_samples,
-                limit=int(limit),
+                window_bars=int(window_bars),
                 max_lag=int(max_lag),
                 pair_overlaps=pair_overlaps,
             )
@@ -1486,7 +1505,7 @@ def causal_discover_signals(  # noqa: C901
                 pruned_symbols, pruned_frame, overlap_pruning = _prune_symbols_for_overlap(
                     series_map,
                     symbol_list,
-                    limit=limit,
+                    limit=int(window_bars),
                     minimum_required=min_required_samples,
                     preserve_symbol=requested_anchor,
                 )
@@ -1544,7 +1563,7 @@ def causal_discover_signals(  # noqa: C901
             limit_message = _limit_constrained_alignment_message(
                 aligned_rows=int(len(frame)),
                 minimum_required=min_required_samples,
-                limit=int(limit),
+                window_bars=int(window_bars),
                 max_lag=int(max_lag),
                 pair_overlaps=pair_overlaps,
             )
@@ -1682,7 +1701,9 @@ def causal_discover_signals(  # noqa: C901
             warnings_out.append(
                 f"{max(pair_attempts - pair_success, 0)} pairwise Granger tests failed; see meta['pair_failures']."
             )
-        output_rows = rows_sorted if detail_mode == "full" else significant_rows
+        rows_for_output = rows_sorted if detail_mode == "full" else significant_rows
+        output_rows, output_truncated = _limit_pair_rows(rows_for_output, output_limit)
+        meta["output_truncated"] = output_truncated
         out: Dict[str, Any] = {
             "success": True,
             "items": output_rows,
@@ -1704,6 +1725,8 @@ def causal_discover_signals(  # noqa: C901
                 },
             ),
         }
+        if output_truncated:
+            out["truncated"] = True
         if warnings_out:
             out["warnings"] = warnings_out
         if rows_sorted and detail_mode == "full":
@@ -1725,6 +1748,7 @@ def causal_discover_signals(  # noqa: C901
         group=group,
         timeframe=timeframe,
         limit=limit,
+        window_bars=window_bars,
         start=start,
         end=end,
         max_lag=max_lag,
