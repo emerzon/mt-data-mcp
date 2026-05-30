@@ -223,6 +223,49 @@ def create_command_function(  # noqa: C901
             return None
         return _shared_normalize_indicator_specs(value)
 
+    def _parse_wait_event_spec_text(text: str) -> Any:
+        s = str(text or "").strip()
+        if not s:
+            return []
+        if s[0] in "[{":
+            parsed: Any = None
+            for parser in (json.loads, ast.literal_eval):
+                try:
+                    parsed = parser(s)
+                    break
+                except Exception:
+                    parsed = None
+            if isinstance(parsed, dict):
+                return [parsed]
+            if isinstance(parsed, list):
+                return parsed
+        if "=" in s:
+            parsed_map = parse_kv_string(s)
+            if parsed_map is not None:
+                return [parsed_map]
+        return normalize_cli_list_value(s)
+
+    def _normalize_wait_event_specs(value: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, dict):
+            return [value]
+        if isinstance(value, str):
+            return _parse_wait_event_spec_text(value)
+        if isinstance(value, (list, tuple)):
+            out: List[Any] = []
+            for item in value:
+                if isinstance(item, str):
+                    parsed = _parse_wait_event_spec_text(item)
+                    if isinstance(parsed, list):
+                        out.extend(parsed)
+                    elif parsed is not None:
+                        out.append(parsed)
+                elif item is not None:
+                    out.append(item)
+            return out
+        return value
+
     def _friendly_validation_error(exc: ValidationError) -> str:
         try:
             errors = exc.errors()
@@ -323,6 +366,8 @@ def create_command_function(  # noqa: C901
                     except ValueError as exc:
                         render_cli_result(_build_cli_error(str(exc)), args=args, cmd_name=cmd_name)
                         return 1
+                elif cmd_name == "wait_event" and param_name in {"watch_for", "end_on"}:
+                    arg_value = _normalize_wait_event_specs(arg_value)
                 else:
                     arg_value = normalize_cli_list_value(arg_value)
             if is_mapping:
