@@ -1478,9 +1478,13 @@ class TestFetchCandles(unittest.TestCase):
         )
         self.assertEqual(
             result['meta']['diagnostics']['indicators']['added_columns'],
-            ['RSI_14', 'EMA_20', 'ATR_14'],
+            ['rsi_14', 'ema_20', 'atr_14'],
         )
-        self.assertIn('ATR_14', result['data'][0])
+        self.assertIn('rsi_14', result['data'][0])
+        self.assertIn('ema_20', result['data'][0])
+        self.assertIn('atr_14', result['data'][0])
+        self.assertNotIn('RSI_14', result['data'][0])
+        self.assertNotIn('EMA_20', result['data'][0])
         self.assertNotIn('ATRr_14', result['data'][0])
 
     @patch(_MT5_CONFIG)
@@ -1503,7 +1507,7 @@ class TestFetchCandles(unittest.TestCase):
         mock_from.return_value = _make_rates(30)
 
         def add_cols(df, spec):
-            df['ATR_14'] = 99.0
+            df['atr_14'] = 99.0
             df['ATRr_14'] = 2.2
             return ['ATRr_14']
 
@@ -1518,7 +1522,7 @@ class TestFetchCandles(unittest.TestCase):
         )
         self.assertIn('ATRr_14', result['data'][0])
         self.assertEqual(result['data'][0]['ATRr_14'], 2.2)
-        self.assertNotIn('ATR_14', result['data'][0])
+        self.assertEqual(result['data'][0]['atr_14'], 99.0)
 
     @patch(_MT5_CONFIG)
     @patch(_RATES_FROM)

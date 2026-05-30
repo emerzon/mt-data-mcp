@@ -869,8 +869,10 @@ def _normalize_indicator_spec_for_display(ti_spec: Optional[str]) -> str:
 def _display_indicator_column_name(column: str) -> str:
     text = str(column or "")
     if text.startswith("ATRr_"):
-        return "ATR_" + text[len("ATRr_") :]
-    return text
+        text = "ATR_" + text[len("ATRr_") :]
+    text = re.sub(r"^MACD([a-z])_", r"MACD_\1_", text)
+    text = _normalize_indicator_spec_for_display(text)
+    return text.replace(".", "_").lower()
 
 
 def _normalize_indicator_columns_for_display(
