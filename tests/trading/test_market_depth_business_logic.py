@@ -286,6 +286,7 @@ def test_market_ticker_returns_lightweight_spread_snapshot() -> None:
 
     assert out["success"] is True
     assert out["type"] == "ticker"
+    assert out["price_currency"] == "USD"
     assert out["bid"] == 200.0
     assert out["ask"] == 201.0
     assert out["spread"] == 1.0
@@ -333,6 +334,7 @@ def test_market_ticker_compact_detail_omits_verbose_fields() -> None:
 
     assert out["success"] is True
     assert out["type"] == "ticker"
+    assert out["price_currency"] == "USD"
     assert out["bid"] == 200.0
     assert out["ask"] == 201.0
     assert out["spread"] == 1.0
@@ -414,6 +416,7 @@ def test_market_ticker_price_field_returns_simple_price() -> None:
     assert out["field"] == "mid"
     assert out["price"] == pytest.approx(1.17229)
     assert out["price_precision"] == 5
+    assert out["price_currency"] == "USD"
     assert out["time_display"] == "2023-11-14 22:13"
     assert "bid" not in out
     assert "spread_pips" not in out

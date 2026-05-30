@@ -64,6 +64,37 @@ def _requested_detail_label(value: Any, *, default: str = "compact") -> str:
     return str(default)
 
 
+def _symbol_price_currency(symbol: Any) -> Optional[str]:
+    symbol_text = str(symbol or "").strip()
+    if not symbol_text:
+        return None
+    try:
+        from ..utils.mt5 import get_symbol_info_cached
+
+        info = get_symbol_info_cached(symbol_text)
+    except Exception:
+        return None
+    for attr in ("currency_profit", "currency_margin"):
+        try:
+            value = getattr(info, attr, None)
+        except Exception:
+            value = None
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _annotate_price_currency(payload: Dict[str, Any], symbol: Any) -> Dict[str, Any]:
+    if not isinstance(payload, dict) or payload.get("error") or payload.get("price_currency"):
+        return payload
+    currency = _symbol_price_currency(symbol)
+    if not currency:
+        return payload
+    out = dict(payload)
+    out["price_currency"] = currency
+    return out
+
+
 def _forecast_interval_summary(payload: Dict[str, Any]) -> Optional[Dict[str, float]]:
     lower_key = next(
         (
@@ -1246,6 +1277,7 @@ def run_forecast_generate(
                 warnings_out.append(warning)
             out["warnings"] = warnings_out
         if isinstance(out, dict):
+            out = _annotate_price_currency(out, request.symbol)
             _annotate_forecast_generate_method(
                 out,
                 requested_method=requested_method,
@@ -1748,6 +1780,8 @@ def run_forecast_barrier_prob(
                 if isinstance(result, dict) and not result.get("error"):
                     result.setdefault("tp_pct", 1.0)
                     result.setdefault("sl_pct", 1.0)
+            if isinstance(result, dict):
+                result = _annotate_price_currency(result, request.symbol)
             result = _apply_barrier_prob_detail(result, request)
             log_operation_finish(
                 logger,
@@ -1786,6 +1820,8 @@ def run_forecast_barrier_prob(
                 sigma=request.sigma,
                 denoise=request.denoise,
             )
+            if isinstance(result, dict):
+                result = _annotate_price_currency(result, request.symbol)
             result = _apply_barrier_prob_detail(result, request)
             log_operation_finish(
                 logger,

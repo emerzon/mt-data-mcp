@@ -279,6 +279,7 @@ def test_forecast_generate_native_theta_suppresses_duplicate_interval_guidance(m
 
 def test_forecast_generate_defaults_to_compact_payload(monkeypatch):
     raw = _unwrap(cf.forecast_generate)
+    monkeypatch.setattr(forecast_use_cases, "_symbol_price_currency", lambda _symbol: "USD")
     monkeypatch.setattr(
         cf,
         "_forecast_impl",
@@ -310,6 +311,7 @@ def test_forecast_generate_defaults_to_compact_payload(monkeypatch):
     assert "detail" not in out
     assert out["symbol"] == "BTCUSD"
     assert out["timeframe"] == "H1"
+    assert out["price_currency"] == "USD"
     assert out["timezone"] == "UTC"
     assert "forecast_from" not in out
     assert "forecast_anchor" not in out
@@ -1754,7 +1756,8 @@ def test_forecast_barrier_methods_accept_monte_carlo_aliases():
     assert called["optimize_output_mode"] == "summary"
 
 
-def test_forecast_barrier_prob_applies_default_pct_barriers_when_missing():
+def test_forecast_barrier_prob_applies_default_pct_barriers_when_missing(monkeypatch):
+    monkeypatch.setattr(forecast_use_cases, "_symbol_price_currency", lambda _symbol: "USD")
     called: dict[str, float] = {}
 
     def fake_barrier_hit(**kwargs):
@@ -1777,6 +1780,7 @@ def test_forecast_barrier_prob_applies_default_pct_barriers_when_missing():
     )
 
     assert out["success"] is True
+    assert out["price_currency"] == "USD"
     assert called == {"tp_pct": 1.0, "sl_pct": 1.0}
     assert out["warnings"] == [
         "Default 1% symmetrical barriers applied; pass tp_pct/sl_pct, "

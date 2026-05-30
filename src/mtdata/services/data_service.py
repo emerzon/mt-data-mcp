@@ -138,6 +138,18 @@ def _symbol_price_digits(*infos: Any) -> int:
     return 0
 
 
+def _symbol_price_currency(*infos: Any) -> Optional[str]:
+    for info in infos:
+        for attr in ("currency_profit", "currency_margin"):
+            try:
+                value = getattr(info, attr, None)
+            except Exception:
+                value = None
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return None
+
+
 def _round_price_value(value: Any, digits: int) -> Any:
     if digits <= 0 or value is None or isinstance(value, bool):
         return value
@@ -1251,6 +1263,7 @@ def fetch_candles(  # noqa: C901
             if err:
                 return {"error": err}
             price_digits = _symbol_price_digits(_info, _info_before)
+            price_currency = _symbol_price_currency(_info, _info_before)
 
             try:
                 ti_spec = _normalize_indicator_spec(ti)
@@ -1563,6 +1576,8 @@ def fetch_candles(  # noqa: C901
                 },
             },
         })
+        if price_currency:
+            payload["price_currency"] = price_currency
         if incomplete_candles_skipped and not include_incomplete:
             if ti_spec:
                 payload["hint"] = (
@@ -1875,6 +1890,8 @@ def _compact_tick_summary(out: Dict[str, Any]) -> Dict[str, Any]:
     }
     if out.get("price_precision") is not None:
         compact["price_precision"] = out.get("price_precision")
+    if out.get("price_currency") is not None:
+        compact["price_currency"] = out.get("price_currency")
     if isinstance(out.get("last_quote"), dict):
         compact["last_quote"] = dict(out["last_quote"])
     if isinstance(out.get("data_quality"), dict):
@@ -1914,6 +1931,7 @@ def fetch_ticks(  # noqa: C901
             if err:
                 return {"error": err}
             price_digits = _symbol_price_digits(_info, _info_before)
+            price_currency = _symbol_price_currency(_info, _info_before)
 
             # Normalized params only. This is an output shape selector, not the
             # shared compact/full detail enum.
@@ -2140,6 +2158,8 @@ def fetch_ticks(  # noqa: C901
             }
             if price_digits > 0:
                 out["price_precision"] = int(price_digits)
+            if price_currency:
+                out["price_currency"] = price_currency
             _add_tick_data_quality(out)
             _round_tick_price_payload(out, price_digits)
             return _compact_tick_summary(out)
@@ -2274,6 +2294,8 @@ def fetch_ticks(  # noqa: C901
                     pass
             if price_digits > 0:
                 out["price_precision"] = int(price_digits)
+            if price_currency:
+                out["price_currency"] = price_currency
             units = _tick_units_for_headers(headers)
             if units and detailed_stats:
                 out["units"] = units
@@ -2391,6 +2413,8 @@ def fetch_ticks(  # noqa: C901
             }
             payload.update(table_payload)
             payload["timezone"] = _timezone_label(use_client_tz=_use_ctz, client_tz=client_tz)
+            if price_currency:
+                payload["price_currency"] = price_currency
             units = _tick_units_for_headers(headers)
             if units:
                 payload["units"] = units
@@ -2549,6 +2573,8 @@ def fetch_ticks(  # noqa: C901
         }
         payload.update(table_payload)
         payload["timezone"] = _timezone_label(use_client_tz=_use_ctz, client_tz=client_tz)
+        if price_currency:
+            payload["price_currency"] = price_currency
         units = _tick_units_for_headers(headers)
         if units:
             payload["units"] = units

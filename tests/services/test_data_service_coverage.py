@@ -670,6 +670,19 @@ class TestFetchCandles(unittest.TestCase):
 
     @patch(_MT5_CONFIG)
     @patch(_RATES_FROM)
+    @patch(_CACHED_INFO, return_value=SimpleNamespace(digits=5, currency_profit="USD"))
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=0)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_candles_include_price_currency(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_cfg):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        mock_from.return_value = _make_rates(10, step=3600)
+        result = fetch_candles('EURUSD', limit=5)
+        self.assertTrue(result.get('success'))
+        self.assertEqual(result["price_currency"], "USD")
+
+    @patch(_MT5_CONFIG)
+    @patch(_RATES_FROM)
     @patch(_CACHED_INFO, return_value=SimpleNamespace(digits=5))
     @patch(_RESOLVE_CTZ, return_value=None)
     @patch(_ESTIMATE_WARMUP, return_value=0)
@@ -2012,6 +2025,20 @@ class TestFetchTicks(unittest.TestCase):
         self.assertEqual(result["units"]["bid"], "price")
         self.assertEqual(result["units"]["ask"], "price")
         self.assertEqual(result["units"]["volume"], "mt5_tick_volume")
+
+    @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=SimpleNamespace(digits=5, currency_profit="USD"))
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_ticks_include_price_currency(self, mock_ctz, mock_info, mock_ticks):
+        mock_ticks.return_value = _make_ticks(20)
+        summary = fetch_ticks('EURUSD', limit=20, format='summary')
+        self.assertTrue(summary.get('success'))
+        self.assertEqual(summary["price_currency"], "USD")
+
+        rows = fetch_ticks('EURUSD', limit=5, format='rows')
+        self.assertTrue(rows.get('success'))
+        self.assertEqual(rows["price_currency"], "USD")
 
     @patch(_TICKS_RANGE)
     @patch(_CACHED_INFO, return_value=SimpleNamespace(digits=5))

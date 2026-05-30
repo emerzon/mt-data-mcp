@@ -132,6 +132,7 @@ def _compact_market_ticker_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "symbol",
         "type",
         "price_precision",
+        "price_currency",
         "bid",
         "ask",
         "spread",
@@ -525,6 +526,7 @@ def market_ticker(
                 or getattr(symbol_info, "currency_margin", None)
                 or ""
             ).strip() or None
+            price_currency = spread_cost_currency
 
             bid = float(tick.bid) if tick.bid else None
             ask = float(tick.ask) if tick.ask else None
@@ -578,6 +580,7 @@ def market_ticker(
                 "symbol": symbol,
                 "type": "ticker",
                 "price_precision": digits,
+                "price_currency": price_currency,
                 "bid": _round_market_ticker_value(bid, digits=digits),
                 "ask": _round_market_ticker_value(ask, digits=digits),
                 "last": _round_market_ticker_value(last, digits=digits),
@@ -676,6 +679,7 @@ def market_ticker(
                     "field": field_value,
                     "price": price,
                     "price_precision": digits,
+                    "price_currency": price_currency,
                 }
                 for key in ("time", "time_display", "timezone"):
                     if out.get(key) is not None:
