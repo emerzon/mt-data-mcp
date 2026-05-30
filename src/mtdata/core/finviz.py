@@ -520,7 +520,12 @@ def _finviz_earnings_error_code(message: str) -> str:
     return "finviz_earnings_failed"
 
 
-def _invalid_finviz_screen_filters_error(filters: Any) -> Dict[str, Any]:
+def _invalid_finviz_screen_filters_error(
+    filters: Any,
+    *,
+    reason: Optional[str] = None,
+    invalid_tokens: Optional[List[str]] = None,
+) -> Dict[str, Any]:
     if isinstance(filters, str):
         raw = filters.strip()
         if raw and not raw.startswith("{"):
@@ -554,15 +559,20 @@ def _invalid_finviz_screen_filters_error(filters: Any) -> Dict[str, Any]:
             "'{\"Exchange\": \"NASDAQ\", \"Sector\": \"Technology\"}'. "
             f"Got: {filters}"
         )
+    if reason:
+        message = f"{message} {reason}"
+    details: Dict[str, Any] = {"received_type": type(filters).__name__}
+    if invalid_tokens:
+        details["invalid_tokens"] = list(invalid_tokens)
     return _finviz_error_payload(
         message,
         code="finviz_screen_filters_invalid",
         operation="finviz_screen",
-        details={"received_type": type(filters).__name__},
+        details=details,
     )
 
 
-def _parse_finviz_screen_shorthand(raw: str) -> Optional[Dict[str, Any]]:
+def _finviz_screen_shorthand_token_map() -> Optional[Dict[str, tuple[str, str]]]:
     try:
         from finvizfinance.screener.base import filter_dict
     except ImportError:
@@ -575,6 +585,13 @@ def _parse_finviz_screen_shorthand(raw: str) -> Optional[Dict[str, Any]]:
             code = str(option_code or "").strip()
             if prefix and code:
                 reverse_filters[f"{prefix}_{code}"] = (str(filter_name), str(option_name))
+    return reverse_filters
+
+
+def _parse_finviz_screen_shorthand(raw: str) -> Optional[Dict[str, Any]]:
+    reverse_filters = _finviz_screen_shorthand_token_map()
+    if reverse_filters is None:
+        return None
 
     filters: Dict[str, Any] = {}
     for token in [part.strip() for part in raw.split(",") if part.strip()]:
@@ -583,6 +600,14 @@ def _parse_finviz_screen_shorthand(raw: str) -> Optional[Dict[str, Any]]:
             return None
         filters[match[0]] = match[1]
     return filters or None
+
+
+def _unknown_finviz_screen_shorthand_tokens(raw: str) -> List[str]:
+    reverse_filters = _finviz_screen_shorthand_token_map()
+    if reverse_filters is None:
+        return []
+    tokens = [part.strip() for part in raw.split(",") if part.strip()]
+    return [token for token in tokens if token not in reverse_filters]
 
 
 def _compact_finviz_filter_token(value: Any, *, keep_sign: bool = False) -> str:
@@ -668,6 +693,16 @@ def _resolve_finviz_screen_filters(filters: Any) -> tuple[Optional[Dict[str, Any
         parsed = _parse_finviz_screen_shorthand(raw)
         if parsed is not None:
             return parsed, None
+        invalid_tokens = _unknown_finviz_screen_shorthand_tokens(raw)
+        if invalid_tokens:
+            return None, _invalid_finviz_screen_filters_error(
+                filters,
+                reason=(
+                    "Unrecognized Finviz shorthand token(s): "
+                    f"{', '.join(invalid_tokens)}."
+                ),
+                invalid_tokens=invalid_tokens,
+            )
     return None, _invalid_finviz_screen_filters_error(filters)
 
 

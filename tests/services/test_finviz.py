@@ -1432,6 +1432,27 @@ class TestFinvizTools:
         assert result["error_code"] == "finviz_screen_filters_invalid"
         assert result["details"] == {"received_type": "str"}
 
+    def test_finviz_screen_invalid_shorthand_identifies_bad_token(self):
+        from mtdata.core.finviz import finviz_screen
+
+        def _run_direct(_logger, operation, func, **fields):
+            return func()
+
+        token_map = {"cap_largeover": ("Market Cap.", "+Large (over $10bln)")}
+        with (
+            patch("mtdata.core.finviz.run_logged_operation", side_effect=_run_direct),
+            patch(
+                "mtdata.core.finviz._finviz_screen_shorthand_token_map",
+                return_value=token_map,
+            ),
+        ):
+            result = finviz_screen.__wrapped__(filters="cap_largeover,sec_stock")
+
+        assert result["success"] is False
+        assert result["error_code"] == "finviz_screen_filters_invalid"
+        assert "Unrecognized Finviz shorthand token(s): sec_stock" in result["error"]
+        assert result["details"]["invalid_tokens"] == ["sec_stock"]
+
     @patch('mtdata.core.finviz.screen_stocks')
     def test_finviz_screen_tool_accepts_dict_filters(self, mock_screen):
         """Test finviz_screen tool accepts dict filters directly."""

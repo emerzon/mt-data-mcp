@@ -161,6 +161,12 @@ Screen stocks using Finviz's powerful filter engine.
 # Tech stocks on NASDAQ
 mtdata-cli finviz_screen --filters '{"Exchange": "NASDAQ", "Sector": "Technology"}' --json
 
+# Same screen using compact key=value syntax
+mtdata-cli finviz_screen --filters "exchange=NASDAQ,sector=Technology" --json
+
+# Same screen using native Finviz shorthand tokens
+mtdata-cli finviz_screen --filters "exch_nasd,sec_technology" --json
+
 # Large-cap value stocks
 mtdata-cli finviz_screen --filters '{"Market Cap.": "Large ($10bln to $200bln)", "P/E": "Under 15"}' --json
 
@@ -173,13 +179,15 @@ mtdata-cli finviz_screen --filters '{"Sector": "Healthcare"}' --order "-marketca
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `--filters` | (optional) | JSON string of filter criteria |
+| `--filters` | (optional) | JSON object, `key=value` pairs, or Finviz shorthand tokens |
 | `--order` | (optional) | Sort: e.g., `-marketcap` (desc), `price` (asc) |
-| `--limit` | 50 | Max results |
+| `--limit` | 20 | Max results per page |
 | `--page` | 1 | Pagination page |
 | `--view` | `overview` | `overview`, `valuation`, `financial`, `ownership`, `performance`, `technical` |
 
 **Common filter keys:** `Exchange`, `Index`, `Sector`, `Industry`, `Country`, `Market Cap.`, `P/E`, `Forward P/E`, `PEG`, `P/S`, `P/B`, `Dividend Yield`, `EPS growth this year`, `Return on Equity`, `Current Ratio`, `Analyst Recom.`, `RSI (14)`, `50-Day Simple Moving Average`, `Average Volume`, `Price`, `Beta`.
+
+**Filter formats:** JSON uses exact Finviz names, for example `{"Exchange":"NASDAQ"}`. Key-value pairs use compact keys and values such as `country=USA,marketcap=mega`. Native shorthand uses Finviz URL tokens such as `cap_largeover,exch_nyse`; invalid tokens are reported in the error details.
 
 ---
 
