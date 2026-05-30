@@ -89,7 +89,9 @@ _TRADE_PLACE_PREVIEW_KEYS = (
     "expiration_normalized",
 )
 _TRADE_PLACE_BASIC_KEYS = _TRADE_PLACE_PREVIEW_KEYS + (
+    "actionability",
     "actionability_reason",
+    "preview_scope_summary",
     "validation_not_performed",
     "warnings",
     "guardrails_preview",
@@ -130,11 +132,13 @@ def _trade_rows_to_dataframe(rows: Any, *, pd_module: Any) -> Any:
 def _resolve_trade_place_preview_detail(request: TradePlaceRequest) -> str:
     contract = resolve_output_contract(
         request,
-        detail=request.preview_detail,
+        detail=request.detail,
         default_detail="compact",
     )
     if contract.shape_detail == "full":
         return "full"
+    if contract.detail in {"standard", "summary"}:
+        return "basic"
     return "preview"
 
 

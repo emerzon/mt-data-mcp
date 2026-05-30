@@ -128,7 +128,7 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("trade_place", "dry_run"): (
         "Preview the order without sending it to the broker."
     ),
-    ("trade_place", "preview_detail"): (
+    ("trade_place", "detail"): (
         "Dry-run preview detail: compact for key checks, full for execution diagnostics."
     ),
     ("trade_place", "require_sl_tp"): (

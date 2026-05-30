@@ -279,7 +279,7 @@ def test_run_trade_place_dry_run_returns_preview_without_execution():
         stop_loss=1.08,
         take_profit=1.12,
         dry_run=True,
-        preview_detail="full",
+        detail="full",
     )
     place_market_order = MagicMock(return_value={"success": True, "path": "market"})
     place_pending_order = MagicMock(return_value={"success": True, "path": "pending"})

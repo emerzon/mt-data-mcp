@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import Annotated, Literal, Optional, Union
+from typing import Literal, Optional, Union
 
-from pydantic import AliasChoices, BaseModel, BeforeValidator, Field, field_validator
+from pydantic import AliasChoices, BaseModel, Field, field_validator
 
 from ...shared.schema import CompactFullDetailLiteral, TimeframeLiteral
 from ...utils.barriers import normalize_trade_direction
@@ -27,21 +27,6 @@ def _normalize_trade_direction_alias(value: Optional[str]) -> Optional[str]:
     if error is None and normalized is not None:
         return normalized
     return value
-
-
-def _normalize_trade_place_preview_detail(value: object) -> str:
-    if value is None:
-        return "compact"
-    normalized = str(value).strip().lower()
-    if normalized in {"preview", "basic", "standard", "summary", "compact"}:
-        return "compact"
-    return normalized
-
-
-TradePlacePreviewDetail = Annotated[
-    Literal["compact", "full"],
-    BeforeValidator(_normalize_trade_place_preview_detail),
-]
 
 
 class TradePlaceRequest(BaseModel):
@@ -79,13 +64,12 @@ class TradePlaceRequest(BaseModel):
         default=False,
         description="Preview the order without sending it to the broker.",
     )
-    preview_detail: TradePlacePreviewDetail = Field(
+    detail: CompactFullDetailLiteral = Field(
         default="compact",
-        validation_alias=AliasChoices("preview_detail", "detail"),
         description=(
-            "Dry-run preview detail level. Use compact for routing/local checks "
-            "or full for MT5 validation details. Legacy preview/basic/standard/"
-            "summary values normalize to compact."
+            "Response detail level. Compact returns the lean dry-run preview; "
+            "standard and summary add local validation context; full keeps all "
+            "preview diagnostics."
         ),
     )
     require_sl_tp: bool = Field(
@@ -115,6 +99,10 @@ class TradeModifyRequest(BaseModel):
     model_config = {"populate_by_name": True}
 
     ticket: Union[int, str]
+    detail: CompactFullDetailLiteral = Field(
+        default="compact",
+        description="Response detail level for modify previews and result payloads.",
+    )
     price: Optional[Union[int, float]] = None
     stop_loss: Optional[Union[int, float]] = Field(
         default=None,
@@ -141,6 +129,10 @@ class TradeModifyRequest(BaseModel):
 
 class TradeCloseRequest(BaseModel):
     ticket: Optional[Union[int, str]] = None
+    detail: CompactFullDetailLiteral = Field(
+        default="compact",
+        description="Response detail level for close previews and result payloads.",
+    )
     close_all: bool = Field(
         default=False,
         description="Close all matching open positions instead of a single ticket.",

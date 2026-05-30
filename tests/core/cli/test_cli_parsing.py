@@ -18,8 +18,11 @@ import pytest
 
 from mtdata.core.data.requests import DataFetchCandlesRequest
 from mtdata.core.trading.requests import (
+    TradeCloseRequest,
     TradeGetOpenRequest,
     TradeHistoryRequest,
+    TradeModifyRequest,
+    TradePlaceRequest,
     TradeRiskAnalyzeRequest,
 )
 from mtdata.forecast.requests import ForecastGenerateRequest
@@ -48,6 +51,7 @@ from mtdata.core.cli import (
     _normalize_cli_list_value,
     _parse_kv_string,
     _parse_set_overrides,
+    get_function_info,
     _resolve_param_kwargs,
     add_dynamic_arguments,
 )
@@ -519,6 +523,26 @@ class TestAddDynamicArguments:
         assert not any(action.dest == "summary_only" for action in parser._actions)
         args = parser.parse_args(["--detail", "standard"])
         assert args.detail == "standard"
+
+    def test_trading_order_commands_expose_canonical_detail(self):
+        for cmd_name, model_type, argv in (
+            ("trade_place", TradePlaceRequest, ["--detail", "summary"]),
+            ("trade_modify", TradeModifyRequest, ["123", "--detail", "summary"]),
+            ("trade_close", TradeCloseRequest, ["--detail", "summary"]),
+        ):
+            parser = argparse.ArgumentParser()
+
+            def tool(request):
+                pass
+
+            tool.__annotations__ = {"request": model_type}
+            func_info = get_function_info(tool)
+            add_dynamic_arguments(parser, func_info, cmd_name=cmd_name)
+
+            assert any(action.dest == "detail" for action in parser._actions)
+            assert not any(action.dest == "preview_detail" for action in parser._actions)
+            args = parser.parse_args(argv)
+            assert args.detail == "summary"
 
     def test_partial_flag_prefix_is_rejected_when_abbrev_disabled(self, capsys):
         parser = argparse.ArgumentParser(allow_abbrev=False)

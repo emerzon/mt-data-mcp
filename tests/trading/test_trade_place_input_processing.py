@@ -13,7 +13,11 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../s
 
 from mtdata.core.trading import trade_modify as _trade_modify_tool
 from mtdata.core.trading import trade_place as _trade_place_tool
-from mtdata.core.trading.requests import TradeModifyRequest, TradePlaceRequest
+from mtdata.core.trading.requests import (
+    TradeCloseRequest,
+    TradeModifyRequest,
+    TradePlaceRequest,
+)
 from mtdata.core.trading.validation import _normalize_order_type_input
 
 
@@ -33,15 +37,17 @@ def trade_modify(**kwargs):
     return _trade_modify_tool(request=request, __cli_raw=raw_output)
 
 
-def test_trade_place_request_uses_preview_detail_canonical_field() -> None:
+def test_trading_order_requests_expose_canonical_detail_field() -> None:
     fields = TradePlaceRequest.model_fields
 
-    assert "preview_detail" in fields
-    assert "detail" not in fields
-    assert TradePlaceRequest(detail="full").preview_detail == "full"
-    assert TradePlaceRequest(detail="compact").preview_detail == "compact"
-    assert TradePlaceRequest(detail="standard").preview_detail == "compact"
-    assert TradePlaceRequest(preview_detail="basic").preview_detail == "compact"
+    assert "detail" in fields
+    assert "preview_detail" not in fields
+    assert TradePlaceRequest(detail="full").detail == "full"
+    assert TradePlaceRequest(detail="compact").detail == "compact"
+    assert TradePlaceRequest(detail="standard").detail == "standard"
+    assert TradePlaceRequest(detail="summary").detail == "summary"
+    assert TradeModifyRequest(ticket=100, detail="summary").detail == "summary"
+    assert TradeCloseRequest(detail="summary").detail == "summary"
 
 
 def test_normalize_order_type_rejects_mt5_integer() -> None:
@@ -235,7 +241,7 @@ def test_trade_place_dry_run_preview_detail_omits_safety_lists() -> None:
             stop_loss=64000,
             take_profit=68000,
             dry_run=True,
-            preview_detail="compact",
+            detail="compact",
             __cli_raw=True,
         )
 
@@ -246,6 +252,33 @@ def test_trade_place_dry_run_preview_detail_omits_safety_lists() -> None:
     assert "warnings" not in out
     assert "validation_not_performed" not in out
     assert "guardrails_preview" not in out
+    assert "validation_scope" not in out
+    assert "trade_gate_passed" not in out
+    mock_market.assert_not_called()
+
+
+def test_trade_place_dry_run_standard_detail_keeps_validation_context() -> None:
+    with patch("mtdata.core.trading._place_market_order") as mock_market, patch(
+        "mtdata.core.trading.build_trade_place_dry_run_preview",
+        return_value={"bid": 64999.0, "ask": 65001.0, "estimated_fill_price": 65001.0},
+    ):
+        out = trade_place(
+            symbol="BTCUSD",
+            volume=0.03,
+            order_type="BUY",
+            stop_loss=64000,
+            take_profit=68000,
+            dry_run=True,
+            detail="standard",
+            __cli_raw=True,
+        )
+
+    assert out.get("success") is True
+    assert out.get("dry_run") is True
+    assert out.get("actionability") == "preview_only"
+    assert "preview_scope_summary" in out
+    assert "warnings" in out
+    assert "guardrails_preview" in out
     assert "validation_scope" not in out
     assert "trade_gate_passed" not in out
     mock_market.assert_not_called()
