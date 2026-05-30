@@ -948,6 +948,26 @@ class TestFinvizTools:
         assert "omitted_field_count" not in result
 
     @patch("mtdata.core.finviz.get_stock_fundamentals")
+    def test_finviz_fundamentals_full_omits_opaque_freshness_basis(
+        self,
+        mock_get_fundamentals,
+    ):
+        from mtdata.core.finviz import finviz_fundamentals
+
+        mock_get_fundamentals.return_value = {
+            "success": True,
+            "symbol": "AAPL",
+            "fundamentals": {"Price": "270.00"},
+        }
+
+        raw = getattr(finviz_fundamentals, "__wrapped__", finviz_fundamentals)
+        result = raw("AAPL", detail="full")
+
+        assert result["price_source"] == "finviz_delayed"
+        assert result["freshness"] == "delayed, timestamp unavailable"
+        assert "freshness_basis" not in result
+
+    @patch("mtdata.core.finviz.get_stock_fundamentals")
     def test_finviz_fundamentals_flags_stale_52w_high(self, mock_get_fundamentals):
         from mtdata.core.finviz import finviz_fundamentals
 

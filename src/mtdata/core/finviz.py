@@ -2062,8 +2062,6 @@ def _filter_finviz_fundamentals_payload(
             delayed=True,
             timestamp_available=False,
         )
-        if detail_mode == "full":
-            out["freshness_basis"] = "finviz_delayed_no_timestamp"
     if category_input != category_mode:
         out["category_requested"] = category_input
     if detail_mode == "full":
