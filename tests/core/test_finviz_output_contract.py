@@ -115,11 +115,14 @@ class TestFinvizCalendarOutputContract:
 
         assert result["date_from"] == "2026-01-05"
         assert result["date_to"] == "2026-01-12"
-        assert result["timezone"] == "America/New_York"
+        assert result["timezone"] == "UTC"
         assert result["items"] == [
             {
-                "date": "2026-01-06T13:30:00",
+                "date": "2026-01-06T18:30:00Z",
+                "local_time": "2026-01-06T13:30:00-05:00",
+                "local_timezone": "America/New_York",
                 "event": "CPI",
+                "impact": "high",
                 "importance": 3,
                 "source_id": "USD",
                 "country": "United States",
@@ -193,7 +196,10 @@ class TestFinvizCalendarOutputContract:
                 "source_id": "FDTR",
                 "event": "Fed Cook Speech",
                 "category": "Interest Rate",
-                "date": "2026-05-08T05:45:00",
+                "date": "2026-05-08T09:45:00Z",
+                "local_time": "2026-05-08T05:45:00-04:00",
+                "local_timezone": "America/New_York",
+                "impact": "medium",
                 "importance": 2,
             }
         ]
@@ -226,7 +232,10 @@ class TestFinvizCalendarOutputContract:
             {
                 "source_id": "USD",
                 "event": "US CPI",
-                "date": "2026-05-08T08:30:00",
+                "date": "2026-05-08T12:30:00Z",
+                "local_time": "2026-05-08T08:30:00-04:00",
+                "local_timezone": "America/New_York",
+                "impact": "high",
                 "importance": 3,
                 "country": "United States",
                 "country_code": "US",
@@ -242,6 +251,7 @@ class TestFinvizCalendarOutputContract:
                     "calendar_id": 419986,
                     "symbol": "FDTR",
                     "event": "Fed Cook Speech",
+                    "importance": 2,
                     "non_emptiness_score": 0,
                 }
             ],
@@ -254,6 +264,8 @@ class TestFinvizCalendarOutputContract:
                 "calendar_id": 419986,
                 "symbol": "FDTR",
                 "event": "Fed Cook Speech",
+                "importance": 2,
+                "impact": "medium",
                 "non_emptiness_score": 0,
             }
         ]

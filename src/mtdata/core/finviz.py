@@ -1188,8 +1188,15 @@ _FINVIZ_CALENDAR_COMPACT_FIELDS = (
     "sales_actual",
     "dividend",
     "amount",
+    "impact",
     "importance",
 )
+
+_FINVIZ_CALENDAR_IMPORTANCE_LABELS = {
+    1: "low",
+    2: "medium",
+    3: "high",
+}
 
 
 def _normalize_finviz_output_key(key: Any) -> str:
@@ -1425,6 +1432,23 @@ def _normalize_finviz_economic_calendar_time(item: Dict[str, Any]) -> Dict[str, 
     return normalized
 
 
+def _finviz_calendar_importance_label(value: Any) -> Optional[str]:
+    try:
+        importance = int(value)
+    except (TypeError, ValueError):
+        return None
+    return _FINVIZ_CALENDAR_IMPORTANCE_LABELS.get(importance)
+
+
+def _add_finviz_calendar_impact_label(item: Dict[str, Any]) -> Dict[str, Any]:
+    normalized = dict(item)
+    if normalized.get("impact") in (None, ""):
+        impact = _finviz_calendar_importance_label(normalized.get("importance"))
+        if impact is not None:
+            normalized["impact"] = impact
+    return normalized
+
+
 def _finviz_price_target_fields(value: Any) -> Dict[str, Any]:
     if value in (None, ""):
         return {}
@@ -1637,6 +1661,12 @@ def _normalize_finviz_calendar_payload(
         if str(calendar_type or "economic").strip().lower() == "economic":
             normalized_items = [
                 _normalize_finviz_economic_calendar_time(item)
+                if isinstance(item, dict)
+                else item
+                for item in normalized_items
+            ]
+            normalized_items = [
+                _add_finviz_calendar_impact_label(item)
                 if isinstance(item, dict)
                 else item
                 for item in normalized_items

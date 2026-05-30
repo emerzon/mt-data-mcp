@@ -1895,6 +1895,7 @@ class TestFinvizTools:
                 "date": "2026-01-04T13:30:00Z",
                 "local_time": "2026-01-04T08:30:00-05:00",
                 "local_timezone": "America/New_York",
+                "impact": "high",
                 "importance": 3,
             }
         ]
