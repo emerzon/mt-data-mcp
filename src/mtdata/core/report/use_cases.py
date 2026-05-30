@@ -12,6 +12,11 @@ from .requests import ReportGenerateRequest
 
 logger = logging.getLogger(__name__)
 
+_BARRIER_EV_EDGE_CONFLICT_NOTE = (
+    "Expected-value and historical edge disagree; treat this barrier setup as "
+    "lower-confidence and wait for confirmation or reduce size."
+)
+
 
 def _report_time_label(value: Any) -> str | None:
     if isinstance(value, str) and value.strip():
@@ -150,6 +155,29 @@ def _prioritize_report_payload(report: Dict[str, Any]) -> Dict[str, Any]:
     return ordered
 
 
+def _add_barrier_conflict_notes(summary_structured: Any) -> Any:
+    if not isinstance(summary_structured, dict):
+        return summary_structured
+    barriers = summary_structured.get("barriers")
+    if not isinstance(barriers, dict):
+        return summary_structured
+
+    changed = False
+    barriers_out: Dict[str, Any] = {}
+    for name, entry in barriers.items():
+        if isinstance(entry, dict) and bool(entry.get("ev_edge_conflict")):
+            entry = dict(entry)
+            entry.setdefault("trading_note", _BARRIER_EV_EDGE_CONFLICT_NOTE)
+            changed = True
+        barriers_out[name] = entry
+    if not changed:
+        return summary_structured
+
+    out = dict(summary_structured)
+    out["barriers"] = barriers_out
+    return out
+
+
 def _compact_report_payload(
     report: Dict[str, Any],
     *,
@@ -191,6 +219,8 @@ def _compact_report_payload(
     for key in ("summary_structured", "sections_status"):
         value = report.get(key)
         if value not in (None, "", [], {}):
+            if key == "summary_structured":
+                value = _add_barrier_conflict_notes(value)
             compact[key] = value
     if "summary_structured" not in compact:
         summary = report.get("summary")
@@ -669,6 +699,7 @@ def run_report_generate(  # noqa: C901
                                     details.append("ev_edge_conflict_reason=ev and edge have opposite signs")
                                     barrier_entry["ev_edge_conflict"] = True
                                     barrier_entry["conflict_reason"] = "ev and edge have opposite signs"
+                                    barrier_entry["trading_note"] = _BARRIER_EV_EDGE_CONFLICT_NOTE
                         except Exception:
                             pass
                         if details:
@@ -709,6 +740,7 @@ def run_report_generate(  # noqa: C901
                                     details.append("ev_edge_conflict_reason=ev and edge have opposite signs")
                                     barrier_entry["ev_edge_conflict"] = True
                                     barrier_entry["conflict_reason"] = "ev and edge have opposite signs"
+                                    barrier_entry["trading_note"] = _BARRIER_EV_EDGE_CONFLICT_NOTE
                         except Exception:
                             pass
                         if details:

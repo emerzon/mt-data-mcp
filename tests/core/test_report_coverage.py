@@ -226,6 +226,9 @@ def test_compact_report_payload_elevates_barrier_conflicts():
         "existing warning",
         "Barrier EV/edge conflict detected for long and short direction(s).",
     ]
+    assert "Expected-value and historical edge disagree" in (
+        out["summary_structured"]["barriers"]["long"]["trading_note"]
+    )
 
 
 def test_report_generate_compact_keeps_actionable_section_summaries():
@@ -797,6 +800,7 @@ class TestReportSummaryBarriers:
         assert structured["edge"] == -0.1
         assert structured["ev_edge_conflict"] is True
         assert structured["conflict_reason"] == "ev and edge have opposite signs"
+        assert "Expected-value and historical edge disagree" in structured["trading_note"]
 
     def test_no_barriers_section(self):
         sec = _make_full_sections()
