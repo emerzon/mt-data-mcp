@@ -176,7 +176,7 @@ def test_trade_risk_analyze_compact_keeps_blocked_sizing_context() -> None:
         )
 
     assert out["position_sizing"] == {
-        "status": "blocked",
+        "status": "risk_too_small_for_min_lot",
         "suggested_volume": 0.0,
         "risk_currency": 0.0,
         "risk_pct": 0.0,
@@ -203,7 +203,7 @@ def test_trade_risk_analyze_marks_position_sizing_incomplete_without_required_in
 
     assert out["success"] is True
     assert out["account"]["login"] == 123456
-    assert out["position_sizing"]["status"] == "incomplete"
+    assert out["position_sizing"]["status"] == "parameters_missing"
     assert out["position_sizing"]["missing"] == [
         "desired_risk_pct",
         "entry",
@@ -290,7 +290,7 @@ def test_trade_risk_analyze_keeps_exposure_analysis_with_partial_sizing_params()
     assert out["success"] is True
     assert "portfolio_risk" in out
     sizing = out["position_sizing"]
-    assert sizing["status"] == "incomplete"
+    assert sizing["status"] == "parameters_missing"
     assert set(sizing["missing"]) == {"entry", "stop_loss"}
     assert "provided" not in sizing
     assert "required_for_sizing" not in sizing
@@ -366,7 +366,7 @@ def test_trade_risk_analyze_blocks_min_volume_risk_overshoot_by_default() -> Non
         )
 
     sizing = out["position_sizing"]
-    assert sizing["status"] == "blocked"
+    assert sizing["status"] == "risk_too_small_for_min_lot"
     assert sizing["suggested_volume"] == 0.0
     assert sizing["min_viable_volume"] == 0.1
     assert sizing["min_viable_risk_pct"] > sizing["requested_risk_pct"]

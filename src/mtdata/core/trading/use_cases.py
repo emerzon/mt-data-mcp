@@ -486,7 +486,7 @@ def _compact_trade_risk_position_sizing(
 ) -> Dict[str, Any]:
     if not isinstance(position_sizing, dict):
         return position_sizing
-    if position_sizing.get("status") == "incomplete":
+    if position_sizing.get("status") == "parameters_missing":
         return {
             key: position_sizing[key]
             for key in ("status", "message", "missing")
@@ -2584,7 +2584,7 @@ def run_trade_risk_analyze(  # noqa: C901
                     + "."
                 )
                 position_sizing: Dict[str, Any] = {
-                    "status": "incomplete",
+                    "status": "parameters_missing",
                     "message": _missing_msg,
                     "missing": position_sizing_missing,
                     "required_for_sizing": [
@@ -2826,7 +2826,11 @@ def run_trade_risk_analyze(  # noqa: C901
                         "symbol": request.symbol,
                         "direction": direction_norm,
                         "direction_source": direction_source,
-                        **({"status": "blocked"} if strict_risk_blocked else {}),
+                        **(
+                            {"status": "risk_too_small_for_min_lot"}
+                            if strict_risk_blocked
+                            else {}
+                        ),
                         "suggested_volume": suggested_volume,
                         "requested_risk_currency": round(risk_amount, 2),
                         "requested_risk_pct": float(request.desired_risk_pct),
