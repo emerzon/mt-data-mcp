@@ -531,7 +531,6 @@ def _fetch_rates_with_warmup(
             if (
                 not start_datetime
                 and not end_datetime
-                and not include_incomplete
                 and not _is_last_bar_forming(
                     rates,
                     timeframe,

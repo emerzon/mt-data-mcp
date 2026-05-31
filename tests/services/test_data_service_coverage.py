@@ -458,8 +458,8 @@ class TestFetchRatesWithWarmup(unittest.TestCase):
         self.assertIsNotNone(result)
 
     @patch(_RATES_FROM)
-    def test_sanity_check_rejects_stale_rates_after_retries(self, mock_from):
-        """Stale bars should fail instead of being returned after retry exhaustion."""
+    def test_include_incomplete_relaxes_closed_market_stale_policy(self, mock_from):
+        """Requesting a forming candle should not block closed-market history."""
         stale_rates = _make_rates(5, base_ts=60 * 60 * 5, step=60 * 60)
         mock_from.return_value = stale_rates
         diagnostics = {}
@@ -473,10 +473,9 @@ class TestFetchRatesWithWarmup(unittest.TestCase):
                 include_incomplete=True,
                 retry=True, sanity_check=True, diagnostics=diagnostics,
             )
-        self.assertIsNone(result)
-        self.assertIn('Data appears stale for EURUSD H1', err)
-        self.assertIn('allow_stale=true', err)
-        self.assertEqual(mock_from.call_count, 2)
+        self.assertIsNone(err)
+        self.assertEqual(result, stale_rates)
+        self.assertEqual(mock_from.call_count, 1)
         self.assertEqual(
             diagnostics['freshness'],
             {
@@ -485,6 +484,9 @@ class TestFetchRatesWithWarmup(unittest.TestCase):
                 'freshness_cutoff_epoch': float((12 * 60 * 60) - (3 * 60 * 60)),
                 'data_freshness_seconds': float((12 * 60 * 60) - stale_rates[-1]['time']),
                 'last_bar_within_policy_window': False,
+                'freshness_policy_relaxed': 'latest_completed_bar_for_live_request',
+                'market_session_status': 'closed_or_idle',
+                'freshness_note': 'Market appears closed or idle; showing the latest completed bar.',
             },
         )
 
