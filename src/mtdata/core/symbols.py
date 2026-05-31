@@ -1824,6 +1824,27 @@ def _normalize_market_scan_rank_by(value: Any) -> tuple[str, Optional[str]]:
     return _MARKET_SCAN_RANK_BY_ALIASES.get(raw_value, raw_value), raw_value
 
 
+def _market_scan_ranking_label(
+    rank_by: str,
+    *,
+    rsi_above: Optional[float] = None,
+    rsi_below: Optional[float] = None,
+) -> str:
+    if rank_by == "abs_price_change_pct":
+        return "largest_abs_price_change_pct"
+    if rank_by == "price_change_pct":
+        return "highest_price_change_pct"
+    if rank_by == "tick_volume":
+        return "highest_tick_volume"
+    if rank_by == "spread_pct":
+        return "lowest_spread_pct"
+    if rank_by == "rsi" and rsi_below is not None and rsi_above is None:
+        return "lowest_rsi"
+    if rank_by == "rsi":
+        return "highest_rsi"
+    return str(rank_by)
+
+
 @mcp.tool()
 def symbols_top_markets(  # noqa: C901
     rank_by: Literal[
@@ -2654,6 +2675,12 @@ def market_scan(  # noqa: C901
                 "success": True,
                 "data": table_payload["rows"],
                 "count": table_payload["row_count"],
+                "rank_by": rank_by_value,
+                "ranking": _market_scan_ranking_label(
+                    rank_by_value,
+                    rsi_above=rsi_above,
+                    rsi_below=rsi_below,
+                ),
                 "requested_limit": int(limit_value),
                 "offset": int(offset_value),
                 "returned_count": int(table_payload["row_count"]),

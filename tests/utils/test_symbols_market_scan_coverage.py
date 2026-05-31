@@ -645,6 +645,8 @@ class TestMarketScan:
         assert "open" in result["columns"]
         assert "real_volume" in result["columns"]
         assert result["count"] == 1
+        assert result["rank_by"] == "abs_price_change_pct"
+        assert result["ranking"] == "largest_abs_price_change_pct"
         assert result["data"][0]["symbol"] == "EURUSD"
         assert result["data"][0]["rsi"] == 100.0
         assert result["data"][0]["sma_value"] == 5.0
@@ -679,6 +681,8 @@ class TestMarketScan:
         assert result["success"] is True
         assert "columns" not in result
         assert result["count"] == 1
+        assert result["rank_by"] == "abs_price_change_pct"
+        assert result["ranking"] == "largest_abs_price_change_pct"
         assert result["requested_limit"] == 5
         assert result["returned_count"] == 1
         assert result["universe_size"] == 1
