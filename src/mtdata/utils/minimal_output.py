@@ -1650,13 +1650,9 @@ def _normalize_library_models_payload(
                     model_name = row.get("method")
                 if _is_empty_value(model_name):
                     model_name = row.get("adapter_method")
-                description = row.get("description")
-                if isinstance(description, str):
-                    description = description.splitlines()[0].strip()
                 compact = {
                     "model": model_name,
                     "available": row.get("available"),
-                    "description": description,
                 }
                 compact_rows.append(
                     {
@@ -1674,7 +1670,6 @@ def _normalize_library_models_payload(
                 if isinstance(item, dict):
                     compact = {
                         "model": item.get("display_name") or item.get("method"),
-                        "description": item.get("description") or item.get("notes"),
                     }
                     compact_rows.append(
                         {

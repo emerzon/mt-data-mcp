@@ -1218,11 +1218,9 @@ class TestFormatResultForCli:
             cmd_name="forecast_list_library_models",
         )
 
-        assert "models[2]{model,available,description}" in result
-        assert (
-            "analog,true,Nearest-neighbor analog forecast using pattern matching."
-            in result
-        )
+        assert "models[2]{model,available}" in result
+        assert "analog,true" in result
+        assert "Nearest-neighbor analog forecast using pattern matching." not in result
         assert "capabilities" not in result
         assert "Long serialized parameter spec" not in result
         assert "show_all_hint" in result
