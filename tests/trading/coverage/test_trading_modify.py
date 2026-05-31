@@ -500,6 +500,26 @@ class TestModifyPendingOrder:
         assert result.get("success") is True
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_broker_no_changes_retcode_is_pending_modify_success(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.TRADE_RETCODE_NO_CHANGES = 10025
+        mt5.orders_get.return_value = [_pending_order(price_open=1.095)]
+        mt5.order_send.return_value = SimpleNamespace(
+            retcode=10025,
+            comment="No changes",
+            request_id=123,
+        )
+        from mtdata.core.trading import _modify_pending_order
+
+        result = _modify_pending_order(ticket=100, price=1.095)
+
+        assert result.get("success") is True
+        assert result.get("no_change") is True
+        assert result["retcode"] == 10025
+        assert result["pending_order_ticket"] == 100
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_dry_run_validates_and_skips_order_send(self):
         mt5 = sys.modules["MetaTrader5"]
         self._setup_mt5(mt5)

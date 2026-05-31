@@ -659,11 +659,33 @@ def _modify_pending_order(
                     out["comment_fallback"] = comment_fallback
                 return out
 
-            if getattr(result, "retcode", None) != mt5.TRADE_RETCODE_DONE:
+            result_retcode = getattr(result, "retcode", None)
+            no_change_code = validation._safe_int_attr(mt5, "TRADE_RETCODE_NO_CHANGES", 10025)
+            if result_retcode == no_change_code:
+                out = {
+                    "success": True,
+                    "no_change": True,
+                    "retcode": result_retcode,
+                    "retcode_name": mt5.retcode_name(result_retcode),
+                    "comment": getattr(result, "comment", None),
+                    "request_id": getattr(result, "request_id", None),
+                    "applied_price": request.get("price"),
+                    "applied_sl": request.get("sl"),
+                    "applied_tp": request.get("tp"),
+                    "applied_expiration": request.get("expiration"),
+                    "pending_order_ticket": resolved_ticket,
+                    "ticket_requested": ticket_id,
+                    "ticket_resolution": ticket_resolution,
+                }
+                if isinstance(comment_fallback, dict):
+                    out["comment_fallback"] = comment_fallback
+                return out
+
+            if result_retcode != mt5.TRADE_RETCODE_DONE:
                 out = {
                     "error": "Failed to modify pending order",
-                    "retcode": result.retcode,
-                    "retcode_name": mt5.retcode_name(result.retcode),
+                    "retcode": result_retcode,
+                    "retcode_name": mt5.retcode_name(result_retcode),
                     "comment": result.comment,
                     "request_id": result.request_id,
                     "last_error": last_error,
