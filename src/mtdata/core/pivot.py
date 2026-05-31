@@ -573,6 +573,8 @@ def support_resistance_levels(
     `None` for all levels.
     Set `extras="metadata"` to return the full diagnostic payload without
     changing every command call site to `detail="full"`.
+    Level `type` reflects current price geometry; `dominant_source` reflects
+    whether historical tests mostly behaved as support or resistance.
 
     Score combines:
     - repeated tests of a level
