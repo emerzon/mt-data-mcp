@@ -161,6 +161,11 @@ def test_trade_place_require_sl_tp_needs_inputs_before_market_send() -> None:
     assert "error" in out
     assert out.get("require_sl_tp") is True
     assert set(out.get("missing", [])) == {"stop_loss", "take_profit"}
+    assert "trade_risk_analyze" in out.get("hint", "")
+    assert out.get("related_tools") == [
+        "trade_risk_analyze",
+        "forecast_barrier_optimize",
+    ]
     mock_prevalidate.assert_called_once_with("BTCUSD", 0.03)
     mock_market.assert_not_called()
 

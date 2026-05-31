@@ -1052,8 +1052,14 @@ def run_trade_place(  # noqa: C901
                             "missing": missing_protection,
                             "hint": (
                                 "Provide both --stop-loss and --take-profit, "
-                                "or explicitly set --require-sl-tp false."
+                                "or explicitly set --require-sl-tp false. "
+                                "Use trade_risk_analyze for position sizing or "
+                                "forecast_barrier_optimize for barrier levels."
                             ),
+                            "related_tools": [
+                                "trade_risk_analyze",
+                                "forecast_barrier_optimize",
+                            ],
                         },
                         order_type=order_type_norm,
                         pending=is_pending,
