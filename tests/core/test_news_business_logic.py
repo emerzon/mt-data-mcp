@@ -50,6 +50,8 @@ def test_news_tool_forwards_symbol(monkeypatch) -> None:
 
     assert result["success"] is True
     assert result["symbol"] == "EURUSD"
+    assert result["data_fetched_at"].endswith("Z")
+    assert "T" in result["data_fetched_at"]
 
 
 def test_news_tool_limits_globally_without_changing_default(monkeypatch) -> None:

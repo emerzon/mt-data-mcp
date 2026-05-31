@@ -78,6 +78,15 @@ def _news_time_utc_text(value: datetime) -> str:
     return published_at.strftime("%Y-%m-%d %H:%M UTC")
 
 
+def _news_data_fetched_at() -> str:
+    return (
+        datetime.now(timezone.utc)
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
+
+
 def _news_relative_time_text(value: datetime) -> Optional[str]:
     published_at = value.astimezone(timezone.utc)
 
@@ -384,6 +393,7 @@ def news(
             offset=offset_value,
         )
         out = _attach_news_row_keys(out)
+        out.setdefault("data_fetched_at", _news_data_fetched_at())
         if detail_mode == "full":
             out.setdefault("tool_scope", "unified_trading_news")
             out.setdefault("timezone", "UTC")
