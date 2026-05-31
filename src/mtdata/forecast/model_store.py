@@ -242,11 +242,12 @@ class ModelStore:
         model_dir = self._model_dir(method, data_scope, params_hash)
         artifact_path = model_dir / "model.bin"
 
-        if not artifact_path.is_file():
-            raise FileNotFoundError(f"No model artifact at {artifact_path}")
+        with self._lock:
+            if not artifact_path.is_file():
+                raise FileNotFoundError(f"No model artifact at {artifact_path}")
 
-        data = artifact_path.read_bytes()
-        self._touch_last_used(model_dir)
+            data = artifact_path.read_bytes()
+            self._touch_last_used(model_dir)
         return data
 
     def find(

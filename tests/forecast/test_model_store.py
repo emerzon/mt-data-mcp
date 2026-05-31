@@ -178,6 +178,20 @@ class TestModelStoreTTL(unittest.TestCase):
         self.assertEqual(meta["store_metadata"]["compatibility_version"], 1)
         self.assertAlmostEqual(meta["store_metadata"]["last_used"], meta["last_used"], delta=0.01)
 
+    def test_load_updates_last_used_under_store_lock(self):
+        self.store.save("m", "d", "p", b"data")
+        lock_states = []
+        original_touch = self.store._touch_last_used
+
+        def wrapped_touch(model_dir):
+            lock_states.append(self.store._lock.locked())
+            return original_touch(model_dir)
+
+        self.store._touch_last_used = wrapped_touch
+
+        self.assertEqual(self.store.load_bytes("m/d/p"), b"data")
+        self.assertEqual(lock_states, [True])
+
     def test_find_backfills_store_metadata_for_legacy_metadata(self):
         self.store.save("m", "d", "p", b"data")
         meta_path = self.store._model_dir("m", "d", "p") / "metadata.json"
