@@ -317,6 +317,7 @@ def load_environment(*, force: bool = False) -> bool:
         return False
 
     loaded = False
+    attempted = False
     try:
         from dotenv import find_dotenv, load_dotenv  # type: ignore
 
@@ -325,10 +326,12 @@ def load_environment(*, force: bool = False) -> bool:
             loaded = bool(load_dotenv(env_path, override=force))
         else:
             loaded = bool(load_dotenv(override=force))
+        attempted = True
     except Exception:
         loaded = False
 
-    _ENV_LOADED = True
+    if attempted:
+        _ENV_LOADED = True
     config_obj = globals().get("mt5_config")
     if config_obj is not None:
         try:

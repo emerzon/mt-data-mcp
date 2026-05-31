@@ -278,3 +278,57 @@ def test_load_environment_force_reload_overrides_dotenv(monkeypatch):
 
     assert loaded is True
     assert calls == [(".env", True)]
+
+
+def test_load_environment_allows_retry_after_dotenv_failure(monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(cfg, "_ENV_LOADED", False)
+    monkeypatch.setitem(
+        sys.modules,
+        "dotenv",
+        SimpleNamespace(
+            find_dotenv=lambda: (_ for _ in ()).throw(RuntimeError("dotenv failed")),
+            load_dotenv=lambda *args, **kwargs: True,
+        ),
+    )
+    monkeypatch.setattr(
+        cfg,
+        "mt5_config",
+        SimpleNamespace(reload_from_env=lambda **kwargs: None),
+    )
+    monkeypatch.setattr(
+        cfg,
+        "trade_guardrails_config",
+        SimpleNamespace(reload_from_env=lambda: None),
+    )
+    monkeypatch.setattr(
+        cfg,
+        "news_embeddings_config",
+        SimpleNamespace(reload_from_env=lambda: None),
+    )
+    monkeypatch.setattr(
+        cfg,
+        "options_data_config",
+        SimpleNamespace(reload_from_env=lambda: None),
+    )
+
+    loaded = cfg.load_environment()
+
+    assert loaded is False
+    assert cfg._ENV_LOADED is False
+
+    monkeypatch.setitem(
+        sys.modules,
+        "dotenv",
+        SimpleNamespace(
+            find_dotenv=lambda: ".env",
+            load_dotenv=lambda path=None, override=False: calls.append((path, override)) or True,
+        ),
+    )
+
+    loaded = cfg.load_environment()
+
+    assert loaded is True
+    assert cfg._ENV_LOADED is True
+    assert calls == [(".env", False)]
