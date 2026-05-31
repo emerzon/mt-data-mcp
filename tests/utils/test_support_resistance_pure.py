@@ -337,12 +337,13 @@ def test_compact_support_resistance_payload_omits_fibonacci_until_standard_detai
             "dominant_source",
         }
     )
-    assert "fibonacci" in standard
+    assert "fibonacci" not in standard
+    assert "coverage_gaps" not in standard
+    assert "zone_overlap" not in standard
     assert "levels" not in standard
     assert standard["supports"]
     assert standard["resistances"]
     assert "nearest" not in standard
-    assert standard["fibonacci"]["nearest"]["support"]["type"] == "support"
 
 
 def test_compact_support_resistance_levels_keep_strength_context() -> None:

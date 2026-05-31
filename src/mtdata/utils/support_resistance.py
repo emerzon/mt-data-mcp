@@ -2553,13 +2553,9 @@ def standard_support_resistance_payload(payload: Dict[str, Any]) -> Dict[str, An
     out = compact_support_resistance_payload(payload)
 
     for key in (
-        "method",
         "max_distance_pct",
         "volume_weighting",
         "volume_source",
-        "coverage_gaps",
-        "zone_overlap",
-        "meta",
         "window",
     ):
         value = payload.get(key)
@@ -2570,11 +2566,6 @@ def standard_support_resistance_payload(payload: Dict[str, Any]) -> Dict[str, An
     if isinstance(volume_sources, list) and volume_sources:
         out["volume_sources"] = list(volume_sources)
 
-    fibonacci = payload.get("fibonacci")
-    compact_fibonacci = compact_fibonacci_payload(fibonacci)
-    if isinstance(compact_fibonacci, dict) and compact_fibonacci:
-        out["fibonacci"] = compact_fibonacci
-
     supports = _compact_support_resistance_levels(payload.get("supports"), standard=True)
     if supports:
         out["supports"] = supports
@@ -2582,17 +2573,6 @@ def standard_support_resistance_payload(payload: Dict[str, Any]) -> Dict[str, An
     resistances = _compact_support_resistance_levels(payload.get("resistances"), standard=True)
     if resistances:
         out["resistances"] = resistances
-
-    levels_source = payload.get("levels")
-    if not isinstance(levels_source, list):
-        levels_source = []
-        for key in ("supports", "resistances"):
-            values = payload.get(key)
-            if isinstance(values, list):
-                levels_source.extend(values)
-    levels = _compact_support_resistance_levels(levels_source, standard=True)
-    if levels:
-        out["levels"] = levels
 
     return out or dict(payload)
 
@@ -2645,10 +2625,14 @@ def full_support_resistance_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         return payload
 
     out = standard_support_resistance_payload(payload)
+    for key in ("method", "coverage_gaps", "zone_overlap", "meta"):
+        value = payload.get(key)
+        if value not in (None, {}, []):
+            out[key] = value
     if isinstance(payload.get("fibonacci"), dict):
         out["fibonacci"] = dict(payload["fibonacci"])
     diagnostics: Dict[str, Any] = {}
-    for key in ("levels", "supports", "resistances"):
+    for key in ("supports", "resistances"):
         section = _support_resistance_level_diagnostics(payload.get(key))
         if section:
             diagnostics[key] = section

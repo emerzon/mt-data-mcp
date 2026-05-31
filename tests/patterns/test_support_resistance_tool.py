@@ -6,6 +6,18 @@ import pandas as pd
 
 from mtdata.utils.mt5 import MT5ConnectionError
 
+_COMPACT_LEVEL_KEYS = {
+    "type",
+    "value",
+    "distance_pct",
+    "touches",
+    "score",
+    "strength_rank",
+    "role_transition",
+    "source_timeframes",
+    "dominant_source",
+}
+
 
 def _get_support_resistance_fn():
     from mtdata.core.pivot import support_resistance_levels
@@ -63,12 +75,8 @@ def test_support_resistance_tool_returns_weighted_levels():
     assert result["level_counts"] == {"support": 1, "resistance": 1, "total": 2}
     assert len(result["supports"]) == 1
     assert len(result["resistances"]) == 1
-    assert set(result["supports"][0]).issubset(
-        {"type", "value", "distance_pct", "strength_rank"}
-    )
-    assert set(result["resistances"][0]).issubset(
-        {"type", "value", "distance_pct", "strength_rank"}
-    )
+    assert set(result["supports"][0]).issubset(_COMPACT_LEVEL_KEYS)
+    assert set(result["resistances"][0]).issubset(_COMPACT_LEVEL_KEYS)
     assert "fibonacci" not in result
     assert "levels" not in result
     assert "nearest" not in result
@@ -195,9 +203,7 @@ def test_support_resistance_tool_compact_exposes_volume_metadata_when_enabled():
 
     assert "volume_weighting" not in result
     assert "volume_source" not in result
-    assert set(result["supports"][0]).issubset(
-        {"type", "value", "distance_pct", "strength_rank"}
-    )
+    assert set(result["supports"][0]).issubset(_COMPACT_LEVEL_KEYS)
 
 
 def test_support_resistance_tool_standard_detail_keeps_actionable_lists_without_full_diagnostics():
@@ -220,13 +226,15 @@ def test_support_resistance_tool_standard_detail_keeps_actionable_lists_without_
     assert result["detail"] == "standard"
     assert len(result["supports"]) == 1
     assert len(result["resistances"]) == 1
-    assert len(result["levels"]) == 2
     assert result["supports"][0]["type"] == "support"
     assert result["resistances"][0]["type"] == "resistance"
+    assert "levels" not in result
     assert "nearest" not in result
+    assert "fibonacci" not in result
+    assert "coverage_gaps" not in result
+    assert "zone_overlap" not in result
     assert "score_breakdown" not in result["supports"][0]
     assert "source_tests" not in result["supports"][0]
-    assert result["fibonacci"]["nearest"]["support"]["type"] == "support"
 
 
 def test_support_resistance_tool_full_detail_keeps_rows_compact_with_structured_diagnostics():
@@ -247,10 +255,10 @@ def test_support_resistance_tool_full_detail_keeps_rows_compact_with_structured_
         )
 
     assert result["detail"] == "full"
-    assert "score_breakdown" not in result["levels"][0]
-    assert "episode_details" not in result["levels"][0]
-    assert "breakout_analysis" not in result["levels"][0]
-    diagnostics = result["diagnostics"]["levels"]
+    assert "score_breakdown" not in result["supports"][0]
+    assert "episode_details" not in result["supports"][0]
+    assert "breakout_analysis" not in result["supports"][0]
+    diagnostics = result["diagnostics"]["supports"]
     first_detail = next(iter(diagnostics.values()))
     assert isinstance(first_detail["score_breakdown"], dict)
     assert isinstance(first_detail["breakout_analysis"], dict)
