@@ -7,6 +7,7 @@ import sys
 from inspect import signature
 from types import ModuleType, SimpleNamespace
 
+import numpy as np
 import pytest
 from pydantic import ValidationError
 
@@ -722,6 +723,33 @@ def test_run_forecast_backtest_omits_trade_metrics_when_unavailable():
     assert "max_drawdown" not in row
     assert "avg_return" not in row
     assert "avg_return_per_trade" not in row
+
+
+def test_run_forecast_backtest_handles_numpy_metrics_available_false():
+    def fake_backtest_impl(**kwargs):
+        return {
+            "success": True,
+            "results": {
+                "naive": {
+                    "success": True,
+                    "metrics_available": np.bool_(False),
+                    "metrics_reason": "no_non_flat_trades",
+                    "metrics": {"win_rate": 1.0, "trades_observed": 1},
+                    "details": [{"position": "flat"}],
+                }
+            },
+        }
+
+    result = forecast_use_cases.run_forecast_backtest(
+        ForecastBacktestRequest(symbol="EURUSD", detail="compact"),
+        backtest_impl=fake_backtest_impl,
+    )
+
+    row = result["ranked_methods"][0]
+    assert row["metrics_available"] == np.bool_(False)
+    assert "metrics_note" in row
+    assert "win_rate" not in row
+    assert "details_count" not in row
 
 
 def test_run_forecast_backtest_routes_date_range_to_impl():

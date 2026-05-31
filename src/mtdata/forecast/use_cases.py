@@ -974,6 +974,14 @@ def _compact_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:
             return None
         return value_f if math.isfinite(value_f) else None
 
+    def _is_explicit_false(value: Any) -> bool:
+        if value is None:
+            return False
+        try:
+            return bool(value) is False
+        except Exception:
+            return False
+
     ranked_methods: list[Dict[str, Any]] = []
     for method_name, method_payload in raw_results.items():
         if not isinstance(method_payload, dict):
@@ -1000,11 +1008,12 @@ def _compact_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:
             if key in method_payload:
                 method_out[key] = _compact_metric(key, method_payload[key])
         metrics_reason = str(method_out.get("metrics_reason") or "").strip()
-        if method_out.get("metrics_available") is False and metrics_reason:
+        metrics_unavailable = _is_explicit_false(method_out.get("metrics_available"))
+        if metrics_unavailable and metrics_reason:
             metrics_note = _BACKTEST_METRICS_REASON_NOTES.get(metrics_reason)
             if metrics_note:
                 method_out["metrics_note"] = metrics_note
-        if method_out.get("metrics_available") is not False:
+        if not metrics_unavailable:
             for key in (
                 "win_rate",
                 "max_drawdown",
@@ -1014,7 +1023,7 @@ def _compact_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:
             ):
                 if key in metrics:
                     method_out[key] = _compact_metric(key, metrics[key])
-        if isinstance(details, list) and method_out.get("metrics_available") is not False:
+        if isinstance(details, list) and not metrics_unavailable:
             method_out["details_count"] = len(details)
         ranked_row = dict(method_out)
         ranked_row["_sort_metric"] = _sort_metric(
