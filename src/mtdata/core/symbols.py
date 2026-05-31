@@ -2303,8 +2303,10 @@ def market_scan(  # noqa: C901
     Pass `symbols` for one instrument or a comma-separated list. `data` is
     the canonical flat row payload. Compact detail is the default; use
     `detail="full"` when you also want the explicit `columns` ordering hint
-    for compatibility. Use `symbols_top_markets` for a quick all-market
-    overview with separate spread, volume, and mover leaderboards.
+    for compatibility. Broad scans use the visible universe; `universe="all"`
+    must be combined with `symbols` or `group` to avoid unbounded hidden-symbol
+    activation. Use `symbols_top_markets` for a quick all-market overview with
+    separate spread, volume, and mover leaderboards.
     """
 
     detail_mode = normalize_output_verbosity_detail(detail, default="compact")
@@ -2348,6 +2350,16 @@ def market_scan(  # noqa: C901
 
             symbols_value = str(symbols or "").strip()
             symbols_filter = symbols_value or None
+            if universe_value == "all" and not symbols_filter and not group:
+                return _market_scan_error(
+                    (
+                        "market_scan universe='all' requires symbols or group "
+                        "to bound the scan. Use universe='visible' for broad scans "
+                        "or symbols_top_markets for quick all-market leaderboards."
+                    ),
+                    code="invalid_input",
+                    request=request,
+                )
 
             timeframe_value = str(timeframe or "H1").strip().upper()
             request["timeframe"] = timeframe_value

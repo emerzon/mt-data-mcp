@@ -605,6 +605,16 @@ class TestMarketScan:
         assert [symbol.name for symbol in selected] == ["USDJPY", "EURUSD"]
         assert meta["missing_symbols"] == ["MISSING"]
 
+    @patch("mtdata.core.symbols.mt5.symbols_get")
+    def test_market_scan_universe_all_requires_bounded_scope(self, mock_symbols_get):
+        fn = _get_market_scan()
+        result = fn(universe="all", limit=5)
+
+        assert result["success"] is False
+        assert result["error_code"] == "invalid_input"
+        assert "requires symbols or group" in result["error"]
+        mock_symbols_get.assert_not_called()
+
     @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
     @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
     @patch("mtdata.core.symbols.mt5.symbol_info_tick")
