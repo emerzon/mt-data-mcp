@@ -741,7 +741,8 @@ def strategy_backtest(  # noqa: C901
                     entry_price = float(action_price)
                 continue
 
-            assert entry_idx is not None and entry_time is not None and entry_price is not None
+            if entry_idx is None or entry_time is None or entry_price is None:
+                raise RuntimeError("Strategy backtest position state is incomplete.")
             bars_held = int(action_idx - entry_idx)
             hit_max_hold = max_hold_bars is not None and bars_held >= int(max_hold_bars)
             if desired_direction == current_direction and not hit_max_hold:
