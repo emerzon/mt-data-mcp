@@ -1399,6 +1399,26 @@ def _normalize_finviz_output_rows(rows: Any) -> Any:
     return [_normalize_finviz_output_row(row) for row in rows]
 
 
+def _normalize_finviz_earnings_rows(rows: Any) -> List[Any]:
+    normalized = _normalize_finviz_output_rows(rows)
+    if not isinstance(normalized, list):
+        return []
+    for row in normalized:
+        if not isinstance(row, dict) or "market_cap" not in row:
+            continue
+        market_cap_source = row.get("market_cap")
+        market_cap = _normalize_finviz_fundamental_value(
+            "market_cap",
+            market_cap_source,
+        )
+        market_cap_formatted = _format_finviz_large_number(market_cap_source)
+        if market_cap is not None:
+            row["market_cap"] = market_cap
+        if market_cap_formatted:
+            row["market_cap_formatted"] = market_cap_formatted
+    return normalized
+
+
 def _normalize_finviz_date_value(value: Any) -> Any:
     if value in (None, ""):
         return value
@@ -2873,7 +2893,7 @@ def finviz_earnings(
         items = result.get("earnings")
         if not isinstance(items, list):
             items = []
-        normalized_items = _normalize_finviz_output_rows(items)
+        normalized_items = _normalize_finviz_earnings_rows(items)
         detail_mode = normalize_output_verbosity_detail(detail, default="compact")
         output_items = (
             normalized_items

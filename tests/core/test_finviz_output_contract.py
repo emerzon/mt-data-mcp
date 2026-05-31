@@ -79,6 +79,24 @@ class TestFinvizEarningsOutputContract:
         assert result["meta"]["stats"]["truncated"] is False
 
     @patch("mtdata.core.finviz.get_earnings_calendar")
+    def test_full_includes_numeric_market_cap(self, mock_get):
+        mock_get.return_value = {
+            "success": True,
+            "period": "This Week",
+            "count": 1,
+            "total": 1,
+            "page": 1,
+            "pages": 1,
+            "truncated": False,
+            "earnings": [{"Ticker": "AAPL", "Market Cap": "3T"}],
+        }
+
+        result = self._unwrapped()(period="This Week", limit=1, page=1, detail="full")
+
+        assert result["items"][0]["market_cap"] == 3_000_000_000_000
+        assert result["items"][0]["market_cap_formatted"] == "3T"
+
+    @patch("mtdata.core.finviz.get_earnings_calendar")
     def test_invalid_period_returns_error_envelope(self, mock_get):
         mock_get.return_value = {
             "error": "Invalid period 'Bad'. Available period: ['This Week']"
