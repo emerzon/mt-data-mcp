@@ -610,7 +610,7 @@ def _level_preview_fields(
         out[f"{prefix}_distance_points"] = round(abs(level_value - entry_price) / point, 2)
     if entry_price:
         out[f"{prefix}_distance_pct"] = round(
-            ((level_value - entry_price) / entry_price) * 100.0,
+            (abs(level_value - entry_price) / abs(entry_price)) * 100.0,
             6,
         )
     return out

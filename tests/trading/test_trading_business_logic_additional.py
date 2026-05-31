@@ -403,6 +403,8 @@ def test_build_trade_place_dry_run_preview_uses_live_quote_and_margin():
     assert result["ask"] == 1.1001
     assert result["estimated_fill_price"] == 1.1001
     assert result["spread_points"] == 2.0
+    assert result["sl_distance_pct"] > 0
+    assert result["tp_distance_pct"] > 0
     assert result["sl_tp_valid"] is True
     assert result["margin_required"] == 123.45
     assert result["margin_free"] == 1000.0

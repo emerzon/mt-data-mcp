@@ -461,6 +461,22 @@ def _build_trade_evaluation(
             out["tp_distance_ticks"] = round(tp_distance / tick_size, 4)
         if sl_distance > 0:
             out["reward_risk_ratio"] = round(tp_distance / sl_distance, 4)
+    units = {
+        key: value
+        for key, value in {
+            "sl_distance_price": "price",
+            "sl_distance_pct": "percentage_points",
+            "sl_distance_ticks": "ticks",
+            "risk_per_lot": "account_currency_per_lot",
+            "tp_distance_price": "price",
+            "tp_distance_pct": "percentage_points",
+            "tp_distance_ticks": "ticks",
+            "reward_risk_ratio": "scalar",
+        }.items()
+        if key in out
+    }
+    if units:
+        out["units"] = units
     return out
 
 
