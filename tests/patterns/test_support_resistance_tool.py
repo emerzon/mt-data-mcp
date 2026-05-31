@@ -294,6 +294,37 @@ def test_support_resistance_tool_auto_mode_merges_timeframes():
     assert "nearest" not in result
 
 
+def test_support_resistance_tool_auto_mode_surfaces_partial_timeframe_failures():
+    fn = _get_support_resistance_fn()
+    gateway = type("Gateway", (), {"ensure_connection": lambda self: None})()
+
+    def _fetch(symbol: str, timeframe: str, need: int, as_of=None):
+        if timeframe == "H1":
+            raise RuntimeError("history unavailable")
+        return _frame().copy()
+
+    with patch("mtdata.core.pivot.create_mt5_gateway", return_value=gateway), \
+         patch("mtdata.core.pivot._fetch_history", side_effect=_fetch):
+        result = fn(
+            "EURUSD",
+            timeframe="auto",
+            lookback=200,
+            tolerance_pct=0.005,
+            min_touches=2,
+            max_levels=3,
+            max_distance_pct=None,
+            reaction_bars=4,
+        )
+
+    assert result["success"] is True
+    assert any(
+        warning.get("code") == "timeframe_failed"
+        and warning.get("timeframe") == "H1"
+        and "history unavailable" in warning.get("message", "")
+        for warning in result.get("warnings", [])
+    )
+
+
 def test_support_resistance_tool_full_detail_retains_support_and_resistance_lists():
     fn = _get_support_resistance_fn()
     gateway = type("Gateway", (), {"ensure_connection": lambda self: None})()

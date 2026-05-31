@@ -88,6 +88,7 @@ def compute_support_resistance_payload(
     multi_timeframe = len(timeframes) > 1
     results: List[Dict[str, Any]] = []
     errors: List[str] = []
+    partial_warnings: List[Dict[str, Any]] = []
     per_timeframe_min_touches = 1 if multi_timeframe else int(min_touches)
     per_timeframe_max_levels = max(int(max_levels), 1) if not multi_timeframe else max(int(max_levels) * 2, 6)
 
@@ -120,7 +121,15 @@ def compute_support_resistance_payload(
             if (result.get("levels") or []) or not multi_timeframe:
                 results.append(result)
         except Exception as exc:
-            errors.append(f"{tf}: {exc}")
+            error_text = f"{tf}: {exc}"
+            errors.append(error_text)
+            partial_warnings.append(
+                {
+                    "code": "timeframe_failed",
+                    "timeframe": tf,
+                    "message": error_text,
+                }
+            )
             if not multi_timeframe:
                 raise
 
@@ -132,7 +141,7 @@ def compute_support_resistance_payload(
     if not multi_timeframe:
         return results[0]
 
-    return merge_support_resistance_results(
+    merged = merge_support_resistance_results(
         results,
         symbol=symbol,
         timeframe=requested_timeframe,
@@ -146,6 +155,9 @@ def compute_support_resistance_payload(
         max_distance_pct=None if max_distance_pct is None else float(max_distance_pct),
         volume_weighting=str(volume_weighting),
     )
+    if partial_warnings:
+        merged["warnings"] = list(merged.get("warnings") or []) + partial_warnings
+    return merged
 
 
 @mcp.tool()
