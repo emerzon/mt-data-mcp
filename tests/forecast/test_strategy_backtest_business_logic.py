@@ -181,6 +181,37 @@ def test_strategy_backtest_returns_no_action_on_flat_history(monkeypatch):
     assert out["message"] == "The strategy generated no trades on the requested history."
 
 
+def test_strategy_backtest_long_only_signal_suppresses_shorts_and_warmup_nan():
+    df = _history_from_closes([5.0, 4.0, 3.0, 2.0, 1.0, 2.0, 3.0, 4.0])
+
+    long_short_signal, _diagnostics, _warmup = forecast_backtest._build_strategy_signal_series(
+        df,
+        strategy="sma_cross",
+        position_mode="long_short",
+        fast_period=2,
+        slow_period=3,
+        rsi_length=14,
+        oversold=30.0,
+        overbought=70.0,
+    )
+    long_only_signal, _diagnostics, warmup = forecast_backtest._build_strategy_signal_series(
+        df,
+        strategy="sma_cross",
+        position_mode="long_only",
+        fast_period=2,
+        slow_period=3,
+        rsi_length=14,
+        oversold=30.0,
+        overbought=70.0,
+    )
+
+    assert long_short_signal.isna().any()
+    assert (long_short_signal == -1.0).any()
+    assert not long_only_signal.isna().any()
+    assert (long_only_signal >= 0.0).all()
+    assert long_only_signal.iloc[:warmup].eq(0.0).all()
+
+
 def test_strategy_backtest_request_allows_rsi_reversion_without_ma_constraint():
     request = StrategyBacktestRequest(
         symbol="EURUSD",

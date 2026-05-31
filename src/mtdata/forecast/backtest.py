@@ -600,7 +600,8 @@ def _build_strategy_signal_series(
         raise ForecastError(f"Unsupported strategy '{strategy}'")
 
     if position_mode == "long_only":
-        signal = signal.where(~np.isfinite(signal), np.where(signal > 0.0, 1.0, 0.0))
+        signal = signal.copy()
+        signal[:] = np.where(np.isfinite(signal) & (signal > 0.0), 1.0, 0.0)
     return signal, diagnostics, warmup
 
 
