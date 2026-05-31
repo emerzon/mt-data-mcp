@@ -707,6 +707,29 @@ class TestFormatResultForCli:
         assert payload["pending_orders"] == []
         assert payload["pending_orders_count"] == 0
 
+    def test_trade_session_context_compact_keeps_false_like_execution_ready(self):
+        class FalseLike:
+            def __bool__(self):
+                return False
+
+        payload = json.loads(
+            _format_result_for_cli(
+                {
+                    "success": True,
+                    "symbol": "EURUSD",
+                    "account": {
+                        "balance": 10000.0,
+                        "execution_ready": FalseLike(),
+                    },
+                },
+                fmt="json",
+                verbose=False,
+                cmd_name="trade_session_context",
+            )
+        )
+
+        assert payload["account"]["execution_ready"] is False
+
     def test_trade_session_context_verbose_toon_keeps_full_sections_and_quote_epoch(
         self,
     ):

@@ -362,7 +362,8 @@ def _normalize_trade_session_context_cli_payload(
                 for key in ("balance", "equity", "profit", "margin_level")
                 if key in account_in and not _is_empty_value(account_in.get(key))
             }
-            if account_in.get("execution_ready") is False:
+            execution_ready = account_in.get("execution_ready")
+            if execution_ready is not None and not bool(execution_ready):
                 account_out["execution_ready"] = False
             if account_out:
                 compact_out["account"] = account_out
