@@ -2258,7 +2258,7 @@ def symbols_top_markets(  # noqa: C901
 
 @mcp.tool()
 def market_scan(  # noqa: C901
-    symbol: Optional[str] = None,
+    symbols: Optional[str] = None,
     group: Optional[str] = None,
     limit: Optional[int] = 50,
     offset: int = 0,
@@ -2279,7 +2279,7 @@ def market_scan(  # noqa: C901
 ) -> Dict[str, Any]:
     """Filtered MT5 market scanner with one flat table and technical filters.
 
-    Pass `symbol` for one instrument or a comma-separated list. `data` is
+    Pass `symbols` for one instrument or a comma-separated list. `data` is
     the canonical flat row payload. Compact detail is the default; use
     `detail="full"` when you also want the explicit `columns` ordering hint
     for compatibility. Use `symbols_top_markets` for a quick all-market
@@ -2290,7 +2290,7 @@ def market_scan(  # noqa: C901
 
     def _run() -> Dict[str, Any]:  # noqa: C901
         request: Dict[str, Any] = {
-            "symbol": symbol,
+            "symbols": symbols,
             "group": group,
             "limit": limit,
             "offset": offset,
@@ -2325,7 +2325,7 @@ def market_scan(  # noqa: C901
                     request=request,
                 )
 
-            symbols_value = str(symbol or "").strip()
+            symbols_value = str(symbols or "").strip()
             symbols_filter = symbols_value or None
 
             timeframe_value = str(timeframe or "H1").strip().upper()
@@ -2708,7 +2708,7 @@ def market_scan(  # noqa: C901
     return run_logged_operation(
         logger,
         operation="market_scan",
-        symbol=symbol,
+        symbols=symbols,
         group=group,
         limit=limit,
         offset=offset,

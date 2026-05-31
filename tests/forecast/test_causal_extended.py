@@ -884,7 +884,7 @@ class TestCorrelationMatrix:
 
         mock_fetch.side_effect = _fetch_side_effect
 
-        result = self._unwrapped()(symbol="BTCUSD")
+        result = self._unwrapped()(symbols="BTCUSD")
 
         assert result["success"] is True
         assert result["meta"]["request"]["symbols_input"] == ["BTCUSD"]

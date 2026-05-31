@@ -243,12 +243,12 @@ class TestAddDynamicArguments:
             parser.parse_args(["--no_include_incomplete"]).include_incomplete == "false"
         )
 
-    def test_market_scan_help_uses_singular_symbol_parameter(self):
+    def test_market_scan_help_uses_plural_symbols_parameter(self):
         parser = argparse.ArgumentParser()
         func_info = {
             "params": [
                 {
-                    "name": "symbol",
+                    "name": "symbols",
                     "type": Optional[str],
                     "required": False,
                     "default": None,
@@ -259,8 +259,10 @@ class TestAddDynamicArguments:
 
         help_text = parser.format_help()
 
-        assert "--symbols" not in help_text
-        assert "symbol" in help_text
+        assert "--symbols" in help_text
+        assert "Comma-separated MT5 symbols" in help_text
+        assert parser.parse_args(["--symbols", "EURUSD,GBPUSD"]).symbols == "EURUSD,GBPUSD"
+        assert parser.parse_args(["EURUSD,GBPUSD"]).symbols == "EURUSD,GBPUSD"
 
     def test_list_param(self):
         parser = argparse.ArgumentParser()
@@ -800,7 +802,7 @@ class TestResolveParamKwargs:
     )
     def test_pairwise_symbol_help_describes_comma_separated_symbols(self, cmd_name):
         kwargs, _ = _resolve_param_kwargs(
-            {"name": "symbol", "type": str, "required": False, "default": None},
+            {"name": "symbols", "type": str, "required": False, "default": None},
             None,
             cmd_name=cmd_name,
         )

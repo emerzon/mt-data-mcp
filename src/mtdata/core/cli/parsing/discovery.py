@@ -8,10 +8,10 @@ ToolInfo = Dict[str, Any]
 _OPTIONAL_FIRST_POSITIONAL_PARAMS: set[tuple[str, str]] = {
     ("finviz_news", "symbol"),
     ("news", "symbol"),
-    ("correlation_matrix", "symbol"),
-    ("cointegration_test", "symbol"),
-    ("market_scan", "symbol"),
-    ("causal_discover_signals", "symbol"),
+    ("correlation_matrix", "symbols"),
+    ("cointegration_test", "symbols"),
+    ("market_scan", "symbols"),
+    ("causal_discover_signals", "symbols"),
     ("market_status", "symbol"),
     ("trade_get_open", "symbol"),
     ("trade_get_pending", "symbol"),
@@ -68,7 +68,7 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("finviz_calendar", "start"): "Start date (YYYY-MM-DD).",
     ("finviz_calendar", "end"): "End date (YYYY-MM-DD).",
     ("forecast_barrier_optimize", "method"): "Barrier simulation method: mc_gbm, mc_gbm_bb, hmm_mc, garch, bootstrap, heston, jump_diffusion, or auto.",
-    ("causal_discover_signals", "symbol"): (
+    ("causal_discover_signals", "symbols"): (
         "Comma-separated MT5 symbols (e.g. EURUSD,GBPUSD); one symbol auto-expands "
         "to its MT5 group. Optional with --group."
     ),
@@ -88,7 +88,7 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("causal_discover_signals", "window_bars"): (
         "Historical bars per symbol used for causal tests."
     ),
-    ("cointegration_test", "symbol"): (
+    ("cointegration_test", "symbols"): (
         "Comma-separated MT5 symbols (e.g. EURUSD,GBPUSD); one symbol auto-expands "
         "to its MT5 group. Optional with --group."
     ),
@@ -100,9 +100,12 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("correlation_matrix", "window_bars"): (
         "Historical bars per symbol used for the correlation window."
     ),
-    ("correlation_matrix", "symbol"): (
+    ("correlation_matrix", "symbols"): (
         "Comma-separated MT5 symbols (e.g. EURUSD,GBPUSD); one symbol auto-expands "
         "to its MT5 group. Optional with --group."
+    ),
+    ("market_scan", "symbols"): (
+        "Comma-separated MT5 symbols to scan. Optional with --group."
     ),
     ("labels_triple_barrier", "detail"): "Detail level: full, standard, summary, or compact (summary plus recent sample).",
     ("labels_triple_barrier", "limit"): (
@@ -596,12 +599,15 @@ def add_dynamic_arguments(
             positional_kwargs["nargs"] = "?"
             positional_kwargs["default"] = argparse.SUPPRESS
             parser.add_argument(param["name"], **positional_kwargs)
-            hidden_alias_kwargs = dict(kwargs)
-            hidden_alias_kwargs["help"] = argparse.SUPPRESS
+            option_kwargs = dict(kwargs)
+            if str(param["name"]) != "symbols":
+                option_kwargs["help"] = argparse.SUPPRESS
             if option_flags:
-                parser.add_argument(*option_flags, **hidden_alias_kwargs)
+                parser.add_argument(*option_flags, **option_kwargs)
             if hidden_option_flags:
-                parser.add_argument(*hidden_option_flags, **hidden_alias_kwargs)
+                hidden_option_kwargs = dict(kwargs)
+                hidden_option_kwargs["help"] = argparse.SUPPRESS
+                parser.add_argument(*hidden_option_flags, **hidden_option_kwargs)
         else:
             if is_optional_bool:
                 local_kwargs = dict(kwargs)

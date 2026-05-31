@@ -172,7 +172,7 @@ class TestMain:
         mock_fn.assert_called_once_with(search_term="BTC", __cli_raw=True)
 
     @patch("mtdata.core.cli.discover_tools")
-    def test_correlation_matrix_keeps_optional_first_positional_symbol(
+    def test_correlation_matrix_keeps_optional_first_positional_symbols(
         self, mock_discover
     ):
         mock_fn = MagicMock(return_value="output text")
@@ -181,7 +181,7 @@ class TestMain:
         mock_fn.__doc__ = "Correlation matrix."
 
         def correlation_matrix(
-            symbol: Optional[str] = None, group: Optional[str] = None
+            symbols: Optional[str] = None, group: Optional[str] = None
         ):
             """Correlation matrix."""
             pass
@@ -201,7 +201,7 @@ class TestMain:
             result = main()
 
         assert result == 0
-        mock_fn.assert_called_once_with(symbol="EURUSD,GBPUSD", __cli_raw=True)
+        mock_fn.assert_called_once_with(symbols="EURUSD,GBPUSD", __cli_raw=True)
 
     @patch("mtdata.core.cli.discover_tools")
     def test_correlation_matrix_accepts_group_without_symbols(self, mock_discover):
@@ -211,7 +211,7 @@ class TestMain:
         mock_fn.__doc__ = "Correlation matrix."
 
         def correlation_matrix(
-            symbol: Optional[str] = None, group: Optional[str] = None
+            symbols: Optional[str] = None, group: Optional[str] = None
         ):
             """Correlation matrix."""
             pass
@@ -246,7 +246,7 @@ class TestMain:
         mock_fn.__doc__ = "Causal discovery."
 
         def causal_discover_signals(
-            symbol: Optional[str] = None, group: Optional[str] = None
+            symbols: Optional[str] = None, group: Optional[str] = None
         ):
             """Causal discovery."""
             pass
@@ -272,7 +272,7 @@ class TestMain:
         mock_fn.assert_called_once_with(group="Forex\\Majors", __cli_raw=True)
 
     @patch("mtdata.core.cli.discover_tools")
-    def test_cointegration_test_keeps_optional_first_positional_symbol(
+    def test_cointegration_test_keeps_optional_first_positional_symbols(
         self, mock_discover
     ):
         mock_fn = MagicMock(return_value="output text")
@@ -281,7 +281,7 @@ class TestMain:
         mock_fn.__doc__ = "Cointegration test."
 
         def cointegration_test(
-            symbol: Optional[str] = None, group: Optional[str] = None
+            symbols: Optional[str] = None, group: Optional[str] = None
         ):
             """Cointegration test."""
             pass
@@ -301,7 +301,7 @@ class TestMain:
             result = main()
 
         assert result == 0
-        mock_fn.assert_called_once_with(symbol="EURUSD,GBPUSD", __cli_raw=True)
+        mock_fn.assert_called_once_with(symbols="EURUSD,GBPUSD", __cli_raw=True)
 
     @patch("mtdata.core.cli.discover_tools")
     def test_cointegration_test_accepts_group_without_symbols(self, mock_discover):
@@ -311,7 +311,7 @@ class TestMain:
         mock_fn.__doc__ = "Cointegration test."
 
         def cointegration_test(
-            symbol: Optional[str] = None, group: Optional[str] = None
+            symbols: Optional[str] = None, group: Optional[str] = None
         ):
             """Cointegration test."""
             pass
@@ -398,13 +398,13 @@ class TestMain:
         assert request.symbol == "EURUSD"
 
     @patch("mtdata.core.cli.discover_tools")
-    def test_market_scan_keeps_optional_first_positional_symbol(self, mock_discover):
+    def test_market_scan_keeps_optional_first_positional_symbols(self, mock_discover):
         mock_fn = MagicMock(return_value="output text")
         mock_fn.__module__ = "mtdata.core.server"
         mock_fn.__name__ = "market_scan"
         mock_fn.__doc__ = "Market scan."
 
-        def market_scan(symbol: Optional[str] = None, group: Optional[str] = None):
+        def market_scan(symbols: Optional[str] = None, group: Optional[str] = None):
             """Market scan."""
             pass
 
@@ -423,7 +423,7 @@ class TestMain:
             result = main()
 
         assert result == 0
-        mock_fn.assert_called_once_with(symbol="EURUSD,GBPUSD", __cli_raw=True)
+        mock_fn.assert_called_once_with(symbols="EURUSD,GBPUSD", __cli_raw=True)
 
     @patch("mtdata.core.cli.discover_tools")
     def test_market_scan_accepts_group_without_symbols(self, mock_discover):
@@ -432,7 +432,7 @@ class TestMain:
         mock_fn.__name__ = "market_scan"
         mock_fn.__doc__ = "Market scan."
 
-        def market_scan(symbol: Optional[str] = None, group: Optional[str] = None):
+        def market_scan(symbols: Optional[str] = None, group: Optional[str] = None):
             """Market scan."""
             pass
 
