@@ -27,6 +27,7 @@ import pandas as pd  # noqa: E402
 
 from mtdata.services.data_service import (  # noqa: E402
     _build_candle_freshness_diagnostics,
+    _build_no_data_error_with_context,
     _build_rates_df,
     _fetch_rates_with_warmup,
     _shift_rate_times,
@@ -54,6 +55,34 @@ def test_candle_freshness_diagnostics_never_reports_negative_freshness() -> None
 
     assert diagnostics["data_freshness_seconds"] == 0.0
     assert diagnostics["last_bar_within_policy_window"] is True
+
+
+def test_no_data_context_uses_non_negative_history_position(monkeypatch) -> None:
+    calls = []
+
+    def fake_copy_rates_from_pos(symbol, timeframe, start_pos, count):
+        calls.append((symbol, timeframe, start_pos, count))
+        return [{"time": 100.0}, {"time": 200.0}]
+
+    monkeypatch.setattr(
+        "mtdata.services.data_service._mt5_copy_rates_from_pos",
+        fake_copy_rates_from_pos,
+    )
+
+    result = _build_no_data_error_with_context(
+        "EURUSD",
+        "H1",
+        1,
+        "1970-01-01 00:00:01",
+        None,
+    )
+
+    assert calls == [("EURUSD", 1, 0, 100_000)]
+    assert result["details"]["available_range"] == {
+        "earliest": "1970-01-01 00:01",
+        "latest": "1970-01-01 00:03",
+    }
+    assert "before earliest available data" in result["error"]
 
 
 @contextmanager

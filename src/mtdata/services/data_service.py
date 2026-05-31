@@ -256,30 +256,45 @@ def _build_no_data_error_with_context(
             if v is not None
         }
     
-    # Try to get first and last available bars for this timeframe to suggest range
+    # Try to sample available bars for this timeframe to suggest a usable range.
     try:
-        first_bar = _mt5_copy_rates_from_pos(symbol, mt5_timeframe, 0, 1)
-        last_bar = _mt5_copy_rates_from_pos(symbol, mt5_timeframe, -1, 1)
-        
-        if first_bar is not None and len(first_bar) > 0 and last_bar is not None and len(last_bar) > 0:
-            first_time = datetime.fromtimestamp(first_bar[0]['time'], tz=dt_timezone.utc)
-            last_time = datetime.fromtimestamp(last_bar[0]['time'], tz=dt_timezone.utc)
-            
+        available_bars = _mt5_copy_rates_from_pos(symbol, mt5_timeframe, 0, 100_000)
+
+        if available_bars is not None and len(available_bars) > 0:
+            times: List[float] = []
+            for bar in available_bars:
+                try:
+                    epoch = float(bar["time"])
+                except Exception:
+                    continue
+                if math.isfinite(epoch):
+                    times.append(epoch)
+            if not times:
+                raise ValueError("available bars have no finite timestamps")
+            first_epoch = min(times)
+            last_epoch = max(times)
+            first_time = datetime.fromtimestamp(first_epoch, tz=dt_timezone.utc)
+            last_time = datetime.fromtimestamp(last_epoch, tz=dt_timezone.utc)
+
             details["available_range"] = {
-                "earliest": _format_time_minimal(first_bar[0]['time']),
-                "latest": _format_time_minimal(last_bar[0]['time']),
+                "earliest": _format_time_minimal(first_epoch),
+                "latest": _format_time_minimal(last_epoch),
             }
-            
+
             # Provide a suggestion based on the mismatch
             if start_datetime:
                 try:
                     req_start, _ = _parse_fetch_datetime_arg(start_datetime)
+                    if req_start is not None and req_start.tzinfo is None:
+                        req_start = req_start.replace(tzinfo=dt_timezone.utc)
+                    elif req_start is not None:
+                        req_start = req_start.astimezone(dt_timezone.utc)
                     if req_start and req_start > last_time:
-                        error_msg = f"No data available - requested start date is after latest available data ({_format_time_minimal(last_bar[0]['time'])})"
-                        details["suggestion"] = f"Use start='{_format_time_minimal(last_bar[0]['time'])}' or earlier"
+                        error_msg = f"No data available - requested start date is after latest available data ({_format_time_minimal(last_epoch)})"
+                        details["suggestion"] = f"Use start='{_format_time_minimal(last_epoch)}' or earlier"
                     elif req_start and req_start < first_time:
-                        error_msg = f"No data available - requested date range is before earliest available data ({_format_time_minimal(first_bar[0]['time'])})"
-                        details["suggestion"] = f"Use start='{_format_time_minimal(first_bar[0]['time'])}' or later"
+                        error_msg = f"No data available - requested date range is before earliest available data ({_format_time_minimal(first_epoch)})"
+                        details["suggestion"] = f"Use start='{_format_time_minimal(first_epoch)}' or later"
                 except Exception:
                     pass
     except Exception:
