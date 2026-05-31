@@ -569,6 +569,7 @@ def _compact_patterns_payload(
         "mode": payload.get("mode"),
         "n_patterns": total_i,
     }
+    compact = {key: value for key, value in compact.items() if value is not None}
     if signal:
         compact["action"] = signal.get("action")
         compact["confidence"] = signal.get("confidence")
