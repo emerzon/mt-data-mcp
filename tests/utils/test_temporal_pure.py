@@ -625,6 +625,29 @@ class TestTemporalAnalyze:
         }
 
     @_apply_analyze_patches
+    def test_summary_detail_returns_best_and_overall_only(self, mock_fetch, *_):
+        r = self._call(mock_fetch, detail="summary")
+
+        assert r.get("success") is True
+        assert "groups" not in r
+        assert "best" in r
+        assert "group_count" in r
+        assert set(r["overall"]).issubset(
+            {"bars", "avg_return", "win_rate", "volatility"}
+        )
+
+    @_apply_analyze_patches
+    def test_standard_detail_adds_range_volume_and_overall(self, mock_fetch, *_):
+        r = self._call(mock_fetch, detail="standard")
+
+        assert r.get("success") is True
+        assert "overall" in r
+        assert "volume_source" in r
+        assert "avg_range_pct" in r["groups"][0]
+        assert "avg_volume" in r["groups"][0]
+        assert "avg_range" not in r["groups"][0]
+
+    @_apply_analyze_patches
     def test_group_by_day_of_week_alias(self, mock_fetch, *_):
         r = self._call(mock_fetch, group_by="day_of_week")
         assert r.get("success") is True

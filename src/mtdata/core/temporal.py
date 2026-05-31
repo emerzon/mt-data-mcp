@@ -33,7 +33,7 @@ from ..services.data_service import (
 )
 from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway
-from .output_contract import normalize_output_verbosity_detail
+from .output_contract import normalize_output_detail
 from ..shared.schema import CompactFullDetailLiteral, TimeframeLiteral
 
 logger = logging.getLogger(__name__)
@@ -246,8 +246,17 @@ def _compact_temporal_stats(row: Dict[str, Any]) -> Dict[str, Any]:
     return {key: row.get(key) for key in keys if row.get(key) is not None}
 
 
-def _compact_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
-    out: Dict[str, Any] = {
+def _standard_temporal_stats(row: Dict[str, Any]) -> Dict[str, Any]:
+    out = _compact_temporal_stats(row)
+    for key in ("returns", "avg_abs_return", "avg_range_pct", "avg_volume"):
+        value = row.get(key)
+        if value is not None:
+            out[key] = value
+    return out
+
+
+def _base_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    return {
         key: payload[key]
         for key in (
             "success",
@@ -263,6 +272,10 @@ def _compact_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         )
         if key in payload
     }
+
+
+def _compact_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    out: Dict[str, Any] = _base_temporal_payload(payload)
     groups = payload.get("groups")
     if isinstance(groups, list) and groups:
         if all(isinstance(row, dict) and "dimension" in row for row in groups):
@@ -329,6 +342,123 @@ def _compact_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     for key in ("warnings", "excluded_groups"):
         value = payload.get(key)
         if value:
+            out[key] = value
+    return out
+
+
+def _summary_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    compact = _compact_temporal_payload(payload)
+    out = {
+        key: compact[key]
+        for key in (
+            "success",
+            "symbol",
+            "timeframe",
+            "group_by",
+            "return_mode",
+            "units",
+            "timezone",
+            "bars",
+            "start",
+            "end",
+        )
+        if key in compact
+    }
+    groups = compact.get("groups")
+    if isinstance(groups, list):
+        if all(isinstance(row, dict) and "dimension" in row for row in groups):
+            out["group_counts"] = {
+                str(row.get("dimension")): len(row.get("breakdown") or [])
+                for row in groups
+                if isinstance(row, dict)
+            }
+        else:
+            out["group_count"] = len(groups)
+    if compact.get("best") not in (None, "", [], {}):
+        out["best"] = compact["best"]
+    overall = payload.get("overall")
+    if isinstance(overall, dict):
+        out["overall"] = {
+            key: overall.get(key)
+            for key in ("bars", "avg_return", "win_rate", "volatility")
+            if overall.get(key) is not None
+        }
+    for key in ("warnings", "excluded_groups"):
+        value = payload.get(key)
+        if value:
+            out[key] = value
+    return out
+
+
+def _standard_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    out: Dict[str, Any] = _base_temporal_payload(payload)
+    groups = payload.get("groups")
+    if isinstance(groups, list) and groups:
+        if all(isinstance(row, dict) and "dimension" in row for row in groups):
+            standard_groups = []
+            best_by_dimension: Dict[str, Dict[str, Any]] = {}
+            for item in groups:
+                dimension = str(item.get("dimension") or "")
+                breakdown = item.get("breakdown")
+                if not isinstance(breakdown, list):
+                    continue
+                standard_breakdown = [
+                    _standard_temporal_stats(row)
+                    for row in breakdown
+                    if isinstance(row, dict)
+                ]
+                standard_groups.append(
+                    {
+                        "dimension": dimension,
+                        "breakdown": standard_breakdown,
+                    }
+                )
+                best = max(
+                    (
+                        row
+                        for row in standard_breakdown
+                        if row.get("avg_return") is not None
+                    ),
+                    key=lambda row: float(row.get("avg_return") or 0.0),
+                    default=None,
+                )
+                if best:
+                    best_by_dimension[dimension] = {
+                        key: best[key]
+                        for key in ("group", "group_label", "avg_return", "win_rate")
+                        if key in best
+                    }
+            out["groups"] = standard_groups
+            if best_by_dimension:
+                out["best"] = best_by_dimension
+        else:
+            standard_groups = [
+                _standard_temporal_stats(row)
+                for row in groups
+                if isinstance(row, dict)
+            ]
+            out["groups"] = standard_groups
+            best = max(
+                (
+                    row
+                    for row in standard_groups
+                    if row.get("avg_return") is not None
+                ),
+                key=lambda row: float(row.get("avg_return") or 0.0),
+                default=None,
+            )
+            if best:
+                out["best"] = {
+                    key: best[key]
+                    for key in ("group", "group_label", "avg_return", "win_rate")
+                    if key in best
+                }
+    overall = payload.get("overall")
+    if isinstance(overall, dict):
+        out["overall"] = _standard_temporal_stats(overall)
+    for key in ("volume_source", "filters", "warnings", "excluded_groups"):
+        value = payload.get(key)
+        if value not in (None, "", [], {}):
             out[key] = value
     return out
 
@@ -470,7 +600,7 @@ def temporal_analyze(  # noqa: C901
                 )
             context["group_by"] = group_norm
             requested_detail = str(detail or "compact").strip().lower()
-            detail_mode = normalize_output_verbosity_detail(detail, default="compact")
+            detail_mode = normalize_output_detail(detail, default="compact")
             if requested_detail not in {"compact", "standard", "summary", "full"}:
                 return _error_response(
                     "detail must be one of: compact, standard, summary, full.",
@@ -793,8 +923,12 @@ def temporal_analyze(  # noqa: C901
                 payload["groups"] = grouped_dimensions
             elif groups_out:
                 payload["groups"] = groups_out
+            if detail_mode == "summary":
+                return _summary_temporal_payload(payload)
             if detail_mode == "compact":
                 return _compact_temporal_payload(payload)
+            if detail_mode == "standard":
+                return _standard_temporal_payload(payload)
             return payload
         except MT5ConnectionError as exc:
             return {"error": str(exc)}
