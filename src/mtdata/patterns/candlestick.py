@@ -721,12 +721,12 @@ def detect_candlestick_patterns(  # noqa: C901
         if col not in df.columns:
             return {"error": f"Missing '{col}' data from rates"}
 
+    temp = df.copy()
+    temp["__epoch"] = [float(e) for e in epochs]
     try:
-        temp = df.copy()
-        temp["__epoch"] = [float(e) for e in epochs]
         temp.index = pd.to_datetime(temp["__epoch"], unit="s")
     except Exception:
-        temp = df.copy()
+        pass
 
     pattern_methods = _get_candlestick_pattern_methods(temp)
     if not pattern_methods:
