@@ -68,6 +68,7 @@ def _patched_mt5_module(mt5):
 def test_floor_volume_steps_keeps_exact_step_sized_values() -> None:
     assert _floor_volume_steps(0.3, 0.1) == 3
     assert _floor_volume_steps(1.2, 0.1) == 12
+    assert _floor_volume_steps(0.1999999999999954, 0.01) == 20
 
 
 def test_floor_volume_steps_does_not_round_up_material_substep_values() -> None:

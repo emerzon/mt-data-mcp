@@ -20,11 +20,15 @@ def _floor_volume_steps(raw: float, step: float) -> int:
     if step_count < 0:
         return 0
 
-    remainder_to_next_step = float(step_count + 1) - float(step_ratio)
-    if remainder_to_next_step > 0.0:
-        snap_tolerance = math.ulp(step_ratio) * 8.0
-        if remainder_to_next_step <= snap_tolerance:
-            step_count += 1
+    next_step_count = step_count + 1
+    next_volume = float(next_step_count) * float(step)
+    if next_volume >= raw:
+        snap_tolerance = max(
+            math.ulp(float(raw)) * 256.0,
+            math.ulp(next_volume) * 256.0,
+        )
+        if next_volume - float(raw) <= snap_tolerance:
+            step_count = next_step_count
 
     return int(step_count)
 

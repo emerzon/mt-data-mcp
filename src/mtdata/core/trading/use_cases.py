@@ -499,13 +499,15 @@ def _floor_volume_steps(raw_volume: float, volume_step: float) -> int:
     if step_count < 0:
         return 0
 
-    remainder_to_next_step = float(step_count + 1) - float(step_ratio)
-    if remainder_to_next_step > 0.0:
-        # Correct only machine-scale underflow so exact step-sized volumes are kept,
-        # while materially smaller values still round down conservatively.
-        snap_tolerance = math.ulp(step_ratio) * 8.0
-        if remainder_to_next_step <= snap_tolerance:
-            return step_count + 1
+    next_step_count = step_count + 1
+    next_volume = float(next_step_count) * float(volume_step)
+    if next_volume >= raw_volume:
+        snap_tolerance = max(
+            math.ulp(float(raw_volume)) * 256.0,
+            math.ulp(next_volume) * 256.0,
+        )
+        if next_volume - float(raw_volume) <= snap_tolerance:
+            return next_step_count
     return step_count
 
 

@@ -204,3 +204,12 @@ def test_exact_step_volume_is_not_rounded_down_by_float_artifact():
     assert meta["suggested_volume"] == 0.3
     assert meta["raw_volume"] == 0.3
     assert meta["risk_over_target"] is False
+
+
+def test_exact_fx_step_volume_is_not_lost_to_float_underflow():
+    vol, meta = compute_risk_based_volume(**_base_params())
+
+    assert vol == 0.2
+    assert meta["suggested_volume"] == 0.2
+    assert meta["actual_risk_pct"] == pytest.approx(1.0, abs=0.0001)
+    assert meta["risk_over_target"] is False
