@@ -88,6 +88,17 @@ def test_clear():
     cache.get_or_load("b", lambda: 2)
     cache.clear()
     assert len(cache) == 0
+    assert len(cache._init_locks) == 0
+
+
+def test_init_locks_do_not_accumulate_for_unique_keys():
+    cache = ModelCache(ttl_seconds=60, max_entries=2)
+
+    for i in range(10):
+        cache.get_or_load(f"k{i}", lambda i=i: i)
+
+    assert len(cache) == 2
+    assert len(cache._init_locks) == 0
 
 
 # ---------------------------------------------------------------------------

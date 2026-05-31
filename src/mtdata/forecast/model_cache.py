@@ -79,46 +79,55 @@ class ModelCache:
                     }
                 else:
                     del self._entries[key]
+                    self._drop_init_lock(key)
 
         # Slow path: acquire per-key init lock to avoid duplicate loads
         init_lock = self._get_init_lock(key)
-        with init_lock:
-            # Double-check after acquiring lock
-            with self._lock:
-                entry = self._entries.get(key)
-                if entry is not None and (time.monotonic() - entry.created_at) <= self._ttl:
-                    entry.last_used = time.monotonic()
-                    entry.hit_count += 1
-                    return entry.model, {
-                        "cache": "hit",
-                        "key": key,
-                        "hit_count": entry.hit_count,
-                    }
+        try:
+            with init_lock:
+                # Double-check after acquiring lock
+                with self._lock:
+                    entry = self._entries.get(key)
+                    if entry is not None and (time.monotonic() - entry.created_at) <= self._ttl:
+                        entry.last_used = time.monotonic()
+                        entry.hit_count += 1
+                        return entry.model, {
+                            "cache": "hit",
+                            "key": key,
+                            "hit_count": entry.hit_count,
+                        }
 
-            t0 = time.monotonic()
-            model = loader()
-            load_time = time.monotonic() - t0
+                t0 = time.monotonic()
+                model = loader()
+                load_time = time.monotonic() - t0
 
-            with self._lock:
-                self._evict_if_full()
-                self._entries[key] = _CacheEntry(key, model)
+                with self._lock:
+                    self._evict_if_full()
+                    self._entries[key] = _CacheEntry(key, model)
 
-            logger.debug("Model cache MISS for %s (loaded in %.2fs)", key, load_time)
-            return model, {
-                "cache": "miss",
-                "key": key,
-                "load_time_seconds": round(load_time, 3),
-            }
+                logger.debug("Model cache MISS for %s (loaded in %.2fs)", key, load_time)
+                return model, {
+                    "cache": "miss",
+                    "key": key,
+                    "load_time_seconds": round(load_time, 3),
+                }
+        finally:
+            self._drop_init_lock(key, init_lock)
 
     def invalidate(self, key: str) -> bool:
         """Remove a specific entry. Returns True if found."""
         with self._lock:
-            return self._entries.pop(key, None) is not None
+            removed = self._entries.pop(key, None) is not None
+        if removed:
+            self._drop_init_lock(key)
+        return removed
 
     def clear(self) -> None:
         """Remove all entries."""
         with self._lock:
             self._entries.clear()
+        with self._init_locks_guard:
+            self._init_locks.clear()
 
     def keys(self) -> list[str]:
         """Return current cache keys."""
@@ -135,11 +144,21 @@ class ModelCache:
                 self._init_locks[key] = threading.Lock()
             return self._init_locks[key]
 
+    def _drop_init_lock(
+        self,
+        key: str,
+        lock: Optional[threading.Lock] = None,
+    ) -> None:
+        with self._init_locks_guard:
+            if lock is None or self._init_locks.get(key) is lock:
+                self._init_locks.pop(key, None)
+
     def _evict_if_full(self) -> None:
         """Evict LRU entry when at capacity.  Caller must hold ``_lock``."""
         while len(self._entries) >= self._max:
             lru_key = min(self._entries, key=lambda k: self._entries[k].last_used)
             del self._entries[lru_key]
+            self._drop_init_lock(lru_key)
 
 
 # Module-level singleton
