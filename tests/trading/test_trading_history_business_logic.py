@@ -1216,6 +1216,7 @@ def test_trade_journal_analyze_compact_returns_summary_only() -> None:
     assert "note" not in out
     assert out["timezone"] == "UTC"
     assert out["summary"]["closed_deals"] == 2
+    assert out["units"]["win_rate"] == "fraction"
     assert "items" not in out
     assert "item_schema" not in out
     assert "breakdowns" not in out
@@ -1399,7 +1400,8 @@ def test_trade_journal_analyze_filters_best_worst_by_pnl_sign() -> None:
     assert out["summary"]["wins"] == 2
     assert out["summary"]["losses"] == 1
     assert out["summary"]["win_rate"] == 0.6667
-    assert out["summary"]["win_rate_display"] == "66.7%"
+    assert "win_rate_display" not in out["summary"]
+    assert out["units"]["win_rate"] == "fraction"
     assert out["summary"]["best_trade"] == 0.82
     assert out["summary"]["worst_trade"] == -0.23
 

@@ -747,7 +747,7 @@ class TestComputePerformanceMetrics:
         m = _compute_performance_metrics(rets, "H1", 1, 0.0)
         assert 0.0 <= m["win_rate"] <= 1.0
         assert m["win_rate"] == pytest.approx(3 / 5)
-        assert m["win_rate_display"] == "60.0%"
+        assert "win_rate_display" not in m
 
     def test_max_drawdown_nonnegative(self):
         rets = [0.01, -0.05, 0.02, -0.03, 0.01]

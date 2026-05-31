@@ -218,7 +218,7 @@ def _stats_for_group(df: pd.DataFrame, volume_col: Optional[str]) -> Dict[str, A
         out["median_return"] = _safe_float(ret.median())
         out["volatility"] = _safe_float(ret.std(ddof=0))
         out["avg_abs_return"] = _safe_float(ret.abs().mean())
-        out["win_rate"] = _safe_float((ret > 0).sum() / float(n))
+        out["win_rate"] = _safe_float(round((ret > 0).sum() / float(n), 4))
     else:
         out["avg_return"] = None
         out["median_return"] = None

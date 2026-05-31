@@ -483,6 +483,11 @@ class TestStatsForGroup:
         assert out["volatility"] is not None
         assert out["win_rate"] == pytest.approx(3 / 5)
 
+    def test_win_rate_is_rounded(self):
+        df = self._make_df([1.0, -0.5, 0.3])
+        out = _stats_for_group(df, None)
+        assert out["win_rate"] == 0.6667
+
     def test_empty_df(self):
         df = self._make_df([])
         out = _stats_for_group(df, None)

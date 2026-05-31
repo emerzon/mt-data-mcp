@@ -265,10 +265,10 @@ def _compute_performance_metrics(
             return None
         return value_f
 
+    win_rate_value = _finite_or_none(win_rate)
     metrics.update({
         "avg_return_per_trade": avg_return,
-        "win_rate": win_rate,
-        "win_rate_display": f"{win_rate:.1%}",
+        "win_rate": float(round(win_rate_value, 4)) if win_rate_value is not None else None,
         "sharpe_ratio": _finite_or_none(sharpe),
         "max_drawdown": max_drawdown,
         "calmar_ratio": _finite_or_none(calmar),

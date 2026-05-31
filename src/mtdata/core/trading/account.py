@@ -56,6 +56,9 @@ _TRADE_ACCOUNT_COMPACT_KEYS = (
     "account_type",
     "trade_mode",
 )
+_TRADE_JOURNAL_UNITS: Dict[str, str] = {
+    "win_rate": "fraction",
+}
 
 
 def _utc_epoch_identity(value: Any) -> float:
@@ -145,7 +148,6 @@ def _trade_journal_metrics(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
         "losses": losses,
         "flats": flats,
         "win_rate": _round_trade_journal_value(win_rate, digits=4),
-        "win_rate_display": f"{win_rate:.1%}" if win_rate is not None else None,
         "net_pnl": _round_trade_journal_value(net_pnl, digits=2),
         "gross_profit": _round_trade_journal_value(gross_profit, digits=2),
         "gross_loss": _round_trade_journal_value(gross_loss, digits=2),
@@ -156,6 +158,11 @@ def _trade_journal_metrics(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
         "best_trade": _round_trade_journal_value(max(pnls), digits=2) if pnls else None,
         "worst_trade": _round_trade_journal_value(min(pnls), digits=2) if pnls else None,
     }
+
+
+def _attach_trade_journal_units(payload: Dict[str, Any]) -> Dict[str, Any]:
+    payload["units"] = dict(_TRADE_JOURNAL_UNITS)
+    return payload
 
 
 def _build_trade_journal_breakdown(
@@ -371,7 +378,7 @@ def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str,
         }
         if breakdowns:
             payload["breakdowns"] = breakdowns
-        return payload
+        return _attach_trade_journal_units(payload)
 
     rows = [row for row in raw_rows if isinstance(row, dict)]
     analyzed_rows: List[Dict[str, Any]] = []
@@ -421,7 +428,7 @@ def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str,
         }
         if breakdowns:
             payload["breakdowns"] = breakdowns
-        return payload
+        return _attach_trade_journal_units(payload)
 
     # Filter trades by P&L sign: wins have positive P&L, losses have negative P&L
     wins = [row for row in analyzed_rows if float(row.get("net_pnl") or 0.0) > 0.0]
@@ -470,7 +477,7 @@ def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str,
             _trade_journal_trade_snapshot(row)
             for row in ranked_worst[: min(5, len(ranked_worst))]
         ]
-    return payload
+    return _attach_trade_journal_units(payload)
 
 
 def _trade_journal_sample_warning(exit_deals: int) -> Optional[str]:
