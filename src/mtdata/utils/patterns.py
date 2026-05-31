@@ -600,7 +600,8 @@ def build_index(
       close[i : i+window_size]. Matches can expose window+future values.
     - Per-window min-max normalization is applied for the index vectors.
     """
-    assert window_size >= 5, "window_size too small"
+    if window_size < 5:
+        raise ValueError("window_size must be at least 5")
     symbols_ok: List[str] = []
     series: List[_SeriesStore] = []
     prepare_info_by_symbol: Dict[str, Dict[str, Any]] = {}

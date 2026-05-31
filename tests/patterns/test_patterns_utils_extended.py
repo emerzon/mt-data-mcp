@@ -18,6 +18,7 @@ from mtdata.utils.patterns import (
     _mass_distance_profile,
     _minmax_scale_row,
     _SeriesStore,
+    build_index,
 )
 
 
@@ -82,6 +83,11 @@ def _make_index(
         metric=metric,
         engine=engine,
     )
+
+
+def test_build_index_rejects_too_small_window_size():
+    with pytest.raises(ValueError, match="window_size must be at least 5"):
+        build_index(["EURUSD"], "H1", window_size=4, future_size=1)
 
 
 # ===================================================================
