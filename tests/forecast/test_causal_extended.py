@@ -1191,14 +1191,28 @@ class TestCointegrationTest:
         assert result["error_code"] == "invalid_input"
         assert "either symbols or group" in result["error"]
 
+    @patch("statsmodels.tsa.stattools.coint", return_value=(-4.5, 0.01, [-3.9, -3.3, -3.0]))
     @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
-    def test_window_bars_must_cover_minimum_overlap_window(self):
+    @patch("mtdata.core.causal._fetch_series")
+    def test_window_bars_caps_min_overlap(self, mock_fetch, _mock_coint):
+        idx = pd.date_range("2024-01-01", periods=60, freq="h")
+        base = np.cumsum(np.linspace(-0.01, 0.01, 60))
+        series_map = {
+            "A": pd.Series(100.0 * np.exp(base), index=idx),
+            "B": pd.Series(50.0 * np.exp(base * 0.98), index=idx),
+        }
+
+        def _fetch_side_effect(symbol, timeframe, count):
+            return series_map[symbol], None
+
+        mock_fetch.side_effect = _fetch_side_effect
         result = self._unwrapped()("A,B", window_bars=50, min_overlap=80)
-        assert result["success"] is False
-        assert result["error_code"] == "invalid_input"
-        assert result["error"] == (
-            "min_overlap (80) cannot exceed window_bars (50). "
-            "Reduce min_overlap or increase window_bars."
+        assert result["success"] is True
+        assert result["context"]["min_overlap"] == 50
+        assert result["meta"]["stats"]["min_overlap_requested"] == 80
+        assert any(
+            warning == "min_overlap adjusted from 80 to 50 to match window_bars."
+            for warning in result.get("warnings", [])
         )
 
     @patch("statsmodels.tsa.stattools.coint", return_value=(-4.5, 0.01, [-3.9, -3.3, -3.0]))

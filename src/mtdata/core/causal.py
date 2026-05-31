@@ -2181,24 +2181,28 @@ def cointegration_test(  # noqa: C901
         transform: Price transform: "log_level" or "level".
         trend: Deterministic trend term for the test: "c", "ct", "ctt", or "n".
         significance: Alpha threshold for reporting cointegrated pairs.
-        min_overlap: Minimum overlapping transformed samples required per pair.
+        min_overlap: Minimum overlapping transformed samples required per pair;
+            values above window_bars are capped to window_bars with a warning.
         detail: "compact" keeps pair results concise; "full" adds overlap/window
             diagnostics and legends.
     """
 
     def _run() -> Dict[str, Any]:  # noqa: C901
+        window_bars_value = int(window_bars)
+        min_overlap_value = int(min_overlap)
+        warnings_out: List[str] = []
         meta: Dict[str, Any] = {
             "_tool": "cointegration_test",
             "_request_keys": _COINTEGRATION_REQUEST_KEYS,
             "timeframe": str(timeframe),
             "limit": limit,
-            "window_bars": int(window_bars),
+            "window_bars": window_bars_value,
             "start": start,
             "end": end,
             "transform": str(transform),
             "trend": str(trend),
             "significance": float(significance),
-            "min_overlap": int(min_overlap),
+            "min_overlap": min_overlap_value,
             "detail": str(detail or "compact"),
         }
         connection_error = _causal_connection_error()
@@ -2297,27 +2301,27 @@ def cointegration_test(  # noqa: C901
                 meta=meta,
             )
 
-        if window_bars < 2:
+        if window_bars_value < 2:
             return _causal_error(
                 "window_bars must be at least 2.",
                 code="invalid_input",
                 meta=meta,
             )
 
-        if min_overlap < 2:
+        if min_overlap_value < 2:
             return _causal_error(
                 "min_overlap must be at least 2.",
                 code="invalid_input",
                 meta=meta,
             )
-        if window_bars < min_overlap:
-            return _causal_error(
-                _min_overlap_exceeds_window_message(
-                    min_overlap=min_overlap,
-                    window_bars=window_bars,
-                ),
-                code="invalid_input",
-                meta=meta,
+        if window_bars_value < min_overlap_value:
+            requested_min_overlap = min_overlap_value
+            min_overlap_value = window_bars_value
+            meta["min_overlap_requested"] = requested_min_overlap
+            meta["min_overlap"] = min_overlap_value
+            warnings_out.append(
+                f"min_overlap adjusted from {requested_min_overlap} to {min_overlap_value} "
+                "to match window_bars."
             )
 
         if not (0.0 < float(significance) < 1.0):
@@ -2355,7 +2359,7 @@ def cointegration_test(  # noqa: C901
             )
         meta["trend"] = trend_value
 
-        fetch_count = max(int(window_bars) + 10, int(min_overlap) + 10, 200)
+        fetch_count = max(window_bars_value + 10, min_overlap_value + 10, 200)
         meta["fetch_count"] = int(fetch_count)
         series_map: Dict[str, pd.Series] = {}
         errors: List[str] = []
@@ -2377,10 +2381,10 @@ def cointegration_test(  # noqa: C901
                 errors[0],
                 code="data_fetch_failed",
                 meta=meta,
+                warnings=warnings_out,
                 details=errors,
             )
 
-        warnings_out: List[str] = []
         if errors:
             warnings_out.extend(errors)
             symbol_list = [symbol for symbol in symbol_list if symbol in series_map]
@@ -2459,10 +2463,10 @@ def cointegration_test(  # noqa: C901
                 subset_all = transformed[[left, right]].dropna(how="any")
                 overlap_rows = int(len(subset_all))
                 pair_overlaps[f"{left}-{right}"] = overlap_rows
-                if overlap_rows < int(min_overlap):
+                if overlap_rows < min_overlap_value:
                     pairs_skipped_min_overlap += 1
                     continue
-                subset = subset_all.tail(int(window_bars))
+                subset = subset_all.tail(window_bars_value)
                 row, failures = _evaluate_cointegration_pair(
                     subset,
                     left,
@@ -2477,7 +2481,7 @@ def cointegration_test(  # noqa: C901
                         row["aligned_observations"] = overlap_rows
                         row["available_overlap_rows"] = overlap_rows
                         row["calculation_samples"] = int(len(subset))
-                        row["window_requested"] = int(window_bars)
+                        row["window_requested"] = window_bars_value
                         row["window_actual"] = int(len(subset))
                         row["window_truncated"] = bool(len(subset) < overlap_rows)
                     rows.append(row)
@@ -2523,10 +2527,10 @@ def cointegration_test(  # noqa: C901
             error_code = "insufficient_overlap"
             error_message = "No symbol pairs had enough overlapping transformed samples to run cointegration tests."
             details = (
-                _format_pair_overlap_details(pair_overlaps, int(min_overlap)) or None
+                _format_pair_overlap_details(pair_overlaps, min_overlap_value) or None
             )
             if pair_failures and any(
-                rows_count >= int(min_overlap) for rows_count in pair_overlaps.values()
+                rows_count >= min_overlap_value for rows_count in pair_overlaps.values()
             ):
                 error_code = "test_failed"
                 error_message = (
@@ -2569,7 +2573,7 @@ def cointegration_test(  # noqa: C901
             "context": {
                 "timeframe": str(timeframe),
                 "limit": output_limit,
-                "window_bars": int(window_bars),
+                "window_bars": window_bars_value,
                 "start": start,
                 "end": end,
                 "transform": transform_value,
@@ -2577,7 +2581,7 @@ def cointegration_test(  # noqa: C901
                     "Cointegration defaults to log_level; correlation defaults to log_return because it measures co-movement in returns."
                 ),
                 "trend": trend_value,
-                "min_overlap": int(min_overlap),
+                "min_overlap": min_overlap_value,
             },
             "meta": _causal_contract_meta(
                 meta,
