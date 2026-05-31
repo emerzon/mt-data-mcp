@@ -502,6 +502,15 @@ def _get_library_forecast_capabilities(*args, **kwargs):
     return _forecast_capabilities_module().get_library_capabilities(*args, **kwargs)
 
 
+def _is_explicit_false(value: Any) -> bool:
+    if value is None:
+        return False
+    try:
+        return not bool(value)
+    except Exception:
+        return False
+
+
 def _genetic_search_impl(**kwargs):
     return _forecast_tune_module().genetic_search_forecast_params(**kwargs)
 
@@ -1159,15 +1168,15 @@ def _forecast_list_library_models_impl(
     capabilities = [
         row
         for row in capabilities_all
-        if show_unavailable or row.get("available") is not False
+        if show_unavailable or not _is_explicit_false(row.get("available"))
     ]
     method_rows = _forecast_library_method_rows(capabilities)
     available_selected = int(
-        sum(1 for row in capabilities if row.get("available") is not False)
+        sum(1 for row in capabilities if not _is_explicit_false(row.get("available")))
     )
     unavailable_selected = int(len(capabilities) - available_selected)
     unavailable_total = int(
-        sum(1 for row in capabilities_all if row.get("available") is False)
+        sum(1 for row in capabilities_all if _is_explicit_false(row.get("available")))
     )
     availability_meta = {
         "total": len(capabilities_all),
@@ -1275,7 +1284,7 @@ def _forecast_library_method_rows(capabilities: Any) -> List[Dict[str, Any]]:
         if not method:
             continue
         row: Dict[str, Any] = {"method": method}
-        row["available"] = capability.get("available") is not False
+        row["available"] = not _is_explicit_false(capability.get("available"))
         display_name = str(capability.get("display_name") or "").strip()
         if display_name:
             row["model"] = display_name

@@ -1118,6 +1118,10 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     out_bad = raw_list_models("other")
     assert "Unsupported library" in out_bad["error"]
 
+    class FalseLike:
+        def __bool__(self):
+            return False
+
     monkeypatch.setattr(
         cf,
         "_get_library_forecast_capabilities",
@@ -1131,7 +1135,7 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
             {
                 "method": "gt_deepar",
                 "namespace": "native",
-                "available": False,
+                "available": FalseLike(),
                 "execution": {"library": "native", "method": "gt_deepar"},
             },
         ]
@@ -1145,6 +1149,7 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert out_native_available["filters"]["show_unavailable"] is False
     out_native_all = raw_list_models("native", show_unavailable=True)
     assert out_native_all["models"] == ["theta", "gt_deepar"]
+    assert out_native_all["methods"][1]["available"] is False
     assert out_native_all["unavailable"] == 1
     assert out_native_all["unavailable_hidden"] == 0
     assert out_native_all["filters"]["show_unavailable"] is True
