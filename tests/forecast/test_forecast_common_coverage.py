@@ -678,6 +678,17 @@ class TestFormatForecastOutput:
             "2026-05-25 01:00",
             "2026-05-25 02:00",
         ]
+        assert result["forecast_calendar_gaps"] == [
+            {
+                "from": "2026-05-22 22:00",
+                "to": "2026-05-24 21:00",
+                "skipped_bars": 48,
+                "reason": "weekend",
+            }
+        ]
+        assert result["horizon_note"] == (
+            "6 trading bars forecast; 48 H1 bars skipped (weekend)."
+        )
         assert "market_hours_note" not in result
         assert "forecast_market_status" not in result
         assert "warnings" not in result

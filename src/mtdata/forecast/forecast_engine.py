@@ -164,6 +164,37 @@ def _forex_forecast_market_status(epoch: Any) -> str:
     return "closed_weekend" if is_standard_weekend_closed_epoch(epoch) else "open"
 
 
+def _forecast_calendar_gap_rows(
+    future_epochs: List[float],
+    tf_secs: int,
+    fmt_time: Any,
+) -> Tuple[List[Dict[str, Any]], int]:
+    try:
+        step = float(tf_secs)
+    except Exception:
+        return [], 0
+    if step <= 0:
+        return [], 0
+
+    gaps: List[Dict[str, Any]] = []
+    total_skipped = 0
+    for previous_epoch, current_epoch in zip(future_epochs, future_epochs[1:]):
+        delta = float(current_epoch) - float(previous_epoch)
+        if delta <= step * 1.5:
+            continue
+        skipped_bars = max(1, int(round(delta / step)) - 1)
+        total_skipped += skipped_bars
+        gaps.append(
+            {
+                "from": fmt_time(float(previous_epoch) + step),
+                "to": fmt_time(float(current_epoch) - step),
+                "skipped_bars": skipped_bars,
+                "reason": "weekend",
+            }
+        )
+    return gaps, total_skipped
+
+
 @dataclass(frozen=True)
 class TrainingExecutionContext:
     method_l: str
@@ -1006,6 +1037,11 @@ def _format_forecast_output(
     )
     forecast_times = [fmt_time(float(epoch)) for epoch in future_epochs]
     last_observation_time = fmt_time(float(last_epoch))
+    calendar_gaps, skipped_bars = _forecast_calendar_gap_rows(
+        future_epochs,
+        tf_secs,
+        fmt_time,
+    )
     price_anchor_series = df["close"] if "close" in df.columns else df[base_col]
     price_anchor_numeric = pd.to_numeric(price_anchor_series, errors="coerce")
     finite_price_anchors = price_anchor_numeric[np.isfinite(price_anchor_numeric)]
@@ -1044,6 +1080,12 @@ def _format_forecast_output(
         "last_price": last_price,
         "last_price_source": "candle_close" if last_price is not None else None,
     }
+    if calendar_gaps:
+        result["forecast_calendar_gaps"] = calendar_gaps
+        result["horizon_note"] = (
+            f"{horizon} trading bars forecast; {skipped_bars} "
+            f"{str(timeframe or '').upper() or 'timeframe'} bars skipped (weekend)."
+        )
 
     # Choose which arrays to expose
     if quantity == 'return':
