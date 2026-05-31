@@ -173,6 +173,8 @@ def pivot_compute_points(  # noqa: C901
 
     By default, compact detail returns classic pivots while standard/full include
     every supported method. Set `method` to return only one pivot method.
+    Use `support_resistance_levels` for complementary data-driven levels from
+    historical retests and reactions.
     """
     def _run() -> Dict[str, Any]:  # noqa: C901
         try:
@@ -602,6 +604,8 @@ def support_resistance_levels(
     changing every command call site to `detail="full"`.
     Level `type` reflects current price geometry; `dominant_source` reflects
     whether historical tests mostly behaved as support or resistance.
+    Use `pivot_compute_points` for complementary formula-based PP/R/S levels
+    from the last completed OHLC bar.
 
     Score combines:
     - repeated tests of a level
