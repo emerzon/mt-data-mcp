@@ -515,6 +515,14 @@ def _shape_trade_risk_analyze_payload(
     return shaped
 
 
+def _trade_risk_sizing_field_label(field_name: str) -> str:
+    return {
+        "desired_risk_pct": "--desired-risk-pct",
+        "entry": "--entry",
+        "stop_loss": "--stop-loss",
+    }.get(field_name, field_name)
+
+
 def _floor_volume_steps(raw_volume: float, volume_step: float) -> int:
     if volume_step <= 0 or not math.isfinite(raw_volume):
         return 0
@@ -2580,7 +2588,12 @@ def run_trade_risk_analyze(  # noqa: C901
                 _missing_msg = (
                     "Portfolio risk analysis completed. Position sizing is "
                     "available when you provide "
-                    + _human_join(position_sizing_missing)
+                    + _human_join(
+                        [
+                            _trade_risk_sizing_field_label(field_name)
+                            for field_name in position_sizing_missing
+                        ]
+                    )
                     + "."
                 )
                 position_sizing: Dict[str, Any] = {
@@ -2593,7 +2606,7 @@ def run_trade_risk_analyze(  # noqa: C901
                         "stop_loss",
                     ],
                     "note": (
-                        "Add desired_risk_pct to specify how much equity to risk "
+                        "Add --desired-risk-pct to specify how much equity to risk "
                         "on the proposed trade."
                     ),
                 }
@@ -2613,8 +2626,8 @@ def run_trade_risk_analyze(  # noqa: C901
                                 if value is not None
                             },
                             "sizing_not_calculated_reason": (
-                                "Position sizing requires desired_risk_pct, "
-                                "entry, and stop_loss."
+                                "Position sizing requires --desired-risk-pct, "
+                                "--entry, and --stop-loss."
                             ),
                         }
                     )

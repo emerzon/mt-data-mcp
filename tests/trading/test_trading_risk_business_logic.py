@@ -210,6 +210,8 @@ def test_trade_risk_analyze_marks_position_sizing_incomplete_without_required_in
         "stop_loss",
     ]
     assert "Portfolio risk analysis completed" in out["position_sizing"]["message"]
+    assert "--desired-risk-pct" in out["position_sizing"]["message"]
+    assert "desired_risk_pct" not in out["position_sizing"]["message"]
     assert "note" not in out["position_sizing"]
     assert "required_for_sizing" not in out["position_sizing"]
 
@@ -231,6 +233,7 @@ def test_trade_risk_analyze_evaluates_trade_levels_without_desired_risk_pct() ->
 
     assert out["success"] is True
     assert out["position_sizing"]["missing"] == ["desired_risk_pct"]
+    assert "--desired-risk-pct" in out["position_sizing"]["message"]
     assert out["trade_evaluation"] == {
         "status": "valid",
         "symbol": "EURUSD",
