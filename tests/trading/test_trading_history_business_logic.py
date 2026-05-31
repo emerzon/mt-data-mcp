@@ -242,6 +242,7 @@ def test_trade_history_compact_omits_parallel_normalized_rows() -> None:
     )
 
     row = out["items"][0]
+    assert out["row_key"] == "items"
     assert row == {
         "time": "2024-01-01 12:00:00",
         "ticket": 11,

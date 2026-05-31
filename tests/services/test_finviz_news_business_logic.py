@@ -159,6 +159,7 @@ def test_finviz_market_news_normalizes_items() -> None:
     assert out["items"][0]["title"] == "Stocks rise"
     assert out["items"][0]["source"] == "AP"
     assert "T14:00:00+00:00" in out["items"][0]["published_at"]
+    assert out["row_key"] == "items"
     assert "preferred_tool" not in out
     assert "tool_scope" not in out
     assert "output_shape" not in out

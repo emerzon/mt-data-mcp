@@ -991,6 +991,7 @@ def _normalize_finviz_news_payload(
         ]
     else:
         out["items"] = normalized_items
+    out["row_key"] = "items"
     return out
 
 
@@ -2965,6 +2966,7 @@ def finviz_earnings(
             "period": result.get("period", period),
             "detail": detail_mode,
             "items": output_items,
+            "row_key": "items",
             "count": int(result.get("count") or len(output_items)),
             "total": result.get("total"),
             "page": result.get("page"),

@@ -44,6 +44,7 @@ class TestFinvizEarningsOutputContract:
             "market_cap": "3T",
         }
         assert result["count"] == 2
+        assert result["row_key"] == "items"
         assert result["page"] == 2
         assert result["total"] == 6
         assert result["pages"] == 3

@@ -71,6 +71,7 @@ def test_news_tool_limits_globally_without_changing_default(monkeypatch) -> None
     assert len(unlimited["general_news"]) == 2
     assert limited["related_news"] == [{"title": "r1"}, {"title": "r2"}]
     assert limited["general_news"] == [{"title": "g1"}]
+    assert limited["row_keys"] == ["related_news", "general_news"]
     assert "impact_news" not in limited
     assert "upcoming_events" not in limited
     assert "recent_events" not in limited
@@ -95,6 +96,7 @@ def test_news_tool_supports_global_offset(monkeypatch) -> None:
     page = raw(limit=2, offset=2)
 
     assert page["general_news"] == [{"title": "g1"}, {"title": "g2"}]
+    assert page["row_keys"] == ["general_news"]
     assert "related_news" not in page
     assert "impact_news" not in page
     assert page["total_candidates"] == 6

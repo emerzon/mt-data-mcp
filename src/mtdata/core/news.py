@@ -269,6 +269,19 @@ def _apply_news_limit(
     return out
 
 
+def _attach_news_row_keys(result: Dict[str, Any]) -> Dict[str, Any]:
+    row_keys = [
+        key
+        for key in _NEWS_BUCKET_KEYS
+        if isinstance(result.get(key), list)
+    ]
+    if row_keys:
+        out = dict(result)
+        out["row_keys"] = row_keys
+        return out
+    return result
+
+
 @mcp.tool()
 def news(
     symbol: Optional[str] = None,
@@ -370,6 +383,7 @@ def news(
             limit_per_bucket=limit_per_bucket_value,
             offset=offset_value,
         )
+        out = _attach_news_row_keys(out)
         if detail_mode == "full":
             out.setdefault("tool_scope", "unified_trading_news")
             out.setdefault("timezone", "UTC")

@@ -166,6 +166,7 @@ def test_attach_collection_contract_avoids_duplicate_rows_for_legacy_data() -> N
     assert out["collection_kind"] == "table"
     assert out["collection_contract_version"] == "collection.v1"
     assert out["canonical_source"] == "data"
+    assert out["row_key"] == "data"
     assert "rows" not in out
 
 
@@ -180,6 +181,7 @@ def test_attach_collection_contract_can_omit_contract_metadata() -> None:
     )
 
     assert out["data"] == rows
+    assert out["row_key"] == "data"
     assert "rows" not in out
     assert "collection_kind" not in out
     assert "collection_contract_version" not in out

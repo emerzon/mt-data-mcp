@@ -788,6 +788,7 @@ def normalize_trade_history_output(
             out = _insert_trade_history_period_context(out, period_context)
     timezone_label = "UTC"
     if out.get("success") is True and isinstance(out.get("items"), list):
+        out.setdefault("row_key", "items")
         raw_items = list(out["items"])
         for item in raw_items:
             if isinstance(item, dict) and item.get("timezone"):

@@ -361,8 +361,10 @@ def attach_collection_contract(
         else:
             out.setdefault("groups", groups)
             canonical_source = canonical_source or "groups"
-    if include_contract_meta and canonical_source:
-        out.setdefault("canonical_source", canonical_source)
+    if canonical_source:
+        out.setdefault("row_key", canonical_source)
+        if include_contract_meta:
+            out.setdefault("canonical_source", canonical_source)
     return out
 
 
