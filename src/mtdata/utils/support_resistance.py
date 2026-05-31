@@ -2469,6 +2469,14 @@ def _compact_support_resistance_levels(
     ]
 
 
+def _has_historical_role_source(levels: List[Dict[str, Any]]) -> bool:
+    return any(
+        str(level.get("dominant_source") or "").strip().lower()
+        in {"support", "resistance"}
+        for level in levels
+    )
+
+
 def compact_support_resistance_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(payload, dict):
         return payload
@@ -2526,6 +2534,11 @@ def compact_support_resistance_payload(payload: Dict[str, Any]) -> Dict[str, Any
     resistance_levels = _compact_support_resistance_levels(resistances)
     if resistance_levels:
         out["resistances"] = resistance_levels
+    if _has_historical_role_source(support_levels + resistance_levels):
+        out["role_note"] = (
+            "type=current side vs price; dominant_source=historical test role; "
+            "role_transition=true marks a support/resistance flip."
+        )
 
     warnings = payload.get("warnings")
     if isinstance(warnings, list) and warnings:

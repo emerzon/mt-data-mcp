@@ -723,6 +723,10 @@ def test_role_reversal_levels_gain_bonus_after_break_and_retest():
         if level.get("dominant_source") == "resistance"
     )
     assert compact_role_reversed["role_transition"] is True
+    assert compact["role_note"] == (
+        "type=current side vs price; dominant_source=historical test role; "
+        "role_transition=true marks a support/resistance flip."
+    )
 
 
 def test_merge_support_resistance_results_combines_multiple_timeframes():
