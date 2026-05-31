@@ -1083,6 +1083,7 @@ _FINVIZ_FUNDAMENTAL_NUMERIC_KEYS = frozenset(
         "price",
         "change_pct",
         "change_price",
+        "enterprise_value",
         "pe_ratio",
         "forward_pe",
         "peg",
@@ -1156,6 +1157,7 @@ _FINVIZ_NUMERIC_SUFFIX_MULTIPLIERS = {
 _FINVIZ_INTEGER_NUMERIC_KEYS = frozenset(
     {
         "market_cap",
+        "enterprise_value",
         "volume",
         "avg_volume",
         "shares_outstanding",
@@ -1166,6 +1168,7 @@ _FINVIZ_INTEGER_NUMERIC_KEYS = frozenset(
 _FINVIZ_LARGE_NUMBER_FORMAT_KEYS = frozenset(
     {
         "market_cap",
+        "enterprise_value",
         "volume",
         "avg_volume",
         "shares_outstanding",
@@ -1985,6 +1988,13 @@ def _finviz_public_fundamental_keys(field: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys(keys))
 
 
+def _finviz_fundamental_field_returned(
+    field: str,
+    filtered: Dict[str, Any],
+) -> bool:
+    return any(key in filtered for key in _finviz_public_fundamental_keys(field))
+
+
 def _resolve_finviz_fundamental_fields(
     fundamentals: Dict[str, Any],
     requested_fields: list[str],
@@ -2115,20 +2125,11 @@ def _filter_finviz_fundamentals_payload(
         out["category_requested"] = category_input
     if detail_mode == "full":
         out["available_field_count"] = len(fundamentals)
-        omitted_fields = [
-            _normalize_finviz_output_key(field)
+        out["omitted_field_count"] = sum(
+            1
             for field in fundamentals
-            if _normalize_finviz_output_key(field) not in filtered
-            and not any(
-                expanded_key in filtered
-                for expanded_key in _finviz_compound_output_keys(
-                    _normalize_finviz_output_key(field)
-                )
-            )
-        ]
-        out["omitted_field_count"] = len(omitted_fields)
-        if omitted_fields:
-            out["omitted_fields"] = omitted_fields
+            if not _finviz_fundamental_field_returned(field, filtered)
+        )
     if requested_fields is not None:
         if missing_fields:
             out["missing_fields"] = missing_fields

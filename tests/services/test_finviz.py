@@ -1093,6 +1093,33 @@ class TestFinvizTools:
         assert "fields_returned" not in result
         assert result["available_field_count"] == 3
         assert result["omitted_field_count"] == 0
+        assert "omitted_fields" not in result
+
+    @patch("mtdata.core.finviz.get_stock_fundamentals")
+    def test_finviz_fundamentals_full_filtered_omits_field_name_list(self, mock_get_fundamentals):
+        from mtdata.core.finviz import finviz_fundamentals
+
+        mock_get_fundamentals.return_value = {
+            "success": True,
+            "symbol": "AAPL",
+            "fundamentals": {
+                "Price": "270.00",
+                "Change": "1.2%",
+                "Market Cap": "3979.47B",
+                "EPS (ttm)": "7.90",
+            },
+        }
+
+        raw = getattr(finviz_fundamentals, "__wrapped__", finviz_fundamentals)
+        result = raw("AAPL", detail="full", fields="price,change")
+
+        assert result["fundamentals"] == {
+            "price": 270.0,
+            "change_pct": 1.2,
+        }
+        assert result["available_field_count"] == 4
+        assert result["omitted_field_count"] == 2
+        assert "omitted_fields" not in result
 
     @patch("mtdata.core.finviz.get_stock_fundamentals")
     def test_finviz_fundamentals_splits_compound_fields(self, mock_get_fundamentals):
@@ -1173,6 +1200,25 @@ class TestFinvizTools:
         assert fundamentals["avg_volume_formatted"] == "43.78M"
         assert "roa" not in fundamentals
         assert "curr_r" not in fundamentals
+
+    @patch("mtdata.core.finviz.get_stock_fundamentals")
+    def test_finviz_fundamentals_parses_enterprise_value(self, mock_get_fundamentals):
+        from mtdata.core.finviz import finviz_fundamentals
+
+        mock_get_fundamentals.return_value = {
+            "success": True,
+            "symbol": "AAPL",
+            "fundamentals": {
+                "Enterprise Value": "4599.54B",
+            },
+        }
+
+        raw = getattr(finviz_fundamentals, "__wrapped__", finviz_fundamentals)
+        result = raw("AAPL", detail="full")
+
+        fundamentals = result["fundamentals"]
+        assert fundamentals["enterprise_value"] == 4_599_540_000_000
+        assert fundamentals["enterprise_value_formatted"] == "4.6T"
 
     @patch("mtdata.core.finviz.get_stock_insider_trades")
     def test_finviz_insider_defaults_to_compact_detail(self, mock_get_trades):
