@@ -319,15 +319,15 @@ def test_forecast_generate_defaults_to_compact_payload(monkeypatch):
     assert "forecast_anchor" not in out
     assert "forecast_step_seconds" not in out
     assert out["last_price"] == 1.05
-    assert out["last_price_source"] == "candle_close"
+    assert "last_price_source" not in out
     assert out["last_price_age_seconds"] == 3600
     assert out["last_price_age"] == "1h 0m"
     assert out["last_price_stale"] is False
     assert out["freshness_basis"] == "bar_policy"
     assert out["forecast_vs_last_price"] == {
-        "first_forecast_delta": -0.05,
-        "first_forecast_delta_pct": -4.7619,
-        "last_forecast_delta": 0.15,
+        "direction": "bearish",
+        "first_step_delta": -0.05,
+        "first_step_delta_pct": -4.7619,
     }
     assert out["forecast_price"] == [1.0, 1.1, 1.2]
     assert out["forecast"] == [
@@ -423,9 +423,9 @@ def test_forecast_generate_rounds_price_outputs_to_symbol_digits(monkeypatch):
 
     assert out["forecast_price"] == [1.17314, 1.17315]
     assert out["forecast_vs_last_price"] == {
-        "first_forecast_delta": 0.00048,
-        "first_forecast_delta_pct": 0.0409,
-        "last_forecast_delta": 0.00049,
+        "direction": "bullish",
+        "first_step_delta": 0.00048,
+        "first_step_delta_pct": 0.0409,
     }
     assert "series" not in out
 
@@ -498,11 +498,7 @@ def test_forecast_generate_compact_marks_unavailable_ci(monkeypatch):
     assert "ci_status" not in out
     assert "ci_available" not in out
     assert "ci_alpha" not in out
-    assert out["warnings"] == [
-        "Point forecast only for method 'theta'; confidence intervals are unavailable. "
-        "Use forecast_conformal_intervals for uncertainty bands.",
-        "Native theta fallback used.",
-    ]
+    assert out["warnings"] == ["Native theta fallback used."]
 
 
 def test_forecast_generate_compact_nests_available_ci(monkeypatch):

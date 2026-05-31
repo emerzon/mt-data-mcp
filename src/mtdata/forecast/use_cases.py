@@ -430,7 +430,7 @@ def _compact_barrier_optimize_payload(payload: Dict[str, Any]) -> Dict[str, Any]
     return out
 
 
-def _forecast_vs_last_price(payload: Dict[str, Any]) -> Optional[Dict[str, float]]:
+def _forecast_vs_last_price(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     last_price = _finite_float(payload.get("last_price"))
     prices = payload.get("forecast_price")
     if last_price is None or not isinstance(prices, list) or not prices:
@@ -441,14 +441,18 @@ def _forecast_vs_last_price(payload: Dict[str, Any]) -> Optional[Dict[str, float
     delta = first_forecast - last_price
     digits = _forecast_price_digits(payload)
     delta_digits = digits if digits is not None else 6
-    out: Dict[str, float] = {
-        "first_forecast_delta": float(round(delta, delta_digits)),
+    if delta > 0:
+        direction = "bullish"
+    elif delta < 0:
+        direction = "bearish"
+    else:
+        direction = "flat"
+    out: Dict[str, Any] = {
+        "direction": direction,
+        "first_step_delta": float(round(delta, delta_digits)),
     }
     if last_price:
-        out["first_forecast_delta_pct"] = float(round(delta / last_price * 100.0, 4))
-    last_forecast = _finite_float(prices[-1])
-    if last_forecast is not None and last_forecast != first_forecast:
-        out["last_forecast_delta"] = float(round(last_forecast - last_price, delta_digits))
+        out["first_step_delta_pct"] = float(round(delta / last_price * 100.0, 4))
     return out
 
 
@@ -554,10 +558,7 @@ def _apply_forecast_generate_detail(
     ci_compact = _forecast_compact_ci(payload)
     if ci_compact:
         compact["ci"] = ci_compact
-    ci_warning_dedup = (
-        isinstance(ci_compact, dict)
-        and str(ci_compact.get("status") or "").strip().lower() == "unavailable"
-    )
+    ci_warning_dedup = ci_unavailable
     for key in (
         "last_observation_time",
         "timezone",
@@ -565,7 +566,6 @@ def _apply_forecast_generate_detail(
         "forecast_price",
         "forecast_return",
         "last_price",
-        "last_price_source",
         "last_price_age_seconds",
         "last_price_age",
         "last_price_stale",
@@ -610,6 +610,7 @@ def _apply_forecast_generate_detail(
             "forecast_step_seconds",
             "forecast_epoch",
             "last_price_close",
+            "last_price_source",
             "lower_price",
             "upper_price",
             "lower_return",
