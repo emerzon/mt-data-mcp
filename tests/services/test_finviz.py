@@ -1311,10 +1311,38 @@ class TestFinvizTools:
         result = raw("TSLA")
 
         row = result["ratings"][0]
+        assert row["price"] == "$615 -> $625"
         assert row["price_target_previous"] == 615.0
         assert row["price_target_new"] == 625.0
         assert row["price_target_change_pct"] == 1.63
-        assert row["price_target_display"] == "$615 \u2192 $625"
+        assert row["price_target_display"] == "$615 -> $625"
+
+    @patch("mtdata.core.finviz.get_stock_ratings")
+    def test_finviz_ratings_cleans_mojibake_price_target_arrow(self, mock_get_ratings):
+        from mtdata.core.finviz import finviz_ratings
+
+        mock_get_ratings.return_value = {
+            "success": True,
+            "symbol": "AAPL",
+            "ratings": [
+                {
+                    "Date": "2026-05-26",
+                    "Status": "Reiterated",
+                    "Firm": "BofA Securities",
+                    "Rating": "Buy",
+                    "Price": "$330 \u00d4\u00e5\u00c6 $380",
+                }
+            ],
+        }
+
+        raw = getattr(finviz_ratings, "__wrapped__", finviz_ratings)
+        result = raw("AAPL")
+
+        row = result["ratings"][0]
+        assert row["price"] == "$330 -> $380"
+        assert row["price_target_display"] == "$330 -> $380"
+        assert row["price_target_previous"] == 330.0
+        assert row["price_target_new"] == 380.0
 
     @patch("mtdata.core.finviz.get_stock_ratings")
     def test_finviz_ratings_none_detail_uses_compact(self, mock_get_ratings):

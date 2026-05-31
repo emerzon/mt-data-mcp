@@ -1531,10 +1531,25 @@ def _add_finviz_calendar_impact_label(item: Dict[str, Any]) -> Dict[str, Any]:
     return normalized
 
 
+_FINVIZ_PRICE_TARGET_ARROW_TOKENS = (
+    "\u2192",
+    "\u00e2\u0086\u0092",
+    "\u00e2\u2020\u2019",
+    "\u00d4\u00e5\u00c6",
+)
+
+
+def _clean_finviz_price_target_display(value: Any) -> str:
+    display = str(value or "").strip()
+    for token in _FINVIZ_PRICE_TARGET_ARROW_TOKENS:
+        display = display.replace(token, " -> ")
+    return re.sub(r"\s+", " ", display).strip()
+
+
 def _finviz_price_target_fields(value: Any) -> Dict[str, Any]:
     if value in (None, ""):
         return {}
-    display = str(value).strip()
+    display = _clean_finviz_price_target_display(value)
     if not display:
         return {}
     prices = [
@@ -1571,8 +1586,9 @@ def _normalize_finviz_rating_rows(rows: Any) -> List[Any]:
             continue
         if "date" in row:
             row["date"] = _normalize_finviz_date_value(row.get("date"))
-        if "price" in row:
-            row.update(_finviz_price_target_fields(row.get("price")))
+        if row.get("price") not in (None, ""):
+            row["price"] = _clean_finviz_price_target_display(row.get("price"))
+            row.update(_finviz_price_target_fields(row["price"]))
     return normalized
 
 
