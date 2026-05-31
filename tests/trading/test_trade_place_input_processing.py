@@ -343,6 +343,36 @@ def test_trade_place_dry_run_rejects_invalid_live_protection_preview() -> None:
     mock_market.assert_not_called()
 
 
+def test_trade_place_dry_run_rejects_bool_like_invalid_protection_preview() -> None:
+    class BoolLikeFalse:
+        def __bool__(self) -> bool:
+            return False
+
+    with patch("mtdata.core.trading._place_market_order") as mock_market, patch(
+        "mtdata.core.trading.build_trade_place_dry_run_preview",
+        return_value={
+            "sl_tp_valid": BoolLikeFalse(),
+            "sl_tp_error": "take_profit must be above the live ask for BUY orders.",
+        },
+    ):
+        out = trade_place(
+            symbol="BTCUSD",
+            volume=0.03,
+            order_type="BUY",
+            stop_loss=64000,
+            take_profit=63000,
+            dry_run=True,
+            __cli_raw=True,
+        )
+
+    assert out.get("success") is False
+    assert out.get("dry_run") is True
+    assert out.get("no_action") is True
+    assert out.get("error_code") == "invalid_protection_levels"
+    assert "take_profit must be above the live ask" in out.get("error", "")
+    mock_market.assert_not_called()
+
+
 def test_trade_place_dry_run_pending_preview_skips_order_send() -> None:
     with patch("mtdata.core.trading._place_pending_order") as mock_pending, patch(
         "mtdata.core.trading.build_trade_place_dry_run_preview",

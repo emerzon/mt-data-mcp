@@ -847,7 +847,12 @@ def run_trade_place(  # noqa: C901
                         take_profit=request.take_profit,
                     )
                 )
-            if preview.get("sl_tp_valid") is False:
+            sl_tp_valid = preview.get("sl_tp_valid")
+            try:
+                sl_tp_invalid = sl_tp_valid is not None and not bool(sl_tp_valid)
+            except Exception:
+                sl_tp_invalid = False
+            if sl_tp_invalid:
                 sl_tp_error = str(preview.get("sl_tp_error") or "").strip()
                 if sl_tp_error:
                     preview["preview_error"] = sl_tp_error
