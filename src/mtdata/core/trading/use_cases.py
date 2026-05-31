@@ -121,6 +121,17 @@ def _round_optional_number(value: Any, digits: int) -> Optional[float]:
     return round(number, int(digits))
 
 
+def _coerce_warning_list(value: Any) -> List[str]:
+    if isinstance(value, list):
+        return [str(item) for item in value if str(item).strip()]
+    if value is None:
+        return []
+    if isinstance(value, str):
+        text = value.strip()
+        return [text] if text else []
+    return [str(value)]
+
+
 def _trade_row_to_dict(row: Any) -> Dict[str, Any]:
     if isinstance(row, dict):
         return dict(row)
@@ -1116,7 +1127,7 @@ def run_trade_place(  # noqa: C901
                 sl_tp_requested, sl_tp_status = _sl_tp_result_details(result)
                 sl_tp_failed = sl_tp_status == "failed"
                 if sl_tp_requested and sl_tp_failed:
-                    warnings_out: List[str] = list(result.get("warnings") or [])
+                    warnings_out = _coerce_warning_list(result.get("warnings"))
                     pos_ticket = result.get("position_ticket")
                     candidate_tickets = [
                         ticket
@@ -1184,7 +1195,7 @@ def run_trade_place(  # noqa: C901
                         if auto_close_ok:
                             result["protection_status"] = "auto_closed_after_sl_tp_fail"
                         else:
-                            warnings_out = list(result.get("warnings") or [])
+                            warnings_out = _coerce_warning_list(result.get("warnings"))
                             auto_close_warning = "AUTO-CLOSE FAILED: position remains unprotected; close immediately."
                             if auto_close_warning not in warnings_out:
                                 warnings_out.append(auto_close_warning)
