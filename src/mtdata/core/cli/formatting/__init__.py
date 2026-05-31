@@ -508,7 +508,19 @@ def _normalize_market_scan_cli_payload(result: Any, *, verbose: bool) -> Any:
         return result
 
     compact_out: Dict[str, Any] = {}
-    for key in ("success", "count", "headers", "data", "no_action", "message"):
+    for key in (
+        "success",
+        "count",
+        "headers",
+        "data",
+        "freshness",
+        "stale_rows",
+        "data_as_of",
+        "session_status",
+        "units",
+        "no_action",
+        "message",
+    ):
         value = result.get(key)
         if not _is_empty_value(value):
             compact_out[key] = value

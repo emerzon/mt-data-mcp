@@ -609,6 +609,11 @@ class TestFormatResultForCli:
                 "filtered_out_symbols": 0,
                 "skipped_symbols": 0,
                 "query_latency_ms": 289.0,
+                "freshness": "fresh",
+                "stale_rows": 0,
+                "data_as_of": "2026-05-29 19:00",
+                "session_status": "closed_weekend",
+                "units": {"close": "price"},
             },
             fmt="toon",
             verbose=False,
@@ -621,6 +626,11 @@ class TestFormatResultForCli:
         assert "scope:" not in result
         assert "query_latency_ms" not in result
         assert "rank_by" not in result
+        assert "freshness: fresh" in result
+        assert "stale_rows: 0" in result
+        assert 'data_as_of: "2026-05-29 19:00"' in result
+        assert "session_status: closed_weekend" in result
+        assert "units.close: price" in result
 
     def test_market_scan_json_keeps_metadata_for_scripts(self):
         payload = json.loads(
