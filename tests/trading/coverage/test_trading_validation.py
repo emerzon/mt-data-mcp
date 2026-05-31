@@ -13,6 +13,7 @@ import os
 import sys
 from datetime import datetime, timezone
 from types import SimpleNamespace
+from typing import get_type_hints
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -102,6 +103,12 @@ def _bypass_auto_connect(monkeypatch):
         if hasattr(module, "ensure_mt5_connection_or_raise"):
             monkeypatch.setattr(f"{module_name}.ensure_mt5_connection_or_raise", lambda: None)
     return passthrough
+
+
+def test_validation_type_hints_resolve_union_annotations():
+    hints = get_type_hints(_validate_volume)
+
+    assert "volume" in hints
 
 
 # ===================================================================

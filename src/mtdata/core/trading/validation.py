@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from typing import Any, Dict, Literal, Optional, Tuple
+from typing import Any, Dict, Literal, Optional, Tuple, Union
 
 from ...utils.coercion import coerce_finite_float
 from ...utils.utils import _coerce_scalar
