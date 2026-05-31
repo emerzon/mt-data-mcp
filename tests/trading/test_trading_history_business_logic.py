@@ -1166,6 +1166,9 @@ def test_trade_journal_analyze_summarizes_realized_exit_deals() -> None:
     assert out["summary"]["expectancy"] == 6.5
     assert "avg_pnl" not in out["summary"]
     assert out["breakdowns"]["by_symbol"][0]["symbol"] == "EURUSD"
+    assert out["item_schema"] == "trade_journal_analyzed_exit.v1"
+    assert [item["ticket"] for item in out["items"]] == [2, 3]
+    assert out["items"][0]["net_pnl"] == 23.5
     assert out["best_trades"][0]["ticket"] == 2
     assert out["best_trades"][0]["profit"] == 25.0
     assert out["worst_trades"][0]["ticket"] == 3
@@ -1213,6 +1216,8 @@ def test_trade_journal_analyze_compact_returns_summary_only() -> None:
     assert "note" not in out
     assert out["timezone"] == "UTC"
     assert out["summary"]["closed_deals"] == 2
+    assert "items" not in out
+    assert "item_schema" not in out
     assert "breakdowns" not in out
     assert "best_trades" not in out
     assert "worst_trades" not in out

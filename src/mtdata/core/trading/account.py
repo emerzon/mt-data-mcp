@@ -458,6 +458,10 @@ def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str,
     if sample_warning:
         payload["sample_warning"] = sample_warning
     if detail_mode == "full":
+        payload["items"] = [
+            _trade_journal_trade_snapshot(row) for row in analyzed_rows
+        ]
+        payload["item_schema"] = "trade_journal_analyzed_exit.v1"
         payload["best_trades"] = [
             _trade_journal_trade_snapshot(row)
             for row in ranked_best[: min(5, len(ranked_best))]
