@@ -29,6 +29,7 @@ from mtdata.services.data_service import (  # noqa: E402
     _build_candle_freshness_diagnostics,
     _build_no_data_error_with_context,
     _build_rates_df,
+    _compact_tick_summary,
     _fetch_rates_with_warmup,
     _shift_rate_times,
     _trim_df_to_target,
@@ -83,6 +84,21 @@ def test_no_data_context_uses_non_negative_history_position(monkeypatch) -> None
         "latest": "1970-01-01 00:03",
     }
     assert "before earliest available data" in result["error"]
+
+
+def test_compact_tick_summary_preserves_false_like_spread_availability() -> None:
+    class FalseLike:
+        def __bool__(self):
+            return False
+
+    payload = {
+        "success": True,
+        "stats": {"spread": {"available": FalseLike(), "low": 1.0, "high": 2.0}},
+    }
+
+    result = _compact_tick_summary(payload)
+
+    assert result["stats"]["spread"] == {"available": False}
 
 
 @contextmanager
