@@ -217,6 +217,24 @@ def _normalize_equity_symbol(symbol: str, *, tool_name: str) -> tuple[Optional[s
     return symbol_norm, None
 
 
+def _require_equity_symbol(
+    symbol: str,
+    *,
+    tool_name: str,
+) -> tuple[Optional[str], Optional[Dict[str, Any]]]:
+    symbol_norm, error = _normalize_equity_symbol(symbol, tool_name=tool_name)
+    if error is not None:
+        return None, error
+    if symbol_norm is None:
+        return None, _finviz_error_payload(
+            f"{tool_name} could not normalize symbol.",
+            code="finviz_symbol_invalid",
+            operation=tool_name,
+            details={"tool": tool_name},
+        )
+    return symbol_norm, None
+
+
 def _finviz_data_fetched_at() -> str:
     return (
         datetime.now(timezone.utc)
@@ -2127,10 +2145,12 @@ def finviz_fundamentals(
     {"success": True, "symbol": "AAPL", "fundamentals": {"pe_ratio": "28.5", ...}}
     """
     def _run() -> Dict[str, Any]:
-        symbol_norm, error = _normalize_equity_symbol(symbol, tool_name="finviz_fundamentals")
+        symbol_norm, error = _require_equity_symbol(
+            symbol,
+            tool_name="finviz_fundamentals",
+        )
         if error is not None:
             return error
-        assert symbol_norm is not None
         result = get_stock_fundamentals(symbol_norm)
         return _filter_finviz_fundamentals_payload(
             result,
@@ -2162,10 +2182,12 @@ def finviz_description(symbol: str) -> Dict[str, Any]:
         Company description text
     """
     def _run() -> Dict[str, Any]:
-        symbol_norm, error = _normalize_equity_symbol(symbol, tool_name="finviz_description")
+        symbol_norm, error = _require_equity_symbol(
+            symbol,
+            tool_name="finviz_description",
+        )
         if error is not None:
             return error
-        assert symbol_norm is not None
         return get_stock_description(symbol_norm)
 
     return _run_logged_tool(
@@ -2209,10 +2231,12 @@ def finviz_news(
     fields = {"symbol": symbol, "limit": limit, "page": page, "detail": detail}
 
     def _run() -> Dict[str, Any]:
-        symbol_norm, error = _normalize_equity_symbol(symbol, tool_name="finviz_news")
+        symbol_norm, error = _require_equity_symbol(
+            symbol,
+            tool_name="finviz_news",
+        )
         if error is not None:
             return error
-        assert symbol_norm is not None
         return _normalize_finviz_news_payload(
             get_stock_news(symbol_norm, limit=limit, page=page),
             detail=detail,
@@ -2252,10 +2276,12 @@ def finviz_insider(
         List of insider trades
     """
     def _run() -> Dict[str, Any]:
-        symbol_norm, error = _normalize_equity_symbol(symbol, tool_name="finviz_insider")
+        symbol_norm, error = _require_equity_symbol(
+            symbol,
+            tool_name="finviz_insider",
+        )
         if error is not None:
             return error
-        assert symbol_norm is not None
         return _compact_finviz_insider_payload(
             get_stock_insider_trades(symbol_norm, limit=limit, page=page),
             detail=detail,
@@ -2299,10 +2325,12 @@ def finviz_ratings(
         List of analyst ratings
     """
     def _run() -> Dict[str, Any]:
-        symbol_norm, error = _normalize_equity_symbol(symbol, tool_name="finviz_ratings")
+        symbol_norm, error = _require_equity_symbol(
+            symbol,
+            tool_name="finviz_ratings",
+        )
         if error is not None:
             return error
-        assert symbol_norm is not None
         extras_value = normalize_output_extras(extras)
         detail_value = detail
         limit_value: Optional[int] = int(limit)
@@ -2345,10 +2373,12 @@ def finviz_peers(
         List of peer ticker symbols
     """
     def _run() -> Dict[str, Any]:
-        symbol_norm, error = _normalize_equity_symbol(symbol, tool_name="finviz_peers")
+        symbol_norm, error = _require_equity_symbol(
+            symbol,
+            tool_name="finviz_peers",
+        )
         if error is not None:
             return error
-        assert symbol_norm is not None
         return _compact_finviz_peers_payload(
             get_stock_peers(symbol_norm),
             detail=detail,

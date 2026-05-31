@@ -898,6 +898,27 @@ class TestFinvizTools:
         assert isinstance(result.get("request_id"), str)
 
     @patch("mtdata.core.finviz.get_stock_fundamentals")
+    @patch("mtdata.core.finviz._normalize_equity_symbol", return_value=(None, None))
+    def test_finviz_fundamentals_handles_degenerate_symbol_normalization(
+        self,
+        mock_normalize,
+        mock_get_fundamentals,
+    ):
+        from mtdata.core.finviz import finviz_fundamentals
+
+        raw = getattr(finviz_fundamentals, "__wrapped__", finviz_fundamentals)
+        result = raw("AAPL")
+
+        mock_normalize.assert_called_once_with(
+            "AAPL",
+            tool_name="finviz_fundamentals",
+        )
+        mock_get_fundamentals.assert_not_called()
+        assert result["success"] is False
+        assert result["error_code"] == "finviz_symbol_invalid"
+        assert result["operation"] == "finviz_fundamentals"
+
+    @patch("mtdata.core.finviz.get_stock_fundamentals")
     def test_finviz_fundamentals_defaults_to_compact_summary(self, mock_get_fundamentals):
         from mtdata.core.finviz import finviz_fundamentals
 
