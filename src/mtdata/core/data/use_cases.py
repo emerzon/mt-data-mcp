@@ -395,18 +395,19 @@ def _public_candle_diagnostics(result: Dict[str, Any]) -> Dict[str, Any]:
     freshness = diagnostics.get("freshness")
     if isinstance(freshness, dict):
         public["freshness_basis"] = "bar_policy"
+        within_policy = freshness.get("last_bar_within_policy_window")
         for key in ("data_freshness_seconds", "last_bar_within_policy_window"):
             if key == "data_freshness_seconds" and query_mode == "range":
                 continue
             if freshness.get(key) is not None:
-                public[key] = freshness[key]
+                public[key] = bool(freshness[key]) if key == "last_bar_within_policy_window" else freshness[key]
         if query_mode != "range" and freshness.get("data_freshness_seconds") is not None:
             seconds = freshness["data_freshness_seconds"]
             public.setdefault("data_age_seconds", seconds)
             age_text = _format_age_seconds(seconds)
             if age_text is not None:
                 public["data_age"] = age_text
-            relaxed_policy = freshness.get("freshness_policy_relaxed")
+            relaxed_policy = bool(freshness.get("freshness_policy_relaxed"))
             if relaxed_policy:
                 public["market_status"] = (
                     freshness.get("market_session_status") or "closed_or_idle"
@@ -415,7 +416,8 @@ def _public_candle_diagnostics(result: Dict[str, Any]) -> Dict[str, Any]:
                 if note:
                     public["note"] = note
             stale = (
-                freshness.get("last_bar_within_policy_window") is False
+                within_policy is not None
+                and not bool(within_policy)
                 and not relaxed_policy
             )
             public["data_stale"] = stale
