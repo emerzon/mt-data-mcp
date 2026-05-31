@@ -3,6 +3,7 @@ from unittest.mock import patch
 import pytest
 
 from mtdata.core.output_contract import (
+    _coerce_optional_verbose_flag,
     attach_collection_contract,
     ensure_common_meta,
     normalize_output_detail,
@@ -79,6 +80,17 @@ def test_normalize_output_extras_accepts_comma_lists_and_full_aliases() -> None:
         "diagnostics",
     )
     assert set(normalize_output_extras("all")) >= {"metadata", "diagnostics", "raw"}
+
+
+def test_normalize_output_extras_accepts_bool_like_full_shortcut() -> None:
+    np = pytest.importorskip("numpy")
+
+    full_extras = normalize_output_extras(True)
+
+    assert normalize_output_extras(np.bool_(True)) == full_extras
+    assert normalize_output_extras("true") == full_extras
+    assert normalize_output_extras(np.bool_(False)) == ()
+    assert _coerce_optional_verbose_flag(np.bool_(True)) is True
 
 
 def test_normalize_output_extras_rejects_legacy_detail_assignments() -> None:

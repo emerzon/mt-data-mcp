@@ -101,10 +101,18 @@ def normalize_output_extras(value: Any) -> tuple[str, ...]:
     """Normalize public richer-output extras into canonical tokens."""
     if value is _MISSING:
         return ()
-    if value in (None, "", False):
+    parsed_bool = _parse_bool_like(value, allow_none=True)
+    if parsed_bool is _UNPARSED_BOOL and not isinstance(
+        value,
+        (str, Iterable, dict, bytes, bytearray),
+    ):
+        parsed_bool = _parse_bool_like(str(value), allow_none=True)
+    if parsed_bool is None or parsed_bool is False:
         return ()
-    if value is True:
+    if parsed_bool is True:
         return tuple(sorted(_OUTPUT_EXTRAS))
+    if value == "":
+        return ()
 
     items: list[Any]
     if isinstance(value, str):
