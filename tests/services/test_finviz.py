@@ -548,12 +548,16 @@ class TestFinvizTools:
         assert "pairs" not in result
         assert result["detail"] == "compact"
         assert result["data_limitations"] == {"performance_periods": "day_only"}
+        assert result["price_currency_basis"] == "quote_currency"
+        assert result["price_source"] == "finviz_delayed"
+        assert result["freshness"] == "finviz_delayed"
         assert result["items"] == [
             {
                 "symbol": "EUR/USD",
                 "mt5_symbol": "EURUSD",
                 "name": "Euro / US Dollar",
                 "price": "1.10",
+                "price_currency": "USD",
                 "perf_day_pct": 0.2,
             }
         ]
@@ -656,6 +660,9 @@ class TestFinvizTools:
         assert result["detail"] == "compact"
         assert result["performance_format"] == "percentage_points"
         assert result["data_limitations"] == {"performance_periods": "day_only"}
+        assert result["price_currency"] == "USD"
+        assert result["price_source"] == "finviz_delayed"
+        assert result["freshness"] == "finviz_delayed"
         assert result["items"] == [
             {
                 "symbol": "BTC",
@@ -946,8 +953,9 @@ class TestFinvizTools:
         assert result["detail"] == "compact"
         assert result["category"] == "summary"
         assert result["currency"] == "USD"
+        assert result["price_currency"] == "USD"
         assert result["price_source"] == "finviz_delayed"
-        assert result["freshness"] == "delayed, timestamp unavailable"
+        assert result["freshness"] == "finviz_delayed"
         assert "freshness_basis" not in result
         assert result["data_fetched_at"].endswith("Z")
         assert result["fundamentals"]["pe_ratio"] == 34.29
@@ -985,7 +993,8 @@ class TestFinvizTools:
         result = raw("AAPL", detail="full")
 
         assert result["price_source"] == "finviz_delayed"
-        assert result["freshness"] == "delayed, timestamp unavailable"
+        assert result["price_currency"] == "USD"
+        assert result["freshness"] == "finviz_delayed"
         assert "freshness_basis" not in result
 
     @patch("mtdata.core.finviz.get_stock_fundamentals")
@@ -1646,6 +1655,9 @@ class TestFinvizTools:
             view="technical",
         )
         assert result["detail"] == "compact"
+        assert result["price_currency"] == "USD"
+        assert result["price_source"] == "finviz_delayed"
+        assert result["freshness"] == "finviz_delayed"
         assert result["items"] == [
             {
                 "symbol": "AAPL",

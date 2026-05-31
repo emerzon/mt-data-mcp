@@ -33,7 +33,6 @@ from ..services.finviz import (
 )
 from ..shared.schema import CompactFullDetailLiteral
 from ..shared.symbols import finviz_forex_symbol_to_mt5
-from ..utils.freshness import format_freshness_label
 from ._mcp_instance import mcp
 from .error_envelope import build_error_payload
 from .execution_logging import run_logged_operation
@@ -288,6 +287,7 @@ _FINVIZ_MARKET_COMPACT_FIELDS = (
     "mt5_symbol",
     "name",
     "price",
+    "price_currency",
     "group",
     "perf_day",
     "perf_week",
@@ -357,6 +357,8 @@ _FINVIZ_DETAIL_ERROR = (
     "detail must be one of: compact, standard, summary, full. "
     "Finviz standard/summary output uses the compact shape."
 )
+_FINVIZ_DELAYED_FRESHNESS = "finviz_delayed"
+_FINVIZ_USD_PRICE_CURRENCY = "USD"
 _FINVIZ_CALENDAR_LOCAL_TIMEZONE = "America/New_York"
 _FINVIZ_CALENDAR_LOCAL_TZ = ZoneInfo(_FINVIZ_CALENDAR_LOCAL_TIMEZONE)
 
@@ -376,12 +378,33 @@ def _derive_forex_pair_name(symbol: Any) -> Optional[str]:
     return None
 
 
+def _forex_pair_currencies(symbol: Any) -> Optional[tuple[str, str]]:
+    text = str(symbol or "").strip().upper()
+    if "/" in text:
+        left, right = text.split("/", 1)
+    elif len(text) == 6:
+        left, right = text[:3], text[3:]
+    else:
+        return None
+    if left in _FOREX_CURRENCY_NAMES and right in _FOREX_CURRENCY_NAMES:
+        return left, right
+    return None
+
+
 def _attach_finviz_forex_mt5_symbol(row: Dict[str, Any]) -> Dict[str, Any]:
-    mt5_symbol = finviz_forex_symbol_to_mt5(row.get("symbol"))
-    if mt5_symbol is None:
-        return row
     out = dict(row)
-    out["mt5_symbol"] = mt5_symbol
+    mt5_symbol = finviz_forex_symbol_to_mt5(row.get("symbol"))
+    if mt5_symbol is not None:
+        out["mt5_symbol"] = mt5_symbol
+    currencies = (
+        _forex_pair_currencies(out.get("symbol"))
+        if out.get("price") not in (None, "")
+        else None
+    )
+    if currencies is not None:
+        base_currency, quote_currency = currencies
+        out["base_currency"] = base_currency
+        out["price_currency"] = quote_currency
     return out
 
 
@@ -523,15 +546,22 @@ def _normalize_finviz_market_payload(
     if omitted:
         out["omitted_item_count"] = omitted
     out["detail"] = detail_mode
+    has_price = any(
+        isinstance(row, dict) and row.get("price") not in (None, "")
+        for row in normalized_rows
+    )
+    if has_price and rows_key in {"stocks", "coins"}:
+        out["price_currency"] = _FINVIZ_USD_PRICE_CURRENCY
+    if has_price and rows_key == "pairs":
+        out["price_currency_basis"] = "quote_currency"
+    if has_price and rows_key in {"stocks", "pairs", "coins"}:
+        out["price_source"] = _FINVIZ_DELAYED_FRESHNESS
+        out["freshness"] = _FINVIZ_DELAYED_FRESHNESS
     if detail_mode != "full" and rows_key in {"pairs", "coins", "futures"}:
         out["performance_format"] = "percentage_points"
     if rows_key in {"pairs", "coins", "futures"}:
         limitations = {"performance_periods": "day_only"}
         if rows_key == "futures":
-            has_price = any(
-                isinstance(row, dict) and row.get("price") not in (None, "")
-                for row in normalized_rows
-            )
             if not has_price:
                 limitations["price"] = "not_available_from_source"
         out["data_limitations"] = limitations
@@ -2123,11 +2153,9 @@ def _filter_finviz_fundamentals_payload(
     out["detail"] = detail_mode
     out["category"] = category_out
     if "price" in filtered:
-        out["price_source"] = "finviz_delayed"
-        out["freshness"] = format_freshness_label(
-            delayed=True,
-            timestamp_available=False,
-        )
+        out["price_source"] = _FINVIZ_DELAYED_FRESHNESS
+        out["price_currency"] = _FINVIZ_USD_PRICE_CURRENCY
+        out["freshness"] = _FINVIZ_DELAYED_FRESHNESS
     if category_input != category_mode:
         out["category_requested"] = category_input
     if detail_mode == "full":
