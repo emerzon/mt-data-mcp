@@ -62,4 +62,5 @@ prompts/*
 !prompts/trader.md
 !prompts/trading_agent_prompt.md
 !prompts/trader_active.md
+!prompts/trader_grid_scalper.md
 code-reports/*

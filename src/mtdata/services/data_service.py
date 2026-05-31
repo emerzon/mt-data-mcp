@@ -1895,7 +1895,12 @@ def _compact_tick_summary(out: Dict[str, Any]) -> Dict[str, Any]:
     spread = out.get("stats", {}).get("spread")
     compact_spread: Dict[str, Any] = {}
     if isinstance(spread, dict):
-        if spread.get("available") is False:
+        available = spread.get("available")
+        try:
+            spread_unavailable = available is not None and not bool(available)
+        except Exception:
+            spread_unavailable = False
+        if spread_unavailable:
             compact_spread["available"] = False
         else:
             for source_key, target_key in (
