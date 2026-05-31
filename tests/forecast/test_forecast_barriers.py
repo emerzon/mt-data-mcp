@@ -2543,6 +2543,26 @@ class TestUnresolvedTerminalPnl(unittest.TestCase):
             "prob_win is 0: no simulated paths reached TP within horizon.",
         )
 
+    def test_evaluate_barrier_candidate_rejects_empty_paths(self):
+        from mtdata.forecast.barriers_optimization import (
+            _BarrierBridgeInputs,
+            _evaluate_barrier_candidate,
+        )
+
+        ctx = self._make_context(last_price=1.1000, pip_size=0.0001, dir_long=True)
+        bridge = _BarrierBridgeInputs(enabled=False, sigma=0.0, log_paths=None, uniform_tp=None, uniform_sl=None)
+
+        result, is_invalid = _evaluate_barrier_candidate(
+            50.0,
+            50.0,
+            np.empty((0, 10)),
+            context=ctx,
+            bridge_inputs=bridge,
+        )
+
+        self.assertIsNone(result)
+        self.assertTrue(is_invalid)
+
 
 class TestCandidateBarrierGeometry(unittest.TestCase):
     def _make_context(self, *, dir_long=True, last_price=1.1000):

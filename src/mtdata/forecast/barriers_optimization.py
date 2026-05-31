@@ -329,6 +329,9 @@ def _evaluate_barrier_candidate(
     bridge_inputs: _BarrierBridgeInputs,
 ) -> Tuple[Optional[Dict[str, Any]], bool]:
     sims_total, horizon_total = eval_paths.shape
+    if sims_total <= 0 or horizon_total <= 0:
+        return None, True
+
     tp_price, sl_price = _candidate_barrier_prices(tp_unit, sl_unit, context=context)
     if not _candidate_barrier_geometry_is_valid(tp_price, sl_price, context=context):
         return None, True
