@@ -1262,7 +1262,7 @@ def _market_scan_error(
 def _market_scan_freshness_summary(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     if not rows:
         return {}
-    stale_count = sum(1 for row in rows if row.get("data_stale") is True)
+    stale_count = sum(1 for row in rows if bool(row.get("data_stale")))
     row_count = len(rows)
     if stale_count == row_count:
         freshness = "stale"

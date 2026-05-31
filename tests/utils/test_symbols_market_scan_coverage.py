@@ -63,6 +63,25 @@ def test_market_scan_error_uses_standard_error_envelope():
     assert "symbols_top_markets" in result["related_tools"]
 
 
+def test_market_scan_freshness_summary_counts_bool_like_stale_flags():
+    from mtdata.core.symbols import _market_scan_freshness_summary
+
+    class BoolLike:
+        def __bool__(self) -> bool:
+            return True
+
+    result = _market_scan_freshness_summary(
+        [
+            {"symbol": "A", "data_stale": True},
+            {"symbol": "B", "data_stale": BoolLike()},
+            {"symbol": "C", "data_stale": False},
+        ]
+    )
+
+    assert result["stale_rows"] == 2
+    assert result["freshness"] == "mixed, 2/3 stale"
+
+
 def _make_symbol(
     name: str,
     *,
