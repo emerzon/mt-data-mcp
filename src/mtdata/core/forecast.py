@@ -1170,7 +1170,7 @@ def _forecast_list_library_models_impl(
         for row in capabilities_all
         if show_unavailable or not _is_explicit_false(row.get("available"))
     ]
-    method_rows = _forecast_library_method_rows(capabilities)
+    model_rows = _forecast_library_model_rows(capabilities)
     available_selected = int(
         sum(1 for row in capabilities if not _is_explicit_false(row.get("available")))
     )
@@ -1189,8 +1189,7 @@ def _forecast_list_library_models_impl(
     if lib == "native":
         return {
             "library": lib,
-            "models": [str(row.get("method")) for row in capabilities],
-            "methods": method_rows,
+            "models": model_rows,
             "capabilities": capabilities,
             **availability_meta,
             "usage": [
@@ -1207,18 +1206,18 @@ def _forecast_list_library_models_impl(
 
         return {
             "library": lib,
-            "models": [str(row.get("display_name")) for row in capabilities],
-            "methods": method_rows,
+            "models": model_rows,
             "capabilities": capabilities,
             **availability_meta,
-            "usage": "mtdata-cli forecast_generate SYMBOL --library statsforecast --method AutoARIMA",
+            "usage": [
+                "mtdata-cli forecast_generate SYMBOL --library statsforecast --method AutoARIMA",
+            ],
         }
 
     if lib == "sktime":
         return {
             "library": lib,
-            "models": [str(row.get("display_name")) for row in capabilities],
-            "methods": method_rows,
+            "models": model_rows,
             "capabilities": capabilities,
             **availability_meta,
             "usage": [
@@ -1230,25 +1229,9 @@ def _forecast_list_library_models_impl(
         }
 
     if lib == "pretrained":
-        models = []
-        for row in capabilities:
-            model_row = {
-                "method": str(row.get("method")),
-                "requires": list(row.get("requires") or []),
-                "params": [
-                    dict(param)
-                    for param in (row.get("params") or [])
-                    if isinstance(param, dict)
-                ],
-            }
-            notes = row.get("notes")
-            if notes:
-                model_row["notes"] = str(notes)
-            models.append(model_row)
         return {
             "library": lib,
-            "models": models,
-            "methods": method_rows,
+            "models": model_rows,
             "capabilities": capabilities,
             **availability_meta,
             "usage": [
@@ -1260,7 +1243,7 @@ def _forecast_list_library_models_impl(
     if lib == "mlforecast":
         return {
             "library": lib,
-            "methods": method_rows,
+            "models": model_rows,
             "capabilities": capabilities,
             **availability_meta,
             "note": "Use `--method <dotted sklearn/lightgbm regressor class>` plus optional constructor kwargs in --params (or use --set method.<k>=<v>).",
@@ -1273,7 +1256,7 @@ def _forecast_list_library_models_impl(
     return {"library": lib, "error": "Unsupported library (supported: native, statsforecast, sktime, pretrained, mlforecast)"}
 
 
-def _forecast_library_method_rows(capabilities: Any) -> List[Dict[str, Any]]:
+def _forecast_library_model_rows(capabilities: Any) -> List[Dict[str, Any]]:
     rows: List[Dict[str, Any]] = []
     if not isinstance(capabilities, list):
         return rows

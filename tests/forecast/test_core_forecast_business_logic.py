@@ -1145,27 +1145,32 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     out_native = raw_list_models("native")
     assert out_native["library"] == "native"
     assert isinstance(out_native["models"], list)
-    assert out_native["methods"][0]["method"] == out_native["models"][0]
+    assert out_native["models"][0]["method"]
+    assert out_native["models"][0]["available"] is True
     assert isinstance(out_native["capabilities"], list)
     assert out_native["capabilities"][0]["execution"]["library"] == "native"
 
     out_stats = raw_list_models("statsforecast")
     assert out_stats["library"] == "statsforecast"
-    assert "AutoARIMA" in out_stats["models"]
     assert any(
         row["method"] == "AutoARIMA" and row["model"] == "AutoARIMA"
-        for row in out_stats["methods"]
+        for row in out_stats["models"]
     )
+    assert isinstance(out_stats["usage"], list)
     assert out_stats["capabilities"][0]["execution"]["library"] == "statsforecast"
     assert out_stats["capabilities"][0]["selector"]["key"] == "model_name"
 
     out_sktime = raw_list_models("sktime")
-    assert out_sktime["models"] == ["NaiveForecaster", "ThetaForecaster"]
+    assert [row["model"] for row in out_sktime["models"]] == [
+        "NaiveForecaster",
+        "ThetaForecaster",
+    ]
     assert out_sktime["capabilities"][0]["selector"]["key"] == "estimator"
     assert out_sktime["capabilities"][0]["execution"]["method"] == "sktime"
 
     out_ml = raw_list_models("mlforecast")
     assert out_ml["library"] == "mlforecast"
+    assert out_ml["models"][0]["method"] == "mlforecast"
     assert "note" in out_ml
     assert out_ml["capabilities"][0]["selector"]["key"] == "model"
 
@@ -1197,13 +1202,17 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
         else [],
     )
     out_native_available = raw_list_models("native")
-    assert out_native_available["models"] == ["theta"]
+    assert out_native_available["models"] == [
+        {"method": "theta", "available": True, "library": "native"}
+    ]
     assert out_native_available["unavailable"] == 0
     assert out_native_available["unavailable_hidden"] == 1
     assert out_native_available["filters"]["show_unavailable"] is False
     out_native_all = raw_list_models("native", show_unavailable=True)
-    assert out_native_all["models"] == ["theta", "gt_deepar"]
-    assert out_native_all["methods"][1]["available"] is False
+    assert out_native_all["models"] == [
+        {"method": "theta", "available": True, "library": "native"},
+        {"method": "gt_deepar", "available": False, "library": "native"},
+    ]
     assert out_native_all["unavailable"] == 1
     assert out_native_all["unavailable_hidden"] == 0
     assert out_native_all["filters"]["show_unavailable"] is True
@@ -1572,9 +1581,7 @@ def test_forecast_list_library_models_derives_pretrained_models_from_capabilitie
     assert out["models"] == [
         {
             "method": "custom_pretrained",
-            "requires": ["pkg-a", "pkg-b"],
-            "params": [{"name": "model_name", "type": "str"}],
-            "notes": "registry-backed note",
+            "available": True,
         }
     ]
 

@@ -1670,6 +1670,7 @@ def _normalize_library_models_payload(
                 if isinstance(item, dict):
                     compact = {
                         "model": item.get("display_name") or item.get("method"),
+                        "available": item.get("available"),
                     }
                     compact_rows.append(
                         {
