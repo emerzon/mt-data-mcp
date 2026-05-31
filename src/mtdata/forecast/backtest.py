@@ -220,6 +220,7 @@ def _compute_performance_metrics(
     arr = arr[np.isfinite(arr)]
     if arr.size == 0:
         return metrics
+    arr = np.clip(arr, -0.999, None)
 
     bars_per_year = _bars_per_year(timeframe)
     cadence = max(1, int(trade_spacing_bars)) if trade_spacing_bars is not None else max(1, int(horizon))

@@ -119,6 +119,19 @@ def test_performance_metrics_skip_annualization_for_short_samples() -> None:
     assert int(metrics["min_trades_for_annualization"]) == 30
 
 
+def test_performance_metrics_clamps_total_loss_returns() -> None:
+    metrics = _compute_performance_metrics(
+        returns=[0.01, -1.5, 0.03, -1.0],
+        timeframe="H1",
+        horizon=1,
+        slippage_bps=0.0,
+    )
+
+    assert metrics["trades_observed"] == 4
+    assert metrics["avg_return_per_trade"] == np.mean([0.01, -0.999, 0.03, -0.999])
+    assert 0.0 <= metrics["max_drawdown"] <= 1.0
+
+
 def test_backtest_price_target_trade_returns_vary_by_forecast_implied_exit() -> None:
     times = np.arange(1700000000, 1700000000 + 90 * 3600, 3600, dtype=float)
     close = np.linspace(100.0, 145.0, 90, dtype=float)
