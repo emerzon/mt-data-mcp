@@ -174,6 +174,10 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("trade_modify", "expiration"): "Pending order expiration time (dateparser string, UTC epoch seconds, or GTC token).",
     ("trade_place", "expiration"): "Pending order expiration time (dateparser string, UTC epoch seconds, or GTC token).",
     ("wait_event", "symbol"): "Trading symbol (e.g. EURUSD).",
+    ("wait_event", "timeframe"): (
+        "Candle/event timeframe. Defaults to M1 for faster event polling; "
+        "set H1 for hourly boundaries."
+    ),
     ("wait_event", "watch_for"): (
         "Event names or event objects. Examples: order_filled, "
         "'{\"type\":\"order_filled\",\"symbol\":\"EURUSD\"}'. "

@@ -557,6 +557,9 @@ def wait_event(
 ) -> Dict[str, Any]:
     """Wait for watch events on a symbol until the next timeframe boundary.
 
+    Defaults to M1 for faster event polling; set `timeframe="H1"` for hourly
+    candle/event boundaries.
+
     Set `wait_next_bar=true` for the common shortcut: wait only for the next
     candle close on `timeframe` and skip inferred market/account watchers.
 
