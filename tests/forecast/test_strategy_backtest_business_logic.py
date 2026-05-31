@@ -60,6 +60,30 @@ def test_strategy_backtest_sma_cross_generates_long_trade(monkeypatch):
     assert out["summary"]["net_return"] > 0.0
 
 
+def test_strategy_backtest_includes_first_valid_warmup_signal(monkeypatch):
+    monkeypatch.setattr(
+        forecast_backtest,
+        "_fetch_history",
+        lambda *args, **kwargs: _history_from_closes(
+            [1.0, 2.0, 3.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]
+        ),
+    )
+
+    out = forecast_backtest.strategy_backtest(
+        symbol="EURUSD",
+        timeframe="H1",
+        strategy="sma_cross",
+        lookback=10,
+        fast_period=2,
+        slow_period=3,
+        detail="full",
+        position_mode="long_short",
+    )
+
+    assert out["success"] is True
+    assert out["trades"][0]["direction"] == "long"
+
+
 def test_strategy_backtest_compact_mode_excludes_trades(monkeypatch):
     monkeypatch.setattr(
         forecast_backtest,

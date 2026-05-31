@@ -715,7 +715,7 @@ def strategy_backtest(  # noqa: C901
         )
 
         start_signal_idx = max(
-            int(signal_warmup),
+            max(int(signal_warmup) - 1, 0),
             0 if range_requested else len(df) - int(lookback),
         )
         times = df["time"].astype(float).to_numpy()
