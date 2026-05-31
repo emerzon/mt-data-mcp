@@ -39,6 +39,7 @@ from ..shared.schema import (
     _PIVOT_METHODS,
     AutoTimeframeLiteral,
     CompactStandardFullDetailLiteral,
+    PivotMethodLiteral,
     TimeframeLiteral,
 )
 
@@ -164,17 +165,27 @@ def compute_support_resistance_payload(
 def pivot_compute_points(  # noqa: C901
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
+    method: Optional[PivotMethodLiteral] = None,
     detail: CompactStandardFullDetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """Compute pivot point levels from the last completed bar on `timeframe`.
-    Parameters: symbol, timeframe
+    Parameters: symbol, timeframe, method, detail
 
-    Returns JSON with shared source data plus levels for every supported pivot method.
+    By default, compact detail returns classic pivots while standard/full include
+    every supported method. Set `method` to return only one pivot method.
     """
     def _run() -> Dict[str, Any]:  # noqa: C901
         try:
             mt5 = create_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise)
             mt5.ensure_connection()
+            method_filter = str(method).strip().lower() if method is not None else None
+            if method_filter and method_filter not in _PIVOT_METHODS:
+                return {
+                    "error": (
+                        f"Invalid pivot method: {method_filter}. "
+                        f"Valid methods: {', '.join(_PIVOT_METHODS)}"
+                    )
+                }
             if timeframe not in TIMEFRAME_MAP:
                 return {"error": invalid_timeframe_error(timeframe, TIMEFRAME_MAP)}
             mt5_tf = TIMEFRAME_MAP[timeframe]
@@ -381,6 +392,8 @@ def pivot_compute_points(  # noqa: C901
             levels_by_method: Dict[str, Dict[str, float]] = {}
             pivot_values: Dict[str, float] = {}
             for method_name in _PIVOT_METHODS:
+                if method_filter and method_name != method_filter:
+                    continue
                 method_info = _compute_method(method_name)
                 if not method_info:
                     continue
@@ -496,17 +509,18 @@ def pivot_compute_points(  # noqa: C901
             }
             payload["timezone"] = timezone_label
             if detail_value == "compact":
-                classic_method = next(
+                compact_method_name = method_filter or "classic"
+                selected_method = next(
                     (
                         info
                         for info in methods_out
-                        if str(info.get("method")).strip().lower() == "classic"
+                        if str(info.get("method")).strip().lower() == compact_method_name
                     ),
                     methods_out[0] if methods_out else None,
                 )
                 compact_levels = (
-                    dict(classic_method.get("levels", {}))
-                    if isinstance(classic_method, dict)
+                    dict(selected_method.get("levels", {}))
+                    if isinstance(selected_method, dict)
                     else {}
                 )
                 compact_payload: Dict[str, Any] = {
@@ -516,13 +530,13 @@ def pivot_compute_points(  # noqa: C901
                     "period": payload["period"],
                     "detail": "compact",
                     "method": (
-                        classic_method.get("method")
-                        if isinstance(classic_method, dict)
+                        selected_method.get("method")
+                        if isinstance(selected_method, dict)
                         else "classic"
                     ),
                     "pivot": (
-                        classic_method.get("pivot")
-                        if isinstance(classic_method, dict)
+                        selected_method.get("pivot")
+                        if isinstance(selected_method, dict)
                         else None
                     ),
                     "levels": {
@@ -550,6 +564,7 @@ def pivot_compute_points(  # noqa: C901
         operation="pivot_compute_points",
         symbol=symbol,
         timeframe=timeframe,
+        method=method,
         detail=detail,
         func=_run,
     )

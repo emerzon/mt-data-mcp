@@ -93,6 +93,16 @@ class TestPivotInvalidInputs:
         assert "error" in res
         assert "Unsupported timeframe" in res["error"]
 
+    def test_invalid_method(self):
+        fn = _get_pivot_fn()
+
+        res = fn("EURUSD", method="quarterly")
+
+        assert res["error"] == (
+            "Invalid pivot method: quarterly. "
+            "Valid methods: classic, fibonacci, camarilla, woodie, demark"
+        )
+
 
 def test_pivot_compute_points_logs_finish_event(caplog):
     fn = _get_pivot_fn()
@@ -213,7 +223,7 @@ class TestPivotSingleBar:
 class TestPivotHappyPath:
     """Full happy-path tests around completed-bar source selection."""
 
-    def _run(self, rates_list, digits=5, use_ctz=False, detail="compact"):
+    def _run(self, rates_list, digits=5, use_ctz=False, detail="compact", method=None):
         fn = _get_pivot_fn()
         info = _make_symbol_info(digits=digits)
         current_dt = datetime.fromtimestamp(1_700_000_000.0, tz=timezone.utc)
@@ -236,7 +246,7 @@ class TestPivotHappyPath:
              patch("mtdata.core.pivot.datetime") as mock_datetime:
             mock_datetime.now.return_value = current_dt
             mock_datetime.fromtimestamp.side_effect = lambda *args, **kwargs: datetime.fromtimestamp(*args, **kwargs)
-            return fn("EURUSD", timeframe="D1", detail=detail)
+            return fn("EURUSD", timeframe="D1", method=method, detail=detail)
 
     def test_classic_levels(self):
         r = [_make_rate(time_=100.0), _make_rate(time_=200.0)]
@@ -247,6 +257,14 @@ class TestPivotHappyPath:
         assert "PP" in res["levels"]
         assert "R1" in res["levels"]
         assert "S1" in res["levels"]
+
+    def test_compact_selects_requested_method(self):
+        r = [_make_rate(time_=100.0), _make_rate(time_=200.0)]
+        res = self._run(r, method="fibonacci")
+
+        assert res["method"] == "fibonacci"
+        assert res["levels"]["R1"] == pytest.approx(1.10449)
+        assert "R4" not in res["levels"]
 
     def test_compact_warns_on_degenerate_rounded_levels(self):
         r = [
@@ -301,6 +319,14 @@ class TestPivotHappyPath:
             if lv["level"] == "PP":
                 assert "classic" in lv
                 assert "fibonacci" in lv
+
+    def test_standard_filters_requested_method(self):
+        r = [_make_rate(time_=100.0), _make_rate(time_=200.0)]
+        res = self._run(r, detail="standard", method="woodie")
+
+        assert res["detail"] == "standard"
+        pp_row = next(row for row in res["levels"] if row["level"] == "PP")
+        assert set(pp_row) == {"level", "woodie"}
 
     def test_full_detail_includes_methods(self):
         fn = _get_pivot_fn()
