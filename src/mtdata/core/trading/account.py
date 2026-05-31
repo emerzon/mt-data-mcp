@@ -478,7 +478,8 @@ def _trade_journal_sample_warning(exit_deals: int) -> Optional[str]:
         return None
     return (
         f"Only {int(exit_deals)} realized exit deal(s) were analyzed; "
-        "journal statistics may be unstable. Increase minutes_back or provide a wider start/end range."
+        "journal statistics may be unstable. Increase limit to fetch more raw deals, "
+        "increase minutes_back, or provide a wider start/end range."
     )
 
 

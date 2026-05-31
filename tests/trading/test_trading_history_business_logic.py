@@ -1340,6 +1340,7 @@ def test_trade_journal_analyze_reports_explicit_minutes_back_window() -> None:
     assert out["minutes_back_effective"] == 60
     assert "note" not in out
     assert "Only 0 realized exit deal" in out["sample_warning"]
+    assert "Increase limit to fetch more raw deals" in out["sample_warning"]
 
 
 def test_trade_journal_analyze_filters_best_worst_by_pnl_sign() -> None:
