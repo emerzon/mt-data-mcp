@@ -1887,9 +1887,12 @@ def _compact_forecast_ci(
     ci_status = payload.get("ci_status")
     if _is_empty_value(ci_status):
         ci_available = payload.get("ci_available")
-        if ci_available is True:
-            ci_status = "available"
-        elif payload.get("ci_unavailable") or ci_available is False:
+        if not _is_empty_value(ci_available):
+            try:
+                ci_status = "available" if bool(ci_available) else "unavailable"
+            except Exception:
+                ci_status = None
+        elif payload.get("ci_unavailable"):
             ci_status = "unavailable"
         elif bool(payload.get("ci_requested")):
             ci_status = "requested"

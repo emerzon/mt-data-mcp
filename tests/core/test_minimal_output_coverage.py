@@ -565,6 +565,20 @@ class TestCompactForecastCi:
             "confidence_level": 0.95
         }
 
+    def test_boolean_like_ci_available_false_sets_unavailable(self):
+        class FalseLike:
+            def __bool__(self):
+                return False
+
+        payload = {
+            "method": "theta",
+            "ci_available": FalseLike(),
+        }
+
+        assert _compact_forecast_ci(payload, lower=[], upper=[]) == {
+            "status": "unavailable",
+        }
+
     def test_compacts_unavailable_ci_to_status_and_ci_alpha(self):
         payload = {
             "method": "theta",
