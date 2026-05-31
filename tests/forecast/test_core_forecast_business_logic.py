@@ -1698,6 +1698,7 @@ def test_run_forecast_conformal_intervals_uses_finite_sample_quantile():
             steps=3,
             spacing=1,
             ci_alpha=0.25,
+            detail="full",
         ),
         backtest_impl=lambda **kwargs: {
             "results": {
@@ -1717,6 +1718,58 @@ def test_run_forecast_conformal_intervals_uses_finite_sample_quantile():
     assert result["lower_price"] == [97.0]
     assert result["upper_price"] == [103.0]
     assert result["ci_status"] == "available"
+
+
+def test_run_forecast_conformal_intervals_compact_omits_technical_metadata():
+    result = forecast_use_cases.run_forecast_conformal_intervals(
+        ForecastConformalIntervalsRequest(
+            symbol="EURUSD",
+            method="theta",
+            horizon=1,
+            steps=1,
+            spacing=1,
+            ci_alpha=0.1,
+        ),
+        backtest_impl=lambda **kwargs: {
+            "results": {
+                "theta": {
+                    "details": [
+                        {"forecast": [10.0], "actual": [9.0]},
+                    ]
+                }
+            }
+        },
+        forecast_impl=lambda **kwargs: {
+            "forecast_time": ["2026-05-29 21:00"],
+            "forecast_price": [100.123456789],
+            "forecast_epoch": [1780088400.0],
+            "forecast_anchor": "next_timeframe_bar_after_last_observation",
+            "forecast_step_seconds": 3600,
+            "forecast": [{"time": "2026-05-29 21:00", "value": 100.123456789}],
+            "params_used": {"alpha": 0.2, "trend_slope": -0.000012493247702752267},
+            "price_precision": 5,
+        },
+    )
+
+    assert result["detail"] == "compact"
+    assert result["forecast_time"] == ["2026-05-29 21:00"]
+    assert result["forecast_price"] == [100.12346]
+    assert result["lower_price"] == [99.12346]
+    assert result["upper_price"] == [101.12346]
+    assert result["conformal"] == {
+        "ci_alpha": 0.1,
+        "calibration_steps": 1,
+        "calibration_spacing": 1,
+    }
+    assert "per_step_q" not in result["conformal"]
+    for key in (
+        "forecast_epoch",
+        "forecast_anchor",
+        "forecast_step_seconds",
+        "forecast",
+        "params_used",
+    ):
+        assert key not in result
 
 
 def test_run_forecast_conformal_intervals_rewrites_interval_unavailable_guidance():

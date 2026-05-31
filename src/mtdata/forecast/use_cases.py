@@ -679,6 +679,64 @@ def _forecast_generate_series_rows(payload: Dict[str, Any]) -> List[Dict[str, An
     return rows
 
 
+def _conformal_summary(conformal: Any) -> Optional[Dict[str, Any]]:
+    if not isinstance(conformal, dict):
+        return None
+    out = {
+        key: conformal.get(key)
+        for key in ("ci_alpha", "calibration_steps", "calibration_spacing")
+        if conformal.get(key) not in (None, "", [], {})
+    }
+    return out or None
+
+
+def _apply_conformal_intervals_detail(
+    payload: Dict[str, Any],
+    request: ForecastConformalIntervalsRequest,
+) -> Dict[str, Any]:
+    if not isinstance(payload, dict) or payload.get("error"):
+        return payload
+    payload = _round_forecast_generate_payload(payload)
+    detail_value = _normalize_trader_detail(getattr(request, "detail", "compact"))
+    if detail_value == "full":
+        out = dict(payload)
+        out["detail"] = "full"
+        return out
+
+    out: Dict[str, Any] = {
+        "success": bool(payload.get("success", True)),
+        "symbol": request.symbol,
+        "timeframe": request.timeframe,
+        "method": payload.get("method", request.method),
+        "horizon": request.horizon,
+        "detail": detail_value,
+    }
+    for key in (
+        "last_observation_time",
+        "timezone",
+        "forecast_time",
+        "forecast_price",
+        "lower_price",
+        "upper_price",
+        "lower_return",
+        "upper_return",
+        "ci_alpha",
+        "confidence_level",
+        "ci_status",
+        "ci_available",
+        "last_price",
+        "last_price_source",
+        "warnings",
+    ):
+        value = payload.get(key)
+        if value not in (None, "", [], {}):
+            out[key] = value
+    conformal = _conformal_summary(payload.get("conformal"))
+    if conformal:
+        out["conformal"] = conformal
+    return out
+
+
 def _specific_forecast_method_name(
     *,
     requested_method: str,
@@ -1600,6 +1658,7 @@ def run_forecast_conformal_intervals(
                 result["warnings"] = filtered_warnings
             else:
                 result.pop("warnings", None)
+        result = _apply_conformal_intervals_detail(result, request)
     except Exception as exc:
         log_operation_exception(
             logger,
