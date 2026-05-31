@@ -58,6 +58,24 @@ class TestBuildPatternResponse:
         assert resp["timeframe"] == "H1"
         assert resp["mode"] == "classic"
 
+    def test_compact_rounds_confidence_noise(self):
+        resp = self._call(
+            detail="compact",
+            patterns=[
+                {
+                    "status": "forming",
+                    "pattern": "Hammer",
+                    "direction": "bullish",
+                    "confidence": 0.20200000000000004,
+                    "end_index": 99,
+                }
+            ],
+        )
+
+        assert resp["confidence"] == 0.202
+        assert resp["strongest_pattern"]["confidence"] == 0.202
+        assert resp["top_patterns"][0]["confidence"] == 0.202
+
     def test_filters_completed(self):
         patterns = [{"status": "forming"}, {"status": "completed"}]
         resp = self._call(patterns=patterns, include_completed=False)

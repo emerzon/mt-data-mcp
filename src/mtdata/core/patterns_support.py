@@ -53,6 +53,13 @@ def _round_value(x: Any) -> Any:
         return x
 
 
+def _round_confidence(value: Any) -> Any:
+    conf = _safe_float(value)
+    if conf is None or not np.isfinite(conf):
+        return value
+    return float(np.round(float(max(0.0, min(1.0, conf))), 3))
+
+
 def _pattern_label(row: Dict[str, Any]) -> Optional[str]:
     for key in ("pattern", "name", "wave_type"):
         value = row.get(key)
@@ -268,14 +275,20 @@ def _summarize_pattern_bias(rows: List[Dict[str, Any]]) -> Optional[Dict[str, An
             if strongest_bullish is None or weight > float(
                 strongest_bullish.get("confidence", 0.0)
             ):
-                strongest_bullish = {"pattern": label, "confidence": float(weight)}
+                strongest_bullish = {
+                    "pattern": label,
+                    "confidence": _round_confidence(weight),
+                }
         elif bias == "bearish":
             bearish_count += 1
             bearish_score += weight
             if strongest_bearish is None or weight > float(
                 strongest_bearish.get("confidence", 0.0)
             ):
-                strongest_bearish = {"pattern": label, "confidence": float(weight)}
+                strongest_bearish = {
+                    "pattern": label,
+                    "confidence": _round_confidence(weight),
+                }
         else:
             neutral_count += 1
 
@@ -304,7 +317,7 @@ def _summarize_pattern_bias(rows: List[Dict[str, Any]]) -> Optional[Dict[str, An
 
     out: Dict[str, Any] = {
         "net_bias": net_bias,
-        "net_confidence": float(max(0.0, min(1.0, net_conf))),
+        "net_confidence": _round_confidence(net_conf),
         "net_score": _round_value(net_score),
         "bullish_score": _round_value(bullish_score),
         "bearish_score": _round_value(bearish_score),
@@ -331,7 +344,7 @@ def _summarize_actionable_pattern_signal(
         confidence = float(signal_bias.get("net_confidence") or 0.0)
     except Exception:
         confidence = 0.0
-    confidence = float(max(0.0, min(1.0, confidence)))
+    confidence = _round_confidence(confidence)
     conflict = bool(signal_bias.get("conflict"))
 
     if net_bias in {"neutral", "mixed"}:
@@ -419,7 +432,7 @@ def _compact_patterns_payload(
     ]
     strong_patterns = int(sum(1 for conf in confidence_values if conf >= 0.7))
     avg_confidence = (
-        _round_value(sum(confidence_values) / len(confidence_values))
+        _round_confidence(sum(confidence_values) / len(confidence_values))
         if confidence_values
         else None
     )
@@ -448,6 +461,8 @@ def _compact_patterns_payload(
             "candidate_note",
         ):
             value = strongest_row.get(key)
+            if key == "confidence":
+                value = _round_confidence(value)
             if value not in (None, ""):
                 strongest_compact[key] = value
         time_value = _first_present(
@@ -497,6 +512,8 @@ def _compact_patterns_payload(
             "candidate_note",
         ):
             value = row.get(key)
+            if key == "confidence":
+                value = _round_confidence(value)
             if value not in (None, ""):
                 item[key] = value
         time_value = (
