@@ -318,8 +318,6 @@ def _compact_candles_payload(
         compact.pop("has_forming_candle", None)
         compact.pop("forming_candle_included", None)
         compact.pop("forming_candle_skipped", None)
-    if "query_type" in public_diagnostics:
-        compact["query_type"] = public_diagnostics["query_type"]
     for key in ("freshness",):
         if key in public_diagnostics:
             compact[key] = public_diagnostics[key]

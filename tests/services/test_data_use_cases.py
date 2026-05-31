@@ -349,7 +349,7 @@ def test_run_data_fetch_candles_range_applies_limit_cap():
     assert result["available_count"] == 5
     assert result["limit_applied"] == 2
     assert result["truncated"] is True
-    assert result["query_type"] == "historical"
+    assert "query_type" not in result
 
 
 def test_run_data_fetch_candles_compact_keeps_spread_estimate_without_meta():
@@ -414,7 +414,7 @@ def test_run_data_fetch_candles_compact_omits_historical_freshness():
         },
     )
 
-    assert result["query_type"] == "historical"
+    assert "query_type" not in result
     assert "data_freshness_seconds" not in result
 
 
