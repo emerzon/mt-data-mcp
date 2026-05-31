@@ -8,6 +8,7 @@ from .patterns_support import (
     _build_highlights,
     _compact_all_mode_payload,
     _dedupe_repeated_regime_context,
+    _empty_patterns_note,
     _elliott_completed_preview,
     _elliott_hidden_completed_note,
     _highlights_all_mode_payload,
@@ -328,6 +329,15 @@ def run_patterns_detect(  # noqa: C901
             start=request.start,
             end=request.end,
         )
+        if isinstance(out, dict) and not out.get("error"):
+            rows = out.get("data")
+            if isinstance(rows, list) and not rows and not out.get("note"):
+                out["note"] = _empty_patterns_note(
+                    "candlestick",
+                    request.limit,
+                    tf_single,
+                    min_strength=request.min_strength,
+                )
         if detail_value == "summary":
             rows = out.get("data") if isinstance(out, dict) else []
             if not isinstance(rows, list):
@@ -336,7 +346,7 @@ def run_patterns_detect(  # noqa: C901
                 {"candlestick": {"patterns": rows}},
                 limit=min(max(1, int(request.top_k or 5)), 10),
             )
-            return {
+            summary_out = {
                 "success": bool(isinstance(out, dict) and out.get("success", True)),
                 "symbol": request.symbol,
                 "timeframe": tf_single,
@@ -344,6 +354,9 @@ def run_patterns_detect(  # noqa: C901
                 "n_patterns": len(rows),
                 "highlights": highlights,
             }
+            if isinstance(out, dict) and out.get("note"):
+                summary_out["note"] = out["note"]
+            return summary_out
         if detail_value == "compact":
             return deps.compact_patterns_payload(
                 out if isinstance(out, dict) else {"data": out},

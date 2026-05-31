@@ -60,6 +60,32 @@ def _round_confidence(value: Any) -> Any:
     return float(np.round(float(max(0.0, min(1.0, conf))), 3))
 
 
+def _empty_patterns_note(
+    mode: Any,
+    limit: Any,
+    timeframe: Any,
+    *,
+    min_strength: Any = None,
+) -> str:
+    mode_label = str(mode or "pattern").strip().lower() or "pattern"
+    tf_label = str(timeframe or "selected timeframe").strip() or "selected timeframe"
+    try:
+        limit_label = str(int(limit))
+    except Exception:
+        limit_label = str(limit or "requested")
+    if mode_label == "candlestick" and min_strength is not None:
+        strength = _round_value(min_strength)
+        return (
+            f"No candlestick patterns detected in {limit_label} {tf_label} bars "
+            f"with min_strength={strength}. Try increasing limit or lowering "
+            "min_strength."
+        )
+    return (
+        f"No {mode_label} patterns detected in {limit_label} {tf_label} bars. "
+        "Try increasing limit or relaxing mode-specific thresholds."
+    )
+
+
 def _pattern_label(row: Dict[str, Any]) -> Optional[str]:
     for key in ("pattern", "name", "wave_type"):
         value = row.get(key)

@@ -292,6 +292,23 @@ class TestPatternsDetect:
         mock_detect.assert_called_once()
 
     @patch("mtdata.core.patterns._detect_candlestick_patterns")
+    def test_candlestick_empty_compact_adds_parameter_note(self, mock_detect):
+        mock_detect.return_value = {"success": True, "data": []}
+
+        result = _call_patterns_detect(
+            symbol="EURUSD",
+            mode="candlestick",
+            timeframe="H1",
+            limit=3,
+            min_strength=0.7,
+        )
+
+        assert result["note"] == (
+            "No candlestick patterns detected in 3 H1 bars with min_strength=0.7. "
+            "Try increasing limit or lowering min_strength."
+        )
+
+    @patch("mtdata.core.patterns._detect_candlestick_patterns")
     def test_candlestick_summary_omits_diagnostics(self, mock_detect):
         mock_detect.return_value = {
             "success": True,

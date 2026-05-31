@@ -51,6 +51,7 @@ from .patterns_support import (
     _compact_patterns_payload,
     _count_patterns_with_status,
     _dedupe_repeated_regime_context,
+    _empty_patterns_note,
     _elliott_completed_preview,
     _elliott_hidden_completed_note,
     _enrich_classic_patterns,
@@ -411,6 +412,8 @@ def _build_pattern_response(
                 f"{_elliott_timeframe_suggestion(timeframe)} "
                 "You can also increase lookback or focus on a clearer trending segment."
             )
+    if str(mode).lower() != "elliott" and int(len(filtered)) == 0 and "note" not in resp:
+        resp["note"] = _empty_patterns_note(mode, limit, timeframe)
     
     # Add data freshness metadata for high timeframes with ancient patterns
     # For MN1 (monthly) and W1 (weekly), check if patterns are very old

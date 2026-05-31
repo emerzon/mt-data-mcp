@@ -58,6 +58,14 @@ class TestBuildPatternResponse:
         assert resp["timeframe"] == "H1"
         assert resp["mode"] == "classic"
 
+    def test_empty_compact_response_adds_note(self):
+        resp = self._call(detail="compact", patterns=[])
+
+        assert resp["note"] == (
+            "No classic patterns detected in 500 H1 bars. "
+            "Try increasing limit or relaxing mode-specific thresholds."
+        )
+
     def test_compact_rounds_confidence_noise(self):
         resp = self._call(
             detail="compact",
