@@ -301,6 +301,97 @@ def test_wait_event_tool_exposes_minimal_public_contract(monkeypatch) -> None:
     assert explicit["event"] is None
     assert explicit["started_at_utc"] == "2026-04-06T02:00:29.017205+00:00"
 
+
+def test_wait_event_tool_accepts_simple_event_names(monkeypatch) -> None:
+    captured = {}
+
+    def _mock_run_wait_event(request, gateway):
+        captured["request"] = request
+        return {
+            "success": True,
+            "status": "pending",
+            "matched": False,
+            "event": None,
+            "criteria": {
+                "watch_for": list(request.watch_for or []),
+                "watch_for_inferred": False,
+                "end_on": list(request.end_on or []),
+                "end_on_inferred": False,
+                "accept_preexisting": False,
+            },
+        }
+
+    monkeypatch.setattr(core_data, "run_wait_event", _mock_run_wait_event)
+    monkeypatch.setattr(core_data, "create_mt5_gateway", lambda ensure_connection_impl=None: object())
+
+    raw = getattr(core_data.wait_event, "__wrapped__", core_data.wait_event)
+    result = raw(
+        symbol="EURUSD",
+        timeframe="M1",
+        watch_for=["order_filled"],
+        end_on=["candle_close"],
+        detail="full",
+    )
+
+    request = captured["request"]
+    assert result["success"] is True
+    assert request.watch_for[0].type == "order_filled"
+    assert request.end_on[0].type == "candle_close"
+    assert result["criteria"]["watch_for_inferred"] is False
+    assert result["criteria"]["end_on_inferred"] is False
+
+
+def test_wait_event_tool_routes_candle_close_watch_for_to_end_on(monkeypatch) -> None:
+    captured = {}
+
+    def _mock_run_wait_event(request, gateway):
+        captured["request"] = request
+        boundary_timeframe = request.end_on[0].timeframe or request.timeframe
+        return {
+            "success": True,
+            "status": "boundary_reached",
+            "matched": False,
+            "event": None,
+            "boundary_event": {
+                "type": "candle_close",
+                "timeframe": boundary_timeframe,
+                "buffer_seconds": 1.0,
+            },
+            "criteria": {
+                "watch_for": list(request.watch_for or []),
+                "watch_for_inferred": False,
+                "end_on": list(request.end_on or []),
+                "end_on_inferred": False,
+                "accept_preexisting": False,
+            },
+        }
+
+    monkeypatch.setattr(core_data, "run_wait_event", _mock_run_wait_event)
+    monkeypatch.setattr(core_data, "create_mt5_gateway", lambda ensure_connection_impl=None: object())
+
+    raw = getattr(core_data.wait_event, "__wrapped__", core_data.wait_event)
+    result = raw(symbol="EURUSD", timeframe="M1", watch_for=["candle_close"], detail="full")
+
+    request = captured["request"]
+    assert result["success"] is True
+    assert request.watch_for == []
+    assert request.end_on[0].type == "candle_close"
+    assert result["boundary_event"]["timeframe"] == "M1"
+    assert result["criteria"]["watch_for_inferred"] is False
+    assert result["criteria"]["end_on_inferred"] is False
+
+
+def test_wait_event_tool_returns_clear_invalid_watch_spec_error(monkeypatch) -> None:
+    monkeypatch.setattr(core_data, "create_mt5_gateway", lambda ensure_connection_impl=None: object())
+
+    raw = getattr(core_data.wait_event, "__wrapped__", core_data.wait_event)
+    result = raw(symbol="EURUSD", timeframe="M1", watch_for=["price_touch_level"])
+
+    assert result["error_code"] == "wait_event_invalid_watch_spec"
+    assert "level" in result["error"]
+    assert "hint" in result
+
+
 def test_wait_event_tool_compact_result_preserves_boundary_closed_candle() -> None:
     result = core_data._compact_wait_event_public_result(
         {

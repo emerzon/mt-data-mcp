@@ -554,6 +554,53 @@ class TestCreateCommandFunction:
         assert request.watch_for[0].level == 1.0
         assert request.end_on[0].type == "candle_close"
 
+    def test_wait_event_simple_event_names_are_wrapped(self, capsys):
+        mock_fn = MagicMock(return_value={"ok": True})
+        func_info = {
+            "func": mock_fn,
+            "params": [
+                {"name": "symbol", "type": str, "required": False, "default": None},
+                {"name": "timeframe", "type": str, "required": False, "default": "M1"},
+                {
+                    "name": "watch_for",
+                    "type": Optional[List[Dict[str, Any]]],
+                    "required": False,
+                    "default": None,
+                },
+                {
+                    "name": "end_on",
+                    "type": Optional[List[Dict[str, Any]]],
+                    "required": False,
+                    "default": None,
+                },
+                {"name": "detail", "type": str, "required": False, "default": "compact"},
+            ],
+        }
+        cmd_fn = create_command_function(func_info, cmd_name="wait_event")
+        args = argparse.Namespace(
+            symbol="EURUSD",
+            timeframe="M1",
+            watch_for="order_filled",
+            end_on="candle_close",
+            detail="compact",
+            json=False,
+            verbose=False,
+        )
+
+        assert cmd_fn(args) == 0
+
+        call_kwargs = mock_fn.call_args.kwargs
+        assert call_kwargs["watch_for"] == [{"type": "order_filled"}]
+        assert call_kwargs["end_on"] == [{"type": "candle_close"}]
+        request = WaitEventRequest(
+            symbol=call_kwargs["symbol"],
+            timeframe=call_kwargs["timeframe"],
+            watch_for=call_kwargs["watch_for"],
+            end_on=call_kwargs["end_on"],
+        )
+        assert request.watch_for[0].type == "order_filled"
+        assert request.end_on[0].type == "candle_close"
+
     def test_detail_full_is_forwarded_without_injecting_verbose(self, capsys):
         mock_fn = MagicMock(return_value={"ok": True})
         func_info = {

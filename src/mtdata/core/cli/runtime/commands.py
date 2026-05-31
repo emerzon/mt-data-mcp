@@ -243,7 +243,14 @@ def create_command_function(  # noqa: C901
             parsed_map = parse_kv_string(s)
             if parsed_map is not None:
                 return [parsed_map]
-        return normalize_cli_list_value(s)
+        parsed_tokens = normalize_cli_list_value(s)
+        if isinstance(parsed_tokens, list):
+            return [
+                {"type": item.strip()} if isinstance(item, str) and item.strip() else item
+                for item in parsed_tokens
+                if item not in (None, "")
+            ]
+        return parsed_tokens
 
     def _normalize_wait_event_specs(value: Any) -> Any:
         if value is None:

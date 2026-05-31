@@ -1,6 +1,9 @@
+import json
 import logging
 import statistics
 from typing import Any, Dict, List, Optional
+
+from pydantic import ValidationError
 
 from ...services.data_service import fetch_candles, fetch_ticks
 from ...shared.schema import CompactFullDetailLiteral, TimeframeLiteral
@@ -45,6 +48,84 @@ _COMPACT_WAIT_EVENT_SPEC_FIELDS = (
     "threshold_mode",
     "threshold_value",
 )
+
+_WAIT_EVENT_BOUNDARY_TYPES = {"candle_close"}
+_WAIT_EVENT_SPEC_HINT = (
+    'Use event names like order_filled or JSON objects like {"type":"order_filled",'
+    '"symbol":"EURUSD"}; use candle_close for candle-boundary waits.'
+)
+
+
+def _normalize_wait_event_public_specs(
+    value: Any,
+    *,
+    field_name: str,
+) -> tuple[Optional[List[Dict[str, Any]]], Optional[str]]:
+    if value is None:
+        return None, None
+    if isinstance(value, dict):
+        return [dict(value)], None
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return [], None
+        if text[0] in "[{":
+            try:
+                parsed = json.loads(text)
+            except Exception as exc:
+                return None, f"wait_event {field_name} JSON is invalid: {exc}"
+            return _normalize_wait_event_public_specs(parsed, field_name=field_name)
+        return [{"type": text}], None
+    if isinstance(value, (list, tuple)):
+        out: List[Dict[str, Any]] = []
+        for item in value:
+            parsed, error = _normalize_wait_event_public_specs(item, field_name=field_name)
+            if error is not None:
+                return None, error
+            if parsed:
+                out.extend(parsed)
+        return out, None
+    return None, f"wait_event {field_name} must be event objects or event type strings."
+
+
+def _move_wait_event_boundary_watchers(
+    watch_for: Optional[List[Dict[str, Any]]],
+    end_on: Optional[List[Dict[str, Any]]],
+) -> tuple[Optional[List[Dict[str, Any]]], Optional[List[Dict[str, Any]]], bool]:
+    if not watch_for:
+        return watch_for, end_on, False
+
+    remaining_watchers: List[Dict[str, Any]] = []
+    boundary_watchers: List[Dict[str, Any]] = []
+    for item in watch_for:
+        event_type = str(item.get("type") or "").strip()
+        if event_type in _WAIT_EVENT_BOUNDARY_TYPES:
+            boundary_watchers.append(dict(item))
+        else:
+            remaining_watchers.append(item)
+    if not boundary_watchers:
+        return watch_for, end_on, False
+    resolved_end_on = list(end_on or [])
+    resolved_end_on.extend(boundary_watchers)
+    return remaining_watchers, resolved_end_on, True
+
+
+def _wait_event_validation_error(exc: ValidationError) -> tuple[str, str]:
+    try:
+        errors = exc.errors()
+    except Exception:
+        return "wait_event request is invalid.", "wait_event_invalid_request"
+    messages: List[str] = []
+    spec_error = False
+    for item in errors:
+        loc = ".".join(str(part) for part in item.get("loc", ()))
+        msg = str(item.get("msg") or "Invalid value.")
+        if loc.split(".", 1)[0] in {"watch_for", "end_on"}:
+            spec_error = True
+        messages.append(f"{loc}: {msg}" if loc else msg)
+    prefix = "Invalid wait_event event spec" if spec_error else "Invalid wait_event request"
+    code = "wait_event_invalid_watch_spec" if spec_error else "wait_event_invalid_request"
+    return f"{prefix}: {'; '.join(messages)}", code
 
 
 def _build_default_wait_event_watchers(
@@ -508,15 +589,35 @@ def wait_event(
     echo in the response.
     """
     symbol_value = str(symbol or "").strip() or None
-    explicit_watch_for = watch_for is not None or bool(wait_next_bar)
-    explicit_end_on = end_on is not None
+    normalized_watch_for, watch_for_error = _normalize_wait_event_public_specs(
+        watch_for,
+        field_name="watch_for",
+    )
+    normalized_end_on, end_on_error = _normalize_wait_event_public_specs(
+        end_on,
+        field_name="end_on",
+    )
+    moved_boundary_watchers = False
+    if watch_for_error is None and end_on_error is None:
+        normalized_watch_for, normalized_end_on, moved_boundary_watchers = (
+            _move_wait_event_boundary_watchers(normalized_watch_for, normalized_end_on)
+        )
+    explicit_watch_for = normalized_watch_for is not None or bool(wait_next_bar)
+    explicit_end_on = normalized_end_on is not None
     symbol_error: Optional[str] = None
+    spec_error = watch_for_error or end_on_error
     if symbol_value is None and not explicit_watch_for:
         symbol_error = "symbol is required when watch_for is omitted."
-    if wait_next_bar and watch_for not in (None, []):
+    if wait_next_bar and normalized_watch_for not in (None, []):
         symbol_error = "wait_next_bar cannot be combined with explicit watch_for events."
 
     def _run() -> Dict[str, Any]:
+        if spec_error is not None:
+            return {
+                "error": spec_error,
+                "error_code": "wait_event_invalid_watch_spec",
+                "hint": _WAIT_EVENT_SPEC_HINT,
+            }
         if symbol_error is not None:
             return {"error": symbol_error}
         request_kwargs: Dict[str, Any] = {
@@ -524,8 +625,8 @@ def wait_event(
         }
         if symbol_value is not None:
             request_kwargs["symbol"] = symbol_value
-        if end_on is not None:
-            request_kwargs["end_on"] = list(end_on)
+        if normalized_end_on is not None:
+            request_kwargs["end_on"] = list(normalized_end_on)
         else:
             request_kwargs["end_on"] = [
                 {"type": "candle_close", "timeframe": timeframe},
@@ -534,18 +635,26 @@ def wait_event(
             resolved_watch_for = []
         else:
             resolved_watch_for = (
-                list(watch_for)
-                if watch_for is not None
+                list(normalized_watch_for)
+                if normalized_watch_for is not None
                 else _build_default_wait_event_watchers(
                     symbol=symbol_value,
                     timeframe=timeframe,
                     watch_tick_count_spike=watch_tick_count_spike,
                 )
             )
-        request = WaitEventRequest(
-            **request_kwargs,
-            watch_for=resolved_watch_for,
-        )
+        try:
+            request = WaitEventRequest(
+                **request_kwargs,
+                watch_for=resolved_watch_for,
+            )
+        except ValidationError as exc:
+            error_message, error_code = _wait_event_validation_error(exc)
+            return {
+                "error": error_message,
+                "error_code": error_code,
+                "hint": _WAIT_EVENT_SPEC_HINT,
+            }
         result = run_wait_event(
             request,
             gateway=create_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise),
@@ -568,6 +677,7 @@ def wait_event(
         watch_tick_count_spike=watch_tick_count_spike,
         detail=detail,
         explicit_watch_for=explicit_watch_for,
-        end_on_count=len(end_on or []),
+        moved_boundary_watchers=moved_boundary_watchers,
+        end_on_count=len(normalized_end_on or []),
         func=_run,
     )
