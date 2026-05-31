@@ -1313,7 +1313,7 @@ def _market_scan_freshness_summary(rows: List[Dict[str, Any]]) -> Dict[str, Any]
     return out
 
 
-_TOP_MARKETS_COMPACT_HEADERS = [
+_TOP_MARKETS_COMPACT_BASE_HEADERS = [
     "symbol",
     "group",
     "timeframe",
@@ -1321,6 +1321,23 @@ _TOP_MARKETS_COMPACT_HEADERS = [
     "time",
     "data_stale",
     "freshness",
+]
+
+_TOP_MARKETS_COMPACT_SPREAD_HEADERS = [
+    "bid",
+    "ask",
+    "spread_pct",
+    "spread_points",
+]
+
+_TOP_MARKETS_COMPACT_BAR_HEADERS = [
+    "close",
+    "tick_volume",
+    "price_change_pct",
+]
+
+_TOP_MARKETS_COMPACT_HEADERS = [
+    *_TOP_MARKETS_COMPACT_BASE_HEADERS,
     "close",
     "bid",
     "ask",
@@ -1330,7 +1347,7 @@ _TOP_MARKETS_COMPACT_HEADERS = [
     "price_change_pct",
 ]
 
-_TOP_MARKETS_FULL_HEADERS = [
+_TOP_MARKETS_FULL_BASE_HEADERS = [
     "symbol",
     "group",
     "description",
@@ -1345,6 +1362,9 @@ _TOP_MARKETS_FULL_HEADERS = [
     "freshness",
     "warning",
     "stale_warning",
+]
+
+_TOP_MARKETS_FULL_SPREAD_HEADERS = [
     "bid",
     "ask",
     "spread",
@@ -1353,6 +1373,9 @@ _TOP_MARKETS_FULL_HEADERS = [
     "spread_cost_per_lot",
     "spread_cost_currency",
     "pricing_basis",
+]
+
+_TOP_MARKETS_FULL_BAR_HEADERS = [
     "open",
     "close",
     "tick_volume",
@@ -1360,12 +1383,33 @@ _TOP_MARKETS_FULL_HEADERS = [
     "price_change_pct",
 ]
 
+_TOP_MARKETS_FULL_HEADERS = [
+    *_TOP_MARKETS_FULL_BASE_HEADERS,
+    *_TOP_MARKETS_FULL_SPREAD_HEADERS,
+    *_TOP_MARKETS_FULL_BAR_HEADERS,
+]
+
 
 def _top_markets_headers(metric: str, *, detail_mode: str) -> List[str]:
-    _ = metric
+    if metric == "spread":
+        if detail_mode == "compact":
+            return [
+                *_TOP_MARKETS_COMPACT_BASE_HEADERS,
+                *_TOP_MARKETS_COMPACT_SPREAD_HEADERS,
+            ]
+        return [
+            *_TOP_MARKETS_FULL_BASE_HEADERS,
+            *_TOP_MARKETS_FULL_SPREAD_HEADERS,
+        ]
     if detail_mode == "compact":
-        return list(_TOP_MARKETS_COMPACT_HEADERS)
-    return list(_TOP_MARKETS_FULL_HEADERS)
+        return [
+            *_TOP_MARKETS_COMPACT_BASE_HEADERS,
+            *_TOP_MARKETS_COMPACT_BAR_HEADERS,
+        ]
+    return [
+        *_TOP_MARKETS_FULL_BASE_HEADERS,
+        *_TOP_MARKETS_FULL_BAR_HEADERS,
+    ]
 
 
 def _top_markets_all_headers(*, detail_mode: str) -> List[str]:
