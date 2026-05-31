@@ -107,7 +107,10 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("market_scan", "symbols"): (
         "Comma-separated MT5 symbols to scan. Optional with --group."
     ),
-    ("labels_triple_barrier", "detail"): "Detail level: full, standard, summary, or compact (summary plus recent sample).",
+    ("labels_triple_barrier", "detail"): (
+        "Detail level: compact (small outcome sample), standard (recent lookback rows), "
+        "summary, or full."
+    ),
     ("labels_triple_barrier", "limit"): (
         "Historical bars fetched for labeling; not an output row limit."
     ),

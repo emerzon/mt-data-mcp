@@ -282,9 +282,7 @@ def labels_triple_barrier(
                 return {"error": direction_error or "Invalid direction."}
             warnings_out: List[str] = []
             output_mode = normalize_output_detail(detail)
-            if output_mode == "standard":
-                output_mode = "compact"
-            if output_mode not in {"full", "summary", "compact"}:
+            if output_mode not in {"full", "standard", "summary", "compact"}:
                 return {
                     "error": (
                         "Invalid detail level. Use 'compact', 'standard', 'full', or 'summary'."
@@ -417,7 +415,7 @@ def labels_triple_barrier(
                         "description": "Neither barrier hit within horizon bars (neutral/timeout outcome)",
                     },
                 }
-            elif output_mode == "compact":
+            elif output_mode in {"compact", "standard"}:
                 payload["label_key"] = {"1": "tp_first", "-1": "sl_first", "0": "hold"}
             if warnings_out:
                 payload["warnings"] = list(warnings_out)
@@ -426,7 +424,7 @@ def labels_triple_barrier(
                     f"Skipped {int(skipped_entries)} entries with invalid or non-positive entry prices."
                 )
                 payload["skipped_entries"] = int(skipped_entries)
-            if output_mode in ("summary", "compact"):
+            if output_mode in ("summary", "compact", "standard"):
                 import numpy as _np
 
                 n = min(int(lookback), len(labels))
@@ -483,6 +481,24 @@ def labels_triple_barrier(
                 sample_indices = list(
                     range(max(0, len(labels) - sample_n), len(labels))
                 )
+
+                def _sample_rows(indices: List[int]) -> List[Dict[str, Any]]:
+                    return [
+                        _triple_barrier_sample_row(
+                            idx=idx,
+                            closes=closes,
+                            t_entry=t_entry,
+                            labels=labels,
+                            hold=hold,
+                            tp_times=tp_times,
+                            sl_times=sl_times,
+                            direction_value=direction_value,
+                            pip_size=pip_size,
+                            barrier_kwargs=barrier_kwargs,
+                        )
+                        for idx in indices
+                    ]
+
                 if output_mode == "compact":
                     outcome_indices = [
                         len(labels) - len(lab_tail) + idx
@@ -504,21 +520,7 @@ def labels_triple_barrier(
                             "data rows show non-neutral outcomes in the lookback window when present; "
                             f"otherwise the most recent {len(sample_indices)} observations."
                         )
-                    payload["data"] = [
-                        _triple_barrier_sample_row(
-                            idx=idx,
-                            closes=closes,
-                            t_entry=t_entry,
-                            labels=labels,
-                            hold=hold,
-                            tp_times=tp_times,
-                            sl_times=sl_times,
-                            direction_value=direction_value,
-                            pip_size=pip_size,
-                            barrier_kwargs=barrier_kwargs,
-                        )
-                        for idx in sample_indices
-                    ]
+                    payload["data"] = _sample_rows(sample_indices)
                     for key in (
                         "entries",
                         "labels",
@@ -528,15 +530,22 @@ def labels_triple_barrier(
                         "sl_time",
                     ):
                         payload.pop(key, None)
-                elif sample_indices:
-                    payload["entries"] = [t_entry[idx] for idx in sample_indices]
-                    payload["labels"] = [labels[idx] for idx in sample_indices]
-                    payload["outcomes"] = [
-                        _label_outcome(labels[idx]) for idx in sample_indices
-                    ]
-                    payload["holding_bars"] = [hold[idx] for idx in sample_indices]
-                    payload["tp_time"] = [tp_times[idx] for idx in sample_indices]
-                    payload["sl_time"] = [sl_times[idx] for idx in sample_indices]
+                elif output_mode == "standard":
+                    payload["sample_basis"] = "recent"
+                    payload["sample_size"] = int(len(sample_indices))
+                    payload["data_note"] = (
+                        "data rows cover the recent summary lookback window."
+                    )
+                    payload["data"] = _sample_rows(sample_indices)
+                    for key in (
+                        "entries",
+                        "labels",
+                        "outcomes",
+                        "holding_bars",
+                        "tp_time",
+                        "sl_time",
+                    ):
+                        payload.pop(key, None)
             return payload
         except MT5ConnectionError as exc:
             return {"error": str(exc)}

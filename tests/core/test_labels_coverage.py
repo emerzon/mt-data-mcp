@@ -309,6 +309,32 @@ class TestLabelsTripleBarrier:
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
     @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
     @patch(f"{_LABELS_MOD}._fetch_history")
+    def test_output_standard_returns_recent_lookback_rows(self, mock_hist, mock_den, mock_pip):
+        mock_hist.return_value = _make_df(80)
+        result = _get_raw_fn()(
+            "EURUSD",
+            tp_pct=0.5,
+            sl_pct=0.5,
+            horizon=5,
+            detail="standard",
+            lookback=25,
+        )
+
+        assert result["success"] is True
+        assert result["summary"]["lookback"] == 25
+        assert result["sample_basis"] == "recent"
+        assert result["sample_size"] == 25
+        assert len(result["data"]) == 25
+        assert {"entry_time", "label", "outcome", "holding_bars"}.issubset(
+            result["data"][0]
+        )
+        assert "labels" not in result
+        assert "entries" not in result
+        assert result["data_note"] == "data rows cover the recent summary lookback window."
+
+    @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
+    @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
+    @patch(f"{_LABELS_MOD}._fetch_history")
     def test_output_compact_prefers_outcome_sample(self, mock_hist, mock_den, mock_pip):
         mock_hist.return_value = _make_df(80)
         result = _get_raw_fn()(
