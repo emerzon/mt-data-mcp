@@ -329,7 +329,8 @@ def test_forecast_generate_defaults_to_compact_payload(monkeypatch):
         "first_step_delta": -0.05,
         "first_step_delta_pct": -4.7619,
     }
-    assert out["forecast_price"] == [1.0, 1.1, 1.2]
+    assert "forecast_time" not in out
+    assert "forecast_price" not in out
     assert out["forecast"] == [
         {"time": "t1", "value": 1.0},
         {"time": "t2", "value": 1.1},
@@ -421,12 +422,16 @@ def test_forecast_generate_rounds_price_outputs_to_symbol_digits(monkeypatch):
 
     out = raw(request=ForecastGenerateRequest(symbol="EURUSD", timeframe="H1", method="theta", horizon=2))
 
-    assert out["forecast_price"] == [1.17314, 1.17315]
     assert out["forecast_vs_last_price"] == {
         "direction": "bullish",
         "first_step_delta": 0.00048,
         "first_step_delta_pct": 0.0409,
     }
+    assert "forecast_price" not in out
+    assert out["forecast"] == [
+        {"time": "t1", "value": 1.17314},
+        {"time": "t2", "value": 1.17315},
+    ]
     assert "series" not in out
 
 
@@ -451,7 +456,12 @@ def test_forecast_generate_compact_flags_flat_theta_display(monkeypatch):
 
     out = raw(request=ForecastGenerateRequest(symbol="EURUSD", timeframe="H1", method="theta", horizon=3))
 
-    assert out["forecast_price"] == [1.16836, 1.16836, 1.16836]
+    assert "forecast_price" not in out
+    assert out["forecast"] == [
+        {"time": "t1", "value": 1.16836},
+        {"time": "t2", "value": 1.16836},
+        {"time": "t3", "value": 1.16836},
+    ]
     assert "theta_signal" not in out
     assert "params_used" not in out
     assert any("near-flat at displayed price precision" in item for item in out["warnings"])
@@ -549,6 +559,9 @@ def test_forecast_generate_compact_nests_available_ci(monkeypatch):
     assert "interval_summary" not in out
     assert "lower_price" not in out
     assert "upper_price" not in out
+    assert "forecast_time" not in out
+    assert "forecast_price" not in out
+    assert "forecast" not in out
 
 
 def test_forecast_generate_standard_preserves_full_arrays(monkeypatch):

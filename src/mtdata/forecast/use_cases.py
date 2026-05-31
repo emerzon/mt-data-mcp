@@ -586,8 +586,13 @@ def _apply_forecast_generate_detail(
     if price_context:
         compact["forecast_vs_last_price"] = price_context
     forecast_rows = _forecast_generate_compact_rows(payload)
-    if forecast_rows:
+    ci_has_intervals = isinstance(ci_compact, dict) and bool(ci_compact.get("intervals"))
+    if forecast_rows and not ci_has_intervals:
         compact["forecast"] = forecast_rows
+    if forecast_rows or ci_has_intervals:
+        compact.pop("forecast_time", None)
+        compact.pop("forecast_price", None)
+        compact.pop("forecast_return", None)
     theta_context = _theta_flatness_context(payload)
     if theta_context and theta_context.get("appears_flat_at_price_precision"):
         warning = "Native theta forecast is near-flat at displayed price precision."
@@ -606,6 +611,9 @@ def _apply_forecast_generate_detail(
             "forecast_start_epoch",
             "forecast_from",
             "forecast_start_time",
+            "forecast_time",
+            "forecast_price",
+            "forecast_return",
             "forecast_anchor",
             "forecast_step_seconds",
             "forecast_epoch",
