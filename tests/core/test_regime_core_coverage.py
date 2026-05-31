@@ -799,7 +799,7 @@ class TestRegimeDetectMSAR:
         ]
         mock_res = MagicMock()
         mock_res.smoothed_marginal_probabilities = probs
-        mock_res.mle_retvals = {"converged": False}
+        mock_res.mle_retvals = {"converged": np.bool_(False)}
         mock_mod = MagicMock()
         mock_mod.return_value = mock_mod
         mock_mod.fit.return_value = mock_res

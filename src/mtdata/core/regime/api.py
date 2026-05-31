@@ -1454,10 +1454,13 @@ def regime_detect(  # noqa: C901
             _append_warnings(payload, _smoothing_warnings(method, smoothing_meta))
             if converged is not None:
                 payload["params_used"]["converged"] = bool(converged)
-                if converged is False:
-                    payload["warnings"] = [
-                        "MS-AR model did not converge; regime probabilities may be unreliable."
-                    ]
+                if not bool(converged):
+                    _append_warnings(
+                        payload,
+                        [
+                            "MS-AR model did not converge; regime probabilities may be unreliable."
+                        ],
+                    )
             # Add reliability info
             reliability = _ms_ar_reliability_from_smoothed(
                 smoothed_probs=probs,
