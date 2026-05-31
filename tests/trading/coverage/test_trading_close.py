@@ -196,6 +196,47 @@ def test_resolve_closed_deal_from_history_queries_recent_window_as_mt5_epoch():
     assert result is matched_row
 
 
+def test_resolve_closed_deal_from_history_tiebreaks_missing_timestamps_by_ticket():
+    older_ticket = SimpleNamespace(
+        ticket=101,
+        order=None,
+        position_id=303,
+        position_by_id=None,
+        position=None,
+        time=0,
+        time_msc=None,
+        time_update=0,
+        time_update_msc=None,
+    )
+    newer_ticket = SimpleNamespace(
+        ticket=102,
+        order=None,
+        position_id=303,
+        position_by_id=None,
+        position=None,
+        time=0,
+        time_msc=None,
+        time_update=0,
+        time_update_msc=None,
+    )
+    mt5 = SimpleNamespace(
+        history_deals_get=MagicMock(return_value=[older_ticket, newer_ticket])
+    )
+
+    with patch(
+        "mtdata.core.trading.execution._to_mt5_history_epoch_seconds",
+        side_effect=[111.0, 222.0],
+    ):
+        result = _resolve_closed_deal_from_history(
+            mt5,
+            result=SimpleNamespace(deal=None, order=None),
+            position=SimpleNamespace(ticket=303),
+            closed_at_utc=datetime(2026, 3, 1, 11, 0, tzinfo=timezone.utc),
+        )
+
+    assert result is newer_ticket
+
+
 # ===================================================================
 #  trade_close (dispatch)
 # ===================================================================

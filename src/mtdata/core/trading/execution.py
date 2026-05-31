@@ -81,6 +81,11 @@ def _deal_history_sort_key(row: Any) -> float:
     return 0.0
 
 
+def _deal_history_selection_key(row: Any) -> tuple[float, int]:
+    ticket = validation._safe_int_ticket(getattr(row, "ticket", None))
+    return _deal_history_sort_key(row), ticket if ticket is not None else -1
+
+
 def _resolve_closed_deal_from_history(
     mt5: Any,
     *,
@@ -126,7 +131,7 @@ def _resolve_closed_deal_from_history(
 
     for matches in (exact_deal_matches, order_matches, position_matches):
         if matches:
-            return max(matches, key=_deal_history_sort_key)
+            return max(matches, key=_deal_history_selection_key)
     return None
 
 
