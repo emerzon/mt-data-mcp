@@ -2651,18 +2651,16 @@ def test_options_tools_support_compact_and_full_detail(monkeypatch):
         "success": True,
         "price": 1.23,
         "delta": 0.4,
-        "detail": "compact",
-        "params": {
-            "spot": 100,
-            "strike": 105,
-            "barrier": 120,
-            "option_type": "call",
-            "barrier_type": "up_out",
-            "maturity_days": 30,
-            "volatility": 0.2,
+        "units": {
+            "price": "premium_per_underlying_unit",
+            "delta": "premium_change_per_underlying_price_unit",
         },
+        "detail": "compact",
     }
-    assert raw_price(100, 105, 120, 30, detail="full")["delta"] == 0.4
+    full_price = raw_price(100, 105, 120, 30, detail="full")
+    assert full_price["delta"] == 0.4
+    assert full_price["units"]["price"] == "premium_per_underlying_unit"
+    assert full_price["params_used"]["spot"] == 100
 
     compact_cal = raw_cal("AAPL", detail="compact")
     assert compact_cal["params"] == {"kappa": 1.0}

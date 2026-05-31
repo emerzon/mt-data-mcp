@@ -63,6 +63,14 @@ def _apply_options_detail(
     detail_mode = _options_detail_mode(detail)
     out = dict(payload)
     out["detail"] = detail_mode
+    if kind == "barrier_price":
+        out.setdefault(
+            "units",
+            {
+                "price": "premium_per_underlying_unit",
+                "delta": "premium_change_per_underlying_price_unit",
+            },
+        )
     if detail_mode == "full":
         return out
 
@@ -94,27 +102,11 @@ def _apply_options_detail(
             compact["options"] = [_compact_option_contract(row) for row in options]
         return compact
     if kind == "barrier_price":
-        compact = {
+        return {
             key: out[key]
-            for key in ("success", "price", "delta", "detail")
+            for key in ("success", "price", "delta", "units", "detail")
             if key in out
         }
-        params = out.get("params_used")
-        if isinstance(params, dict):
-            compact["params"] = {
-                key: params[key]
-                for key in (
-                    "spot",
-                    "strike",
-                    "barrier",
-                    "option_type",
-                    "barrier_type",
-                    "maturity_days",
-                    "volatility",
-                )
-                if key in params and params[key] is not None
-            }
-        return compact
     if kind == "heston_calibrate":
         compact = {
             key: out[key]
