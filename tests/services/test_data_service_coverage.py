@@ -2098,6 +2098,26 @@ class TestFetchTicks(unittest.TestCase):
         self.assertEqual(row['last'], 1.17333)
 
     @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=SimpleNamespace(digits=5))
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_tick_rows_tolerate_missing_quote_sides(self, mock_ctz, mock_info, mock_ticks):
+        ticks = _make_ticks(3)
+        ticks[0]["bid"] = None
+        ticks[1]["ask"] = None
+        ticks[2]["last"] = None
+        mock_ticks.return_value = ticks
+
+        result = fetch_ticks('EURUSD', limit=3, format='rows')
+
+        self.assertTrue(result.get('success'))
+        self.assertIsNone(result['data'][0]['bid'])
+        self.assertIsNotNone(result['data'][0]['ask'])
+        self.assertIsNotNone(result['data'][1]['bid'])
+        self.assertIsNone(result['data'][1]['ask'])
+        self.assertEqual(result['data'][2]['last'], 0.0)
+
+    @patch(_TICKS_RANGE)
     @patch(_CACHED_INFO, return_value=MagicMock())
     @patch(_RESOLVE_CTZ, return_value=ZoneInfo("America/Chicago"))
     @patch(_GUARD, _mock_symbol_guard)

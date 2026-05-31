@@ -2040,16 +2040,19 @@ def fetch_ticks(  # noqa: C901
         volumes_real: List[float] = []
         for tick in ticks:
             _epochs.append(_tick_epoch_seconds(tick))
-            bid = float(_tick_field(tick, "bid"))
-            ask = float(_tick_field(tick, "ask"))
+            bid_value = _finite_or_none(_tick_field(tick, "bid"))
+            ask_value = _finite_or_none(_tick_field(tick, "ask"))
+            bid = float("nan") if bid_value is None else bid_value
+            ask = float("nan") if ask_value is None else ask_value
             flag_value = int(_tick_field(tick, "flags") or 0)
             bids.append(bid)
             asks.append(ask)
-            lasts.append(float(_tick_field(tick, "last") or 0.0))
+            last_value = _finite_or_none(_tick_field(tick, "last"))
+            lasts.append(0.0 if last_value is None else last_value)
             flags.append(flag_value)
             missing_side = _one_sided_zero_spread_missing_side(bid, ask, flag_value)
-            effective_bids.append(None if missing_side == "bid" else bid)
-            effective_asks.append(None if missing_side == "ask" else ask)
+            effective_bids.append(None if bid_value is None or missing_side == "bid" else bid)
+            effective_asks.append(None if ask_value is None or missing_side == "ask" else ask)
             try:
                 volumes.append(float(_tick_field(tick, "volume")))
             except (TypeError, ValueError):
