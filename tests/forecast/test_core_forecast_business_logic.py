@@ -1426,13 +1426,12 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
             ],
         },
     )
-    capped = _unwrap(cf.forecast_list_methods)()
-    assert "filters" not in capped
-    assert capped["methods_shown"] == 20
-    assert capped["methods_hidden"] == 5
-    assert capped["truncation_reason"] == (
-        "Default compact limit 20; set limit=25 for all filtered methods."
-    )
+    default_out = _unwrap(cf.forecast_list_methods)()
+    assert "filters" not in default_out
+    assert default_out["methods_shown"] == 25
+    assert default_out["methods_hidden"] == 0
+    assert "has_more" not in default_out
+    assert "truncation_reason" not in default_out
 
     uncapped = _unwrap(cf.forecast_list_methods)(all=True)
     assert uncapped["methods_shown"] == 25

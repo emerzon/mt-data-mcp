@@ -39,7 +39,6 @@ from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway, mt5_connection_error
 
 logger = logging.getLogger(__name__)
-_FORECAST_LIST_METHODS_DEFAULT_COMPACT_LIMIT = 20
 
 _FORECAST_PROCESS_ISOLATION_ENV = "MTDATA_FORECAST_PROCESS_ISOLATION"
 _FORECAST_PROCESS_TIMEOUT_ENV = "MTDATA_FORECAST_PROCESS_TIMEOUT_SECONDS"
@@ -1402,21 +1401,7 @@ def _forecast_list_methods_impl(  # noqa: C901
             return {"error": f"Invalid offset: {offset}. Must be a non-negative integer."}
         if offset_value < 0:
             return {"error": f"Invalid offset: {offset_value}. Must be >= 0."}
-        compact_default_limit_applies = (
-            detail_value != "full"
-            and limit_value is None
-            and not include_all
-            and not search_value
-            and not category_filter_value
-            and not library_value
-            and supports_ci is None
-            and not bool(show_unavailable)
-        )
-        effective_limit_value = (
-            _FORECAST_LIST_METHODS_DEFAULT_COMPACT_LIMIT
-            if compact_default_limit_applies
-            else limit_value
-        )
+        effective_limit_value = limit_value
 
         method_to_category = snapshot.get("method_to_category") if isinstance(snapshot, dict) else {}
         if not isinstance(method_to_category, dict):
@@ -1628,11 +1613,6 @@ def _forecast_list_methods_impl(  # noqa: C901
                 truncation_reason = (
                     f"Limit {effective_limit_value} at offset {offset_value}; "
                     f"set offset={offset_value + len(selected_methods)} for more filtered methods."
-                )
-            elif compact_default_limit_applies:
-                truncation_reason = (
-                    f"Default compact limit {_FORECAST_LIST_METHODS_DEFAULT_COMPACT_LIMIT}; "
-                    f"set limit={len(compact_methods)} for all filtered methods."
                 )
             else:
                 truncation_reason = (
