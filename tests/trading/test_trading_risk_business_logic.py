@@ -75,6 +75,12 @@ def test_floor_volume_steps_does_not_round_up_material_substep_values() -> None:
     assert _floor_volume_steps(1.1999999999999, 0.1) == 11
 
 
+def test_floor_volume_steps_rejects_invalid_inputs() -> None:
+    assert _floor_volume_steps(1.0, 0.0) == 0
+    assert _floor_volume_steps(1.0, -0.1) == 0
+    assert _floor_volume_steps(float("nan"), 0.1) == 0
+
+
 def test_trade_risk_analyze_does_not_round_up_substep_boundary_volume() -> None:
     mt5 = MagicMock()
     mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")

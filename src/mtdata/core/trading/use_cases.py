@@ -492,6 +492,8 @@ def _shape_trade_risk_analyze_payload(
 
 
 def _floor_volume_steps(raw_volume: float, volume_step: float) -> int:
+    if volume_step <= 0 or not math.isfinite(raw_volume):
+        return 0
     step_ratio = raw_volume / volume_step
     step_count = math.floor(step_ratio)
     if step_count < 0:
