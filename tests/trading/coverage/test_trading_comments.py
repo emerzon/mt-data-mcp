@@ -126,6 +126,14 @@ class TestNormalizeCloseTradeComment:
         assert short_meta["comment_may_be_truncated"] is False
         assert exact_limit_meta["comment_may_be_truncated"] is True
 
+    def test_comment_row_metadata_keeps_literal_nan_comment(self):
+        numeric_nan_meta = _comment_row_metadata(float("nan"))
+        literal_nan_meta = _comment_row_metadata("nan")
+
+        assert numeric_nan_meta == {}
+        assert literal_nan_meta["comment_visible_length"] == 3
+        assert literal_nan_meta["comment_may_be_truncated"] is False
+
 
 # ===================================================================
 #  _normalize_pending_expiration (mixed: some paths need config mock)

@@ -107,7 +107,7 @@ def _comment_row_metadata(comment: Any) -> Dict[str, Any]:
         text = str(comment).strip()
     except Exception:
         text = ""
-    if not text or text.lower() == "nan":
+    if not text:
         return {}
     return {
         "comment_visible_length": len(text),
