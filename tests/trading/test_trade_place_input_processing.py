@@ -230,6 +230,33 @@ def test_trade_place_dry_run_market_preview_skips_order_send() -> None:
     mock_market.assert_not_called()
 
 
+def test_trade_place_dry_run_market_preview_allows_missing_sl_tp() -> None:
+    with patch("mtdata.core.trading._place_market_order") as mock_market, patch(
+        "mtdata.core.trading.build_trade_place_dry_run_preview",
+        return_value={"bid": 64999.0, "ask": 65001.0, "estimated_fill_price": 65001.0},
+    ) as mock_preview:
+        out = trade_place(
+            symbol="BTCUSD",
+            volume=0.03,
+            order_type="BUY",
+            dry_run=True,
+            __cli_raw=True,
+        )
+
+    assert out.get("success") is True
+    assert out.get("dry_run") is True
+    assert out.get("require_sl_tp") is True
+    assert "SL/TP not required in dry run mode" in out.get("dry_run_note", "")
+    assert out.get("would_send_order") is False
+    assert out.get("action") == "place_market_order"
+    assert "requested_sl" not in out
+    assert "requested_tp" not in out
+    mock_preview.assert_called_once()
+    assert mock_preview.call_args.kwargs["stop_loss"] is None
+    assert mock_preview.call_args.kwargs["take_profit"] is None
+    mock_market.assert_not_called()
+
+
 def test_trade_place_dry_run_preview_detail_omits_safety_lists() -> None:
     with patch("mtdata.core.trading._place_market_order") as mock_market, patch(
         "mtdata.core.trading.build_trade_place_dry_run_preview",

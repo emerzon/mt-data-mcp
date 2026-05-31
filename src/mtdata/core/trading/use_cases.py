@@ -80,6 +80,7 @@ _TRADE_PLACE_PREVIEW_KEYS = (
     "sl_tp_error",
     "preview_error",
     "message",
+    "dry_run_note",
     "require_sl_tp",
     "auto_close_on_sl_tp_fail",
     "magic",
@@ -801,6 +802,8 @@ def run_trade_place(  # noqa: C901
         return _finish(duplicate_result)
 
     try:
+        dry_run_missing_protection: List[str] = []
+
         def _dry_run_preview(
             *,
             order_type: str,
@@ -858,6 +861,11 @@ def run_trade_place(  # noqa: C901
                     side=_guardrail_order_side(order_type),
                 ),
             }
+            if dry_run_missing_protection:
+                preview["dry_run_note"] = (
+                    "SL/TP not required in dry run mode; add stop_loss and "
+                    "take_profit for a complete protection preview."
+                )
             if callable(build_dry_run_preview):
                 preview.update(
                     build_dry_run_preview(
@@ -1021,7 +1029,9 @@ def run_trade_place(  # noqa: C901
             if request.take_profit in (None, 0):
                 missing_protection.append("take_profit")
             if missing_protection:
-                if not bool(request.dry_run):
+                if bool(request.dry_run):
+                    dry_run_missing_protection = list(missing_protection)
+                else:
                     prevalidation_error = prevalidate_trade_place_market_input(
                         symbol_norm,
                         request.volume,
@@ -1032,22 +1042,22 @@ def run_trade_place(  # noqa: C901
                             order_type=order_type_norm,
                             pending=is_pending,
                         )
-                return _finish(
-                    {
-                        "error": (
-                            "require_sl_tp=True requires both stop_loss and take_profit for market orders. "
-                            "Refusing to place an unprotected position."
-                        ),
-                        "require_sl_tp": True,
-                        "missing": missing_protection,
-                        "hint": (
-                            "Provide both --stop-loss and --take-profit, "
-                            "or explicitly set --require-sl-tp false."
-                        ),
-                    },
-                    order_type=order_type_norm,
-                    pending=is_pending,
-                )
+                    return _finish(
+                        {
+                            "error": (
+                                "require_sl_tp=True requires both stop_loss and take_profit for market orders. "
+                                "Refusing to place an unprotected position."
+                            ),
+                            "require_sl_tp": True,
+                            "missing": missing_protection,
+                            "hint": (
+                                "Provide both --stop-loss and --take-profit, "
+                                "or explicitly set --require-sl-tp false."
+                            ),
+                        },
+                        order_type=order_type_norm,
+                        pending=is_pending,
+                    )
 
         if bool(request.dry_run):
             guardrail_preview = preview_trade_guardrails(
