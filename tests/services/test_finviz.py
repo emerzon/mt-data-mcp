@@ -1202,7 +1202,7 @@ class TestFinvizTools:
         assert "curr_r" not in fundamentals
 
     @patch("mtdata.core.finviz.get_stock_fundamentals")
-    def test_finviz_fundamentals_parses_enterprise_value(self, mock_get_fundamentals):
+    def test_finviz_fundamentals_normalizes_mixed_numeric_formats(self, mock_get_fundamentals):
         from mtdata.core.finviz import finviz_fundamentals
 
         mock_get_fundamentals.return_value = {
@@ -1210,6 +1210,10 @@ class TestFinvizTools:
             "symbol": "AAPL",
             "fundamentals": {
                 "Enterprise Value": "4599.54B",
+                "Income": "122.58B",
+                "Sales": "451.44B",
+                "EPS this Y": "17.26%",
+                "EPS next Y": "9.62",
             },
         }
 
@@ -1219,6 +1223,12 @@ class TestFinvizTools:
         fundamentals = result["fundamentals"]
         assert fundamentals["enterprise_value"] == 4_599_540_000_000
         assert fundamentals["enterprise_value_formatted"] == "4.6T"
+        assert fundamentals["income"] == 122_580_000_000
+        assert fundamentals["income_formatted"] == "122.58B"
+        assert fundamentals["sales"] == 451_440_000_000
+        assert fundamentals["sales_formatted"] == "451.44B"
+        assert fundamentals["eps_this_y"] == 17.26
+        assert fundamentals["eps_next_y"] == 9.62
 
     @patch("mtdata.core.finviz.get_stock_insider_trades")
     def test_finviz_insider_defaults_to_compact_detail(self, mock_get_trades):
