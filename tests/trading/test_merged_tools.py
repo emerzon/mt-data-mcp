@@ -3,11 +3,8 @@ import unittest
 from collections import namedtuple
 from unittest.mock import MagicMock, patch
 
-from src.mtdata.utils.mt5 import _mt5_epoch_to_utc
 from src.mtdata.utils.utils import (
     _format_time_minimal,
-    _format_time_minimal_local,
-    _use_client_tz,
 )
 
 # Mock mt5 before importing the module
@@ -111,8 +108,7 @@ class TestMergedTools(unittest.TestCase):
         self.assertEqual(row.get("type"), "BUY")
         self.assertEqual(row.get("symbol"), "EURUSD")
         self.assertEqual(row.get("ticket"), 1)
-        fmt_time = _format_time_minimal_local if _use_client_tz() else _format_time_minimal
-        expected_time = fmt_time(_mt5_epoch_to_utc(1700000001))
+        expected_time = _format_time_minimal(1700000001)
         self.assertEqual(row.get("time"), expected_time)
         self.assertIsNone(row.get("time_msc"))
         self.assertIsNone(row.get("time_update"))
@@ -249,9 +245,8 @@ class TestMergedTools(unittest.TestCase):
         self.assertEqual(row.get("type"), "SELL_LIMIT")
         self.assertEqual(row.get("symbol"), "EURUSD")
         self.assertEqual(row.get("ticket"), 1)
-        fmt_time = _format_time_minimal_local if _use_client_tz() else _format_time_minimal
-        expected_time = fmt_time(_mt5_epoch_to_utc(1700000000))
-        expected_exp = fmt_time(_mt5_epoch_to_utc(1700003600))
+        expected_time = _format_time_minimal(1700000000)
+        expected_exp = _format_time_minimal(1700003600)
         self.assertEqual(row.get("time"), expected_time)
         self.assertIn("expiration", row)
         self.assertEqual(row.get("expiration"), expected_exp)
