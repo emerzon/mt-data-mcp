@@ -132,7 +132,13 @@ def build_runtime_timezone_meta(
 
     offset_env = os.getenv("MT5_TIME_OFFSET_MINUTES")
     server_offset_minutes = None
-    if offset_env is not None:
+    try:
+        cfg_offset_minutes = int(getattr(cfg, "time_offset_minutes"))
+    except Exception:
+        cfg_offset_minutes = None
+    if cfg_offset_minutes not in (None, 0):
+        server_offset_minutes = cfg_offset_minutes
+    elif offset_env is not None:
         try:
             server_offset_minutes = int(offset_env)
         except Exception:
@@ -141,7 +147,11 @@ def build_runtime_timezone_meta(
         server_offset_seconds = int(server_offset_minutes) * 60
 
     server_source = "none"
-    if server_tz_config:
+    if isinstance(server_offset_minutes, int) and (
+        server_offset_minutes != 0 or (offset_env is not None and not server_tz_config)
+    ):
+        server_source = "MT5_TIME_OFFSET_MINUTES"
+    elif server_tz_config:
         server_source = "MT5_SERVER_TZ"
     elif server_offset_minutes is not None:
         server_source = "MT5_TIME_OFFSET_MINUTES"

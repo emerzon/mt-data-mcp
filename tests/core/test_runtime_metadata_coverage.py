@@ -13,10 +13,12 @@ def _make_config(
     server_tz=None,
     client_tz=None,
     offset_seconds=0,
+    time_offset_minutes=None,
 ):
     return SimpleNamespace(
         server_tz_name=server_tz_name,
         client_tz_name=client_tz_name,
+        time_offset_minutes=time_offset_minutes,
         get_server_tz=lambda: server_tz,
         get_client_tz=lambda: client_tz,
         get_time_offset_seconds=lambda: offset_seconds,
@@ -64,6 +66,25 @@ def test_api_shape_uses_shared_schema_without_local_or_now() -> None:
             "tz": "US/Central",
         },
     }
+
+
+def test_static_offset_source_takes_precedence_over_configured_server_tz() -> None:
+    cfg = _make_config(
+        server_tz_name="Europe/Nicosia",
+        server_tz=ZoneInfo("Europe/Nicosia"),
+        offset_seconds=5400,
+        time_offset_minutes=90,
+    )
+
+    result = build_runtime_timezone_meta(
+        {},
+        mt5_config=cfg,
+        include_now=False,
+    )
+
+    assert result["server"]["source"] == "MT5_TIME_OFFSET_MINUTES"
+    assert result["server"]["tz"] == "Europe/Nicosia"
+    assert result["server"]["offset_seconds"] == 5400
 
 
 def test_uses_iana_name_for_client_timezone_when_available() -> None:
