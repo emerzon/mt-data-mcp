@@ -36,6 +36,7 @@ def test_market_status_timezone_display_utc_converts_market_times(monkeypatch) -
     result = raw(region="us", timezone_display="utc", detail="full")
 
     assert result["success"] is True
+    assert result["mode"] == "global"
     assert result["timezone"] == "UTC"
     assert {market["symbol"] for market in result["markets"]} == {"NYSE", "NASDAQ"}
     for market in result["markets"]:
@@ -66,6 +67,7 @@ def test_market_status_uses_utc_weekend_for_closed_reason(monkeypatch) -> None:
     result = raw(region="all", detail="full")
 
     assert result["success"] is True
+    assert result["mode"] == "global"
     assert result["data_fetched_at"] == "2026-04-25T03:18:00Z"
     assert result["global_status"] == "weekend"
     assert result["closed_reason_counts"] == {"weekend": 9}

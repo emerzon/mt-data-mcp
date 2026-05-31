@@ -909,7 +909,7 @@ def market_status(
     detail: CompactFullDetailLiteral = "compact",
     extras: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Get trading status of major stock markets worldwide.
+    """Get global exchange status, or MT5 symbol tradability when `symbol` is supplied.
 
     Returns the current status (open/closed/pre-market/lunch break) for major
     markets including NYSE, NASDAQ, LSE, Xetra, Euronext, Tokyo, Hong Kong,
@@ -1067,6 +1067,7 @@ def market_status(
 
         payload = {
             "success": True,
+            "mode": "global",
             "data_fetched_at": _format_utc_iso_z(now_utc),
             "timezone": "UTC",
             "day_of_week": now_utc.strftime("%A"),
