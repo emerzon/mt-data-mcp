@@ -2960,8 +2960,15 @@ def run_trade_var_cvar_calculate(  # noqa: C901
 
     try:
         account = gateway.account_info()
-    except Exception:
-        account = None
+    except Exception as exc:
+        return _finish(
+            {
+                "error": (
+                    "Failed to get account info for VaR/CVaR calculation: "
+                    f"{str(exc)}"
+                )
+            }
+        )
     equity = None
     currency = None
     if account is not None:

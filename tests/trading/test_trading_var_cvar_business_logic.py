@@ -155,6 +155,26 @@ def test_run_trade_var_cvar_calculate_returns_empty_when_no_open_positions() -> 
     assert "worst_observations" not in out
 
 
+def test_run_trade_var_cvar_calculate_reports_account_info_failure() -> None:
+    def account_info():
+        raise RuntimeError("MT5 disconnected")
+
+    gateway = SimpleNamespace(
+        ensure_connection=lambda: None,
+        account_info=account_info,
+        positions_get=lambda symbol=None: [],
+    )
+
+    out = run_trade_var_cvar_calculate(
+        TradeVarCvarRequest(),
+        gateway=gateway,
+    )
+
+    assert out["error"] == (
+        "Failed to get account info for VaR/CVaR calculation: MT5 disconnected"
+    )
+
+
 def test_run_trade_var_cvar_calculate_full_detail_keeps_empty_shape() -> None:
     gateway = SimpleNamespace(
         ensure_connection=lambda: None,
