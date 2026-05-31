@@ -1939,7 +1939,7 @@ def _compact_tick_summary(out: Dict[str, Any]) -> Dict[str, Any]:
         compact["price_precision"] = out.get("price_precision")
     if out.get("price_currency") is not None:
         compact["price_currency"] = out.get("price_currency")
-    for key in ("freshness", "data_freshness_seconds"):
+    for key in ("freshness", "data_freshness_seconds", "data_stale"):
         if out.get(key) is not None:
             compact[key] = out.get(key)
     if isinstance(out.get("last_quote"), dict):
@@ -2194,6 +2194,7 @@ def fetch_ticks(  # noqa: C901
             age_seconds = max(0.0, float(time.time()) - latest_tick_epoch)
             data_stale = age_seconds > 300.0
             payload["data_freshness_seconds"] = round(age_seconds, 3)
+            payload["data_stale"] = data_stale
             freshness = format_freshness_label(
                 data_stale=data_stale,
                 age_seconds=age_seconds,

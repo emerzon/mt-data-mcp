@@ -2111,6 +2111,7 @@ class TestFetchTicks(unittest.TestCase):
         for result in (rows, summary):
             self.assertTrue(result.get('success'))
             self.assertEqual(result["data_freshness_seconds"], 600.0)
+            self.assertTrue(result["data_stale"])
             self.assertEqual(result["freshness"], "stale, tick 10m 0s ago")
             self.assertEqual(result["last_quote"]["spread_points"], 20.0)
 

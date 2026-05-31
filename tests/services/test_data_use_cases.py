@@ -850,6 +850,9 @@ def test_run_data_fetch_ticks_compact_prunes_row_diagnostics():
                 },
             ],
             "timezone": "UTC",
+            "freshness": "stale, tick 10m 0s ago",
+            "data_freshness_seconds": 600.0,
+            "data_stale": True,
             "stats": {"spread": {"low": 0.00006, "high": 0.00008}},
             "last_quote": {"bid": 1.16591, "ask": 1.16599},
             "flags_legend": {"1026": ["bid", "volume_real"]},
@@ -878,6 +881,9 @@ def test_run_data_fetch_ticks_compact_prunes_row_diagnostics():
             },
         ],
         "timezone": "UTC",
+        "freshness": "stale, tick 10m 0s ago",
+        "data_freshness_seconds": 600.0,
+        "data_stale": True,
         "units": {"bid": "price", "ask": "price", "spread": "price"},
     }
 
