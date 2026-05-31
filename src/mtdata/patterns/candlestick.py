@@ -701,6 +701,7 @@ def detect_candlestick_patterns(  # noqa: C901
         symbol=symbol,
         timeframe_seconds=float(TIMEFRAME_SECONDS.get(timeframe, 0) or 0),
     )
+    epochs = pd.to_numeric(df["time"], errors="coerce").tolist()
     _use_ctz = _use_client_tz()
     if _use_ctz:
         with warnings.catch_warnings():
