@@ -328,13 +328,24 @@ def _compact_candles_payload(
 
 def _standard_candles_payload(result: Dict[str, Any]) -> Dict[str, Any]:
     standard = _compact_candles_payload(result, include_forming_booleans=True)
-    for key, value in _public_candle_diagnostics(result).items():
-        standard[key] = value
+    public_diagnostics = _public_candle_diagnostics(result)
+    for key in (
+        "query_type",
+        "freshness",
+        "data_stale",
+        "market_status",
+        "stale_warning",
+        "spread_estimate",
+    ):
+        if key in public_diagnostics:
+            standard[key] = public_diagnostics[key]
     return standard
 
 
 def _summary_candles_payload(result: Dict[str, Any]) -> Dict[str, Any]:
-    summary = _standard_candles_payload(result)
+    summary = _compact_candles_payload(result, include_forming_booleans=True)
+    for key, value in _public_candle_diagnostics(result).items():
+        summary[key] = value
     summary["output"] = "summary"
     rows = result.get("data")
     if isinstance(rows, list) and rows:

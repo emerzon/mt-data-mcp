@@ -418,7 +418,7 @@ def test_run_data_fetch_candles_compact_omits_historical_freshness():
     assert "data_freshness_seconds" not in result
 
 
-def test_run_data_fetch_candles_standard_keeps_public_diagnostics_only():
+def test_run_data_fetch_candles_standard_omits_verbose_diagnostics():
     request = DataFetchCandlesRequest(
         symbol="EURUSD",
         timeframe="H1",
@@ -439,6 +439,7 @@ def test_run_data_fetch_candles_standard_keeps_public_diagnostics_only():
             "meta": {
                 "diagnostics": {
                     "query": {
+                        "mode": "latest",
                         "latency_ms": 12.3,
                         "warmup_retry": {"applied": False},
                         "cache_status": "unknown",
@@ -455,9 +456,15 @@ def test_run_data_fetch_candles_standard_keeps_public_diagnostics_only():
     assert "meta" not in result
     assert result["symbol"] == "EURUSD"
     assert result["timeframe"] == "H1"
-    assert result["data_freshness_seconds"] == 60.0
-    assert result["latency_ms"] == 12.3
-    assert result["last_bar_within_policy_window"] is True
+    assert result["query_type"] == "latest"
+    assert result["data_stale"] is False
+    assert result["freshness"] == "fresh, bar 1m 0s ago"
+    assert "latency_ms" not in result
+    assert "freshness_basis" not in result
+    assert "data_freshness_seconds" not in result
+    assert "data_age_seconds" not in result
+    assert "data_age" not in result
+    assert "last_bar_within_policy_window" not in result
     assert "warmup_retry" not in result
     assert "cache_status" not in result
 
@@ -495,7 +502,7 @@ def test_run_data_fetch_candles_standard_handles_bool_like_freshness_flags():
         },
     )
 
-    assert result["last_bar_within_policy_window"] is False
+    assert "last_bar_within_policy_window" not in result
     assert result["data_stale"] is True
     assert result["freshness"] == "stale, bar 1h 1m ago"
 
