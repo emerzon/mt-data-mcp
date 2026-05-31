@@ -842,6 +842,33 @@ class TestClosePositions:
         assert result["ticket"] == 42
         assert "tick data" in result["error"].lower()
 
+    def test_execute_single_close_rejects_invalid_full_close_volume(self):
+        from mtdata.core.trading.gateway import create_trading_gateway
+        mt5 = MagicMock()
+        mt5.ORDER_FILLING_IOC = 1
+        mt5.ORDER_TIME_GTC = 0
+
+        position = SimpleNamespace(
+            ticket=42, symbol="EURUSD", volume=0.0, type=0, magic=100,
+        )
+
+        gw = create_trading_gateway(
+            adapter=mt5, include_retcode_name=True,
+            ensure_connection_impl=lambda: None,
+        )
+
+        result = _execute_single_close(
+            gw, position,
+            requested_volume=None, position_volume_before=None,
+            remaining_volume_estimate=None, deviation=20,
+            comment=None, fill_modes=[mt5.ORDER_FILLING_IOC],
+        )
+
+        assert result["ticket"] == 42
+        assert "invalid volume" in result["error"].lower()
+        mt5.symbol_info_tick.assert_not_called()
+        mt5.order_send.assert_not_called()
+
     def test_execute_single_close_unknown_side(self):
         """Returns error when position side cannot be determined."""
         from mtdata.core.trading.gateway import create_trading_gateway

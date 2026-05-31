@@ -734,6 +734,23 @@ def _execute_single_close(
         }
     is_buy_position = position_side == "BUY"
 
+    if requested_volume is not None:
+        try:
+            close_volume = float(requested_volume)
+        except (TypeError, ValueError):
+            close_volume = float("nan")
+    else:
+        close_volume = validation._safe_float_attr(
+            position,
+            "volume",
+            default=float("nan"),
+        )
+    if not math.isfinite(close_volume) or close_volume <= 0:
+        return {
+            "ticket": position.ticket,
+            "error": f"Position has invalid volume ({getattr(position, 'volume', None)}) for close operation.",
+        }
+
     tick = mt5.symbol_info_tick(position.symbol)
     if tick is None:
         tick_error = validation._safe_last_error(mt5)
@@ -776,7 +793,7 @@ def _execute_single_close(
                 "action": mt5.TRADE_ACTION_DEAL,
                 "position": position.ticket,
                 "symbol": position.symbol,
-                "volume": requested_volume if requested_volume is not None else position.volume,
+                "volume": close_volume,
                 "type": close_type,
                 "price": close_price,
                 "deviation": deviation,
