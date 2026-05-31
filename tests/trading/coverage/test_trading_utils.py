@@ -213,6 +213,10 @@ class TestEdgeCases:
         result = _normalize_trade_comment(123, default="x")
         assert result == "123"
 
+    def test_trade_comment_preserves_zero_input(self):
+        result = _normalize_trade_comment(0, default="x")
+        assert result == "0"
+
     def test_server_time_naive_large_timestamp(self):
         dt = datetime(2099, 12, 31, 23, 59, 59)
         result = _server_time_naive_to_mt5_timestamp(dt)

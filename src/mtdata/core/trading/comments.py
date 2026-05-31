@@ -15,7 +15,7 @@ _MT5_COMMENT_SANITIZE_RE = re.compile(r"[^A-Za-z0-9 _.!-]+")
 
 def _sanitize_trade_comment_text(value: Any) -> str:
     try:
-        text = str(value or "").strip()
+        text = "" if value is None else str(value).strip()
     except Exception:
         return ""
     if not text:
