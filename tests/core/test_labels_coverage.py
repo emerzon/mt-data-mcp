@@ -493,6 +493,10 @@ class TestLabelsTripleBarrier:
         assert "no price path hit TP or SL" in summary["explanation"]
         assert summary["max_observed_move_pct"]["favorable"] >= 0.0
         assert summary["max_observed_move_pct"]["adverse"] >= 0.0
+        suggestions = summary["suggested_pct_barriers"]
+        assert suggestions["tp_pct"][0] <= suggestions["tp_pct"][1]
+        assert suggestions["sl_pct"][0] <= suggestions["sl_pct"][1]
+        assert "forecast_barrier_optimize" in summary["suggestion_basis"]
 
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
     @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")

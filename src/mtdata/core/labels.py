@@ -42,6 +42,18 @@ def _label_outcome(label: int) -> str:
     return "neutral"
 
 
+def _neutral_barrier_pct_range(max_move_pct: Any) -> Optional[List[float]]:
+    try:
+        max_move = float(max_move_pct)
+    except Exception:
+        return None
+    if not math.isfinite(max_move) or max_move <= 0.0:
+        return None
+    low = max_move * 0.4
+    high = max_move * 0.8
+    return [round(low, 4), round(max(high, low), 4)]
+
+
 def _triple_barrier_sample_row(
     *,
     idx: int,
@@ -459,6 +471,24 @@ def labels_triple_barrier(
                         "calculation failure; consider tightening barriers or increasing "
                         "horizon if you need more barrier hits."
                     )
+                    moves = summary.get("max_observed_move_pct")
+                    if isinstance(moves, dict):
+                        tp_range = _neutral_barrier_pct_range(moves.get("favorable"))
+                        sl_range = _neutral_barrier_pct_range(moves.get("adverse"))
+                        if tp_range or sl_range:
+                            summary["suggested_pct_barriers"] = {
+                                key: value
+                                for key, value in {
+                                    "tp_pct": tp_range,
+                                    "sl_pct": sl_range,
+                                }.items()
+                                if value is not None
+                            }
+                            summary["suggestion_basis"] = (
+                                "Ranges are 40-80% of the max observed favorable/adverse move "
+                                "inside the summary lookback; use forecast_barrier_optimize for "
+                                "objective-specific tuning."
+                            )
                 if output_mode == "summary":
                     out = {
                         "success": True,
