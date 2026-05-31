@@ -349,8 +349,8 @@ def _apply_symbol_currency_diagnostics(payload: Dict[str, Any]) -> None:
     reported_base = payload.get("currency_base")
     if inferred_base and payload.get("currency_base_warning"):
         payload["currency_base_reported"] = reported_base
-        payload["currency_base"] = inferred_base
-        payload["currency_base_source"] = "inferred_from_symbol_name"
+        payload["currency_base_source"] = "reported_by_mt5"
+        payload["currency_base_inference_source"] = "inferred_from_symbol_name"
 
 
 def _symbol_session_type(

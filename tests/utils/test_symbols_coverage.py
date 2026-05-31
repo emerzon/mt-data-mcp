@@ -774,11 +774,12 @@ class TestSymbolsDescribe:
         sd = res["details"]
 
         assert res["symbol"] == "BTCUSD"
-        assert sd["currency_base"] == "BTC"
+        assert sd["currency_base"] == "USD"
         assert sd["currency_base_reported"] == "USD"
-        assert sd["currency_base_source"] == "inferred_from_symbol_name"
+        assert sd["currency_base_source"] == "reported_by_mt5"
         assert sd["currency_profit"] == "USD"
         assert sd["currency_base_inferred"] == "BTC"
+        assert sd["currency_base_inference_source"] == "inferred_from_symbol_name"
         assert "verify broker metadata" in sd["currency_base_warning"]
 
     @patch(f"{_MT5}.symbol_info")
