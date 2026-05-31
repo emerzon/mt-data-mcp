@@ -116,7 +116,7 @@ def _build_triple_barrier_outputs(
 ]:
     max_entry_index = len(closes) - int(horizon)
     if max_entry_index <= 0:
-        return [], [], [], [], [], 0
+        return [], [], [], [], [], [], [], 0
 
     entry_prices = closes[:max_entry_index]
     valid_price_mask = np.isfinite(entry_prices) & (entry_prices > 0.0)

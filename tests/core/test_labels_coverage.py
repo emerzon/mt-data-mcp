@@ -79,6 +79,26 @@ class TestLabelsTripleBarrier:
         assert len(result["data"]) > 0
         assert "labels" not in result
 
+    def test_triple_barrier_helper_short_history_keeps_return_arity(self):
+        from mtdata.core.labels import _build_triple_barrier_outputs
+
+        frame = _make_df(10)
+
+        result = _build_triple_barrier_outputs(
+            closes=frame["close"].to_numpy(dtype=float),
+            highs=frame["high"].to_numpy(dtype=float),
+            lows=frame["low"].to_numpy(dtype=float),
+            times=frame["time"].to_numpy(dtype=float),
+            horizon=12,
+            label_on="high_low",
+            direction_value="long",
+            pip_size=0.0001,
+            barrier_kwargs={"tp_pct": 0.5, "sl_pct": 0.5},
+        )
+
+        assert len(result) == 8
+        assert result == ([], [], [], [], [], [], [], 0)
+
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
     @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
     @patch(f"{_LABELS_MOD}._fetch_history")
