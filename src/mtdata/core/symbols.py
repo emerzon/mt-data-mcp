@@ -5,7 +5,12 @@ import re
 import time
 from typing import Any, Dict, List, Literal, Optional
 
-from ..shared.constants import DEFAULT_ROW_LIMIT, GROUP_SEARCH_THRESHOLD, TIMEFRAME_MAP
+from ..shared.constants import (
+    DEFAULT_ROW_LIMIT,
+    GROUP_SEARCH_THRESHOLD,
+    TIMEFRAME_MAP,
+    TIMEFRAME_SECONDS,
+)
 from ..shared.schema import CompactFullDetailLiteral, TimeframeLiteral
 from ..shared.validators import invalid_timeframe_error
 from ..utils.freshness import format_age_seconds, format_freshness_label
@@ -907,17 +912,29 @@ def _market_scan_round(value: Optional[float], digits: int = 6) -> Optional[floa
     return round(float(value), max(0, int(digits)))
 
 
-def _market_scan_freshness_fields(bar_time: Optional[float]) -> Dict[str, Any]:
+def _market_scan_stale_bar_seconds(timeframe: Optional[str]) -> int:
+    seconds = TIMEFRAME_SECONDS.get(str(timeframe or "").strip().upper())
+    if seconds:
+        return max(1, int(seconds) * 2)
+    return int(_MARKET_SCAN_STALE_BAR_SECONDS)
+
+
+def _market_scan_freshness_fields(
+    bar_time: Optional[float],
+    *,
+    timeframe: Optional[str] = None,
+) -> Dict[str, Any]:
     if bar_time is None:
         return {}
     try:
         age_seconds = max(0.0, float(time.time()) - float(bar_time))
     except Exception:
         return {}
-    data_stale = age_seconds > _MARKET_SCAN_STALE_BAR_SECONDS
+    stale_after_seconds = _market_scan_stale_bar_seconds(timeframe)
+    data_stale = age_seconds > stale_after_seconds
     fields: Dict[str, Any] = {
         "data_freshness_seconds": _market_scan_round(age_seconds, digits=3),
-        "stale_after_seconds": int(_MARKET_SCAN_STALE_BAR_SECONDS),
+        "stale_after_seconds": stale_after_seconds,
         "bar_age_hours": _market_scan_round(age_seconds / 3600.0, digits=3),
         "data_stale": data_stale,
         "freshness": format_freshness_label(
@@ -1100,7 +1117,7 @@ def _build_market_scan_bar_row(
         {
             "timeframe": timeframe,
             "time": _format_time_minimal(bar_time) if bar_time is not None else None,
-            **_market_scan_freshness_fields(bar_time),
+            **_market_scan_freshness_fields(bar_time, timeframe=timeframe),
             "open": _market_scan_round(open_price, digits=digits),
             "close": _market_scan_round(close_price, digits=digits),
             "tick_volume": tick_volume,
@@ -1630,7 +1647,7 @@ def _build_market_scan_signal_row(
         {
             "timeframe": timeframe,
             "time": _format_time_minimal(bar_time) if bar_time is not None else None,
-            **_market_scan_freshness_fields(bar_time),
+            **_market_scan_freshness_fields(bar_time, timeframe=timeframe),
             "open": _market_scan_round(open_price, digits=digits),
             "close": _market_scan_round(close_price, digits=digits),
             "tick_volume": tick_volume,

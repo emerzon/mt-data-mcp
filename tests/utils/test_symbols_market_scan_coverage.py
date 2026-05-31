@@ -82,6 +82,20 @@ def test_market_scan_freshness_summary_counts_bool_like_stale_flags():
     assert result["freshness"] == "mixed, 2/3 stale"
 
 
+def test_market_scan_bar_freshness_uses_timeframe_window():
+    from mtdata.core.symbols import _market_scan_freshness_fields
+
+    with patch("mtdata.core.symbols.time.time", return_value=1_700_000_000.0):
+        result = _market_scan_freshness_fields(
+            1_700_000_000.0 - (26 * 60 * 60),
+            timeframe="H1",
+        )
+
+    assert result["stale_after_seconds"] == 2 * 60 * 60
+    assert result["data_stale"] is True
+    assert result["freshness"] == "stale, bar 1d 2h ago"
+
+
 def _make_symbol(
     name: str,
     *,
