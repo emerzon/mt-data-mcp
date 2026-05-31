@@ -908,6 +908,9 @@ def _consolidate_payload(  # noqa: C901
                 if regime_confidence is not None:
                     current_regime["regime_confidence"] = regime_confidence
 
+        if output_mode == "compact" and isinstance(current_regime, dict):
+            current_regime.pop("regime_id", None)
+
         # Restructure payload:
         new_payload: Dict[str, Any] = {
             "symbol": payload.get("symbol"),

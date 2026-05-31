@@ -372,6 +372,7 @@ def test_consolidate_payload_uses_regime_confidence_name() -> None:
     current_regime = out["current_regime"]
     assert current_regime["regime_confidence"] == 0.825
     assert "confidence" not in current_regime
+    assert "regime_id" not in current_regime
 
 
 def test_rule_based_uses_price_window_metrics_for_return_target() -> None:
