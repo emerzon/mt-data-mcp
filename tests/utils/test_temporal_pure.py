@@ -621,9 +621,12 @@ class TestTemporalAnalyze:
         assert r.get("success") is True
         assert "overall" not in r
         assert "groups" in r
+        assert "group" not in r["groups"][0]
+        assert "group_label" in r["groups"][0]
         assert "avg_range" not in r["groups"][0]
         assert "avg_volume" not in r["groups"][0]
         assert "best" in r
+        assert "group" not in r["best"]
         assert r["units"] == {
             "returns": "percentage_points",
             "win_rate": "fraction",
@@ -649,6 +652,8 @@ class TestTemporalAnalyze:
         assert r.get("success") is True
         assert "overall" in r
         assert "volume_source" in r
+        assert "group" in r["groups"][0]
+        assert "group_label" in r["groups"][0]
         assert "avg_range_pct" in r["groups"][0]
         assert "avg_volume" in r["groups"][0]
         assert "avg_range" not in r["groups"][0]
@@ -819,6 +824,8 @@ class TestTemporalAnalyze:
         assert "overall" not in r
         assert [group["dimension"] for group in r["groups"]] == ["dow", "hour", "month"]
         assert "avg_range" not in r["groups"][0]["breakdown"][0]
+        assert "group" not in r["groups"][0]["breakdown"][0]
+        assert "group" not in r["best"]["dow"]
         assert set(r["best"]) == {"dow", "hour", "month"}
 
     @_apply_analyze_patches

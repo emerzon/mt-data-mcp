@@ -241,21 +241,19 @@ def _stats_for_group(df: pd.DataFrame, volume_col: Optional[str]) -> Dict[str, A
     return out
 
 
-def _compact_temporal_stats(row: Dict[str, Any]) -> Dict[str, Any]:
-    keys = (
-        "group",
-        "group_label",
-        "bars",
-        "avg_return",
-        "median_return",
-        "win_rate",
-        "volatility",
-    )
+def _compact_temporal_stats(
+    row: Dict[str, Any],
+    *,
+    include_group: bool = False,
+) -> Dict[str, Any]:
+    keys = ("group_label", "bars", "avg_return", "median_return", "win_rate", "volatility")
+    if include_group:
+        keys = ("group", *keys)
     return {key: row.get(key) for key in keys if row.get(key) is not None}
 
 
 def _standard_temporal_stats(row: Dict[str, Any]) -> Dict[str, Any]:
-    out = _compact_temporal_stats(row)
+    out = _compact_temporal_stats(row, include_group=True)
     for key in ("returns", "avg_abs_return", "avg_range_pct", "avg_volume"):
         value = row.get(key)
         if value is not None:
@@ -468,7 +466,7 @@ def _standard_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
                 if best:
                     best_by_dimension[dimension] = {
                         key: best[key]
-                        for key in ("group", "group_label", "avg_return", "win_rate")
+                        for key in ("group_label", "avg_return", "win_rate")
                         if key in best
                     }
             out["groups"] = standard_groups
@@ -490,12 +488,12 @@ def _standard_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
                 key=lambda row: float(row.get("avg_return") or 0.0),
                 default=None,
             )
-            if best:
-                out["best"] = {
-                    key: best[key]
-                    for key in ("group", "group_label", "avg_return", "win_rate")
-                    if key in best
-                }
+        if best:
+            out["best"] = {
+                key: best[key]
+                for key in ("group_label", "avg_return", "win_rate")
+                if key in best
+            }
     overall = payload.get("overall")
     if isinstance(overall, dict):
         out["overall"] = _standard_temporal_stats(overall)
