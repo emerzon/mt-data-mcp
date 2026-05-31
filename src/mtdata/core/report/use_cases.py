@@ -345,6 +345,62 @@ def _compact_report_top_patterns(patterns_section: Any, *, limit: int = 3) -> Li
     return compact
 
 
+def _section_timeframes(section: Any) -> List[str]:
+    if not isinstance(section, dict):
+        return []
+    return [
+        str(key)
+        for key, value in section.items()
+        if key != "__base_timeframe__" and isinstance(value, dict)
+    ]
+
+
+def _report_template_focus(
+    *,
+    template: str,
+    report: Dict[str, Any],
+    horizon: int,
+) -> Dict[str, Any]:
+    sections = report.get("sections")
+    if not isinstance(sections, dict):
+        return {}
+    profile_by_template = {
+        "basic": "balanced",
+        "advanced": "regime_volatility",
+        "scalping": "short_horizon_spread",
+        "intraday": "intraday_mtf",
+        "swing": "swing_mtf",
+        "position": "higher_timeframe_mtf",
+    }
+    focus: Dict[str, Any] = {
+        "profile": profile_by_template.get(template, template),
+        "horizon": int(horizon),
+    }
+    meta = report.get("meta")
+    if isinstance(meta, dict) and meta.get("timeframe") not in (None, "", [], {}):
+        focus["base_timeframe"] = meta.get("timeframe")
+    context_tfs = _section_timeframes(sections.get("contexts_multi"))
+    if context_tfs:
+        focus["context_timeframes"] = context_tfs
+    pivot_tfs = _section_timeframes(sections.get("pivot_multi"))
+    if pivot_tfs:
+        focus["pivot_timeframes"] = pivot_tfs
+    if isinstance(sections.get("market"), dict):
+        focus["market_snapshot"] = True
+    regime = sections.get("regime")
+    if isinstance(regime, dict):
+        methods = [
+            str(key)
+            for key, value in regime.items()
+            if isinstance(value, dict) and key not in {"error", "warning"}
+        ]
+        if methods:
+            focus["regime_methods"] = methods
+    if isinstance(sections.get("volatility_har_rv"), dict):
+        focus["extra_volatility"] = "har_rv"
+    return focus
+
+
 def run_report_generate(  # noqa: C901
     request: ReportGenerateRequest,
     *,
@@ -851,6 +907,18 @@ def run_report_generate(  # noqa: C901
                 )
                 if top_patterns:
                     summary_structured["patterns"] = {"recent": top_patterns}
+            except Exception:
+                pass
+
+            try:
+                if detail_value == "compact":
+                    template_focus = _report_template_focus(
+                        template=template_name,
+                        report=rep,
+                        horizon=eff_horizon,
+                    )
+                    if template_focus:
+                        summary_structured["template_focus"] = template_focus
             except Exception:
                 pass
 

@@ -300,6 +300,41 @@ def test_report_generate_compact_keeps_actionable_section_summaries():
     assert "sections" not in out
 
 
+def test_report_generate_compact_exposes_template_focus():
+    fn = _get_report_generate()
+    sections = _make_full_sections()
+    sections["contexts_multi"] = {
+        "H1": {"trend_compact": "up"},
+        "H4": {"trend_compact": "up"},
+        "D1": {"trend_compact": "mixed"},
+    }
+    sections["pivot_multi"] = {
+        "D1": {"levels": {}},
+        "W1": {"levels": {}},
+        "__base_timeframe__": "H4",
+    }
+    rep = _make_report(sections=sections)
+    rep["meta"] = {"timeframe": "H4"}
+    mock_swing = MagicMock(return_value=rep)
+
+    with patch("mtdata.core.report_templates.template_basic", mock_swing, create=True), \
+         patch("mtdata.core.report_templates.template_advanced", mock_swing, create=True), \
+         patch("mtdata.core.report_templates.template_scalping", mock_swing, create=True), \
+         patch("mtdata.core.report_templates.template_intraday", mock_swing, create=True), \
+         patch("mtdata.core.report_templates.template_swing", mock_swing, create=True), \
+         patch("mtdata.core.report_templates.template_position", mock_swing, create=True), \
+         patch(_FMT_NUM, side_effect=str):
+        out = fn("EURUSD", template="swing", horizon=24, detail="compact")
+
+    focus = out["summary_structured"]["template_focus"]
+    assert focus["profile"] == "swing_mtf"
+    assert focus["base_timeframe"] == "H4"
+    assert focus["horizon"] == 24
+    assert focus["context_timeframes"] == ["H1", "H4", "D1"]
+    assert focus["pivot_timeframes"] == ["D1", "W1"]
+    assert "__base_timeframe__" not in focus["pivot_timeframes"]
+
+
 def test_report_generate_standard_infers_root_timezone_from_sections():
     fn = _get_report_generate()
     rep = _make_report(
