@@ -681,7 +681,7 @@ def build_trade_place_dry_run_preview(
     if bid is None or ask is None or not math.isfinite(bid) or not math.isfinite(ask):
         return {"preview_error": f"Failed to get valid bid/ask for {symbol}"}
 
-    digits = validation._safe_int_attr(symbol_info, "digits", 6) or 6
+    digits = validation._safe_int_attr(symbol_info, "digits", 6)
     point = validation._safe_float_attr(symbol_info, "point") or 0.0
     side = "BUY" if str(order_type).upper().startswith("BUY") else "SELL"
     order_type_value = _order_type_constant(mt5, order_type)

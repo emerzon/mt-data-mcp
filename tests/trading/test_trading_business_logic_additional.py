@@ -410,6 +410,43 @@ def test_build_trade_place_dry_run_preview_uses_live_quote_and_margin():
     adapter.order_calc_margin.assert_called_once_with(0, "EURUSD", 0.1, 1.1001)
 
 
+def test_build_trade_place_dry_run_preview_preserves_zero_symbol_digits():
+    adapter = SimpleNamespace(
+        ORDER_TYPE_BUY=0,
+        order_calc_margin=MagicMock(return_value=123.45),
+    )
+    gateway = MagicMock()
+    gateway.adapter = adapter
+    gateway.ORDER_TYPE_BUY = 0
+    gateway.symbol_info.return_value = SimpleNamespace(
+        visible=True,
+        volume_min=1.0,
+        volume_max=100.0,
+        volume_step=1.0,
+        point=1.0,
+        digits=0,
+        trade_stops_level=10,
+        trade_freeze_level=0,
+    )
+    gateway.symbol_info_tick.return_value = SimpleNamespace(bid=12344.6, ask=12345.4)
+    gateway.account_info.return_value = SimpleNamespace(margin_free=1000.0)
+
+    result = build_trade_place_dry_run_preview(
+        symbol="US30",
+        volume=1.0,
+        order_type="BUY",
+        pending=False,
+        price=None,
+        stop_loss=None,
+        take_profit=None,
+        gateway=gateway,
+    )
+
+    assert result["bid"] == 12345.0
+    assert result["ask"] == 12345.0
+    assert result["estimated_fill_price"] == 12345.0
+
+
 def test_run_trade_place_uses_candidate_tickets_when_position_ticket_is_missing():
     request = TradePlaceRequest(
         symbol="EURUSD",
