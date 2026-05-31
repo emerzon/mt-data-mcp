@@ -1517,15 +1517,9 @@ def _compact_finviz_earnings_items(items: Any) -> List[Any]:
         if change_pct is not None:
             row["change_pct"] = change_pct
         if "market_cap" in row:
-            market_cap = _normalize_finviz_fundamental_value(
-                "market_cap",
-                row.get("market_cap"),
-            )
-            if market_cap is not None:
-                row["market_cap"] = market_cap
             market_cap_formatted = _format_finviz_large_number(row.get("market_cap"))
             if market_cap_formatted:
-                row["market_cap_formatted"] = market_cap_formatted
+                row["market_cap"] = market_cap_formatted
         compact_rows.append(row)
     return compact_rows
 

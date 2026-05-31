@@ -1358,8 +1358,7 @@ class TestFinvizTools:
             {
                 "symbol": "APLM",
                 "earnings": "Apr 27/b",
-                "market_cap": 14170000,
-                "market_cap_formatted": "14.17M",
+                "market_cap": "14.17M",
                 "price": "12.85",
                 "change_pct": -2.58,
                 "volume": "6593",
