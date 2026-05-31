@@ -45,6 +45,14 @@ _MONTH_LABELS = [
     "Jan", "Feb", "Mar", "Apr", "May", "Jun",
     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ]
+_PAGINATION_KEYS = (
+    "total_count",
+    "offset",
+    "limit",
+    "has_more",
+    "more_available",
+    "truncated",
+)
 
 
 def _error_response(
@@ -255,6 +263,40 @@ def _standard_temporal_stats(row: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
+def _paginate_temporal_rows(
+    rows: List[Dict[str, Any]],
+    *,
+    limit: Optional[int],
+    offset: int,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    total_count = len(rows)
+    paged = rows[offset:]
+    if limit is not None:
+        paged = paged[:limit]
+
+    if limit is None and offset == 0:
+        return paged, {}
+
+    more_available = max(0, total_count - offset - len(paged))
+    meta: Dict[str, Any] = {
+        "total_count": total_count,
+        "offset": offset,
+        "has_more": more_available > 0,
+        "more_available": more_available,
+    }
+    if limit is not None:
+        meta["limit"] = limit
+    if more_available > 0:
+        meta["truncated"] = True
+    return paged, meta
+
+
+def _copy_pagination_meta(source: Dict[str, Any], target: Dict[str, Any]) -> None:
+    for key in _PAGINATION_KEYS:
+        if key in source:
+            target[key] = source[key]
+
+
 def _base_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     return {
         key: payload[key]
@@ -269,6 +311,7 @@ def _base_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
             "bars",
             "start",
             "end",
+            *_PAGINATION_KEYS,
         )
         if key in payload
     }
@@ -291,12 +334,12 @@ def _compact_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
                     for row in breakdown
                     if isinstance(row, dict)
                 ]
-                compact_groups.append(
-                    {
-                        "dimension": dimension,
-                        "breakdown": compact_breakdown,
-                    }
-                )
+                group_item = {
+                    "dimension": dimension,
+                    "breakdown": compact_breakdown,
+                }
+                _copy_pagination_meta(item, group_item)
+                compact_groups.append(group_item)
                 best = max(
                     (
                         row
@@ -407,12 +450,12 @@ def _standard_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
                     for row in breakdown
                     if isinstance(row, dict)
                 ]
-                standard_groups.append(
-                    {
-                        "dimension": dimension,
-                        "breakdown": standard_breakdown,
-                    }
-                )
+                group_item = {
+                    "dimension": dimension,
+                    "breakdown": standard_breakdown,
+                }
+                _copy_pagination_meta(item, group_item)
+                standard_groups.append(group_item)
                 best = max(
                     (
                         row
@@ -541,6 +584,8 @@ def temporal_analyze(  # noqa: C901
     time_range: Optional[str] = None,
     return_mode: Literal["pct", "log"] = "pct",  # type: ignore
     min_bars: Optional[int] = None,
+    limit: Optional[int] = None,
+    offset: int = 0,
     detail: CompactFullDetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """Temporal analysis by day-of-week, hour, or month.
@@ -555,6 +600,8 @@ def temporal_analyze(  # noqa: C901
       timezone if configured, wraps midnight like 22:00-02:00)
     - min_bars: exclude grouped rows below this sample size. When omitted for
       day-of-week analysis, sparse weekend groups are auto-filtered.
+    - limit/offset: page grouped output rows; does not change the analysis
+      window or overall statistics.
     - volume: uses real_volume when available and non-zero, else tick_volume
 
     Returns grouped averages for returns and volatility plus simple extras.
@@ -573,9 +620,12 @@ def temporal_analyze(  # noqa: C901
             "start": start,
             "end": end,
             "detail": detail,
+            "offset": offset,
         }
         if min_bars is not None:
             context["min_bars"] = min_bars
+        if limit is not None:
+            context["limit"] = limit
         try:
             mt5_gateway = create_mt5_gateway(
                 adapter=mt5,
@@ -607,6 +657,40 @@ def temporal_analyze(  # noqa: C901
                     stage="validate",
                     context=context,
                 )
+
+            limit_value: Optional[int] = None
+            if limit is not None:
+                try:
+                    limit_value = int(float(limit))
+                except Exception:
+                    return _error_response(
+                        "limit must be a positive integer.",
+                        stage="validate",
+                        context=context,
+                    )
+                if limit_value <= 0:
+                    return _error_response(
+                        "limit must be a positive integer.",
+                        stage="validate",
+                        context=context,
+                    )
+            try:
+                offset_value = int(float(offset or 0))
+            except Exception:
+                return _error_response(
+                    "offset must be a non-negative integer.",
+                    stage="validate",
+                    context=context,
+                )
+            if offset_value < 0:
+                return _error_response(
+                    "offset must be a non-negative integer.",
+                    stage="validate",
+                    context=context,
+                )
+            context["offset"] = offset_value
+            if limit_value is not None:
+                context["limit"] = limit_value
 
             dow_val = _parse_weekday(day_of_week)
             if day_of_week is not None and dow_val is None:
@@ -876,6 +960,32 @@ def temporal_analyze(  # noqa: C901
                 {key: value for key, value in row.items() if key != "_group_key"}
                 for row in groups_out
             ]
+            pagination_meta: Dict[str, Any] = {}
+            if grouped_dimensions and (limit_value is not None or offset_value):
+                paged_dimensions = []
+                for item in grouped_dimensions:
+                    breakdown = item.get("breakdown")
+                    if not isinstance(breakdown, list):
+                        paged_dimensions.append(item)
+                        continue
+                    paged_breakdown, item_meta = _paginate_temporal_rows(
+                        breakdown,
+                        limit=limit_value,
+                        offset=offset_value,
+                    )
+                    paged_item = {
+                        "dimension": item.get("dimension"),
+                        "breakdown": paged_breakdown,
+                    }
+                    paged_item.update(item_meta)
+                    paged_dimensions.append(paged_item)
+                grouped_dimensions = paged_dimensions
+            elif groups_out:
+                groups_out, pagination_meta = _paginate_temporal_rows(
+                    groups_out,
+                    limit=limit_value,
+                    offset=offset_value,
+                )
             overall = _stats_for_group(analysis_df, volume_col)
 
             start_epoch = float(analysis_df["__epoch"].iloc[0])
@@ -909,6 +1019,7 @@ def temporal_analyze(  # noqa: C901
                 "overall": overall,
                 "volume_source": volume_col,
             }
+            payload.update(pagination_meta)
             if excluded_groups:
                 filters["min_bars"] = {
                     "value": int(min_bars_value or 0),
@@ -946,5 +1057,7 @@ def temporal_analyze(  # noqa: C901
         timeframe=timeframe,
         group_by=group_by,
         lookback=lookback,
+        limit=limit,
+        offset=offset,
         func=_run,
     )

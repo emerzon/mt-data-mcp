@@ -202,6 +202,12 @@ def test_temporal_analyze_group_by_literal_exposes_canonical_modes_only():
     assert set(get_args(annotation)) == {"dow", "hour", "month", "all"}
 
 
+def test_temporal_analyze_signature_exposes_limit_offset():
+    params = inspect.signature(_raw_temporal_analyze).parameters
+    assert params["limit"].default is None
+    assert params["offset"].default == 0
+
+
 # ===================================================================
 # _parse_weekday
 # ===================================================================
@@ -699,6 +705,46 @@ class TestTemporalAnalyze:
         assert "excluded_groups" not in r
 
     @_apply_analyze_patches
+    def test_limit_offsets_group_rows_without_changing_overall(self, mock_fetch, *_):
+        rates = _make_rates(n=24 * 14, start_epoch=1704067200, interval=3600)
+        r = self._call(
+            mock_fetch,
+            rates=rates,
+            group_by="dow",
+            min_bars=0,
+            limit=2,
+            offset=1,
+        )
+
+        assert r.get("success") is True
+        assert [group["group_label"] for group in r["groups"]] == ["Tue", "Wed"]
+        assert r["total_count"] == 7
+        assert r["offset"] == 1
+        assert r["limit"] == 2
+        assert r["has_more"] is True
+        assert r["more_available"] == 4
+        assert r["bars"] == 24 * 14
+
+    @_apply_analyze_patches
+    def test_limit_pages_group_by_all_breakdowns_per_dimension(self, mock_fetch, *_):
+        rates = _make_rates(n=24 * 40, start_epoch=1704067200, interval=3600)
+        r = self._call(
+            mock_fetch,
+            rates=rates,
+            group_by="all",
+            limit=1,
+            offset=1,
+        )
+
+        assert r.get("success") is True
+        assert [item["dimension"] for item in r["groups"]] == ["dow", "hour", "month"]
+        assert all(len(item["breakdown"]) == 1 for item in r["groups"])
+        assert r["groups"][0]["breakdown"][0]["group_label"] == "Tue"
+        assert r["groups"][0]["total_count"] == 7
+        assert r["groups"][0]["offset"] == 1
+        assert r["groups"][0]["limit"] == 1
+
+    @_apply_analyze_patches
     def test_temporal_analyze_logs_finish_event(self, mock_fetch, caplog):
         mock_fetch.return_value = (_make_rates(n=200, start_epoch=1704067200, interval=3600), None)
         with caplog.at_level("DEBUG", logger="mtdata.core.temporal"):
@@ -875,6 +921,18 @@ class TestTemporalAnalyze:
     @_apply_analyze_patches
     def test_invalid_lookback(self, mock_fetch, *_):
         r = _raw_temporal_analyze(symbol="EURUSD", timeframe="H1", lookback=1, group_by="dow")
+        assert "error" in r
+        assert r["stage"] == "validate"
+
+    @_apply_analyze_patches
+    def test_invalid_limit(self, mock_fetch, *_):
+        r = _raw_temporal_analyze(symbol="EURUSD", timeframe="H1", lookback=100, limit=0)
+        assert "error" in r
+        assert r["stage"] == "validate"
+
+    @_apply_analyze_patches
+    def test_invalid_offset(self, mock_fetch, *_):
+        r = _raw_temporal_analyze(symbol="EURUSD", timeframe="H1", lookback=100, offset=-1)
         assert "error" in r
         assert r["stage"] == "validate"
 
