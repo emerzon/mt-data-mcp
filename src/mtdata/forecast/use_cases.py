@@ -17,6 +17,8 @@ from ..core.execution_logging import (
     log_operation_start,
 )
 from ..core.output_contract import attach_collection_contract
+from ..utils.freshness import format_age_seconds as _format_age_seconds
+from ..utils.freshness import format_freshness_label
 from .backtest import execute_forecast_backtest as _forecast_backtest_impl
 from .barriers_shared import barrier_method_error, normalize_barrier_method
 from .capabilities import resolve_capability_request
@@ -456,6 +458,21 @@ def _forecast_vs_last_price(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]
     return out
 
 
+def _forecast_anchor_freshness(payload: Dict[str, Any]) -> Optional[str]:
+    label = format_freshness_label(
+        data_stale=payload.get("last_price_stale"),
+        age_seconds=payload.get("last_price_age_seconds"),
+        age_text=payload.get("last_price_age"),
+        item="anchor",
+    )
+    if not label:
+        return None
+    policy = _format_age_seconds(payload.get("stale_after_seconds"))
+    if policy and label.startswith("stale"):
+        return f"{label} (policy: {policy})"
+    return label
+
+
 def _forecast_generate_compact_rows(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
     times = payload.get("forecast_time")
     if not isinstance(times, list):
@@ -566,12 +583,7 @@ def _apply_forecast_generate_detail(
         "forecast_price",
         "forecast_return",
         "last_price",
-        "last_price_age_seconds",
-        "last_price_age",
         "last_price_stale",
-        "freshness_basis",
-        "stale_after_seconds",
-        "stale_warning",
         "warnings",
     ):
         value = payload.get(key)
@@ -582,6 +594,9 @@ def _apply_forecast_generate_detail(
             )
         if value not in (None, "", [], {}):
             compact[key] = value
+    freshness = _forecast_anchor_freshness(payload)
+    if freshness:
+        compact["freshness"] = freshness
     price_context = _forecast_vs_last_price(payload)
     if price_context:
         compact["forecast_vs_last_price"] = price_context
@@ -619,6 +634,11 @@ def _apply_forecast_generate_detail(
             "forecast_epoch",
             "last_price_close",
             "last_price_source",
+            "last_price_age_seconds",
+            "last_price_age",
+            "freshness_basis",
+            "stale_after_seconds",
+            "stale_warning",
             "lower_price",
             "upper_price",
             "lower_return",

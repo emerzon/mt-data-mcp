@@ -320,10 +320,12 @@ def test_forecast_generate_defaults_to_compact_payload(monkeypatch):
     assert "forecast_step_seconds" not in out
     assert out["last_price"] == 1.05
     assert "last_price_source" not in out
-    assert out["last_price_age_seconds"] == 3600
-    assert out["last_price_age"] == "1h 0m"
     assert out["last_price_stale"] is False
-    assert out["freshness_basis"] == "bar_policy"
+    assert out["freshness"] == "fresh, anchor 1h 0m ago"
+    assert "last_price_age_seconds" not in out
+    assert "last_price_age" not in out
+    assert "freshness_basis" not in out
+    assert "stale_after_seconds" not in out
     assert out["forecast_vs_last_price"] == {
         "direction": "bearish",
         "first_step_delta": -0.05,
@@ -340,6 +342,49 @@ def test_forecast_generate_defaults_to_compact_payload(monkeypatch):
     assert "collection_kind" not in out
     assert "collection_contract_version" not in out
     assert "forecast_epoch" not in out
+
+
+def test_forecast_generate_compact_summarizes_stale_anchor(monkeypatch):
+    raw = _unwrap(cf.forecast_generate)
+    monkeypatch.setattr(
+        cf,
+        "_forecast_impl",
+        lambda **kwargs: {
+            "success": True,
+            "method": kwargs["method"],
+            "horizon": kwargs["horizon"],
+            "quantity": kwargs["quantity"],
+            "forecast_time": ["t1"],
+            "forecast_price": [1.0],
+            "last_price": 1.05,
+            "last_price_age_seconds": 101884,
+            "last_price_age": "1d 4h",
+            "last_price_stale": True,
+            "freshness_basis": "bar_policy",
+            "stale_after_seconds": 10800,
+            "stale_warning": (
+                "Last forecast anchor is older than the bar freshness policy; "
+                "market may be closed or broker data may be stale."
+            ),
+        },
+    )
+
+    out = raw(
+        request=ForecastGenerateRequest(
+            symbol="EURUSD",
+            timeframe="H1",
+            method="theta",
+            horizon=1,
+        )
+    )
+
+    assert out["last_price_stale"] is True
+    assert out["freshness"] == "stale, anchor 1d 4h ago (policy: 3h 0m)"
+    assert "last_price_age_seconds" not in out
+    assert "last_price_age" not in out
+    assert "freshness_basis" not in out
+    assert "stale_after_seconds" not in out
+    assert "stale_warning" not in out
 
 
 def test_forecast_backtest_request_accepts_method_alias():
