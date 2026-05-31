@@ -1192,7 +1192,7 @@ def _forecast_list_library_models_impl(
 
     if lib == "statsforecast":
         try:
-            pass  # type: ignore
+            import_module("statsforecast")
         except Exception as exc:
             return {"library": lib, "error": f"statsforecast import failed: {exc}"}
 

@@ -1404,6 +1404,30 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert "Error listing forecast methods" in _unwrap(cf.forecast_list_methods)()["error"]
 
 
+def test_forecast_list_library_models_reports_missing_statsforecast(monkeypatch):
+    raw_list_models = _unwrap(cf.forecast_list_library_models)
+
+    monkeypatch.setattr(
+        cf,
+        "_get_library_forecast_capabilities",
+        lambda *_args, **_kwargs: [],
+    )
+
+    def fake_import_module(name):
+        if name == "statsforecast":
+            raise ModuleNotFoundError("No module named 'statsforecast'")
+        return ModuleType(name)
+
+    monkeypatch.setattr(cf, "import_module", fake_import_module)
+
+    out = raw_list_models("statsforecast")
+
+    assert out == {
+        "library": "statsforecast",
+        "error": "statsforecast import failed: No module named 'statsforecast'",
+    }
+
+
 def test_forecast_list_methods_compact_describes_builtin_methods():
     compact = _unwrap(cf.forecast_list_methods)(show_unavailable=True)
     missing = [
