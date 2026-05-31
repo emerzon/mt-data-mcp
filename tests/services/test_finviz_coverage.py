@@ -359,29 +359,35 @@ class TestGetInsiderActivity:
 
 
 class TestGetFuturesPerformance:
-    @patch("mtdata.services.finviz._apply_finvizfinance_timeout_patch")
-    def test_success(self, mock_patch):
-        df = pd.DataFrame({"Name": ["Gold"], "Change": ["+1.5%"]})
-        mock_f = MagicMock()
-        mock_f.return_value.performance.return_value = df
-        with patch.dict("sys.modules", {"finvizfinance.future": MagicMock(Future=mock_f)}):
-            result = svc.get_futures_performance()
+    @patch(
+        "mtdata.services.finviz._fetch_finviz_futures_performance_rows",
+        return_value=[{"Name": "Gold", "Change": "+1.5%"}],
+    )
+    def test_success(self, mock_fetch):
+        result = svc.get_futures_performance()
+
+        mock_fetch.assert_called_once_with()
         assert result["success"] is True
         assert result["count"] == 1
 
-    @patch("mtdata.services.finviz._apply_finvizfinance_timeout_patch")
-    def test_empty(self, mock_patch):
-        mock_f = MagicMock()
-        mock_f.return_value.performance.return_value = pd.DataFrame()
-        with patch.dict("sys.modules", {"finvizfinance.future": MagicMock(Future=mock_f)}):
-            result = svc.get_futures_performance()
+    @patch(
+        "mtdata.services.finviz._fetch_finviz_futures_performance_rows",
+        side_effect=ValueError("No futures performance data available"),
+    )
+    def test_empty(self, mock_fetch):
+        result = svc.get_futures_performance()
+
+        mock_fetch.assert_called_once_with()
         assert "error" in result
 
-    @patch("mtdata.services.finviz._apply_finvizfinance_timeout_patch")
-    def test_exception(self, mock_patch):
-        mock_f = MagicMock(side_effect=Exception("err"))
-        with patch.dict("sys.modules", {"finvizfinance.future": MagicMock(Future=mock_f)}):
-            result = svc.get_futures_performance()
+    @patch(
+        "mtdata.services.finviz._fetch_finviz_futures_performance_rows",
+        side_effect=Exception("err"),
+    )
+    def test_exception(self, mock_fetch):
+        result = svc.get_futures_performance()
+
+        mock_fetch.assert_called_once_with()
         assert "error" in result
 
 
