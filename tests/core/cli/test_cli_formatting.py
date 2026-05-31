@@ -220,6 +220,27 @@ class TestFormatResultForCli:
         parsed = json.loads(result)
         assert parsed["price"] == 1.23456
 
+    def test_json_auto_precision_keeps_full_float(self):
+        result = _format_result_for_cli(
+            {"avg_return": -0.024297043390669737},
+            fmt="json",
+            verbose=False,
+            cmd_name="temporal_analyze",
+        )
+        parsed = json.loads(result)
+        assert parsed["avg_return"] == -0.024297043390669737
+
+    def test_json_compact_precision_rounds_floats(self):
+        result = _format_result_for_cli(
+            {"avg_return": -0.024297043390669737},
+            fmt="json",
+            verbose=False,
+            cmd_name="temporal_analyze",
+            precision="compact",
+        )
+        parsed = json.loads(result)
+        assert parsed["avg_return"] == -0.0243
+
     def test_json_format_replaces_non_finite_with_null(self):
         result = _format_result_for_cli(
             {"nan": float("nan"), "pos_inf": float("inf"), "neg_inf": float("-inf")},

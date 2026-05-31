@@ -60,7 +60,10 @@ def _format_result_for_cli(
     )
     if fmt_s == CLI_FORMAT_JSON:
         payload = {"text": prepared} if isinstance(prepared, str) else prepared
-        payload = _sanitize_json(payload)
+        payload = _sanitize_json(
+            payload,
+            compact_numbers=precision_policy.simplify_numbers,
+        )
         return json.dumps(payload, ensure_ascii=False, indent=2, allow_nan=False, default=_json_default)
     if isinstance(prepared, str):
         return prepared
