@@ -138,6 +138,63 @@ def test_market_status_symbol_mode_reports_heuristic_status(monkeypatch) -> None
     assert result["last_tick_time"] == "2024-01-02T12:00:00Z"
 
 
+def test_market_status_symbol_mode_handles_bool_like_trade_and_schedule(monkeypatch) -> None:
+    fixed_now = datetime(2024, 1, 2, 12, 0, tzinfo=timezone.utc)
+
+    class BoolLike:
+        def __bool__(self) -> bool:
+            return True
+
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            if tz is None:
+                return fixed_now.replace(tzinfo=None)
+            return fixed_now.astimezone(tz)
+
+    class Gateway:
+        def ensure_connection(self) -> None:
+            return None
+
+        def symbol_info(self, symbol: str):
+            return SimpleNamespace(name=symbol, visible=True, trade_mode=4)
+
+        def symbol_info_tick(self, symbol: str):
+            return SimpleNamespace(time=fixed_now.timestamp(), bid=1.1, ask=1.2)
+
+    monkeypatch.setattr(market_status_mod, "datetime", FixedDateTime)
+    monkeypatch.setattr(
+        market_status_mod,
+        "_symbol_trade_mode_status",
+        lambda gateway, trade_mode: {
+            "can_open_new_positions": BoolLike(),
+            "status": "open",
+            "trade_mode_label": "Full",
+        },
+    )
+    monkeypatch.setattr(
+        market_status_mod,
+        "_infer_symbol_schedule_from_recent_candles",
+        lambda symbol, gateway, now_utc=None: {
+            "source": "recent_candles",
+            "confidence": "high",
+            "current_time_in_active_session": BoolLike(),
+            "trades_on_weekends": False,
+            "inferred_24_7": False,
+        },
+    )
+
+    result = market_status_mod._check_symbol_market_status(
+        "EURUSD",
+        detail="summary",
+        gateway=Gateway(),
+    )
+
+    assert result["status"] == "probably_open"
+    assert result["can_open_new_positions"] is True
+    assert result["trade_mode_allows_opening"] is True
+
+
 def test_market_status_symbol_mode_blocks_weekend_opening(monkeypatch) -> None:
     raw = _unwrap(market_status_mod.market_status)
     fixed_now = datetime(2026, 4, 25, 3, 14, tzinfo=timezone.utc)

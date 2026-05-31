@@ -164,6 +164,15 @@ def _normalize_time(dt: datetime) -> datetime:
     return dt.replace(second=0, microsecond=0)
 
 
+def _coerce_optional_bool(value: Any) -> Optional[bool]:
+    if value is None:
+        return None
+    try:
+        return bool(value)
+    except Exception:
+        return None
+
+
 def _format_utc_iso_z(dt: datetime) -> str:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
@@ -803,13 +812,14 @@ def _check_symbol_market_status(
         now_utc=now_utc,
     )
 
-    trade_mode_can_open = mode_status["can_open_new_positions"]
+    trade_mode_can_open = _coerce_optional_bool(mode_status["can_open_new_positions"])
     can_open = trade_mode_can_open
     tick_freshness = tick_status.get("tick_freshness")
     reason = None
     is_crypto_symbol = is_probably_crypto_symbol(symbol_name)
     recent_schedule_allows_now = (
-        schedule_status.get("current_time_in_active_session") is True
+        _coerce_optional_bool(schedule_status.get("current_time_in_active_session"))
+        is True
     )
     if (
         can_open is True
