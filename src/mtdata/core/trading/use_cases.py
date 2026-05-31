@@ -109,6 +109,18 @@ def _human_join(items: List[str]) -> str:
     return ", ".join(items[:-1]) + f", and {items[-1]}"
 
 
+def _round_optional_number(value: Any, digits: int) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        number = float(value)
+    except Exception:
+        return None
+    if not math.isfinite(number):
+        return None
+    return round(number, int(digits))
+
+
 def _trade_row_to_dict(row: Any) -> Dict[str, Any]:
     if isinstance(row, dict):
         return dict(row)
@@ -2398,16 +2410,16 @@ def run_trade_risk_analyze(  # noqa: C901
                             "entry": entry_price,
                             "sl": sl_price,
                             "tp": tp_price,
-                            "risk_currency": round(risk_currency, 2)
-                            if risk_currency
-                            else None,
-                            "risk_pct": round(risk_pct, 2) if risk_pct else None,
+                            "risk_currency": _round_optional_number(
+                                risk_currency, 2
+                            ),
+                            "risk_pct": _round_optional_number(risk_pct, 2),
                             "risk_status": risk_status,
                             "notional_value": round(notional_value, 2),
-                            "reward_currency": round(reward_currency, 2)
-                            if reward_currency
-                            else None,
-                            "rr_ratio": round(rr_ratio, 2) if rr_ratio else None,
+                            "reward_currency": _round_optional_number(
+                                reward_currency, 2
+                            ),
+                            "rr_ratio": _round_optional_number(rr_ratio, 2),
                         }
                     )
                 except Exception as exc:
@@ -2809,10 +2821,10 @@ def run_trade_risk_analyze(  # noqa: C901
                         "volume_min": min_volume,
                         "volume_max": max_volume,
                         "volume_rounding": rounding_mode,
-                        "reward_currency": round(reward_currency, 2)
-                        if reward_currency
-                        else None,
-                        "rr_ratio": round(rr_ratio, 2) if rr_ratio else None,
+                        "reward_currency": _round_optional_number(
+                            reward_currency, 2
+                        ),
+                        "rr_ratio": _round_optional_number(rr_ratio, 2),
                         "sizing_notes": sizing_notes,
                     }
                     if strict_risk_blocked:

@@ -311,6 +311,45 @@ def test_trade_risk_analyze_handles_missing_account_fields() -> None:
     assert out["account"]["currency"] is None
 
 
+def test_trade_risk_analyze_preserves_zero_position_risk_metrics() -> None:
+    mt5 = MagicMock()
+    mt5.POSITION_TYPE_BUY = 0
+    mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
+    mt5.positions_get.return_value = [
+        SimpleNamespace(
+            ticket=1,
+            symbol="EURUSD",
+            type=0,
+            volume=1.0,
+            price_open=100.0,
+            sl=100.0,
+            tp=110.0,
+        ),
+        SimpleNamespace(
+            ticket=2,
+            symbol="EURUSD",
+            type=0,
+            volume=1.0,
+            price_open=100.0,
+            sl=90.0,
+            tp=100.0,
+        ),
+    ]
+    mt5.symbol_info.return_value = _make_symbol_info()
+
+    with _patched_mt5_module(mt5):
+        out = trade_risk_analyze(symbol="EURUSD", detail="full")
+
+    by_ticket = {row["ticket"]: row for row in out["positions"]}
+    assert by_ticket[1]["risk_currency"] == 0.0
+    assert by_ticket[1]["risk_pct"] == 0.0
+    assert by_ticket[1]["reward_currency"] == 10.0
+    assert by_ticket[1]["rr_ratio"] is None
+    assert by_ticket[2]["risk_currency"] == 10.0
+    assert by_ticket[2]["reward_currency"] == 0.0
+    assert by_ticket[2]["rr_ratio"] == 0.0
+
+
 def test_trade_risk_analyze_blocks_min_volume_risk_overshoot_by_default() -> None:
     mt5 = MagicMock()
     mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
