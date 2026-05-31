@@ -2091,6 +2091,29 @@ class TestFetchTicks(unittest.TestCase):
         self.assertTrue(rows.get('success'))
         self.assertEqual(rows["price_currency"], "USD")
 
+    @patch(f'{_DS}.time.time', return_value=1_700_000_600.0)
+    @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=SimpleNamespace(digits=5, point=0.00001))
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_recent_ticks_include_freshness_and_spread_points(
+        self,
+        mock_ctz,
+        mock_info,
+        mock_ticks,
+        mock_time,
+    ):
+        mock_ticks.return_value = _make_ticks(20, base_ts=1_700_000_000.0)
+
+        rows = fetch_ticks('EURUSD', limit=5, format='rows')
+        summary = fetch_ticks('EURUSD', limit=20, format='summary')
+
+        for result in (rows, summary):
+            self.assertTrue(result.get('success'))
+            self.assertEqual(result["data_freshness_seconds"], 600.0)
+            self.assertEqual(result["freshness"], "stale, tick 10m 0s ago")
+            self.assertEqual(result["last_quote"]["spread_points"], 20.0)
+
     @patch(_TICKS_RANGE)
     @patch(_CACHED_INFO, return_value=SimpleNamespace(digits=5))
     @patch(_RESOLVE_CTZ, return_value=None)

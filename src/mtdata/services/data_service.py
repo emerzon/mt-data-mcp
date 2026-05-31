@@ -42,6 +42,7 @@ from ..utils.denoise import (
 from ..utils.denoise import (
     normalize_denoise_spec as _normalize_denoise_spec,
 )
+from ..utils.freshness import format_freshness_label
 from ..utils.indicators import (
     _apply_ta_indicators,
     _estimate_warmup_bars,
@@ -149,6 +150,19 @@ def _symbol_price_currency(*infos: Any) -> Optional[str]:
                 value = None
             if isinstance(value, str) and value.strip():
                 return value.strip()
+    return None
+
+
+def _symbol_price_point(*infos: Any) -> Optional[float]:
+    for info in infos:
+        try:
+            point_raw = getattr(info, "point", None)
+        except Exception:
+            point_raw = None
+        if isinstance(point_raw, (int, float)):
+            point = float(point_raw)
+            if math.isfinite(point) and point > 0.0:
+                return point
     return None
 
 
@@ -1925,6 +1939,9 @@ def _compact_tick_summary(out: Dict[str, Any]) -> Dict[str, Any]:
         compact["price_precision"] = out.get("price_precision")
     if out.get("price_currency") is not None:
         compact["price_currency"] = out.get("price_currency")
+    for key in ("freshness", "data_freshness_seconds"):
+        if out.get(key) is not None:
+            compact[key] = out.get(key)
     if isinstance(out.get("last_quote"), dict):
         compact["last_quote"] = dict(out["last_quote"])
     if isinstance(out.get("data_quality"), dict):
@@ -1965,6 +1982,7 @@ def fetch_ticks(  # noqa: C901
                 return {"error": err}
             price_digits = _symbol_price_digits(_info, _info_before)
             price_currency = _symbol_price_currency(_info, _info_before)
+            price_point = _symbol_price_point(_info, _info_before)
 
             # Normalized params only. This is an output shape selector, not the
             # shared compact/full detail enum.
@@ -2164,6 +2182,26 @@ def fetch_ticks(  # noqa: C901
                 warnings_list.append(warning)
             payload["warnings"] = warnings_list
 
+        def _add_tick_context_fields(payload: Dict[str, Any]) -> None:
+            last_quote = payload.get("last_quote")
+            if isinstance(last_quote, dict) and price_point is not None:
+                spread_value = _finite_or_none(last_quote.get("spread"))
+                if spread_value is not None:
+                    last_quote["spread_points"] = round(spread_value / price_point, 4)
+            if start or end or not _epochs:
+                return
+            latest_tick_epoch = float(_epochs[-1])
+            age_seconds = max(0.0, float(time.time()) - latest_tick_epoch)
+            data_stale = age_seconds > 300.0
+            payload["data_freshness_seconds"] = round(age_seconds, 3)
+            freshness = format_freshness_label(
+                data_stale=data_stale,
+                age_seconds=age_seconds,
+                item="tick",
+            )
+            if freshness:
+                payload["freshness"] = freshness
+
         def _compact_summary_from_ticks() -> Dict[str, Any]:
             df_stats = df_ticks.copy()
             df_stats["mid"] = (df_stats["bid"] + df_stats["ask"]) / 2.0
@@ -2203,6 +2241,7 @@ def fetch_ticks(  # noqa: C901
             if price_currency:
                 out["price_currency"] = price_currency
             _add_tick_data_quality(out)
+            _add_tick_context_fields(out)
             _round_tick_price_payload(out, price_digits)
             return _compact_tick_summary(out)
 
@@ -2434,6 +2473,7 @@ def fetch_ticks(  # noqa: C901
                     out["stats"]["volume"] = {"kind": volume_kind}
 
             _add_tick_data_quality(out)
+            _add_tick_context_fields(out)
             _round_tick_price_payload(out, price_digits)
             return out if detailed_stats else _compact_tick_summary(out)
 
@@ -2475,6 +2515,7 @@ def fetch_ticks(  # noqa: C901
                 ]
                 payload["simplify"] = meta
             _add_tick_data_quality(payload)
+            _add_tick_context_fields(payload)
             return payload
         # Optional simplification based on a chosen y-series
         select_indices = list(range(original_count))
@@ -2620,6 +2661,7 @@ def fetch_ticks(  # noqa: C901
         if has_flags:
             payload["flags_legend"] = _observed_tick_flags_decoded(flags)
         _add_tick_data_quality(payload)
+        _add_tick_context_fields(payload)
         if simplify_present and original_count > len(rows):
             payload["simplified"] = True
             meta = {
