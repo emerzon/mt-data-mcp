@@ -18,8 +18,8 @@ from ..core.execution_logging import (
 )
 from ..core.output_contract import attach_collection_contract
 from .backtest import execute_forecast_backtest as _forecast_backtest_impl
-from .capabilities import resolve_capability_request
 from .barriers_shared import barrier_method_error, normalize_barrier_method
+from .capabilities import resolve_capability_request
 from .exceptions import ForecastError, raise_if_error_result
 from .forecast import execute_forecast as _forecast_impl
 from .requests import (
@@ -387,6 +387,46 @@ def _with_reference_price_context(payload: Dict[str, Any]) -> Dict[str, Any]:
     reference_source = out.get("reference_price_source", out.get("last_price_source"))
     if reference_source not in (None, "", [], {}):
         out.setdefault("reference_price_source", reference_source)
+    return out
+
+
+_BARRIER_OPTIMIZE_COMPACT_OMIT_KEYS = frozenset(
+    {
+        "actionability",
+        "actionability_flags",
+        "actionability_reason",
+        "concise",
+        "mathematically_viable",
+        "no_action",
+        "no_action_reason",
+        "no_candidates",
+        "output_mode",
+        "trade_gate_passed",
+        "tradable",
+        "viable",
+        "viable_only",
+        "warning",
+    }
+)
+
+
+def _compact_barrier_optimize_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    out = {
+        key: value
+        for key, value in payload.items()
+        if key not in _BARRIER_OPTIMIZE_COMPACT_OMIT_KEYS
+    }
+    reason = (
+        payload.get("status_reason")
+        or payload.get("actionability_reason")
+        or payload.get("no_action_reason")
+        or payload.get("warning")
+    )
+    if reason not in (None, "", [], {}):
+        out["status_reason"] = reason
+    trade_gate = payload.get("trade_gate_passed", payload.get("tradable"))
+    if trade_gate not in (None, "", [], {}):
+        out["tradable"] = bool(trade_gate)
     return out
 
 
@@ -2028,6 +2068,8 @@ def run_forecast_barrier_optimize(
                 result.pop("last_price", None)
                 result.pop("last_price_close", None)
                 result.pop("last_price_source", None)
+            if detail_value == "compact":
+                result = _compact_barrier_optimize_payload(result)
             result.setdefault("barrier_unit", "percent")
             result.setdefault("probability_unit", "fraction")
             result.setdefault(

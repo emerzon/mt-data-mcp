@@ -2009,6 +2009,66 @@ def test_forecast_barrier_optimize_rounds_public_float_artifacts():
     assert "Expected reward/risk edge" in out["edge_definition"]
 
 
+def test_forecast_barrier_optimize_compact_trims_blocked_status_noise():
+    reason = "No viable TP/SL candidates satisfied the viability filter."
+
+    def fake_optimize(**_kwargs):
+        return {
+            "success": True,
+            "results_total": 0,
+            "viable_results_total": 0,
+            "best": None,
+            "viable": False,
+            "no_candidates": True,
+            "status": "non_viable",
+            "status_reason": reason,
+            "no_action": True,
+            "no_action_reason": reason,
+            "actionability": "blocked",
+            "actionability_reason": reason,
+            "actionability_flags": ["status_non_viable", "warning"],
+            "mathematically_viable": False,
+            "tradable": False,
+            "trade_gate_passed": False,
+            "warning": reason,
+            "output_mode": "concise",
+            "viable_only": True,
+            "concise": True,
+            "reference_price": 1.16606,
+            "reference_price_source": "live_tick_ask",
+        }
+
+    out = forecast_use_cases.run_forecast_barrier_optimize(
+        ForecastBarrierOptimizeRequest(symbol="EURUSD", method="mc_gbm"),
+        parse_kv_or_json=lambda value: value or {},
+        barrier_optimize_impl=fake_optimize,
+    )
+
+    assert out["status"] == "non_viable"
+    assert out["status_reason"] == reason
+    assert out["tradable"] is False
+    assert out["results_total"] == 0
+    assert out["viable_results_total"] == 0
+    assert out["best"] is None
+    assert out["reference_price"] == 1.16606
+    for key in (
+        "no_action",
+        "no_action_reason",
+        "actionability",
+        "actionability_reason",
+        "actionability_flags",
+        "mathematically_viable",
+        "trade_gate_passed",
+        "viable",
+        "no_candidates",
+        "warning",
+        "output_mode",
+        "viable_only",
+        "concise",
+    ):
+        assert key not in out
+
+
 def test_forecast_barrier_prob_closed_form_rejects_tp_sl_inputs_before_generic_error():
     called = False
 
