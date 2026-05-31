@@ -25,6 +25,21 @@ def _clean_status(value: Any) -> str:
     return str(value or "").strip().lower().replace("_", " ")
 
 
+def _coerce_bool_flag(value: Any) -> Optional[bool]:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (str, bytes, bytearray, list, tuple, dict, set)):
+        return None
+    if not hasattr(value, "__bool__"):
+        return None
+    try:
+        return bool(value)
+    except Exception:
+        return None
+
+
 def format_freshness_label(
     *,
     data_stale: Any = None,
@@ -58,12 +73,14 @@ def format_freshness_label(
             label = f"{label} {reason}"
     elif status and status not in {"open", "live"}:
         label = status
-    elif data_stale is True:
-        label = "stale"
-    elif data_stale is False:
-        label = "fresh"
     else:
-        return None
+        stale_flag = _coerce_bool_flag(data_stale)
+        if stale_flag is True:
+            label = "stale"
+        elif stale_flag is False:
+            label = "fresh"
+        else:
+            return None
 
     age = str(age_text or "").strip() or format_age_seconds(age_seconds)
     if age:
