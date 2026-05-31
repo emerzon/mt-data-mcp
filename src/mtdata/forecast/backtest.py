@@ -41,6 +41,20 @@ from .forecast import forecast
 from .gpu_runtime import cleanup_forecast_gpu_runtime, forecast_methods_may_use_gpu
 from .volatility import forecast_volatility
 
+_BREAKEVEN_RETURN_EPS = 1e-12
+
+
+def _trade_return_bucket(value: Any) -> Literal["winning", "losing", "breakeven"]:
+    try:
+        ret = float(value or 0.0)
+    except (TypeError, ValueError):
+        ret = 0.0
+    if ret > _BREAKEVEN_RETURN_EPS:
+        return "winning"
+    if ret < -_BREAKEVEN_RETURN_EPS:
+        return "losing"
+    return "breakeven"
+
 
 def _attach_request_metadata(
     result: Dict[str, Any],
@@ -965,9 +979,10 @@ def strategy_backtest(  # noqa: C901
                         monthly_stats[month_key]["trades"] += 1
                         ret = float(trade.get("return_net") or 0.0)
                         monthly_stats[month_key]["returns"].append(ret)
-                        if ret > 0:
+                        bucket = _trade_return_bucket(ret)
+                        if bucket == "winning":
                             monthly_stats[month_key]["winning"] += 1
-                        elif ret < 0:
+                        elif bucket == "losing":
                             monthly_stats[month_key]["losing"] += 1
                 
                 monthly_breakdown = []
@@ -987,9 +1002,18 @@ def strategy_backtest(  # noqa: C901
                 
                 # Trade distribution statistics
                 if trades:
-                    winning_trades = [t for t in trades if float(t.get("return_net") or 0.0) > 0.0]
-                    losing_trades = [t for t in trades if float(t.get("return_net") or 0.0) < 0.0]
-                    breakeven_trades = [t for t in trades if float(t.get("return_net") or 0.0) == 0.0]
+                    winning_trades = [
+                        t for t in trades
+                        if _trade_return_bucket(t.get("return_net")) == "winning"
+                    ]
+                    losing_trades = [
+                        t for t in trades
+                        if _trade_return_bucket(t.get("return_net")) == "losing"
+                    ]
+                    breakeven_trades = [
+                        t for t in trades
+                        if _trade_return_bucket(t.get("return_net")) == "breakeven"
+                    ]
                     
                     trade_distribution = {}
                     

@@ -23,6 +23,13 @@ def _history_from_closes(closes: list[float]) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def test_trade_return_bucket_treats_noise_as_breakeven():
+    assert forecast_backtest._trade_return_bucket(1e-13) == "breakeven"
+    assert forecast_backtest._trade_return_bucket(-1e-13) == "breakeven"
+    assert forecast_backtest._trade_return_bucket(1e-6) == "winning"
+    assert forecast_backtest._trade_return_bucket(-1e-6) == "losing"
+
+
 def test_strategy_backtest_full_detail_includes_equity_curve(monkeypatch):
     """Full detail mode should include equity curve data."""
     monkeypatch.setattr(
