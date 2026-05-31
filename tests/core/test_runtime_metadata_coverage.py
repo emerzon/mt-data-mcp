@@ -87,6 +87,16 @@ def test_static_offset_source_takes_precedence_over_configured_server_tz() -> No
     assert result["server"]["offset_seconds"] == 5400
 
 
+def test_zero_static_offset_env_is_not_reported_as_timezone_source(monkeypatch) -> None:
+    monkeypatch.delenv("MT5_SERVER_TZ", raising=False)
+    monkeypatch.setenv("MT5_TIME_OFFSET_MINUTES", "0")
+    cfg = _make_config(offset_seconds=0, time_offset_minutes=0)
+
+    result = build_runtime_timezone_meta({}, mt5_config=cfg, include_now=False)
+
+    assert result["server"] == {"source": "none"}
+
+
 def test_uses_iana_name_for_client_timezone_when_available() -> None:
     cfg = _make_config(client_tz=ZoneInfo("America/Chicago"))
 

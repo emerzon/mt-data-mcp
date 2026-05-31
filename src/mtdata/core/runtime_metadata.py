@@ -147,14 +147,10 @@ def build_runtime_timezone_meta(
         server_offset_seconds = int(server_offset_minutes) * 60
 
     server_source = "none"
-    if isinstance(server_offset_minutes, int) and (
-        server_offset_minutes != 0 or (offset_env is not None and not server_tz_config)
-    ):
+    if isinstance(server_offset_minutes, int) and server_offset_minutes != 0:
         server_source = "MT5_TIME_OFFSET_MINUTES"
     elif server_tz_config:
         server_source = "MT5_SERVER_TZ"
-    elif server_offset_minutes is not None:
-        server_source = "MT5_TIME_OFFSET_MINUTES"
 
     server_tzinfo = _resolve_tzinfo(server_tz_obj) or _resolve_tzinfo(server_tz_resolved or server_tz_config)
     client_tzinfo = _resolve_tzinfo(client_tz_obj) or _resolve_tzinfo(client_tz_resolved or client_tz_config)
