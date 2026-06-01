@@ -272,6 +272,7 @@ def _run_forecast_payload_direct(operation: str, payload: Dict[str, Any]) -> Dic
         return _forecast_list_library_models_impl(
             payload["library"],
             show_unavailable=bool(payload.get("show_unavailable", False)),
+            detail=payload.get("detail", "compact"),
         )
 
     if operation == "forecast_backtest_run":
@@ -661,6 +662,7 @@ def forecast_generate(request: ForecastGenerateRequest) -> Dict[str, Any]:
 def forecast_list_library_models(
     library: Literal["native", "statsforecast", "sktime", "pretrained", "mlforecast", "all"],
     show_unavailable: bool = False,
+    detail: CompactFullDetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     """List available model names within a forecast library.
 
@@ -674,10 +676,12 @@ def forecast_list_library_models(
         process_payload={
             "library": library,
             "show_unavailable": bool(show_unavailable),
+            "detail": detail,
         },
         func=lambda: _forecast_list_library_models_impl(
             library,
             show_unavailable=show_unavailable,
+            detail=detail,
         ),
     )
 
@@ -1152,8 +1156,10 @@ def _forecast_list_library_models_impl(
     library: Literal["native", "statsforecast", "sktime", "pretrained", "mlforecast", "all"],
     *,
     show_unavailable: bool = False,
+    detail: CompactFullDetailLiteral = "compact",
 ) -> Dict[str, Any]:
     lib = str(library).strip().lower()
+    detail_mode = "full" if str(detail or "compact").strip().lower() == "full" else "compact"
     supported_libraries = ("native", "statsforecast", "sktime", "pretrained", "mlforecast")
     if lib == "all":
         sections: List[Dict[str, Any]] = []
@@ -1162,7 +1168,9 @@ def _forecast_list_library_models_impl(
         total_unavailable_hidden = 0
         for library_name in supported_libraries:
             section = _forecast_list_library_models_impl(
-                library_name, show_unavailable=show_unavailable
+                library_name,
+                show_unavailable=show_unavailable,
+                detail=detail_mode,
             )
             if section.get("error"):
                 sections.append(
@@ -1175,18 +1183,20 @@ def _forecast_list_library_models_impl(
             total_models += int(section.get("total_filtered") or 0)
             total_available += int(section.get("available") or 0)
             total_unavailable_hidden += int(section.get("unavailable_hidden") or 0)
-            sections.append(
-                {
-                    "library": library_name,
-                    "models": section.get("models") or [],
-                    "total_filtered": section.get("total_filtered"),
-                    "available": section.get("available"),
-                    "unavailable": section.get("unavailable"),
-                    "unavailable_hidden": section.get("unavailable_hidden"),
-                }
-            )
+            section_out = {
+                "library": library_name,
+                "models": section.get("models") or [],
+                "total_filtered": section.get("total_filtered"),
+                "available": section.get("available"),
+                "unavailable": section.get("unavailable"),
+                "unavailable_hidden": section.get("unavailable_hidden"),
+            }
+            if detail_mode == "full" and isinstance(section.get("capabilities"), list):
+                section_out["capabilities"] = section.get("capabilities")
+            sections.append(section_out)
         return {
             "library": "all",
+            "detail": detail_mode,
             "libraries": sections,
             "total_filtered": total_models,
             "available": total_available,
@@ -1218,18 +1228,24 @@ def _forecast_list_library_models_impl(
         "unavailable": unavailable_selected,
         "unavailable_hidden": 0 if show_unavailable else unavailable_total,
         "filters": {"show_unavailable": bool(show_unavailable)},
+        "detail": detail_mode,
     }
+
+    def _maybe_add_capabilities(payload: Dict[str, Any]) -> Dict[str, Any]:
+        if detail_mode == "full":
+            payload["capabilities"] = capabilities
+        return payload
+
     if lib == "native":
-        return {
+        return _maybe_add_capabilities({
             "library": lib,
             "models": model_rows,
-            "capabilities": capabilities,
             **availability_meta,
             "usage": [
                 "mtdata-cli forecast_generate SYMBOL --library native --method analog",
                 "mtdata-cli forecast_generate SYMBOL --library native --method theta",
             ],
-        }
+        })
 
     if lib == "statsforecast":
         try:
@@ -1237,21 +1253,19 @@ def _forecast_list_library_models_impl(
         except Exception as exc:
             return {"library": lib, "error": f"statsforecast import failed: {exc}"}
 
-        return {
+        return _maybe_add_capabilities({
             "library": lib,
             "models": model_rows,
-            "capabilities": capabilities,
             **availability_meta,
             "usage": [
                 "mtdata-cli forecast_generate SYMBOL --library statsforecast --method AutoARIMA",
             ],
-        }
+        })
 
     if lib == "sktime":
-        return {
+        return _maybe_add_capabilities({
             "library": lib,
             "models": model_rows,
-            "capabilities": capabilities,
             **availability_meta,
             "usage": [
                 "mtdata-cli forecast_generate SYMBOL --library sktime --method theta",
@@ -1259,32 +1273,30 @@ def _forecast_list_library_models_impl(
                 "mtdata-cli forecast_generate SYMBOL --library sktime --method sktime.forecasting.theta.ThetaForecaster --params \"sp=24\"",
             ],
             "note": "The --method value is matched to the closest available forecaster name; you can also pass a dotted class path. Constructor kwargs go in --params (or use --set method.<k>=<v>).",
-        }
+        })
 
     if lib == "pretrained":
-        return {
+        return _maybe_add_capabilities({
             "library": lib,
             "models": model_rows,
-            "capabilities": capabilities,
             **availability_meta,
             "usage": [
                 "mtdata-cli forecast_generate SYMBOL --library pretrained --method chronos2",
                 "mtdata-cli forecast_generate SYMBOL --library pretrained --method timesfm",
             ],
-        }
+        })
 
     if lib == "mlforecast":
-        return {
+        return _maybe_add_capabilities({
             "library": lib,
             "models": model_rows,
-            "capabilities": capabilities,
             **availability_meta,
             "note": "Use `--method <dotted sklearn/lightgbm regressor class>` plus optional constructor kwargs in --params (or use --set method.<k>=<v>).",
             "usage": [
                 "mtdata-cli forecast_generate SYMBOL --library mlforecast --method sklearn.ensemble.RandomForestRegressor --params \"n_estimators=200\"",
                 "mtdata-cli forecast_generate SYMBOL --library native --method mlf_rf",
             ],
-        }
+        })
 
     return {"library": lib, "error": "Unsupported library (supported: native, statsforecast, sktime, pretrained, mlforecast, all)"}
 
