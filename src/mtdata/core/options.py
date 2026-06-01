@@ -141,6 +141,49 @@ def _apply_options_detail(
 
 
 @mcp.tool()
+def options_provider_status(
+    detail: CompactFullDetailLiteral = "compact",  # type: ignore
+) -> Dict[str, Any]:
+    """Report configured options-chain provider readiness without querying market data."""
+    from ..bootstrap.settings import options_data_config
+
+    provider = str(getattr(options_data_config, "provider", "yahoo") or "yahoo").strip().lower()
+    api_key_configured = bool(getattr(options_data_config, "api_key", None))
+    effective_provider = "tradier" if provider == "auto" and api_key_configured else provider
+    chain_data_ready = effective_provider == "tradier" and api_key_configured
+    payload: Dict[str, Any] = {
+        "success": True,
+        "configured_provider": provider,
+        "effective_provider": effective_provider,
+        "api_key_configured": api_key_configured,
+        "chain_data_ready": chain_data_ready,
+        "supported_providers": ["tradier", "yahoo"],
+        "chain_dependent_tools": [
+            "options_expirations",
+            "options_chain",
+            "options_heston_calibrate",
+        ],
+        "local_tools": ["options_barrier_price"],
+        "action_required": None if chain_data_ready else "configure_options_provider",
+        "remediation": None
+        if chain_data_ready
+        else (
+            "For reliable options chains, set MTDATA_OPTIONS_PROVIDER=tradier "
+            "and MTDATA_OPTIONS_API_KEY. Yahoo is an unauthenticated fallback "
+            "and may return 401/429."
+        ),
+    }
+    if _options_detail_mode(detail) == "full":
+        payload["tradier_docs"] = "https://documentation.tradier.com/"
+        payload["base_url"] = getattr(options_data_config, "base_url", None)
+    return _run_options_operation(
+        "options_provider_status",
+        detail=detail,
+        func=lambda: payload,
+    )
+
+
+@mcp.tool()
 def options_expirations(
     symbol: str,
     detail: CompactFullDetailLiteral = "compact",  # type: ignore
