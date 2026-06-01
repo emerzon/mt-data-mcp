@@ -363,7 +363,7 @@ def _run_forecast_payload_direct(operation: str, payload: Dict[str, Any]) -> Dic
             library=payload.get("library"),
             supports_ci=payload.get("supports_ci"),
             supports_training=payload.get("supports_training"),
-            profile=payload.get("profile", "all"),
+            profile=payload.get("profile", "quickstart"),
             show_unavailable=bool(payload.get("show_unavailable", False)),
         )
 
@@ -827,14 +827,14 @@ def forecast_list_methods(
     ] = None,
     supports_ci: Optional[bool] = None,
     supports_training: Optional[bool] = None,
-    profile: Literal["all", "quickstart", "core"] = "all",
+    profile: Literal["quickstart", "core", "all"] = "quickstart",
     show_unavailable: bool = False,
 ) -> Dict[str, Any]:
     """List forecast methods and availability.
 
     Compact output is the default. Use extras='metadata' to include full
-    parameter docs and supports metadata. Use limit/offset to page large
-    filtered method catalogs.
+    parameter docs and supports metadata. The default quickstart profile returns
+    a small native baseline set; use profile='all' for the full catalog.
     """
     search_term_value = str(search_term or "").strip() or None
     return _run_forecast_operation(
@@ -1513,7 +1513,7 @@ def _forecast_list_methods_impl(  # noqa: C901
     library: Optional[str] = None,
     supports_ci: Optional[bool] = None,
     supports_training: Optional[bool] = None,
-    profile: str = "all",
+    profile: str = "quickstart",
     show_unavailable: bool = False,
 ) -> Dict[str, Any]:
     try:
@@ -1525,7 +1525,7 @@ def _forecast_list_methods_impl(  # noqa: C901
         search_value = str(search or "").strip().lower()
         category_filter_value = str(category or "").strip().lower()
         library_value = str(library or "").strip().lower()
-        profile_value = str(profile or "all").strip().lower()
+        profile_value = str(profile or "quickstart").strip().lower()
         if profile_value not in _FORECAST_METHOD_PROFILES:
             return {"error": "Invalid profile. Use all, quickstart, or core."}
         profile_methods = _FORECAST_METHOD_PROFILES[profile_value]
@@ -1691,8 +1691,8 @@ def _forecast_list_methods_impl(  # noqa: C901
                 "show_unavailable": bool(show_unavailable),
             }
             if profile_methods is not None:
-                out_full["profile_note"] = (
-                    "quickstart/core shows native methods with no optional package dependency."
+            out_full["profile_note"] = (
+                    "quickstart/core shows native methods with no optional package dependency; use profile=all for the full catalog."
                 )
             out_full["note"] = (
                 "Full view includes trader-facing method metadata and structured params; "
@@ -1805,7 +1805,7 @@ def _forecast_list_methods_impl(  # noqa: C901
         if profile_methods is not None:
             out["profile"] = profile_value
             out["profile_note"] = (
-                "Native quickstart methods with no optional package dependency."
+                "Native quickstart methods with no optional package dependency; use profile=all for the full catalog."
             )
             out["usage"] = [
                 "mtdata-cli forecast_generate SYMBOL --method theta",
