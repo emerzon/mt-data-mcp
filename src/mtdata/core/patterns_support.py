@@ -621,6 +621,10 @@ def _compact_patterns_payload(
         "lookback": payload.get("lookback"),
         "mode": payload.get("mode"),
         "n_patterns": total_i,
+        "applied_limit": payload.get("applied_limit"),
+        "applied_top_k": payload.get("applied_top_k"),
+        "applied_last_n_bars": payload.get("applied_last_n_bars"),
+        "effective_window": payload.get("effective_window"),
     }
     compact = {key: value for key, value in compact.items() if value is not None}
     if signal:

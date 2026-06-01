@@ -161,6 +161,40 @@ def _limit_pattern_payload_rows(payload: Any, *, top_k: Any) -> Any:
     return out
 
 
+def _attach_pattern_window_metadata(
+    payload: Any,
+    *,
+    limit: Any,
+    top_k: Any,
+    last_n_bars: Any = None,
+) -> None:
+    if not isinstance(payload, dict) or payload.get("error"):
+        return
+    try:
+        applied_limit = int(limit)
+    except Exception:
+        applied_limit = limit
+    try:
+        applied_top_k = int(top_k)
+    except Exception:
+        applied_top_k = top_k
+    try:
+        applied_last_n = int(last_n_bars) if last_n_bars is not None else None
+    except Exception:
+        applied_last_n = last_n_bars
+    payload.setdefault("applied_limit", applied_limit)
+    payload.setdefault("applied_top_k", applied_top_k)
+    payload.setdefault("applied_last_n_bars", applied_last_n)
+    payload.setdefault(
+        "effective_window",
+        {
+            "fetched_bars": applied_limit,
+            "pattern_filter_bars": applied_last_n or applied_limit,
+            "returned_cap": applied_top_k,
+        },
+    )
+
+
 def _attach_signal_bias_summary(resp: Dict[str, Any], deps: "PatternsDetectDeps") -> None:
     summary = resp.get("summary")
     if isinstance(summary, dict) and summary.get("signal_bias"):
@@ -330,6 +364,12 @@ def run_patterns_detect(  # noqa: C901
             end=request.end,
         )
         if isinstance(out, dict) and not out.get("error"):
+            _attach_pattern_window_metadata(
+                out,
+                limit=request.limit,
+                top_k=request.top_k,
+                last_n_bars=last_n_bars_val,
+            )
             rows = out.get("data")
             if isinstance(rows, list) and not rows and not out.get("note"):
                 out["note"] = _empty_patterns_note(
