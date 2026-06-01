@@ -920,6 +920,68 @@ def _resolve_finviz_screen_filters(filters: Any) -> tuple[Optional[Dict[str, Any
     return None, _invalid_finviz_screen_filters_error(filters)
 
 
+@mcp.tool()
+def finviz_filters_list(
+    search: Optional[str] = None,
+    limit: int = 50,
+    detail: CompactFullDetailLiteral = "compact",  # type: ignore
+) -> Dict[str, Any]:
+    """List valid Finviz screener filters and accepted values."""
+    try:
+        from finvizfinance.screener.base import filter_dict
+    except ImportError as exc:
+        return {"error": f"Unable to load Finviz filter metadata: {exc}"}
+
+    detail_mode = normalize_output_verbosity_detail(detail, default="compact")
+    query = str(search or "").strip().lower()
+    rows: List[Dict[str, Any]] = []
+    for filter_name, spec in filter_dict.items():
+        prefix = str(spec.get("prefix") or "").strip()
+        options = [
+            {"value": str(option_name), "token": f"{prefix}_{option_code}"}
+            for option_name, option_code in (spec.get("option") or {}).items()
+            if str(option_name).strip()
+        ]
+        haystack = " ".join(
+            [str(filter_name), prefix]
+            + [str(option.get("value") or "") for option in options]
+            + [str(option.get("token") or "") for option in options]
+        ).lower()
+        if query and query not in haystack:
+            continue
+        row: Dict[str, Any] = {
+            "filter": str(filter_name),
+            "prefix": prefix,
+            "value_count": len(options),
+        }
+        if detail_mode == "full":
+            row["values"] = options
+        else:
+            row["values"] = options[:8]
+            if len(options) > 8:
+                row["omitted_value_count"] = len(options) - 8
+        rows.append(row)
+
+    try:
+        limit_value = max(1, int(limit or 50))
+    except Exception:
+        return {"error": "limit must be a positive integer."}
+    limited_rows = rows[:limit_value]
+    out: Dict[str, Any] = {
+        "success": True,
+        "items": limited_rows,
+        "count": len(limited_rows),
+        "total": len(rows),
+        "detail": detail_mode,
+        "hint": "Use finviz_screen filters as Filter=Value pairs or shorthand tokens such as cap_largeover.",
+    }
+    if search not in (None, ""):
+        out["search"] = search
+    if len(rows) > len(limited_rows):
+        out["omitted_item_count"] = len(rows) - len(limited_rows)
+    return out
+
+
 def _clean_finviz_text_value(value: Any) -> Any:
     if isinstance(value, str):
         return value.strip()
