@@ -13,7 +13,8 @@ from .runtime_metadata import build_runtime_timezone_meta
 
 _MISSING = object()
 _SUCCESS_RELATED_TOOLS = {
-    "market_ticker": ["trade_session_context", "support_resistance_levels", "market_status"],
+    "market_ticker": ["market_snapshot", "trade_session_context", "support_resistance_levels"],
+    "market_snapshot": ["market_ticker", "report_generate", "trade_session_context"],
     "data_fetch_candles": ["indicators_describe", "temporal_analyze", "patterns_detect"],
     "patterns_detect": ["regime_detect", "support_resistance_levels", "pivot_compute_points"],
     "regime_detect": ["patterns_detect", "forecast_generate", "temporal_analyze"],

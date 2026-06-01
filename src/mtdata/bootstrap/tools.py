@@ -18,6 +18,7 @@ TOOL_MODULE_NAMES: Final[tuple[str, ...]] = (
     "mtdata.core.denoise",
     "mtdata.core.indicators",
     "mtdata.core.market_depth",
+    "mtdata.core.market_snapshot",
     "mtdata.core.options",
     "mtdata.core.patterns",
     "mtdata.core.pivot",
