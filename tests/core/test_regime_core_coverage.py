@@ -869,7 +869,7 @@ class TestRegimeDetectHMM:
         mu = np.array([0.0, 0.001])
         sigma = np.array([0.001, 0.003])
         with patch(
-            "mtdata.core.regime.fit_gaussian_mixture_1d",
+            "mtdata.core.regime.fit_temporal_gaussian_hmm_1d",
             return_value=(w, mu, sigma, gamma, None),
             create=True,
         ):
@@ -890,7 +890,7 @@ class TestRegimeDetectHMM:
         mu = np.array([0.0, 0.001])
         sigma = np.array([0.001, 0.003])
         with patch(
-            "mtdata.core.regime.fit_gaussian_mixture_1d",
+            "mtdata.core.regime.fit_temporal_gaussian_hmm_1d",
             return_value=(w, mu, sigma, gamma, None),
             create=True,
         ):
@@ -910,7 +910,7 @@ class TestRegimeDetectHMM:
         mu = np.array([0.0, 0.001])
         sigma = np.array([0.001, 0.003])
         with patch(
-            "mtdata.core.regime.fit_gaussian_mixture_1d",
+            "mtdata.core.regime.fit_temporal_gaussian_hmm_1d",
             return_value=(w, mu, sigma, gamma, None),
             create=True,
         ):
@@ -930,7 +930,7 @@ class TestRegimeDetectHMM:
         mu = np.array([0.0, 0.001])
         sigma = np.array([0.001, 0.003])
         with patch(
-            "mtdata.core.regime.fit_gaussian_mixture_1d",
+            "mtdata.core.regime.fit_temporal_gaussian_hmm_1d",
             return_value=(w, mu, sigma, gamma, None),
             create=True,
         ):
@@ -957,7 +957,7 @@ class TestRegimeDetectHMM:
         mu = np.array([0.0, 0.001])
         sigma = np.array([0.001, 0.003])
         with patch(
-            "mtdata.core.regime.fit_gaussian_mixture_1d",
+            "mtdata.core.regime.fit_temporal_gaussian_hmm_1d",
             return_value=(w, mu, sigma, gamma, None),
             create=True,
         ):
@@ -976,14 +976,33 @@ class TestRegimeDetectHMM:
     @patch(_FMT, side_effect=_time_fmt_stub)
     @patch(_DENOISE, return_value="close")
     @patch(_FETCH)
-    def test_hmm_import_error(self, mock_fetch, mock_denoise, mock_fmt):
+    def test_hmm_fallback_warning_when_temporal_hmm_fails(
+        self, mock_fetch, mock_denoise, mock_fmt
+    ):
         df = _make_df(50)
         mock_fetch.return_value = df
-        with patch.dict("sys.modules", {"mtdata.forecast.monte_carlo": None}):
+        gamma = np.ones((49, 1), dtype=float)
+        w = np.array([1.0])
+        mu = np.array([0.0])
+        sigma = np.array([0.001])
+        with (
+            patch(
+                "mtdata.core.regime.fit_temporal_gaussian_hmm_1d",
+                side_effect=RuntimeError("temporal hmm failed"),
+                create=True,
+            ),
+            patch(
+                "mtdata.forecast.monte_carlo.fit_gaussian_mixture_1d",
+                return_value=(w, mu, sigma, gamma, None),
+                create=True,
+            ),
+        ):
             fn = _get_regime_detect()
-            res = fn("EURUSD", limit=50, method="hmm")
-        # Should return an error about import
+            res = fn("EURUSD", limit=50, method="hmm", detail="full")
         assert isinstance(res, dict)
+        assert res.get("success") is True
+        assert res.get("params_used", {}).get("backend") == "gaussian_mixture_fallback"
+        assert "fell back" in " ".join(res.get("warnings", [])).lower()
 
     @patch(_FMT, side_effect=_time_fmt_stub)
     @patch(_DENOISE, return_value="close")
@@ -997,7 +1016,7 @@ class TestRegimeDetectHMM:
         mu = np.array([0.0, 0.001])
         sigma = np.array([0.001, 0.003])
         with patch(
-            "mtdata.core.regime.fit_gaussian_mixture_1d",
+            "mtdata.core.regime.fit_temporal_gaussian_hmm_1d",
             return_value=(w, mu, sigma, gamma, None),
             create=True,
         ):
@@ -1018,7 +1037,7 @@ class TestRegimeDetectHMM:
         mu = np.array([0.0])
         sigma = np.array([0.001])
         with patch(
-            "mtdata.forecast.monte_carlo.fit_gaussian_mixture_1d",
+            "mtdata.core.regime.fit_temporal_gaussian_hmm_1d",
             return_value=(w, mu, sigma, gamma, None),
             create=True,
         ):
@@ -1048,7 +1067,7 @@ class TestRegimeDetectHMM:
         mu = np.array([0.0, 0.001, -0.001])
         sigma = np.array([0.001, 0.003, 0.002])
         with patch(
-            "mtdata.core.regime.fit_gaussian_mixture_1d",
+            "mtdata.core.regime.fit_temporal_gaussian_hmm_1d",
             return_value=(w, mu, sigma, gamma, None),
             create=True,
         ):
@@ -1101,7 +1120,7 @@ class TestRegimeDetectHMM:
         mu = np.array([0.001, -0.001])
         sigma = np.array([0.003, 0.001])
         with patch(
-            "mtdata.core.regime.api.fit_gaussian_mixture_1d",
+            "mtdata.core.regime.fit_temporal_gaussian_hmm_1d",
             return_value=(w, mu, sigma, gamma, None),
             create=True,
         ):
@@ -1120,7 +1139,7 @@ class TestRegimeDetectHMM:
         df = _make_df(60)
         mock_fetch.return_value = df
         with patch(
-            "mtdata.forecast.monte_carlo.fit_gaussian_mixture_1d", create=True
+            "mtdata.core.regime.fit_temporal_gaussian_hmm_1d", create=True
         ) as mock_fit:
             fn = _get_regime_detect()
             res = fn(

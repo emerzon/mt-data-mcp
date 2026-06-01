@@ -618,7 +618,7 @@ def test_gmm_alias_reports_requested_method_and_common_reliability() -> None:
         patch("mtdata.core.regime._resolve_denoise_base_col", return_value="close"),
         patch("mtdata.core.regime._format_time_minimal", side_effect=lambda x: f"T{x}"),
         patch(
-            "mtdata.core.regime.api.fit_gaussian_mixture_1d",
+            "mtdata.core.regime.fit_temporal_gaussian_hmm_1d",
             return_value=(weights, mu, sigma, gamma, None),
             create=True,
         ),
