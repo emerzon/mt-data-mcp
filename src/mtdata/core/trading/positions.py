@@ -402,6 +402,8 @@ def _compact_non_empty_mapping(row: Dict[str, Any]) -> Dict[str, Any]:
 _TRADE_MONEY_FIELDS = {"profit", "commission", "swap", "fee"}
 _TRADE_PRICE_FIELDS = {
     "price",
+    "entry_price",
+    "trigger_price",
     "price_open",
     "price_current",
     "price_stoplimit",

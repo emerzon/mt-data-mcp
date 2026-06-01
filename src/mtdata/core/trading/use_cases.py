@@ -3862,16 +3862,23 @@ def _filter_trade_query_profit(df: Any, request: Any, pd_module: Any) -> Any:
 
 
 def _filter_trade_query_side_and_type(df: Any, request: Any) -> Any:
-    if "type" not in df.columns:
+    type_field = "order_type" if "order_type" in df.columns else "type"
+    if type_field not in df.columns and "side" not in df.columns:
         return df
     out = df
     side = str(getattr(request, "side", "") or "").strip().upper()
     order_type = str(getattr(request, "order_type", "") or "").strip().upper()
-    type_text = out["type"].astype(str).str.upper()
     if side in {"BUY", "SELL"}:
-        out = out.loc[type_text.eq(side) | type_text.str.startswith(f"{side}_")].copy()
-        type_text = out["type"].astype(str).str.upper()
+        if "side" in out.columns:
+            side_text = out["side"].astype(str).str.upper()
+            out = out.loc[side_text.eq(side)].copy()
+        else:
+            type_text = out[type_field].astype(str).str.upper()
+            out = out.loc[
+                type_text.eq(side) | type_text.str.startswith(f"{side}_")
+            ].copy()
     if order_type:
+        type_text = out[type_field].astype(str).str.upper()
         out = out.loc[type_text.eq(order_type)].copy()
     return out
 
@@ -4035,15 +4042,15 @@ def _build_trade_get_open_output(
                 _mt5_int_const(gateway, "POSITION_TYPE_SELL", 1): "SELL",
             }
         )
-        open_df["type"] = mapped.fillna(open_df["type"].astype(str))
+        open_df["side"] = mapped.fillna(open_df["type"].astype(str))
     return pd_module.DataFrame(
         {
             "symbol": _pick_trade_series(open_df, pd_module, "symbol"),
             "ticket": _pick_trade_series(open_df, pd_module, "ticket"),
             "time": time_txt,
-            "type": _pick_trade_series(open_df, pd_module, "type"),
+            "side": _pick_trade_series(open_df, pd_module, "side"),
             "volume": _pick_trade_series(open_df, pd_module, "volume"),
-            "price_open": _pick_trade_series(open_df, pd_module, "price_open"),
+            "entry_price": _pick_trade_series(open_df, pd_module, "price_open"),
             "sl": _pick_trade_series(open_df, pd_module, "sl"),
             "tp": _pick_trade_series(open_df, pd_module, "tp"),
             "price_current": _pick_trade_series(open_df, pd_module, "price_current"),
@@ -4129,14 +4136,16 @@ def _build_trade_get_pending_output(
                 ): "SELL_STOP_LIMIT",
             }
         )
-        pending_df["type"] = mapped.fillna(pending_df["type"].astype(str))
+        pending_df["order_type"] = mapped.fillna(pending_df["type"].astype(str))
+        pending_df["side"] = pending_df["order_type"].astype(str).str.split("_").str[0]
     return pd_module.DataFrame(
         {
             "symbol": _pick_trade_series(pending_df, pd_module, "symbol"),
             "ticket": _pick_trade_series(pending_df, pd_module, "ticket"),
             "time": time_txt,
             "expiration": expiration,
-            "type": _pick_trade_series(pending_df, pd_module, "type"),
+            "side": _pick_trade_series(pending_df, pd_module, "side"),
+            "order_type": _pick_trade_series(pending_df, pd_module, "order_type"),
             "volume": _pick_trade_series(
                 pending_df,
                 pd_module,
@@ -4144,7 +4153,7 @@ def _build_trade_get_pending_output(
                 "volume_current",
                 "volume_initial",
             ),
-            "price_open": _pick_trade_series(pending_df, pd_module, "price_open"),
+            "trigger_price": _pick_trade_series(pending_df, pd_module, "price_open"),
             "sl": _pick_trade_series(pending_df, pd_module, "sl"),
             "tp": _pick_trade_series(pending_df, pd_module, "tp"),
             "price_current": _pick_trade_series(pending_df, pd_module, "price_current"),
