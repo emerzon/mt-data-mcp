@@ -552,7 +552,9 @@ def normalize_market_status_output(
         return out
 
     markets = out.get("markets")
-    if isinstance(markets, list):
+    if out.get("mode") == "global" and detail_mode in {"compact", "summary"}:
+        out.pop("markets", None)
+    elif isinstance(markets, list):
         compact_markets = []
         for market in markets:
             if isinstance(market, dict):
