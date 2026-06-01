@@ -486,6 +486,69 @@ def _apply_report_section_controls(
             report["section_controls"]["missing_requested_sections"] = missing_requested
 
 
+def _report_section_names_by_status(
+    sections_status: Any,
+    status: str,
+) -> List[str]:
+    if not isinstance(sections_status, dict):
+        return []
+    sections = sections_status.get("sections")
+    if not isinstance(sections, dict):
+        return []
+    names: List[str] = []
+    for name, payload in sections.items():
+        if isinstance(payload, dict) and str(payload.get("status") or "").lower() == status:
+            names.append(str(name))
+    return names
+
+
+def _build_overall_report_assessment(report: Dict[str, Any]) -> Dict[str, Any]:
+    sections_status = report.get("sections_status")
+    summary = sections_status.get("summary", {}) if isinstance(sections_status, dict) else {}
+    total = int(summary.get("total", 0) or 0)
+    errors = int(summary.get("error", 0) or 0)
+    partial = int(summary.get("partial", 0) or 0)
+    ok = int(summary.get("ok", 0) or 0)
+
+    failed_sections = _report_section_names_by_status(sections_status, "error")
+    partial_sections = _report_section_names_by_status(sections_status, "partial")
+
+    if total <= 0:
+        confidence = "low"
+        recommended_action = "rerun_with_full_detail"
+        summary_text = "No report sections were available for assessment."
+    elif errors > 0:
+        confidence = "low" if errors >= max(1, total // 3) else "medium"
+        recommended_action = "use_with_caution"
+        summary_text = "Report is usable only with caution because one or more sections failed."
+    elif partial > 0:
+        confidence = "medium"
+        recommended_action = "review_partial_sections"
+        summary_text = "Report is mostly usable, but partial sections reduce confidence."
+    else:
+        confidence = "high" if ok >= 3 else "medium"
+        recommended_action = "review_key_levels_and_risk"
+        summary_text = "Report sections completed successfully; review levels, forecast, and risk context before acting."
+
+    assessment: Dict[str, Any] = {
+        "is_trade_signal": False,
+        "recommended_action": recommended_action,
+        "confidence": confidence,
+        "summary": summary_text,
+        "section_health": {
+            "ok": ok,
+            "partial": partial,
+            "error": errors,
+            "total": total,
+        },
+    }
+    if failed_sections:
+        assessment["failed_sections"] = failed_sections[:6]
+    if partial_sections:
+        assessment["partial_sections"] = partial_sections[:6]
+    return assessment
+
+
 def _report_template_focus(
     *,
     template: str,
@@ -1093,6 +1156,7 @@ def run_report_generate(  # noqa: C901
                     else "complete"
                 )
                 rep["success"] = bool(error_count == 0)
+                rep["overall_assessment"] = _build_overall_report_assessment(rep)
             diagnostics = rep.get("diagnostics")
             if not isinstance(diagnostics, dict):
                 diagnostics = {}
