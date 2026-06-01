@@ -59,13 +59,14 @@ class TestMcpRuntimeSettings:
         settings = load_mcp_runtime_settings()
         assert settings.transport == "sse"
 
-    def test_non_loopback_host_requires_explicit_remote_flag(self, monkeypatch):
+    def test_non_loopback_host_warns_but_allows_bind(self, monkeypatch):
         from mtdata.bootstrap.runtime import load_mcp_runtime_settings
 
         monkeypatch.setenv("FASTMCP_HOST", "0.0.0.0")
         monkeypatch.delenv("FASTMCP_ALLOW_REMOTE", raising=False)
-        with pytest.raises(ValueError, match="FASTMCP_ALLOW_REMOTE"):
-            load_mcp_runtime_settings()
+        with pytest.warns(RuntimeWarning, match="FASTMCP_ALLOW_REMOTE"):
+            settings = load_mcp_runtime_settings()
+        assert settings.host == "0.0.0.0"
 
     def test_stdio_skips_remote_bind_guard(self, monkeypatch):
         from mtdata.bootstrap.runtime import load_mcp_runtime_settings
@@ -1306,19 +1307,20 @@ class TestMainEntryPoints:
         mock_bootstrap.assert_called_once()
 
     @patch("mtdata.core.server.bootstrap_tools")
-    def test_main_remote_bind_error_exits_before_bootstrap(self, mock_bootstrap, monkeypatch):
+    @patch("mtdata.core.server.mcp")
+    def test_main_remote_bind_warns_and_starts(self, mock_mcp, mock_bootstrap, monkeypatch):
         monkeypatch.delenv("MCP_TRANSPORT", raising=False)
         monkeypatch.setenv("FASTMCP_HOST", "0.0.0.0")
         monkeypatch.delenv("FASTMCP_ALLOW_REMOTE", raising=False)
+        mock_mcp.settings = None
+        mock_mcp.run = MagicMock()
         from mtdata.core.server import main
 
-        with pytest.raises(SystemExit) as exc:
+        with pytest.warns(RuntimeWarning, match="FASTMCP_ALLOW_REMOTE"):
             main()
 
-        message = str(exc.value)
-        assert "FASTMCP_ALLOW_REMOTE=1" in message
-        assert "FASTMCP_HOST=127.0.0.1" in message
-        mock_bootstrap.assert_not_called()
+        mock_bootstrap.assert_called_once()
+        mock_mcp.run.assert_called_once()
 
 
 # ── mcp instance ──────────────────────────────────────────────────────────

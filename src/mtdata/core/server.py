@@ -35,14 +35,7 @@ def main(
 ):
     """Main entry point for the MCP server"""
     load_environment()
-    try:
-        runtime = runtime_settings or load_mcp_runtime_settings(transport_override=transport)
-    except ValueError as exc:
-        raise SystemExit(
-            f"{exc}\n"
-            "For local-only MCP/SSE startup, set FASTMCP_HOST=127.0.0.1. "
-            "To intentionally listen on all interfaces, set FASTMCP_ALLOW_REMOTE=1."
-        ) from None
+    runtime = runtime_settings or load_mcp_runtime_settings(transport_override=transport)
     bootstrap_tools()
     apply_mcp_runtime_settings(mcp, runtime)
     settings = getattr(mcp, 'settings', None)
