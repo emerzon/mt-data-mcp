@@ -24,7 +24,15 @@ class PatternsDetectRequest(BaseModel):
         None,
         description="Optional UTC-compatible end date/time; end-only anchors recent history.",
     )
-    min_strength: float = 0.70
+    min_strength: float = Field(
+        0.70,
+        description=(
+            "Candlestick strength threshold from 0.0 to 1.0; default 0.70. "
+            "Lower values show more exploratory/noisy patterns, while 0.70+ "
+            "keeps stricter high-conviction detections. Classic/fractal modes "
+            "use their own mode-specific confidence rules."
+        ),
+    )
     min_gap: int = 3
     robust_only: bool = False
     whitelist: Optional[str] = None

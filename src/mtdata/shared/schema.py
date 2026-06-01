@@ -129,7 +129,11 @@ PARAM_HINTS = {
     "deal_ticket": "Filter deal history by deal ticket.",
     "order_ticket": "Filter history by order ticket.",
     "minutes_back": "Look back this many minutes from end/now instead of using start.",
-    "min_strength": "Minimum candlestick pattern strength (0-1).",
+    "min_strength": (
+        "Candlestick strength threshold 0.0-1.0, default 0.70. "
+        "Use 0.30-0.50 for exploratory scans, 0.50-0.70 for broader "
+        "trading context, and 0.70+ for stricter high-conviction detections."
+    ),
     "min_gap": "Minimum bars between detected patterns.",
     "robust_only": "Only return high-confidence patterns when true.",
     "whitelist": "Comma-separated pattern names to include.",
