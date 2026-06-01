@@ -39,7 +39,10 @@ class TradePlaceRequest(BaseModel):
     model_config = {"populate_by_name": True}
 
     symbol: Optional[str] = None
-    volume: Optional[float] = None
+    volume: Optional[float] = Field(
+        default=None,
+        description="Partial close volume in lots. Requires ticket.",
+    )
     order_type: Optional[OrderTypeInput] = Field(
         default=None,
         description=(

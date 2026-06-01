@@ -102,6 +102,7 @@ def trade_close(request: TradeCloseRequest) -> dict:
     `ticket` closes a specific position or pending order.
     Any bulk close requires `close_all=true`.
     Set `volume` only to partially close a specific open position by ticket.
+    `volume` is invalid without `ticket`.
     Set `dry_run=true` to preview routing and validation without sending a close/cancel request.
     """
     return run_logged_operation(
