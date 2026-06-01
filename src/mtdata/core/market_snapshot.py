@@ -207,7 +207,6 @@ def market_snapshot(
                 "default": "quote,levels,patterns",
                 "heavy_opt_in": "Add regime or forecast to sections when needed.",
             }
-        }
         return payload
 
     return run_logged_operation(
