@@ -185,9 +185,16 @@ _MIN_ANNUALIZATION_TRADES = 30
 _MIN_ANNUALIZATION_YEARS = 0.25
 _TRADE_BACKTEST_UNITS = {
     "returns": "return_fraction",
+    "avg_return": "return_fraction",
+    "avg_return_per_trade": "return_fraction",
     "drawdown": "return_fraction",
+    "max_drawdown": "return_fraction",
     "win_rate": "fraction",
+    "avg_directional_accuracy": "fraction",
     "slippage_bps": "basis_points",
+    "successful_tests": "count",
+    "num_tests": "count",
+    "trades_observed": "count",
 }
 _FORECAST_ERROR_UNITS = {
     "price": "price",
@@ -199,7 +206,10 @@ _FORECAST_ERROR_UNITS = {
 def _backtest_units(quantity: Optional[str] = None) -> Dict[str, str]:
     units = dict(_TRADE_BACKTEST_UNITS)
     if quantity is not None:
-        units["forecast_error"] = _FORECAST_ERROR_UNITS.get(str(quantity), str(quantity))
+        forecast_error_unit = _FORECAST_ERROR_UNITS.get(str(quantity), str(quantity))
+        units["forecast_error"] = forecast_error_unit
+        units["avg_rmse"] = forecast_error_unit
+        units["avg_mae"] = forecast_error_unit
     return units
 
 

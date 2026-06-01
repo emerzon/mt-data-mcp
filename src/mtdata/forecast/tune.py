@@ -8,7 +8,7 @@ import time
 import warnings
 from typing import Any, Dict, List, Optional, Tuple
 
-from .backtest import forecast_backtest as _forecast_backtest
+from .backtest import _backtest_units, forecast_backtest as _forecast_backtest
 from .optimize import (
     build_comprehensive_search_space as _build_search_space,
 )
@@ -26,6 +26,15 @@ _NOISY_FORECAST_TUNE_LOGGERS = (
     "torch._dynamo",
     "torch._inductor",
 )
+
+
+def _tuning_units(metric: Any) -> Dict[str, str]:
+    units = _backtest_units("price")
+    metric_key = str(metric or "").strip()
+    metric_unit = units.get(metric_key, "metric_value")
+    units["best_score"] = metric_unit
+    units["score"] = metric_unit
+    return units
 
 
 def _suppress_noisy_forecast_tune_loggers() -> None:
@@ -639,6 +648,7 @@ def optuna_search_forecast_params(  # noqa: C901
         "best_score": float(best_score),
         "best_params": best_params,
         "metric": metric,
+        "units": _tuning_units(metric),
         "mode": mode_val,
         "optimizer": "optuna",
         "n_trials": int(n_trials_val),
@@ -862,6 +872,7 @@ def genetic_search_forecast_params(  # noqa: C901
         "best_score": float(best_score),
         "best_params": best_params,
         "metric": metric,
+        "units": _tuning_units(metric),
         "mode": mode,
         "population": int(population),
         "generations": int(generations),
