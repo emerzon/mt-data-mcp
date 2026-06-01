@@ -469,6 +469,15 @@ def normalize_denoise_spec(spec: Any, default_when: str = 'pre_ti') -> Optional[
 
 def get_denoise_methods_data() -> Dict[str, Any]:
     """Get metadata about all available denoise methods."""
+    def _has_auto_param(value: Any) -> bool:
+        if isinstance(value, str):
+            return value.strip().lower() == "auto"
+        if isinstance(value, dict):
+            return any(_has_auto_param(item) for item in value.values())
+        if isinstance(value, (list, tuple, set)):
+            return any(_has_auto_param(item) for item in value)
+        return False
+
     base_defaults = _denoise_base_defaults("pre_ti")
     methods: List[Dict[str, Any]] = [
         {
@@ -478,6 +487,8 @@ def get_denoise_methods_data() -> Dict[str, Any]:
             "requires": "",
             "params": [],
             "supports": {"causality": _supported_denoise_causality("none")},
+            "supports_causal": True,
+            "has_auto_params": False,
             "defaults": base_defaults,
         }
     ]
@@ -496,6 +507,8 @@ def get_denoise_methods_data() -> Dict[str, Any]:
             "requires": requires,
             "params": list(default_params.keys()),
             "supports": {"causality": _supported_denoise_causality(method_name)},
+            "supports_causal": "causal" in _supported_denoise_causality(method_name),
+            "has_auto_params": any(_has_auto_param(value) for value in default_params.values()),
             "defaults": base_defaults,
         })
 
