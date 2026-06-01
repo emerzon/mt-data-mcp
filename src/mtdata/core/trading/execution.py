@@ -1075,6 +1075,50 @@ def _close_positions_dry_run_preview(
     }
 
 
+def _pending_order_preview_row(order: Any) -> Dict[str, Any]:
+    return {
+        key: value
+        for key, value in {
+            "ticket": getattr(order, "ticket", None),
+            "symbol": getattr(order, "symbol", None),
+            "type": getattr(order, "type", None),
+            "volume_current": getattr(order, "volume_current", None),
+            "price_open": getattr(order, "price_open", None),
+            "sl": getattr(order, "sl", None),
+            "tp": getattr(order, "tp", None),
+            "magic": getattr(order, "magic", None),
+            "comment": getattr(order, "comment", None),
+        }.items()
+        if value not in (None, "")
+    }
+
+
+def _cancel_pending_dry_run_preview(
+    orders: List[Any],
+    *,
+    symbol: Optional[str],
+    magic: Optional[int],
+) -> Dict[str, Any]:
+    rows = [_pending_order_preview_row(order) for order in orders]
+    filters = {
+        key: value
+        for key, value in {
+            "symbol": symbol,
+            "magic": magic,
+        }.items()
+        if value not in (None, "")
+    }
+    return {
+        "success": True,
+        "dry_run": True,
+        "actionability": "preview_only",
+        "matched_pending_count": len(rows),
+        "matched_pending_orders": rows,
+        "filters_applied": filters,
+        "would_cancel_pending_orders": len(rows),
+    }
+
+
 def _close_positions(  # noqa: C901
     ticket: Optional[Union[int, str]] = None,
     symbol: Optional[str] = None,
@@ -1426,6 +1470,7 @@ def _cancel_pending(
     symbol: Optional[str] = None,
     magic: Optional[int] = None,
     comment: Optional[str] = None,
+    dry_run: bool = False,
     gateway: Optional[MT5TradingGateway] = None,
 ) -> dict:
     """Internal helper to cancel pending orders."""
@@ -1484,6 +1529,13 @@ def _cancel_pending(
                 ]
                 if not orders:
                     return {"message": "No pending orders matched criteria"}
+
+            if dry_run:
+                return _cancel_pending_dry_run_preview(
+                    list(orders),
+                    symbol=symbol,
+                    magic=magic_filter,
+                )
 
             # 2. Cancel orders
             results = []

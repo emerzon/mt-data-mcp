@@ -1675,6 +1675,27 @@ def run_trade_close(  # noqa: C901
                     message = position_preview.get("message")
                     if message not in (None, ""):
                         preview["message"] = message
+            if int(preview.get("matched_count") or 0) == 0:
+                pending_preview = cancel_pending(
+                    symbol=request.symbol,
+                    **magic_kwargs,
+                    comment=request.comment,
+                    dry_run=True,
+                )
+                if isinstance(pending_preview, dict):
+                    if pending_preview.get("error"):
+                        preview["pending_preview_error"] = pending_preview.get("error")
+                    elif "matched_pending_count" in pending_preview:
+                        for key in (
+                            "matched_pending_count",
+                            "matched_pending_orders",
+                            "would_cancel_pending_orders",
+                        ):
+                            if key in pending_preview:
+                                preview[key] = pending_preview[key]
+                    else:
+                        preview["matched_pending_count"] = 0
+                        preview["matched_pending_orders"] = []
         if request.ticket is not None:
             preview["ticket"] = request.ticket
             preview["ticket_resolution"] = (
