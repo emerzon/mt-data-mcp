@@ -659,7 +659,7 @@ def forecast_generate(request: ForecastGenerateRequest) -> Dict[str, Any]:
 
 @mcp.tool()
 def forecast_list_library_models(
-    library: Literal["native", "statsforecast", "sktime", "pretrained", "mlforecast"],
+    library: Literal["native", "statsforecast", "sktime", "pretrained", "mlforecast", "all"],
     show_unavailable: bool = False,
 ) -> Dict[str, Any]:
     """List available model names within a forecast library.
@@ -1149,11 +1149,50 @@ def forecast_barrier_optimize(
 
 
 def _forecast_list_library_models_impl(
-    library: Literal["native", "statsforecast", "sktime", "pretrained", "mlforecast"],
+    library: Literal["native", "statsforecast", "sktime", "pretrained", "mlforecast", "all"],
     *,
     show_unavailable: bool = False,
 ) -> Dict[str, Any]:
     lib = str(library).strip().lower()
+    supported_libraries = ("native", "statsforecast", "sktime", "pretrained", "mlforecast")
+    if lib == "all":
+        sections: List[Dict[str, Any]] = []
+        total_models = 0
+        total_available = 0
+        total_unavailable_hidden = 0
+        for library_name in supported_libraries:
+            section = _forecast_list_library_models_impl(
+                library_name, show_unavailable=show_unavailable
+            )
+            if section.get("error"):
+                sections.append(
+                    {
+                        "library": library_name,
+                        "error": section.get("error"),
+                    }
+                )
+                continue
+            total_models += int(section.get("total_filtered") or 0)
+            total_available += int(section.get("available") or 0)
+            total_unavailable_hidden += int(section.get("unavailable_hidden") or 0)
+            sections.append(
+                {
+                    "library": library_name,
+                    "models": section.get("models") or [],
+                    "total_filtered": section.get("total_filtered"),
+                    "available": section.get("available"),
+                    "unavailable": section.get("unavailable"),
+                    "unavailable_hidden": section.get("unavailable_hidden"),
+                }
+            )
+        return {
+            "library": "all",
+            "libraries": sections,
+            "total_filtered": total_models,
+            "available": total_available,
+            "unavailable_hidden": total_unavailable_hidden,
+            "filters": {"show_unavailable": bool(show_unavailable)},
+        }
     capabilities_raw = _get_library_forecast_capabilities(
         lib,
         discover_sktime_forecasters=_discover_sktime_forecasters,
@@ -1247,7 +1286,7 @@ def _forecast_list_library_models_impl(
             ],
         }
 
-    return {"library": lib, "error": "Unsupported library (supported: native, statsforecast, sktime, pretrained, mlforecast)"}
+    return {"library": lib, "error": "Unsupported library (supported: native, statsforecast, sktime, pretrained, mlforecast, all)"}
 
 
 def _forecast_library_model_rows(capabilities: Any) -> List[Dict[str, Any]]:
