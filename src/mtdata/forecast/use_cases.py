@@ -1217,8 +1217,12 @@ def _compact_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:
         "avg_directional_accuracy": 4,
         "win_rate": 4,
         "max_drawdown": 4,
+        "max_drawdown_pct": 4,
         "avg_return": 6,
+        "avg_return_pct": 4,
         "avg_return_per_trade": 6,
+        "avg_return_per_trade_pct": 4,
+        "annual_return_pct": 4,
     }
 
     def _compact_metric(key: str, value: Any) -> Any:
@@ -1286,8 +1290,12 @@ def _compact_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:
             for key in (
                 "win_rate",
                 "max_drawdown",
+                "max_drawdown_pct",
                 "avg_return",
+                "avg_return_pct",
                 "avg_return_per_trade",
+                "avg_return_per_trade_pct",
+                "annual_return_pct",
                 "trades_observed",
             ):
                 if key in metrics:

@@ -124,9 +124,13 @@ def _compact_strategy_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:
 def _unavailable_performance_metrics(reason: str, slippage_bps: float) -> Dict[str, Any]:
     return {
         "avg_return": None,
+        "avg_return_pct": None,
         "avg_return_per_trade": None,
+        "avg_return_per_trade_pct": None,
         "win_rate": None,
         "max_drawdown": None,
+        "max_drawdown_pct": None,
+        "annual_return_pct": None,
         "trades_per_year": None,
         "trades_observed": 0,
         "slippage_bps": float(slippage_bps),
@@ -187,9 +191,14 @@ _MIN_ANNUALIZATION_YEARS = 0.25
 _TRADE_BACKTEST_UNITS = {
     "returns": "return_fraction",
     "avg_return": "return_fraction",
+    "avg_return_pct": "percentage_points",
     "avg_return_per_trade": "return_fraction",
+    "avg_return_per_trade_pct": "percentage_points",
     "drawdown": "return_fraction",
     "max_drawdown": "return_fraction",
+    "max_drawdown_pct": "percentage_points",
+    "annual_return": "return_fraction",
+    "annual_return_pct": "percentage_points",
     "win_rate": "fraction",
     "avg_directional_accuracy": "fraction",
     "directional_calls_made": "count",
@@ -318,6 +327,16 @@ def _compute_performance_metrics(
         "trades_observed": int(arr.size),
         "slippage_bps": float(slippage_bps),
     })
+    for source_key in ("avg_return_per_trade", "max_drawdown", "annual_return"):
+        source_value = metrics.get(source_key)
+        if source_value is None:
+            continue
+        try:
+            source_float = float(source_value)
+        except Exception:
+            continue
+        if math.isfinite(source_float):
+            metrics[f"{source_key}_pct"] = float(round(source_float * 100.0, 6))
     if not enough_trades:
         metrics["sample_notice"] = {
             "code": "annualization_suppressed_low_sample",
