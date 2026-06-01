@@ -1787,6 +1787,8 @@ def fetch_candles(  # noqa: C901
             data_rows = payload.get("data", []) or []
             has_spread_values = False
             spread_all_zero = True
+            spread_value_count = 0
+            spread_zero_count = 0
             spread_idx = None
             try:
                 if "spread" in headers:
@@ -1797,28 +1799,40 @@ def fetch_candles(  # noqa: C901
                 if isinstance(row, dict):
                     if "spread" in row and row.get("spread") is not None:
                         has_spread_values = True
+                        spread_value_count += 1
                         try:
-                            if float(row.get("spread", 0)) != 0.0:
+                            if float(row.get("spread", 0)) == 0.0:
+                                spread_zero_count += 1
+                            else:
                                 spread_all_zero = False
-                                break
                         except Exception:
                             has_spread_values = True
                             spread_all_zero = False
-                            break
                 elif isinstance(row, (list, tuple)):
                     if spread_idx is not None and spread_idx < len(row):
                         val = row[spread_idx]
                         if val is not None:
                             has_spread_values = True
+                            spread_value_count += 1
                             try:
-                                if float(val) != 0.0:
+                                if float(val) == 0.0:
+                                    spread_zero_count += 1
+                                else:
                                     spread_all_zero = False
-                                    break
                             except Exception:
                                 has_spread_values = True
                                 spread_all_zero = False
-                                break
-            if not has_spread_values or spread_all_zero:
+            spread_mostly_zero = (
+                has_spread_values
+                and spread_value_count >= 3
+                and spread_zero_count / float(spread_value_count) >= 0.75
+            )
+            if not has_spread_values or spread_all_zero or spread_mostly_zero:
+                if spread_mostly_zero and not spread_all_zero:
+                    payload.setdefault("warnings", []).append(
+                        "include_spread native candle spread is zero for most bars; "
+                        "using an estimated spread because MT5 candle spread appears sparse."
+                    )
                 try:
                     tick_stats = fetch_ticks(symbol, limit=5000, format="stats")
                     spread_stats = tick_stats.get("stats", {}).get("spread")
