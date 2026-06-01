@@ -369,6 +369,8 @@ class TaskManager:
         workers = max_workers or int(os.environ.get("MTDATA_TRAIN_WORKERS", _MAX_WORKERS_DEFAULT))
         heavy_workers = heavy_limit or int(os.environ.get("MTDATA_HEAVY_LIMIT", _HEAVY_WORKERS_DEFAULT))
 
+        self._light_worker_limit = workers
+        self._heavy_worker_limit = heavy_workers
         self._light_executor = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="train-light")
         self._heavy_executor = ThreadPoolExecutor(max_workers=heavy_workers, thread_name_prefix="train-heavy")
         self._mp_context = mp.get_context("spawn")
@@ -852,6 +854,39 @@ class TaskManager:
         if status:
             tasks = [t for t in tasks if t.status == status]
         return sorted(tasks, key=lambda t: t.created_at, reverse=True)
+
+    def runtime_snapshot(self) -> Dict[str, Any]:
+        """Return lightweight queue and worker state for status payloads."""
+        tasks = self.list_tasks()
+        with self._lock:
+            heavy_task_ids = set(self._process_controls)
+            future_task_ids = set(self._futures)
+        status_counts: Dict[str, int] = {}
+        for task in tasks:
+            status_counts[task.status] = status_counts.get(task.status, 0) + 1
+        pending = sorted(
+            (task for task in tasks if task.status == "pending"),
+            key=lambda task: task.created_at,
+        )
+        queue_positions = {
+            task.task_id: index
+            for index, task in enumerate(pending, start=1)
+        }
+        return {
+            "workers": {
+                "light_limit": int(self._light_worker_limit),
+                "heavy_limit": int(self._heavy_worker_limit),
+                "active_futures": len(future_task_ids),
+                "active_heavy_processes": len(heavy_task_ids),
+            },
+            "queue": {
+                "pending": len(pending),
+                "running": int(status_counts.get("running", 0)),
+                "status_counts": status_counts,
+            },
+            "queue_positions": queue_positions,
+            "heavy_task_ids": sorted(heavy_task_ids),
+        }
 
     def wait_for_status(self, task_id: str, timeout_seconds: float = 30.0, poll_interval: float = 0.25) -> Optional[TrainingTask]:
         deadline = time.time() + max(0.0, float(timeout_seconds))

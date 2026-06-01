@@ -234,7 +234,28 @@ def _serialize_model_handle(
     return payload
 
 
-def _task_status_payload(task: Any, *, detail: DetailLevel) -> Dict[str, Any]:
+def _task_runtime_payload(task: Any, runtime: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    if not isinstance(runtime, dict):
+        return {}
+    task_id = str(getattr(task, "task_id", "") or "")
+    out: Dict[str, Any] = {}
+    queue_positions = runtime.get("queue_positions")
+    if isinstance(queue_positions, dict) and task_id in queue_positions:
+        out["queue_position"] = queue_positions.get(task_id)
+    heavy_task_ids = runtime.get("heavy_task_ids")
+    if isinstance(heavy_task_ids, list) and task_id in heavy_task_ids:
+        out["worker_pool"] = "heavy"
+    elif getattr(task, "status", None) == "running":
+        out["worker_pool"] = "light"
+    return out
+
+
+def _task_status_payload(
+    task: Any,
+    *,
+    detail: DetailLevel,
+    runtime: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     payload: Dict[str, Any] = {
         "success": True,
         "detail": detail,
@@ -254,6 +275,7 @@ def _task_status_payload(task: Any, *, detail: DetailLevel) -> Dict[str, Any]:
 
     if task.progress is not None:
         payload["progress"] = _serialize_progress(task.progress, detail=detail)
+    payload.update(_task_runtime_payload(task, runtime))
 
     if task.status == "completed" and task.result is not None:
         payload["model_id"] = task.result.model_id
@@ -269,6 +291,11 @@ def _task_status_payload(task: Any, *, detail: DetailLevel) -> Dict[str, Any]:
         payload["error"] = task.error
 
     if detail == "full":
+        if runtime:
+            payload["runtime"] = {
+                "workers": runtime.get("workers"),
+                "queue": runtime.get("queue"),
+            }
         params_hash = getattr(task, "params_hash", None)
         if params_hash:
             payload["params_hash"] = params_hash
@@ -276,7 +303,12 @@ def _task_status_payload(task: Any, *, detail: DetailLevel) -> Dict[str, Any]:
     return payload
 
 
-def _task_list_item_payload(task: Any, *, detail: DetailLevel) -> Dict[str, Any]:
+def _task_list_item_payload(
+    task: Any,
+    *,
+    detail: DetailLevel,
+    runtime: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     started_at = getattr(task, "started_at", None)
     payload: Dict[str, Any] = {
         "task_id": task.task_id,
@@ -301,6 +333,7 @@ def _task_list_item_payload(task: Any, *, detail: DetailLevel) -> Dict[str, Any]
         payload["pid"] = pid
     if task.progress is not None:
         payload["progress_fraction"] = task.progress.fraction
+    payload.update(_task_runtime_payload(task, runtime))
     if task.result is not None:
         payload["model_id"] = task.result.model_id
         payload["produced_model_ids"] = [task.result.model_id]
@@ -370,7 +403,11 @@ def forecast_train(request: ForecastTrainRequest) -> Dict[str, Any]:
                 "method": request.method,
                 "data_scope": f"{request.symbol}_{request.timeframe}",
             }
-        payload = _task_status_payload(task, detail="compact")
+        payload = _task_status_payload(
+            task,
+            detail="compact",
+            runtime=tm.runtime_snapshot(),
+        )
         payload["message"] = (
             "Training task queued. Poll forecast_task_status or use forecast_task_wait "
             "to observe completion."
@@ -407,7 +444,11 @@ def forecast_task_status(request: ForecastTaskStatusRequest) -> Dict[str, Any]:
             out["detail"] = detail_mode
             out["task_id"] = request.task_id
             return out
-        return _task_status_payload(task, detail=detail_mode)
+        return _task_status_payload(
+            task,
+            detail=detail_mode,
+            runtime=tm.runtime_snapshot(),
+        )
 
     return run_logged_operation(
         logger,
@@ -528,7 +569,11 @@ def forecast_task_wait(request: ForecastTaskWaitRequest) -> Dict[str, Any]:
             out["detail"] = detail_mode
             out["task_id"] = request.task_id
             return out
-        payload = _task_status_payload(task, detail=detail_mode)
+        payload = _task_status_payload(
+            task,
+            detail=detail_mode,
+            runtime=tm.runtime_snapshot(),
+        )
         payload["wait_timeout_seconds"] = request.timeout_seconds
         return payload
 
@@ -564,6 +609,7 @@ def forecast_task_list(
                 operation="forecast_task_list",
             )
         tm = _get_task_manager()
+        runtime = tm.runtime_snapshot()
         tasks = [
             task
             for task in tm.list_tasks(status=status_filter)
@@ -574,7 +620,10 @@ def forecast_task_list(
                 since_minutes=since_minutes,
             )
         ]
-        items = [_task_list_item_payload(task, detail=detail_mode) for task in tasks]
+        items = [
+            _task_list_item_payload(task, detail=detail_mode, runtime=runtime)
+            for task in tasks
+        ]
         summary: Dict[str, int] = {}
         for item in items:
             status = str(item.get("status") or "unknown")
@@ -589,6 +638,10 @@ def forecast_task_list(
                 "since_minutes": since_minutes,
                 "method": method,
                 "data_scope": data_scope,
+            },
+            "runtime": {
+                "workers": runtime.get("workers"),
+                "queue": runtime.get("queue"),
             },
             "tasks": items,
         }
