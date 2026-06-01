@@ -23,6 +23,14 @@ except Exception:
 from ..base import _series_like, register_filter
 
 
+def _ssa_trajectory_matrix(x: np.ndarray, window: int) -> np.ndarray:
+    try:
+        return np.lib.stride_tricks.sliding_window_view(x, window).T
+    except Exception:
+        K = len(x) - window + 1
+        return np.column_stack([x[i : i + window] for i in range(K)])
+
+
 def _ssa_denoise(
     x: np.ndarray,
     window: int,
@@ -38,7 +46,9 @@ def _ssa_denoise(
     if L >= n:
         return x
     K = n - L + 1
-    X = np.column_stack([x[i : i + L] for i in range(K)])
+    X = _ssa_trajectory_matrix(x, L)
+    if X.shape != (L, K):
+        X = np.column_stack([x[i : i + L] for i in range(K)])
     U, s, Vt = np.linalg.svd(X, full_matrices=False)
     if components is None:
         r = min(2, len(s))
