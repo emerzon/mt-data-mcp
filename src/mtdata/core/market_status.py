@@ -870,6 +870,13 @@ def _check_symbol_market_status(
         ),
         "trades_on_weekends": schedule_status.get("trades_on_weekends"),
         "inferred_24_7": schedule_status.get("inferred_24_7"),
+        "session_context": {
+            "source": schedule_status["source"],
+            "confidence": schedule_status["confidence"],
+            "local_session_open": schedule_status.get("current_time_in_active_session"),
+            "trades_on_weekends": schedule_status.get("trades_on_weekends"),
+            "inferred_24_7": schedule_status.get("inferred_24_7"),
+        },
         "message": message,
         "data_fetched_at": _format_utc_iso_z(now_utc),
         "timezone": "UTC",
