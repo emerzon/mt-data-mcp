@@ -210,6 +210,7 @@ def _run_screener_view(
     screener: Any,
     *,
     order: str = "Ticker",
+    ascend: bool = True,
     limit: int = 20,
     page: int = 1,
 ) -> Any:
@@ -219,11 +220,39 @@ def _run_screener_view(
     return run_screener_view(
         screener,
         order=order,
+        ascend=ascend,
         limit=limit,
         page=page,
         screener_max_rows=_FINVIZ_SCREENER_MAX_ROWS,
         page_limit_max=_FINVIZ_PAGE_LIMIT_MAX,
     )
+
+
+_FINVIZ_SCREEN_ORDER_ALIASES = {
+    "ticker": "Ticker",
+    "symbol": "Ticker",
+    "company": "Company",
+    "marketcap": "Market Cap.",
+    "market_cap": "Market Cap.",
+    "market_capitalization": "Market Cap.",
+    "price": "Price",
+    "volume": "Volume",
+    "change": "Change",
+}
+
+
+def _resolve_finviz_screen_order(order: Any) -> tuple[str, bool, str]:
+    text = str(order or "").strip()
+    if not text:
+        return "Market Cap.", False, "-marketcap"
+    ascend = True
+    if text.startswith("-"):
+        ascend = False
+        text = text[1:].strip()
+    elif text.startswith("+"):
+        text = text[1:].strip()
+    key = text.strip().lower().replace(" ", "_").replace(".", "")
+    return _FINVIZ_SCREEN_ORDER_ALIASES.get(key, text), ascend, str(order)
 
 
 def _finviz_http_get(url: str, *, headers: Dict[str, str], params: Dict[str, Any]) -> Any:
@@ -602,11 +631,12 @@ def screen_stocks(
         
         if filters:
             screener.set_filter(filters_dict=filters)
-        order_name = str(order).strip() if isinstance(order, str) and str(order).strip() else "Ticker"
+        order_name, order_ascend, order_applied = _resolve_finviz_screen_order(order)
 
         df, fetch_limit = _run_screener_view(
             screener,
             order=order_name,
+            ascend=order_ascend,
             limit=limit,
             page=page,
         )
@@ -634,6 +664,7 @@ def screen_stocks(
             "success": True,
             "view": view_lower,
             "filters": filters or {},
+            "order": order_applied,
             "count": len(stocks_list),
             "total": total,
             "page": safe_page,

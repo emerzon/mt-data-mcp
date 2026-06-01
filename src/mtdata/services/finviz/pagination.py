@@ -113,6 +113,7 @@ def run_screener_view(
     screener: Any,
     *,
     order: str = "Ticker",
+    ascend: bool = True,
     limit: int = 20,
     page: int = 1,
     screener_max_rows: Optional[int] = None,
@@ -129,7 +130,13 @@ def run_screener_view(
         max_rows=max_rows,
         page_limit_max=page_limit_max,
     )
-    return screener.screener_view(order=order, limit=fetch_limit, verbose=0, sleep_sec=0), fetch_limit
+    return screener.screener_view(
+        order=order,
+        limit=fetch_limit,
+        verbose=0,
+        sleep_sec=0,
+        ascend=ascend,
+    ), fetch_limit
 
 
 __all__ = [
