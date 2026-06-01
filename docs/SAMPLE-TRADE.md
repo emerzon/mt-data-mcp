@@ -38,6 +38,8 @@ The language is kept simple so anyone with a basic interest in trading can follo
 | **`pivot_compute_points`** | `symbol=EURUSD`, `timeframe=D1` | <ul><li>Each run returns classic, Fibonacci, Camarilla, Woodie, and DeMark tables so you can compare support/resistance ladders.</li><li>Every method lists **support (S1, S2, …)** and **resistance (R1, R2, …)** tiers that traders monitor.</li></ul> |
 | **Result** | JSON with: <br>‑ Pivot (PP) = 1.17505 <br>‑ R1 = 1.17848 <br>‑ S1 = 1.17264 <br>‑ R2, S2, R3, S3 also provided. | **Interpretation** <br>‑ Current price (≈ 1.1776) sits **just below R1** and **above the pivot** – a classic “test‑and‑break” situation. <br>‑ If price falls, S1 (1.17264) is the first support; if it breaks above R1, the next target is R2 (≈ 1.1809). |
 
+Use **`confluence_levels`** when you want the pivot ladder ranked against data-driven support/resistance and Fibonacci swing levels. It highlights zones where independent methods cluster, such as a daily pivot resistance sitting within a few pips of an H1 resistance retest and a 61.8% Fibonacci retracement.
+
 ---
 
 ### 4. Estimate near‑future volatility
@@ -99,4 +101,3 @@ By following these steps you move from raw price numbers to **data‑driven trad
 - [BARRIER_FUNCTIONS.md](BARRIER_FUNCTIONS.md) — Barrier optimization deep dive
 - [GLOSSARY.md](GLOSSARY.md) — Term definitions
 - [FINVIZ.md](FINVIZ.md) — Fundamental data (for equity analysis)
-

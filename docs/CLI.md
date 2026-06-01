@@ -227,6 +227,7 @@ Trained models are written under `~/.mtdata/models/` by default and re-used auto
 | `indicators_list` | List available indicators |
 | `indicators_describe` | Get indicator details |
 | `patterns_detect` | Detect candlestick, chart, harmonic, fractal, and Elliott patterns |
+| `confluence_levels` | Rank price zones where pivots, support/resistance, and Fibonacci levels cluster |
 | `pivot_compute_points` | Calculate pivot levels |
 | `support_resistance_levels` | Compute support/resistance levels with Fibonacci swing context |
 | `correlation_matrix` | Pairwise correlation matrix between symbols |
@@ -506,4 +507,3 @@ MTDATA_CLI_DEBUG=1 mtdata-cli forecast_generate EURUSD
 - [OPTIONS_QUANTLIB.md](OPTIONS_QUANTLIB.md) — Options and QuantLib commands
 - [TEMPORAL.md](TEMPORAL.md) — Temporal analysis
 - [TROUBLESHOOTING.md](TROUBLESHOOTING.md) — Common issues
-

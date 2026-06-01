@@ -5,10 +5,19 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional
 
 from ..forecast.common import fetch_history as _fetch_history
+from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
+from ..shared.schema import (
+    _PIVOT_METHODS,
+    AutoTimeframeLiteral,
+    CompactStandardFullDetailLiteral,
+    PivotMethodLiteral,
+    TimeframeLiteral,
+)
 from ..shared.validators import (
     invalid_timeframe_error,
     unsupported_timeframe_seconds_error,
 )
+from ..utils.level_confluence import build_level_confluence_payload
 from ..utils.mt5 import (
     MT5ConnectionError,
     _mt5_copy_rates_from,
@@ -16,6 +25,7 @@ from ..utils.mt5 import (
     ensure_mt5_connection_or_raise,
     mt5,
 )
+from ..utils.pivot_points import compute_pivot_method_levels, compute_pivot_methods
 from ..utils.support_resistance import (
     compact_support_resistance_payload,
     compute_support_resistance_levels,
@@ -31,17 +41,9 @@ from ..utils.utils import (
     _use_client_tz,
 )
 from ._mcp_instance import mcp
-from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from .execution_logging import run_logged_operation
-from .output_contract import normalize_output_extras
 from .mt5_gateway import create_mt5_gateway
-from ..shared.schema import (
-    _PIVOT_METHODS,
-    AutoTimeframeLiteral,
-    CompactStandardFullDetailLiteral,
-    PivotMethodLiteral,
-    TimeframeLiteral,
-)
+from .output_contract import normalize_output_extras
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +82,29 @@ _PIVOT_METHOD_INFO: Dict[str, Dict[str, str]] = {
         "intended_use": "Directional single-level pivot context from the prior bar.",
     },
 }
+
+
+def _positive_float_attr(obj: Any, *names: str) -> Optional[float]:
+    if obj is None:
+        return None
+    for name in names:
+        value = getattr(obj, name, None)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            continue
+        numeric = float(value)
+        if math.isfinite(numeric) and numeric > 0:
+            return numeric
+    return None
+
+
+def _tick_reference_price(tick: Any) -> Optional[float]:
+    if tick is None:
+        return None
+    bid = _positive_float_attr(tick, "bid")
+    ask = _positive_float_attr(tick, "ask")
+    if bid is not None and ask is not None:
+        return (bid + ask) / 2.0
+    return _positive_float_attr(tick, "last", "bid", "ask")
 
 
 def _resolve_support_resistance_timeframes(timeframe: Optional[str]) -> tuple[str, List[str]]:
@@ -281,18 +306,6 @@ def pivot_compute_points(  # noqa: C901
                 except Exception:
                     return float(v)
 
-            def _positive_float_attr(obj: Any, *names: str) -> Optional[float]:
-                if obj is None:
-                    return None
-                for name in names:
-                    value = getattr(obj, name, None)
-                    if isinstance(value, bool) or not isinstance(value, (int, float)):
-                        continue
-                    numeric = float(value)
-                    if math.isfinite(numeric) and numeric > 0:
-                        return numeric
-                return None
-
             rng = H - L
             price_increment = _positive_float_attr(
                 _info_before,
@@ -341,79 +354,19 @@ def pivot_compute_points(  # noqa: C901
                 }
 
             def _compute_method(method_name: str):
-                name = method_name.lower().strip()
-                if name == "classic":
-                    PP = (H + L + C) / 3.0
-                    levels_raw = {
-                        "PP": PP,
-                        "R1": 2 * PP - L,
-                        "S1": 2 * PP - H,
-                        "R2": PP + rng,
-                        "S2": PP - rng,
-                        "R3": H + 2 * (PP - L),
-                        "S3": L - 2 * (H - PP),
-                    }
-                    pivot_val = PP
-                elif name == "fibonacci":
-                    PP = (H + L + C) / 3.0
-                    levels_raw = {
-                        "PP": PP,
-                        "R1": PP + 0.382 * rng,
-                        "S1": PP - 0.382 * rng,
-                        "R2": PP + 0.618 * rng,
-                        "S2": PP - 0.618 * rng,
-                        "R3": PP + rng,
-                        "S3": PP - rng,
-                    }
-                    pivot_val = PP
-                elif name == "camarilla":
-                    k = 1.1
-                    levels_raw = {
-                        "PP": (H + L + C) / 3.0,
-                        "R1": C + (k * rng) / 12.0,
-                        "S1": C - (k * rng) / 12.0,
-                        "R2": C + (k * rng) / 6.0,
-                        "S2": C - (k * rng) / 6.0,
-                        "R3": C + (k * rng) / 4.0,
-                        "S3": C - (k * rng) / 4.0,
-                        "R4": C + (k * rng) / 2.0,
-                        "S4": C - (k * rng) / 2.0,
-                    }
-                    pivot_val = levels_raw["PP"]
-                elif name == "woodie":
-                    PP = (H + L + 2 * C) / 4.0
-                    levels_raw = {
-                        "PP": PP,
-                        "R1": 2 * PP - L,
-                        "S1": 2 * PP - H,
-                        "R2": PP + rng,
-                        "S2": PP - rng,
-                    }
-                    pivot_val = PP
-                elif name == "demark":
-                    if C < O:
-                        X = H + 2 * L + C
-                    elif C > O:
-                        X = 2 * H + L + C
-                    else:
-                        X = H + L + 2 * C
-                    PP = X / 4.0
-                    levels_raw = {
-                        "PP": PP,
-                        "R1": X / 2.0 - L,
-                        "S1": X / 2.0 - H,
-                    }
-                    pivot_val = PP
-                else:
+                method_info = compute_pivot_method_levels(
+                    method_name,
+                    open_price=O,
+                    high_price=H,
+                    low_price=L,
+                    close_price=C,
+                    digits=digits,
+                )
+                if not method_info:
                     return None
-
-                levels = {k: _round(v) for k, v in levels_raw.items()}
                 return {
-                    "method": name,
-                    "pivot": _round(pivot_val) if pivot_val is not None else None,
-                    "levels": levels,
-                    "level_set": list(levels.keys()),
-                    **_PIVOT_METHOD_INFO.get(name, {}),
+                    **method_info,
+                    **_PIVOT_METHOD_INFO.get(str(method_info.get("method")), {}),
                 }
 
             methods_out = []
@@ -615,6 +568,224 @@ def pivot_compute_points(  # noqa: C901
 
 
 @mcp.tool()
+def confluence_levels(  # noqa: C901
+    symbol: str,
+    pivot_timeframe: TimeframeLiteral = "D1",
+    sr_timeframe: AutoTimeframeLiteral = "auto",
+    lookback: int = 200,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    tolerance_pct: float = 0.0015,
+    tolerance_points: Optional[float] = None,
+    min_touches: int = 2,
+    max_levels: int = 8,
+    max_distance_pct: Optional[float] = 5.0,
+    min_source_families: int = 1,
+    pivot_method: Optional[PivotMethodLiteral] = None,
+    volume_weighting: Literal["off", "auto"] = "off",
+    reaction_bars: int = 6,
+    adx_period: int = 14,
+    decay_half_life_bars: Optional[int] = None,
+    detail: CompactStandardFullDetailLiteral = "compact",
+    extras: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Find nearby high-probability price zones where multiple level methods agree.
+
+    Combines formula pivot levels, touch-derived support/resistance, and
+    Fibonacci swing levels. Defaults use daily pivots and auto-timeframe S/R.
+    Single-family clusters are returned but score lower than multi-family
+    confluence. Use `min_source_families=2` to require independent agreement.
+    """
+
+    def _run() -> Dict[str, Any]:  # noqa: C901
+        try:
+            gateway = create_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise)
+            gateway.ensure_connection()
+
+            pivot_tf = str(pivot_timeframe or "D1").strip().upper()
+            sr_tf = str(sr_timeframe or "auto").strip()
+            method_filter = str(pivot_method).strip().lower() if pivot_method is not None else None
+            if method_filter and method_filter not in _PIVOT_METHODS:
+                return {
+                    "error": (
+                        f"Invalid pivot method: {method_filter}. "
+                        f"Valid methods: {', '.join(_PIVOT_METHODS)}"
+                    )
+                }
+            if pivot_tf not in TIMEFRAME_MAP:
+                return {"error": invalid_timeframe_error(pivot_tf, TIMEFRAME_MAP)}
+            mt5_tf = TIMEFRAME_MAP[pivot_tf]
+            tf_secs = TIMEFRAME_SECONDS.get(pivot_tf)
+            if not tf_secs:
+                return {"error": unsupported_timeframe_seconds_error(pivot_tf)}
+            if tolerance_points is not None and float(tolerance_points) < 0.0:
+                return {"error": "tolerance_points must be non-negative"}
+            if float(tolerance_pct) < 0.0:
+                return {"error": "tolerance_pct must be non-negative"}
+
+            def _has_field(row, name: str) -> bool:
+                try:
+                    if isinstance(row, dict):
+                        return name in row
+                    dt = getattr(row, "dtype", None)
+                    names = getattr(dt, "names", None) if dt is not None else None
+                    return bool(names and name in names)
+                except Exception:
+                    return False
+
+            with _symbol_ready_guard(symbol) as (err, info_before):
+                if err:
+                    return {"error": err}
+                system_now_dt = datetime.now(timezone.utc)
+                system_now_ts = system_now_dt.timestamp()
+                server_now_dt = system_now_dt
+                server_now_ts = system_now_ts
+                tick = mt5.symbol_info_tick(symbol)
+                if tick is not None and getattr(tick, "time", None):
+                    tick_time = float(tick.time)
+                    freshness_limit = float(max(tf_secs, 300))
+                    if abs(system_now_ts - tick_time) <= freshness_limit:
+                        server_now_ts = tick_time
+                        server_now_dt = datetime.fromtimestamp(server_now_ts, tz=timezone.utc)
+                rates = _mt5_copy_rates_from(symbol, mt5_tf, server_now_dt, 5)
+
+            if rates is None or len(rates) == 0:
+                return {"error": f"Failed to get rates for {symbol}: {mt5.last_error()}"}
+
+            latest = rates[-1]
+            if (float(latest["time"]) + tf_secs) <= server_now_ts:
+                source_bar = latest
+            elif len(rates) >= 2:
+                source_bar = rates[-2]
+            else:
+                return {"error": "No completed bars available to compute pivot points"}
+
+            high = float(source_bar["high"]) if _has_field(source_bar, "high") else float("nan")
+            low = float(source_bar["low"]) if _has_field(source_bar, "low") else float("nan")
+            close = float(source_bar["close"]) if _has_field(source_bar, "close") else float("nan")
+            open_ = float(source_bar["open"]) if _has_field(source_bar, "open") else close
+            if any(math.isnan(value) for value in (high, low, close)):
+                return {"error": "Pivot calculation requires high, low, and close prices"}
+
+            digits = int(getattr(info_before, "digits", 0) or 0) if info_before is not None else 0
+            price_increment = _positive_float_attr(info_before, "trade_tick_size", "point")
+            if price_increment is None and digits >= 0:
+                price_increment = 10.0 ** (-int(digits))
+
+            requested_methods = [method_filter] if method_filter else list(_PIVOT_METHODS)
+            pivot_methods = compute_pivot_methods(
+                open_price=open_,
+                high_price=high,
+                low_price=low,
+                close_price=close,
+                digits=digits,
+                methods=requested_methods,
+            )
+            for method_info in pivot_methods:
+                method_name = str(method_info.get("method") or "")
+                method_info.update(_PIVOT_METHOD_INFO.get(method_name, {}))
+
+            sr_payload = compute_support_resistance_payload(
+                fetch_history_impl=_fetch_history,
+                symbol=symbol,
+                timeframe=sr_tf,
+                limit=int(lookback),
+                start=start,
+                end=end,
+                tolerance_pct=float(tolerance_pct),
+                min_touches=int(min_touches),
+                max_levels=max(1, int(max_levels)),
+                max_distance_pct=None if max_distance_pct is None else float(max_distance_pct),
+                volume_weighting=str(volume_weighting),
+                reaction_bars=int(reaction_bars),
+                adx_period=int(adx_period),
+                decay_half_life_bars=None if decay_half_life_bars is None else int(decay_half_life_bars),
+            )
+
+            reference_price = _tick_reference_price(tick)
+            if reference_price is None:
+                try:
+                    sr_current = sr_payload.get("current_price")
+                    reference_price = float(sr_current) if sr_current is not None else None
+                except Exception:
+                    reference_price = None
+            if reference_price is None or not math.isfinite(float(reference_price)):
+                reference_price = close
+
+            detail_value = str(detail).strip().lower()
+            if normalize_output_extras(extras):
+                detail_value = "full"
+            if detail_value in {"summary", "summary_only"}:
+                detail_value = "compact"
+
+            payload = build_level_confluence_payload(
+                symbol=symbol,
+                pivot_timeframe=pivot_tf,
+                sr_timeframe=str(sr_payload.get("timeframe") or sr_tf),
+                pivot_methods=pivot_methods,
+                support_resistance_payload=sr_payload,
+                reference_price=float(reference_price),
+                tolerance_pct=float(tolerance_pct),
+                tolerance_points=tolerance_points,
+                price_increment=price_increment,
+                max_levels=int(max_levels),
+                max_distance_pct=None if max_distance_pct is None else float(max_distance_pct),
+                min_source_families=max(1, int(min_source_families)),
+                detail=detail_value,
+            )
+            period_start = float(source_bar["time"]) if _has_field(source_bar, "time") else float("nan")
+            if math.isfinite(period_start):
+                _use_ctz = _use_client_tz()
+                payload["pivot_period"] = {
+                    "start": _format_time_minimal_local(period_start) if _use_ctz else _format_time_minimal(period_start),
+                    "end": _format_time_minimal_local(period_start + float(tf_secs))
+                    if _use_ctz
+                    else _format_time_minimal(period_start + float(tf_secs)),
+                }
+                payload["timezone"] = _pivot_display_timezone(_use_ctz)
+            else:
+                payload["timezone"] = "UTC"
+            payload["calculation_basis"] = {
+                "pivot_source_bar": f"last completed {pivot_tf} bar",
+                "support_resistance_timeframe": str(sr_payload.get("timeframe") or sr_tf),
+                "reference_price": "latest tick midpoint/last when available, else S/R current price or pivot close",
+            }
+            warnings = sr_payload.get("warnings")
+            if isinstance(warnings, list) and warnings:
+                payload["warnings"] = list(warnings)
+            return payload
+        except MT5ConnectionError as exc:
+            return {"error": str(exc)}
+        except Exception as exc:
+            return {"error": f"Error computing confluence levels: {str(exc)}"}
+
+    return run_logged_operation(
+        logger,
+        operation="confluence_levels",
+        symbol=symbol,
+        pivot_timeframe=pivot_timeframe,
+        sr_timeframe=sr_timeframe,
+        lookback=lookback,
+        start=start,
+        end=end,
+        tolerance_pct=tolerance_pct,
+        tolerance_points=tolerance_points,
+        min_touches=min_touches,
+        max_levels=max_levels,
+        max_distance_pct=max_distance_pct,
+        min_source_families=min_source_families,
+        pivot_method=pivot_method,
+        volume_weighting=volume_weighting,
+        reaction_bars=reaction_bars,
+        adx_period=adx_period,
+        decay_half_life_bars=decay_half_life_bars,
+        detail=detail,
+        extras=extras,
+        func=_run,
+    )
+
+
+@mcp.tool()
 def support_resistance_levels(
     symbol: str,
     timeframe: AutoTimeframeLiteral = "H1",
@@ -716,4 +887,3 @@ def support_resistance_levels(
         extras=extras,
         func=_run,
     )
-

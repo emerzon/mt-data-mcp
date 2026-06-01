@@ -1,0 +1,115 @@
+from __future__ import annotations
+
+from mtdata.utils.level_confluence import build_level_confluence_payload
+
+
+def test_confluence_clusters_pivot_sr_and_fibonacci_levels():
+    payload = build_level_confluence_payload(
+        symbol="EURUSD",
+        pivot_timeframe="D1",
+        sr_timeframe="auto",
+        reference_price=1.08,
+        tolerance_pct=0.001,
+        pivot_methods=[
+            {
+                "method": "classic",
+                "levels": {"R2": 1.0850},
+                "pivot": 1.08,
+            }
+        ],
+        support_resistance_payload={
+            "success": True,
+            "symbol": "EURUSD",
+            "timeframe": "auto",
+            "levels": [
+                {
+                    "type": "resistance",
+                    "value": 1.0853,
+                    "score": 5.0,
+                    "touches": 3,
+                }
+            ],
+            "fibonacci": {
+                "levels": [
+                    {
+                        "label": "61.8%",
+                        "ratio": 0.618,
+                        "kind": "retracement",
+                        "value": 1.0848,
+                    }
+                ]
+            },
+        },
+        max_distance_pct=1.0,
+        detail="standard",
+    )
+
+    assert payload["success"] is True
+    assert payload["levels"]
+    cluster = payload["levels"][0]
+    assert cluster["source_families"] == [
+        "pivot_formula",
+        "swing_fibonacci",
+        "touch_derived",
+    ]
+    assert cluster["role"] == "above"
+    assert {source["source"] for source in cluster["sources"]} == {
+        "pivot",
+        "support_resistance",
+        "fibonacci",
+    }
+
+
+def test_pivot_original_resistance_below_reference_is_role_below():
+    payload = build_level_confluence_payload(
+        symbol="EURUSD",
+        pivot_timeframe="D1",
+        sr_timeframe="H1",
+        reference_price=1.10,
+        tolerance_pct=0.001,
+        pivot_methods=[
+            {
+                "method": "classic",
+                "levels": {"R1": 1.09},
+                "pivot": 1.085,
+            }
+        ],
+        support_resistance_payload={"levels": []},
+        max_distance_pct=2.0,
+        detail="full",
+    )
+
+    candidate = payload["candidates"][0]
+    assert candidate["family"] == "pivot_formula"
+    assert candidate["role"] == "below"
+    assert "Classic R1" in candidate["label"]
+
+
+def test_single_family_clusters_are_returned_but_score_lower_than_multi_family():
+    single = build_level_confluence_payload(
+        symbol="EURUSD",
+        pivot_timeframe="D1",
+        sr_timeframe="H1",
+        reference_price=1.08,
+        tolerance_pct=0.001,
+        pivot_methods=[{"method": "classic", "levels": {"PP": 1.0801}}],
+        support_resistance_payload={"levels": []},
+        detail="standard",
+    )
+    multi = build_level_confluence_payload(
+        symbol="EURUSD",
+        pivot_timeframe="D1",
+        sr_timeframe="H1",
+        reference_price=1.08,
+        tolerance_pct=0.001,
+        pivot_methods=[{"method": "classic", "levels": {"PP": 1.0801}}],
+        support_resistance_payload={
+            "levels": [{"type": "support", "value": 1.0802, "score": 4, "touches": 2}]
+        },
+        detail="standard",
+    )
+
+    assert single["levels"]
+    assert multi["levels"]
+    assert single["levels"][0]["source_families"] == ["pivot_formula"]
+    assert multi["levels"][0]["score"] > single["levels"][0]["score"]

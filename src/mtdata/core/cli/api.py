@@ -1167,6 +1167,10 @@ _COMMAND_USAGE_EXAMPLES: Dict[str, Tuple[str, Optional[str]]] = {
         f"{CLI_PROGRAM} pivot_compute_points BTCUSD --timeframe D1",
         None,
     ),
+    "confluence_levels": (
+        f"{CLI_PROGRAM} confluence_levels EURUSD --pivot-timeframe D1 --sr-timeframe auto",
+        f"{CLI_PROGRAM} confluence_levels EURUSD --min-source-families 2 --detail standard --json",
+    ),
     "regime_detect": (
         f"{CLI_PROGRAM} regime_detect BTCUSD --timeframe H1 --method hmm",
         f"{CLI_PROGRAM} regime_detect BTCUSD --timeframe H1 --method hmm --extras metadata",

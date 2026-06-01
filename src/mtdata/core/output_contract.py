@@ -19,8 +19,9 @@ _SUCCESS_RELATED_TOOLS = {
     "patterns_detect": ["regime_detect", "support_resistance_levels", "pivot_compute_points"],
     "regime_detect": ["patterns_detect", "forecast_generate", "temporal_analyze"],
     "trade_session_context": ["market_ticker", "trade_risk_analyze", "trade_get_open"],
-    "support_resistance_levels": ["pivot_compute_points", "data_fetch_candles", "patterns_detect"],
-    "pivot_compute_points": ["support_resistance_levels", "market_status", "data_fetch_candles"],
+    "support_resistance_levels": ["confluence_levels", "pivot_compute_points", "data_fetch_candles"],
+    "pivot_compute_points": ["confluence_levels", "support_resistance_levels", "market_status"],
+    "confluence_levels": ["pivot_compute_points", "support_resistance_levels", "data_fetch_candles"],
 }
 _VERBOSE_ONLY_KEYS = frozenset(
     {
