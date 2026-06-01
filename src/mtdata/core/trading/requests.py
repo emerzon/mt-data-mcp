@@ -1,15 +1,14 @@
 from __future__ import annotations
 
-from typing import Literal, Optional, Union
+from typing import Any, Dict, Literal, Optional, Union
 
 from pydantic import AliasChoices, BaseModel, Field, field_validator
 
 from ...shared.schema import CompactFullDetailLiteral, TimeframeLiteral
 from ...utils.barriers import normalize_trade_direction
-from .time import ExpirationValue
 from . import validation
+from .time import ExpirationValue
 from .validation import OrderTypeInput
-
 
 MAGIC_NUMBER_DESCRIPTION = (
     "MT5 magic number: integer strategy/order identifier used to group EA or "
@@ -283,6 +282,42 @@ class TradeRiskAnalyzeRequest(BaseModel):
         ),
     )
     desired_risk_pct: Optional[float] = None
+    sizing_method: Literal["fixed_fraction", "kelly"] = Field(
+        default="fixed_fraction",
+        description=(
+            "Position sizing method. fixed_fraction uses desired_risk_pct; "
+            "kelly uses win-rate and average win/loss inputs to derive risk."
+        ),
+    )
+    kelly_metrics: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description=(
+            "Optional metrics dict containing win_rate, avg_win_return, and "
+            "avg_loss_return. Explicit kelly_* fields override this dict."
+        ),
+    )
+    kelly_win_rate: Optional[float] = Field(
+        default=None,
+        description="Kelly win probability as a fraction in [0, 1].",
+    )
+    kelly_avg_win: Optional[float] = Field(
+        default=None,
+        description="Average winning return for Kelly sizing.",
+    )
+    kelly_avg_loss: Optional[float] = Field(
+        default=None,
+        description="Average losing return magnitude for Kelly sizing.",
+    )
+    kelly_fraction_multiplier: float = Field(
+        default=0.5,
+        ge=0.0,
+        description="Multiplier applied to the raw Kelly fraction; half-Kelly is 0.5.",
+    )
+    kelly_max_risk_pct: float = Field(
+        default=2.0,
+        gt=0.0,
+        description="Maximum account risk percentage allowed for Kelly sizing.",
+    )
     strict_risk: bool = Field(
         default=True,
         description=(

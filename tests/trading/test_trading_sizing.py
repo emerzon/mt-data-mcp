@@ -213,3 +213,70 @@ def test_exact_fx_step_volume_is_not_lost_to_float_underflow():
     assert meta["suggested_volume"] == 0.2
     assert meta["actual_risk_pct"] == pytest.approx(1.0, abs=0.0001)
     assert meta["risk_over_target"] is False
+
+
+# ---------------------------------------------------------------------------
+# Kelly sizing
+# ---------------------------------------------------------------------------
+
+def test_kelly_sizing_uses_default_cap_when_no_desired_risk_pct():
+    params = _base_params(
+        sizing_method="kelly",
+        kelly_win_rate=0.55,
+        kelly_avg_win=0.02,
+        kelly_avg_loss=0.01,
+    )
+    params.pop("risk_pct")
+
+    vol, meta = compute_risk_based_volume(**params)
+
+    assert vol == 0.4
+    assert meta["sizing_method"] == "kelly"
+    assert meta["requested_risk_pct"] == 2.0
+    assert meta["actual_risk_pct"] == pytest.approx(2.0, abs=0.0001)
+    assert meta["kelly"]["kelly_fraction"] == pytest.approx(0.325)
+    assert meta["kelly"]["effective_risk_pct"] == 2.0
+
+
+def test_kelly_sizing_honors_desired_risk_pct_as_cap():
+    vol, meta = compute_risk_based_volume(**_base_params(
+        risk_pct=1.0,
+        sizing_method="kelly",
+        kelly_win_rate=0.55,
+        kelly_avg_win=0.02,
+        kelly_avg_loss=0.01,
+    ))
+
+    assert vol == 0.2
+    assert meta["requested_risk_pct"] == 1.0
+    assert meta["kelly"]["cap_risk_pct"] == 1.0
+    assert meta["kelly"]["effective_risk_pct"] == 1.0
+
+
+def test_kelly_no_edge_returns_zero_volume_without_error():
+    vol, meta = compute_risk_based_volume(**_base_params(
+        risk_pct=None,
+        sizing_method="kelly",
+        kelly_win_rate=0.4,
+        kelly_avg_win=0.01,
+        kelly_avg_loss=0.01,
+    ))
+
+    assert vol == 0.0
+    assert meta["status"] == "kelly_no_edge"
+    assert meta["suggested_volume"] == 0.0
+    assert meta["risk_compliance"] == "kelly_no_positive_edge"
+    assert meta["volume_rounding"] == "kelly_no_edge"
+    assert "error" not in meta
+
+
+def test_kelly_sizing_rejects_missing_inputs():
+    vol, meta = compute_risk_based_volume(**_base_params(
+        risk_pct=None,
+        sizing_method="kelly",
+        kelly_win_rate=0.55,
+        kelly_avg_win=0.02,
+    ))
+
+    assert vol is None
+    assert "kelly_avg_loss" in meta["error"]

@@ -194,6 +194,11 @@ _TRADE_BACKTEST_UNITS = {
     "avg_return_pct": "percentage_points",
     "avg_return_per_trade": "return_fraction",
     "avg_return_per_trade_pct": "percentage_points",
+    "avg_win_return": "return_fraction",
+    "avg_win_return_pct": "percentage_points",
+    "avg_loss_return": "absolute_return_fraction",
+    "avg_loss_return_pct": "percentage_points",
+    "avg_win_loss_ratio": "ratio",
     "drawdown": "return_fraction",
     "max_drawdown": "return_fraction",
     "max_drawdown_pct": "percentage_points",
@@ -201,6 +206,8 @@ _TRADE_BACKTEST_UNITS = {
     "annual_return_pct": "percentage_points",
     "win_rate": "fraction",
     "win_rate_pct": "percentage_points",
+    "kelly_fraction": "fraction",
+    "half_kelly_fraction": "fraction",
     "avg_directional_accuracy": "fraction",
     "directional_calls_made": "count",
     "directional_opportunities": "count",
@@ -285,6 +292,27 @@ def _compute_performance_metrics(
     losing_trades = int(np.sum(arr < 0.0))
     breakeven_trades = int(arr.size - winning_trades - losing_trades)
     win_rate = float(np.mean(arr > 0.0)) if arr.size > 0 else float('nan')
+    win_returns = arr[arr > 0.0]
+    loss_returns = np.abs(arr[arr < 0.0])
+    avg_win_return = (
+        float(np.mean(win_returns)) if win_returns.size > 0 else float("nan")
+    )
+    avg_loss_return = (
+        float(np.mean(loss_returns)) if loss_returns.size > 0 else float("nan")
+    )
+    avg_win_loss_ratio = float("nan")
+    kelly_fraction = float("nan")
+    half_kelly_fraction = float("nan")
+    if (
+        math.isfinite(avg_win_return)
+        and avg_win_return > 0
+        and math.isfinite(avg_loss_return)
+        and avg_loss_return > 0
+        and math.isfinite(win_rate)
+    ):
+        avg_win_loss_ratio = float(avg_win_return / avg_loss_return)
+        kelly_fraction = float(win_rate - ((1.0 - win_rate) / avg_win_loss_ratio))
+        half_kelly_fraction = float(kelly_fraction * 0.5)
     std_ret = float(np.std(arr, ddof=1)) if arr.size > 1 else 0.0
     enough_trades = int(arr.size) >= int(_MIN_ANNUALIZATION_TRADES)
     sharpe = float('nan')
@@ -332,6 +360,11 @@ def _compute_performance_metrics(
         "avg_return_per_trade": avg_return,
         "win_rate": float(round(win_rate_value, 4)) if win_rate_value is not None else None,
         "win_rate_pct": win_rate_pct,
+        "avg_win_return": _finite_or_none(avg_win_return),
+        "avg_loss_return": _finite_or_none(avg_loss_return),
+        "avg_win_loss_ratio": _finite_or_none(avg_win_loss_ratio),
+        "kelly_fraction": _finite_or_none(kelly_fraction),
+        "half_kelly_fraction": _finite_or_none(half_kelly_fraction),
         "sharpe_ratio": _finite_or_none(sharpe),
         "max_drawdown": max_drawdown,
         "calmar_ratio": _finite_or_none(calmar),
@@ -343,7 +376,13 @@ def _compute_performance_metrics(
         "breakeven_trades": breakeven_trades,
         "slippage_bps": float(slippage_bps),
     })
-    for source_key in ("avg_return_per_trade", "max_drawdown", "annual_return"):
+    for source_key in (
+        "avg_return_per_trade",
+        "avg_win_return",
+        "avg_loss_return",
+        "max_drawdown",
+        "annual_return",
+    ):
         source_value = metrics.get(source_key)
         if source_value is None:
             continue

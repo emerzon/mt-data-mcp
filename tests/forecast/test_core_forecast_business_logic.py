@@ -729,6 +729,41 @@ def test_run_forecast_backtest_strips_per_anchor_details_in_compact_mode():
     assert "metrics" not in result["ranked_methods"][0]
 
 
+def test_run_forecast_backtest_compact_keeps_kelly_metrics():
+    def fake_backtest_impl(**kwargs):
+        return {
+            "success": True,
+            "results": {
+                "theta": {
+                    "success": True,
+                    "avg_mae": 1.0,
+                    "metrics": {
+                        "win_rate": 0.5,
+                        "avg_win_return": 0.03000001,
+                        "avg_loss_return": 0.01500001,
+                        "avg_win_loss_ratio": 1.999998,
+                        "kelly_fraction": 0.249999,
+                        "half_kelly_fraction": 0.124999,
+                        "trades_observed": 4,
+                    },
+                    "details": [{"anchor": "2026-01-01 00:00", "success": True}],
+                }
+            },
+        }
+
+    result = forecast_use_cases.run_forecast_backtest(
+        ForecastBacktestRequest(symbol="EURUSD", detail="compact"),
+        backtest_impl=fake_backtest_impl,
+    )
+
+    row = result["ranked_methods"][0]
+    assert row["avg_win_return"] == 0.03
+    assert row["avg_loss_return"] == 0.015
+    assert row["avg_win_loss_ratio"] == 2.0
+    assert row["kelly_fraction"] == 0.25
+    assert row["half_kelly_fraction"] == 0.125
+
+
 def test_run_forecast_backtest_omits_trade_metrics_when_unavailable():
     def fake_backtest_impl(**kwargs):
         return {

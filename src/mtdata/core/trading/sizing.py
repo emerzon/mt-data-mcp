@@ -10,6 +10,9 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List, Optional, Tuple
 
+DEFAULT_KELLY_FRACTION_MULTIPLIER = 0.5
+DEFAULT_KELLY_MAX_RISK_PCT = 2.0
+
 
 def _floor_volume_steps(raw: float, step: float) -> int:
     """Floor to nearest volume step count."""
@@ -48,10 +51,103 @@ def _resolve_risk_tick_value(
     return float(tick_value)
 
 
-def compute_risk_based_volume(
+def _finite_float(value: Any) -> Optional[float]:
+    try:
+        value_f = float(value)
+    except Exception:
+        return None
+    if not math.isfinite(value_f):
+        return None
+    return value_f
+
+
+def compute_kelly_sizing_context(
+    *,
+    win_rate: Any,
+    avg_win: Any,
+    avg_loss: Any,
+    fraction_multiplier: Any = DEFAULT_KELLY_FRACTION_MULTIPLIER,
+    max_risk_pct: Any = DEFAULT_KELLY_MAX_RISK_PCT,
+    desired_risk_pct: Any = None,
+    source: Optional[str] = None,
+) -> Tuple[Optional[float], Dict[str, Any]]:
+    """Compute the effective risk percent implied by Kelly inputs.
+
+    Returns ``(effective_risk_pct, metadata)``. Non-positive Kelly edge is a
+    valid outcome and returns ``0.0`` with ``status="kelly_no_edge"``.
+    """
+    errors: List[str] = []
+    win_rate_f = _finite_float(win_rate)
+    avg_win_f = _finite_float(avg_win)
+    avg_loss_f = _finite_float(avg_loss)
+    multiplier_f = _finite_float(fraction_multiplier)
+    max_risk_pct_f = _finite_float(max_risk_pct)
+    desired_risk_pct_f = _finite_float(desired_risk_pct)
+
+    if win_rate_f is None or not 0.0 <= win_rate_f <= 1.0:
+        errors.append("kelly_win_rate must be finite and between 0 and 1.")
+    if avg_win_f is None or avg_win_f <= 0:
+        errors.append("kelly_avg_win must be positive and finite.")
+    if avg_loss_f is None or avg_loss_f == 0:
+        errors.append("kelly_avg_loss must be non-zero and finite.")
+    if multiplier_f is None or multiplier_f < 0:
+        errors.append("kelly_fraction_multiplier must be non-negative and finite.")
+    if max_risk_pct_f is None or max_risk_pct_f <= 0:
+        errors.append("kelly_max_risk_pct must be positive and finite.")
+    if desired_risk_pct is not None and (
+        desired_risk_pct_f is None or desired_risk_pct_f <= 0
+    ):
+        errors.append("desired_risk_pct must be positive and finite when supplied.")
+    if errors:
+        return None, {"error": "; ".join(errors)}
+
+    loss_magnitude = abs(float(avg_loss_f))
+    if loss_magnitude <= 0:
+        return None, {"error": "kelly_avg_loss must be non-zero and finite."}
+
+    odds = float(avg_win_f) / loss_magnitude
+    if not math.isfinite(odds) or odds <= 0:
+        return None, {"error": "Kelly odds must be positive and finite."}
+
+    probability = float(win_rate_f)
+    loss_probability = 1.0 - probability
+    kelly_fraction = probability - (loss_probability / odds)
+    half_kelly_fraction = kelly_fraction * 0.5
+    applied_fraction = kelly_fraction * float(multiplier_f)
+    uncapped_risk_pct = max(0.0, applied_fraction * 100.0)
+    cap_risk_pct = float(max_risk_pct_f)
+    if desired_risk_pct_f is not None:
+        cap_risk_pct = min(cap_risk_pct, float(desired_risk_pct_f))
+    effective_risk_pct = min(uncapped_risk_pct, cap_risk_pct)
+
+    context: Dict[str, Any] = {
+        "win_rate": probability,
+        "avg_win_return": float(avg_win_f),
+        "avg_loss_return": loss_magnitude,
+        "avg_win_loss_ratio": odds,
+        "kelly_fraction": kelly_fraction,
+        "half_kelly_fraction": half_kelly_fraction,
+        "kelly_fraction_multiplier": float(multiplier_f),
+        "applied_kelly_fraction": applied_fraction,
+        "uncapped_risk_pct": uncapped_risk_pct,
+        "cap_risk_pct": cap_risk_pct,
+        "effective_risk_pct": effective_risk_pct,
+    }
+    if source:
+        context["source"] = source
+    if desired_risk_pct_f is not None:
+        context["desired_risk_pct_cap"] = float(desired_risk_pct_f)
+    if kelly_fraction <= 0.0 or effective_risk_pct <= 0.0:
+        context["status"] = "kelly_no_edge"
+        context["effective_risk_pct"] = 0.0
+        return 0.0, context
+    return effective_risk_pct, context
+
+
+def compute_risk_based_volume(  # noqa: C901
     *,
     equity: float,
-    risk_pct: float,
+    risk_pct: Optional[float] = None,
     entry_price: float,
     stop_loss_price: float,
     direction: str,
@@ -62,6 +158,13 @@ def compute_risk_based_volume(
     volume_max: float,
     volume_step: float,
     strict_risk: bool = True,
+    sizing_method: str = "fixed_fraction",
+    kelly_win_rate: Optional[float] = None,
+    kelly_avg_win: Optional[float] = None,
+    kelly_avg_loss: Optional[float] = None,
+    kelly_fraction_multiplier: float = DEFAULT_KELLY_FRACTION_MULTIPLIER,
+    kelly_max_risk_pct: float = DEFAULT_KELLY_MAX_RISK_PCT,
+    kelly_source: Optional[str] = None,
 ) -> Tuple[Optional[float], Dict[str, Any]]:
     """Compute position volume from risk parameters.
 
@@ -76,7 +179,13 @@ def compute_risk_based_volume(
 
     if not math.isfinite(equity) or equity <= 0:
         errors.append("Equity must be positive and finite.")
-    if not math.isfinite(risk_pct) or risk_pct <= 0:
+    method = str(sizing_method or "fixed_fraction").strip().lower()
+    if method not in {"fixed_fraction", "kelly"}:
+        errors.append("sizing_method must be 'fixed_fraction' or 'kelly'.")
+    risk_pct_value = _finite_float(risk_pct)
+    if method == "fixed_fraction" and (
+        risk_pct_value is None or risk_pct_value <= 0
+    ):
         errors.append("risk_pct must be positive and finite.")
     if not math.isfinite(entry_price):
         errors.append("entry_price must be finite.")
@@ -90,8 +199,6 @@ def compute_risk_based_volume(
     if errors:
         return None, {"error": "; ".join(errors)}
 
-    risk_amount = equity * (risk_pct / 100.0)
-
     if direction.lower() == "long":
         sl_distance_ticks = (entry_price - stop_loss_price) / tick_size
     else:
@@ -102,6 +209,50 @@ def compute_risk_based_volume(
             "error": "Stop-loss distance must be positive (wrong side of entry?).",
             "sl_distance_ticks": round(sl_distance_ticks, 4),
         }
+
+    kelly_context: Optional[Dict[str, Any]] = None
+    if method == "kelly":
+        effective_risk_pct, kelly_context = compute_kelly_sizing_context(
+            win_rate=kelly_win_rate,
+            avg_win=kelly_avg_win,
+            avg_loss=kelly_avg_loss,
+            fraction_multiplier=kelly_fraction_multiplier,
+            max_risk_pct=kelly_max_risk_pct,
+            desired_risk_pct=risk_pct,
+            source=kelly_source,
+        )
+        if effective_risk_pct is None:
+            return None, kelly_context
+        if effective_risk_pct <= 0.0:
+            return 0.0, {
+                "status": "kelly_no_edge",
+                "strict_risk": bool(strict_risk),
+                "suggested_volume": 0.0,
+                "raw_volume": 0.0,
+                "risk_amount": 0.0,
+                "actual_risk": 0.0,
+                "actual_risk_pct": 0.0,
+                "requested_risk_pct": 0.0,
+                "risk_pct_diff": 0.0,
+                "risk_over_target": False,
+                "risk_compliance": "kelly_no_positive_edge",
+                "risk_overshoot_pct": 0.0,
+                "risk_overshoot_currency": 0.0,
+                "risk_over_target_reason": None,
+                "sl_distance_ticks": round(sl_distance_ticks, 4),
+                "risk_tick_value": round(risk_tick_value, 8),
+                "volume_rounding": "kelly_no_edge",
+                "notes": [
+                    "Kelly sizing produced no positive edge; suggested volume is 0.0."
+                ],
+                "sizing_method": method,
+                "kelly": kelly_context,
+            }
+        requested_risk_pct = float(effective_risk_pct)
+    else:
+        requested_risk_pct = float(risk_pct_value)
+
+    risk_amount = equity * (requested_risk_pct / 100.0)
 
     raw_volume = risk_amount / (sl_distance_ticks * risk_tick_value)
     if not math.isfinite(raw_volume) or raw_volume <= 0:
@@ -135,7 +286,6 @@ def compute_risk_based_volume(
 
     actual_risk = sl_distance_ticks * risk_tick_value * suggested
     actual_risk_pct = (actual_risk / equity) * 100.0
-    requested_risk_pct = float(risk_pct)
     risk_pct_diff = actual_risk_pct - requested_risk_pct
     risk_over_target = actual_risk_pct > (requested_risk_pct + 1e-9)
     overshoot_pct = max(0.0, actual_risk_pct - requested_risk_pct)
@@ -207,6 +357,9 @@ def compute_risk_based_volume(
         "volume_rounding": rounding_mode,
         "notes": notes,
     }
+    if method == "kelly":
+        meta["sizing_method"] = method
+        meta["kelly"] = kelly_context
     if strict_risk_blocked:
         meta.update(
             {

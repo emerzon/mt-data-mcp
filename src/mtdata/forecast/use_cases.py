@@ -58,6 +58,9 @@ _TUNING_METRICS = frozenset(
         "calmar_ratio",
         "annual_return",
         "avg_return_per_trade",
+        "avg_win_loss_ratio",
+        "kelly_fraction",
+        "half_kelly_fraction",
     }
 )
 _VOLATILITY_PROXY_METHODS = {"arima", "sarima", "ets", "theta"}
@@ -1290,6 +1293,13 @@ def _compact_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:
         "avg_return_pct": 4,
         "avg_return_per_trade": 6,
         "avg_return_per_trade_pct": 4,
+        "avg_win_return": 6,
+        "avg_win_return_pct": 4,
+        "avg_loss_return": 6,
+        "avg_loss_return_pct": 4,
+        "avg_win_loss_ratio": 4,
+        "kelly_fraction": 4,
+        "half_kelly_fraction": 4,
         "annual_return_pct": 4,
     }
 
@@ -1364,6 +1374,13 @@ def _compact_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:
                 "avg_return_pct",
                 "avg_return_per_trade",
                 "avg_return_per_trade_pct",
+                "avg_win_return",
+                "avg_win_return_pct",
+                "avg_loss_return",
+                "avg_loss_return_pct",
+                "avg_win_loss_ratio",
+                "kelly_fraction",
+                "half_kelly_fraction",
                 "annual_return_pct",
                 "trades_observed",
             ):

@@ -20,18 +20,21 @@ def trade_risk_analyze(request: TradeRiskAnalyzeRequest) -> dict:
 
     Use this for symbol-level trade planning: current exposure, stop-loss risk,
     reward/risk, and optional lot sizing from `desired_risk_pct`, `stop_loss`,
-    and an optional `entry`. When entry is omitted with symbol and stop_loss,
-    it defaults to the live tick price: ask for long, bid for short, or mid
-    when direction is omitted. It is not a portfolio tail-risk model; use
-    `trade_var_cvar_calculate` for VaR/CVaR across open positions.
+    and an optional `entry`. With `sizing_method="kelly"`, win rate and average
+    win/loss metrics derive the risk percentage before broker volume rounding.
+    When entry is omitted with symbol and stop_loss, it defaults to the live
+    tick price: ask for long, bid for short, or mid when direction is omitted.
+    It is not a portfolio tail-risk model; use `trade_var_cvar_calculate` for
+    VaR/CVaR across open positions.
     Compact detail keeps the sizing decision fields; full detail includes
     broker volume rounding diagnostics and incomplete-sizing context.
 
     When sizing a proposed trade, pass direction='long' or direction='short' to
     validate that proposed SL/TP are on the correct side of the entry. New-trade
-    sizing is opt-in: provide desired_risk_pct and stop_loss to calculate lot
-    size. strict_risk=True blocks positive suggested volume when broker minimum
-    volume would exceed the requested risk.
+    sizing is opt-in: fixed_fraction requires desired_risk_pct and stop_loss;
+    Kelly requires sizing_method="kelly", stop_loss, and Kelly win/loss inputs.
+    strict_risk=True blocks positive suggested volume when broker minimum volume
+    would exceed the requested risk.
     """
     return run_logged_operation(
         logger,

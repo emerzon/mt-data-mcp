@@ -6,6 +6,8 @@ from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from mtdata.core.trading import risk as core_trading_risk
 from mtdata.core.trading import trade_risk_analyze as _trade_risk_analyze_tool
 from mtdata.core.trading.requests import TradeRiskAnalyzeRequest
@@ -155,6 +157,92 @@ def test_trade_risk_analyze_compact_position_sizing_keeps_decision_fields() -> N
         "tp": 116.0,
         "rr_ratio": 2.0,
     }
+
+
+def test_trade_risk_analyze_kelly_sizes_from_flat_metrics() -> None:
+    mt5 = MagicMock()
+    mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
+    mt5.positions_get.return_value = []
+    mt5.symbol_info.return_value = _make_symbol_info()
+
+    with _patched_mt5_module(mt5):
+        out = trade_risk_analyze(
+            symbol="EURUSD",
+            sizing_method="kelly",
+            direction="long",
+            entry=100.0,
+            stop_loss=92.0,
+            take_profit=116.0,
+            kelly_win_rate=0.55,
+            kelly_avg_win=0.02,
+            kelly_avg_loss=0.01,
+        )
+
+    sizing = out["position_sizing"]
+    assert sizing["sizing_method"] == "kelly"
+    assert sizing["suggested_volume"] == 2.5
+    assert sizing["risk_currency"] == 20.0
+    assert sizing["risk_pct"] == 2.0
+    assert sizing["risk_compliance"] == "within_requested_risk"
+    assert sizing["rr_ratio"] == 2.0
+    assert sizing["kelly"]["source"] == "flat_fields"
+    assert sizing["kelly"]["kelly_fraction"] == pytest.approx(0.325)
+    assert sizing["kelly"]["effective_risk_pct"] == 2.0
+
+
+def test_trade_risk_analyze_kelly_honors_desired_risk_cap_from_metrics_dict() -> None:
+    mt5 = MagicMock()
+    mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
+    mt5.positions_get.return_value = []
+    mt5.symbol_info.return_value = _make_symbol_info()
+
+    with _patched_mt5_module(mt5):
+        out = trade_risk_analyze(
+            symbol="EURUSD",
+            sizing_method="kelly",
+            desired_risk_pct=1.0,
+            entry=100.0,
+            stop_loss=92.0,
+            kelly_metrics={
+                "win_rate": 0.55,
+                "avg_win_return": 0.02,
+                "avg_loss_return": 0.01,
+            },
+        )
+
+    sizing = out["position_sizing"]
+    assert sizing["suggested_volume"] == 1.2
+    assert sizing["risk_currency"] == 9.6
+    assert sizing["risk_pct"] == 0.96
+    assert sizing["kelly"]["source"] == "kelly_metrics"
+    assert sizing["kelly"]["cap_risk_pct"] == 1.0
+    assert sizing["kelly"]["effective_risk_pct"] == 1.0
+
+
+def test_trade_risk_analyze_kelly_no_edge_returns_zero_volume() -> None:
+    mt5 = MagicMock()
+    mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
+    mt5.positions_get.return_value = []
+    mt5.symbol_info.return_value = _make_symbol_info()
+
+    with _patched_mt5_module(mt5):
+        out = trade_risk_analyze(
+            symbol="EURUSD",
+            sizing_method="kelly",
+            entry=100.0,
+            stop_loss=92.0,
+            kelly_win_rate=0.4,
+            kelly_avg_win=0.01,
+            kelly_avg_loss=0.01,
+        )
+
+    sizing = out["position_sizing"]
+    assert sizing["status"] == "kelly_no_edge"
+    assert sizing["suggested_volume"] == 0.0
+    assert sizing["risk_currency"] == 0.0
+    assert sizing["risk_pct"] == 0.0
+    assert sizing["risk_compliance"] == "kelly_no_positive_edge"
+    assert sizing["kelly"]["status"] == "kelly_no_edge"
 
 
 def test_trade_risk_analyze_compact_keeps_blocked_sizing_context() -> None:

@@ -41,7 +41,7 @@ from .requests import (
     TradeVarCvarRequest,
 )
 from .safety import evaluate_trade_guardrails, preview_trade_guardrails
-from .sizing import _resolve_risk_tick_value
+from .sizing import _resolve_risk_tick_value, compute_kelly_sizing_context
 
 logger = logging.getLogger(__name__)
 _DEFAULT_TRADE_HISTORY_LOOKBACK_DAYS = 7
@@ -524,20 +524,11 @@ def _build_trade_evaluation(
 
 _COMPACT_POSITION_SIZING_FIELDS = (
     "status",
+    "sizing_method",
     "suggested_volume",
-    "volume_lots",
     "risk_currency",
-    "risk_amount_account_currency",
     "risk_pct",
     "risk_compliance",
-    "risk_mode",
-    "nearest_viable",
-    "volume_step",
-    "volume_rounding",
-    "sizing_notes",
-    "units",
-    "sizing_context",
-    "margin_impact",
     "min_viable_volume",
     "min_viable_risk_currency",
     "min_viable_risk_pct",
@@ -546,6 +537,7 @@ _COMPACT_POSITION_SIZING_FIELDS = (
     "sl",
     "tp",
     "rr_ratio",
+    "kelly",
 )
 
 
@@ -588,7 +580,101 @@ def _trade_risk_sizing_field_label(field_name: str) -> str:
         "desired_risk_pct": "--desired-risk-pct",
         "entry": "--entry",
         "stop_loss": "--stop-loss",
+        "kelly_win_rate": "--kelly-win-rate",
+        "kelly_avg_win": "--kelly-avg-win",
+        "kelly_avg_loss": "--kelly-avg-loss",
     }.get(field_name, field_name)
+
+
+def _normalize_trade_risk_sizing_method(
+    value: Any,
+) -> tuple[Optional[str], Optional[str]]:
+    method = str(value or "fixed_fraction").strip().lower().replace("-", "_")
+    if method in {"fixed", "fixed_fraction"}:
+        return "fixed_fraction", None
+    if method == "kelly":
+        return "kelly", None
+    return None, "Invalid sizing_method. Valid options: fixed_fraction, kelly"
+
+
+def _metric_value_from_aliases(
+    payload: Dict[str, Any],
+    aliases: tuple[str, ...],
+) -> Any:
+    for alias in aliases:
+        if alias in payload and payload[alias] is not None:
+            return payload[alias]
+    return None
+
+
+def _extract_trade_risk_kelly_inputs(
+    request: TradeRiskAnalyzeRequest,
+) -> tuple[Dict[str, Any], List[str], Optional[str]]:
+    metrics = (
+        request.kelly_metrics
+        if isinstance(getattr(request, "kelly_metrics", None), dict)
+        else {}
+    )
+    inputs: Dict[str, Any] = {
+        "win_rate": _metric_value_from_aliases(
+            metrics,
+            (
+                "kelly_win_rate",
+                "win_rate",
+                "win_probability",
+                "probability",
+                "p",
+            ),
+        ),
+        "avg_win": _metric_value_from_aliases(
+            metrics,
+            (
+                "kelly_avg_win",
+                "avg_win_return",
+                "avg_win",
+                "average_win",
+                "mean_win_return",
+            ),
+        ),
+        "avg_loss": _metric_value_from_aliases(
+            metrics,
+            (
+                "kelly_avg_loss",
+                "avg_loss_return",
+                "avg_loss",
+                "average_loss",
+                "mean_loss_return",
+                "avg_loss_magnitude",
+            ),
+        ),
+    }
+    source = "kelly_metrics" if metrics else None
+    flat_overrides = False
+    if request.kelly_win_rate is not None:
+        inputs["win_rate"] = request.kelly_win_rate
+        flat_overrides = True
+    if request.kelly_avg_win is not None:
+        inputs["avg_win"] = request.kelly_avg_win
+        flat_overrides = True
+    if request.kelly_avg_loss is not None:
+        inputs["avg_loss"] = request.kelly_avg_loss
+        flat_overrides = True
+    if flat_overrides:
+        source = (
+            "flat_fields_overrode_kelly_metrics"
+            if metrics
+            else "flat_fields"
+        )
+    missing = [
+        field_name
+        for field_name, value in (
+            ("kelly_win_rate", inputs.get("win_rate")),
+            ("kelly_avg_win", inputs.get("avg_win")),
+            ("kelly_avg_loss", inputs.get("avg_loss")),
+        )
+        if value is None
+    ]
+    return inputs, missing, source
 
 
 def _floor_volume_steps(raw_volume: float, volume_step: float) -> int:
@@ -2930,78 +3016,132 @@ def run_trade_risk_analyze(  # noqa: C901
                     entry_source=entry_source,
                 )
 
-            position_sizing_missing = [
-                field_name
-                for field_name, value in (
-                    ("desired_risk_pct", request.desired_risk_pct),
+            sizing_method, sizing_method_error = _normalize_trade_risk_sizing_method(
+                getattr(request, "sizing_method", "fixed_fraction")
+            )
+            kelly_inputs, kelly_missing, kelly_source = (
+                _extract_trade_risk_kelly_inputs(request)
+                if sizing_method == "kelly"
+                else ({}, [], None)
+            )
+            if sizing_method_error:
+                result["position_sizing_error"] = sizing_method_error
+            else:
+                required_pairs: List[tuple[str, Any]] = [
                     ("entry", request.entry),
                     ("stop_loss", request.stop_loss),
-                )
-                if value is None
-            ]
-            if position_sizing_missing:
-                position_sizing_provided = [
+                ]
+                if sizing_method == "kelly":
+                    required_pairs.extend(
+                        (
+                            ("kelly_win_rate", kelly_inputs.get("win_rate")),
+                            ("kelly_avg_win", kelly_inputs.get("avg_win")),
+                            ("kelly_avg_loss", kelly_inputs.get("avg_loss")),
+                        )
+                    )
+                else:
+                    required_pairs.insert(
+                        0,
+                        ("desired_risk_pct", request.desired_risk_pct),
+                    )
+                position_sizing_missing = [
                     field_name
-                    for field_name, value in (
+                    for field_name, value in required_pairs
+                    if value is None
+                ]
+                if position_sizing_missing:
+                    provided_pairs: List[tuple[str, Any]] = [
                         ("desired_risk_pct", request.desired_risk_pct),
                         ("entry", request.entry),
                         ("stop_loss", request.stop_loss),
+                        ("kelly_win_rate", kelly_inputs.get("win_rate")),
+                        ("kelly_avg_win", kelly_inputs.get("avg_win")),
+                        ("kelly_avg_loss", kelly_inputs.get("avg_loss")),
+                    ]
+                    position_sizing_provided = [
+                        field_name
+                        for field_name, value in provided_pairs
+                        if value is not None
+                    ]
+                    _missing_msg = (
+                        "Portfolio risk analysis completed. Position sizing is "
+                        "available when you provide "
+                        + _human_join(
+                            [
+                                _trade_risk_sizing_field_label(field_name)
+                                for field_name in position_sizing_missing
+                            ]
+                        )
+                        + "."
                     )
-                    if value is not None
-                ]
-                _missing_msg = (
-                    "Portfolio risk analysis completed. Position sizing is "
-                    "available when you provide "
-                    + _human_join(
-                        [
-                            _trade_risk_sizing_field_label(field_name)
-                            for field_name in position_sizing_missing
-                        ]
-                    )
-                    + "."
-                )
-                position_sizing: Dict[str, Any] = {
-                    "status": "parameters_missing",
-                    "message": _missing_msg,
-                    "missing": position_sizing_missing,
-                    "required_for_sizing": [
-                        "desired_risk_pct",
-                        "entry",
-                        "stop_loss",
-                    ],
-                    "note": (
-                        "Add --desired-risk-pct to specify how much equity to risk "
-                        "on the proposed trade."
-                    ),
-                }
-                if position_sizing_provided:
-                    position_sizing.update(
-                        {
-                            "provided": position_sizing_provided,
-                            "proposed_trade_context": {
-                                key: value
-                                for key, value in (
-                                    ("desired_risk_pct", request.desired_risk_pct),
-                                    ("entry", request.entry),
-                                    ("stop_loss", request.stop_loss),
-                                    ("take_profit", request.take_profit),
-                                    ("direction", request.direction),
-                                )
-                                if value is not None
-                            },
-                            "sizing_not_calculated_reason": (
-                                "Position sizing requires --desired-risk-pct, "
-                                "--entry, and --stop-loss."
-                            ),
+                    required_for_sizing = [field_name for field_name, _ in required_pairs]
+                    position_sizing: Dict[str, Any] = {
+                        "status": "parameters_missing",
+                        "message": _missing_msg,
+                        "missing": position_sizing_missing,
+                        "required_for_sizing": required_for_sizing,
+                        "note": (
+                            "Add --desired-risk-pct to specify how much equity to risk "
+                            "on the proposed trade."
+                        )
+                        if sizing_method == "fixed_fraction"
+                        else (
+                            "Kelly sizing needs win rate and average win/loss "
+                            "returns; desired_risk_pct is optional and acts as a cap."
+                        ),
+                    }
+                    if sizing_method == "kelly":
+                        position_sizing["sizing_method"] = sizing_method
+                    if position_sizing_provided:
+                        proposed_context = {
+                            key: value
+                            for key, value in (
+                                ("desired_risk_pct", request.desired_risk_pct),
+                                ("entry", request.entry),
+                                ("stop_loss", request.stop_loss),
+                                ("take_profit", request.take_profit),
+                                ("direction", request.direction),
+                                ("kelly_win_rate", kelly_inputs.get("win_rate")),
+                                ("kelly_avg_win", kelly_inputs.get("avg_win")),
+                                ("kelly_avg_loss", kelly_inputs.get("avg_loss")),
+                                ("kelly_source", kelly_source),
+                            )
+                            if value is not None
                         }
-                    )
-                result["position_sizing"] = position_sizing
+                        position_sizing.update(
+                            {
+                                "provided": position_sizing_provided,
+                                "proposed_trade_context": proposed_context,
+                                "sizing_not_calculated_reason": (
+                                    "Position sizing requires "
+                                    + _human_join(
+                                        [
+                                            _trade_risk_sizing_field_label(field_name)
+                                            for field_name in position_sizing_missing
+                                        ]
+                                    )
+                                    + "."
+                                ),
+                            }
+                        )
+                    result["position_sizing"] = position_sizing
 
-            if (
-                request.desired_risk_pct is not None
+            sizing_ready = bool(
+                sizing_method_error is None
                 and request.entry is not None
                 and request.stop_loss is not None
-            ):
+                and (
+                    (
+                        sizing_method == "fixed_fraction"
+                        and request.desired_risk_pct is not None
+                    )
+                    or (
+                        sizing_method == "kelly"
+                        and not kelly_missing
+                    )
+                )
+            )
+            if sizing_ready:
                 if not request.symbol:
                     return {"error": "symbol is required for position sizing"}
 
@@ -3067,7 +3207,6 @@ def run_trade_risk_analyze(  # noqa: C901
                     result["position_sizing_error"] = level_error
                     return result
 
-                risk_amount = equity * (request.desired_risk_pct / 100.0)
                 if direction_norm == "long":
                     sl_distance_ticks = (
                         request.entry - request.stop_loss
@@ -3077,6 +3216,99 @@ def run_trade_risk_analyze(  # noqa: C901
                         request.stop_loss - request.entry
                     ) / tick_size
                 if sl_distance_ticks > 0:
+                    kelly_context = None
+                    if sizing_method == "kelly":
+                        effective_risk_pct_raw, kelly_context = (
+                            compute_kelly_sizing_context(
+                                win_rate=kelly_inputs.get("win_rate"),
+                                avg_win=kelly_inputs.get("avg_win"),
+                                avg_loss=kelly_inputs.get("avg_loss"),
+                                fraction_multiplier=(
+                                    request.kelly_fraction_multiplier
+                                ),
+                                max_risk_pct=request.kelly_max_risk_pct,
+                                desired_risk_pct=request.desired_risk_pct,
+                                source=kelly_source,
+                            )
+                        )
+                        if effective_risk_pct_raw is None:
+                            result["position_sizing_error"] = (
+                                kelly_context.get("error")
+                                if isinstance(kelly_context, dict)
+                                else "Invalid Kelly sizing inputs"
+                            )
+                            return result
+                        effective_risk_pct = float(effective_risk_pct_raw)
+                    else:
+                        effective_risk_pct = float(request.desired_risk_pct)
+
+                    if sizing_method == "kelly" and effective_risk_pct <= 0.0:
+                        result["position_sizing"] = {
+                            "symbol": request.symbol,
+                            "direction": direction_norm,
+                            "direction_source": direction_source,
+                            "status": "kelly_no_edge",
+                            "sizing_method": "kelly",
+                            "suggested_volume": 0.0,
+                            "volume_lots": 0.0,
+                            "requested_risk_currency": 0.0,
+                            "risk_amount_account_currency": 0.0,
+                            "requested_risk_pct": 0.0,
+                            "strict_risk": bool(
+                                getattr(request, "strict_risk", True)
+                            ),
+                            "risk_mode": "strict"
+                            if bool(getattr(request, "strict_risk", True))
+                            else "flexible",
+                            "entry": request.entry,
+                            **(
+                                {"entry_source": entry_source}
+                                if entry_source
+                                else {}
+                            ),
+                            "sl": request.stop_loss,
+                            "tp": request.take_profit,
+                            "risk_currency": 0.0,
+                            "risk_pct": 0.0,
+                            "risk_pct_diff": 0.0,
+                            "risk_over_target": False,
+                            "risk_compliance": "kelly_no_positive_edge",
+                            "risk_overshoot_pct": 0.0,
+                            "risk_overshoot_currency": 0.0,
+                            "raw_volume": 0.0,
+                            "volume_step": volume_step,
+                            "volume_min": min_volume,
+                            "volume_max": max_volume,
+                            "volume_rounding": "kelly_no_edge",
+                            "notional_value": 0.0,
+                            "units": {
+                                "account_currency": currency,
+                                "volume": "lots",
+                                "risk_currency": "account_currency",
+                                "risk_pct": "percent_of_equity",
+                                "price": "symbol_price",
+                                "notional_value": "account_currency_approx",
+                                "tick_value": "account_currency_per_tick_per_lot",
+                                "kelly_fraction": "fraction",
+                            },
+                            "sizing_context": {
+                                "equity": round(equity, 2),
+                                "account_currency": currency,
+                                "contract_size": contract_size,
+                                "tick_size": tick_size,
+                                "risk_tick_value": round(risk_tick_value, 8),
+                                "volume_step": volume_step,
+                                "volume_min": min_volume,
+                                "volume_max": max_volume,
+                            },
+                            "sizing_notes": [
+                                "Kelly sizing produced no positive edge; suggested volume is 0.0."
+                            ],
+                            "kelly": kelly_context,
+                        }
+                        return result
+
+                    risk_amount = equity * (effective_risk_pct / 100.0)
                     raw_volume = risk_amount / (sl_distance_ticks * risk_tick_value)
                     if not math.isfinite(raw_volume) or raw_volume <= 0:
                         result["position_sizing_error"] = "Calculated volume is invalid"
@@ -3111,6 +3343,10 @@ def run_trade_risk_analyze(  # noqa: C901
                         sizing_notes.append(
                             "Direction was inferred from take-profit placement because stop-loss matched entry."
                         )
+                    if sizing_method == "kelly":
+                        sizing_notes.append(
+                            f"Kelly sizing set effective risk to {effective_risk_pct:.2f}% after multiplier and cap."
+                        )
 
                     step_txt = f"{volume_step:.10f}".rstrip("0")
                     step_decimals = (
@@ -3125,12 +3361,12 @@ def run_trade_risk_analyze(  # noqa: C901
 
                     actual_risk = sl_distance_ticks * risk_tick_value * suggested_volume
                     actual_risk_pct = (actual_risk / equity) * 100.0
-                    risk_pct_diff = actual_risk_pct - float(request.desired_risk_pct)
+                    risk_pct_diff = actual_risk_pct - effective_risk_pct
                     risk_over_target = actual_risk_pct > (
-                        float(request.desired_risk_pct) + 1e-9
+                        effective_risk_pct + 1e-9
                     )
                     overshoot_pct = max(
-                        0.0, float(actual_risk_pct) - float(request.desired_risk_pct)
+                        0.0, float(actual_risk_pct) - effective_risk_pct
                     )
                     overshoot_currency = max(
                         0.0, float(actual_risk) - float(risk_amount)
@@ -3244,11 +3480,16 @@ def run_trade_risk_analyze(  # noqa: C901
                             if strict_risk_blocked
                             else {}
                         ),
+                        **(
+                            {"sizing_method": "kelly", "kelly": kelly_context}
+                            if sizing_method == "kelly"
+                            else {}
+                        ),
                         "suggested_volume": suggested_volume,
                         "volume_lots": suggested_volume,
                         "requested_risk_currency": round(risk_amount, 2),
                         "risk_amount_account_currency": round(risk_amount, 2),
-                        "requested_risk_pct": float(request.desired_risk_pct),
+                        "requested_risk_pct": effective_risk_pct,
                         "strict_risk": bool(getattr(request, "strict_risk", True)),
                         "risk_mode": "strict"
                         if bool(getattr(request, "strict_risk", True))
@@ -3283,6 +3524,11 @@ def run_trade_risk_analyze(  # noqa: C901
                             "price": "symbol_price",
                             "notional_value": "account_currency_approx",
                             "tick_value": "account_currency_per_tick_per_lot",
+                            **(
+                                {"kelly_fraction": "fraction"}
+                                if sizing_method == "kelly"
+                                else {}
+                            ),
                         },
                         "sizing_context": {
                             "equity": round(equity, 2),
@@ -3332,13 +3578,13 @@ def run_trade_risk_analyze(  # noqa: C901
                     if risk_over_target:
                         if strict_risk_blocked:
                             result["position_sizing_warning"] = (
-                                f"Requested risk {float(request.desired_risk_pct):.2f}% but minimum tradable volume risks "
+                                f"Requested risk {effective_risk_pct:.2f}% but minimum tradable volume risks "
                                 f"{float(min_viable_risk_pct or 0.0):.2f}% (+{overshoot_pct:.2f}%); "
                                 "suggested_volume is 0.0 because strict_risk is enabled."
                             )
                         else:
                             result["position_sizing_warning"] = (
-                                f"Requested risk {float(request.desired_risk_pct):.2f}% but actual risk is "
+                                f"Requested risk {effective_risk_pct:.2f}% but actual risk is "
                                 f"{float(actual_risk_pct):.2f}% (+{overshoot_pct:.2f}%) after broker volume constraints."
                             )
                         result["risk_alert"] = {
@@ -3349,7 +3595,7 @@ def run_trade_risk_analyze(  # noqa: C901
                                 else "risk_overshoot_after_volume_constraints"
                             ),
                             "reason": overshoot_reason,
-                            "requested_risk_pct": float(request.desired_risk_pct),
+                            "requested_risk_pct": effective_risk_pct,
                             "actual_risk_pct": round(
                                 float(min_viable_risk_pct or actual_risk_pct), 2
                             ),
