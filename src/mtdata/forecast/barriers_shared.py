@@ -578,12 +578,21 @@ def _build_actionability_payload(
         else:
             actionability_reason = "Selection diagnostics require manual review before trading."
 
-    return {
+    out = {
         "actionability": actionability,
         "trade_gate_passed": trade_gate_passed,
         "actionability_reason": actionability_reason,
         "actionability_flags": deduped_flags,
     }
+    if status != "ok":
+        out["remediation"] = {
+            "next_steps": [
+                "Retry with search_profile='long' or a wider TP/SL grid.",
+                "Run forecast_barrier_prob with explicit TP/SL levels to inspect hit probabilities.",
+                "Use viable_only=false only for diagnostics; keep tradable=false setups out of execution.",
+            ]
+        }
+    return out
 
 
 def _auto_barrier_method(
