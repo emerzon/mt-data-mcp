@@ -284,6 +284,10 @@ class ForecastBarrierOptimizeRequest(BaseModel):
     objective: str = "ev"
     top_k: Optional[int] = None
     viable_only: bool = True
+    tradable_only: bool = False
+    min_ev: Optional[float] = None
+    min_edge: Optional[float] = None
+    min_kelly: Optional[float] = None
     grid_style: str = "fixed"
     preset: Optional[str] = None
     search_profile: str = "medium"

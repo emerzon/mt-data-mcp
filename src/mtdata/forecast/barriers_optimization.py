@@ -225,6 +225,62 @@ def _barrier_search_config(
     return {key: value for key, value in out.items() if value is not None}
 
 
+def _barrier_candidate_filter_config(
+    *,
+    tradable_only: bool,
+    min_ev: Optional[float],
+    min_edge: Optional[float],
+    min_kelly: Optional[float],
+) -> Dict[str, Any]:
+    out: Dict[str, Any] = {}
+    if tradable_only:
+        out["tradable_only"] = True
+    if min_ev is not None:
+        out["min_ev"] = _safe_float(min_ev)
+    if min_edge is not None:
+        out["min_edge"] = _safe_float(min_edge)
+        out["min_edge_basis"] = "edge_vs_breakeven"
+    if min_kelly is not None:
+        out["min_kelly"] = _safe_float(min_kelly)
+    return out
+
+
+def _optional_finite_float(value: Any) -> Optional[float]:
+    try:
+        numeric = float(value)
+    except Exception:
+        return None
+    if not np.isfinite(numeric):
+        return None
+    return float(numeric)
+
+
+def _candidate_passes_threshold_filters(
+    row: Dict[str, Any],
+    *,
+    cost_per_trade: float,
+    tradable_only_val: bool,
+    min_ev_val: Optional[float],
+    min_edge_val: Optional[float],
+    min_kelly_val: Optional[float],
+) -> bool:
+    _annotate_candidate_metrics(row, cost_per_trade=cost_per_trade)
+    if tradable_only_val and not _candidate_is_viable(row, cost_per_trade=cost_per_trade):
+        return False
+    ev_value = _safe_float(row.get("ev"))
+    if min_ev_val is not None and (ev_value is None or ev_value < min_ev_val):
+        return False
+    edge_value = _safe_float(row.get("edge_vs_breakeven"))
+    if edge_value is None:
+        edge_value = _safe_float(row.get("edge"))
+    if min_edge_val is not None and (edge_value is None or edge_value < min_edge_val):
+        return False
+    kelly_value = _safe_float(row.get("kelly"))
+    if min_kelly_val is not None and (kelly_value is None or kelly_value < min_kelly_val):
+        return False
+    return True
+
+
 def _resolve_profile_param(
     params_dict: Dict[str, Any],
     profile_cfg: Dict[str, Any],
@@ -651,12 +707,31 @@ def _select_barrier_candidate_views(
     *,
     cost_per_trade: float,
     viable_only_val: bool,
+    tradable_only_val: bool,
+    min_ev_val: Optional[float],
+    min_edge_val: Optional[float],
+    min_kelly_val: Optional[float],
     concise_val: bool,
     top_k_val: Optional[int],
     return_grid: bool,
     output_mode: str,
 ) -> Dict[str, Any]:
     ranked_candidates = _dedupe_ranked_barrier_candidates(ranked_candidates)
+    ranked_before_thresholds = len(ranked_candidates)
+    if tradable_only_val or min_ev_val is not None or min_edge_val is not None or min_kelly_val is not None:
+        ranked_candidates = [
+            row
+            for row in ranked_candidates
+            if _candidate_passes_threshold_filters(
+                row,
+                cost_per_trade=cost_per_trade,
+                tradable_only_val=tradable_only_val,
+                min_ev_val=min_ev_val,
+                min_edge_val=min_edge_val,
+                min_kelly_val=min_kelly_val,
+            )
+        ]
+    threshold_filtered_out = bool(ranked_before_thresholds and not ranked_candidates)
     viable_candidates = [
         row
         for row in ranked_candidates
@@ -687,7 +762,9 @@ def _select_barrier_candidate_views(
     viability_filtered_out = bool(viable_only_val and not viable_candidates and ranked_candidates)
     warning = None
     if not candidates:
-        if viability_filtered_out:
+        if threshold_filtered_out:
+            warning = "No TP/SL candidates satisfied the requested threshold filters."
+        elif viability_filtered_out:
             warning = "No viable TP/SL candidates satisfied the viability filter."
         else:
             warning = "No valid TP/SL candidates after applying grid generation and constraints."
@@ -1004,6 +1081,12 @@ def forecast_barrier_optimize(  # noqa: C901
             params_dict.get('viable_only', viable_only),
             default=bool(viable_only),
         )
+        tradable_only_val = _coerce_barrier_bool_flag(
+            params_dict.get('tradable_only', False),
+            default=False,
+        )
+        if tradable_only_val:
+            viable_only_val = True
         concise_val = _coerce_barrier_bool_flag(
             params_dict.get('concise', concise),
             default=bool(concise),
@@ -1161,6 +1244,10 @@ def forecast_barrier_optimize(  # noqa: C901
             rr_min_val = None
         if rr_max_val is not None and rr_max_val <= 0:
             rr_max_val = None
+
+        min_ev_val = _optional_finite_float(params_dict.get('min_ev'))
+        min_edge_val = _optional_finite_float(params_dict.get('min_edge'))
+        min_kelly_val = _optional_finite_float(params_dict.get('min_kelly'))
 
         min_prob_win_val = params_dict.get('min_prob_win', min_prob_win)
         max_prob_no_hit_val = params_dict.get('max_prob_no_hit', max_prob_no_hit)
@@ -1768,6 +1855,14 @@ def forecast_barrier_optimize(  # noqa: C901
                     ),
                 },
             }
+            candidate_filters = _barrier_candidate_filter_config(
+                tradable_only=tradable_only_val,
+                min_ev=min_ev_val,
+                min_edge=min_edge_val,
+                min_kelly=min_kelly_val,
+            )
+            if candidate_filters:
+                out["candidate_filters"] = candidate_filters
             if price_precision is not None:
                 out["price_precision"] = int(price_precision)
             if objective_changed:
@@ -2610,6 +2705,10 @@ def forecast_barrier_optimize(  # noqa: C901
             list(results),
             cost_per_trade=cost_per_trade,
             viable_only_val=viable_only_val,
+            tradable_only_val=tradable_only_val,
+            min_ev_val=min_ev_val,
+            min_edge_val=min_edge_val,
+            min_kelly_val=min_kelly_val,
             concise_val=concise_val,
             top_k_val=top_k_val,
             return_grid=return_grid,
@@ -2715,6 +2814,14 @@ def forecast_barrier_optimize(  # noqa: C901
             "status_reason": status_reason,
             "no_action": status != "ok",
         }
+        candidate_filters = _barrier_candidate_filter_config(
+            tradable_only=tradable_only_val,
+            min_ev=min_ev_val,
+            min_edge=min_edge_val,
+            min_kelly=min_kelly_val,
+        )
+        if candidate_filters:
+            out["candidate_filters"] = candidate_filters
         if price_precision is not None:
             out["price_precision"] = int(price_precision)
         if optuna_meta is not None:

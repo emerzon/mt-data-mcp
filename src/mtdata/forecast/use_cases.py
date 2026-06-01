@@ -2068,6 +2068,12 @@ def run_forecast_barrier_optimize(
     params_norm = parse_kv_or_json(request.params)
     if not isinstance(params_norm, dict):
         params_norm = {}
+    for threshold_key in ("min_ev", "min_edge", "min_kelly"):
+        threshold_value = getattr(request, threshold_key, None)
+        if threshold_value is not None:
+            params_norm[threshold_key] = threshold_value
+    if bool(getattr(request, "tradable_only", False)):
+        params_norm["tradable_only"] = True
     if str(params_norm.get("optimizer", "")).strip().lower() == "optuna":
         optuna_defaults = {
             "sampler": "tpe",
