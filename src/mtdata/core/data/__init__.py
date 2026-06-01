@@ -463,6 +463,10 @@ def data_fetch_candles(
 
     allow_stale : bool, optional
         Return the latest available closed bars even if they fall outside the normal freshness window. Defaults to false.
+
+    explain_indicators : bool, optional
+        When true, add compact latest-value interpretation notes for common
+        requested indicators. Defaults to false to keep row output lean.
     
     Returns:
     --------

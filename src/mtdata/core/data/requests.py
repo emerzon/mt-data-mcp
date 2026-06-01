@@ -403,6 +403,13 @@ class DataFetchCandlesRequest(BaseModel):
     )
     include_incomplete: bool = False
     allow_stale: bool = False
+    explain_indicators: bool = Field(
+        False,
+        description=(
+            "When true and indicators are requested, include compact latest-value "
+            "interpretation notes for common indicators."
+        ),
+    )
 
     @field_validator("symbol")
     @classmethod

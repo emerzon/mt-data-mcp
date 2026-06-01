@@ -3,7 +3,9 @@ from __future__ import annotations
 import logging
 import time
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
+
+import numpy as np
 
 from ...shared.result import Err, Ok, Result, to_dict
 from ...utils.freshness import format_age_seconds as _format_age_seconds
@@ -198,6 +200,8 @@ def _run_data_fetch_candles_impl(
                 result["spread_unavailable"] = True
     detail_mode = str(request.detail or "compact").strip().lower()
     if isinstance(result, dict):
+        if bool(getattr(request, "explain_indicators", False)):
+            _attach_indicator_explanations(result)
         _apply_range_limit_cap(
             result,
             limit=effective_limit if effective_limit is not None else request.limit,
@@ -236,6 +240,85 @@ def _effective_candle_limit(request: DataFetchCandlesRequest) -> int:
     if has_indicators and not limit_explicit:
         return max(limit, _ANALYSIS_CANDLE_DEFAULT_LIMIT)
     return limit
+
+
+def _latest_numeric_row_value(rows: Any, column: str) -> Optional[float]:
+    if not isinstance(rows, list):
+        return None
+    for row in reversed(rows):
+        if not isinstance(row, dict) or column not in row:
+            continue
+        try:
+            value = float(row.get(column))
+        except Exception:
+            continue
+        if np.isfinite(value):
+            return value
+    return None
+
+
+def _indicator_family(column: str) -> str:
+    name = str(column or "").strip().upper()
+    if name.startswith("MACD"):
+        return "MACD"
+    return name.split("_", 1)[0]
+
+
+def _indicator_reading(column: str, value: float, *, latest_close: Optional[float]) -> str:
+    family = _indicator_family(column)
+    if family == "RSI":
+        if value >= 70.0:
+            state = "overbought"
+        elif value <= 30.0:
+            state = "oversold"
+        else:
+            state = "neutral"
+        return f"RSI {value:.2f}: {state}; common bands are 30/70."
+    if family in {"EMA", "SMA", "WMA", "HMA"}:
+        if latest_close is None:
+            return f"{family} {value:.5g}: moving-average trend reference."
+        side = "above" if latest_close > value else "below" if latest_close < value else "at"
+        return f"Close is {side} {family} ({value:.5g}); above often supports bullish trend context."
+    if family == "MACD":
+        if str(column).upper().startswith("MACDH"):
+            side = "positive" if value > 0 else "negative" if value < 0 else "flat"
+            return f"MACD histogram {value:.5g}: {side} momentum."
+        side = "above zero" if value > 0 else "below zero" if value < 0 else "at zero"
+        return f"MACD {value:.5g}: {side}; compare line/signal/histogram together."
+    if family == "ATR":
+        return f"ATR {value:.5g}: volatility/range estimate in price units."
+    if family in {"BBL", "BBM", "BBU"}:
+        return f"{family} {value:.5g}: Bollinger Band level; compare close to lower/mid/upper bands."
+    return f"{column} {value:.5g}: see indicators_describe for detailed interpretation."
+
+
+def _attach_indicator_explanations(result: Dict[str, Any]) -> None:
+    meta = result.get("meta")
+    diagnostics = meta.get("diagnostics") if isinstance(meta, dict) else None
+    indicators = diagnostics.get("indicators") if isinstance(diagnostics, dict) else None
+    added_columns = indicators.get("added_columns") if isinstance(indicators, dict) else None
+    if not isinstance(added_columns, list) or not added_columns:
+        return
+    rows = result.get("data")
+    latest_close = _latest_numeric_row_value(rows, "close")
+    explanations: List[Dict[str, Any]] = []
+    for column in added_columns:
+        column_name = str(column or "").strip()
+        if not column_name:
+            continue
+        value = _latest_numeric_row_value(rows, column_name)
+        if value is None:
+            continue
+        explanations.append(
+            {
+                "column": column_name,
+                "family": _indicator_family(column_name),
+                "latest": round(float(value), 6),
+                "reading": _indicator_reading(column_name, value, latest_close=latest_close),
+            }
+        )
+    if explanations:
+        result["indicator_explanations"] = explanations
 
 
 def _apply_range_limit_cap(result: Dict[str, Any], *, limit: int) -> None:
