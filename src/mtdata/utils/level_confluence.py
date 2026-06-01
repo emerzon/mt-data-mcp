@@ -364,7 +364,7 @@ def _score_cluster(
         "tightness_bonus": _round_metric(tightness_bonus),
     }
     reasons = [
-        f"{family_count} source family" + ("" if family_count == 1 else "ies") + f": {', '.join(families)}",
+        f"{family_count} source {'family' if family_count == 1 else 'families'}: {', '.join(families)}",
         f"{len(records)} level" + ("" if len(records) == 1 else "s") + " inside tolerance",
     ]
     if width > 0.0:
