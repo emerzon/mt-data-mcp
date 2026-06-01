@@ -637,6 +637,8 @@ def _apply_forecast_generate_detail(
         if row_series:
             out.setdefault("forecast", row_series)
         out["detail"] = detail_value
+        if detail_value == "full":
+            out.setdefault("interpretation", _forecast_generate_interpretation(out))
         return attach_collection_contract(
             out,
             collection_kind="time_series",
@@ -750,6 +752,40 @@ def _apply_forecast_generate_detail(
             continue
         compact[key] = value
     return compact
+
+
+def _forecast_generate_interpretation(payload: Dict[str, Any]) -> Dict[str, str]:
+    interpretation: Dict[str, str] = {}
+    if payload.get("forecast") not in (None, "", [], {}):
+        interpretation["forecast"] = (
+            "Per-step forecast rows for the requested horizon."
+        )
+    if payload.get("forecast_price") not in (None, "", [], {}):
+        interpretation["forecast_price"] = (
+            "Predicted price path in instrument price units."
+        )
+    if payload.get("forecast_return") not in (None, "", [], {}):
+        interpretation["forecast_return"] = (
+            "Predicted return path as decimal fractions; 0.01 means 1%."
+        )
+    if payload.get("last_price") not in (None, "", [], {}):
+        interpretation["last_price"] = (
+            "Reference market price used to anchor forecast comparisons."
+        )
+    if payload.get("forecast_vs_last_price") not in (None, "", [], {}):
+        interpretation["forecast_vs_last_price"] = (
+            "First forecast step versus last_price; next_bar_change_pct is a "
+            "percentage of last_price."
+        )
+    if (
+        payload.get("lower_price") not in (None, "", [], {})
+        or payload.get("upper_price") not in (None, "", [], {})
+        or payload.get("ci") not in (None, "", [], {})
+    ):
+        interpretation["confidence_intervals"] = (
+            "Forecast uncertainty bands when the selected method supports them."
+        )
+    return interpretation
 
 
 def _forecast_training_period(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -970,6 +1006,7 @@ def _apply_barrier_prob_detail(
     if detail_value == "full":
         out = dict(payload)
         out["detail"] = "full"
+        out.setdefault("interpretation", _barrier_prob_interpretation(out))
         return out
 
     if "prob_hit" in payload:
@@ -1109,6 +1146,36 @@ def _annotate_barrier_prob_context(
     out.setdefault("probability_unit", "fraction")
     out.setdefault("edge_definition", "prob_tp_first - prob_sl_first")
     return out
+
+
+def _barrier_prob_interpretation(payload: Dict[str, Any]) -> Dict[str, str]:
+    interpretation: Dict[str, str] = {}
+    if payload.get("prob_tp_first") not in (None, "", [], {}):
+        interpretation["prob_tp_first"] = (
+            "Probability the take-profit barrier is reached before stop-loss."
+        )
+    if payload.get("prob_sl_first") not in (None, "", [], {}):
+        interpretation["prob_sl_first"] = (
+            "Probability the stop-loss barrier is reached before take-profit."
+        )
+    if payload.get("prob_no_hit") not in (None, "", [], {}):
+        interpretation["prob_no_hit"] = (
+            "Probability neither barrier is reached before the forecast horizon."
+        )
+    if payload.get("edge") not in (None, "", [], {}):
+        interpretation["edge"] = (
+            "Directional edge; positive favors take-profit-first outcomes, "
+            "negative favors stop-loss-first outcomes."
+        )
+    if payload.get("prob_hit") not in (None, "", [], {}):
+        interpretation["prob_hit"] = (
+            "Closed-form probability the requested barrier is touched by horizon."
+        )
+    if any(str(key).endswith("_ci95") for key in payload):
+        interpretation["ci95"] = (
+            "Approximate 95% confidence intervals for Monte Carlo probabilities."
+        )
+    return interpretation
 
 
 def _request_has_barrier_inputs(request: ForecastBarrierProbRequest) -> bool:
