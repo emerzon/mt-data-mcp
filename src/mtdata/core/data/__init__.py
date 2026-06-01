@@ -393,6 +393,7 @@ def _compact_wait_event_public_result(
     out = dict(result)
     max_wait_seconds = out.pop("max_wait_seconds", None)
     elapsed_seconds = out.get("elapsed_seconds")
+    poll_interval_seconds = out.get("poll_interval_seconds")
     status = str(out.get("status") or "").strip().lower()
 
     criteria_in = out.get("criteria")
@@ -462,9 +463,23 @@ def _compact_wait_event_public_result(
             out["waited_seconds"] = elapsed_seconds
         if max_wait_seconds is not None:
             out["max_wait_seconds"] = max_wait_seconds
+        if poll_interval_seconds is not None:
+            out["poll_interval_seconds"] = poll_interval_seconds
         monitored_types = _wait_event_monitored_types(criteria)
         if monitored_types:
             out["events_monitored"] = monitored_types
+    else:
+        wait_policy = {
+            key: value
+            for key, value in (
+                ("elapsed_seconds", elapsed_seconds),
+                ("max_wait_seconds", max_wait_seconds),
+                ("poll_interval_seconds", poll_interval_seconds),
+            )
+            if value is not None
+        }
+        if wait_policy:
+            out["wait_policy"] = wait_policy
 
     return out
 
@@ -632,7 +647,8 @@ def wait_event(
     timeframe: TimeframeLiteral = "M1",
     wait_next_bar: bool = False,
     watch_tick_count_spike: bool = True,
-    max_wait_seconds: Optional[float] = None,
+    max_wait_seconds: Optional[float] = 300.0,
+    poll_interval_seconds: Optional[float] = None,
     watch_for: Optional[List[Dict[str, Any]]] = None,
     end_on: Optional[List[Dict[str, Any]]] = None,
     detail: CompactFullDetailLiteral = "compact",
@@ -657,8 +673,11 @@ def wait_event(
     its default watcher set. For boundary-only waits, pass `watch_for=[]` and
     rely on `timeframe` or explicit `end_on` candle-close events.
 
-    Set `max_wait_seconds` to cap blocking waits. Omit it to use the engine
-    default.
+    `max_wait_seconds` defaults to 300 seconds on the public tool surface so
+    CLI calls have an explicit timebox. Set it to null to use no timeout, or
+    raise it for longer candle-boundary waits.
+    Set `poll_interval_seconds` to tune polling cadence; omit it to use the
+    engine default.
 
     Boundary waits belong in `end_on` as `{"type": "candle_close", ...}`.
     `watch_for` is for explicit market/account event objects only; pass
@@ -713,8 +732,9 @@ def wait_event(
         }
         if symbol_value is not None:
             request_kwargs["symbol"] = symbol_value
-        if max_wait_seconds is not None:
-            request_kwargs["max_wait_seconds"] = max_wait_seconds
+        request_kwargs["max_wait_seconds"] = max_wait_seconds
+        if poll_interval_seconds is not None:
+            request_kwargs["poll_interval_seconds"] = poll_interval_seconds
         if normalized_end_on is not None:
             request_kwargs["end_on"] = list(normalized_end_on)
         else:
