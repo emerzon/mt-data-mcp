@@ -207,6 +207,9 @@ _TRADE_BACKTEST_UNITS = {
     "successful_tests": "count",
     "num_tests": "count",
     "trades_observed": "count",
+    "winning_trades": "count",
+    "losing_trades": "count",
+    "breakeven_trades": "count",
 }
 _FORECAST_ERROR_UNITS = {
     "price": "price",
@@ -277,6 +280,9 @@ def _compute_performance_metrics(
     trades_per_year = float(bars_per_year / cadence) if math.isfinite(bars_per_year) else float('nan')
 
     avg_return = float(np.mean(arr))
+    winning_trades = int(np.sum(arr > 0.0))
+    losing_trades = int(np.sum(arr < 0.0))
+    breakeven_trades = int(arr.size - winning_trades - losing_trades)
     win_rate = float(np.mean(arr > 0.0)) if arr.size > 0 else float('nan')
     std_ret = float(np.std(arr, ddof=1)) if arr.size > 1 else 0.0
     enough_trades = int(arr.size) >= int(_MIN_ANNUALIZATION_TRADES)
@@ -325,6 +331,9 @@ def _compute_performance_metrics(
         "annual_return": _finite_or_none(annual_return),
         "trades_per_year": trades_per_year,
         "trades_observed": int(arr.size),
+        "winning_trades": winning_trades,
+        "losing_trades": losing_trades,
+        "breakeven_trades": breakeven_trades,
         "slippage_bps": float(slippage_bps),
     })
     for source_key in ("avg_return_per_trade", "max_drawdown", "annual_return"):
