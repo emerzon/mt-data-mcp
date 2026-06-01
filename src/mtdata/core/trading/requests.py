@@ -271,6 +271,13 @@ class TradeRiskAnalyzeRequest(BaseModel):
             "volume would exceed desired_risk_pct."
         ),
     )
+    include_pending: bool = Field(
+        default=True,
+        description=(
+            "Include contingent stop-loss risk from pending orders in portfolio "
+            "risk totals when enough order price/SL metadata is available."
+        ),
+    )
     direction: Optional[str] = None
     entry: Optional[float] = Field(
         default=None,

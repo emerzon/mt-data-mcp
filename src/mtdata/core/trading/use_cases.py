@@ -2380,10 +2380,14 @@ def run_trade_risk_analyze(  # noqa: C901
                 validation._safe_int_attr(gateway, "ORDER_TYPE_SELL", 1),
             )
             position_risks: List[Dict[str, Any]] = []
+            pending_order_risks: List[Dict[str, Any]] = []
             risk_calculation_failures: List[Dict[str, Any]] = []
             total_risk_currency = 0.0
+            total_pending_risk_currency = 0.0
             positions_without_sl = 0
+            pending_orders_without_sl = 0
             total_notional_exposure = 0.0
+            total_pending_notional_exposure = 0.0
             symbol_info_cache: Dict[str, Any] = {}
 
             for pos in positions:
@@ -2509,6 +2513,150 @@ def run_trade_risk_analyze(  # noqa: C901
                     )
                     continue
 
+            open_position_risk_currency = total_risk_currency
+            open_position_notional_exposure = total_notional_exposure
+
+            if getattr(request, "include_pending", True):
+                pending_orders = (
+                    gateway.orders_get(symbol=request.symbol)
+                    if request.symbol
+                    else gateway.orders_get()
+                )
+                if pending_orders is None:
+                    pending_orders = []
+                pending_buy_types = {
+                    validation._safe_int_attr(gateway, "ORDER_TYPE_BUY_LIMIT", 2),
+                    validation._safe_int_attr(gateway, "ORDER_TYPE_BUY_STOP", 4),
+                    validation._safe_int_attr(gateway, "ORDER_TYPE_BUY_STOP_LIMIT", 6),
+                }
+                pending_sell_types = {
+                    validation._safe_int_attr(gateway, "ORDER_TYPE_SELL_LIMIT", 3),
+                    validation._safe_int_attr(gateway, "ORDER_TYPE_SELL_STOP", 5),
+                    validation._safe_int_attr(gateway, "ORDER_TYPE_SELL_STOP_LIMIT", 7),
+                }
+                for order in pending_orders:
+                    try:
+                        symbol_key = str(getattr(order, "symbol", ""))
+                        if symbol_key not in symbol_info_cache:
+                            symbol_info_cache[symbol_key] = gateway.symbol_info(symbol_key)
+                        sym_info = symbol_info_cache[symbol_key]
+                        if sym_info is None:
+                            risk_calculation_failures.append(
+                                {
+                                    "scope": "pending_order",
+                                    "ticket": getattr(order, "ticket", None),
+                                    "symbol": getattr(order, "symbol", None),
+                                    "error": f"Failed to get symbol info for {getattr(order, 'symbol', None)}",
+                                    "error_type": "SymbolInfoUnavailable",
+                                }
+                            )
+                            continue
+
+                        entry_price = float(getattr(order, "price_open", 0.0) or 0.0)
+                        sl_raw = getattr(order, "sl", None)
+                        tp_raw = getattr(order, "tp", None)
+                        sl_price = float(sl_raw) if sl_raw and float(sl_raw) > 0 else None
+                        tp_price = float(tp_raw) if tp_raw and float(tp_raw) > 0 else None
+                        volume = float(
+                            getattr(
+                                order,
+                                "volume_current",
+                                getattr(order, "volume_initial", getattr(order, "volume", 0.0)),
+                            )
+                            or 0.0
+                        )
+
+                        contract_size = float(sym_info.trade_contract_size)
+                        tick_value = validation._safe_float_attr(sym_info, "trade_tick_value")
+                        tick_value_loss = validation._safe_float_attr(sym_info, "trade_tick_value_loss")
+                        tick_size = validation._safe_float_attr(sym_info, "trade_tick_size")
+                        risk_tick_value = _resolve_risk_tick_value(
+                            tick_value=tick_value,
+                            tick_value_loss=tick_value_loss,
+                        )
+                        if not math.isfinite(tick_size) or tick_size <= 0:
+                            tick_size = 0.0
+                        tick_value_valid = math.isfinite(risk_tick_value) and risk_tick_value > 0
+                        if not math.isfinite(contract_size) or contract_size <= 0:
+                            contract_size = 1.0
+
+                        notional_value = abs(volume) * contract_size * entry_price
+                        total_pending_notional_exposure += notional_value
+
+                        order_type = validation._safe_int_attr(order, "type", -1)
+                        is_buy_order = int(order_type) in pending_buy_types
+                        is_sell_order = int(order_type) in pending_sell_types
+                        direction_label = "BUY" if is_buy_order else "SELL" if is_sell_order else "UNKNOWN"
+
+                        risk_currency = None
+                        risk_pct = None
+                        reward_currency = None
+                        rr_ratio = None
+                        risk_status = "undefined"
+                        if entry_price > 0 and sl_price and tick_size > 0 and tick_value_valid and direction_label != "UNKNOWN":
+                            risk_ticks = (
+                                (entry_price - sl_price) / tick_size
+                                if is_buy_order
+                                else (sl_price - entry_price) / tick_size
+                            )
+                            risk_currency = abs(risk_ticks * risk_tick_value * volume)
+                            risk_pct = (risk_currency / equity) * 100.0 if equity > 0 else 0.0
+                            total_pending_risk_currency += risk_currency
+                            risk_status = "defined"
+                            if tp_price:
+                                reward_ticks = (
+                                    (tp_price - entry_price) / tick_size
+                                    if is_buy_order
+                                    else (entry_price - tp_price) / tick_size
+                                )
+                                reward_currency = abs(reward_ticks * tick_value * volume)
+                                if risk_currency > 0:
+                                    rr_ratio = reward_currency / risk_currency
+                        elif sl_price:
+                            risk_calculation_failures.append(
+                                {
+                                    "scope": "pending_order",
+                                    "ticket": getattr(order, "ticket", None),
+                                    "symbol": getattr(order, "symbol", None),
+                                    "error": "Pending order has stop-loss but entry, direction, or symbol tick metadata is invalid.",
+                                    "error_type": "InvalidPendingRiskMetadata",
+                                }
+                            )
+                        else:
+                            pending_orders_without_sl += 1
+                            risk_status = "unlimited"
+
+                        pending_order_risks.append(
+                            {
+                                "ticket": getattr(order, "ticket", None),
+                                "symbol": getattr(order, "symbol", None),
+                                "type": direction_label,
+                                "volume": volume,
+                                "entry": entry_price,
+                                "sl": sl_price,
+                                "tp": tp_price,
+                                "risk_currency": _round_optional_number(risk_currency, 2),
+                                "risk_pct": _round_optional_number(risk_pct, 2),
+                                "risk_status": risk_status,
+                                "notional_value": round(notional_value, 2),
+                                "reward_currency": _round_optional_number(reward_currency, 2),
+                                "rr_ratio": _round_optional_number(rr_ratio, 2),
+                            }
+                        )
+                    except Exception as exc:
+                        risk_calculation_failures.append(
+                            {
+                                "scope": "pending_order",
+                                "ticket": getattr(order, "ticket", None),
+                                "symbol": getattr(order, "symbol", None),
+                                "error": str(exc),
+                                "error_type": type(exc).__name__,
+                            }
+                        )
+                        continue
+
+            total_risk_currency += total_pending_risk_currency
+            total_notional_exposure += total_pending_notional_exposure
             total_risk_pct = (
                 (total_risk_currency / equity) * 100.0 if equity > 0 else 0.0
             )
@@ -2523,7 +2671,7 @@ def run_trade_risk_analyze(  # noqa: C901
             else:
                 quantified_risk_level = "low"
 
-            if positions_without_sl > 0:
+            if positions_without_sl > 0 or pending_orders_without_sl > 0:
                 overall_risk_status = "unlimited"
             elif risk_calculation_failures:
                 overall_risk_status = "incomplete"
@@ -2546,22 +2694,34 @@ def run_trade_risk_analyze(  # noqa: C901
                     "quantified_risk_level": quantified_risk_level,
                     "total_risk_currency": round(total_risk_currency, 2),
                     "total_risk_pct": round(total_risk_pct, 2),
+                    "open_position_risk_currency": round(open_position_risk_currency, 2),
+                    "contingent_pending_risk_currency": round(total_pending_risk_currency, 2),
                     "positions_count": len(position_risks),
+                    "pending_orders_included": bool(getattr(request, "include_pending", True)),
+                    "pending_orders_count": len(pending_order_risks),
                     "positions_without_sl": positions_without_sl,
+                    "pending_orders_without_sl": pending_orders_without_sl,
                     "positions_with_risk_calculation_failures": len(
                         risk_calculation_failures
                     ),
                     "notional_exposure": round(total_notional_exposure, 2),
                     "notional_exposure_pct": round(notional_exposure_pct, 2),
+                    "open_position_notional_exposure": round(open_position_notional_exposure, 2),
+                    "contingent_pending_notional_exposure": round(total_pending_notional_exposure, 2),
                 },
                 "positions": position_risks,
             }
+            if getattr(request, "include_pending", True):
+                result["pending_orders"] = pending_order_risks
             if risk_calculation_failures:
                 result["risk_calculation_failures"] = risk_calculation_failures
-            if positions_without_sl > 0:
-                result["warning"] = (
-                    f"{positions_without_sl} position(s) without stop loss - UNLIMITED RISK!"
-                )
+            if positions_without_sl > 0 or pending_orders_without_sl > 0:
+                warning_parts = []
+                if positions_without_sl > 0:
+                    warning_parts.append(f"{positions_without_sl} position(s) without stop loss")
+                if pending_orders_without_sl > 0:
+                    warning_parts.append(f"{pending_orders_without_sl} pending order(s) without stop loss")
+                result["warning"] = "; ".join(warning_parts) + " - UNLIMITED RISK!"
             elif risk_calculation_failures:
                 result["warning"] = (
                     f"{len(risk_calculation_failures)} position(s) could not be evaluated for risk; "
