@@ -777,6 +777,9 @@ def trade_account_info(
 def trade_history(request: TradeHistoryRequest) -> Dict[str, Any]:
     """Get deal or order history as tabular data.
 
+    `history_kind="deals"` returns executed fills with P&L and is the default
+    for performance analysis. `history_kind="orders"` returns order lifecycle
+    events for audit and reconciliation.
     Use `detail="compact"` (default) for rows plus minimal envelope metadata.
     Use `detail="standard"` or `detail="full"` to include period context, and
     `detail="full"` to retain request echo fields.

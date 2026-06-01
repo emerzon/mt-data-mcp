@@ -185,7 +185,13 @@ class TradeCloseRequest(BaseModel):
 
 
 class TradeHistoryRequest(BaseModel):
-    history_kind: Literal["deals", "orders"] = "deals"
+    history_kind: Literal["deals", "orders"] = Field(
+        default="deals",
+        description=(
+            "Trade history type. deals = executed fills with P&L for journals; "
+            "orders = order lifecycle events for audit/reconciliation."
+        ),
+    )
     detail: CompactFullDetailLiteral = "compact"
     column_style: Literal["snake_case", "humanized"] = Field(
         default="snake_case",
