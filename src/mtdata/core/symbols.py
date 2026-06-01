@@ -2225,9 +2225,9 @@ def symbols_top_markets(  # noqa: C901
                 )
                 out.update(scan_meta)
                 out["ranking"] = (
-                    "largest_abs_price_change"
+                    "largest_abs_price_change_pct"
                     if rank_kind == "abs_price_change"
-                    else "highest_price_change"
+                    else "highest_price_change_pct"
                 )
                 out.update(_scope_fields("price_change", price_change_rows))
                 _attach_top_markets_units(out, price_change_rows)
@@ -2246,12 +2246,12 @@ def symbols_top_markets(  # noqa: C901
                 returned_counts = {
                     "lowest_spread": len(spread_rows),
                     "highest_volume": len(volume_rows),
-                    "highest_price_change": len(price_change_rows),
+                    "highest_price_change_pct": len(price_change_rows),
                 }
                 available_counts = {
                     "lowest_spread": evaluated_counts["spread"],
                     "highest_volume": evaluated_counts["volume"],
-                    "highest_price_change": evaluated_counts["price_change"],
+                    "highest_price_change_pct": evaluated_counts["price_change"],
                 }
                 notes = [
                     fields["note"]
@@ -2280,7 +2280,7 @@ def symbols_top_markets(  # noqa: C901
                         volume_rows,
                         detail_mode=detail_mode,
                     ),
-                    "highest_price_change": _compact_top_market_leaderboard_rows(
+                    "highest_price_change_pct": _compact_top_market_leaderboard_rows(
                         "price_change",
                         price_change_rows,
                         detail_mode=detail_mode,
@@ -2293,7 +2293,7 @@ def symbols_top_markets(  # noqa: C901
             all_rows = [
                 *_ranked_top_market_rows("lowest_spread", spread_rows),
                 *_ranked_top_market_rows("highest_volume", volume_rows),
-                *_ranked_top_market_rows("highest_price_change", price_change_rows),
+                *_ranked_top_market_rows("highest_price_change_pct", price_change_rows),
             ]
             out = _market_scan_table(
                 _top_markets_all_headers(detail_mode=detail_mode),
@@ -2305,19 +2305,19 @@ def symbols_top_markets(  # noqa: C901
             out["rank_categories"] = [
                 "lowest_spread",
                 "highest_volume",
-                "highest_price_change",
+                "highest_price_change_pct",
             ]
             out["requested_limit"] = int(limit_value)
             out["universe_size"] = int(len(selected_symbols))
             out["returned_counts"] = {
                 "lowest_spread": len(spread_rows),
                 "highest_volume": len(volume_rows),
-                "highest_price_change": len(price_change_rows),
+                "highest_price_change_pct": len(price_change_rows),
             }
             out["available_counts"] = {
                 "lowest_spread": evaluated_counts["spread"],
                 "highest_volume": evaluated_counts["volume"],
-                "highest_price_change": evaluated_counts["price_change"],
+                "highest_price_change_pct": evaluated_counts["price_change"],
             }
             if detail_mode == "full":
                 out["scan_stats"] = {
@@ -2903,3 +2903,4 @@ def market_scan(  # noqa: C901
         timeframe=timeframe,
         func=_run,
     )
+
