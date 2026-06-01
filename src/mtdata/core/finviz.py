@@ -102,7 +102,7 @@ _FINVIZ_FUNDAMENTAL_CATEGORIES: Dict[str, tuple[str, ...]] = {
         "52W High",
         "52W Low",
     ),
-    "technicals": (
+    "technical": (
         "RSI (14)",
         "SMA20",
         "SMA50",
@@ -146,9 +146,7 @@ _FINVIZ_FUNDAMENTAL_CATEGORIES: Dict[str, tuple[str, ...]] = {
 }
 _FINVIZ_FUNDAMENTAL_CATEGORY_ALIASES = {
     "overview": "summary",
-    "tech": "technicals",
-    "technical": "technicals",
-    "technicals": "technicals",
+    "tech": "technical",
     "valuation_metrics": "valuation",
 }
 
