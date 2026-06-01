@@ -1199,6 +1199,34 @@ _FINVIZ_INTEGER_NUMERIC_KEYS = frozenset(
         "employees",
     }
 )
+_FINVIZ_PERCENT_FUNDAMENTAL_KEYS = frozenset(
+    {
+        "change_pct",
+        "return_on_assets",
+        "return_on_equity",
+        "return_on_investment",
+        "return_on_invested_capital",
+        "gross_margin",
+        "operating_margin",
+        "profit_margin",
+        "performance_week",
+        "performance_month",
+        "performance_quarter",
+        "performance_half_year",
+        "performance_year",
+        "performance_ytd",
+        "performance_3y",
+        "performance_5y",
+        "performance_10y",
+        "dividend_yield",
+        "payout",
+        "insider_own",
+        "insider_trans",
+        "inst_own",
+        "inst_trans",
+        "short_float",
+    }
+)
 _FINVIZ_LARGE_NUMBER_FORMAT_KEYS = frozenset(
     {
         "market_cap",
@@ -1375,6 +1403,14 @@ def _add_finviz_large_number_formats(fundamentals: Dict[str, Any]) -> None:
         formatted = _format_finviz_large_number(fundamentals.get(key))
         if formatted:
             fundamentals[formatted_key] = formatted
+
+
+def _finviz_fundamental_units(fundamentals: Dict[str, Any]) -> Dict[str, str]:
+    units: Dict[str, str] = {}
+    for key in fundamentals:
+        if key.endswith("_pct") or key in _FINVIZ_PERCENT_FUNDAMENTAL_KEYS:
+            units[key] = "percentage_points"
+    return units
 
 
 def _compact_finviz_fundamentals(fundamentals: Dict[str, Any]) -> Dict[str, Any]:
@@ -2205,6 +2241,9 @@ def _filter_finviz_fundamentals_payload(
     out["currency"] = "USD"
     _add_finviz_52w_quality_flags(filtered)
     out["fundamentals"] = filtered
+    units = _finviz_fundamental_units(filtered)
+    if units:
+        out["units"] = units
     out["detail"] = detail_mode
     out["category"] = category_out
     if "price" in filtered:
