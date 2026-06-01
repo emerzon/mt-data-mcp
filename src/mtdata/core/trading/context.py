@@ -98,6 +98,16 @@ def _round_trade_session_price(value: Any, *, digits: int) -> Any:
     return float(round(numeric, max(0, int(digits))))
 
 
+def _trade_session_fixed_decimal(value: Any, *, digits: int) -> Any:
+    try:
+        numeric = float(value)
+    except Exception:
+        return value
+    if not math.isfinite(numeric):
+        return value
+    return f"{numeric:.{max(0, int(digits))}f}"
+
+
 def _round_trade_session_prices(value: Any, *, digits: int, key: Optional[str] = None) -> Any:
     if isinstance(value, dict):
         return {
@@ -304,10 +314,16 @@ def _compact_trade_session_context_payload(payload: Dict[str, Any]) -> Dict[str,
                 if quote.get(key) not in (None, "")
             }
             if quote_summary:
-                compact["quote"] = _normalize_nested_quote_time(
+                normalized_quote = _normalize_nested_quote_time(
                     quote_summary,
                     compact=True,
                 )
+                if normalized_quote.get("spread") not in (None, ""):
+                    normalized_quote["spread"] = _trade_session_fixed_decimal(
+                        normalized_quote.get("spread"),
+                        digits=_price_precision_from_quote(quote),
+                    )
+                compact["quote"] = normalized_quote
 
     open_positions = payload.get("open_positions")
     volume_units: Dict[str, str] = {}
