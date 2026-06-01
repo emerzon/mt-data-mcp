@@ -376,17 +376,58 @@ def _validate_trade_risk_levels(
     entry: float,
     stop_loss: float,
     take_profit: float | None,
-) -> str | None:
+) -> Dict[str, Any] | None:
+    def _error(
+        *,
+        code: str,
+        field: str,
+        reason: str,
+        constraint: str,
+        value: float,
+    ) -> Dict[str, Any]:
+        return {
+            "code": code,
+            "field": field,
+            "reason": reason,
+            "entry": entry,
+            field: value,
+            "constraint": constraint,
+        }
+
     if direction == "long":
         if stop_loss > entry:
-            return "For long trades, stop_loss must be below entry."
+            return _error(
+                code="invalid_sl_for_direction",
+                field="stop_loss",
+                reason="For long trades, stop_loss must be below entry.",
+                constraint="stop_loss < entry",
+                value=stop_loss,
+            )
         if take_profit is not None and take_profit <= entry:
-            return "For long trades, take_profit must be above entry."
+            return _error(
+                code="invalid_tp_for_direction",
+                field="take_profit",
+                reason="For long trades, take_profit must be above entry.",
+                constraint="take_profit > entry",
+                value=take_profit,
+            )
         return None
     if stop_loss < entry:
-        return "For short trades, stop_loss must be above entry."
+        return _error(
+            code="invalid_sl_for_direction",
+            field="stop_loss",
+            reason="For short trades, stop_loss must be above entry.",
+            constraint="stop_loss > entry",
+            value=stop_loss,
+        )
     if take_profit is not None and take_profit >= entry:
-        return "For short trades, take_profit must be below entry."
+        return _error(
+            code="invalid_tp_for_direction",
+            field="take_profit",
+            reason="For short trades, take_profit must be below entry.",
+            constraint="take_profit < entry",
+            value=take_profit,
+        )
     return None
 
 
