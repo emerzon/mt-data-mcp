@@ -227,12 +227,34 @@ Trained models are written under `~/.mtdata/models/` by default and re-used auto
 | `indicators_list` | List available indicators |
 | `indicators_describe` | Get indicator details |
 | `patterns_detect` | Detect candlestick, chart, harmonic, fractal, and Elliott patterns |
-| `confluence_levels` | Rank price zones where pivots, support/resistance, and Fibonacci levels cluster |
+| `volume_profile_levels` | Compute POC, VAH, and VAL from bounded ticks or M1-bar approximation |
+| `confluence_levels` | Rank price zones where pivots, support/resistance, Fibonacci, and volume-profile levels cluster |
 | `pivot_compute_points` | Calculate pivot levels |
 | `support_resistance_levels` | Compute support/resistance levels with Fibonacci swing context |
 | `correlation_matrix` | Pairwise correlation matrix between symbols |
 | `cointegration_test` | Pairwise cointegration test between symbols |
 | `causal_discover_signals` | Granger-style causal discovery between symbols |
+
+Volume profile example:
+
+```bash
+mtdata-cli volume_profile_levels EURUSD --start "1 week ago" --end "now" \
+  --source auto --price-source mid --bucket-points 10 --json
+```
+
+You can also derive the window from a lookback:
+
+```bash
+mtdata-cli volume_profile_levels EURUSD --timeframe H1 --limit 168 \
+  --source auto --bucket-points 10 --json
+```
+
+For fractal + volume-structure confluence, opt in through pattern config:
+
+```bash
+mtdata-cli patterns_detect EURUSD --timeframe H1 --mode fractal \
+  --config '{"volume_profile":true,"volume_profile_tolerance_points":25}' --json
+```
 
 ### Trading
 | Command | Description |

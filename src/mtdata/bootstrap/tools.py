@@ -22,6 +22,7 @@ TOOL_MODULE_NAMES: Final[tuple[str, ...]] = (
     "mtdata.core.options",
     "mtdata.core.patterns",
     "mtdata.core.pivot",
+    "mtdata.core.volume_profile",
     "mtdata.core.symbols",
     "mtdata.core.regime",
     "mtdata.core.labels",

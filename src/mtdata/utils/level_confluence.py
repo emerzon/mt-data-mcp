@@ -46,6 +46,9 @@ def _distance_pct(price: float, reference_price: float) -> Optional[float]:
 
 def _source_weight(record: Dict[str, Any]) -> float:
     family = str(record.get("source_family") or "")
+    if family == "volume_profile":
+        level = str(record.get("level") or "").upper()
+        return 1.1 if level == "POC" else 0.85
     if family == "touch_derived":
         score = _as_float(record.get("score"))
         return 1.15 + min(math.log1p(max(score or 0.0, 0.0)) / 5.0, 0.45)
@@ -225,14 +228,65 @@ def _normalize_fibonacci_records(
     return records
 
 
+def _normalize_volume_profile_records(
+    payload: Optional[Dict[str, Any]],
+    *,
+    reference_price: float,
+    max_distance_pct: Optional[float],
+) -> List[Dict[str, Any]]:
+    if not isinstance(payload, dict) or payload.get("success") is not True:
+        return []
+    raw_levels = payload.get("levels")
+    if not isinstance(raw_levels, list):
+        raw_levels = [
+            value
+            for value in (payload.get("poc"), payload.get("vah"), payload.get("val"))
+            if isinstance(value, dict)
+        ]
+    records: List[Dict[str, Any]] = []
+    for level in raw_levels:
+        if not isinstance(level, dict):
+            continue
+        price = _as_float(level.get("price"))
+        if price is None:
+            continue
+        distance = _distance_pct(price, reference_price)
+        if (
+            max_distance_pct is not None
+            and distance is not None
+            and abs(distance) > float(max_distance_pct)
+        ):
+            continue
+        label = str(level.get("level") or level.get("type") or "VP").strip().upper()
+        records.append(
+            {
+                "source_family": "volume_profile",
+                "source": "volume_profile",
+                "method": str(payload.get("source") or "auto"),
+                "label": f"Volume Profile {label}",
+                "level": label,
+                "price": price,
+                "role": _role_for_price(price, reference_price),
+                "distance_pct": _round_metric(distance),
+                "original_role": "volume_structure",
+                "volume": level.get("volume"),
+                "volume_share": level.get("volume_share"),
+                "bucket_index": level.get("bucket_index"),
+                "volume_kind": payload.get("volume_kind"),
+            }
+        )
+    return records
+
+
 def normalize_level_records(
     *,
     pivot_methods: Any,
     support_resistance_payload: Dict[str, Any],
     reference_price: float,
     max_distance_pct: Optional[float] = None,
+    volume_profile_payload: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
-    """Normalize pivot, S/R, and Fibonacci payloads into comparable records."""
+    """Normalize pivot, S/R, Fibonacci, and volume profile payloads."""
     reference = float(reference_price)
     records = []
     records.extend(
@@ -252,6 +306,13 @@ def normalize_level_records(
     records.extend(
         _normalize_fibonacci_records(
             support_resistance_payload.get("fibonacci"),
+            reference_price=reference,
+            max_distance_pct=max_distance_pct,
+        )
+    )
+    records.extend(
+        _normalize_volume_profile_records(
+            volume_profile_payload,
             reference_price=reference,
             max_distance_pct=max_distance_pct,
         )
@@ -427,6 +488,7 @@ def build_level_confluence_payload(
     max_distance_pct: Optional[float] = 5.0,
     min_source_families: int = 1,
     detail: str = "compact",
+    volume_profile_payload: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Build ranked level confluence zones from normalized level sources."""
     reference = float(reference_price)
@@ -441,6 +503,7 @@ def build_level_confluence_payload(
         support_resistance_payload=support_resistance_payload,
         reference_price=reference,
         max_distance_pct=max_distance_pct,
+        volume_profile_payload=volume_profile_payload,
     )
     min_families = max(1, int(min_source_families))
     clusters = []
@@ -514,4 +577,14 @@ def build_level_confluence_payload(
                 else None
             ),
         }
+        if isinstance(volume_profile_payload, dict):
+            out["source_payload_meta"]["volume_profile_source"] = volume_profile_payload.get("source")
+            out["source_payload_meta"]["volume_profile_volume_kind"] = volume_profile_payload.get("volume_kind")
+    if isinstance(volume_profile_payload, dict):
+        vp_diag = volume_profile_payload.get("diagnostics")
+        if vp_diag not in (None, "", [], {}):
+            out["volume_profile_diagnostics"] = vp_diag
+        warnings = volume_profile_payload.get("warnings")
+        if isinstance(warnings, list) and warnings:
+            out["volume_profile_warnings"] = warnings
     return out

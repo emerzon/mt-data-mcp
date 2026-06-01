@@ -46,6 +46,7 @@ from ..utils.utils import (
     _parse_start_datetime,
 )
 from ..utils.utils import to_float_np as __to_float_np
+from ..utils.volume_profile import annotate_level_confluence
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway, mt5_connection_error
@@ -83,6 +84,7 @@ from .patterns_support import (
     _visible_pattern_rows,
 )
 from .patterns_use_cases import PatternsDetectDeps, run_patterns_detect
+from .volume_profile import compute_volume_profile_payload
 
 logger = logging.getLogger(__name__)
 
@@ -358,6 +360,8 @@ def _patterns_detect_deps() -> PatternsDetectDeps:
         validate_fractal_config=_validate_fractal_detector_config,
         validate_harmonic_config=_validate_harmonic_detector_config,
         summarize_fractal_context=_summarize_fractal_context,
+        compute_volume_profile_payload=compute_volume_profile_payload,
+        annotate_level_confluence=annotate_level_confluence,
         format_time_minimal=_format_time_minimal,
         to_float_np=__to_float_np,
     )

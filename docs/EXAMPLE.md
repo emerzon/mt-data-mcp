@@ -219,6 +219,36 @@ Harmonic Fibonacci-ratio patterns:
 mtdata-cli patterns_detect EURUSD --timeframe H1 --mode harmonic --limit 800 --json
 ```
 
+Bill Williams fractal price-structure levels:
+
+```bash
+mtdata-cli patterns_detect EURUSD --timeframe H1 --mode fractal --limit 300 --json
+```
+
+Volume-profile structure levels from bounded tick data:
+
+```bash
+mtdata-cli volume_profile_levels EURUSD \
+  --start "2026-01-01" --end "2026-01-08" \
+  --source auto --price-source mid --bucket-points 10 --json
+```
+
+Equivalent H1 lookback form:
+
+```bash
+mtdata-cli volume_profile_levels EURUSD --timeframe H1 --limit 168 \
+  --source auto --price-source mid --bucket-points 10 --json
+```
+
+Combine the two by opting fractal detection into volume-profile confluence:
+
+```bash
+mtdata-cli patterns_detect EURUSD --timeframe H1 --mode fractal --limit 300 \
+  --config '{"volume_profile":true,"volume_profile_tolerance_points":25}' --json
+```
+
+`volume_profile_levels` returns POC, VAH, and VAL. `source=auto` uses raw ticks for bounded windows and falls back to an M1-bar approximation for larger windows; broker FX volume is usually tick activity, not exchange-traded volume.
+
 ---
 
 ## 10) Combine signals into a decision (simple recipe)
@@ -246,4 +276,3 @@ See [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
 - [TEMPORAL.md](TEMPORAL.md) — Session and seasonal analysis
 - [BARRIER_FUNCTIONS.md](BARRIER_FUNCTIONS.md) — Barrier optimization deep dive
 - [SAMPLE-TRADE.md](SAMPLE-TRADE.md) — Guided trade workflow
-

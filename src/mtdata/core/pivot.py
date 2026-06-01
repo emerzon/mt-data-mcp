@@ -44,6 +44,7 @@ from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway
 from .output_contract import normalize_output_extras
+from .volume_profile import compute_volume_profile_payload
 
 logger = logging.getLogger(__name__)
 
@@ -586,6 +587,9 @@ def confluence_levels(  # noqa: C901
     reaction_bars: int = 6,
     adx_period: int = 14,
     decay_half_life_bars: Optional[int] = None,
+    volume_profile_source: Literal["auto", "ticks", "m1_bars"] = "auto",
+    volume_profile_max_tick_window_days: int = 7,
+    volume_profile_max_ticks: int = 50_000,
     detail: CompactStandardFullDetailLiteral = "compact",
     extras: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -717,6 +721,24 @@ def confluence_levels(  # noqa: C901
                 detail_value = "full"
             if detail_value in {"summary", "summary_only"}:
                 detail_value = "compact"
+            volume_profile_payload: Optional[Dict[str, Any]]
+            volume_profile_payload = compute_volume_profile_payload(
+                symbol=symbol,
+                start=start,
+                end=end,
+                source=volume_profile_source,
+                price_source="mid",
+                volume_source="auto",
+                bucket_points=None,
+                bucket_count=80,
+                max_buckets=120,
+                value_area_pct=0.70,
+                reference_price=float(reference_price),
+                max_tick_window_days=int(volume_profile_max_tick_window_days),
+                max_ticks=int(volume_profile_max_ticks),
+                max_m1_bars=max(1, int(lookback) * 60),
+                detail="compact",
+            )
 
             payload = build_level_confluence_payload(
                 symbol=symbol,
@@ -732,6 +754,7 @@ def confluence_levels(  # noqa: C901
                 max_distance_pct=None if max_distance_pct is None else float(max_distance_pct),
                 min_source_families=max(1, int(min_source_families)),
                 detail=detail_value,
+                volume_profile_payload=volume_profile_payload,
             )
             period_start = float(source_bar["time"]) if _has_field(source_bar, "time") else float("nan")
             if math.isfinite(period_start):
@@ -749,6 +772,11 @@ def confluence_levels(  # noqa: C901
                 "pivot_source_bar": f"last completed {pivot_tf} bar",
                 "support_resistance_timeframe": str(sr_payload.get("timeframe") or sr_tf),
                 "reference_price": "latest tick midpoint/last when available, else S/R current price or pivot close",
+                "volume_profile": (
+                    f"{volume_profile_payload.get('source')} source"
+                    if isinstance(volume_profile_payload, dict) and volume_profile_payload.get("success")
+                    else "unavailable"
+                ),
             }
             warnings = sr_payload.get("warnings")
             if isinstance(warnings, list) and warnings:
@@ -779,6 +807,9 @@ def confluence_levels(  # noqa: C901
         reaction_bars=reaction_bars,
         adx_period=adx_period,
         decay_half_life_bars=decay_half_life_bars,
+        volume_profile_source=volume_profile_source,
+        volume_profile_max_tick_window_days=volume_profile_max_tick_window_days,
+        volume_profile_max_ticks=volume_profile_max_ticks,
         detail=detail,
         extras=extras,
         func=_run,

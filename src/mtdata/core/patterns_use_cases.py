@@ -108,12 +108,21 @@ _CLASSIC_CONFIG_EXTRA_KEYS = {
     "stock_bars_left",
     "stock_bars_right",
 }
+_FRACTAL_CONFIG_EXTRA_KEYS = {
+    "volume_profile",
+    "volume_profile_source",
+    "volume_profile_tolerance_points",
+    "volume_profile_max_tick_window_days",
+    "volume_profile_max_ticks",
+}
 
 
 def _unknown_config_keys_for_mode(mode: str, unknown_keys: List[str]) -> List[str]:
     mode_key = str(mode).strip().lower()
     if mode_key == "classic":
         return [key for key in unknown_keys if key not in _CLASSIC_CONFIG_EXTRA_KEYS]
+    if mode_key == "fractal":
+        return [key for key in unknown_keys if key not in _FRACTAL_CONFIG_EXTRA_KEYS]
     return list(unknown_keys)
 
 
@@ -267,7 +276,7 @@ def _all_mode_invalid_config_keys(
     if not isinstance(config, dict):
         return []
 
-    known_keys = set(_CLASSIC_CONFIG_EXTRA_KEYS)
+    known_keys = set(_CLASSIC_CONFIG_EXTRA_KEYS) | set(_FRACTAL_CONFIG_EXTRA_KEYS)
     for cfg in (classic_cfg, elliott_cfg, fractal_cfg, harmonic_cfg):
         try:
             known_keys.update(vars(cfg).keys())
@@ -282,7 +291,7 @@ def _all_mode_invalid_config_keys(
     out: List[str] = []
     for key in config.keys():
         key_str = str(key)
-        if key_str in _CLASSIC_CONFIG_EXTRA_KEYS:
+        if key_str in _CLASSIC_CONFIG_EXTRA_KEYS or key_str in _FRACTAL_CONFIG_EXTRA_KEYS:
             continue
         if key_str not in known_keys:
             out.append(key_str)
@@ -334,6 +343,8 @@ class PatternsDetectDeps:
     validate_fractal_config: Any
     validate_harmonic_config: Any
     summarize_fractal_context: Any
+    compute_volume_profile_payload: Any
+    annotate_level_confluence: Any
     format_time_minimal: Any
     to_float_np: Any
 
@@ -386,6 +397,32 @@ def run_patterns_detect(  # noqa: C901
             limit,
             request.denoise,
         )
+
+    def _config_bool(name: str, default: bool = False) -> bool:
+        if not isinstance(request.config, dict) or name not in request.config:
+            return default
+        value = request.config.get(name)
+        if isinstance(value, bool):
+            return value
+        if value is None:
+            return default
+        return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+    def _config_int(name: str, default: int) -> int:
+        if not isinstance(request.config, dict) or name not in request.config:
+            return default
+        try:
+            return int(request.config.get(name))
+        except Exception:
+            return default
+
+    def _config_float(name: str, default: float) -> float:
+        if not isinstance(request.config, dict) or name not in request.config:
+            return default
+        try:
+            return float(request.config.get(name))
+        except Exception:
+            return default
 
     if mode_value == "candlestick":
         tf_single = tf_norm or "H1"
@@ -623,6 +660,46 @@ def run_patterns_detect(  # noqa: C901
         fractal_context = deps.summarize_fractal_context(visible_rows)
         if fractal_context:
             resp.update(fractal_context)
+        if _config_bool("volume_profile", False):
+            vp_source = (
+                str((request.config or {}).get("volume_profile_source") or "auto")
+                .strip()
+                .lower()
+                if isinstance(request.config, dict)
+                else "auto"
+            )
+            vp_payload = deps.compute_volume_profile_payload(
+                symbol=request.symbol,
+                start=request.start,
+                end=request.end,
+                source=vp_source,
+                price_source="mid",
+                volume_source="auto",
+                bucket_count=80,
+                max_buckets=120,
+                value_area_pct=0.70,
+                reference_price=None,
+                max_tick_window_days=_config_int("volume_profile_max_tick_window_days", 7),
+                max_ticks=_config_int("volume_profile_max_ticks", 50_000),
+                max_m1_bars=max(1, int(request.limit) * 60),
+                detail="compact",
+            )
+            resp["volume_profile"] = vp_payload
+            if isinstance(vp_payload, dict) and vp_payload.get("success"):
+                enriched_rows = deps.annotate_level_confluence(
+                    resp.get("patterns") or [],
+                    vp_payload.get("levels") or [],
+                    tolerance_points=_config_float("volume_profile_tolerance_points", 25.0),
+                    price_point=vp_payload.get("price_point") or vp_payload.get("bucket_size"),
+                    price_key="level_price",
+                )
+                resp["patterns"] = enriched_rows
+                resp["n_volume_profile_confluences"] = sum(
+                    1
+                    for row in enriched_rows
+                    if isinstance(row, dict)
+                    and (row.get("volume_profile_confluence") or {}).get("within_tolerance")
+                )
         _attach_signal_bias_summary(resp, deps)
         return resp
 

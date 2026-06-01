@@ -82,6 +82,7 @@ EXPECTED_TOOL_NAMES = frozenset(
         "trade_var_cvar_calculate",
         "trade_session_context",
         "tools_list",
+        "volume_profile_levels",
         "wait_event",
     }
 )
