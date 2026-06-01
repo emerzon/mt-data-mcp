@@ -219,11 +219,27 @@ class TradeJournalAnalyzeRequest(BaseModel):
         description="Maximum raw history rows to inspect. Default 50 keeps post-session review fast; raise for longer-term statistics.",
     )
     breakdown_limit: int = 10
+    min_sample: int = Field(
+        default=30,
+        description="Recommended minimum realized exit deals for journal statistics.",
+    )
+    check_only: bool = Field(
+        default=False,
+        description="Return sample sufficiency metadata without computing journal statistics.",
+    )
 
     @field_validator("side", mode="before")
     @classmethod
     def _normalize_side(cls, value: Optional[str]) -> Optional[str]:
         return _normalize_trade_side_alias(value)
+
+    @field_validator("breakdown_limit", "min_sample")
+    @classmethod
+    def _validate_positive_count(cls, value: int) -> int:
+        value_i = int(value)
+        if value_i <= 0:
+            raise ValueError("value must be greater than 0.")
+        return value_i
 
 
 class TradeRiskAnalyzeRequest(BaseModel):

@@ -333,6 +333,7 @@ def _trade_journal_period_context(
 def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str, Any]:
     period_context = _trade_journal_period_context(request)
     detail_mode = str(request.detail or "compact").strip().lower()
+    minimum_sample = int(max(1, int(request.min_sample)))
     if detail_mode == "compact":
         period_context = {"timezone": "UTC"}
     history_result = _run_trade_history_request(
@@ -360,7 +361,23 @@ def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str,
     message = history_result.get("message")
     if isinstance(message, str) and message.strip() and not raw_rows:
         breakdown_limit = int(max(1, int(request.breakdown_limit)))
-        sample_warning = _trade_journal_sample_warning(0)
+        sample_quality = _trade_journal_sample_quality(0, minimum=minimum_sample)
+        if request.check_only:
+            return {
+                "success": True,
+                **period_context,
+                "check_only": True,
+                "check_result": sample_quality,
+                "sample_size": 0,
+                "sample_quality": sample_quality,
+                "message": message,
+                "meta": {
+                    "history_rows": 0,
+                    "exit_deals": 0,
+                    "min_sample": minimum_sample,
+                },
+            }
+        sample_warning = _trade_journal_sample_warning(0, minimum=minimum_sample)
         breakdowns = _trade_journal_breakdowns(
             [],
             limit=breakdown_limit,
@@ -370,11 +387,14 @@ def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str,
             "success": True,
             **period_context,
             "summary": _trade_journal_metrics([]),
+            "sample_size": 0,
+            "sample_quality": sample_quality,
             "message": message,
             "meta": {
                 "history_rows": 0,
                 "exit_deals": 0,
                 "breakdown_limit": breakdown_limit,
+                "min_sample": minimum_sample,
             },
             "sample_warning": sample_warning,
         }
@@ -410,7 +430,23 @@ def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str,
 
     breakdown_limit = int(max(1, int(request.breakdown_limit)))
     if not analyzed_rows:
-        sample_warning = _trade_journal_sample_warning(len(analyzed_rows))
+        sample_quality = _trade_journal_sample_quality(0, minimum=minimum_sample)
+        if request.check_only:
+            return {
+                "success": True,
+                **period_context,
+                "check_only": True,
+                "check_result": sample_quality,
+                "sample_size": 0,
+                "sample_quality": sample_quality,
+                "message": "No realized exit deals found in the requested trade history.",
+                "meta": {
+                    "history_rows": int(len(rows)),
+                    "exit_deals": 0,
+                    "min_sample": minimum_sample,
+                },
+            }
+        sample_warning = _trade_journal_sample_warning(0, minimum=minimum_sample)
         breakdowns = _trade_journal_breakdowns(
             [],
             limit=breakdown_limit,
@@ -420,17 +456,36 @@ def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str,
             "success": True,
             **period_context,
             "summary": _trade_journal_metrics([]),
+            "sample_size": 0,
+            "sample_quality": sample_quality,
             "message": "No realized exit deals found in the requested trade history.",
             "meta": {
                 "history_rows": int(len(rows)),
                 "exit_deals": 0,
                 "breakdown_limit": breakdown_limit,
+                "min_sample": minimum_sample,
             },
             **({"sample_warning": sample_warning} if sample_warning else {}),
         }
         if breakdowns:
             payload["breakdowns"] = breakdowns
         return _attach_trade_journal_units(payload)
+
+    sample_quality = _trade_journal_sample_quality(len(analyzed_rows), minimum=minimum_sample)
+    if request.check_only:
+        return {
+            "success": True,
+            **period_context,
+            "check_only": True,
+            "check_result": sample_quality,
+            "sample_size": int(len(analyzed_rows)),
+            "sample_quality": sample_quality,
+            "meta": {
+                "history_rows": int(len(rows)),
+                "exit_deals": int(len(analyzed_rows)),
+                "min_sample": minimum_sample,
+            },
+        }
 
     # Filter trades by P&L sign: wins have positive P&L, losses have negative P&L
     wins = [row for row in analyzed_rows if float(row.get("net_pnl") or 0.0) > 0.0]
@@ -455,15 +510,18 @@ def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str,
         "success": True,
         **period_context,
         "summary": _trade_journal_metrics(analyzed_rows),
+        "sample_size": int(len(analyzed_rows)),
+        "sample_quality": sample_quality,
         "meta": {
             "history_rows": int(len(rows)),
             "exit_deals": int(len(analyzed_rows)),
             "breakdown_limit": breakdown_limit,
+            "min_sample": minimum_sample,
         },
     }
     if breakdowns:
         payload["breakdowns"] = breakdowns
-    sample_warning = _trade_journal_sample_warning(len(analyzed_rows))
+    sample_warning = _trade_journal_sample_warning(len(analyzed_rows), minimum=minimum_sample)
     if sample_warning:
         payload["sample_warning"] = sample_warning
     if detail_mode == "full":
@@ -482,12 +540,44 @@ def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str,
     return _attach_trade_journal_units(payload)
 
 
-def _trade_journal_sample_warning(exit_deals: int) -> Optional[str]:
-    if int(exit_deals) >= 30:
+def _trade_journal_sample_quality(exit_deals: int, *, minimum: int = 30) -> Dict[str, Any]:
+    count = int(max(0, int(exit_deals)))
+    recommended = int(max(1, int(minimum)))
+    if count <= 0:
+        status = "empty"
+        confidence = "none"
+    elif count < recommended:
+        status = "insufficient"
+        confidence = "low"
+    elif count < 100:
+        status = "usable"
+        confidence = "basic"
+    else:
+        status = "robust"
+        confidence = "higher"
+    quality: Dict[str, Any] = {
+        "status": status,
+        "sample_size": count,
+        "minimum_recommended": recommended,
+        "robust_sample": 100,
+        "confidence": confidence,
+    }
+    if count < recommended:
+        quality["suggestions"] = [
+            "Increase limit to fetch more raw deals.",
+            "Increase minutes_back or provide a wider start/end range.",
+            "Remove symbol or side filters if you want account-level statistics.",
+        ]
+    return quality
+
+
+def _trade_journal_sample_warning(exit_deals: int, *, minimum: int = 30) -> Optional[str]:
+    recommended = int(max(1, int(minimum)))
+    if int(exit_deals) >= recommended:
         return None
     return (
         f"Only {int(exit_deals)} realized exit deal(s) were analyzed; "
-        "journal statistics may be unstable. Increase limit to fetch more raw deals, "
+        f"{recommended}+ is recommended for basic journal statistics. Increase limit to fetch more raw deals, "
         "increase minutes_back, or provide a wider start/end range."
     )
 
