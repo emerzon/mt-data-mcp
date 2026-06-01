@@ -1640,6 +1640,25 @@ def fetch_candles(  # noqa: C901
         # Attach denoise applications metadata if any
         if denoise_apps:
             payload['denoise'] = {'applications': denoise_apps}
+        if denoise_apps or ti_spec:
+            denoise_stages = {
+                str(app.get("when") or "").lower()
+                for app in denoise_apps
+                if isinstance(app, dict)
+            }
+            pipeline = ["fetch_ohlcv"]
+            if "pre_ti" in denoise_stages:
+                pipeline.append("denoise_pre_ti")
+            if ti_spec:
+                pipeline.append("indicators")
+                payload["indicator_input"] = (
+                    "pre_ti_denoised_ohlcv"
+                    if "pre_ti" in denoise_stages
+                    else "raw_ohlcv"
+                )
+            if "post_ti" in denoise_stages:
+                pipeline.append("denoise_post_ti")
+            payload["processing_pipeline"] = pipeline
         if denoise_warnings:
             warns = payload.get('warnings')
             if not isinstance(warns, list):
