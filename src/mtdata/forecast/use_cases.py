@@ -1617,12 +1617,18 @@ def run_forecast_generate(
             and lib in ("", "native")
             and str(resolved_method).strip().lower() == "theta"
         ):
+            detail_value = _normalize_trader_detail(getattr(request, "detail", "compact"))
             warning = (
                 "Using native theta. StatsForecast theta is available via "
-                f"`mtdata-cli forecast_generate {request.symbol} --timeframe {request.timeframe} "
-                f"--library statsforecast --method Theta --horizon {request.horizon}` "
                 "and may produce different forecasts/interval behavior."
             )
+            if detail_value != "compact":
+                warning = (
+                    warning
+                    + " Example: "
+                    + f"mtdata-cli forecast_generate {request.symbol} --timeframe {request.timeframe} "
+                    + f"--library statsforecast --method Theta --horizon {request.horizon}"
+                )
             warnings_out = out.get("warnings")
             if not isinstance(warnings_out, list):
                 warnings_out = []

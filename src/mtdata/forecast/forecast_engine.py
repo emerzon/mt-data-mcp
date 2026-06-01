@@ -1130,21 +1130,9 @@ def _format_forecast_output(
                 result["lower_price"] = lower_vals
                 result["upper_price"] = upper_vals
         else:
-            symbol_arg = str(symbol).strip() if symbol is not None else ""
-            timeframe_arg = str(timeframe).strip() if timeframe is not None else ""
-            symbol_token = symbol_arg if symbol_arg else "SYMBOL"
-            timeframe_token = timeframe_arg if timeframe_arg else None
-            cmd_parts = [
-                "mtdata-cli forecast_conformal_intervals",
-                symbol_token,
-            ]
-            if timeframe_token:
-                cmd_parts.extend(["--timeframe", timeframe_token])
-            cmd_parts.extend(["--method", str(method), "--horizon", str(horizon)])
-            conformal_cmd = " ".join(cmd_parts)
             warning_text = (
                 f"Point forecast only for method '{method}'; confidence intervals are unavailable. "
-                f"Use forecast_conformal_intervals for uncertainty bands. Example: {conformal_cmd}"
+                "Use forecast_conformal_intervals for uncertainty bands."
             )
             warnings = result.get("warnings")
             if not isinstance(warnings, list):
