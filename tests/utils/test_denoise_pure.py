@@ -829,6 +829,21 @@ class TestHampelFilter:
         y = _hampel_filter(NOISY_SIGNAL, window=7, n_sigmas=3.0, causality="zero_phase")
         _check_basic(y, N)
 
+    def test_matches_python_reference(self):
+        rng = np.random.RandomState(7)
+        x = rng.normal(0.0, 1.0, 64)
+        x[[5, 18, 42]] += np.array([8.0, -9.0, 11.0])
+
+        expected = specialized_filters._hampel_filter_python(
+            x,
+            window=7,
+            n_sigmas=3.0,
+            causality="zero_phase",
+        )
+        actual = _hampel_filter(x, window=7, n_sigmas=3.0, causality="zero_phase")
+
+        np.testing.assert_allclose(actual, expected)
+
     def test_replaces_outliers(self):
         rng = np.random.RandomState(123)
         x = rng.normal(0, 1, 50)
@@ -839,6 +854,21 @@ class TestHampelFilter:
     def test_causal(self):
         y = _hampel_filter(NOISY_SIGNAL, window=7, n_sigmas=3.0, causality="causal")
         _check_basic(y, N)
+
+    def test_causal_matches_python_reference(self):
+        rng = np.random.RandomState(11)
+        x = rng.normal(0.0, 1.0, 64)
+        x[[6, 23, 37]] += np.array([6.0, -7.0, 9.0])
+
+        expected = specialized_filters._hampel_filter_python(
+            x,
+            window=9,
+            n_sigmas=2.5,
+            causality="causal",
+        )
+        actual = _hampel_filter(x, window=9, n_sigmas=2.5, causality="causal")
+
+        np.testing.assert_allclose(actual, expected)
 
     def test_short_array(self):
         y = _hampel_filter(np.array([1.0, 2.0]), window=7, n_sigmas=3.0, causality="zero_phase")
@@ -851,10 +881,52 @@ class TestBilateralFilter1d:
                                  truncate=3.0, causality="zero_phase")
         _check_basic(y, N)
 
+    def test_matches_python_reference(self):
+        rng = np.random.RandomState(21)
+        x = rng.normal(0.0, 1.0, 48)
+
+        expected = specialized_filters._bilateral_filter_1d_python(
+            x,
+            sigma_s=2.0,
+            sigma_r=0.5,
+            truncate=3.0,
+            causality="zero_phase",
+        )
+        actual = _bilateral_filter_1d(
+            x,
+            sigma_s=2.0,
+            sigma_r=0.5,
+            truncate=3.0,
+            causality="zero_phase",
+        )
+
+        np.testing.assert_allclose(actual, expected)
+
     def test_causal(self):
         y = _bilateral_filter_1d(NOISY_SIGNAL, sigma_s=2.0, sigma_r=0.5,
                                  truncate=3.0, causality="causal")
         _check_basic(y, N)
+
+    def test_causal_matches_python_reference(self):
+        rng = np.random.RandomState(22)
+        x = rng.normal(0.0, 1.0, 48)
+
+        expected = specialized_filters._bilateral_filter_1d_python(
+            x,
+            sigma_s=1.5,
+            sigma_r=0.75,
+            truncate=2.5,
+            causality="causal",
+        )
+        actual = _bilateral_filter_1d(
+            x,
+            sigma_s=1.5,
+            sigma_r=0.75,
+            truncate=2.5,
+            causality="causal",
+        )
+
+        np.testing.assert_allclose(actual, expected)
 
     def test_zero_sigma_returns_input(self):
         y = _bilateral_filter_1d(NOISY_SIGNAL, sigma_s=0.0, sigma_r=0.5,
