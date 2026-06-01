@@ -1,8 +1,10 @@
+import io
 import logging
 import multiprocessing as mp
 import os
 import time
 import traceback
+from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from functools import lru_cache
 from importlib import import_module
 from typing import Any, Dict, List, Literal, Optional
@@ -232,43 +234,80 @@ def _send_forecast_process_message(channel: Any, message: Dict[str, Any]) -> Non
     raise RuntimeError("Invalid forecast child result channel")
 
 
+@contextmanager
+def _suppress_forecast_child_side_output():
+    stdout_buffer = io.StringIO()
+    stderr_buffer = io.StringIO()
+    previous_disable = logging.root.manager.disable
+    env_updates = {
+        "HF_HUB_DISABLE_PROGRESS_BARS": "1",
+        "TOKENIZERS_PARALLELISM": "false",
+        "TRANSFORMERS_VERBOSITY": "error",
+        "TQDM_DISABLE": "1",
+    }
+    previous_env: Dict[str, Optional[str]] = {}
+    missing_env: set[str] = set()
+    for key, value in env_updates.items():
+        if key in os.environ:
+            previous_env[key] = os.environ.get(key)
+        else:
+            missing_env.add(key)
+        os.environ[key] = value
+    try:
+        logging.disable(logging.CRITICAL)
+        with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
+            yield
+    finally:
+        logging.disable(previous_disable)
+        for key in env_updates:
+            if key in missing_env:
+                os.environ.pop(key, None)
+                continue
+            restored = previous_env.get(key)
+            if restored is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = restored
+
+
 def _forecast_process_entry(operation: str, payload: Dict[str, Any], result_channel: Any) -> None:
     os.environ[_FORECAST_PROCESS_CHILD_ENV] = "1"
-    try:
-        result = _run_forecast_payload_direct(operation, payload)
-    except ForecastError as exc:
-        _send_forecast_process_message(
-            result_channel,
-            {
-                "status": "forecast_error",
-                "message": str(exc),
-            },
-        )
-    except BaseException as exc:
-        _send_forecast_process_message(
-            result_channel,
-            {
-                "status": "exception",
-                "type": type(exc).__name__,
-                "message": str(exc),
-                "traceback": traceback.format_exc(),
-            },
-        )
-    else:
-        _send_forecast_process_message(result_channel, {"status": "ok", "result": result})
-    finally:
+    with _suppress_forecast_child_side_output():
         try:
-            from ..forecast.gpu_runtime import cleanup_forecast_gpu_runtime
+            result = _run_forecast_payload_direct(operation, payload)
+        except ForecastError as exc:
+            _send_forecast_process_message(
+                result_channel,
+                {
+                    "status": "forecast_error",
+                    "message": str(exc),
+                },
+            )
+        except BaseException as exc:
+            _send_forecast_process_message(
+                result_channel,
+                {
+                    "status": "exception",
+                    "type": type(exc).__name__,
+                    "message": str(exc),
+                    "traceback": traceback.format_exc(),
+                },
+            )
+        else:
+            _send_forecast_process_message(result_channel, {"status": "ok", "result": result})
+        finally:
+            try:
+                from ..forecast.gpu_runtime import cleanup_forecast_gpu_runtime
 
-            cleanup_forecast_gpu_runtime(clear_model_cache=True)
-        except Exception:
-            pass
-        try:
-            close = getattr(result_channel, "close", None)
-            if callable(close):
-                close()
-        except Exception:
-            pass
+                cleanup_forecast_gpu_runtime(clear_model_cache=True)
+            except Exception:
+                pass
+            try:
+                close = getattr(result_channel, "close", None)
+                if callable(close):
+                    close()
+            except Exception:
+                pass
 
 
 def _run_forecast_payload_direct(operation: str, payload: Dict[str, Any]) -> Dict[str, Any]:

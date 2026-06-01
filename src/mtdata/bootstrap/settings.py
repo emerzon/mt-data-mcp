@@ -60,9 +60,15 @@ def _suppress_noisy_third_party_logs() -> None:
     os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
     for logger_name, level in (
         ("numba.cuda.cudadrv.driver", logging.WARNING),
+        ("absl", logging.ERROR),
+        ("huggingface_hub", logging.WARNING),
+        ("timesfm", logging.WARNING),
+        ("timesfm_2p5_torch", logging.WARNING),
+        ("torch", logging.WARNING),
         ("torch.distributed", logging.ERROR),
         ("torch.distributed.elastic.multiprocessing.redirects", logging.ERROR),
         ("torch._dynamo", logging.ERROR),
+        ("transformers", logging.WARNING),
         ("lightning", logging.ERROR),
         ("pytorch_lightning", logging.ERROR),
     ):
