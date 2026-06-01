@@ -691,6 +691,9 @@ def _invalid_finviz_screen_filters_error(
     details: Dict[str, Any] = {"received_type": type(filters).__name__}
     if invalid_tokens:
         details["invalid_tokens"] = list(invalid_tokens)
+    examples = _finviz_screen_filter_name_examples()
+    if examples:
+        details["valid_filter_examples"] = examples
     return _finviz_error_payload(
         message,
         code="finviz_screen_filters_invalid",
@@ -713,6 +716,14 @@ def _finviz_screen_shorthand_token_map() -> Optional[Dict[str, tuple[str, str]]]
             if prefix and code:
                 reverse_filters[f"{prefix}_{code}"] = (str(filter_name), str(option_name))
     return reverse_filters
+
+
+def _finviz_screen_filter_name_examples(limit: int = 12) -> List[str]:
+    try:
+        from finvizfinance.screener.base import filter_dict
+    except ImportError:
+        return []
+    return [str(name) for name in list(filter_dict.keys())[: max(1, int(limit))]]
 
 
 def _parse_finviz_screen_shorthand(raw: str) -> Optional[Dict[str, Any]]:
@@ -823,11 +834,47 @@ def _parse_finviz_screen_key_value_filters(raw: str) -> Optional[Dict[str, Any]]
     return parsed or None
 
 
+def _normalize_finviz_screen_filter_dict(
+    filters: Dict[str, Any],
+) -> tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+    try:
+        from finvizfinance.screener.base import filter_dict
+    except ImportError:
+        return filters, None
+
+    filter_names = {
+        _compact_finviz_filter_token(name): str(name)
+        for name in filter_dict
+    }
+    normalized: Dict[str, Any] = {}
+    invalid_tokens: List[str] = []
+    for key, value in filters.items():
+        filter_name = filter_names.get(_compact_finviz_filter_token(key))
+        if filter_name is None:
+            invalid_tokens.append(str(key))
+            continue
+        option_name = _resolve_finviz_filter_option(filter_dict[filter_name], value)
+        if option_name is None:
+            invalid_tokens.append(f"{filter_name}={value}")
+            continue
+        normalized[filter_name] = option_name
+    if invalid_tokens:
+        return None, _invalid_finviz_screen_filters_error(
+            filters,
+            reason=(
+                "Unknown filter key or value. Use exact Finviz filter names, "
+                "supported shorthand, or key=value aliases such as pe_under=15."
+            ),
+            invalid_tokens=invalid_tokens,
+        )
+    return normalized, None
+
+
 def _resolve_finviz_screen_filters(filters: Any) -> tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
     if filters is None:
         return None, None
     if isinstance(filters, dict):
-        return filters, None
+        return _normalize_finviz_screen_filter_dict(filters)
     if not isinstance(filters, str):
         return None, _invalid_finviz_screen_filters_error(filters)
 
