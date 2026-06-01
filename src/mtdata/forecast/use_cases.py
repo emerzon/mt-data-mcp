@@ -1923,6 +1923,12 @@ def _apply_tuning_detail(result: Dict[str, Any], detail: str) -> Dict[str, Any]:
     if "history_tail" in out:
         out["history_tail_count"] = len(out.get("history_tail") or [])
         out.pop("history_tail", None)
+    if "best_result_summary" in out:
+        summary = out.get("best_result_summary")
+        if isinstance(summary, dict) and summary.get("horizon") is not None:
+            out.setdefault("best_horizon", summary.get("horizon"))
+        out["best_result_summary_omitted"] = "Use detail=full for nested backtest result details."
+        out.pop("best_result_summary", None)
     return out
 
 
