@@ -155,6 +155,8 @@ class TestForecastNeural:
             params={"max_steps": 100}, Y_df=Y_df,
         )
         assert pu["max_epochs"] == 100
+        assert pu["val_size"] == 20
+        assert pu["early_stop_patience_steps"] == 20
 
     @patch("mtdata.forecast.methods.neural._nf_setup_and_predict")
     @patch("mtdata.forecast.methods.neural._edge_pad_to_length", side_effect=lambda v, l: v[:l] if len(v) >= l else np.pad(v, (0, l - len(v)), mode="edge"))
@@ -228,6 +230,23 @@ class TestForecastNeural:
             Y_df=Y_df,
         )
         assert pu["input_size"] == 88
+
+    @patch("mtdata.forecast.methods.neural._nf_setup_and_predict")
+    def test_small_series_disables_early_stopping(self, predict_mock):
+        predict_mock.return_value = _make_Yf(4)
+        Y_df = pd.DataFrame({"unique_id": ["ts"] * 9, "ds": list(range(9)), "y": np.linspace(100, 103, 9)})
+        _vals, pu = forecast_neural(
+            method="nhits",
+            series=np.linspace(100, 103, 9),
+            fh=8,
+            timeframe="H1",
+            n=9,
+            m=0,
+            params={},
+            Y_df=Y_df,
+        )
+        assert "val_size" not in pu
+        assert "early_stop_patience_steps" not in pu
 
 
 # ── NeuralForecastMethod and subclasses  (lines 90-177) ─────────────────────

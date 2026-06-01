@@ -112,6 +112,9 @@ def forecast_neural(
     steps = int(params.get('max_steps', params.get('max_epochs', 50)))
     batch_size = int(params.get('batch_size', 32))
     lr = params.get('learning_rate', None)
+    val_size, early_stop_patience_steps = _neural_resolve_validation_settings(
+        params, n, int(fh), steps,
+    )
 
     Yf = _nf_setup_and_predict(
         model_class=model_class,
@@ -121,6 +124,8 @@ def forecast_neural(
         input_size=int(input_size),
         batch_size=int(batch_size),
         steps=int(steps),
+        val_size=val_size,
+        early_stop_patience_steps=early_stop_patience_steps,
         learning_rate=float(lr) if lr is not None else None,
         exog_used=exog_used,
         exog_future=exog_future,
@@ -136,7 +141,15 @@ def forecast_neural(
         f"{method_l.upper()} forecast",
         allow_actual_fallback=False,
     )
-    params_used = {'max_epochs': int(steps), 'input_size': int(input_size), 'batch_size': int(batch_size)}
+    params_used = {
+        'max_epochs': int(steps),
+        'input_size': int(input_size),
+        'batch_size': int(batch_size),
+    }
+    if val_size > 0:
+        params_used['val_size'] = int(val_size)
+    if early_stop_patience_steps is not None:
+        params_used['early_stop_patience_steps'] = int(early_stop_patience_steps)
     return f_vals.astype(float, copy=False), params_used
 
 
@@ -167,6 +180,29 @@ def _neural_resolve_hyperparams(
     return input_size, steps, batch_size, float(lr) if lr is not None else None
 
 
+def _neural_resolve_validation_settings(
+    params: Dict[str, Any], n: int, fh: int, steps: int,
+) -> Tuple[int, Optional[int]]:
+    raw_val_size = params.get("val_size")
+    if raw_val_size is None:
+        available = max(0, int(n) - int(fh) - 1)
+        if available <= 0:
+            val_size = 0
+        else:
+            val_size = min(available, max(int(fh), int(n) // 5))
+    else:
+        val_size = max(0, min(int(raw_val_size), max(0, int(n) - 1)))
+
+    raw_patience = params.get("early_stop_patience_steps")
+    if val_size <= 0:
+        return 0, None
+    if raw_patience is None:
+        patience = min(max(5, int(steps) // 5), max(1, int(steps) - 1))
+    else:
+        patience = max(0, int(raw_patience))
+    return int(val_size), (int(patience) if patience > 0 else None)
+
+
 class NeuralForecastMethod(ForecastMethod):
     PARAMS: List[Dict[str, Any]] = [
         {"name": "input_size", "type": "int|null", "description": "Lookback context for the model (auto if omitted)."},
@@ -174,6 +210,12 @@ class NeuralForecastMethod(ForecastMethod):
         {"name": "max_epochs", "type": "int|null", "description": "Alias for max_steps."},
         {"name": "batch_size", "type": "int", "description": "Batch size (default: 32)."},
         {"name": "learning_rate", "type": "float|null", "description": "Learning rate (model default if omitted)."},
+        {"name": "val_size", "type": "int|null", "description": "Validation window for early stopping (auto if omitted)."},
+        {
+            "name": "early_stop_patience_steps",
+            "type": "int|null",
+            "description": "Stop training early after this many non-improving validation checks (auto if omitted).",
+        },
     ]
 
     @property
@@ -238,6 +280,9 @@ class NeuralForecastMethod(ForecastMethod):
         input_size, steps, batch_size, lr = _neural_resolve_hyperparams(
             p, n, int(horizon), int(seasonality or 0),
         )
+        val_size, early_stop_patience_steps = _neural_resolve_validation_settings(
+            p, n, int(horizon), steps,
+        )
         timeframe = str(p.get("timeframe") or kwargs.get("timeframe") or "H1")
         model_class = _resolve_nf_model_class(self.name)
 
@@ -254,6 +299,8 @@ class NeuralForecastMethod(ForecastMethod):
             input_size=input_size,
             batch_size=batch_size,
             steps=steps,
+            val_size=val_size,
+            early_stop_patience_steps=early_stop_patience_steps,
             learning_rate=lr,
             accel=accel,
         )
@@ -265,6 +312,7 @@ class NeuralForecastMethod(ForecastMethod):
                     model_kwargs=model_kwargs,
                     timeframe=timeframe,
                     Y_df=Y_df,
+                    val_size=val_size,
                     exog_used=exog_used,
                 )
 
@@ -275,6 +323,10 @@ class NeuralForecastMethod(ForecastMethod):
             'max_epochs': steps, 'input_size': input_size,
             'batch_size': batch_size,
         }
+        if val_size > 0:
+            params_used['val_size'] = val_size
+        if early_stop_patience_steps is not None:
+            params_used['early_stop_patience_steps'] = early_stop_patience_steps
         return TrainResult(
             artifact_bytes=artifact_bytes,
             params_used=params_used,
