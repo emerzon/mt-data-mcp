@@ -80,6 +80,17 @@ class ForecastTaskCancelRequest(BaseModel):
     task_id: str = Field(..., description="Task ID to cancel.")
 
 
+class ForecastTaskCancelAllRequest(BaseModel):
+    status_filter: Optional[str] = Field(
+        "running",
+        description="Task status to cancel. Defaults to running; use pending to cancel queued tasks.",
+    )
+    method: Optional[str] = Field(None, description="Optional method filter.")
+    data_scope: Optional[str] = Field(None, description="Optional data_scope filter such as EURUSD_H1.")
+    since_minutes: Optional[float] = Field(None, ge=0.0, description="Only cancel tasks created within this many minutes.")
+    dry_run: bool = Field(True, description="Preview matching tasks without cancelling them.")
+
+
 class ForecastTaskWaitRequest(BaseModel):
     task_id: str = Field(..., description="Task ID returned by forecast_train or forecast_generate async mode.")
     timeout_seconds: float = Field(30.0, ge=0.0, le=300.0)
@@ -113,6 +124,31 @@ class ForecastModelsCleanupRequest(BaseModel):
 
 def _detail_mode(value: Any) -> DetailLevel:
     return "full" if str(value or "compact").strip().lower() == "full" else "compact"
+
+
+def _task_matches_filters(
+    task: Any,
+    *,
+    method: Optional[str] = None,
+    data_scope: Optional[str] = None,
+    since_minutes: Optional[float] = None,
+) -> bool:
+    if method and str(getattr(task, "method", "")) != str(method):
+        return False
+    if data_scope and str(getattr(task, "data_scope", "")) != str(data_scope):
+        return False
+    if since_minutes is not None:
+        try:
+            since_seconds = max(0.0, float(since_minutes)) * 60.0
+        except Exception:
+            return False
+        created_at = getattr(task, "created_at", None)
+        try:
+            if time.time() - float(created_at) > since_seconds:
+                return False
+        except Exception:
+            return False
+    return True
 
 
 def _serialize_progress(progress: Any, *, detail: DetailLevel) -> Dict[str, Any]:
@@ -410,6 +446,67 @@ def forecast_task_cancel(request: ForecastTaskCancelRequest) -> Dict[str, Any]:
 
 
 @mcp.tool()
+def forecast_task_cancel_all(request: ForecastTaskCancelAllRequest) -> Dict[str, Any]:
+    """Preview or cancel matching non-terminal forecast training tasks."""
+    def _execute() -> Dict[str, Any]:
+        status_value = str(request.status_filter or "running").strip().lower()
+        if status_value not in {"pending", "running"}:
+            return build_error_payload(
+                "forecast_task_cancel_all only supports status_filter=pending or running.",
+                code="forecast_task_cancel_all_invalid_status",
+                operation="forecast_task_cancel_all",
+            )
+        tm = _get_task_manager()
+        tasks = [
+            task
+            for task in tm.list_tasks(status=status_value)
+            if _task_matches_filters(
+                task,
+                method=request.method,
+                data_scope=request.data_scope,
+                since_minutes=request.since_minutes,
+            )
+        ]
+        matches = [
+            {
+                "task_id": task.task_id,
+                "method": task.method,
+                "data_scope": task.data_scope,
+                "status": task.status,
+                "created_at": task.created_at,
+            }
+            for task in tasks
+        ]
+        cancelled = []
+        if not request.dry_run:
+            for task in tasks:
+                result = tm.cancel(task.task_id)
+                if result.get("cancel_requested"):
+                    cancelled.append(result)
+        return {
+            "success": True,
+            "dry_run": bool(request.dry_run),
+            "status_filter": status_value,
+            "method": request.method,
+            "data_scope": request.data_scope,
+            "since_minutes": request.since_minutes,
+            "matched": len(matches),
+            "cancelled": len(cancelled),
+            "tasks": matches,
+            "results": cancelled,
+        }
+
+    return run_logged_operation(
+        logger,
+        operation="forecast_task_cancel_all",
+        func=_execute,
+        status_filter=request.status_filter,
+        method=request.method,
+        dry_run=request.dry_run,
+    )
+
+
+@mcp.tool()
 def forecast_task_wait(request: ForecastTaskWaitRequest) -> Dict[str, Any]:
     """Wait for a forecast training task to complete or timeout."""
     def _execute() -> Dict[str, Any]:
@@ -442,17 +539,35 @@ def forecast_task_wait(request: ForecastTaskWaitRequest) -> Dict[str, Any]:
 @mcp.tool()
 def forecast_task_list(
     status_filter: Optional[str] = None,
+    since_minutes: Optional[float] = None,
+    method: Optional[str] = None,
+    data_scope: Optional[str] = None,
     detail: DetailLevel = "compact",
 ) -> Dict[str, Any]:
     """List active and recent forecast training tasks.
 
-    Optionally filter by status: pending, running, completed, failed, cancelled.
+    Optionally filter by status, method, data_scope, or recent creation window.
     Use ``extras='metadata'`` for expanded progress and result payloads.
     """
     def _execute() -> Dict[str, Any]:
         detail_mode = _detail_mode(detail)
+        if since_minutes is not None and float(since_minutes) < 0:
+            return build_error_payload(
+                "since_minutes must be >= 0.",
+                code="forecast_task_list_invalid_since",
+                operation="forecast_task_list",
+            )
         tm = _get_task_manager()
-        tasks = tm.list_tasks(status=status_filter)
+        tasks = [
+            task
+            for task in tm.list_tasks(status=status_filter)
+            if _task_matches_filters(
+                task,
+                method=method,
+                data_scope=data_scope,
+                since_minutes=since_minutes,
+            )
+        ]
         items = [_task_list_item_payload(task, detail=detail_mode) for task in tasks]
         summary: Dict[str, int] = {}
         for item in items:
@@ -463,6 +578,12 @@ def forecast_task_list(
             "detail": detail_mode,
             "count": len(items),
             "summary": summary,
+            "filters": {
+                "status_filter": status_filter,
+                "since_minutes": since_minutes,
+                "method": method,
+                "data_scope": data_scope,
+            },
             "tasks": items,
         }
         if not items:
@@ -481,6 +602,9 @@ def forecast_task_list(
         operation="forecast_task_list",
         func=_execute,
         status_filter=status_filter,
+        since_minutes=since_minutes,
+        method=method,
+        data_scope=data_scope,
         detail=detail,
     )
 
