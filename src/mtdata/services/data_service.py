@@ -89,6 +89,10 @@ logger = logging.getLogger(__name__)
 _AUTO_TIME_ALIGNMENT_MIN_SHIFT_SECONDS = 1800
 _AUTO_TIME_ALIGNMENT_MAX_SHIFT_SECONDS = 18 * 3600
 _TICK_SUMMARY_MIN_ANALYTIC_TICKS = 20
+_DATE_FORMAT_HINT = (
+    "Accepted examples: '2026-01-15', '2026-01-15 14:30', "
+    "'2026-01-15T14:30:00Z', 'yesterday', '2 days ago', 'last Friday'."
+)
 _CANDLE_PRICE_COLUMNS = frozenset({"open", "high", "low", "close"})
 _TICK_PRICE_COLUMNS = frozenset({"bid", "ask", "mid", "spread", "last"})
 _TICK_PRICE_STAT_KEYS = frozenset(
@@ -585,7 +589,7 @@ def _fetch_rates_with_warmup(
 def _parse_fetch_datetime_arg(value: str) -> tuple[Optional[datetime], Optional[str]]:
     parsed = _parse_start_datetime(value)
     if parsed is None:
-        return None, "Invalid date format. Try '2025-08-29', '2025-08-29 14:30', 'yesterday 14:00'."
+        return None, f"Could not parse date {value!r}. {_DATE_FORMAT_HINT}"
     return parsed, None
 
 
@@ -2147,11 +2151,11 @@ def fetch_ticks(  # noqa: C901
             if start:
                 from_date = _parse_start_datetime(start)
                 if not from_date:
-                    return {"error": "Invalid date format. Try examples like '2025-08-29', '2025-08-29 14:30', 'yesterday 14:00', '2 days ago'."}
+                    return {"error": f"Could not parse start date {start!r}. {_DATE_FORMAT_HINT}"}
                 if end:
                     to_date = _parse_start_datetime(end)
                     if not to_date:
-                        return {"error": "Invalid 'end' date format. Try '2025-08-29 14:30' or 'yesterday 18:00'."}
+                        return {"error": f"Could not parse end date {end!r}. {_DATE_FORMAT_HINT}"}
                     if from_date > to_date:
                         return {"error": "start must be before or equal to end."}
                     ticks = _fetch_ticks_range_with_retry(symbol, from_date, to_date)
