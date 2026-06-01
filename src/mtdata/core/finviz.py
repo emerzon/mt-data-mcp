@@ -2797,7 +2797,7 @@ def finviz_futures(
 
 @mcp.tool()
 def finviz_calendar(
-    calendar: str = "economic",
+    calendar: Literal["economic", "earnings", "dividends"] = "economic",  # type: ignore
     impact: Optional[Literal["low", "medium", "high"]] = None,
     country: Optional[str] = None,
     currency: Optional[str] = None,
@@ -2817,7 +2817,7 @@ def finviz_calendar(
     Parameters
     ----------
     calendar : str
-        Calendar type: "economic", "earnings", or "dividends" (also accepts paths like "/calendar/economic").
+        Calendar type: "economic", "earnings", or "dividends".
     impact : str, optional
         Economic only: filter by impact level: "low", "medium", or "high".
     country : str, optional
@@ -2856,11 +2856,7 @@ def finviz_calendar(
         start_value = str(start or "").strip() or None
         end_value = str(end or "").strip() or None
 
-        cal = (calendar or "").strip().lower()
-        if "?" in cal:
-            cal = cal.split("?", 1)[0]
-        if "/" in cal:
-            cal = cal.rstrip("/").split("/")[-1]
+        cal = (calendar or "economic").strip().lower()
 
         country_filter, filter_error = _resolve_finviz_calendar_country_filter(
             country=country,
