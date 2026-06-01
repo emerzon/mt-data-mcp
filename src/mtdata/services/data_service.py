@@ -1825,33 +1825,44 @@ def fetch_candles(  # noqa: C901
                     est_mean = None
                     if isinstance(spread_stats, dict):
                         est_mean = spread_stats.get("mean") or spread_stats.get("median") or spread_stats.get("first")
+                    estimate_source = "tick_stats"
+                    live_spread = _live_tick_spread(symbol)
                     if est_mean is not None:
                         est_mean = float(est_mean)
+                        if live_spread is not None and live_spread > 0.0:
+                            diff_ratio = abs(float(live_spread) - est_mean) / max(float(live_spread), abs(est_mean), 1e-12)
+                            payload.setdefault("meta", {}).setdefault("diagnostics", {}).setdefault("spread_estimate", {})["live_spread"] = live_spread
+                            payload["meta"]["diagnostics"]["spread_estimate"]["live_diff_ratio"] = diff_ratio
+                            if diff_ratio > 0.5:
+                                payload.setdefault("warnings", []).append(
+                                    "include_spread tick-stat estimate differed from live spread "
+                                    f"by {diff_ratio:.0%}; live ticker spread ({live_spread:g}) applied."
+                                )
+                                est_mean = float(live_spread)
+                                estimate_source = "live_ticker_crosscheck"
+                                payload["spread_accuracy"] = "tick_stats_replaced_by_live"
                         data_rows = _apply_estimated_spread_to_candle_rows(
                             data_rows,
                             spread_idx=spread_idx,
                             estimated_spread=est_mean,
-                            source="tick_stats",
+                            source=estimate_source,
                         )
                         payload["data"] = data_rows
                         payload.setdefault("warnings", []).append(
                             "include_spread requested but spread unavailable; "
-                            f"estimated mean spread from recent ticks ({est_mean:g}) applied."
+                            f"estimated spread from {estimate_source} ({est_mean:g}) applied."
                         )
                         payload["spread_unit"] = "price"
                         payload["spread_estimated"] = True
-                        payload["spread_source"] = "tick_stats"
+                        payload["spread_source"] = estimate_source
                         payload.setdefault("meta", {}).setdefault("diagnostics", {}).setdefault("spread_estimate", {})["estimated_mean"] = est_mean
-                        payload["meta"]["diagnostics"]["spread_estimate"]["source"] = "tick_stats"
+                        payload["meta"]["diagnostics"]["spread_estimate"]["source"] = estimate_source
                         payload["meta"]["diagnostics"]["spread_estimate"]["unit"] = "price"
                         payload["meta"]["diagnostics"]["spread_estimate"]["tick_stats"] = spread_stats
                     else:
                         # Fallback to live ticker
-                        tick = mt5.symbol_info_tick(symbol)
-                        bid = getattr(tick, "bid", None) if tick is not None else None
-                        ask = getattr(tick, "ask", None) if tick is not None else None
-                        if bid is not None and ask is not None:
-                            est_mean = float(max(0.0, (ask - bid)))
+                        if live_spread is not None:
+                            est_mean = float(live_spread)
                             data_rows = _apply_estimated_spread_to_candle_rows(
                                 data_rows,
                                 spread_idx=spread_idx,
@@ -1875,6 +1886,24 @@ def fetch_candles(  # noqa: C901
         return payload
     except Exception as e:
         return {"error": f"Error getting rates: {str(e)}"}
+
+
+def _live_tick_spread(symbol: str) -> Optional[float]:
+    try:
+        tick = mt5.symbol_info_tick(symbol)
+    except Exception:
+        tick = None
+    bid = getattr(tick, "bid", None) if tick is not None else None
+    ask = getattr(tick, "ask", None) if tick is not None else None
+    try:
+        bid_f = float(bid)
+        ask_f = float(ask)
+    except Exception:
+        return None
+    if not math.isfinite(bid_f) or not math.isfinite(ask_f):
+        return None
+    spread = max(0.0, ask_f - bid_f)
+    return spread if spread > 0.0 else None
 
 
 def _apply_estimated_spread_to_candle_rows(
