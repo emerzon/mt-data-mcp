@@ -104,7 +104,20 @@ def _apply_options_detail(
     if kind == "barrier_price":
         return {
             key: out[key]
-            for key in ("success", "price", "delta", "units", "detail")
+            for key in (
+                "success",
+                "option_type",
+                "barrier_type",
+                "spot",
+                "strike",
+                "barrier",
+                "maturity_days",
+                "price",
+                "delta",
+                "units",
+                "pricing_note",
+                "detail",
+            )
             if key in out
         }
     if kind == "heston_calibrate":
@@ -211,28 +224,47 @@ def options_barrier_price(
     """Price a barrier option using QuantLib."""
     from ..forecast.quantlib_tools import price_barrier_option_quantlib as _impl
 
+    def _run() -> Dict[str, Any]:
+        payload = _impl(
+            spot=float(spot),
+            strike=float(strike),
+            barrier=float(barrier),
+            maturity_days=int(maturity_days),
+            option_type=option_type,
+            barrier_type=barrier_type,
+            risk_free_rate=float(risk_free_rate),
+            dividend_yield=float(dividend_yield),
+            volatility=float(volatility),
+            rebate=float(rebate),
+        )
+        if isinstance(payload, dict) and payload.get("success"):
+            payload.update(
+                {
+                    "option_type": option_type,
+                    "barrier_type": barrier_type,
+                    "spot": float(spot),
+                    "strike": float(strike),
+                    "barrier": float(barrier),
+                    "maturity_days": int(maturity_days),
+                    "pricing_note": (
+                        f"{barrier_type} {option_type}: spot={float(spot)}, "
+                        f"strike={float(strike)}, barrier={float(barrier)}."
+                    ),
+                }
+            )
+        return _apply_options_detail(
+            payload,
+            detail=detail,
+            kind="barrier_price",
+        )
+
     return _run_options_operation(
         "options_barrier_price",
         option_type=option_type,
         barrier_type=barrier_type,
         maturity_days=maturity_days,
         detail=detail,
-        func=lambda: _apply_options_detail(
-            _impl(
-                spot=float(spot),
-                strike=float(strike),
-                barrier=float(barrier),
-                maturity_days=int(maturity_days),
-                option_type=option_type,
-                barrier_type=barrier_type,
-                risk_free_rate=float(risk_free_rate),
-                dividend_yield=float(dividend_yield),
-                volatility=float(volatility),
-                rebate=float(rebate),
-            ),
-            detail=detail,
-            kind="barrier_price",
-        ),
+        func=_run,
     )
 
 
