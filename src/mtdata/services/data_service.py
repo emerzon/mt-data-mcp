@@ -1194,6 +1194,34 @@ def _collect_session_gaps(
     return session_gaps, None
 
 
+def _annotate_candle_gap_rows(
+    payload: Dict[str, Any],
+    session_gaps: List[Dict[str, Any]],
+) -> None:
+    rows = payload.get("data")
+    if not isinstance(rows, list) or not session_gaps:
+        return
+    gaps_by_to = {
+        str(gap.get("to")): {
+            "gap_seconds": gap.get("gap_seconds"),
+            "missing_bars_est": gap.get("missing_bars_est"),
+            "context": gap.get("context"),
+        }
+        for gap in session_gaps
+        if isinstance(gap, dict) and gap.get("to") not in (None, "")
+    }
+    if not gaps_by_to:
+        return
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        gap = gaps_by_to.get(str(row.get("time")))
+        if gap:
+            row["gap_before"] = {
+                key: value for key, value in gap.items() if value not in (None, "")
+            }
+
+
 def _format_candle_times(
     df: pd.DataFrame,
     headers: List[str],
@@ -1685,6 +1713,7 @@ def fetch_candles(  # noqa: C901
             payload['warnings'] = warns
         if session_gaps:
             payload['session_gaps'] = session_gaps
+            _annotate_candle_gap_rows(payload, session_gaps)
             warns = payload.get('warnings')
             if not isinstance(warns, list):
                 warns = []
