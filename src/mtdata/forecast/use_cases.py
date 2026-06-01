@@ -480,10 +480,18 @@ def _forecast_generate_compact_rows(payload: Dict[str, Any]) -> List[Dict[str, A
         return []
 
     forecast_values = None
-    for key in ("forecast_price", "forecast_return", "forecast"):
+    forecast_key = ""
+    quantity = str(payload.get("quantity") or "").strip().lower()
+    candidate_keys = (
+        ("forecast_return", "forecast_price", "forecast")
+        if quantity == "return"
+        else ("forecast_price", "forecast_return", "forecast")
+    )
+    for key in candidate_keys:
         value = payload.get(key)
         if isinstance(value, list):
             forecast_values = value
+            forecast_key = key
             break
     if not isinstance(forecast_values, list):
         return []
@@ -498,12 +506,16 @@ def _forecast_generate_compact_rows(payload: Dict[str, Any]) -> List[Dict[str, A
     market_status = payload.get("forecast_market_status")
 
     count = min(len(times), len(forecast_values))
+    price_values = payload.get("forecast_price")
     rows: List[Dict[str, Any]] = []
     for idx in range(count):
-        row: Dict[str, Any] = {
-            "time": times[idx],
-            "value": forecast_values[idx],
-        }
+        row: Dict[str, Any] = {"time": times[idx]}
+        if quantity == "return" and forecast_key == "forecast_return":
+            row["return"] = forecast_values[idx]
+            if isinstance(price_values, list) and idx < len(price_values):
+                row["price"] = price_values[idx]
+        else:
+            row["value"] = forecast_values[idx]
         if isinstance(market_status, list) and idx < len(market_status):
             row["market_status"] = market_status[idx]
         if isinstance(lower_values, list) and isinstance(upper_values, list):
@@ -601,6 +613,12 @@ def _apply_forecast_generate_detail(
     freshness = _forecast_anchor_freshness(payload)
     if freshness:
         compact["freshness"] = freshness
+    if str(compact.get("quantity") or "").strip().lower() == "return":
+        compact["return_unit"] = "return_fraction"
+        if isinstance(payload.get("forecast_price"), list):
+            compact["quantity_note"] = (
+                "forecast rows show return; price is the reconstructed price path."
+            )
     price_context = _forecast_vs_last_price(payload)
     if price_context:
         compact["forecast_vs_last_price"] = price_context
