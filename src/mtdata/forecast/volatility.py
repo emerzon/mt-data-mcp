@@ -542,6 +542,10 @@ def _finalize_volatility_output(
             ):
                 out.pop("volatility_horizon_annualized", None)
                 out.pop("volatility_horizon_annualized_pct", None)
+                out.setdefault(
+                    "volatility_annualized_note",
+                    "also applies to horizon; sqrt-time annualization is identical",
+                )
         except Exception:
             pass
         return out
