@@ -2220,7 +2220,11 @@ def fetch_ticks(  # noqa: C901
             bids.append(bid)
             asks.append(ask)
             last_value = _finite_or_none(_tick_field(tick, "last"))
-            lasts.append(0.0 if last_value is None else last_value)
+            lasts.append(
+                float("nan")
+                if last_value is None or last_value <= 0.0
+                else last_value
+            )
             flags.append(flag_value)
             missing_side = _one_sided_zero_spread_missing_side(bid, ask, flag_value)
             effective_bids.append(None if bid_value is None or missing_side == "bid" else bid)
@@ -2234,7 +2238,7 @@ def fetch_ticks(  # noqa: C901
             except (TypeError, ValueError):
                 volumes_real.append(float("nan"))
 
-        has_last = len(set(lasts)) > 1 or any(v != 0 for v in lasts)
+        has_last = any(math.isfinite(value) for value in lasts)
         finite_volumes = [v for v in volumes if math.isfinite(v)]
         has_volume = bool(finite_volumes) and (
             len(set(finite_volumes)) > 1 or any(v != 0.0 for v in finite_volumes)
@@ -2332,6 +2336,18 @@ def fetch_ticks(  # noqa: C901
                 warnings_list.append(warning)
             payload["warnings"] = warnings_list
 
+        def _add_tick_last_quality(payload: Dict[str, Any]) -> None:
+            if has_last:
+                return
+            payload["last_unavailable"] = True
+            warnings_list = payload.get("warnings")
+            if not isinstance(warnings_list, list):
+                warnings_list = []
+            warning = "Broker tick data did not provide a usable last price; last is null."
+            if warning not in warnings_list:
+                warnings_list.append(warning)
+            payload["warnings"] = warnings_list
+
         def _add_tick_context_fields(payload: Dict[str, Any]) -> None:
             last_quote = payload.get("last_quote")
             if isinstance(last_quote, dict) and price_point is not None:
@@ -2392,6 +2408,7 @@ def fetch_ticks(  # noqa: C901
             if price_currency:
                 out["price_currency"] = price_currency
             _add_tick_data_quality(out)
+            _add_tick_last_quality(out)
             _add_tick_context_fields(out)
             _round_tick_price_payload(out, price_digits)
             return _compact_tick_summary(out)
@@ -2624,6 +2641,7 @@ def fetch_ticks(  # noqa: C901
                     out["stats"]["volume"] = {"kind": volume_kind}
 
             _add_tick_data_quality(out)
+            _add_tick_last_quality(out)
             _add_tick_context_fields(out)
             _round_tick_price_payload(out, price_digits)
             return out if detailed_stats else _compact_tick_summary(out)
@@ -2664,8 +2682,9 @@ def fetch_ticks(  # noqa: C901
                     + (["volume"] if has_volume else [])
                     + (["volume_real"] if has_real_volume else [])
                 ]
-                payload["simplify"] = meta
+                    payload["simplify"] = meta
             _add_tick_data_quality(payload)
+            _add_tick_last_quality(payload)
             _add_tick_context_fields(payload)
             return payload
         # Optional simplification based on a chosen y-series
@@ -2812,6 +2831,7 @@ def fetch_ticks(  # noqa: C901
         if has_flags:
             payload["flags_legend"] = _observed_tick_flags_decoded(flags)
         _add_tick_data_quality(payload)
+        _add_tick_last_quality(payload)
         _add_tick_context_fields(payload)
         if simplify_present and original_count > len(rows):
             payload["simplified"] = True
