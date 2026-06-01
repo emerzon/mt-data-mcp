@@ -70,6 +70,7 @@ PARAMETER_HELP: Final[dict[str, str]] = {
         "Comma-separated output fields to keep; preserves essential top-level "
         "metadata and matching nested row fields."
     ),
+    "page": "One-based page number for tools that expose page-based pagination.",
     "detail": "Output detail level when supported by the tool.",
     "format": "Domain-specific shape selector when supported; TOON/JSON selection uses json.",
 }

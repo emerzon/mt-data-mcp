@@ -2244,6 +2244,20 @@ def run_trade_history(  # noqa: C901
             if offset_value < 0:
                 return {"error": "offset must be >= 0."}
             total_count = int(len(df))
+            page_value = None
+            raw_page = getattr(request, "page", None)
+            if raw_page not in (None, ""):
+                try:
+                    page_value = int(raw_page)
+                except Exception:
+                    return {"error": "page must be a positive integer."}
+                if page_value < 1:
+                    return {"error": "page must be >= 1."}
+                if offset_value:
+                    return {"error": "Use either page or offset for trade_history pagination, not both."}
+                if not limit_value:
+                    return {"error": "page requires a positive limit."}
+                offset_value = int((page_value - 1) * int(limit_value))
             if (limit_value or offset_value) and "__sort_utc" in df.columns:
                 df = df.sort_values("__sort_utc")
             if offset_value:
@@ -2280,14 +2294,25 @@ def run_trade_history(  # noqa: C901
                         if position_value not in (None, ""):
                             row["position_ticket"] = position_value
                     row.update(comment_row_metadata(row.get("comment")))
-            if offset_value or (limit_value and total_count > len(records)):
-                return {
+            has_more = offset_value + len(records) < total_count
+            if page_value is not None or offset_value or (limit_value and total_count > len(records)):
+                pagination = {
                     "items": records,
                     "total_count": total_count,
                     "offset": offset_value,
                     "limit": limit_value,
-                    "has_more": offset_value + len(records) < total_count,
+                    "has_more": has_more,
                 }
+                if limit_value:
+                    current_page = page_value or (offset_value // int(limit_value)) + 1
+                    pagination["page"] = int(current_page)
+                    pagination["pages"] = int((total_count + int(limit_value) - 1) // int(limit_value))
+                    if has_more:
+                        pagination["next_offset"] = int(offset_value + len(records))
+                        pagination["next_page"] = int(current_page + 1)
+                elif has_more:
+                    pagination["next_offset"] = int(offset_value + len(records))
+                return pagination
             return records
         except Exception as exc:
             return {"error": str(exc)}

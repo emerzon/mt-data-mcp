@@ -197,6 +197,7 @@ class TradeHistoryRequest(BaseModel):
     minutes_back: Optional[int] = None
     limit: Optional[int] = 100
     offset: int = 0
+    page: Optional[int] = None
 
     @field_validator("side", mode="before")
     @classmethod

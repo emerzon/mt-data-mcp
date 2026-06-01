@@ -643,6 +643,7 @@ def _trade_history_request_echo(request: Any, *, history_kind: Any) -> Dict[str,
         "symbol",
         "limit",
         "offset",
+        "page",
     ):
         value = getattr(request, field, None)
         if value is None:
