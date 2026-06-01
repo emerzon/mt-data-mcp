@@ -1378,10 +1378,7 @@ def _add_finviz_large_number_formats(fundamentals: Dict[str, Any]) -> None:
 
 
 def _compact_finviz_fundamentals(fundamentals: Dict[str, Any]) -> Dict[str, Any]:
-    compact = dict(fundamentals)
-    if compact.get("market_cap_formatted") not in (None, ""):
-        compact.pop("market_cap", None)
-    return compact
+    return dict(fundamentals)
 
 
 def _finite_finviz_float(value: Any) -> Optional[float]:
