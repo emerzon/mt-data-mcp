@@ -45,7 +45,7 @@ def validate_and_clean_data(
     method_name: str = "forecast"
 ) -> Tuple[np.ndarray, Optional[str]]:
     """
-    Validate and clean time series data by handling NaN values.
+    Validate and clean time series data by interpolating missing values.
     
     Args:
         data: Input time series data
@@ -62,12 +62,15 @@ def validate_and_clean_data(
     if not np.any(np.isfinite(data)):
         return np.array([]), f"{method_name} error: context contains no finite values"
     
-    # Clean the data - replace NaN with mean of finite values
-    finite_mean = np.nanmean(data[np.isfinite(data)])
-    if not np.isfinite(finite_mean):
-        finite_mean = 0.0
-    
-    cleaned_data = np.nan_to_num(data, nan=float(finite_mean))
+    cleaned_data = np.asarray(data, dtype=float).copy()
+    finite_mask = np.isfinite(cleaned_data)
+    if not finite_mask.all():
+        idx = np.arange(cleaned_data.size, dtype=float)
+        cleaned_data[~finite_mask] = np.interp(
+            idx[~finite_mask],
+            idx[finite_mask],
+            cleaned_data[finite_mask],
+        )
     
     # Validate cleaned data
     if not np.any(np.isfinite(cleaned_data)):
@@ -227,5 +230,4 @@ def safe_import_modules(
         return None, f"{method_name} requires {', '.join(required_modules)}: {ex}"
     
     return imported_modules, None
-
 
