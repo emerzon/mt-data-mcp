@@ -525,6 +525,24 @@ def labels_triple_barrier(
                 n = min(int(lookback), len(labels))
                 lab_tail = labels[-n:] if n > 0 else labels
                 hold_tail = hold[-n:] if n > 0 else hold
+                recommended_lookback = max(int(horizon) * 10, 30)
+                bars_insufficient_for_horizon = int(n) <= int(horizon) * 2
+                sample_quality = {
+                    "status": "low" if int(n) < recommended_lookback else "ok",
+                    "lookback": int(n),
+                    "requested_lookback": int(lookback),
+                    "minimum_recommended": int(recommended_lookback),
+                    "bars_insufficient_for_horizon": bool(bars_insufficient_for_horizon),
+                }
+                if int(n) < recommended_lookback:
+                    sample_quality["reason"] = (
+                        f"Only {int(n)} labeled rows are summarized; "
+                        f"{recommended_lookback}+ is recommended for horizon={int(horizon)}."
+                    )
+                    warnings_out.append(
+                        "Summary lookback is small relative to horizon; label counts may be unstable. "
+                        f"Use lookback>={recommended_lookback} for a basic read."
+                    )
                 counts = {
                     "tp": int(sum(1 for v in lab_tail if v == 1)),
                     "sl": int(sum(1 for v in lab_tail if v == -1)),
@@ -539,6 +557,7 @@ def labels_triple_barrier(
                     "lookback": int(n),
                     "counts": counts,
                     "median_holding_bars": med_hold,
+                    "sample_quality": sample_quality,
                 }
                 favorable_tail = max_favorable_moves_pct[-n:] if n > 0 else max_favorable_moves_pct
                 adverse_tail = max_adverse_moves_pct[-n:] if n > 0 else max_adverse_moves_pct
