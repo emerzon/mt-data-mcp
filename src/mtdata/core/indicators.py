@@ -18,6 +18,131 @@ logger = logging.getLogger(__name__)
 _DOC_SECTION_RE = re.compile(r"^([A-Za-z][A-Za-z0-9 _/\-]{1,48})\s*:\s*$")
 _DOC_PARAM_RE = re.compile(r"^[\-\*\u2022]?\s*([A-Za-z_][A-Za-z0-9_]*)\s*(?:\([^)]*\))?\s*:\s*(.+)$")
 _DOC_SIG_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*\s*\(.*\)\s*(?:->\s*.+)?$")
+_TRADING_STYLES = {"intraday", "swing", "position"}
+_CATEGORY_TRADING_CONTEXT: Dict[str, Dict[str, Any]] = {
+    "momentum": {
+        "common_use": "momentum, reversal, and divergence checks",
+        "typical_parameters": "use the library default first, then shorten for intraday or lengthen for position trades",
+        "pairs_well_with": ["trend", "volume", "support_resistance"],
+        "trading_styles": ["intraday", "swing", "position"],
+    },
+    "overlap": {
+        "common_use": "trend direction, dynamic support/resistance, and pullback context",
+        "typical_parameters": "20/50 for swing context; 100/200 for higher-timeframe trend",
+        "pairs_well_with": ["momentum", "atr", "volume"],
+        "trading_styles": ["intraday", "swing", "position"],
+    },
+    "trend": {
+        "common_use": "trend strength, trend-following filters, and regime confirmation",
+        "typical_parameters": "start with defaults; confirm against price structure and ATR",
+        "pairs_well_with": ["moving_average", "momentum", "atr"],
+        "trading_styles": ["swing", "position", "intraday"],
+    },
+    "volatility": {
+        "common_use": "range expansion, stop distance, and breakout compression checks",
+        "typical_parameters": "14 or 20 periods are common baselines",
+        "pairs_well_with": ["trend", "support_resistance", "volume"],
+        "trading_styles": ["intraday", "swing", "position"],
+    },
+    "volume": {
+        "common_use": "participation, accumulation/distribution, and move confirmation",
+        "typical_parameters": "compare to recent baseline; FX volume is usually tick volume",
+        "pairs_well_with": ["price_action", "momentum", "volatility"],
+        "trading_styles": ["intraday", "swing"],
+    },
+    "statistics": {
+        "common_use": "normalization, mean reversion, and outlier checks",
+        "typical_parameters": "20-period windows are common for rolling context",
+        "pairs_well_with": ["volatility", "trend"],
+        "trading_styles": ["intraday", "swing", "position"],
+    },
+    "performance": {
+        "common_use": "return and drawdown context for research workflows",
+        "typical_parameters": "align window to the holding period under test",
+        "pairs_well_with": ["strategy_backtest", "risk"],
+        "trading_styles": ["swing", "position"],
+    },
+    "candles": {
+        "common_use": "price-action pattern context and candle-shape transforms",
+        "typical_parameters": "use defaults, then validate on the traded timeframe",
+        "pairs_well_with": ["support_resistance", "volume", "trend"],
+        "trading_styles": ["intraday", "swing"],
+    },
+    "cycles": {
+        "common_use": "cycle phase and turning-point research",
+        "typical_parameters": "use as exploratory context, not a standalone trigger",
+        "pairs_well_with": ["momentum", "trend"],
+        "trading_styles": ["swing", "position"],
+    },
+}
+_INDICATOR_TRADING_CONTEXT: Dict[str, Dict[str, Any]] = {
+    "rsi": {
+        "common_use": "overbought/oversold, momentum reversal, and divergence checks",
+        "typical_parameters": "rsi(14); 70/30 bands are common, 80/20 is stricter",
+        "pairs_well_with": ["macd", "atr", "support_resistance"],
+        "trading_styles": ["intraday", "swing", "position"],
+    },
+    "macd": {
+        "common_use": "trend-momentum shifts and pullback continuation confirmation",
+        "typical_parameters": "macd(12,26,9) is the standard baseline",
+        "pairs_well_with": ["ema", "rsi", "volume"],
+        "trading_styles": ["intraday", "swing", "position"],
+    },
+    "bbands": {
+        "common_use": "volatility contraction/expansion and mean-reversion context",
+        "typical_parameters": "bbands(20,2); wider bands reduce false touches",
+        "pairs_well_with": ["rsi", "atr", "volume"],
+        "trading_styles": ["intraday", "swing"],
+    },
+    "atr": {
+        "common_use": "stop distance, range expansion, and volatility-normalized sizing",
+        "typical_parameters": "atr(14) is the standard baseline",
+        "pairs_well_with": ["trend", "support_resistance", "barrier_tools"],
+        "trading_styles": ["intraday", "swing", "position"],
+    },
+    "adx": {
+        "common_use": "trend-strength filter before applying trend-following entries",
+        "typical_parameters": "adx(14); readings above 20-25 often mark stronger trend",
+        "pairs_well_with": ["ema", "macd", "atr"],
+        "trading_styles": ["swing", "position", "intraday"],
+    },
+    "ema": {
+        "common_use": "trend direction, pullback zones, and fast/slow cross context",
+        "typical_parameters": "ema(20), ema(50), ema(200) are common baselines",
+        "pairs_well_with": ["macd", "atr", "rsi"],
+        "trading_styles": ["intraday", "swing", "position"],
+    },
+    "sma": {
+        "common_use": "higher-timeframe trend and widely watched support/resistance",
+        "typical_parameters": "sma(20), sma(50), sma(200) are common baselines",
+        "pairs_well_with": ["rsi", "atr", "volume"],
+        "trading_styles": ["swing", "position"],
+    },
+    "stoch": {
+        "common_use": "range-bound momentum reversals and short-term exhaustion",
+        "typical_parameters": "stoch(14,3,3) is a common baseline",
+        "pairs_well_with": ["bbands", "support_resistance", "atr"],
+        "trading_styles": ["intraday", "swing"],
+    },
+    "supertrend": {
+        "common_use": "trend-following bias and trailing-stop context",
+        "typical_parameters": "supertrend(7,3) is a common starting point",
+        "pairs_well_with": ["atr", "adx", "ema"],
+        "trading_styles": ["intraday", "swing"],
+    },
+    "vwap": {
+        "common_use": "intraday fair-value reference and institutional participation context",
+        "typical_parameters": "session VWAP; reset at the trading session boundary",
+        "pairs_well_with": ["volume", "rsi", "price_action"],
+        "trading_styles": ["intraday"],
+    },
+    "obv": {
+        "common_use": "volume confirmation and accumulation/distribution divergence",
+        "typical_parameters": "use default OBV and compare slope/divergence to price",
+        "pairs_well_with": ["macd", "support_resistance", "trend"],
+        "trading_styles": ["swing", "position", "intraday"],
+    },
+}
 
 
 def _canonical_doc_section(name: str) -> str:
@@ -151,6 +276,22 @@ def _extract_short_description(description: Optional[str]) -> Optional[str]:
     return first_line
 
 
+def _indicator_trading_context(item: Dict[str, Any]) -> Dict[str, Any]:
+    name = str(item.get("name") or "").strip().lower()
+    category = str(item.get("category") or "").strip().lower()
+    context = dict(_CATEGORY_TRADING_CONTEXT.get(category, {}))
+    context.update(_INDICATOR_TRADING_CONTEXT.get(name, {}))
+    return context
+
+
+def _matches_trading_style(item: Dict[str, Any], style: str) -> bool:
+    normalized = str(style or "").strip().lower()
+    if not normalized:
+        return True
+    context = _indicator_trading_context(item)
+    return normalized in {str(x).strip().lower() for x in context.get("trading_styles", [])}
+
+
 def _build_indicator_documentation(target: Dict[str, Any]) -> Dict[str, Any]:
     name = str(target.get("name") or "")
     raw_desc = str(target.get("description") or "")
@@ -262,13 +403,14 @@ def _describe_indicator_params(
 def indicators_list(
     search_term: Optional[str] = None,
     category: Optional[CategoryLiteral] = None,
+    trading_style: Optional[Literal["intraday", "swing", "position"]] = None,
     limit: Optional[int] = DEFAULT_ROW_LIMIT,
     offset: int = 0,
     detail: CompactFullDetailLiteral = "compact",
 ) -> Dict[str, Any]:  # type: ignore
     """List indicators as a tabular result with optional search, category, and detail filters.
 
-    Parameters: search_term?, category?, limit?, offset?, detail?
+    Parameters: search_term?, category?, trading_style?, limit?, offset?, detail?
     """
     def _run() -> Dict[str, Any]:
         try:
@@ -290,6 +432,11 @@ def indicators_list(
             if category:
                 cat_q = category.strip().lower()
                 items = [it for it in items if (it.get('category') or '').lower() == cat_q]
+            style_q = str(trading_style or "").strip().lower()
+            if style_q and style_q not in _TRADING_STYLES:
+                return {"error": f"Invalid trading_style: {trading_style}. Use intraday, swing, or position."}
+            if style_q:
+                items = [it for it in items if _matches_trading_style(it, style_q)]
             if not search_active:
                 items.sort(key=lambda x: (x.get('category') or '', x.get('name') or ''))
             total_matches = len(items)
@@ -322,26 +469,44 @@ def indicators_list(
                             len(params),
                             params,
                             ", ".join(str(alias) for alias in (it.get("aliases") or []) if str(alias).strip()),
+                            _indicator_trading_context(it),
                             docs.get("description") or it.get("description", ""),
                         ]
                     )
                 result = _table_from_rows(
-                    ["name", "category", "summary", "params_count", "params", "aliases", "description"],
+                    [
+                        "name",
+                        "category",
+                        "summary",
+                        "params_count",
+                        "params",
+                        "aliases",
+                        "trading_context",
+                        "description",
+                    ],
                     rows,
                 )
             else:
-                rows = [
-                    [
+                include_use = bool(search_active or style_q)
+                headers = ["name", "category", "description", "params_count", "params"]
+                if include_use:
+                    headers.append("use")
+                rows = []
+                for it in items:
+                    row = [
                         it.get('name',''),
                         it.get('category',''),
                         _extract_short_description(it.get('description', '')),
                         len(it.get("params") or []),
                         _format_indicator_param_summary(it.get("params") or []),
                     ]
-                    for it in items
-                ]
-                result = _table_from_rows(["name", "category", "description", "params_count", "params"], rows)
+                    if include_use:
+                        row.append(_indicator_trading_context(it).get("common_use", ""))
+                    rows.append(row)
+                result = _table_from_rows(headers, rows)
             result["detail"] = detail_mode
+            if style_q:
+                result["trading_style"] = style_q
             more_available = max(0, total_matches - offset_value - len(items))
             if total_matches > len(items) or offset_value:
                 result["total_count"] = total_matches
@@ -361,6 +526,7 @@ def indicators_list(
         operation="indicators_list",
         search_term=search_term,
         category=category,
+        trading_style=trading_style,
         limit=limit,
         offset=offset,
         detail=detail,
@@ -402,6 +568,7 @@ def indicators_describe(
             docs = _build_indicator_documentation(indicator)
             description = docs.get("description") or indicator.get("description") or ""
             params = docs.get("parameters") or indicator.get("params") or []
+            trading_context = _indicator_trading_context(indicator)
             compact_indicator: Dict[str, Any] = {
                 "name": indicator.get("name"),
                 "category": indicator.get("category"),
@@ -411,6 +578,8 @@ def indicators_describe(
                     include_descriptions=False,
                 ),
             }
+            if trading_context:
+                compact_indicator["trading_context"] = trading_context
             if detail_mode in {"compact", "summary"}:
                 return {
                     "success": True,
@@ -433,6 +602,8 @@ def indicators_describe(
 
             indicator["description"] = description
             indicator["params"] = params
+            if trading_context:
+                indicator["trading_context"] = trading_context
             indicator["documentation"] = {
                 "calculation": docs.get("calculation"),
                 "interpretation": docs.get("interpretation"),
