@@ -142,9 +142,17 @@ def _trade_journal_metrics(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     avg_pnl = float(net_pnl / count) if count else None
     avg_win = float(gross_profit / wins) if wins else None
     avg_loss = float(gross_loss / losses) if losses else None
-    profit_factor = float(gross_profit / gross_loss) if gross_loss > 0.0 else None
+    profit_factor_note = None
+    if wins == 0 and losses > 0:
+        profit_factor = None
+        profit_factor_note = "Undefined because there were no winning trades."
+    elif losses == 0 and wins > 0:
+        profit_factor = None
+        profit_factor_note = "Undefined because there were no losing trades."
+    else:
+        profit_factor = float(gross_profit / gross_loss) if gross_loss > 0.0 else None
     win_rate = float(wins / count) if count else None
-    return {
+    metrics = {
         "closed_deals": count,
         "wins": wins,
         "losses": losses,
@@ -160,6 +168,9 @@ def _trade_journal_metrics(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
         "best_trade": _round_trade_journal_value(max(pnls), digits=2) if pnls else None,
         "worst_trade": _round_trade_journal_value(min(pnls), digits=2) if pnls else None,
     }
+    if profit_factor_note:
+        metrics["profit_factor_note"] = profit_factor_note
+    return metrics
 
 
 def _attach_trade_journal_units(payload: Dict[str, Any]) -> Dict[str, Any]:
