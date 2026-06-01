@@ -451,10 +451,10 @@ def _forecast_vs_last_price(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]
         direction = "flat"
     out: Dict[str, Any] = {
         "direction": direction,
-        "first_step_delta": float(round(delta, delta_digits)),
+        "next_bar_change": float(round(delta, delta_digits)),
     }
     if last_price:
-        out["first_step_delta_pct"] = float(round(delta / last_price * 100.0, 4))
+        out["next_bar_change_pct"] = float(round(delta / last_price * 100.0, 4))
     return out
 
 
