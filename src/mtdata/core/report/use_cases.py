@@ -261,6 +261,57 @@ def _add_barrier_conflict_notes(summary_structured: Any) -> Any:
     return out
 
 
+_COMPACT_SUMMARY_STRUCTURED_KEYS = (
+    "market",
+    "forecast",
+    "backtest",
+    "barriers",
+    "patterns",
+    "pivot",
+    "volatility",
+    "template_focus",
+)
+
+
+def _compact_summary_structured(value: Any) -> Any:
+    if not isinstance(value, dict):
+        return value
+    out: Dict[str, Any] = {}
+    for key in _COMPACT_SUMMARY_STRUCTURED_KEYS:
+        section = value.get(key)
+        if section not in (None, "", [], {}):
+            out[key] = section
+    if not out:
+        return value
+    omitted = [str(key) for key in value if key not in out]
+    if omitted:
+        out["omitted_sections"] = omitted
+        out["show_full_hint"] = "Use detail=standard or detail=full for omitted report sections."
+    return out
+
+
+def _compact_sections_status(value: Any) -> Any:
+    if not isinstance(value, dict):
+        return value
+    out: Dict[str, Any] = {}
+    summary = value.get("summary")
+    if isinstance(summary, dict):
+        out["summary"] = summary
+    sections = value.get("sections")
+    if isinstance(sections, dict):
+        non_ok = {
+            str(name): status
+            for name, status in sections.items()
+            if str(status) != "ok"
+        }
+        if non_ok:
+            out["non_ok_sections"] = non_ok
+    details = value.get("details")
+    if isinstance(details, dict) and details:
+        out["details"] = details
+    return out or value
+
+
 def _compact_report_payload(
     report: Dict[str, Any],
     *,
@@ -307,6 +358,9 @@ def _compact_report_payload(
         if value not in (None, "", [], {}):
             if key == "summary_structured":
                 value = _add_barrier_conflict_notes(value)
+                value = _compact_summary_structured(value)
+            elif key == "sections_status":
+                value = _compact_sections_status(value)
             compact[key] = value
     if "summary_structured" not in compact:
         summary = report.get("summary")
