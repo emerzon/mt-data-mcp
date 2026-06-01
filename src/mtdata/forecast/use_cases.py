@@ -2097,6 +2097,20 @@ def run_forecast_tune_optuna(
         method=request.method,
         methods=len(request.methods or []),
     )
+    invalid_method = _validate_tuning_methods(request)
+    if invalid_method is not None:
+        result = _apply_tuning_detail(invalid_method, request.detail)
+        log_operation_finish(
+            logger,
+            operation="forecast_tune_optuna",
+            started_at=started_at,
+            success=False,
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            method=request.method,
+            methods=len(request.methods or []),
+        )
+        return result
     invalid_metric = _validate_tuning_metric(request.metric)
     if invalid_metric is not None:
         result = _apply_tuning_detail(invalid_metric, request.detail)
