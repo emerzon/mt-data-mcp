@@ -574,6 +574,7 @@ def symbols_list(  # noqa: C901
     limit: Optional[int] = DEFAULT_ROW_LIMIT,
     offset: int = 0,
     list_mode: Literal["symbols", "groups"] = "symbols",  # type: ignore
+    universe: Literal["visible", "all"] = "visible",  # type: ignore
     search_mode: Literal[  # type: ignore
         "auto",
         "name",
@@ -589,10 +590,14 @@ def symbols_list(  # noqa: C901
     Search is case-insensitive. Auto mode searches symbol, description, and
     group fields, then ranks exact/prefix/name matches before description and
     group matches.
+
+    Without a search term, universe="visible" lists Market Watch symbols and
+    universe="all" lists the broker catalog. Searches use the broker catalog.
     """
     normalized_search_term = _normalize_symbol_search_term(search_term)
     detail_mode = normalize_output_detail(detail, default="compact")
     search_mode_value = str(search_mode or "auto").strip().lower()
+    universe_value = str(universe or "visible").strip().lower()
 
     def _run() -> Dict[str, Any]:
         try:
@@ -604,6 +609,8 @@ def symbols_list(  # noqa: C901
             mode = str(list_mode or "symbols").strip().lower()
             if mode not in ("symbols", "groups"):
                 return {"error": "list_mode must be 'symbols' or 'groups'."}
+            if universe_value not in {"visible", "all"}:
+                return {"error": "universe must be 'visible' or 'all'."}
             if search_mode_value not in _SYMBOL_SEARCH_MODES:
                 return {
                     "error": (
@@ -622,19 +629,27 @@ def symbols_list(  # noqa: C901
 
             matched_symbols = []
             search_universe: List[Any] = []
+            all_symbols = mt5_gateway.symbols_get()
+            if all_symbols is None:
+                return {"error": f"Failed to get symbols: {mt5_gateway.last_error()}"}
+            all_symbols_list = list(all_symbols)
+            broker_symbol_count = len(all_symbols_list)
+            visible_count = sum(
+                1
+                for symbol in all_symbols_list
+                if bool(getattr(symbol, "visible", False))
+            )
+            effective_universe = "all" if normalized_search_term else universe_value
 
             if normalized_search_term:
-                all_symbols = mt5_gateway.symbols_get()
-                if all_symbols is None:
-                    return {"error": f"Failed to get symbols: {mt5_gateway.last_error()}"}
-                search_universe = list(all_symbols)
+                search_universe = all_symbols_list
                 matched_symbols = _match_symbols_for_search(
                     search_universe,
                     normalized_search_term,
                     search_mode_value,
                 )
             else:
-                matched_symbols = list(mt5_gateway.symbols_get() or [])
+                matched_symbols = all_symbols_list
 
             if normalized_search_term:
                 matched_symbols = sorted(
@@ -652,7 +667,7 @@ def symbols_list(  # noqa: C901
                         getattr(symbol, "name", "")
                     ),
                 )
-            only_visible = not bool(normalized_search_term)
+            only_visible = effective_universe == "visible"
             symbol_list = []
             for symbol in matched_symbols:
                 if only_visible and not symbol.visible:
@@ -705,6 +720,7 @@ def symbols_list(  # noqa: C901
                     "count": len(symbol_list),
                     "search_term": normalized_search_term,
                     "search_mode": search_mode_value,
+                    "universe": effective_universe,
                     "limit": limit_value,
                 }
                 if normalized_search_term:
@@ -720,6 +736,15 @@ def symbols_list(  # noqa: C901
                                 normalized_search_term,
                                 search_mode_value,
                             )
+                        )
+                elif effective_universe == "visible":
+                    out["visible_count"] = visible_count
+                    out["broker_symbol_count"] = broker_symbol_count
+                    if broker_symbol_count > visible_count:
+                        out["note"] = (
+                            "Showing visible Market Watch symbols only "
+                            f"({visible_count} of {broker_symbol_count}); "
+                            "use universe=all or search_term for the broker catalog."
                         )
                 if offset_value or has_more:
                     out["total_count"] = total_count
@@ -751,6 +776,7 @@ def symbols_list(  # noqa: C901
                 headers = ["symbol", "group", "description"]
                 rows = [[s["symbol"], s["group"], s["description"]] for s in symbol_list]
             result = _table_from_rows(headers, rows)
+            result["universe"] = effective_universe
             if normalized_search_term:
                 result["search"] = _symbol_search_context(
                     normalized_search_term,
@@ -763,7 +789,16 @@ def symbols_list(  # noqa: C901
                             search_universe,
                             normalized_search_term,
                             search_mode_value,
+                            )
                         )
+            elif effective_universe == "visible":
+                result["visible_count"] = visible_count
+                result["broker_symbol_count"] = broker_symbol_count
+                if broker_symbol_count > visible_count:
+                    result["note"] = (
+                        "Showing visible Market Watch symbols only "
+                        f"({visible_count} of {broker_symbol_count}); "
+                        "use universe=all or search_term for the broker catalog."
                     )
             if offset_value or has_more:
                 result["total_count"] = total_count
@@ -788,6 +823,7 @@ def symbols_list(  # noqa: C901
         limit=limit,
         offset=offset,
         list_mode=list_mode,
+        universe=universe_value,
         search_mode=search_mode_value,
         detail=detail_mode,
         func=_run,
