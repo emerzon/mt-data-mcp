@@ -2398,6 +2398,11 @@ def run_trade_history(  # noqa: C901
                     "limit": limit_value,
                     "has_more": has_more,
                 }
+                if has_more:
+                    pagination["truncated"] = True
+                    pagination["more_available"] = int(
+                        max(total_count - offset_value - len(records), 0)
+                    )
                 if limit_value:
                     current_page = page_value or (offset_value // int(limit_value)) + 1
                     pagination["page"] = int(current_page)
@@ -3993,7 +3998,7 @@ def _apply_trade_query_limit(
     if preserve_order:
         return out_df.head(limit_value).copy()
     sorted_index = (
-        time_utc.sort_values(
+        time_utc.reindex(out_df.index).sort_values(
             kind="stable",
             na_position="first",
         )
@@ -4227,14 +4232,28 @@ def _run_trade_query_impl(
                 comment_series=comment_series,
                 comment_row_metadata=comment_row_metadata,
             )
+        total_count = len(out_df)
+        limit_value = normalize_limit(request.limit)
         out_df = _apply_trade_query_limit(
             out_df,
             time_utc=time_utc,
-            limit=request.limit,
+            limit=limit_value,
             normalize_limit=normalize_limit,
             preserve_order=bool(getattr(request, "close_priority", None)),
         )
-        return Ok(out_df.to_dict(orient="records"))
+        records = out_df.to_dict(orient="records")
+        if limit_value and total_count > len(records):
+            return Ok(
+                {
+                    "items": records,
+                    "total_count": int(total_count),
+                    "limit": int(limit_value),
+                    "has_more": True,
+                    "truncated": True,
+                    "more_available": int(total_count - len(records)),
+                }
+            )
+        return Ok(records)
     except Exception as exc:
         return Err(str(exc))
 

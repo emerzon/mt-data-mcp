@@ -256,7 +256,14 @@ def _normalize_trade_read_output(
             message_text = str(rows.get("message", "")).strip()
             if message_text:
                 out["message"] = message_text
-            for key in ("total_count", "offset", "limit", "has_more"):
+            for key in (
+                "total_count",
+                "offset",
+                "limit",
+                "has_more",
+                "truncated",
+                "more_available",
+            ):
                 if key in rows:
                     out[key] = rows.get(key)
             if len(items) == 0:
