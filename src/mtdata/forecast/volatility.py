@@ -1,3 +1,4 @@
+import difflib
 import math
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional
@@ -47,6 +48,16 @@ _VOLATILITY_METHOD_HINTS = (
     "theta",
     "ensemble",
 )
+
+_VOLATILITY_METHOD_CONCEPT_HINTS = {
+    "close_to_close": "rolling_std",
+    "historical": "rolling_std",
+    "historical_volatility": "rolling_std",
+    "realized": "realized_kernel",
+    "realized_volatility": "realized_kernel",
+    "standard_deviation": "rolling_std",
+    "stddev": "rolling_std",
+}
 
 
 # Optional availability flags (match server discovery)
@@ -269,6 +280,12 @@ def _invalid_volatility_method_error(
     method_text = str(method).strip()
     method_l = method_text.lower()
     valid_method_list = sorted(valid_methods)
+    normalized_method = method_l.replace("-", "_").replace(" ", "_")
+    suggested_method = _VOLATILITY_METHOD_CONCEPT_HINTS.get(normalized_method)
+    if suggested_method not in valid_methods:
+        matches = difflib.get_close_matches(normalized_method, valid_method_list, n=1, cutoff=0.55)
+        suggested_method = matches[0] if matches else None
+    suggestion_text = f" Did you mean: {suggested_method}?" if suggested_method else ""
     supports = _forecast_method_supports(method_l)
     supported_quantities = [
         quantity
@@ -297,22 +314,24 @@ def _invalid_volatility_method_error(
             "error": (
                 f"Method '{method_text}' is registered for forecast_generate but is "
                 "not a forecast_volatility_estimate method. Use one of: "
-                f"{', '.join(valid_method_list)}."
+                f"{', '.join(valid_method_list)}.{suggestion_text}"
             ),
             "error_code": "unsupported_volatility_method",
             "method": method_l,
             "quantity": "volatility",
             "supported_quantities": supported_quantities,
             "valid_volatility_methods": valid_method_list,
+            **({"suggested_method": suggested_method} if suggested_method else {}),
         }
 
     return {
         "error": (
             f"Invalid volatility method: {method_text}. Use one of: "
-            f"{', '.join(valid_method_list)}."
+            f"{', '.join(valid_method_list)}.{suggestion_text}"
         ),
         "error_code": "invalid_volatility_method",
         "valid_volatility_methods": valid_method_list,
+        **({"suggested_method": suggested_method} if suggested_method else {}),
     }
 
 
