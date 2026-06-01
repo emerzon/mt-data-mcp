@@ -39,10 +39,7 @@ class TradePlaceRequest(BaseModel):
     model_config = {"populate_by_name": True}
 
     symbol: Optional[str] = None
-    volume: Optional[float] = Field(
-        default=None,
-        description="Partial close volume in lots. Requires ticket.",
-    )
+    volume: Optional[float] = None
     order_type: Optional[OrderTypeInput] = Field(
         default=None,
         description=(
@@ -151,7 +148,10 @@ class TradeCloseRequest(BaseModel):
     )
     symbol: Optional[str] = None
     magic: Optional[int] = Field(default=None, description=MAGIC_NUMBER_DESCRIPTION)
-    volume: Optional[float] = None
+    volume: Optional[float] = Field(
+        default=None,
+        description="Partial close volume in lots. Requires ticket.",
+    )
     dry_run: bool = Field(
         default=False,
         description="Preview the close request without sending it to the broker.",
@@ -342,6 +342,11 @@ class TradeVarCvarRequest(BaseModel):
 class TradeGetOpenRequest(BaseModel):
     symbol: Optional[str] = None
     ticket: Optional[Union[int, str]] = None
+    side: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("side", "direction"),
+        description="Optional direction filter. Accepts buy/sell or long/short.",
+    )
     magic: Optional[int] = Field(default=None, description=MAGIC_NUMBER_DESCRIPTION)
     profit_only: bool = Field(
         default=False,
@@ -369,10 +374,28 @@ class TradeGetOpenRequest(BaseModel):
         ),
     )
 
+    @field_validator("side", mode="before")
+    @classmethod
+    def _normalize_side(cls, value: Optional[str]) -> Optional[str]:
+        return _normalize_trade_side_alias(value)
+
 
 class TradeGetPendingRequest(BaseModel):
     symbol: Optional[str] = None
     ticket: Optional[Union[int, str]] = None
+    side: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("side", "direction"),
+        description="Optional order direction filter. Accepts buy/sell or long/short.",
+    )
+    order_type: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("order_type", "type"),
+        description=(
+            "Optional pending order type filter: buy_limit, sell_limit, "
+            "buy_stop, sell_stop, buy_stop_limit, or sell_stop_limit."
+        ),
+    )
     magic: Optional[int] = Field(default=None, description=MAGIC_NUMBER_DESCRIPTION)
     limit: Optional[int] = 200
     detail: CompactFullDetailLiteral = Field(
@@ -382,6 +405,19 @@ class TradeGetPendingRequest(BaseModel):
             "while preserving the standard read envelope."
         ),
     )
+
+    @field_validator("side", mode="before")
+    @classmethod
+    def _normalize_side(cls, value: Optional[str]) -> Optional[str]:
+        return _normalize_trade_side_alias(value)
+
+    @field_validator("order_type", mode="before")
+    @classmethod
+    def _normalize_order_type(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        text = str(value).strip().upper()
+        return text or None
 
 
 class TradeSessionContextRequest(BaseModel):

@@ -3845,6 +3845,21 @@ def _filter_trade_query_profit(df: Any, request: Any, pd_module: Any) -> Any:
     return df.loc[profit < 0.0].copy()
 
 
+def _filter_trade_query_side_and_type(df: Any, request: Any) -> Any:
+    if "type" not in df.columns:
+        return df
+    out = df
+    side = str(getattr(request, "side", "") or "").strip().upper()
+    order_type = str(getattr(request, "order_type", "") or "").strip().upper()
+    type_text = out["type"].astype(str).str.upper()
+    if side in {"BUY", "SELL"}:
+        out = out.loc[type_text.eq(side) | type_text.str.startswith(f"{side}_")].copy()
+        type_text = out["type"].astype(str).str.upper()
+    if order_type:
+        out = out.loc[type_text.eq(order_type)].copy()
+    return out
+
+
 def _sort_trade_query_close_priority(df: Any, request: Any, pd_module: Any) -> Any:
     priority = str(getattr(request, "close_priority", "") or "").strip().lower()
     if priority not in {"loss_first", "profit_first", "largest_first"}:
@@ -3872,6 +3887,12 @@ def _trade_query_empty_filter_message(request: Any) -> Optional[str]:
     magic = getattr(request, "magic", None)
     if magic is not None:
         return f"No rows matched magic={magic}"
+    side = getattr(request, "side", None)
+    if side not in (None, ""):
+        return f"No rows matched side={side}"
+    order_type = getattr(request, "order_type", None)
+    if order_type not in (None, ""):
+        return f"No rows matched order_type={order_type}"
     return None
 
 
@@ -4186,6 +4207,11 @@ def _run_trade_query_impl(
             mt5_epoch_to_utc=mt5_epoch_to_utc,
             timezone_label=timezone_label,
         )
+        out_df = _filter_trade_query_side_and_type(out_df, request)
+        if len(out_df) == 0:
+            message = _trade_query_empty_filter_message(request)
+            if message is not None:
+                return Ok([{"message": message}])
         detail = str(getattr(request, "detail", "compact") or "compact").strip().lower()
         if detail == "full":
             _append_trade_comment_metadata(
