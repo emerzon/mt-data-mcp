@@ -1643,6 +1643,38 @@ def run_trade_close(  # noqa: C901
                 "tax_impact",
             ],
         }
+        if request.ticket is None:
+            position_preview = close_positions(
+                symbol=request.symbol,
+                **magic_kwargs,
+                volume=None,
+                profit_only=request.profit_only,
+                loss_only=request.loss_only,
+                close_priority=request.close_priority,
+                comment=request.comment,
+                deviation=request.deviation,
+                dry_run=True,
+            )
+            if isinstance(position_preview, dict):
+                if position_preview.get("error"):
+                    preview["position_preview_error"] = position_preview.get("error")
+                elif "matched_count" in position_preview:
+                    for key in (
+                        "matched_count",
+                        "matched_positions",
+                        "total_volume",
+                        "total_profit",
+                        "filters_applied",
+                        "would_send_orders",
+                    ):
+                        if key in position_preview:
+                            preview[key] = position_preview[key]
+                else:
+                    preview["matched_count"] = 0
+                    preview["matched_positions"] = []
+                    message = position_preview.get("message")
+                    if message not in (None, ""):
+                        preview["message"] = message
         if request.ticket is not None:
             preview["ticket"] = request.ticket
             preview["ticket_resolution"] = (

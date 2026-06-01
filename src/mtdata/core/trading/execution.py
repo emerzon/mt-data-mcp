@@ -1010,6 +1010,71 @@ def _sort_close_positions(
     return list(positions)
 
 
+def _close_position_preview_row(position: Any) -> Dict[str, Any]:
+    return {
+        key: value
+        for key, value in {
+            "ticket": getattr(position, "ticket", None),
+            "symbol": getattr(position, "symbol", None),
+            "type": getattr(position, "type", None),
+            "volume": getattr(position, "volume", None),
+            "profit": getattr(position, "profit", None),
+            "price_open": getattr(position, "price_open", None),
+            "price_current": getattr(position, "price_current", None),
+            "sl": getattr(position, "sl", None),
+            "tp": getattr(position, "tp", None),
+            "magic": getattr(position, "magic", None),
+            "comment": getattr(position, "comment", None),
+        }.items()
+        if value not in (None, "")
+    }
+
+
+def _close_positions_dry_run_preview(
+    positions: List[Any],
+    *,
+    symbol: Optional[str],
+    magic: Optional[int],
+    profit_only: bool,
+    loss_only: bool,
+    close_priority: Optional[str],
+) -> Dict[str, Any]:
+    rows = [_close_position_preview_row(position) for position in positions]
+    total_volume = 0.0
+    total_profit = 0.0
+    for position in positions:
+        try:
+            total_volume += float(getattr(position, "volume", 0.0) or 0.0)
+        except Exception:
+            pass
+        try:
+            total_profit += float(getattr(position, "profit", 0.0) or 0.0)
+        except Exception:
+            pass
+    filters = {
+        key: value
+        for key, value in {
+            "symbol": symbol,
+            "magic": magic,
+            "profit_only": bool(profit_only) or None,
+            "loss_only": bool(loss_only) or None,
+            "close_priority": close_priority,
+        }.items()
+        if value not in (None, "", False)
+    }
+    return {
+        "success": True,
+        "dry_run": True,
+        "actionability": "preview_only",
+        "matched_count": len(rows),
+        "matched_positions": rows,
+        "total_volume": round(total_volume, 8),
+        "total_profit": round(total_profit, 2),
+        "filters_applied": filters,
+        "would_send_orders": len(rows),
+    }
+
+
 def _close_positions(  # noqa: C901
     ticket: Optional[Union[int, str]] = None,
     symbol: Optional[str] = None,
@@ -1020,6 +1085,7 @@ def _close_positions(  # noqa: C901
     close_priority: Optional[str] = None,
     comment: Optional[str] = None,
     deviation: int = 20,
+    dry_run: bool = False,
     gateway: Optional[MT5TradingGateway] = None,
 ) -> dict:
     """Internal helper to close open positions."""
@@ -1100,6 +1166,16 @@ def _close_positions(  # noqa: C901
             deviation_validated, deviation_error = validation._validate_deviation(deviation)
             if deviation_error:
                 return {"error": deviation_error}
+
+            if dry_run:
+                return _close_positions_dry_run_preview(
+                    to_close,
+                    symbol=symbol,
+                    magic=magic_filter,
+                    profit_only=profit_only,
+                    loss_only=loss_only,
+                    close_priority=close_priority,
+                )
 
             # 3. Close positions
             results = []
