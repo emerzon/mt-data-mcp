@@ -353,6 +353,10 @@ def _compact_report_payload(
     completeness = report.get("completeness")
     if completeness not in (None, "", [], {}):
         compact["completeness"] = completeness
+    for key in ("overall_assessment", "sections_with_issues", "section_controls"):
+        value = report.get(key)
+        if value not in (None, "", [], {}):
+            compact[key] = value
     for key in ("summary_structured", "sections_status"):
         value = report.get(key)
         if value not in (None, "", [], {}):
@@ -497,7 +501,9 @@ def _report_section_names_by_status(
         return []
     names: List[str] = []
     for name, payload in sections.items():
-        if isinstance(payload, dict) and str(payload.get("status") or "").lower() == status:
+        if isinstance(payload, str) and payload.lower() == status:
+            names.append(str(name))
+        elif isinstance(payload, dict) and str(payload.get("status") or "").lower() == status:
             names.append(str(name))
     return names
 
@@ -1156,6 +1162,15 @@ def run_report_generate(  # noqa: C901
                     else "complete"
                 )
                 rep["success"] = bool(error_count == 0)
+                sections_with_issues: Dict[str, List[str]] = {}
+                partial_section_names = _report_section_names_by_status(sections_status, "partial")
+                error_section_names = _report_section_names_by_status(sections_status, "error")
+                if partial_section_names:
+                    sections_with_issues["partial"] = partial_section_names
+                if error_section_names:
+                    sections_with_issues["error"] = error_section_names
+                if sections_with_issues:
+                    rep["sections_with_issues"] = sections_with_issues
                 rep["overall_assessment"] = _build_overall_report_assessment(rep)
             diagnostics = rep.get("diagnostics")
             if not isinstance(diagnostics, dict):
