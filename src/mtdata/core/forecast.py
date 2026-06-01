@@ -307,6 +307,7 @@ def _run_forecast_payload_direct(operation: str, payload: Dict[str, Any]) -> Dic
             category=payload.get("category"),
             library=payload.get("library"),
             supports_ci=payload.get("supports_ci"),
+            supports_training=payload.get("supports_training"),
             show_unavailable=bool(payload.get("show_unavailable", False)),
         )
 
@@ -769,6 +770,7 @@ def forecast_list_methods(
         Literal["native", "statsforecast", "sktime", "pretrained", "mlforecast"]
     ] = None,
     supports_ci: Optional[bool] = None,
+    supports_training: Optional[bool] = None,
     show_unavailable: bool = False,
 ) -> Dict[str, Any]:
     """List forecast methods and availability.
@@ -796,6 +798,7 @@ def forecast_list_methods(
             "category": category,
             "library": library,
             "supports_ci": supports_ci,
+            "supports_training": supports_training,
             "show_unavailable": bool(show_unavailable),
         },
         func=lambda: _forecast_list_methods_impl(
@@ -806,6 +809,7 @@ def forecast_list_methods(
             category=category,
             library=library,
             supports_ci=supports_ci,
+            supports_training=supports_training,
             show_unavailable=show_unavailable,
         ),
     )
@@ -1449,6 +1453,7 @@ def _forecast_list_methods_impl(  # noqa: C901
     category: Optional[str] = None,
     library: Optional[str] = None,
     supports_ci: Optional[bool] = None,
+    supports_training: Optional[bool] = None,
     show_unavailable: bool = False,
 ) -> Dict[str, Any]:
     try:
@@ -1508,6 +1513,11 @@ def _forecast_list_methods_impl(  # noqa: C901
                 return bool(item.get("supports_ci"))
             return None
 
+        def _item_supports_training(item: Dict[str, Any]) -> Optional[bool]:
+            if isinstance(item.get("supports_training"), bool):
+                return bool(item.get("supports_training"))
+            return None
+
         def _item_library(item: Dict[str, Any]) -> str:
             for key in ("namespace", "library"):
                 value = str(item.get(key) or "").strip().lower()
@@ -1529,6 +1539,11 @@ def _forecast_list_methods_impl(  # noqa: C901
             if category_filter_value and _item_category(item) != category_filter_value:
                 return False
             if supports_ci is not None and _item_supports_ci(item) is not bool(supports_ci):
+                return False
+            if (
+                supports_training is not None
+                and _item_supports_training(item) is not bool(supports_training)
+            ):
                 return False
             if not show_unavailable and not bool(item.get("available")):
                 return False
@@ -1605,6 +1620,7 @@ def _forecast_list_methods_impl(  # noqa: C901
                 "offset": offset_value,
                 "library": library_value or None,
                 "supports_ci": supports_ci,
+                "supports_training": supports_training,
                 "show_unavailable": bool(show_unavailable),
             }
             out_full["note"] = (
