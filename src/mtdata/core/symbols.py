@@ -1200,15 +1200,15 @@ def _project_market_scan_rows(
 
 _MARKET_SCAN_UNITS = {
     "close": "price",
-    "price_change_pct": "percentage_points",
+    "price_change_pct": "percentage_points (1.0 = 1%)",
     "tick_volume": "broker_tick_count",
     "real_volume": "traded_volume",
     "spread_points": "broker_points",
     "spread_pips": "pips",
-    "spread_pct": "percentage_points",
+    "spread_pct": "percentage_points (1.0 = 1%)",
     "spread_cost_per_lot": "currency_per_lot_estimate",
     "rsi": "0_100",
-    "sma_distance_pct": "percentage_points",
+    "sma_distance_pct": "percentage_points (1.0 = 1%)",
     "data_age_seconds": "seconds",
     "data_freshness_seconds": "seconds",
     "stale_after_seconds": "seconds",

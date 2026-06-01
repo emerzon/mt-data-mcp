@@ -527,7 +527,7 @@ def _finviz_screen_units_for_rows(rows: Any) -> Dict[str, str]:
         if value not in (None, "")
     }
     units = {
-        key: "percentage_points"
+        key: "percentage_points (1.0 = 1%)"
         for key in seen_fields
         if key in _FINVIZ_SCREEN_PERCENT_FIELDS or str(key).endswith("_pct")
     }
@@ -612,10 +612,9 @@ def _normalize_finviz_market_payload(
         out["freshness"] = _FINVIZ_DELAYED_FRESHNESS
     if detail_mode != "full" and rows_key in {"pairs", "coins", "futures"}:
         out["performance_format"] = "percentage_points"
-    if rows_key == "stocks":
-        units = _finviz_screen_units_for_rows(output_rows)
-        if units:
-            out["units"] = units
+    units = _finviz_screen_units_for_rows(output_rows)
+    if units:
+        out["units"] = units
     if rows_key in {"pairs", "coins", "futures"}:
         limitations = {"performance_periods": "day_only"}
         if rows_key == "futures":
