@@ -259,6 +259,24 @@ def _round_forecast_generate_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
+def _round_forecast_volatility_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    out = dict(payload)
+    digits_by_key = {
+        "volatility_per_bar": 6,
+        "volatility_annualized": 6,
+        "volatility_horizon": 6,
+        "volatility_horizon_annualized": 6,
+        "volatility_per_bar_pct": 4,
+        "volatility_annualized_pct": 4,
+        "volatility_horizon_pct": 4,
+        "volatility_horizon_annualized_pct": 4,
+    }
+    for key, digits in digits_by_key.items():
+        if key in out:
+            out[key] = _round_forecast_number(out.get(key), digits=digits)
+    return out
+
+
 def _round_barrier_value(value: Any, *, digits: int) -> Any:
     numeric = _finite_float(value)
     if numeric is None:
@@ -526,6 +544,30 @@ def _forecast_generate_compact_rows(payload: Dict[str, Any]) -> List[Dict[str, A
     return rows
 
 
+def _forecast_generate_volatility_rows(
+    payload: Dict[str, Any],
+    *,
+    horizon: Any,
+) -> List[Dict[str, Any]]:
+    volatility = _finite_float(payload.get("volatility_per_bar"))
+    volatility_pct = _finite_float(payload.get("volatility_per_bar_pct"))
+    if volatility is None and volatility_pct is None:
+        return []
+    try:
+        count = max(1, int(horizon or payload.get("horizon") or 1))
+    except Exception:
+        count = 1
+    rows: List[Dict[str, Any]] = []
+    for step in range(1, count + 1):
+        row: Dict[str, Any] = {"step": step}
+        if volatility is not None:
+            row["volatility"] = float(round(volatility, 6))
+        if volatility_pct is not None:
+            row["volatility_pct"] = float(round(volatility_pct, 4))
+        rows.append(row)
+    return rows
+
+
 def _theta_flatness_context(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     if str(payload.get("method") or "").strip().lower() != "theta":
         return None
@@ -558,7 +600,13 @@ def _apply_forecast_generate_detail(
     if not isinstance(payload, dict) or payload.get("error"):
         return payload
     payload = _round_forecast_generate_payload(payload)
+    if str(payload.get("quantity") or request.quantity or "").strip().lower() == "volatility":
+        payload = _round_forecast_volatility_payload(payload)
     training_period = _forecast_training_period(payload)
+    volatility_rows = _forecast_generate_volatility_rows(
+        payload,
+        horizon=getattr(request, "horizon", None),
+    )
 
     detail_value = _normalize_trader_detail(getattr(request, "detail", "compact"))
     if detail_value in {"standard", "full"}:
@@ -569,13 +617,14 @@ def _apply_forecast_generate_detail(
         if training_period:
             out.setdefault("training_period", training_period)
         forecast_rows = _forecast_generate_compact_rows(out)
-        if forecast_rows:
-            out.setdefault("forecast", forecast_rows)
+        row_series = forecast_rows or volatility_rows
+        if row_series:
+            out.setdefault("forecast", row_series)
         out["detail"] = detail_value
         return attach_collection_contract(
             out,
             collection_kind="time_series",
-            series=_forecast_generate_series_rows(out),
+            series=_forecast_generate_series_rows(out) or row_series,
             include_contract_meta=detail_value == "full",
         )
 
@@ -626,6 +675,11 @@ def _apply_forecast_generate_detail(
     ci_has_intervals = isinstance(ci_compact, dict) and bool(ci_compact.get("intervals"))
     if forecast_rows and not ci_has_intervals:
         compact["forecast"] = forecast_rows
+    elif volatility_rows:
+        compact["forecast"] = volatility_rows
+        compact["quantity_note"] = (
+            "forecast rows repeat the per-bar volatility estimate for each horizon step."
+        )
     if forecast_rows or ci_has_intervals:
         compact.pop("forecast_time", None)
         compact.pop("forecast_price", None)
