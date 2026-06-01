@@ -371,7 +371,7 @@ def pd_freq_from_timeframe(tf: str) -> str:
     }
     return mapping.get(t, 'D')
 
-
+
 # ------------------------------------------------------------------
 # Composable NeuralForecast building blocks (used by train/predict)
 # ------------------------------------------------------------------
@@ -403,6 +403,8 @@ def nf_build_model_kwargs(
     input_size: int,
     batch_size: int,
     steps: int,
+    val_size: Optional[int] = None,
+    early_stop_patience_steps: Optional[int] = None,
     learning_rate: Optional[float] = None,
     accel: Optional[str] = None,
     enable_progress_bar: bool = False,
@@ -433,6 +435,14 @@ def nf_build_model_kwargs(
         model_kwargs['max_epochs'] = int(steps)
     else:
         model_kwargs['max_steps'] = int(steps)
+    if val_size is not None and int(val_size) > 0 and 'val_size' in ctor_params:
+        model_kwargs['val_size'] = int(val_size)
+    if (
+        early_stop_patience_steps is not None
+        and int(early_stop_patience_steps) > 0
+        and 'early_stop_patience_steps' in ctor_params
+    ):
+        model_kwargs['early_stop_patience_steps'] = int(early_stop_patience_steps)
     if learning_rate is not None:
         try:
             model_kwargs['learning_rate'] = float(learning_rate)
@@ -567,6 +577,7 @@ def nf_create_and_fit(
     model_kwargs: Dict[str, Any],
     timeframe: str,
     Y_df: pd.DataFrame,
+    val_size: Optional[int] = None,
     exog_used: Optional[np.ndarray] = None,
     exog_future: Optional[np.ndarray] = None,
     future_times: Optional[List[float]] = None,
@@ -616,15 +627,22 @@ def nf_create_and_fit(
         except Exception:
             _fit_params = {}
         supports_x = 'X_df' in _fit_params
+        supports_val_size = 'val_size' in _fit_params
 
         if exog_used is not None and isinstance(exog_used, np.ndarray) and exog_used.size and supports_x:
             X_df = pd.DataFrame({'unique_id': ['ts'] * len(Y_df), 'ds': Y_df['ds'].values})
             cols = [f'x{i}' for i in range(exog_used.shape[1])]
             for j, cname in enumerate(cols):
                 X_df[cname] = exog_used[:, j]
-            nf.fit(df=Y_df, X_df=X_df, verbose=False)
+            fit_kwargs: Dict[str, Any] = {'df': Y_df, 'X_df': X_df, 'verbose': False}
+            if val_size is not None and int(val_size) > 0 and supports_val_size:
+                fit_kwargs['val_size'] = int(val_size)
+            nf.fit(**fit_kwargs)
         else:
-            nf.fit(df=Y_df, verbose=False)
+            fit_kwargs = {'df': Y_df, 'verbose': False}
+            if val_size is not None and int(val_size) > 0 and supports_val_size:
+                fit_kwargs['val_size'] = int(val_size)
+            nf.fit(**fit_kwargs)
 
     return nf
 
@@ -681,6 +699,8 @@ def nf_setup_and_predict(  # noqa: C901
     input_size: int,
     batch_size: int,
     steps: int,
+    val_size: Optional[int] = None,
+    early_stop_patience_steps: Optional[int] = None,
     learning_rate: Optional[float] = None,
     exog_used: Optional[np.ndarray] = None,
     exog_future: Optional[np.ndarray] = None,
@@ -710,6 +730,14 @@ def nf_setup_and_predict(  # noqa: C901
         model_kwargs['max_epochs'] = int(steps)
     else:
         model_kwargs['max_steps'] = int(steps)
+    if val_size is not None and int(val_size) > 0 and 'val_size' in ctor_params:
+        model_kwargs['val_size'] = int(val_size)
+    if (
+        early_stop_patience_steps is not None
+        and int(early_stop_patience_steps) > 0
+        and 'early_stop_patience_steps' in ctor_params
+    ):
+        model_kwargs['early_stop_patience_steps'] = int(early_stop_patience_steps)
     if learning_rate is not None:
         try:
             model_kwargs['learning_rate'] = float(learning_rate)
@@ -848,6 +876,7 @@ def nf_setup_and_predict(  # noqa: C901
                 except Exception:
                     _pred_params = {}
                 supports_x = ('X_df' in _fit_params) and ('X_df' in _pred_params)
+                supports_val_size = 'val_size' in _fit_params
 
                 if exog_used is not None and isinstance(exog_used, np.ndarray) and exog_used.size and supports_x:
                     # Build X_df and X_future for NF (newer API)
@@ -855,7 +884,10 @@ def nf_setup_and_predict(  # noqa: C901
                     cols = [f'x{i}' for i in range(exog_used.shape[1])]
                     for j, cname in enumerate(cols):
                         X_df[cname] = exog_used[:, j]
-                    nf.fit(df=Y_df, X_df=X_df, verbose=False)  # type: ignore
+                    fit_kwargs: Dict[str, Any] = {'df': Y_df, 'X_df': X_df, 'verbose': False}
+                    if val_size is not None and int(val_size) > 0 and supports_val_size:
+                        fit_kwargs['val_size'] = int(val_size)
+                    nf.fit(**fit_kwargs)  # type: ignore[arg-type]
                     if exog_future is not None and isinstance(exog_future, np.ndarray) and exog_future.size and future_times is not None:
                         ds_f = pd.to_datetime(pd.Series(future_times), unit='s', utc=True)
                         Xf_df = pd.DataFrame({'unique_id': ['ts'] * int(len(ds_f)), 'ds': pd.Index(ds_f).to_pydatetime()})
@@ -871,7 +903,10 @@ def nf_setup_and_predict(  # noqa: C901
                         else:
                             Yf = nf.predict()  # type: ignore
                 else:
-                    nf.fit(df=Y_df, verbose=False)  # type: ignore
+                    fit_kwargs = {'df': Y_df, 'verbose': False}
+                    if val_size is not None and int(val_size) > 0 and supports_val_size:
+                        fit_kwargs['val_size'] = int(val_size)
+                    nf.fit(**fit_kwargs)  # type: ignore[arg-type]
                     if 'h' in _pred_params:
                         Yf = nf.predict(h=int(fh))  # type: ignore
                     else:
@@ -991,4 +1026,3 @@ def fetch_history(
         if not start and len(df) > need:
             df = df.iloc[-int(need):]
     return df.reset_index(drop=True)
-

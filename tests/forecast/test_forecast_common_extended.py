@@ -22,6 +22,7 @@ from mtdata.forecast.common import (
     nf_setup_and_predict,
     pd_freq_from_timeframe,
 )
+from mtdata.forecast.methods.neural import _neural_resolve_validation_settings
 
 # ---------------------------------------------------------------------------
 # nf_setup_and_predict (lines 159-345) — heavily mocked
@@ -97,6 +98,11 @@ class TestNfSetupAndPredict:
         assert "max_steps" not in sig.parameters
         assert "max_epochs" not in sig.parameters
 
+    def test_validation_settings_choose_reasonable_defaults(self):
+        val_size, patience = _neural_resolve_validation_settings({}, n=100, fh=12, steps=50)
+        assert val_size == 20
+        assert patience == 10
+
     @patch("mtdata.forecast.common.pd_freq_from_timeframe", return_value="1h")
     def test_basic_predict_mocked_nf(self, mock_freq):
         """End-to-end with fully mocked NeuralForecast."""
@@ -108,7 +114,8 @@ class TestNfSetupAndPredict:
                        inspect.Parameter("h", inspect.Parameter.KEYWORD_ONLY, default=None)]
         mock_nf_inst.predict.__signature__ = inspect.Signature(pred_params)
         fit_params = [inspect.Parameter("self", inspect.Parameter.POSITIONAL_OR_KEYWORD),
-                      inspect.Parameter("df", inspect.Parameter.KEYWORD_ONLY)]
+                      inspect.Parameter("df", inspect.Parameter.KEYWORD_ONLY),
+                      inspect.Parameter("val_size", inspect.Parameter.KEYWORD_ONLY, default=None)]
         mock_nf_inst.fit.__signature__ = inspect.Signature(fit_params)
 
         # Build a callable that mimics NeuralForecast class — returns the mock instance
@@ -130,9 +137,10 @@ class TestNfSetupAndPredict:
         with patch.dict("sys.modules", {"neuralforecast": nf_module}):
             result = nf_setup_and_predict(
                 model_class=model_cls, fh=10, timeframe="H1",
-                Y_df=_make_y_df(), input_size=24, batch_size=32, steps=5,
+                Y_df=_make_y_df(), input_size=24, batch_size=32, steps=5, val_size=12,
             )
         assert isinstance(result, pd.DataFrame)
+        assert mock_nf_inst.fit.call_args.kwargs["val_size"] == 12
 
     @patch("mtdata.forecast.common.pd_freq_from_timeframe", return_value="1h")
     def test_restores_environment_after_prediction(self, mock_freq, monkeypatch):
