@@ -365,7 +365,7 @@ class TradeGetOpenRequest(BaseModel):
             "loss_first, profit_first, or largest_first."
         ),
     )
-    limit: Optional[int] = 200
+    limit: Optional[int] = 50
     detail: CompactFullDetailLiteral = Field(
         default="compact",
         description=(
@@ -397,7 +397,7 @@ class TradeGetPendingRequest(BaseModel):
         ),
     )
     magic: Optional[int] = Field(default=None, description=MAGIC_NUMBER_DESCRIPTION)
-    limit: Optional[int] = 200
+    limit: Optional[int] = 50
     detail: CompactFullDetailLiteral = Field(
         default="compact",
         description=(
