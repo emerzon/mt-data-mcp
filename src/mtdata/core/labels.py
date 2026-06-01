@@ -656,6 +656,25 @@ def labels_triple_barrier(
                         )
                         payload["sample_basis"] = "recent"
                     payload["sample_size"] = int(len(sample_indices))
+                    non_neutral_count = int(counts["tp"] + counts["sl"])
+                    if (
+                        n > 0
+                        and non_neutral_count > 0
+                        and non_neutral_count / n < 0.10
+                    ):
+                        neutral_pct = (float(counts["neutral"]) / float(n)) * 100.0
+                        payload["sample_context"] = {
+                            "neutral": int(counts["neutral"]),
+                            "total": int(n),
+                            "neutral_pct": round(neutral_pct, 2),
+                            "non_neutral": non_neutral_count,
+                            "tp": int(counts["tp"]),
+                            "sl": int(counts["sl"]),
+                            "note": (
+                                f"{counts['neutral']} of {n} labels are neutral; "
+                                f"showing {len(sample_indices)} non-neutral rows."
+                            ),
+                        }
                     if len(sample_indices) < n:
                         payload["sample_note"] = (
                             "data rows show non-neutral outcomes in the lookback window when present; "
