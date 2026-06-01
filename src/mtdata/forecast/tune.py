@@ -665,6 +665,8 @@ def optuna_search_forecast_params(  # noqa: C901
         payload["study_name"] = study_name_val
     if best_result is not None:
         sel = best_result.get('_sel_method') if isinstance(best_result, dict) else None
+        if not sel:
+            sel = best_params.get('method') or method
         agg = None
         try:
             agg = best_result.get('results', {}).get(sel) if isinstance(best_result, dict) else None
@@ -880,6 +882,8 @@ def genetic_search_forecast_params(  # noqa: C901
     }
     if best_result is not None:
         sel = best_result.get('_sel_method') if isinstance(best_result, dict) else None
+        if not sel:
+            sel = best_params.get('method') or method
         agg = None
         try:
             agg = best_result.get('results', {}).get(sel) if isinstance(best_result, dict) else None
