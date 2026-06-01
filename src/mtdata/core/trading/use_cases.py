@@ -3518,10 +3518,18 @@ def run_trade_var_cvar_calculate(  # noqa: C901
                 "message": message,
                 "positions": 0,
             }
-            if "equity" in summary:
-                result["equity"] = summary["equity"]
-            if "currency" in summary:
-                result["currency"] = summary["currency"]
+        if request.symbol:
+            result["scope"] = "symbol"
+            result["symbol"] = request.symbol
+            result["portfolio_hint"] = (
+                "Omit symbol to calculate VaR/CVaR for all open positions."
+            )
+        else:
+            result["scope"] = "portfolio"
+        if "equity" in summary:
+            result["equity"] = summary["equity"]
+        if "currency" in summary:
+            result["currency"] = summary["currency"]
         return _finish(result)
 
     position_type_buy = validation._safe_int_attr(
