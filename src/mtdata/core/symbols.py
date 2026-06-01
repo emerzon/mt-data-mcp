@@ -774,7 +774,7 @@ def symbols_list(  # noqa: C901
                     "symbol": symbol.name,
                     "group": _extract_group_path_util(symbol),
                     "description": symbol.description,
-                    "visible": bool(getattr(symbol, "visible", False)),
+                    "in_marketwatch": bool(getattr(symbol, "visible", False)),
                     "session_type": _symbol_session_type(
                         name=symbol.name,
                         group=_extract_group_path_util(symbol),
@@ -896,9 +896,9 @@ def symbols_list(  # noqa: C901
                     headers.append("session_type")
                 rows = [[s.get(header) for header in headers] for s in symbol_list]
             elif detail_mode == "full":
-                headers = ["symbol", "group", "description", "visible"]
+                headers = ["symbol", "group", "description", "in_marketwatch"]
                 rows = [
-                    [s["symbol"], s["group"], s["description"], s["visible"]]
+                    [s["symbol"], s["group"], s["description"], s["in_marketwatch"]]
                     for s in symbol_list
                 ]
             else:
