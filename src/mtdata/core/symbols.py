@@ -7,7 +7,6 @@ from typing import Any, Dict, List, Literal, Optional
 
 from ..shared.constants import (
     DEFAULT_ROW_LIMIT,
-    GROUP_SEARCH_THRESHOLD,
     TIMEFRAME_MAP,
     TIMEFRAME_SECONDS,
 )
@@ -213,6 +212,80 @@ _SYMBOL_SEARCH_MODES = frozenset(
     {"auto", "name", "description", "group", "exact", "all"}
 )
 
+_SYMBOL_SEARCH_FIELDS: Dict[str, List[str]] = {
+    "auto": ["symbol", "description", "group"],
+    "name": ["symbol"],
+    "description": ["description"],
+    "group": ["group"],
+    "exact": ["symbol"],
+    "all": ["symbol", "description", "group"],
+}
+
+_SYMBOL_SEARCH_REASON_RANK: Dict[str, int] = {
+    "exact_name": 0,
+    "name_prefix": 1,
+    "name_contains": 2,
+    "description_contains": 3,
+    "group_contains": 4,
+    "matched": 9,
+}
+
+
+def _symbol_search_match_reason(symbol: Any, search_term: str, search_mode: str) -> str:
+    query = search_term.casefold()
+    name = str(getattr(symbol, "name", "") or "")
+    description = str(getattr(symbol, "description", "") or "")
+    group = str(_extract_group_path_util(symbol) or "")
+    name_folded = name.casefold()
+
+    if search_mode == "exact":
+        return "exact_name"
+    if search_mode in {"auto", "all", "name"} and name_folded == query:
+        return "exact_name"
+    if search_mode in {"auto", "all", "name"}:
+        if name_folded.startswith(query):
+            return "name_prefix"
+        if query in name_folded:
+            return "name_contains"
+    if search_mode in {"auto", "all", "description"} and query in description.casefold():
+        return "description_contains"
+    if search_mode in {"auto", "all", "group"} and query in group.casefold():
+        return "group_contains"
+    return "matched"
+
+
+def _symbol_search_sort_key(
+    symbol: Any,
+    search_term: str,
+    search_mode: str,
+) -> tuple[int, str, str]:
+    reason = _symbol_search_match_reason(symbol, search_term, search_mode)
+    return (
+        _SYMBOL_SEARCH_REASON_RANK.get(reason, 9),
+        *_case_insensitive_sort_key(getattr(symbol, "name", "")),
+    )
+
+
+def _symbol_search_context(search_term: str, search_mode: str) -> Dict[str, Any]:
+    context: Dict[str, Any] = {
+        "term": search_term,
+        "mode": search_mode,
+        "fields": _SYMBOL_SEARCH_FIELDS.get(
+            search_mode,
+            ["symbol", "description", "group"],
+        ),
+        "match": "case_insensitive_substring",
+    }
+    if search_mode in {"auto", "all"}:
+        context["ranking"] = [
+            "exact_name",
+            "name_prefix",
+            "name_contains",
+            "description_contains",
+            "group_contains",
+        ]
+    return context
+
 
 def _symbols_from_groups(
     groups: Dict[str, List[Any]],
@@ -267,16 +340,8 @@ def _match_symbols_for_search(
         return description_matches
     if search_mode == "group":
         return _symbols_from_groups(groups, matching_groups)
-    if search_mode == "all":
+    if search_mode in {"auto", "all"}:
         return all_field_matches
-
-    if matching_groups and len(matching_groups) <= GROUP_SEARCH_THRESHOLD:
-        return _symbols_from_groups(groups, matching_groups)
-    if symbol_name_matches:
-        return symbol_name_matches
-    if matching_groups:
-        return _symbols_from_groups(groups, matching_groups)
-    return all_field_matches
 
 
 _COMMON_QUOTE_CURRENCIES = (
@@ -467,7 +532,12 @@ def symbols_list(  # noqa: C901
     ] = "auto",
     detail: CompactFullDetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
-    """List symbols or symbol groups."""
+    """List symbols or symbol groups.
+
+    Search is case-insensitive. Auto mode searches symbol, description, and
+    group fields, then ranks exact/prefix/name matches before description and
+    group matches.
+    """
     normalized_search_term = _normalize_symbol_search_term(search_term)
     detail_mode = normalize_output_detail(detail, default="compact")
     search_mode_value = str(search_mode or "auto").strip().lower()
@@ -512,10 +582,22 @@ def symbols_list(  # noqa: C901
             else:
                 matched_symbols = list(mt5_gateway.symbols_get() or [])
 
-            matched_symbols = sorted(
-                matched_symbols,
-                key=lambda symbol: _case_insensitive_sort_key(getattr(symbol, "name", "")),
-            )
+            if normalized_search_term:
+                matched_symbols = sorted(
+                    matched_symbols,
+                    key=lambda symbol: _symbol_search_sort_key(
+                        symbol,
+                        normalized_search_term,
+                        search_mode_value,
+                    ),
+                )
+            else:
+                matched_symbols = sorted(
+                    matched_symbols,
+                    key=lambda symbol: _case_insensitive_sort_key(
+                        getattr(symbol, "name", "")
+                    ),
+                )
             only_visible = not bool(normalized_search_term)
             symbol_list = []
             for symbol in matched_symbols:
@@ -532,6 +614,12 @@ def symbols_list(  # noqa: C901
                         description=symbol.description,
                     ),
                 }
+                if normalized_search_term:
+                    row["match_reason"] = _symbol_search_match_reason(
+                        symbol,
+                        normalized_search_term,
+                        search_mode_value,
+                    )
                 for attr in (
                     "currency_base",
                     "currency_profit",
@@ -565,6 +653,11 @@ def symbols_list(  # noqa: C901
                     "search_mode": search_mode_value,
                     "limit": limit_value,
                 }
+                if normalized_search_term:
+                    out["search"] = _symbol_search_context(
+                        normalized_search_term,
+                        search_mode_value,
+                    )
                 if offset_value or has_more:
                     out["total_count"] = total_count
                     out["offset"] = offset_value
@@ -572,6 +665,8 @@ def symbols_list(  # noqa: C901
                 return out
             if detail_mode == "compact":
                 headers = ["symbol", "group", "description"]
+                if normalized_search_term:
+                    headers.append("match_reason")
                 for optional_header in (
                     "currency_base",
                     "currency_profit",
@@ -593,6 +688,11 @@ def symbols_list(  # noqa: C901
                 headers = ["symbol", "group", "description"]
                 rows = [[s["symbol"], s["group"], s["description"]] for s in symbol_list]
             result = _table_from_rows(headers, rows)
+            if normalized_search_term:
+                result["search"] = _symbol_search_context(
+                    normalized_search_term,
+                    search_mode_value,
+                )
             if offset_value or has_more:
                 result["total_count"] = total_count
                 result["offset"] = offset_value
