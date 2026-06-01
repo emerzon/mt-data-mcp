@@ -6,6 +6,7 @@ import pytest
 
 from mtdata.utils.support_resistance import (
     _build_zone_overlap,
+    _cluster_tests,
     _resolve_adaptive_settings,
     compact_support_resistance_payload,
     compute_support_resistance_levels,
@@ -195,6 +196,24 @@ def _volume_weighted_supports_frame() -> pd.DataFrame:
     frame.loc[16, "tick_volume"] = 420.0
     frame["real_volume"] = 0.0
     return frame
+
+
+def _cluster_test_event(value: float, *, index: int, score: float = 1.0) -> dict[str, float | int | str | None]:
+    return {
+        "value": value,
+        "score": score,
+        "retest_component": score,
+        "bounce_component": 0.0,
+        "adx_component": 0.0,
+        "volume_component": 0.0,
+        "timestamp": None,
+        "index": index,
+        "type": "support",
+        "atr_value": 1.0,
+        "bounce_atr": 0.0,
+        "pretest_adx": 0.0,
+        "volume_ratio": None,
+    }
 
 
 def test_compute_support_resistance_returns_ranked_levels_around_current_price():
@@ -518,6 +537,23 @@ def test_volume_weighting_prefers_real_volume_when_available():
     )
 
     assert result["volume_source"] == "real_volume"
+
+
+def test_cluster_tests_avoids_transitive_chain_merges_across_shifted_centroids():
+    clusters = _cluster_tests(
+        [
+            _cluster_test_event(100.00, index=1),
+            _cluster_test_event(100.09, index=2),
+            _cluster_test_event(100.18, index=3),
+        ],
+        tolerance_pct=0.001,
+    )
+
+    assert len(clusters) == 2
+    assert clusters[0]["touches"] == 2
+    assert clusters[0]["value"] == pytest.approx(100.045)
+    assert clusters[1]["touches"] == 1
+    assert clusters[1]["value"] == pytest.approx(100.18)
 
 
 def test_no_extrema_returns_empty_levels():
