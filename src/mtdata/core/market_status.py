@@ -968,6 +968,17 @@ def _check_symbol_market_status_batch(
     }
 
 
+def _market_status_symbol_mode_warnings(
+    *,
+    region: Any,
+) -> List[str]:
+    warnings: List[str] = []
+    region_value = str(region or "all").strip().lower()
+    if region_value not in {"", "all"}:
+        warnings.append("region is ignored when symbol is provided; symbol mode checks broker symbol tradability directly.")
+    return warnings
+
+
 @mcp.tool()
 def market_status(
     symbol: Optional[str] = None,
@@ -1038,10 +1049,19 @@ def market_status(
 
     def _run() -> Dict[str, Any]:
         if symbol not in (None, ""):
+            symbol_warnings = _market_status_symbol_mode_warnings(
+                region=region,
+            )
             symbol_list = _split_market_status_symbols(str(symbol))
             if len(symbol_list) > 1:
-                return _check_symbol_market_status_batch(symbol_list, detail=detail_mode)
-            return _check_symbol_market_status(str(symbol), detail=detail_mode)
+                batch_result = _check_symbol_market_status_batch(symbol_list, detail=detail_mode)
+                if symbol_warnings:
+                    batch_result["warnings"] = symbol_warnings
+                return batch_result
+            result = _check_symbol_market_status(str(symbol), detail=detail_mode)
+            if symbol_warnings and not result.get("error"):
+                result["warnings"] = symbol_warnings
+            return result
 
         # Map regions to markets
         region_map = {
