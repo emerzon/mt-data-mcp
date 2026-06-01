@@ -8,7 +8,7 @@ import os
 import pkgutil
 import time
 from functools import lru_cache
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from ..core.execution_logging import (
     infer_result_success,
@@ -45,6 +45,7 @@ _BACKTEST_METRICS_REASON_NOTES = {
     ),
 }
 _VOLATILITY_PROXY_METHODS = {"arima", "sarima", "ets", "theta"}
+_PRETRAINED_FORECAST_METHODS = ("chronos2", "chronos_bolt", "timesfm", "lag_llama")
 _DEFAULT_VOLATILITY_PROXY = "squared_return"
 
 
@@ -828,6 +829,16 @@ def _specific_forecast_method_name(
     return str(resolved_method or requested or "").strip()
 
 
+def _library_method_error(
+    *,
+    library: str,
+    method: str,
+    valid_methods: Iterable[str],
+) -> str:
+    valid = ", ".join(str(item) for item in valid_methods)
+    return f"method '{method}' is not available in library '{library}'. Valid methods: {valid}."
+
+
 def _annotate_forecast_generate_method(
     payload: Dict[str, Any],
     *,
@@ -1413,12 +1424,39 @@ def run_forecast_generate(
                 resolved_method = "sktime"
                 params.setdefault("estimator", dotted)
         elif lib == "pretrained":
+            if method and method.strip().lower() not in _PRETRAINED_FORECAST_METHODS:
+                raise ForecastError(
+                    _library_method_error(
+                        library="pretrained",
+                        method=method,
+                        valid_methods=_PRETRAINED_FORECAST_METHODS,
+                    )
+                )
             resolved_method = method or "chronos2"
         elif lib == "mlforecast":
             if not method:
                 raise ForecastError("method is required for library=mlforecast")
-            resolved_method = "mlforecast"
-            params.setdefault("model", method)
+            method_key = method.strip().lower()
+            if (
+                "." not in method
+                and method_key not in {"mlforecast", "mlf_rf", "mlf_lightgbm"}
+            ):
+                raise ForecastError(
+                    _library_method_error(
+                        library="mlforecast",
+                        method=method,
+                        valid_methods=(
+                            "mlf_lightgbm",
+                            "mlf_rf",
+                            "mlforecast with params.model=<approved dotted class>",
+                        ),
+                    )
+                )
+            if method_key in {"mlf_rf", "mlf_lightgbm"}:
+                resolved_method = method_key
+            else:
+                resolved_method = "mlforecast"
+                params.setdefault("model", method)
         else:
             raise ForecastError(f"Unsupported library: {request.library}")
 

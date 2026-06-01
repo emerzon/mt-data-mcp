@@ -335,10 +335,14 @@ class GenericMLForecastMethod(MLForecastMethod):
             raise ValueError("GenericMLForecastMethod requires 'model' (dotted path) in params")
 
         if model_path not in _GENERIC_MLFORECAST_ALLOWED_MODELS:
-            allowed = ", ".join(sorted(_GENERIC_MLFORECAST_ALLOWED_MODELS))
+            allowed_models = sorted(_GENERIC_MLFORECAST_ALLOWED_MODELS)
+            preview = ", ".join(allowed_models[:5])
+            remaining = max(0, len(allowed_models) - 5)
+            suffix = f", ...and {remaining} more" if remaining else ""
             raise ValueError(
                 f"Model '{model_path}' is not allowed for GenericMLForecastMethod. "
-                f"Allowed models: {allowed}"
+                f"Allowed examples: {preview}{suffix}. "
+                "Use forecast_list_library_models library=mlforecast for the full list."
             )
 
         try:
