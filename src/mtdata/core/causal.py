@@ -58,6 +58,10 @@ _TRANSFORM_ALIASES: Dict[str, str] = {
     "none": "level",
     "raw": "level",
     "price": "level",
+    "log": "log_level",
+    "log_level": "log_level",
+    "log-price": "log_level",
+    "log_price": "log_level",
 }
 
 _COINTEGRATION_TRANSFORM_ALIASES: Dict[str, str] = {
@@ -105,6 +109,11 @@ _TRANSFORM_LEGEND: Dict[str, Dict[str, str]] = {
         "description": "Raw price levels (no transformation)",
         "formula": "close_t",
         "use_case": "Direct price analysis; required for cointegration tests",
+    },
+    "log_level": {
+        "description": "Natural log of price levels",
+        "formula": "ln(close_t)",
+        "use_case": "Price-level analysis with reduced scale effects",
     },
 }
 
@@ -426,6 +435,10 @@ def _transform_frame(frame: pd.DataFrame, transform: str) -> pd.DataFrame:
         log_prices = np.log(clean)
         log_prices = log_prices.replace([np.inf, -np.inf], np.nan)
         frame = log_prices.diff()
+    elif transform in ("log_level", "log", "log-price", "log_price"):
+        clean = frame.astype(float).where(frame > 0)
+        clean = clean.mask(clean <= 0)
+        frame = np.log(clean).replace([np.inf, -np.inf], np.nan)
     elif transform in ("pct", "return", "pct_change"):
         frame = frame.pct_change()
     elif transform in ("diff", "difference", "first_diff"):
@@ -1316,7 +1329,7 @@ def causal_discover_signals(  # noqa: C901
         end: Optional UTC-compatible end date/time; end-only anchors recent history.
         max_lag: Maximum lag order for tests (>=1).
         significance: Alpha level for reporting causal links.
-        transform: Preprocessing transform: "log_return", "pct", "diff", or "level".
+        transform: Preprocessing transform: "log_return", "pct", "diff", "level", or "log_level".
         normalize: Z-score columns before testing to stabilise scale.
         detail: "compact" returns significant links plus top pair summaries; "full"
             returns every tested pair in items.
@@ -1858,7 +1871,7 @@ def correlation_matrix(  # noqa: C901
         start: Optional UTC-compatible start date/time for the analysis window.
         end: Optional UTC-compatible end date/time; end-only anchors recent history.
         method: Correlation method: "pearson" or "spearman".
-        transform: Preprocessing transform: "log_return", "pct", "diff", or "level".
+        transform: Preprocessing transform: "log_return", "pct", "diff", "level", or "log_level".
         min_overlap: Minimum overlapping transformed samples required per pair.
         detail: "compact" keeps canonical pair rows and counts; "standard" adds
             highlight indexes; "full" also includes the derived matrix view.
@@ -2008,7 +2021,7 @@ def correlation_matrix(  # noqa: C901
         transform_value = _normalize_transform_name(transform)
         if transform_value is None:
             return _causal_error(
-                "Invalid transform. Valid options: log_return, pct, diff, level",
+                "Invalid transform. Valid options: log_return, pct, diff, level, log_level",
                 code="invalid_transform",
                 meta=meta,
             )
