@@ -12,6 +12,7 @@ Provides tools for:
 
 import logging
 import time
+from datetime import datetime, timezone
 from typing import Any, Dict, Literal, Optional
 
 from pydantic import BaseModel, Field
@@ -24,6 +25,22 @@ from .execution_logging import run_logged_operation
 logger = logging.getLogger(__name__)
 
 DetailLevel = CompactFullDetailLiteral
+
+
+def _format_epoch_utc(value: Any) -> Optional[str]:
+    try:
+        timestamp = float(value)
+    except Exception:
+        return None
+    try:
+        return (
+            datetime.fromtimestamp(timestamp, timezone.utc)
+            .replace(microsecond=0)
+            .isoformat()
+            .replace("+00:00", "Z")
+        )
+    except Exception:
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -95,12 +112,13 @@ def _serialize_progress(progress: Any, *, detail: DetailLevel) -> Dict[str, Any]
 
 
 def _serialize_model_handle(handle: Any, *, detail: DetailLevel) -> Dict[str, Any]:
+    created_at_epoch = getattr(handle, "created_at", None)
     payload: Dict[str, Any] = {
         "model_id": handle.model_id,
         "method": handle.method,
         "data_scope": handle.data_scope,
         "params_hash": handle.params_hash,
-        "created_at": handle.created_at,
+        "created_at": _format_epoch_utc(created_at_epoch) or created_at_epoch,
     }
     if detail == "full":
         from ..forecast.model_store import (
@@ -108,6 +126,7 @@ def _serialize_model_handle(handle: Any, *, detail: DetailLevel) -> Dict[str, An
             sanitize_store_metadata,
         )
 
+        payload["created_at_epoch"] = created_at_epoch
         store_metadata = dict(getattr(handle, "store_metadata", {}) or {})
         payload["metadata"] = dict(getattr(handle, "metadata", {}) or {})
         payload["store_metadata"] = sanitize_store_metadata(store_metadata)
