@@ -256,7 +256,7 @@ def _build_triple_barrier_outputs(
 def labels_triple_barrier(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
-    limit: int = 1200,
+    limit: int = 100,
     horizon: int = 12,
     tp_abs: Optional[float] = None,
     sl_abs: Optional[float] = None,
