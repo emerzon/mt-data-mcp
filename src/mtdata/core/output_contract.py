@@ -12,6 +12,15 @@ from ..utils.utils import _UNPARSED_BOOL, _parse_bool_like
 from .runtime_metadata import build_runtime_timezone_meta
 
 _MISSING = object()
+_SUCCESS_RELATED_TOOLS = {
+    "market_ticker": ["trade_session_context", "support_resistance_levels", "market_status"],
+    "data_fetch_candles": ["indicators_describe", "temporal_analyze", "patterns_detect"],
+    "patterns_detect": ["regime_detect", "support_resistance_levels", "pivot_compute_points"],
+    "regime_detect": ["patterns_detect", "forecast_generate", "temporal_analyze"],
+    "trade_session_context": ["market_ticker", "trade_risk_analyze", "trade_get_open"],
+    "support_resistance_levels": ["pivot_compute_points", "data_fetch_candles", "patterns_detect"],
+    "pivot_compute_points": ["support_resistance_levels", "market_status", "data_fetch_candles"],
+}
 _VERBOSE_ONLY_KEYS = frozenset(
     {
         "meta",
@@ -299,6 +308,23 @@ def ensure_common_meta(
 
     if meta:
         out["meta"] = meta
+    return out
+
+
+def attach_success_guidance(
+    result: Any,
+    *,
+    tool_name: Optional[str] = None,
+) -> Any:
+    """Attach optional related-tool guidance to successful payloads."""
+    if not isinstance(result, dict) or result.get("error"):
+        return result
+    normalized_tool = str(tool_name or "").strip()
+    related = _SUCCESS_RELATED_TOOLS.get(normalized_tool)
+    if not related or result.get("related_tools"):
+        return result
+    out = dict(result)
+    out["related_tools"] = list(related)
     return out
 
 

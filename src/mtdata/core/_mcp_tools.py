@@ -23,6 +23,7 @@ from .error_envelope import (
     normalize_error_payload,
 )
 from .output_contract import (
+    attach_success_guidance,
     apply_output_verbosity,
     normalize_output_extras,
     resolve_output_contract,
@@ -634,6 +635,11 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # n
                     public_out = normalize_news_output(
                         public_out,
                         detail=contract_state.detail,
+                    )
+                if "guidance" in contract_state.extras:
+                    public_out = attach_success_guidance(
+                        public_out,
+                        tool_name=fname,
                     )
                 public_out = apply_output_verbosity(
                     public_out,

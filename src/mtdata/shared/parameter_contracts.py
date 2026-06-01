@@ -10,6 +10,7 @@ OUTPUT_EXTRAS: Final[frozenset[str]] = frozenset(
         "raw",
         "raw_rows",
         "method_docs",
+        "guidance",
     }
 )
 OUTPUT_EXTRA_FULL_ALIASES: Final[frozenset[str]] = frozenset(
