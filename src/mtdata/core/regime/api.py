@@ -34,7 +34,7 @@ from .methods.bocpd import (
     _filter_bocpd_change_points,
     _walkforward_quantile_threshold_calibration,
 )
-from .methods.hmm import _hmm_reliability_from_gamma
+from .methods.hmm import _hmm_reliability_from_gamma, fit_temporal_gaussian_hmm_1d
 from .methods.ms_ar import _ms_ar_reliability_from_smoothed
 from .payload import (
     _consolidate_payload,
@@ -1513,7 +1513,7 @@ def regime_detect(  # noqa: C901
                 )
             )
 
-        elif method == "hmm":  # 'hmm' (mixture/HMM-lite)
+        elif method == "hmm":
             n_states, n_states_error, n_states_source, state_count_warnings = (
                 _resolve_state_count_param(
                     p,
@@ -1525,14 +1525,56 @@ def regime_detect(  # noqa: C901
                 return _finish({"error": n_states_error})
             if n_states is None or n_states < 2:
                 return _finish({"error": "n_states must be >= 2 for hmm."})
+            hmm_fit_warnings: List[str] = []
+            hmm_meta: Dict[str, Any] = {}
+            temporal_hmm_error: Optional[Exception] = None
             try:
-                from ...forecast.monte_carlo import fit_gaussian_mixture_1d
+                fit_hmm = globals().get(
+                    "fit_temporal_gaussian_hmm_1d",
+                    fit_temporal_gaussian_hmm_1d,
+                )
+                w, mu, sigma, gamma, hmm_meta = fit_hmm(x, n_states=n_states)
+                if not isinstance(hmm_meta, dict):
+                    hmm_meta = {}
             except Exception as ex:
-                return _finish({"error": f"HMM-lite import error: {ex}"})
-            fit_gaussian_mixture_1d = globals().get(
-                "fit_gaussian_mixture_1d", fit_gaussian_mixture_1d
-            )
-            w, mu, sigma, gamma, _ = fit_gaussian_mixture_1d(x, n_states=n_states)
+                temporal_hmm_error = ex
+                try:
+                    from ...forecast.monte_carlo import fit_gaussian_mixture_1d
+                except Exception as fallback_import_ex:
+                    return _finish(
+                        {
+                            "error": "Temporal Gaussian HMM failed "
+                            f"({ex}) and Gaussian-mixture fallback import also failed "
+                            f"({fallback_import_ex})."
+                        }
+                    )
+                fit_gaussian_mixture_1d = globals().get(
+                    "fit_gaussian_mixture_1d", fit_gaussian_mixture_1d
+                )
+                try:
+                    w, mu, sigma, gamma, fallback_ll = fit_gaussian_mixture_1d(
+                        x, n_states=n_states
+                    )
+                except Exception as fallback_ex:
+                    return _finish(
+                        {
+                            "error": "Temporal Gaussian HMM failed "
+                            f"({ex}) and Gaussian-mixture fallback also failed "
+                            f"({fallback_ex})."
+                        }
+                    )
+                hmm_meta = {
+                    "backend": "gaussian_mixture_fallback",
+                    "fallback_reason": str(ex),
+                    "temporal_model": False,
+                }
+                fallback_ll_value = _coerce_optional_float(fallback_ll)
+                if fallback_ll_value is not None:
+                    hmm_meta["log_likelihood"] = float(fallback_ll_value)
+                hmm_fit_warnings.append(
+                    "Temporal Gaussian HMM fit failed; fell back to a non-temporal "
+                    f"Gaussian mixture. Original error: {ex}"
+                )
             gamma_matrix = _normalize_state_probability_matrix(
                 gamma,
                 rows=x.size,
@@ -1580,6 +1622,14 @@ def regime_detect(  # noqa: C901
                     "n_states": int(n_states),
                     "fitted_n_states": int(len(mu)),
                     "state_count_param": n_states_source,
+                    "backend": str(hmm_meta.get("backend", "gaussian_hmm")),
+                    "temporal_model": bool(
+                        hmm_meta.get(
+                            "temporal_model",
+                            str(hmm_meta.get("backend", "gaussian_hmm"))
+                            == "gaussian_hmm",
+                        )
+                    ),
                     "min_regime_bars": int(min_regime_bars_val),
                     "relabeled": bool(canon_meta.get("relabeled", False)),
                     "smoothing_applied": bool(
@@ -1593,8 +1643,11 @@ def regime_detect(  # noqa: C901
                     ),
                 },
             }
+            if temporal_hmm_error is not None:
+                payload["params_used"]["fallback_reason"] = str(temporal_hmm_error)
             if canon_meta.get("mapping"):
                 payload["params_used"]["label_mapping"] = canon_meta["mapping"]
+            _append_warnings(payload, hmm_fit_warnings)
             _append_warnings(payload, state_count_warnings)
             _append_warnings(payload, _smoothing_warnings(method, smoothing_meta))
             # Add reliability info
