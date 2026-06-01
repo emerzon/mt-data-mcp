@@ -9,7 +9,7 @@ import pytest
 from mtdata.core import regime as regime_mod
 from mtdata.core.regime import _consolidate_payload, regime_detect
 from mtdata.core.regime import api as regime_api
-from mtdata.core.regime.api import _build_all_method_comparison
+from mtdata.core.regime.api import _build_all_method_comparison, _trailing_window_std
 from mtdata.core.regime.payload import _build_regime_descriptions
 
 
@@ -748,6 +748,20 @@ def test_garch_rejects_price_target() -> None:
 
     assert out["error_code"] == "invalid_target"
     assert "target='return'" in out["error"]
+
+
+def test_trailing_window_std_matches_naive_garch_window_scan() -> None:
+    x = np.array([0.02, -0.01, 0.03, np.nan, 0.04, -0.02, 0.01, 0.0], dtype=float)
+    window = 3
+
+    expected = np.array(
+        [np.std(x[max(0, i - window) : i + 1]) for i in range(len(x))],
+        dtype=float,
+    )
+
+    actual = _trailing_window_std(x, window)
+
+    np.testing.assert_allclose(actual, expected, equal_nan=True)
 
 
 def test_wavelet_rejects_non_positive_energy_window() -> None:
