@@ -86,6 +86,43 @@ def _summary_window_size(lookback: int, size: int) -> int:
     return min(max(lookback_i, 0), int(size))
 
 
+def _trailing_window_std(values: np.ndarray, window: int) -> np.ndarray:
+    data = np.asarray(values, dtype=float)
+    if data.size == 0:
+        return np.empty(0, dtype=float)
+
+    window_i = max(0, int(window))
+    indices = np.arange(data.size, dtype=int)
+    starts = np.maximum(indices - window_i, 0)
+    counts = indices - starts + 1
+
+    finite = np.isfinite(data)
+    safe_values = np.where(finite, data, 0.0)
+    safe_sq_values = safe_values * safe_values
+
+    cumsum = np.zeros(data.size + 1, dtype=float)
+    cumsum_sq = np.zeros(data.size + 1, dtype=float)
+    cumsum_finite = np.zeros(data.size + 1, dtype=int)
+    np.cumsum(safe_values, out=cumsum[1:])
+    np.cumsum(safe_sq_values, out=cumsum_sq[1:])
+    np.cumsum(finite.astype(int), out=cumsum_finite[1:])
+
+    window_sum = cumsum[1:] - cumsum[starts]
+    window_sq_sum = cumsum_sq[1:] - cumsum_sq[starts]
+    finite_counts = cumsum_finite[1:] - cumsum_finite[starts]
+    valid = finite_counts == counts
+
+    result = np.full(data.size, np.nan, dtype=float)
+    if not np.any(valid):
+        return result
+
+    valid_counts = counts[valid].astype(float)
+    mean = window_sum[valid] / valid_counts
+    variance = (window_sq_sum[valid] / valid_counts) - (mean * mean)
+    result[valid] = np.sqrt(np.maximum(variance, 0.0))
+    return result
+
+
 def _history_fetch_limit(limit: Optional[int], lookback: int) -> int:
     if limit is not None and int(limit) >= 0:
         return int(max(int(limit), 50))
@@ -2000,9 +2037,7 @@ def regime_detect(  # noqa: C901
                     window = 5
 
                 # Rolling standard deviation of returns
-                rolling_vol = np.array(
-                    [np.std(x[max(0, i - window) : i + 1]) for i in range(len(x))]
-                )
+                rolling_vol = _trailing_window_std(x, window)
                 rolling_vol = rolling_vol[np.isfinite(rolling_vol) & (rolling_vol > 0)]
 
                 if len(rolling_vol) > 10:
