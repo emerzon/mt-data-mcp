@@ -8,9 +8,9 @@ from .patterns_support import (
     _build_highlights,
     _compact_all_mode_payload,
     _dedupe_repeated_regime_context,
-    _empty_patterns_note,
     _elliott_completed_preview,
     _elliott_hidden_completed_note,
+    _empty_patterns_note,
     _highlights_all_mode_payload,
     score_all_mode_patterns,
 )
@@ -258,15 +258,17 @@ def _all_mode_invalid_config_keys(
     classic_cfg: Any,
     elliott_cfg: Any,
     fractal_cfg: Any,
+    harmonic_cfg: Any,
     classic_invalid: List[str],
     elliott_invalid: List[str],
     fractal_invalid: List[str],
+    harmonic_invalid: List[str],
 ) -> List[str]:
     if not isinstance(config, dict):
         return []
 
     known_keys = set(_CLASSIC_CONFIG_EXTRA_KEYS)
-    for cfg in (classic_cfg, elliott_cfg, fractal_cfg):
+    for cfg in (classic_cfg, elliott_cfg, fractal_cfg, harmonic_cfg):
         try:
             known_keys.update(vars(cfg).keys())
         except Exception:
@@ -275,6 +277,7 @@ def _all_mode_invalid_config_keys(
     classic_invalid_set = {str(key) for key in classic_invalid}
     elliott_invalid_set = {str(key) for key in elliott_invalid}
     fractal_invalid_set = {str(key) for key in fractal_invalid}
+    harmonic_invalid_set = {str(key) for key in harmonic_invalid}
 
     out: List[str] = []
     for key in config.keys():
@@ -292,6 +295,8 @@ def _all_mode_invalid_config_keys(
             applicable_invalid_sets.append(elliott_invalid_set)
         if hasattr(fractal_cfg, key_str):
             applicable_invalid_sets.append(fractal_invalid_set)
+        if hasattr(harmonic_cfg, key_str):
+            applicable_invalid_sets.append(harmonic_invalid_set)
 
         if applicable_invalid_sets and all(
             key_str in invalid_set for invalid_set in applicable_invalid_sets
@@ -308,6 +313,7 @@ class PatternsDetectDeps:
     classic_cfg_cls: Any
     elliott_cfg_cls: Any
     fractal_cfg_cls: Any
+    harmonic_cfg_cls: Any
     apply_config_to_obj: Any
     select_classic_engines: Any
     available_classic_engines: Any
@@ -320,11 +326,13 @@ class PatternsDetectDeps:
     build_pattern_response: Any
     format_elliott_patterns: Any
     format_fractal_patterns: Any
+    format_harmonic_patterns: Any
     detect_candlestick_patterns: Any
     elliott_timeframe_suggestion: Any
     resolve_elliott_scan_timeframes: Any
     validate_classic_config_errors: Any
     validate_fractal_config: Any
+    validate_harmonic_config: Any
     summarize_fractal_context: Any
     format_time_minimal: Any
     to_float_np: Any
@@ -618,6 +626,39 @@ def run_patterns_detect(  # noqa: C901
         _attach_signal_bias_summary(resp, deps)
         return resp
 
+    if mode_value == "harmonic":
+        tf_single = tf_norm or "H1"
+        cfg = deps.harmonic_cfg_cls()
+        unknown_cfg = _unknown_config_keys_for_mode(
+            mode_value,
+            deps.apply_config_to_obj(cfg, request.config),
+        )
+        if unknown_cfg:
+            return {"error": f"Invalid config key(s): {sorted(unknown_cfg)}"}
+        config_errors = deps.validate_harmonic_config(cfg)
+        if config_errors:
+            return {"error": f"Invalid harmonic config: {config_errors[0]}"}
+
+        df, err = _fetch_pattern_frame(tf_single, request.limit)
+        if err:
+            return err
+
+        out_list = deps.format_harmonic_patterns(df, cfg)
+        resp = deps.build_pattern_response(
+            request.symbol,
+            tf_single,
+            request.limit,
+            mode_value,
+            out_list,
+            request.include_completed,
+            request.include_series,
+            request.series_time,
+            df,
+            detail=detail_value,
+        )
+        _attach_signal_bias_summary(resp, deps)
+        return resp
+
     if mode_value == "elliott":
         cfg = deps.elliott_cfg_cls()
         unknown_cfg = _unknown_config_keys_for_mode(
@@ -803,6 +844,7 @@ def run_patterns_detect(  # noqa: C901
 
         candlestick_patterns: List[Dict[str, Any]] = []
         classic_patterns: List[Dict[str, Any]] = []
+        harmonic_patterns: List[Dict[str, Any]] = []
         elliott_patterns: List[Dict[str, Any]] = []
         fractal_patterns: List[Dict[str, Any]] = []
         section_errors: Dict[str, Dict[str, str]] = {}
@@ -810,6 +852,7 @@ def run_patterns_detect(  # noqa: C901
         classic_cfg = deps.classic_cfg_cls()
         elliott_cfg = deps.elliott_cfg_cls()
         fractal_cfg = deps.fractal_cfg_cls()
+        harmonic_cfg = deps.harmonic_cfg_cls()
 
         # Enable auto-complete for stale forming patterns by default in "all" mode
         # This prevents ancient patterns from showing as "forming" indefinitely
@@ -824,23 +867,44 @@ def run_patterns_detect(  # noqa: C901
         classic_invalid: List[str] = []
         elliott_invalid: List[str] = []
         fractal_invalid: List[str] = []
+        harmonic_invalid: List[str] = []
         if isinstance(request.config, dict):
             classic_invalid = deps.apply_config_to_obj(classic_cfg, request.config)
             elliott_invalid = deps.apply_config_to_obj(elliott_cfg, request.config)
             fractal_invalid = deps.apply_config_to_obj(fractal_cfg, request.config)
+            harmonic_invalid = deps.apply_config_to_obj(harmonic_cfg, request.config)
 
-        fractal_unapplied_keys = _all_mode_invalid_config_keys(
+        all_unapplied_keys = _all_mode_invalid_config_keys(
             request.config,
             classic_cfg=classic_cfg,
             elliott_cfg=elliott_cfg,
             fractal_cfg=fractal_cfg,
+            harmonic_cfg=harmonic_cfg,
             classic_invalid=classic_invalid,
             elliott_invalid=elliott_invalid,
             fractal_invalid=fractal_invalid,
+            harmonic_invalid=harmonic_invalid,
         )
-        if fractal_unapplied_keys:
-            msg = f"Invalid config key(s): {fractal_unapplied_keys}"
-            section_errors["fractal"] = {tf: msg for tf in timeframes}
+        if all_unapplied_keys:
+            cfgs_by_section = {
+                "fractal": fractal_cfg,
+                "harmonic": harmonic_cfg,
+            }
+            all_known_keys: set[str] = set()
+            for cfg in (classic_cfg, elliott_cfg, fractal_cfg, harmonic_cfg):
+                try:
+                    all_known_keys.update(str(key) for key in vars(cfg).keys())
+                except Exception:
+                    continue
+            for section_name, section_cfg in cfgs_by_section.items():
+                section_keys = [
+                    key
+                    for key in all_unapplied_keys
+                    if hasattr(section_cfg, str(key)) or str(key) not in all_known_keys
+                ]
+                if section_keys:
+                    msg = f"Invalid config key(s): {section_keys}"
+                    section_errors[section_name] = {tf: msg for tf in timeframes}
 
         classic_config_errors = deps.validate_classic_config_errors(classic_cfg)
         classic_config_error_msg: Optional[str] = None
@@ -855,6 +919,13 @@ def run_patterns_detect(  # noqa: C901
             section_errors.setdefault("fractal", {})
             for tf in timeframes:
                 section_errors["fractal"][tf] = msg
+
+        harmonic_config_errors = deps.validate_harmonic_config(harmonic_cfg)
+        if harmonic_config_errors:
+            msg = f"Invalid harmonic config: {harmonic_config_errors[0]}"
+            section_errors.setdefault("harmonic", {})
+            for tf in timeframes:
+                section_errors["harmonic"][tf] = msg
 
         # Elliott waves are multi-bar structures: a wave ending 20+ bars from
         # the tip is still actively developing.  The default recent_bars=3 is
@@ -911,11 +982,12 @@ def run_patterns_detect(  # noqa: C901
             except Exception as exc:
                 section_errors.setdefault("candlestick", {})[tf] = str(exc)
 
-            # ── Shared data fetch for classic + elliott ──
+            # ── Shared data fetch for classic + harmonic + elliott + fractal ──
             df, fetch_err = _fetch_pattern_frame(tf, tf_limit)
             if fetch_err:
                 err_msg = str(fetch_err.get("error", "data fetch failed"))
                 section_errors.setdefault("classic", {})[tf] = err_msg
+                section_errors.setdefault("harmonic", {})[tf] = err_msg
                 section_errors.setdefault("elliott", {})[tf] = err_msg
                 section_errors.setdefault("fractal", {})[tf] = err_msg
                 continue
@@ -940,6 +1012,18 @@ def run_patterns_detect(  # noqa: C901
                                 classic_patterns.append(row)
                 except Exception as exc:
                     section_errors.setdefault("classic", {})[tf] = str(exc)
+
+            # ── Harmonic ──
+            if tf not in section_errors.get("harmonic", {}):
+                try:
+                    harmonic_rows = deps.format_harmonic_patterns(df, harmonic_cfg)
+                    for row in harmonic_rows:
+                        if isinstance(row, dict):
+                            row["timeframe"] = tf
+                            row["_data_length"] = n_bars
+                            harmonic_patterns.append(row)
+                except Exception as exc:
+                    section_errors.setdefault("harmonic", {})[tf] = str(exc)
 
             # ── Elliott ──
             try:
@@ -971,6 +1055,11 @@ def run_patterns_detect(  # noqa: C901
                 for r in classic_patterns
                 if str(r.get("status", "")).lower() != "completed"
             ]
+            harmonic_patterns = [
+                r
+                for r in harmonic_patterns
+                if str(r.get("status", "")).lower() != "completed"
+            ]
             elliott_patterns = [
                 r
                 for r in elliott_patterns
@@ -985,12 +1074,14 @@ def run_patterns_detect(  # noqa: C901
         # Score and sort each section by relevance (confidence + recency)
         score_all_mode_patterns(candlestick_patterns, request.limit)
         score_all_mode_patterns(classic_patterns, request.limit)
+        score_all_mode_patterns(harmonic_patterns, request.limit)
         score_all_mode_patterns(elliott_patterns, request.limit)
         score_all_mode_patterns(fractal_patterns, request.limit)
 
         total = (
             len(candlestick_patterns)
             + len(classic_patterns)
+            + len(harmonic_patterns)
             + len(elliott_patterns)
             + len(fractal_patterns)
         )
@@ -1018,6 +1109,10 @@ def run_patterns_detect(  # noqa: C901
                 "n_patterns": len(classic_patterns),
                 "patterns": classic_patterns,
             },
+            "harmonic": {
+                "n_patterns": len(harmonic_patterns),
+                "patterns": harmonic_patterns,
+            },
             "elliott": {
                 "n_patterns": len(elliott_patterns),
                 "patterns": elliott_patterns,
@@ -1033,6 +1128,10 @@ def run_patterns_detect(  # noqa: C901
             bias = deps.summarize_pattern_bias(classic_patterns)
             if bias:
                 resp["classic"]["signal_bias"] = bias
+        if harmonic_patterns:
+            bias = deps.summarize_pattern_bias(harmonic_patterns)
+            if bias:
+                resp["harmonic"]["signal_bias"] = bias
         if fractal_patterns:
             bias = deps.summarize_pattern_bias(fractal_patterns)
             if bias:
@@ -1056,6 +1155,6 @@ def run_patterns_detect(  # noqa: C901
     return {
         "error": (
             f"Unknown mode: {request.mode}. "
-            "Use all, candlestick, classic/chart, fractal, or elliott."
+            "Use all, candlestick, classic/chart, harmonic, fractal, or elliott."
         )
     }

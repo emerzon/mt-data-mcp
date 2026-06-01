@@ -65,6 +65,39 @@ mtdata-cli patterns_detect EURUSD --timeframe H1 --mode classic --limit 500
 | **Wedge** | Rising or falling wedge |
 | **Rectangle** | Horizontal consolidation |
 
+### Harmonic Patterns
+
+Fibonacci-ratio patterns built from alternating pivot legs.
+
+```bash
+mtdata-cli patterns_detect EURUSD --timeframe H1 --mode harmonic --limit 500
+```
+
+**Patterns detected:**
+| Pattern | Description |
+|---------|-------------|
+| **ABCD** | Four-point measured-move completion |
+| **Gartley** | XABCD retracement pattern with 0.786 XA completion |
+| **Bat / Alternate Bat** | XABCD patterns with deeper D-point completion |
+| **Butterfly** | XABCD extension beyond X |
+| **Crab / Deep Crab** | Extended XABCD completion patterns |
+| **Shark, Cypher, 5-0** | Additional Fibonacci-ratio reversal structures |
+
+**Useful harmonic config:**
+```bash
+mtdata-cli patterns_detect EURUSD --timeframe H1 --mode harmonic \
+  --config "pattern_types=gartley,bat,crab ratio_tolerance=0.06 min_confidence=0.45"
+```
+
+**Common output fields:**
+| Field | Meaning |
+|-------|---------|
+| `entry_price` | D-point completion price |
+| `target_price`, `target_price_1`, `target_price_2` | CD retracement targets |
+| `invalidation_price` | Pattern invalidation level with configured buffer |
+| `price_levels` | Entry, targets, invalidation, and PRZ levels |
+| `details.ratios` | Measured Fibonacci ratios for the candidate |
+
 ### Fractal Patterns
 
 Bill Williams-style bullish and bearish fractal levels with confirmation and breakout context.
@@ -92,12 +125,12 @@ mtdata-cli patterns_detect EURUSD --timeframe H1 --mode fractal \
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `--mode` | `all` | Pattern type: all, candlestick, classic, fractal, elliott |
+| `--mode` | `all` | Pattern type: all, candlestick, classic, harmonic, fractal, elliott |
 | `--limit` | 1000 | Bars to analyze |
 | `--robust-only` | false | Only return high-confidence candlestick patterns. Pass `true` to filter to the robust subset. |
 | `--whitelist` | — | Comma-separated list of specific patterns |
 | `--min-strength` | 0.90 | Minimum semantic candlestick conviction score (0.0-1.0) |
-| `--config` | — | Detector-specific overrides. Fractals support `left_bars`, `right_bars`, `breakout_basis`, `min_prominence_pct`, and `confidence_prominence_cap_pct`. |
+| `--config` | — | Detector-specific overrides. Fractals support `left_bars`, `right_bars`, `breakout_basis`, `min_prominence_pct`, and `confidence_prominence_cap_pct`. Harmonics support `pattern_types`, `ratio_tolerance`, `min_confidence`, and pivot controls. |
 
 ### Filtering Patterns
 
@@ -270,6 +303,7 @@ data[5]{time,pattern}:
 | Candlestick patterns | `mtdata-cli patterns_detect EURUSD --mode candlestick` |
 | Robust patterns only | `mtdata-cli patterns_detect EURUSD --mode candlestick --robust-only true` |
 | Chart patterns | `mtdata-cli patterns_detect EURUSD --mode classic` |
+| Harmonic patterns | `mtdata-cli patterns_detect EURUSD --mode harmonic` |
 | Fractal levels and breakouts | `mtdata-cli patterns_detect EURUSD --mode fractal` |
 | Analog forecast | `mtdata-cli forecast_generate EURUSD --method analog --params "window_size=64 top_k=20"` |
 | Analog with DTW | `mtdata-cli forecast_generate EURUSD --method analog --params "refine_metric=dtw"` |

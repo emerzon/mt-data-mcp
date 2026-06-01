@@ -9,6 +9,11 @@ from .fractal import (
     FractalPatternResult,
     detect_fractal_patterns,
 )
+from .harmonic import (
+    HarmonicDetectorConfig,
+    HarmonicPatternResult,
+    detect_harmonic_patterns,
+)
 
 __all__ = [
     "detect_classic_patterns",
@@ -20,4 +25,7 @@ __all__ = [
     "detect_fractal_patterns",
     "FractalPatternResult",
     "FractalDetectorConfig",
+    "detect_harmonic_patterns",
+    "HarmonicPatternResult",
+    "HarmonicDetectorConfig",
 ]

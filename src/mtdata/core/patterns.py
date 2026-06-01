@@ -23,6 +23,12 @@ from ..patterns.fractal import detect_fractal_patterns as _detect_fractal_patter
 from ..patterns.fractal import (
     validate_fractal_detector_config as _validate_fractal_detector_config,
 )
+from ..patterns.harmonic import HarmonicDetectorConfig as _HarmonicCfg
+from ..patterns.harmonic import detect_harmonic_patterns as _detect_harmonic_patterns
+from ..patterns.harmonic import (
+    validate_harmonic_detector_config as _validate_harmonic_detector_config,
+)
+from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..shared.validators import invalid_timeframe_error
 from ..utils.denoise import _apply_denoise as _apply_denoise_util
 from ..utils.denoise import normalize_denoise_spec as _normalize_denoise_spec
@@ -41,19 +47,18 @@ from ..utils.utils import (
 )
 from ..utils.utils import to_float_np as __to_float_np
 from ._mcp_instance import mcp
-from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway, mt5_connection_error
-from .patterns_requests import PatternsDetectRequest, PatternsDetailLiteral
+from .patterns_requests import PatternsDetailLiteral, PatternsDetectRequest
 from .patterns_support import (
     _STOCK_PATTERN_UTILS_CACHE,  # noqa: F401
     _build_stock_pattern_frame,
     _compact_patterns_payload,
     _count_patterns_with_status,
     _dedupe_repeated_regime_context,
-    _empty_patterns_note,
     _elliott_completed_preview,
     _elliott_hidden_completed_note,
+    _empty_patterns_note,
     _enrich_classic_patterns,
     _enrich_elliott_patterns,
     _estimate_classic_bars_to_completion,
@@ -332,6 +337,7 @@ def _patterns_detect_deps() -> PatternsDetectDeps:
         classic_cfg_cls=_ClassicCfg,
         elliott_cfg_cls=_ElliottCfg,
         fractal_cfg_cls=_FractalCfg,
+        harmonic_cfg_cls=_HarmonicCfg,
         apply_config_to_obj=_apply_config_to_obj,
         select_classic_engines=_select_classic_engines,
         available_classic_engines=_available_classic_engines,
@@ -344,11 +350,13 @@ def _patterns_detect_deps() -> PatternsDetectDeps:
         build_pattern_response=_build_pattern_response,
         format_elliott_patterns=_format_elliott_patterns,
         format_fractal_patterns=_format_fractal_patterns,
+        format_harmonic_patterns=_format_harmonic_patterns,
         detect_candlestick_patterns=_detect_candlestick_patterns,
         elliott_timeframe_suggestion=_elliott_timeframe_suggestion,
         resolve_elliott_scan_timeframes=_resolve_elliott_scan_timeframes,
         validate_classic_config_errors=_fatal_classic_detector_config_errors,
         validate_fractal_config=_validate_fractal_detector_config,
+        validate_harmonic_config=_validate_harmonic_detector_config,
         summarize_fractal_context=_summarize_fractal_context,
         format_time_minimal=_format_time_minimal,
         to_float_np=__to_float_np,
@@ -468,7 +476,7 @@ def _build_pattern_response(
                     if years_spanned >= 10:
                         resp["data_freshness"]["years_spanned"] = years_spanned
                         # Add warning if patterns are very old or span many years
-                        if not "warnings" in resp:
+                        if "warnings" not in resp:
                             resp["warnings"] = []
                         if isinstance(resp["warnings"], list):
                             warning_msg = (
@@ -669,6 +677,66 @@ def _format_fractal_patterns(
             breakout_date = _format_pattern_timestamp(details.get("breakout_time"))
             if breakout_date:
                 row["breakout_date"] = breakout_date
+            out_list.append(row)
+        except Exception:
+            continue
+    return out_list
+
+
+def _format_harmonic_patterns(
+    df: pd.DataFrame,
+    cfg: _HarmonicCfg,
+) -> List[Dict[str, Any]]:
+    pats = _detect_harmonic_patterns(df, cfg)
+    out_list: List[Dict[str, Any]] = []
+    for p in pats:
+        try:
+            start_date, end_date = _format_pattern_dates(p.start_time, p.end_time)
+            details = {k: _round_value(v) for k, v in (p.details or {}).items()}
+            bias = str(details.get("bias") or p.bias or "").strip().lower()
+            target_prices = [
+                float(value)
+                for value in getattr(p, "target_prices", [])
+                if isinstance(value, (int, float, np.integer, np.floating))
+            ]
+            target_1 = target_prices[0] if target_prices else None
+            target_2 = target_prices[1] if len(target_prices) > 1 else None
+            price_levels: Dict[str, Any] = {
+                "entry": float(p.entry_price),
+                "target_1": target_1,
+                "target_2": target_2,
+                "invalidation": float(p.invalidation_price),
+            }
+            for key in ("prz_low", "prz_mid", "prz_high"):
+                value = details.get(key)
+                if isinstance(value, (int, float, np.integer, np.floating)):
+                    price_levels[key] = float(value)
+
+            row: Dict[str, Any] = {
+                "name": p.name,
+                "status": p.status,
+                "confidence": float(max(0.0, min(1.0, p.confidence))),
+                "start_index": int(p.start_index),
+                "end_index": int(p.end_index),
+                "start_date": start_date,
+                "end_date": end_date,
+                "direction": bias,
+                "bias": bias,
+                "entry_price": float(p.entry_price),
+                "reference_price": float(p.entry_price),
+                "invalidation_price": float(p.invalidation_price),
+                "price_levels": {
+                    key: _round_value(value)
+                    for key, value in price_levels.items()
+                    if value not in (None, "")
+                },
+                "details": details,
+            }
+            if target_1 is not None:
+                row["target_price"] = float(target_1)
+                row["target_price_1"] = float(target_1)
+            if target_2 is not None:
+                row["target_price_2"] = float(target_2)
             out_list.append(row)
         except Exception:
             continue
@@ -1086,7 +1154,7 @@ def _attach_pattern_usage_notice(result: Dict[str, Any]) -> None:
 def patterns_detect(
     request: PatternsDetectRequest,
 ) -> Dict[str, Any]:
-    """Detect chart patterns (candlestick, classic, fractal, or Elliott Wave).
+    """Detect chart patterns (candlestick, classic, harmonic, fractal, or Elliott Wave).
     
     **REQUIRED**: symbol parameter must be provided (e.g., "EURUSD", "BTCUSD")
     
@@ -1108,11 +1176,12 @@ def patterns_detect(
     
     mode : str, optional (default="candlestick")
         Pattern detection method:
-        - "all": Comprehensive scan — candlestick + classic + fractal + Elliott across
+        - "all": Comprehensive scan - candlestick + classic + harmonic + fractal + Elliott across
           multiple timeframes. Returns sectioned output.
         - "candlestick": Japanese candlestick patterns (Doji, Hammer, Engulfing, etc.)
         - "classic": Chart patterns (Head & Shoulders, Triangles, Flags, etc.)
         - "chart": Alias for classic chart patterns
+        - "harmonic": Fibonacci-ratio patterns (ABCD, Gartley, Bat, Butterfly, Crab, etc.)
         - "fractal": Bill Williams-style bullish/bearish fractal levels with breakout context
         - "elliott": Elliott Wave patterns
 
@@ -1171,6 +1240,10 @@ def patterns_detect(
         - left_bars, right_bars
         - breakout_basis: "close" or "high_low"
         - min_prominence_pct, confidence_prominence_cap_pct
+        Useful harmonic options include:
+        - pattern_types: list[str] (for example ["gartley", "bat", "crab", "abcd"])
+        - ratio_tolerance, min_confidence, max_pivots, max_pattern_age_bars
+        - min_prominence_pct, min_distance, pivot_use_hl
 
     engine : str, optional (default="native")
         Classic engine selection: "native", "stock_pattern",
@@ -1217,6 +1290,9 @@ def patterns_detect(
 
     # Detect fractal levels and breakouts
     patterns_detect(symbol="EURUSD", mode="fractal", timeframe="H1", config={"breakout_basis": "high_low"})
+
+    # Detect Fibonacci harmonic patterns
+    patterns_detect(symbol="EURUSD", mode="harmonic", timeframe="H1", limit=500)
 
     # Detect Elliott Wave patterns
     patterns_detect(symbol="BTCUSD", mode="elliott", timeframe="H4", detail="full")

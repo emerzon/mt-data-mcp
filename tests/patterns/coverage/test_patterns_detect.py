@@ -14,7 +14,6 @@ import pytest
 
 from mtdata.core.patterns_requests import PatternsDetectRequest
 
-
 # ---------------------------------------------------------------------------
 # Helpers to build mock data
 # ---------------------------------------------------------------------------
@@ -574,6 +573,53 @@ class TestPatternsDetect:
         assert "Invalid fractal config" in result["error"]
         mock_fetch.assert_not_called()
 
+    @patch("mtdata.core.patterns._format_harmonic_patterns")
+    @patch("mtdata.core.patterns._fetch_pattern_data")
+    def test_harmonic_mode_success(self, mock_fetch, mock_format):
+        df = _make_ohlcv_df(200)
+        mock_fetch.return_value = (df, None)
+        mock_format.return_value = [
+            {
+                "name": "Bullish Gartley",
+                "status": "forming",
+                "confidence": 0.82,
+                "direction": "bullish",
+                "bias": "bullish",
+                "entry_price": 1.101,
+                "target_price": 1.12,
+                "invalidation_price": 1.09,
+                "start_index": 80,
+                "end_index": 180,
+                "start_date": "2024-01-01",
+                "end_date": "2024-01-05",
+            }
+        ]
+
+        result = _call_patterns_detect(
+            symbol="EURUSD",
+            mode="harmonic",
+            timeframe="H1",
+            detail="full",
+        )
+
+        assert result.get("success") is True
+        assert result.get("mode") == "harmonic"
+        assert result["patterns"][0]["name"] == "Bullish Gartley"
+        assert result["summary"]["signal_bias"]["net_bias"] == "bullish"
+        mock_format.assert_called_once()
+
+    @patch("mtdata.core.patterns._fetch_pattern_data")
+    def test_harmonic_invalid_config_key_returns_error_before_fetch(self, mock_fetch):
+        result = _call_patterns_detect(
+            symbol="EURUSD",
+            mode="harmonic",
+            timeframe="H1",
+            config={"not_a_real_harmonic_key": 3},
+        )
+
+        assert result == {"error": "Invalid config key(s): ['not_a_real_harmonic_key']"}
+        mock_fetch.assert_not_called()
+
     @patch("mtdata.core.patterns._run_classic_engine")
     @patch("mtdata.core.patterns._fetch_pattern_data")
     def test_classic_invalid_engine(self, mock_fetch, mock_engine):
@@ -596,12 +642,21 @@ class TestPatternsDetect:
 class TestPatternsDetectAllMode:
     """Tests for mode='all' comprehensive scan."""
 
+    @patch("mtdata.core.patterns._format_harmonic_patterns")
     @patch("mtdata.core.patterns._format_fractal_patterns")
     @patch("mtdata.core.patterns._format_elliott_patterns")
     @patch("mtdata.core.patterns._run_classic_engine")
     @patch("mtdata.core.patterns._fetch_pattern_data")
     @patch("mtdata.core.patterns._detect_candlestick_patterns")
-    def test_all_mode_basic_success(self, mock_candle, mock_fetch, mock_engine, mock_elliott, mock_fractal):
+    def test_all_mode_basic_success(
+        self,
+        mock_candle,
+        mock_fetch,
+        mock_engine,
+        mock_elliott,
+        mock_fractal,
+        mock_harmonic,
+    ):
         df = _make_ohlcv_df(200)
         mock_candle.return_value = {
             "data": [{"pattern": "Hammer", "direction": "bullish", "confidence": 0.9,
@@ -630,6 +685,17 @@ class TestPatternsDetectAllMode:
             "confirmation_index": 14,
             "confirmation_date": "2024-01-05",
         }]
+        mock_harmonic.return_value = [{
+            "name": "Bullish Gartley",
+            "status": "forming",
+            "confidence": 0.83,
+            "bias": "bullish",
+            "entry_price": 1.11,
+            "target_price": 1.13,
+            "invalidation_price": 1.10,
+            "start_index": 20,
+            "end_index": 120,
+        }]
 
         result = _call_patterns_detect(symbol="EURUSD", mode="all")
         assert result["success"] is True
@@ -638,6 +704,7 @@ class TestPatternsDetectAllMode:
         assert set(result["timeframes"]) == {"M30", "H1", "H4", "D1", "W1"}
         assert result["candlestick"]["by_timeframe"]  # has TF data
         assert len(result["classic"]["patterns"]) > 0
+        assert len(result["harmonic"]["patterns"]) > 0
         assert len(result["elliott"]["patterns"]) > 0
         assert len(result["fractal"]["patterns"]) > 0
 
@@ -756,6 +823,56 @@ class TestPatternsDetectAllMode:
         assert result["success"] is True
         assert "fractal" in result
         assert len(result["fractal"]["patterns"]) <= 8
+
+    @patch("mtdata.core.patterns._format_harmonic_patterns")
+    @patch("mtdata.core.patterns._format_fractal_patterns")
+    @patch("mtdata.core.patterns._format_elliott_patterns")
+    @patch("mtdata.core.patterns._run_classic_engine")
+    @patch("mtdata.core.patterns._fetch_pattern_data")
+    @patch("mtdata.core.patterns._detect_candlestick_patterns")
+    def test_all_mode_compact_includes_harmonic_section(
+        self,
+        mock_candle,
+        mock_fetch,
+        mock_engine,
+        mock_elliott,
+        mock_fractal,
+        mock_harmonic,
+    ):
+        df = _make_ohlcv_df(200)
+        mock_candle.return_value = {"data": []}
+        mock_fetch.return_value = (df, None)
+        mock_engine.return_value = ([], None)
+        mock_elliott.return_value = []
+        mock_fractal.return_value = []
+        mock_harmonic.return_value = [
+            {
+                "name": f"Harmonic {i}",
+                "status": "forming",
+                "confidence": 0.8,
+                "bias": "bullish" if i % 2 == 0 else "bearish",
+                "entry_price": 1.1 + (i * 0.01),
+                "target_price": 1.2 + (i * 0.01),
+                "invalidation_price": 1.0 + (i * 0.01),
+                "start_index": i,
+                "end_index": 150 + i,
+                "start_date": "2024-01-01",
+                "end_date": "2024-01-02",
+            }
+            for i in range(12)
+        ]
+
+        result = _call_patterns_detect(
+            symbol="EURUSD",
+            mode="all",
+            timeframe="H1",
+            detail="compact",
+        )
+
+        assert result["success"] is True
+        assert "harmonic" in result
+        assert len(result["harmonic"]["patterns"]) <= 8
+        assert result["harmonic"]["patterns"][0]["entry_price"]
 
     @patch("mtdata.core.patterns._format_fractal_patterns")
     @patch("mtdata.core.patterns._format_elliott_patterns")
@@ -986,12 +1103,20 @@ class TestPatternsDetectAllMode:
         assert len(result["classic"]["patterns"]) <= 8
         assert len(result["elliott"]["patterns"]) <= 8
 
+    @patch("mtdata.core.patterns._format_fractal_patterns")
+    @patch("mtdata.core.patterns._format_harmonic_patterns")
     @patch("mtdata.core.patterns._format_elliott_patterns")
     @patch("mtdata.core.patterns._run_classic_engine")
     @patch("mtdata.core.patterns._fetch_pattern_data")
     @patch("mtdata.core.patterns._detect_candlestick_patterns")
     def test_all_mode_summary_detail_omits_section_payloads(
-        self, mock_candle, mock_fetch, mock_engine, mock_elliott
+        self,
+        mock_candle,
+        mock_fetch,
+        mock_engine,
+        mock_elliott,
+        mock_harmonic,
+        mock_fractal,
     ):
         df = _make_ohlcv_df(200)
         mock_candle.return_value = {
@@ -1014,6 +1139,8 @@ class TestPatternsDetectAllMode:
             "end_index": 195,
         }], None)
         mock_elliott.return_value = []
+        mock_harmonic.return_value = []
+        mock_fractal.return_value = []
 
         result = _call_patterns_detect(
             symbol="EURUSD",
@@ -1030,6 +1157,7 @@ class TestPatternsDetectAllMode:
         assert result["signal_bias"]["net_bias"] == "bullish"
         assert "candlestick" not in result
         assert "classic" not in result
+        assert "harmonic" not in result
         assert "elliott" not in result
         assert "fractal" not in result
 

@@ -750,7 +750,7 @@ def _dedupe_repeated_regime_context(payload: Dict[str, Any]) -> Dict[str, Any]:
             out["patterns"] = rows_out
             out["regime_context"] = shared_context
 
-    for section_name in ("candlestick", "classic", "elliott", "fractal"):
+    for section_name in ("candlestick", "classic", "harmonic", "elliott", "fractal"):
         section = out.get(section_name)
         if not isinstance(section, dict):
             continue
@@ -856,6 +856,11 @@ _ALL_COMPACT_CLASSIC_KEYS = (
     "reference_price", "target_price", "invalidation_price",
     "bars_to_completion", "start_date", "end_date",
 )
+_ALL_COMPACT_HARMONIC_KEYS = (
+    "timeframe", "name", "status", "confidence", "bias",
+    "entry_price", "target_price", "invalidation_price",
+    "start_date", "end_date",
+)
 _ALL_COMPACT_ELLIOTT_KEYS = (
     "timeframe", "wave_type", "status", "confidence",
     "start_date", "end_date",
@@ -872,7 +877,13 @@ _HIGHLIGHT_KEYS = (
 )
 
 # Section weight multipliers for highlight ranking
-_SECTION_WEIGHT = {"classic": 1.0, "elliott": 1.0, "fractal": 0.75, "candlestick": 0.5}
+_SECTION_WEIGHT = {
+    "classic": 1.0,
+    "harmonic": 1.0,
+    "elliott": 1.0,
+    "fractal": 0.75,
+    "candlestick": 0.5,
+}
 
 # Weights for relevance = w_conf * confidence + w_rec * recency
 _W_CONFIDENCE = 0.6
@@ -1033,6 +1044,22 @@ def _build_highlights(
             "_relevance": (row.get("relevance", 0) or 0) * _SECTION_WEIGHT["classic"],
         })
 
+    for row in payload.get("harmonic", {}).get("patterns", []):
+        candidates.append({
+            "section": "harmonic",
+            "timeframe": row.get("timeframe"),
+            "name": row.get("name"),
+            "direction": row.get("bias") or row.get("direction"),
+            "status": row.get("status"),
+            "confidence": row.get("confidence"),
+            "time": row.get("end_date", row.get("start_date")),
+            "bar_index": row.get("end_index", row.get("start_index")),
+            "price": row.get("entry_price", row.get("reference_price")),
+            "target_price": row.get("target_price"),
+            "invalidation_price": row.get("invalidation_price"),
+            "_relevance": (row.get("relevance", 0) or 0) * _SECTION_WEIGHT["harmonic"],
+        })
+
     for row in payload.get("elliott", {}).get("patterns", []):
         candidates.append({
             "section": "elliott",
@@ -1135,9 +1162,10 @@ def _compact_all_mode_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     else:
         compact["candlestick"] = {"by_timeframe": {}}
 
-    # Classic + Elliott + Fractal: trimmed pattern lists (top 3 per section, key fields only)
+    # Classic + Harmonic + Elliott + Fractal: trimmed pattern lists.
     for section_name, keys in (
         ("classic", _ALL_COMPACT_CLASSIC_KEYS),
+        ("harmonic", _ALL_COMPACT_HARMONIC_KEYS),
         ("elliott", _ALL_COMPACT_ELLIOTT_KEYS),
         ("fractal", _ALL_COMPACT_FRACTAL_KEYS),
     ):
@@ -1183,7 +1211,7 @@ def _highlights_all_mode_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     section_counts: Dict[str, int] = {}
     signal_inputs: List[Dict[str, Any]] = []
-    for section_name in ("candlestick", "classic", "elliott", "fractal"):
+    for section_name in ("candlestick", "classic", "harmonic", "elliott", "fractal"):
         section = payload.get(section_name)
         if not isinstance(section, dict):
             continue

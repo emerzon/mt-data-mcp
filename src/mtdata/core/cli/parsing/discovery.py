@@ -59,6 +59,7 @@ _COMMAND_PARAM_CHOICE_OVERRIDES: Dict[tuple[str, str], list[str]] = {
         "candlestick",
         "classic",
         "chart",
+        "harmonic",
         "fractal",
         "elliott",
     ],
@@ -145,7 +146,7 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "Historical bars fetched for pattern analysis; use top_k for compact "
         "top-pattern count."
     ),
-    ("patterns_detect", "mode"): "Pattern mode: all, candlestick, classic, chart, fractal, or elliott.",
+    ("patterns_detect", "mode"): "Pattern mode: all, candlestick, classic, chart, harmonic, fractal, or elliott.",
     ("regime_detect", "limit"): (
         "Historical bars fetched for regime detection. Defaults to the effective "
         "lookback plus warmup bars; use max_regimes for compact output count."

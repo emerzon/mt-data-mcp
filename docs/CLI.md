@@ -226,7 +226,7 @@ Trained models are written under `~/.mtdata/models/` by default and re-used auto
 |---------|-------------|
 | `indicators_list` | List available indicators |
 | `indicators_describe` | Get indicator details |
-| `patterns_detect` | Detect candlestick/chart patterns |
+| `patterns_detect` | Detect candlestick, chart, harmonic, fractal, and Elliott patterns |
 | `pivot_compute_points` | Calculate pivot levels |
 | `support_resistance_levels` | Compute support/resistance levels with Fibonacci swing context |
 | `correlation_matrix` | Pairwise correlation matrix between symbols |
@@ -427,6 +427,9 @@ mtdata-cli trade_var_cvar_calculate --symbol EURUSD --method gaussian --transfor
 ```bash
 # Candlestick patterns
 mtdata-cli patterns_detect EURUSD --mode candlestick --robust-only true
+
+# Harmonic Fibonacci-ratio patterns
+mtdata-cli patterns_detect EURUSD --mode harmonic --limit 800
 
 # Regime detection
 mtdata-cli regime_detect EURUSD --method hmm --params "n_states=2"

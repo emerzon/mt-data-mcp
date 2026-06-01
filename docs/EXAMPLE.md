@@ -213,6 +213,12 @@ Classic chart patterns:
 mtdata-cli patterns_detect EURUSD --timeframe H1 --mode classic --limit 800 --json
 ```
 
+Harmonic Fibonacci-ratio patterns:
+
+```bash
+mtdata-cli patterns_detect EURUSD --timeframe H1 --mode harmonic --limit 800 --json
+```
+
 ---
 
 ## 10) Combine signals into a decision (simple recipe)
