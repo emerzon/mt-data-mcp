@@ -834,7 +834,7 @@ def get_earnings_calendar(
     """
     try:
         _apply_finvizfinance_timeout_patch()
-        from finvizfinance.earnings import Earnings
+        from finvizfinance.screener.financial import Financial
 
         allowed_periods = {"This Week", "Next Week", "Previous Week", "This Month"}
         if period not in allowed_periods:
@@ -845,13 +845,14 @@ def get_earnings_calendar(
                 )
             )
 
-        cal = Earnings(period=period)
-        df = getattr(cal, "df", None)
-        if df is None:
-            # Fallback for finvizfinance variants exposing a method instead of .df
-            getter = getattr(cal, "earnings", None)
-            if callable(getter):
-                df = getter()
+        screener = Financial()
+        screener.set_filter(filters_dict={"Earnings Date": period})
+        df, fetch_limit = _run_screener_view(
+            screener,
+            order="Earnings Date",
+            limit=limit,
+            page=page,
+        )
 
         if df is None or df.empty:
             return {"error": "No earnings calendar data available"}
@@ -868,7 +869,7 @@ def get_earnings_calendar(
             "total": total,
             "page": safe_page,
             "pages": pages,
-            "truncated": False,
+            "truncated": bool(total >= fetch_limit),
             "earnings": items_list,
         }
     except ValueError as e:
