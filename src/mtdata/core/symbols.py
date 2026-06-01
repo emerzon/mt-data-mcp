@@ -231,6 +231,83 @@ _SYMBOL_SEARCH_REASON_RANK: Dict[str, int] = {
     "matched": 9,
 }
 
+_SYMBOL_CATEGORY_ALIASES = {
+    "fx": "forex",
+    "forex": "forex",
+    "crypto": "crypto",
+    "cryptos": "crypto",
+    "index": "indices",
+    "indices": "indices",
+    "commodity": "commodities",
+    "commodities": "commodities",
+    "stock": "stocks",
+    "stocks": "stocks",
+    "equity": "stocks",
+    "equities": "stocks",
+    "bond": "bonds",
+    "bonds": "bonds",
+    "etf": "etfs",
+    "etfs": "etfs",
+}
+
+
+def _normalize_symbol_category_filter(value: Optional[str]) -> Optional[str]:
+    text = str(value or "").strip().lower().replace("-", "_")
+    if not text:
+        return None
+    return _SYMBOL_CATEGORY_ALIASES.get(text)
+
+
+def _symbol_name_letters(symbol: Any) -> str:
+    return re.sub(r"[^A-Z]", "", str(getattr(symbol, "name", "") or "").upper())
+
+
+def _symbol_category(symbol: Any) -> str:
+    name = str(getattr(symbol, "name", "") or "")
+    path = str(_extract_group_path_util(symbol) or "")
+    description = str(getattr(symbol, "description", "") or "")
+    text = f"{name} {path} {description}".casefold()
+    letters = _symbol_name_letters(symbol)
+    pair_prefix = letters[:6]
+
+    if (
+        len(pair_prefix) == 6
+        and pair_prefix[:3] in _FOREX_CURRENCY_CODES
+        and pair_prefix[3:] in _FOREX_CURRENCY_CODES
+    ):
+        return "forex"
+    if any(base.casefold() in text for base in _COMMON_CRYPTO_BASES):
+        return "crypto"
+    if any(token in text for token in ("bond", "treasury", "bund", "gilt")):
+        return "bonds"
+    if "etf" in text:
+        return "etfs"
+    if any(token in text for token in ("index", "indices", "nasdaq", "dow", "dax")):
+        return "indices"
+    if any(token in text for token in ("gold", "silver", "oil", "xau", "xag", "brent")):
+        return "commodities"
+    if any(token in text for token in ("stock", "stocks", "share", "shares", "equity")):
+        return "stocks"
+    return "other"
+
+
+def _symbol_group_matches(symbol: Any, group_filter: Optional[str]) -> bool:
+    if not group_filter:
+        return True
+    group_path = _normalize_group_path_query(_extract_group_path_util(symbol))
+    return group_filter.casefold() in group_path.casefold()
+
+
+def _symbol_currency_matches(symbol: Any, currency_filter: Optional[str]) -> bool:
+    if not currency_filter:
+        return True
+    target = currency_filter.upper()
+    for attr in ("currency_base", "currency_profit", "currency_margin"):
+        value = str(getattr(symbol, attr, "") or "").upper()
+        if value == target:
+            return True
+    return target in _symbol_name_letters(symbol)
+
 
 def _symbol_search_match_reason(symbol: Any, search_term: str, search_mode: str) -> str:
     query = search_term.casefold()
@@ -575,6 +652,9 @@ def symbols_list(  # noqa: C901
     offset: int = 0,
     list_mode: Literal["symbols", "groups"] = "symbols",  # type: ignore
     universe: Literal["visible", "all"] = "visible",  # type: ignore
+    group: Optional[str] = None,
+    currency: Optional[str] = None,
+    category: Optional[str] = None,
     search_mode: Literal[  # type: ignore
         "auto",
         "name",
@@ -593,8 +673,12 @@ def symbols_list(  # noqa: C901
 
     Without a search term, universe="visible" lists Market Watch symbols and
     universe="all" lists the broker catalog. Searches use the broker catalog.
+    Use group, currency, and category to filter the resulting symbol set.
     """
     normalized_search_term = _normalize_symbol_search_term(search_term)
+    group_filter = _normalize_group_path_query(group) if group else None
+    currency_filter = str(currency or "").strip().upper() or None
+    category_filter = _normalize_symbol_category_filter(category)
     detail_mode = normalize_output_detail(detail, default="compact")
     search_mode_value = str(search_mode or "auto").strip().lower()
     universe_value = str(universe or "visible").strip().lower()
@@ -611,6 +695,13 @@ def symbols_list(  # noqa: C901
                 return {"error": "list_mode must be 'symbols' or 'groups'."}
             if universe_value not in {"visible", "all"}:
                 return {"error": "universe must be 'visible' or 'all'."}
+            if category and not category_filter:
+                return {
+                    "error": (
+                        "category must be one of forex, crypto, indices, "
+                        "commodities, stocks, bonds, or etfs."
+                    )
+                }
             if search_mode_value not in _SYMBOL_SEARCH_MODES:
                 return {
                     "error": (
@@ -672,6 +763,13 @@ def symbols_list(  # noqa: C901
             for symbol in matched_symbols:
                 if only_visible and not symbol.visible:
                     continue
+                if not _symbol_group_matches(symbol, group_filter):
+                    continue
+                if not _symbol_currency_matches(symbol, currency_filter):
+                    continue
+                symbol_category = _symbol_category(symbol)
+                if category_filter and symbol_category != category_filter:
+                    continue
                 row = {
                     "symbol": symbol.name,
                     "group": _extract_group_path_util(symbol),
@@ -683,6 +781,8 @@ def symbols_list(  # noqa: C901
                         description=symbol.description,
                     ),
                 }
+                if category_filter:
+                    row["category"] = symbol_category
                 if normalized_search_term:
                     row["match_reason"] = _symbol_search_match_reason(
                         symbol,
@@ -708,6 +808,13 @@ def symbols_list(  # noqa: C901
             if offset_value < 0:
                 return {"error": "offset must be >= 0."}
             total_count = len(symbol_list)
+            filters = {}
+            if group_filter:
+                filters["group"] = group_filter
+            if currency_filter:
+                filters["currency"] = currency_filter
+            if category_filter:
+                filters["category"] = category_filter
             if offset_value:
                 symbol_list = symbol_list[offset_value:]
             if limit_value:
@@ -723,6 +830,8 @@ def symbols_list(  # noqa: C901
                     "universe": effective_universe,
                     "limit": limit_value,
                 }
+                if filters:
+                    out["filters"] = filters
                 if normalized_search_term:
                     out["search"] = _symbol_search_context(
                         normalized_search_term,
@@ -753,6 +862,8 @@ def symbols_list(  # noqa: C901
                 return out
             if detail_mode == "compact":
                 headers = ["symbol", "group", "description"]
+                if category_filter:
+                    headers.append("category")
                 if normalized_search_term:
                     headers.append("match_reason")
                 for optional_header in (
@@ -777,6 +888,8 @@ def symbols_list(  # noqa: C901
                 rows = [[s["symbol"], s["group"], s["description"]] for s in symbol_list]
             result = _table_from_rows(headers, rows)
             result["universe"] = effective_universe
+            if filters:
+                result["filters"] = filters
             if normalized_search_term:
                 result["search"] = _symbol_search_context(
                     normalized_search_term,
@@ -824,6 +937,9 @@ def symbols_list(  # noqa: C901
         offset=offset,
         list_mode=list_mode,
         universe=universe_value,
+        group=group_filter,
+        currency=currency_filter,
+        category=category_filter,
         search_mode=search_mode_value,
         detail=detail_mode,
         func=_run,
