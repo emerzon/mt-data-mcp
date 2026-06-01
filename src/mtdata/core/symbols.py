@@ -1795,43 +1795,43 @@ def _market_scan_sort_rows(
     rows: List[Dict[str, Any]],
     *,
     rank_by: str,
+    rank_order: str,
     rsi_above: Optional[float],
     rsi_below: Optional[float],
 ) -> None:
-    if rank_by == "spread_pct":
-        rows.sort(
-            key=lambda row: (
-                row.get("spread_pct") is None,
-                row.get("spread_pct") if row.get("spread_pct") is not None else float("inf"),
-                row.get("symbol") or "",
-            )
-        )
-        return
-
-    if rank_by == "rsi" and rsi_below is not None and rsi_above is None:
-        rows.sort(
-            key=lambda row: (
-                row.get("rsi") is None,
-                row.get("rsi") if row.get("rsi") is not None else float("inf"),
-                row.get("symbol") or "",
-            )
-        )
-        return
+    order = str(rank_order or "auto").strip().lower()
+    if order == "auto":
+        if rank_by == "spread_pct":
+            order = "asc"
+        elif rank_by == "rsi" and rsi_below is not None and rsi_above is None:
+            order = "asc"
+        else:
+            order = "desc"
 
     if rank_by == "abs_price_change_pct":
         rows.sort(
             key=lambda row: (
                 row.get("price_change_pct") is None,
-                -abs(float(row.get("price_change_pct") or 0.0)),
+                (
+                    abs(float(row.get("price_change_pct") or 0.0))
+                    if order == "asc"
+                    else -abs(float(row.get("price_change_pct") or 0.0))
+                ),
                 row.get("symbol") or "",
             )
         )
         return
 
+    missing_value = float("inf") if order == "asc" else 0.0
+
     rows.sort(
         key=lambda row: (
             row.get(rank_by) is None,
-            -(float(row.get(rank_by) or 0.0)),
+            (
+                float(row.get(rank_by) if row.get(rank_by) is not None else missing_value)
+                if order == "asc"
+                else -(float(row.get(rank_by) or 0.0))
+            ),
             row.get("symbol") or "",
         )
     )
@@ -1875,6 +1875,12 @@ _MARKET_SCAN_RANK_BY_CHOICES = (
 def _normalize_market_scan_rank_by(value: Any) -> tuple[str, Optional[str]]:
     raw_value = str(value or "abs_price_change_pct").strip().lower()
     return _MARKET_SCAN_RANK_BY_ALIASES.get(raw_value, raw_value), raw_value
+
+
+def _normalize_market_scan_rank_order(value: Any) -> tuple[str, Optional[str]]:
+    raw_value = str(value or "auto").strip().lower()
+    aliases = {"ascending": "asc", "descending": "desc"}
+    return aliases.get(raw_value, raw_value), raw_value
 
 
 def _market_scan_ranking_label(
@@ -2365,6 +2371,7 @@ def market_scan(  # noqa: C901
     rsi_above: Optional[float] = None,
     price_vs_sma: Optional[Literal["above", "below"]] = None,  # type: ignore
     rank_by: Literal["abs_price_change_pct", "abs_price_change", "price_change_pct", "price_change", "tick_volume", "volume", "rsi", "spread_pct", "spread"] = "abs_price_change_pct",  # type: ignore
+    rank_order: Literal["auto", "asc", "desc", "ascending", "descending"] = "auto",  # type: ignore
 ) -> Dict[str, Any]:
     """Filtered MT5 market scanner with one flat table and technical filters.
 
@@ -2415,6 +2422,7 @@ def market_scan(  # noqa: C901
             "detail": detail_mode,
             "lookback": lookback,
             "rank_by": rank_by,
+            "rank_order": rank_order,
             "filters": {
                 key: value
                 for key, value in {
@@ -2481,6 +2489,16 @@ def market_scan(  # noqa: C901
                         "rank_by must be one of: "
                         f"{', '.join(_MARKET_SCAN_RANK_BY_CHOICES)}."
                     ),
+                    code="invalid_input",
+                    request=request,
+                )
+            rank_order_value, rank_order_input = _normalize_market_scan_rank_order(rank_order)
+            request["rank_order"] = rank_order_value
+            if rank_order_input != rank_order_value:
+                request["rank_order_input"] = rank_order_input
+            if rank_order_value not in {"auto", "asc", "desc"}:
+                return _market_scan_error(
+                    "rank_order must be one of: auto, asc, desc, ascending, descending.",
                     code="invalid_input",
                     request=request,
                 )
@@ -2704,6 +2722,7 @@ def market_scan(  # noqa: C901
             _market_scan_sort_rows(
                 matched_rows,
                 rank_by=rank_by_value,
+                rank_order=rank_order_value,
                 rsi_above=rsi_above,
                 rsi_below=rsi_below,
             )
@@ -2795,6 +2814,7 @@ def market_scan(  # noqa: C901
                 "data": table_payload["rows"],
                 "count": table_payload["row_count"],
                 "rank_by": rank_by_value,
+                "rank_order": rank_order_value,
                 "ranking": _market_scan_ranking_label(
                     rank_by_value,
                     rsi_above=rsi_above,

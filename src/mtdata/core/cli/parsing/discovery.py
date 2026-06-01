@@ -118,6 +118,10 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "Built-in scan preset: oversold, overbought, high-volume, tight-spread, "
         "gap-up, or gap-down. Explicit filter flags override preset defaults."
     ),
+    ("market_scan", "rank_order"): (
+        "Sort direction for ranked rows: auto, asc/ascending, or desc/descending. "
+        "Auto keeps tight spreads and oversold RSI ascending; most other ranks descending."
+    ),
     ("labels_triple_barrier", "detail"): (
         "Detail level: compact (small outcome sample), standard (recent lookback rows), "
         "summary, or full."
