@@ -1844,25 +1844,6 @@ def _ranked_top_market_rows(
     ]
 
 
-def _compact_top_market_leaderboard_rows(
-    metric: str,
-    rows: List[Dict[str, Any]],
-    *,
-    detail_mode: str,
-) -> List[Dict[str, Any]]:
-    headers = _top_markets_headers(metric, detail_mode=detail_mode)
-    return [
-        {
-            "rank": rank,
-            **{
-                header: row.get(header)
-                for header in headers
-            },
-        }
-        for rank, row in enumerate(rows, start=1)
-    ]
-
-
 def _top_market_data_source(metric: str, timeframe: str) -> str:
     return "live_tick" if metric == "spread" else f"{timeframe}_bars"
 
@@ -2626,54 +2607,6 @@ def symbols_top_markets(  # noqa: C901
                     rows=out.get("data"),
                     include_contract_meta=detail_mode == "full",
                 )
-
-            if detail_mode == "compact":
-                returned_counts = {
-                    "lowest_spread": len(spread_rows),
-                    "highest_volume": len(volume_rows),
-                    "highest_price_change_pct": len(price_change_rows),
-                }
-                available_counts = {
-                    "lowest_spread": evaluated_counts["spread"],
-                    "highest_volume": evaluated_counts["volume"],
-                    "highest_price_change_pct": evaluated_counts["price_change"],
-                }
-                notes = [
-                    fields["note"]
-                    for metric_name, rows in (
-                        ("spread", spread_rows),
-                        ("volume", volume_rows),
-                        ("price_change", price_change_rows),
-                    )
-                    for fields in (_scope_fields(metric_name, rows),)
-                    if fields.get("note")
-                ]
-                out = {
-                    "success": True,
-                    "ranking": "all",
-                    "requested_limit": int(limit_value),
-                    "universe_size": int(len(selected_symbols)),
-                    "returned_counts": returned_counts,
-                    "available_counts": available_counts,
-                    "lowest_spread": _compact_top_market_leaderboard_rows(
-                        "spread",
-                        spread_rows,
-                        detail_mode=detail_mode,
-                    ),
-                    "highest_volume": _compact_top_market_leaderboard_rows(
-                        "volume",
-                        volume_rows,
-                        detail_mode=detail_mode,
-                    ),
-                    "highest_price_change_pct": _compact_top_market_leaderboard_rows(
-                        "price_change",
-                        price_change_rows,
-                        detail_mode=detail_mode,
-                    ),
-                    **({"notes": notes} if notes else {}),
-                }
-                _attach_top_markets_units(out, spread_rows, volume_rows, price_change_rows)
-                return out
 
             all_rows = [
                 *_ranked_top_market_rows("lowest_spread", spread_rows),
