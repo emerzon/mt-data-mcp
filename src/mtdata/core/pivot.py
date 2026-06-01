@@ -509,6 +509,13 @@ def pivot_compute_points(  # noqa: C901
             timezone_label = _pivot_display_timezone(_use_ctz)
             start_str = _format_time_minimal_local(period_start) if _use_ctz else _format_time_minimal(period_start)
             end_str = _format_time_minimal_local(period_end) if _use_ctz else _format_time_minimal(period_end)
+            period_note = None
+            if str(timeframe).upper() in {"D1", "W1", "MN1"}:
+                period_note = (
+                    "MT5 daily/weekly/monthly bar periods follow broker/server "
+                    "session boundaries; UTC timestamps may not align to UTC "
+                    "calendar midnight."
+                )
 
             detail_value = str(detail).strip().lower()
             if detail_value in {"summary", "summary_only"}:
@@ -539,6 +546,8 @@ def pivot_compute_points(  # noqa: C901
                 },
                 "levels": levels_table,
             }
+            if period_note:
+                payload["period_note"] = period_note
             payload["timezone"] = timezone_label
             if detail_value == "compact":
                 compact_method_name = method_filter or "classic"
@@ -573,6 +582,8 @@ def pivot_compute_points(  # noqa: C901
                     ),
                     "levels": compact_levels,
                 }
+                if period_note:
+                    compact_payload["period_note"] = period_note
                 if isinstance(selected_method, dict):
                     for key in ("level_set", "method_description", "intended_use"):
                         value = selected_method.get(key)
