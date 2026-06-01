@@ -133,14 +133,52 @@ def _resolved_pending_order_ticket(
 
 
 def _trade_read_scope(request: Any) -> str:
+    has_temporal_filter = any(
+        getattr(request, field, None) is not None
+        for field in ("start", "end", "minutes_back")
+    )
     if getattr(request, "ticket", None) is not None:
         return "ticket"
     for field in ("position_ticket", "deal_ticket", "order_ticket"):
         if getattr(request, field, None) is not None:
             return "ticket"
     if getattr(request, "symbol", None) is not None:
+        if has_temporal_filter:
+            return "symbol_date_range"
         return "symbol"
+    if (
+        getattr(request, "start", None) is not None
+        or getattr(request, "end", None) is not None
+    ):
+        return "date_range"
+    if getattr(request, "minutes_back", None) is not None:
+        return "lookback"
+    for field in ("side", "magic", "order_type"):
+        if getattr(request, field, None) is not None:
+            return "filtered"
+    if bool(getattr(request, "profit_only", False)) or bool(
+        getattr(request, "loss_only", False)
+    ):
+        return "filtered"
     return "all"
+
+
+def _trade_history_filters_applied(request: Any) -> Dict[str, Any]:
+    filters: Dict[str, Any] = {}
+    for field in (
+        "start",
+        "end",
+        "minutes_back",
+        "symbol",
+        "side",
+        "position_ticket",
+        "deal_ticket",
+        "order_ticket",
+    ):
+        value = getattr(request, field, None)
+        if value is not None:
+            filters[field] = value
+    return filters
 
 
 def _preserve_trade_error_metadata(out: Dict[str, Any], source: Dict[str, Any]) -> None:
@@ -221,6 +259,10 @@ def _normalize_trade_read_output(
         "count": 0,
         "items": [],
     }
+    if kind == "trade_history":
+        filters_applied = _trade_history_filters_applied(request)
+        if filters_applied:
+            out["filters_applied"] = filters_applied
     if account_currency:
         out["currency"] = account_currency
     if _include_trade_read_request_metadata(request):
