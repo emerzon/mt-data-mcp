@@ -1113,10 +1113,16 @@ def _compact_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:
             return False
 
     ranked_methods: list[Dict[str, Any]] = []
+    methods_total = 0
+    methods_failed: list[str] = []
     for method_name, method_payload in raw_results.items():
+        methods_total += 1
         if not isinstance(method_payload, dict):
             ranked_methods.append({"method": method_name, "result": method_payload})
+            methods_failed.append(str(method_name))
             continue
+        if method_payload.get("success") is False:
+            methods_failed.append(str(method_name))
         details = method_payload.get("details")
         metrics = (
             method_payload.get("metrics")
@@ -1132,6 +1138,7 @@ def _compact_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:
             "successful_tests",
             "num_tests",
             "trade_status",
+            "directional_accuracy_status",
             "metrics_available",
             "metrics_reason",
         ):
@@ -1153,6 +1160,9 @@ def _compact_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:
             ):
                 if key in metrics:
                     method_out[key] = _compact_metric(key, metrics[key])
+            sample_notice = metrics.get("sample_notice")
+            if isinstance(sample_notice, dict) and sample_notice:
+                method_out["sample_notice"] = sample_notice
         if isinstance(details, list) and not metrics_unavailable:
             method_out["details_count"] = len(details)
         ranked_row = dict(method_out)
@@ -1170,6 +1180,11 @@ def _compact_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:
         compact_out.pop("slippage_bps", None)
     if compact_out.get("trade_threshold") in (0, 0.0, None):
         compact_out.pop("trade_threshold", None)
+    compact_out["methods_total"] = methods_total
+    compact_out["methods_succeeded"] = methods_total - len(methods_failed)
+    compact_out["methods_failed"] = len(methods_failed)
+    if methods_failed:
+        compact_out["failed_methods"] = methods_failed
     ranked_methods.sort(
         key=lambda row: (
             row.get("_sort_metric") is None,
