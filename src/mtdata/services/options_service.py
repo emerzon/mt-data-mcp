@@ -29,16 +29,14 @@ _YAHOO_BACKOFF_SECONDS = 0.5
 _YAHOO_MIN_REQUEST_INTERVAL_SECONDS = 1.0
 _TRADIER_DOCS_URL = "https://documentation.tradier.com/"
 _YAHOO_AUTH_REMEDIATION = (
-    "Yahoo Finance options data is unavailable from the unauthenticated endpoint. "
-    "mtdata has no Yahoo API-key setting to configure. To use an authenticated "
-    "provider, set MTDATA_OPTIONS_PROVIDER=tradier and MTDATA_OPTIONS_API_KEY. "
-    f"Get a Tradier API token at {_TRADIER_DOCS_URL}."
+    "Run options_provider_status for configuration details. Yahoo options is "
+    "unauthenticated and may reject requests; for reliable chains set "
+    "MTDATA_OPTIONS_PROVIDER=tradier and MTDATA_OPTIONS_API_KEY."
 )
 _TRADIER_AUTH_REMEDIATION = (
-    "Tradier options data requires an API token. Set "
-    "MTDATA_OPTIONS_PROVIDER=tradier and MTDATA_OPTIONS_API_KEY, or set "
-    "MTDATA_OPTIONS_PROVIDER=yahoo to use the unauthenticated Yahoo fallback. "
-    f"Get a Tradier API token at {_TRADIER_DOCS_URL}."
+    "Run options_provider_status for configuration details. Tradier options "
+    "requires MTDATA_OPTIONS_API_KEY with MTDATA_OPTIONS_PROVIDER=tradier, or "
+    "MTDATA_OPTIONS_PROVIDER=yahoo for the unauthenticated fallback."
 )
 _YAHOO_SESSION: Optional[requests.Session] = None
 _YAHOO_SESSION_LOCK = _threading.Lock()
@@ -173,10 +171,14 @@ def _options_error(error: Any, *, prefix: Optional[str] = None) -> Dict[str, Any
     if "Yahoo Finance options endpoint returned 401" in message_text:
         out["error_code"] = "options_provider_auth"
         out["provider"] = "yahoo"
+        out["next_tool"] = "options_provider_status"
+        out["env_vars"] = ["MTDATA_OPTIONS_PROVIDER", "MTDATA_OPTIONS_API_KEY"]
         out["remediation"] = _YAHOO_AUTH_REMEDIATION
     elif "Tradier options provider" in message_text or "Tradier options endpoint returned 401" in message_text:
         out["error_code"] = "options_provider_auth"
         out["provider"] = "tradier"
+        out["next_tool"] = "options_provider_status"
+        out["env_vars"] = ["MTDATA_OPTIONS_PROVIDER", "MTDATA_OPTIONS_API_KEY"]
         out["remediation"] = _TRADIER_AUTH_REMEDIATION
     elif "429" in message_text or "rate limit" in message_text.lower():
         out["error_code"] = "options_provider_rate_limit"
