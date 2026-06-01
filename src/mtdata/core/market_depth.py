@@ -541,7 +541,6 @@ def market_ticker(
                 "bid": _round_market_ticker_value(bid, digits=digits),
                 "ask": _round_market_ticker_value(ask, digits=digits),
                 "last": _round_market_ticker_value(last, digits=digits),
-                "tick_volume": tick_volume,
                 "spread": spread_abs,
                 "spread_points": spread_points,
                 "spread_pct": spread_pct,
@@ -549,6 +548,8 @@ def market_ticker(
                 "pricing_basis": pricing_basis,
                 "time": tick_time,
             }
+            if tick_volume not in (None, 0):
+                out["tick_volume"] = tick_volume
             if spread_cost_per_lot is not None and spread_cost_currency:
                 out["spread_cost_currency"] = spread_cost_currency
             if tick_time is not None:
