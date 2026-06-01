@@ -510,13 +510,31 @@ def forecast_models_list(
             "models": items,
         }
         if not items:
+            out["model_store"] = {
+                "path": str(getattr(store, "root", "")),
+                "ttl_days": _days(getattr(store, "ttl_seconds", 0.0)),
+                "models_cached": 0,
+            }
             if method:
                 out["message"] = f"No stored forecast models matched method={method!r}."
             else:
-                out["message"] = "No stored forecast models found."
+                out["message"] = (
+                    "No stored forecast models found. Trainable methods persist "
+                    "artifacts here after forecast_train or async forecast_generate."
+                )
             out["hint"] = (
-                "Train with forecast_train; use forecast_list_methods to inspect methods."
+                "Use forecast_train to create a model, or run forecast_list_methods "
+                "with profile=all and supports_training=true to inspect trainable methods."
             )
+            out["actions"] = [
+                "mtdata-cli forecast_list_methods --profile all --supports_training true",
+                "mtdata-cli forecast_train --help",
+            ]
+            out["related_tools"] = [
+                "forecast_train",
+                "forecast_list_methods",
+                "forecast_models_cleanup",
+            ]
         return out
 
     return run_logged_operation(
