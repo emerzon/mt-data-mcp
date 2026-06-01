@@ -3356,6 +3356,11 @@ def run_trade_var_cvar_calculate(  # noqa: C901
     summary: Dict[str, Any] = {
         "method": method_value,
         "confidence": round(float(confidence_value), 6),
+        "tail_probability": round(float(1.0 - confidence_value), 6),
+        "confidence_interpretation": (
+            f"{confidence_value * 100.0:g}% confidence "
+            f"({(1.0 - confidence_value) * 100.0:g}% tail risk)"
+        ),
         "transform": transform_value,
         "timeframe": timeframe_value,
         "lookback": int(lookback),

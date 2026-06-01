@@ -274,7 +274,13 @@ class TradeVarCvarRequest(BaseModel):
     symbol: Optional[str] = None
     timeframe: TimeframeLiteral = "H1"
     lookback: int = 500
-    confidence: float = 0.95
+    confidence: float = Field(
+        0.95,
+        description=(
+            "VaR/CVaR confidence level. Use a fraction such as 0.95 or 0.99, "
+            "or a percentage such as 95. Values must resolve to 0 < confidence < 1."
+        ),
+    )
     method: str = "historical"
     transform: str = "log_return"
     min_observations: int = 50
