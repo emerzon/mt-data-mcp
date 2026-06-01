@@ -149,8 +149,6 @@ _FINVIZ_FUNDAMENTAL_CATEGORY_ALIASES = {
     "tech": "technicals",
     "technical": "technicals",
     "technicals": "technicals",
-    "financial": "valuation",
-    "financials": "valuation",
     "valuation_metrics": "valuation",
 }
 
