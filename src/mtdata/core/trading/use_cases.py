@@ -483,9 +483,14 @@ def _build_trade_evaluation(
 _COMPACT_POSITION_SIZING_FIELDS = (
     "status",
     "suggested_volume",
+    "volume_lots",
     "risk_currency",
+    "risk_amount_account_currency",
     "risk_pct",
     "risk_compliance",
+    "units",
+    "sizing_context",
+    "margin_impact",
     "min_viable_volume",
     "min_viable_risk_currency",
     "min_viable_risk_pct",
@@ -3027,6 +3032,42 @@ def run_trade_risk_analyze(  # noqa: C901
                         if actual_risk > 0:
                             rr_ratio = reward_currency / actual_risk
 
+                    notional_value = abs(suggested_volume) * contract_size * float(request.entry)
+                    margin_impact = None
+                    order_calc_margin = getattr(
+                        getattr(gateway, "adapter", None),
+                        "order_calc_margin",
+                        None,
+                    )
+                    if callable(order_calc_margin) and suggested_volume > 0:
+                        order_type_for_margin = validation._safe_int_attr(
+                            gateway,
+                            "ORDER_TYPE_BUY" if direction_norm == "long" else "ORDER_TYPE_SELL",
+                            0 if direction_norm == "long" else 1,
+                        )
+                        try:
+                            margin_raw = float(
+                                order_calc_margin(
+                                    order_type_for_margin,
+                                    request.symbol,
+                                    suggested_volume,
+                                    float(request.entry),
+                                )
+                            )
+                        except Exception:
+                            margin_raw = math.nan
+                        if math.isfinite(margin_raw):
+                            margin_impact = {
+                                "margin_required": round(margin_raw, 2),
+                                "margin_currency": currency or "account_currency",
+                            }
+                            margin_free = validation._safe_float_attr(account, "margin_free")
+                            if margin_free is not None and math.isfinite(margin_free):
+                                margin_impact["margin_free"] = round(float(margin_free), 2)
+                                margin_impact["margin_sufficient"] = (
+                                    float(margin_free) >= float(margin_raw)
+                                )
+
                     risk_compliance = (
                         "blocked_min_volume_exceeds_requested_risk"
                         if strict_risk_blocked
@@ -3046,7 +3087,9 @@ def run_trade_risk_analyze(  # noqa: C901
                             else {}
                         ),
                         "suggested_volume": suggested_volume,
+                        "volume_lots": suggested_volume,
                         "requested_risk_currency": round(risk_amount, 2),
+                        "risk_amount_account_currency": round(risk_amount, 2),
                         "requested_risk_pct": float(request.desired_risk_pct),
                         "strict_risk": bool(getattr(request, "strict_risk", True)),
                         "entry": request.entry,
@@ -3070,6 +3113,27 @@ def run_trade_risk_analyze(  # noqa: C901
                             reward_currency, 2
                         ),
                         "rr_ratio": _round_optional_number(rr_ratio, 2),
+                        "notional_value": round(notional_value, 2),
+                        "units": {
+                            "account_currency": currency,
+                            "volume": "lots",
+                            "risk_currency": "account_currency",
+                            "risk_pct": "percent_of_equity",
+                            "price": "symbol_price",
+                            "notional_value": "account_currency_approx",
+                            "tick_value": "account_currency_per_tick_per_lot",
+                        },
+                        "sizing_context": {
+                            "equity": round(equity, 2),
+                            "account_currency": currency,
+                            "contract_size": contract_size,
+                            "tick_size": tick_size,
+                            "risk_tick_value": round(risk_tick_value, 8),
+                            "volume_step": volume_step,
+                            "volume_min": min_volume,
+                            "volume_max": max_volume,
+                        },
+                        **({"margin_impact": margin_impact} if margin_impact else {}),
                         "sizing_notes": sizing_notes,
                     }
                     if strict_risk_blocked:
