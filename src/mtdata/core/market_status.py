@@ -903,6 +903,64 @@ def _check_symbol_market_status(
     return result
 
 
+def _split_market_status_symbols(symbols: str) -> List[str]:
+    seen = set()
+    out: List[str] = []
+    for part in str(symbols or "").split(","):
+        symbol = part.strip().upper()
+        if symbol and symbol not in seen:
+            out.append(symbol)
+            seen.add(symbol)
+    return out
+
+
+def _compact_symbol_market_status(row: Dict[str, Any], *, detail: str) -> Dict[str, Any]:
+    if detail == "full":
+        return row
+    keys = (
+        "symbol",
+        "status",
+        "can_open_new_positions",
+        "tick_freshness",
+        "reason",
+        "message",
+    )
+    return {key: row.get(key) for key in keys if row.get(key) is not None}
+
+
+def _check_symbol_market_status_batch(
+    symbols: List[str],
+    *,
+    detail: str,
+) -> Dict[str, Any]:
+    mt5_gateway = create_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise)
+    rows: List[Dict[str, Any]] = []
+    errors: List[Dict[str, Any]] = []
+    for symbol in symbols:
+        result = _check_symbol_market_status(symbol, detail=detail, gateway=mt5_gateway)
+        if result.get("error"):
+            errors.append({"symbol": symbol, "error": result.get("error")})
+            continue
+        rows.append(_compact_symbol_market_status(result, detail=detail))
+
+    status_counts: Dict[str, int] = {}
+    for row in rows:
+        status = str(row.get("status") or "unknown")
+        status_counts[status] = status_counts.get(status, 0) + 1
+    can_open_count = sum(1 for row in rows if row.get("can_open_new_positions") is True)
+    total = len(symbols)
+    return {
+        "success": True,
+        "mode": "symbols",
+        "symbols": symbols,
+        "data": rows,
+        "count": len(rows),
+        "errors": errors if errors else None,
+        "summary": f"{can_open_count}/{total} symbol(s) can open new positions.",
+        "status_counts": status_counts,
+    }
+
+
 @mcp.tool()
 def market_status(
     symbol: Optional[str] = None,
@@ -973,6 +1031,9 @@ def market_status(
 
     def _run() -> Dict[str, Any]:
         if symbol not in (None, ""):
+            symbol_list = _split_market_status_symbols(str(symbol))
+            if len(symbol_list) > 1:
+                return _check_symbol_market_status_batch(symbol_list, detail=detail_mode)
             return _check_symbol_market_status(str(symbol), detail=detail_mode)
 
         # Map regions to markets
