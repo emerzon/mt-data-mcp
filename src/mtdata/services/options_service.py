@@ -3,6 +3,7 @@ from __future__ import annotations
 """Options market-data service helpers."""
 
 import datetime as _dt
+import email.utils as _email_utils
 import logging
 import threading as _threading
 import time as _time
@@ -43,6 +44,45 @@ _YAHOO_SESSION: Optional[requests.Session] = None
 _YAHOO_SESSION_LOCK = _threading.Lock()
 _YAHOO_RATE_LIMIT_LOCK = _threading.Lock()
 _YAHOO_LAST_REQUEST_MONOTONIC = 0.0
+
+
+class _OptionsRateLimitError(ValueError):
+    def __init__(self, provider: str, retry_after_seconds: Optional[float]) -> None:
+        self.provider = provider
+        self.retry_after_seconds = retry_after_seconds
+        retry_text = (
+            f" retry_after_seconds={retry_after_seconds:g}"
+            if retry_after_seconds is not None
+            else ""
+        )
+        super().__init__(f"{provider} options provider rate limit exceeded.{retry_text}")
+
+
+def _live_options_metadata(provider: str) -> Dict[str, Any]:
+    return {
+        "provider": provider,
+        "cached": False,
+        "data_age_seconds": 0,
+    }
+
+
+def _parse_retry_after_seconds(value: Any) -> Optional[float]:
+    if value in (None, ""):
+        return None
+    try:
+        return max(0.0, float(value))
+    except (TypeError, ValueError):
+        pass
+    try:
+        retry_at = _email_utils.parsedate_to_datetime(str(value))
+        if retry_at.tzinfo is None:
+            retry_at = retry_at.replace(tzinfo=_dt.timezone.utc)
+        return max(
+            0.0,
+            (retry_at - _dt.datetime.now(tz=_dt.timezone.utc)).total_seconds(),
+        )
+    except Exception:
+        return None
 
 
 def _to_numeric(
@@ -120,15 +160,28 @@ def _get_yahoo_session() -> requests.Session:
         return _YAHOO_SESSION
 
 
-def _options_error(message: str) -> Dict[str, Any]:
-    out: Dict[str, Any] = {"success": False, "error": str(message)}
-    message_text = str(message)
+def _options_error(error: Any, *, prefix: Optional[str] = None) -> Dict[str, Any]:
+    message_text = str(error)
+    if prefix:
+        message_text = f"{prefix}: {message_text}"
+    out: Dict[str, Any] = {"success": False, "error": message_text}
+    if isinstance(error, _OptionsRateLimitError):
+        out["error_code"] = "options_provider_rate_limit"
+        out["provider"] = error.provider
+        out["retry_after_seconds"] = error.retry_after_seconds
+        return out
     if "Yahoo Finance options endpoint returned 401" in message_text:
         out["error_code"] = "options_provider_auth"
+        out["provider"] = "yahoo"
         out["remediation"] = _YAHOO_AUTH_REMEDIATION
     elif "Tradier options provider" in message_text or "Tradier options endpoint returned 401" in message_text:
         out["error_code"] = "options_provider_auth"
+        out["provider"] = "tradier"
         out["remediation"] = _TRADIER_AUTH_REMEDIATION
+    elif "429" in message_text or "rate limit" in message_text.lower():
+        out["error_code"] = "options_provider_rate_limit"
+        out["provider"] = _configured_options_provider()
+        out["retry_after_seconds"] = None
     return out
 
 
@@ -162,10 +215,8 @@ def _yahoo_http_get(url: str, *, params: Dict[str, Any], headers: Dict[str, str]
         if response.status_code not in _YAHOO_RETRY_STATUS_CODES or attempt + 1 >= _YAHOO_MAX_ATTEMPTS:
             return response
         response.close()
-        retry_after_raw = response.headers.get("Retry-After")
-        try:
-            retry_after = float(retry_after_raw) if retry_after_raw is not None else backoff_seconds
-        except (TypeError, ValueError):
+        retry_after = _parse_retry_after_seconds(response.headers.get("Retry-After"))
+        if retry_after is None:
             retry_after = backoff_seconds
         _time.sleep(max(backoff_seconds, retry_after))
         backoff_seconds *= 2.0
@@ -190,6 +241,11 @@ def _fetch_yahoo_options_payload(symbol: str, expiry_epoch: Optional[int] = None
                     "Authentication error: Yahoo Finance options endpoint returned "
                     "401 Unauthorized. No mtdata API-key setting is available for this "
                     "Yahoo endpoint."
+                )
+            if response.status_code == 429:
+                raise _OptionsRateLimitError(
+                    "yahoo",
+                    _parse_retry_after_seconds(response.headers.get("Retry-After")),
                 )
             # For other HTTP errors, re-raise as-is
             raise
@@ -232,6 +288,11 @@ def _tradier_http_get(path: str, *, params: Dict[str, Any]) -> Dict[str, Any]:
                 raise ValueError(
                     "Authentication error: Tradier options endpoint returned "
                     "401 Unauthorized."
+                )
+            if response.status_code == 429:
+                raise _OptionsRateLimitError(
+                    "tradier",
+                    _parse_retry_after_seconds(response.headers.get("Retry-After")),
                 )
             raise
         payload = response.json()
@@ -409,7 +470,7 @@ def _get_tradier_options_expirations(symbol: str) -> Dict[str, Any]:
         quote = {}
     return {
         "success": True,
-        "provider": "tradier",
+        **_live_options_metadata("tradier"),
         "symbol": symbol_norm,
         "underlying_price": _to_numeric(
             quote.get("last") or quote.get("close"),
@@ -468,7 +529,7 @@ def _get_tradier_options_chain(
     )
     return {
         "success": True,
-        "provider": "tradier",
+        **_live_options_metadata("tradier"),
         "symbol": symbol_norm,
         "expiration": chosen_expiry,
         "underlying_price": underlying_price,
@@ -497,7 +558,7 @@ def get_options_expirations(symbol: str) -> Dict[str, Any]:
         quote = payload.get("quote", {}) if isinstance(payload.get("quote"), dict) else {}
         return {
             "success": True,
-            "provider": "yahoo",
+            **_live_options_metadata("yahoo"),
             "symbol": str(symbol).upper().strip(),
             "underlying_price": _to_numeric(
                 quote.get("regularMarketPrice"),
@@ -510,7 +571,7 @@ def get_options_expirations(symbol: str) -> Dict[str, Any]:
             "expiration_count": int(len(expirations)),
         }
     except Exception as e:
-        return _options_error(f"Failed to fetch options expirations: {e}")
+        return _options_error(e, prefix="Failed to fetch options expirations")
 
 
 def get_options_chain(
@@ -620,7 +681,7 @@ def get_options_chain(
 
         return {
             "success": True,
-            "provider": "yahoo",
+            **_live_options_metadata("yahoo"),
             "symbol": symbol_norm,
             "expiration": chosen_expiry_ymd,
             "underlying_price": _to_numeric(
@@ -641,4 +702,4 @@ def get_options_chain(
             "options": combined,
         }
     except Exception as e:
-        return _options_error(f"Failed to fetch options chain: {e}")
+        return _options_error(e, prefix="Failed to fetch options chain")

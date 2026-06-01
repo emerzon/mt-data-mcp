@@ -77,7 +77,16 @@ def _apply_options_detail(
     if kind == "expirations":
         return {
             key: out[key]
-            for key in ("success", "symbol", "expirations", "expiration_count", "detail")
+            for key in (
+                "success",
+                "provider",
+                "cached",
+                "data_age_seconds",
+                "symbol",
+                "expirations",
+                "expiration_count",
+                "detail",
+            )
             if key in out
         }
     if kind == "chain":
@@ -85,6 +94,9 @@ def _apply_options_detail(
             key: out[key]
             for key in (
                 "success",
+                "provider",
+                "cached",
+                "data_age_seconds",
                 "symbol",
                 "expiration",
                 "underlying_price",
