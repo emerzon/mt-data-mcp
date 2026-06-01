@@ -430,6 +430,21 @@ def _temporal_sample_warnings(groups: Any) -> Dict[str, Any]:
     }
 
 
+def _temporal_group_count(groups: Any) -> int:
+    if not isinstance(groups, list):
+        return 0
+    total = 0
+    for item in groups:
+        if not isinstance(item, dict):
+            continue
+        breakdown = item.get("breakdown")
+        if isinstance(breakdown, list):
+            total += len([row for row in breakdown if isinstance(row, dict)])
+        else:
+            total += 1
+    return total
+
+
 def _base_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     return {
         key: payload[key]
@@ -445,6 +460,9 @@ def _base_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
             "bars",
             "start",
             "end",
+            "groups_analyzed",
+            "groups_excluded",
+            "min_bars_applied",
             *_PAGINATION_KEYS,
         )
         if key in payload
@@ -519,6 +537,9 @@ def _summary_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
             "bars",
             "start",
             "end",
+            "groups_analyzed",
+            "groups_excluded",
+            "min_bars_applied",
         )
         if key in compact
     }
@@ -1149,6 +1170,11 @@ def temporal_analyze(  # noqa: C901
                 "overall": overall,
                 "volume_source": volume_col,
             }
+            group_payload_source = grouped_dimensions if grouped_dimensions else groups_out
+            payload["groups_analyzed"] = _temporal_group_count(group_payload_source)
+            payload["groups_excluded"] = len(excluded_groups)
+            if min_bars_value is not None:
+                payload["min_bars_applied"] = int(min_bars_value or 0)
             if group_norm in {"session", "all"}:
                 payload["session_definition"] = _SESSION_DEFINITION
             if min_bars_value is not None:
