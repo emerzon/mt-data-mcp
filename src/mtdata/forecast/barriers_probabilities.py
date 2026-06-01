@@ -1,11 +1,13 @@
 import traceback
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional
 
 import numpy as np
 
-from ..shared.constants import TIMEFRAME_SECONDS
+from ..shared.constants import SANITY_BARS_TOLERANCE, TIMEFRAME_SECONDS
 from ..shared.schema import DenoiseSpec, TimeframeLiteral
 from ..shared.validators import unsupported_timeframe_seconds_error
+from ..utils.freshness import format_age_seconds, format_freshness_label
 from ..utils.barriers import (
     barrier_prices_are_valid as _barrier_prices_are_valid,
 )
@@ -19,6 +21,11 @@ from ..utils.barriers import (
     resolve_barrier_prices as _resolve_barrier_prices,
 )
 from ..utils.barriers import validate_barrier_unit_family_exclusivity
+from ..utils.utils import (
+    _format_time_minimal,
+    _format_time_minimal_local,
+    _use_client_tz,
+)
 from ..utils.utils import parse_kv_or_json as _parse_kv_or_json
 from .barriers_shared import (
     _auto_barrier_method,
@@ -42,6 +49,94 @@ from .monte_carlo import simulate_gbm_mc as _simulate_gbm_mc
 from .monte_carlo import simulate_heston_mc as _simulate_heston_mc
 from .monte_carlo import simulate_hmm_mc as _simulate_hmm_mc
 from .monte_carlo import simulate_jump_diffusion_mc as _simulate_jump_diffusion_mc
+
+
+def _format_barrier_epoch(epoch: float) -> str:
+    formatter = _format_time_minimal_local if _use_client_tz() else _format_time_minimal
+    return formatter(float(epoch))
+
+
+def _coerce_epoch(value: Any) -> Optional[float]:
+    try:
+        epoch = float(value)
+    except Exception:
+        return None
+    if not np.isfinite(epoch) or epoch <= 0.0:
+        return None
+    if epoch > 10_000_000_000:
+        epoch /= 1000.0
+    return epoch
+
+
+def _history_freshness_context(df: Any, timeframe: str) -> Dict[str, Any]:
+    out: Dict[str, Any] = {"history_bars_used": int(len(df))}
+    try:
+        last_epoch = _coerce_epoch(df["time"].iloc[-1])
+    except Exception:
+        last_epoch = None
+    if last_epoch is None:
+        return out
+
+    now_epoch = datetime.now(timezone.utc).timestamp()
+    age_seconds = max(0, int(round(now_epoch - last_epoch)))
+    stale_after = int(
+        max(1, int(TIMEFRAME_SECONDS.get(timeframe, 0) or 0))
+        * max(1, int(SANITY_BARS_TOLERANCE))
+    )
+    data_stale = age_seconds > stale_after if stale_after > 0 else None
+    age_text = format_age_seconds(age_seconds)
+    out.update(
+        {
+            "data_as_of": _format_barrier_epoch(last_epoch),
+            "data_as_of_epoch": float(last_epoch),
+            "data_freshness_seconds": age_seconds,
+            "data_stale": data_stale,
+            "stale_after_seconds": stale_after,
+            "freshness_basis": "bar_policy",
+        }
+    )
+    freshness = format_freshness_label(
+        data_stale=data_stale,
+        age_seconds=age_seconds,
+        age_text=age_text,
+        item="data",
+    )
+    if freshness:
+        out["freshness"] = freshness
+    return out
+
+
+def _live_reference_time_context(symbol: str, timeframe: str) -> Dict[str, Any]:
+    try:
+        import MetaTrader5 as _mt5  # type: ignore
+    except Exception:
+        return {}
+    try:
+        tick = _mt5.symbol_info_tick(symbol)
+    except Exception:
+        tick = None
+    if tick is None:
+        return {}
+
+    epoch = _coerce_epoch(getattr(tick, "time_msc", None))
+    if epoch is None:
+        epoch = _coerce_epoch(getattr(tick, "time", None))
+    if epoch is None:
+        return {}
+
+    now_epoch = datetime.now(timezone.utc).timestamp()
+    age_seconds = max(0, int(round(now_epoch - epoch)))
+    stale_after = int(
+        max(1, int(TIMEFRAME_SECONDS.get(timeframe, 0) or 0))
+        * max(1, int(SANITY_BARS_TOLERANCE))
+    )
+    return {
+        "reference_price_time": _format_barrier_epoch(epoch),
+        "reference_price_time_epoch": float(epoch),
+        "reference_price_age_seconds": age_seconds,
+        "reference_price_age": format_age_seconds(age_seconds),
+        "reference_price_stale": age_seconds > stale_after if stale_after > 0 else None,
+    }
 
 
 def forecast_barrier_hit_probabilities(  # noqa: C901
@@ -99,6 +194,7 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
         df = _fetch_history(symbol, timeframe, need, as_of=None)
         if len(df) < 10:
             return {"error": "Insufficient history for simulation"}
+        freshness_context = _history_freshness_context(df, timeframe)
         # Current price baseline
         last_price_close, last_price, last_price_source, price_warning, price_error = _resolve_reference_prices(
             df['close'].astype(float).to_numpy(),
@@ -416,6 +512,12 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
             "time_to_tp_bars": tp_stats,
             "time_to_sl_bars": sl_stats,
         }
+        out.update(freshness_context)
+        if str(last_price_source or "").startswith("live_tick"):
+            out.update(_live_reference_time_context(symbol, timeframe))
+        elif freshness_context.get("data_as_of"):
+            out["reference_price_time"] = freshness_context.get("data_as_of")
+            out["reference_price_time_epoch"] = freshness_context.get("data_as_of_epoch")
         if price_precision is not None:
             out["price_precision"] = int(price_precision)
         if method_requested != method_key:
@@ -475,6 +577,7 @@ def forecast_barrier_closed_form(
         df = _fetch_history(symbol, timeframe, need, as_of=None)
         if len(df) < 10:
             return {"error": "Insufficient history"}
+        freshness_context = _history_freshness_context(df, timeframe)
         base_col = 'close'
         if denoise:
             try:
@@ -539,6 +642,10 @@ def forecast_barrier_closed_form(
             "sigma_annual": sigma_val,
             "prob_hit": float(prob),
         }
+        result.update(freshness_context)
+        if freshness_context.get("data_as_of"):
+            result["reference_price_time"] = freshness_context.get("data_as_of")
+            result["reference_price_time_epoch"] = freshness_context.get("data_as_of_epoch")
         if price_precision is not None:
             result["price_precision"] = int(price_precision)
         if already_hit:
