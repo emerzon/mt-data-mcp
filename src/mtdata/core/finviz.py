@@ -349,6 +349,34 @@ _FINVIZ_SCREEN_COMPACT_FIELDS_BY_VIEW = {
         "beta",
     ),
 }
+_FINVIZ_SCREEN_FRACTION_PERCENT_FIELDS = frozenset(
+    {
+        "profit_margin",
+        "operating_margin",
+        "gross_margin",
+        "return_on_assets",
+        "return_on_equity",
+        "insider_own",
+        "insider_trans",
+        "inst_own",
+        "inst_trans",
+    }
+)
+_FINVIZ_SCREEN_PERCENT_FIELDS = _FINVIZ_SCREEN_FRACTION_PERCENT_FIELDS | frozenset(
+    {
+        "change_pct",
+        "short_float",
+        "performance_week",
+        "performance_month",
+        "performance_quarter",
+        "performance_half_year",
+        "performance_year",
+        "performance_ytd",
+        "rsi_14",
+        "sma20_distance_pct",
+        "sma50_distance_pct",
+    }
+)
 _FINVIZ_DETAIL_ERROR = (
     "detail must be one of: compact, standard, summary, full. "
     "Finviz standard/summary output uses the compact shape."
@@ -479,6 +507,26 @@ def _compact_finviz_screen_row(
     }
 
 
+def _finviz_screen_units_for_rows(rows: Any) -> Dict[str, str]:
+    if not isinstance(rows, list):
+        return {}
+    seen_fields = {
+        key
+        for row in rows
+        if isinstance(row, dict)
+        for key, value in row.items()
+        if value not in (None, "")
+    }
+    units = {
+        key: "percentage_points"
+        for key in seen_fields
+        if key in _FINVIZ_SCREEN_PERCENT_FIELDS or str(key).endswith("_pct")
+    }
+    if "short_ratio" in seen_fields:
+        units["short_ratio"] = "days_to_cover"
+    return units
+
+
 def _normalize_finviz_market_payload(
     result: Dict[str, Any],
     *,
@@ -555,6 +603,10 @@ def _normalize_finviz_market_payload(
         out["freshness"] = _FINVIZ_DELAYED_FRESHNESS
     if detail_mode != "full" and rows_key in {"pairs", "coins", "futures"}:
         out["performance_format"] = "percentage_points"
+    if rows_key == "stocks":
+        units = _finviz_screen_units_for_rows(output_rows)
+        if units:
+            out["units"] = units
     if rows_key in {"pairs", "coins", "futures"}:
         limitations = {"performance_periods": "day_only"}
         if rows_key == "futures":
@@ -597,6 +649,15 @@ def _canonicalize_finviz_market_row(row: Dict[str, Any]) -> Dict[str, Any]:
     change_pct = _finviz_percent_value(out.get("change_pct"))
     if change_pct is not None:
         out["change_pct"] = change_pct
+    for field in _FINVIZ_SCREEN_PERCENT_FIELDS:
+        if field not in out:
+            continue
+        pct_value = _finviz_percent_value(
+            out.get(field),
+            fraction_input=field in _FINVIZ_SCREEN_FRACTION_PERCENT_FIELDS,
+        )
+        if pct_value is not None:
+            out[field] = pct_value
     if _is_known_forex_pair_row(out):
         out = _attach_finviz_forex_mt5_symbol(out)
     return out
