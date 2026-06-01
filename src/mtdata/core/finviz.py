@@ -1109,11 +1109,43 @@ def _normalize_finviz_published_at(value: Any, *, now: Optional[datetime] = None
     return text
 
 
-def _normalize_finviz_news_item(item: Any) -> Any:
+def _finviz_relative_time_from_text(value: Any) -> Optional[str]:
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    if " ago" in text.lower():
+        return text
+    try:
+        dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    delta = datetime.now(timezone.utc) - dt.astimezone(timezone.utc)
+    seconds = max(0, int(delta.total_seconds()))
+    if seconds < 90:
+        return "just now"
+    minutes = seconds // 60
+    if minutes < 90:
+        return f"{minutes} minutes ago"
+    hours = minutes // 60
+    if hours < 48:
+        return f"{hours} hours ago"
+    days = hours // 24
+    if days < 14:
+        return f"{days} days ago"
+    weeks = days // 7
+    return f"{weeks} weeks ago"
+
+
+def _normalize_finviz_news_item(item: Any, *, kind: str = "headline") -> Any:
     if not isinstance(item, dict):
         return item
 
     out: Dict[str, Any] = {}
+    raw_published_at: Any = None
     for source_key, target_key in (
         ("Title", "title"),
         ("Source", "source"),
@@ -1122,6 +1154,8 @@ def _normalize_finviz_news_item(item: Any) -> Any:
         ("title", "title"),
         ("source", "source"),
         ("published_at", "published_at"),
+        ("relative_time", "relative_time"),
+        ("kind", "kind"),
         ("url", "url"),
     ):
         if source_key not in item:
@@ -1130,8 +1164,17 @@ def _normalize_finviz_news_item(item: Any) -> Any:
         if value in (None, ""):
             continue
         if target_key == "published_at":
+            raw_published_at = value
             value = _normalize_finviz_published_at(value)
         out[target_key] = value
+    if "relative_time" not in out:
+        relative_time = (
+            _finviz_relative_time_from_text(raw_published_at)
+            or _finviz_relative_time_from_text(out.get("published_at"))
+        )
+        if relative_time:
+            out["relative_time"] = relative_time
+    out.setdefault("kind", kind)
     return out
 
 
@@ -1139,6 +1182,7 @@ def _normalize_finviz_news_payload(
     result: Dict[str, Any],
     *,
     detail: CompactFullDetailLiteral = "compact",  # type: ignore
+    kind: str = "headline",
 ) -> Dict[str, Any]:
     out = dict(result)
     out.pop("tool_scope", None)
@@ -1154,14 +1198,17 @@ def _normalize_finviz_news_payload(
         return out
 
     source_rows = news_rows if isinstance(news_rows, list) else items_rows
-    normalized_items = [_normalize_finviz_news_item(item) for item in source_rows]
+    normalized_items = [
+        _normalize_finviz_news_item(item, kind=kind)
+        for item in source_rows
+    ]
     out.pop("news", None)
     if detail_mode == "summary":
         out.pop("items", None)
         out["count"] = int(out.get("count") or len(normalized_items))
         return out
     if detail_mode == "compact":
-        compact_fields = {"title", "source", "published_at"}
+        compact_fields = {"title", "source", "published_at", "relative_time", "kind"}
         out["items"] = [
             {
                 key: value
@@ -2575,6 +2622,7 @@ def finviz_news(
         return _normalize_finviz_news_payload(
             get_stock_news(symbol_norm, limit=limit, page=page),
             detail=detail,
+            kind="direct_symbol",
         )
 
     return _run_logged_tool("finviz_news", fields, _run)
@@ -2870,6 +2918,7 @@ def finviz_market_news(
         lambda: _normalize_finviz_news_payload(
             get_general_news(news_type=news_type, limit=limit, page=page),
             detail=detail,
+            kind="blog" if str(news_type).lower().strip() == "blogs" else "headline",
         ),
     )
 
