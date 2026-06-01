@@ -175,6 +175,33 @@ def _build_trade_ready(account: Any, quote: Any) -> Dict[str, Any]:
     }
 
 
+def _build_quote_quality(quote: Any) -> Dict[str, Any]:
+    if not isinstance(quote, dict) or quote.get("error") not in (None, ""):
+        return {
+            "status": "unavailable",
+            "is_live": False,
+            "warning": "quote_unavailable",
+        }
+    age_seconds = quote.get("data_age_seconds")
+    stale = bool(quote.get("data_stale"))
+    status = "stale" if stale else "reliable"
+    out: Dict[str, Any] = {
+        "status": status,
+        "is_live": not stale,
+        "data_stale": stale,
+    }
+    if age_seconds not in (None, ""):
+        out["age_seconds"] = age_seconds
+    for key in ("freshness", "market_status", "timezone", "time"):
+        value = quote.get(key)
+        if value not in (None, ""):
+            out[key] = value
+    warning = quote.get("stale_warning") or quote.get("warning")
+    if warning not in (None, ""):
+        out["warning"] = warning
+    return out
+
+
 def _compact_trade_session_items(
     section: Any,
     *,
@@ -213,6 +240,7 @@ def _compact_trade_session_context_payload(payload: Dict[str, Any]) -> Dict[str,
             "other_positions_count",
             "partial_failure",
             "trade_ready",
+            "quote_quality",
         )
         if payload.get(key) not in (None, "")
     }
@@ -261,6 +289,8 @@ def _compact_trade_session_context_payload(payload: Dict[str, Any]) -> Dict[str,
                     "spread_pct",
                     "spread_cost_per_lot",
                     "spread_cost_currency",
+                    "freshness",
+                    "market_status",
                     "time",
                     "time_display",
                     "time_epoch",
@@ -455,6 +485,7 @@ def trade_session_context(request: TradeSessionContextRequest) -> Dict[str, Any]
             "open_positions": open_res,
             "pending_orders": pending_res,
             "quote": quote_res,
+            "quote_quality": _build_quote_quality(quote_res),
         }
         if other_positions_count is not None:
             payload["portfolio_positions_count"] = portfolio_positions_count
