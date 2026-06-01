@@ -3,6 +3,7 @@ import logging
 import math
 import re
 import time
+from difflib import SequenceMatcher
 from typing import Any, Dict, List, Literal, Optional
 
 from ..shared.constants import (
@@ -284,6 +285,57 @@ def _symbol_search_context(search_term: str, search_mode: str) -> Dict[str, Any]
             "description_contains",
             "group_contains",
         ]
+    return context
+
+
+def _symbol_search_suggestions(
+    all_symbols: List[Any],
+    search_term: str,
+    *,
+    limit: int = 5,
+) -> List[Dict[str, Any]]:
+    query = str(search_term or "").strip().casefold()
+    if not query:
+        return []
+    scored: List[tuple[float, str, Any]] = []
+    for symbol in all_symbols:
+        name = str(getattr(symbol, "name", "") or "")
+        if not name:
+            continue
+        name_folded = name.casefold()
+        if query in name_folded:
+            score = 1.0
+        else:
+            score = SequenceMatcher(None, query, name_folded).ratio()
+        if score >= 0.55:
+            scored.append((score, name, symbol))
+    scored.sort(key=lambda item: (-item[0], *_case_insensitive_sort_key(item[1])))
+    return [
+        _symbol_suggestion_from_info(symbol)
+        for _, _, symbol in scored[: max(1, int(limit))]
+    ]
+
+
+def _symbols_empty_search_context(
+    all_symbols: List[Any],
+    search_term: str,
+    search_mode: str,
+) -> Dict[str, Any]:
+    context: Dict[str, Any] = {
+        "message": (
+            f"No symbols matched '{search_term}'. "
+            "Try search_mode=all for broader matching or check spelling."
+        ),
+        "universe_size": len(all_symbols),
+    }
+    suggestions = _symbol_search_suggestions(all_symbols, search_term)
+    if suggestions:
+        context["suggestions"] = suggestions
+    if search_mode == "all":
+        context["message"] = (
+            f"No symbols matched '{search_term}'. "
+            "Check spelling or inspect broker groups with list_mode=groups."
+        )
     return context
 
 
@@ -569,13 +621,15 @@ def symbols_list(  # noqa: C901
                 )
 
             matched_symbols = []
+            search_universe: List[Any] = []
 
             if normalized_search_term:
                 all_symbols = mt5_gateway.symbols_get()
                 if all_symbols is None:
                     return {"error": f"Failed to get symbols: {mt5_gateway.last_error()}"}
+                search_universe = list(all_symbols)
                 matched_symbols = _match_symbols_for_search(
-                    list(all_symbols),
+                    search_universe,
                     normalized_search_term,
                     search_mode_value,
                 )
@@ -658,6 +712,15 @@ def symbols_list(  # noqa: C901
                         normalized_search_term,
                         search_mode_value,
                     )
+                    out["universe_size"] = len(search_universe)
+                    if total_count == 0:
+                        out.update(
+                            _symbols_empty_search_context(
+                                search_universe,
+                                normalized_search_term,
+                                search_mode_value,
+                            )
+                        )
                 if offset_value or has_more:
                     out["total_count"] = total_count
                     out["offset"] = offset_value
@@ -693,6 +756,15 @@ def symbols_list(  # noqa: C901
                     normalized_search_term,
                     search_mode_value,
                 )
+                result["universe_size"] = len(search_universe)
+                if total_count == 0:
+                    result.update(
+                        _symbols_empty_search_context(
+                            search_universe,
+                            normalized_search_term,
+                            search_mode_value,
+                        )
+                    )
             if offset_value or has_more:
                 result["total_count"] = total_count
                 result["offset"] = offset_value
