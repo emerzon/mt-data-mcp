@@ -578,8 +578,16 @@ def _build_actionability_payload(
         else:
             actionability_reason = "Selection diagnostics require manual review before trading."
 
+    recommendation = {
+        "actionable": "trade",
+        "review": "review",
+        "blocked": "avoid",
+    }.get(actionability, "review")
+
     out = {
         "actionability": actionability,
+        "recommendation": recommendation,
+        "recommendation_reason": actionability_reason,
         "trade_gate_passed": trade_gate_passed,
         "actionability_reason": actionability_reason,
         "actionability_flags": deduped_flags,
