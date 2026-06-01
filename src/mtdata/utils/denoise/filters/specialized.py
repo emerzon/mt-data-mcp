@@ -11,6 +11,8 @@ except Exception:
 
 from ..base import _series_like, register_filter
 
+_MAX_WINDOWED_ELEMENTS = 2_000_000
+
 
 def _kalman_filter_1d(
     x: np.ndarray,
@@ -77,7 +79,17 @@ def _denoise_kalman_series(
     return _series_like(s, y)
 
 
-def _hampel_filter(
+def _sliding_windows_with_nan_padding(
+    x: np.ndarray,
+    left_pad: int,
+    right_pad: int,
+    window: int,
+) -> np.ndarray:
+    padded = np.pad(x, (left_pad, right_pad), mode='constant', constant_values=np.nan)
+    return np.lib.stride_tricks.sliding_window_view(padded, window_shape=window)
+
+
+def _hampel_filter_python(
     x: np.ndarray,
     window: int,
     n_sigmas: float,
@@ -107,6 +119,33 @@ def _hampel_filter(
     return y
 
 
+def _hampel_filter(
+    x: np.ndarray,
+    window: int,
+    n_sigmas: float,
+    causality: str,
+) -> np.ndarray:
+    x_arr = np.asarray(x, dtype=float)
+    n = len(x_arr)
+    if n < 3:
+        return x_arr
+    win = max(3, int(window))
+    if n * win > _MAX_WINDOWED_ELEMENTS:
+        return _hampel_filter_python(x_arr, window=win, n_sigmas=n_sigmas, causality=causality)
+    if causality == 'causal':
+        windows = _sliding_windows_with_nan_padding(x_arr, win - 1, 0, win)
+    else:
+        half = win // 2
+        windows = _sliding_windows_with_nan_padding(x_arr, half, half, win)
+    med = np.nanmedian(windows, axis=1)
+    mad = np.nanmedian(np.abs(windows - med[:, None]), axis=1)
+    scale = np.where(mad > 0.0, 1.4826 * mad, 0.0)
+    mask = (scale > 0.0) & (np.abs(x_arr - med) > float(n_sigmas) * scale)
+    y = x_arr.copy()
+    y[mask] = med[mask]
+    return y
+
+
 @register_filter('hampel')
 def _denoise_hampel_series(
     s: pd.Series,
@@ -120,7 +159,7 @@ def _denoise_hampel_series(
     return _series_like(s, y)
 
 
-def _bilateral_filter_1d(
+def _bilateral_filter_1d_python(
     x: np.ndarray,
     sigma_s: float,
     sigma_r: float,
@@ -152,6 +191,55 @@ def _bilateral_filter_1d(
         denom = np.sum(w)
         y[i] = np.sum(w * x[idx]) / denom if denom > 0 else x[i]
     return y
+
+
+def _bilateral_filter_1d(
+    x: np.ndarray,
+    sigma_s: float,
+    sigma_r: float,
+    truncate: float,
+    causality: str,
+) -> np.ndarray:
+    x_arr = np.asarray(x, dtype=float)
+    n = len(x_arr)
+    if n < 3:
+        return x_arr
+    if sigma_s <= 0 or sigma_r <= 0:
+        return x_arr
+    radius = max(1, int(round(float(truncate) * float(sigma_s))))
+    if causality == 'causal':
+        win = radius + 1
+        if n * win > _MAX_WINDOWED_ELEMENTS:
+            return _bilateral_filter_1d_python(
+                x_arr,
+                sigma_s=sigma_s,
+                sigma_r=sigma_r,
+                truncate=truncate,
+                causality=causality,
+            )
+        windows = _sliding_windows_with_nan_padding(x_arr, win - 1, 0, win)
+        offsets = np.arange(-radius, 1, dtype=float)
+    else:
+        win = 2 * radius + 1
+        if n * win > _MAX_WINDOWED_ELEMENTS:
+            return _bilateral_filter_1d_python(
+                x_arr,
+                sigma_s=sigma_s,
+                sigma_r=sigma_r,
+                truncate=truncate,
+                causality=causality,
+            )
+        windows = _sliding_windows_with_nan_padding(x_arr, radius, radius, win)
+        offsets = np.arange(-radius, radius + 1, dtype=float)
+    mask = ~np.isnan(windows)
+    center = x_arr[:, None]
+    spatial_weights = np.exp(-0.5 * (offsets / float(sigma_s)) ** 2)[None, :]
+    valid_windows = np.where(mask, windows, center)
+    range_weights = np.exp(-0.5 * ((valid_windows - center) / float(sigma_r)) ** 2)
+    weights = np.where(mask, spatial_weights * range_weights, 0.0)
+    denom = np.sum(weights, axis=1)
+    numer = np.sum(weights * np.where(mask, valid_windows, 0.0), axis=1)
+    return np.where(denom > 0.0, numer / denom, x_arr)
 
 
 @register_filter('bilateral')
