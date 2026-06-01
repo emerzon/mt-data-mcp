@@ -163,16 +163,11 @@ _SYMBOL_DESCRIBE_COMPACT_DIRECT_FIELDS: tuple[str, ...] = (
     "price_change_pct",
     "price_change_pct_unit",
     "digits",
-    "point",
     "trade_contract_size",
-    "trade_tick_size",
-    "trade_tick_value",
     "volume_min",
     "volume_max",
     "volume_step",
-    "spread_float",
     "trade_mode_label",
-    "order_mode_labels",
 )
 
 _SYMBOL_DESCRIBE_SUMMARY_DIRECT_FIELDS: tuple[str, ...] = (
@@ -730,7 +725,7 @@ def symbols_describe(
     detail : str, optional (default="compact")
         Output verbosity level:
         - "summary": Symbol identity, currencies, quote freshness, and session/trade labels
-        - "compact": Essential fields only (identifier, volume limits, contract size, tick size/value)
+        - "compact": Essential identity, status, volume, and contract fields
         - "standard": Same concise field set as compact for this single-symbol metadata tool
         - "full": Complete metadata including all trading modes, swap details, and session times
     Returns:
