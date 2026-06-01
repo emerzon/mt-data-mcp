@@ -353,7 +353,7 @@ def _compact_report_payload(
     completeness = report.get("completeness")
     if completeness not in (None, "", [], {}):
         compact["completeness"] = completeness
-    for key in ("overall_assessment", "sections_with_issues", "section_controls"):
+    for key in ("executive_summary", "overall_assessment", "sections_with_issues", "section_controls"):
         value = report.get(key)
         if value not in (None, "", [], {}):
             compact[key] = value
@@ -553,6 +553,39 @@ def _build_overall_report_assessment(report: Dict[str, Any]) -> Dict[str, Any]:
     if partial_sections:
         assessment["partial_sections"] = partial_sections[:6]
     return assessment
+
+
+def _build_report_executive_summary(
+    report: Dict[str, Any],
+    *,
+    symbol: str,
+    template: str,
+) -> Dict[str, Any]:
+    assessment = report.get("overall_assessment")
+    if not isinstance(assessment, dict):
+        assessment = {}
+    summary_structured = report.get("summary_structured")
+    if not isinstance(summary_structured, dict):
+        summary_structured = {}
+    out: Dict[str, Any] = {
+        "symbol": symbol,
+        "template": template,
+        "is_trade_signal": bool(assessment.get("is_trade_signal", False)),
+        "recommended_action": assessment.get("recommended_action"),
+        "confidence": assessment.get("confidence"),
+        "completeness": report.get("completeness"),
+    }
+    section_health = assessment.get("section_health")
+    if isinstance(section_health, dict):
+        out["section_health"] = section_health
+    for key in ("context", "backtest", "barriers", "patterns", "template_focus"):
+        value = summary_structured.get(key)
+        if value not in (None, "", [], {}):
+            out[key] = value
+    sections_with_issues = report.get("sections_with_issues")
+    if sections_with_issues not in (None, "", [], {}):
+        out["sections_with_issues"] = sections_with_issues
+    return {key: value for key, value in out.items() if value not in (None, "", [], {})}
 
 
 def _report_template_focus(
@@ -1172,6 +1205,11 @@ def run_report_generate(  # noqa: C901
                 if sections_with_issues:
                     rep["sections_with_issues"] = sections_with_issues
                 rep["overall_assessment"] = _build_overall_report_assessment(rep)
+                rep["executive_summary"] = _build_report_executive_summary(
+                    rep,
+                    symbol=request.symbol,
+                    template=template_name,
+                )
             diagnostics = rep.get("diagnostics")
             if not isinstance(diagnostics, dict):
                 diagnostics = {}
