@@ -109,7 +109,7 @@ def fit_temporal_gaussian_hmm_1d(
     initial_state_probabilities = _normalize_probability_vector(
         np.asarray(getattr(model, "startprob_", gamma[0]), dtype=float)
     )
-    log_likelihood = float(model.score(x2) * n_obs)
+    log_likelihood = float(model.score(x2))
 
     order = np.argsort(mu)
     gamma = gamma[:, order]
