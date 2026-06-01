@@ -47,6 +47,19 @@ _BACKTEST_METRICS_REASON_NOTES = {
         "No active long/short trades; win_rate and drawdown need at least one trade."
     ),
 }
+_TUNING_METRICS = frozenset(
+    {
+        "avg_rmse",
+        "avg_mae",
+        "avg_directional_accuracy",
+        "win_rate",
+        "max_drawdown",
+        "sharpe_ratio",
+        "calmar_ratio",
+        "annual_return",
+        "avg_return_per_trade",
+    }
+)
 _VOLATILITY_PROXY_METHODS = {"arima", "sarima", "ets", "theta"}
 _PRETRAINED_FORECAST_METHODS = ("chronos2", "chronos_bolt", "timesfm", "lag_llama")
 _DEFAULT_VOLATILITY_PROXY = "squared_return"
@@ -1940,6 +1953,27 @@ def _validate_tuning_methods(
     return None
 
 
+def _validate_tuning_metric(metric: Any) -> Optional[Dict[str, Any]]:
+    metric_value = str(metric or "").strip()
+    metric_key = metric_value.lower()
+    if metric_key in _TUNING_METRICS:
+        return None
+    suggestions = difflib.get_close_matches(metric_key, sorted(_TUNING_METRICS), n=3, cutoff=0.45)
+    message = (
+        f"Unsupported tuning metric: {metric_value or '<empty>'}. "
+        f"Supported metrics: {', '.join(sorted(_TUNING_METRICS))}."
+    )
+    if suggestions:
+        message += f" Did you mean: {', '.join(suggestions)}?"
+    return {
+        "success": False,
+        "error": message,
+        "error_code": "unsupported_metric",
+        "metric": metric_value,
+        "supported_metrics": sorted(_TUNING_METRICS),
+    }
+
+
 def _apply_tuning_detail(result: Dict[str, Any], detail: str) -> Dict[str, Any]:
     detail_value = _requested_detail_label(detail)
     out = dict(result)
@@ -1975,6 +2009,20 @@ def run_forecast_tune_genetic(
     invalid_method = _validate_tuning_methods(request)
     if invalid_method is not None:
         result = _apply_tuning_detail(invalid_method, request.detail)
+        log_operation_finish(
+            logger,
+            operation="forecast_tune_genetic",
+            started_at=started_at,
+            success=False,
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            method=request.method,
+            methods=len(request.methods or []),
+        )
+        return result
+    invalid_metric = _validate_tuning_metric(request.metric)
+    if invalid_metric is not None:
+        result = _apply_tuning_detail(invalid_metric, request.detail)
         log_operation_finish(
             logger,
             operation="forecast_tune_genetic",
@@ -2049,6 +2097,20 @@ def run_forecast_tune_optuna(
         method=request.method,
         methods=len(request.methods or []),
     )
+    invalid_metric = _validate_tuning_metric(request.metric)
+    if invalid_metric is not None:
+        result = _apply_tuning_detail(invalid_metric, request.detail)
+        log_operation_finish(
+            logger,
+            operation="forecast_tune_optuna",
+            started_at=started_at,
+            success=False,
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            method=request.method,
+            methods=len(request.methods or []),
+        )
+        return result
     method_for_search, search_space = _resolve_tuning_search_space(request)
     try:
         result = optuna_search_impl(
