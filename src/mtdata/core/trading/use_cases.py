@@ -2066,9 +2066,12 @@ def run_trade_history(  # noqa: C901
                 numeric = pd.to_numeric(raw, errors="coerce")
                 if numeric.notna().any():
                     df[f"{col}_code"] = numeric.astype("Int64")
-                df[col] = raw.apply(
-                    lambda v: decode_mt5_enum_label(gateway, v, prefix=prefix) or v
+                labels = raw.apply(
+                    lambda v: decode_mt5_enum_label(gateway, v, prefix=prefix)
                 )
+                if labels.notna().any():
+                    df[f"{col}_label"] = labels
+                df[col] = labels.where(labels.notna(), raw)
 
             def _reason_to_exit_trigger(reason: Any) -> Optional[str]:
                 txt = str(reason or "").strip().lower()
