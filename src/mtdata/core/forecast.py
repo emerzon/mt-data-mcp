@@ -74,6 +74,22 @@ _FORECAST_CONNECTION_REQUIRED_OPERATIONS = frozenset(
         "forecast_barrier_optimize",
     }
 )
+_FORECAST_QUICKSTART_METHODS = frozenset(
+    {
+        "analog",
+        "drift",
+        "fourier_ols",
+        "mc_gbm",
+        "naive",
+        "seasonal_naive",
+        "theta",
+    }
+)
+_FORECAST_METHOD_PROFILES = {
+    "all": None,
+    "quickstart": _FORECAST_QUICKSTART_METHODS,
+    "core": _FORECAST_QUICKSTART_METHODS,
+}
 
 _FORECAST_TIMESTAMP_OPERATIONS = frozenset(
     {
@@ -308,6 +324,7 @@ def _run_forecast_payload_direct(operation: str, payload: Dict[str, Any]) -> Dic
             library=payload.get("library"),
             supports_ci=payload.get("supports_ci"),
             supports_training=payload.get("supports_training"),
+            profile=payload.get("profile", "all"),
             show_unavailable=bool(payload.get("show_unavailable", False)),
         )
 
@@ -771,6 +788,7 @@ def forecast_list_methods(
     ] = None,
     supports_ci: Optional[bool] = None,
     supports_training: Optional[bool] = None,
+    profile: Literal["all", "quickstart", "core"] = "all",
     show_unavailable: bool = False,
 ) -> Dict[str, Any]:
     """List forecast methods and availability.
@@ -799,6 +817,7 @@ def forecast_list_methods(
             "library": library,
             "supports_ci": supports_ci,
             "supports_training": supports_training,
+            "profile": profile,
             "show_unavailable": bool(show_unavailable),
         },
         func=lambda: _forecast_list_methods_impl(
@@ -810,6 +829,7 @@ def forecast_list_methods(
             library=library,
             supports_ci=supports_ci,
             supports_training=supports_training,
+            profile=profile,
             show_unavailable=show_unavailable,
         ),
     )
@@ -1454,6 +1474,7 @@ def _forecast_list_methods_impl(  # noqa: C901
     library: Optional[str] = None,
     supports_ci: Optional[bool] = None,
     supports_training: Optional[bool] = None,
+    profile: str = "all",
     show_unavailable: bool = False,
 ) -> Dict[str, Any]:
     try:
@@ -1465,6 +1486,10 @@ def _forecast_list_methods_impl(  # noqa: C901
         search_value = str(search or "").strip().lower()
         category_filter_value = str(category or "").strip().lower()
         library_value = str(library or "").strip().lower()
+        profile_value = str(profile or "all").strip().lower()
+        if profile_value not in _FORECAST_METHOD_PROFILES:
+            return {"error": "Invalid profile. Use all, quickstart, or core."}
+        profile_methods = _FORECAST_METHOD_PROFILES[profile_value]
         supported_libraries = {
             "native",
             "statsforecast",
@@ -1534,6 +1559,9 @@ def _forecast_list_methods_impl(  # noqa: C901
             return "native"
 
         def _method_matches(item: Dict[str, Any]) -> bool:
+            method_name = str(item.get("method") or "")
+            if profile_methods is not None and method_name not in profile_methods:
+                return False
             if library_value and _item_library(item) != library_value:
                 return False
             if category_filter_value and _item_category(item) != category_filter_value:
@@ -1549,7 +1577,6 @@ def _forecast_list_methods_impl(  # noqa: C901
                 return False
             if not search_value:
                 return True
-            method_name = str(item.get("method") or "")
             desc = str(item.get("description") or "")
             cat = _item_category(item)
             namespace = str(item.get("namespace") or "")
@@ -1621,8 +1648,13 @@ def _forecast_list_methods_impl(  # noqa: C901
                 "library": library_value or None,
                 "supports_ci": supports_ci,
                 "supports_training": supports_training,
+                "profile": profile_value,
                 "show_unavailable": bool(show_unavailable),
             }
+            if profile_methods is not None:
+                out_full["profile_note"] = (
+                    "quickstart/core shows native methods with no optional package dependency."
+                )
             out_full["note"] = (
                 "Full view includes trader-facing method metadata and structured params; "
                 "use search_term, library, or limit to narrow large catalogs."
@@ -1731,6 +1763,16 @@ def _forecast_list_methods_impl(  # noqa: C901
             "methods_shown": int(len(selected_methods)),
             "methods_hidden": hidden_count,
         }
+        if profile_methods is not None:
+            out["profile"] = profile_value
+            out["profile_note"] = (
+                "Native quickstart methods with no optional package dependency."
+            )
+            out["usage"] = [
+                "mtdata-cli forecast_generate SYMBOL --method theta",
+                "mtdata-cli forecast_generate SYMBOL --method analog",
+                "mtdata-cli forecast_generate SYMBOL --method mc_gbm",
+            ]
         if offset_value:
             out["methods_before"] = int(min(offset_value, len(compact_methods)))
             out["offset"] = int(offset_value)
