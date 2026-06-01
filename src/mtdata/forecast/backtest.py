@@ -127,6 +127,7 @@ def _unavailable_performance_metrics(reason: str, slippage_bps: float) -> Dict[s
         "avg_return_per_trade": None,
         "avg_return_per_trade_pct": None,
         "win_rate": None,
+        "win_rate_pct": None,
         "max_drawdown": None,
         "max_drawdown_pct": None,
         "annual_return_pct": None,
@@ -199,6 +200,7 @@ _TRADE_BACKTEST_UNITS = {
     "annual_return": "return_fraction",
     "annual_return_pct": "percentage_points",
     "win_rate": "fraction",
+    "win_rate_pct": "percentage_points",
     "avg_directional_accuracy": "fraction",
     "directional_calls_made": "count",
     "directional_opportunities": "count",
@@ -321,9 +323,15 @@ def _compute_performance_metrics(
         return value_f
 
     win_rate_value = _finite_or_none(win_rate)
+    win_rate_pct = (
+        float(round(win_rate_value * 100.0, 4))
+        if win_rate_value is not None
+        else None
+    )
     metrics.update({
         "avg_return_per_trade": avg_return,
         "win_rate": float(round(win_rate_value, 4)) if win_rate_value is not None else None,
+        "win_rate_pct": win_rate_pct,
         "sharpe_ratio": _finite_or_none(sharpe),
         "max_drawdown": max_drawdown,
         "calmar_ratio": _finite_or_none(calmar),

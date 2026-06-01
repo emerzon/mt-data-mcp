@@ -1283,6 +1283,7 @@ def _compact_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:
         "avg_mae": 6,
         "avg_directional_accuracy": 4,
         "win_rate": 4,
+        "win_rate_pct": 4,
         "max_drawdown": 4,
         "max_drawdown_pct": 4,
         "avg_return": 6,
@@ -1356,6 +1357,7 @@ def _compact_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:
         if not metrics_unavailable:
             for key in (
                 "win_rate",
+                "win_rate_pct",
                 "max_drawdown",
                 "max_drawdown_pct",
                 "avg_return",

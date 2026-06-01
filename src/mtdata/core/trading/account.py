@@ -60,6 +60,7 @@ _TRADE_ACCOUNT_COMPACT_KEYS = (
 )
 _TRADE_JOURNAL_UNITS: Dict[str, str] = {
     "win_rate": "fraction",
+    "win_rate_pct": "percentage_points",
 }
 
 
@@ -152,12 +153,14 @@ def _trade_journal_metrics(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     else:
         profit_factor = float(gross_profit / gross_loss) if gross_loss > 0.0 else None
     win_rate = float(wins / count) if count else None
+    win_rate_pct = float(win_rate * 100.0) if win_rate is not None else None
     metrics = {
         "closed_deals": count,
         "wins": wins,
         "losses": losses,
         "flats": flats,
         "win_rate": _round_trade_journal_value(win_rate, digits=4),
+        "win_rate_pct": _round_trade_journal_value(win_rate_pct, digits=2),
         "net_pnl": _round_trade_journal_value(net_pnl, digits=2),
         "gross_profit": _round_trade_journal_value(gross_profit, digits=2),
         "gross_loss": _round_trade_journal_value(gross_loss, digits=2),
@@ -211,7 +214,7 @@ def _compact_trade_journal_breakdown(
     *,
     label_name: str,
 ) -> List[Dict[str, Any]]:
-    compact_keys = ("closed_deals", "win_rate", "net_pnl", "expectancy")
+    compact_keys = ("closed_deals", "win_rate", "win_rate_pct", "net_pnl", "expectancy")
     output: List[Dict[str, Any]] = []
     for item in items:
         compact_item = {label_name: item.get(label_name)}

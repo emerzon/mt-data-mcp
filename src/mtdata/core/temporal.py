@@ -261,13 +261,20 @@ def _stats_for_group(df: pd.DataFrame, volume_col: Optional[str]) -> Dict[str, A
         out["median_return"] = _rounded_temporal_float(ret.median())
         out["volatility"] = _rounded_temporal_float(ret.std(ddof=0))
         out["avg_abs_return"] = _rounded_temporal_float(ret.abs().mean())
-        out["win_rate"] = _safe_float(round((ret > 0).sum() / float(n), 4))
+        win_rate = _safe_float(round((ret > 0).sum() / float(n), 4))
+        out["win_rate"] = win_rate
+        out["win_rate_pct"] = (
+            _safe_float(round(float(win_rate) * 100.0, 2))
+            if win_rate is not None
+            else None
+        )
     else:
         out["avg_return"] = None
         out["median_return"] = None
         out["volatility"] = None
         out["avg_abs_return"] = None
         out["win_rate"] = None
+        out["win_rate_pct"] = None
 
     if "__range" in df.columns:
         rng = pd.to_numeric(df["__range"], errors="coerce")
@@ -293,7 +300,15 @@ def _compact_temporal_stats(
     *,
     include_group: bool = False,
 ) -> Dict[str, Any]:
-    keys = ("group_label", "bars", "avg_return", "median_return", "win_rate", "volatility")
+    keys = (
+        "group_label",
+        "bars",
+        "avg_return",
+        "median_return",
+        "win_rate",
+        "win_rate_pct",
+        "volatility",
+    )
     if include_group:
         keys = ("group", *keys)
     return {key: row.get(key) for key in keys if row.get(key) is not None}
@@ -488,7 +503,7 @@ def _compact_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
             compact_groups, best_rows, pagination = _flatten_temporal_dimension_groups(
                 groups,
                 formatter=_compact_temporal_stats,
-                best_keys=("group", "group_label", "avg_return", "win_rate"),
+                best_keys=("group", "group_label", "avg_return", "win_rate", "win_rate_pct"),
             )
             out["groups"] = compact_groups
             if best_rows:
@@ -514,7 +529,7 @@ def _compact_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         if best:
             out["best"] = {
                 key: best[key]
-                for key in ("group", "group_label", "avg_return", "win_rate")
+                for key in ("group", "group_label", "avg_return", "win_rate", "win_rate_pct")
                 if key in best
             }
     elif isinstance(payload.get("overall"), dict):
@@ -578,7 +593,7 @@ def _summary_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     if isinstance(overall, dict):
         out["overall"] = {
             key: overall.get(key)
-            for key in ("bars", "avg_return", "win_rate", "volatility")
+            for key in ("bars", "avg_return", "win_rate", "win_rate_pct", "volatility")
             if overall.get(key) is not None
         }
     for key in (
@@ -602,7 +617,7 @@ def _standard_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
             standard_groups, best_rows, pagination = _flatten_temporal_dimension_groups(
                 groups,
                 formatter=_standard_temporal_stats,
-                best_keys=("group_label", "avg_return", "win_rate"),
+                best_keys=("group_label", "avg_return", "win_rate", "win_rate_pct"),
             )
             out["groups"] = standard_groups
             if best_rows:
@@ -628,7 +643,7 @@ def _standard_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         if best:
             out["best"] = {
                 key: best[key]
-                for key in ("group_label", "avg_return", "win_rate")
+                for key in ("group_label", "avg_return", "win_rate", "win_rate_pct")
                 if key in best
             }
     overall = payload.get("overall")
@@ -1170,6 +1185,7 @@ def temporal_analyze(  # noqa: C901
                 "units": {
                     "returns": "percentage_points",
                     "win_rate": "fraction",
+                    "win_rate_pct": "percentage_points",
                     "avg_range_pct": "percentage_points",
                 },
                 "timezone": tz_name,
