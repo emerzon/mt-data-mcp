@@ -150,6 +150,7 @@ _CAUSAL_DISCOVER_REQUEST_KEYS = frozenset(
         "group_resolved",
         "timeframe",
         "limit",
+        "offset",
         "window_bars",
         "start",
         "end",
@@ -169,6 +170,7 @@ _CORRELATION_REQUEST_KEYS = frozenset(
         "group_resolved",
         "timeframe",
         "limit",
+        "offset",
         "window_bars",
         "start",
         "end",
@@ -187,6 +189,7 @@ _COINTEGRATION_REQUEST_KEYS = frozenset(
         "group_resolved",
         "timeframe",
         "limit",
+        "offset",
         "window_bars",
         "start",
         "end",
@@ -627,13 +630,36 @@ def _normalize_output_limit(limit: Optional[int]) -> tuple[int | None, str | Non
     return value, None
 
 
+def _normalize_output_offset(offset: int) -> tuple[int, str | None]:
+    try:
+        value = int(offset)
+    except (TypeError, ValueError):
+        return 0, "offset must be a non-negative integer."
+    if value < 0:
+        return 0, "offset must be a non-negative integer."
+    return value, None
+
+
 def _limit_pair_rows(
     rows: List[Dict[str, Any]],
     limit: int | None,
-) -> tuple[List[Dict[str, Any]], bool]:
-    if limit is None or len(rows) <= limit:
-        return rows, False
-    return rows[:limit], True
+    offset: int = 0,
+) -> tuple[List[Dict[str, Any]], bool, Dict[str, Any]]:
+    total = int(len(rows))
+    start = min(max(0, int(offset)), total)
+    if limit is None:
+        page = rows[start:]
+    else:
+        page = rows[start : start + int(limit)]
+    has_more = bool(start + len(page) < total)
+    truncated = bool(start > 0 or has_more)
+    pagination = {
+        "total_count": total,
+        "offset": int(start),
+        "limit": limit,
+        "has_more": has_more,
+    }
+    return page, truncated, pagination
 
 
 def _public_pair_row(row: Dict[str, Any]) -> Dict[str, Any]:
@@ -1265,6 +1291,7 @@ def causal_discover_signals(  # noqa: C901
     group: Optional[str] = None,
     timeframe: TimeframeLiteral = "H1",
     limit: Optional[int] = None,
+    offset: int = 0,
     window_bars: int = 500,
     start: Optional[str] = None,
     end: Optional[str] = None,
@@ -1303,6 +1330,7 @@ def causal_discover_signals(  # noqa: C901
             "_request_keys": _CAUSAL_DISCOVER_REQUEST_KEYS,
             "timeframe": str(timeframe),
             "limit": limit,
+            "offset": int(offset),
             "window_bars": int(window_bars),
             "start": start,
             "end": end,
@@ -1416,6 +1444,13 @@ def causal_discover_signals(  # noqa: C901
         if limit_error is not None:
             return _causal_error(
                 limit_error,
+                code="invalid_input",
+                meta=meta,
+            )
+        output_offset, offset_error = _normalize_output_offset(offset)
+        if offset_error is not None:
+            return _causal_error(
+                offset_error,
                 code="invalid_input",
                 meta=meta,
             )
@@ -1717,7 +1752,11 @@ def causal_discover_signals(  # noqa: C901
                 f"{max(pair_attempts - pair_success, 0)} pairwise Granger tests failed; see meta['pair_failures']."
             )
         rows_for_output = rows_sorted if detail_mode == "full" else significant_rows
-        output_rows, output_truncated = _limit_pair_rows(rows_for_output, output_limit)
+        output_rows, output_truncated, pagination = _limit_pair_rows(
+            rows_for_output,
+            output_limit,
+            output_offset,
+        )
         meta["output_truncated"] = output_truncated
         transform_value = _normalize_transform_name(transform) or str(transform).strip().lower()
         out: Dict[str, Any] = {
@@ -1729,6 +1768,7 @@ def causal_discover_signals(  # noqa: C901
             ),
             "items": output_rows,
             "count": int(len(output_rows)),
+            **pagination,
             "summary": {
                 "significance": float(significance),
                 "counts": {
@@ -1784,6 +1824,7 @@ def correlation_matrix(  # noqa: C901
     group: Optional[str] = None,
     timeframe: TimeframeLiteral = "H1",
     limit: Optional[int] = None,
+    offset: int = 0,
     window_bars: int = 500,
     start: Optional[str] = None,
     end: Optional[str] = None,
@@ -1825,6 +1866,7 @@ def correlation_matrix(  # noqa: C901
             "_request_keys": _CORRELATION_REQUEST_KEYS,
             "timeframe": str(timeframe),
             "limit": limit,
+            "offset": int(offset),
             "window_bars": int(window_bars),
             "start": start,
             "end": end,
@@ -1916,6 +1958,13 @@ def correlation_matrix(  # noqa: C901
         if limit_error is not None:
             return _causal_error(
                 limit_error,
+                code="invalid_input",
+                meta=meta,
+            )
+        output_offset, offset_error = _normalize_output_offset(offset)
+        if offset_error is not None:
+            return _causal_error(
+                offset_error,
                 code="invalid_input",
                 meta=meta,
             )
@@ -2080,7 +2129,11 @@ def correlation_matrix(  # noqa: C901
             window_bars=int(window_bars),
             min_overlap=int(min_overlap),
         )
-        output_rows_raw, output_truncated = _limit_pair_rows(rows, output_limit)
+        output_rows_raw, output_truncated, pagination = _limit_pair_rows(
+            rows,
+            output_limit,
+            output_offset,
+        )
         meta.update(
             {
                 "pairs_attempted": int(
@@ -2123,6 +2176,7 @@ def correlation_matrix(  # noqa: C901
             ),
             "items": output_rows,
             "count": int(len(output_rows_raw)),
+            **pagination,
             "context": {
                 "timeframe": str(timeframe),
                 "limit": output_limit,
@@ -2175,6 +2229,7 @@ def cointegration_test(  # noqa: C901
     group: Optional[str] = None,
     timeframe: TimeframeLiteral = "H1",
     limit: Optional[int] = None,
+    offset: int = 0,
     window_bars: int = 500,
     start: Optional[str] = None,
     end: Optional[str] = None,
@@ -2222,6 +2277,7 @@ def cointegration_test(  # noqa: C901
             "_request_keys": _COINTEGRATION_REQUEST_KEYS,
             "timeframe": str(timeframe),
             "limit": limit,
+            "offset": int(offset),
             "window_bars": window_bars_value,
             "start": start,
             "end": end,
@@ -2323,6 +2379,13 @@ def cointegration_test(  # noqa: C901
         if limit_error is not None:
             return _causal_error(
                 limit_error,
+                code="invalid_input",
+                meta=meta,
+            )
+        output_offset, offset_error = _normalize_output_offset(offset)
+        if offset_error is not None:
+            return _causal_error(
+                offset_error,
                 code="invalid_input",
                 meta=meta,
             )
@@ -2524,7 +2587,11 @@ def cointegration_test(  # noqa: C901
                 str(item["right"]),
             )
         )
-        output_rows_raw, output_truncated = _limit_pair_rows(rows, output_limit)
+        output_rows_raw, output_truncated, pagination = _limit_pair_rows(
+            rows,
+            output_limit,
+            output_offset,
+        )
         meta.update(
             {
                 "pairs_attempted": int(
@@ -2592,6 +2659,7 @@ def cointegration_test(  # noqa: C901
             ),
             "items": [_public_pair_row(row) for row in output_rows_raw],
             "count": int(len(output_rows_raw)),
+            **pagination,
             "summary": {
                 "counts": {
                     "pairs": int(len(output_rows_raw)),
