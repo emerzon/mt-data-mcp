@@ -103,6 +103,7 @@ _SYMBOL_DESCRIBE_FIELDS: tuple[str, ...] = (
     "price_change",
     "session_open",
     "session_close",
+    "price_change_pct",
     "trade_mode",
     "trade_exemode",
     "trade_calc_mode",
@@ -143,6 +144,8 @@ _SYMBOL_DESCRIBE_COMPACT_DIRECT_FIELDS: tuple[str, ...] = (
     "market_status_reason",
     "note",
     "warning",
+    "price_change_pct",
+    "price_change_pct_unit",
     "digits",
     "point",
     "trade_contract_size",
@@ -169,6 +172,8 @@ _SYMBOL_DESCRIBE_SUMMARY_DIRECT_FIELDS: tuple[str, ...] = (
     "market_status_reason",
     "note",
     "warning",
+    "price_change_pct",
+    "price_change_pct_unit",
     "trade_mode_label",
     "order_mode_labels",
 )
@@ -837,6 +842,27 @@ def symbols_describe(
                             break
                     if label:
                         symbol_data[f"{attr}_label"] = label
+
+            price_change_value = _market_scan_float(symbol_data.get("price_change"))
+            if price_change_value is not None:
+                symbol_data["price_change_pct"] = _market_scan_round(
+                    price_change_value,
+                    digits=6,
+                )
+                symbol_data["price_change_pct_unit"] = "percentage_points (1.0 = 1%)"
+            else:
+                session_open = _market_scan_float(symbol_data.get("session_open"))
+                session_close = _market_scan_float(symbol_data.get("session_close"))
+                if (
+                    session_open is not None
+                    and session_close is not None
+                    and abs(session_open) > 1e-12
+                ):
+                    symbol_data["price_change_pct"] = _market_scan_round(
+                        ((session_close - session_open) / abs(session_open)) * 100.0,
+                        digits=6,
+                    )
+                    symbol_data["price_change_pct_unit"] = "percentage_points (1.0 = 1%)"
 
             _add_symbol_currency_diagnostics(symbol_data)
             if contract.detail == "summary":
