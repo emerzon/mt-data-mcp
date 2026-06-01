@@ -892,11 +892,12 @@ def template_basic(  # noqa: C901
     p['params'] = base_params
 
     mode_val = str(p.get('mode', 'pct'))
+    barrier_method = str(p.get('barrier_method', 'hmm_mc'))
     grid_long = _get_raw_result(forecast_barrier_optimize,
         symbol=symbol,
         timeframe=tf,
         horizon=int(horizon),
-        method='hmm_mc',
+        method=barrier_method,
         mode=mode_val,
         params=p.get('params'),
         objective=str(p.get('objective','ev')),
@@ -904,13 +905,14 @@ def template_basic(  # noqa: C901
         grid_style=str(p.get('grid_style', 'fixed')),
         preset=p.get('grid_preset', p.get('preset')),
         search_profile=str(p.get('search_profile', 'medium')),
+        fast_defaults=bool(p.get('fast_defaults', False)),
         direction='long',
     )
     grid_short = _get_raw_result(forecast_barrier_optimize,
         symbol=symbol,
         timeframe=tf,
         horizon=int(horizon),
-        method='hmm_mc',
+        method=barrier_method,
         mode=mode_val,
         params=p.get('params'),
         objective=str(p.get('objective','ev')),
@@ -918,6 +920,7 @@ def template_basic(  # noqa: C901
         grid_style=str(p.get('grid_style', 'fixed')),
         preset=p.get('grid_preset', p.get('preset')),
         search_profile=str(p.get('search_profile', 'medium')),
+        fast_defaults=bool(p.get('fast_defaults', False)),
         direction='short',
     )
     sec_bar: Dict[str, Any] = {}
@@ -955,6 +958,8 @@ def template_basic(  # noqa: C901
                     "and break-even thresholds before trading."
                 )
     sec_bar['mode'] = mode_val
+    sec_bar['method'] = barrier_method
+    sec_bar['search_profile'] = str(p.get('search_profile', 'medium'))
     sec_bar['note'] = (
         "Report barriers are produced by an independent optimization run; "
         "standalone forecast_barrier_optimize may yield different candidates. "
