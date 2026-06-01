@@ -4,9 +4,9 @@ import numpy as np
 import pandas as pd
 
 from ..common import log_returns_from_prices as _log_returns_from_prices
+from ..forecast_registry import ForecastRegistry
 from ..interface import ForecastMethod, ForecastResult
 from ..monte_carlo import simulate_gbm_mc, simulate_hmm_mc
-from ..forecast_registry import ForecastRegistry
 
 
 def _ci_from_sims(paths: np.ndarray, alpha: float) -> Tuple[np.ndarray, np.ndarray]:
@@ -121,7 +121,7 @@ class MonteCarloGBMMethod(ForecastMethod):
         rets = x
         mu = float(params.get("mu", float(np.mean(rets))))
         sigma = float(params.get("sigma", float(np.std(rets, ddof=1) + 1e-12)))
-        rng = np.random.RandomState(seed)
+        rng = np.random.default_rng(seed)
         ret_paths = rng.normal(loc=mu, scale=max(sigma, 1e-12), size=(n_sims, fh))
         point = np.median(ret_paths, axis=0)
         ci = None
