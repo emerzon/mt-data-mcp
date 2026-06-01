@@ -259,6 +259,7 @@ def _execute_training_spec(
     store_root: str,
     progress_callback,
     cancel_token: CancelToken,
+    source_task_id: Optional[str] = None,
 ) -> TrainedModelHandle:
     _ensure_training_methods_registered()
     prepared = _prepare_spec_inputs(spec)
@@ -281,7 +282,11 @@ def _execute_training_spec(
         data_scope=prepared["data_scope"],
         params_hash=prepared["params_hash"],
         artifact_bytes=result.artifact_bytes,
-        metadata={**(result.metadata or {}), "params_used": result.params_used},
+        metadata={
+            **(result.metadata or {}),
+            "params_used": result.params_used,
+            "source_task_id": source_task_id,
+        },
     )
 
 
@@ -295,6 +300,7 @@ def _process_heartbeat_loop(event_queue: Any, stop_event: threading.Event, inter
 
 def _process_training_entry(
     spec: _TrainingSpec,
+    task_id: str,
     store_root: str,
     event_queue: Any,
     cancel_event: Any,
@@ -322,6 +328,7 @@ def _process_training_entry(
             store_root=store_root,
             progress_callback=_on_progress,
             cancel_token=token,
+            source_task_id=task_id,
         )
         event_queue.put({
             "type": "completed",
@@ -652,6 +659,7 @@ class TaskManager:
                 store_root=str(self.store.root),
                 progress_callback=_on_progress,
                 cancel_token=token,
+                source_task_id=task_id,
             )
         except TrainingCancelledError as exc:
             self._mutate_task(
@@ -739,7 +747,7 @@ class TaskManager:
         cancel_event = self._mp_context.Event()
         process = self._mp_context.Process(
             target=_process_training_entry,
-            args=(spec, str(self.store.root), event_queue, cancel_event, self._heartbeat_interval()),
+            args=(spec, task_id, str(self.store.root), event_queue, cancel_event, self._heartbeat_interval()),
             daemon=True,
         )
         process.start()

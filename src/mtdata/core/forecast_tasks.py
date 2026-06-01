@@ -195,6 +195,10 @@ def _serialize_model_handle(
         "params_hash": handle.params_hash,
         "created_at": _format_epoch_utc(created_at_epoch) or created_at_epoch,
     }
+    model_metadata = dict(getattr(handle, "metadata", {}) or {})
+    source_task_id = model_metadata.get("source_task_id")
+    if source_task_id not in (None, ""):
+        payload["source_task_id"] = str(source_task_id)
     if last_used_epoch is not None:
         payload["last_used"] = _format_epoch_utc(last_used_epoch) or last_used_epoch
     age_days = _days(store_info.get("age_seconds"))
@@ -224,7 +228,7 @@ def _serialize_model_handle(
             payload["file_count"] = int(store_info.get("file_count") or 0)
             payload["model_dir"] = store_info.get("model_dir")
         store_metadata = dict(getattr(handle, "store_metadata", {}) or {})
-        payload["metadata"] = dict(getattr(handle, "metadata", {}) or {})
+        payload["metadata"] = model_metadata
         payload["store_metadata"] = sanitize_store_metadata(store_metadata)
         payload["compatibility"] = describe_store_metadata_compatibility(store_metadata)
     return payload
@@ -253,6 +257,7 @@ def _task_status_payload(task: Any, *, detail: DetailLevel) -> Dict[str, Any]:
 
     if task.status == "completed" and task.result is not None:
         payload["model_id"] = task.result.model_id
+        payload["produced_model_ids"] = [task.result.model_id]
         payload["message"] = (
             f"Training complete. Model stored as '{task.result.model_id}'. "
             "Subsequent forecast_generate calls will use this model automatically."
@@ -298,6 +303,7 @@ def _task_list_item_payload(task: Any, *, detail: DetailLevel) -> Dict[str, Any]
         payload["progress_fraction"] = task.progress.fraction
     if task.result is not None:
         payload["model_id"] = task.result.model_id
+        payload["produced_model_ids"] = [task.result.model_id]
     if task.error:
         payload["error"] = task.error
 
