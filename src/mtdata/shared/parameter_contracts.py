@@ -20,7 +20,7 @@ OUTPUT_EXTRA_FULL_ALIASES: Final[frozenset[str]] = frozenset(
         "verbose",
     }
 )
-PUBLIC_OUTPUT_PARAMS: Final[frozenset[str]] = frozenset({"json", "extras"})
+PUBLIC_OUTPUT_PARAMS: Final[frozenset[str]] = frozenset({"json", "extras", "fields"})
 OUTPUT_EXTRAS_HELP: Final[str] = (
     "Comma-separated richer output sections such as "
     f"{', '.join(sorted(OUTPUT_EXTRAS))}. Use "
@@ -66,6 +66,10 @@ PARAMETER_HELP: Final[dict[str, str]] = {
     "output_mode": "Barrier optimization output shape.",
     "json": "Return structured JSON instead of default TOON text.",
     "extras": OUTPUT_EXTRAS_HELP,
+    "fields": (
+        "Comma-separated output fields to keep; preserves essential top-level "
+        "metadata and matching nested row fields."
+    ),
     "detail": "Output detail level when supported by the tool.",
     "format": "Domain-specific shape selector when supported; TOON/JSON selection uses json.",
 }

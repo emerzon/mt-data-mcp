@@ -594,7 +594,129 @@ def _append_public_output_params(params: List[inspect.Parameter]) -> List[inspec
                 annotation=Union[str, List[str], None],
             )
         )
+    if "fields" not in names:
+        out.append(
+            inspect.Parameter(
+                "fields",
+                kind=inspect.Parameter.KEYWORD_ONLY,
+                default=None,
+                annotation=Union[str, List[str], None],
+            )
+        )
     return out
+
+
+_FIELD_SELECTION_META_KEYS = frozenset(
+    {
+        "success",
+        "error",
+        "error_code",
+        "request_id",
+        "symbol",
+        "symbols",
+        "timeframe",
+        "detail",
+        "count",
+        "total",
+        "truncated",
+    }
+)
+
+
+def _normalize_output_fields(value: Any) -> tuple[str, ...]:
+    if value in (None, False, ""):
+        return ()
+    if isinstance(value, str):
+        raw_items = value.replace(";", ",").split(",")
+    elif isinstance(value, (list, tuple, set, frozenset)):
+        raw_items = list(value)
+    else:
+        raw_items = [value]
+    fields: list[str] = []
+    for item in raw_items:
+        field = str(item or "").strip()
+        if field and field not in fields:
+            fields.append(field)
+    return tuple(fields)
+
+
+def _filter_output_fields(
+    value: Any,
+    wanted: set[str],
+    *,
+    preserve_meta: bool,
+) -> tuple[Any, bool]:
+    if isinstance(value, dict):
+        out: Dict[str, Any] = {}
+        matched = False
+        for key, subvalue in value.items():
+            field = str(key)
+            if field in wanted:
+                out[key] = subvalue
+                matched = True
+                continue
+            if preserve_meta and field in _FIELD_SELECTION_META_KEYS:
+                out[key] = subvalue
+                continue
+            filtered, submatched = _filter_output_fields(
+                subvalue,
+                wanted,
+                preserve_meta=False,
+            )
+            if submatched:
+                out[key] = filtered
+                matched = True
+        return out, matched
+    if isinstance(value, list):
+        out_items = []
+        matched = False
+        for item in value:
+            filtered, submatched = _filter_output_fields(
+                item,
+                wanted,
+                preserve_meta=False,
+            )
+            if submatched:
+                out_items.append(filtered)
+                matched = True
+        return out_items, matched
+    if isinstance(value, tuple):
+        filtered_items = []
+        matched = False
+        for item in value:
+            filtered, submatched = _filter_output_fields(
+                item,
+                wanted,
+                preserve_meta=False,
+            )
+            if submatched:
+                filtered_items.append(filtered)
+                matched = True
+        return tuple(filtered_items), matched
+    return value, False
+
+
+def _select_output_fields(value: Any, fields: Any) -> Any:
+    requested = _normalize_output_fields(fields)
+    if not requested or not isinstance(value, dict):
+        return value
+    wanted = set(requested)
+    filtered, matched = _filter_output_fields(
+        value,
+        wanted,
+        preserve_meta=True,
+    )
+    if matched:
+        return filtered
+    if value.get("error"):
+        return value
+    return {
+        "success": False,
+        "error_code": "invalid_output_fields",
+        "error": "No requested output fields were present.",
+        "requested_fields": list(requested),
+        "available_fields": sorted(str(key) for key in value),
+    }
 
 
 def _callable_accepts_kwarg(func: Any, name: str) -> bool:
@@ -669,6 +791,7 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # n
             precision = kw.pop("precision", None)
             json_output = kw.pop("json", False)
             extras = kw.pop("extras", None)
+            fields = kw.pop("fields", None)
             contract_state = resolve_output_contract({})
 
             try:
@@ -748,6 +871,7 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # n
                     tool_name=fname,
                     detail=contract_state.shape_detail,
                 )
+                public_out = _select_output_fields(public_out, fields)
 
             if contract_state.json:
                 return public_out
