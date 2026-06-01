@@ -639,6 +639,14 @@ def _finviz_earnings_error_code(message: str) -> str:
     return "finviz_earnings_failed"
 
 
+_FINVIZ_EARNINGS_PERIODS = {
+    "this-week": "This Week",
+    "next-week": "Next Week",
+    "previous-week": "Previous Week",
+    "this-month": "This Month",
+}
+
+
 def _invalid_finviz_screen_filters_error(
     filters: Any,
     *,
@@ -2955,7 +2963,7 @@ def finviz_calendar(
 
 @mcp.tool()
 def finviz_earnings(
-    period: Literal["This Week", "Next Week", "Previous Week", "This Month"] = "This Week",
+    period: Literal["this-week", "next-week", "previous-week", "this-month"] = "this-week",
     limit: int = 10,
     page: int = 1,
     detail: CompactFullDetailLiteral = "compact",  # type: ignore
@@ -2970,7 +2978,7 @@ def finviz_earnings(
     Parameters
     ----------
     period : str
-        Calendar period: "This Week", "Next Week", "Previous Week", "This Month"
+        Calendar period: this-week, next-week, previous-week, or this-month.
     limit : int
         Max items per page (default 10)
     page : int
@@ -2985,6 +2993,7 @@ def finviz_earnings(
         Earnings calendar data
     """
     def _run() -> Dict[str, Any]:
+        period_value = _FINVIZ_EARNINGS_PERIODS[str(period)]
         request = {
             "period": period,
             "limit": limit,
@@ -2994,7 +3003,7 @@ def finviz_earnings(
         detail_error = _validate_finviz_detail(detail, operation="finviz_earnings")
         if detail_error is not None:
             return detail_error
-        result = get_earnings_calendar(period=period, limit=limit, page=page)
+        result = get_earnings_calendar(period=period_value, limit=limit, page=page)
         if not isinstance(result, dict):
             return {
                 "success": False,
@@ -3036,7 +3045,7 @@ def finviz_earnings(
         }
         out: Dict[str, Any] = {
             "success": True,
-            "period": result.get("period", period),
+            "period": period,
             "detail": detail_mode,
             "items": output_items,
             "row_key": "items",
