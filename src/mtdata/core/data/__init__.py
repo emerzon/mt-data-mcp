@@ -325,6 +325,47 @@ def _compact_wait_event_specs(specs: Any, *, inferred: bool) -> Dict[str, Any]:
     return out
 
 
+def _compact_wait_event_criteria(matched_event: Dict[str, Any]) -> Dict[str, Any]:
+    criteria = matched_event.get("criteria")
+    if not isinstance(criteria, dict):
+        return {}
+    return {
+        field_name: criteria.get(field_name)
+        for field_name in (
+            "threshold_mode",
+            "threshold_value",
+            "direction",
+            "level",
+            "lower",
+            "upper",
+            "distance",
+            "price_source",
+            "confirm_ticks",
+        )
+        if criteria.get(field_name) is not None
+    }
+
+
+def _wait_event_trigger_reason(matched_event: Dict[str, Any]) -> Optional[str]:
+    event_type = str(matched_event.get("type") or "").strip()
+    if not event_type:
+        return None
+    criteria = _compact_wait_event_criteria(matched_event)
+    reason_parts = [event_type]
+    for field_name in (
+        "threshold_value",
+        "level",
+        "lower",
+        "upper",
+        "distance",
+        "direction",
+    ):
+        value = criteria.get(field_name)
+        if value is not None:
+            reason_parts.append(f"{field_name}={value}")
+    return ", ".join(reason_parts)
+
+
 def _compact_wait_event_public_result(
     result: Dict[str, Any],
     *,
@@ -380,6 +421,13 @@ def _compact_wait_event_public_result(
         event_type = matched_event.get("type")
         if event_type is not None:
             compact_matched["type"] = event_type
+            compact_matched["watcher_type"] = event_type
+        trigger_reason = _wait_event_trigger_reason(matched_event)
+        if trigger_reason:
+            compact_matched["trigger_reason"] = trigger_reason
+        compact_criteria = _compact_wait_event_criteria(matched_event)
+        if compact_criteria:
+            compact_matched["criteria"] = compact_criteria
         for field_name in _WAIT_EVENT_IDENTITY_FIELDS:
             value = matched_event.get(field_name)
             if value is not None:
