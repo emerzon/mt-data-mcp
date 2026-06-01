@@ -616,8 +616,8 @@ def _normalize_var_cvar_method(method: Any) -> tuple[Optional[str], Optional[str
     if method_text in {"historical", "hist"}:
         return "historical", None
     if method_text in {"gaussian", "normal", "parametric"}:
-        return "gaussian", None
-    return None, "Invalid method. Valid options: historical, gaussian"
+        return "parametric", None
+    return None, "Invalid method. Valid options: historical, parametric"
 
 
 def _normalize_var_cvar_transform(
