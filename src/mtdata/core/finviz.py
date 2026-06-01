@@ -1219,12 +1219,17 @@ _FINVIZ_EARNINGS_COMPACT_FIELDS = (
     "symbol",
     "company",
     "earnings",
+    "earnings_timing",
     "eps_estimate",
     "market_cap",
     "price",
     "change",
     "volume",
 )
+_FINVIZ_EARNINGS_TIMING_SUFFIXES = {
+    "/b": "before_market",
+    "/a": "after_market",
+}
 _FINVIZ_CALENDAR_COMPACT_FIELDS = (
     "symbol",
     "source_id",
@@ -1446,7 +1451,14 @@ def _normalize_finviz_earnings_rows(rows: Any) -> List[Any]:
     if not isinstance(normalized, list):
         return []
     for row in normalized:
-        if not isinstance(row, dict) or "market_cap" not in row:
+        if not isinstance(row, dict):
+            continue
+        earnings_text = str(row.get("earnings") or "").strip().lower()
+        for suffix, timing in _FINVIZ_EARNINGS_TIMING_SUFFIXES.items():
+            if earnings_text.endswith(suffix):
+                row["earnings_timing"] = timing
+                break
+        if "market_cap" not in row:
             continue
         market_cap_source = row.get("market_cap")
         market_cap = _normalize_finviz_fundamental_value(
