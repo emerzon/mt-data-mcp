@@ -1377,6 +1377,7 @@ def fetch_candles(  # noqa: C901
             warmup_bars = _estimate_warmup_bars(ti_spec)
             rate_fetch_diagnostics: Dict[str, Any] = {}
             freshness_diagnostics: Optional[Dict[str, Any]] = None
+            historical_bounds_requested = bool(start_datetime or end_datetime)
 
             rates, rates_error = _fetch_rates_with_warmup(
                 symbol,
@@ -1388,7 +1389,7 @@ def fetch_candles(  # noqa: C901
                 end_datetime,
                 include_incomplete=include_incomplete,
                 retry=True,
-                sanity_check=not bool(allow_stale),
+                sanity_check=not bool(allow_stale) and not historical_bounds_requested,
                 diagnostics=rate_fetch_diagnostics,
             )
             freshness_diagnostics = rate_fetch_diagnostics.get("freshness")
@@ -1481,7 +1482,7 @@ def fetch_candles(  # noqa: C901
                         end_datetime,
                         include_incomplete=include_incomplete,
                         retry=True,
-                        sanity_check=not bool(allow_stale),
+                        sanity_check=not bool(allow_stale) and not historical_bounds_requested,
                     )
                     retry_applied = rates_retry is not None and len(rates_retry) > 0
                     warmup_retry_meta = {
