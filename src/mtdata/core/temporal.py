@@ -39,6 +39,9 @@ from ..shared.schema import CompactFullDetailLiteral, TimeframeLiteral
 logger = logging.getLogger(__name__)
 
 
+_TEMPORAL_RELIABLE_GROUP_BARS = 30
+_TEMPORAL_SAMPLE_WARNING_LIMIT = 10
+
 
 _DOW_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 _MONTH_LABELS = [
@@ -383,6 +386,50 @@ def _flatten_temporal_dimension_groups(
     return flat_groups, best_rows, pagination
 
 
+def _temporal_sample_warnings(groups: Any) -> Dict[str, Any]:
+    rows: List[Dict[str, Any]] = []
+
+    def _add_row(row: Dict[str, Any], *, dimension: Optional[str] = None) -> None:
+        bars = int(row.get("bars", 0) or 0)
+        if bars >= _TEMPORAL_RELIABLE_GROUP_BARS:
+            return
+        warning = {
+            "group_label": row.get("group_label"),
+            "bars": bars,
+            "recommended_min_bars": _TEMPORAL_RELIABLE_GROUP_BARS,
+        }
+        if dimension:
+            warning["dimension"] = dimension
+        if row.get("group") is not None:
+            warning["group"] = row.get("group")
+        rows.append(warning)
+
+    if isinstance(groups, list):
+        for item in groups:
+            if not isinstance(item, dict):
+                continue
+            breakdown = item.get("breakdown")
+            if isinstance(breakdown, list):
+                dimension = str(item.get("dimension") or "")
+                for row in breakdown:
+                    if isinstance(row, dict):
+                        _add_row(row, dimension=dimension or None)
+            else:
+                _add_row(item)
+
+    if not rows:
+        return {}
+    shown = rows[:_TEMPORAL_SAMPLE_WARNING_LIMIT]
+    return {
+        "sample_warnings": shown,
+        "sample_warning_count": len(rows),
+        "sample_notice": (
+            "Some temporal groups have small samples; increase lookback or set "
+            "min_bars for stricter filtering."
+        ),
+    }
+
+
 def _base_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     return {
         key: payload[key]
@@ -394,6 +441,7 @@ def _base_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
             "return_mode",
             "units",
             "timezone",
+            "lookback",
             "bars",
             "start",
             "end",
@@ -442,7 +490,13 @@ def _compact_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
             }
     elif isinstance(payload.get("overall"), dict):
         out["overall"] = _compact_temporal_stats(payload["overall"])
-    for key in ("warnings", "excluded_groups"):
+    for key in (
+        "warnings",
+        "excluded_groups",
+        "sample_warnings",
+        "sample_warning_count",
+        "sample_notice",
+    ):
         value = payload.get(key)
         if value:
             out[key] = value
@@ -461,6 +515,7 @@ def _summary_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
             "return_mode",
             "units",
             "timezone",
+            "lookback",
             "bars",
             "start",
             "end",
@@ -494,7 +549,13 @@ def _summary_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
             for key in ("bars", "avg_return", "win_rate", "volatility")
             if overall.get(key) is not None
         }
-    for key in ("warnings", "excluded_groups"):
+    for key in (
+        "warnings",
+        "excluded_groups",
+        "sample_warnings",
+        "sample_warning_count",
+        "sample_notice",
+    ):
         value = payload.get(key)
         if value:
             out[key] = value
@@ -541,7 +602,15 @@ def _standard_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     overall = payload.get("overall")
     if isinstance(overall, dict):
         out["overall"] = _standard_temporal_stats(overall)
-    for key in ("volume_source", "filters", "warnings", "excluded_groups"):
+    for key in (
+        "volume_source",
+        "filters",
+        "warnings",
+        "excluded_groups",
+        "sample_warnings",
+        "sample_warning_count",
+        "sample_notice",
+    ):
         value = payload.get(key)
         if value not in (None, "", [], {}):
             out[key] = value
@@ -1072,6 +1141,7 @@ def temporal_analyze(  # noqa: C901
                     "avg_range_pct": "percentage_points",
                 },
                 "timezone": tz_name,
+                "lookback": effective_lookback,
                 "bars": int(len(analysis_df)),
                 "start": start_str,
                 "end": end_str,
@@ -1081,12 +1151,20 @@ def temporal_analyze(  # noqa: C901
             }
             if group_norm in {"session", "all"}:
                 payload["session_definition"] = _SESSION_DEFINITION
-            payload.update(pagination_meta)
-            if excluded_groups:
+            if min_bars_value is not None:
                 filters["min_bars"] = {
                     "value": int(min_bars_value or 0),
                     "auto": bool(auto_min_bars),
+                    "source": "auto" if auto_min_bars else "request",
+                    "purpose": "exclude grouped rows below this sample size",
                 }
+            payload.update(pagination_meta)
+            sample_context = _temporal_sample_warnings(
+                grouped_dimensions if grouped_dimensions else groups_out
+            )
+            if sample_context:
+                payload.update(sample_context)
+            if excluded_groups:
                 payload["excluded_groups"] = excluded_groups
                 payload["warnings"] = [
                     "Sparse temporal groups below min_bars were excluded from "
