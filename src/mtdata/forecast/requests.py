@@ -68,6 +68,13 @@ class ForecastGenerateRequest(BaseModel):
         return self
 
 
+def _normalize_methods_value(value: Any) -> Any:
+    if not isinstance(value, str):
+        return value
+    methods = [item.strip() for item in value.replace(",", " ").split() if item.strip()]
+    return methods or None
+
+
 class ForecastBacktestRequest(BaseModel):
     symbol: str
     timeframe: TimeframeLiteral = "H1"
@@ -93,14 +100,11 @@ class ForecastBacktestRequest(BaseModel):
     def _normalize_method_alias(cls, values: Any) -> Any:
         if not isinstance(values, dict):
             return values
-        if "methods" in values or "method" not in values:
-            return values
         out = dict(values)
-        method_value = out.pop("method")
-        if isinstance(method_value, str):
-            out["methods"] = [method_value]
-        else:
-            out["methods"] = method_value
+        if "methods" not in out and "method" in out:
+            out["methods"] = out.pop("method")
+        if "methods" in out:
+            out["methods"] = _normalize_methods_value(out["methods"])
         return out
 
     @model_validator(mode="before")
