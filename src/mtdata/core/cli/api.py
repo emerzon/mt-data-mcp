@@ -820,6 +820,17 @@ def _forecast_generate_typed_value_epilog() -> str:
     return "\n".join(lines)
 
 
+def _parse_cli_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "y", "on"}:
+        return True
+    if text in {"0", "false", "no", "n", "off"}:
+        return False
+    raise argparse.ArgumentTypeError("expected true or false")
+
+
 def _resolve_forecast_typed_cli_value(
     raw_value: Any,
     *,
@@ -917,6 +928,12 @@ def _add_forecast_generate_args(cmd_parser: argparse.ArgumentParser) -> None:
         default="price",
         help="Target quantity.",
     )
+    group_target.add_argument(
+        "--proxy",
+        choices=["squared_return", "abs_return", "log_r2"],
+        default=None,
+        help="Volatility proxy when quantity=volatility.",
+    )
 
     group_uncertainty = cmd_parser.add_argument_group("Uncertainty")
     group_uncertainty.add_argument(
@@ -978,6 +995,25 @@ def _add_forecast_generate_args(cmd_parser: argparse.ArgumentParser) -> None:
         default=None,
         metavar="SECTION.KEY=VALUE",
         help="Override nested params (method, denoise, features, dimred, target).",
+    )
+
+    group_exec = cmd_parser.add_argument_group("Execution")
+    group_exec.add_argument(
+        "--async-mode",
+        dest="async_mode",
+        type=_parse_cli_bool,
+        nargs="?",
+        const=True,
+        default=False,
+        metavar="BOOL",
+        help="Submit heavy model training in the background when supported.",
+    )
+    group_exec.add_argument(
+        "--model-id",
+        dest="model_id",
+        type=str,
+        default=None,
+        help="Use a trained-model params_hash from the model store.",
     )
 
     group_dbg = cmd_parser.add_argument_group("Debug")
@@ -1596,13 +1632,14 @@ def main():
                 params=params,
                 ci_alpha=args.ci_alpha,
                 quantity=args.quantity,
+                proxy=args.proxy,
                 denoise=cast(Any, denoise or None),
                 features=features or None,
                 dimred_method=args.dimred_method,
                 dimred_params=dimred_params or None,
                 target_spec=target_spec or None,
-                async_mode=False,
-                model_id=None,
+                async_mode=bool(args.async_mode),
+                model_id=args.model_id,
                 detail=resolve_output_contract(args).shape_detail,
             )
 
