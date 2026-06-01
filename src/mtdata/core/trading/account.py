@@ -780,6 +780,8 @@ def trade_history(request: TradeHistoryRequest) -> Dict[str, Any]:
     `history_kind="deals"` returns executed fills with P&L and is the default
     for performance analysis. `history_kind="orders"` returns order lifecycle
     events for audit and reconciliation.
+    Compact deals use `fill_time`; compact orders use `placed_time` and
+    `done_time`. Full/detail rows retain native MT5 time fields.
     Use `detail="compact"` (default) for rows plus minimal envelope metadata.
     Use `detail="standard"` or `detail="full"` to include period context, and
     `detail="full"` to retain request echo fields.

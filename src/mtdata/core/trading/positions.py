@@ -485,7 +485,7 @@ _TRADE_HISTORY_ORDER_TOP_LEVEL_FIELDS = (
     "comment",
 )
 _TRADE_HISTORY_COMPACT_DEAL_FIELDS = (
-    "time",
+    "fill_time",
     "ticket",
     "deal_ticket",
     "order_ticket",
@@ -505,8 +505,8 @@ _TRADE_HISTORY_COMPACT_DEAL_FIELDS = (
     "exit_trigger_price",
 )
 _TRADE_HISTORY_COMPACT_ORDER_FIELDS = (
-    "time_setup",
-    "time_done",
+    "placed_time",
+    "done_time",
     "ticket",
     "order_ticket",
     "position_ticket",
@@ -600,8 +600,14 @@ def _compact_trade_history_row(
 ) -> Dict[str, Any]:
     compact = _round_trade_money_fields(row)
     if history_kind == "orders":
+        if "time_setup" in compact:
+            compact["placed_time"] = compact["time_setup"]
+        if "time_done" in compact:
+            compact["done_time"] = compact["time_done"]
         fields = _TRADE_HISTORY_COMPACT_ORDER_FIELDS
     else:
+        if "time" in compact:
+            compact["fill_time"] = compact["time"]
         action = _trade_history_action(compact, history_kind=history_kind)
         if action is not None:
             compact["action"] = action
@@ -719,6 +725,9 @@ def _trade_history_humanized_key(key: str) -> str:
         "sl": "SL",
         "tp": "TP",
         "time": "Time",
+        "fill_time": "Fill Time",
+        "placed_time": "Placed Time",
+        "done_time": "Done Time",
         "time_setup": "Setup Time",
         "time_done": "Done Time",
         "time_msc": "Time Msc",
