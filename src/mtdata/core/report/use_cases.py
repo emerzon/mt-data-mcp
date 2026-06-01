@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import time
 import warnings
 from datetime import datetime, timezone
@@ -16,6 +17,20 @@ _BARRIER_EV_EDGE_CONFLICT_NOTE = (
     "Expected value and break-even edge disagree; treat this barrier setup as "
     "lower-confidence and review win probability, payoff skew, and no-hit share."
 )
+
+
+def _round_report_barrier_metric(name: str, value: Any) -> Any:
+    try:
+        numeric = float(value)
+    except Exception:
+        return value
+    if not math.isfinite(numeric):
+        return value
+    if name in {"tp_pct", "sl_pct"}:
+        return round(numeric, 2)
+    if name in {"ev", "edge", "edge_vs_breakeven"}:
+        return round(numeric, 3)
+    return value
 
 
 def _report_time_label(value: Any) -> str | None:
@@ -807,22 +822,30 @@ def run_report_generate(  # noqa: C901
                         details: List[str] = [f"dir={dname}"]
                         barrier_entry: Dict[str, Any] = {}
                         if tp is not None:
-                            details.append(f"tp={format_number(tp)}%")
-                            barrier_entry["tp_pct"] = tp
+                            tp_out = _round_report_barrier_metric("tp_pct", tp)
+                            details.append(f"tp={format_number(tp_out)}%")
+                            barrier_entry["tp_pct"] = tp_out
                         if sl is not None:
-                            details.append(f"sl={format_number(sl)}%")
-                            barrier_entry["sl_pct"] = sl
+                            sl_out = _round_report_barrier_metric("sl_pct", sl)
+                            details.append(f"sl={format_number(sl_out)}%")
+                            barrier_entry["sl_pct"] = sl_out
                         if ev is not None:
-                            details.append(f"ev={format_number(ev)}")
-                            barrier_entry["ev"] = ev
+                            ev_out = _round_report_barrier_metric("ev", ev)
+                            details.append(f"ev={format_number(ev_out)}")
+                            barrier_entry["ev"] = ev_out
                         if edge is not None:
-                            details.append(f"edge={format_number(edge)}")
-                            barrier_entry["edge"] = edge
+                            edge_out = _round_report_barrier_metric("edge", edge)
+                            details.append(f"edge={format_number(edge_out)}")
+                            barrier_entry["edge"] = edge_out
                         if edge_vs_breakeven is not None:
-                            details.append(
-                                f"edge_vs_breakeven={format_number(edge_vs_breakeven)}"
+                            edge_be_out = _round_report_barrier_metric(
+                                "edge_vs_breakeven",
+                                edge_vs_breakeven,
                             )
-                            barrier_entry["edge_vs_breakeven"] = edge_vs_breakeven
+                            details.append(
+                                f"edge_vs_breakeven={format_number(edge_be_out)}"
+                            )
+                            barrier_entry["edge_vs_breakeven"] = edge_be_out
                         try:
                             conflict_metric = (
                                 "edge_vs_breakeven" if edge_vs_breakeven is not None else "edge"
@@ -859,22 +882,30 @@ def run_report_generate(  # noqa: C901
                             details.append(f"dir={str(direction)}")
                             barrier_entry["direction"] = str(direction)
                         if tp is not None:
-                            details.append(f"tp={format_number(tp)}%")
-                            barrier_entry["tp_pct"] = tp
+                            tp_out = _round_report_barrier_metric("tp_pct", tp)
+                            details.append(f"tp={format_number(tp_out)}%")
+                            barrier_entry["tp_pct"] = tp_out
                         if sl is not None:
-                            details.append(f"sl={format_number(sl)}%")
-                            barrier_entry["sl_pct"] = sl
+                            sl_out = _round_report_barrier_metric("sl_pct", sl)
+                            details.append(f"sl={format_number(sl_out)}%")
+                            barrier_entry["sl_pct"] = sl_out
                         if ev is not None:
-                            details.append(f"ev={format_number(ev)}")
-                            barrier_entry["ev"] = ev
+                            ev_out = _round_report_barrier_metric("ev", ev)
+                            details.append(f"ev={format_number(ev_out)}")
+                            barrier_entry["ev"] = ev_out
                         if edge is not None:
-                            details.append(f"edge={format_number(edge)}")
-                            barrier_entry["edge"] = edge
+                            edge_out = _round_report_barrier_metric("edge", edge)
+                            details.append(f"edge={format_number(edge_out)}")
+                            barrier_entry["edge"] = edge_out
                         if edge_vs_breakeven is not None:
-                            details.append(
-                                f"edge_vs_breakeven={format_number(edge_vs_breakeven)}"
+                            edge_be_out = _round_report_barrier_metric(
+                                "edge_vs_breakeven",
+                                edge_vs_breakeven,
                             )
-                            barrier_entry["edge_vs_breakeven"] = edge_vs_breakeven
+                            details.append(
+                                f"edge_vs_breakeven={format_number(edge_be_out)}"
+                            )
+                            barrier_entry["edge_vs_breakeven"] = edge_be_out
                         try:
                             conflict_metric = (
                                 "edge_vs_breakeven" if edge_vs_breakeven is not None else "edge"
