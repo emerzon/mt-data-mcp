@@ -332,6 +332,28 @@ def _ensure_chronos2_history_df(
     })
 
 
+def _regularize_chronos2_timestamps(timestamps: pd.DatetimeIndex) -> pd.DatetimeIndex:
+    """Return evenly spaced timestamps so Chronos-2 can infer dataframe frequency."""
+    if len(timestamps) < 3:
+        return timestamps
+    try:
+        if pd.infer_freq(timestamps) is not None:
+            return timestamps
+    except Exception:
+        pass
+    try:
+        deltas = pd.Series(timestamps).diff().dropna()
+        positive = deltas[deltas > pd.Timedelta(0)]
+        if positive.empty:
+            return timestamps
+        step = positive.median()
+        if not isinstance(step, pd.Timedelta) or step <= pd.Timedelta(0):
+            return timestamps
+        return pd.date_range(end=timestamps[-1], periods=len(timestamps), freq=step)
+    except Exception:
+        return timestamps
+
+
 def _build_chronos2_df_inputs(
     *,
     history_df: pd.DataFrame,
@@ -373,6 +395,7 @@ def _build_chronos2_df_inputs(
             covariate_history[col] = pd.to_numeric(covariate_history[col], errors="coerce").astype(float).ffill().bfill()
 
     timestamps = pd.to_datetime(frame["time"].astype(float).to_numpy(), unit="s", utc=True)
+    timestamps = _regularize_chronos2_timestamps(timestamps)
     context_df = pd.DataFrame({
         "item_id": np.repeat("series_0", len(frame)),
         "timestamp": timestamps,
@@ -404,6 +427,23 @@ def _build_chronos2_df_inputs(
             future_df[str(col)] = pd.to_numeric(covariate_future[col], errors="coerce").astype(float).to_numpy()
 
     return context_df, future_df, target_columns
+
+
+def _format_chronos2_runtime_error(exc: Exception) -> str:
+    message = str(exc).strip()
+    if message.startswith("chronos2 error:"):
+        return message
+    detail = message or repr(exc)
+    lowered = detail.lower()
+    if "could not infer frequency" in lowered or "infer frequency" in lowered:
+        return (
+            "chronos2 error: Chronos-2 could not infer a regular dataframe frequency. "
+            "mtdata regularizes MT5 bar timestamps before calling Chronos-2; if this "
+            "still fails, retry with a fixed liquid timeframe/symbol or use "
+            "chronos_bolt/theta. Details: "
+            f"{detail}"
+        )
+    return f"chronos2 error ({type(exc).__name__}): {detail}"
 
 
 def _extract_chronos2_predict_df_output(
@@ -549,7 +589,7 @@ class ChronosBoltMethod(PretrainedMethod):
         "chronos_bolt": ("chronos-forecasting>=2.0.0", "torch"),
     }
     CAPABILITY_NOTES = {
-        "chronos2": "Hugging Face model id via params.model_name (default: amazon/chronos-2; set device_map explicitly for stable CPU/CUDA routing).",
+        "chronos2": "Hugging Face model id via params.model_name (default: amazon/chronos-2); uses regularized bar timestamps for Chronos-2 frequency inference.",
         "chronos_bolt": "Uses Bolt-family checkpoints (default: amazon/chronos-bolt-base); set device_map explicitly for stable CPU/CUDA routing.",
     }
     PARAMS: List[Dict[str, Any]] = [
@@ -821,7 +861,7 @@ class ChronosBoltMethod(PretrainedMethod):
             return ForecastResult(forecast=f_vals, params_used=params_used, metadata=metadata)
             
         except Exception as ex:
-            raise RuntimeError(f"chronos2 error ({type(ex).__name__}): {ex!r}") from ex
+            raise RuntimeError(_format_chronos2_runtime_error(ex)) from ex
         finally:
             # Cached pipelines may be shared across requests; only drop local refs here.
             pipe = None
