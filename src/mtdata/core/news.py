@@ -287,6 +287,23 @@ def _attach_news_row_keys(result: Dict[str, Any]) -> Dict[str, Any]:
     if row_keys:
         out = dict(result)
         out["row_keys"] = row_keys
+        summary_present = False
+        summary_missing = False
+        for key in row_keys:
+            rows = result.get(key)
+            if not isinstance(rows, list):
+                continue
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                if "summary" in row:
+                    summary_present = True
+                else:
+                    summary_missing = True
+        if summary_present and summary_missing:
+            out["optional_item_fields"] = {
+                "summary": "source-dependent preview; omitted when unavailable"
+            }
         return out
     return result
 
