@@ -7,6 +7,7 @@ import math
 import os
 import pkgutil
 import time
+import warnings
 from functools import lru_cache
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -1319,8 +1320,15 @@ def _compact_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:
 def _discover_sktime_forecasters() -> Dict[str, Tuple[str, str]]:
     """Return mapping of forecaster class name (lower) -> (class_name, dotted path)."""
     try:
-        import sktime.forecasting as _sf  # type: ignore
-        from sktime.forecasting.base import BaseForecaster  # type: ignore
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=DeprecationWarning)
+            warnings.filterwarnings(
+                "ignore",
+                message=r".*swigvarlink.*",
+                category=DeprecationWarning,
+            )
+            import sktime.forecasting as _sf  # type: ignore
+            from sktime.forecasting.base import BaseForecaster  # type: ignore
     except Exception:
         return {}
 
@@ -1339,7 +1347,14 @@ def _discover_sktime_forecasters() -> Dict[str, Tuple[str, str]]:
         if not isinstance(mod_name, str) or _skip_module(mod_name):
             continue
         try:
-            module = importlib.import_module(mod_name)
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=DeprecationWarning)
+                warnings.filterwarnings(
+                    "ignore",
+                    message=r".*swigvarlink.*",
+                    category=DeprecationWarning,
+                )
+                module = importlib.import_module(mod_name)
         except Exception:
             continue
         for _, obj in vars(module).items():

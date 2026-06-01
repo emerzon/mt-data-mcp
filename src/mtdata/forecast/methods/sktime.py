@@ -370,7 +370,14 @@ class GenericSktimeMethod(SktimeMethod):
         try:
             module_path, class_name = estimator_path.rsplit('.', 1)
             import importlib
-            module = importlib.import_module(module_path)
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=DeprecationWarning)
+                warnings.filterwarnings(
+                    "ignore",
+                    message=r".*swigvarlink.*",
+                    category=DeprecationWarning,
+                )
+                module = importlib.import_module(module_path)
             estimator_cls = getattr(module, class_name)
         except (ValueError, ImportError, AttributeError) as e:
              raise ValueError(f"Could not import sktime estimator '{estimator_path}': {e}")
