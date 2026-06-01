@@ -159,6 +159,7 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
     Notes:
     - Barriers are provided via absolute prices (tp_abs/sl_abs), percentages
       (tp_pct/sl_pct), or ticks (tp_ticks/sl_ticks; uses `trade_tick_size`).
+      Use exactly one unit family per request; mixed units are rejected.
     - In discrete time, TP and SL can be hit in the same bar. Those ties are
       split 50/50 into `prob_tp_first` and `prob_sl_first`.
     """

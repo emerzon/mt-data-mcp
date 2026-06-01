@@ -276,6 +276,7 @@ def labels_triple_barrier(
       - Absolute prices: tp_abs/sl_abs
       - Percent offsets: tp_pct/sl_pct (0.5 => 0.5%)
       - Ticks: tp_ticks/sl_ticks (trade_tick_size from symbol info)
+      Use exactly one barrier unit family per call; mixed units are rejected.
 
     label_on='high_low' considers intrabar extremes for barrier hits; 'close' uses closes only.
     When both TP and SL are touched in the same high/low bar, the result is treated

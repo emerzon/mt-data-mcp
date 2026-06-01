@@ -216,12 +216,12 @@ class ForecastBarrierProbRequest(BaseModel):
     horizon: int = Field(12, ge=1)
     method: str = "hmm_mc"
     direction: str = "long"
-    tp_abs: Optional[float] = None
-    sl_abs: Optional[float] = None
-    tp_pct: Optional[float] = None
-    sl_pct: Optional[float] = None
-    tp_ticks: Optional[float] = None
-    sl_ticks: Optional[float] = None
+    tp_abs: Optional[float] = Field(None, description="Take-profit absolute price. Do not combine with percent or tick barriers.")
+    sl_abs: Optional[float] = Field(None, description="Stop-loss absolute price. Do not combine with percent or tick barriers.")
+    tp_pct: Optional[float] = Field(None, description="Take-profit percent move, e.g. 2.0 for 2%. Do not combine with price or tick barriers.")
+    sl_pct: Optional[float] = Field(None, description="Stop-loss percent move, e.g. 1.0 for 1%. Do not combine with price or tick barriers.")
+    tp_ticks: Optional[float] = Field(None, description="Take-profit distance in trade ticks. Do not combine with price or percent barriers.")
+    sl_ticks: Optional[float] = Field(None, description="Stop-loss distance in trade ticks. Do not combine with price or percent barriers.")
     params: Optional[Dict[str, Any]] = None
     denoise: Optional[DenoiseSpec] = None
     barrier: float = 0.0
