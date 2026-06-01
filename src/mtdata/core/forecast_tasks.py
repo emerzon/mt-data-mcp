@@ -242,6 +242,62 @@ def _serialize_model_handle(
     return payload
 
 
+def _model_store_state_payload(handle: Any) -> Dict[str, Any]:
+    try:
+        store = _get_model_store()
+        info = store.describe_model(handle)
+    except Exception:
+        return {"model_store_status": "unknown", "model_stored": None}
+
+    file_count = int(info.get("file_count") or 0)
+    expired = bool(info.get("expired")) if info.get("expired") is not None else False
+    if file_count <= 0:
+        status = "missing"
+    elif expired:
+        status = "expired"
+    else:
+        status = "present"
+
+    payload: Dict[str, Any] = {
+        "model_stored": file_count > 0,
+        "model_store_status": status,
+        "model_store_path": info.get("model_dir"),
+        "model_store_file_count": file_count,
+    }
+    if info.get("ttl_seconds") is not None:
+        payload["model_store_ttl_days"] = _days(info.get("ttl_seconds"))
+    return payload
+
+
+def _recent_completed_model_tasks(
+    *,
+    method: Optional[str] = None,
+    limit: int = 5,
+) -> List[Dict[str, Any]]:
+    try:
+        tasks = _get_task_manager().list_tasks(status="completed")
+    except Exception:
+        return []
+
+    rows: List[Dict[str, Any]] = []
+    for task in tasks:
+        handle = getattr(task, "result", None)
+        if handle is None:
+            continue
+        if method and getattr(handle, "method", None) != method:
+            continue
+        row = {
+            "task_id": task.task_id,
+            "model_id": handle.model_id,
+            "completed_at": getattr(task, "completed_at", None),
+        }
+        row.update(_model_store_state_payload(handle))
+        rows.append(row)
+        if len(rows) >= max(1, int(limit)):
+            break
+    return rows
+
+
 def _task_runtime_payload(task: Any, runtime: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     if not isinstance(runtime, dict):
         return {}
@@ -358,6 +414,7 @@ def _task_list_item_payload(
     if task.result is not None:
         payload["model_id"] = task.result.model_id
         payload["produced_model_ids"] = [task.result.model_id]
+        payload.update(_model_store_state_payload(task.result))
     if task.error:
         payload["error"] = task.error
 
@@ -739,6 +796,9 @@ def forecast_models_list(
                 "forecast_list_methods",
                 "forecast_models_cleanup",
             ]
+            recent_tasks = _recent_completed_model_tasks(method=method)
+            if recent_tasks:
+                out["recent_completed_tasks"] = recent_tasks
         return out
 
     return run_logged_operation(
