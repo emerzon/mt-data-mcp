@@ -118,8 +118,8 @@ _TICK_ROW_UNITS = {
     "mid": "price",
     "spread": "price",
     "tick_gap_ms": "milliseconds",
-    "volume": "mt5_tick_volume",
-    "volume_real": "traded_volume",
+    "tick_volume": "broker_tick_count",
+    "real_volume": "traded_volume",
 }
 
 
@@ -225,11 +225,13 @@ def _round_tick_price_payload(out: Dict[str, Any], digits: int) -> None:
         for key in ("bid", "ask", "mid", "spread"):
             if key in last_quote:
                 last_quote[key] = _round_price_value(last_quote[key], digits)
-    volume_stats = stats.get("volume") if isinstance(stats, dict) else None
-    if isinstance(volume_stats, dict):
-        for key in ("vwap_mid", "vwap_last"):
-            if key in volume_stats:
-                volume_stats[key] = _round_price_value(volume_stats[key], digits)
+    if isinstance(stats, dict):
+        for volume_key in ("tick_volume", "real_volume"):
+            volume_stats = stats.get(volume_key)
+            if isinstance(volume_stats, dict):
+                for key in ("vwap_mid", "vwap_last"):
+                    if key in volume_stats:
+                        volume_stats[key] = _round_price_value(volume_stats[key], digits)
 
 
 def _tick_units_for_headers(headers: List[str]) -> Dict[str, str]:
@@ -1989,7 +1991,7 @@ def _tick_flag_definitions() -> tuple[tuple[int, str, str], ...]:
         ),
         (
             _mt5_tick_flag_value("TICK_FLAG_VOLUME", 16),
-            "volume",
+            "tick_volume",
             "Tick volume changed or is present in the tick.",
         ),
         (
@@ -2004,7 +2006,7 @@ def _tick_flag_definitions() -> tuple[tuple[int, str, str], ...]:
         ),
         (
             _mt5_tick_flag_value("TICK_FLAG_VOLUME_REAL", 1024),
-            "volume_real",
+            "real_volume",
             "Real volume changed or is present in the tick.",
         ),
     )
@@ -2268,7 +2270,7 @@ def fetch_ticks(  # noqa: C901
         headers.extend(["bid", "ask"])
         if full_rows:
             headers.extend(["mid", "spread", "tick_gap_ms"])
-        headers.extend(["last", "volume", "volume_real", "flags", "flags_decoded"])
+        headers.extend(["last", "tick_volume", "real_volume", "flags", "flags_decoded"])
 
         # Choose a consistent millisecond time format for tick rows.
         # Low-level tick fetch helpers already normalize MT5 times to UTC.
@@ -2318,8 +2320,8 @@ def fetch_ticks(  # noqa: C901
             df_ticks["spread"] = df_ticks["ask"] - df_ticks["bid"]
             df_ticks["tick_gap_ms"] = tick_gap_ms
         df_ticks["last"] = lasts
-        df_ticks["volume"] = volumes
-        df_ticks["volume_real"] = volumes_real
+        df_ticks["tick_volume"] = volumes
+        df_ticks["real_volume"] = volumes_real
         df_ticks["flags"] = flags
         df_ticks["flags_decoded"] = [
             _decode_tick_flags(flag_value) for flag_value in flags
@@ -2637,16 +2639,16 @@ def fetch_ticks(  # noqa: C901
                 if detailed_stats:
                     vol_out["dist"] = _series_stats(vol_vals_num, total_count=len(df_stats))
                 if not small_summary_sample:
-                    out["stats"]["volume"] = vol_out
+                    out["stats"][volume_kind] = vol_out
             else:
                 if detailed_stats:
-                    out["stats"]["volume"] = {
+                    out["stats"][volume_kind] = {
                         "kind": volume_kind,
                         "per_second": tick_rate_per_second,
                         "sum": int(len(df_stats)),
                     }
                 elif not small_summary_sample:
-                    out["stats"]["volume"] = {"kind": volume_kind}
+                    out["stats"][volume_kind] = {"kind": volume_kind}
 
             _add_tick_data_quality(out)
             _add_tick_last_quality(out)
@@ -2687,8 +2689,8 @@ def fetch_ticks(  # noqa: C901
                     c
                     for c in ["bid", "ask"]
                     + (["last"] if has_last else [])
-                    + (["volume"] if has_volume else [])
-                    + (["volume_real"] if has_real_volume else [])
+                    + (["tick_volume"] if has_volume else [])
+                    + (["real_volume"] if has_real_volume else [])
                 ]
                 payload["simplify"] = meta
             _add_tick_data_quality(payload)
@@ -2706,9 +2708,9 @@ def fetch_ticks(  # noqa: C901
                 if has_last:
                     cols.append('last')
                 if has_volume:
-                    cols.append('volume')
+                    cols.append('tick_volume')
                 if has_real_volume:
-                    cols.append('volume_real')
+                    cols.append('real_volume')
                 n_out = _choose_simplify_points(original_count, simplify_used)
                 per = max(3, int(round(n_out / max(1, len(cols)))))
                 idx_set: set = set([0, original_count - 1])
@@ -2718,8 +2720,8 @@ def fetch_ticks(  # noqa: C901
                     "bid": bids,
                     "ask": asks,
                     "last": lasts,
-                    "volume": volumes,
-                    "volume_real": volumes_real,
+                    "tick_volume": volumes,
+                    "real_volume": volumes_real,
                 }
                 series_by_col: Dict[str, List[float]] = {c: extracted_columns[c] for c in cols}
                 for c in cols:
@@ -2851,8 +2853,8 @@ def fetch_ticks(  # noqa: C901
                     c
                     for c in ["bid", "ask"]
                     + (["last"] if has_last else [])
-                    + (["volume"] if has_volume else [])
-                    + (["volume_real"] if has_real_volume else [])
+                    + (["tick_volume"] if has_volume else [])
+                    + (["real_volume"] if has_real_volume else [])
                 ],
             }
             try:
