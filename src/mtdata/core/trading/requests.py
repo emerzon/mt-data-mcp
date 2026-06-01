@@ -281,7 +281,12 @@ class TradeVarCvarRequest(BaseModel):
             "or a percentage such as 95. Values must resolve to 0 < confidence < 1."
         ),
     )
-    method: str = "historical"
+    method: str = Field(
+        default="historical",
+        description=(
+            "Tail-risk method. Use historical, gaussian, cornish_fisher, or ewma."
+        ),
+    )
     transform: str = "log_return"
     min_observations: int = 50
     detail: CompactFullDetailLiteral = Field(
