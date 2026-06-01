@@ -1116,6 +1116,7 @@ def _build_market_scan_bar_row(
     row.update(
         {
             "timeframe": timeframe,
+            "data_source": f"{timeframe}_bars",
             "time": _format_time_minimal(bar_time) if bar_time is not None else None,
             **_market_scan_freshness_fields(bar_time, timeframe=timeframe),
             "open": _market_scan_round(open_price, digits=digits),
@@ -1690,6 +1691,7 @@ def _build_market_scan_signal_row(
     row.update(
         {
             "timeframe": timeframe,
+            "data_source": f"{timeframe}_bars",
             "time": _format_time_minimal(bar_time) if bar_time is not None else None,
             **_market_scan_freshness_fields(bar_time, timeframe=timeframe),
             "open": _market_scan_round(open_price, digits=digits),
@@ -2688,7 +2690,11 @@ def market_scan(  # noqa: C901
             compact_headers = [
                 "symbol",
                 "group",
+                "timeframe",
+                "data_source",
+                "time",
                 "data_stale",
+                "freshness",
                 "close",
                 "price_change_pct",
                 "tick_volume",
