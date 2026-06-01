@@ -975,15 +975,20 @@ def _build_candle_headers(
     return headers
 
 
-def _candle_volume_metadata(headers: List[str]) -> Dict[str, str]:
-    meta: Dict[str, str] = {}
+def _candle_volume_metadata(headers: List[str]) -> Dict[str, Any]:
+    meta: Dict[str, Any] = {}
+    units: Dict[str, str] = {}
     if "tick_volume" in headers:
         meta["volume_type"] = "tick_count"
         meta["volume_note"] = (
             "MT5 tick_volume is broker tick count for the bar, not exchange traded volume."
         )
+        units["tick_volume"] = "broker_tick_count"
     if "real_volume" in headers:
         meta["real_volume_type"] = "traded_volume"
+        units["real_volume"] = "traded_volume"
+    if units:
+        meta["units"] = units
     return meta
 
 
