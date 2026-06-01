@@ -328,6 +328,61 @@ def _copy_pagination_meta(source: Dict[str, Any], target: Dict[str, Any]) -> Non
             target[key] = source[key]
 
 
+def _flatten_temporal_dimension_groups(
+    groups: List[Any],
+    *,
+    formatter: Any,
+    best_keys: Tuple[str, ...],
+) -> Tuple[
+    List[Dict[str, Any]],
+    List[Dict[str, Any]],
+    Dict[str, Dict[str, Any]],
+]:
+    flat_groups: List[Dict[str, Any]] = []
+    best_rows: List[Dict[str, Any]] = []
+    pagination: Dict[str, Dict[str, Any]] = {}
+    for item in groups:
+        if not isinstance(item, dict):
+            continue
+        dimension = str(item.get("dimension") or "")
+        breakdown = item.get("breakdown")
+        if not dimension or not isinstance(breakdown, list):
+            continue
+        formatted_rows = [
+            formatter(row)
+            for row in breakdown
+            if isinstance(row, dict)
+        ]
+        for row in formatted_rows:
+            flat_row = {"dimension": dimension}
+            flat_row.update(row)
+            flat_groups.append(flat_row)
+        page_meta: Dict[str, Any] = {}
+        _copy_pagination_meta(item, page_meta)
+        if page_meta:
+            pagination[dimension] = page_meta
+        best = max(
+            (
+                row
+                for row in formatted_rows
+                if row.get("avg_return") is not None
+            ),
+            key=lambda row: float(row.get("avg_return") or 0.0),
+            default=None,
+        )
+        if best:
+            best_row = {"dimension": dimension}
+            best_row.update(
+                {
+                    key: best[key]
+                    for key in best_keys
+                    if key in best
+                }
+            )
+            best_rows.append(best_row)
+    return flat_groups, best_rows, pagination
+
+
 def _base_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     return {
         key: payload[key]
@@ -353,42 +408,16 @@ def _compact_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     groups = payload.get("groups")
     if isinstance(groups, list) and groups:
         if all(isinstance(row, dict) and "dimension" in row for row in groups):
-            compact_groups = []
-            best_by_dimension: Dict[str, Dict[str, Any]] = {}
-            for item in groups:
-                dimension = str(item.get("dimension") or "")
-                breakdown = item.get("breakdown")
-                if not isinstance(breakdown, list):
-                    continue
-                compact_breakdown = [
-                    _compact_temporal_stats(row)
-                    for row in breakdown
-                    if isinstance(row, dict)
-                ]
-                group_item = {
-                    "dimension": dimension,
-                    "breakdown": compact_breakdown,
-                }
-                _copy_pagination_meta(item, group_item)
-                compact_groups.append(group_item)
-                best = max(
-                    (
-                        row
-                        for row in compact_breakdown
-                        if row.get("avg_return") is not None
-                    ),
-                    key=lambda row: float(row.get("avg_return") or 0.0),
-                    default=None,
-                )
-                if best:
-                    best_by_dimension[dimension] = {
-                        key: best[key]
-                        for key in ("group", "group_label", "avg_return", "win_rate")
-                        if key in best
-                    }
+            compact_groups, best_rows, pagination = _flatten_temporal_dimension_groups(
+                groups,
+                formatter=_compact_temporal_stats,
+                best_keys=("group", "group_label", "avg_return", "win_rate"),
+            )
             out["groups"] = compact_groups
-            if best_by_dimension:
-                out["best"] = best_by_dimension
+            if best_rows:
+                out["best"] = best_rows
+            if pagination:
+                out["dimension_pagination"] = pagination
             return out
         compact_groups = [
             _compact_temporal_stats(row)
@@ -441,11 +470,19 @@ def _summary_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     groups = compact.get("groups")
     if isinstance(groups, list):
         if all(isinstance(row, dict) and "dimension" in row for row in groups):
-            out["group_counts"] = {
-                str(row.get("dimension")): len(row.get("breakdown") or [])
-                for row in groups
-                if isinstance(row, dict)
-            }
+            pagination = compact.get("dimension_pagination")
+            if isinstance(pagination, dict):
+                out["group_counts"] = {
+                    str(dimension): int(meta.get("total_count") or 0)
+                    for dimension, meta in pagination.items()
+                    if isinstance(meta, dict)
+                }
+            else:
+                counts: Dict[str, int] = {}
+                for row in groups:
+                    dimension = str(row.get("dimension") or "")
+                    counts[dimension] = counts.get(dimension, 0) + 1
+                out["group_counts"] = counts
         else:
             out["group_count"] = len(groups)
     if compact.get("best") not in (None, "", [], {}):
@@ -469,42 +506,16 @@ def _standard_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     groups = payload.get("groups")
     if isinstance(groups, list) and groups:
         if all(isinstance(row, dict) and "dimension" in row for row in groups):
-            standard_groups = []
-            best_by_dimension: Dict[str, Dict[str, Any]] = {}
-            for item in groups:
-                dimension = str(item.get("dimension") or "")
-                breakdown = item.get("breakdown")
-                if not isinstance(breakdown, list):
-                    continue
-                standard_breakdown = [
-                    _standard_temporal_stats(row)
-                    for row in breakdown
-                    if isinstance(row, dict)
-                ]
-                group_item = {
-                    "dimension": dimension,
-                    "breakdown": standard_breakdown,
-                }
-                _copy_pagination_meta(item, group_item)
-                standard_groups.append(group_item)
-                best = max(
-                    (
-                        row
-                        for row in standard_breakdown
-                        if row.get("avg_return") is not None
-                    ),
-                    key=lambda row: float(row.get("avg_return") or 0.0),
-                    default=None,
-                )
-                if best:
-                    best_by_dimension[dimension] = {
-                        key: best[key]
-                        for key in ("group_label", "avg_return", "win_rate")
-                        if key in best
-                    }
+            standard_groups, best_rows, pagination = _flatten_temporal_dimension_groups(
+                groups,
+                formatter=_standard_temporal_stats,
+                best_keys=("group_label", "avg_return", "win_rate"),
+            )
             out["groups"] = standard_groups
-            if best_by_dimension:
-                out["best"] = best_by_dimension
+            if best_rows:
+                out["best"] = best_rows
+            if pagination:
+                out["dimension_pagination"] = pagination
         else:
             standard_groups = [
                 _standard_temporal_stats(row)
