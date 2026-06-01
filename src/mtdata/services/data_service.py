@@ -1636,11 +1636,6 @@ def fetch_candles(  # noqa: C901
             },
         }
         volume_metadata = _candle_volume_metadata(headers)
-        if ohlcv not in (None, ""):
-            volume_metadata = {
-                **_available_candle_volume_metadata(rates),
-                **volume_metadata,
-            }
 
         payload.update({
             "success": True,

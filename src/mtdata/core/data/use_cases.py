@@ -210,6 +210,7 @@ def _run_data_fetch_candles_impl(
         _prune_zero_candle_exclusions(result)
         if detail_mode == "compact":
             result = _compact_candles_payload(result)
+            _slim_projected_candles_payload(result)
             _drop_redundant_session_gap_warnings(result)
         elif detail_mode == "summary":
             result = _summary_candles_payload(result)
@@ -413,6 +414,29 @@ def _compact_candles_payload(
         compact["spread_estimate"] = public_diagnostics["spread_estimate"]
     _filter_compact_routine_session_gaps(compact)
     return compact
+
+
+def _slim_projected_candles_payload(payload: Dict[str, Any]) -> None:
+    if not bool(payload.get("ohlcv_filter_applied")):
+        return
+    rows = payload.get("data")
+    projected_fields: set[str] = set()
+    if isinstance(rows, list):
+        for row in rows:
+            if isinstance(row, dict):
+                projected_fields.update(str(key) for key in row if str(key) != "time")
+    payload.pop("ohlcv_filter_applied", None)
+    if not projected_fields or projected_fields.isdisjoint({"tick_volume", "real_volume", "volume"}):
+        for key in ("volume_type", "volume_unit", "real_volume_type", "real_volume_unit"):
+            payload.pop(key, None)
+    if "spread" not in projected_fields:
+        payload.pop("spread_estimate", None)
+        payload.pop("spread_unavailable", None)
+    if not any(isinstance(row, dict) and row.get("is_forming") for row in rows or []):
+        payload.pop("forming_candle_status", None)
+        payload.pop("has_forming_candle", None)
+        payload.pop("forming_candle_included", None)
+        payload.pop("forming_candle_skipped", None)
 
 
 def _filter_compact_routine_session_gaps(payload: Dict[str, Any]) -> None:
