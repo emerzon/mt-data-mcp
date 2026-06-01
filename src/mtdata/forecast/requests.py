@@ -142,7 +142,12 @@ class ForecastConformalIntervalsRequest(BaseModel):
     horizon: int = Field(12, ge=1)
     steps: int = Field(25, ge=1, description="Number of rolling-origin calibration anchors.")
     spacing: int = Field(20, ge=1, description="Bars between consecutive calibration anchors.")
-    ci_alpha: float = Field(0.1, gt=0.0, lt=1.0)
+    ci_alpha: float = Field(
+        0.1,
+        gt=0.0,
+        lt=1.0,
+        description="Conformal alpha; 0.10 gives 90% confidence, 0.05 gives 95%. Values outside 0.05-0.20 are warned.",
+    )
     denoise: Optional[DenoiseSpec] = None
     params: Optional[Dict[str, Any]] = None
     detail: CompactFullDetailLiteral = "compact"

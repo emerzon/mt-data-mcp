@@ -722,6 +722,24 @@ def _conformal_summary(conformal: Any) -> Optional[Dict[str, Any]]:
     return out or None
 
 
+def _conformal_alpha_warning(ci_alpha: Any) -> Optional[str]:
+    alpha = _finite_float(ci_alpha)
+    if alpha is None:
+        return None
+    confidence = 1.0 - float(alpha)
+    if alpha < 0.05:
+        return (
+            f"ci_alpha={alpha:g} gives a {confidence:.0%} interval, which is "
+            "unusually wide for trading decisions; typical values are 0.05 or 0.10."
+        )
+    if alpha > 0.20:
+        return (
+            f"ci_alpha={alpha:g} gives a {confidence:.0%} interval, which is "
+            "unusually narrow for risk management; typical values are 0.05 or 0.10."
+        )
+    return None
+
+
 def _apply_conformal_intervals_detail(
     payload: Dict[str, Any],
     request: ForecastConformalIntervalsRequest,
@@ -756,6 +774,7 @@ def _apply_conformal_intervals_detail(
         "confidence_level",
         "ci_status",
         "ci_available",
+        "ci_warning",
         "last_price",
         "last_price_source",
         "warnings",
@@ -1696,6 +1715,7 @@ def run_forecast_conformal_intervals(
         result["confidence_level"] = round(1.0 - float(request.ci_alpha), 6)
         result["ci_status"] = "available"
         result["ci_available"] = True
+        alpha_warning = _conformal_alpha_warning(request.ci_alpha)
         warnings_out = result.get("warnings")
         if isinstance(warnings_out, list):
             filtered_warnings = [
@@ -1705,6 +1725,14 @@ def run_forecast_conformal_intervals(
                 result["warnings"] = filtered_warnings
             else:
                 result.pop("warnings", None)
+        if alpha_warning:
+            result["ci_warning"] = alpha_warning
+            warnings_list = result.get("warnings")
+            if not isinstance(warnings_list, list):
+                warnings_list = []
+            if alpha_warning not in warnings_list:
+                warnings_list.append(alpha_warning)
+            result["warnings"] = warnings_list
         result = _apply_conformal_intervals_detail(result, request)
     except Exception as exc:
         log_operation_exception(
