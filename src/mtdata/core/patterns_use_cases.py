@@ -212,6 +212,46 @@ def _attach_signal_bias_summary(resp: Dict[str, Any], deps: "PatternsDetectDeps"
     summary["signal_bias"] = signal_bias
 
 
+def _classic_ensemble_breakdown(
+    per_engine: Dict[str, List[Dict[str, Any]]],
+    engines: List[str],
+    weights: Dict[str, float],
+    include_completed: bool,
+) -> List[Dict[str, Any]]:
+    rows_out: List[Dict[str, Any]] = []
+    total_weight = float(sum(max(0.0, float(weights.get(engine, 1.0))) for engine in engines)) or 1.0
+    for engine in engines:
+        rows = [row for row in per_engine.get(engine, []) if isinstance(row, dict)]
+        if include_completed:
+            visible = rows
+        else:
+            visible = [
+                row
+                for row in rows
+                if str(row.get("status", "")).strip().lower() == "forming"
+            ]
+        weight = max(0.0, float(weights.get(engine, 1.0)))
+        confidences: List[float] = []
+        for row in visible:
+            try:
+                confidences.append(float(row.get("confidence") or 0.0))
+            except Exception:
+                continue
+        top_confidence = max(confidences) if confidences else 0.0
+        rows_out.append(
+            {
+                "engine": engine,
+                "weight": round(weight, 4),
+                "effective_weight": round(weight / total_weight, 4),
+                "n_patterns": len(visible),
+                "top_confidence": round(float(top_confidence), 4),
+                "contribution_score": round(float(weight * len(visible)), 4),
+            }
+        )
+    rows_out.sort(key=lambda item: float(item.get("contribution_score") or 0.0), reverse=True)
+    return rows_out
+
+
 def _all_mode_invalid_config_keys(
     config: Optional[Dict[str, Any]],
     *,
@@ -520,6 +560,14 @@ def run_patterns_detect(  # noqa: C901
         resp["engine_findings"] = deps.summarize_engine_findings(
             per_engine, engines, request.include_completed
         )
+        if run_ensemble:
+            resp["ensemble_weights"] = weight_map
+            resp["ensemble_breakdown"] = _classic_ensemble_breakdown(
+                per_engine,
+                engines,
+                weight_map,
+                request.include_completed,
+            )
         _attach_signal_bias_summary(resp, deps)
         if engine_errors:
             resp["engine_errors"] = engine_errors

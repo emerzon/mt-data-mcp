@@ -668,6 +668,8 @@ def _compact_patterns_payload(
         "engines_run",
         "engine_findings",
         "engine_errors",
+        "ensemble_weights",
+        "ensemble_breakdown",
         "scanned_timeframes",
     ):
         value = payload.get(key)
