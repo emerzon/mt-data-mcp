@@ -11,6 +11,17 @@ import numpy as np
 from ..services.options_service import get_options_chain
 
 
+def _quantlib_pricing_assumptions(model: str) -> Dict[str, str]:
+    return {
+        "source": "QuantLib",
+        "model": model,
+        "day_count": "Actual365Fixed",
+        "calendar": "UnitedStates.NYSE",
+        "rate_compounding": "continuous_flat",
+        "maturity_basis": "calendar_days",
+    }
+
+
 def price_barrier_option_quantlib(
     *,
     spot: float,
@@ -137,6 +148,9 @@ def price_barrier_option_quantlib(
         "delta": float(delta) if math.isfinite(delta) else None,
         "gamma": float(gamma) if math.isfinite(gamma) else None,
         "vega": float(vega) if math.isfinite(vega) else None,
+        "pricing_assumptions": _quantlib_pricing_assumptions(
+            "BlackScholesMerton analytic barrier"
+        ),
         "params_used": _barrier_option_params(
             spot=spot_val,
             strike=strike_val,
@@ -316,6 +330,9 @@ def calibrate_heston_quantlib_from_options(
             "rho": float(model.rho()),
             "v0": float(model.v0()),
         },
+        "pricing_assumptions": _quantlib_pricing_assumptions(
+            "Heston analytic calibration"
+        ),
         "risk_free_rate": float(risk_free_rate),
         "dividend_yield": float(dividend_yield),
         "sample_contracts": rows[:10],

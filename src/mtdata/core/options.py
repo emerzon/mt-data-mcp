@@ -127,6 +127,7 @@ def _apply_options_detail(
                 "price",
                 "delta",
                 "units",
+                "pricing_assumptions",
                 "pricing_note",
                 "detail",
             )
@@ -144,6 +145,7 @@ def _apply_options_detail(
                 "spot",
                 "calibration_error_rmse",
                 "params",
+                "pricing_assumptions",
                 "detail",
             )
             if key in out
