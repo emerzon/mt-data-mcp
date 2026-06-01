@@ -25,10 +25,10 @@ from ...utils.coercion import coerce_finite_float
 from ..output_contract import normalize_output_detail
 
 _INDICATOR_FORMAT_HELP = (
-    "Use bare names like 'rsi', underscore forms like 'rsi_14', "
-    "key-value specs like 'sma=20', compact specs like 'sma(20)' "
-    "and 'macd(12,26,9)', or named specs like "
-    "'rsi(length=14)' and 'macd(fast=12,slow=26,signal=9)'."
+    "Prefer compact CLI specs like 'rsi(14),macd(12,26,9)' "
+    "or JSON arrays like '[{\"name\":\"rsi\",\"params\":[14]}]'. "
+    "Bare names, underscore forms like 'rsi_14', key-value specs like "
+    "'sma=20', and named params like 'rsi(length=14)' also work."
 )
 
 
@@ -250,10 +250,10 @@ def _normalize_indicator_entry(value: Any) -> Dict[str, Any]:
 def _normalize_indicator_specs(value: Any) -> Any:
     if value is None:
         return None
-    if isinstance(value, str):
-        stripped = value.strip()
+    def _normalize_indicator_string(text_value: str) -> List[Dict[str, Any]]:
+        stripped = text_value.strip()
         if not stripped:
-            return None
+            return []
         if stripped.startswith("[") and stripped.endswith("]"):
             try:
                 parsed = json.loads(stripped)
@@ -262,8 +262,20 @@ def _normalize_indicator_specs(value: Any) -> Any:
             if isinstance(parsed, list):
                 return [_normalize_indicator_entry(item) for item in parsed]
         return [_normalize_indicator_entry(token) for token in _split_indicator_spec_tokens(stripped)]
+
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return None
+        return _normalize_indicator_string(stripped)
     if isinstance(value, list):
-        return [_normalize_indicator_entry(item) for item in value]
+        entries: List[Dict[str, Any]] = []
+        for item in value:
+            if isinstance(item, str):
+                entries.extend(_normalize_indicator_string(item))
+            else:
+                entries.append(_normalize_indicator_entry(item))
+        return entries
     return value
 
 

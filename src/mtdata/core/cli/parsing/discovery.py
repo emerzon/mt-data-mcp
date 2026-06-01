@@ -60,7 +60,7 @@ _COMMAND_PARAM_CHOICE_OVERRIDES: Dict[tuple[str, str], list[str]] = {
 
 
 _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
-    ("data_fetch_candles", "indicators"): "Technical indicators. Use bare names like rsi, underscore forms like rsi_14, key-value specs like sma=20, positional specs like sma(20) and macd(12,26,9), or named specs like rsi(length=14) and macd(fast=12,slow=26,signal=9). Use params syntax, not sma,20.",
+    ("data_fetch_candles", "indicators"): "Technical indicators. Prefer compact CLI specs like 'rsi(14),macd(12,26,9)' or JSON arrays like '[{\"name\":\"rsi\",\"params\":[14]}]'. Bare names, rsi_14, sma=20, and named params like rsi(length=14) also work. Use params syntax, not sma,20.",
     ("finviz_screen", "filters"): "Filter key=value pairs, operator aliases like beta_under=1, Finviz shorthand, or JSON object. Examples: 'country=USA,marketcap=mega', 'pe_under=15,beta_under=1', 'cap_largeover,exch_nyse', '{\"Exchange\":\"NASDAQ\",\"Sector\":\"Technology\"}'. Common keys include Exchange, Index, Sector, Industry, Country, Market Cap., P/E, Dividend Yield, RSI (14), Average Volume, and Price.",
     ("finviz_screen", "limit"): "Max screener results to return on this page.",
     ("finviz_screen", "order"): "Finviz sort key. Example: -marketcap for descending or price for ascending.",
