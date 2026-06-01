@@ -1329,6 +1329,7 @@ _TOP_MARKETS_COMPACT_SPREAD_HEADERS = [
     "ask",
     "spread_pct",
     "spread_points",
+    "spread_pips",
 ]
 
 _TOP_MARKETS_COMPACT_BAR_HEADERS = [
@@ -2741,6 +2742,7 @@ def market_scan(  # noqa: C901
                 "close",
                 "price_change_pct",
                 "tick_volume",
+                "spread_pct",
                 "spread_points",
                 "spread_pips",
             ]
