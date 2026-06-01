@@ -1289,6 +1289,12 @@ def _market_scan_freshness_summary(rows: List[Dict[str, Any]]) -> Dict[str, Any]
         "freshness": freshness,
         "stale_rows": int(stale_count),
     }
+    if stale_count:
+        out["stale_symbols"] = [
+            str(row.get("symbol"))
+            for row in rows
+            if bool(row.get("data_stale")) and str(row.get("symbol") or "").strip()
+        ]
     row_times = [
         str(row.get("time") or "").strip()
         for row in rows
