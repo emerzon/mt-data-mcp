@@ -2216,6 +2216,7 @@ def fetch_ticks(  # noqa: C901
         flags: List[int] = []
         volumes: List[float] = []
         volumes_real: List[float] = []
+        quote_types: List[str] = []
         for tick in ticks:
             _epochs.append(_tick_epoch_seconds(tick))
             bid_value = _finite_or_none(_tick_field(tick, "bid"))
@@ -2235,6 +2236,14 @@ def fetch_ticks(  # noqa: C901
             missing_side = _one_sided_zero_spread_missing_side(bid, ask, flag_value)
             effective_bids.append(None if bid_value is None or missing_side == "bid" else bid)
             effective_asks.append(None if ask_value is None or missing_side == "ask" else ask)
+            if missing_side == "bid" or (bid_value is None and ask_value is not None):
+                quote_types.append("ask_only")
+            elif missing_side == "ask" or (ask_value is None and bid_value is not None):
+                quote_types.append("bid_only")
+            elif bid_value is None and ask_value is None:
+                quote_types.append("no_quote")
+            else:
+                quote_types.append("bid_ask")
             try:
                 volumes.append(float(_tick_field(tick, "volume")))
             except (TypeError, ValueError):
@@ -2264,6 +2273,9 @@ def fetch_ticks(  # noqa: C901
         if full_rows:
             headers.append("time_epoch")
         headers.extend(["bid", "ask"])
+        include_quote_type = any(value != "bid_ask" for value in quote_types)
+        if include_quote_type:
+            headers.append("quote_type")
         if full_rows:
             headers.extend(["mid", "spread", "tick_gap_ms"])
         headers.extend(["last", "tick_volume", "real_volume", "flags", "flags_decoded"])
@@ -2319,6 +2331,8 @@ def fetch_ticks(  # noqa: C901
         df_ticks["tick_volume"] = volumes
         df_ticks["real_volume"] = volumes_real
         df_ticks["flags"] = flags
+        if include_quote_type:
+            df_ticks["quote_type"] = quote_types
         df_ticks["flags_decoded"] = [
             _decode_tick_flags(flag_value) for flag_value in flags
         ]
@@ -2333,6 +2347,10 @@ def fetch_ticks(  # noqa: C901
                 "one_sided_zero_spread_ratio": round(one_sided_ratio, 4),
                 "spread_ticks_excluded": int(one_sided_zero_spread_count),
                 "warning_ratio": _ONE_SIDED_TICK_WARNING_RATIO,
+                "quote_type_counts": {
+                    kind: quote_types.count(kind)
+                    for kind in sorted(set(quote_types))
+                },
             }
             if one_sided_ratio < _ONE_SIDED_TICK_WARNING_RATIO:
                 payload["data_quality"]["one_sided_zero_spread_status"] = "info"
