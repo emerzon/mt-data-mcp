@@ -84,6 +84,7 @@ _TRADE_PLACE_PREVIEW_KEYS = (
     "require_sl_tp",
     "auto_close_on_sl_tp_fail",
     "magic",
+    "comment",
     "requested_price",
     "requested_sl",
     "requested_tp",
@@ -929,6 +930,8 @@ def run_trade_place(  # noqa: C901
                 preview["requested_price"] = request.price
             if request.magic is not None:
                 preview["magic"] = request.magic
+            if request.comment:
+                preview["comment"] = request.comment
             if request.stop_loss not in (None, 0):
                 preview["requested_sl"] = request.stop_loss
             if request.take_profit not in (None, 0):
