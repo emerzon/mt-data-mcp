@@ -3,20 +3,30 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.responses import JSONResponse
 from starlette.staticfiles import StaticFiles
 
 from ..bootstrap.runtime import WebApiRuntimeSettings, load_web_api_runtime_settings
+from .output_serialization import sanitize_json
 
 logger = logging.getLogger(__name__)
+
+
+class SafeJSONResponse(JSONResponse):
+    """JSON response that preserves strict JSON by converting NaN/inf to null."""
+
+    def render(self, content: Any) -> bytes:
+        return super().render(sanitize_json(content))
 
 
 def create_web_api_app(settings: WebApiRuntimeSettings | None = None) -> FastAPI:
     """Create the shared FastAPI app with configured CORS middleware."""
     runtime = settings or load_web_api_runtime_settings()
-    app = FastAPI(title="mtdata-webui", version="0.1.0")
+    app = FastAPI(title="mtdata-webui", version="0.1.0", default_response_class=SafeJSONResponse)
     origins = list(runtime.cors_origins)
     if not origins:
         origins = ["http://127.0.0.1:5173", "http://localhost:5173"]
