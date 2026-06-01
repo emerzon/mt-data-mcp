@@ -544,6 +544,10 @@ def _get_forecast_methods_data():
     return _forecast_module().get_forecast_methods_data()
 
 
+def _get_volatility_methods_data():
+    return _forecast_volatility_module().get_volatility_methods_data()
+
+
 def _get_forecast_methods_snapshot():
     return _forecast_methods_module().get_forecast_methods_snapshot(
         method_data=_get_forecast_methods_data(),
@@ -1503,6 +1507,58 @@ def _forecast_list_full_row(
     return row
 
 
+def _forecast_volatility_methods_section(
+    *,
+    detail: str,
+    show_unavailable: bool,
+) -> Dict[str, Any]:
+    note = (
+        "Dedicated volatility estimators for forecast_volatility_estimate; "
+        "forecast_generate quantity=volatility routes to this method namespace."
+    )
+    try:
+        data = _get_volatility_methods_data()
+    except Exception as exc:
+        return {
+            "tool": "forecast_volatility_estimate",
+            "note": note,
+            "error": f"Unable to list volatility methods: {exc}",
+        }
+    methods = data.get("methods") if isinstance(data, dict) else None
+    if not isinstance(methods, list):
+        return {
+            "tool": "forecast_volatility_estimate",
+            "note": note,
+            "error": "Volatility method metadata is unavailable.",
+        }
+
+    selected = [
+        item
+        for item in methods
+        if isinstance(item, dict) and (show_unavailable or bool(item.get("available")))
+    ]
+    if detail == "full":
+        return {
+            "tool": "forecast_volatility_estimate",
+            "note": note,
+            "total": len(methods),
+            "methods_shown": len(selected),
+            "methods": selected,
+        }
+    method_names = [
+        str(item.get("method"))
+        for item in selected
+        if item.get("method") not in (None, "")
+    ]
+    return {
+        "tool": "forecast_volatility_estimate",
+        "note": note,
+        "total": len(methods),
+        "methods_shown": len(method_names),
+        "methods": method_names,
+    }
+
+
 def _forecast_list_methods_impl(  # noqa: C901
     *,
     detail: CompactFullDetailLiteral = "compact",
@@ -1633,6 +1689,10 @@ def _forecast_list_methods_impl(  # noqa: C901
             "optimizer_only_methods": ["ensemble"],
             "note": "Barrier methods are for forecast_barrier_prob and forecast_barrier_optimize; forecast_generate uses the main forecast method registry.",
         }
+        volatility_methods = _forecast_volatility_methods_section(
+            detail=detail_value,
+            show_unavailable=bool(show_unavailable),
+        )
 
         if detail_value == "full":
             if not bool(snapshot.get("methods_valid")):
@@ -1691,13 +1751,14 @@ def _forecast_list_methods_impl(  # noqa: C901
                 "show_unavailable": bool(show_unavailable),
             }
             if profile_methods is not None:
-            out_full["profile_note"] = (
+                out_full["profile_note"] = (
                     "quickstart/core shows native methods with no optional package dependency; use profile=all for the full catalog."
                 )
             out_full["note"] = (
                 "Full view includes trader-facing method metadata and structured params; "
                 "use search_term, library, or limit to narrow large catalogs."
             )
+            out_full["volatility_methods"] = volatility_methods
             out_full["barrier_methods"] = barrier_methods
             return out_full
 
@@ -1801,6 +1862,7 @@ def _forecast_list_methods_impl(  # noqa: C901
             "methods": selected_methods,
             "methods_shown": int(len(selected_methods)),
             "methods_hidden": hidden_count,
+            "volatility_methods": volatility_methods,
         }
         if profile_methods is not None:
             out["profile"] = profile_value
@@ -1811,6 +1873,7 @@ def _forecast_list_methods_impl(  # noqa: C901
                 "mtdata-cli forecast_generate SYMBOL --method theta",
                 "mtdata-cli forecast_generate SYMBOL --method analog",
                 "mtdata-cli forecast_generate SYMBOL --method mc_gbm",
+                "mtdata-cli forecast_volatility_estimate SYMBOL --method ewma",
             ]
         if offset_value:
             out["methods_before"] = int(min(offset_value, len(compact_methods)))
