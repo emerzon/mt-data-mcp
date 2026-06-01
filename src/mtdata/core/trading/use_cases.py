@@ -489,6 +489,8 @@ _COMPACT_POSITION_SIZING_FIELDS = (
     "risk_amount_account_currency",
     "risk_pct",
     "risk_compliance",
+    "risk_mode",
+    "nearest_viable",
     "units",
     "sizing_context",
     "margin_impact",
@@ -3204,6 +3206,9 @@ def run_trade_risk_analyze(  # noqa: C901
                         "risk_amount_account_currency": round(risk_amount, 2),
                         "requested_risk_pct": float(request.desired_risk_pct),
                         "strict_risk": bool(getattr(request, "strict_risk", True)),
+                        "risk_mode": "strict"
+                        if bool(getattr(request, "strict_risk", True))
+                        else "flexible",
                         "entry": request.entry,
                         **({"entry_source": entry_source} if entry_source else {}),
                         "sl": request.stop_loss,
@@ -3264,6 +3269,20 @@ def run_trade_risk_analyze(  # noqa: C901
                                 "min_viable_risk_overshoot_currency": round(
                                     float(min_viable_overshoot_currency or 0.0), 2
                                 ),
+                                "nearest_viable": {
+                                    "volume": min_viable_volume,
+                                    "risk_currency": round(
+                                        float(min_viable_risk_currency or 0.0), 2
+                                    ),
+                                    "risk_pct": round(
+                                        float(min_viable_risk_pct or 0.0), 2
+                                    ),
+                                    "note": (
+                                        "Increase desired_risk_pct to this risk_pct "
+                                        "or set strict_risk=false to allow the "
+                                        "minimum-lot trade."
+                                    ),
+                                },
                             }
                         )
                     if risk_over_target:
