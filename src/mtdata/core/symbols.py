@@ -923,15 +923,20 @@ def _market_scan_freshness_fields(
     bar_time: Optional[float],
     *,
     timeframe: Optional[str] = None,
+    symbol: Any = None,
 ) -> Dict[str, Any]:
     if bar_time is None:
         return {}
     try:
-        age_seconds = max(0.0, float(time.time()) - float(bar_time))
+        now_epoch = float(time.time())
+        age_seconds = max(0.0, now_epoch - float(bar_time))
     except Exception:
         return {}
     stale_after_seconds = _market_scan_stale_bar_seconds(timeframe)
     data_stale = age_seconds > stale_after_seconds
+    closed_session = quote_closed_session_context(symbol, now_epoch=now_epoch)
+    if data_stale and closed_session:
+        data_stale = False
     fields: Dict[str, Any] = {
         "data_freshness_seconds": _market_scan_round(age_seconds, digits=3),
         "stale_after_seconds": stale_after_seconds,
@@ -943,6 +948,15 @@ def _market_scan_freshness_fields(
             item="bar",
         ),
     }
+    if closed_session:
+        fields.update(closed_session)
+        fields["freshness"] = format_freshness_label(
+            data_stale=False,
+            market_status=fields.get("market_status"),
+            market_status_reason=fields.get("market_status_reason"),
+            age_seconds=age_seconds,
+            item="bar",
+        )
     if fields["data_stale"]:
         fields["stale_warning"] = (
             "Completed bar data may be stale; latest bar is "
@@ -1118,7 +1132,7 @@ def _build_market_scan_bar_row(
             "timeframe": timeframe,
             "data_source": f"{timeframe}_bars",
             "time": _format_time_minimal(bar_time) if bar_time is not None else None,
-            **_market_scan_freshness_fields(bar_time, timeframe=timeframe),
+            **_market_scan_freshness_fields(bar_time, timeframe=timeframe, symbol=symbol.name),
             "open": _market_scan_round(open_price, digits=digits),
             "close": _market_scan_round(close_price, digits=digits),
             "tick_volume": tick_volume,
@@ -1696,7 +1710,7 @@ def _build_market_scan_signal_row(
             "timeframe": timeframe,
             "data_source": f"{timeframe}_bars",
             "time": _format_time_minimal(bar_time) if bar_time is not None else None,
-            **_market_scan_freshness_fields(bar_time, timeframe=timeframe),
+            **_market_scan_freshness_fields(bar_time, timeframe=timeframe, symbol=symbol.name),
             "open": _market_scan_round(open_price, digits=digits),
             "close": _market_scan_round(close_price, digits=digits),
             "tick_volume": tick_volume,
