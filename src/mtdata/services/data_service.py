@@ -89,6 +89,7 @@ logger = logging.getLogger(__name__)
 _AUTO_TIME_ALIGNMENT_MIN_SHIFT_SECONDS = 1800
 _AUTO_TIME_ALIGNMENT_MAX_SHIFT_SECONDS = 18 * 3600
 _TICK_SUMMARY_MIN_ANALYTIC_TICKS = 20
+_ONE_SIDED_TICK_WARNING_RATIO = 0.50
 _DATE_FORMAT_HINT = (
     "Accepted examples: '2026-01-15', '2026-01-15 14:30', "
     "'2026-01-15T14:30:00Z', 'yesterday', '2 days ago', 'last Friday'."
@@ -2326,10 +2327,17 @@ def fetch_ticks(  # noqa: C901
         def _add_tick_data_quality(payload: Dict[str, Any]) -> None:
             if one_sided_zero_spread_count <= 0:
                 return
+            one_sided_ratio = one_sided_zero_spread_count / max(1, original_count)
             payload["data_quality"] = {
                 "one_sided_zero_spread_ticks": int(one_sided_zero_spread_count),
+                "one_sided_zero_spread_ratio": round(one_sided_ratio, 4),
                 "spread_ticks_excluded": int(one_sided_zero_spread_count),
+                "warning_ratio": _ONE_SIDED_TICK_WARNING_RATIO,
             }
+            if one_sided_ratio < _ONE_SIDED_TICK_WARNING_RATIO:
+                payload["data_quality"]["one_sided_zero_spread_status"] = "info"
+                return
+            payload["data_quality"]["one_sided_zero_spread_status"] = "warning"
             warnings_list = payload.get("warnings")
             if not isinstance(warnings_list, list):
                 warnings_list = []
