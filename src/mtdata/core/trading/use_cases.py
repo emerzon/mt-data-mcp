@@ -1117,16 +1117,27 @@ def run_trade_place(  # noqa: C901
                         else "Trade blocked by guardrails"
                     )
                     error_message = f"{prefix}: {violations[0]}"
+                blocked_payload = {
+                    "error": error_message,
+                    "guardrail_blocked": True,
+                    "dry_run": True,
+                    "no_action": True,
+                    "actionability": "blocked_by_guardrails",
+                    "guardrails_preview": guardrail_preview,
+                    "violations": violations,
+                }
+                for key in (
+                    "error_code",
+                    "allowed_symbols_sample",
+                    "allowed_symbols_count",
+                    "suggestion",
+                    "guardrail_context",
+                ):
+                    value = guardrail_preview.get(key)
+                    if value not in (None, "", []):
+                        blocked_payload[key] = value
                 return _finish(
-                    {
-                        "error": error_message,
-                        "guardrail_blocked": True,
-                        "dry_run": True,
-                        "no_action": True,
-                        "actionability": "blocked_by_guardrails",
-                        "guardrails_preview": guardrail_preview,
-                        "violations": violations,
-                    },
+                    blocked_payload,
                     order_type=order_type_norm,
                     pending=is_pending,
                 )
