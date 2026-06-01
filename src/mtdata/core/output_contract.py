@@ -328,6 +328,13 @@ def attach_success_guidance(
     return out
 
 
+def related_tools_for(tool_name: Optional[str]) -> list[str]:
+    """Return configured related tools for a public tool name."""
+    normalized_tool = str(tool_name or "").strip()
+    related = _SUCCESS_RELATED_TOOLS.get(normalized_tool)
+    return list(related or [])
+
+
 def attach_collection_contract(
     result: Any,
     *,

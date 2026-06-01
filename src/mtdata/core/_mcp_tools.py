@@ -188,6 +188,101 @@ _TOOL_REGISTRY: Dict[str, Any] = _ToolRegistryView("function")
 _TOOL_OBJECT_REGISTRY: Dict[str, Any] = _ToolRegistryView("tool_object")
 
 
+def _tool_catalog_category(name: str, func: Any) -> str:
+    module = str(getattr(func, "__module__", "") or "")
+    if name.startswith("trade_") or ".trading" in module:
+        return "trading"
+    if name.startswith("forecast_") or name.startswith("strategy_"):
+        return "forecast"
+    if name.startswith("finviz_") or name in {"market_scan", "market_ticker", "market_status"}:
+        return "market"
+    if name.startswith("symbols_"):
+        return "symbols"
+    if name.startswith("data_") or name == "wait_event":
+        return "data"
+    if name.startswith("patterns_") or name.startswith("regime_"):
+        return "pattern_regime"
+    if name.startswith("options_"):
+        return "options"
+    if name.startswith("report_"):
+        return "report"
+    if name.startswith("denoise_") or name.startswith("indicators_"):
+        return "methods"
+    if name in {"pivot_compute_points", "support_resistance_levels", "temporal_analyze"}:
+        return "analysis"
+    return "research"
+
+
+def _tool_catalog_description(func: Any) -> str:
+    target = getattr(func, "__wrapped__", func)
+    doc = inspect.getdoc(target) or inspect.getdoc(func) or ""
+    for line in doc.splitlines():
+        text = line.strip()
+        if text:
+            return text
+    return ""
+
+
+def _tool_catalog_parameters(func: Any) -> Dict[str, str]:
+    target = getattr(func, "__wrapped__", func)
+    try:
+        signature = _get_runtime_signature(target)
+    except Exception:
+        return {}
+    params = list(signature.parameters.values())
+    if len(params) == 1:
+        annotation = params[0].annotation
+        try:
+            if inspect.isclass(annotation) and issubclass(annotation, BaseModel):
+                return {
+                    name: "required" if field.is_required() else "optional"
+                    for name, field in annotation.model_fields.items()
+                }
+        except Exception:
+            pass
+    out: Dict[str, str] = {}
+    for param in params:
+        if param.name.startswith("__"):
+            continue
+        out[param.name] = "required" if param.default is inspect._empty else "optional"
+    return out
+
+
+def registered_tool_catalog(*, detail: str = "compact") -> Dict[str, Any]:
+    """Return a generated catalog of registered mtdata tools."""
+    from .output_contract import related_tools_for
+
+    detail_mode = str(detail or "compact").strip().lower()
+    tools = []
+    categories: Dict[str, List[str]] = {}
+    for name in sorted(_TOOL_METADATA_REGISTRY):
+        entry = _TOOL_METADATA_REGISTRY[name]
+        func = entry.function
+        if func is _REGISTRY_UNSET:
+            continue
+        category = _tool_catalog_category(name, func)
+        categories.setdefault(category, []).append(name)
+        row: Dict[str, Any] = {
+            "name": name,
+            "category": category,
+            "description": _tool_catalog_description(func),
+        }
+        related = related_tools_for(name)
+        if related:
+            row["related_tools"] = related
+        if detail_mode == "full":
+            row["parameters"] = _tool_catalog_parameters(func)
+            row["module"] = str(getattr(func, "__module__", "") or "")
+        tools.append(row)
+    return {
+        "success": True,
+        "detail": "full" if detail_mode == "full" else "compact",
+        "count": len(tools),
+        "categories": categories,
+        "tools": tools,
+    }
+
+
 def _get_runtime_signature(obj: Any) -> inspect.Signature:
     """Resolve a signature with evaluated annotations when available."""
     if _ANNOTATION_VALUE_FORMAT is not None:

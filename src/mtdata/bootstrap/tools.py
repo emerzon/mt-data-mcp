@@ -30,6 +30,7 @@ TOOL_MODULE_NAMES: Final[tuple[str, ...]] = (
     "mtdata.core.temporal",
     "mtdata.core.finviz",
     "mtdata.core.news",
+    "mtdata.core.tools",
 )
 
 _BOOTSTRAPPED_MODULES: tuple[ModuleType, ...] = ()
