@@ -1868,6 +1868,12 @@ class NewsAggregator:
             "upcoming_count": len(upcoming_events),
             "recent_count": len(recent_events),
         }
+        if context is not None and not related_news and general_news:
+            payload["symbol_news_note"] = (
+                f"No {context.symbol}-specific related news passed relevance gates; "
+                "general_news remains market-wide. Try finviz_news for raw "
+                "Finviz-only per-ticker headlines."
+            )
         if context is None:
             general_news_rows = payload.pop("general_news")
             related_news_rows = payload.pop("related_news")
