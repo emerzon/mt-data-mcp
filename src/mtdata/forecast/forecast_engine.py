@@ -1466,7 +1466,16 @@ def forecast_engine(  # noqa: C901
                 )
             )
         if method_l == 'ensemble' and metadata:
-            result['ensemble'] = metadata
+            generic_metadata_keys = {"params_used", "diagnostics", "model_info", "warnings"}
+            ensemble_metadata = {
+                key: value
+                for key, value in metadata.items()
+                if key not in generic_metadata_keys
+            }
+            for key in ensemble_metadata:
+                result.pop(key, None)
+            if ensemble_metadata:
+                result["ensemble"] = ensemble_metadata
         return result
 
     except Exception as e:
