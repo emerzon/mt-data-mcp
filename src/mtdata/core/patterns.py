@@ -1064,6 +1064,24 @@ def _apply_config_to_obj(cfg: Any, config: Optional[Dict[str, Any]]) -> List[str
             deduped.append(key)
     return deduped
 
+
+def _attach_pattern_usage_notice(result: Dict[str, Any]) -> None:
+    if not isinstance(result, dict) or result.get("error"):
+        return
+    result.setdefault("is_signal", False)
+    result.setdefault("usage", "information_only")
+    result.setdefault(
+        "calibration",
+        {
+            "confidence": "heuristic pattern score, not historical win rate",
+            "note": (
+                "Validate patterns with labels_triple_barrier or a backtest before "
+                "treating bias/action fields as trading signals."
+            ),
+        },
+    )
+
+
 @mcp.tool()
 def patterns_detect(
     request: PatternsDetectRequest,
@@ -1210,6 +1228,7 @@ def patterns_detect(
         result = run_patterns_detect(request, _patterns_detect_deps())
         if isinstance(result, dict) and "error" not in result:
             result.setdefault("timezone", "UTC")
+            _attach_pattern_usage_notice(result)
         return result
 
     return run_logged_operation(

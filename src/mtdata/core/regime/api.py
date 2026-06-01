@@ -753,6 +753,23 @@ def _suggest_faster_regime_methods(methods: List[str]) -> List[str]:
     return suggestions[:3]
 
 
+def _attach_regime_usage_notice(result: Dict[str, Any]) -> None:
+    if not isinstance(result, dict) or result.get("error"):
+        return
+    result.setdefault("is_signal", False)
+    result.setdefault("usage", "information_only")
+    result.setdefault(
+        "calibration",
+        {
+            "confidence": "model or heuristic assignment score, not historical hit rate",
+            "note": (
+                "Regime labels describe observed state. Validate with backtests "
+                "before using direction/confidence as a trading signal."
+            ),
+        },
+    )
+
+
 def _get_timeframe_defaults(timeframe: str) -> Dict[str, int]:
     """Get sensible defaults for regime detection based on timeframe.
 
@@ -906,6 +923,7 @@ def regime_detect(  # noqa: C901
                 result.setdefault("requested_method", requested_method)
             _append_warnings(result, global_warnings)
             result.setdefault("timezone", "UTC")
+            _attach_regime_usage_notice(result)
         log_operation_finish(
             logger,
             operation="regime_detect",
