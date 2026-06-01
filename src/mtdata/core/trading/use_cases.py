@@ -2374,6 +2374,14 @@ def run_trade_history(  # noqa: C901
             for row in records:
                 if isinstance(row, dict):
                     row["timezone"] = timezone_label
+                    if kind == "deals":
+                        if "deal_ticket" not in row and row.get("ticket") not in (None, ""):
+                            row["deal_ticket"] = row.get("ticket")
+                        if "order_ticket" not in row and row.get("order") not in (None, ""):
+                            row["order_ticket"] = row.get("order")
+                    elif kind == "orders":
+                        if "order_ticket" not in row and row.get("ticket") not in (None, ""):
+                            row["order_ticket"] = row.get("ticket")
                     if "position_ticket" not in row:
                         position_value = row.get("position_id")
                         if position_value in (None, ""):

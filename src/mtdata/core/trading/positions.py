@@ -381,7 +381,9 @@ _TRADE_HISTORY_DIAGNOSTIC_FIELDS = {
 _TRADE_HISTORY_ROW_METADATA_FIELDS = {"timezone"}
 _TRADE_HISTORY_DEAL_TOP_LEVEL_FIELDS = (
     "ticket",
+    "deal_ticket",
     "order",
+    "order_ticket",
     "time",
     "time_msc",
     "type",
@@ -408,6 +410,7 @@ _TRADE_HISTORY_DEAL_TOP_LEVEL_FIELDS = (
 )
 _TRADE_HISTORY_ORDER_TOP_LEVEL_FIELDS = (
     "ticket",
+    "order_ticket",
     "time_setup",
     "time_done",
     "time_setup_msc",
@@ -432,6 +435,8 @@ _TRADE_HISTORY_ORDER_TOP_LEVEL_FIELDS = (
 _TRADE_HISTORY_COMPACT_DEAL_FIELDS = (
     "time",
     "ticket",
+    "deal_ticket",
+    "order_ticket",
     "position_ticket",
     "symbol",
     "type",
@@ -451,6 +456,7 @@ _TRADE_HISTORY_COMPACT_ORDER_FIELDS = (
     "time_setup",
     "time_done",
     "ticket",
+    "order_ticket",
     "position_ticket",
     "symbol",
     "type",
@@ -665,7 +671,9 @@ def _trade_history_humanized_key(key: str) -> str:
         "time_done": "Done Time",
         "time_msc": "Time Msc",
         "ticket": "Ticket",
+        "deal_ticket": "Deal Ticket",
         "order": "Order",
+        "order_ticket": "Order Ticket",
         "deal": "Deal",
         "position_id": "Position ID",
         "position_by_id": "Position By ID",
