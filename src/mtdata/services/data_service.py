@@ -1608,6 +1608,12 @@ def fetch_candles(  # noqa: C901
         remaining_excluded = max(0, remaining_after_forming - quality_excluded)
         window_shortfall = remaining_excluded if (start_datetime or end_datetime) else 0
         source_shortfall = max(0, remaining_excluded - window_shortfall)
+        candle_excluded_total = (
+            incomplete_candles_skipped
+            + quality_excluded
+            + window_shortfall
+            + source_shortfall
+        )
         candle_counts = {
             "requested": candles_requested,
             "returned": candles_returned,
@@ -1616,7 +1622,7 @@ def fetch_candles(  # noqa: C901
                 "indicator_warmup": 0,
                 "quality_filtered": quality_excluded,
                 "window_or_source_shortfall": window_shortfall + source_shortfall,
-                "total": candles_excluded,
+                "total": candle_excluded_total,
             },
         }
         volume_metadata = _candle_volume_metadata(headers)

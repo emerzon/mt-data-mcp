@@ -321,6 +321,8 @@ def _compact_candles_payload(
         compact.pop("has_forming_candle", None)
         compact.pop("forming_candle_included", None)
         compact.pop("forming_candle_skipped", None)
+    if result.get("forming_candle_status") == "skipped" and result.get("hint"):
+        compact["hint"] = result["hint"]
     for key in ("freshness",):
         if key in public_diagnostics:
             compact[key] = public_diagnostics[key]
