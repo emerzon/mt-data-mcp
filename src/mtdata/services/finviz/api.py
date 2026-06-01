@@ -301,6 +301,17 @@ def _crypto_day_week_identical(rows: List[Dict[str, Any]]) -> bool:
     return matched > 0
 
 
+def _drop_duplicate_day_week_performance(rows: List[Dict[str, Any]]) -> bool:
+    if not _crypto_day_week_identical(rows):
+        return False
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        row.pop("Perf Week", None)
+        row.pop("Perf WTD", None)
+    return True
+
+
 def _crypto_price_display(value: Any) -> Optional[str]:
     num = _to_float_or_none(value)
     if num is None:
@@ -738,12 +749,21 @@ def get_forex_performance() -> Dict[str, Any]:
             class_name="Forex",
             empty_error="No forex performance data available",
         )
-        return {
+        warnings_out: List[str] = []
+        if _drop_duplicate_day_week_performance(items_list):
+            warnings_out.append(
+                "Finviz returned identical 'Perf Day' and 'Perf Week' values; "
+                "omitted weekly performance because only day-level performance is reliable."
+            )
+        out = {
             "success": True,
             "market": "forex",
             "count": len(items_list),
             "pairs": items_list,
         }
+        if warnings_out:
+            out["warnings"] = warnings_out
+        return out
     except Exception as e:
         logger.exception("Error fetching forex performance")
         return {"error": _sanitize_error_message(e)}
@@ -764,13 +784,10 @@ def get_crypto_performance() -> Dict[str, Any]:
             price_display = _crypto_price_display(row.get("Price"))
             if price_display is not None:
                 row["Price"] = price_display
-        if _crypto_day_week_identical(items_list):
-            for row in items_list:
-                if isinstance(row, dict) and "Perf Week" in row and "Perf WTD" not in row:
-                    row["Perf WTD"] = row.get("Perf Week")
+        if _drop_duplicate_day_week_performance(items_list):
             warnings_out.append(
-                "Finviz returned identical 'Perf Day' and 'Perf Week' values across all rows; "
-                "added 'Perf WTD' alias to clarify likely week-to-date semantics."
+                "Finviz returned identical 'Perf Day' and 'Perf Week' values; "
+                "omitted weekly performance because only day-level performance is reliable."
             )
 
         out = {
