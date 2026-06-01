@@ -147,6 +147,14 @@ def _next_candle_close_server_time(timeframe: str, *, now_utc: Optional[datetime
     return day_start + timedelta(seconds=float(next_slot * interval_seconds))
 
 
+def _format_utc_offset(offset_seconds: int) -> str:
+    sign = "+" if offset_seconds >= 0 else "-"
+    total_seconds = abs(int(offset_seconds))
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes = remainder // 60
+    return f"{sign}{hours:02d}:{minutes:02d}"
+
+
 def _next_candle_wait_payload(
     timeframe: str,
     *,
@@ -162,6 +170,15 @@ def _next_candle_wait_payload(
 
     next_close_server = _next_candle_close_server_time(timeframe, now_utc=current_utc)
     next_close_utc = _server_time_naive_to_utc(next_close_server)
+    server_offset_seconds = int(
+        round(
+            (
+                next_close_server.replace(tzinfo=None)
+                - next_close_utc.replace(tzinfo=None)
+            ).total_seconds()
+        )
+    )
+    server_utc_offset = _format_utc_offset(server_offset_seconds)
     wait_seconds = max(
         0.0,
         float((next_close_utc - current_utc).total_seconds()) + max(0.0, float(buffer_seconds)),
@@ -178,8 +195,9 @@ def _next_candle_wait_payload(
         "sleep_seconds": float(wait_seconds),
         "started_at_utc": current_utc.isoformat(),
         "next_candle_close_utc": next_close_utc.isoformat(),
-        "next_candle_close_server": next_close_server.isoformat(),
+        "next_candle_close_server": f"{next_close_server.isoformat()}{server_utc_offset}",
         "server_timezone": str(server_tz_name),
+        "server_utc_offset": server_utc_offset,
     }
 
 
