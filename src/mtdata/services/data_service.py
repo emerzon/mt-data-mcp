@@ -2362,15 +2362,21 @@ def fetch_ticks(  # noqa: C901
             if one_sided_zero_spread_count <= 0:
                 return
             one_sided_ratio = one_sided_zero_spread_count / max(1, original_count)
+            quote_type_counts = {
+                kind: quote_types.count(kind)
+                for kind in sorted(set(quote_types))
+            }
+            complete_ticks = int(quote_type_counts.get("bid_ask", 0))
+            incomplete_ticks = int(original_count - complete_ticks)
             payload["data_quality"] = {
                 "one_sided_zero_spread_ticks": int(one_sided_zero_spread_count),
+                "complete_ticks": complete_ticks,
+                "incomplete_ticks": incomplete_ticks,
+                "total_ticks": int(original_count),
                 "one_sided_zero_spread_ratio": round(one_sided_ratio, 4),
                 "spread_ticks_excluded": int(one_sided_zero_spread_count),
                 "warning_ratio": _ONE_SIDED_TICK_WARNING_RATIO,
-                "quote_type_counts": {
-                    kind: quote_types.count(kind)
-                    for kind in sorted(set(quote_types))
-                },
+                "quote_type_counts": quote_type_counts,
             }
             if one_sided_ratio < _ONE_SIDED_TICK_WARNING_RATIO:
                 payload["data_quality"]["one_sided_zero_spread_status"] = "info"

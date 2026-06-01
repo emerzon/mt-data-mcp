@@ -676,15 +676,16 @@ def _compact_tick_row(row: Any) -> Any:
     if not isinstance(row, dict):
         return row
     compact = {
-        key: row[key]
-        for key in ("time", "bid", "ask")
-        if key in row and row[key] not in (None, "")
+        "time": row.get("time"),
+        "bid": row.get("bid"),
+        "ask": row.get("ask"),
     }
+    if row.get("quote_type") not in (None, ""):
+        compact["quote_type"] = row.get("quote_type")
     spread = row.get("spread")
     if spread in (None, ""):
         spread = _tick_row_spread(row.get("bid"), row.get("ask"))
-    if spread not in (None, ""):
-        compact["spread"] = spread
+    compact["spread"] = spread if spread not in ("",) else None
     return compact
 
 
