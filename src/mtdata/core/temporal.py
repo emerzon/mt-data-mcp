@@ -53,6 +53,21 @@ _PAGINATION_KEYS = (
     "more_available",
     "truncated",
 )
+_SESSION_ORDER = {
+    "asia": 0,
+    "london": 1,
+    "london_ny_overlap": 2,
+    "ny": 3,
+    "off_session": 4,
+}
+_SESSION_DEFINITION = {
+    "clock": "UTC",
+    "asia": "00:00-07:00",
+    "london": "07:00-13:30",
+    "london_ny_overlap": "13:30-16:00",
+    "ny": "16:00-21:00",
+    "off_session": "21:00-24:00",
+}
 
 
 def _error_response(
@@ -86,9 +101,27 @@ def _normalize_group_by(value: Optional[str]) -> str:
         return "hour"
     if v in ("month", "months", "mo"):
         return "month"
+    if v in ("session", "sessions", "market_session", "trading_session"):
+        return "session"
     if v in ("all", "none", "overall"):
         return "all"
     return v
+
+
+def _market_session_label(minutes_utc: Any) -> str:
+    try:
+        minutes = int(minutes_utc)
+    except Exception:
+        return "unknown"
+    if 0 <= minutes < 7 * 60:
+        return "asia"
+    if 7 * 60 <= minutes < 13 * 60 + 30:
+        return "london"
+    if 13 * 60 + 30 <= minutes < 16 * 60:
+        return "london_ny_overlap"
+    if 16 * 60 <= minutes < 21 * 60:
+        return "ny"
+    return "off_session"
 
 
 def _parse_mapped_value(
@@ -576,7 +609,7 @@ def temporal_analyze(  # noqa: C901
     lookback: int = 200,
     start: Optional[str] = None,
     end: Optional[str] = None,
-    group_by: Literal["dow", "hour", "month", "all"] = "dow",
+    group_by: Literal["dow", "hour", "month", "session", "all"] = "dow",
     day_of_week: Optional[str] = None,
     month: Optional[str] = None,
     time_range: Optional[str] = None,
@@ -586,7 +619,7 @@ def temporal_analyze(  # noqa: C901
     offset: int = 0,
     detail: CompactFullDetailLiteral = "compact",
 ) -> Dict[str, Any]:
-    """Temporal analysis by day-of-week, hour, or month.
+    """Temporal analysis by day-of-week, hour, market session, or month.
 
     `lookback` controls the number of historical bars used when start/end are
     omitted.
@@ -603,8 +636,8 @@ def temporal_analyze(  # noqa: C901
     - volume: uses real_volume when available and non-zero, else tick_volume
 
     Returns grouped averages for returns and volatility plus simple extras.
-    Group keys are numeric: dow=1..7 (Mon..Sun), hour=0..23, month=1..12;
-    group_label contains the display label.
+    Group keys are numeric for dow/hour/month; session uses UTC market-session
+    labels: asia, london, london_ny_overlap, ny, off_session.
     Example: temporal_analyze(symbol="EURUSD", group_by="dow")
     Use group_by='all' for a single overall summary.
     """
@@ -640,9 +673,9 @@ def temporal_analyze(  # noqa: C901
                 )
 
             group_norm = _normalize_group_by(group_by)
-            if group_norm not in ("dow", "hour", "month", "all"):
+            if group_norm not in ("dow", "hour", "month", "session", "all"):
                 return _error_response(
-                    "Invalid group_by. Use: dow, hour, month, all.",
+                    "Invalid group_by. Use: dow, hour, month, session, all.",
                     stage="validate",
                     context=context,
                 )
@@ -801,6 +834,8 @@ def temporal_analyze(  # noqa: C901
             dt_utc = pd.to_datetime(df["__epoch"], unit="s", utc=True)
             dt = dt_utc.dt.tz_convert(client_tz) if use_client_tz else dt_utc
             df["__dt"] = dt
+            session_minutes = dt_utc.dt.hour * 60 + dt_utc.dt.minute
+            df["__session"] = session_minutes.map(_market_session_label)
 
             if "close" not in df.columns:
                 return _error_response(
@@ -862,46 +897,62 @@ def temporal_analyze(  # noqa: C901
                     grouped["__group"] = grouped["__dt"].dt.month
                 elif dimension == "hour":
                     grouped["__group"] = grouped["__dt"].dt.hour
+                elif dimension == "session":
+                    grouped["__group"] = grouped["__session"]
                 else:
                     return []
 
                 out_rows: List[Dict[str, Any]] = []
-                for key, grp in grouped.groupby("__group", sort=True):
+                sort_groups = dimension != "session"
+                for key, grp in grouped.groupby("__group", sort=sort_groups):
                     row = _stats_for_group(grp, volume_col)
-                    key_int = int(key)
                     if dimension == "dow":
+                        key_int = int(key)
                         row["group"] = key_int + 1
                         row["group_label"] = (
                             _DOW_LABELS[key_int] if 0 <= key_int <= 6 else str(key)
                         )
                     elif dimension == "month":
+                        key_int = int(key)
                         row["group"] = key_int
                         row["group_label"] = (
                             _MONTH_LABELS[key_int - 1]
                             if 1 <= key_int <= 12
                             else str(key)
                         )
-                    else:
+                    elif dimension == "hour":
+                        key_int = int(key)
                         row["group"] = key_int
                         row["group_label"] = f"{key_int:02d}:00"
+                    else:
+                        key_text = str(key)
+                        row["group"] = key_text
+                        row["group_label"] = key_text.replace("_", " ")
+                        key_int = _SESSION_ORDER.get(key_text, 99)
                     row["_group_key"] = key_int
                     out_rows.append(row)
+                if dimension == "session":
+                    out_rows.sort(key=lambda row: int(row.get("_group_key", 99)))
                 return out_rows
 
             groups_out: List[Dict[str, Any]] = []
             grouped_dimensions: List[Dict[str, Any]] = []
 
-            if group_norm in {"dow", "month", "hour"}:
+            if group_norm in {"dow", "month", "hour", "session"}:
                 groups_out = _groups_for_dimension(group_norm)
                 if groups_out:
                     if group_norm == "dow":
                         df["__group"] = df["__dt"].dt.weekday
                     elif group_norm == "month":
                         df["__group"] = df["__dt"].dt.month
-                    else:
+                    elif group_norm == "hour":
                         df["__group"] = df["__dt"].dt.hour
+                    else:
+                        df["__group"] = df["__session"].map(
+                            lambda value: _SESSION_ORDER.get(str(value), 99)
+                        )
             elif group_norm == "all":
-                for dimension in ("dow", "hour", "month"):
+                for dimension in ("dow", "hour", "month", "session"):
                     breakdown = [
                         {key: value for key, value in row.items() if key != "_group_key"}
                         for row in _groups_for_dimension(dimension)
@@ -1017,6 +1068,8 @@ def temporal_analyze(  # noqa: C901
                 "overall": overall,
                 "volume_source": volume_col,
             }
+            if group_norm in {"session", "all"}:
+                payload["session_definition"] = _SESSION_DEFINITION
             payload.update(pagination_meta)
             if excluded_groups:
                 filters["min_bars"] = {
