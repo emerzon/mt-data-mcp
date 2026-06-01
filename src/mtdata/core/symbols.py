@@ -28,7 +28,13 @@ from ..utils.symbol import (
 from ..utils.symbol import (
     _normalize_group_path_query,
 )
-from ..utils.utils import _format_time_minimal, _normalize_limit, _table_from_rows
+from ..utils.utils import (
+    _format_time_minimal,
+    _format_time_minimal_local,
+    _normalize_limit,
+    _resolve_client_tz,
+    _table_from_rows,
+)
 from ._mcp_instance import mcp
 from .error_envelope import build_error_payload
 from .execution_logging import run_logged_operation
@@ -73,6 +79,16 @@ def _nonempty_symbol_string(value: Any) -> Optional[str]:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _client_timezone_label(client_tz: Any) -> str:
+    if client_tz is None:
+        return "UTC"
+    return (
+        getattr(client_tz, "key", None)
+        or getattr(client_tz, "zone", None)
+        or str(client_tz)
+    )
 
 
 _SYMBOL_DESCRIBE_PRICE_FIELDS = frozenset(
@@ -759,6 +775,12 @@ def symbols_describe(
                 "order_mode": {"prefixes": ("SYMBOL_ORDER_",), "bitmask": True},
             }
 
+            client_tz = _resolve_client_tz()
+            if client_tz is None:
+                time_formatter = _format_time_minimal
+            else:
+                time_formatter = _format_time_minimal_local
+
             symbol_data = {}
             available_attrs = set(dir(symbol_info))
             for attr in _SYMBOL_DESCRIBE_FIELDS:
@@ -782,7 +804,7 @@ def symbols_describe(
                         utc_epoch = _mt5_epoch_to_utc(epoch)
                         if contract.shape_detail == "full":
                             symbol_data["time_epoch"] = utc_epoch
-                        symbol_data["time"] = _format_time_minimal(utc_epoch)
+                        symbol_data["time"] = time_formatter(utc_epoch)
                         symbol_data.update(
                             {
                                 key: value
@@ -874,7 +896,7 @@ def symbols_describe(
             return {
                 "success": True,
                 "symbol": symbol_name or _nonempty_symbol_string(symbol) or symbol,
-                "timezone": "UTC",
+                "timezone": _client_timezone_label(client_tz),
                 "details": symbol_data,
             }
         except MT5ConnectionError as exc:
