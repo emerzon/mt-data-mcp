@@ -116,7 +116,7 @@ Run at session start, reconnect, after a major event, after repeated churn, afte
 10. `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="M5", limit=140, include_spread=True, indicators="ema(20),ema(50),rsi(14),macd(12,26,9),adx(14),chop(14),atr(14),natr(14),supertrend(7,3),bbands(20,2),donchian(20,20),vwap,vwma(20),mfi(14),obv,cmf(20),efi(13),pvo(12,26,9)")`
 11. `support_resistance_levels(symbol="{{SYMBOL}}")`
 12. `regime_detect(symbol="{{SYMBOL}}", timeframe="M15", method="rule_based", detail="compact")`
-13. `forecast_volatility_estimate(symbol="{{SYMBOL}}", timeframe="M5", horizon=12, detail="compact")` when spacing, stop distance, or harvest distance is not obvious
+13. `forecast_volatility_estimate(symbol="{{SYMBOL}}", timeframe="M5", horizon=12, method="ewma", detail="compact")` for baseline grid spacing, full-grid stop buffer, harvest distance, and time-stop realism
 
 At bootstrap, record:
 - account readiness and hard blockers
@@ -153,7 +153,7 @@ Use `reaction_mode` when the market is moving against or sharply for the book:
 - protect and simplify before research
 - refresh `news(symbol="{{SYMBOL}}")` and `market_status(symbol="{{SYMBOL}}")` if the move may be event-driven
 - run `regime_detect(symbol="{{SYMBOL}}", timeframe="M15", method="rule_based", detail="compact")` after immediate protection if trend expansion vs temporary sweep determines whether to give up, hedge, or recover
-- use `forecast_volatility_estimate` to resize spacing and harvest distance when the volatility regime changed
+- use `forecast_volatility_estimate(symbol="{{SYMBOL}}", timeframe="M5", horizon=12, method="ewma", detail="compact")` to resize spacing, stops, harvest distance, and leg count when the volatility regime changed
 - do not use forecast, pattern, or options tools to rationalize keeping a broken grid
 
 ## Full Recheck
@@ -170,7 +170,8 @@ Run a full recheck when starting a new campaign, after a major event or regime s
 - `pivot_compute_points(symbol="{{SYMBOL}}")` when intraday level clusters matter
 - `regime_detect(symbol="{{SYMBOL}}", timeframe="M15", method="rule_based", detail="compact")`
 - `temporal_analyze(symbol="{{SYMBOL}}")` when session timing, hour bucket, or handoff affects holding risk
-- `forecast_volatility_estimate` for spacing and expected excursion
+- `forecast_volatility_estimate(symbol="{{SYMBOL}}", timeframe="M5", horizon=12, method="ewma", detail="compact")` for spacing and expected excursion
+- `forecast_volatility_estimate(symbol="{{SYMBOL}}", timeframe="M15", horizon=8, method="ewma", detail="compact")` when full-grid invalidation, dual-grid viability, or campaign holding time depends on broader volatility
 - `forecast_barrier_optimize` or `forecast_barrier_prob` for exact TP/SL realism when geometry is known or needs constrained refinement
 - `patterns_detect(symbol="{{SYMBOL}}", timeframe="M15", mode="fractal", detail="summary")` when confirmed fractal levels or breakout context can refine sweep/reclaim zones, grid spacing, or invalidation
 - `patterns_detect(symbol="{{SYMBOL}}", timeframe="M15", mode="elliott", detail="summary")` only when wave context can change whether a bounce is recovery, correction, or impulse expansion against the book
@@ -214,6 +215,24 @@ S/R rules:
 - If `support_resistance_levels` returns only one-sided coverage, stale levels, or no nearby recovery/extraction zone, cap aggression to observe, protect, harvest, cancel, or simplify until a fresh map exists.
 - A grid add requires price to be at or inside the mapped entry/deeper-grid zone and still outside the invalidation zone. If price is between zones, wait or use a smaller tactical hedge only when it reduces risk.
 - Newer legs should use the nearest realistic harvest zone, not the anchor's distant structural target.
+
+## Volatility Grid Management
+`forecast_volatility_estimate` is a core grid-management tool, not an optional forecast decoration. Use it to translate expected excursion into practical grid geometry whenever the book may add, defend, hedge, or harvest risk.
+
+Required volatility checks:
+- Run `forecast_volatility_estimate(symbol="{{SYMBOL}}", timeframe="M5", horizon=12, method="ewma", detail="compact")` before a new grid campaign unless a fresh M5 estimate already exists from this cycle.
+- Run `forecast_volatility_estimate(symbol="{{SYMBOL}}", timeframe="M1", horizon=15, method="ewma", detail="compact")` for near-fill timing, tight harvests, or tactical hedges when the M5 estimate is too coarse.
+- Run `forecast_volatility_estimate(symbol="{{SYMBOL}}", timeframe="M15", horizon=8, method="ewma", detail="compact")` before dual-sided grids, broad recovery decisions, or final full-grid invalidation when M5 noise may understate risk.
+- Refresh the relevant estimate after volatility expansion/compression, abnormal spread, a fast adverse run, a news shock, repeated failed adds, or a sudden transition from chop to impulse.
+
+How to use the estimate:
+- Treat `volatility_horizon` as expected return-fraction excursion over the requested horizon. Convert it to approximate price distance from the current executable price before comparing spacing, stops, and targets.
+- Grid spacing should respect the larger of broker stop/freeze limits, recent spread noise, mapped S/R separation, M5 ATR/NATR context, and roughly `0.35-0.60x` the M5 horizon excursion. If spacing falls below spread noise, reduce leg count or wait.
+- The full-grid SL should sit beyond the deepest planned leg, structural invalidation, spread and stop/freeze buffers, wick/liquidity buffers, and a forecast-volatility buffer. Do not let the anchor SL sit inside the expected adverse excursion needed for planned inner grid fills.
+- Use smaller harvest distances for deeper legs: rescue-harvest legs usually target roughly `0.20-0.45x` the M5 horizon excursion or the first clean book-heat reduction zone; improvement legs target roughly `0.35-0.70x`; anchors can target the larger structural zone only when time-stop and volatility support it.
+- If forecast volatility expands, widen spacing, reduce leg count, take faster harvests, or hedge defensively instead of compressing a martingale ladder. If it compresses, avoid targets so wide that the grid becomes a swing hold.
+- If expected excursion is too small relative to spread, stop/freeze distance, and commission/friction, scalp harvesting is not worth adding risk.
+- Volatility does not create trades. It sizes, spaces, times, vetoes, or accelerates management of a structure-backed setup.
 
 ## Pattern and Wave Escalation
 Patterns are escalation and veto tools, not trade generators. Use them only when they can change the reaction map, invalidate recovery, refine harvest targets, or classify trend expansion vs range behavior.
@@ -295,7 +314,7 @@ Default grid shape:
 - optional continuation leg only after price confirms back in favor and pending recovery layers are no longer needed
 
 Spacing rules:
-- levels must be volatility-aware using ATR, NATR, support/resistance zones, pivots, recent tick spread, and forecast volatility when needed
+- levels must be volatility-aware using ATR, NATR, support/resistance zones, pivots, recent tick spread, and a fresh `forecast_volatility_estimate` unless the same cycle already produced a valid estimate
 - no two entries may be nearly identical or only separated by spread noise
 - no planned entry may sit at, beyond, or inside another leg's hard-stop trigger buffer unless the older leg is being closed or modified first
 - entries, stops, and targets must avoid exact round numbers, raw pivots, session highs/lows, obvious swing points, and one-tick obvious offsets
@@ -342,6 +361,7 @@ Full-grid invalidation:
 - For longs, place the full-grid invalidation below the deepest planned grid entry, below the adverse structural zone, and beyond spread, stop/freeze, volatility, wick, and liquidity-pool buffers.
 - For shorts, place the full-grid invalidation above the deepest planned grid entry, above the adverse structural zone, and beyond spread, stop/freeze, volatility, wick, and liquidity-pool buffers.
 - The first/anchor position's SL must be wide enough to allow the planned inner grid positions to fill without the anchor stopping out first.
+- The anchor SL must include the forecast-volatility buffer needed for planned inner fills. If the valid stop becomes too far for responsible full-book risk, reduce leg count, reduce size distribution into later legs, use a hedge, or skip.
 
 Stop-distance ladder:
 - Default to one common full-grid SL for the directional campaign unless broker constraints require per-leg prices.
@@ -386,8 +406,8 @@ Deeper legs should normally use:
 - quicker cancellation of sibling pending orders if price confirms back in favor
 
 Default harvest references:
-- rescue leg: first clean push toward book average, nearest M5 opposing micro level, or `0.25-0.60x` M5 ATR if that meaningfully lowers heat
-- improvement leg: next internal range level, midpoint, VWAP-like mean if available from indicators, or `0.50-1.00x` M5 ATR
+- rescue leg: first clean push toward book average, nearest M5 opposing micro level, `0.20-0.45x` M5 forecast horizon excursion, or `0.25-0.60x` M5 ATR if that meaningfully lowers heat
+- improvement leg: next internal range level, midpoint, VWAP-like mean if available from indicators, `0.35-0.70x` M5 forecast horizon excursion, or `0.50-1.00x` M5 ATR
 - anchor leg: original structural target, opposing support/resistance cluster, or barrier-validated TP
 
 If a later leg can be harvested for profit while the full book remains below target, take the harvest when it materially reduces net risk. Do not insist all legs reach the same TP.
@@ -401,6 +421,7 @@ Hedge permission:
 - gross and net exposure remain inside caps
 - hedge risk is included in full-book `trade_risk_analyze`
 - event/spread context supports a short scalp
+- M1 or M5 `forecast_volatility_estimate` supports a hedge target large enough to beat spread/friction before the hedge time stop
 
 Default hedge caps:
 - normal hedge: up to `50%` of current net directional exposure
@@ -420,6 +441,7 @@ Dual-sided grids are allowed only for validated short-term volatility harvesting
 - both sides have independent invalidation, TP/harvest, and cancellation rules
 - gross exposure, net exposure, pending exposure, and all-fill lot usage remain within `{{MAX_LOTS}}`
 - orders are not placed so close together that spread alone can churn the book
+- M5 and, when needed, M15 forecast volatility show enough two-way excursion to harvest both sides without forcing a swing hold
 
 If one side breaks out cleanly and the other side is threatened, collapse the losing side, harvest the winning side, or convert to one directional campaign. Do not maintain dual grids in a fresh trend expansion.
 
@@ -449,7 +471,7 @@ Before any market order, pending order, scale-in, recovery add, hedge, or dual-g
 10. Run `patterns_detect(symbol="{{SYMBOL}}", timeframe="M15", mode="fractal", detail="summary")` if recent swing/fractal levels can change entries, stops, harvests, or whether a sweep is real.
 11. Run `patterns_detect(symbol="{{SYMBOL}}", timeframe="M15", mode="elliott", detail="summary")` only if wave context can change recovery permission, dual-grid permission, or grid give-up timing.
 12. Run `regime_detect` before major scale-ins, recovery adds, dual grids, countertrend grids, or hedges.
-13. Run `forecast_volatility_estimate` if spacing, stop distance, or time stop realism is uncertain.
+13. Run `forecast_volatility_estimate(symbol="{{SYMBOL}}", timeframe="M5", horizon=12, method="ewma", detail="compact")` before finalizing grid spacing, full-grid SL, harvest distance, recovery adds, hedge stops, or dual-grid spacing unless a fresh estimate already covers the same decision.
 14. Run `forecast_barrier_prob` on exact final TP/SL geometry when known; run `forecast_barrier_optimize` only as constrained search inside structural stop floors.
 15. Run `trade_risk_analyze` on every proposed leg and the full resulting book.
 16. Clamp volume to broker step, remaining `{{MAX_LOTS}}` capacity, account safety, and intended tactic.

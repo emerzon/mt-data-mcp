@@ -2689,7 +2689,7 @@ def fetch_ticks(  # noqa: C901
                     + (["volume"] if has_volume else [])
                     + (["volume_real"] if has_real_volume else [])
                 ]
-                    payload["simplify"] = meta
+                payload["simplify"] = meta
             _add_tick_data_quality(payload)
             _add_tick_last_quality(payload)
             _add_tick_context_fields(payload)
