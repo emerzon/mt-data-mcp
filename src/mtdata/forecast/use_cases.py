@@ -747,9 +747,12 @@ def _apply_conformal_intervals_detail(
     if not isinstance(payload, dict) or payload.get("error"):
         return payload
     payload = _round_forecast_generate_payload(payload)
+    forecast_rows = _forecast_generate_compact_rows(payload)
     detail_value = _normalize_trader_detail(getattr(request, "detail", "compact"))
     if detail_value == "full":
         out = dict(payload)
+        if forecast_rows:
+            out.setdefault("forecast", forecast_rows)
         out["detail"] = "full"
         return out
 
@@ -785,6 +788,17 @@ def _apply_conformal_intervals_detail(
     conformal = _conformal_summary(payload.get("conformal"))
     if conformal:
         out["conformal"] = conformal
+    if forecast_rows:
+        out["forecast"] = forecast_rows
+        for key in (
+            "forecast_time",
+            "forecast_price",
+            "lower_price",
+            "upper_price",
+            "lower_return",
+            "upper_return",
+        ):
+            out.pop(key, None)
     return out
 
 
