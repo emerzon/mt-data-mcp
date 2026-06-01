@@ -967,6 +967,14 @@ def strategy_backtest(  # noqa: C901
                 "time": _format_time_minimal(float(times[last_idx])),
             },
         }
+        sample_notice = metrics.get("sample_notice") if isinstance(metrics, dict) else None
+        if isinstance(sample_notice, dict):
+            trades_observed = sample_notice.get("trades_observed")
+            minimum_trades = sample_notice.get("minimum_trades")
+            result["warning"] = (
+                f"Only {trades_observed} trade(s) observed; treat strategy metrics as low-confidence "
+                f"until at least {minimum_trades} trades are available."
+            )
         if detail_mode == "full":
             result["contracts"] = {
                 "data_preparation": _contract_payload(data_contract),
