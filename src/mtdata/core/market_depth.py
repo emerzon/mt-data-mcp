@@ -111,8 +111,10 @@ def _compact_market_ticker_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "price_currency",
         "bid",
         "ask",
+        "mid",
         "spread",
         "spread_points",
+        "spread_pct",
         "freshness",
         "market_status_reason",
         "time",
@@ -513,6 +515,7 @@ def market_ticker(
             spread_abs = None
             spread_points = None
             spread_pct = None
+            mid = None
             spread_cost_per_lot = None
             pricing_basis = "quote_only"
             if bid is not None and ask is not None and ask >= bid:
@@ -540,6 +543,7 @@ def market_ticker(
                 "price_currency": price_currency,
                 "bid": _round_market_ticker_value(bid, digits=digits),
                 "ask": _round_market_ticker_value(ask, digits=digits),
+                "mid": _round_market_ticker_value(mid, digits=digits),
                 "last": _round_market_ticker_value(last, digits=digits),
                 "spread": spread_abs,
                 "spread_points": spread_points,
