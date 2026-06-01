@@ -517,6 +517,20 @@ def _build_order_comment_payload(
     )
 
 
+def _order_result_value(result: Any, field: str) -> Any:
+    try:
+        return getattr(result, field)
+    except Exception:
+        return None
+
+
+def _order_retcode_name(mt5: Any, retcode: Any) -> Optional[str]:
+    try:
+        return mt5.retcode_name(retcode)
+    except Exception:
+        return common._retcode_name(mt5, retcode)
+
+
 def _submit_order_request(
     mt5: Any,
     request: Dict[str, Any],
@@ -539,17 +553,18 @@ def _submit_order_request(
             "fill_mode_attempts": fill_mode_attempts,
         }
 
-    if not validation._retcode_is_done(mt5, getattr(result, "retcode", None)):
+    retcode = _order_result_value(result, "retcode")
+    if not validation._retcode_is_done(mt5, retcode):
         error_message = base_error
         invalid_comment = comments._invalid_comment_error_text(result, last_error)
         if invalid_comment is not None:
             error_message = invalid_comment_error
         return None, {
             "error": error_message,
-            "retcode": result.retcode,
-            "retcode_name": mt5.retcode_name(result.retcode),
-            "comment": result.comment,
-            "request_id": result.request_id,
+            "retcode": retcode,
+            "retcode_name": _order_retcode_name(mt5, retcode),
+            "comment": _order_result_value(result, "comment"),
+            "request_id": _order_result_value(result, "request_id"),
             "last_error": last_error,
             "fill_mode_attempts": fill_mode_attempts,
         }
@@ -1003,17 +1018,18 @@ def _place_market_order(  # noqa: C901
             )
 
             warnings_out: List[str] = []
+            retcode = _order_result_value(result, "retcode")
             out: Dict[str, Any] = {
-                "retcode": result.retcode,
-                "retcode_name": mt5.retcode_name(result.retcode),
-                "deal": result.deal,
-                "order": result.order,
-                "volume": result.volume,
-                "price": result.price,
-                "bid": result.bid,
-                "ask": result.ask,
-                "comment": result.comment,
-                "request_id": result.request_id,
+                "retcode": retcode,
+                "retcode_name": _order_retcode_name(mt5, retcode),
+                "deal": _order_result_value(result, "deal"),
+                "order": _order_result_value(result, "order"),
+                "volume": _order_result_value(result, "volume"),
+                "price": _order_result_value(result, "price"),
+                "bid": _order_result_value(result, "bid"),
+                "ask": _order_result_value(result, "ask"),
+                "comment": _order_result_value(result, "comment"),
+                "request_id": _order_result_value(result, "request_id"),
                 "position_ticket": position_ticket,
                 "position_ticket_candidates": position_ticket_candidates or None,
                 "position_ticket_resolution": position_ticket_resolution,
@@ -1208,21 +1224,22 @@ def _place_pending_order(
             fill_mode_attempts = send_outcome["fill_mode_attempts"]
             used_request = send_outcome["used_request"]
 
+            retcode = _order_result_value(result, "retcode")
             out: Dict[str, Any] = {
                 "success": True,
-                "retcode": result.retcode,
-                "retcode_name": mt5.retcode_name(result.retcode),
-                "deal": result.deal,
-                "order": result.order,
-                "volume": result.volume,
-                "price": result.price,
-                "bid": result.bid,
-                "ask": result.ask,
+                "retcode": retcode,
+                "retcode_name": _order_retcode_name(mt5, retcode),
+                "deal": _order_result_value(result, "deal"),
+                "order": _order_result_value(result, "order"),
+                "volume": _order_result_value(result, "volume"),
+                "price": _order_result_value(result, "price"),
+                "bid": _order_result_value(result, "bid"),
+                "ask": _order_result_value(result, "ask"),
                 "requested_price": float(norm_price),
                 "requested_sl": float(norm_sl) if norm_sl is not None else None,
                 "requested_tp": float(norm_tp) if norm_tp is not None else None,
-                "comment": result.comment,
-                "request_id": result.request_id,
+                "comment": _order_result_value(result, "comment"),
+                "request_id": _order_result_value(result, "request_id"),
                 "type_filling_used": used_request.get("type_filling"),
             }
             if expiration_specified:
