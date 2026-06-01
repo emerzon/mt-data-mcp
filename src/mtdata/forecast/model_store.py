@@ -162,6 +162,10 @@ class ModelStore:
     def root(self) -> Path:
         return self._root
 
+    @property
+    def ttl_seconds(self) -> float:
+        return float(self._ttl)
+
     def _model_dir(self, method: str, data_scope: str, params_hash: str) -> Path:
         safe_scope = data_scope.replace("/", "_").replace("\\", "_")
         return self._root / method / safe_scope / params_hash
@@ -296,6 +300,43 @@ class ModelStore:
         method, data_scope, params_hash = parts
         model_dir = self._model_dir(method, data_scope, params_hash)
         return self._remove_dir(model_dir)
+
+    def describe_model(self, handle: TrainedModelHandle) -> Dict[str, Any]:
+        """Return operational metadata for a stored model handle."""
+        model_dir = self._model_dir(handle.method, handle.data_scope, handle.params_hash)
+        meta = self._read_raw_meta(model_dir) or {}
+        created_at = self._coerce_timestamp(meta.get("created_at"), handle.created_at)
+        last_used = self._last_used_from_meta(meta, created_at)
+        size_bytes = 0
+        file_count = 0
+        if model_dir.is_dir():
+            for path in model_dir.rglob("*"):
+                if not path.is_file():
+                    continue
+                try:
+                    size_bytes += int(path.stat().st_size)
+                    file_count += 1
+                except OSError:
+                    continue
+        now = time.time()
+        ttl = float(self._ttl)
+        expires_in_seconds: Optional[float] = None
+        expired = False
+        if ttl > 0:
+            expires_in_seconds = ttl - max(0.0, now - last_used)
+            expired = expires_in_seconds <= 0
+        return {
+            "model_dir": str(model_dir),
+            "created_at": created_at,
+            "last_used": last_used,
+            "age_seconds": max(0.0, now - created_at),
+            "idle_seconds": max(0.0, now - last_used),
+            "ttl_seconds": ttl,
+            "expires_in_seconds": expires_in_seconds,
+            "expired": expired,
+            "size_bytes": size_bytes,
+            "file_count": file_count,
+        }
 
     def cleanup_expired(self) -> int:
         """Remove all models that have exceeded the TTL. Returns count removed."""

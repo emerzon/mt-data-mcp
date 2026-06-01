@@ -8,6 +8,7 @@ Provides tools for:
 - Listing active tasks (``forecast_task_list``)
 - Listing stored trained models (``forecast_models_list``)
 - Deleting stored models (``forecast_models_delete``)
+- Cleaning up stale stored models (``forecast_models_cleanup``)
 """
 
 import logging
@@ -41,6 +42,14 @@ def _format_epoch_utc(value: Any) -> Optional[str]:
         )
     except Exception:
         return None
+
+
+def _days(value: Any) -> Optional[float]:
+    try:
+        seconds = float(value)
+    except Exception:
+        return None
+    return round(max(0.0, seconds) / 86400.0, 3)
 
 
 # ---------------------------------------------------------------------------
@@ -84,6 +93,20 @@ class ForecastModelsDeleteRequest(BaseModel):
     model_id: str = Field(..., description="Model ID in format method/data_scope/params_hash.")
 
 
+class ForecastModelsCleanupRequest(BaseModel):
+    older_than_days: Optional[float] = Field(
+        None,
+        ge=0.0,
+        description="Delete models idle for at least this many days. Omit to use the store TTL.",
+    )
+    method: Optional[str] = Field(None, description="Optional method filter.")
+    dry_run: bool = Field(True, description="Preview matching models without deleting them.")
+    detail: DetailLevel = Field(
+        "compact",
+        description="Response detail level: compact returns model IDs; full includes age and size fields.",
+    )
+
+
 # ---------------------------------------------------------------------------
 # Payload shaping helpers
 # ---------------------------------------------------------------------------
@@ -111,8 +134,24 @@ def _serialize_progress(progress: Any, *, detail: DetailLevel) -> Dict[str, Any]
     return payload
 
 
-def _serialize_model_handle(handle: Any, *, detail: DetailLevel) -> Dict[str, Any]:
+def _serialize_model_handle(
+    handle: Any,
+    *,
+    detail: DetailLevel,
+    store: Any = None,
+) -> Dict[str, Any]:
     created_at_epoch = getattr(handle, "created_at", None)
+    store_info: Dict[str, Any] = {}
+    describe = getattr(store, "describe_model", None)
+    if callable(describe):
+        try:
+            raw_info = describe(handle)
+            if isinstance(raw_info, dict):
+                store_info = raw_info
+        except Exception:
+            store_info = {}
+    created_at_epoch = store_info.get("created_at", created_at_epoch)
+    last_used_epoch = store_info.get("last_used")
     payload: Dict[str, Any] = {
         "model_id": handle.model_id,
         "method": handle.method,
@@ -120,6 +159,21 @@ def _serialize_model_handle(handle: Any, *, detail: DetailLevel) -> Dict[str, An
         "params_hash": handle.params_hash,
         "created_at": _format_epoch_utc(created_at_epoch) or created_at_epoch,
     }
+    if last_used_epoch is not None:
+        payload["last_used"] = _format_epoch_utc(last_used_epoch) or last_used_epoch
+    age_days = _days(store_info.get("age_seconds"))
+    idle_days = _days(store_info.get("idle_seconds"))
+    expires_in_days = _days(store_info.get("expires_in_seconds"))
+    if age_days is not None:
+        payload["age_days"] = age_days
+    if idle_days is not None:
+        payload["idle_days"] = idle_days
+    if store_info.get("size_bytes") is not None:
+        payload["size_bytes"] = int(store_info.get("size_bytes") or 0)
+    if expires_in_days is not None:
+        payload["expires_in_days"] = expires_in_days
+    if store_info.get("expired") is not None:
+        payload["expired"] = bool(store_info.get("expired"))
     if detail == "full":
         from ..forecast.model_store import (
             describe_store_metadata_compatibility,
@@ -127,6 +181,12 @@ def _serialize_model_handle(handle: Any, *, detail: DetailLevel) -> Dict[str, An
         )
 
         payload["created_at_epoch"] = created_at_epoch
+        if last_used_epoch is not None:
+            payload["last_used_epoch"] = last_used_epoch
+        if store_info:
+            payload["ttl_days"] = _days(store_info.get("ttl_seconds"))
+            payload["file_count"] = int(store_info.get("file_count") or 0)
+            payload["model_dir"] = store_info.get("model_dir")
         store_metadata = dict(getattr(handle, "store_metadata", {}) or {})
         payload["metadata"] = dict(getattr(handle, "metadata", {}) or {})
         payload["store_metadata"] = sanitize_store_metadata(store_metadata)
@@ -440,7 +500,7 @@ def forecast_models_list(
         store = _get_model_store()
         handles = store.list_models(method=method)
         items = [
-            _serialize_model_handle(h, detail=detail_mode)
+            _serialize_model_handle(h, detail=detail_mode, store=store)
             for h in handles
         ]
         out = {
@@ -495,4 +555,71 @@ def forecast_models_delete(request: ForecastModelsDeleteRequest) -> Dict[str, An
         operation="forecast_models_delete",
         func=_execute,
         model_id=request.model_id,
+    )
+
+
+@mcp.tool()
+def forecast_models_cleanup(request: ForecastModelsCleanupRequest) -> Dict[str, Any]:
+    """Preview or delete stale stored forecast models."""
+    def _execute() -> Dict[str, Any]:
+        detail_mode = _detail_mode(request.detail)
+        store = _get_model_store()
+        handles = store.list_models(method=request.method)
+        generated_at = time.time()
+        matches = []
+        for handle in handles:
+            info = store.describe_model(handle)
+            if request.older_than_days is None:
+                matched = bool(info.get("expired"))
+                reason = "expired_by_ttl"
+            else:
+                idle_seconds = float(info.get("idle_seconds") or 0.0)
+                matched = idle_seconds >= float(request.older_than_days) * 86400.0
+                reason = "idle_age"
+            if not matched:
+                continue
+            row: Dict[str, Any] = {
+                "model_id": handle.model_id,
+                "method": handle.method,
+                "reason": reason,
+            }
+            if detail_mode == "full":
+                row.update(
+                    {
+                        "data_scope": handle.data_scope,
+                        "created_at": _format_epoch_utc(info.get("created_at")),
+                        "last_used": _format_epoch_utc(info.get("last_used")),
+                        "age_days": _days(info.get("age_seconds")),
+                        "idle_days": _days(info.get("idle_seconds")),
+                        "expires_in_days": _days(info.get("expires_in_seconds")),
+                        "size_bytes": int(info.get("size_bytes") or 0),
+                    }
+                )
+            matches.append(row)
+
+        deleted = 0
+        if not request.dry_run:
+            for row in matches:
+                if store.delete(str(row.get("model_id") or "")):
+                    deleted += 1
+
+        return {
+            "success": True,
+            "detail": detail_mode,
+            "dry_run": bool(request.dry_run),
+            "method": request.method,
+            "older_than_days": request.older_than_days,
+            "ttl_days": _days(getattr(store, "ttl_seconds", 0.0)),
+            "matched": len(matches),
+            "deleted": deleted,
+            "models": matches,
+            "generated_at": _format_epoch_utc(generated_at),
+        }
+
+    return run_logged_operation(
+        logger,
+        operation="forecast_models_cleanup",
+        func=_execute,
+        method=request.method,
+        dry_run=request.dry_run,
     )
