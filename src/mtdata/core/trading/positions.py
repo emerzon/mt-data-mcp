@@ -213,6 +213,20 @@ def _trade_read_timezone_label(items: Any) -> Optional[str]:
     return None
 
 
+def _strip_active_trade_row_metadata(items: List[Any], *, kind: str) -> List[Any]:
+    if kind not in {"open_positions", "pending_orders"}:
+        return items
+    out: List[Any] = []
+    for item in items:
+        if isinstance(item, dict):
+            row = dict(item)
+            row.pop("timezone", None)
+            out.append(row)
+        else:
+            out.append(item)
+    return out
+
+
 def _attach_trade_volume_units(out: Dict[str, Any]) -> None:
     items = out.get("items")
     if not isinstance(items, list):
@@ -286,12 +300,16 @@ def _normalize_trade_read_output(
 
         items = rows.get("items")
         if isinstance(items, list):
-            out["items"] = [
+            normalized_items = [
                 _round_trade_money_fields(item) if isinstance(item, dict) else item
                 for item in items
             ]
+            timezone_label = _trade_read_timezone_label(normalized_items)
+            out["items"] = _strip_active_trade_row_metadata(
+                normalized_items,
+                kind=kind,
+            )
             out["count"] = len(items)
-            timezone_label = _trade_read_timezone_label(out["items"])
             if timezone_label:
                 out["timezone"] = timezone_label
             _attach_trade_volume_units(out)
@@ -337,11 +355,15 @@ def _normalize_trade_read_output(
         out["error"] = f"Unexpected {kind} payload type: {type(rows).__name__}"
         return out
 
-    out["items"] = [
+    normalized_items = [
         _round_trade_money_fields(row) if isinstance(row, dict) else row for row in rows
     ]
+    timezone_label = _trade_read_timezone_label(normalized_items)
+    out["items"] = _strip_active_trade_row_metadata(
+        normalized_items,
+        kind=kind,
+    )
     out["count"] = len(rows)
-    timezone_label = _trade_read_timezone_label(out["items"])
     if timezone_label:
         out["timezone"] = timezone_label
     _attach_trade_volume_units(out)
