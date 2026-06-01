@@ -555,6 +555,9 @@ def _apply_forecast_generate_detail(
         out.setdefault("timeframe", request.timeframe)
         if training_period:
             out.setdefault("training_period", training_period)
+        forecast_rows = _forecast_generate_compact_rows(out)
+        if forecast_rows:
+            out.setdefault("forecast", forecast_rows)
         out["detail"] = detail_value
         return attach_collection_contract(
             out,
