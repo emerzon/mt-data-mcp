@@ -360,6 +360,12 @@ _FINVIZ_SCREEN_FRACTION_PERCENT_FIELDS = frozenset(
         "insider_trans",
         "inst_own",
         "inst_trans",
+        "performance_week",
+        "performance_month",
+        "performance_quarter",
+        "performance_half_year",
+        "performance_year",
+        "performance_ytd",
     }
 )
 _FINVIZ_SCREEN_PERCENT_FIELDS = _FINVIZ_SCREEN_FRACTION_PERCENT_FIELDS | frozenset(
