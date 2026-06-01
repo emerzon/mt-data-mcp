@@ -25,6 +25,8 @@ from .barriers_shared import barrier_method_error, normalize_barrier_method
 from .capabilities import resolve_capability_request
 from .exceptions import ForecastError, raise_if_error_result
 from .forecast import execute_forecast as _forecast_impl
+from .forecast_methods import get_forecast_method_names
+from .forecast_validation import format_invalid_method_error
 from .requests import (
     ForecastBacktestRequest,
     ForecastBarrierOptimizeRequest,
@@ -1914,6 +1916,30 @@ def _resolve_tuning_search_space(
     return method_for_search, search_space
 
 
+def _validate_tuning_methods(
+    request: ForecastTuneGeneticRequest | ForecastTuneOptunaRequest,
+) -> Optional[Dict[str, Any]]:
+    requested = (
+        list(request.methods)
+        if isinstance(request.methods, (list, tuple)) and len(request.methods) > 0
+        else [request.method]
+    )
+    methods = [str(method or "").strip() for method in requested if str(method or "").strip()]
+    valid_methods = list(get_forecast_method_names())
+    valid_lookup = {str(method).lower(): str(method) for method in valid_methods}
+    for method in methods:
+        if method.lower() in valid_lookup:
+            continue
+        return {
+            "success": False,
+            "error": format_invalid_method_error(method, valid_methods),
+            "error_code": "unsupported_method",
+            "method": method,
+            "valid_methods_tool": "forecast_list_methods",
+        }
+    return None
+
+
 def _apply_tuning_detail(result: Dict[str, Any], detail: str) -> Dict[str, Any]:
     detail_value = _requested_detail_label(detail)
     out = dict(result)
@@ -1946,6 +1972,20 @@ def run_forecast_tune_genetic(
         method=request.method,
         methods=len(request.methods or []),
     )
+    invalid_method = _validate_tuning_methods(request)
+    if invalid_method is not None:
+        result = _apply_tuning_detail(invalid_method, request.detail)
+        log_operation_finish(
+            logger,
+            operation="forecast_tune_genetic",
+            started_at=started_at,
+            success=False,
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            method=request.method,
+            methods=len(request.methods or []),
+        )
+        return result
     method_for_search, search_space = _resolve_tuning_search_space(request)
     try:
         result = genetic_search_impl(
