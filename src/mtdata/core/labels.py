@@ -366,12 +366,40 @@ def labels_triple_barrier(
                 sl_price=sample_sl,
             ):
                 if tp_abs is not None or sl_abs is not None:
+                    if direction_value == "long":
+                        constraint = "tp_abs must be above entry_price and sl_abs must be below entry_price"
+                    else:
+                        constraint = "tp_abs must be below entry_price and sl_abs must be above entry_price"
+                    direction_hint = {
+                        "direction": direction_value,
+                        "entry_price": round(float(sample_entry_price), 8),
+                        "constraint": constraint,
+                        "tp_abs": tp_abs,
+                        "sl_abs": sl_abs,
+                        "resolved_tp": round(float(sample_tp), 8) if sample_tp is not None else None,
+                        "resolved_sl": round(float(sample_sl), 8) if sample_sl is not None else None,
+                    }
+                    offset_hint = None
+                    abs_values = [
+                        abs(float(value))
+                        for value in (tp_abs, sl_abs)
+                        if value is not None and math.isfinite(float(value))
+                    ]
+                    if abs_values and max(abs_values) < abs(float(sample_entry_price)) * 0.2:
+                        offset_hint = (
+                            "The absolute levels are far from the entry price; if these are offsets, "
+                            "use tp_pct/sl_pct or tp_ticks/sl_ticks instead."
+                        )
+                        direction_hint["offset_hint"] = offset_hint
                     return {
                         "error": (
-                            "Invalid absolute TP/SL levels for the entry price. "
-                            "tp_abs/sl_abs are absolute price levels, not offsets; "
-                            "use tp_ticks/sl_ticks or tp_pct/sl_pct for offset-style barriers."
-                        )
+                            "Invalid absolute TP/SL levels for the entry price: "
+                            f"{constraint}. entry_price≈{sample_entry_price:.8g}, "
+                            f"tp_abs={tp_abs}, sl_abs={sl_abs}. "
+                            "Use tp_pct/sl_pct or tp_ticks/sl_ticks for offset-style barriers."
+                        ),
+                        "direction_hint": direction_hint,
+                        **({"offset_hint": offset_hint} if offset_hint else {}),
                     }
                 return {
                     "error": "Resolved TP/SL barriers are invalid for the entry price."
