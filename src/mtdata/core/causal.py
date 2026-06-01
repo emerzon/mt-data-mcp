@@ -462,6 +462,21 @@ def _normalize_cointegration_trend(value: str) -> str | None:
     return _COINTEGRATION_TREND_ALIASES.get(text)
 
 
+def _causal_transform_reason(tool: str, transform: str) -> str:
+    transform_value = str(transform or "").strip().lower()
+    if tool == "cointegration_test":
+        if transform_value == "log_level":
+            return "Cointegration tests price-level relationships; log_level preserves levels while reducing scale effects."
+        return "Cointegration tests price-level relationships, so level-style transforms are used."
+    if transform_value == "log_return":
+        return "Return transforms compare co-movement and predictive links without shared price-scale effects."
+    if transform_value == "pct":
+        return "Percentage returns compare relative movement across different price scales."
+    if transform_value == "diff":
+        return "First differences remove level drift before pairwise relationship tests."
+    return "Level transform keeps raw price levels; use for level relationships, not return co-movement."
+
+
 def _standardize_frame(frame: pd.DataFrame) -> pd.DataFrame:
     if frame.empty:
         return frame
@@ -1704,8 +1719,14 @@ def causal_discover_signals(  # noqa: C901
         rows_for_output = rows_sorted if detail_mode == "full" else significant_rows
         output_rows, output_truncated = _limit_pair_rows(rows_for_output, output_limit)
         meta["output_truncated"] = output_truncated
+        transform_value = _normalize_transform_name(transform) or str(transform).strip().lower()
         out: Dict[str, Any] = {
             "success": True,
+            "transform": transform_value,
+            "transform_reason": _causal_transform_reason(
+                "causal_discover_signals",
+                transform_value,
+            ),
             "items": output_rows,
             "count": int(len(output_rows)),
             "summary": {
@@ -2095,6 +2116,11 @@ def correlation_matrix(  # noqa: C901
         )
         out: Dict[str, Any] = {
             "success": True,
+            "transform": transform_value,
+            "transform_reason": _causal_transform_reason(
+                "correlation_matrix",
+                transform_value,
+            ),
             "items": output_rows,
             "count": int(len(output_rows_raw)),
             "context": {
@@ -2559,6 +2585,11 @@ def cointegration_test(  # noqa: C901
 
         out: Dict[str, Any] = {
             "success": True,
+            "transform": transform_value,
+            "transform_reason": _causal_transform_reason(
+                "cointegration_test",
+                transform_value,
+            ),
             "items": [_public_pair_row(row) for row in output_rows_raw],
             "count": int(len(output_rows_raw)),
             "summary": {
