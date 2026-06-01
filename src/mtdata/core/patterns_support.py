@@ -334,6 +334,21 @@ def _summarize_pattern_bias(rows: List[Dict[str, Any]]) -> Optional[Dict[str, An
     )
     net_conf = agreement * evidence_strength
     conflict = bool(bullish_count > 0 and bearish_count > 0)
+    if directional_count > 0:
+        if bullish_count > bearish_count:
+            dominant_direction = "bullish"
+            dominant_share = bullish_count / directional_count
+        elif bearish_count > bullish_count:
+            dominant_direction = "bearish"
+            dominant_share = bearish_count / directional_count
+        else:
+            dominant_direction = "balanced"
+            dominant_share = 0.5
+        directional_strength = abs(bullish_count - bearish_count) / directional_count
+    else:
+        dominant_direction = "neutral"
+        dominant_share = 0.0
+        directional_strength = 0.0
     if directional_total <= 1e-9:
         net_bias = "neutral"
     elif conflict and net_conf < 0.2:
@@ -351,6 +366,9 @@ def _summarize_pattern_bias(rows: List[Dict[str, Any]]) -> Optional[Dict[str, An
         "bearish_patterns": int(bearish_count),
         "neutral_patterns": int(neutral_count),
         "conflict": conflict,
+        "dominant_direction": dominant_direction,
+        "dominant_share": _round_confidence(dominant_share),
+        "directional_strength": _round_confidence(directional_strength),
     }
     if strongest_bullish:
         out["strongest_bullish"] = strongest_bullish
@@ -394,6 +412,41 @@ def _summarize_actionable_pattern_signal(
     if conflict:
         out["conflict"] = "both_bullish_and_bearish_patterns_present"
     return out
+
+
+def _pattern_signal_verdict(
+    signal_bias: Dict[str, Any],
+    strongest_pattern: Optional[Dict[str, Any]],
+) -> Optional[str]:
+    bullish = int(signal_bias.get("bullish_patterns") or 0)
+    bearish = int(signal_bias.get("bearish_patterns") or 0)
+    if bullish <= 0 and bearish <= 0:
+        return None
+    dominant = str(signal_bias.get("dominant_direction") or "neutral")
+    share = signal_bias.get("dominant_share")
+    strength = signal_bias.get("directional_strength")
+    conflict = bool(signal_bias.get("conflict"))
+    pieces = [
+        f"Pattern mix is {dominant} ({bullish} bullish vs {bearish} bearish"
+    ]
+    if share not in (None, ""):
+        pieces[0] += f"; dominant_share={share}"
+    pieces[0] += ")."
+    if strongest_pattern:
+        label = strongest_pattern.get("pattern")
+        direction = strongest_pattern.get("direction")
+        confidence = strongest_pattern.get("confidence")
+        strongest_text = f"Strongest pattern is {label}"
+        if direction not in (None, ""):
+            strongest_text += f" ({direction})"
+        if confidence not in (None, ""):
+            strongest_text += f" confidence={confidence}"
+        pieces.append(strongest_text + ".")
+    if conflict:
+        pieces.append("Mixed bullish/bearish evidence; wait for confirmation or check a higher timeframe.")
+    elif strength not in (None, ""):
+        pieces.append(f"Directional strength={strength}.")
+    return " ".join(pieces)
 
 
 def _compact_patterns_payload(
@@ -578,8 +631,18 @@ def _compact_patterns_payload(
             compact["conflict"] = signal.get("conflict")
     if signal_bias:
         compact["bias"] = signal_bias.get("net_bias")
+        compact["dominant_direction"] = signal_bias.get("dominant_direction")
+        compact["directional_score"] = {
+            "direction": signal_bias.get("dominant_direction"),
+            "strength": signal_bias.get("directional_strength"),
+            "share": signal_bias.get("dominant_share"),
+        }
     if strongest_compact:
         compact["strongest_pattern"] = strongest_compact
+    if signal_bias:
+        verdict = _pattern_signal_verdict(signal_bias, strongest_compact)
+        if verdict:
+            compact["verdict"] = verdict
     if top_patterns:
         compact["top_patterns"] = top_patterns
     if total_i > len(top_patterns):
