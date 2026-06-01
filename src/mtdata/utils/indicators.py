@@ -41,6 +41,8 @@ _TA_INDICATOR_CATEGORIES = (
     "cycles",
 )
 logger = logging.getLogger(__name__)
+_DEFAULT_TOKEN_RE = r"(?:'[^']*'|\"[^\"]*\"|True|False|None|null|[+-]?\d+(?:\.\d+)?|[A-Za-z_][A-Za-z0-9_]*)"
+_DEFAULT_MISSING = object()
 
 
 def _normalize_ta_indicator_name(name: str) -> str:
@@ -98,6 +100,27 @@ def _try_number(s: str):
         return None
 
 
+def _parse_doc_default_value(raw: str) -> Any:
+    text = str(raw or "").strip().rstrip(".,)")
+    if not text:
+        return _DEFAULT_MISSING
+    if (text.startswith("'") and text.endswith("'")) or (text.startswith('"') and text.endswith('"')):
+        return text[1:-1]
+    lowered = text.lower()
+    if lowered == "true":
+        return True
+    if lowered == "false":
+        return False
+    if lowered in {"none", "null"}:
+        return None
+    number = _try_number(text)
+    if number is not None:
+        return number
+    if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", text):
+        return text
+    return _DEFAULT_MISSING
+
+
 def _parse_ti_number(token: str) -> int | float | None:
     """Parse a numeric TI arg, normalizing integral floats to int.
 
@@ -129,20 +152,22 @@ def infer_defaults_from_doc(func_name: str, doc_text: str, params: List[Dict[str
                 k, v = part.split('=', 1)
                 k = k.strip()
                 v = v.strip().strip(',)')
-                num = _try_number(v)
-                if num is not None:
+                default_value = _parse_doc_default_value(v)
+                if default_value is not _DEFAULT_MISSING and default_value is not None:
                     for p in params:
                         if p.get('name') == k and 'default' not in p:
-                            p['default'] = num
+                            p['default'] = default_value
     for p in params:
         if 'default' in p:
             continue
         k = p.get('name')
         if not k:
             continue
-        m = re.search(rf"{re.escape(k)}[^\n]*?(?:Default|default)\s*:?[\s]*([0-9]+(?:\.[0-9]+)?)", text)
+        m = re.search(rf"{re.escape(k)}[^\n]*?(?:Default|default)\s*:?\s*({_DEFAULT_TOKEN_RE})", text)
         if m:
-            p['default'] = _try_number(m.group(1))
+            default_value = _parse_doc_default_value(m.group(1))
+            if default_value is not _DEFAULT_MISSING:
+                p['default'] = default_value
 
 
 def list_ta_indicators(*, detailed: bool = False) -> List[Dict[str, Any]]:
