@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from bisect import bisect_left
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -515,60 +516,83 @@ def _collect_tests(
     return tests
 
 
+def _cluster_search_radius(value: float, *, tolerance_pct: float) -> float:
+    tolerance_value = max(float(tolerance_pct), 0.0)
+    if tolerance_value <= 0.0:
+        return 0.0
+    if tolerance_value >= 1.0:
+        return math.inf
+    return max(abs(float(value)), 1e-9) * tolerance_value / (1.0 - tolerance_value)
+
+
+def _insert_cluster_sorted(clusters: List[Dict[str, Any]], cluster: Dict[str, Any]) -> None:
+    insert_at = bisect_left([float(item["value"]) for item in clusters], float(cluster["value"]))
+    clusters.insert(insert_at, cluster)
+
+
 def _cluster_tests(tests: List[Dict[str, Any]], *, tolerance_pct: float) -> List[Dict[str, Any]]:
-    clusters: List[Dict[str, Any]] = []
+    active_clusters: List[Dict[str, Any]] = []
+    finalized_clusters: List[Dict[str, Any]] = []
+    tolerance_value = max(float(tolerance_pct), 0.0)
     for test in sorted(tests, key=lambda item: float(item["value"])):
         value = float(test["value"])
-        best_cluster: Optional[Dict[str, Any]] = None
+        search_radius = _cluster_search_radius(value, tolerance_pct=tolerance_value)
+        lower_bound = value - search_radius
+        upper_bound = value + search_radius
+        while active_clusters and float(active_clusters[0]["value"]) < lower_bound:
+            finalized_clusters.append(active_clusters.pop(0))
+
+        best_cluster_index: Optional[int] = None
         best_delta: Optional[float] = None
-        for cluster in clusters:
+        for index, cluster in enumerate(active_clusters):
             ref = float(cluster["value"])
-            threshold = max(abs(ref), abs(value), 1e-9) * float(tolerance_pct)
+            if ref > upper_bound:
+                break
+            threshold = max(abs(ref), abs(value), 1e-9) * tolerance_value
             delta = abs(ref - value)
             if delta <= threshold and (best_delta is None or delta < best_delta):
-                best_cluster = cluster
+                best_cluster_index = index
                 best_delta = delta
 
         score = max(float(test["score"]), 1e-9)
         timestamp = test.get("timestamp")
-        if best_cluster is None:
-            clusters.append(
-                {
-                    "value": float(value),
-                    "weight_sum": float(score),
-                    "touches": 1,
-                    "score_base": float(test["score"]),
-                    "score": float(test["score"]),
-                    "retest_score": float(test["retest_component"]),
-                    "bounce_score": float(test["bounce_component"]),
-                    "adx_score": float(test["adx_component"]),
-                    "volume_score": float(test.get("volume_component", 0.0)),
-                    "first_time": timestamp,
-                    "last_time": timestamp,
-                    "first_index": int(test["index"]),
-                    "last_index": int(test["index"]),
-                    "support_tests": 1 if test["type"] == "support" else 0,
-                    "resistance_tests": 1 if test["type"] == "resistance" else 0,
-                    "value_sq_sum": float(value * value * score),
-                    "touch_min": float(value),
-                    "touch_max": float(value),
-                    "atr_metric_sum": float(test["atr_value"]) * score,
-                    "atr_weight_sum": float(score),
-                    "bounce_metric_sum": float(test["bounce_atr"]) * score,
-                    "adx_metric_sum": float(test["pretest_adx"]) * score,
-                    "metric_weight_sum": float(score),
-                    "volume_metric_sum": 0.0,
-                    "volume_metric_weight_sum": 0.0,
-                    "tests": [dict(test)],
-                }
-            )
+        if best_cluster_index is None:
+            cluster = {
+                "value": float(value),
+                "weight_sum": float(score),
+                "touches": 1,
+                "score_base": float(test["score"]),
+                "score": float(test["score"]),
+                "retest_score": float(test["retest_component"]),
+                "bounce_score": float(test["bounce_component"]),
+                "adx_score": float(test["adx_component"]),
+                "volume_score": float(test.get("volume_component", 0.0)),
+                "first_time": timestamp,
+                "last_time": timestamp,
+                "first_index": int(test["index"]),
+                "last_index": int(test["index"]),
+                "support_tests": 1 if test["type"] == "support" else 0,
+                "resistance_tests": 1 if test["type"] == "resistance" else 0,
+                "value_sq_sum": float(value * value * score),
+                "touch_min": float(value),
+                "touch_max": float(value),
+                "atr_metric_sum": float(test["atr_value"]) * score,
+                "atr_weight_sum": float(score),
+                "bounce_metric_sum": float(test["bounce_atr"]) * score,
+                "adx_metric_sum": float(test["pretest_adx"]) * score,
+                "metric_weight_sum": float(score),
+                "volume_metric_sum": 0.0,
+                "volume_metric_weight_sum": 0.0,
+                "tests": [dict(test)],
+            }
             volume_ratio = _as_finite_float(test.get("volume_ratio"))
             if volume_ratio is not None:
-                clusters[-1]["volume_metric_sum"] = float(volume_ratio) * score
-                clusters[-1]["volume_metric_weight_sum"] = float(score)
+                cluster["volume_metric_sum"] = float(volume_ratio) * score
+                cluster["volume_metric_weight_sum"] = float(score)
+            _insert_cluster_sorted(active_clusters, cluster)
             continue
 
-        cluster = best_cluster
+        cluster = active_clusters.pop(best_cluster_index)
         new_weight = float(cluster["weight_sum"]) + score
         cluster["value"] = (float(cluster["value"]) * float(cluster["weight_sum"]) + value * score) / new_weight
         cluster["weight_sum"] = new_weight
@@ -603,7 +627,9 @@ def _cluster_tests(tests: List[Dict[str, Any]], *, tolerance_pct: float) -> List
             if cluster["last_time"] is None or float(timestamp) > float(cluster["last_time"]):
                 cluster["last_time"] = timestamp
 
-    return clusters
+        _insert_cluster_sorted(active_clusters, cluster)
+
+    return finalized_clusters + active_clusters
 
 
 def _apply_episode_metrics(cluster: Dict[str, Any], *, episode_gap_bars: int) -> None:
