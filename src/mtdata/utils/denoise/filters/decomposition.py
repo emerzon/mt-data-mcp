@@ -20,7 +20,54 @@ try:
 except Exception:
     _VMD = None  # type: ignore
 
+try:
+    from sklearn.utils.extmath import randomized_svd as _randomized_svd
+except Exception:
+    _randomized_svd = None  # type: ignore
+
 from ..base import _series_like, register_filter
+
+
+def _ssa_requested_rank(components: Optional[Any], max_rank: int) -> Optional[int]:
+    if components is None:
+        return min(2, max_rank)
+    if isinstance(components, float) and 0 < components <= 1:
+        return None
+    return max(1, min(int(components), max_rank))
+
+
+def _should_use_randomized_ssa_svd(shape: tuple[int, int], rank: Optional[int]) -> bool:
+    if _randomized_svd is None or rank is None:
+        return False
+    full_rank = min(shape)
+    if rank >= full_rank or full_rank < 64 or (shape[0] * shape[1]) < 8192:
+        return False
+    return rank <= max(4, full_rank // 3)
+
+
+def _ssa_svd(
+    X: np.ndarray,
+    *,
+    requested_rank: Optional[int],
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    if _should_use_randomized_ssa_svd(X.shape, requested_rank):
+        assert requested_rank is not None
+        try:
+            oversamples = min(10, max(2, min(X.shape) - requested_rank))
+            U, s, Vt = _randomized_svd(
+                X,
+                n_components=requested_rank,
+                n_iter=4,
+                n_oversamples=oversamples,
+                random_state=0,
+                flip_sign=False,
+            )
+            if U.shape[1] == requested_rank and Vt.shape[0] == requested_rank and np.all(np.isfinite(s)):
+                order = np.argsort(s)[::-1]
+                return U[:, order], s[order], Vt[order, :]
+        except Exception:
+            _logger.debug("SSA randomized SVD failed; falling back to full SVD", exc_info=True)
+    return np.linalg.svd(X, full_matrices=False)
 
 
 def _ssa_denoise(
@@ -39,9 +86,10 @@ def _ssa_denoise(
         return x
     K = n - L + 1
     X = np.column_stack([x[i : i + L] for i in range(K)])
-    U, s, Vt = np.linalg.svd(X, full_matrices=False)
-    if components is None:
-        r = min(2, len(s))
+    requested_rank = _ssa_requested_rank(components, min(L, K))
+    U, s, Vt = _ssa_svd(X, requested_rank=requested_rank)
+    if requested_rank is not None:
+        r = requested_rank
     elif isinstance(components, float) and 0 < components <= 1:
         total_energy = float(np.sum(s ** 2))
         if not math.isfinite(total_energy) or total_energy <= 0.0:

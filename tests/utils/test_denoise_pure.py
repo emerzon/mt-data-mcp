@@ -4,8 +4,6 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from mtdata.utils.denoise import api as denoise_api
-from mtdata.utils.denoise.api import _run_denoise_handler
 from mtdata.utils.denoise import (
     _apply_denoise,
     _denoise_series,
@@ -14,12 +12,14 @@ from mtdata.utils.denoise import (
     get_denoise_methods_data,
     normalize_denoise_spec,
 )
+from mtdata.utils.denoise import api as denoise_api
+from mtdata.utils.denoise.api import _run_denoise_handler
+from mtdata.utils.denoise.filters import specialized as specialized_filters
 from mtdata.utils.denoise.filters.adaptive import (
     _adaptive_lms_filter,
     _adaptive_rls_filter,
 )
 from mtdata.utils.denoise.filters.decomposition import _ssa_denoise, _vmd_denoise
-from mtdata.utils.denoise.filters import specialized as specialized_filters
 from mtdata.utils.denoise.filters.specialized import (
     _bilateral_filter_1d,
     _hampel_filter,
@@ -929,6 +929,55 @@ class TestSsaDenoise:
     def test_energy_ratio_components(self):
         y = _ssa_denoise(NOISY_SIGNAL, window=30, components=0.9)
         _check_basic(y, N)
+
+    def test_small_component_count_uses_randomized_svd(self, monkeypatch):
+        real_svd = np.linalg.svd
+        captured = {}
+
+        def fake_randomized_svd(X, **kwargs):
+            captured["shape"] = X.shape
+            captured["kwargs"] = dict(kwargs)
+            U, s, Vt = real_svd(X, full_matrices=False)
+            n_components = int(kwargs["n_components"])
+            return U[:, :n_components], s[:n_components], Vt[:n_components, :]
+
+        monkeypatch.setattr(
+            "mtdata.utils.denoise.filters.decomposition._randomized_svd",
+            fake_randomized_svd,
+        )
+        monkeypatch.setattr(
+            "mtdata.utils.denoise.filters.decomposition.np.linalg.svd",
+            lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("full svd should be skipped")),
+        )
+
+        y = _ssa_denoise(NOISY_SIGNAL, window=80, components=2)
+
+        _check_basic(y, N)
+        assert captured["shape"] == (80, N - 80 + 1)
+        assert captured["kwargs"]["n_components"] == 2
+        assert captured["kwargs"]["random_state"] == 0
+
+    def test_energy_ratio_components_keep_full_svd_for_exact_rank_selection(self, monkeypatch):
+        real_svd = np.linalg.svd
+        calls = {"count": 0}
+
+        def counting_svd(*args, **kwargs):
+            calls["count"] += 1
+            return real_svd(*args, **kwargs)
+
+        monkeypatch.setattr(
+            "mtdata.utils.denoise.filters.decomposition._randomized_svd",
+            lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("randomized svd should be skipped")),
+        )
+        monkeypatch.setattr(
+            "mtdata.utils.denoise.filters.decomposition.np.linalg.svd",
+            counting_svd,
+        )
+
+        y = _ssa_denoise(NOISY_SIGNAL, window=80, components=0.9)
+
+        _check_basic(y, N)
+        assert calls["count"] == 1
 
     def test_short_array(self):
         y = _ssa_denoise(np.array([1.0, 2.0, 3.0]), window=10, components=2)
