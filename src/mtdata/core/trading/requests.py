@@ -214,7 +214,10 @@ class TradeJournalAnalyzeRequest(BaseModel):
     position_ticket: Optional[Union[int, str]] = None
     deal_ticket: Optional[Union[int, str]] = None
     minutes_back: Optional[int] = None
-    limit: Optional[int] = 500
+    limit: Optional[int] = Field(
+        default=50,
+        description="Maximum raw history rows to inspect. Default 50 keeps post-session review fast; raise for longer-term statistics.",
+    )
     breakdown_limit: int = 10
 
     @field_validator("side", mode="before")
