@@ -1783,6 +1783,18 @@ def _normalize_finviz_calendar_payload(
                 for item in normalized_items
             ]
         out["count"] = len(out["items"])
+        if out["count"] == 0:
+            cal_type = str(calendar_type or "economic").strip().lower()
+            if cal_type == "earnings":
+                out["message"] = "No detailed earnings calendar rows matched the date range."
+                out["hint"] = (
+                    "Use finviz_earnings for the period-based earnings view with price/volume context."
+                )
+            elif cal_type == "dividends":
+                out["message"] = "No dividend calendar rows matched the date range."
+            else:
+                out["message"] = "No economic calendar events matched the filters."
+                out["hint"] = "Relax impact, country, currency, start, or end filters."
     if country_code_filter:
         out["country_filter"] = str(country_code_filter).upper()
     if str(calendar_type or "economic").strip().lower() == "economic":
