@@ -1168,6 +1168,18 @@ def _close_positions(  # noqa: C901
                         out["ticket_resolution"] = ticket_resolution
                     return out
                 if (
+                    symbol is not None
+                    and str(getattr(position, "symbol", "") or "").upper()
+                    != str(symbol).upper()
+                ):
+                    return {
+                        "error": (
+                            f"Position {ticket} belongs to {position.symbol}, "
+                            f"not requested symbol {symbol}."
+                        ),
+                        "checked_scopes": ["positions"],
+                    }
+                if (
                     magic_filter is not None
                     and validation._safe_int_ticket(getattr(position, "magic", None))
                     != magic_filter
@@ -1502,6 +1514,18 @@ def _cancel_pending(
                     if isinstance(ticket_resolution, dict):
                         out["ticket_resolution"] = ticket_resolution
                     return out
+                if (
+                    symbol is not None
+                    and str(getattr(order, "symbol", "") or "").upper()
+                    != str(symbol).upper()
+                ):
+                    return {
+                        "error": (
+                            f"Pending order {ticket} belongs to {order.symbol}, "
+                            f"not requested symbol {symbol}."
+                        ),
+                        "checked_scopes": ["pending_orders"],
+                    }
                 if (
                     magic_filter is not None
                     and validation._safe_int_ticket(getattr(order, "magic", None))
