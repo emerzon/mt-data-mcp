@@ -58,6 +58,30 @@ def _pivot_display_timezone(use_client_tz: bool) -> str:
 _PIVOT_COMPAT_EXPORTS = (mt5,)
 
 
+_PIVOT_METHOD_INFO: Dict[str, Dict[str, str]] = {
+    "classic": {
+        "method_description": "PP=(H+L+C)/3; R/S levels extend arithmetically from the prior bar range.",
+        "intended_use": "General-purpose floor-trader pivots for broad support/resistance context.",
+    },
+    "fibonacci": {
+        "method_description": "PP=(H+L+C)/3; R/S levels use 0.382, 0.618, and 1.000 range multiples.",
+        "intended_use": "Traders who align pivot levels with Fibonacci retracement/extension zones.",
+    },
+    "camarilla": {
+        "method_description": "Levels are close-centered using 1.1 * prior range fractions; includes R1-R4/S1-S4.",
+        "intended_use": "Intraday mean-reversion/breakout context; R3/S3 and R4/S4 are commonly watched.",
+    },
+    "woodie": {
+        "method_description": "PP=(H+L+2*C)/4, weighting the close more heavily than classic pivots.",
+        "intended_use": "Close-sensitive intraday pivot context.",
+    },
+    "demark": {
+        "method_description": "Uses open/close relationship to choose X, then computes PP, R1, and S1.",
+        "intended_use": "Directional single-level pivot context from the prior bar.",
+    },
+}
+
+
 def _resolve_support_resistance_timeframes(timeframe: Optional[str]) -> tuple[str, List[str]]:
     raw = str(timeframe or "auto").strip()
     if not raw or raw.lower() == "auto":
@@ -388,6 +412,8 @@ def pivot_compute_points(  # noqa: C901
                     "method": name,
                     "pivot": _round(pivot_val) if pivot_val is not None else None,
                     "levels": levels,
+                    "level_set": list(levels.keys()),
+                    **_PIVOT_METHOD_INFO.get(name, {}),
                 }
 
             methods_out = []
@@ -507,6 +533,10 @@ def pivot_compute_points(  # noqa: C901
                     "null cells mean that pivot method does not define that level. "
                     "Camarilla levels are centered on the close price, so S1 may be above PP and R1 may be below PP."
                 ),
+                "method_descriptions": {
+                    name: dict(_PIVOT_METHOD_INFO.get(name, {}))
+                    for name in method_names
+                },
                 "levels": levels_table,
             }
             payload["timezone"] = timezone_label
@@ -541,12 +571,13 @@ def pivot_compute_points(  # noqa: C901
                         if isinstance(selected_method, dict)
                         else None
                     ),
-                    "levels": {
-                        key: compact_levels[key]
-                        for key in ("PP", "R1", "S1", "R2", "S2", "R3", "S3")
-                        if key in compact_levels
-                    },
+                    "levels": compact_levels,
                 }
+                if isinstance(selected_method, dict):
+                    for key in ("level_set", "method_description", "intended_use"):
+                        value = selected_method.get(key)
+                        if value not in (None, "", [], {}):
+                            compact_payload[key] = value
                 compact_payload["timezone"] = timezone_label
                 degenerate_info = _degenerate_levels_info(compact_payload["levels"])
                 if degenerate_info:
