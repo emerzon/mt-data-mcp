@@ -1084,15 +1084,14 @@ def _apply_pre_ti_denoise(
     if normalized and str(normalized.get('when', 'pre_ti')).lower() == 'pre_ti':
         added_columns = _apply_denoise_util(df, normalized, default_when='pre_ti')
         _extend_unique_headers(headers, added_columns)
-
-    _append_denoise_application(
-        denoise_apps,
-        denoise,
-        default_when='pre_ti',
-        default_causality='causal',
-        default_keep_original=False,
-        added_columns=added_columns,
-    )
+        _append_denoise_application(
+            denoise_apps,
+            normalized,
+            default_when='pre_ti',
+            default_causality='causal',
+            default_keep_original=False,
+            added_columns=added_columns,
+        )
 
 
 def _apply_indicator_stage(
@@ -1129,21 +1128,22 @@ def _apply_post_ti_denoise(
 ) -> None:
     if not denoise:
         return
+    if not (isinstance(denoise, dict) and denoise.get('when') not in (None, "")):
+        return
 
     normalized = _normalize_denoise_spec(denoise, default_when='post_ti')
     added_columns: List[str] = []
     if normalized and str(normalized.get('when', 'post_ti')).lower() == 'post_ti':
         added_columns = _apply_denoise_util(df, normalized, default_when='post_ti')
         _extend_unique_headers(headers, added_columns)
-
-    _append_denoise_application(
-        denoise_apps,
-        normalized,
-        default_when='post_ti',
-        default_causality='zero_phase',
-        default_keep_original=True,
-        added_columns=added_columns,
-    )
+        _append_denoise_application(
+            denoise_apps,
+            normalized,
+            default_when='post_ti',
+            default_causality='zero_phase',
+            default_keep_original=True,
+            added_columns=added_columns,
+        )
 
 
 def _rebuild_candle_indicator_window(
