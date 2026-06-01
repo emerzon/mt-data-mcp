@@ -576,7 +576,11 @@ def _trade_account_payload_for_mode(payload: Dict[str, Any], *, mode: str) -> Di
     if mode == "compact":
         keys = _TRADE_ACCOUNT_COMPACT_KEYS
     else:
-        return dict(payload)
+        out = dict(payload)
+        out["additional_fields"] = [
+            key for key in payload if key not in _TRADE_ACCOUNT_COMPACT_KEYS
+        ]
+        return out
     return {key: payload.get(key) for key in keys if key in payload}
 
 
