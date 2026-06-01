@@ -366,6 +366,23 @@ def _wait_event_trigger_reason(matched_event: Dict[str, Any]) -> Optional[str]:
     return ", ".join(reason_parts)
 
 
+def _wait_event_monitored_types(criteria: Optional[Dict[str, Any]]) -> List[str]:
+    if not isinstance(criteria, dict):
+        return []
+    event_types: set[str] = set()
+    for field_name in ("watch_for", "end_on"):
+        specs = criteria.get(field_name)
+        if not isinstance(specs, list):
+            continue
+        for spec in specs:
+            if not isinstance(spec, dict):
+                continue
+            event_type = str(spec.get("type") or "").strip()
+            if event_type:
+                event_types.add(event_type)
+    return sorted(event_types)
+
+
 def _compact_wait_event_public_result(
     result: Dict[str, Any],
     *,
@@ -374,7 +391,9 @@ def _compact_wait_event_public_result(
     detail: CompactFullDetailLiteral = "compact",
 ) -> Dict[str, Any]:
     out = dict(result)
-    out.pop("max_wait_seconds", None)
+    max_wait_seconds = out.pop("max_wait_seconds", None)
+    elapsed_seconds = out.get("elapsed_seconds")
+    status = str(out.get("status") or "").strip().lower()
 
     criteria_in = out.get("criteria")
     criteria = dict(criteria_in) if isinstance(criteria_in, dict) else None
@@ -436,6 +455,16 @@ def _compact_wait_event_public_result(
         if isinstance(observed, dict) and observed:
             compact_matched["observed"] = dict(observed)
         out["matched_event"] = compact_matched or None
+
+    if status == "timeout":
+        out["timeout"] = True
+        if elapsed_seconds is not None:
+            out["waited_seconds"] = elapsed_seconds
+        if max_wait_seconds is not None:
+            out["max_wait_seconds"] = max_wait_seconds
+        monitored_types = _wait_event_monitored_types(criteria)
+        if monitored_types:
+            out["events_monitored"] = monitored_types
 
     return out
 
@@ -603,6 +632,7 @@ def wait_event(
     timeframe: TimeframeLiteral = "M1",
     wait_next_bar: bool = False,
     watch_tick_count_spike: bool = True,
+    max_wait_seconds: Optional[float] = None,
     watch_for: Optional[List[Dict[str, Any]]] = None,
     end_on: Optional[List[Dict[str, Any]]] = None,
     detail: CompactFullDetailLiteral = "compact",
@@ -626,6 +656,9 @@ def wait_event(
     `symbol` is required when `watch_for` is omitted and the tool is inferring
     its default watcher set. For boundary-only waits, pass `watch_for=[]` and
     rely on `timeframe` or explicit `end_on` candle-close events.
+
+    Set `max_wait_seconds` to cap blocking waits. Omit it to use the engine
+    default.
 
     Boundary waits belong in `end_on` as `{"type": "candle_close", ...}`.
     `watch_for` is for explicit market/account event objects only; pass
@@ -680,6 +713,8 @@ def wait_event(
         }
         if symbol_value is not None:
             request_kwargs["symbol"] = symbol_value
+        if max_wait_seconds is not None:
+            request_kwargs["max_wait_seconds"] = max_wait_seconds
         if normalized_end_on is not None:
             request_kwargs["end_on"] = list(normalized_end_on)
         else:
