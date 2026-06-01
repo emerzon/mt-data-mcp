@@ -379,13 +379,23 @@ def forecast_task_list(
         for item in items:
             status = str(item.get("status") or "unknown")
             summary[status] = summary.get(status, 0) + 1
-        return {
+        out = {
             "success": True,
             "detail": detail_mode,
             "count": len(items),
             "summary": summary,
             "tasks": items,
         }
+        if not items:
+            if status_filter:
+                out["message"] = f"No forecast tasks matched status_filter={status_filter!r}."
+            else:
+                out["message"] = "No forecast tasks found."
+            out["hint"] = (
+                "Create tasks with forecast_train or forecast_backtest_run; "
+                "status_filter values: pending,running,completed,failed,cancelled."
+            )
+        return out
 
     return run_logged_operation(
         logger,
@@ -414,12 +424,21 @@ def forecast_models_list(
             _serialize_model_handle(h, detail=detail_mode)
             for h in handles
         ]
-        return {
+        out = {
             "success": True,
             "detail": detail_mode,
             "count": len(items),
             "models": items,
         }
+        if not items:
+            if method:
+                out["message"] = f"No stored forecast models matched method={method!r}."
+            else:
+                out["message"] = "No stored forecast models found."
+            out["hint"] = (
+                "Train with forecast_train; use forecast_list_methods to inspect methods."
+            )
+        return out
 
     return run_logged_operation(
         logger,

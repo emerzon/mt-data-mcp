@@ -309,13 +309,25 @@ def _compact_trade_read_output(out: Dict[str, Any], *, request: Any) -> Dict[str
     ):
         return out
     if int(out.get("count") or 0) == 0:
-        return {
+        kind = str(out.get("kind") or "")
+        default_message = {
+            "open_positions": "No open positions matched the request.",
+            "pending_orders": "No pending orders matched the request.",
+        }.get(kind, "No rows matched the request.")
+        compact = {
             "success": True,
             "kind": out.get("kind"),
             "count": 0,
             "items": [],
             "empty": True,
         }
+        compact["message"] = out.get("message") or default_message
+        compact["hint"] = (
+            "Normal when flat; relax symbol/ticket filters or check trade_account_info."
+            if kind == "open_positions"
+            else "Normal when no working orders; relax symbol/ticket filters or check trade_account_info."
+        )
+        return compact
     compact = dict(out)
     for key in ("kind", "scope", "empty", "no_action"):
         compact.pop(key, None)

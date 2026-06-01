@@ -1817,6 +1817,22 @@ def causal_discover_signals(  # noqa: C901
             out["message"] = (
                 "No statistically significant causal links detected at the selected threshold."
             )
+            near_threshold = min(1.0, float(significance) * 2.0)
+            near_misses = [
+                {
+                    "effect": row.get("effect"),
+                    "cause": row.get("cause"),
+                    "lag": row.get("lag"),
+                    "p_value": row.get("p_value"),
+                }
+                for row in rows_sorted
+                if float(row.get("p_value", 1.0)) <= near_threshold
+            ][:3]
+            if near_misses:
+                out["near_misses"] = near_misses
+            out["hint"] = (
+                "For exploration, try higher significance, larger max_lag, or larger window_bars."
+            )
         return out
 
     return run_logged_operation(
