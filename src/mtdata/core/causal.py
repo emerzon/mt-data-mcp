@@ -1751,7 +1751,11 @@ def causal_discover_signals(  # noqa: C901
             warnings_out.append(
                 f"{max(pair_attempts - pair_success, 0)} pairwise Granger tests failed; see meta['pair_failures']."
             )
-        rows_for_output = rows_sorted if detail_mode == "full" else significant_rows
+        rows_for_output = (
+            rows_sorted
+            if detail_mode in {"standard", "full"}
+            else significant_rows
+        )
         output_rows, output_truncated, pagination = _limit_pair_rows(
             rows_for_output,
             output_limit,
