@@ -137,6 +137,44 @@ def _normalize_nested_quote_time(quote: Dict[str, Any], *, compact: bool) -> Dic
     return normalized
 
 
+def _build_trade_ready(account: Any, quote: Any) -> Dict[str, Any]:
+    blockers: list[str] = []
+    margin_free = None
+    if not isinstance(account, dict) or account.get("error") not in (None, ""):
+        blockers.append("account_unavailable")
+    else:
+        margin_free = account.get("margin_free")
+        if account.get("execution_ready") is False:
+            blockers.append("account_execution_not_ready")
+        execution_blockers = account.get("execution_blockers")
+        if isinstance(execution_blockers, list):
+            blockers.extend(str(item) for item in execution_blockers if item not in (None, ""))
+        try:
+            if margin_free is not None and float(margin_free) <= 0:
+                blockers.append("no_free_margin")
+        except Exception:
+            pass
+
+    if not isinstance(quote, dict) or quote.get("error") not in (None, ""):
+        blockers.append("quote_unavailable")
+    elif bool(quote.get("data_stale")):
+        blockers.append("quote_stale")
+
+    deduped_blockers = list(dict.fromkeys(blockers))
+    margin_sufficient = None
+    try:
+        if margin_free is not None:
+            margin_sufficient = float(margin_free) > 0
+    except Exception:
+        margin_sufficient = None
+    return {
+        "can_trade": not deduped_blockers,
+        "any_blockers": bool(deduped_blockers),
+        "blockers": deduped_blockers,
+        "margin_sufficient_for_min_lot": margin_sufficient,
+    }
+
+
 def _compact_trade_session_items(
     section: Any,
     *,
@@ -174,6 +212,7 @@ def _compact_trade_session_context_payload(payload: Dict[str, Any]) -> Dict[str,
             "portfolio_positions_count",
             "other_positions_count",
             "partial_failure",
+            "trade_ready",
         )
         if payload.get(key) not in (None, "")
     }
@@ -189,7 +228,12 @@ def _compact_trade_session_context_payload(payload: Dict[str, Any]) -> Dict[str,
                     "login",
                     "equity",
                     "profit",
+                    "balance",
+                    "margin",
                     "margin_free",
+                    "margin_level",
+                    "currency",
+                    "leverage",
                     "account_type",
                     "execution_ready",
                     "execution_blockers",
@@ -417,6 +461,7 @@ def trade_session_context(request: TradeSessionContextRequest) -> Dict[str, Any]
             payload["other_positions_count"] = other_positions_count
         if request.include_account:
             payload["account"] = account_res
+            payload["trade_ready"] = _build_trade_ready(account_res, quote_res)
         if partial_failure:
             payload["partial_failure"] = True
         if request.detail == "compact":
