@@ -70,6 +70,7 @@ def _suppress_noisy_third_party_logs() -> None:
         ("torch.distributed.elastic.multiprocessing.redirects", logging.ERROR),
         ("torch._dynamo", logging.ERROR),
         ("transformers", logging.WARNING),
+        ("lightgbm", logging.ERROR),
         ("lightning", logging.ERROR),
         ("pytorch_lightning", logging.ERROR),
     ):

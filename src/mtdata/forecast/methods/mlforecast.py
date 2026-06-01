@@ -309,7 +309,8 @@ class MLFLightGBM(MLForecastMethod):
             learning_rate=float(params.get('learning_rate', 0.05)),
             num_leaves=int(params.get('num_leaves', 31)),
             max_depth=int(params.get('max_depth', -1)),
-            random_state=42
+            random_state=42,
+            verbosity=int(params.get('verbosity', -1)),
         )
 
 @ForecastRegistry.register("mlforecast")
@@ -363,6 +364,11 @@ class GenericMLForecastMethod(MLForecastMethod):
             )
 
         model_params = {k: v for k, v in params.items() if k in valid_params}
+        if module_path.lower().startswith("lightgbm"):
+            if "verbosity" in valid_params and "verbosity" not in model_params:
+                model_params["verbosity"] = -1
+            if "verbose" in valid_params and "verbose" not in model_params:
+                model_params["verbose"] = -1
 
         return model_cls(**model_params)
 
