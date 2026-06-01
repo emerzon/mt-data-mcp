@@ -65,6 +65,7 @@ def _suppress_noisy_third_party_logs() -> None:
         ("timesfm", logging.WARNING),
         ("timesfm_2p5_torch", logging.WARNING),
         ("torch", logging.WARNING),
+        ("torchao", logging.ERROR),
         ("torch.distributed", logging.ERROR),
         ("torch.distributed.elastic.multiprocessing.redirects", logging.ERROR),
         ("torch._dynamo", logging.ERROR),
