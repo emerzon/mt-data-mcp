@@ -832,6 +832,24 @@ def symbols_list(  # noqa: C901
                 }
                 if filters:
                     out["filters"] = filters
+                sample = []
+                for row in symbol_list[:5]:
+                    sample.append(
+                        {
+                            key: row.get(key)
+                            for key in (
+                                "symbol",
+                                "group",
+                                "description",
+                                "category",
+                                "match_reason",
+                            )
+                            if row.get(key) is not None
+                        }
+                    )
+                if sample:
+                    out["sample"] = sample
+                    out["sample_count"] = len(sample)
                 if normalized_search_term:
                     out["search"] = _symbol_search_context(
                         normalized_search_term,
