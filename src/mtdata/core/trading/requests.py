@@ -153,6 +153,13 @@ class TradeCloseRequest(BaseModel):
         default=False,
         description="Preview the close request without sending it to the broker.",
     )
+    confirm_close_all: bool = Field(
+        default=False,
+        description=(
+            "Required with close_all=true and dry_run=false to execute a live "
+            "bulk close."
+        ),
+    )
     profit_only: bool = Field(
         default=False,
         description="Only close positions that are currently profitable.",

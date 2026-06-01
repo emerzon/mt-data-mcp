@@ -1464,6 +1464,7 @@ def run_trade_close(  # noqa: C901
         profit_only=request.profit_only,
         loss_only=request.loss_only,
         dry_run=request.dry_run,
+        confirm_close_all=request.confirm_close_all,
         magic=request.magic,
     )
 
@@ -1491,6 +1492,7 @@ def run_trade_close(  # noqa: C901
             profit_only=request.profit_only,
             loss_only=request.loss_only,
             dry_run=request.dry_run,
+            confirm_close_all=request.confirm_close_all,
             magic=request.magic,
         )
         return result
@@ -1546,6 +1548,27 @@ def run_trade_close(  # noqa: C901
                 )
             },
             scope="ticket",
+        )
+
+    if request.close_all and not request.dry_run and not request.confirm_close_all:
+        return _finish(
+            {
+                "error": (
+                    "Live close_all requires explicit confirmation. Re-run with "
+                    "dry_run=true to preview, or pass confirm_close_all=true to "
+                    "execute the bulk close."
+                ),
+                "error_code": "CONFIRMATION_REQUIRED",
+                "close_all": True,
+                "dry_run": False,
+                "required_confirmation": "confirm_close_all=true",
+                "alternatives": [
+                    "Pass dry_run=true to preview matching positions",
+                    "Pass ticket=<ticket_number> to close a specific position",
+                    "Pass confirm_close_all=true only after reviewing exposure",
+                ],
+            },
+            scope="bulk_confirmation",
         )
 
     if request.ticket is None and not request.close_all and not request.dry_run:
@@ -1607,6 +1630,12 @@ def run_trade_close(  # noqa: C901
             "preview_scope_summary": (
                 "Routing and request validation only; no close or cancel request was sent to MT5."
             ),
+            "estimated": [
+                "operation",
+                "scope",
+                "routing",
+                "target_resolution" if request.ticket is not None else "filter_scope",
+            ],
             "not_estimated": [
                 "realized_pnl",
                 "slippage",
