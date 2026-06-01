@@ -49,6 +49,27 @@ def _append_diagnostic_warning(report: Dict[str, Any], message: str) -> None:
     report["diagnostics"] = diagnostics
 
 
+def _attach_report_compute_hint(report: Any, request: ReportGenerateRequest) -> Any:
+    if not isinstance(report, dict) or report.get("error"):
+        return report
+    template = str(request.template or "basic").strip().lower()
+    if template == "minimal":
+        return report
+    diagnostics = report.get("diagnostics")
+    if not isinstance(diagnostics, dict):
+        diagnostics = {}
+    diagnostics.setdefault(
+        "compute_intensity",
+        "high" if template == "advanced" else "moderate",
+    )
+    diagnostics.setdefault(
+        "compute_hint",
+        "Non-minimal templates may run several analysis sub-tools; use template=minimal for the fast path.",
+    )
+    report["diagnostics"] = diagnostics
+    return report
+
+
 @mcp.tool()
 def report_generate(
     request: ReportGenerateRequest,
@@ -62,17 +83,23 @@ def report_generate(
     - params: optional dict to tune steps/spacing, grids, and optionally override timeframe per template via 'timeframe' or methods via 'methods'.
     - denoise: pass-through to candle fetching (e.g., {method:'ema', params:{alpha:0.2}, columns:['close']}).  
     """
-    return run_logged_operation(
-        logger,
-        operation="report_generate",
-        symbol=request.symbol,
-        template=request.template,
-        func=lambda: _report_connection_error()
-        or run_report_generate(
+    def _run() -> Union[str, Dict[str, Any]]:
+        connection_error = _report_connection_error()
+        if connection_error is not None:
+            return connection_error
+        report = run_report_generate(
             request,
             format_number=format_number,
             get_indicator_value=_get_indicator_value,
             report_error_payload=_report_error_payload,
             append_diagnostic_warning=_append_diagnostic_warning,
-        ),
+        )
+        return _attach_report_compute_hint(report, request)
+
+    return run_logged_operation(
+        logger,
+        operation="report_generate",
+        symbol=request.symbol,
+        template=request.template,
+        func=_run,
     )

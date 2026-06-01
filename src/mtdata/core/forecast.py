@@ -101,6 +101,67 @@ _FORECAST_TIMESTAMP_OPERATIONS = frozenset(
         "forecast_volatility_estimate",
     }
 )
+_FORECAST_HEAVY_OPERATIONS = frozenset(
+    {
+        "forecast_tune_genetic",
+        "forecast_tune_optuna",
+        "forecast_optimize_hints",
+    }
+)
+
+
+def _positive_int(value: Any, default: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed > 0 else default
+
+
+def _value_count(value: Any, default: int = 1) -> int:
+    if isinstance(value, (list, tuple, set)):
+        return max(1, len(value))
+    if value in (None, "", {}):
+        return default
+    return 1
+
+
+def _forecast_compute_cost(operation: str, payload: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if operation not in _FORECAST_HEAVY_OPERATIONS:
+        return None
+    data = dict(payload or {})
+    steps = _positive_int(data.get("steps"), 5)
+    method_count = _value_count(data.get("methods") or data.get("method"), 1)
+    if operation == "forecast_tune_optuna":
+        trials = _positive_int(data.get("n_trials"), 40)
+        return {
+            "unit": "rolling_backtests",
+            "estimated": trials * steps * method_count,
+            "drivers": "n_trials*steps*methods",
+        }
+    population = _positive_int(data.get("population"), 20 if operation == "forecast_optimize_hints" else 12)
+    generations = _positive_int(data.get("generations"), 15 if operation == "forecast_optimize_hints" else 10)
+    timeframes = _value_count(data.get("timeframes") or data.get("timeframe"), 4 if operation == "forecast_optimize_hints" else 1)
+    return {
+        "unit": "rolling_backtests",
+        "estimated": population * generations * steps * method_count * timeframes,
+        "drivers": "population*generations*steps*methods*timeframes",
+    }
+
+
+def _attach_forecast_compute_hint(
+    result: Dict[str, Any],
+    *,
+    operation: str,
+    payload: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    cost = _forecast_compute_cost(operation, payload)
+    if cost is None or not isinstance(result, dict) or result.get("error"):
+        return result
+    out = dict(result)
+    out.setdefault("compute_intensity", "high")
+    out.setdefault("compute_cost", cost)
+    return out
 
 
 def _attach_timezone(result: Dict[str, Any], *, operation: str) -> Dict[str, Any]:
@@ -673,7 +734,12 @@ def _run_forecast_operation(
                 result = _run_forecast_payload_in_process(operation, dict(process_payload or {}))
             else:
                 result = func()
-            return _attach_timezone(result, operation=operation)
+            result = _attach_timezone(result, operation=operation)
+            return _attach_forecast_compute_hint(
+                result,
+                operation=operation,
+                payload=process_payload,
+            )
         except ForecastError as exc:
             if catch_forecast_error:
                 return _forecast_error_payload(exc, operation=operation)
