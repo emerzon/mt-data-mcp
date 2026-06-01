@@ -54,6 +54,18 @@ def _neutral_barrier_pct_range(max_move_pct: Any) -> Optional[List[float]]:
     return [round(low, 4), round(max(high, low), 4)]
 
 
+def _round_label_price(value: Any, *, digits: int) -> Optional[float]:
+    try:
+        numeric = float(value)
+    except Exception:
+        return None
+    if not math.isfinite(numeric):
+        return None
+    if int(digits) <= 0:
+        return numeric
+    return round(numeric, max(0, int(digits)))
+
+
 def _triple_barrier_sample_row(
     *,
     idx: int,
@@ -66,6 +78,7 @@ def _triple_barrier_sample_row(
     direction_value: str,
     pip_size: float,
     barrier_kwargs: Dict[str, Any],
+    price_digits: int = 0,
 ) -> Dict[str, Any]:
     label = int(labels[idx])
     row: Dict[str, Any] = {
@@ -79,7 +92,7 @@ def _triple_barrier_sample_row(
     try:
         entry_price = float(closes[idx])
         if math.isfinite(entry_price):
-            row["entry_price"] = entry_price
+            row["entry_price"] = _round_label_price(entry_price, digits=price_digits)
             tp_price, sl_price = _resolve_barrier_prices(
                 price=entry_price,
                 direction=direction_value,
@@ -88,9 +101,9 @@ def _triple_barrier_sample_row(
                 **barrier_kwargs,
             )
             if tp_price is not None:
-                row["tp_price"] = float(tp_price)
+                row["tp_price"] = _round_label_price(tp_price, digits=price_digits)
             if sl_price is not None:
-                row["sl_price"] = float(sl_price)
+                row["sl_price"] = _round_label_price(sl_price, digits=price_digits)
     except Exception:
         pass
     return row
@@ -287,9 +300,18 @@ def labels_triple_barrier(
 
     def _run() -> Dict[str, Any]:
         try:
-            create_mt5_gateway(
+            mt5_gateway = create_mt5_gateway(
                 ensure_connection_impl=ensure_mt5_connection_or_raise
-            ).ensure_connection()
+            )
+            mt5_gateway.ensure_connection()
+            symbol_info = mt5_gateway.symbol_info(symbol)
+            price_digits = max(0, int(getattr(symbol_info, "digits", 0) or 0)) if symbol_info else 0
+            trade_tick_size = None
+            if symbol_info is not None:
+                try:
+                    trade_tick_size = float(getattr(symbol_info, "trade_tick_size", 0.0) or 0.0)
+                except Exception:
+                    trade_tick_size = None
             direction_value, direction_error = _normalize_trade_direction(direction)
             if direction_error or direction_value is None:
                 return {"error": direction_error or "Invalid direction."}
@@ -466,6 +488,10 @@ def labels_triple_barrier(
                 "tp_time": tp_times,
                 "sl_time": sl_times,
             }
+            if price_digits > 0:
+                payload["price_precision"] = int(price_digits)
+            if trade_tick_size is not None and trade_tick_size > 0:
+                payload["trade_tick_size"] = trade_tick_size
             if output_mode == "full":
                 payload["label_legend"] = {
                     "1": {
@@ -559,6 +585,10 @@ def labels_triple_barrier(
                         "labeling_coverage": labeling_coverage,
                         "summary": summary,
                     }
+                    if price_digits > 0:
+                        out["price_precision"] = int(price_digits)
+                    if trade_tick_size is not None and trade_tick_size > 0:
+                        out["trade_tick_size"] = trade_tick_size
                     if warnings_out:
                         out["warnings"] = list(warnings_out)
                     if skipped_entries > 0:
@@ -586,6 +616,7 @@ def labels_triple_barrier(
                             direction_value=direction_value,
                             pip_size=pip_size,
                             barrier_kwargs=barrier_kwargs,
+                            price_digits=price_digits,
                         )
                         for idx in indices
                     ]
