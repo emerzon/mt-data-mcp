@@ -11,6 +11,12 @@ from . import validation
 from .validation import OrderTypeInput
 
 
+MAGIC_NUMBER_DESCRIPTION = (
+    "MT5 magic number: integer strategy/order identifier used to group EA or "
+    "strategy trades. Use as a filter for one strategy; omit for all magic numbers."
+)
+
+
 def _normalize_trade_side_alias(value: Optional[str]) -> Optional[str]:
     if value is None:
         return None
@@ -54,7 +60,10 @@ class TradePlaceRequest(BaseModel):
     comment: Optional[str] = None
     magic: Optional[int] = Field(
         default=None,
-        description="Optional MT5 magic number. Defaults to configured order_magic when omitted.",
+        description=(
+            "MT5 magic number: integer strategy/order identifier used to group EA or "
+            "strategy trades. Defaults to configured order_magic when omitted."
+        ),
     )
     deviation: int = Field(
         default=20,
@@ -138,7 +147,7 @@ class TradeCloseRequest(BaseModel):
         description="Close all matching open positions instead of a single ticket.",
     )
     symbol: Optional[str] = None
-    magic: Optional[int] = None
+    magic: Optional[int] = Field(default=None, description=MAGIC_NUMBER_DESCRIPTION)
     volume: Optional[float] = None
     dry_run: bool = Field(
         default=False,
@@ -315,7 +324,7 @@ class TradeVarCvarRequest(BaseModel):
 class TradeGetOpenRequest(BaseModel):
     symbol: Optional[str] = None
     ticket: Optional[Union[int, str]] = None
-    magic: Optional[int] = None
+    magic: Optional[int] = Field(default=None, description=MAGIC_NUMBER_DESCRIPTION)
     profit_only: bool = Field(
         default=False,
         description="Only return currently profitable open positions.",
@@ -346,7 +355,7 @@ class TradeGetOpenRequest(BaseModel):
 class TradeGetPendingRequest(BaseModel):
     symbol: Optional[str] = None
     ticket: Optional[Union[int, str]] = None
-    magic: Optional[int] = None
+    magic: Optional[int] = Field(default=None, description=MAGIC_NUMBER_DESCRIPTION)
     limit: Optional[int] = 200
     detail: CompactFullDetailLiteral = Field(
         default="compact",

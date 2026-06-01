@@ -30,6 +30,10 @@ _INDICATOR_FORMAT_HELP = (
     "Bare names, underscore forms like 'rsi_14', key-value specs like "
     "'sma=20', and named params like 'rsi(length=14)' also work."
 )
+_MAGIC_NUMBER_DESCRIPTION = (
+    "MT5 magic number: integer strategy/order identifier used to group EA or "
+    "strategy trades. Use as a filter for one strategy; omit for all magic numbers."
+)
 
 
 def _normalize_data_detail(value: Any) -> str:
@@ -483,7 +487,7 @@ class _WaitAccountEventBase(BaseModel):
     symbol: Optional[str] = None
     order_ticket: Optional[int] = None
     position_ticket: Optional[int] = None
-    magic: Optional[int] = None
+    magic: Optional[int] = Field(default=None, description=_MAGIC_NUMBER_DESCRIPTION)
     side: Optional[Literal["buy", "sell"]] = None
 
     @field_validator("order_ticket")
@@ -747,7 +751,7 @@ class WaitEventRequest(BaseModel):
     timeframe: Optional[TimeframeLiteral] = None
     order_ticket: Optional[int] = None
     position_ticket: Optional[int] = None
-    magic: Optional[int] = None
+    magic: Optional[int] = Field(default=None, description=_MAGIC_NUMBER_DESCRIPTION)
     side: Optional[Literal["buy", "sell"]] = None
     buffer_seconds: float = 1.0
     poll_interval_seconds: float = 0.5
