@@ -18,6 +18,7 @@ _OPTIONAL_FIRST_POSITIONAL_PARAMS: set[tuple[str, str]] = {
     ("trade_place", "symbol"),
     ("trade_risk_analyze", "symbol"),
     ("trade_var_cvar_calculate", "symbol"),
+    ("forecast_list_library_models", "library"),
     ("wait_event", "symbol"),
 }
 

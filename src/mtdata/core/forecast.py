@@ -270,9 +270,11 @@ def _run_forecast_payload_direct(operation: str, payload: Dict[str, Any]) -> Dic
 
     if operation == "forecast_list_library_models":
         return _forecast_list_library_models_impl(
-            payload["library"],
+            payload.get("library", "all"),
             show_unavailable=bool(payload.get("show_unavailable", False)),
             detail=payload.get("detail", "compact"),
+            limit=payload.get("limit"),
+            offset=int(payload.get("offset", 0) or 0),
         )
 
     if operation == "forecast_backtest_run":
@@ -660,7 +662,7 @@ def forecast_generate(request: ForecastGenerateRequest) -> Dict[str, Any]:
 
 @mcp.tool()
 def forecast_list_library_models(
-    library: Literal["native", "statsforecast", "sktime", "pretrained", "mlforecast", "all"],
+    library: Literal["native", "statsforecast", "sktime", "pretrained", "mlforecast", "all"] = "all",
     show_unavailable: bool = False,
     detail: CompactFullDetailLiteral = "compact",  # type: ignore
     limit: Optional[int] = None,
