@@ -19,8 +19,12 @@ from mtdata.utils.denoise.filters.adaptive import (
     _adaptive_lms_filter,
     _adaptive_rls_filter,
 )
-from mtdata.utils.denoise.filters.decomposition import _ssa_denoise, _vmd_denoise
 from mtdata.utils.denoise.filters import adaptive as adaptive_filters
+from mtdata.utils.denoise.filters.decomposition import (
+    _ssa_denoise,
+    _ssa_trajectory_matrix,
+    _vmd_denoise,
+)
 from mtdata.utils.denoise.filters.specialized import (
     _bilateral_filter_1d,
     _hampel_filter,
@@ -999,6 +1003,16 @@ class TestAdaptiveRlsFilter:
 
 
 class TestSsaDenoise:
+    def test_trajectory_matrix_uses_sliding_window_view(self):
+        x = np.arange(12.0, dtype=float)
+
+        X = _ssa_trajectory_matrix(x, 4)
+
+        assert X.shape == (4, 9)
+        assert np.shares_memory(X, x)
+        np.testing.assert_array_equal(X[:, 0], np.array([0.0, 1.0, 2.0, 3.0]))
+        np.testing.assert_array_equal(X[:, -1], np.array([8.0, 9.0, 10.0, 11.0]))
+
     def test_basic(self):
         y = _ssa_denoise(NOISY_SIGNAL, window=30, components=2)
         _check_basic(y, N)

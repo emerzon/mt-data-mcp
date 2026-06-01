@@ -70,6 +70,14 @@ def _ssa_svd(
     return np.linalg.svd(X, full_matrices=False)
 
 
+def _ssa_trajectory_matrix(x: np.ndarray, window: int) -> np.ndarray:
+    try:
+        return np.lib.stride_tricks.sliding_window_view(x, window).T
+    except Exception:
+        K = len(x) - window + 1
+        return np.column_stack([x[i : i + window] for i in range(K)])
+
+
 def _ssa_denoise(
     x: np.ndarray,
     window: int,
@@ -85,7 +93,9 @@ def _ssa_denoise(
     if L >= n:
         return x
     K = n - L + 1
-    X = np.column_stack([x[i : i + L] for i in range(K)])
+    X = _ssa_trajectory_matrix(x, L)
+    if X.shape != (L, K):
+        X = np.column_stack([x[i : i + L] for i in range(K)])
     requested_rank = _ssa_requested_rank(components, min(L, K))
     U, s, Vt = _ssa_svd(X, requested_rank=requested_rank)
     if requested_rank is not None:
