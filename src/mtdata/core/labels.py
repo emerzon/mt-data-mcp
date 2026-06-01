@@ -397,12 +397,40 @@ def labels_triple_barrier(
                 barrier_kwargs=barrier_kwargs,
             )
 
+            rows_before_labeling = int(N)
+            labelable_rows = int(max(0, max_entry_index))
+            rows_after_labeling = int(len(labels))
+            horizon_trimmed = int(max(0, rows_before_labeling - labelable_rows))
+            horizon_trim_fraction = (
+                float(horizon_trimmed) / float(rows_before_labeling)
+                if rows_before_labeling > 0
+                else 0.0
+            )
+            labeling_coverage = {
+                "rows_before_labeling": rows_before_labeling,
+                "labelable_rows_before_invalid_skips": labelable_rows,
+                "rows_after_labeling": rows_after_labeling,
+                "horizon_trimmed": horizon_trimmed,
+                "horizon_trim_fraction": round(horizon_trim_fraction, 4),
+                "invalid_entry_skipped": int(skipped_entries),
+            }
+            if horizon_trim_fraction > 0.05:
+                warnings_out.append(
+                    f"Horizon labeling trimmed {horizon_trimmed} tail row(s) "
+                    f"({horizon_trim_fraction:.1%}) because each label needs "
+                    f"{int(horizon)} future bar(s). Increase limit for more labeled rows."
+                )
+
             payload: Dict[str, Any] = {
                 "success": True,
                 "symbol": symbol,
                 "timeframe": timeframe,
                 "direction": direction_value,
                 "horizon": int(horizon),
+                "rows_before_labeling": rows_before_labeling,
+                "rows_after_labeling": rows_after_labeling,
+                "horizon_trimmed": horizon_trimmed,
+                "labeling_coverage": labeling_coverage,
                 "entries": t_entry,
                 "labels": labels,
                 "outcomes": [_label_outcome(label) for label in labels],
@@ -497,6 +525,10 @@ def labels_triple_barrier(
                         "timeframe": timeframe,
                         "direction": direction_value,
                         "horizon": int(horizon),
+                        "rows_before_labeling": rows_before_labeling,
+                        "rows_after_labeling": rows_after_labeling,
+                        "horizon_trimmed": horizon_trimmed,
+                        "labeling_coverage": labeling_coverage,
                         "summary": summary,
                     }
                     if warnings_out:
