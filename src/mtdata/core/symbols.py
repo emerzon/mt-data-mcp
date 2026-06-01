@@ -2811,6 +2811,12 @@ def market_scan(  # noqa: C901
             freshness_summary = _market_scan_freshness_summary(limited_rows)
             out: Dict[str, Any] = {
                 "success": True,
+                "status": "ok" if total_matches > 0 else "no_matches",
+                "message": (
+                    f"{int(total_matches)} symbol(s) matched the requested market scan filters."
+                    if total_matches > 0
+                    else "No symbols matched the requested market scan filters."
+                ),
                 "data": table_payload["rows"],
                 "count": table_payload["row_count"],
                 "rank_by": rank_by_value,
@@ -2851,7 +2857,6 @@ def market_scan(  # noqa: C901
                 )
             if total_matches == 0:
                 out["summary"]["empty"] = True
-                out["message"] = "No symbols matched the requested market scan filters."
             return attach_collection_contract(
                 out,
                 collection_kind="table",
