@@ -1641,6 +1641,17 @@ def fetch_candles(  # noqa: C901
                 },
             },
         })
+        if query_mode == "range":
+            query_applied: Dict[str, Any] = {
+                "mode": query_mode,
+                "timeframe": timeframe,
+                "limit": candles_requested,
+            }
+            if start_datetime not in (None, ""):
+                query_applied["start"] = start_datetime
+            if end_datetime not in (None, ""):
+                query_applied["end"] = end_datetime
+            payload["query_applied"] = query_applied
         if price_currency:
             payload["price_currency"] = price_currency
         if incomplete_candles_skipped and not include_incomplete:
