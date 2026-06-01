@@ -143,6 +143,19 @@ _INDICATOR_TRADING_CONTEXT: Dict[str, Dict[str, Any]] = {
         "trading_styles": ["swing", "position", "intraday"],
     },
 }
+_RELATED_INDICATORS: Dict[str, List[str]] = {
+    "rsi": ["stochrsi", "tsi", "mfi"],
+    "macd": ["ppo", "ema", "adx"],
+    "bbands": ["kc", "donchian", "atr"],
+    "atr": ["natr", "bbands", "kc"],
+    "adx": ["aroon", "chop", "vortex"],
+    "ema": ["sma", "hma", "macd"],
+    "sma": ["ema", "wma", "vwma"],
+    "stoch": ["stochrsi", "rsi", "willr"],
+    "supertrend": ["atr", "adx", "ema"],
+    "vwap": ["vwma", "obv", "pvt"],
+    "obv": ["pvt", "ad", "mfi"],
+}
 
 
 def _canonical_doc_section(name: str) -> str:
@@ -290,6 +303,53 @@ def _matches_trading_style(item: Dict[str, Any], style: str) -> bool:
         return True
     context = _indicator_trading_context(item)
     return normalized in {str(x).strip().lower() for x in context.get("trading_styles", [])}
+
+
+def _indicator_preferred_spec(name: str, params: List[Dict[str, Any]], context: Dict[str, Any]) -> str:
+    lname = str(name or "").strip().lower()
+    typical = str(context.get("typical_parameters") or "")
+    match = re.search(rf"\b{re.escape(lname)}\([^)]*\)", typical, flags=re.IGNORECASE)
+    if match:
+        return match.group(0).lower()
+    for raw in params or []:
+        if not isinstance(raw, dict) or "default" not in raw:
+            continue
+        default = raw.get("default")
+        if isinstance(default, bool) or default is None:
+            continue
+        return f"{lname}({default})"
+    return lname
+
+
+def _indicator_example_column(spec: str) -> str:
+    text = str(spec or "").strip().lower()
+    match = re.fullmatch(r"([a-z0-9_]+)(?:\(([^)]*)\))?", text)
+    if not match:
+        return text.replace("(", "_").replace(")", "").replace(",", "_")
+    name = match.group(1)
+    args = [
+        re.sub(r"[^a-z0-9_.-]+", "", part.split("=", 1)[-1].strip().lower())
+        for part in (match.group(2) or "").split(",")
+        if part.strip()
+    ]
+    return "_".join([name, *args]) if args else name
+
+
+def _indicator_usage_metadata(
+    name: str,
+    params: List[Dict[str, Any]],
+    context: Dict[str, Any],
+) -> Dict[str, Any]:
+    spec = _indicator_preferred_spec(name, params, context)
+    return {
+        "compact_spec": spec,
+        "cli": f'--indicators "{spec}"',
+        "python": f'indicators="{spec}"',
+        "column_output": {
+            "example": _indicator_example_column(spec),
+            "note": "Exact column names are produced by the pandas-ta backend and may include additional suffixes for multi-output indicators.",
+        },
+    }
 
 
 def _build_indicator_documentation(target: Dict[str, Any]) -> Dict[str, Any]:
@@ -569,6 +629,9 @@ def indicators_describe(
             description = docs.get("description") or indicator.get("description") or ""
             params = docs.get("parameters") or indicator.get("params") or []
             trading_context = _indicator_trading_context(indicator)
+            usage = _indicator_usage_metadata(str(indicator.get("name") or name), params, trading_context)
+            interpretation = docs.get("interpretation") or trading_context.get("common_use")
+            see_also = _RELATED_INDICATORS.get(str(indicator.get("name") or "").strip().lower(), [])
             compact_indicator: Dict[str, Any] = {
                 "name": indicator.get("name"),
                 "category": indicator.get("category"),
@@ -580,6 +643,11 @@ def indicators_describe(
             }
             if trading_context:
                 compact_indicator["trading_context"] = trading_context
+            compact_indicator["usage"] = usage
+            if interpretation:
+                compact_indicator["interpretation"] = interpretation
+            if see_also:
+                compact_indicator["see_also"] = see_also
             if detail_mode in {"compact", "summary"}:
                 return {
                     "success": True,
@@ -604,6 +672,11 @@ def indicators_describe(
             indicator["params"] = params
             if trading_context:
                 indicator["trading_context"] = trading_context
+            indicator["usage"] = usage
+            if interpretation:
+                indicator["interpretation"] = interpretation
+            if see_also:
+                indicator["see_also"] = see_also
             indicator["documentation"] = {
                 "calculation": docs.get("calculation"),
                 "interpretation": docs.get("interpretation"),
