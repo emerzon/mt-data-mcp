@@ -22,6 +22,12 @@ _OPTIONAL_FIRST_POSITIONAL_PARAMS: set[tuple[str, str]] = {
     ("wait_event", "symbol"),
 }
 
+_HIDDEN_OPTIONAL_FIRST_POSITIONAL_FLAGS: set[tuple[str, str]] = {
+    ("correlation_matrix", "symbols"),
+    ("cointegration_test", "symbols"),
+    ("causal_discover_signals", "symbols"),
+}
+
 _COMMAND_PARAM_CHOICE_OVERRIDES: Dict[tuple[str, str], list[str]] = {
     (
         "forecast_barrier_optimize",
@@ -631,7 +637,10 @@ def add_dynamic_arguments(
             positional_kwargs["default"] = argparse.SUPPRESS
             parser.add_argument(param["name"], **positional_kwargs)
             option_kwargs = dict(kwargs)
-            if str(param["name"]) != "symbols":
+            if (
+                str(param["name"]) != "symbols"
+                or (str(cmd_name or ""), str(param["name"])) in _HIDDEN_OPTIONAL_FIRST_POSITIONAL_FLAGS
+            ):
                 option_kwargs["help"] = argparse.SUPPRESS
             if option_flags:
                 parser.add_argument(*option_flags, **option_kwargs)
