@@ -114,6 +114,10 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("market_scan", "symbols"): (
         "Comma-separated MT5 symbols to scan. Optional with --group."
     ),
+    ("market_scan", "preset"): (
+        "Built-in scan preset: oversold, overbought, high-volume, tight-spread, "
+        "gap-up, or gap-down. Explicit filter flags override preset defaults."
+    ),
     ("labels_triple_barrier", "detail"): (
         "Detail level: compact (small outcome sample), standard (recent lookback rows), "
         "summary, or full."

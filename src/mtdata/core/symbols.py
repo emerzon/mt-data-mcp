@@ -2333,10 +2333,21 @@ def symbols_top_markets(  # noqa: C901
     )
 
 
+_MARKET_SCAN_PRESETS: Dict[str, Dict[str, Any]] = {
+    "oversold": {"rsi_below": 30.0, "min_tick_volume": 1000, "rank_by": "rsi"},
+    "overbought": {"rsi_above": 70.0, "min_tick_volume": 1000, "rank_by": "rsi"},
+    "high_volume": {"min_price_change_pct": 1.0, "rank_by": "tick_volume"},
+    "tight_spread": {"max_spread_pct": 0.01, "min_tick_volume": 500, "rank_by": "spread_pct"},
+    "gap_up": {"min_price_change_pct": 2.0, "rank_by": "price_change_pct"},
+    "gap_down": {"max_price_change_pct": -2.0, "rank_by": "price_change_pct"},
+}
+
+
 @mcp.tool()
 def market_scan(  # noqa: C901
     symbols: Optional[str] = None,
     group: Optional[str] = None,
+    preset: Optional[str] = None,
     limit: Optional[int] = 50,
     offset: int = 0,
     universe: Literal["visible", "all"] = "visible",  # type: ignore
@@ -2366,11 +2377,36 @@ def market_scan(  # noqa: C901
     """
 
     detail_mode = normalize_output_verbosity_detail(detail, default="compact")
+    preset_value = str(preset or "").strip().lower().replace("-", "_")
+    preset_error = None
+    preset_config = _MARKET_SCAN_PRESETS.get(preset_value) if preset_value else None
+    if preset_value and preset_config is None:
+        preset_error = (
+            "preset must be one of: "
+            + ", ".join(sorted(_MARKET_SCAN_PRESETS))
+            + "."
+        )
+    elif preset_config:
+        if min_price_change_pct is None and "min_price_change_pct" in preset_config:
+            min_price_change_pct = preset_config["min_price_change_pct"]
+        if max_price_change_pct is None and "max_price_change_pct" in preset_config:
+            max_price_change_pct = preset_config["max_price_change_pct"]
+        if max_spread_pct is None and "max_spread_pct" in preset_config:
+            max_spread_pct = preset_config["max_spread_pct"]
+        if min_tick_volume is None and "min_tick_volume" in preset_config:
+            min_tick_volume = preset_config["min_tick_volume"]
+        if rsi_below is None and "rsi_below" in preset_config:
+            rsi_below = preset_config["rsi_below"]
+        if rsi_above is None and "rsi_above" in preset_config:
+            rsi_above = preset_config["rsi_above"]
+        if rank_by in {None, "abs_price_change_pct"} and "rank_by" in preset_config:
+            rank_by = preset_config["rank_by"]
 
     def _run() -> Dict[str, Any]:  # noqa: C901
         request: Dict[str, Any] = {
             "symbols": symbols,
             "group": group,
+            "preset": preset_value or None,
             "limit": limit,
             "offset": offset,
             "universe": universe,
@@ -2395,6 +2431,13 @@ def market_scan(  # noqa: C901
             },
         }
         try:
+            if preset_error:
+                return _market_scan_error(
+                    preset_error,
+                    code="invalid_input",
+                    request=request,
+                )
+
             universe_value = str(universe or "visible").strip().lower()
             request["universe"] = universe_value
             if universe_value not in {"visible", "all"}:
