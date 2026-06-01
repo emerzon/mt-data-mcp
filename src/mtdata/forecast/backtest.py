@@ -99,7 +99,6 @@ def _compact_metrics_payload(metrics: Optional[Dict[str, Any]]) -> Dict[str, Any
 def _compact_strategy_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:
     out = dict(result)
     out.pop("detail", None)
-    out.pop("position_mode", None)
     out.pop("parameters", None)
 
     summary = out.get("summary")
@@ -951,6 +950,11 @@ def strategy_backtest(  # noqa: C901
             "summary": {
                 "bars_used": int(bars_used),
                 "warmup_bars": int(signal_warmup),
+                "signal_bars": int(max(0, int(bars_used) - int(signal_warmup))),
+                "warmup_reason": (
+                    f"{strategy_value} requires {int(signal_warmup)} warmup bar(s) "
+                    "before generated signals are eligible for trading."
+                ),
                 "num_trades": int(len(trades)),
                 "long_trades": long_trades,
                 "short_trades": short_trades,
