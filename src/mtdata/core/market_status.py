@@ -18,6 +18,7 @@ from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway
 from .output_contract import normalize_output_extras, normalize_output_verbosity_detail
+from .runtime_metadata import build_runtime_timezone_meta
 
 logger = logging.getLogger(__name__)
 
@@ -785,6 +786,7 @@ def _check_symbol_market_status(
     symbol: str,
     *,
     detail: str,
+    timezone_display: str = "utc",
     gateway: Any = None,
 ) -> Dict[str, Any]:
     symbol_name = str(symbol or "").strip().upper()
@@ -880,6 +882,7 @@ def _check_symbol_market_status(
         "message": message,
         "data_fetched_at": _format_utc_iso_z(now_utc),
         "timezone": "UTC",
+        "timezone_context": _symbol_market_status_timezone_context(timezone_display),
     }
     if reason:
         result["reason"] = reason
@@ -908,6 +911,20 @@ def _check_symbol_market_status(
             if key in tick_status:
                 result[key] = tick_status[key]
     return result
+
+
+def _symbol_market_status_timezone_context(timezone_display: Any) -> Dict[str, Any]:
+    runtime = build_runtime_timezone_meta({}, include_now=True)
+    server = runtime.get("server") if isinstance(runtime.get("server"), dict) else {}
+    client = runtime.get("client") if isinstance(runtime.get("client"), dict) else {}
+    return {
+        "timezone_display": str(timezone_display or "utc"),
+        "status_timezone": "UTC",
+        "server_tz": server.get("tz"),
+        "server_now": server.get("now"),
+        "client_tz": client.get("tz"),
+        "client_now": client.get("now"),
+    }
 
 
 def _split_market_status_symbols(symbols: str) -> List[str]:
@@ -939,12 +956,18 @@ def _check_symbol_market_status_batch(
     symbols: List[str],
     *,
     detail: str,
+    timezone_display: str,
 ) -> Dict[str, Any]:
     mt5_gateway = create_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise)
     rows: List[Dict[str, Any]] = []
     errors: List[Dict[str, Any]] = []
     for symbol in symbols:
-        result = _check_symbol_market_status(symbol, detail=detail, gateway=mt5_gateway)
+        result = _check_symbol_market_status(
+            symbol,
+            detail=detail,
+            timezone_display=timezone_display,
+            gateway=mt5_gateway,
+        )
         if result.get("error"):
             errors.append({"symbol": symbol, "error": result.get("error")})
             continue
@@ -965,6 +988,7 @@ def _check_symbol_market_status_batch(
         "errors": errors if errors else None,
         "summary": f"{can_open_count}/{total} symbol(s) can open new positions.",
         "status_counts": status_counts,
+        "timezone_context": _symbol_market_status_timezone_context(timezone_display),
     }
 
 
@@ -1054,11 +1078,19 @@ def market_status(
             )
             symbol_list = _split_market_status_symbols(str(symbol))
             if len(symbol_list) > 1:
-                batch_result = _check_symbol_market_status_batch(symbol_list, detail=detail_mode)
+                batch_result = _check_symbol_market_status_batch(
+                    symbol_list,
+                    detail=detail_mode,
+                    timezone_display=timezone_display_mode,
+                )
                 if symbol_warnings:
                     batch_result["warnings"] = symbol_warnings
                 return batch_result
-            result = _check_symbol_market_status(str(symbol), detail=detail_mode)
+            result = _check_symbol_market_status(
+                str(symbol),
+                detail=detail_mode,
+                timezone_display=timezone_display_mode,
+            )
             if symbol_warnings and not result.get("error"):
                 result["warnings"] = symbol_warnings
             return result
