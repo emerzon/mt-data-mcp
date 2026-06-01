@@ -71,9 +71,9 @@ class ForecastGenerateRequest(BaseModel):
 class ForecastBacktestRequest(BaseModel):
     symbol: str
     timeframe: TimeframeLiteral = "H1"
-    horizon: int = Field(12, ge=1)
-    steps: int = Field(5, ge=1)
-    spacing: int = Field(20, ge=1)
+    horizon: int = Field(12, ge=1, description="Bars forecast after each backtest anchor.")
+    steps: int = Field(5, ge=1, description="Number of rolling-origin backtest anchors to run.")
+    spacing: int = Field(20, ge=1, description="Bars between consecutive rolling-origin anchors.")
     start: Optional[str] = None
     end: Optional[str] = None
     methods: Optional[List[str]] = None
@@ -140,8 +140,8 @@ class ForecastConformalIntervalsRequest(BaseModel):
     timeframe: TimeframeLiteral = "H1"
     method: str = "theta"
     horizon: int = Field(12, ge=1)
-    steps: int = Field(25, ge=1)
-    spacing: int = Field(20, ge=1)
+    steps: int = Field(25, ge=1, description="Number of rolling-origin calibration anchors.")
+    spacing: int = Field(20, ge=1, description="Bars between consecutive calibration anchors.")
     ci_alpha: float = Field(0.1, gt=0.0, lt=1.0)
     denoise: Optional[DenoiseSpec] = None
     params: Optional[Dict[str, Any]] = None
@@ -162,9 +162,9 @@ class ForecastTuneGeneticRequest(BaseModel):
     timeframe: TimeframeLiteral = "H1"
     method: Optional[str] = "theta"
     methods: Optional[List[str]] = None
-    horizon: int = Field(12, ge=1)
-    steps: int = Field(5, ge=1)
-    spacing: int = Field(20, ge=1)
+    horizon: int = Field(12, ge=1, description="Bars forecast after each tuning backtest anchor.")
+    steps: int = Field(5, ge=1, description="Number of rolling-origin backtest anchors per trial.")
+    spacing: int = Field(20, ge=1, description="Bars between consecutive tuning backtest anchors.")
     search_space: Optional[Dict[str, Any]] = None
     metric: str = "avg_rmse"
     mode: str = "min"
@@ -186,9 +186,9 @@ class ForecastTuneOptunaRequest(BaseModel):
     timeframe: TimeframeLiteral = "H1"
     method: Optional[str] = "theta"
     methods: Optional[List[str]] = None
-    horizon: int = Field(12, ge=1)
-    steps: int = Field(5, ge=1)
-    spacing: int = Field(20, ge=1)
+    horizon: int = Field(12, ge=1, description="Bars forecast after each tuning backtest anchor.")
+    steps: int = Field(5, ge=1, description="Number of rolling-origin backtest anchors per trial.")
+    spacing: int = Field(20, ge=1, description="Bars between consecutive tuning backtest anchors.")
     search_space: Optional[Dict[str, Any]] = None
     metric: str = "avg_rmse"
     mode: str = "min"
@@ -250,9 +250,9 @@ class ForecastOptimizeHintsRequest(BaseModel):
     timeframe: Optional[TimeframeLiteral] = None
     timeframes: Optional[List[TimeframeLiteral]] = None
     methods: Optional[List[str]] = None
-    horizon: int = Field(12, ge=1)
-    steps: int = Field(5, ge=1)
-    spacing: int = Field(20, ge=1)
+    horizon: int = Field(12, ge=1, description="Bars forecast after each optimization backtest anchor.")
+    steps: int = Field(5, ge=1, description="Number of rolling-origin backtest anchors per candidate.")
+    spacing: int = Field(20, ge=1, description="Bars between consecutive optimization backtest anchors.")
     population: int = Field(20, ge=1, le=100)
     generations: int = Field(15, ge=1, le=100)
     crossover_rate: float = Field(0.6, ge=0.0, le=1.0)

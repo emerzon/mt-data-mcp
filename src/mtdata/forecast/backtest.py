@@ -1609,11 +1609,32 @@ def forecast_backtest(  # noqa: C901
                     "metrics_reason": "no_successful_tests",
                 }
 
+        anchor_mode = (
+            "explicit"
+            if anchors and isinstance(anchors, (list, tuple)) and len(anchors) > 0
+            else "rolling"
+        )
+        backtest_plan: Dict[str, Any] = {
+            "model": "rolling_origin_expanding_window",
+            "anchor_mode": anchor_mode,
+            "runs_requested": int(len(anchors)) if anchor_mode == "explicit" else int(steps),
+            "runs_used": int(len(anchor_indices)),
+            "horizon_bars": int(horizon),
+            "history_bars_used": int(len(df)),
+        }
+        if anchor_mode == "rolling":
+            backtest_plan["anchor_spacing_bars"] = int(spacing)
+            backtest_plan["validation_span_bars"] = int(horizon) + max(
+                0,
+                int(len(anchor_indices)) - 1,
+            ) * int(spacing)
+
         result_payload = {
             "success": True,
             "symbol": symbol,
             "timeframe": timeframe,
             "units": _backtest_units(quantity),
+            "backtest_plan": backtest_plan,
             "slippage_bps": float(slippage_bps),
             "trade_threshold": float(trade_threshold or 0.0),
             "detail": detail_mode,
