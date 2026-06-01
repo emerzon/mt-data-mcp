@@ -7,6 +7,7 @@ import time
 import warnings
 from datetime import datetime, timedelta
 from datetime import timezone as dt_timezone
+from numbers import Real
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
 import pandas as pd
@@ -2060,6 +2061,25 @@ def _finite_or_none(value: Any) -> Optional[float]:
     return numeric
 
 
+def _json_safe_payload(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {key: _json_safe_payload(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_safe_payload(item) for item in value]
+    if isinstance(value, tuple):
+        return [_json_safe_payload(item) for item in value]
+    if isinstance(value, Real) and not isinstance(value, bool):
+        number = float(value)
+        if not math.isfinite(number):
+            return None
+    try:
+        if pd.isna(value) and not isinstance(value, (str, bytes)):
+            return None
+    except Exception:
+        pass
+    return value
+
+
 def _compact_tick_summary(out: Dict[str, Any]) -> Dict[str, Any]:
     spread = out.get("stats", {}).get("spread")
     compact_spread: Dict[str, Any] = {}
@@ -2442,7 +2462,7 @@ def fetch_ticks(  # noqa: C901
             _add_tick_last_quality(out)
             _add_tick_context_fields(out)
             _round_tick_price_payload(out, price_digits)
-            return _compact_tick_summary(out)
+            return _json_safe_payload(_compact_tick_summary(out))
 
         def _add_tick_summary_fields(payload: Dict[str, Any]) -> None:
             summary = _compact_summary_from_ticks()
@@ -2478,7 +2498,7 @@ def fetch_ticks(  # noqa: C901
                         out["q75"] = float("nan")
                     if detailed_stats or n != int(total_count):
                         out["count"] = n
-                    return out
+                    return _json_safe_payload(out)
                 first = float(vals.iloc[0])
                 last = float(vals.iloc[-1])
                 low = float(vals.min())
@@ -2508,7 +2528,7 @@ def fetch_ticks(  # noqa: C901
                     out["q75"] = float(vals.quantile(0.75))
                 if detailed_stats or n != int(total_count):
                     out["count"] = n
-                return out
+                return _json_safe_payload(out)
 
             df_stats = df_ticks.copy()
             df_stats["mid"] = (df_stats["bid"] + df_stats["ask"]) / 2.0
@@ -2675,7 +2695,9 @@ def fetch_ticks(  # noqa: C901
             _add_tick_last_quality(out)
             _add_tick_context_fields(out)
             _round_tick_price_payload(out, price_digits)
-            return out if detailed_stats else _compact_tick_summary(out)
+            return _json_safe_payload(
+                out if detailed_stats else _compact_tick_summary(out)
+            )
 
         # If simplify mode requests approximation or resampling, use shared path
         if simplify_present and simplify_mode in ('approximate', 'resample'):
@@ -2717,7 +2739,7 @@ def fetch_ticks(  # noqa: C901
             _add_tick_data_quality(payload)
             _add_tick_last_quality(payload)
             _add_tick_context_fields(payload)
-            return payload
+            return _json_safe_payload(payload)
         # Optional simplification based on a chosen y-series
         select_indices = list(range(original_count))
         _simp_method_used: Optional[str] = None
@@ -2889,7 +2911,7 @@ def fetch_ticks(  # noqa: C901
             except Exception:
                 pass
             payload["simplify"] = meta
-        return payload
+        return _json_safe_payload(payload)
     except Exception as e:
         return {"error": f"Error getting ticks: {str(e)}"}
 
