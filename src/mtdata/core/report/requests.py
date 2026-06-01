@@ -50,7 +50,17 @@ class ReportGenerateRequest(BaseModel):
         description="Return only summary and metadata; omit detailed report sections.",
     )
     denoise: Optional[DenoiseSpec] = None
-    params: Optional[Dict[str, Any]] = None
+    params: Optional[Dict[str, Any]] = Field(
+        None,
+        description=(
+            "Template/sub-tool overrides. Common keys: timeframe, context_limit, context_tail, "
+            "methods, backtest_steps, backtest_spacing, backtest_rmse_tolerance, "
+            "backtest_min_directional_accuracy, patterns_limit, top_k, barrier_method, "
+            "search_profile, grid_style, tp_min/tp_max/tp_steps, sl_min/sl_max/sl_steps, "
+            "extra_timeframes, pivot_timeframes. Advanced keys: regime_limit, regime_lookback, "
+            "cp_threshold, hmm_states, conformal_steps, conformal_spacing, conformal_alpha."
+        ),
+    )
     detail: CompactStandardFullDetailLiteral = "compact"
 
     @model_validator(mode="before")

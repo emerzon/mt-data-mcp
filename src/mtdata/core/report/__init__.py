@@ -80,7 +80,11 @@ def report_generate(
                 'minimal' (fast path: context + direct forecast; skips pivot/backtest/barrier optimization/patterns),
                 'advanced' (adds regimes, HAR-RV, conformal),
                 or style-specific ('scalping' | 'intraday' | 'swing' | 'position').
-    - params: optional dict to tune steps/spacing, grids, and optionally override timeframe per template via 'timeframe' or methods via 'methods'.
+    - params: optional dict for template/sub-tool overrides:
+              timeframe, methods, context_limit/context_tail, backtest_steps/backtest_spacing,
+              barrier_method/search_profile/grid_style/TP-SL grid keys, patterns_limit,
+              extra_timeframes/pivot_timeframes, and advanced regime/conformal keys
+              (regime_limit, regime_lookback, cp_threshold, hmm_states, conformal_*).
     - denoise: pass-through to candle fetching (e.g., {method:'ema', params:{alpha:0.2}, columns:['close']}).  
     """
     def _run() -> Union[str, Dict[str, Any]]:
