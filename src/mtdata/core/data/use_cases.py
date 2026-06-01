@@ -326,7 +326,46 @@ def _compact_candles_payload(
             compact[key] = public_diagnostics[key]
     if "spread_estimate" in public_diagnostics:
         compact["spread_estimate"] = public_diagnostics["spread_estimate"]
+    _filter_compact_routine_session_gaps(compact)
     return compact
+
+
+def _filter_compact_routine_session_gaps(payload: Dict[str, Any]) -> None:
+    session_gaps = payload.get("session_gaps")
+    if not isinstance(session_gaps, list) or not session_gaps:
+        return
+    routine_to = {
+        str(gap.get("to"))
+        for gap in session_gaps
+        if isinstance(gap, dict)
+        and str(gap.get("context") or "").strip().lower() == "weekend/session break"
+        and gap.get("to") not in (None, "")
+    }
+    filtered = [
+        gap
+        for gap in session_gaps
+        if not (
+            isinstance(gap, dict)
+            and str(gap.get("context") or "").strip().lower() == "weekend/session break"
+        )
+    ]
+    if filtered:
+        payload["session_gaps"] = filtered
+    else:
+        payload.pop("session_gaps", None)
+    rows = payload.get("data")
+    if not routine_to or not isinstance(rows, list):
+        return
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        gap = row.get("gap_before")
+        if (
+            isinstance(gap, dict)
+            and str(row.get("time")) in routine_to
+            and str(gap.get("context") or "").strip().lower() == "weekend/session break"
+        ):
+            row.pop("gap_before", None)
 
 
 def _standard_candles_payload(result: Dict[str, Any]) -> Dict[str, Any]:
