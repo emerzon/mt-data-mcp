@@ -286,6 +286,7 @@ def _task_status_payload(
         payload["pid"] = pid
 
     if task.progress is not None:
+        payload["progress_fraction"] = task.progress.fraction
         payload["progress"] = _serialize_progress(task.progress, detail=detail)
     payload.update(_task_runtime_payload(task, runtime))
 
