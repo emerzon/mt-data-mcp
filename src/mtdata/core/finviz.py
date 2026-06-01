@@ -2736,8 +2736,10 @@ def finviz_futures(
     """
     Get futures market performance from Finviz.
     
-    Returns performance data for major futures contracts including
-    commodities, indices, bonds, and currencies.
+    This endpoint is a performance-only Finviz source. It returns daily percent
+    moves for major futures contracts across commodities, indices, bonds, and
+    currencies, but Finviz does not expose current price or volume in this
+    source. The response includes data_limitations.price when price is absent.
     
     Returns
     -------
