@@ -2217,9 +2217,6 @@ def correlation_matrix(  # noqa: C901
                 "start": start,
                 "end": end,
                 "transform": transform_value,
-                "transform_note": (
-                    "Correlation defaults to log_return; cointegration defaults to log_level because it tests price-level relationships."
-                ),
                 "min_overlap": int(min_overlap),
             },
             "summary": {
@@ -2230,6 +2227,10 @@ def correlation_matrix(  # noqa: C901
             },
             "meta": _causal_contract_meta(meta),
         }
+        if detail_mode in {"standard", "full"}:
+            out["context"]["transform_note"] = (
+                "Correlation defaults to log_return; cointegration defaults to log_level because it tests price-level relationships."
+            )
         if output_truncated:
             out["truncated"] = True
         if detail_mode == "full":
@@ -2709,9 +2710,6 @@ def cointegration_test(  # noqa: C901
                 "start": start,
                 "end": end,
                 "transform": transform_value,
-                "transform_note": (
-                    "Cointegration defaults to log_level; correlation defaults to log_return because it measures co-movement in returns."
-                ),
                 "trend": trend_value,
                 "min_overlap": min_overlap_value,
             },
@@ -2735,6 +2733,10 @@ def cointegration_test(  # noqa: C901
                 ),
             ),
         }
+        if detail_mode in {"standard", "full"}:
+            out["context"]["transform_note"] = (
+                "Cointegration defaults to log_level; correlation defaults to log_return because it measures co-movement in returns."
+            )
         if output_truncated:
             out["truncated"] = True
         if warnings_out:
