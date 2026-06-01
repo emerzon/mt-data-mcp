@@ -167,26 +167,18 @@ def _market_ticker_error(
 
 def _market_depth_disabled_payload() -> Dict[str, Any]:
     return {
+        "success": False,
         "error": (
             "market_depth_fetch is disabled. "
             f"Set {_MARKET_DEPTH_ENABLE_ENV}=1 to enable it."
         ),
+        "error_code": "feature_disabled",
+        "feature": "market_depth_fetch",
+        "env_var": _MARKET_DEPTH_ENABLE_ENV,
+        "enable_instructions": f"Set {_MARKET_DEPTH_ENABLE_ENV}=1 to enable market_depth_fetch.",
+        "why_disabled": "Market depth requires broker DOM support and is disabled by default.",
         "recommended_alternative": "market_ticker",
     }
-
-
-def _unregister_market_depth_fetch_tool() -> None:
-    try:
-        from . import _mcp_tools
-
-        registry = getattr(_mcp_tools, "_TOOL_REGISTRY", None)
-        if isinstance(registry, dict):
-            registry.pop("market_depth_fetch", None)
-        object_registry = getattr(_mcp_tools, "_TOOL_OBJECT_REGISTRY", None)
-        if isinstance(object_registry, dict):
-            object_registry.pop("market_depth_fetch", None)
-    except Exception:
-        pass
 
 
 def _market_depth_fetch_impl(symbol: str, spread: bool = False, require_dom: bool = False) -> Dict[str, Any]:  # noqa: C901
@@ -400,36 +392,24 @@ def _market_depth_fetch_impl(symbol: str, spread: bool = False, require_dom: boo
     )
 
 
-def _market_depth_fetch_disabled(symbol: str, spread: bool = False, require_dom: bool = False) -> Dict[str, Any]:
-    """Return DOM if available; otherwise current bid/ask snapshot for `symbol`.
-
-    Parameters: symbol
-    """
-    if _market_depth_fetch_enabled():
-        return _market_depth_fetch_impl(symbol, spread=spread, require_dom=require_dom)
-    return run_logged_operation(
-        logger,
-        operation="market_depth_fetch",
-        symbol=symbol,
-        spread=spread,
-        require_dom=require_dom,
-        func=_market_depth_disabled_payload,
-    )
-
-
 def market_depth_fetch(symbol: str, spread: bool = False, require_dom: bool = False) -> Dict[str, Any]:
     """Return DOM if available; otherwise current bid/ask snapshot for `symbol`.
 
     Parameters: symbol
     """
+    if not _market_depth_fetch_enabled():
+        return run_logged_operation(
+            logger,
+            operation="market_depth_fetch",
+            symbol=symbol,
+            spread=spread,
+            require_dom=require_dom,
+            func=_market_depth_disabled_payload,
+        )
     return _market_depth_fetch_impl(symbol, spread=spread, require_dom=require_dom)
 
 
-if _market_depth_fetch_enabled():
-    market_depth_fetch = mcp.tool()(market_depth_fetch)
-else:
-    _unregister_market_depth_fetch_tool()
-    market_depth_fetch = _market_depth_fetch_disabled
+market_depth_fetch = mcp.tool()(market_depth_fetch)
 
 
 @mcp.tool()
