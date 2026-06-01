@@ -1974,6 +1974,90 @@ def _validate_tuning_metric(metric: Any) -> Optional[Dict[str, Any]]:
     }
 
 
+def _validate_tuning_param_spec(path: str, spec: Any) -> Optional[str]:
+    if not isinstance(spec, dict):
+        return f"{path} must be an object with type/min/max or choices."
+    spec_type = str(spec.get("type", "float")).strip().lower()
+    if spec_type not in {"int", "float", "categorical"}:
+        return f"{path}.type must be int, float, or categorical."
+    if spec_type == "categorical":
+        choices = spec.get("choices")
+        if not isinstance(choices, (list, tuple)) or len(choices) == 0:
+            return f"{path}.choices must be a non-empty list."
+        return None
+    if "min" not in spec or "max" not in spec:
+        return f"{path} must include min and max."
+    try:
+        lower = float(spec.get("min"))
+        upper = float(spec.get("max"))
+    except Exception:
+        return f"{path}.min and {path}.max must be numeric."
+    if upper < lower:
+        return f"{path}.max must be >= min."
+    if bool(spec.get("log", False)) and (lower <= 0.0 or upper <= 0.0):
+        return f"{path}.log=true requires positive min and max."
+    return None
+
+
+def _validate_tuning_search_space(search_space: Any) -> Optional[Dict[str, Any]]:
+    if search_space in (None, {}):
+        return None
+    if not isinstance(search_space, dict):
+        return {
+            "success": False,
+            "error": "search_space must be an object mapping parameter names to specs.",
+            "error_code": "invalid_search_space",
+        }
+    flat = any(
+        isinstance(value, dict)
+        and any(key in value for key in ("type", "min", "max", "choices"))
+        for key, value in search_space.items()
+        if key != "_method_spaces"
+    )
+    errors: List[str] = []
+    if flat:
+        for name, spec in search_space.items():
+            if name == "_method_spaces":
+                continue
+            error = _validate_tuning_param_spec(str(name), spec)
+            if error:
+                errors.append(error)
+    else:
+        for method_name, method_space in search_space.items():
+            if method_name == "_method_spaces":
+                continue
+            if not isinstance(method_space, dict):
+                errors.append(f"{method_name} must map to a parameter-spec object.")
+                continue
+            for param_name, spec in method_space.items():
+                error = _validate_tuning_param_spec(f"{method_name}.{param_name}", spec)
+                if error:
+                    errors.append(error)
+    method_spaces = search_space.get("_method_spaces")
+    if method_spaces is not None and not isinstance(method_spaces, dict):
+        errors.append("_method_spaces must be an object.")
+    elif isinstance(method_spaces, dict):
+        for method_name, method_space in method_spaces.items():
+            if not isinstance(method_space, dict):
+                errors.append(f"_method_spaces.{method_name} must be an object.")
+                continue
+            for param_name, spec in method_space.items():
+                error = _validate_tuning_param_spec(
+                    f"_method_spaces.{method_name}.{param_name}",
+                    spec,
+                )
+                if error:
+                    errors.append(error)
+    if not errors:
+        return None
+    return {
+        "success": False,
+        "error": "Invalid search_space: " + "; ".join(errors[:5]),
+        "error_code": "invalid_search_space",
+        "errors": errors[:10],
+    }
+
+
 def _apply_tuning_detail(result: Dict[str, Any], detail: str) -> Dict[str, Any]:
     detail_value = _requested_detail_label(detail)
     out = dict(result)
@@ -2023,6 +2107,20 @@ def run_forecast_tune_genetic(
     invalid_metric = _validate_tuning_metric(request.metric)
     if invalid_metric is not None:
         result = _apply_tuning_detail(invalid_metric, request.detail)
+        log_operation_finish(
+            logger,
+            operation="forecast_tune_genetic",
+            started_at=started_at,
+            success=False,
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            method=request.method,
+            methods=len(request.methods or []),
+        )
+        return result
+    invalid_search_space = _validate_tuning_search_space(request.search_space)
+    if invalid_search_space is not None:
+        result = _apply_tuning_detail(invalid_search_space, request.detail)
         log_operation_finish(
             logger,
             operation="forecast_tune_genetic",
@@ -2114,6 +2212,20 @@ def run_forecast_tune_optuna(
     invalid_metric = _validate_tuning_metric(request.metric)
     if invalid_metric is not None:
         result = _apply_tuning_detail(invalid_metric, request.detail)
+        log_operation_finish(
+            logger,
+            operation="forecast_tune_optuna",
+            started_at=started_at,
+            success=False,
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            method=request.method,
+            methods=len(request.methods or []),
+        )
+        return result
+    invalid_search_space = _validate_tuning_search_space(request.search_space)
+    if invalid_search_space is not None:
+        result = _apply_tuning_detail(invalid_search_space, request.detail)
         log_operation_finish(
             logger,
             operation="forecast_tune_optuna",
