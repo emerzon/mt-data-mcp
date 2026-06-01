@@ -239,14 +239,26 @@ def _task_runtime_payload(task: Any, runtime: Optional[Dict[str, Any]]) -> Dict[
         return {}
     task_id = str(getattr(task, "task_id", "") or "")
     out: Dict[str, Any] = {}
+    training_category = None
+    try:
+        info = _get_registry().get_method_info(str(getattr(task, "method", "") or ""))
+        if isinstance(info, dict):
+            training_category = str(info.get("training_category") or "").strip().lower() or None
+    except Exception:
+        training_category = None
+    if training_category:
+        out["training_category"] = training_category
+        out["worker_type"] = "heavy" if training_category == "heavy" else "light"
     queue_positions = runtime.get("queue_positions")
     if isinstance(queue_positions, dict) and task_id in queue_positions:
         out["queue_position"] = queue_positions.get(task_id)
     heavy_task_ids = runtime.get("heavy_task_ids")
     if isinstance(heavy_task_ids, list) and task_id in heavy_task_ids:
         out["worker_pool"] = "heavy"
+        out["worker_type"] = "heavy"
     elif getattr(task, "status", None) == "running":
         out["worker_pool"] = "light"
+        out.setdefault("worker_type", "light")
     return out
 
 
