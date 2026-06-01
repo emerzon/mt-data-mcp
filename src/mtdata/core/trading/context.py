@@ -191,11 +191,11 @@ def _compact_trade_session_context_payload(payload: Dict[str, Any]) -> Dict[str,
                     "profit",
                     "margin_free",
                     "account_type",
+                    "execution_ready",
+                    "execution_blockers",
                 )
                 if account.get(key) not in (None, "")
             }
-            if account.get("execution_ready") is False:
-                account_summary["execution_ready"] = False
             if account_summary:
                 compact["account"] = account_summary
 

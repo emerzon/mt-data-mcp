@@ -55,6 +55,8 @@ _TRADE_ACCOUNT_COMPACT_KEYS = (
     "company",
     "account_type",
     "trade_mode",
+    "execution_ready",
+    "execution_blockers",
 )
 _TRADE_JOURNAL_UNITS: Dict[str, str] = {
     "win_rate": "fraction",
