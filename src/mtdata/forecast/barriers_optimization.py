@@ -162,6 +162,69 @@ def _resolve_barrier_search_profile_config(
     return search_profile_val, dict(_BARRIER_SEARCH_PROFILE_DEFAULTS[search_profile_val])
 
 
+def _barrier_search_config(
+    *,
+    search_profile: str,
+    grid_style: str,
+    preset: Optional[str],
+    mode: str,
+    objective: str,
+    tp_min: float,
+    tp_max: float,
+    sl_min: float,
+    sl_max: float,
+    tp_steps: int,
+    sl_steps: int,
+    ratio_min: float,
+    ratio_max: float,
+    ratio_steps: int,
+    vol_window: int,
+    vol_min_mult: float,
+    vol_max_mult: float,
+    vol_steps: int,
+    candidate_pairs: Optional[List[Tuple[Any, Any]]] = None,
+) -> Dict[str, Any]:
+    def _range(values: List[float], fallback_min: float, fallback_max: float) -> List[float]:
+        finite = [float(value) for value in values if np.isfinite(float(value))]
+        if finite:
+            return [_safe_float(min(finite)), _safe_float(max(finite))]
+        return [_safe_float(fallback_min), _safe_float(fallback_max)]
+
+    pairs = candidate_pairs or []
+    tp_values: List[float] = []
+    sl_values: List[float] = []
+    for tp_value, sl_value in pairs:
+        try:
+            tp_float = float(tp_value)
+            sl_float = float(sl_value)
+        except Exception:
+            continue
+        if np.isfinite(tp_float):
+            tp_values.append(tp_float)
+        if np.isfinite(sl_float):
+            sl_values.append(sl_float)
+
+    out: Dict[str, Any] = {
+        "profile": search_profile,
+        "grid_style": grid_style,
+        "preset": preset if grid_style == "preset" else None,
+        "mode": mode,
+        "objective": objective,
+        "tp_range": _range(tp_values, tp_min, tp_max),
+        "sl_range": _range(sl_values, sl_min, sl_max),
+        "tp_steps": int(tp_steps),
+        "sl_steps": int(sl_steps),
+    }
+    if grid_style == "ratio":
+        out["ratio_range"] = [_safe_float(ratio_min), _safe_float(ratio_max)]
+        out["ratio_steps"] = int(ratio_steps)
+    if grid_style == "volatility":
+        out["vol_window"] = int(vol_window)
+        out["vol_mult_range"] = [_safe_float(vol_min_mult), _safe_float(vol_max_mult)]
+        out["vol_steps"] = int(vol_steps)
+    return {key: value for key, value in out.items() if value is not None}
+
+
 def _resolve_profile_param(
     params_dict: Dict[str, Any],
     profile_cfg: Dict[str, Any],
@@ -1625,6 +1688,31 @@ def forecast_barrier_optimize(  # noqa: C901
                 "objective": objective_val,
                 "search_profile": search_profile_val,
                 "fast_defaults": bool(search_profile_val == 'fast'),
+                "search_config": _barrier_search_config(
+                    search_profile=search_profile_val,
+                    grid_style=grid_style_val,
+                    preset=preset_val,
+                    mode=mode_val,
+                    objective=objective_val,
+                    tp_min=tp_min_val,
+                    tp_max=tp_max_val,
+                    sl_min=sl_min_val,
+                    sl_max=sl_max_val,
+                    tp_steps=tp_steps_val,
+                    sl_steps=sl_steps_val,
+                    ratio_min=ratio_min_val,
+                    ratio_max=ratio_max_val,
+                    ratio_steps=ratio_steps_val,
+                    vol_window=vol_window_val,
+                    vol_min_mult=vol_min_mult_val,
+                    vol_max_mult=vol_max_mult_val,
+                    vol_steps=vol_steps_val,
+                    candidate_pairs=[
+                        (row.get("tp"), row.get("sl"))
+                        for row in candidates
+                        if isinstance(row, dict)
+                    ],
+                ),
                 "compute_profile": {
                     "profile": search_profile_val,
                     "n_sims": int(sims),
@@ -2569,6 +2657,27 @@ def forecast_barrier_optimize(  # noqa: C901
             "objective": objective_val,
             "search_profile": search_profile_val,
             "fast_defaults": bool(search_profile_val == 'fast'),
+            "search_config": _barrier_search_config(
+                search_profile=search_profile_val,
+                grid_style=grid_style_val,
+                preset=preset_val,
+                mode=mode_val,
+                objective=objective_val,
+                tp_min=tp_min_val,
+                tp_max=tp_max_val,
+                sl_min=sl_min_val,
+                sl_max=sl_max_val,
+                tp_steps=tp_steps_val,
+                sl_steps=sl_steps_val,
+                ratio_min=ratio_min_val,
+                ratio_max=ratio_max_val,
+                ratio_steps=ratio_steps_val,
+                vol_window=vol_window_val,
+                vol_min_mult=vol_min_mult_val,
+                vol_max_mult=vol_max_mult_val,
+                vol_steps=vol_steps_val,
+                candidate_pairs=base_candidates,
+            ),
             "compute_profile": {
                 "profile": search_profile_val,
                 "n_sims": int(sims),
