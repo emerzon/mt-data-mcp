@@ -1230,6 +1230,7 @@ _FINVIZ_CALENDAR_COMPACT_FIELDS = (
     "source_id",
     "country",
     "country_code",
+    "country_inferred",
     "event",
     "category",
     "date",
@@ -1643,6 +1644,11 @@ _FINVIZ_CALENDAR_COUNTRY_PREFIXES = (
     ("CHINA", "China", "CN"),
     ("CNY", "China", "CN"),
 )
+_FINVIZ_CALENDAR_EVENT_COUNTRY_KEYWORDS = (
+    ("FEDERAL RESERVE", "United States", "US"),
+    ("FOMC", "United States", "US"),
+    ("FED ", "United States", "US"),
+)
 _FINVIZ_CALENDAR_CURRENCY_TO_COUNTRY_CODE = {
     "USD": "US",
     "EUR": "EU",
@@ -1695,6 +1701,13 @@ def _infer_finviz_calendar_country(item: Dict[str, Any]) -> tuple[Any, Any]:
     for prefix, country, code in _FINVIZ_CALENDAR_COUNTRY_PREFIXES:
         if compact_source.startswith(prefix):
             return country, code
+    event_text = " ".join(
+        str(item.get(field) or "").upper()
+        for field in ("event", "title", "category")
+    )
+    for keyword, country, code in _FINVIZ_CALENDAR_EVENT_COUNTRY_KEYWORDS:
+        if keyword in event_text:
+            return country, code
     return None, None
 
 
@@ -1724,11 +1737,17 @@ def _compact_finviz_calendar_item(
 
 def _enrich_finviz_calendar_country(item: Dict[str, Any]) -> Dict[str, Any]:
     normalized = dict(item)
+    had_country = normalized.get("country") not in (None, "")
+    had_country_code = normalized.get("country_code") not in (None, "")
     country, country_code = _infer_finviz_calendar_country(normalized)
     if country not in (None, ""):
         normalized["country"] = country
     if country_code not in (None, ""):
         normalized["country_code"] = country_code
+    if (country not in (None, "") or country_code not in (None, "")) and not (
+        had_country or had_country_code
+    ):
+        normalized["country_inferred"] = True
     return normalized
 
 
