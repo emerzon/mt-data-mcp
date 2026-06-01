@@ -14,6 +14,8 @@ from typing import Any, Dict, List, Optional, Union, cast, get_args, get_origin
 from pydantic import BaseModel
 
 from ..shared.parameter_contracts import (
+    OUTPUT_EXTRA_FULL_ALIASES,
+    OUTPUT_EXTRAS,
     PUBLIC_OUTPUT_PARAMS,
 )
 from ..utils.utils import _UNPARSED_BOOL, _coerce_scalar, _parse_bool_like
@@ -279,6 +281,11 @@ def registered_tool_catalog(*, detail: str = "compact") -> Dict[str, Any]:
         "detail": "full" if detail_mode == "full" else "compact",
         "count": len(tools),
         "categories": categories,
+        "output_extras": {
+            "accepted": sorted(OUTPUT_EXTRAS),
+            "full_aliases": sorted(OUTPUT_EXTRA_FULL_ALIASES),
+            "support": "best_effort_by_tool",
+        },
         "tools": tools,
     }
 
