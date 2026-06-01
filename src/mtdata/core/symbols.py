@@ -2687,6 +2687,7 @@ def market_scan(  # noqa: C901
             ]
             compact_headers = [
                 "symbol",
+                "data_stale",
                 "close",
                 "price_change_pct",
                 "tick_volume",
