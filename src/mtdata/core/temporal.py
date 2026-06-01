@@ -241,6 +241,13 @@ def _time_label(minutes: int) -> str:
     return f"{minutes // 60:02d}:{minutes % 60:02d}"
 
 
+def _rounded_temporal_float(value: Any, *, digits: int = 6) -> Optional[float]:
+    number = _safe_float(value)
+    if number is None:
+        return None
+    return round(float(number), digits)
+
+
 def _stats_for_group(df: pd.DataFrame, volume_col: Optional[str]) -> Dict[str, Any]:
     out: Dict[str, Any] = {
         "bars": int(len(df)),
@@ -250,10 +257,10 @@ def _stats_for_group(df: pd.DataFrame, volume_col: Optional[str]) -> Dict[str, A
     n = int(ret.shape[0])
     out["returns"] = n
     if n > 0:
-        out["avg_return"] = _safe_float(ret.mean())
-        out["median_return"] = _safe_float(ret.median())
-        out["volatility"] = _safe_float(ret.std(ddof=0))
-        out["avg_abs_return"] = _safe_float(ret.abs().mean())
+        out["avg_return"] = _rounded_temporal_float(ret.mean())
+        out["median_return"] = _rounded_temporal_float(ret.median())
+        out["volatility"] = _rounded_temporal_float(ret.std(ddof=0))
+        out["avg_abs_return"] = _rounded_temporal_float(ret.abs().mean())
         out["win_rate"] = _safe_float(round((ret > 0).sum() / float(n), 4))
     else:
         out["avg_return"] = None
@@ -265,15 +272,19 @@ def _stats_for_group(df: pd.DataFrame, volume_col: Optional[str]) -> Dict[str, A
     if "__range" in df.columns:
         rng = pd.to_numeric(df["__range"], errors="coerce")
         rng = rng[pd.notna(rng)]
-        out["avg_range"] = _safe_float(rng.mean()) if len(rng) else None
+        out["avg_range"] = (
+            _rounded_temporal_float(rng.mean(), digits=8) if len(rng) else None
+        )
     if "__range_pct" in df.columns:
         rngp = pd.to_numeric(df["__range_pct"], errors="coerce")
         rngp = rngp[pd.notna(rngp)]
-        out["avg_range_pct"] = _safe_float(rngp.mean()) if len(rngp) else None
+        out["avg_range_pct"] = _rounded_temporal_float(rngp.mean()) if len(rngp) else None
     if volume_col and volume_col in df.columns:
         vol = pd.to_numeric(df[volume_col], errors="coerce")
         vol = vol[pd.notna(vol)]
-        out["avg_volume"] = _safe_float(vol.mean()) if len(vol) else None
+        out["avg_volume"] = (
+            _rounded_temporal_float(vol.mean(), digits=2) if len(vol) else None
+        )
     return out
 
 
