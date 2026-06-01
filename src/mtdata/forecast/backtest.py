@@ -145,6 +145,7 @@ def _attach_metrics_status(
     if metrics:
         payload["metrics"] = metrics
         payload["metrics_available"] = True
+        payload["metrics_reason"] = "available"
         payload["slippage_bps"] = float(slippage_bps)
         return
 
