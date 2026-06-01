@@ -214,9 +214,18 @@ def _serialize_model_handle(
         payload["expires_in_days"] = expires_in_days
     if store_info.get("expired") is not None:
         payload["expired"] = bool(store_info.get("expired"))
+    store_metadata = dict(getattr(handle, "store_metadata", {}) or {})
+    try:
+        from ..forecast.model_store import describe_store_metadata_compatibility
+
+        compatibility = describe_store_metadata_compatibility(store_metadata)
+    except Exception:
+        compatibility = {}
+    compatibility_status = compatibility.get("status") if isinstance(compatibility, dict) else None
+    if compatibility_status:
+        payload["compatibility_status"] = compatibility_status
     if detail == "full":
         from ..forecast.model_store import (
-            describe_store_metadata_compatibility,
             sanitize_store_metadata,
         )
 
@@ -227,10 +236,9 @@ def _serialize_model_handle(
             payload["ttl_days"] = _days(store_info.get("ttl_seconds"))
             payload["file_count"] = int(store_info.get("file_count") or 0)
             payload["model_dir"] = store_info.get("model_dir")
-        store_metadata = dict(getattr(handle, "store_metadata", {}) or {})
         payload["metadata"] = model_metadata
         payload["store_metadata"] = sanitize_store_metadata(store_metadata)
-        payload["compatibility"] = describe_store_metadata_compatibility(store_metadata)
+        payload["compatibility"] = compatibility
     return payload
 
 
