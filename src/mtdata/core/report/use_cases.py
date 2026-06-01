@@ -424,6 +424,68 @@ def _section_timeframes(section: Any) -> List[str]:
     ]
 
 
+def _split_report_section_names(value: Any) -> Optional[List[str]]:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        names = [item.strip() for item in value.replace(",", " ").split() if item.strip()]
+        return names or None
+    if isinstance(value, (list, tuple)):
+        names = [str(item).strip() for item in value if str(item).strip()]
+        return names or None
+    return None
+
+
+def _apply_report_section_controls(
+    report: Dict[str, Any],
+    *,
+    include_sections: Any = None,
+    max_sections: Optional[int] = None,
+    summary_only: bool = False,
+) -> None:
+    sections = report.get("sections")
+    if not isinstance(sections, dict):
+        return
+
+    original_names = list(sections.keys())
+    if summary_only:
+        selected_names: List[str] = []
+        missing_requested: List[str] = []
+    else:
+        requested_names = _split_report_section_names(include_sections)
+        if requested_names:
+            requested_lookup = {name.casefold(): name for name in original_names}
+            selected_names = []
+            missing_requested = []
+            for requested in requested_names:
+                actual = requested_lookup.get(requested.casefold())
+                if actual is None:
+                    missing_requested.append(requested)
+                elif actual not in selected_names:
+                    selected_names.append(actual)
+        else:
+            selected_names = list(original_names)
+            missing_requested = []
+
+        if max_sections is not None:
+            selected_names = selected_names[: max(0, int(max_sections))]
+
+    report["sections"] = {name: sections[name] for name in selected_names if name in sections}
+    omitted_names = [name for name in original_names if name not in selected_names]
+    if omitted_names or missing_requested or summary_only or max_sections is not None or include_sections:
+        report["section_controls"] = {
+            "summary_only": bool(summary_only),
+            "included_sections": selected_names,
+            "included_count": len(selected_names),
+            "omitted_sections": omitted_names,
+            "omitted_count": len(omitted_names),
+        }
+        if max_sections is not None:
+            report["section_controls"]["max_sections"] = int(max_sections)
+        if missing_requested:
+            report["section_controls"]["missing_requested_sections"] = missing_requested
+
+
 def _report_template_focus(
     *,
     template: str,
@@ -1010,6 +1072,12 @@ def run_report_generate(  # noqa: C901
             rep["summary"] = summ
             if summary_structured:
                 rep["summary_structured"] = summary_structured
+            _apply_report_section_controls(
+                rep,
+                include_sections=request.include_sections,
+                max_sections=request.max_sections,
+                summary_only=bool(request.summary_only),
+            )
             sections = rep.get("sections")
             if isinstance(sections, dict):
                 sections_status = _build_sections_status(sections)

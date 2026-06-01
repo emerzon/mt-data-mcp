@@ -36,6 +36,19 @@ class ReportGenerateRequest(BaseModel):
     start: Optional[str] = None
     end: Optional[str] = None
     methods: Optional[Union[str, List[str]]] = None
+    include_sections: Optional[Union[str, List[str]]] = Field(
+        None,
+        description="Only include these report sections. Accepts a list or comma/space separated names.",
+    )
+    max_sections: Optional[int] = Field(
+        None,
+        ge=1,
+        description="Maximum number of report sections to include, after include_sections filtering.",
+    )
+    summary_only: bool = Field(
+        False,
+        description="Return only summary and metadata; omit detailed report sections.",
+    )
     denoise: Optional[DenoiseSpec] = None
     params: Optional[Dict[str, Any]] = None
     detail: CompactStandardFullDetailLiteral = "compact"
