@@ -193,9 +193,11 @@ def default_search_space(method: Optional[str] = None, methods: Optional[List[st
                 out[m] = dict(_DEFAULT_SPACES_METHOD_SCOPED[m])
         return out
     if method:
-        sp = _DEFAULT_SPACES_METHOD_SCOPED.get(str(method))
-        if isinstance(sp, dict) and sp:
-            return dict(sp)
+        method_key = str(method)
+        if method_key in _DEFAULT_SPACES_METHOD_SCOPED:
+            sp = _DEFAULT_SPACES_METHOD_SCOPED.get(method_key)
+            if isinstance(sp, dict):
+                return dict(sp)
         # Fallback to a generic seasonality search for classical methods
         return {"seasonality": {"type": "int", "min": 8, "max": 48}}
     # Neither provided: return a compact method-scoped default

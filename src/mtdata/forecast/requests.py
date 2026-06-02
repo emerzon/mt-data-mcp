@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from ..shared.schema import (
     CompactFullDetailLiteral,
@@ -262,8 +262,8 @@ class ForecastOptimizeHintsRequest(BaseModel):
     horizon: int = Field(12, ge=1, description="Bars forecast after each optimization backtest anchor.")
     steps: int = Field(5, ge=1, description="Number of rolling-origin backtest anchors per candidate.")
     spacing: int = Field(20, ge=1, description="Bars between consecutive optimization backtest anchors.")
-    population: int = Field(20, ge=1, le=100)
-    generations: int = Field(15, ge=1, le=100)
+    population: int = Field(8, ge=1, le=100)
+    generations: int = Field(5, ge=1, le=100)
     crossover_rate: float = Field(0.6, ge=0.0, le=1.0)
     mutation_rate: float = Field(0.3, ge=0.0, le=1.0)
     fitness_metric: str = "composite"

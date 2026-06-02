@@ -159,8 +159,8 @@ class TestForecastOptimizeHintsRequest:
     def test_default_values(self):
         req = ForecastOptimizeHintsRequest(symbol='EURUSD')
         assert req.fitness_metric == 'composite'
-        assert req.population == 20
-        assert req.generations == 15
+        assert req.population == 8
+        assert req.generations == 5
         assert req.top_n == 5
 
 

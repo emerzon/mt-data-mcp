@@ -329,6 +329,7 @@ def test_forecast_generate_defaults_to_compact_payload(monkeypatch):
     assert out["forecast_vs_last_price"] == {
         "direction": "bullish",
         "direction_basis": "horizon_end",
+        "direction_threshold_pct": 0.01,
         "first_step_delta": -0.05,
         "horizon_delta": 0.15,
         "first_step_delta_pct": -4.7619,
@@ -388,6 +389,43 @@ def test_forecast_generate_compact_summarizes_stale_anchor(monkeypatch):
     assert "freshness_basis" not in out
     assert "stale_after_seconds" not in out
     assert "stale_warning" not in out
+
+
+def test_forecast_generate_compact_normalizes_utc_times_and_neutral_delta(monkeypatch):
+    raw = _unwrap(cf.forecast_generate)
+    monkeypatch.setattr(
+        cf,
+        "_forecast_impl",
+        lambda **kwargs: {
+            "success": True,
+            "method": kwargs["method"],
+            "horizon": kwargs["horizon"],
+            "quantity": kwargs["quantity"],
+            "last_observation_time": "2026-06-02 19:00",
+            "forecast_time": ["2026-06-02 20:00", "2026-06-02 21:00"],
+            "forecast_price": [1.00004, 1.00005],
+            "last_price": 1.0,
+            "digits": 5,
+        },
+    )
+
+    out = raw(
+        request=ForecastGenerateRequest(
+            symbol="EURUSD",
+            timeframe="H1",
+            method="theta",
+            horizon=2,
+        )
+    )
+
+    assert out["last_observation_time"] == "2026-06-02T19:00Z"
+    assert out["timezone"] == "UTC"
+    assert out["forecast"] == [
+        {"time": "2026-06-02T20:00Z", "value": 1.00004},
+        {"time": "2026-06-02T21:00Z", "value": 1.00005},
+    ]
+    assert out["forecast_vs_last_price"]["direction"] == "neutral"
+    assert out["forecast_vs_last_price"]["direction_threshold_pct"] == 0.01
 
 
 def test_forecast_backtest_request_accepts_method_alias():
@@ -473,6 +511,7 @@ def test_forecast_generate_rounds_price_outputs_to_symbol_digits(monkeypatch):
     assert out["forecast_vs_last_price"] == {
         "direction": "bullish",
         "direction_basis": "horizon_end",
+        "direction_threshold_pct": 0.01,
         "first_step_delta": 0.00048,
         "horizon_delta": 0.00049,
         "first_step_delta_pct": 0.0409,
@@ -517,6 +556,7 @@ def test_forecast_generate_compact_flags_flat_theta_display(monkeypatch):
     assert "params_used" not in out
     assert out["path_flat"] is True
     assert out["path_range"] == 0.0
+    assert out["point_forecast_mode"] == "flat_anchor"
     assert any("near-flat at displayed price precision" in item for item in out["warnings"])
 
 
@@ -1570,6 +1610,33 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert "Error listing forecast methods" in _unwrap(cf.forecast_list_methods)()["error"]
 
 
+def test_forecast_list_library_models_defaults_to_compact_page(monkeypatch):
+    rows = [
+        {
+            "method": f"model_{idx}",
+            "namespace": "native",
+            "available": True,
+            "execution": {"library": "native", "method": f"model_{idx}"},
+        }
+        for idx in range(25)
+    ]
+    monkeypatch.setattr(
+        cf,
+        "_get_library_forecast_capabilities",
+        lambda lib, **_kwargs: rows if lib == "native" else [],
+    )
+
+    compact_page = cf._forecast_list_library_models_impl("native")
+    assert compact_page["models_shown"] == 20
+    assert compact_page["total_filtered"] == 25
+    assert compact_page["has_more"] is True
+    assert compact_page["filters"]["limit"] == 20
+
+    full_page = cf._forecast_list_library_models_impl("native", detail="full")
+    assert full_page["models_shown"] == 25
+    assert full_page["filters"]["limit"] is None
+
+
 def test_forecast_list_library_models_reports_missing_statsforecast(monkeypatch):
     raw_list_models = _unwrap(cf.forecast_list_library_models)
 
@@ -1929,6 +1996,37 @@ def test_run_forecast_conformal_intervals_compact_omits_technical_metadata():
         "params_used",
     ):
         assert key not in result
+
+
+def test_forecast_conformal_intervals_compact_marks_flat_point_forecast():
+    out = forecast_use_cases._apply_conformal_intervals_detail(
+        {
+            "success": True,
+            "method": "theta",
+            "horizon": 2,
+            "last_observation_time": "2026-06-02 19:00",
+            "forecast_time": ["2026-06-02 20:00", "2026-06-02 21:00"],
+            "forecast_price": [1.23456, 1.23456],
+            "lower_price": [1.23, 1.23],
+            "upper_price": [1.24, 1.24],
+            "digits": 5,
+            "ci_alpha": 0.1,
+        },
+        ForecastConformalIntervalsRequest(
+            symbol="EURUSD",
+            timeframe="H1",
+            method="theta",
+            horizon=2,
+            detail="compact",
+        ),
+    )
+
+    assert out["last_observation_time"] == "2026-06-02T19:00Z"
+    assert out["forecast"] == [
+        {"time": "2026-06-02T20:00Z", "value": 1.23456, "lower": 1.23, "upper": 1.24},
+        {"time": "2026-06-02T21:00Z", "value": 1.23456, "lower": 1.23, "upper": 1.24},
+    ]
+    assert out["point_forecast_mode"] == "flat_anchor"
 
 
 def test_run_forecast_conformal_intervals_rewrites_interval_unavailable_guidance():

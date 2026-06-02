@@ -487,8 +487,21 @@ class TestFormatResultForCli:
         result = _format_result_for_cli(
             {
                 "success": True,
+                "horizon": 12,
+                "tp_pct": 0.5,
+                "sl_pct": 0.3,
+                "barrier_unit": "percent",
+                "barrier_mode": "pct",
+                "probability_unit": "fraction",
                 "prob_tp_first": 0.52,
                 "prob_sl_first": 0.48,
+                "units": {
+                    "horizon": "bars",
+                    "tp_pct": "percentage_points",
+                    "sl_pct": "percentage_points",
+                    "prob_tp_first": "probability_fraction",
+                    "prob_sl_first": "probability_fraction",
+                },
                 "tp_hit_prob_by_t": [0.1, 0.2],
                 "sl_hit_prob_by_t": [0.3, 0.4],
             },
@@ -496,6 +509,10 @@ class TestFormatResultForCli:
             verbose=False,
             cmd_name="forecast_barrier_prob",
         )
+        assert "tp_pct" in result
+        assert "sl_pct" in result
+        assert "barrier_unit" in result
+        assert "units" in result
         assert "prob_tp_first" in result
         assert "prob_sl_first" in result
         assert "tp_hit_prob_by_t" not in result

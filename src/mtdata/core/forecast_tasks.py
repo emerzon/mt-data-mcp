@@ -44,6 +44,23 @@ def _format_epoch_utc(value: Any) -> Optional[str]:
         return None
 
 
+def _attach_time_field(
+    payload: Dict[str, Any],
+    field: str,
+    value: Any,
+    *,
+    detail: DetailLevel,
+) -> None:
+    iso_value = _format_epoch_utc(value)
+    if iso_value is not None:
+        payload[field] = iso_value
+        if detail == "full":
+            payload[f"{field}_epoch"] = value
+        return
+    if value is not None:
+        payload[field] = value
+
+
 def _days(value: Any) -> Optional[float]:
     try:
         seconds = float(value)
@@ -289,7 +306,8 @@ def _recent_completed_model_tasks(
         row = {
             "task_id": task.task_id,
             "model_id": handle.model_id,
-            "completed_at": getattr(task, "completed_at", None),
+            "completed_at": _format_epoch_utc(getattr(task, "completed_at", None))
+            or getattr(task, "completed_at", None),
         }
         row.update(_model_store_state_payload(handle))
         rows.append(row)
@@ -339,12 +357,13 @@ def _task_status_payload(
         "method": task.method,
         "data_scope": task.data_scope,
         "status": task.status,
-        "created_at": task.created_at,
-        "started_at": task.started_at,
-        "completed_at": task.completed_at,
-        "heartbeat_at": getattr(task, "heartbeat_at", None),
+        "timezone": "UTC",
         "cancel_requested": bool(getattr(task, "cancel_requested", False)),
     }
+    _attach_time_field(payload, "created_at", getattr(task, "created_at", None), detail=detail)
+    _attach_time_field(payload, "started_at", getattr(task, "started_at", None), detail=detail)
+    _attach_time_field(payload, "completed_at", getattr(task, "completed_at", None), detail=detail)
+    _attach_time_field(payload, "heartbeat_at", getattr(task, "heartbeat_at", None), detail=detail)
     pid = getattr(task, "pid", None)
     if pid is not None:
         payload["pid"] = pid
@@ -392,11 +411,12 @@ def _task_list_item_payload(
         "method": task.method,
         "data_scope": task.data_scope,
         "status": task.status,
-        "created_at": task.created_at,
-        "started_at": started_at,
-        "heartbeat_at": getattr(task, "heartbeat_at", None),
+        "timezone": "UTC",
         "cancel_requested": bool(getattr(task, "cancel_requested", False)),
     }
+    _attach_time_field(payload, "created_at", getattr(task, "created_at", None), detail=detail)
+    _attach_time_field(payload, "started_at", started_at, detail=detail)
+    _attach_time_field(payload, "heartbeat_at", getattr(task, "heartbeat_at", None), detail=detail)
     completed_at = getattr(task, "completed_at", None)
     elapsed_start = started_at or getattr(task, "created_at", None)
     elapsed_end = completed_at or time.time()
@@ -419,7 +439,7 @@ def _task_list_item_payload(
         payload["error"] = task.error
 
     if detail == "full":
-        payload["completed_at"] = task.completed_at
+        _attach_time_field(payload, "completed_at", completed_at, detail=detail)
         params_hash = getattr(task, "params_hash", None)
         if params_hash:
             payload["params_hash"] = params_hash
@@ -598,7 +618,9 @@ def forecast_task_cancel_all(request: ForecastTaskCancelAllRequest) -> Dict[str,
                 "method": task.method,
                 "data_scope": task.data_scope,
                 "status": task.status,
-                "created_at": task.created_at,
+                "created_at": _format_epoch_utc(getattr(task, "created_at", None))
+                or getattr(task, "created_at", None),
+                "timezone": "UTC",
             }
             for task in tasks
         ]

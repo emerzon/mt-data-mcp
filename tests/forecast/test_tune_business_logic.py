@@ -21,6 +21,9 @@ def test_default_search_space_modes():
     single_unknown = tune.default_search_space(method="unknown")
     assert single_unknown == {"seasonality": {"type": "int", "min": 8, "max": 48}}
 
+    known_empty = tune.default_search_space(method="drift")
+    assert known_empty == {}
+
     none_given = tune.default_search_space()
     assert "_shared" in none_given
     assert "theta" in none_given

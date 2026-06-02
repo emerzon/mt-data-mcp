@@ -8,6 +8,7 @@ import os
 import pkgutil
 import time
 import warnings
+from datetime import datetime, timezone
 from functools import lru_cache
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -66,6 +67,56 @@ _TUNING_METRICS = frozenset(
 _VOLATILITY_PROXY_METHODS = {"arima", "sarima", "ets", "theta"}
 _PRETRAINED_FORECAST_METHODS = ("chronos2", "chronos_bolt", "timesfm", "lag_llama")
 _DEFAULT_VOLATILITY_PROXY = "squared_return"
+_FORECAST_DIRECTION_NEUTRAL_THRESHOLD_PCT = 0.01
+
+
+def _format_forecast_time_utc(value: Any) -> Any:
+    if value in (None, ""):
+        return value
+    if isinstance(value, (int, float)):
+        try:
+            return datetime.fromtimestamp(float(value), timezone.utc).strftime(
+                "%Y-%m-%dT%H:%M:%SZ"
+            )
+        except Exception:
+            return value
+    text = str(value).strip()
+    if not text:
+        return value
+    parse_text = text.replace("Z", "+00:00")
+    if "T" not in parse_text and " " in parse_text:
+        parse_text = parse_text.replace(" ", "T", 1)
+    try:
+        parsed = datetime.fromisoformat(parse_text)
+    except Exception:
+        return value
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    else:
+        parsed = parsed.astimezone(timezone.utc)
+    parsed = parsed.replace(microsecond=0)
+    if parsed.second == 0:
+        return parsed.strftime("%Y-%m-%dT%H:%MZ")
+    return parsed.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _normalize_forecast_time_fields(payload: Dict[str, Any]) -> Dict[str, Any]:
+    out = dict(payload)
+    for key in (
+        "last_observation_time",
+        "forecast_from",
+        "forecast_start_time",
+    ):
+        if key in out:
+            out[key] = _format_forecast_time_utc(out.get(key))
+    value = out.get("forecast_time")
+    if isinstance(value, list):
+        out["forecast_time"] = [_format_forecast_time_utc(item) for item in value]
+    elif value not in (None, ""):
+        out["forecast_time"] = _format_forecast_time_utc(value)
+    if any(key in out for key in ("last_observation_time", "forecast_time")):
+        out.setdefault("timezone", "UTC")
+    return out
 
 
 def _normalize_trader_detail(value: Any, *, default: str = "compact") -> str:
@@ -483,21 +534,29 @@ def _forecast_vs_last_price(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]
     horizon_delta = horizon_forecast - last_price
     digits = _forecast_price_digits(payload)
     delta_digits = digits if digits is not None else 6
-    if horizon_delta > 0:
+    first_delta_pct = None
+    horizon_delta_pct = None
+    if last_price:
+        first_delta_pct = first_delta / last_price * 100.0
+        horizon_delta_pct = horizon_delta / last_price * 100.0
+    if horizon_delta_pct is not None and abs(horizon_delta_pct) <= _FORECAST_DIRECTION_NEUTRAL_THRESHOLD_PCT:
+        direction = "neutral"
+    elif horizon_delta > 0:
         direction = "bullish"
     elif horizon_delta < 0:
         direction = "bearish"
     else:
-        direction = "flat"
+        direction = "neutral"
     out: Dict[str, Any] = {
         "direction": direction,
         "direction_basis": "horizon_end",
+        "direction_threshold_pct": _FORECAST_DIRECTION_NEUTRAL_THRESHOLD_PCT,
         "first_step_delta": float(round(first_delta, delta_digits)),
         "horizon_delta": float(round(horizon_delta, delta_digits)),
     }
-    if last_price:
-        out["first_step_delta_pct"] = float(round(first_delta / last_price * 100.0, 4))
-        out["horizon_delta_pct"] = float(round(horizon_delta / last_price * 100.0, 4))
+    if first_delta_pct is not None and horizon_delta_pct is not None:
+        out["first_step_delta_pct"] = float(round(first_delta_pct, 4))
+        out["horizon_delta_pct"] = float(round(horizon_delta_pct, 4))
     return out
 
 
@@ -520,6 +579,10 @@ def _forecast_path_flatness(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]
         "path_flat": True,
         "path_range": float(round(path_range, range_digits)),
     }
+
+
+def _forecast_point_mode(payload: Dict[str, Any]) -> Optional[str]:
+    return "flat_anchor" if _forecast_path_flatness(payload) else None
 
 
 def _forecast_anchor_freshness(payload: Dict[str, Any]) -> Optional[str]:
@@ -572,7 +635,7 @@ def _forecast_generate_compact_rows(payload: Dict[str, Any]) -> List[Dict[str, A
     price_values = payload.get("forecast_price")
     rows: List[Dict[str, Any]] = []
     for idx in range(count):
-        row: Dict[str, Any] = {"time": times[idx]}
+        row: Dict[str, Any] = {"time": _format_forecast_time_utc(times[idx])}
         if quantity == "return" and forecast_key == "forecast_return":
             row["return"] = forecast_values[idx]
             if isinstance(price_values, list) and idx < len(price_values):
@@ -620,6 +683,7 @@ def _apply_forecast_generate_detail(
     if not isinstance(payload, dict) or payload.get("error"):
         return payload
     payload = _round_forecast_generate_payload(payload)
+    payload = _normalize_forecast_time_fields(payload)
     if str(payload.get("quantity") or request.quantity or "").strip().lower() == "volatility":
         payload = _round_forecast_volatility_payload(payload)
     training_period = _forecast_training_period(payload)
@@ -696,6 +760,7 @@ def _apply_forecast_generate_detail(
     path_flatness = _forecast_path_flatness(payload)
     if path_flatness:
         compact.update(path_flatness)
+        compact.setdefault("point_forecast_mode", "flat_anchor")
     forecast_rows = _forecast_generate_compact_rows(payload)
     ci_has_intervals = isinstance(ci_compact, dict) and bool(ci_compact.get("intervals"))
     if forecast_rows and not ci_has_intervals:
@@ -881,12 +946,16 @@ def _apply_conformal_intervals_detail(
     if not isinstance(payload, dict) or payload.get("error"):
         return payload
     payload = _round_forecast_generate_payload(payload)
+    payload = _normalize_forecast_time_fields(payload)
     forecast_rows = _forecast_generate_compact_rows(payload)
+    point_mode = _forecast_point_mode(payload)
     detail_value = _normalize_trader_detail(getattr(request, "detail", "compact"))
     if detail_value == "full":
         out = dict(payload)
         if forecast_rows:
             out.setdefault("forecast", forecast_rows)
+        if point_mode:
+            out.setdefault("point_forecast_mode", point_mode)
         out["detail"] = "full"
         return out
 
@@ -922,6 +991,8 @@ def _apply_conformal_intervals_detail(
     conformal = _conformal_summary(payload.get("conformal"))
     if conformal:
         out["conformal"] = conformal
+    if point_mode:
+        out["point_forecast_mode"] = point_mode
     if forecast_rows:
         out["forecast"] = forecast_rows
         for key in (

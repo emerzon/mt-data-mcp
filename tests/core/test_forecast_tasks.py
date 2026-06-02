@@ -71,6 +71,10 @@ class TestForecastTaskStatus:
         assert result["detail"] == "compact"
         assert result["task_id"] == "task-abc"
         assert result["status"] == "running"
+        assert result["timezone"] == "UTC"
+        assert result["created_at"] == "1970-01-01T00:16:40Z"
+        assert result["started_at"] == "1970-01-01T00:16:41Z"
+        assert result["heartbeat_at"] == "1970-01-01T00:16:42Z"
         assert result["progress"]["fraction"] == 0.5
         assert result["pid"] == 4321
         assert result["cancel_requested"] is False
@@ -133,6 +137,10 @@ class TestForecastTaskStatus:
         assert result["success"] is True
         assert result["detail"] == "full"
         assert result["params_hash"] == "hash-123"
+        assert result["created_at"] == "1970-01-01T00:16:40Z"
+        assert result["created_at_epoch"] == 1000.0
+        assert result["started_at_epoch"] == 1001.0
+        assert result["completed_at_epoch"] == 1060.0
         assert result["progress"]["metrics"] == {"rmse": 0.1}
         assert result["result"]["metadata"] == {"epochs": 12}
         assert result["cancel_requested"] is True
@@ -244,7 +252,8 @@ class TestForecastTaskList:
         assert result["count"] == 2
         assert result["summary"] == {"running": 1, "completed": 1}
         assert result["tasks"][0]["progress_fraction"] == 0.1
-        assert result["tasks"][0]["started_at"] == 1001.0
+        assert result["tasks"][0]["started_at"] == "1970-01-01T00:16:41Z"
+        assert result["tasks"][0]["timezone"] == "UTC"
         assert result["tasks"][0]["elapsed_seconds"] == 14.0
         assert result["tasks"][0]["pid"] == 4321
         assert result["tasks"][1]["model_id"] == "nhits/EURUSD_H1/x"

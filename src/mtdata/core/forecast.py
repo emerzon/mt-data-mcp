@@ -46,6 +46,7 @@ _FORECAST_PROCESS_ISOLATION_ENV = "MTDATA_FORECAST_PROCESS_ISOLATION"
 _FORECAST_PROCESS_TIMEOUT_ENV = "MTDATA_FORECAST_PROCESS_TIMEOUT_SECONDS"
 _FORECAST_PROCESS_CHILD_ENV = "MTDATA_FORECAST_PROCESS_CHILD"
 _FORECAST_PROCESS_ISOLATION_DEFAULT = "gpu"
+_FORECAST_LIBRARY_MODELS_COMPACT_LIMIT = 20
 _FORECAST_ISOLATABLE_OPERATIONS = frozenset(
     {
         "forecast_generate",
@@ -1307,10 +1308,15 @@ def _forecast_list_library_models_impl(
         offset_value = max(0, int(offset or 0))
     except Exception:
         offset_value = 0
+    default_limit = (
+        _FORECAST_LIBRARY_MODELS_COMPACT_LIMIT
+        if detail_mode != "full" and limit is None
+        else None
+    )
     try:
-        limit_value = None if limit is None else max(0, int(limit))
+        limit_value = default_limit if limit is None else max(0, int(limit))
     except Exception:
-        limit_value = None
+        limit_value = default_limit
     supported_libraries = ("native", "statsforecast", "sktime", "pretrained", "mlforecast")
     if lib == "all":
         sections: List[Dict[str, Any]] = []
