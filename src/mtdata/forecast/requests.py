@@ -144,7 +144,11 @@ class ForecastConformalIntervalsRequest(BaseModel):
     timeframe: TimeframeLiteral = "H1"
     method: str = "theta"
     horizon: int = Field(12, ge=1)
-    steps: int = Field(25, ge=1, description="Number of rolling-origin calibration anchors.")
+    steps: int = Field(
+        50,
+        ge=1,
+        description="Number of rolling-origin calibration anchors; default 50 for stabler interval quantiles.",
+    )
     spacing: int = Field(20, ge=1, description="Bars between consecutive calibration anchors.")
     ci_alpha: float = Field(
         0.1,

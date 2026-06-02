@@ -1531,6 +1531,27 @@ def _forecast_method_params(params: Any) -> List[Dict[str, Any]]:
     return rows
 
 
+def _forecast_ci_method(item: Dict[str, Any]) -> Optional[str]:
+    explicit = str(item.get("ci_method") or "").strip().lower()
+    if explicit:
+        return explicit
+    method_name = str(item.get("method") or "").strip().lower()
+    category = str(item.get("category") or item.get("namespace") or "").strip().lower()
+    if method_name in {"ses", "holt", "holt_winters_add", "holt_winters_mul", "ets", "arima", "sarima"}:
+        return "statsmodels_prediction_interval"
+    if method_name == "theta":
+        return "native_theta_interval"
+    if method_name in {"mc_gbm", "hmm_mc"} or category == "monte_carlo":
+        return "simulation_quantile"
+    if method_name == "analog" or category == "analog":
+        return "analog_quantile"
+    if category in {"statsforecast", "sktime"}:
+        return "provider_prediction_interval"
+    if method_name in {"chronos2", "chronos_bolt", "lag_llama"} or category == "pretrained":
+        return "probabilistic_model_quantile"
+    return None
+
+
 def _forecast_list_full_row(
     item: Dict[str, Any],
     *,
@@ -1553,6 +1574,10 @@ def _forecast_list_full_row(
         row["supports_ci"] = bool(supports.get("ci"))
     elif isinstance(item.get("supports_ci"), bool):
         row["supports_ci"] = bool(item.get("supports_ci"))
+    if row.get("supports_ci") is True:
+        ci_method = _forecast_ci_method(item)
+        if ci_method:
+            row["ci_method"] = ci_method
     if isinstance(item.get("supports_training"), bool):
         row["supports_training"] = bool(item.get("supports_training"))
     if row.get("supports_training") is True and item.get("training_category") not in (None, ""):
@@ -1874,6 +1899,10 @@ def _forecast_list_methods_impl(  # noqa: C901
                 row["supports_ci"] = bool(supports.get("ci"))
             elif isinstance(item.get("supports_ci"), bool):
                 row["supports_ci"] = bool(item.get("supports_ci"))
+            if row.get("supports_ci") is True:
+                ci_method = _forecast_ci_method(item)
+                if ci_method:
+                    row["ci_method"] = ci_method
             if isinstance(item.get("supports_training"), bool):
                 row["supports_training"] = bool(item.get("supports_training"))
             params = item.get("params")

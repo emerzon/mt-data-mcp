@@ -402,6 +402,10 @@ def test_forecast_generate_compact_normalizes_utc_times_and_neutral_delta(monkey
             "horizon": kwargs["horizon"],
             "quantity": kwargs["quantity"],
             "last_observation_time": "2026-06-02 19:00",
+            "forecast_start_time": "2026-06-02 20:00",
+            "forecast_start_offset_bars": 1.0,
+            "last_price_age_seconds": 3600,
+            "last_price_stale": False,
             "forecast_time": ["2026-06-02 20:00", "2026-06-02 21:00"],
             "forecast_price": [1.00004, 1.00005],
             "last_price": 1.0,
@@ -420,6 +424,15 @@ def test_forecast_generate_compact_normalizes_utc_times_and_neutral_delta(monkey
 
     assert out["last_observation_time"] == "2026-06-02T19:00Z"
     assert out["timezone"] == "UTC"
+    assert out["data_window"] == {
+        "last_observation": "2026-06-02T19:00Z",
+        "last_bar_complete": True,
+        "input_bar_policy": "closed_bars_only",
+        "forecast_start": "2026-06-02T20:00Z",
+        "forecast_start_offset_bars": 1.0,
+        "last_observation_age_seconds": 3600,
+        "last_observation_stale": False,
+    }
     assert out["forecast"] == [
         {"time": "2026-06-02T20:00Z", "value": 1.00004},
         {"time": "2026-06-02T21:00Z", "value": 1.00005},
@@ -1610,6 +1623,53 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert "Error listing forecast methods" in _unwrap(cf.forecast_list_methods)()["error"]
 
 
+def test_forecast_list_methods_compact_exposes_ci_method(monkeypatch):
+    monkeypatch.setattr(
+        cf,
+        "_get_forecast_methods_data",
+        lambda: {
+            "total": 3,
+            "categories": {"ets_arima": ["arima"], "monte_carlo": ["mc_gbm"]},
+            "methods": [
+                {
+                    "method": "arima",
+                    "available": True,
+                    "category": "ets_arima",
+                    "description": "ARIMA model.",
+                    "params": [],
+                    "requires": [],
+                    "supports": {"ci": True},
+                },
+                {
+                    "method": "mc_gbm",
+                    "available": True,
+                    "category": "monte_carlo",
+                    "description": "Monte Carlo GBM.",
+                    "params": [],
+                    "requires": [],
+                    "supports": {"ci": True},
+                },
+                {
+                    "method": "naive",
+                    "available": True,
+                    "category": "classical",
+                    "description": "Naive model.",
+                    "params": [],
+                    "requires": [],
+                    "supports": {"ci": False},
+                },
+            ],
+        },
+    )
+
+    compact = _unwrap(cf.forecast_list_methods)(supports_ci=True, profile="all")
+    methods = {row["method"]: row for row in compact["methods"]}
+
+    assert set(methods) == {"arima", "mc_gbm"}
+    assert methods["arima"]["ci_method"] == "statsmodels_prediction_interval"
+    assert methods["mc_gbm"]["ci_method"] == "simulation_quantile"
+
+
 def test_forecast_list_library_models_defaults_to_compact_page(monkeypatch):
     rows = [
         {
@@ -1863,6 +1923,7 @@ def test_forecast_conformal_intervals_request_defaults_and_spacing_validation():
     request = ForecastConformalIntervalsRequest(symbol="EURUSD")
 
     assert request.horizon == 12
+    assert request.steps == 50
     assert request.spacing == 20
     assert request.detail == "compact"
 
@@ -2512,9 +2573,14 @@ def test_forecast_barrier_prob_compact_nests_confidence_intervals_once():
     payload = {
         "success": True,
         "symbol": "EURUSD",
+        "n_sims": 2000,
+        "seed": 42,
         "prob_tp_first": 0.55,
         "prob_sl_first": 0.30,
         "prob_no_hit": 0.15,
+        "prob_tp_first_se": 0.0111,
+        "prob_sl_first_se": 0.0102,
+        "prob_no_hit_se": 0.008,
         "prob_tp_first_ci95": {"low": 0.5, "high": 0.6},
         "prob_sl_first_ci95": {"low": 0.25, "high": 0.35},
         "prob_no_hit_ci95": {"low": 0.1, "high": 0.2},
@@ -2529,10 +2595,18 @@ def test_forecast_barrier_prob_compact_nests_confidence_intervals_once():
         "prob_tp_first_ci95": {"low": 0.5, "high": 0.6},
         "prob_sl_first_ci95": {"low": 0.25, "high": 0.35},
         "prob_no_hit_ci95": {"low": 0.1, "high": 0.2},
+        "prob_tp_first_se": 0.0111,
+        "prob_sl_first_se": 0.0102,
+        "prob_no_hit_se": 0.008,
     }
+    assert out["n_sims"] == 2000
+    assert out["seed"] == 42
     assert "prob_tp_first_ci95" not in out
     assert "prob_sl_first_ci95" not in out
     assert "prob_no_hit_ci95" not in out
+    assert "prob_tp_first_se" not in out
+    assert "prob_sl_first_se" not in out
+    assert "prob_no_hit_se" not in out
 
 
 def test_forecast_barrier_prob_compact_uses_reference_price_context():

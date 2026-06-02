@@ -544,7 +544,8 @@ def _finalize_volatility_output(
                 out.pop("volatility_horizon_annualized_pct", None)
                 out.setdefault(
                     "volatility_annualized_note",
-                    "also applies to horizon; sqrt-time annualization is identical",
+                    "volatility_horizon_annualized equals volatility_annualized under sqrt-time scaling; "
+                    "volatility_horizon remains scaled to the requested horizon.",
                 )
         except Exception:
             pass

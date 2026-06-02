@@ -600,6 +600,31 @@ def _forecast_anchor_freshness(payload: Dict[str, Any]) -> Optional[str]:
     return label
 
 
+def _forecast_generate_data_window(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    last_observation = payload.get("last_observation_time")
+    if last_observation in (None, "", [], {}):
+        return None
+    out: Dict[str, Any] = {
+        "last_observation": last_observation,
+        "last_bar_complete": True,
+        "input_bar_policy": "closed_bars_only",
+    }
+    for source_key, target_key in (
+        ("forecast_start_time", "forecast_start"),
+        ("forecast_start_offset_bars", "forecast_start_offset_bars"),
+    ):
+        value = payload.get(source_key)
+        if value not in (None, "", [], {}):
+            out[target_key] = value
+    age_seconds = payload.get("last_price_age_seconds")
+    if age_seconds not in (None, "", [], {}):
+        out["last_observation_age_seconds"] = age_seconds
+    stale = payload.get("last_price_stale")
+    if isinstance(stale, bool):
+        out["last_observation_stale"] = stale
+    return out
+
+
 def _forecast_generate_compact_rows(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
     times = payload.get("forecast_time")
     if not isinstance(times, list):
@@ -748,6 +773,9 @@ def _apply_forecast_generate_detail(
     freshness = _forecast_anchor_freshness(payload)
     if freshness:
         compact["freshness"] = freshness
+    data_window = _forecast_generate_data_window(payload)
+    if data_window:
+        compact["data_window"] = data_window
     if str(compact.get("quantity") or "").strip().lower() == "return":
         compact["return_unit"] = "return_fraction"
         if isinstance(payload.get("forecast_price"), list):
@@ -1147,7 +1175,14 @@ def _apply_barrier_prob_detail(
     ):
         _set_if_present(compact, key, payload.get(key))
     confidence: Dict[str, Any] = {}
-    for key in ("prob_tp_first_ci95", "prob_sl_first_ci95", "prob_no_hit_ci95"):
+    for key in (
+        "prob_tp_first_ci95",
+        "prob_sl_first_ci95",
+        "prob_no_hit_ci95",
+        "prob_tp_first_se",
+        "prob_sl_first_se",
+        "prob_no_hit_se",
+    ):
         value = payload.get(key)
         if value not in (None, "", [], {}):
             confidence[key] = value
