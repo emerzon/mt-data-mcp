@@ -2591,6 +2591,17 @@ def test_forecast_tune_optuna_routing(monkeypatch):
     assert "Error in optuna tuning" in raw_tune(request=ForecastTuneOptunaRequest(symbol="EURUSD"))["error"]
 
 
+def _ready_options_provider():
+    return {
+        "configured_provider": "tradier",
+        "effective_provider": "tradier",
+        "api_key_configured": True,
+        "chain_data_ready": True,
+        "action_required": None,
+        "remediation": None,
+    }
+
+
 def test_options_and_quantlib_tool_routing(monkeypatch):
     raw_exp = _unwrap(opt.options_expirations)
     raw_chain = _unwrap(opt.options_chain)
@@ -2604,6 +2615,7 @@ def test_options_and_quantlib_tool_routing(monkeypatch):
     monkeypatch.setattr(options_service, "get_options_chain", lambda **kwargs: {"kind": "chain", **kwargs})
     monkeypatch.setattr(quantlib_tools, "price_barrier_option_quantlib", lambda **kwargs: {"kind": "price", **kwargs})
     monkeypatch.setattr(quantlib_tools, "calibrate_heston_quantlib_from_options", lambda **kwargs: {"kind": "cal", **kwargs})
+    monkeypatch.setattr(opt, "_options_provider_readiness", _ready_options_provider)
 
     out = raw_exp(symbol="AAPL")
     assert out["kind"] == "exp"
@@ -2645,12 +2657,53 @@ def test_options_and_quantlib_tool_routing(monkeypatch):
     assert out["option_type"] == "put"
 
 
+def test_options_chain_tools_short_circuit_when_provider_not_ready(monkeypatch):
+    raw_exp = _unwrap(opt.options_expirations)
+    raw_chain = _unwrap(opt.options_chain)
+    raw_cal = _unwrap(opt.options_heston_calibrate)
+
+    import mtdata.forecast.quantlib_tools as quantlib_tools
+    import mtdata.services.options_service as options_service
+
+    def fail_call(**kwargs):
+        raise AssertionError("options provider should not be queried")
+
+    monkeypatch.setattr(options_service, "get_options_expirations", fail_call)
+    monkeypatch.setattr(options_service, "get_options_chain", fail_call)
+    monkeypatch.setattr(quantlib_tools, "calibrate_heston_quantlib_from_options", fail_call)
+    monkeypatch.setattr(
+        opt,
+        "_options_provider_readiness",
+        lambda: {
+            "configured_provider": "yahoo",
+            "effective_provider": "yahoo",
+            "api_key_configured": False,
+            "chain_data_ready": False,
+            "action_required": "configure_options_provider",
+            "remediation": "configure Tradier",
+        },
+    )
+
+    for result in (
+        raw_exp(symbol="AAPL"),
+        raw_chain(symbol="AAPL"),
+        raw_cal(symbol="AAPL"),
+    ):
+        assert result["success"] is False
+        assert result["error_code"] == "options_provider_auth"
+        assert result["provider"] == "yahoo"
+        assert result["next_tool"] == "options_provider_status"
+        assert result["chain_data_ready"] is False
+        assert result["action_required"] == "configure_options_provider"
+
+
 def test_options_chain_logs_finish_event(caplog, monkeypatch):
     raw_chain = _unwrap(opt.options_chain)
 
     import mtdata.services.options_service as options_service
 
     monkeypatch.setattr(options_service, "get_options_chain", lambda **kwargs: {"success": True, **kwargs})
+    monkeypatch.setattr(opt, "_options_provider_readiness", _ready_options_provider)
 
     with caplog.at_level(logging.DEBUG, logger=opt.logger.name):
         out = raw_chain(symbol="AAPL", expiration="2026-06-19", option_type="call", limit=25)
@@ -2671,6 +2724,7 @@ def test_options_tools_support_compact_and_full_detail(monkeypatch):
     import mtdata.forecast.quantlib_tools as quantlib_tools
     import mtdata.services.options_service as options_service
 
+    monkeypatch.setattr(opt, "_options_provider_readiness", _ready_options_provider)
     monkeypatch.setattr(
         options_service,
         "get_options_expirations",
