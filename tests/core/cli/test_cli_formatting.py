@@ -307,6 +307,45 @@ class TestFormatResultForCli:
         assert "forecast[2]{time,forecast,market_status}" in result
         assert "closed_weekend" in result
 
+    def test_forecast_generate_toon_uses_symbol_digits_for_prices(self):
+        payload = {
+            "success": True,
+            "symbol": "EURUSD",
+            "timeframe": "H1",
+            "method": "theta",
+            "horizon": 3,
+            "quantity": "price",
+            "forecast_time": ["t1", "t2", "t3"],
+            "forecast_price": [1.16345, 1.16345, 1.16346],
+            "last_price": 1.16343,
+            "digits": 5,
+            "forecast_vs_last_price": {
+                "direction": "bullish",
+                "next_bar_change": 0.00002,
+            },
+        }
+
+        result = _format_result_for_cli(
+            payload,
+            fmt="toon",
+            verbose=False,
+            cmd_name="forecast_generate",
+        )
+        full_result = _format_result_for_cli(
+            payload,
+            fmt="toon",
+            verbose=False,
+            cmd_name="forecast_generate",
+            precision="full",
+        )
+
+        for rendered in (result, full_result):
+            assert "last_price: 1.16343" in rendered
+            assert "t1,1.16345" in rendered
+            assert "t3,1.16346" in rendered
+            assert "last_price: 1.163" not in rendered.splitlines()
+            assert "  t1,1.163" not in rendered.splitlines()
+
     def test_news_toon_format_omits_null_tail_cells_and_uses_generic_time_header(self):
         result = _format_result_for_cli(
             {

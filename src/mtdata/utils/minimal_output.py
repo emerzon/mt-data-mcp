@@ -295,6 +295,7 @@ def _normalize_forecast_payload(
                 digits = int(digits)
             except Exception:
                 digits = None
+        price_digits = digits if "price" in main_key else None
 
         if "price" in main_key:
             lower_key, upper_key = "lower_price", "upper_price"
@@ -384,9 +385,9 @@ def _normalize_forecast_payload(
         rows: List[Dict[str, Any]] = []
         for i in range(n):
             val = fvals[i]
-            if format_digits and digits is not None and isinstance(val, (int, float)):
+            if format_digits and price_digits is not None and isinstance(val, (int, float)):
                 try:
-                    val = f"{float(val):.{digits}f}"
+                    val = f"{float(val):.{price_digits}f}"
                 except Exception:
                     pass
 
@@ -399,12 +400,12 @@ def _normalize_forecast_payload(
             if include_interval_columns:
                 low_val = lower[i] if i < len(lower) else None
                 up_val = upper[i] if i < len(upper) else None
-                if format_digits and digits is not None:
+                if format_digits and price_digits is not None:
                     try:
                         if isinstance(low_val, (int, float)):
-                            low_val = f"{float(low_val):.{digits}f}"
+                            low_val = f"{float(low_val):.{price_digits}f}"
                         if isinstance(up_val, (int, float)):
-                            up_val = f"{float(up_val):.{digits}f}"
+                            up_val = f"{float(up_val):.{price_digits}f}"
                     except Exception:
                         pass
                 row["lower"] = low_val
@@ -414,9 +415,9 @@ def _normalize_forecast_payload(
                 if not isinstance(qarr, list):
                     continue
                 q_val = qarr[i] if i < len(qarr) else None
-                if format_digits and digits is not None and isinstance(q_val, (int, float)):
+                if format_digits and price_digits is not None and isinstance(q_val, (int, float)):
                     try:
-                        q_val = f"{float(q_val):.{digits}f}"
+                        q_val = f"{float(q_val):.{price_digits}f}"
                     except Exception:
                         pass
                 row[f"q{q}"] = q_val
@@ -446,6 +447,17 @@ def _normalize_forecast_payload(
                 "forecast_vs_last_price",
             ):
                 value = payload.get(key)
+                if (
+                    key == "last_price"
+                    and format_digits
+                    and digits is not None
+                    and isinstance(value, (int, float))
+                    and not isinstance(value, bool)
+                ):
+                    try:
+                        value = f"{float(value):.{digits}f}"
+                    except Exception:
+                        pass
                 if not _is_empty_value(value):
                     out[key] = value
 
@@ -2223,7 +2235,7 @@ def format_result_minimal(
                             forecast_norm = _normalize_forecast_payload(
                                 result,
                                 verbose=verbose,
-                                format_digits=precision_policy.simplify_numbers,
+                                format_digits=True,
                             )
                             if forecast_norm is not None:
                                 normalized = forecast_norm
