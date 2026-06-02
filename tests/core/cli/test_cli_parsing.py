@@ -8,6 +8,7 @@ import copy
 import json
 import logging
 import os
+import re
 import sys
 import types
 from datetime import datetime, timezone
@@ -55,6 +56,73 @@ from mtdata.core.cli import (
     add_dynamic_arguments,
     get_function_info,
 )
+
+
+def test_dynamic_cli_help_has_no_placeholder_param_text():
+    from mtdata.bootstrap.settings import load_environment
+    from mtdata.core.cli import api as cli_api
+
+    load_environment()
+    functions = cli_api.discover_tools()
+    parser = cli_api._safe_argument_parser(prog="mtdata-cli")
+    cli_api.add_global_args_to_parser(parser, exclude_params=["timeframe"])
+    parser.add_argument(
+        "--timeframe",
+        dest="_global_timeframe",
+        default=argparse.SUPPRESS,
+        metavar="TIMEFRAME",
+    )
+    subparsers = parser.add_subparsers(dest="command")
+    command_parsers = {}
+    forecast_tool = None
+
+    for cmd_name, tool in sorted(functions.items()):
+        func = tool["func"]
+        func_info = tool.setdefault("_cli_func_info", cli_api.get_function_info(func))
+        cli_api._apply_schema_overrides(tool, func_info)
+        if cmd_name == "forecast_generate":
+            forecast_tool = (tool, func_info)
+            continue
+
+        cmd_parser = cli_api._safe_add_subparser(subparsers, cmd_name)
+        exclude_globals = [p["name"] for p in func_info["params"]]
+        if cmd_name == "report_generate":
+            exclude_globals.append("timeframe")
+        if cmd_name.startswith("finviz_") or cmd_name in cli_api._TIMEFRAMELESS_GLOBAL_COMMANDS:
+            exclude_globals.append("timeframe")
+        cli_api.add_global_args_to_parser(
+            cmd_parser,
+            exclude_params=exclude_globals,
+            suppress_defaults=True,
+        )
+        cli_api.add_dynamic_arguments(
+            cmd_parser,
+            func_info,
+            (tool.get("meta") or {}).get("param_docs"),
+            cmd_name=cmd_name,
+        )
+        command_parsers[cmd_name] = cmd_parser
+
+    if forecast_tool is not None:
+        cmd_parser = cli_api._safe_add_subparser(subparsers, "forecast_generate")
+        cli_api.add_global_args_to_parser(
+            cmd_parser,
+            exclude_params=["symbol", "timeframe"],
+            suppress_defaults=True,
+        )
+        cli_api._add_forecast_generate_args(cmd_parser)
+        command_parsers["forecast_generate"] = cmd_parser
+
+    placeholder = re.compile(r"^[A-Za-z_][A-Za-z0-9_]* parameter$")
+    offenders = []
+    for cmd_name, cmd_parser in sorted(command_parsers.items()):
+        for action in cmd_parser._actions:
+            help_text = getattr(action, "help", None)
+            if isinstance(help_text, str) and placeholder.match(help_text):
+                offenders.append(f"{cmd_name}.{action.dest}: {help_text}")
+
+    assert offenders == []
+
 
 # ========================================================================
 # _add_forecast_generate_args
