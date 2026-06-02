@@ -327,9 +327,12 @@ def test_forecast_generate_defaults_to_compact_payload(monkeypatch):
     assert "freshness_basis" not in out
     assert "stale_after_seconds" not in out
     assert out["forecast_vs_last_price"] == {
-        "direction": "bearish",
+        "direction": "bullish",
+        "direction_basis": "horizon_end",
         "first_step_delta": -0.05,
+        "horizon_delta": 0.15,
         "first_step_delta_pct": -4.7619,
+        "horizon_delta_pct": 14.2857,
     }
     assert "forecast_time" not in out
     assert "forecast_price" not in out
@@ -469,8 +472,11 @@ def test_forecast_generate_rounds_price_outputs_to_symbol_digits(monkeypatch):
 
     assert out["forecast_vs_last_price"] == {
         "direction": "bullish",
+        "direction_basis": "horizon_end",
         "first_step_delta": 0.00048,
+        "horizon_delta": 0.00049,
         "first_step_delta_pct": 0.0409,
+        "horizon_delta_pct": 0.0418,
     }
     assert "forecast_price" not in out
     assert out["forecast"] == [
@@ -509,7 +515,36 @@ def test_forecast_generate_compact_flags_flat_theta_display(monkeypatch):
     ]
     assert "theta_signal" not in out
     assert "params_used" not in out
+    assert out["path_flat"] is True
+    assert out["path_range"] == 0.0
     assert any("near-flat at displayed price precision" in item for item in out["warnings"])
+
+
+def test_forecast_generate_compact_flags_one_tick_flat_path(monkeypatch):
+    raw = _unwrap(cf.forecast_generate)
+    monkeypatch.setattr(
+        cf,
+        "_forecast_impl",
+        lambda **kwargs: {
+            "success": True,
+            "method": kwargs["method"],
+            "horizon": kwargs["horizon"],
+            "quantity": kwargs["quantity"],
+            "forecast_time": ["t1", "t2", "t3", "t4", "t5"],
+            "forecast_price": [1.16426, 1.16426, 1.16427, 1.16427, 1.16427],
+            "last_price": 1.16505,
+            "digits": 5,
+            "ci_status": "unavailable",
+        },
+    )
+
+    out = raw(request=ForecastGenerateRequest(symbol="EURUSD", timeframe="H1", method="theta", horizon=5))
+
+    assert out["path_flat"] is True
+    assert out["path_range"] == 0.00001
+    assert out["forecast_vs_last_price"]["direction"] == "bearish"
+    assert out["forecast_vs_last_price"]["direction_basis"] == "horizon_end"
+    assert any("forecast_conformal_intervals" in item for item in out["warnings"])
 
 
 def test_forecast_generate_compact_marks_unavailable_ci(monkeypatch):

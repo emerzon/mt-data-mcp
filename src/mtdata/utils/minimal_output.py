@@ -445,6 +445,8 @@ def _normalize_forecast_payload(
                 "last_price_source",
                 "forecast_start_gap_bars",
                 "forecast_vs_last_price",
+                "path_flat",
+                "path_range",
             ):
                 value = payload.get(key)
                 if (

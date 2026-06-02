@@ -476,24 +476,50 @@ def _forecast_vs_last_price(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]
     if last_price is None or not isinstance(prices, list) or not prices:
         return None
     first_forecast = _finite_float(prices[0])
-    if first_forecast is None:
+    horizon_forecast = _finite_float(prices[-1])
+    if first_forecast is None or horizon_forecast is None:
         return None
-    delta = first_forecast - last_price
+    first_delta = first_forecast - last_price
+    horizon_delta = horizon_forecast - last_price
     digits = _forecast_price_digits(payload)
     delta_digits = digits if digits is not None else 6
-    if delta > 0:
+    if horizon_delta > 0:
         direction = "bullish"
-    elif delta < 0:
+    elif horizon_delta < 0:
         direction = "bearish"
     else:
         direction = "flat"
     out: Dict[str, Any] = {
         "direction": direction,
-        "next_bar_change": float(round(delta, delta_digits)),
+        "direction_basis": "horizon_end",
+        "first_step_delta": float(round(first_delta, delta_digits)),
+        "horizon_delta": float(round(horizon_delta, delta_digits)),
     }
     if last_price:
-        out["next_bar_change_pct"] = float(round(delta / last_price * 100.0, 4))
+        out["first_step_delta_pct"] = float(round(first_delta / last_price * 100.0, 4))
+        out["horizon_delta_pct"] = float(round(horizon_delta / last_price * 100.0, 4))
     return out
+
+
+def _forecast_path_flatness(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    prices = payload.get("forecast_price")
+    if not isinstance(prices, list) or len(prices) < 2:
+        return None
+    finite_prices = [_finite_float(value) for value in prices]
+    if any(value is None for value in finite_prices):
+        return None
+    price_values = [float(value) for value in finite_prices if value is not None]
+    path_range = max(price_values) - min(price_values)
+    digits = _forecast_price_digits(payload)
+    threshold = 0.0 if digits is None else 10.0 ** (-max(0, digits))
+    tolerance = max(threshold * 1e-9, 1e-12)
+    if path_range > threshold + tolerance:
+        return None
+    range_digits = digits if digits is not None else 6
+    return {
+        "path_flat": True,
+        "path_range": float(round(path_range, range_digits)),
+    }
 
 
 def _forecast_anchor_freshness(payload: Dict[str, Any]) -> Optional[str]:
@@ -587,31 +613,6 @@ def _forecast_generate_volatility_rows(
     return rows
 
 
-def _theta_flatness_context(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    if str(payload.get("method") or "").strip().lower() != "theta":
-        return None
-    params_used = payload.get("params_used")
-    if not isinstance(params_used, dict):
-        return None
-    trend_slope = _finite_float(params_used.get("trend_slope"))
-    if trend_slope is None or trend_slope == 0.0:
-        return None
-    prices = payload.get("forecast_price")
-    if not isinstance(prices, list) or len(prices) < 2:
-        return None
-    finite_prices = [_finite_float(value) for value in prices]
-    if any(value is None for value in finite_prices):
-        return None
-    price_values = [float(value) for value in finite_prices if value is not None]
-    drift_per_step = 0.5 * trend_slope
-    digits = _forecast_price_digits(payload)
-    drift_digits = max(8, (digits if digits is not None else 6) + 3)
-    return {
-        "target_drift_per_step": float(round(drift_per_step, drift_digits)),
-        "appears_flat_at_price_precision": len(set(price_values)) == 1,
-    }
-
-
 def _apply_forecast_generate_detail(
     payload: Dict[str, Any],
     request: ForecastGenerateRequest,
@@ -692,6 +693,9 @@ def _apply_forecast_generate_detail(
     price_context = _forecast_vs_last_price(payload)
     if price_context:
         compact["forecast_vs_last_price"] = price_context
+    path_flatness = _forecast_path_flatness(payload)
+    if path_flatness:
+        compact.update(path_flatness)
     forecast_rows = _forecast_generate_compact_rows(payload)
     ci_has_intervals = isinstance(ci_compact, dict) and bool(ci_compact.get("intervals"))
     if forecast_rows and not ci_has_intervals:
@@ -705,9 +709,11 @@ def _apply_forecast_generate_detail(
         compact.pop("forecast_time", None)
         compact.pop("forecast_price", None)
         compact.pop("forecast_return", None)
-    theta_context = _theta_flatness_context(payload)
-    if theta_context and theta_context.get("appears_flat_at_price_precision"):
-        warning = "Native theta forecast is near-flat at displayed price precision."
+    if path_flatness:
+        warning = (
+            "Forecast path is near-flat at displayed price precision; compare "
+            "another method or run forecast_conformal_intervals."
+        )
         warnings_out = compact.get("warnings")
         if not isinstance(warnings_out, list):
             warnings_out = []
@@ -777,8 +783,8 @@ def _forecast_generate_interpretation(payload: Dict[str, Any]) -> Dict[str, str]
         )
     if payload.get("forecast_vs_last_price") not in (None, "", [], {}):
         interpretation["forecast_vs_last_price"] = (
-            "First forecast step versus last_price; next_bar_change_pct is a "
-            "percentage of last_price."
+            "Horizon-end forecast versus last_price; first_step_delta shows "
+            "only the first bar."
         )
     if (
         payload.get("lower_price") not in (None, "", [], {})

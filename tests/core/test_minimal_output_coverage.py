@@ -243,6 +243,8 @@ class TestNormalizeForecastPayload:
             "last_price": 101.0,
             "last_price_source": "candle_close",
             "forecast_vs_last_price": {"first_forecast_delta": -1.0},
+            "path_flat": True,
+            "path_range": 0.00001,
         }
         result = _normalize_forecast_payload(payload, verbose=False)
         assert "meta" not in result
@@ -254,6 +256,8 @@ class TestNormalizeForecastPayload:
         assert result["last_price"] == 101.0
         assert result["last_price_source"] == "candle_close"
         assert result["forecast_vs_last_price"] == {"first_forecast_delta": -1.0}
+        assert result["path_flat"] is True
+        assert result["path_range"] == 0.00001
 
     def test_q50_dedup(self):
         payload = {
