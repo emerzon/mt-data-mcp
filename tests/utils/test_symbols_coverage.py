@@ -239,6 +239,29 @@ class TestSymbolsListSearch:
             res = fn(search_term="  EUR  ", limit=25)
         assert [row[0] for row in res["data"]] == ["EURUSD"]
 
+    @patch(_NORM_LIMIT, return_value=5)
+    @patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r})
+    @patch(f"{_MT5}.symbols_get")
+    def test_short_currency_search_promotes_major_fx_pairs(self, mock_get, mock_tbl, mock_lim):
+        mock_get.return_value = [
+            _make_symbol("EURAUD", path="Forex\\Minors", description="Euro vs Aussie"),
+            _make_symbol("EURBBL_M6", path="Bonds\\Euro", description="Euro bond"),
+            _make_symbol("EURBND_M6", path="Bonds\\Euro", description="Euro bond"),
+            _make_symbol("EURCAD", path="Forex\\Minors", description="Euro vs CAD"),
+            _make_symbol("EURCHF", path="Forex\\Minors", description="Euro vs CHF"),
+            _make_symbol("EURUSD", path="Forex\\Majors", description="Euro vs Dollar"),
+        ]
+        with patch(_GROUP_PATH, side_effect=lambda s: s.path):
+            fn = _get_symbols_list()
+            res = fn(search_term="EUR", limit=5)
+
+        assert [row[0] for row in res["data"]][:3] == ["EURUSD", "EURCHF", "EURAUD"]
+        assert res["top_match"] == {
+            "symbol": "EURUSD",
+            "match_reason": "name_prefix",
+            "group": "Forex\\Majors",
+        }
+
     @patch(_NORM_LIMIT, return_value=25)
     @patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r})
     @patch(f"{_MT5}.symbols_get")

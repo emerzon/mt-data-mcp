@@ -60,6 +60,27 @@ _FOREX_CURRENCY_CODES = {
     "NZD",
     "USD",
 }
+_FOREX_SEARCH_PAIR_PRIORITY = {
+    pair: idx
+    for idx, pair in enumerate(
+        (
+            "EURUSD",
+            "GBPUSD",
+            "USDJPY",
+            "USDCHF",
+            "AUDUSD",
+            "USDCAD",
+            "NZDUSD",
+            "EURGBP",
+            "EURJPY",
+            "EURCHF",
+            "EURAUD",
+            "EURCAD",
+            "GBPJPY",
+            "GBPCHF",
+        )
+    )
+}
 
 
 def _case_insensitive_sort_key(value: Any) -> tuple[str, str]:
@@ -275,19 +296,25 @@ def _symbol_name_letters(symbol: Any) -> str:
     return re.sub(r"[^A-Z]", "", str(getattr(symbol, "name", "") or "").upper())
 
 
+def _symbol_forex_pair(symbol: Any) -> Optional[str]:
+    pair = _symbol_name_letters(symbol)[:6]
+    if (
+        len(pair) == 6
+        and pair[:3] in _FOREX_CURRENCY_CODES
+        and pair[3:] in _FOREX_CURRENCY_CODES
+    ):
+        return pair
+    return None
+
+
 def _symbol_category(symbol: Any) -> str:
     name = str(getattr(symbol, "name", "") or "")
     path = str(_extract_group_path_util(symbol) or "")
     description = str(getattr(symbol, "description", "") or "")
     text = f"{name} {path} {description}".casefold()
-    letters = _symbol_name_letters(symbol)
-    pair_prefix = letters[:6]
+    pair_prefix = _symbol_forex_pair(symbol)
 
-    if (
-        len(pair_prefix) == 6
-        and pair_prefix[:3] in _FOREX_CURRENCY_CODES
-        and pair_prefix[3:] in _FOREX_CURRENCY_CODES
-    ):
+    if pair_prefix:
         return "forex"
     if any(base.casefold() in text for base in _COMMON_CRYPTO_BASES):
         return "crypto"
@@ -349,12 +376,43 @@ def _symbol_search_sort_key(
     symbol: Any,
     search_term: str,
     search_mode: str,
-) -> tuple[int, str, str]:
+) -> tuple[int, int, str, str]:
     reason = _symbol_search_match_reason(symbol, search_term, search_mode)
+    forex_rank = _symbol_search_forex_rank(symbol, search_term)
+    reason_rank = _SYMBOL_SEARCH_REASON_RANK.get(reason, 9)
+    if forex_rank < 100:
+        reason_rank = min(reason_rank, _SYMBOL_SEARCH_REASON_RANK["name_prefix"])
     return (
-        _SYMBOL_SEARCH_REASON_RANK.get(reason, 9),
+        reason_rank,
+        forex_rank,
         *_case_insensitive_sort_key(getattr(symbol, "name", "")),
     )
+
+
+def _symbol_search_forex_rank(symbol: Any, search_term: str) -> int:
+    query = re.sub(r"[^A-Z]", "", str(search_term or "").upper())
+    if len(query) != 3 or query not in _FOREX_CURRENCY_CODES:
+        return 0
+    pair = _symbol_forex_pair(symbol)
+    if not pair or query not in (pair[:3], pair[3:]):
+        return 100
+    return _FOREX_SEARCH_PAIR_PRIORITY.get(pair, 50)
+
+
+def _symbol_top_match(row: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if not isinstance(row, dict):
+        return None
+    reason = row.get("match_reason")
+    if reason not in {"exact_name", "name_prefix"}:
+        return None
+    out = {
+        "symbol": row.get("symbol"),
+        "match_reason": reason,
+    }
+    group = row.get("group")
+    if group not in (None, ""):
+        out["group"] = group
+    return out
 
 
 def _symbol_search_context(search_term: str, search_mode: str) -> Dict[str, Any]:
@@ -828,6 +886,11 @@ def symbols_list(  # noqa: C901
                 filters["currency"] = currency_filter
             if category_filter:
                 filters["category"] = category_filter
+            top_match = (
+                _symbol_top_match(symbol_list[0] if symbol_list else None)
+                if normalized_search_term
+                else None
+            )
             if offset_value:
                 symbol_list = symbol_list[offset_value:]
             if limit_value:
@@ -868,6 +931,8 @@ def symbols_list(  # noqa: C901
                         normalized_search_term,
                         search_mode_value,
                     )
+                    if top_match:
+                        out["top_match"] = top_match
                     out["universe_size"] = len(search_universe)
                     if total_count == 0:
                         out.update(
@@ -926,6 +991,8 @@ def symbols_list(  # noqa: C901
                     normalized_search_term,
                     search_mode_value,
                 )
+                if top_match:
+                    result["top_match"] = top_match
                 result["universe_size"] = len(search_universe)
                 if total_count == 0:
                     result.update(
