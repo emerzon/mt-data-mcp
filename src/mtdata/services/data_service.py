@@ -25,7 +25,6 @@ from ..shared.constants import (
     TI_NAN_WARMUP_FACTOR,
     TI_NAN_WARMUP_MIN_ADD,
     TICKS_LOOKBACK_DAYS,
-    TIME_DISPLAY_FORMAT,
     TIMEFRAME_MAP,
     TIMEFRAME_SECONDS,
 )
@@ -74,9 +73,10 @@ from ..utils.simplify import (
 )
 from ..utils.utils import (
     _coerce_scalar,
+    _format_datetime_minute_explicit,
     _format_numeric_rows_from_df,
-    _format_time_minimal,
-    _format_time_minimal_local,
+    _format_time_explicit,
+    _format_time_explicit_local,
     _normalize_ohlcv_arg,
     _parse_start_datetime,
     _resolve_client_tz,
@@ -309,8 +309,8 @@ def _build_no_data_error_with_context(
             last_time = datetime.fromtimestamp(last_epoch, tz=dt_timezone.utc)
 
             details["available_range"] = {
-                "earliest": _format_time_minimal(first_epoch),
-                "latest": _format_time_minimal(last_epoch),
+                "earliest": _format_time_explicit(first_epoch),
+                "latest": _format_time_explicit(last_epoch),
             }
 
             # Provide a suggestion based on the mismatch
@@ -322,11 +322,11 @@ def _build_no_data_error_with_context(
                     elif req_start is not None:
                         req_start = req_start.astimezone(dt_timezone.utc)
                     if req_start and req_start > last_time:
-                        error_msg = f"No data available - requested start date is after latest available data ({_format_time_minimal(last_epoch)})"
-                        details["suggestion"] = f"Use start='{_format_time_minimal(last_epoch)}' or earlier"
+                        error_msg = f"No data available - requested start date is after latest available data ({_format_time_explicit(last_epoch)})"
+                        details["suggestion"] = f"Use start='{_format_time_explicit(last_epoch)}' or earlier"
                     elif req_start and req_start < first_time:
-                        error_msg = f"No data available - requested date range is before earliest available data ({_format_time_minimal(first_epoch)})"
-                        details["suggestion"] = f"Use start='{_format_time_minimal(first_epoch)}' or later"
+                        error_msg = f"No data available - requested date range is before earliest available data ({_format_time_explicit(first_epoch)})"
+                        details["suggestion"] = f"Use start='{_format_time_explicit(first_epoch)}' or later"
                 except Exception:
                     pass
     except Exception:
@@ -590,7 +590,7 @@ def _fetch_rates_with_warmup(
     ):
         return None, (
             f"Data appears stale for {symbol} {timeframe}: latest completed bar is "
-            f"from {_format_time_minimal(stale_last_t)}. Market may be closed; "
+            f"from {_format_time_explicit(stale_last_t)}. Market may be closed; "
             "set allow_stale=true to retrieve the latest "
             "available completed historical bars."
         )
@@ -714,9 +714,15 @@ def _format_rate_times(epoch_series: pd.Series, *, use_client_tz: bool) -> pd.Se
         except Exception:
             pass
 
-    formatted = dt_series.dt.strftime(TIME_DISPLAY_FORMAT)
+    formatted = dt_series.map(
+        lambda value: (
+            _format_datetime_minute_explicit(value.to_pydatetime())
+            if pd.notna(value)
+            else None
+        )
+    )
     if bool(formatted.isna().any()):
-        formatter = _format_time_minimal_local if use_client_tz else _format_time_minimal
+        formatter = _format_time_explicit_local if use_client_tz else _format_time_explicit
         fallback = epochs.map(lambda value: formatter(float(value)) if pd.notna(value) else None)
         formatted = formatted.where(~formatted.isna(), fallback)
     return formatted
@@ -1200,11 +1206,11 @@ def _collect_session_gaps(
                 continue
 
             if use_client_tz:
-                from_disp = _format_time_minimal_local(prev_t)
-                to_disp = _format_time_minimal_local(curr_t)
+                from_disp = _format_time_explicit_local(prev_t)
+                to_disp = _format_time_explicit_local(curr_t)
             else:
-                from_disp = _format_time_minimal(prev_t)
-                to_disp = _format_time_minimal(curr_t)
+                from_disp = _format_time_explicit(prev_t)
+                to_disp = _format_time_explicit(curr_t)
 
             missing_bars_est = max(1, int(round(gap_seconds / expected_bar_seconds)) - 1)
             prev_dt = datetime.fromtimestamp(prev_t, tz=dt_timezone.utc)
@@ -1277,7 +1283,6 @@ def _format_candle_times(
         df.attrs['_tz_used_name'] = 'UTC'
         return
 
-    fmt = TIME_DISPLAY_FORMAT
     tz_used_name = 'UTC'
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
@@ -1285,7 +1290,7 @@ def _format_candle_times(
         if use_client_tz:
             tz_used_name = getattr(client_tz, 'zone', None) or str(client_tz)
             time_values = time_values.dt.tz_convert(client_tz)
-        df['time'] = time_values.dt.strftime(fmt)
+        df['time'] = time_values.map(lambda value: _format_datetime_minute_explicit(value.to_pydatetime()))
     df.attrs['_tz_used_name'] = tz_used_name
 
 
@@ -2326,7 +2331,12 @@ def fetch_ticks(  # noqa: C901
             if millis >= 1000:
                 dt = dt + timedelta(seconds=1)
                 millis = 0
-            return f"{dt.strftime('%Y-%m-%d %H:%M:%S')}.{millis:03d}"
+            offset = dt.strftime("%z")
+            if offset == "+0000":
+                offset = "Z"
+            elif len(offset) == 5 and offset[0] in {"+", "-"}:
+                offset = f"{offset[:3]}:{offset[3:]}"
+            return f"{dt.strftime('%Y-%m-%dT%H:%M:%S')}.{millis:03d}{offset}"
 
         original_count = len(ticks)
         simplify_eff = _normalize_simplify_spec(simplify, limit=limit, fallback_rows=original_count)

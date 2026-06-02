@@ -726,6 +726,8 @@ class TestSymbolsDescribe:
 
         assert isinstance(sd.get("time"), str)
         assert ":" in sd.get("time")
+        assert "T" in sd["time"]
+        assert sd["time"].endswith("Z") or sd["time"][-6] in {"+", "-"}
         assert sd["time_epoch"] == 1700000000.0
         assert "n_fields" not in sd
         assert "n_sequence_fields" not in sd

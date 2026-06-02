@@ -165,6 +165,32 @@ def _format_time_minimal_local(epoch_seconds: float) -> str:
     except Exception:
         return _format_time_minimal(epoch_seconds)
 
+def _format_time_explicit(epoch_seconds: float) -> str:
+    """Format UTC epoch seconds with an embedded timezone marker."""
+    dt = datetime.fromtimestamp(epoch_seconds, tz=timezone.utc)
+    return _format_datetime_minute_explicit(dt)
+
+def _format_time_explicit_local(epoch_seconds: float) -> str:
+    """Format epoch seconds in local/client time with an embedded offset."""
+    from ..bootstrap.settings import mt5_config
+    try:
+        tz = mt5_config.get_client_tz()
+        if tz is not None:
+            dt = datetime.fromtimestamp(epoch_seconds, tz=timezone.utc).astimezone(tz)
+        else:
+            dt = datetime.fromtimestamp(epoch_seconds, tz=timezone.utc).astimezone()
+        return _format_datetime_minute_explicit(dt)
+    except Exception:
+        return _format_time_explicit(epoch_seconds)
+
+def _format_datetime_minute_explicit(dt: datetime) -> str:
+    text = dt.strftime("%Y-%m-%dT%H:%M%z")
+    if text.endswith("+0000"):
+        return f"{text[:-5]}Z"
+    if len(text) >= 5 and text[-5] in {"+", "-"}:
+        return f"{text[:-2]}:{text[-2:]}"
+    return text
+
 def _use_client_tz(_: object = None) -> bool:
     """Return True when a client timezone is configured."""
     from ..bootstrap.settings import mt5_config

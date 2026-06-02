@@ -8,6 +8,7 @@ import pytest
 
 from mtdata.utils.utils import (
     _coerce_scalar,
+    _format_time_explicit,
     _format_time_minimal,
     _normalize_limit,
     _normalize_ohlcv_arg,
@@ -165,6 +166,10 @@ class TestFormatTimeMinimal:
     def test_known_timestamp(self):
         result = _format_time_minimal(1704067200)  # 2024-01-01 00:00 UTC
         assert "2024-01-01" in result
+
+    def test_explicit_utc_timestamp_has_timezone_marker(self):
+        result = _format_time_explicit(1704067200)
+        assert result == "2024-01-01T00:00Z"
 
 class TestToFloatNp:
     def test_list_of_ints(self):

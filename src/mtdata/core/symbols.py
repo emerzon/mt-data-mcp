@@ -29,8 +29,8 @@ from ..utils.symbol import (
     _normalize_group_path_query,
 )
 from ..utils.utils import (
-    _format_time_minimal,
-    _format_time_minimal_local,
+    _format_time_explicit,
+    _format_time_explicit_local,
     _normalize_limit,
     _resolve_client_tz,
     _table_from_rows,
@@ -1194,9 +1194,9 @@ def symbols_describe(
 
             client_tz = _resolve_client_tz()
             if client_tz is None:
-                time_formatter = _format_time_minimal
+                time_formatter = _format_time_explicit
             else:
-                time_formatter = _format_time_minimal_local
+                time_formatter = _format_time_explicit_local
 
             symbol_data = {}
             available_attrs = set(dir(symbol_info))
@@ -1482,7 +1482,7 @@ def _market_scan_quote_freshness_fields(
     if tick_time is None:
         return {}
     return {
-        "tick_time": _format_time_minimal(tick_time),
+        "tick_time": _format_time_explicit(tick_time),
         **_quote_staleness_fields(tick_time, symbol=symbol),
     }
 
@@ -1597,7 +1597,7 @@ def _build_market_scan_bar_row(
         {
             "timeframe": timeframe,
             "data_source": f"{timeframe}_bars",
-            "time": _format_time_minimal(bar_time) if bar_time is not None else None,
+            "time": _format_time_explicit(bar_time) if bar_time is not None else None,
             **_market_scan_freshness_fields(bar_time, timeframe=timeframe, symbol=symbol.name),
             "open": _market_scan_round(open_price, digits=digits),
             "close": _market_scan_round(close_price, digits=digits),
@@ -2172,7 +2172,7 @@ def _build_market_scan_signal_row(
         {
             "timeframe": timeframe,
             "data_source": f"{timeframe}_bars",
-            "time": _format_time_minimal(bar_time) if bar_time is not None else None,
+            "time": _format_time_explicit(bar_time) if bar_time is not None else None,
             **_market_scan_freshness_fields(bar_time, timeframe=timeframe, symbol=symbol.name),
             "open": _market_scan_round(open_price, digits=digits),
             "close": _market_scan_round(close_price, digits=digits),

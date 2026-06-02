@@ -80,8 +80,8 @@ def test_no_data_context_uses_non_negative_history_position(monkeypatch) -> None
 
     assert calls == [("EURUSD", 1, 0, 100_000)]
     assert result["details"]["available_range"] == {
-        "earliest": "1970-01-01 00:01",
-        "latest": "1970-01-01 00:03",
+        "earliest": "1970-01-01T00:01Z",
+        "latest": "1970-01-01T00:03Z",
     }
     assert "before earliest available data" in result["error"]
 
@@ -714,6 +714,7 @@ class TestFetchCandles(unittest.TestCase):
         self.assertEqual(result['symbol'], 'EURUSD')
         self.assertEqual(result['timeframe'], 'H1')
         self.assertEqual(result['volume_type'], 'tick_count')
+        self.assertRegex(result["data"][0]["time"], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}Z$")
 
     @patch(_MT5_CONFIG)
     @patch(_RATES_FROM)
@@ -2266,8 +2267,8 @@ class TestFetchTicks(unittest.TestCase):
         result = fetch_ticks('EURUSD', limit=3, format='full_rows')
 
         self.assertTrue(result.get('success'))
-        self.assertEqual(result["data"][0]["time"], "2023-11-14 22:13:20.000")
-        self.assertEqual(result["data"][1]["time"], "2023-11-14 22:13:20.123")
+        self.assertEqual(result["data"][0]["time"], "2023-11-14T22:13:20.000Z")
+        self.assertEqual(result["data"][1]["time"], "2023-11-14T22:13:20.123Z")
         self.assertAlmostEqual(result["data"][1]["time_epoch"], 1700000000.123, places=3)
         self.assertAlmostEqual(result["data"][1]["tick_gap_ms"], 123.0, places=3)
         self.assertAlmostEqual(result["data"][2]["tick_gap_ms"], 333.0, places=3)

@@ -768,6 +768,7 @@ class TestMarketScan:
             "spread_points",
             "spread_pips",
         }.issubset(row)
+        assert row["time"].endswith("Z")
         assert row["spread_pips"] == 1.0
         assert mock_rates.call_args.args[3] == 1
         assert "real_volume" not in row

@@ -13,8 +13,8 @@ from ..utils.mt5 import (
     mt5,
 )
 from ..utils.utils import (
-    _format_time_minimal,
-    _format_time_minimal_local,
+    _format_time_explicit,
+    _format_time_explicit_local,
     _resolve_client_tz,
     _use_client_tz,
 )
@@ -373,9 +373,9 @@ def _market_depth_fetch_impl(symbol: str, spread: bool = False, require_dom: boo
                     out["capabilities"]["spread_overlay_applied"] = True
             _use_ctz = _use_client_tz()
             if tick.time and _use_ctz:
-                out["data"]["time_display"] = _format_time_minimal_local(float(tick.time))
+                out["data"]["time_display"] = _format_time_explicit_local(float(tick.time))
             elif tick.time:
-                out["data"]["time_display"] = _format_time_minimal(float(tick.time))
+                out["data"]["time_display"] = _format_time_explicit(float(tick.time))
             out["timezone"] = _display_timezone_label(use_client_tz=_use_ctz)
             out["query_latency_ms"] = round((time.perf_counter() - started) * 1000.0, 3)
             return out
@@ -559,9 +559,9 @@ def market_ticker(
                 out["spread_cost_currency"] = spread_cost_currency
             if tick_time is not None:
                 if _use_ctz:
-                    out["time_display"] = _format_time_minimal_local(float(tick_time))
+                    out["time_display"] = _format_time_explicit_local(float(tick_time))
                 else:
-                    out["time_display"] = _format_time_minimal(float(tick_time))
+                    out["time_display"] = _format_time_explicit(float(tick_time))
             age_seconds = None
             now_epoch = None
             if tick_time is not None:
