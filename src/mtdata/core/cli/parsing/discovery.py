@@ -134,7 +134,8 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "summary, or full."
     ),
     ("labels_triple_barrier", "limit"): (
-        "Historical bars fetched for labeling; not an output row limit."
+        "Historical bars fetched for labeling; not an output row limit. "
+        "Too-small values are raised to cover lookback plus horizon."
     ),
     ("labels_triple_barrier", "lookback"): (
         "Recent labeled entries used for compact/summary stats and samples; "

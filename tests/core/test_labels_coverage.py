@@ -274,6 +274,7 @@ class TestLabelsTripleBarrier:
         result = _get_raw_fn()("EURUSD", tp_pct=0.5, sl_pct=0.5, horizon=5, detail="compact", lookback=10)
         assert result["success"] is True
         assert "summary" in result
+        assert result["sample_quality_status"] == "low"
         assert len(result["data"]) <= 10
         assert {"entry_time", "label", "outcome", "holding_bars"}.issubset(
             result["data"][0]
@@ -281,6 +282,27 @@ class TestLabelsTripleBarrier:
         assert "labels" not in result
         assert "entries" not in result
         assert result["sample_size"] <= 10
+
+    @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
+    @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
+    @patch(f"{_LABELS_MOD}._fetch_history")
+    def test_low_limit_auto_raises_to_default_summary_window(self, mock_hist, mock_den, mock_pip):
+        mock_hist.return_value = _make_df(312)
+
+        result = _get_raw_fn()(
+            "EURUSD",
+            limit=20,
+            tp_pct=0.5,
+            sl_pct=0.5,
+            detail="compact",
+        )
+
+        assert mock_hist.call_args.args[2] == 312
+        assert result["success"] is True
+        assert result["rows_after_labeling"] == 300
+        assert result["summary"]["lookback"] == 300
+        assert result["sample_quality_status"] == "ok"
+        assert result["summary"]["sample_quality"]["status"] == "ok"
 
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
     @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
