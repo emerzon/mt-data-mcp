@@ -37,6 +37,7 @@ _NEWS_BUCKET_KEYS = (
     "recent_events",
     "market_context",
 )
+_NEWS_SYMBOL_LIMIT_BUCKET_KEYS = ("related_news",)
 _NEWS_BUCKET_COUNT_KEYS = {
     "general_news": "general_count",
     "related_news": "related_count",
@@ -234,6 +235,7 @@ def _apply_news_limit(
     limit: Optional[int],
     limit_per_bucket: Optional[int] = None,
     offset: int = 0,
+    symbol_mode: bool = False,
 ) -> Dict[str, Any]:
     if limit is None and limit_per_bucket is None and not offset:
         return result
@@ -243,15 +245,36 @@ def _apply_news_limit(
     truncated = False
     remaining = int(limit) if limit is not None else None
     remaining_offset = max(0, int(offset or 0))
-    for key in _NEWS_BUCKET_KEYS:
+    if symbol_mode and limit is not None and limit_per_bucket is None:
+        bucket_keys = _NEWS_SYMBOL_LIMIT_BUCKET_KEYS
+        drop_bucket_keys = set(_NEWS_BUCKET_KEYS) - set(bucket_keys)
+        limit_scope = "symbol"
+    else:
+        bucket_keys = _NEWS_BUCKET_KEYS
+        drop_bucket_keys = set()
+        limit_scope = (
+            "global" if limit is not None else "per_bucket" if limit_per_bucket is not None else "offset"
+        )
+
+    bucket_truncation: Dict[str, bool] = {}
+    for key in drop_bucket_keys:
+        out.pop(key, None)
+        count_key = _NEWS_BUCKET_COUNT_KEYS.get(key)
+        if count_key:
+            out.pop(count_key, None)
+
+    for key in bucket_keys:
         value = out.get(key)
         if isinstance(value, list):
             total_candidates += len(value)
+            original_len = len(value)
+            bucket_skipped = 0
             if remaining_offset:
                 skip_count = min(remaining_offset, len(value))
                 value = value[skip_count:]
                 remaining_offset -= skip_count
                 truncated = truncated or skip_count > 0
+                bucket_skipped = skip_count
             bucket_limit = len(value)
             if limit_per_bucket is not None:
                 bucket_limit = min(bucket_limit, int(limit_per_bucket))
@@ -261,6 +284,11 @@ def _apply_news_limit(
                 out[key] = value[:bucket_limit]
                 truncated = True
                 value = out[key]
+                bucket_truncation[key] = True
+            elif bucket_skipped:
+                bucket_truncation[key] = True
+            else:
+                bucket_truncation[key] = False
             if remaining is not None:
                 remaining = max(0, remaining - len(value))
             count_key = _NEWS_BUCKET_COUNT_KEYS.get(key)
@@ -271,14 +299,16 @@ def _apply_news_limit(
                 out.pop(key, None)
             else:
                 out[key] = value
+            if original_len == len(value) and not bucket_skipped:
+                bucket_truncation.setdefault(key, False)
     out["total_candidates"] = total_candidates
     out["returned"] = returned
     out["truncated"] = truncated
     out["offset"] = int(offset or 0)
     out["has_more"] = bool(max(0, total_candidates - int(offset or 0) - returned) > 0)
-    out["limit_scope"] = (
-        "global" if limit is not None else "per_bucket" if limit_per_bucket is not None else "offset"
-    )
+    out["limit_scope"] = limit_scope
+    if bucket_truncation:
+        out["bucket_truncation"] = bucket_truncation
     return out
 
 
@@ -359,8 +389,8 @@ def news(
         when possible, while `full` preserves the richer source, matching, and
         item metadata payloads.
     limit : int, optional
-        Maximum total number of items to return across news buckets. Omit to
-        keep the source-selected bucket sizes.
+        Maximum items to return. With `symbol`, this caps `related_news` only
+        and omits general buckets; without `symbol`, it caps across all buckets.
     limit_per_bucket : int, optional
         Maximum number of items to return per news bucket. Use this only when
         you explicitly want a per-bucket cap.
@@ -415,6 +445,7 @@ def news(
             limit=limit_value,
             limit_per_bucket=limit_per_bucket_value,
             offset=offset_value,
+            symbol_mode=symbol not in (None, ""),
         )
         out = _attach_news_row_keys(out)
         out.setdefault("data_fetched_at", _news_data_fetched_at())

@@ -84,6 +84,36 @@ def test_news_tool_limits_globally_without_changing_default(monkeypatch) -> None
     assert limited["has_more"] is True
 
 
+def test_news_tool_symbol_limit_caps_related_bucket_only(monkeypatch) -> None:
+    raw = _unwrap(news)
+
+    payload = {
+        "success": True,
+        "symbol": "EURUSD",
+        "general_news": [{"title": "g1"}, {"title": "g2"}],
+        "related_news": [{"title": "r1"}, {"title": "r2"}, {"title": "r3"}],
+        "impact_news": [{"title": "i1"}],
+        "upcoming_events": [{"title": "u1"}],
+        "recent_events": [{"title": "e1"}],
+    }
+    monkeypatch.setattr("mtdata.core.news.fetch_unified_news", lambda symbol=None: payload)
+
+    limited = raw(symbol="EURUSD", limit=2)
+
+    assert limited["related_news"] == [{"title": "r1"}, {"title": "r2"}]
+    assert limited["row_keys"] == ["related_news"]
+    assert "general_news" not in limited
+    assert "impact_news" not in limited
+    assert "upcoming_events" not in limited
+    assert "recent_events" not in limited
+    assert limited["total_candidates"] == 3
+    assert limited["returned"] == 2
+    assert limited["limit_scope"] == "symbol"
+    assert limited["bucket_truncation"] == {"related_news": True}
+    assert limited["truncated"] is True
+    assert limited["has_more"] is True
+
+
 def test_news_tool_supports_global_offset(monkeypatch) -> None:
     raw = _unwrap(news)
 
