@@ -783,6 +783,9 @@ class TestFinvizTools:
             "performance_periods": ["day"],
             "price": "not_available_from_source",
         }
+        assert result["price_source"] == "finviz_delayed"
+        assert result["freshness"] == "finviz_delayed"
+        assert "delayed web data" in result["warnings"][0]
         assert result["items"] == [
             {
                 "symbol": "NQ",
@@ -1047,8 +1050,10 @@ class TestFinvizTools:
         result = raw("AAPL")
 
         fundamentals = result["fundamentals"]
-        assert fundamentals["new_52w_high"] is True
-        assert fundamentals["high_52w_distance_pct_recomputed"] == 1.09
+        assert result["trust"] == "degraded"
+        assert fundamentals["new_52w_high"] is False
+        assert fundamentals["new_52w_high_unconfirmed"] is True
+        assert "high_52w_distance_pct_recomputed" not in fundamentals
         assert "upstream 52-week data may be delayed" in fundamentals["data_quality_warnings"][0]
 
     @patch("mtdata.core.finviz.get_stock_fundamentals")
@@ -1341,11 +1346,16 @@ class TestFinvizTools:
         result = raw("TSLA")
 
         row = result["ratings"][0]
-        assert row["price"] == "$615 -> $625"
         assert row["price_target_previous"] == 615.0
         assert row["price_target_new"] == 625.0
         assert row["price_target_change_pct"] == 1.63
-        assert row["price_target_display"] == "$615 -> $625"
+        assert "price" not in row
+        assert "price_target_display" not in row
+
+        full = raw("TSLA", detail="full")
+        full_row = full["ratings"][0]
+        assert full_row["price"] == "$615 -> $625"
+        assert full_row["price_target_display"] == "$615 -> $625"
 
     @patch("mtdata.core.finviz.get_stock_ratings")
     def test_finviz_ratings_cleans_mojibake_price_target_arrow(self, mock_get_ratings):
@@ -1366,7 +1376,7 @@ class TestFinvizTools:
         }
 
         raw = getattr(finviz_ratings, "__wrapped__", finviz_ratings)
-        result = raw("AAPL")
+        result = raw("AAPL", detail="full")
 
         row = result["ratings"][0]
         assert row["price"] == "$330 -> $380"
@@ -1501,7 +1511,9 @@ class TestFinvizTools:
         assert result["items"] == [
             {
                 "symbol": "APLM",
+                "earnings_date": "2026-04-27",
                 "earnings": "Apr 27/b",
+                "earnings_timing": "before_market",
                 "market_cap": "14.17M",
                 "price": "12.85",
                 "change_pct": -2.58,

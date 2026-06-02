@@ -400,6 +400,10 @@ _FINVIZ_FOREX_DELAYED_PRICE_WARNING = (
     "Finviz forex prices are delayed web quotes, not executable MT5 bid/ask; "
     "use market_ticker before order placement."
 )
+_FINVIZ_FUTURES_DELAYED_WARNING = (
+    "Finviz futures performance rows are delayed web data, not executable MT5 "
+    "quotes; use market_ticker before order placement."
+)
 _FINVIZ_USD_PRICE_CURRENCY = "USD"
 _FINVIZ_CALENDAR_LOCAL_TIMEZONE = "America/New_York"
 _FINVIZ_CALENDAR_LOCAL_TZ = ZoneInfo(_FINVIZ_CALENDAR_LOCAL_TIMEZONE)
@@ -649,6 +653,10 @@ def _normalize_finviz_market_payload(
         out["freshness"] = _FINVIZ_DELAYED_FRESHNESS
     if has_price and rows_key == "pairs":
         _append_finviz_warning(out, _FINVIZ_FOREX_DELAYED_PRICE_WARNING)
+    if rows_key == "futures":
+        out["price_source"] = _FINVIZ_DELAYED_FRESHNESS
+        out["freshness"] = _FINVIZ_DELAYED_FRESHNESS
+        _append_finviz_warning(out, _FINVIZ_FUTURES_DELAYED_WARNING)
     if detail_mode != "full" and rows_key in {"pairs", "coins", "futures"}:
         out["performance_format"] = "percentage_points"
     units = _finviz_screen_units_for_rows(output_rows)
@@ -722,6 +730,13 @@ def _coerce_finviz_limit(limit: Optional[int], *, default: int) -> int:
     return max(0, int(limit))
 
 
+def _coerce_finviz_offset(offset: Optional[int]) -> int:
+    try:
+        return max(0, int(offset or 0))
+    except Exception:
+        return 0
+
+
 def _build_tool_contract_meta(
     *,
     tool: str,
@@ -759,6 +774,22 @@ _FINVIZ_EARNINGS_PERIODS = {
     "previous-week": "Previous Week",
     "this-month": "This Month",
 }
+_FINVIZ_EARNINGS_PERIOD_ALIASES = {
+    value.lower(): key for key, value in _FINVIZ_EARNINGS_PERIODS.items()
+}
+
+
+def _normalize_finviz_earnings_period(value: Any) -> Optional[tuple[str, str]]:
+    text = str(value or "").strip()
+    key = text.lower()
+    key = key.replace("_", "-")
+    if key in _FINVIZ_EARNINGS_PERIODS:
+        return key, _FINVIZ_EARNINGS_PERIODS[key]
+    label_key = text.lower()
+    if label_key in _FINVIZ_EARNINGS_PERIOD_ALIASES:
+        canonical = _FINVIZ_EARNINGS_PERIOD_ALIASES[label_key]
+        return canonical, _FINVIZ_EARNINGS_PERIODS[canonical]
+    return None
 
 
 def _invalid_finviz_screen_filters_error(
@@ -1037,7 +1068,9 @@ def _resolve_finviz_screen_filters(filters: Any) -> tuple[Optional[Dict[str, Any
 @mcp.tool()
 def finviz_filters_list(
     search: Optional[str] = None,
-    limit: int = 50,
+    filter_name: Optional[str] = None,
+    limit: int = 20,
+    offset: int = 0,
     detail: CompactFullDetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     """List valid Finviz screener filters and accepted values."""
@@ -1048,8 +1081,9 @@ def finviz_filters_list(
 
     detail_mode = normalize_output_verbosity_detail(detail, default="compact")
     query = str(search or "").strip().lower()
+    filter_query = str(filter_name or "").strip().lower()
     rows: List[Dict[str, Any]] = []
-    for filter_name, spec in filter_dict.items():
+    for display_name, spec in filter_dict.items():
         prefix = str(spec.get("prefix") or "").strip()
         options = [
             {"value": str(option_name), "token": f"{prefix}_{option_code}"}
@@ -1057,42 +1091,53 @@ def finviz_filters_list(
             if str(option_name).strip()
         ]
         haystack = " ".join(
-            [str(filter_name), prefix]
+            [str(display_name), prefix]
             + [str(option.get("value") or "") for option in options]
             + [str(option.get("token") or "") for option in options]
         ).lower()
         if query and query not in haystack:
             continue
+        if filter_query and filter_query not in {
+            str(display_name).strip().lower(),
+            prefix.lower(),
+        }:
+            continue
         row: Dict[str, Any] = {
-            "filter": str(filter_name),
+            "filter": str(display_name),
             "prefix": prefix,
             "value_count": len(options),
         }
-        if detail_mode == "full":
+        if detail_mode == "full" or filter_query:
             row["values"] = options
-        else:
-            row["values"] = options[:8]
-            if len(options) > 8:
-                row["omitted_value_count"] = len(options) - 8
         rows.append(row)
 
     try:
-        limit_value = max(1, int(limit or 50))
+        limit_value = max(1, int(limit or 20))
     except Exception:
         return {"error": "limit must be a positive integer."}
-    limited_rows = rows[:limit_value]
+    offset_value = _coerce_finviz_offset(offset)
+    limited_rows = rows[offset_value: offset_value + limit_value]
     out: Dict[str, Any] = {
         "success": True,
         "items": limited_rows,
         "count": len(limited_rows),
         "total": len(rows),
+        "limit": limit_value,
+        "offset": offset_value,
+        "has_more": offset_value + len(limited_rows) < len(rows),
         "detail": detail_mode,
-        "hint": "Use finviz_screen filters as Filter=Value pairs or shorthand tokens such as cap_largeover.",
+        "hint": (
+            "Use finviz_screen filters as Filter=Value pairs or shorthand "
+            "tokens such as cap_largeover; pass filter_name or detail=full "
+            "for accepted values."
+        ),
     }
     if search not in (None, ""):
         out["search"] = search
+    if filter_name not in (None, ""):
+        out["filter_name"] = filter_name
     if len(rows) > len(limited_rows):
-        out["omitted_item_count"] = len(rows) - len(limited_rows)
+        out["omitted_item_count"] = max(0, len(rows) - offset_value - len(limited_rows))
     return out
 
 
@@ -1520,6 +1565,7 @@ _FINVIZ_LARGE_NUMBER_FORMAT_KEYS = frozenset(
 _FINVIZ_EARNINGS_COMPACT_FIELDS = (
     "symbol",
     "company",
+    "earnings_date",
     "earnings",
     "earnings_timing",
     "eps_estimate",
@@ -1543,6 +1589,8 @@ _FINVIZ_CALENDAR_COMPACT_FIELDS = (
     "local_timezone",
     "earnings_date",
     "ex_dividend_date",
+    "exdate",
+    "ex_date",
     "pay_date",
     "record_date",
     "reference",
@@ -1557,6 +1605,9 @@ _FINVIZ_CALENDAR_COMPACT_FIELDS = (
     "sales_actual",
     "dividend",
     "amount",
+    "ordinary",
+    "special",
+    "yield",
     "impact",
 )
 
@@ -1687,7 +1738,11 @@ def _finviz_fundamental_units(fundamentals: Dict[str, Any]) -> Dict[str, str]:
 
 
 def _compact_finviz_fundamentals(fundamentals: Dict[str, Any]) -> Dict[str, Any]:
-    return dict(fundamentals)
+    return {
+        key: value
+        for key, value in fundamentals.items()
+        if not str(key).endswith("_recomputed")
+    }
 
 
 def _finite_finviz_float(value: Any) -> Optional[float]:
@@ -1703,28 +1758,36 @@ def _finite_finviz_float(value: Any) -> Optional[float]:
     return numeric
 
 
-def _add_finviz_52w_quality_flags(fundamentals: Dict[str, Any]) -> None:
+def _add_finviz_52w_quality_flags(
+    fundamentals: Dict[str, Any],
+    *,
+    include_diagnostics: bool = False,
+) -> None:
     price = _finite_finviz_float(fundamentals.get("price"))
     if price is None or price <= 0:
         return
     warnings_out: List[str] = []
     high = _finite_finviz_float(fundamentals.get("high_52w_price"))
     if high is not None and high > 0 and price > high:
-        fundamentals["new_52w_high"] = True
-        fundamentals["high_52w_distance_pct_recomputed"] = round(
-            ((price - high) / high) * 100.0,
-            2,
-        )
+        fundamentals["new_52w_high"] = False
+        fundamentals["new_52w_high_unconfirmed"] = True
+        if include_diagnostics:
+            fundamentals["high_52w_distance_pct_recomputed"] = round(
+                ((price - high) / high) * 100.0,
+                2,
+            )
         warnings_out.append(
             "Current price is above the reported 52-week high; upstream 52-week data may be delayed."
         )
     low = _finite_finviz_float(fundamentals.get("low_52w_price"))
     if low is not None and low > 0 and price < low:
-        fundamentals["new_52w_low"] = True
-        fundamentals["low_52w_distance_pct_recomputed"] = round(
-            ((price - low) / low) * 100.0,
-            2,
-        )
+        fundamentals["new_52w_low"] = False
+        fundamentals["new_52w_low_unconfirmed"] = True
+        if include_diagnostics:
+            fundamentals["low_52w_distance_pct_recomputed"] = round(
+                ((price - low) / low) * 100.0,
+                2,
+            )
         warnings_out.append(
             "Current price is below the reported 52-week low; upstream 52-week data may be delayed."
         )
@@ -1762,6 +1825,9 @@ def _normalize_finviz_earnings_rows(rows: Any) -> List[Any]:
             if earnings_text.endswith(suffix):
                 row["earnings_timing"] = timing
                 break
+        earnings_date = _finviz_earnings_date_from_token(row.get("earnings"))
+        if earnings_date:
+            row["earnings_date"] = earnings_date
         if "market_cap" not in row:
             continue
         market_cap_source = row.get("market_cap")
@@ -1775,6 +1841,31 @@ def _normalize_finviz_earnings_rows(rows: Any) -> List[Any]:
         if market_cap_formatted:
             row["market_cap_formatted"] = market_cap_formatted
     return normalized
+
+
+def _finviz_earnings_date_from_token(value: Any) -> Optional[str]:
+    if value in (None, ""):
+        return None
+    token = str(value).strip()
+    if not token:
+        return None
+    date_part = token.split("/", 1)[0].strip()
+    if not date_part:
+        return None
+    for fmt in ("%Y-%m-%d",):
+        try:
+            parsed = datetime.strptime(date_part, fmt)
+        except ValueError:
+            continue
+        return parsed.date().isoformat()
+    reference_year = datetime.now(timezone.utc).year
+    for fmt in ("%b %d %Y", "%B %d %Y"):
+        try:
+            parsed = datetime.strptime(f"{date_part} {reference_year}", fmt)
+        except ValueError:
+            continue
+        return parsed.date().isoformat()
+    return None
 
 
 def _normalize_finviz_date_value(value: Any) -> Any:
@@ -1908,6 +1999,16 @@ def _normalize_finviz_rating_rows(rows: Any) -> List[Any]:
             row["price"] = _clean_finviz_price_target_display(row.get("price"))
             row.update(_finviz_price_target_fields(row["price"]))
     return normalized
+
+
+def _compact_finviz_rating_row(row: Any) -> Any:
+    if not isinstance(row, dict):
+        return row
+    compact = dict(row)
+    if compact.get("price_target_new") not in (None, ""):
+        compact.pop("price", None)
+        compact.pop("price_target_display", None)
+    return compact
 
 
 def _compact_finviz_earnings_items(items: Any) -> List[Any]:
@@ -2258,6 +2359,10 @@ def _compact_finviz_insider_payload(result: Dict[str, Any], *, detail: str) -> D
         "buy_transactions": buys,
         "sell_transactions": sells,
     }
+    out["hint"] = (
+        "Single-symbol insider trades; use finviz_insider_activity for "
+        "market-wide scans."
+    )
     out["omitted_item_count"] = max(0, len(normalized_rows) - len(compact_rows))
     return out
 
@@ -2300,6 +2405,7 @@ def _compact_finviz_insider_activity_payload(
         "sell_transactions": sells,
         "top_symbols": _summarize_insider_activity_tickers(normalized_rows),
     }
+    out["hint"] = "Market-wide insider activity; use finviz_insider SYMBOL for one ticker."
     out["omitted_item_count"] = max(0, len(normalized_rows) - len(compact_rows))
     return out
 
@@ -2329,7 +2435,7 @@ def _compact_finviz_ratings_payload(
         if omitted:
             out["show_all_hint"] = f"Increase limit to {len(normalized_rows)} to view all ratings."
         return out
-    compact_rows = limited_rows
+    compact_rows = [_compact_finviz_rating_row(row) for row in limited_rows]
     out["ratings"] = compact_rows
     out["summary"] = {
         "latest": compact_rows[0] if compact_rows else None,
@@ -2341,7 +2447,7 @@ def _compact_finviz_ratings_payload(
 
 
 def _compact_finviz_peers_payload(
-    result: Dict[str, Any], *, detail: str, limit: Optional[int]
+    result: Dict[str, Any], *, detail: str, limit: Optional[int], offset: Optional[int] = 0
 ) -> Dict[str, Any]:
     error = _validate_finviz_detail(detail, operation="finviz_peers")
     if error is not None or not result.get("success"):
@@ -2352,19 +2458,29 @@ def _compact_finviz_peers_payload(
         return result
     out = dict(result)
     limit_value = _coerce_finviz_limit(limit, default=len(peers))
-    limited_peers = peers[:limit_value]
+    offset_value = _coerce_finviz_offset(offset)
+    limited_peers = peers[offset_value: offset_value + limit_value]
+    omitted = max(0, len(peers) - offset_value - len(limited_peers))
     out["detail"] = detail_mode
     if detail_mode == "full":
         out["peers"] = limited_peers
         out["count"] = len(limited_peers)
         out["available_count"] = len(peers)
-        out["omitted_item_count"] = max(0, len(peers) - len(limited_peers))
+        out["offset"] = offset_value
+        out["has_more"] = offset_value + len(limited_peers) < len(peers)
+        out["omitted_item_count"] = omitted
         return out
     compact_peers = limited_peers
     out["peers"] = compact_peers
     out["count"] = len(compact_peers)
     out["available_count"] = len(peers)
-    out["omitted_item_count"] = max(0, len(peers) - len(compact_peers))
+    out["offset"] = offset_value
+    out["has_more"] = offset_value + len(compact_peers) < len(peers)
+    out["omitted_item_count"] = omitted
+    if omitted:
+        out["show_all_hint"] = (
+            f"{omitted} more peers available; pass offset={offset_value + len(compact_peers)}."
+        )
     return out
 
 
@@ -2512,8 +2628,13 @@ def _filter_finviz_fundamentals_payload(
         filtered = _compact_finviz_fundamentals(filtered)
     out = dict(result)
     out["currency"] = "USD"
-    _add_finviz_52w_quality_flags(filtered)
+    _add_finviz_52w_quality_flags(
+        filtered,
+        include_diagnostics=detail_mode == "full",
+    )
     out["fundamentals"] = filtered
+    if filtered.get("data_quality_warnings"):
+        out["trust"] = "degraded"
     units = _finviz_fundamental_units(filtered)
     if units:
         out["units"] = units
@@ -2779,6 +2900,7 @@ def finviz_peers(
     symbol: str,
     detail: CompactFullDetailLiteral = "compact",  # type: ignore
     limit: int = 5,
+    offset: int = 0,
 ) -> Dict[str, Any]:
     """
     Get peer companies for a US stock.
@@ -2807,11 +2929,12 @@ def finviz_peers(
             get_stock_peers(symbol_norm),
             detail=detail,
             limit=limit,
+            offset=offset,
         )
 
     return _run_logged_tool(
         "finviz_peers",
-        {"symbol": symbol, "detail": detail, "limit": limit},
+        {"symbol": symbol, "detail": detail, "limit": limit, "offset": offset},
         _run,
     )
 
@@ -3262,9 +3385,24 @@ def finviz_earnings(
         Earnings calendar data
     """
     def _run() -> Dict[str, Any]:
-        period_value = _FINVIZ_EARNINGS_PERIODS[str(period)]
+        normalized_period = _normalize_finviz_earnings_period(period)
+        if normalized_period is None:
+            return {
+                "success": False,
+                "error": (
+                    "Invalid period. Use one of: "
+                    + ", ".join(sorted(_FINVIZ_EARNINGS_PERIODS))
+                    + "."
+                ),
+                "error_code": "finviz_earnings_invalid_period",
+                "meta": _build_tool_contract_meta(
+                    tool="finviz_earnings",
+                    request={"period": period, "limit": limit, "page": page, "detail": detail},
+                ),
+            }
+        period_key, period_value = normalized_period
         request = {
-            "period": period,
+            "period": period_key,
             "limit": limit,
             "page": page,
             "detail": detail,
@@ -3314,7 +3452,7 @@ def finviz_earnings(
         }
         out: Dict[str, Any] = {
             "success": True,
-            "period": period,
+            "period": period_key,
             "detail": detail_mode,
             "items": output_items,
             "row_key": "items",
@@ -3325,6 +3463,10 @@ def finviz_earnings(
         }
         if out["detail"] != "full":
             out["omitted_item_count"] = max(0, int(out.get("total") or 0) - int(out["count"]))
+            out["hint"] = (
+                "Period-based earnings view; use finviz_calendar(calendar='earnings') "
+                "for date-range EPS/sales actuals and surprises."
+            )
         if out["detail"] == "full":
             out["meta"] = _build_tool_contract_meta(
                 tool="finviz_earnings",

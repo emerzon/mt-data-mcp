@@ -3,6 +3,7 @@ from unittest.mock import patch
 from mtdata.core.finviz import (
     finviz_calendar,
     finviz_earnings,
+    finviz_filters_list,
     finviz_insider,
     finviz_insider_activity,
     finviz_peers,
@@ -14,6 +15,59 @@ def _unwrap(fn):
     while hasattr(fn, "__wrapped__"):
         fn = fn.__wrapped__
     return fn
+
+
+def test_filters_list_defaults_to_index_and_supports_exact_lookup():
+    import sys
+    from types import ModuleType
+
+    finvizfinance = ModuleType("finvizfinance")
+    screener = ModuleType("finvizfinance.screener")
+    base = ModuleType("finvizfinance.screener.base")
+    base.filter_dict = {
+        "Industry": {
+            "prefix": "ind",
+            "option": {
+                "Any": "",
+                "Stocks only": "stocks",
+                "Technology": "tech",
+            },
+        },
+        "Exchange": {
+            "prefix": "exch",
+            "option": {"NASDAQ": "nasd", "NYSE": "nyse"},
+        },
+    }
+    screener.base = base
+    finvizfinance.screener = screener
+
+    with patch.dict(
+        sys.modules,
+        {
+            "finvizfinance": finvizfinance,
+            "finvizfinance.screener": screener,
+            "finvizfinance.screener.base": base,
+        },
+    ):
+        index = _unwrap(finviz_filters_list)(limit=1)
+        exact = _unwrap(finviz_filters_list)(filter_name="Exchange")
+
+    assert index["count"] == 1
+    assert index["total"] == 2
+    assert index["limit"] == 1
+    assert index["has_more"] is True
+    assert "values" not in index["items"][0]
+    assert exact["items"] == [
+        {
+            "filter": "Exchange",
+            "prefix": "exch",
+            "value_count": 2,
+            "values": [
+                {"value": "NASDAQ", "token": "exch_nasd"},
+                {"value": "NYSE", "token": "exch_nyse"},
+            ],
+        }
+    ]
 
 
 class TestFinvizEarningsOutputContract:
@@ -288,6 +342,33 @@ class TestFinvizCalendarOutputContract:
             }
         ]
 
+    @patch("mtdata.core.finviz.get_dividends_calendar_api")
+    def test_calendar_dividends_compact_keeps_exdate_and_amounts(self, mock_get):
+        mock_get.return_value = {
+            "success": True,
+            "items": [
+                {
+                    "symbol": "ADI",
+                    "company": "Analog Devices Inc",
+                    "exdate": "2026-06-02",
+                    "ordinary": 1.1,
+                    "special": None,
+                    "yield": 1.004,
+                }
+            ],
+        }
+
+        result = _unwrap(finviz_calendar)(calendar="dividends", limit=1)
+
+        assert result["items"] == [
+            {
+                "symbol": "ADI",
+                "exdate": "2026-06-02",
+                "ordinary": 1.1,
+                "yield": 1.004,
+            }
+        ]
+
 
 class TestFinvizInsiderActivityOutputContract:
     @patch("mtdata.core.finviz.get_insider_activity")
@@ -484,6 +565,31 @@ class TestFinvizProgressiveDisclosure:
         assert result["omitted_item_count"] == 3
 
     @patch("mtdata.core.finviz.get_stock_ratings")
+    def test_ratings_compact_removes_duplicate_price_target_strings(self, mock_get):
+        mock_get.return_value = {
+            "success": True,
+            "symbol": "AAPL",
+            "ratings": [
+                {
+                    "Date": "2026-05-26",
+                    "Status": "Reiterated",
+                    "Firm": "BofA Securities",
+                    "Rating": "Buy",
+                    "Price": "$330 -> $380",
+                }
+            ],
+        }
+
+        result = _unwrap(finviz_ratings)("AAPL", detail="compact")
+        row = result["ratings"][0]
+
+        assert row["price_target_previous"] == 330.0
+        assert row["price_target_new"] == 380.0
+        assert "price" not in row
+        assert "price_target_display" not in row
+        assert result["summary"]["latest"] == row
+
+    @patch("mtdata.core.finviz.get_stock_ratings")
     def test_ratings_metadata_extra_returns_full_history(self, mock_get):
         rows = [{"Date": f"2026-01-0{i}", "Rating": "Buy"} for i in range(1, 6)]
         mock_get.return_value = {"success": True, "symbol": "AAPL", "ratings": rows}
@@ -525,6 +631,8 @@ class TestFinvizProgressiveDisclosure:
         assert result["count"] == 5
         assert result["available_count"] == 6
         assert result["omitted_item_count"] == 1
+        assert result["has_more"] is True
+        assert result["offset"] == 0
 
     @patch("mtdata.core.finviz.get_stock_peers")
     def test_peers_limit_controls_returned_rows(self, mock_get):
@@ -537,6 +645,19 @@ class TestFinvizProgressiveDisclosure:
         assert result["count"] == 2
         assert result["available_count"] == 3
         assert result["omitted_item_count"] == 1
+        assert result["has_more"] is True
+
+    @patch("mtdata.core.finviz.get_stock_peers")
+    def test_peers_offset_fetches_followup_page(self, mock_get):
+        peers = ["MSFT", "GOOGL", "META", "AMZN", "NVDA", "ORCL"]
+        mock_get.return_value = {"success": True, "symbol": "AAPL", "peers": peers}
+
+        result = _unwrap(finviz_peers)("AAPL", limit=2, offset=4)
+
+        assert result["peers"] == ["NVDA", "ORCL"]
+        assert result["offset"] == 4
+        assert result["has_more"] is False
+        assert result["omitted_item_count"] == 0
 
     @patch("mtdata.core.finviz.get_stock_ratings")
     def test_finviz_detail_accepts_standard_alias_as_compact(self, mock_get):
