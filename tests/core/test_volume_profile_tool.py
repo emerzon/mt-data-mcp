@@ -122,6 +122,67 @@ def test_compute_volume_profile_payload_derives_window_from_timeframe_limit(monk
     assert captured["end"] == "2026-01-02 00:00:00"
 
 
+def test_compute_volume_profile_payload_defaults_timeframe_limit(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(
+        vp,
+        "create_mt5_gateway",
+        lambda **_: SimpleNamespace(ensure_connection=lambda: None),
+    )
+    monkeypatch.setattr(
+        vp,
+        "_symbol_ready_guard",
+        lambda symbol: _Guard(None, SimpleNamespace(point=0.0001, digits=5)),
+    )
+
+    def fake_fetch_ticks(**kwargs):
+        captured.update(kwargs)
+        return {
+            "data": [
+                {
+                    "bid": 1.0999,
+                    "ask": 1.1001,
+                    "mid": 1.1000,
+                    "tick_volume": 1,
+                    "real_volume": 0,
+                }
+            ]
+        }
+
+    monkeypatch.setattr(vp, "fetch_ticks", fake_fetch_ticks)
+
+    result = vp.compute_volume_profile_payload(
+        symbol="EURUSD",
+        end="2026-01-02 00:00:00",
+        timeframe="H1",
+        source="ticks",
+        bucket_size=0.0001,
+    )
+
+    assert result["success"] is True
+    assert result["window"] == {
+        "start": "2025-12-24 16:00:00",
+        "end": "2026-01-02 00:00:00",
+    }
+    assert captured["start"] == "2025-12-24 16:00:00"
+    assert captured["end"] == "2026-01-02 00:00:00"
+
+
+def test_compute_volume_profile_payload_invalid_limit_suggests_default() -> None:
+    result = vp.compute_volume_profile_payload(
+        symbol="EURUSD",
+        timeframe="H1",
+        limit=0,
+    )
+
+    assert result == {
+        "error": (
+            "limit must be a positive integer when timeframe is provided; "
+            "omit limit to use the default 200 bars."
+        )
+    }
+
+
 class _Guard:
     def __init__(self, err, info):
         self.err = err

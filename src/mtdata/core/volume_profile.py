@@ -29,6 +29,7 @@ VolumeProfileVolumeSourceLiteral = Literal["auto", "real_volume", "tick_volume",
 _DEFAULT_MAX_TICK_WINDOW_DAYS = 7
 _DEFAULT_MAX_TICKS = 200_000
 _DEFAULT_MAX_M1_BARS = 20_000
+_DEFAULT_PROFILE_LIMIT = 200
 
 
 def _positive_float_attr(obj: Any, *names: str) -> Optional[float]:
@@ -88,12 +89,20 @@ def _resolve_profile_window(
     seconds = TIMEFRAME_SECONDS.get(tf)
     if seconds is None:
         return {"error": f"Invalid timeframe {timeframe!r}"}
-    try:
-        bars = int(limit) if limit is not None else 0
-    except (TypeError, ValueError):
-        bars = 0
-    if bars <= 0:
-        return {"error": "limit must be a positive integer when timeframe is provided"}
+    if limit is None:
+        bars = _DEFAULT_PROFILE_LIMIT
+    else:
+        try:
+            bars = int(limit)
+        except (TypeError, ValueError):
+            bars = 0
+        if bars <= 0:
+            return {
+                "error": (
+                    "limit must be a positive integer when timeframe is provided; "
+                    f"omit limit to use the default {int(_DEFAULT_PROFILE_LIMIT)} bars."
+                )
+            }
     end_dt = _parse_start_datetime(end) if end else datetime.utcnow()
     if end and end_dt is None:
         return {"error": f"Could not parse end datetime {end!r}"}
@@ -418,7 +427,8 @@ def volume_profile_levels(  # noqa: PLR0913
     """Compute volume-profile POC, VAH, and VAL from ticks or M1-bar approximation.
 
     `source="auto"` uses bounded raw ticks for short windows and falls back to
-    M1-bar approximation for larger windows. `price_source="mid"` is the safe
+    M1-bar approximation for larger windows. When `timeframe` is provided without
+    `limit`, the window defaults to 200 bars. `price_source="mid"` is the safe
     default for FX symbols where tick `last` is often unavailable.
     """
 
