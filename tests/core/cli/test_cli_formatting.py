@@ -738,6 +738,36 @@ class TestFormatResultForCli:
         assert payload["pending_orders"] == []
         assert payload["pending_orders_count"] == 0
 
+    def test_trade_session_context_toon_preserves_nested_quote_precision(self):
+        result = _format_result_for_cli(
+            {
+                "success": True,
+                "symbol": "EURUSD",
+                "state": "flat",
+                "quote": {
+                    "success": True,
+                    "symbol": "EURUSD",
+                    "time": 1700000000,
+                    "time_display": "2023-11-14 22:13",
+                    "price_precision": 5,
+                    "bid": 1.16346,
+                    "ask": 1.16355,
+                    "spread": 0.00009,
+                    "spread_points": 9.0,
+                },
+            },
+            fmt="toon",
+            verbose=False,
+            cmd_name="trade_session_context",
+        )
+
+        assert "bid: 1.16346" in result
+        assert "ask: 1.16355" in result
+        assert "spread: 0.00009" in result
+        assert "  bid: 1.163" not in result.splitlines()
+        assert "  ask: 1.164" not in result.splitlines()
+        assert "price_precision" not in result
+
     def test_trade_session_context_compact_keeps_false_like_execution_ready(self):
         class FalseLike:
             def __bool__(self):

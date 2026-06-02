@@ -216,6 +216,28 @@ def _round_cli_float(value: Any, *, digits: int) -> Any:
         return value
 
 
+def _price_precision_from_cli_quote(quote: Any) -> Optional[int]:
+    if not isinstance(quote, dict):
+        return None
+    for key in ("price_precision", "digits"):
+        try:
+            raw = quote.get(key)
+            if raw is not None:
+                return max(0, int(raw))
+        except Exception:
+            continue
+    return None
+
+
+def _fixed_cli_quote_price(value: Any, *, digits: int) -> Any:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return value
+    try:
+        return f"{float(value):.{max(0, int(digits))}f}"
+    except Exception:
+        return value
+
+
 def _normalize_market_ticker_cli_payload(
     result: Any,
     *,
@@ -294,6 +316,7 @@ def _normalize_trade_session_context_cli_payload(
     *,
     verbose: bool,
     compact_numbers: bool = False,
+    format_quote_prices: bool = False,
 ) -> Any:
     if not isinstance(result, dict):
         return result
@@ -331,6 +354,14 @@ def _normalize_trade_session_context_cli_payload(
                 )
                 if key in quote_norm and not _is_empty_value(quote_norm.get(key))
             }
+            price_precision = _price_precision_from_cli_quote(quote_norm)
+            if format_quote_prices and price_precision is not None:
+                for key in ("bid", "ask", "last", "spread"):
+                    if key in compact_quote:
+                        compact_quote[key] = _fixed_cli_quote_price(
+                            compact_quote.get(key),
+                            digits=price_precision,
+                        )
             if "error" in quote_norm and not _is_empty_value(quote_norm.get("error")):
                 compact_quote = {"error": quote_norm.get("error")}
             if compact_quote:
@@ -650,6 +681,7 @@ def _prepare_cli_payload(
             prepared,
             verbose=verbose,
             compact_numbers=compact_numbers,
+            format_quote_prices=fmt == CLI_FORMAT_TOON,
         )
     elif adapter is _normalize_symbols_describe_cli_payload:
         prepared = adapter(prepared, verbose=verbose)
