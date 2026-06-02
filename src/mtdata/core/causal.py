@@ -546,6 +546,41 @@ def _format_sample_time(value: Any) -> str:
     return timestamp.strftime("%Y-%m-%d %H:%M")
 
 
+def _pairwise_analysis_context(rows: List[Dict[str, Any]], *, timeframe: Any) -> Dict[str, Any]:
+    context: Dict[str, Any] = {
+        "timeframe": str(timeframe),
+        "timezone": "UTC",
+    }
+    starts = [
+        str(row.get("period_start"))
+        for row in rows
+        if row.get("period_start") not in (None, "")
+    ]
+    ends = [
+        str(row.get("period_end"))
+        for row in rows
+        if row.get("period_end") not in (None, "")
+    ]
+    samples = [
+        int(row["samples"])
+        for row in rows
+        if row.get("samples") is not None
+    ]
+    if starts:
+        context["period_start"] = min(starts)
+    if ends:
+        context["period_end"] = max(ends)
+    if samples:
+        samples_min = min(samples)
+        samples_max = max(samples)
+        if samples_min == samples_max:
+            context["samples"] = samples_min
+        else:
+            context["samples_min"] = samples_min
+            context["samples_max"] = samples_max
+    return context
+
+
 def _rank_correlation_pairs(
     frame: pd.DataFrame,
     symbols: List[str],
@@ -919,6 +954,8 @@ def _evaluate_cointegration_pair(
             "spread_last": spread_last,
             "spread_zscore": spread_zscore,
             "samples": int(len(subset)),
+            "period_start": _format_sample_time(subset.index[0]),
+            "period_end": _format_sample_time(subset.index[-1]),
             "cointegrated": bool(float(p_value) < significance),
             "relationship": "cointegrated"
             if float(p_value) < significance
@@ -1729,6 +1766,8 @@ def causal_discover_signals(  # noqa: C901
                     continue
                 lag_correction_factor = max(1, int(tested_lags))
                 best_p = float(min(1.0, best_p_raw * lag_correction_factor))
+                period_start = _format_sample_time(subset.index[0])
+                period_end = _format_sample_time(subset.index[-1])
                 rows.append(
                     {
                         "effect": effect,
@@ -1739,6 +1778,8 @@ def causal_discover_signals(  # noqa: C901
                         "p_value_correction": "bonferroni",
                         "lag_tests_run": lag_correction_factor,
                         "samples": len(subset),
+                        "period_start": period_start,
+                        "period_end": period_end,
                         "significant": bool(best_p < significance),
                     }
                 )
@@ -1786,6 +1827,16 @@ def causal_discover_signals(  # noqa: C901
             "items": output_rows,
             "count": int(len(output_rows)),
             **pagination,
+            "context": {
+                **_pairwise_analysis_context(rows_sorted, timeframe=timeframe),
+                "limit": output_limit,
+                "window_bars": int(window_bars),
+                "start": start,
+                "end": end,
+                "transform": transform_value,
+                "max_lag": int(max_lag),
+                "significance": float(significance),
+            },
             "summary": {
                 "significance": float(significance),
                 "counts": {
@@ -2211,7 +2262,7 @@ def correlation_matrix(  # noqa: C901
             "count": int(len(output_rows_raw)),
             **pagination,
             "context": {
-                "timeframe": str(timeframe),
+                **_pairwise_analysis_context(rows, timeframe=timeframe),
                 "limit": output_limit,
                 "window_bars": int(window_bars),
                 "start": start,
@@ -2704,7 +2755,7 @@ def cointegration_test(  # noqa: C901
                 "highlights": _build_cointegration_summary(output_rows_raw),
             },
             "context": {
-                "timeframe": str(timeframe),
+                **_pairwise_analysis_context(rows, timeframe=timeframe),
                 "limit": output_limit,
                 "window_bars": window_bars_value,
                 "start": start,
