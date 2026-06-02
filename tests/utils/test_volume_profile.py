@@ -27,6 +27,18 @@ def test_compute_volume_profile_uses_mid_and_tick_count_fallback():
     assert result["volume_kind"] == "tick_count"
     assert result["poc"]["price"] == 1.10015
     assert result["poc"]["volume"] == 2.0
+    assert (
+        result["poc"]["volume_share"]
+        == result["poc"]["volume"] / result["total_volume"]
+    )
+    assert (
+        result["vah"]["volume_share"]
+        == result["vah"]["volume"] / result["total_volume"]
+    )
+    assert (
+        result["val"]["volume_share"]
+        == result["val"]["volume"] / result["total_volume"]
+    )
     assert result["val"]["price"] <= result["poc"]["price"] <= result["vah"]["price"]
 
 
@@ -55,6 +67,8 @@ def test_compute_volume_profile_expands_value_area_ties_deterministically():
     assert result["value_area"]["bucket_indexes"] == [1, 2, 3]
     assert result["value_area"]["volume"] == 18.0
     assert result["value_area"]["volume_share"] == 0.9
+    level_shares = {row["level"]: row["volume_share"] for row in result["levels"]}
+    assert level_shares == {"POC": 0.5, "VAH": 0.2, "VAL": 0.2}
 
 
 def test_compute_volume_profile_drops_missing_last_prices():

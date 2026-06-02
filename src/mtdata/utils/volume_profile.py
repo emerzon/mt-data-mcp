@@ -499,6 +499,7 @@ def _build_level_rows(
             "type": "volume_value_area_high",
             "price": vah_price,
             "volume": float(value_area["high_bucket"]["volume"]),
+            "volume_share": float(value_area["high_bucket"]["volume_share"]),
             "bucket_index": int(value_area["high_bucket"]["index"]),
         },
         "val": {
@@ -506,6 +507,7 @@ def _build_level_rows(
             "type": "volume_value_area_low",
             "price": val_price,
             "volume": float(value_area["low_bucket"]["volume"]),
+            "volume_share": float(value_area["low_bucket"]["volume_share"]),
             "bucket_index": int(value_area["low_bucket"]["index"]),
         },
     }
