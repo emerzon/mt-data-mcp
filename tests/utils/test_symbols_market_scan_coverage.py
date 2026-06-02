@@ -216,7 +216,7 @@ class TestSymbolsTopMarkets:
         result = fn(limit=1, timeframe="H1")
 
         assert result["success"] is True
-        assert result["ranking"] == "largest_abs_price_change"
+        assert result["ranking"] == "largest_abs_price_change_pct"
         assert result["requested_limit"] == 1
         assert result["returned_count"] == 1
         assert len(result["data"]) == 1
@@ -228,7 +228,60 @@ class TestSymbolsTopMarkets:
         assert result["units"]["close"] == "price"
         assert "lowest_spread" not in result
         assert "highest_volume" not in result
-        assert "highest_price_change" not in result
+        assert "highest_price_change_pct" not in result
+
+    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
+    @patch("mtdata.core.symbols.mt5.symbols_get")
+    def test_filters_group_and_category_for_comparable_universe(
+        self,
+        mock_symbols_get,
+        mock_rates,
+        mock_group,
+    ):
+        mock_symbols_get.return_value = [
+            _make_symbol("EURUSD", path="Forex\\Majors", description="Euro", digits=4),
+            _make_symbol("GBPUSD", path="Forex\\Majors", description="Pound", digits=4),
+            _make_symbol("XAUUSD", path="Commodities\\Metals", description="Gold"),
+            _make_symbol("BTCUSD", path="Crypto", description="Bitcoin"),
+        ]
+        mock_rates.side_effect = lambda symbol, timeframe, start_pos, count: {
+            "EURUSD": [
+                {
+                    "time": 1700000000.0,
+                    "open": 1.1000,
+                    "close": 1.1100,
+                    "tick_volume": 100,
+                    "real_volume": 0,
+                }
+            ],
+            "GBPUSD": [
+                {
+                    "time": 1700000000.0,
+                    "open": 1.3000,
+                    "close": 1.2870,
+                    "tick_volume": 50,
+                    "real_volume": 0,
+                }
+            ],
+        }[symbol]
+
+        fn = _get_symbols_top_markets()
+        result = fn(
+            limit=5,
+            timeframe="H1",
+            group="Forex",
+            category="forex",
+        )
+
+        assert result["success"] is True
+        assert result["filters"] == {
+            "group": "Forex\\Majors",
+            "category": "forex",
+        }
+        assert result["universe_size"] == 2
+        assert {row["symbol"] for row in result["data"]} == {"EURUSD", "GBPUSD"}
+        assert {row["asset_class"] for row in result["data"]} == {"forex"}
 
     @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
     @patch("mtdata.core.symbols.mt5.symbol_info_tick")
@@ -266,6 +319,7 @@ class TestSymbolsTopMarkets:
         assert list(result["data"][0].keys()) == [
             "symbol",
             "group",
+            "asset_class",
             "timeframe",
             "data_source",
             "time",
@@ -275,6 +329,7 @@ class TestSymbolsTopMarkets:
             "ask",
             "spread_pct",
             "spread_points",
+            "spread_pips",
         ]
         assert result["data"][0]["data_source"] == "live_tick"
         assert result["data"][0]["freshness"] is None
@@ -301,8 +356,8 @@ class TestSymbolsTopMarkets:
 
         assert result["success"] is True
         assert result["ranking"] == "highest_volume"
-        assert result["rank_by"] == "volume"
-        assert result["rank_by_input"] == "tick_volume"
+        assert result["rank_by"] == "tick_volume"
+        assert result["rank_by_input"] is None
 
     @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
     @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
@@ -333,14 +388,14 @@ class TestSymbolsTopMarkets:
         }
         assert top_by_category["lowest_spread"]["symbol"] == "EURUSD"
         assert top_by_category["highest_volume"]["symbol"] == "EURUSD"
-        assert top_by_category["highest_price_change"]["symbol"] == "GBPUSD"
+        assert top_by_category["highest_price_change_pct"]["symbol"] == "GBPUSD"
         assert result["collection_kind"] == "table"
         assert result["canonical_source"] == "data"
         assert result["ranking"] == "all"
         assert result["rank_categories"] == [
             "lowest_spread",
             "highest_volume",
-            "highest_price_change",
+            "highest_price_change_pct",
         ]
         assert "groups" not in result
         assert "results" not in result
@@ -383,6 +438,7 @@ class TestSymbolsTopMarkets:
         assert list(result["data"][0].keys()) == [
             "symbol",
             "group",
+            "asset_class",
             "timeframe",
             "data_source",
             "time",
@@ -392,6 +448,7 @@ class TestSymbolsTopMarkets:
             "ask",
             "spread_pct",
             "spread_points",
+            "spread_pips",
         ]
         assert result["data"][0]["data_source"] == "live_tick"
         assert result["data"][0]["freshness"] is None
@@ -454,46 +511,34 @@ class TestSymbolsTopMarkets:
         assert result["returned_counts"] == {
             "lowest_spread": 2,
             "highest_volume": 2,
-            "highest_price_change": 2,
+            "highest_price_change_pct": 2,
         }
         assert result["available_counts"] == result["returned_counts"]
-        assert result["notes"]
-        assert "data" not in result
-        assert list(result["lowest_spread"][0].keys()) == [
-            "rank",
-            "symbol",
-            "group",
-            "timeframe",
-            "data_source",
-            "time",
-            "data_stale",
-            "freshness",
-            "bid",
-            "ask",
-            "spread_pct",
-            "spread_points",
-        ]
-        assert list(result["highest_volume"][0].keys()) == [
-            "rank",
-            "symbol",
-            "group",
-            "timeframe",
-            "data_source",
-            "time",
-            "data_stale",
-            "freshness",
-            "close",
-            "tick_volume",
-            "price_change_pct",
-        ]
-        assert result["lowest_spread"][0]["data_source"] == "live_tick"
-        assert result["lowest_spread"][0]["freshness"] is None
-        assert "tick_volume" not in result["lowest_spread"][0]
-        assert "bid" not in result["highest_volume"][0]
-        assert result["highest_volume"][0]["data_source"] == "H1_bars"
-        assert result["lowest_spread"][0]["symbol"] == "EURUSD"
-        assert result["highest_volume"][0]["symbol"] == "EURUSD"
-        assert result["highest_price_change"][0]["symbol"] == "GBPUSD"
+        assert "notes" not in result
+        assert "data" in result
+        first_spread = next(
+            row
+            for row in result["data"]
+            if row["rank_category"] == "lowest_spread" and row["rank"] == 1
+        )
+        first_volume = next(
+            row
+            for row in result["data"]
+            if row["rank_category"] == "highest_volume" and row["rank"] == 1
+        )
+        first_price_change = next(
+            row
+            for row in result["data"]
+            if row["rank_category"] == "highest_price_change_pct" and row["rank"] == 1
+        )
+        assert first_spread["data_source"] == "live_tick"
+        assert first_spread["freshness"] is None
+        assert first_spread["asset_class"] == "forex"
+        assert first_volume["data_source"] == "H1_bars"
+        assert first_volume["asset_class"] == "forex"
+        assert first_spread["symbol"] == "EURUSD"
+        assert first_volume["symbol"] == "EURUSD"
+        assert first_price_change["symbol"] == "GBPUSD"
         assert result["units"]["tick_volume"] == "broker_tick_count"
         assert result["units"]["close"] == "price"
         assert "data_sources" not in result

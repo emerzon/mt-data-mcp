@@ -1349,6 +1349,7 @@ def _market_scan_base_row(symbol: Any) -> Dict[str, Any]:
     return {
         "symbol": getattr(symbol, "name", None),
         "group": _extract_group_path_util(symbol),
+        "asset_class": _symbol_category(symbol),
         "description": getattr(symbol, "description", None),
     }
 
@@ -1802,6 +1803,7 @@ def _market_scan_freshness_summary(rows: List[Dict[str, Any]]) -> Dict[str, Any]
 _TOP_MARKETS_COMPACT_BASE_HEADERS = [
     "symbol",
     "group",
+    "asset_class",
     "timeframe",
     "data_source",
     "time",
@@ -1837,6 +1839,7 @@ _TOP_MARKETS_COMPACT_HEADERS = [
 _TOP_MARKETS_FULL_BASE_HEADERS = [
     "symbol",
     "group",
+    "asset_class",
     "description",
     "timeframe",
     "data_source",
@@ -2388,20 +2391,24 @@ def symbols_top_markets(  # noqa: C901
     limit: Optional[int] = 10,
     universe: Literal["visible", "all"] = "visible",  # type: ignore
     timeframe: TimeframeLiteral = "H1",
+    group: Optional[str] = None,
+    category: Optional[str] = None,
     detail: CompactFullDetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """Quick MT5 market overview ranked by spread, volume, or price change.
 
-    Defaults to visible tradable symbols for responsiveness. Set `universe="all"` to
-    include hidden tradable symbols too; that mode is slower because MT5 may need to
+    Defaults to visible tradable symbols for responsiveness. Set `group` or
+    `category` (forex, crypto, indices, commodities, stocks, bonds, etfs) to keep
+    rankings inside a comparable asset universe. Set `universe="all"` to include
+    hidden tradable symbols too; that mode is slower because MT5 may need to
     activate quotes for instruments that are not already visible. Defaults to a
     single absolute-price-change leaderboard; set `rank_by="price_change"` for
     gainers only or `rank_by="all"` for spread, volume, and signed price-change
     leaderboards. Volume and price-change rankings use the most recent completed
     bar on `timeframe`. Uses compact leaderboard rows by default. Set
     `detail="full"` for the expanded row shape and collection metadata. Use
-    `market_scan` instead when you need symbol/group inputs, RSI/SMA filters, or
-    a single flat scanner table.
+    `market_scan` instead when you need explicit symbol inputs, RSI/SMA filters,
+    or a single flat scanner table.
     """
 
     detail_mode = normalize_output_verbosity_detail(detail, default="compact")
@@ -2435,6 +2442,15 @@ def symbols_top_markets(  # noqa: C901
             universe_value = str(universe or "visible").strip().lower()
             if universe_value not in {"visible", "all"}:
                 return {"error": "universe must be 'visible' or 'all'."}
+            group_filter = _normalize_group_path_query(group) if group else None
+            category_filter = _normalize_symbol_category_filter(category)
+            if category and not category_filter:
+                return {
+                    "error": (
+                        "category must be one of forex, crypto, indices, "
+                        "commodities, stocks, bonds, or etfs."
+                    )
+                }
 
             timeframe_value = str(timeframe or "H1").strip().upper()
             needs_bar_data = rank_kind in {
@@ -2458,12 +2474,48 @@ def symbols_top_markets(  # noqa: C901
                 return {"error": f"Failed to get symbols: {mt5_gateway.last_error()}"}
             all_symbols = list(raw_symbols)
 
+            selected_symbols = [
+                symbol
+                for symbol in all_symbols
+                if _market_scan_is_tradable(symbol)
+                and (universe_value == "all" or bool(getattr(symbol, "visible", False)))
+            ]
+            filters: Dict[str, Any] = {}
+            if group_filter:
+                resolved_groups, group_error = _resolve_market_scan_group_path(
+                    selected_symbols,
+                    group_filter,
+                )
+                if group_error or not resolved_groups:
+                    return {"error": group_error or f"No symbol group matched '{group_filter}'."}
+                resolved_group_set = {
+                    _normalize_group_path_query(group_path).lower()
+                    for group_path in resolved_groups
+                }
+                selected_symbols = [
+                    symbol
+                    for symbol in selected_symbols
+                    if _normalize_group_path_query(
+                        str(_extract_group_path_util(symbol) or "")
+                    ).lower()
+                    in resolved_group_set
+                ]
+                filters["group"] = (
+                    resolved_groups[0]
+                    if len(resolved_groups) == 1
+                    else str(group_filter).strip()
+                )
+                if len(resolved_groups) > 1:
+                    filters["groups"] = resolved_groups
+            if category_filter:
+                selected_symbols = [
+                    symbol
+                    for symbol in selected_symbols
+                    if _symbol_category(symbol) == category_filter
+                ]
+                filters["category"] = category_filter
             selected_symbols = sorted(
-                [
-                    symbol for symbol in all_symbols
-                    if _market_scan_is_tradable(symbol)
-                    and (universe_value == "all" or bool(getattr(symbol, "visible", False)))
-                ],
+                selected_symbols,
                 key=lambda symbol: _case_insensitive_sort_key(getattr(symbol, "name", "")),
             )
 
@@ -2619,6 +2671,8 @@ def symbols_top_markets(  # noqa: C901
                 return fields
 
             scan_meta = {"success": True}
+            if filters:
+                scan_meta["filters"] = filters
             if detail_mode == "full":
                 scan_meta.update(
                     {
