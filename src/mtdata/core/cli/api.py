@@ -1433,7 +1433,10 @@ def main():
 
     parser = _safe_argument_parser(
         prog=parser_prog,
-        description="Dynamic CLI for MetaTrader5 MCP tools (TOON output by default)",
+        description=(
+            "Dynamic CLI for MetaTrader5 MCP tools "
+            "(TOON by default; set MTDATA_OUTPUT_FORMAT=json for JSON)"
+        ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=_build_epilog(functions),
         allow_abbrev=False,

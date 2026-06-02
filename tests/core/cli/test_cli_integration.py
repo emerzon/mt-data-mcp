@@ -33,6 +33,7 @@ from mtdata.forecast.requests import ForecastGenerateRequest
 def _isolate_env(monkeypatch):
     """Clear env vars that influence debug/colour behaviour between tests."""
     monkeypatch.delenv("MTDATA_CLI_DEBUG", raising=False)
+    monkeypatch.delenv("MTDATA_OUTPUT_FORMAT", raising=False)
     monkeypatch.delenv("NO_COLOR", raising=False)
     monkeypatch.delenv("MT5_TIME_OFFSET_MINUTES", raising=False)
 
@@ -573,6 +574,30 @@ class TestMain:
         out = capsys.readouterr()
         assert json.loads(out.out)["ok"] is True
         assert "noise that should be suppressed" not in out.err
+
+    @patch("mtdata.core.cli.discover_tools")
+    def test_env_output_format_json_uses_json_default(
+        self, mock_discover, monkeypatch, capsys
+    ):
+        def simple_tool(**_kwargs):
+            return {"ok": True}
+
+        info = get_function_info(simple_tool)
+        mock_discover.return_value = {
+            "simple_tool": {
+                "func": simple_tool,
+                "meta": {"description": "Simple tool"},
+                "_cli_func_info": info,
+            },
+        }
+
+        monkeypatch.setenv("MTDATA_OUTPUT_FORMAT", "json")
+        with patch("sys.argv", ["cli.py", "simple_tool"]):
+            result = main()
+
+        assert result == 0
+        out = capsys.readouterr()
+        assert json.loads(out.out)["ok"] is True
 
     @patch("mtdata.core.cli.discover_tools")
     def test_json_output_suppresses_stream_noise_and_third_party_logs(

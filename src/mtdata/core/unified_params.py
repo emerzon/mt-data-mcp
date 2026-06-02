@@ -42,7 +42,10 @@ def add_global_args_to_parser(
         json_kwargs = {
             "action": "store_true",
             "dest": "json",
-            "help": "Output structured JSON (default output is TOON text).",
+            "help": (
+                "Output structured JSON. Default is TOON text unless "
+                "MTDATA_OUTPUT_FORMAT=json is set."
+            ),
         }
         if suppress_defaults:
             json_kwargs["default"] = argparse.SUPPRESS

@@ -33,6 +33,7 @@ from mtdata.forecast.requests import ForecastGenerateRequest
 def _isolate_env(monkeypatch):
     """Clear env vars that influence debug/colour behaviour between tests."""
     monkeypatch.delenv("MTDATA_CLI_DEBUG", raising=False)
+    monkeypatch.delenv("MTDATA_OUTPUT_FORMAT", raising=False)
     monkeypatch.delenv("NO_COLOR", raising=False)
     monkeypatch.delenv("MT5_TIME_OFFSET_MINUTES", raising=False)
 
@@ -47,6 +48,7 @@ from mtdata.core.cli import (
     _json_default,
     _quote_cli_value,
     _render_cli_result,
+    _resolve_cli_formatter,
     _write_cli_text,
 )
 
@@ -258,6 +260,16 @@ class TestFormatResultForCli:
             "hello", fmt=None, verbose=False, cmd_name="test"
         )
         assert isinstance(result, str)
+
+    def test_env_output_format_defaults_to_json(self, monkeypatch):
+        monkeypatch.setenv("MTDATA_OUTPUT_FORMAT", "json")
+
+        assert _resolve_cli_formatter(argparse.Namespace(json=False)) == "json"
+
+    def test_json_flag_overrides_env_output_format(self, monkeypatch):
+        monkeypatch.setenv("MTDATA_OUTPUT_FORMAT", "toon")
+
+        assert _resolve_cli_formatter(argparse.Namespace(json=True)) == "json"
 
     def test_forecast_generate_toon_compact_keeps_interval_warnings(self):
         result = _format_result_for_cli(

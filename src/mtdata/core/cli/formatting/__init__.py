@@ -1,4 +1,5 @@
 import json
+import os
 from datetime import datetime
 from typing import Any, Callable, Dict, Optional
 
@@ -33,6 +34,9 @@ def _normalize_cli_formatter(fmt: Any) -> str:
 def _resolve_cli_formatter(args: Any) -> str:
     if bool(getattr(args, "json", False)):
         return CLI_FORMAT_JSON
+    env_format = os.environ.get("MTDATA_OUTPUT_FORMAT")
+    if env_format is not None:
+        return _normalize_cli_formatter(env_format)
     return CLI_FORMAT_TOON
 
 
