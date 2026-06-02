@@ -567,11 +567,16 @@ class TestFinvizTools:
         assert "pairs" not in result
         assert result["detail"] == "compact"
         assert result["data_limitations"] == {
-            "performance_periods": ["day", "week", "month", "quarter", "year"]
+            "performance_periods": ["day", "week", "month", "quarter", "year"],
+            "price": "delayed_web_quote_not_executable",
         }
         assert result["price_currency_basis"] == "quote_currency"
         assert result["price_source"] == "finviz_delayed"
         assert result["freshness"] == "finviz_delayed"
+        assert result["warnings"] == [
+            "Finviz forex prices are delayed web quotes, not executable MT5 bid/ask; "
+            "use market_ticker before order placement."
+        ]
         assert result["items"] == [
             {
                 "symbol": "EURUSD",
