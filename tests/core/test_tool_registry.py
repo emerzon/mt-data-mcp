@@ -2,6 +2,7 @@
 
 from mtdata.bootstrap.tools import bootstrap_tools, mcp
 from mtdata.core._mcp_tools import registered_tool_catalog
+from mtdata.core.tools import tools_list
 
 EXPECTED_TOOL_NAMES = frozenset(
     {
@@ -153,3 +154,52 @@ def test_tools_catalog_standard_detail_includes_parameter_summaries():
     assert "module" not in standard_market_scan
     assert full_market_scan["parameters"]["timeframe"] == "optional"
     assert full_market_scan["module"] == "mtdata.core.symbols"
+
+
+def test_tools_list_filters_and_paginates_rows():
+    bootstrap_tools()
+    raw_tools_list = getattr(tools_list, "__wrapped__", tools_list)
+
+    out = raw_tools_list(category="forecast", limit=3, offset=1)
+
+    assert out["success"] is True
+    assert out["filters"] == {"category": "forecast", "search": None}
+    assert out["count"] == 3
+    assert out["total_count"] > out["count"]
+    assert out["offset"] == 1
+    assert out["limit"] == 3
+    assert out["has_more"] is True
+    assert all(row["category"] == "forecast" for row in out["tools"])
+
+
+def test_tools_list_compact_keeps_rows_slim_by_default(monkeypatch):
+    monkeypatch.delenv("MTDATA_ENABLE_MARKET_DEPTH_FETCH", raising=False)
+    bootstrap_tools()
+    raw_tools_list = getattr(tools_list, "__wrapped__", tools_list)
+
+    out = raw_tools_list(category="market", search="depth")
+
+    assert out["success"] is True
+    row = next(row for row in out["tools"] if row["name"] == "market_depth_fetch")
+    assert set(row) == {"name", "category", "description"}
+    assert out["gated_tools"] == [
+        {
+            "enabled": False,
+            "enable_env": "MTDATA_ENABLE_MARKET_DEPTH_FETCH",
+            "status": "disabled",
+            "why_disabled": "Requires broker Level 2/DOM support and is off by default.",
+            "recommended_alternative": "market_ticker",
+            "name": "market_depth_fetch",
+        }
+    ]
+
+
+def test_tools_list_related_tools_are_opt_in():
+    bootstrap_tools()
+    raw_tools_list = getattr(tools_list, "__wrapped__", tools_list)
+
+    hidden = raw_tools_list(search="data_fetch_candles")
+    shown = raw_tools_list(search="data_fetch_candles", include_related=True)
+
+    assert "related_tools" not in hidden["tools"][0]
+    assert shown["tools"][0]["related_tools"]
