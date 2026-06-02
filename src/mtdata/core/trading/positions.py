@@ -517,6 +517,8 @@ _TRADE_HISTORY_COMPACT_DEAL_FIELDS = (
     "symbol",
     "type",
     "action",
+    "deal_effect",
+    "position_side",
     "volume",
     "price",
     "profit",
@@ -617,6 +619,25 @@ def _trade_history_action(row: Dict[str, Any], *, history_kind: Optional[str]) -
     return None
 
 
+def _trade_history_position_side(
+    row: Dict[str, Any],
+    *,
+    action: Optional[str],
+    history_kind: Optional[str],
+) -> Optional[str]:
+    if history_kind == "orders":
+        return None
+    raw_type = _first_present(row, "type_label", "type")
+    type_text = str(raw_type or "").strip().lower().replace("_", " ")
+    if not type_text:
+        return None
+    if "buy" in type_text:
+        return "short" if action in {"close", "close_by"} else "long"
+    if "sell" in type_text:
+        return "long" if action in {"close", "close_by"} else "short"
+    return None
+
+
 def _compact_trade_history_row(
     row: Dict[str, Any],
     *,
@@ -635,6 +656,14 @@ def _compact_trade_history_row(
         action = _trade_history_action(compact, history_kind=history_kind)
         if action is not None:
             compact["action"] = action
+            compact["deal_effect"] = action
+        position_side = _trade_history_position_side(
+            compact,
+            action=action,
+            history_kind=history_kind,
+        )
+        if position_side is not None:
+            compact["position_side"] = position_side
         if compact.get("comment_may_be_truncated") is True:
             compact["comment_truncated"] = True
         fields = _TRADE_HISTORY_COMPACT_DEAL_FIELDS
@@ -681,6 +710,14 @@ def _normalize_trade_history_row(
     action = _trade_history_action(row, history_kind=history_kind)
     if action is not None:
         normalized["action"] = action
+        normalized["deal_effect"] = action
+    position_side = _trade_history_position_side(
+        row,
+        action=action,
+        history_kind=history_kind,
+    )
+    if position_side is not None:
+        normalized["position_side"] = position_side
     public_details = _public_trade_history_details(row)
     for key in top_level_fields:
         if key in public_details:
@@ -765,8 +802,10 @@ def _trade_history_humanized_key(key: str) -> str:
         "symbol": "Symbol",
         "type": "Type",
         "type_code": "Type Code",
+        "position_side": "Position Side",
         "entry": "Entry",
         "entry_code": "Entry Code",
+        "deal_effect": "Deal Effect",
         "reason": "Reason",
         "reason_code": "Reason Code",
         "state": "State",

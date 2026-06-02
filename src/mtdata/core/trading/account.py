@@ -420,7 +420,9 @@ def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str,
             continue
         enriched = dict(row)
         enriched["symbol"] = symbol
-        enriched["side"] = str(row.get("type") or "").strip() or "Unknown"
+        enriched["side"] = (
+            str(row.get("position_side") or row.get("type") or "").strip() or "Unknown"
+        )
         enriched["exit_trigger"] = (
             str(row.get("exit_trigger") or "").strip() or "Unspecified"
         )

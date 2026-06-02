@@ -529,11 +529,34 @@ def test_trade_history_deals_decodes_enum_codes_to_labels() -> None:
     row = out["items"][0]
     assert row["type"] == "Buy"
     assert row["action"] == "open"
+    assert row["deal_effect"] == "open"
+    assert row["position_side"] == "long"
     assert "entry" not in row
     assert "reason" not in row
     assert "type_code" not in row
     assert "entry_code" not in row
     assert "reason_code" not in row
+
+
+def test_trade_history_deals_reports_closed_position_side() -> None:
+    mt5, prev = _install_mock_mt5()
+    mt5.DEAL_TYPE_SELL = 1
+    mt5.DEAL_ENTRY_OUT = 1
+    Deal = namedtuple("Deal", ["ticket", "time", "symbol", "type", "entry"])
+    mt5.history_deals_get.return_value = [
+        Deal(ticket=1, time=1700000000, symbol="EURUSD", type=1, entry=1)
+    ]
+
+    with patch("mtdata.core.trading.account._use_client_tz", lambda: False):
+        out = trade_history(history_kind="deals", __cli_raw=True)
+    if prev is not None:
+        sys.modules["MetaTrader5"] = prev
+
+    row = out["items"][0]
+    assert row["type"] == "Sell"
+    assert row["action"] == "close"
+    assert row["deal_effect"] == "close"
+    assert row["position_side"] == "long"
 
 
 def test_trade_history_deals_extracts_exit_trigger_from_comment() -> None:
@@ -1231,6 +1254,7 @@ def test_trade_journal_analyze_standard_uses_lite_symbol_breakdown() -> None:
             "symbol": "EURUSD",
             "entry": "Out",
             "type": "Buy",
+            "position_side": "short",
             "profit": 25.0,
             "commission": -1.0,
             "swap": -0.5,
@@ -1242,6 +1266,7 @@ def test_trade_journal_analyze_standard_uses_lite_symbol_breakdown() -> None:
             "symbol": "GBPUSD",
             "entry": "Out",
             "type": "Sell",
+            "position_side": "long",
             "profit": -10.0,
             "commission": -0.5,
             "swap": 0.0,
@@ -1281,6 +1306,7 @@ def test_trade_journal_analyze_summary_adds_lite_side_breakdown() -> None:
             "symbol": "EURUSD",
             "entry": "Out",
             "type": "Buy",
+            "position_side": "short",
             "profit": 25.0,
             "commission": -1.0,
             "swap": -0.5,
@@ -1292,6 +1318,7 @@ def test_trade_journal_analyze_summary_adds_lite_side_breakdown() -> None:
             "symbol": "GBPUSD",
             "entry": "Out",
             "type": "Sell",
+            "position_side": "long",
             "profit": -10.0,
             "commission": -0.5,
             "swap": 0.0,
@@ -1315,9 +1342,11 @@ def test_trade_journal_analyze_summary_adds_lite_side_breakdown() -> None:
         "side",
         "closed_deals",
         "win_rate",
+        "win_rate_pct",
         "net_pnl",
         "expectancy",
     }
+    assert {row["side"] for row in out["breakdowns"]["by_side"]} == {"long", "short"}
     assert "by_exit_trigger" not in out["breakdowns"]
     assert "best_trades" not in out
     assert "worst_trades" not in out
