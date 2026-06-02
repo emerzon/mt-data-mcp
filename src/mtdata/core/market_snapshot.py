@@ -89,7 +89,92 @@ def _latest_direction(forecast: Any) -> Optional[str]:
     return "flat"
 
 
-def _snapshot_summary(symbol: str, sections: Dict[str, Any]) -> str:
+def _section_failed(payload: Any) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    if payload.get("error"):
+        return True
+    return payload.get("success") is False
+
+
+def _section_error_text(payload: Any) -> str:
+    if not isinstance(payload, dict):
+        return ""
+    error = payload.get("error")
+    if error not in (None, ""):
+        return str(error)
+    if payload.get("success") is False:
+        message = payload.get("message") or payload.get("details")
+        return str(message) if message not in (None, "") else "section failed"
+    return ""
+
+
+def _looks_like_invalid_symbol_error(message: str, symbol: str) -> bool:
+    text = str(message or "").lower()
+    if "symbol" not in text:
+        return False
+    symbol_text = str(symbol or "").strip().lower()
+    if symbol_text and symbol_text not in text:
+        return False
+    return any(
+        phrase in text
+        for phrase in (
+            "not found",
+            "not available",
+            "unavailable",
+            "unknown symbol",
+        )
+    )
+
+
+def _snapshot_health(
+    symbol: str,
+    selected: tuple[str, ...],
+    sections: Dict[str, Any],
+) -> Dict[str, Any]:
+    failed = [name for name in selected if _section_failed(sections.get(name))]
+    if not failed:
+        return {"success": True}
+
+    errors = {
+        name: text
+        for name in failed
+        if (text := _section_error_text(sections.get(name)))
+    }
+    invalid_symbol = any(
+        _looks_like_invalid_symbol_error(message, symbol)
+        for message in errors.values()
+    )
+
+    health: Dict[str, Any] = {"failed_sections": failed}
+    if invalid_symbol:
+        health.update(
+            {
+                "success": False,
+                "failure_reason": "invalid_symbol",
+                "error": (
+                    f"Symbol {symbol!r} was not found or is not available."
+                ),
+            }
+        )
+    elif len(failed) == len(selected):
+        health.update(
+            {
+                "success": False,
+                "failure_reason": "all_sections_failed",
+                "error": "All requested snapshot sections failed.",
+            }
+        )
+    else:
+        health.update({"success": True, "partial_failure": True})
+    return health
+
+
+def _snapshot_summary(
+    symbol: str,
+    sections: Dict[str, Any],
+    failed_sections: Optional[list[str]] = None,
+) -> str:
     parts = [f"{symbol} snapshot"]
     quote = sections.get("quote")
     if isinstance(quote, dict):
@@ -103,6 +188,8 @@ def _snapshot_summary(symbol: str, sections: Dict[str, Any]) -> str:
     direction = _latest_direction(forecast)
     if direction:
         parts.append(f"forecast={direction}")
+    if failed_sections:
+        parts.append("failed=" + ",".join(failed_sections))
     return "; ".join(parts) + "."
 
 
@@ -190,8 +277,9 @@ def market_snapshot(
             name: _call_section(name, symbol, str(timeframe), int(horizon), detail_mode)
             for name in selected
         }
+        health = _snapshot_health(symbol, selected, section_payloads)
         payload: Dict[str, Any] = {
-            "success": True,
+            "success": bool(health.get("success")),
             "symbol": symbol,
             "timeframe": timeframe,
             "as_of": (
@@ -201,9 +289,14 @@ def market_snapshot(
                 .replace("+00:00", "Z")
             ),
             "sections": list(selected),
+            **{key: value for key, value in health.items() if key != "success"},
             **section_payloads,
         }
-        payload["summary"] = _snapshot_summary(symbol, section_payloads)
+        payload["summary"] = _snapshot_summary(
+            symbol,
+            section_payloads,
+            health.get("failed_sections"),
+        )
         if detail_mode == "full":
             payload["section_notes"] = {
                 "default": "quote,levels,patterns",
