@@ -193,6 +193,138 @@ def _snapshot_summary(
     return "; ".join(parts) + "."
 
 
+def _first_level_value(levels: Any) -> Any:
+    if not isinstance(levels, list):
+        return None
+    for level in levels:
+        if not isinstance(level, dict):
+            continue
+        value = level.get("value")
+        if value is not None:
+            return value
+    return None
+
+
+def _nearest_level_value(payload: Any, side: str) -> Any:
+    if not isinstance(payload, dict):
+        return None
+
+    direct_key = f"nearest_{side}"
+    direct = payload.get(direct_key)
+    if isinstance(direct, dict):
+        value = direct.get("value")
+        if value is not None:
+            return value
+    elif direct is not None:
+        return direct
+
+    nearest = payload.get("nearest")
+    if isinstance(nearest, dict):
+        nested = nearest.get(side)
+        if isinstance(nested, dict):
+            value = nested.get("value")
+            if value is not None:
+                return value
+        elif nested is not None:
+            return nested
+
+    return _first_level_value(payload.get(f"{side}s"))
+
+
+def _bias_from_signal_bias(value: Any) -> Optional[str]:
+    if not isinstance(value, dict):
+        return None
+    for key in ("net_bias", "bias", "direction"):
+        item = value.get(key)
+        if isinstance(item, str) and item.strip():
+            return item.strip().lower()
+    return None
+
+
+def _pattern_row_bias(row: Any) -> Optional[str]:
+    if not isinstance(row, dict):
+        return None
+    for key in ("pattern_bias", "bias", "direction"):
+        value = row.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip().lower()
+    details = row.get("details")
+    if isinstance(details, dict):
+        return _pattern_row_bias(details)
+    return None
+
+
+def _pattern_bias(payload: Any) -> Optional[str]:
+    if not isinstance(payload, dict):
+        return None
+
+    for key in ("pattern_bias", "bias", "direction"):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip().lower()
+
+    bias = _bias_from_signal_bias(payload.get("signal_bias"))
+    if bias:
+        return bias
+
+    summary = payload.get("summary")
+    if isinstance(summary, dict):
+        bias = _bias_from_signal_bias(summary.get("signal_bias"))
+        if bias:
+            return bias
+        for key in ("pattern_bias", "bias", "direction"):
+            value = summary.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip().lower()
+
+    counts = {"bullish": 0, "bearish": 0, "neutral": 0}
+    for rows_key in ("highlights", "patterns", "data"):
+        rows = payload.get(rows_key)
+        if not isinstance(rows, list):
+            continue
+        for row in rows:
+            row_bias = _pattern_row_bias(row)
+            if row_bias in counts:
+                counts[row_bias] += 1
+
+    if counts["bullish"] > counts["bearish"]:
+        return "bullish"
+    if counts["bearish"] > counts["bullish"]:
+        return "bearish"
+    if counts["bullish"] or counts["bearish"]:
+        return "mixed"
+    if counts["neutral"]:
+        return "neutral"
+    if payload.get("n_patterns") == 0:
+        return "none"
+    return None
+
+
+def _snapshot_summary_payload(sections: Dict[str, Any]) -> Dict[str, Any]:
+    quote = sections.get("quote")
+    levels = sections.get("levels")
+    patterns = sections.get("patterns")
+
+    out: Dict[str, Any] = {}
+    if isinstance(quote, dict):
+        for key in ("bid", "ask"):
+            value = quote.get(key)
+            if value is not None:
+                out[key] = value
+
+    support = _nearest_level_value(levels, "support")
+    if support is not None:
+        out["nearest_support"] = support
+    resistance = _nearest_level_value(levels, "resistance")
+    if resistance is not None:
+        out["nearest_resistance"] = resistance
+
+    pattern_bias = _pattern_bias(patterns)
+    if pattern_bias:
+        out["pattern_bias"] = pattern_bias
+    return out
+
+
 def _call_section(name: str, symbol: str, timeframe: str, horizon: int, detail: str) -> Any:
     try:
         if name == "quote":
@@ -268,7 +400,10 @@ def market_snapshot(
     horizon: int = 8,
     detail: CompactStandardFullDetailLiteral = "compact",
 ) -> Dict[str, Any]:
-    """Return a unified pre-trade market snapshot with selectable analysis sections."""
+    """Return a unified pre-trade market snapshot with selectable analysis sections.
+
+    Default sections are quote,levels,patterns; pass sections=quote for quote-only.
+    """
 
     def _run() -> Dict[str, Any]:
         selected = _parse_snapshot_sections(sections)
@@ -290,8 +425,13 @@ def market_snapshot(
             ),
             "sections": list(selected),
             **{key: value for key, value in health.items() if key != "success"},
-            **section_payloads,
         }
+        if detail_mode == "summary":
+            summary_payload = _snapshot_summary_payload(section_payloads)
+            if summary_payload:
+                payload["snapshot"] = summary_payload
+        else:
+            payload.update(section_payloads)
         payload["summary"] = _snapshot_summary(
             symbol,
             section_payloads,
