@@ -21,7 +21,7 @@ def test_market_status_tool_supports_detail_contract() -> None:
     assert [param.name for param in params] == ["symbol", "region", "timezone_display", "detail", "extras"]
     assert params[0].default is None
     assert params[1].default == "all"
-    assert params[2].default == "local"
+    assert params[2].default == "auto"
     assert params[3].default == "compact"
     assert params[4].default is None
 
@@ -83,7 +83,9 @@ def test_market_status_rejects_invalid_timezone_display() -> None:
 
     result = raw(timezone_display="broker")
 
-    assert result == {"error": "Invalid timezone_display. Use 'local', 'utc', or 'auto'."}
+    assert result == {
+        "error": "Invalid timezone_display. Use 'local', 'utc', 'server', or 'auto'."
+    }
 
 
 def test_market_status_symbol_mode_reports_heuristic_status(monkeypatch) -> None:
@@ -138,6 +140,30 @@ def test_market_status_symbol_mode_reports_heuristic_status(monkeypatch) -> None
     assert result["tick_available"] is True
     assert result["data_fetched_at"] == "2024-01-02T12:00:00Z"
     assert result["last_tick_time"] == "2024-01-02T12:00:00Z"
+    assert result["timezone_context"]["timezone_display"] == "server"
+    assert result["timezone_context"]["market_now"] == "2024-01-02T12:00:00Z"
+    assert result["timezone_context"]["authoritative_clock"] in {"server", "utc"}
+
+
+def test_market_status_symbol_timezone_context_labels_server_clock(monkeypatch) -> None:
+    monkeypatch.setattr(
+        market_status_mod,
+        "build_runtime_timezone_meta",
+        lambda _result, include_now=True: {
+            "server": {"tz": "Europe/Nicosia", "offset_seconds": 7200},
+            "client": {"tz": "UTC", "now": "2024-01-02T12:00:00+00:00"},
+        },
+    )
+
+    context = market_status_mod._symbol_market_status_timezone_context(
+        "server",
+        now_utc=datetime(2024, 1, 2, 12, 0, tzinfo=timezone.utc),
+    )
+
+    assert context["timezone_display"] == "server"
+    assert context["authoritative_clock"] == "server"
+    assert context["status_timezone"] == "Europe/Nicosia"
+    assert context["market_now"] == "2024-01-02T14:00:00+02:00"
 
 
 def test_market_status_symbol_mode_handles_bool_like_trade_and_schedule(monkeypatch) -> None:

@@ -7,6 +7,7 @@ import math
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from typing import Any, Dict, List, Literal, Optional, Tuple
+from zoneinfo import ZoneInfo
 
 import holidays
 
@@ -200,11 +201,17 @@ def _format_duration(minutes: int) -> str:
     return f"{hours}h {mins}min{'s' if mins != 1 else ''}"
 
 
-def _normalize_timezone_display(value: Optional[str]) -> Optional[str]:
-    normalized = str(value or "local").strip().lower()
-    if normalized == "auto":
-        return "local"
+def _normalize_timezone_display(
+    value: Optional[str],
+    *,
+    symbol_mode: bool = False,
+) -> Optional[str]:
+    normalized = str(value or "auto").strip().lower()
+    if normalized in {"", "auto"}:
+        return "server" if symbol_mode else "local"
     if normalized in {"local", "utc"}:
+        return normalized
+    if normalized == "server" and symbol_mode:
         return normalized
     return None
 
@@ -782,11 +789,34 @@ def _infer_symbol_schedule_from_recent_candles(
     }
 
 
+def _symbol_market_now(now_utc: datetime, server: Dict[str, Any]) -> tuple[str, str, str]:
+    server_tz = server.get("tz")
+    if isinstance(server_tz, str) and server_tz.strip():
+        try:
+            market_now = (
+                now_utc.astimezone(ZoneInfo(server_tz.strip()))
+                .replace(microsecond=0)
+                .isoformat()
+            )
+            return "server", server_tz.strip(), market_now
+        except Exception:
+            pass
+    offset_seconds = server.get("offset_seconds")
+    if offset_seconds is not None:
+        try:
+            tzinfo = timezone(timedelta(seconds=int(offset_seconds)))
+            market_now = now_utc.astimezone(tzinfo).replace(microsecond=0).isoformat()
+            return "server", tzinfo.tzname(None) or "server", market_now
+        except Exception:
+            pass
+    return "utc", "UTC", _format_utc_iso_z(now_utc)
+
+
 def _check_symbol_market_status(
     symbol: str,
     *,
     detail: str,
-    timezone_display: str = "utc",
+    timezone_display: str = "server",
     gateway: Any = None,
 ) -> Dict[str, Any]:
     symbol_name = str(symbol or "").strip().upper()
@@ -882,7 +912,10 @@ def _check_symbol_market_status(
         "message": message,
         "data_fetched_at": _format_utc_iso_z(now_utc),
         "timezone": "UTC",
-        "timezone_context": _symbol_market_status_timezone_context(timezone_display),
+        "timezone_context": _symbol_market_status_timezone_context(
+            timezone_display,
+            now_utc=now_utc,
+        ),
     }
     if reason:
         result["reason"] = reason
@@ -913,13 +946,24 @@ def _check_symbol_market_status(
     return result
 
 
-def _symbol_market_status_timezone_context(timezone_display: Any) -> Dict[str, Any]:
+def _symbol_market_status_timezone_context(
+    timezone_display: Any,
+    *,
+    now_utc: Optional[datetime] = None,
+) -> Dict[str, Any]:
     runtime = build_runtime_timezone_meta({}, include_now=True)
     server = runtime.get("server") if isinstance(runtime.get("server"), dict) else {}
     client = runtime.get("client") if isinstance(runtime.get("client"), dict) else {}
+    clock_now = now_utc or datetime.now(timezone.utc)
+    authoritative_clock, status_timezone, market_now = _symbol_market_now(
+        clock_now,
+        server,
+    )
     return {
-        "timezone_display": str(timezone_display or "utc"),
-        "status_timezone": "UTC",
+        "timezone_display": str(timezone_display or "server"),
+        "authoritative_clock": authoritative_clock,
+        "market_now": market_now,
+        "status_timezone": status_timezone,
         "server_tz": server.get("tz"),
         "server_now": server.get("now"),
         "client_tz": client.get("tz"),
@@ -1007,7 +1051,7 @@ def _market_status_symbol_mode_warnings(
 def market_status(
     symbol: Optional[str] = None,
     region: Optional[Literal["us", "europe", "asia", "all"]] = "all",
-    timezone_display: Optional[Literal["local", "utc", "auto"]] = "local",
+    timezone_display: Optional[Literal["local", "utc", "server", "auto"]] = "auto",
     detail: CompactFullDetailLiteral = "compact",
     extras: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -1026,8 +1070,9 @@ def market_status(
     region : str, optional
         Filter by region: "us", "europe", "asia", or "all" (default: "all")
     timezone_display : str, optional
-        Time display format: "local" (market's local time), "utc", or "auto" (default: "local")
-        UTC display preserves `local_time` and adds `display_time` in UTC.
+        Time display format: "local" (market's local time), "utc", "server"
+        for MT5 symbol mode, or "auto" (default). Auto uses local exchange
+        time in global mode and broker/server time in symbol mode.
     detail : {"compact", "full"}, optional
         Response detail level. `compact` (default) omits per-market messages
         and upcoming holiday details, while `full` preserves them.
@@ -1067,12 +1112,16 @@ def market_status(
 
     detail_mode = normalize_output_verbosity_detail(detail)
     extras_value = normalize_output_extras(extras)
-    timezone_display_mode = _normalize_timezone_display(timezone_display)
+    symbol_mode = symbol not in (None, "")
+    timezone_display_mode = _normalize_timezone_display(
+        timezone_display,
+        symbol_mode=symbol_mode,
+    )
     if timezone_display_mode is None:
-        return {"error": "Invalid timezone_display. Use 'local', 'utc', or 'auto'."}
+        return {"error": "Invalid timezone_display. Use 'local', 'utc', 'server', or 'auto'."}
 
     def _run() -> Dict[str, Any]:
-        if symbol not in (None, ""):
+        if symbol_mode:
             symbol_warnings = _market_status_symbol_mode_warnings(
                 region=region,
             )
