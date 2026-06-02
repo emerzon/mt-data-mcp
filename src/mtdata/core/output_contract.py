@@ -22,6 +22,10 @@ _SUCCESS_RELATED_TOOLS = {
     "support_resistance_levels": ["confluence_levels", "pivot_compute_points", "data_fetch_candles"],
     "pivot_compute_points": ["confluence_levels", "support_resistance_levels", "market_status"],
     "confluence_levels": ["pivot_compute_points", "support_resistance_levels", "data_fetch_candles"],
+    "correlation_matrix": ["cointegration_test", "causal_discover_signals", "trade_var_cvar_calculate"],
+    "cointegration_test": ["correlation_matrix", "causal_discover_signals"],
+    "causal_discover_signals": ["correlation_matrix", "cointegration_test"],
+    "trade_var_cvar_calculate": ["correlation_matrix", "cointegration_test", "causal_discover_signals"],
 }
 _VERBOSE_ONLY_KEYS = frozenset(
     {

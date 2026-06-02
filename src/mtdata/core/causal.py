@@ -493,6 +493,36 @@ def _causal_transform_reason(tool: str, transform: str) -> str:
     return "Level transform keeps raw price levels; use for level relationships, not return co-movement."
 
 
+def _pair_transform_comparability(tool: str, transform: str) -> Dict[str, List[str]]:
+    """Describe which pair analytics defaults answer the same transformed question."""
+    transform_value = str(transform or "").strip().lower()
+    if transform_value in {"log_return", "pct", "diff"}:
+        comparable = [
+            name
+            for name in (
+                "correlation_matrix(default=log_return)",
+                "causal_discover_signals(default=log_return)",
+                "trade_var_cvar_calculate(default=log_return)",
+            )
+            if not name.startswith(str(tool or ""))
+        ]
+        return {
+            "comparable_with": comparable,
+            "not_comparable_with": ["cointegration_test(default=log_level)"],
+        }
+    comparable = ["cointegration_test(default=log_level)"]
+    if str(tool or "") == "cointegration_test":
+        comparable = []
+    return {
+        "comparable_with": comparable,
+        "not_comparable_with": [
+            "correlation_matrix(default=log_return)",
+            "causal_discover_signals(default=log_return)",
+            "trade_var_cvar_calculate(default=log_return)",
+        ],
+    }
+
+
 def _standardize_frame(frame: pd.DataFrame) -> pd.DataFrame:
     if frame.empty:
         return frame
@@ -1824,6 +1854,10 @@ def causal_discover_signals(  # noqa: C901
                 "causal_discover_signals",
                 transform_value,
             ),
+            **_pair_transform_comparability(
+                "causal_discover_signals",
+                transform_value,
+            ),
             "items": output_rows,
             "count": int(len(output_rows)),
             **pagination,
@@ -2255,6 +2289,10 @@ def correlation_matrix(  # noqa: C901
             "success": True,
             "transform": transform_value,
             "transform_reason": _causal_transform_reason(
+                "correlation_matrix",
+                transform_value,
+            ),
+            **_pair_transform_comparability(
                 "correlation_matrix",
                 transform_value,
             ),
@@ -2739,6 +2777,10 @@ def cointegration_test(  # noqa: C901
             "success": True,
             "transform": transform_value,
             "transform_reason": _causal_transform_reason(
+                "cointegration_test",
+                transform_value,
+            ),
+            **_pair_transform_comparability(
                 "cointegration_test",
                 transform_value,
             ),

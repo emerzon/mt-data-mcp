@@ -13,11 +13,13 @@ from mtdata.core.causal import (
     _normalize_cointegration_trend,
     _normalize_correlation_method,
     _normalize_transform_name,
+    _pair_transform_comparability,
     _parse_symbols,
     _standardize_frame,
     _transform_cointegration_frame,
     _transform_frame,
 )
+from mtdata.core.output_contract import related_tools_for
 
 
 class TestParseSymbols:
@@ -38,6 +40,32 @@ class TestParseSymbols:
 
     def test_mixed_delimiters(self):
         assert _parse_symbols("A;B,C;D") == ["A", "B", "C", "D"]
+
+
+def test_pair_transform_comparability_links_return_tools():
+    comparability = _pair_transform_comparability("correlation_matrix", "log_return")
+
+    assert comparability["comparable_with"] == [
+        "causal_discover_signals(default=log_return)",
+        "trade_var_cvar_calculate(default=log_return)",
+    ]
+    assert comparability["not_comparable_with"] == [
+        "cointegration_test(default=log_level)"
+    ]
+
+
+def test_pair_transform_comparability_marks_cointegration_level_scope():
+    comparability = _pair_transform_comparability("cointegration_test", "log_level")
+
+    assert comparability["comparable_with"] == []
+    assert "correlation_matrix(default=log_return)" in comparability["not_comparable_with"]
+
+
+def test_pair_workflow_related_tools_are_cataloged():
+    assert related_tools_for("cointegration_test") == [
+        "correlation_matrix",
+        "causal_discover_signals",
+    ]
 
 
 class TestTransformFrame:
