@@ -383,6 +383,13 @@ def _wait_event_monitored_types(criteria: Optional[Dict[str, Any]]) -> List[str]
     return sorted(event_types)
 
 
+def _wait_event_next_poll_hint(poll_interval_seconds: Any) -> Optional[str]:
+    seconds = _coerce_finite_float(poll_interval_seconds)
+    if seconds is None or seconds <= 0.0:
+        return None
+    return f"retry after {seconds:g}s"
+
+
 def _compact_wait_event_public_result(
     result: Dict[str, Any],
     *,
@@ -465,7 +472,12 @@ def _compact_wait_event_public_result(
             out["max_wait_seconds"] = max_wait_seconds
         if poll_interval_seconds is not None:
             out["poll_interval_seconds"] = poll_interval_seconds
-        monitored_types = _wait_event_monitored_types(criteria)
+        next_poll_hint = _wait_event_next_poll_hint(poll_interval_seconds)
+        if next_poll_hint:
+            out["next_poll_hint"] = next_poll_hint
+        monitored_types = (
+            _wait_event_monitored_types(criteria) if explicit_watch_for else []
+        )
         if monitored_types:
             out["events_monitored"] = monitored_types
     else:

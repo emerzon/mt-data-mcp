@@ -443,6 +443,58 @@ def test_wait_event_tool_compact_result_preserves_boundary_closed_candle() -> No
         },
     }
 
+
+def test_wait_event_compact_timeout_omits_inferred_event_catalog() -> None:
+    result = core_data._compact_wait_event_public_result(
+        {
+            "success": True,
+            "status": "timeout",
+            "matched": False,
+            "event": None,
+            "elapsed_seconds": 2.003,
+            "poll_interval_seconds": 0.5,
+            "max_wait_seconds": 2.0,
+            "criteria": {
+                "watch_for": [
+                    {"type": "order_created"},
+                    {"type": "position_opened"},
+                    {"type": "volume_spike"},
+                ],
+                "end_on": [{"type": "candle_close", "timeframe": "M1"}],
+            },
+        },
+        explicit_watch_for=False,
+        explicit_end_on=False,
+    )
+
+    assert result["status"] == "timeout"
+    assert result["waited_seconds"] == 2.003
+    assert result["next_poll_hint"] == "retry after 0.5s"
+    assert "events_monitored" not in result
+
+
+def test_wait_event_compact_timeout_keeps_explicit_watch_types() -> None:
+    result = core_data._compact_wait_event_public_result(
+        {
+            "success": True,
+            "status": "timeout",
+            "matched": False,
+            "event": None,
+            "elapsed_seconds": 2.003,
+            "poll_interval_seconds": 0.5,
+            "max_wait_seconds": 2.0,
+            "criteria": {
+                "watch_for": [{"type": "price_change"}],
+                "end_on": [{"type": "candle_close", "timeframe": "M1"}],
+            },
+        },
+        explicit_watch_for=True,
+        explicit_end_on=False,
+    )
+
+    assert result["events_monitored"] == ["candle_close", "price_change"]
+
+
 def test_wait_event_tool_compacts_matched_event_by_default(monkeypatch) -> None:
     def _mock_run_wait_event(request, gateway):
         return {
