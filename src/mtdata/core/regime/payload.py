@@ -323,6 +323,46 @@ def _bocpd_segment_status(
     return "post_change_segment"
 
 
+def _canonical_regime_label(label: Any, *, method: str) -> Optional[str]:
+    text = str(label or "").strip().lower()
+    if not text:
+        return None
+    if method == "bocpd":
+        if text in {"stable", "no_recent_change_detected"}:
+            return "ranging"
+        if "bullish" in text:
+            return "trending_up"
+        if "bearish" in text:
+            return "trending_down"
+        if "change" in text or "transition" in text:
+            return "transition"
+    if text in {"ranging", "range", "quiet_range", "stable"}:
+        return "ranging"
+    if text in {"trending_up", "bullish", "bullish_segment"} or text.startswith("bullish_"):
+        return "trending_up"
+    if text in {"trending_down", "bearish", "bearish_segment"} or text.startswith("bearish_"):
+        return "trending_down"
+    if text in {"trending", "volatile_trend"}:
+        return "trending"
+    if "transition" in text or "change" in text:
+        return "transition"
+    if "high_vol" in text or "very_high_vol" in text:
+        return "high_volatility"
+    if "low_vol" in text or "very_low_vol" in text or "quiet" in text:
+        return "low_volatility"
+    return text
+
+
+def _attach_label_fields(row: Dict[str, Any], *, method: str) -> None:
+    label = row.get("label")
+    if label in (None, ""):
+        return
+    row.setdefault("state_label_native", label)
+    canonical = _canonical_regime_label(label, method=method)
+    if canonical:
+        row.setdefault("state_label_canonical", canonical)
+
+
 def _build_bocpd_segment_context(
     series_values: np.ndarray,
     *,
@@ -828,6 +868,7 @@ def _consolidate_payload(  # noqa: C901
                         "label", f"regime_{regime_id}"
                     )
                 row["regime_confidence"] = round(seg["regime_confidence"], 4)
+            _attach_label_fields(row, method=method)
             final_segments.append(row)
 
         # Build current segment/regime info for trading (last segment only)
@@ -863,6 +904,7 @@ def _consolidate_payload(  # noqa: C901
                     "bars": last_seg["bars"],
                     "transition_risk": transition_risk,
                 }
+                _attach_label_fields(current_regime, method=method)
                 latest_transition_probability_value = _finite_float(
                     latest_transition_probability,
                 )
@@ -902,6 +944,7 @@ def _consolidate_payload(  # noqa: C901
                     "since": last_seg["start"],
                     "bars": last_seg["bars"],
                 }
+                _attach_label_fields(current_regime, method=method)
                 regime_confidence = last_seg.get("regime_confidence") or last_seg.get(
                     "transition_conf"
                 )
@@ -926,6 +969,14 @@ def _consolidate_payload(  # noqa: C901
                 new_payload["transition_summary"] = transition_summary
             if regime_context:
                 new_payload["regime_context"] = regime_context
+                new_payload.setdefault(
+                    "units",
+                    {
+                        "regime_context.return_pct": "percentage_points",
+                        "regime_context.volatility_pct": "percentage_points",
+                        "scale_note": "1.0 percentage point = 1%.",
+                    },
+                )
 
             total_regimes = len(final_segments)
             if output_mode == "compact" and max_regimes > 0 and total_regimes > max_regimes:
@@ -933,9 +984,17 @@ def _consolidate_payload(  # noqa: C901
                 new_payload["regimes_truncated"] = True
                 new_payload["total_regimes"] = total_regimes
                 new_payload["showing_regimes"] = max_regimes
+                new_payload["has_more"] = True
+                omitted = max(0, total_regimes - max_regimes)
+                new_payload["history_hint"] = (
+                    f"{omitted} older regime segment(s) omitted; use detail='full' "
+                    "or increase max_regimes."
+                )
             else:
                 new_payload["regimes"] = final_segments
                 new_payload["total_regimes"] = total_regimes
+                if output_mode == "compact":
+                    new_payload["has_more"] = False
         else:
             # Core trading info (compact)
             if current_regime:
@@ -950,10 +1009,17 @@ def _consolidate_payload(  # noqa: C901
                 new_payload["regimes_truncated"] = True
                 new_payload["total_regimes"] = total_regimes
                 new_payload["showing_regimes"] = max_regimes
+                new_payload["has_more"] = True
+                omitted = max(0, total_regimes - max_regimes)
+                new_payload["history_hint"] = (
+                    f"{omitted} older regime segment(s) omitted; use detail='full' "
+                    "or increase max_regimes."
+                )
             else:
                 new_payload["regimes"] = final_segments
                 if output_mode == "compact":
                     new_payload["total_regimes"] = total_regimes
+                    new_payload["has_more"] = False
 
         if regime_descriptions:
             observed_regimes = {

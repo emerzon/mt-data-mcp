@@ -74,6 +74,7 @@ class TestConsolidatePayload:
         result = _consolidate_payload(payload, "bocpd", "compact", include_series=True)
         assert "regimes" in result
         assert "current_regime" in result
+        assert result["has_more"] is False
 
     def test_no_series_when_not_requested(self):
         payload = {
@@ -119,6 +120,10 @@ class TestConsolidatePayload:
             "bullish",
             "bearish",
         ]
+        assert result["regimes"][0]["state_label_native"] == "bullish_segment"
+        assert result["regimes"][0]["state_label_canonical"] == "trending_up"
+        assert result["units"]["regime_context.return_pct"] == "percentage_points"
+        assert result["units"]["scale_note"] == "1.0 percentage point = 1%."
         assert result["params_used"]["relabeled"] is True
         assert result["params_used"]["label_mapping"] == {"0": 1, "1": 0}
 
@@ -163,6 +168,9 @@ class TestConsolidatePayload:
 
         assert result["regimes"][0]["label"] == "bearish_quiet"
         assert result["regimes"][1]["label"] == "bullish_volatile"
+        assert result["regimes"][0]["state_label_native"] == "bearish_quiet"
+        assert result["regimes"][0]["state_label_canonical"] == "trending_down"
+        assert result["current_regime"]["state_label_canonical"] == "trending_up"
         assert result["regime_info"][0]["label"] == "bearish_quiet"
         assert result["regime_info"][0]["stat_label"] == "negative_very_low_vol"
         assert "downward drift" in result["regime_info"][0]["trading_interpretation"]
@@ -173,6 +181,36 @@ class TestConsolidatePayload:
         assert result["regime_info"][1]["volatility"] == pytest.approx(0.0035)
         assert result["regime_info"][0]["observed_in_window"] is True
         assert result["regime_info"][1]["observed_in_window"] is True
+
+    def test_compact_regime_history_reports_has_more_and_hint(self):
+        payload = {
+            "symbol": "EURUSD",
+            "timeframe": "H1",
+            "method": "hmm",
+            "target": "return",
+            "success": True,
+            "times": ["T1", "T2", "T3", "T4", "T5"],
+            "state": [0, 1, 0, 1, 0],
+            "state_probabilities": [
+                [0.9, 0.1],
+                [0.1, 0.9],
+                [0.8, 0.2],
+                [0.2, 0.8],
+                [0.9, 0.1],
+            ],
+            "regime_params": {
+                "weights": [0.6, 0.4],
+                "mu": [0.002, -0.001],
+                "sigma": [0.0035, 0.0004],
+            },
+        }
+
+        result = _consolidate_payload(payload, "hmm", "compact", max_regimes=2)
+
+        assert result["regimes_truncated"] is True
+        assert result["has_more"] is True
+        assert result["showing_regimes"] == 2
+        assert "older regime segment(s) omitted" in result["history_hint"]
 
     def test_hmm_regime_info_marks_unobserved_model_states(self):
         payload = {

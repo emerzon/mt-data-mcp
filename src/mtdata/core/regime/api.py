@@ -260,6 +260,7 @@ def _method_parameter_warnings(
     include_series: bool,
     max_regimes: int,
     output: str,
+    lookback_mapped_to_window: bool = False,
 ) -> List[str]:
     warnings_out: List[str] = []
     for legacy_key in ("k_regimes", "n_clusters"):
@@ -276,10 +277,20 @@ def _method_parameter_warnings(
             f"for method='{method}'."
         )
     if method == "rule_based":
-        if requested_lookback >= 0 or "lookback" in params:
+        if (
+            requested_lookback >= 0
+            and "window_bars" in params
+            and not bool(lookback_mapped_to_window)
+        ):
             warnings_out.append(
-                "lookback is not used by rule_based; use params.window_bars to control "
-                "the rule-based analysis window."
+                "lookback was ignored for rule_based because params.window_bars was "
+                "also provided; remove params.window_bars to use lookback as the "
+                "rule-based analysis window."
+            )
+        elif "lookback" in params:
+            warnings_out.append(
+                "params.lookback is ignored for rule_based; use the top-level "
+                "lookback argument or params.window_bars."
             )
         if requested_min_regime_bars >= 0 or "min_regime_bars" in params:
             warnings_out.append(
@@ -675,6 +686,7 @@ _TIMEFRAME_DEFAULTS: Dict[str, Dict[str, int]] = {
     "W1": {"lookback": 100, "min_regime_bars": 2},  # ~100 weeks, 2 week regimes
     "MN1": {"lookback": 48, "min_regime_bars": 2},  # ~48 months, 2 month regimes
 }
+_RULE_BASED_RECOMMENDED_WINDOW_BARS = 160
 
 
 _REGIME_METHOD_RUNTIME_GUIDANCE: Dict[str, Dict[str, str]] = {
@@ -921,6 +933,11 @@ def regime_detect(  # noqa: C901
         if isinstance(result, dict) and "error" not in result:
             if requested_method != method:
                 result.setdefault("requested_method", requested_method)
+                result.setdefault("method_effective", method)
+                result.setdefault(
+                    "method_note",
+                    f"Requested method '{requested_method}' is handled by the '{method}' implementation.",
+                )
             _append_warnings(result, global_warnings)
             result.setdefault("timezone", "UTC")
             _attach_regime_usage_notice(result)
@@ -956,6 +973,11 @@ def regime_detect(  # noqa: C901
         effective_min_regime_bars = (
             min_regime_bars if min_regime_bars >= 0 else tf_defaults["min_regime_bars"]
         )
+        lookback_mapped_to_window = (
+            method == "rule_based" and requested_lookback >= 0 and "window_bars" not in p
+        )
+        if lookback_mapped_to_window:
+            p["window_bars"] = int(effective_lookback)
 
         min_regime_bars_val, min_regime_bars_error = _coerce_param(
             p,
@@ -980,6 +1002,7 @@ def regime_detect(  # noqa: C901
             include_series=bool(include_series),
             max_regimes=int(max_regimes),
             output=output,
+            lookback_mapped_to_window=lookback_mapped_to_window,
         )
 
         rule_based_config: Optional[Dict[str, Any]] = None
@@ -2349,9 +2372,19 @@ def regime_detect(  # noqa: C901
             trend_strength_out = round(trend_strength, 4)
             efficiency_ratio_out = round(efficiency_ratio, 4)
             window_move_pct = round((move / base_price) * 100.0, 4)
+            window_quality: Optional[Dict[str, Any]] = None
+            if int(window_bars) < _RULE_BASED_RECOMMENDED_WINDOW_BARS:
+                window_quality = {
+                    "status": "limited_history",
+                    "lookback_too_short": True,
+                    "recommended_min_bars": _RULE_BASED_RECOMMENDED_WINDOW_BARS,
+                    "window_bars": int(window_bars),
+                }
             regime_info = {
                 "state": regime_state,
                 "direction": direction,
+                "state_label_native": regime_state,
+                "state_label_canonical": regime_state,
                 "direction_basis": "net_window_move",
                 "interpretation": interpretation,
                 "trend_strength": trend_strength_out,
@@ -2407,7 +2440,12 @@ def regime_detect(  # noqa: C901
                 "since": regime_since,
                 "bars": int(window_bars),
                 "direction": direction,
+                "state_label_native": regime_state,
+                "state_label_canonical": regime_state,
+                "headline": f"regime={regime_state}; window_bias={direction}",
             }
+            if regime_state != "trending":
+                current_regime["window_bias"] = direction
             regime_payload = dict(regime_info)
 
             reliability = _common_reliability(
@@ -2455,13 +2493,23 @@ def regime_detect(  # noqa: C901
                     "signal_source": "price",
                 },
             }
+            if window_quality:
+                payload["data_quality"] = window_quality
+                current_regime["window_quality"] = window_quality["status"]
             if output == "summary":
                 payload["summary"] = {
                     "lookback": int(window_bars),
                     "last_state": int(regime_id),
                     "label": regime_state,
                     "direction": direction,
+                    "window_bias": direction if regime_state != "trending" else None,
+                    "headline": f"regime={regime_state}; window_bias={direction}",
                     "regime_confidence": regime_confidence,
+                }
+                payload["summary"] = {
+                    key: value
+                    for key, value in payload["summary"].items()
+                    if value is not None
                 }
                 if regime_state != "trending" or state_note:
                     payload["summary"]["direction_basis"] = "net_window_move"
@@ -2496,6 +2544,8 @@ def regime_detect(  # noqa: C901
                     "target": target,
                     "current_regime": compact_current_regime,
                 }
+                if window_quality:
+                    payload["data_quality"] = window_quality
 
             return _finish(payload)
 

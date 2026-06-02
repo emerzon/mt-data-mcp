@@ -564,6 +564,10 @@ def test_rule_based_compact_explains_direction_bias() -> None:
     assert current_regime["bars"] == 60
     assert current_regime["label"] == "ranging"
     assert current_regime["direction"] == "bearish"
+    assert current_regime["window_bias"] == "bearish"
+    assert current_regime["headline"] == "regime=ranging; window_bias=bearish"
+    assert current_regime["state_label_native"] == "ranging"
+    assert current_regime["state_label_canonical"] == "ranging"
     assert current_regime["regime_confidence"] == pytest.approx(0.8029)
     assert "state" not in current_regime
     assert "efficiency_ratio" in current_regime
@@ -626,9 +630,33 @@ def test_rule_based_warns_for_inapplicable_parameters() -> None:
 
     warnings = "\n".join(out.get("warnings", []))
     assert "threshold only applies to BOCPD" in warnings
-    assert "lookback is not used by rule_based" in warnings
+    assert "lookback was ignored for rule_based because params.window_bars was also provided" not in warnings
     assert "min_regime_bars is not used by rule_based" in warnings
     assert "max_regimes has no effect for rule_based" in warnings
+
+
+def test_rule_based_lookback_controls_window_when_window_bars_omitted() -> None:
+    raw = _unwrap(regime_detect)
+
+    with (
+        patch("mtdata.core.regime._fetch_history", return_value=_choppy_bearish_df()),
+        patch("mtdata.core.regime._resolve_denoise_base_col", return_value="close"),
+        patch("mtdata.core.regime._format_time_minimal", side_effect=lambda x: f"T{x}"),
+    ):
+        out = raw(
+            symbol="TEST",
+            timeframe="H1",
+            limit=120,
+            method="rule_based",
+            lookback=50,
+        )
+
+    current_regime = out["current_regime"]
+    assert current_regime["bars"] == 50
+    assert out["data_quality"]["status"] == "limited_history"
+    assert out["data_quality"]["lookback_too_short"] is True
+    assert out["data_quality"]["recommended_min_bars"] == 160
+    assert "lookback is not used by rule_based" not in "\n".join(out.get("warnings", []))
 
 
 def test_gmm_alias_reports_requested_method_and_common_reliability() -> None:
@@ -660,6 +688,8 @@ def test_gmm_alias_reports_requested_method_and_common_reliability() -> None:
 
     assert out["method"] == "hmm"
     assert out["requested_method"] == "gmm"
+    assert out["method_effective"] == "hmm"
+    assert "gmm" in out["method_note"]
     assert out["reliability"]["reliability_label"] in {
         "high",
         "medium",
