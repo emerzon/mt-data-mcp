@@ -588,7 +588,6 @@ def _normalize_candle_cli_payload(result: Any, *, fmt: str) -> Any:
     if not isinstance(result, dict):
         return result
     out = dict(result)
-    out.pop("count", None)
     if fmt == CLI_FORMAT_TOON:
         meta_in = out.get("meta")
         if isinstance(meta_in, dict):

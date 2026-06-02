@@ -108,6 +108,25 @@ def test_run_data_fetch_candles_honors_explicit_indicator_limit():
     assert captured["kwargs"]["limit"] == 20
 
 
+def test_run_data_fetch_candles_uses_larger_plain_default_limit():
+    captured = {}
+    request = DataFetchCandlesRequest(symbol="EURUSD")
+
+    def _fetch(**kwargs):
+        captured["kwargs"] = kwargs
+        return {"success": True, "count": 100, "data": []}
+
+    result = run_data_fetch_candles(
+        request,
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_candles_impl=_fetch,
+    )
+
+    assert result["success"] is True
+    assert request.limit == 100
+    assert captured["kwargs"]["limit"] == 100
+
+
 def test_data_fetch_requests_accept_simplify_boolean_and_modes():
     candles_on = DataFetchCandlesRequest(symbol="EURUSD", simplify=True)
     ticks_on = DataFetchTicksRequest(symbol="EURUSD", simplify="auto")
@@ -221,6 +240,44 @@ def test_run_data_fetch_candles_compact_omits_tick_volume_note():
     assert result["volume_type"] == "tick_count"
     assert result["volume_semantics"] == "tick_volume_is_broker_tick_count_not_lots"
     assert "volume_note" not in result
+
+
+def test_run_data_fetch_candles_compact_discloses_inplace_denoise():
+    request = DataFetchCandlesRequest(
+        symbol="EURUSD",
+        timeframe="H1",
+        limit=5,
+        denoise={"method": "ema"},
+    )
+
+    result = run_data_fetch_candles(
+        request,
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_candles_impl=lambda **kwargs: {
+            "success": True,
+            "symbol": "EURUSD",
+            "timeframe": "H1",
+            "candles": 5,
+            "denoise": {
+                "applications": [
+                    {
+                        "method": "ema",
+                        "when": "pre_ti",
+                        "keep_original": False,
+                        "columns": ["close"],
+                        "added_columns": [],
+                    }
+                ]
+            },
+            "data": [{"time": 1, "close": 1.1}],
+        },
+    )
+
+    assert result["denoise_applied"] is True
+    assert result["denoise_method"] == "ema"
+    assert result["denoise_overwrote_columns"] == ["close"]
+    assert result["price_column"] == "close (ema-smoothed)"
+    assert "denoise" not in result
 
 
 def test_run_data_fetch_candles_projection_drops_hidden_volume_semantics():
@@ -917,19 +974,22 @@ def test_run_data_fetch_ticks_compact_prunes_row_diagnostics():
                 "bid": 1.1659,
                 "ask": 1.16596,
                 "spread": 0.00006,
+                "mid": 1.16593,
             },
             {
                 "time": "2026-05-29 20:57",
                 "bid": 1.16591,
                 "ask": 1.16599,
                 "spread": 0.00008,
+                "mid": 1.16595,
             },
         ],
         "timezone": "UTC",
         "freshness": "stale, tick 10m 0s ago",
         "data_freshness_seconds": 600.0,
         "data_stale": True,
-        "units": {"bid": "price", "ask": "price", "spread": "price"},
+        "units": {"bid": "price", "ask": "price", "spread": "price", "mid": "price"},
+        "quote_completeness_pct": 50.0,
         "quality": "partial_quotes=1/2; last=unavailable",
     }
 
@@ -969,6 +1029,10 @@ def test_run_data_fetch_ticks_compact_summarizes_quality_without_verbose_warning
     )
 
     assert result["quality"] == "partial_quotes=3/5; last=unavailable"
+    assert result["quote_completeness_pct"] == 40.0
+    assert result["data"][3]["mid"] == 1.10006
+    assert result["data"][4]["mid"] == 1.10007
+    assert result["data"][4]["mid_inferred"] is True
     assert "data_quality" not in result
     assert "warnings" not in result
 
@@ -1027,7 +1091,7 @@ def test_data_fetch_candles_request_defaults_to_compact_detail():
     request = DataFetchCandlesRequest(symbol="EURUSD")
 
     assert request.detail == "compact"
-    assert request.limit == 20
+    assert request.limit == 100
 
 
 def test_data_fetch_candles_wrapper_respects_detail_contract(monkeypatch):
@@ -1055,10 +1119,10 @@ def test_data_fetch_candles_wrapper_respects_detail_contract(monkeypatch):
         json=True,
     )
 
-    assert raw["meta"]["diagnostics"]["query"]["requested_bars"] == 20
+    assert raw["meta"]["diagnostics"]["query"]["requested_bars"] == 100
     assert "meta" not in compact
     assert full["meta"]["tool"] == "data_fetch_candles"
-    assert full["meta"]["diagnostics"]["query"]["requested_bars"] == 20
+    assert full["meta"]["diagnostics"]["query"]["requested_bars"] == 100
 
 
 def test_data_fetch_ticks_request_rejects_removed_output_field():

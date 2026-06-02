@@ -1072,19 +1072,50 @@ def _append_denoise_application(
 ) -> None:
     try:
         denoise_meta = dict(source_spec or {})
+        columns = denoise_meta.get('columns', 'close')
+        keep_original = bool(denoise_meta.get('keep_original', default_keep_original))
+        overwritten_columns = [] if keep_original else _normalize_denoise_display_columns(columns)
         denoise_apps.append(
             {
                 'method': str(denoise_meta.get('method', 'none')).lower(),
                 'when': str(denoise_meta.get('when', default_when)).lower(),
                 'causality': str(denoise_meta.get('causality', default_causality)),
-                'keep_original': bool(denoise_meta.get('keep_original', default_keep_original)),
-                'columns': denoise_meta.get('columns', 'close'),
+                'keep_original': keep_original,
+                'columns': columns,
                 'params': denoise_meta.get('params') or {},
                 'added_columns': added_columns,
+                'overwrote_columns': overwritten_columns,
             }
         )
     except Exception:
         pass
+
+
+def _normalize_denoise_display_columns(value: Any) -> List[str]:
+    if isinstance(value, str):
+        text = value.strip()
+        if text.lower() in {"ohlc", "ohlcv", "price"}:
+            return ["open", "high", "low", "close"]
+        return [part for part in text.replace(",", " ").split() if part]
+    if isinstance(value, (list, tuple, set)):
+        return [str(item).strip() for item in value if str(item).strip()]
+    return []
+
+
+def _latest_indicator_values_missing(df: pd.DataFrame, columns: List[str]) -> bool:
+    if not columns or len(df) <= 0:
+        return False
+    for column in columns:
+        if column not in df.columns:
+            return True
+        value = df[column].iloc[-1]
+        try:
+            if pd.isna(value):
+                return True
+        except Exception:
+            if value is None:
+                return True
+    return False
 
 
 def _apply_pre_ti_denoise(
@@ -1619,6 +1650,7 @@ def fetch_candles(  # noqa: C901
         has_forming_candle = bool(initial_incomplete_trimmed or _trimmed_incomplete or tail_is_forming)
         forming_candle_included = bool(include_incomplete and tail_is_forming)
         forming_candle_skipped = bool(incomplete_candles_skipped and not include_incomplete)
+        latest_indicator_missing = _latest_indicator_values_missing(df, ti_added_cols)
         if forming_candle_included:
             forming_candle_status = "included"
         elif forming_candle_skipped:
@@ -1717,7 +1749,7 @@ def fetch_candles(  # noqa: C901
         if price_currency:
             payload["price_currency"] = price_currency
         if incomplete_candles_skipped and not include_incomplete:
-            if ti_spec:
+            if ti_spec and latest_indicator_missing:
                 payload["hint"] = (
                     "Latest forming candle was skipped. Set include_incomplete=true only if you need "
                     "that bar; increase limit if requested indicators need more warmup context."

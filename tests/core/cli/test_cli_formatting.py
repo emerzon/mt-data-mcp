@@ -52,7 +52,6 @@ from mtdata.core.cli import (
     _write_cli_text,
 )
 
-
 # ========================================================================
 # _json_default
 # ========================================================================
@@ -185,6 +184,22 @@ class TestFormatResultMinimal:
 
 
 class TestFormatResultForCli:
+    def test_toon_format_keeps_candle_count(self):
+        result = _format_result_for_cli(
+            {
+                "success": True,
+                "symbol": "EURUSD",
+                "timeframe": "H1",
+                "count": 5,
+                "data": [{"time": "2026-05-29T12:00:00Z", "close": 1.1}],
+            },
+            fmt="toon",
+            verbose=False,
+            cmd_name="data_fetch_candles",
+        )
+
+        assert "count: 5" in result
+
     def test_json_format(self):
         result = _format_result_for_cli(
             {"a": 1}, fmt="json", verbose=False, cmd_name="test"
@@ -1010,7 +1025,7 @@ class TestFormatResultForCli:
         )
         assert payload["data"] == [{"time": "2023-11-14 22:13", "close": 1.1}]
         assert "bars" not in payload
-        assert "count" not in payload
+        assert payload["count"] == 1
 
     def test_compact_toon_hides_runtime_timezone_meta(self):
         result = _format_result_for_cli(

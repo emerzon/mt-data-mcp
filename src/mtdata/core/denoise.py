@@ -15,7 +15,7 @@ from .output_contract import normalize_output_verbosity_detail
 logger = logging.getLogger(__name__)
 
 
-_DENOISE_METHOD_DEFAULT_LIMIT = 10
+_DENOISE_METHOD_DEFAULT_LIMIT = 30
 
 
 def _summary_denoise_method(row: Dict[str, Any]) -> Dict[str, Any]:
@@ -56,7 +56,7 @@ def denoise_list_methods(
         limit_value = max(1, int(limit or _DENOISE_METHOD_DEFAULT_LIMIT))
         visible = methods[:limit_value]
         hidden = max(0, len(methods) - len(visible))
-        return {
+        out = {
             "success": True,
             "detail": detail_mode,
             "available_only": bool(available_only),
@@ -69,6 +69,9 @@ def denoise_list_methods(
             "methods": [_summary_denoise_method(row) for row in visible],
             "describe_hint": "Use denoise_describe(method) for params and descriptions.",
         }
+        if hidden > 0:
+            out["list_all_hint"] = f"Pass limit={len(methods)} to list every method."
+        return out
 
     return run_logged_operation(
         logger,

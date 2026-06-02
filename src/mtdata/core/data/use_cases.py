@@ -15,6 +15,7 @@ from ..mt5_gateway import mt5_connection_error
 from ..output_contract import attach_collection_contract
 from ..trading.time import _next_candle_wait_payload, _sleep_until_next_candle
 from .requests import (
+    DATA_FETCH_CANDLES_DEFAULT_LIMIT,
     DataFetchCandlesRequest,
     DataFetchTicksRequest,
     WaitCandleRequest,
@@ -233,7 +234,7 @@ def _effective_candle_limit(request: DataFetchCandlesRequest) -> int:
     try:
         limit = max(1, int(request.limit))
     except Exception:
-        limit = 20
+        limit = DATA_FETCH_CANDLES_DEFAULT_LIMIT
     fields_set = getattr(request, "model_fields_set", set())
     limit_explicit = "limit" in fields_set
     has_indicators = request.indicators not in (None, "", [], {})
@@ -411,9 +412,58 @@ def _compact_candles_payload(
             compact[key] = public_diagnostics[key]
     if "spread_estimate" in public_diagnostics:
         compact["spread_estimate"] = public_diagnostics["spread_estimate"]
+    _attach_denoise_disclosure(compact)
     _attach_candle_volume_semantics(compact)
-    _filter_compact_routine_session_gaps(compact)
     return compact
+
+
+def _normalize_denoise_columns(value: Any) -> List[str]:
+    if isinstance(value, str):
+        text = value.strip()
+        if text.lower() in {"ohlc", "ohlcv", "price"}:
+            return ["open", "high", "low", "close"]
+        return [part for part in text.replace(",", " ").split() if part]
+    if isinstance(value, (list, tuple, set)):
+        return [str(item).strip() for item in value if str(item).strip()]
+    return []
+
+
+def _attach_denoise_disclosure(payload: Dict[str, Any]) -> None:
+    denoise_info = payload.get("denoise")
+    applications = denoise_info.get("applications") if isinstance(denoise_info, dict) else None
+    if not isinstance(applications, list) or not applications:
+        return
+
+    methods: List[str] = []
+    overwritten: List[str] = []
+    for app in applications:
+        if not isinstance(app, dict):
+            continue
+        method = str(app.get("method") or "").strip().lower()
+        if method and method != "none" and method not in methods:
+            methods.append(method)
+        if bool(app.get("keep_original")):
+            continue
+        added_columns = app.get("added_columns")
+        added = {
+            str(item).strip()
+            for item in added_columns
+            if str(item).strip()
+        } if isinstance(added_columns, list) else set()
+        for column in _normalize_denoise_columns(app.get("columns")):
+            if column and column not in added and column not in overwritten:
+                overwritten.append(column)
+
+    if not methods and not overwritten:
+        return
+    payload["denoise_applied"] = True
+    if methods:
+        payload["denoise_method"] = methods[0] if len(methods) == 1 else methods
+    if overwritten:
+        payload["denoise_overwrote_columns"] = overwritten
+        if "close" in overwritten and methods:
+            payload["price_column"] = f"close ({methods[0]}-smoothed)"
+    payload.pop("denoise", None)
 
 
 def _attach_candle_volume_semantics(payload: Dict[str, Any]) -> None:
@@ -447,24 +497,6 @@ def _slim_projected_candles_payload(payload: Dict[str, Any]) -> None:
         payload.pop("has_forming_candle", None)
         payload.pop("forming_candle_included", None)
         payload.pop("forming_candle_skipped", None)
-
-
-def _filter_compact_routine_session_gaps(payload: Dict[str, Any]) -> None:
-    session_gaps = payload.get("session_gaps")
-    if not isinstance(session_gaps, list) or not session_gaps:
-        return
-    filtered = [
-        gap
-        for gap in session_gaps
-        if not (
-            isinstance(gap, dict)
-            and str(gap.get("context") or "").strip().lower() == "weekend/session break"
-        )
-    ]
-    if filtered:
-        payload["session_gaps"] = filtered
-    else:
-        payload.pop("session_gaps", None)
 
 
 def _standard_candles_payload(result: Dict[str, Any]) -> Dict[str, Any]:
@@ -656,7 +688,14 @@ def _compact_tick_rows_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     }
     rows = compact.get("data")
     if isinstance(rows, list):
-        compact["data"] = [_compact_tick_row(row) for row in rows]
+        compact_rows: List[Any] = []
+        last_spread: Optional[float] = None
+        for row in rows:
+            compact_row, row_spread = _compact_tick_row(row, last_spread=last_spread)
+            if row_spread is not None:
+                last_spread = row_spread
+            compact_rows.append(compact_row)
+        compact["data"] = compact_rows
         compact["count"] = len(compact["data"])
         units = compact.get("units")
         present_fields = {
@@ -674,15 +713,29 @@ def _compact_tick_rows_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
             if isinstance(units, dict)
             else {}
         )
-        for field in ("bid", "ask", "spread"):
+        for field in ("bid", "ask", "mid", "spread"):
             if any(isinstance(row, dict) and field in row for row in compact["data"]):
                 compact_units.setdefault(field, "price")
         if compact_units:
             compact["units"] = compact_units
+    quote_completeness = _tick_quote_completeness_pct(payload)
+    if quote_completeness is not None:
+        compact["quote_completeness_pct"] = quote_completeness
     quality = _compact_tick_quality(payload)
     if quality:
         compact["quality"] = quality
     return compact
+
+
+def _tick_quote_completeness_pct(payload: Dict[str, Any]) -> Optional[float]:
+    data_quality = payload.get("data_quality")
+    if not isinstance(data_quality, dict):
+        return None
+    complete = _as_nonnegative_int(data_quality.get("complete_ticks"))
+    total = _as_nonnegative_int(data_quality.get("total_ticks"))
+    if complete is None or not total:
+        return None
+    return round((float(complete) / float(total)) * 100.0, 2)
 
 
 def _compact_tick_quality(payload: Dict[str, Any]) -> Optional[str]:
@@ -715,9 +768,13 @@ def _as_nonnegative_int(value: Any) -> Optional[int]:
     return number if number >= 0 else None
 
 
-def _compact_tick_row(row: Any) -> Any:
+def _compact_tick_row(
+    row: Any,
+    *,
+    last_spread: Optional[float] = None,
+) -> tuple[Any, Optional[float]]:
     if not isinstance(row, dict):
-        return row
+        return row, None
     compact = {
         "time": row.get("time"),
         "bid": row.get("bid"),
@@ -729,7 +786,18 @@ def _compact_tick_row(row: Any) -> Any:
     if spread in (None, ""):
         spread = _tick_row_spread(row.get("bid"), row.get("ask"))
     compact["spread"] = spread if spread not in ("",) else None
-    return compact
+    bid = _tick_row_price(row.get("bid"))
+    ask = _tick_row_price(row.get("ask"))
+    numeric_spread = _tick_row_price(spread)
+    if bid is not None and ask is not None:
+        compact["mid"] = round((bid + ask) / 2.0, 10)
+    elif last_spread is not None and bid is not None:
+        compact["mid"] = round(bid + (last_spread / 2.0), 10)
+        compact["mid_inferred"] = True
+    elif last_spread is not None and ask is not None:
+        compact["mid"] = round(ask - (last_spread / 2.0), 10)
+        compact["mid_inferred"] = True
+    return compact, numeric_spread
 
 
 def _tick_row_spread(bid: Any, ask: Any) -> Optional[float]:
@@ -739,6 +807,18 @@ def _tick_row_spread(bid: Any, ask: Any) -> Optional[float]:
         return round(float(ask) - float(bid), 10)
     except (TypeError, ValueError):
         return None
+
+
+def _tick_row_price(value: Any) -> Optional[float]:
+    try:
+        if value in (None, ""):
+            return None
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not np.isfinite(numeric):
+        return None
+    return numeric
 
 
 def _run_wait_candle_impl(

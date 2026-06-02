@@ -17,9 +17,9 @@ from ...shared.schema import (
     CompactStandardFullDetailLiteral,
     DenoiseSpec,
     IndicatorSpec,
-    reject_removed_field,
     SimplifySpec,
     TimeframeLiteral,
+    reject_removed_field,
 )
 from ...utils.coercion import coerce_finite_float
 from ..output_contract import normalize_output_detail
@@ -34,6 +34,8 @@ _MAGIC_NUMBER_DESCRIPTION = (
     "MT5 magic number: integer strategy/order identifier used to group EA or "
     "strategy trades. Use as a filter for one strategy; omit for all magic numbers."
 )
+DATA_FETCH_CANDLES_DEFAULT_LIMIT = 100
+DATA_FETCH_TICKS_DEFAULT_LIMIT = 20
 
 
 def _normalize_data_detail(value: Any) -> str:
@@ -378,7 +380,7 @@ class DataFetchCandlesRequest(BaseModel):
     symbol: str
     timeframe: TimeframeLiteral = "H1"
     detail: CompactStandardFullDetailLiteral = "compact"
-    limit: int = 20
+    limit: int = DATA_FETCH_CANDLES_DEFAULT_LIMIT
     start: Optional[str] = None
     end: Optional[str] = None
     ohlcv: Optional[str] = Field(
@@ -431,7 +433,7 @@ class DataFetchCandlesRequest(BaseModel):
 
 class DataFetchTicksRequest(BaseModel):
     symbol: str
-    limit: int = 20
+    limit: int = DATA_FETCH_TICKS_DEFAULT_LIMIT
     start: Optional[str] = None
     end: Optional[str] = None
     simplify: SimplifySpecInput = None
