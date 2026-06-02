@@ -566,8 +566,8 @@ class TestFinvizTools:
         assert result["freshness"] == "finviz_delayed"
         assert result["items"] == [
             {
-                "symbol": "EUR/USD",
-                "mt5_symbol": "EURUSD",
+                "symbol": "EURUSD",
+                "display_symbol": "EUR/USD",
                 "name": "Euro / US Dollar",
                 "price": "1.10",
                 "price_currency": "USD",
@@ -601,13 +601,13 @@ class TestFinvizTools:
         assert result["omitted_item_count"] == 1
         assert result["items"] == [
             {
-                "symbol": "EUR/USD",
-                "mt5_symbol": "EURUSD",
+                "symbol": "EURUSD",
+                "display_symbol": "EUR/USD",
                 "name": "Euro / US Dollar",
             },
             {
-                "symbol": "GBP/USD",
-                "mt5_symbol": "GBPUSD",
+                "symbol": "GBPUSD",
+                "display_symbol": "GBP/USD",
                 "name": "British Pound / US Dollar",
             },
         ]
@@ -633,13 +633,13 @@ class TestFinvizTools:
         assert result["available_count"] == 2
         assert result["items"] == [
             {
-                "symbol": "EUR/USD",
-                "mt5_symbol": "EURUSD",
+                "symbol": "EURUSD",
+                "display_symbol": "EUR/USD",
                 "name": "Euro / US Dollar",
             },
             {
-                "symbol": "USD/JPY",
-                "mt5_symbol": "USDJPY",
+                "symbol": "USDJPY",
+                "display_symbol": "USD/JPY",
                 "name": "US Dollar / Japanese Yen",
             },
         ]

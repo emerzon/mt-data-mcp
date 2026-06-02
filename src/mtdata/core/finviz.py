@@ -280,7 +280,7 @@ _FOREX_CURRENCY_NAMES = {
 
 _FINVIZ_MARKET_COMPACT_FIELDS = (
     "symbol",
-    "mt5_symbol",
+    "display_symbol",
     "name",
     "price",
     "price_currency",
@@ -428,13 +428,16 @@ def _forex_pair_currencies(symbol: Any) -> Optional[tuple[str, str]]:
     return None
 
 
-def _attach_finviz_forex_mt5_symbol(row: Dict[str, Any]) -> Dict[str, Any]:
+def _normalize_finviz_forex_symbol(row: Dict[str, Any]) -> Dict[str, Any]:
     out = dict(row)
-    mt5_symbol = finviz_forex_symbol_to_mt5(row.get("symbol"))
+    source_symbol = str(row.get("symbol") or "").strip().upper()
+    mt5_symbol = finviz_forex_symbol_to_mt5(source_symbol)
     if mt5_symbol is not None:
-        out["mt5_symbol"] = mt5_symbol
+        out["symbol"] = mt5_symbol
+        if source_symbol and source_symbol != mt5_symbol:
+            out["display_symbol"] = source_symbol
     currencies = (
-        _forex_pair_currencies(out.get("symbol"))
+        _forex_pair_currencies(source_symbol or out.get("symbol"))
         if out.get("price") not in (None, "")
         else None
     )
@@ -691,7 +694,7 @@ def _canonicalize_finviz_market_row(row: Dict[str, Any]) -> Dict[str, Any]:
         if pct_value is not None:
             out[field] = pct_value
     if _is_known_forex_pair_row(out):
-        out = _attach_finviz_forex_mt5_symbol(out)
+        out = _normalize_finviz_forex_symbol(out)
     return out
 
 
