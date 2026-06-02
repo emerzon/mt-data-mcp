@@ -329,7 +329,6 @@ def _compact_temporal_stats(
         "bars",
         "avg_return",
         "median_return",
-        "win_rate",
         "win_rate_pct",
         "volatility",
     )
@@ -519,8 +518,21 @@ def _base_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _drop_compact_temporal_duplicate_units(out: Dict[str, Any]) -> None:
+    units = out.get("units")
+    if not isinstance(units, dict):
+        return
+    compact_units = {
+        key: value
+        for key, value in units.items()
+        if key != "win_rate"
+    }
+    out["units"] = compact_units
+
+
 def _compact_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     out: Dict[str, Any] = _base_temporal_payload(payload)
+    _drop_compact_temporal_duplicate_units(out)
     groups = payload.get("groups")
     if isinstance(groups, list) and groups:
         if all(isinstance(row, dict) and "dimension" in row for row in groups):
@@ -617,7 +629,7 @@ def _summary_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     if isinstance(overall, dict):
         out["overall"] = {
             key: overall.get(key)
-            for key in ("bars", "avg_return", "win_rate", "win_rate_pct", "volatility")
+            for key in ("bars", "avg_return", "win_rate_pct", "volatility")
             if overall.get(key) is not None
         }
     for key in (

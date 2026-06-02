@@ -87,6 +87,9 @@ def test_confluence_compact_omits_verbose_source_narration():
     assert "sources" not in cluster
     assert "score_components" not in cluster
     assert cluster["source_count"] == 3
+    assert payload["tolerance"]["fraction"] == 0.001
+    assert "input_pct" not in payload["tolerance"]
+    assert payload["units"]["tolerance.pct_points"] == "percentage_points (1.0 = 1%)"
 
 
 def test_pivot_original_resistance_below_reference_is_role_below():

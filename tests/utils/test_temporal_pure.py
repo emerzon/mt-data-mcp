@@ -636,13 +636,15 @@ class TestTemporalAnalyze:
         assert "groups" in r
         assert "group" not in r["groups"][0]
         assert "group_label" in r["groups"][0]
+        assert "win_rate" not in r["groups"][0]
+        assert "win_rate_pct" in r["groups"][0]
         assert "avg_range" not in r["groups"][0]
         assert "avg_volume" not in r["groups"][0]
         assert "best" in r
         assert "group" not in r["best"]
         assert r["units"] == {
             "returns": "percentage_points",
-            "win_rate": "fraction",
+            "win_rate_pct": "percentage_points",
             "avg_range_pct": "percentage_points",
         }
 
@@ -669,7 +671,7 @@ class TestTemporalAnalyze:
         assert "best" in r
         assert "group_count" in r
         assert set(r["overall"]).issubset(
-            {"bars", "avg_return", "win_rate", "volatility"}
+            {"bars", "avg_return", "win_rate_pct", "volatility"}
         )
 
     @_apply_analyze_patches

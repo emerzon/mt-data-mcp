@@ -555,9 +555,15 @@ def build_level_confluence_payload(
         },
         "tolerance": {
             "price": _round_price(tolerance_abs),
-            "pct": _round_metric((tolerance_abs / abs(reference)) * 100.0) if abs(reference) > 1e-12 else None,
-            "input_pct": tolerance_pct,
-            "input_points": tolerance_points,
+            "pct_points": _round_metric((tolerance_abs / abs(reference)) * 100.0) if abs(reference) > 1e-12 else None,
+            "fraction": tolerance_pct,
+            "points": tolerance_points,
+        },
+        "units": {
+            "tolerance.price": "price",
+            "tolerance.pct_points": "percentage_points (1.0 = 1%)",
+            "tolerance.fraction": "price_fraction (0.0015 = 0.15%)",
+            "tolerance.points": "broker_points",
         },
         "max_distance_pct": max_distance_pct,
         "min_source_families": min_families,

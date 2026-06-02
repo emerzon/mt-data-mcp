@@ -741,6 +741,8 @@ class TestCausalDiscoverSignals:
         assert result["success"] is True
         assert result["items"] == []
         assert result["count"] == 0
+        assert result["result"] == "no_links_found"
+        assert result["pairs_tested"] == 2
         assert result["summary"]["counts"] == {
             "pairs_tested": 2,
             "significant_links": 0,

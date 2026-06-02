@@ -1895,6 +1895,7 @@ def causal_discover_signals(  # noqa: C901
         transform_value = _normalize_transform_name(transform) or str(transform).strip().lower()
         out: Dict[str, Any] = {
             "success": True,
+            "result": "links_found" if significant_rows else "no_links_found",
             "transform": transform_value,
             "transform_reason": _causal_transform_reason(
                 "causal_discover_signals",
@@ -1906,6 +1907,7 @@ def causal_discover_signals(  # noqa: C901
             ),
             "items": output_rows,
             "count": int(len(output_rows)),
+            "pairs_tested": int(pair_success),
             **pagination,
             "context": {
                 **_pairwise_analysis_context(rows_sorted, timeframe=timeframe),
@@ -1920,7 +1922,7 @@ def causal_discover_signals(  # noqa: C901
             "summary": {
                 "significance": float(significance),
                 "counts": {
-                    "pairs_tested": int(len(rows_sorted)),
+                    "pairs_tested": int(pair_success),
                     "significant_links": int(len(significant_rows)),
                 }
             },
@@ -1941,6 +1943,7 @@ def causal_discover_signals(  # noqa: C901
         if rows_sorted and detail_mode == "full":
             out["pairs"] = _compact_causal_pair_rows(rows_sorted, limit=20)
         if not rows_sorted:
+            out["result"] = "no_tests_run"
             out["message"] = (
                 "No causal relationships detected (insufficient data or all tests failed)."
             )
