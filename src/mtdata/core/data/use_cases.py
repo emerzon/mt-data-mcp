@@ -41,8 +41,6 @@ _COMPACT_TICK_TOP_LEVEL_FIELDS = (
     "freshness",
     "data_freshness_seconds",
     "data_stale",
-    "data_quality",
-    "warnings",
     "simplified",
     "simplify",
 )
@@ -669,7 +667,40 @@ def _compact_tick_rows_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
                 compact_units.setdefault(field, "price")
         if compact_units:
             compact["units"] = compact_units
+    quality = _compact_tick_quality(payload)
+    if quality:
+        compact["quality"] = quality
     return compact
+
+
+def _compact_tick_quality(payload: Dict[str, Any]) -> Optional[str]:
+    notes: List[str] = []
+    data_quality = payload.get("data_quality")
+    if isinstance(data_quality, dict):
+        incomplete = _as_nonnegative_int(data_quality.get("incomplete_ticks"))
+        total = _as_nonnegative_int(data_quality.get("total_ticks"))
+        if total is None:
+            total = _as_nonnegative_int(payload.get("count"))
+        if incomplete is not None and incomplete > 0 and total:
+            notes.append(f"partial_quotes={incomplete}/{total}")
+        else:
+            status = str(data_quality.get("one_sided_zero_spread_status") or "").strip().lower()
+            if status and status not in {"ok", "info"}:
+                notes.append(f"quote_quality={status}")
+    if payload.get("last_unavailable") is True:
+        notes.append("last=unavailable")
+    warnings = payload.get("warnings")
+    if not notes and isinstance(warnings, list) and warnings:
+        notes.append(f"warnings={len(warnings)}")
+    return "; ".join(notes) if notes else None
+
+
+def _as_nonnegative_int(value: Any) -> Optional[int]:
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number >= 0 else None
 
 
 def _compact_tick_row(row: Any) -> Any:

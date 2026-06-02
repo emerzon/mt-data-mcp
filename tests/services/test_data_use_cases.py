@@ -859,6 +859,22 @@ def test_run_data_fetch_ticks_compact_prunes_row_diagnostics():
             "duration_seconds": 1,
             "tick_rate_per_second": 2,
             "price_precision": 5,
+            "data_quality": {
+                "one_sided_zero_spread_ticks": 1,
+                "complete_ticks": 1,
+                "incomplete_ticks": 1,
+                "total_ticks": 2,
+                "one_sided_zero_spread_ratio": 0.5,
+                "spread_ticks_excluded": 1,
+                "warning_ratio": 0.5,
+                "quote_type_counts": {"bid_ask": 1, "bid_only": 1},
+                "one_sided_zero_spread_status": "warning",
+            },
+            "last_unavailable": True,
+            "warnings": [
+                "Some ticks had identical bid/ask with one-sided quote flags.",
+                "Broker tick data did not provide a usable last price; last is null.",
+            ],
         },
     )
 
@@ -885,7 +901,47 @@ def test_run_data_fetch_ticks_compact_prunes_row_diagnostics():
         "data_freshness_seconds": 600.0,
         "data_stale": True,
         "units": {"bid": "price", "ask": "price", "spread": "price"},
+        "quality": "partial_quotes=1/2; last=unavailable",
     }
+
+
+def test_run_data_fetch_ticks_compact_summarizes_quality_without_verbose_warnings():
+    result = run_data_fetch_ticks(
+        DataFetchTicksRequest(symbol="EURUSD", limit=5, detail="compact"),
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_ticks_impl=lambda **_kwargs: {
+            "success": True,
+            "symbol": "EURUSD",
+            "count": 5,
+            "data": [
+                {"time": "t1", "bid": 1.1, "ask": None, "quote_type": "bid_only"},
+                {"time": "t2", "bid": None, "ask": 1.1001, "quote_type": "ask_only"},
+                {"time": "t3", "bid": 1.1, "ask": 1.1001},
+                {"time": "t4", "bid": 1.10001, "ask": 1.10011},
+                {"time": "t5", "bid": 1.10002, "ask": None, "quote_type": "bid_only"},
+            ],
+            "data_quality": {
+                "one_sided_zero_spread_ticks": 3,
+                "complete_ticks": 2,
+                "incomplete_ticks": 3,
+                "total_ticks": 5,
+                "one_sided_zero_spread_ratio": 0.6,
+                "spread_ticks_excluded": 3,
+                "warning_ratio": 0.5,
+                "quote_type_counts": {"ask_only": 1, "bid_ask": 2, "bid_only": 2},
+                "one_sided_zero_spread_status": "warning",
+            },
+            "last_unavailable": True,
+            "warnings": [
+                "Some ticks had identical bid/ask with one-sided quote flags.",
+                "Broker tick data did not provide a usable last price; last is null.",
+            ],
+        },
+    )
+
+    assert result["quality"] == "partial_quotes=3/5; last=unavailable"
+    assert "data_quality" not in result
+    assert "warnings" not in result
 
 
 def test_data_fetch_candles_logs_finish_event(monkeypatch, caplog):
