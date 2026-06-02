@@ -38,6 +38,13 @@ _NEWS_BUCKET_KEYS = (
     "market_context",
 )
 _NEWS_SYMBOL_LIMIT_BUCKET_KEYS = ("related_news",)
+_NEWS_SYMBOL_MACRO_LIMIT_BUCKET_KEYS = (
+    "related_news",
+    "general_news",
+    "impact_news",
+    "upcoming_events",
+    "recent_events",
+)
 _NEWS_BUCKET_COUNT_KEYS = {
     "general_news": "general_count",
     "related_news": "related_count",
@@ -236,6 +243,7 @@ def _apply_news_limit(
     limit_per_bucket: Optional[int] = None,
     offset: int = 0,
     symbol_mode: bool = False,
+    symbol_asset_class: Optional[str] = None,
 ) -> Dict[str, Any]:
     if limit is None and limit_per_bucket is None and not offset:
         return result
@@ -246,9 +254,13 @@ def _apply_news_limit(
     remaining = int(limit) if limit is not None else None
     remaining_offset = max(0, int(offset or 0))
     if symbol_mode and limit is not None and limit_per_bucket is None:
-        bucket_keys = _NEWS_SYMBOL_LIMIT_BUCKET_KEYS
+        if str(symbol_asset_class or "").strip().lower() == "forex":
+            bucket_keys = _NEWS_SYMBOL_MACRO_LIMIT_BUCKET_KEYS
+            limit_scope = "symbol_macro"
+        else:
+            bucket_keys = _NEWS_SYMBOL_LIMIT_BUCKET_KEYS
+            limit_scope = "symbol"
         drop_bucket_keys = set(_NEWS_BUCKET_KEYS) - set(bucket_keys)
-        limit_scope = "symbol"
     else:
         bucket_keys = _NEWS_BUCKET_KEYS
         drop_bucket_keys = set()
@@ -307,6 +319,12 @@ def _apply_news_limit(
     out["offset"] = int(offset or 0)
     out["has_more"] = bool(max(0, total_candidates - int(offset or 0) - returned) > 0)
     out["limit_scope"] = limit_scope
+    if limit_scope == "symbol_macro":
+        out["macro_fallback"] = True
+        out["macro_fallback_reason"] = (
+            "FX symbols can have sparse direct headlines; limit fills from "
+            "related_news first, then macro/general/event buckets."
+        )
     if bucket_truncation:
         out["bucket_truncation"] = bucket_truncation
     return out
@@ -437,15 +455,23 @@ def news(
         return {"error": "offset must be >= 0."}
 
     def _run() -> Dict[str, Any]:
+        raw = fetch_unified_news(symbol=symbol)
+        instrument = raw.get("instrument") if isinstance(raw, dict) else None
+        asset_class = (
+            instrument.get("asset_class")
+            if isinstance(instrument, dict)
+            else None
+        )
         out = _apply_news_limit(
             normalize_news_output(
-                fetch_unified_news(symbol=symbol),
+                raw,
                 detail=detail_mode,
             ),
             limit=limit_value,
             limit_per_bucket=limit_per_bucket_value,
             offset=offset_value,
             symbol_mode=symbol not in (None, ""),
+            symbol_asset_class=asset_class,
         )
         out = _attach_news_row_keys(out)
         out.setdefault("data_fetched_at", _news_data_fetched_at())

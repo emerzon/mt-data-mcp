@@ -114,6 +114,35 @@ def test_news_tool_symbol_limit_caps_related_bucket_only(monkeypatch) -> None:
     assert limited["has_more"] is True
 
 
+def test_news_tool_fx_symbol_limit_fills_from_macro_buckets(monkeypatch) -> None:
+    raw = _unwrap(news)
+
+    payload = {
+        "success": True,
+        "symbol": "EURUSD",
+        "instrument": {"symbol": "EURUSD", "asset_class": "forex"},
+        "general_news": [{"title": "g1"}, {"title": "g2"}],
+        "related_news": [{"title": "r1"}],
+        "impact_news": [{"title": "i1"}],
+        "upcoming_events": [{"title": "u1"}],
+        "recent_events": [{"title": "e1"}],
+        "market_context": [{"title": "m1"}],
+    }
+    monkeypatch.setattr("mtdata.core.news.fetch_unified_news", lambda symbol=None: payload)
+
+    limited = raw(symbol="EURUSD", limit=3)
+
+    assert limited["related_news"] == [{"title": "r1"}]
+    assert limited["general_news"] == [{"title": "g1"}, {"title": "g2"}]
+    assert limited["row_keys"] == ["related_news", "general_news"]
+    assert "market_context" not in limited
+    assert limited["total_candidates"] == 6
+    assert limited["returned"] == 3
+    assert limited["limit_scope"] == "symbol_macro"
+    assert limited["macro_fallback"] is True
+    assert limited["has_more"] is True
+
+
 def test_news_tool_supports_global_offset(monkeypatch) -> None:
     raw = _unwrap(news)
 
