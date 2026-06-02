@@ -210,6 +210,45 @@ def test_compact_report_payload_omits_string_summary_when_structured_exists():
     assert "summary" not in out
 
 
+def test_compact_report_payload_omits_duplicate_assessment_blocks():
+    from mtdata.core.report.use_cases import _compact_report_payload
+
+    out = _compact_report_payload(
+        {
+            "success": True,
+            "completeness": "partial",
+            "executive_summary": {
+                "recommended_action": "review_partial_sections",
+                "confidence": "medium",
+                "section_health": {"ok": 7, "partial": 1, "error": 0, "total": 8},
+                "sections_with_issues": {"partial": ["barriers"]},
+            },
+            "overall_assessment": {
+                "recommended_action": "review_partial_sections",
+                "confidence": "medium",
+                "section_health": {"ok": 7, "partial": 1, "error": 0, "total": 8},
+                "partial_sections": ["barriers"],
+            },
+            "sections_with_issues": {"partial": ["barriers"]},
+            "sections_status": {
+                "summary": {"ok": 7, "partial": 1, "error": 0, "total": 8},
+                "sections": {"forecast": "ok", "barriers": "partial"},
+            },
+            "summary_structured": {
+                "template_focus": {"profile": "balanced"},
+            },
+        },
+        symbol="EURUSD",
+        template="basic",
+    )
+
+    assert out["overall_assessment"]["partial_sections"] == ["barriers"]
+    assert out["summary_structured"]["template_focus"] == {"profile": "balanced"}
+    assert "executive_summary" not in out
+    assert "sections_with_issues" not in out
+    assert "sections_status" not in out
+
+
 def test_compact_report_payload_elevates_barrier_conflicts():
     from mtdata.core.report.use_cases import _compact_report_payload
 

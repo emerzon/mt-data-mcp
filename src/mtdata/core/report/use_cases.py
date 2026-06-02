@@ -290,28 +290,6 @@ def _compact_summary_structured(value: Any) -> Any:
     return out
 
 
-def _compact_sections_status(value: Any) -> Any:
-    if not isinstance(value, dict):
-        return value
-    out: Dict[str, Any] = {}
-    summary = value.get("summary")
-    if isinstance(summary, dict):
-        out["summary"] = summary
-    sections = value.get("sections")
-    if isinstance(sections, dict):
-        non_ok = {
-            str(name): status
-            for name, status in sections.items()
-            if str(status) != "ok"
-        }
-        if non_ok:
-            out["non_ok_sections"] = non_ok
-    details = value.get("details")
-    if isinstance(details, dict) and details:
-        out["details"] = details
-    return out or value
-
-
 def _compact_report_payload(
     report: Dict[str, Any],
     *,
@@ -353,18 +331,21 @@ def _compact_report_payload(
     completeness = report.get("completeness")
     if completeness not in (None, "", [], {}):
         compact["completeness"] = completeness
-    for key in ("executive_summary", "overall_assessment", "sections_with_issues", "section_controls"):
+    assessment = report.get("overall_assessment")
+    if assessment not in (None, "", [], {}):
+        compact["overall_assessment"] = assessment
+    elif report.get("executive_summary") not in (None, "", [], {}):
+        compact["executive_summary"] = report.get("executive_summary")
+    for key in ("section_controls",):
         value = report.get(key)
         if value not in (None, "", [], {}):
             compact[key] = value
-    for key in ("summary_structured", "sections_status"):
+    for key in ("summary_structured",):
         value = report.get(key)
         if value not in (None, "", [], {}):
             if key == "summary_structured":
                 value = _add_barrier_conflict_notes(value)
                 value = _compact_summary_structured(value)
-            elif key == "sections_status":
-                value = _compact_sections_status(value)
             compact[key] = value
     if "summary_structured" not in compact:
         summary = report.get("summary")
