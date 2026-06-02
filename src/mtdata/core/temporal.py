@@ -41,6 +41,15 @@ logger = logging.getLogger(__name__)
 
 _TEMPORAL_RELIABLE_GROUP_BARS = 30
 _TEMPORAL_SAMPLE_WARNING_LIMIT = 10
+_TEMPORAL_DEFAULT_LOOKBACK_DAYS = {
+    "dow": 210,
+    "hour": 60,
+    "session": 60,
+    "month": 730,
+    "all": 365,
+}
+_TEMPORAL_DEFAULT_LOOKBACK_FLOOR = 200
+_TEMPORAL_DEFAULT_LOOKBACK_CAP = 20_000
 
 
 _DOW_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
@@ -109,6 +118,21 @@ def _normalize_group_by(value: Optional[str]) -> str:
     if v in ("all", "none", "overall"):
         return "all"
     return v
+
+
+def _default_temporal_lookback(timeframe: str, group_by: str) -> int:
+    seconds_per_bar = TIMEFRAME_SECONDS.get(str(timeframe or "").strip().upper())
+    if not seconds_per_bar:
+        return _TEMPORAL_DEFAULT_LOOKBACK_FLOOR
+    days = _TEMPORAL_DEFAULT_LOOKBACK_DAYS.get(
+        str(group_by or "").strip().lower(),
+        _TEMPORAL_DEFAULT_LOOKBACK_DAYS["dow"],
+    )
+    bars = int((int(days) * 86_400 + int(seconds_per_bar) - 1) // int(seconds_per_bar))
+    return max(
+        _TEMPORAL_DEFAULT_LOOKBACK_FLOOR,
+        min(_TEMPORAL_DEFAULT_LOOKBACK_CAP, bars),
+    )
 
 
 def _market_session_label(minutes_utc: Any) -> str:
@@ -733,7 +757,7 @@ def _fetch_rates(
 def temporal_analyze(  # noqa: C901
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
-    lookback: int = 200,
+    lookback: Optional[int] = None,
     start: Optional[str] = None,
     end: Optional[str] = None,
     group_by: Literal["dow", "hour", "month", "session", "all"] = "dow",
@@ -749,7 +773,7 @@ def temporal_analyze(  # noqa: C901
     """Temporal analysis by day-of-week, hour, market session, or month.
 
     `lookback` controls the number of historical bars used when start/end are
-    omitted.
+    omitted. When omitted, the tool chooses a timeframe-aware seasonal window.
 
     Filters:
     - day_of_week: 0-6 or names like Mon, Tuesday
@@ -790,15 +814,6 @@ def temporal_analyze(  # noqa: C901
                 ensure_connection_impl=ensure_mt5_connection_or_raise,
             )
             mt5_gateway.ensure_connection()
-            effective_lookback = 0 if lookback is None else int(lookback)
-            context["lookback"] = effective_lookback
-            if effective_lookback <= 1 and not (start and end):
-                return _error_response(
-                    "lookback must be >= 2 for return calculations.",
-                    stage="validate",
-                    context=context,
-                )
-
             group_norm = _normalize_group_by(group_by)
             if group_norm not in ("dow", "hour", "month", "session", "all"):
                 return _error_response(
@@ -807,6 +822,28 @@ def temporal_analyze(  # noqa: C901
                     context=context,
                 )
             context["group_by"] = group_norm
+            lookback_defaulted = lookback is None
+            try:
+                effective_lookback = (
+                    _default_temporal_lookback(timeframe, group_norm)
+                    if lookback_defaulted
+                    else int(lookback)
+                )
+            except Exception:
+                return _error_response(
+                    "lookback must be an integer.",
+                    stage="validate",
+                    context=context,
+                )
+            context["lookback"] = effective_lookback
+            if lookback_defaulted:
+                context["lookback_source"] = "auto"
+            if effective_lookback <= 1 and not (start and end):
+                return _error_response(
+                    "lookback must be >= 2 for return calculations.",
+                    stage="validate",
+                    context=context,
+                )
             requested_detail = str(detail or "compact").strip().lower()
             detail_mode = normalize_output_detail(detail, default="compact")
             if requested_detail not in {"compact", "standard", "summary", "full"}:

@@ -11,6 +11,7 @@ import pandas as pd
 import pytest
 
 from mtdata.core.temporal import (
+    _default_temporal_lookback,
     _error_response,
     _fetch_rates,
     _normalize_group_by,
@@ -206,6 +207,13 @@ def test_temporal_analyze_signature_exposes_limit_offset():
     params = inspect.signature(_raw_temporal_analyze).parameters
     assert params["limit"].default is None
     assert params["offset"].default == 0
+
+
+def test_default_temporal_lookback_scales_by_timeframe_and_group():
+    assert _default_temporal_lookback("H1", "dow") == 24 * 210
+    assert _default_temporal_lookback("H1", "hour") == 24 * 60
+    assert _default_temporal_lookback("D1", "dow") == 210
+    assert _default_temporal_lookback("M1", "dow") == 20_000
 
 
 # ===================================================================
@@ -637,6 +645,20 @@ class TestTemporalAnalyze:
             "win_rate": "fraction",
             "avg_range_pct": "percentage_points",
         }
+
+    @_apply_analyze_patches
+    def test_omitted_lookback_uses_seasonal_default(self, mock_fetch, *_):
+        mock_fetch.return_value = (
+            _make_rates(n=24 * 210, start_epoch=1704067200, interval=3600),
+            None,
+        )
+
+        r = _raw_temporal_analyze(symbol="EURUSD", timeframe="H1", group_by="dow")
+
+        assert r.get("success") is True
+        assert mock_fetch.call_args.args[2] == 24 * 210
+        assert r["lookback"] == 24 * 210
+        assert "sample_warnings" not in r
 
     @_apply_analyze_patches
     def test_summary_detail_returns_best_and_overall_only(self, mock_fetch, *_):
