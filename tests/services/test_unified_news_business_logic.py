@@ -235,11 +235,12 @@ def test_fetch_unified_news_uses_symbol_metadata_for_crypto_classification(monke
 
     result = svc.fetch_unified_news("BTCUSD")
     titles = [item["title"] for item in result["related_news"]]
+    context_titles = [item["title"] for item in result["market_context"]]
 
     assert result["success"] is True
     assert result["instrument"]["asset_class"] == "crypto"
     assert result["instrument"]["metadata_hints"]["currency_base"] == "BTC"
-    assert any("market snapshot" in title.lower() for title in titles)
+    assert any("market snapshot" in title.lower() for title in context_titles)
     assert any("Bitcoin steady ahead of CPI release" == title for title in titles)
 
 
@@ -634,11 +635,13 @@ def test_index_aliases_match_futures_snapshots(monkeypatch) -> None:
 
     result = svc.fetch_unified_news("NAS100")
 
-    snapshots = [item for item in result["related_news"] if item["kind"] == "market_snapshot"]
+    snapshots = [item for item in result["market_context"] if item["kind"] == "market_snapshot"]
     assert snapshots
     assert snapshots[0]["published_at"] is not None
+    assert snapshots[0]["metadata"]["source_type"] == "quote_snapshot"
     assert snapshots[0]["metadata"]["snapshot_time_inferred"] is True
-    assert result["source_details"]["finviz"]["selected_related"] >= 1
+    assert result["related_news"] == []
+    assert result["source_details"]["finviz"]["selected_market_context"] >= 1
 
 
 def test_market_snapshots_handle_lowercase_and_pair_keys(monkeypatch) -> None:
@@ -680,12 +683,13 @@ def test_market_snapshots_handle_lowercase_and_pair_keys(monkeypatch) -> None:
     forex_result = svc.fetch_unified_news("EURUSD")
     futures_result = svc.fetch_unified_news("NAS100")
 
-    assert forex_result["related_news"][0]["title"] == "EUR/USD market snapshot"
-    assert "Perf Week: -0.0039" in (forex_result["related_news"][0]["summary"] or "")
-    assert "-0.0039000000000000003" not in (forex_result["related_news"][0]["summary"] or "")
-    assert futures_result["related_news"][0]["title"] == "Nasdaq 100 E-mini market snapshot"
-    assert "Label: Nasdaq 100 E-mini" in (futures_result["related_news"][0]["summary"] or "")
-    assert "Perf: 0.8%" in (futures_result["related_news"][0]["summary"] or "")
+    assert forex_result["related_news"] == []
+    assert forex_result["market_context"][0]["title"] == "EUR/USD market snapshot"
+    assert "Perf Week: -0.0039" in (forex_result["market_context"][0]["summary"] or "")
+    assert "-0.0039000000000000003" not in (forex_result["market_context"][0]["summary"] or "")
+    assert futures_result["market_context"][0]["title"] == "Nasdaq 100 E-mini market snapshot"
+    assert "Label: Nasdaq 100 E-mini" in (futures_result["market_context"][0]["summary"] or "")
+    assert "Perf: 0.8%" in (futures_result["market_context"][0]["summary"] or "")
 
 
 def test_index_snapshot_candidate_pool_keeps_more_than_three_rows(monkeypatch) -> None:
@@ -717,7 +721,7 @@ def test_index_snapshot_candidate_pool_keeps_more_than_three_rows(monkeypatch) -
 
     result = svc.fetch_unified_news("NAS100")
 
-    snapshots = [item for item in result["related_news"] if item["kind"] == "market_snapshot"]
+    snapshots = [item for item in result["market_context"] if item["kind"] == "market_snapshot"]
     assert len(snapshots) >= 4
 
 
@@ -747,7 +751,7 @@ def test_market_snapshots_require_meaningful_relevance(monkeypatch) -> None:
 
     result = svc.fetch_unified_news("NAS100")
 
-    titles = [item["title"] for item in result["related_news"]]
+    titles = [item["title"] for item in result["market_context"]]
     assert any(title == "Nasdaq 100 E-mini market snapshot" for title in titles)
     assert all(title != "DY market snapshot" for title in titles)
 
@@ -778,7 +782,7 @@ def test_crypto_snapshots_require_exact_symbol_family_match(monkeypatch) -> None
 
     result = svc.fetch_unified_news("BTCUSD")
 
-    titles = [item["title"] for item in result["related_news"]]
+    titles = [item["title"] for item in result["market_context"]]
     assert any(title == "BTC market snapshot" for title in titles)
     assert all(title != "BCH market snapshot" for title in titles)
 
@@ -1257,24 +1261,36 @@ def test_fetch_unified_news_can_rerank_with_embeddings(monkeypatch) -> None:
 
         def score_documents(self, context, items):
             return {
-                items[0].dedupe_key(): 0.05,
-                items[1].dedupe_key(): 0.95,
+                item.dedupe_key(): 0.95 if "rallies" in item.title.lower() else 0.05
+                for item in items
             }
 
         def status(self):
             return {"enabled": True, "available": True, "model": "Qwen/Qwen3-Embedding-0.6B"}
 
-    monkeypatch.setattr(svc, "get_general_news", lambda news_type="news", limit=20, page=1: {"success": True, "items": []})
+    monkeypatch.setattr(
+        svc,
+        "get_general_news",
+        lambda news_type="news", limit=20, page=1: {
+            "success": True,
+            "items": [
+                {
+                    "Title": "Nasdaq 100 futures edge lower as yields rise",
+                    "Source": "Reuters",
+                    "Date": "2026-03-29T08:00:00Z",
+                },
+                {
+                    "Title": "Nasdaq 100 rallies after chip earnings",
+                    "Source": "CNBC",
+                    "Date": "2026-03-29T09:00:00Z",
+                },
+            ],
+        },
+    )
     monkeypatch.setattr(
         svc,
         "get_futures_performance",
-        lambda: {
-            "success": True,
-            "futures": [
-                {"Ticker": "NQ", "Price": "20100.00", "Change": "0.4%"},
-                {"Ticker": "NAS100", "Price": "20110.00", "Change": "0.5%"},
-            ],
-        },
+        lambda: {"success": True, "futures": []},
     )
     monkeypatch.setattr(
         svc,
@@ -1288,8 +1304,9 @@ def test_fetch_unified_news_can_rerank_with_embeddings(monkeypatch) -> None:
 
     result = svc.fetch_unified_news("NAS100")
 
-    assert result["related_news"][0]["title"] == "NAS100 market snapshot"
+    assert result["related_news"][0]["title"] == "Nasdaq 100 rallies after chip earnings"
     assert result["related_news"][0]["metadata"]["embedding_used"] is True
+    assert result["market_context"] == []
     assert result["matching"]["embeddings"]["enabled"] is True
 
 

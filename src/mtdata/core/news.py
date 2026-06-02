@@ -22,6 +22,8 @@ _NEWS_COMPACT_TOP_LEVEL_KEYS = frozenset(
         "matching",
         "general_count",
         "related_count",
+        "market_context",
+        "market_context_count",
         "impact_count",
         "upcoming_count",
         "recent_count",
@@ -33,10 +35,12 @@ _NEWS_BUCKET_KEYS = (
     "impact_news",
     "upcoming_events",
     "recent_events",
+    "market_context",
 )
 _NEWS_BUCKET_COUNT_KEYS = {
     "general_news": "general_count",
     "related_news": "related_count",
+    "market_context": "market_context_count",
     "impact_news": "impact_count",
     "upcoming_events": "upcoming_count",
     "recent_events": "recent_count",
@@ -327,17 +331,19 @@ def news(
     With no symbol, returns the most important recent general news from all
     available sources.
 
-    With a symbol, returns two buckets:
+    With a symbol, returns separate news/event buckets:
     - `general_news`: important recent market-wide items.
     - `related_news`: items relevant to the instrument, including direct symbol
-      news when available, asset-specific market snapshots, and macro events
-      whose text and metadata suggest likely impact on the instrument.
+      news and macro headlines whose text and metadata suggest likely impact
+      on the instrument.
     - `impact_news`: high-importance systemic headlines, such as war or energy
       shocks, that may matter even when they are not direct lexical matches.
     - `upcoming_events`: future economic-calendar items relevant to the
       instrument, surfaced separately so scheduled releases are easy to spot.
     - `recent_events`: the latest relevant economic releases, surfaced
       separately so actual values are easy to scan.
+    Full detail also includes `market_context` for quote/performance snapshots;
+    compact detail hides it so default news scans stay headline-focused.
 
     Matching uses symbol aliases, asset-class terms, MT5 symbol metadata, and a
     lightweight cosine-similarity score over headline/event text.
@@ -368,6 +374,7 @@ def news(
         - `instrument`: inferred symbol context when `symbol` is provided
         - `general_news`: important recent general news
         - `related_news`: symbol-relevant news and events
+        - `market_context`: quote/performance context in `detail="full"`
         - `impact_news`: high-importance systemic market headlines
         - `upcoming_events`: future scheduled events relevant to the instrument
         - `recent_events`: latest relevant scheduled releases for the instrument

@@ -1503,6 +1503,7 @@ class FinvizNewsSource:
                         "label": label,
                         "market": market,
                         "search_text": " ".join(_safe_text(value) for value in row.values()),
+                        "source_type": "quote_snapshot",
                         "snapshot_time_inferred": True,
                         "snapshot_score": round(row_score, 4),
                     },
@@ -1665,6 +1666,7 @@ class NewsAggregator:
                 "error": "No news sources available",
                 "general_news": [],
                 "related_news": [],
+                "market_context": [],
                 "impact_news": [],
                 "upcoming_events": [],
                 "recent_events": [],
@@ -1672,6 +1674,7 @@ class NewsAggregator:
 
         general_candidates: List[NewsItem] = []
         related_candidates: List[NewsItem] = []
+        market_context_candidates: List[NewsItem] = []
         source_details: Dict[str, Dict[str, Any]] = {}
 
         for name, source in selected_sources.items():
@@ -1681,11 +1684,22 @@ class NewsAggregator:
                 related_items: List[NewsItem] = []
                 if context is not None:
                     related_items = source.fetch_related_candidates(context, candidate_limit)
-                    related_candidates.extend(related_items)
+                    context_items = [
+                        item for item in related_items if item.kind == "market_snapshot"
+                    ]
+                    news_items = [
+                        item for item in related_items if item.kind != "market_snapshot"
+                    ]
+                    related_candidates.extend(news_items)
+                    market_context_candidates.extend(context_items)
+                else:
+                    news_items = []
+                    context_items = []
                 source_details[name] = {
                     "success": True,
                     "general_candidates": len(general_items),
-                    "related_candidates": len(related_items),
+                    "related_candidates": len(news_items),
+                    "market_context_candidates": len(context_items),
                 }
             except Exception as exc:
                 logger.exception("Error collecting news from %s", name)
@@ -1701,11 +1715,13 @@ class NewsAggregator:
                 "source_details": source_details,
                 "general_news": [],
                 "related_news": [],
+                "market_context": [],
                 "impact_news": [],
                 "upcoming_events": [],
                 "recent_events": [],
                 "general_count": 0,
                 "related_count": 0,
+                "market_context_count": 0,
                 "impact_count": 0,
                 "upcoming_count": 0,
                 "recent_count": 0,
@@ -1724,10 +1740,27 @@ class NewsAggregator:
         )
 
         related_news: List[NewsItem] = []
+        market_context: List[NewsItem] = []
         impact_news: List[NewsItem] = []
         upcoming_events: List[NewsItem] = []
         recent_events: List[NewsItem] = []
         if context is not None:
+            market_context_pool = _dedupe_items(market_context_candidates)
+            for item in market_context_pool:
+                item.importance_score = _score_importance(item)
+                item.relevance_score, matched_terms = _score_relevance(item, context)
+                if matched_terms:
+                    item.metadata["matched_terms"] = matched_terms
+            market_context_pool.sort(
+                key=lambda item: (
+                    item.relevance_score,
+                    item.importance_score,
+                    item.published_at or datetime.min.replace(tzinfo=timezone.utc),
+                ),
+                reverse=True,
+            )
+            market_context = market_context_pool[:_MAX_SNAPSHOT_ROWS]
+
             promoted_general_candidates = [
                 item for item in general_pool
                 if _should_promote_general_item_to_related(item, context)
@@ -1819,10 +1852,12 @@ class NewsAggregator:
 
         general_news = _sort_news_for_display(general_pool[:general_bucket_size])
         related_news = _sort_news_for_display(related_news)
+        market_context = _sort_news_for_display(market_context)
         impact_news = _sort_news_for_display(impact_news)
         recent_events = _sort_news_for_display(recent_events)
         selected_general_counts = Counter(item.provider for item in general_news)
         selected_related_counts = Counter(item.provider for item in related_news)
+        selected_context_counts = Counter(item.provider for item in market_context)
         selected_impact_counts = Counter(item.provider for item in impact_news)
         selected_upcoming_counts = Counter(item.provider for item in upcoming_events)
         selected_recent_counts = Counter(item.provider for item in recent_events)
@@ -1831,12 +1866,14 @@ class NewsAggregator:
                 continue
             details["selected_general"] = selected_general_counts.get(name, 0)
             details["selected_related"] = selected_related_counts.get(name, 0)
+            details["selected_market_context"] = selected_context_counts.get(name, 0)
             details["selected_impact"] = selected_impact_counts.get(name, 0)
             details["selected_upcoming"] = selected_upcoming_counts.get(name, 0)
             details["selected_recent"] = selected_recent_counts.get(name, 0)
             details["selected_total"] = (
                 details["selected_general"]
                 + details["selected_related"]
+                + details["selected_market_context"]
                 + details["selected_impact"]
                 + details["selected_upcoming"]
                 + details["selected_recent"]
@@ -1851,7 +1888,7 @@ class NewsAggregator:
                 "model": "keyword_plus_cosine_similarity",
                 "notes": [
                     "Ranks direct symbol mentions, asset-class terms, macro exposures, and text cosine similarity.",
-                    "Related news may include market snapshots and economic calendar events when they plausibly impact the instrument.",
+                    "Related news excludes quote snapshots; delayed Finviz performance rows are separated into market_context.",
                     "Impact news highlights high-importance systemic headlines such as war, sanctions, tariffs, and energy shocks.",
                     "Upcoming events surface future economic-calendar items in a dedicated section so they do not get buried by headlines.",
                     "Recent events surface the latest economic releases separately, with actual values when the source provides them.",
@@ -1859,12 +1896,14 @@ class NewsAggregator:
                 "embeddings": embedding_service.status() if context is not None else {"enabled": embedding_service.enabled},
             },
             "related_news": [item.to_dict() for item in related_news],
+            "market_context": [item.to_dict() for item in market_context],
             "general_news": [item.to_dict() for item in general_news],
             "impact_news": [item.to_dict() for item in impact_news],
             "upcoming_events": [item.to_dict() for item in upcoming_events],
             "recent_events": [item.to_dict() for item in recent_events],
             "general_count": len(general_news),
             "related_count": len(related_news),
+            "market_context_count": len(market_context),
             "impact_count": len(impact_news),
             "upcoming_count": len(upcoming_events),
             "recent_count": len(recent_events),

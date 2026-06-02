@@ -196,7 +196,8 @@ def test_news_output_hides_debug_fields_when_not_verbose() -> None:
         "source_details": {"finviz": {"selected_total": 1}},
         "matching": {"embeddings": {"enabled": True}},
         "general_count": 1,
-        "related_count": 1,
+        "related_count": 0,
+        "market_context_count": 1,
         "impact_count": 0,
         "general_news": [
             {
@@ -214,7 +215,8 @@ def test_news_output_hides_debug_fields_when_not_verbose() -> None:
                 "metadata": {"source_rank": 0, "relative_time": "9 days ago"},
             }
         ],
-        "related_news": [
+        "related_news": [],
+        "market_context": [
             {
                 "title": "EUR/USD market snapshot",
                 "provider": "finviz",
@@ -241,6 +243,7 @@ def test_news_output_hides_debug_fields_when_not_verbose() -> None:
     assert "matching" not in result
     assert "general_count" not in result
     assert "related_count" not in result
+    assert "market_context_count" not in result
     assert "impact_count" not in result
     assert result["general_news"] == [
         {
@@ -252,17 +255,8 @@ def test_news_output_hides_debug_fields_when_not_verbose() -> None:
         }
     ]
     assert "url" not in result["general_news"][0]
-    assert result["related_news"] == [
-        {
-            "title": "EUR/USD market snapshot",
-            "source": "Finviz Forex",
-            "kind": "market_snapshot",
-            "published_at": "2026-03-29T08:05:00Z",
-            "relative_time": "9 days ago",
-            "summary": "Price: 1.1541",
-        }
-    ]
-    assert "url" not in result["related_news"][0]
+    assert "related_news" not in result
+    assert "market_context" not in result
     assert "category" not in result["general_news"][0]
 
 
