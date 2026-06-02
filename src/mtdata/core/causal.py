@@ -27,7 +27,7 @@ from ..utils.symbol import (
     _normalize_group_path_query,
 )
 from ._mcp_instance import mcp
-from ..shared.constants import TIMEFRAME_MAP
+from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway, mt5_connection_error
 from .output_contract import normalize_output_verbosity_detail
@@ -609,6 +609,52 @@ def _pairwise_analysis_context(rows: List[Dict[str, Any]], *, timeframe: Any) ->
             context["samples_min"] = samples_min
             context["samples_max"] = samples_max
     return context
+
+
+def _pairwise_period_alignment(
+    rows: List[Dict[str, Any]],
+    *,
+    timeframe: Any,
+) -> tuple[Dict[str, Any], Optional[str]]:
+    starts = _sample_timestamps(row.get("period_start") for row in rows)
+    ends = _sample_timestamps(row.get("period_end") for row in rows)
+    if len(starts) < 2 and len(ends) < 2:
+        return {}, None
+
+    timeframe_key = str(timeframe or "").strip().upper()
+    bar_seconds = float(TIMEFRAME_SECONDS.get(timeframe_key, 0) or 0)
+    threshold = pd.Timedelta(seconds=bar_seconds) if bar_seconds > 0.0 else pd.Timedelta(0)
+    start_span = (max(starts) - min(starts)) if len(starts) >= 2 else pd.Timedelta(0)
+    end_span = (max(ends) - min(ends)) if len(ends) >= 2 else pd.Timedelta(0)
+    if start_span <= threshold and end_span <= threshold:
+        return {}, None
+
+    context = {
+        "period_scope": "pairwise_union",
+        "pair_windows_aligned": False,
+    }
+    warning = (
+        f"Pair sample windows differ by more than one {timeframe_key or 'timeframe'} bar; "
+        "compare each row's period_start/period_end instead of treating context period as a shared window."
+    )
+    return context, warning
+
+
+def _sample_timestamps(values: Any) -> List[pd.Timestamp]:
+    timestamps: List[pd.Timestamp] = []
+    for value in values:
+        if value in (None, ""):
+            continue
+        try:
+            timestamp = pd.Timestamp(value)
+        except Exception:
+            continue
+        if pd.isna(timestamp):
+            continue
+        if timestamp.tzinfo is not None:
+            timestamp = timestamp.tz_convert("UTC").tz_localize(None)
+        timestamps.append(timestamp)
+    return timestamps
 
 
 def _rank_correlation_pairs(
@@ -2285,6 +2331,23 @@ def correlation_matrix(  # noqa: C901
             if detail_mode in {"standard", "full"}
             else {}
         )
+        context = {
+            **_pairwise_analysis_context(rows, timeframe=timeframe),
+            "limit": output_limit,
+            "window_bars": int(window_bars),
+            "start": start,
+            "end": end,
+            "transform": transform_value,
+            "min_overlap": int(min_overlap),
+        }
+        alignment_context, alignment_warning = _pairwise_period_alignment(
+            rows,
+            timeframe=timeframe,
+        )
+        if alignment_context:
+            context.update(alignment_context)
+        if alignment_warning:
+            warnings_out.append(alignment_warning)
         out: Dict[str, Any] = {
             "success": True,
             "transform": transform_value,
@@ -2299,15 +2362,7 @@ def correlation_matrix(  # noqa: C901
             "items": output_rows,
             "count": int(len(output_rows_raw)),
             **pagination,
-            "context": {
-                **_pairwise_analysis_context(rows, timeframe=timeframe),
-                "limit": output_limit,
-                "window_bars": int(window_bars),
-                "start": start,
-                "end": end,
-                "transform": transform_value,
-                "min_overlap": int(min_overlap),
-            },
+            "context": context,
             "summary": {
                 "counts": {
                     "pairs": int(len(output_rows_raw)),

@@ -1077,6 +1077,34 @@ class TestCorrelationMatrix:
 
     @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
     @patch("mtdata.core.causal._fetch_series")
+    def test_pairwise_window_misalignment_is_flagged(self, mock_fetch):
+        base_idx = pd.date_range("2024-01-01", periods=120, freq="h")
+        rets = np.linspace(-0.01, 0.01, 120)
+        series_map = {
+            "A": pd.Series(100.0 * np.exp(np.cumsum(rets)), index=base_idx),
+            "B": pd.Series(90.0 * np.exp(np.cumsum(rets[:100] * 1.01)), index=base_idx[:100]),
+            "C": pd.Series(110.0 * np.exp(np.cumsum(rets[20:] * 0.99)), index=base_idx[20:]),
+        }
+
+        mock_fetch.side_effect = lambda symbol, timeframe, count: (series_map[symbol], None)
+
+        result = self._unwrapped()(
+            "A,B,C",
+            window_bars=60,
+            min_overlap=30,
+        )
+
+        assert result["success"] is True
+        assert result["context"]["period_scope"] == "pairwise_union"
+        assert result["context"]["pair_windows_aligned"] is False
+        assert any(
+            "Pair sample windows differ by more than one H1 bar" in warning
+            for warning in result["warnings"]
+        )
+        assert len({row["period_end"] for row in result["items"]}) > 1
+
+    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal._fetch_series")
     def test_partial_fetch_failures_are_preserved_as_warnings(self, mock_fetch):
         idx = pd.date_range("2024-01-01", periods=80, freq="h")
         rets = np.linspace(-0.01, 0.01, 80)
