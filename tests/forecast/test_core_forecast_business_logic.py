@@ -2102,8 +2102,13 @@ def test_forecast_barrier_prob_applies_default_pct_barriers_when_missing(monkeyp
     assert out["tp_pct"] == 1.0
     assert out["sl_pct"] == 1.0
     assert out["barrier_unit"] == "percent"
+    assert out["barrier_mode"] == "pct"
     assert out["probability_unit"] == "fraction"
     assert out["edge_definition"] == "prob_tp_first - prob_sl_first"
+    assert out["units"]["horizon"] == "bars"
+    assert out["units"]["tp_pct"] == "percentage_points"
+    assert out["units"]["prob_tp_first"] == "probability_fraction"
+    assert out["verdict"] == "TP-first bias, positive edge"
 
 
 def test_forecast_barrier_prob_keeps_partial_barrier_inputs_strict():

@@ -1127,6 +1127,10 @@ def _annotate_barrier_prob_context(
     request: ForecastBarrierProbRequest,
 ) -> Dict[str, Any]:
     out = dict(payload)
+    out.setdefault("symbol", request.symbol)
+    out.setdefault("timeframe", request.timeframe)
+    out.setdefault("horizon", request.horizon)
+    out.setdefault("direction", request.direction)
     if request.tp_pct is not None:
         out.setdefault("tp_pct", request.tp_pct)
     if request.sl_pct is not None:
@@ -1142,13 +1146,70 @@ def _annotate_barrier_prob_context(
 
     if out.get("tp_pct") is not None or out.get("sl_pct") is not None:
         out.setdefault("barrier_unit", "percent")
+        out.setdefault("barrier_mode", "pct")
     elif out.get("tp_ticks") is not None or out.get("sl_ticks") is not None:
         out.setdefault("barrier_unit", "ticks")
+        out.setdefault("barrier_mode", "ticks")
     elif out.get("tp_abs") is not None or out.get("sl_abs") is not None or out.get("barrier") is not None:
         out.setdefault("barrier_unit", "price")
+        out.setdefault("barrier_mode", "price")
     out.setdefault("probability_unit", "fraction")
     out.setdefault("edge_definition", "prob_tp_first - prob_sl_first")
+    units = _barrier_prob_units(out)
+    if units:
+        out.setdefault("units", units)
+    verdict = _barrier_prob_verdict(out)
+    if verdict:
+        out.setdefault("verdict", verdict)
     return out
+
+
+def _barrier_prob_units(payload: Dict[str, Any]) -> Dict[str, str]:
+    units: Dict[str, str] = {}
+    for key in ("horizon", "time_to_tp_bars", "time_to_sl_bars"):
+        if payload.get(key) not in (None, "", [], {}):
+            units[key] = "bars"
+    price_keys = (
+        "reference_price",
+        "tp_price",
+        "sl_price",
+        "tp_abs",
+        "sl_abs",
+        "barrier",
+    )
+    for key in price_keys:
+        if payload.get(key) not in (None, "", [], {}):
+            units[key] = "price"
+    for key in ("tp_pct", "sl_pct"):
+        if payload.get(key) not in (None, "", [], {}):
+            units[key] = "percentage_points"
+    for key in ("tp_ticks", "sl_ticks"):
+        if payload.get(key) not in (None, "", [], {}):
+            units[key] = "ticks"
+    for key in ("prob_tp_first", "prob_sl_first", "prob_no_hit", "prob_hit"):
+        if payload.get(key) not in (None, "", [], {}):
+            units[key] = "probability_fraction"
+    if payload.get("edge") not in (None, "", [], {}):
+        units["edge"] = "probability_difference"
+    return units
+
+
+def _barrier_prob_verdict(payload: Dict[str, Any]) -> Optional[str]:
+    edge_value = _finite_float(payload.get("edge"))
+    if edge_value is None:
+        tp_prob = _finite_float(payload.get("prob_tp_first"))
+        sl_prob = _finite_float(payload.get("prob_sl_first"))
+        if tp_prob is not None and sl_prob is not None:
+            edge_value = tp_prob - sl_prob
+    if edge_value is not None:
+        if edge_value > 0:
+            return "TP-first bias, positive edge"
+        if edge_value < 0:
+            return "SL-first bias, negative edge"
+        return "Neutral first-hit edge"
+    if payload.get("prob_hit") not in (None, "", [], {}):
+        return "Barrier-hit probability estimated"
+    return None
 
 
 def _barrier_prob_interpretation(payload: Dict[str, Any]) -> Dict[str, str]:
