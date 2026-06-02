@@ -808,6 +808,46 @@ def test_build_pattern_response_compact_counts_omitted_rows_when_truncated():
     assert "show_all_hint" not in compact
 
 
+def test_build_pattern_response_compact_promotes_data_gap_warning():
+    df = pd.DataFrame(
+        {"time": list(range(12)), "close": [100.0 + i for i in range(12)]}
+    )
+    df.attrs["warnings"] = [
+        "Data quality warning: detected time gaps larger than 1.5 bar intervals."
+    ]
+    patterns = [
+        {
+            "name": "Hammer",
+            "status": "forming",
+            "confidence": 0.8,
+            "bias": "bullish",
+            "end_index": 10,
+        }
+    ]
+
+    compact = _build_pattern_response(
+        "EURUSD",
+        "H1",
+        100,
+        "classic",
+        patterns,
+        include_completed=False,
+        include_series=False,
+        series_time="string",
+        df=df,
+        detail="compact",
+    )
+
+    assert compact["data_quality"] == {
+        "status": "warning",
+        "patterns_reliability": "degraded",
+        "issues": ["time_gaps"],
+    }
+    keys = list(compact)
+    assert keys.index("data_quality") < keys.index("action")
+    assert compact["warnings"] == df.attrs["warnings"]
+
+
 def test_patterns_detect_elliott_without_timeframe_scans_default_subset(monkeypatch):
     monkeypatch.setattr(
         core_patterns, "TIMEFRAME_MAP", {"M1": 1, "H1": 2, "H4": 3, "D1": 4}

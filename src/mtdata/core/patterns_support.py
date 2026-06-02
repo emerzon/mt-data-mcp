@@ -449,6 +449,40 @@ def _pattern_signal_verdict(
     return " ".join(pieces)
 
 
+def _pattern_data_quality_summary(warnings_in: Any) -> Optional[Dict[str, Any]]:
+    if not isinstance(warnings_in, list):
+        return None
+
+    issues: List[str] = []
+    for warning in warnings_in:
+        text = str(warning).strip().lower()
+        if not text:
+            continue
+        if "time gaps" in text or "bar intervals" in text:
+            issues.append("time_gaps")
+        elif "stale" in text:
+            issues.append("stale_data")
+        elif "repeated close" in text or "nearly flat" in text:
+            issues.append("flat_prices")
+        elif "zero-volume" in text or "zero volume" in text:
+            issues.append("zero_volume")
+        elif "duplicate candle" in text:
+            issues.append("duplicate_timestamps")
+        elif "out-of-order" in text or "sorted candle" in text:
+            issues.append("timestamp_order")
+        elif "non-finite" in text or "inconsistent ohlc" in text:
+            issues.append("invalid_ohlc")
+
+    if not issues:
+        return None
+
+    return {
+        "status": "warning",
+        "patterns_reliability": "degraded",
+        "issues": list(dict.fromkeys(issues)),
+    }
+
+
 def _compact_patterns_payload(
     payload: Dict[str, Any],
     *,
@@ -630,6 +664,9 @@ def _compact_patterns_payload(
     compact["patterns_shown"] = len(top_patterns)
     compact["patterns_omitted"] = max(0, total_i - len(top_patterns))
     compact["strong_patterns"] = strong_patterns
+    data_quality = _pattern_data_quality_summary(payload.get("warnings"))
+    if data_quality:
+        compact["data_quality"] = data_quality
     if signal_bias:
         distribution = {
             "bullish": int(signal_bias.get("bullish_patterns") or 0),
