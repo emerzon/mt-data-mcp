@@ -1061,13 +1061,23 @@ def _list_symbol_groups(
         if all_symbols is None:
             return {"error": f"Failed to get symbols: {gateway.last_error()}"}
         
-        # Collect unique groups and counts
+        # Collect unique groups and compact discovery metadata.
         groups = {}
         for symbol in all_symbols:
             group_path = _extract_group_path_util(symbol)
             if group_path not in groups:
-                groups[group_path] = {"count": 0}
-            groups[group_path]["count"] += 1
+                groups[group_path] = {
+                    "symbol_count": 0,
+                    "visible_count": 0,
+                    "sample_symbols": [],
+                }
+            group_meta = groups[group_path]
+            group_meta["symbol_count"] += 1
+            if bool(getattr(symbol, "visible", False)):
+                group_meta["visible_count"] += 1
+            symbol_name = str(getattr(symbol, "name", "") or "").strip()
+            if symbol_name and len(group_meta["sample_symbols"]) < 3:
+                group_meta["sample_symbols"].append(symbol_name)
         
         # Filter by search term if provided
         filtered_items = list(groups.items())
@@ -1078,7 +1088,7 @@ def _list_symbol_groups(
         # Sort groups by count (most symbols first)
         filtered_items.sort(
             key=lambda item: (
-                -item[1]["count"],
+                -item[1]["symbol_count"],
                 *_case_insensitive_sort_key(item[0]),
             )
         )
@@ -1113,12 +1123,25 @@ def _list_symbol_groups(
                 out["has_more"] = has_more
             return out
         if detail_mode in {"standard", "full"}:
-            rows = [[name, meta["count"]] for name, meta in filtered_items]
-            result = _table_from_rows(["group", "count"], rows)
+            rows = [
+                [name, meta["symbol_count"], meta["visible_count"]]
+                for name, meta in filtered_items
+            ]
+            result = _table_from_rows(["group", "symbol_count", "visible_count"], rows)
         else:
-            group_names = [name for name, _ in filtered_items]
-            rows = [[g] for g in group_names]
-            result = _table_from_rows(["group"], rows)
+            rows = [
+                [
+                    name,
+                    meta["symbol_count"],
+                    meta["visible_count"],
+                    meta["sample_symbols"],
+                ]
+                for name, meta in filtered_items
+            ]
+            result = _table_from_rows(
+                ["group", "symbol_count", "visible_count", "sample_symbols"],
+                rows,
+            )
         if offset_value or has_more:
             result["total_count"] = total_count
             result["offset"] = offset_value
@@ -1695,11 +1718,21 @@ def _market_scan_units_for_rows(rows: List[Dict[str, Any]]) -> Dict[str, str]:
         for key, value in row.items()
         if value is not None
     }
-    return {
+    units = {
         key: unit
         for key, unit in _MARKET_SCAN_UNITS.items()
         if key in seen_fields
     }
+    if "spread_pips" in units:
+        has_non_fx_spread_row = any(
+            isinstance(row, dict)
+            and row.get("spread_points") is not None
+            and row.get("spread_pips") is None
+            for row in rows
+        )
+        if has_non_fx_spread_row:
+            units["spread_pips"] = "pips (forex_only; omitted when not applicable)"
+    return units
 
 
 def _attach_top_markets_units(

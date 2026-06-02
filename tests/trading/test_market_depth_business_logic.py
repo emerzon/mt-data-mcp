@@ -55,21 +55,26 @@ def test_market_depth_tick_fallback_includes_price_display() -> None:
         "mtdata.core.market_depth._use_client_tz", return_value=False
     ):
         mt5.symbol_select.return_value = True
-        mt5.symbol_info.return_value = SimpleNamespace(digits=2)
+        mt5.symbol_info.return_value = SimpleNamespace(digits=2, currency_profit="USD")
         mt5.market_book_get.return_value = []
         mt5.symbol_info_tick.return_value = tick
 
         out = _raw_market_depth_fetch("BTCUSD")
 
     assert out["success"] is True
-    assert out["type"] == "tick_data"
+    assert out["type"] == "quote_fallback"
+    assert out["depth_status"] == "unavailable"
+    assert out["recommended_alternative"] == "market_ticker"
     assert out["capabilities"]["dom_available"] is False
+    assert out["capabilities"]["depth_status"] == "unavailable"
     assert out["capabilities"]["depth_source"] == "symbol_info_tick"
-    assert out["data"]["recommended_alternative"] == "market_ticker"
     assert out["price_precision"] == 2
+    assert out["price_currency"] == "USD"
     assert out["data"]["bid"] == 65601.0
     assert out["data"]["ask"] == 65601.5
     assert out["data"]["last"] == 65601.0
+    assert out["data"]["time"] == "2023-11-14T22:13Z"
+    assert out["data"]["time_epoch"] == 1700000000
     assert out["units"] == {"volume": "mt5_tick_volume"}
     assert isinstance(out.get("query_latency_ms"), float)
 
@@ -178,7 +183,7 @@ def test_market_depth_releases_book_after_empty_snapshot() -> None:
         out = _raw_market_depth_fetch("BTCUSD")
 
     assert out["success"] is True
-    assert out["type"] == "tick_data"
+    assert out["type"] == "quote_fallback"
     mt5.market_book_add.assert_called_once_with("BTCUSD")
     mt5.market_book_release.assert_called_once_with("BTCUSD")
 

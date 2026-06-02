@@ -540,7 +540,7 @@ class TestListSymbolGroups:
 
         res = _list_symbol_groups(limit=1, offset=1)
 
-        assert res["data"] == [["G2"]]
+        assert res["data"] == [["G2", 1, 1, ["B1"]]]
         assert res["total_count"] == 3
         assert res["offset"] == 1
         assert res["limit"] == 1
@@ -561,7 +561,11 @@ class TestListSymbolGroups:
             _make_symbol("C2", path="Alpha"),
         ]
         res = _list_symbol_groups()
-        assert res["data"] == [["Zulu"], ["Alpha"], ["beta"]]
+        assert res["data"] == [
+            ["Zulu", 3, 3, ["A1", "A2", "A3"]],
+            ["Alpha", 2, 2, ["C1", "C2"]],
+            ["beta", 2, 2, ["B1", "B2"]],
+        ]
 
 
 # ---------------------------------------------------------------------------

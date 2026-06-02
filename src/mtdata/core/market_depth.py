@@ -207,6 +207,11 @@ def _market_depth_fetch_impl(symbol: str, spread: bool = False, require_dom: boo
             point = float(getattr(symbol_info, "point", 0.0) or 0.0)
             tick_size = float(getattr(symbol_info, "trade_tick_size", 0.0) or 0.0)
             tick_value = float(getattr(symbol_info, "trade_tick_value", 0.0) or 0.0)
+            price_currency = str(
+                getattr(symbol_info, "currency_profit", None)
+                or getattr(symbol_info, "currency_margin", None)
+                or ""
+            ).strip() or None
 
             def _compute_spread_metrics(bid: Any, ask: Any) -> Dict[str, Any] | None:
                 try:
@@ -293,8 +298,10 @@ def _market_depth_fetch_impl(symbol: str, spread: bool = False, require_dom: boo
                     "symbol": symbol,
                     "type": "full_depth",
                     "price_precision": digits,
+                    "price_currency": price_currency,
                     "capabilities": {
                         "dom_available": True,
+                        "depth_status": "available",
                         "depth_source": "market_book_get",
                         "spread_overlay_requested": bool(spread),
                     },
@@ -344,10 +351,14 @@ def _market_depth_fetch_impl(symbol: str, spread: bool = False, require_dom: boo
             out = {
                 "success": True,
                 "symbol": symbol,
-                "type": "tick_data",
+                "type": "quote_fallback",
+                "depth_status": "unavailable",
                 "price_precision": digits,
+                "price_currency": price_currency,
+                "recommended_alternative": "market_ticker",
                 "capabilities": {
                     "dom_available": False,
+                    "depth_status": "unavailable",
                     "depth_source": "symbol_info_tick",
                     "spread_overlay_requested": bool(spread),
                     "fallback_reason": "market_book_get returned no levels",
@@ -357,9 +368,7 @@ def _market_depth_fetch_impl(symbol: str, spread: bool = False, require_dom: boo
                     "ask": float(tick.ask) if tick.ask else None,
                     "last": float(tick.last) if tick.last else None,
                     "volume": int(tick.volume) if tick.volume else None,
-                    "time": int(float(tick.time)) if tick.time else None,
                     "note": "Full market depth not available, showing current bid/ask snapshot.",
-                    "recommended_alternative": "market_ticker",
                 },
                 "units": dict(_MARKET_DEPTH_TICK_UNITS),
             }
@@ -373,9 +382,11 @@ def _market_depth_fetch_impl(symbol: str, spread: bool = False, require_dom: boo
                     out["capabilities"]["spread_overlay_applied"] = True
             _use_ctz = _use_client_tz()
             if tick.time and _use_ctz:
-                out["data"]["time_display"] = _format_time_explicit_local(float(tick.time))
+                out["data"]["time"] = _format_time_explicit_local(float(tick.time))
+                out["data"]["time_epoch"] = int(float(tick.time))
             elif tick.time:
-                out["data"]["time_display"] = _format_time_explicit(float(tick.time))
+                out["data"]["time"] = _format_time_explicit(float(tick.time))
+                out["data"]["time_epoch"] = int(float(tick.time))
             out["timezone"] = _display_timezone_label(use_client_tz=_use_ctz)
             out["query_latency_ms"] = round((time.perf_counter() - started) * 1000.0, 3)
             return out

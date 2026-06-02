@@ -892,6 +892,7 @@ def _check_symbol_market_status(
         "status_source": "trade_mode_and_tick_freshness",
         "status_confidence": "heuristic",
         "can_open_new_positions": can_open,
+        "is_tradable": can_open,
         "trade_mode_allows_opening": trade_mode_can_open,
         "trade_mode_label": mode_status.get("trade_mode_label"),
         "tick_freshness": tick_freshness,
@@ -940,6 +941,17 @@ def _check_symbol_market_status(
         result["inferred_schedule"] = schedule_status
     else:
         result.pop("message", None)
+        timezone_context = result.pop("timezone_context", {})
+        if isinstance(timezone_context, dict):
+            market_now = timezone_context.get("market_now")
+            if market_now is not None:
+                result["market_clock"] = market_now
+            status_timezone = timezone_context.get("status_timezone")
+            if status_timezone is not None:
+                result["market_clock_timezone"] = status_timezone
+            authoritative_clock = timezone_context.get("authoritative_clock")
+            if authoritative_clock is not None:
+                result["authoritative_clock"] = authoritative_clock
         for key in ("tick_available", "last_tick_time", "last_tick_age_seconds"):
             if key in tick_status:
                 result[key] = tick_status[key]
@@ -988,8 +1000,12 @@ def _compact_symbol_market_status(row: Dict[str, Any], *, detail: str) -> Dict[s
     keys = (
         "symbol",
         "status",
+        "is_tradable",
         "can_open_new_positions",
         "tick_freshness",
+        "market_clock",
+        "market_clock_timezone",
+        "authoritative_clock",
         "reason",
         "message",
     )

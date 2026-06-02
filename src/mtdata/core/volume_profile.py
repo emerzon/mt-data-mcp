@@ -30,6 +30,7 @@ _DEFAULT_MAX_TICK_WINDOW_DAYS = 7
 _DEFAULT_MAX_TICKS = 200_000
 _DEFAULT_MAX_M1_BARS = 20_000
 _DEFAULT_PROFILE_LIMIT = 200
+_MIN_TICK_PRICE_COVERAGE_RATIO = 0.5
 
 
 def _positive_float_attr(obj: Any, *names: str) -> Optional[float]:
@@ -221,12 +222,63 @@ def _fetch_m1_rows(
     }
 
 
+def _row_finite_positive(row: Any, key: str) -> Optional[float]:
+    if isinstance(row, dict):
+        value = row.get(key)
+    else:
+        value = getattr(row, key, None)
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return None
+    if math.isfinite(numeric) and numeric > 0.0:
+        return numeric
+    return None
+
+
+def _tick_price_quality(rows: list[dict[str, Any]], price_source: str) -> Dict[str, Any]:
+    source = str(price_source or "mid").strip().lower()
+    total = len(rows)
+    valid = 0
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        price = _row_finite_positive(row, source)
+        if source == "mid" and price is None:
+            bid = _row_finite_positive(row, "bid")
+            ask = _row_finite_positive(row, "ask")
+            if bid is not None and ask is not None:
+                price = (bid + ask) / 2.0
+        if price is not None:
+            valid += 1
+    ratio = (valid / total) if total else 0.0
+    return {
+        "price_source": source,
+        "input_rows": int(total),
+        "valid_price_rows": int(valid),
+        "dropped_price_rows": int(max(0, total - valid)),
+        "valid_price_ratio": round(ratio, 4),
+    }
+
+
+def _should_fallback_from_tick_prices(quality: Dict[str, Any]) -> bool:
+    input_rows = int(quality.get("input_rows") or 0)
+    if input_rows <= 0:
+        return True
+    valid_rows = int(quality.get("valid_price_rows") or 0)
+    if valid_rows <= 0:
+        return True
+    ratio = float(quality.get("valid_price_ratio") or 0.0)
+    return ratio < _MIN_TICK_PRICE_COVERAGE_RATIO
+
+
 def _select_profile_rows(
     *,
     symbol: str,
     start: Optional[str],
     end: Optional[str],
     source: str,
+    price_source: str,
     max_tick_window_days: int,
     max_ticks: int,
     max_m1_bars: int,
@@ -260,7 +312,33 @@ def _select_profile_rows(
         end=end,
         max_ticks=max_ticks,
     )
-    if not tick_result.get("error") or source_value == "ticks":
+    if not tick_result.get("error"):
+        rows = tick_result.get("rows")
+        if not isinstance(rows, list):
+            rows = []
+        quality = _tick_price_quality(rows, price_source)
+        diagnostics = tick_result.setdefault("diagnostics", {})
+        if isinstance(diagnostics, dict):
+            diagnostics["tick_price_quality"] = quality
+        if source_value == "auto" and _should_fallback_from_tick_prices(quality):
+            fallback = _fetch_m1_rows(
+                symbol=symbol,
+                start=start,
+                end=end,
+                max_m1_bars=max_m1_bars,
+            )
+            fallback_diagnostics = fallback.setdefault("diagnostics", {})
+            if isinstance(fallback_diagnostics, dict):
+                fallback_diagnostics["auto_fallback_reason"] = (
+                    "tick price coverage below threshold"
+                )
+                fallback_diagnostics["tick_price_quality"] = quality
+                fallback_diagnostics["min_tick_price_coverage_ratio"] = (
+                    _MIN_TICK_PRICE_COVERAGE_RATIO
+                )
+            return fallback
+        return tick_result
+    if source_value == "ticks":
         return tick_result
     fallback = _fetch_m1_rows(
         symbol=symbol,
@@ -339,11 +417,27 @@ def compute_volume_profile_payload(
     max_m1_bars: int = _DEFAULT_MAX_M1_BARS,
     detail: CompactStandardFullDetailLiteral = "compact",
 ) -> Dict[str, Any]:
+    source_value = str(source or "auto").strip().lower()
+    effective_max_ticks = max_ticks
+    window_limit = limit
+    if limit is not None and not timeframe and source_value in {"auto", "ticks"}:
+        try:
+            effective_max_ticks = int(limit)
+        except (TypeError, ValueError):
+            effective_max_ticks = 0
+        if effective_max_ticks <= 0:
+            return {
+                "error": (
+                    "limit must be a positive integer when used as a tick cap; "
+                    "omit limit to use max_ticks."
+                )
+            }
+        window_limit = None
     window = _resolve_profile_window(
         start=start,
         end=end,
         timeframe=timeframe,
-        limit=limit,
+        limit=window_limit,
     )
     if window.get("error"):
         return {"error": window["error"]}
@@ -360,8 +454,9 @@ def compute_volume_profile_payload(
         start=resolved_start,
         end=resolved_end,
         source=source,
+        price_source=price_source,
         max_tick_window_days=max_tick_window_days,
-        max_ticks=max_ticks,
+        max_ticks=effective_max_ticks,
         max_m1_bars=max_m1_bars,
     )
     if selected.get("error"):

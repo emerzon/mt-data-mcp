@@ -79,6 +79,99 @@ def test_compute_volume_profile_payload_uses_tick_rows(monkeypatch):
     assert "buckets" not in result
 
 
+def test_compute_volume_profile_payload_uses_limit_as_tick_cap(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(vp, "create_mt5_gateway", lambda **_: SimpleNamespace(ensure_connection=lambda: None))
+    monkeypatch.setattr(
+        vp,
+        "_symbol_ready_guard",
+        lambda symbol: _Guard(None, SimpleNamespace(point=0.0001, digits=5)),
+    )
+
+    def fake_fetch_ticks(**kwargs):
+        captured.update(kwargs)
+        return {
+            "data": [
+                {
+                    "bid": 1.0999,
+                    "ask": 1.1001,
+                    "mid": 1.1000,
+                    "tick_volume": 1,
+                    "real_volume": 0,
+                }
+            ]
+        }
+
+    monkeypatch.setattr(vp, "fetch_ticks", fake_fetch_ticks)
+
+    result = vp.compute_volume_profile_payload(
+        symbol="EURUSD",
+        source="ticks",
+        limit=5000,
+        bucket_size=0.0001,
+    )
+
+    assert result["success"] is True
+    assert result["source"] == "ticks"
+    assert result["window"] == {"start": None, "end": None}
+    assert captured["limit"] == 5000
+    assert captured["start"] is None
+    assert captured["end"] is None
+
+
+def test_compute_volume_profile_payload_auto_falls_back_on_low_tick_mid_coverage(monkeypatch):
+    monkeypatch.setattr(vp, "create_mt5_gateway", lambda **_: SimpleNamespace(ensure_connection=lambda: None))
+    monkeypatch.setattr(
+        vp,
+        "_symbol_ready_guard",
+        lambda symbol: _Guard(None, SimpleNamespace(point=0.0001, digits=5)),
+    )
+    monkeypatch.setattr(
+        vp,
+        "fetch_ticks",
+        lambda **_: {
+            "data": [
+                {"bid": None, "ask": 1.1001, "tick_volume": 1, "real_volume": 0},
+                {"bid": 1.1000, "ask": None, "tick_volume": 1, "real_volume": 0},
+            ]
+        },
+    )
+    monkeypatch.setattr(
+        vp,
+        "fetch_candles",
+        lambda **_: {
+            "data": [
+                {
+                    "time": "2026-01-01 00:00:00",
+                    "open": 1.1000,
+                    "high": 1.1010,
+                    "low": 1.0990,
+                    "close": 1.1005,
+                    "tick_volume": 90,
+                    "real_volume": 0,
+                }
+            ]
+        },
+    )
+
+    result = vp.compute_volume_profile_payload(
+        symbol="EURUSD",
+        source="auto",
+        bucket_size=0.0005,
+    )
+
+    assert result["success"] is True
+    assert result["source"] == "m1_bars"
+    assert result["diagnostics"]["auto_fallback_reason"] == "tick price coverage below threshold"
+    assert result["diagnostics"]["tick_price_quality"] == {
+        "price_source": "mid",
+        "input_rows": 2,
+        "valid_price_rows": 0,
+        "dropped_price_rows": 2,
+        "valid_price_ratio": 0.0,
+    }
+
+
 def test_compute_volume_profile_payload_derives_window_from_timeframe_limit(monkeypatch):
     captured = {}
     monkeypatch.setattr(vp, "create_mt5_gateway", lambda **_: SimpleNamespace(ensure_connection=lambda: None))

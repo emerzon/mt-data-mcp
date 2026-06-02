@@ -710,6 +710,13 @@ class TestFormatResultForCli:
                 "lookback": 100,
                 "limit": 3,
                 "rank_by": "abs_price_change_pct",
+                "rank_order": "desc",
+                "ranking": "largest_abs_price_change_pct",
+                "requested_limit": 3,
+                "returned_count": 1,
+                "total_count": 6,
+                "offset": 0,
+                "has_more": True,
                 "scanned_symbols": 6,
                 "evaluated_symbols": 6,
                 "matched_symbols": 6,
@@ -732,7 +739,14 @@ class TestFormatResultForCli:
         assert "EURUSD" in result
         assert "scope:" not in result
         assert "query_latency_ms" not in result
-        assert "rank_by" not in result
+        assert "rank_by: abs_price_change_pct" in result
+        assert "rank_order: desc" in result
+        assert "ranking: largest_abs_price_change_pct" in result
+        assert "requested_limit: 3" in result
+        assert "returned_count: 1" in result
+        assert "total_count: 6" in result
+        assert "offset: 0" in result
+        assert "has_more: true" in result
         assert "freshness: fresh" in result
         assert "stale_rows: 0" in result
         assert 'data_as_of: "2026-05-29 19:00"' in result

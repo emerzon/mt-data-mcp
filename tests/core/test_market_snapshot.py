@@ -83,6 +83,8 @@ def test_market_snapshot_summary_detail_returns_lean_snapshot(monkeypatch):
     assert result["snapshot"] == {
         "bid": 1.1001,
         "ask": 1.1003,
+        "mid": 1.1002,
+        "spread_pips": 2.0,
         "nearest_support": 1.098,
         "nearest_resistance": 1.105,
         "pattern_bias": "bullish",
@@ -91,6 +93,49 @@ def test_market_snapshot_summary_detail_returns_lean_snapshot(monkeypatch):
     assert "levels" not in result
     assert "patterns" not in result
     assert result["summary"] == "EURUSD snapshot; mid=1.1002; spread_pips=2.0."
+
+
+def test_market_snapshot_compact_defaults_to_lean_snapshot(monkeypatch):
+    def fake_call_section(name, symbol, timeframe, horizon, detail):
+        if name == "quote":
+            return {
+                "success": True,
+                "symbol": symbol,
+                "bid": 1.1001,
+                "ask": 1.1003,
+                "mid": 1.1002,
+                "spread_points": 2.0,
+            }
+        if name == "levels":
+            return {
+                "success": True,
+                "scan_window": {"start": "2026-01-01", "end": "2026-01-02"},
+                "supports": [{"type": "support", "value": 1.098}],
+                "resistances": [{"type": "resistance", "value": 1.105}],
+            }
+        return {
+            "success": True,
+            "n_patterns": 2,
+            "highlights": [{"pattern": "engulfing", "bias": "bullish"}],
+            "calibration": {"minimum_confidence": 0.3},
+        }
+
+    monkeypatch.setattr(snapshot_mod, "_call_section", fake_call_section)
+
+    result = _raw_market_snapshot(symbol="EURUSD", detail="compact")
+
+    assert result["snapshot"] == {
+        "bid": 1.1001,
+        "ask": 1.1003,
+        "mid": 1.1002,
+        "spread_points": 2.0,
+        "nearest_support": 1.098,
+        "nearest_resistance": 1.105,
+        "pattern_bias": "bullish",
+    }
+    assert "quote" not in result
+    assert "levels" not in result
+    assert "patterns" not in result
 
 
 def test_snapshot_patterns_section_requests_recent_candlestick_triggers(monkeypatch):

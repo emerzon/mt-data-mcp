@@ -307,7 +307,17 @@ def _snapshot_summary_payload(sections: Dict[str, Any]) -> Dict[str, Any]:
 
     out: Dict[str, Any] = {}
     if isinstance(quote, dict):
-        for key in ("bid", "ask"):
+        for key in (
+            "bid",
+            "ask",
+            "mid",
+            "spread",
+            "spread_points",
+            "spread_pips",
+            "spread_pct",
+            "freshness",
+            "time",
+        ):
             value = quote.get(key)
             if value is not None:
                 out[key] = value
@@ -426,7 +436,7 @@ def market_snapshot(
             "sections": list(selected),
             **{key: value for key, value in health.items() if key != "success"},
         }
-        if detail_mode == "summary":
+        if detail_mode in {"summary", "summary_only", "compact"}:
             summary_payload = _snapshot_summary_payload(section_payloads)
             if summary_payload:
                 payload["snapshot"] = summary_payload

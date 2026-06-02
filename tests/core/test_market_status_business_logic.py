@@ -140,9 +140,11 @@ def test_market_status_symbol_mode_reports_heuristic_status(monkeypatch) -> None
     assert result["tick_available"] is True
     assert result["data_fetched_at"] == "2024-01-02T12:00:00Z"
     assert result["last_tick_time"] == "2024-01-02T12:00:00Z"
-    assert result["timezone_context"]["timezone_display"] == "server"
-    assert result["timezone_context"]["market_now"] == "2024-01-02T12:00:00Z"
-    assert result["timezone_context"]["authoritative_clock"] in {"server", "utc"}
+    assert result["is_tradable"] is True
+    assert result["market_clock"] == "2024-01-02T12:00:00Z"
+    assert result["market_clock_timezone"] == "UTC"
+    assert result["authoritative_clock"] in {"server", "utc"}
+    assert "timezone_context" not in result
 
 
 def test_market_status_symbol_timezone_context_labels_server_clock(monkeypatch) -> None:

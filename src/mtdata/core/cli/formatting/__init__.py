@@ -546,6 +546,14 @@ def _normalize_market_scan_cli_payload(result: Any, *, verbose: bool) -> Any:
     for key in (
         "success",
         "count",
+        "returned_count",
+        "total_count",
+        "requested_limit",
+        "offset",
+        "has_more",
+        "rank_by",
+        "rank_order",
+        "ranking",
         "headers",
         "data",
         "freshness",
@@ -553,6 +561,7 @@ def _normalize_market_scan_cli_payload(result: Any, *, verbose: bool) -> Any:
         "data_as_of",
         "session_status",
         "units",
+        "summary",
         "no_action",
         "message",
     ):
