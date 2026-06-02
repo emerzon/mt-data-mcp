@@ -272,6 +272,12 @@ def test_trade_risk_analyze_compact_keeps_blocked_sizing_context() -> None:
         "min_viable_volume": 0.1,
         "min_viable_risk_currency": 2.0,
         "min_viable_risk_pct": 0.2,
+        "volume_min": 0.1,
+        "volume_step": 0.1,
+        "volume_max": 10.0,
+        "strict_risk_hint": (
+            "Skip trade or set strict_risk=false to accept the minimum-lot risk."
+        ),
         "entry": 100.0,
         "sl": 80.0,
     }
@@ -476,6 +482,9 @@ def test_trade_risk_analyze_blocks_min_volume_risk_overshoot_by_default() -> Non
     assert sizing["risk_compliance"] == "blocked_min_volume_exceeds_requested_risk"
     assert sizing["risk_overshoot_pct"] > 0.0
     assert sizing["risk_over_target_reason"] == "min_volume_constraint"
+    assert sizing["strict_risk_hint"] == (
+        "Skip trade or set strict_risk=false to accept the minimum-lot risk."
+    )
     assert "position_sizing_warning" in out
     assert "risk_alert" in out
     assert out["risk_alert"]["severity"] == "block"

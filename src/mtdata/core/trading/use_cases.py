@@ -552,11 +552,21 @@ def _compact_trade_risk_position_sizing(
             for key in ("status", "message", "missing")
             if key in position_sizing
         }
-    return {
+    compact = {
         key: position_sizing[key]
         for key in _COMPACT_POSITION_SIZING_FIELDS
         if key in position_sizing and position_sizing[key] is not None
     }
+    if position_sizing.get("status") == "risk_too_small_for_min_lot":
+        for key in (
+            "volume_min",
+            "volume_step",
+            "volume_max",
+            "strict_risk_hint",
+        ):
+            if key in position_sizing and position_sizing[key] is not None:
+                compact[key] = position_sizing[key]
+    return compact
 
 
 def _shape_trade_risk_analyze_payload(
@@ -3558,6 +3568,10 @@ def run_trade_risk_analyze(  # noqa: C901
                                 ),
                                 "min_viable_risk_overshoot_currency": round(
                                     float(min_viable_overshoot_currency or 0.0), 2
+                                ),
+                                "strict_risk_hint": (
+                                    "Skip trade or set strict_risk=false to accept "
+                                    "the minimum-lot risk."
                                 ),
                                 "nearest_viable": {
                                     "volume": min_viable_volume,
