@@ -91,6 +91,16 @@ def _suppress_duplicate_collection_data(payload: Dict[str, Any]) -> Dict[str, An
     return out
 
 
+def _move_top_level_metadata_to_tail(payload: Dict[str, Any]) -> Dict[str, Any]:
+    tail_keys = ("units",)
+    tail = {key: payload[key] for key in tail_keys if key in payload}
+    if not tail:
+        return payload
+    out = {key: value for key, value in payload.items() if key not in tail}
+    out.update(tail)
+    return out
+
+
 def _render_news_bucket_toon(
     key: str,
     items: List[Any],
@@ -2303,6 +2313,7 @@ def format_result_minimal(
             )
             if market_status_norm is not None:
                 normalized = market_status_norm
+            normalized = _move_top_level_metadata_to_tail(normalized)
         if isinstance(normalized, str):
             return normalized.strip()
         toon_text = _format_to_toon(

@@ -1111,6 +1111,24 @@ class TestFormatResultMinimal:
         assert "collection_kind: table" in table_verbose
         assert "collection_contract_version: collection.v1" in table_verbose
 
+    def test_top_level_units_render_after_result_sections(self):
+        payload = {
+            "units": {"net_return": "return_fraction", "win_rate": "fraction"},
+            "summary": {"num_trades": 21, "net_return": -0.00756},
+            "metrics": {"win_rate": 0.333, "max_drawdown": 0.01217},
+        }
+
+        result = format_result_minimal(
+            payload,
+            verbose=False,
+            tool_name="strategy_backtest",
+        )
+        lines = result.splitlines()
+
+        assert lines.index("summary:") < lines.index("metrics:")
+        assert lines.index("units:") > lines.index("metrics:")
+        assert "  net_return: return_fraction" in lines
+
     def test_compact_trade_risk_output_hides_intermediate_sizing_fields(self):
         payload = {
             "success": True,
