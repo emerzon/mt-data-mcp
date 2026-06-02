@@ -73,6 +73,31 @@ def test_fetch_unified_news_without_symbol_returns_only_general_bucket(monkeypat
     assert set(result["sources_used"]) == {"finviz", "mt5"}
 
 
+def test_fetch_unified_news_repairs_provider_mojibake(monkeypatch) -> None:
+    def fake_general_news(news_type: str = "news", limit: int = 20, page: int = 1):
+        return {
+            "success": True,
+            "items": [
+                {
+                    "Title": "HPE\u00d4\u00c7\u00d6s stock soars",
+                    "Source": "Reuters",
+                    "Date": "2026-03-29T08:00:00Z",
+                }
+            ],
+        }
+
+    monkeypatch.setattr(svc, "get_general_news", fake_general_news)
+    monkeypatch.setattr(svc, "get_mt5_news", lambda **_kwargs: {"success": True, "news": []})
+    monkeypatch.setattr(svc, "get_symbol_info_cached", lambda symbol: None)
+    _disable_ycnbc(monkeypatch)
+    _disable_embeddings(monkeypatch)
+    _reset_aggregator(monkeypatch)
+
+    result = svc.fetch_unified_news()
+
+    assert result["general_news"][0]["title"] == "HPE\u2019s stock soars"
+
+
 def test_fetch_unified_news_defaults_to_twenty_general_items(monkeypatch) -> None:
     def fake_general_news(news_type: str = "news", limit: int = 20, page: int = 1):
         return {

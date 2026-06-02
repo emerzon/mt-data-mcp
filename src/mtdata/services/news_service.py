@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional
 from ..core.runtime_metadata import build_runtime_timezone_meta
 from ..utils.mt5 import _mt5_epoch_to_utc
 from ..utils.utils import _resolve_client_tz, _use_client_tz
+from .news_text import normalize_news_text
 
 logger = logging.getLogger(__name__)
 
@@ -195,6 +196,7 @@ class MT5NewsParser:
             subject = data[subject_start:subject_end].decode('utf-16-le').rstrip('\x00')
         except UnicodeDecodeError:
             return None
+        subject = normalize_news_text(subject)
 
         if not subject or not any(ch.isalpha() for ch in subject):
             return None
@@ -217,6 +219,7 @@ class MT5NewsParser:
             source = data[source_start:source_end].decode('utf-16-le').rstrip('\x00')
         except UnicodeDecodeError:
             return None
+        source = normalize_news_text(source)
 
         if not source:
             return None

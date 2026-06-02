@@ -10,6 +10,7 @@ from .client import (
     get_finviz_page_limit_max,
     get_finviz_screener_max_rows,
 )
+from ..news_text import normalize_news_text
 
 logger = logging.getLogger(__name__)
 
@@ -201,7 +202,7 @@ def _strip_string_fields_in_rows(rows: List[Dict[str, Any]], *keys: str) -> List
         for key in wanted:
             value = row_out.get(key)
             if isinstance(value, str):
-                row_out[key] = value.strip()
+                row_out[key] = normalize_news_text(value)
         out.append(row_out)
     return out
 
@@ -714,6 +715,7 @@ def get_general_news(news_type: str = "news", limit: int = 20, page: int = 1) ->
             limit=limit,
             page=page,
         )
+        items_list = _strip_string_fields_in_rows(items_list, "Title", "Source", "Date", "Link")
 
         return {
             "success": True,

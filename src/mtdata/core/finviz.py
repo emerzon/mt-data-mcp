@@ -31,6 +31,7 @@ from ..services.finviz import (
     get_stock_ratings,
     screen_stocks,
 )
+from ..services.news_text import normalize_news_text
 from ..shared.schema import CompactFullDetailLiteral
 from ..shared.symbols import finviz_forex_symbol_to_mt5
 from ._mcp_instance import mcp
@@ -1080,7 +1081,7 @@ def finviz_filters_list(
 
 def _clean_finviz_text_value(value: Any) -> Any:
     if isinstance(value, str):
-        return value.strip()
+        return normalize_news_text(value)
     return value
 
 

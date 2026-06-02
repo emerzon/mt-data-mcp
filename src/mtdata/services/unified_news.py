@@ -33,6 +33,7 @@ from .finviz import (
 )
 from .news_embeddings import get_news_embedding_service
 from .news_service import get_mt5_news
+from .news_text import normalize_news_text
 
 logger = logging.getLogger(__name__)
 
@@ -409,7 +410,7 @@ class NewsSource(Protocol):
 
 
 def _safe_text(value: Any) -> str:
-    return str(value or "").strip()
+    return str(normalize_news_text(str(value or "")) or "").strip()
 
 
 def _normalize_symbol(symbol: Optional[str]) -> Optional[str]:
