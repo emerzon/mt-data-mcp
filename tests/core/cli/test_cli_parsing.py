@@ -18,6 +18,7 @@ from unittest.mock import MagicMock, call, patch
 import pytest
 
 from mtdata.core.data.requests import DataFetchCandlesRequest
+from mtdata.core.patterns_requests import PatternsDetectRequest
 from mtdata.core.trading.requests import (
     TradeCloseRequest,
     TradeGetOpenRequest,
@@ -593,6 +594,21 @@ class TestAddDynamicArguments:
         assert not any(action.dest == "summary_only" for action in parser._actions)
         args = parser.parse_args(["--detail", "standard"])
         assert args.detail == "standard"
+
+    def test_patterns_detect_detail_choices_follow_canonical_order(self):
+        parser = argparse.ArgumentParser()
+
+        def tool(request):
+            pass
+
+        tool.__annotations__ = {"request": PatternsDetectRequest}
+        func_info = get_function_info(tool)
+        add_dynamic_arguments(parser, func_info, cmd_name="patterns_detect")
+
+        detail_action = next(action for action in parser._actions if action.dest == "detail")
+        assert list(detail_action.choices) == ["compact", "standard", "summary", "full"]
+        args = parser.parse_args(["EURUSD", "--detail", "summary"])
+        assert args.detail == "summary"
 
     def test_trading_order_commands_expose_canonical_detail(self):
         for cmd_name, model_type, argv in (

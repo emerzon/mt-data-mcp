@@ -50,6 +50,25 @@ def test_data_quality_uses_tick_volume_when_real_volume_is_structural_zero():
     assert not any("zero-volume bars dominate" in warning for warning in warnings)
 
 
+def test_data_quality_suppresses_expected_fx_weekend_gap():
+    friday = pd.Timestamp("2026-05-29 20:00:00", tz="UTC").timestamp()
+    sunday = pd.Timestamp("2026-05-31 21:00:00", tz="UTC").timestamp()
+    df = pd.DataFrame(
+        {
+            "time": [friday - 3600, friday, sunday, sunday + 3600],
+            "open": [1.0, 1.1, 1.2, 1.3],
+            "high": [1.1, 1.2, 1.3, 1.4],
+            "low": [0.9, 1.0, 1.1, 1.2],
+            "close": [1.05, 1.15, 1.25, 1.35],
+            "tick_volume": [120, 135, 142, 128],
+        }
+    )
+
+    warnings = data_quality_warnings(df, symbol="EURUSD", timeframe_seconds=3600)
+
+    assert not any("time gap" in warning for warning in warnings)
+
+
 def test_patterns_detect_returns_connection_error_payload(monkeypatch):
     def fail_connection():
         raise MT5ConnectionError(
@@ -120,6 +139,8 @@ def test_patterns_detect_public_default_is_compact_for_classic_mode(monkeypatch)
     assert out["n_patterns"] == 1
     assert out["action"] == "review_long_setup"
     assert out["bias"] == "bullish"
+    assert out["is_actionable"] is True
+    assert out["signal_confidence"] == pytest.approx(0.81)
     assert out["strongest_pattern"]["name"] == "Ascending Triangle"
     assert "recent_patterns" not in out
     assert "patterns" not in out
@@ -795,15 +816,13 @@ def test_build_pattern_response_compact_counts_omitted_rows_when_truncated():
     assert len(compact["top_patterns"]) == 3
     assert compact["patterns_shown"] == 3
     assert compact["patterns_omitted"] == 6
-    assert compact["strong_patterns"] == 9
-    keys = list(compact)
-    assert keys.index("patterns_omitted") < keys.index("verdict")
-    assert keys.index("pattern_distribution") < keys.index("top_patterns")
-    distribution = compact["pattern_distribution"]
-    assert distribution["bullish"] == 4
-    assert distribution["bearish"] == 5
-    assert distribution["neutral"] == 0
-    assert distribution["avg_confidence"] == pytest.approx(0.86)
+    assert compact["status"] == "conflicting"
+    assert compact["is_actionable"] is False
+    assert "action" not in compact
+    assert "confidence" not in compact
+    assert "pattern_distribution" not in compact
+    assert "strong_patterns" not in compact
+    assert "verdict" not in compact
     assert "hints" not in compact
     assert "show_all_hint" not in compact
 
@@ -844,8 +863,42 @@ def test_build_pattern_response_compact_promotes_data_gap_warning():
         "issues": ["time_gaps"],
     }
     keys = list(compact)
-    assert keys.index("data_quality") < keys.index("action")
+    assert keys.index("data_quality") < keys.index("status")
     assert compact["warnings"] == df.attrs["warnings"]
+
+
+def test_build_pattern_response_compact_suppresses_low_confidence_elliott_bias():
+    df = pd.DataFrame(
+        {"time": list(range(12)), "close": [100.0 + i for i in range(12)]}
+    )
+
+    compact = _build_pattern_response(
+        "EURUSD",
+        "H1",
+        150,
+        "elliott",
+        [
+            {
+                "wave_type": "Impulse",
+                "status": "forming",
+                "confidence": 0.1,
+                "bias": "bullish",
+                "end_index": 10,
+            }
+        ],
+        include_completed=False,
+        include_series=False,
+        series_time="string",
+        df=df,
+        detail="compact",
+    )
+
+    assert compact["status"] == "uncertain"
+    assert compact["is_actionable"] is False
+    assert compact["signal_confidence"] == pytest.approx(0.1)
+    assert "action" not in compact
+    assert "bias" not in compact
+    assert "dominant_direction" not in compact
 
 
 def test_patterns_detect_elliott_without_timeframe_scans_default_subset(monkeypatch):

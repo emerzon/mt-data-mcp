@@ -43,6 +43,7 @@ _SHARED_REGIME_CONTEXT_KEYS = (
     "window_move_pct",
 )
 _ACTIONABLE_SIGNAL_MIN_CONFIDENCE = 0.5
+_DIRECTIONAL_BIAS_MIN_CONFIDENCE = 0.3
 
 
 def _round_value(x: Any) -> Any:
@@ -404,14 +405,36 @@ def _summarize_actionable_pattern_signal(
         status = net_bias
         action = "review_long_setup" if net_bias == "bullish" else "review_short_setup"
 
+    is_actionable = bool(action != "wait" and status in {"bullish", "bearish"})
     out: Dict[str, Any] = {
         "status": status,
         "action": action,
         "confidence": confidence,
+        "is_actionable": is_actionable,
     }
     if conflict:
         out["conflict"] = "both_bullish_and_bearish_patterns_present"
     return out
+
+
+def _should_expose_directional_bias(
+    signal_bias: Dict[str, Any],
+    signal: Dict[str, Any],
+) -> bool:
+    if bool(signal.get("is_actionable")):
+        return True
+    if bool(signal_bias.get("conflict")):
+        return False
+    status = str(signal.get("status") or "").strip().lower()
+    if status in {"uncertain", "conflicting"} or status.startswith("conflicting_"):
+        return False
+    try:
+        confidence = float(
+            signal.get("confidence") or signal_bias.get("net_confidence") or 0.0
+        )
+    except Exception:
+        confidence = 0.0
+    return bool(confidence >= _DIRECTIONAL_BIAS_MIN_CONFIDENCE)
 
 
 def _pattern_signal_verdict(
@@ -538,17 +561,6 @@ def _compact_patterns_payload(
     except Exception:
         total_i = len(rows)
 
-    confidence_values = [
-        float(conf)
-        for conf in (_safe_float(row.get("confidence")) for row in rows)
-        if conf is not None and np.isfinite(conf)
-    ]
-    strong_patterns = int(sum(1 for conf in confidence_values if conf >= 0.7))
-    avg_confidence = (
-        _round_confidence(sum(confidence_values) / len(confidence_values))
-        if confidence_values
-        else None
-    )
     signal_bias = _summarize_pattern_bias(rows)
     signal: Dict[str, Any] = {}
     if signal_bias:
@@ -663,26 +675,18 @@ def _compact_patterns_payload(
     compact = {key: value for key, value in compact.items() if value is not None}
     compact["patterns_shown"] = len(top_patterns)
     compact["patterns_omitted"] = max(0, total_i - len(top_patterns))
-    compact["strong_patterns"] = strong_patterns
     data_quality = _pattern_data_quality_summary(payload.get("warnings"))
     if data_quality:
         compact["data_quality"] = data_quality
-    if signal_bias:
-        distribution = {
-            "bullish": int(signal_bias.get("bullish_patterns") or 0),
-            "bearish": int(signal_bias.get("bearish_patterns") or 0),
-            "neutral": int(signal_bias.get("neutral_patterns") or 0),
-        }
-        if avg_confidence is not None:
-            distribution["avg_confidence"] = avg_confidence
-        compact["pattern_distribution"] = distribution
     if signal:
-        compact["action"] = signal.get("action")
-        compact["confidence"] = signal.get("confidence")
+        compact["is_actionable"] = bool(signal.get("is_actionable"))
         compact["status"] = signal.get("status")
+        compact["signal_confidence"] = signal.get("confidence")
+        if signal.get("is_actionable"):
+            compact["action"] = signal.get("action")
         if signal.get("conflict"):
             compact["conflict"] = signal.get("conflict")
-    if signal_bias:
+    if signal_bias and _should_expose_directional_bias(signal_bias, signal):
         compact["bias"] = signal_bias.get("net_bias")
         compact["dominant_direction"] = signal_bias.get("dominant_direction")
         compact["directional_score"] = {
@@ -692,10 +696,6 @@ def _compact_patterns_payload(
         }
     if strongest_compact:
         compact["strongest_pattern"] = strongest_compact
-    if signal_bias:
-        verdict = _pattern_signal_verdict(signal_bias, strongest_compact)
-        if verdict:
-            compact["verdict"] = verdict
     if top_patterns:
         compact["top_patterns"] = top_patterns
 

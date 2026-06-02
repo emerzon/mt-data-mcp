@@ -1142,6 +1142,11 @@ def _attach_pattern_usage_notice(result: Dict[str, Any]) -> None:
         return
     result.setdefault("is_signal", False)
     result.setdefault("usage", "information_only")
+    compact_shape = "patterns_shown" in result or (
+        result.get("mode") == "all" and "highlights" in result
+    )
+    if compact_shape:
+        return
     result.setdefault(
         "calibration",
         {
@@ -1191,9 +1196,9 @@ def patterns_detect(
 
     detail : str, optional (default="compact")
         Output verbosity:
-        - "summary": quick-read highlights and aggregate bias/counts only.
         - "compact": trader-focused summary with recent patterns and pattern mix.
         - "standard": sectioned all-mode output with trimmed pattern rows.
+        - "summary": quick-read highlights and aggregate bias/counts only.
         - "full": complete pattern rows suitable for research/debugging.
     
     limit : int, optional (default=150)

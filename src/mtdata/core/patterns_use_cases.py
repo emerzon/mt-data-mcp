@@ -115,6 +115,10 @@ _FRACTAL_CONFIG_EXTRA_KEYS = {
     "volume_profile_max_tick_window_days",
     "volume_profile_max_ticks",
 }
+_MODE_RECOMMENDED_MIN_BARS = {
+    "harmonic": 120,
+    "elliott": 150,
+}
 
 
 def _unknown_config_keys_for_mode(mode: str, unknown_keys: List[str]) -> List[str]:
@@ -219,6 +223,31 @@ def _attach_signal_bias_summary(resp: Dict[str, Any], deps: "PatternsDetectDeps"
         summary = {}
         resp["summary"] = summary
     summary["signal_bias"] = signal_bias
+
+
+def _attach_recommended_min_bars(resp: Dict[str, Any], mode: str, limit: Any) -> None:
+    if not isinstance(resp, dict) or resp.get("error"):
+        return
+    recommended = _MODE_RECOMMENDED_MIN_BARS.get(str(mode).strip().lower())
+    if recommended is None:
+        return
+    try:
+        requested = int(limit)
+    except Exception:
+        requested = 0
+    if requested >= int(recommended):
+        return
+    resp["recommended_min_bars"] = int(recommended)
+    data_quality = resp.get("data_quality")
+    if not isinstance(data_quality, dict):
+        data_quality = {}
+        resp["data_quality"] = data_quality
+    data_quality.setdefault("status", "insufficient_history")
+    data_quality.setdefault("patterns_reliability", "limited")
+    data_quality.setdefault(
+        "note",
+        f"{mode} detection is unreliable below {int(recommended)} bars.",
+    )
 
 
 def _classic_ensemble_breakdown(
@@ -733,6 +762,7 @@ def run_patterns_detect(  # noqa: C901
             df,
             detail=detail_value,
         )
+        _attach_recommended_min_bars(resp, mode_value, request.limit)
         _attach_signal_bias_summary(resp, deps)
         return resp
 
@@ -751,7 +781,7 @@ def run_patterns_detect(  # noqa: C901
                 return err
 
             out_list = deps.format_elliott_patterns(df, cfg)
-            return deps.build_pattern_response(
+            resp = deps.build_pattern_response(
                 request.symbol,
                 tf_norm,
                 request.limit,
@@ -763,6 +793,8 @@ def run_patterns_detect(  # noqa: C901
                 df,
                 detail=detail_value,
             )
+            _attach_recommended_min_bars(resp, mode_value, request.limit)
+            return resp
 
         scanned_timeframes = deps.resolve_elliott_scan_timeframes(cfg)
         findings: List[Dict[str, Any]] = []

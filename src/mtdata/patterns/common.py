@@ -1,13 +1,13 @@
 import math
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 import numpy as np
 import pandas as pd
 
 from ..shared.constants import TIMEFRAME_SECONDS
-from ..shared.symbols import is_probably_crypto_symbol
+from ..shared.symbols import FIAT_CURRENCY_CODES, is_probably_crypto_symbol
 
 
 @dataclass
@@ -47,6 +47,33 @@ def interval_overlap_ratio(a_start: int, a_end: int, b_start: int, b_end: int) -
     return float(inter) / float(union)
 
 
+def _is_probably_forex_symbol(symbol: Any) -> bool:
+    text = "".join(ch for ch in str(symbol or "").upper().strip() if ch.isalnum())
+    if len(text) < 6:
+        return False
+    base = text[:3]
+    quote = text[3:6]
+    return base in FIAT_CURRENCY_CODES and quote in FIAT_CURRENCY_CODES
+
+
+def _crosses_weekend(start_epoch: float, end_epoch: float) -> bool:
+    try:
+        start_dt = datetime.fromtimestamp(float(start_epoch), tz=timezone.utc)
+        end_dt = datetime.fromtimestamp(float(end_epoch), tz=timezone.utc)
+    except Exception:
+        return False
+    if end_dt <= start_dt:
+        return False
+    current = start_dt
+    while current <= end_dt:
+        if current.weekday() >= 5:
+            return True
+        current = (current + timedelta(days=1)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+    return end_dt.weekday() >= 5
+
+
 def data_quality_warnings(
     df: Any,
     *,
@@ -83,8 +110,35 @@ def data_quality_warnings(
             times = times[np.isfinite(times)]
             if times.size >= 3:
                 gaps = np.diff(times)
-                if gaps.size > 0 and float(np.nanmax(gaps)) > (1.5 * float(timeframe_seconds)):
-                    warnings.append("Data quality warning: detected time gaps larger than 1.5 bar intervals.")
+                threshold = 1.5 * float(timeframe_seconds)
+                if gaps.size > 0 and float(np.nanmax(gaps)) > threshold:
+                    expected_weekend_gaps = 0
+                    unexpected_gaps = 0
+                    is_fx = _is_probably_forex_symbol(symbol)
+                    is_crypto = is_probably_crypto_symbol(symbol)
+                    for idx, gap in enumerate(gaps):
+                        if not np.isfinite(gap) or float(gap) <= threshold:
+                            continue
+                        start_epoch = float(times[idx])
+                        end_epoch = float(times[idx + 1])
+                        if is_fx and not is_crypto and _crosses_weekend(
+                            start_epoch, end_epoch
+                        ):
+                            expected_weekend_gaps += 1
+                        else:
+                            unexpected_gaps += 1
+                    if unexpected_gaps > 0:
+                        suffix = ""
+                        if expected_weekend_gaps:
+                            suffix = (
+                                f" ({expected_weekend_gaps} expected weekend/session "
+                                "gap(s) suppressed)."
+                            )
+                        warnings.append(
+                            "Data quality warning: detected "
+                            f"{unexpected_gaps} unexpected time gap(s) larger than "
+                            f"1.5 bar intervals.{suffix}"
+                        )
 
     volume_col = None
     volume_series: Optional[np.ndarray] = None

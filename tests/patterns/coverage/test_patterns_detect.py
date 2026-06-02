@@ -620,6 +620,24 @@ class TestPatternsDetect:
         assert result == {"error": "Invalid config key(s): ['not_a_real_harmonic_key']"}
         mock_fetch.assert_not_called()
 
+    @patch("mtdata.core.patterns._format_harmonic_patterns")
+    @patch("mtdata.core.patterns._fetch_pattern_data")
+    def test_harmonic_short_window_reports_recommended_minimum(self, mock_fetch, mock_format):
+        df = _make_ohlcv_df(20)
+        mock_fetch.return_value = (df, None)
+        mock_format.return_value = []
+
+        result = _call_patterns_detect(
+            symbol="EURUSD",
+            mode="harmonic",
+            timeframe="H1",
+            limit=20,
+        )
+
+        assert result["recommended_min_bars"] == 120
+        assert result["data_quality"]["status"] == "insufficient_history"
+        assert result["data_quality"]["patterns_reliability"] == "limited"
+
     @patch("mtdata.core.patterns._run_classic_engine")
     @patch("mtdata.core.patterns._fetch_pattern_data")
     def test_classic_invalid_engine(self, mock_fetch, mock_engine):
