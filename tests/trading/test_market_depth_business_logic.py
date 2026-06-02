@@ -672,7 +672,8 @@ def test_market_ticker_rewrites_invalid_symbol_selection_error() -> None:
     assert out["error_code"] == "market_ticker_symbol_unavailable"
     assert out["operation"] == "market_ticker"
     assert out["request_id"]
-    assert "symbols_search" in out["remediation"]
+    assert "symbols_list(search_term='FAKESYMBOL')" in out["remediation"]
+    assert "symbols_search" not in out["remediation"]
 
 
 def test_market_ticker_rejects_empty_quote_snapshot() -> None:

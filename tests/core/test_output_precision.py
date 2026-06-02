@@ -32,9 +32,14 @@ def test_json_auto_precision_keeps_full_numbers():
 def test_auto_precision_compacts_large_tables_but_not_trading_tools():
     compact = resolve_output_precision(None, tool_name="data_fetch_candles")
     trading = resolve_output_precision(None, tool_name="trade_positions")
+    support_resistance = resolve_output_precision(
+        None,
+        tool_name="support_resistance_levels",
+    )
 
     assert compact.simplify_numbers is True
     assert trading.simplify_numbers is False
+    assert support_resistance.simplify_numbers is False
 
 
 def test_full_precision_rendering_does_not_display_round_price_fields():

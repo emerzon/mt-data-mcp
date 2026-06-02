@@ -15,19 +15,6 @@ _COMPACT_ALIASES = {"compact", "display", "min", "minimal", "simplified"}
 _FULL_ALIASES = {"full", "raw", "none", "off", "exact"}
 _AUTO_ALIASES = {"auto", "default", ""}
 
-_COMPACT_BY_DEFAULT_TOOLS = {
-    "data_fetch_candles",
-    "data_fetch_ticks",
-    "forecast_list_methods",
-    "forecast_list_library_models",
-    "forecast_models_list",
-    "market_scan",
-    "mt5_symbols_get",
-    "symbols_list",
-    "symbols_search",
-    "symbols_top_markets",
-}
-
 _FULL_BY_DEFAULT_PREFIXES = ("trade_",)
 
 _FULL_BY_DEFAULT_TOOLS = {
@@ -36,7 +23,7 @@ _FULL_BY_DEFAULT_TOOLS = {
     "forecast_generate",
     "market_depth_fetch",
     "market_ticker",
-    "support_resistance_find",
+    "support_resistance_levels",
 }
 
 

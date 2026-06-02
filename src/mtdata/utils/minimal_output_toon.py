@@ -157,7 +157,8 @@ def _is_empty_value(value: Any) -> bool:
 
 
 def _format_number_full(num: float) -> str:
-    return format_number(float(num))
+    text = repr(float(num))
+    return "0.0" if text == "-0.0" else text
 
 
 def _minify_number(num: float) -> str:
