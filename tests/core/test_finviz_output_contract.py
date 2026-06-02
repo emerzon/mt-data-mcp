@@ -142,8 +142,6 @@ class TestFinvizCalendarOutputContract:
                 "local_timezone": "America/New_York",
                 "event": "CPI",
                 "impact": "high",
-                "importance": 3,
-                "source_id": "USD",
                 "country": "United States",
                 "country_code": "US",
                 "reference_date": "2025-12",
@@ -212,14 +210,14 @@ class TestFinvizCalendarOutputContract:
 
         assert result["items"] == [
             {
-                "source_id": "FDTR",
+                "country": "United States",
+                "country_code": "US",
                 "event": "Fed Cook Speech",
                 "category": "Interest Rate",
                 "date": "2026-05-08T09:45:00Z",
                 "local_time": "2026-05-08T05:45:00-04:00",
                 "local_timezone": "America/New_York",
                 "impact": "medium",
-                "importance": 2,
             }
         ]
 
@@ -249,13 +247,11 @@ class TestFinvizCalendarOutputContract:
         assert result["count"] == 1
         assert result["items"] == [
             {
-                "source_id": "USD",
                 "event": "US CPI",
                 "date": "2026-05-08T12:30:00Z",
                 "local_time": "2026-05-08T08:30:00-04:00",
                 "local_timezone": "America/New_York",
                 "impact": "high",
-                "importance": 3,
                 "country": "United States",
                 "country_code": "US",
             }
@@ -286,6 +282,9 @@ class TestFinvizCalendarOutputContract:
                 "importance": 2,
                 "impact": "medium",
                 "non_emptiness_score": 0,
+                "country": "United States",
+                "country_code": "US",
+                "country_inferred": True,
             }
         ]
 

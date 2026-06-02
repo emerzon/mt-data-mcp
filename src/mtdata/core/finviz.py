@@ -1489,10 +1489,8 @@ _FINVIZ_EARNINGS_TIMING_SUFFIXES = {
 }
 _FINVIZ_CALENDAR_COMPACT_FIELDS = (
     "symbol",
-    "source_id",
     "country",
     "country_code",
-    "country_inferred",
     "event",
     "category",
     "date",
@@ -1515,7 +1513,6 @@ _FINVIZ_CALENDAR_COMPACT_FIELDS = (
     "dividend",
     "amount",
     "impact",
-    "importance",
 )
 
 _FINVIZ_CALENDAR_IMPORTANCE_LABELS = {

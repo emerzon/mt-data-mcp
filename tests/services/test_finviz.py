@@ -2005,7 +2005,6 @@ class TestFinvizTools:
 
         assert result["items"] == [
             {
-                "source_id": "UNITEDSTANONFAR",
                 "country": "United States",
                 "country_code": "US",
                 "event": "Nonfarm Payrolls",
@@ -2014,7 +2013,6 @@ class TestFinvizTools:
                 "local_time": "2026-01-04T08:30:00-05:00",
                 "local_timezone": "America/New_York",
                 "impact": "high",
-                "importance": 3,
             }
         ]
         assert result["timezone"] == "UTC"
