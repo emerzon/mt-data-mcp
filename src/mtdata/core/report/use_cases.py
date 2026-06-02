@@ -136,6 +136,7 @@ def _build_sections_status(sections: Dict[str, Any]) -> Dict[str, Any]:
                 ),
                 "errors": errors,
             }
+    summary["total"] = len(statuses)
     out: Dict[str, Any] = {
         "summary": summary,
         "sections": statuses,

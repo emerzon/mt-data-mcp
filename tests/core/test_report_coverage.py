@@ -1007,8 +1007,12 @@ class TestReportWarnings:
              patch(_FMT_NUM, side_effect=str):
             res = fn("EURUSD", template="basic", format="toon")
 
-        assert res["sections_status"]["summary"]["ok"] >= 1
+        summary = res["sections_status"]["summary"]
+        assert summary["ok"] >= 1
+        assert summary["total"] == summary["ok"] + summary["partial"] + summary["error"]
         assert res["sections_status"]["sections"]["forecast"] == "ok"
+        assert res["overall_assessment"]["section_health"]["total"] == summary["total"]
+        assert res["overall_assessment"]["summary"] != "No report sections were available for assessment."
         assert res["success"] is True
 
     def test_partial_section_marks_report_partially_complete(self):
@@ -1031,6 +1035,8 @@ class TestReportWarnings:
 
         assert res["sections_status"]["sections"]["barriers"] == "partial"
         assert res["sections_status"]["summary"]["partial"] >= 1
+        assert res["overall_assessment"]["section_health"]["total"] == res["sections_status"]["summary"]["total"]
+        assert res["overall_assessment"]["recommended_action"] == "review_partial_sections"
         assert res["sections_status"]["details"]["barriers"]["errors"][0]["path"] == "short"
         assert "usable data" in res["sections_status"]["definitions"]["partial"]
         assert res["completeness"] == "partial"
