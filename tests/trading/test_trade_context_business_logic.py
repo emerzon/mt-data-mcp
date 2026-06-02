@@ -91,15 +91,14 @@ def test_trade_session_context_compacts_nested_sections_by_default() -> None:
 
     assert out["state"] == "open_position"
     assert out["state_scope"] == "symbol"
-    assert out["account"] == {
-        "login": 123456,
-        "equity": 10010.0,
-        "account_type": "demo",
-    }
+    assert out["account"]["equity"] == 10010.0
+    assert "login" not in out["account"]
+    assert "account_type" not in out["account"]
+    assert "execution_ready" not in out["account"]
     assert out["quote"] == {
         "bid": 1.1,
         "ask": 1.1002,
-        "spread": 0.0002,
+        "spread": "0.000200",
         "spread_pips": 2.0,
         "time": "2023-11-14 22:13",
         "timezone": "UTC",

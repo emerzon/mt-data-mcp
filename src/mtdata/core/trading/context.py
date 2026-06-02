@@ -263,7 +263,6 @@ def _compact_trade_session_context_payload(payload: Dict[str, Any]) -> Dict[str,
             account_summary = {
                 key: account.get(key)
                 for key in (
-                    "login",
                     "equity",
                     "profit",
                     "balance",
@@ -272,9 +271,6 @@ def _compact_trade_session_context_payload(payload: Dict[str, Any]) -> Dict[str,
                     "margin_level",
                     "currency",
                     "leverage",
-                    "account_type",
-                    "execution_ready",
-                    "execution_blockers",
                 )
                 if account.get(key) not in (None, "")
             }

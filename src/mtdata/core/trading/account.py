@@ -39,7 +39,6 @@ logger = logging.getLogger(__name__)
 
 _TRADE_ACCOUNT_COMPACT_KEYS = (
     "success",
-    "login",
     "balance",
     "equity",
     "profit",
@@ -51,12 +50,6 @@ _TRADE_ACCOUNT_COMPACT_KEYS = (
     "leverage",
     "trade_allowed",
     "trade_expert",
-    "server",
-    "company",
-    "account_type",
-    "trade_mode",
-    "execution_ready",
-    "execution_blockers",
 )
 _TRADE_JOURNAL_UNITS: Dict[str, str] = {
     "win_rate": "fraction",
@@ -696,8 +689,8 @@ def trade_account_info(
 ) -> dict:
     """Get account information with compact or full account output modes.
 
-    Use `detail="compact"` (default) for routine balance, margin, and account
-    identity checks. Use `detail="full"` for execution-readiness diagnostics.
+    Use `detail="compact"` (default) for routine balance and margin checks.
+    Use `detail="full"` for broker/account identifiers and execution diagnostics.
     """
 
     def _run() -> dict:

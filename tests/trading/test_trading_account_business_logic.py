@@ -145,15 +145,15 @@ def test_trade_account_info_compact_detail_includes_account_fields_without_diagn
         out = raw(detail="compact")
 
     assert out["balance"] == 10000.0
-    assert out["login"] == 123456
     assert out["profit"] == 50.0
     assert out["margin"] == 100.0
     assert out["margin_free"] == 9950.0
     assert out["leverage"] == 100
-    assert out["server"] == "Demo-Server"
-    assert out["company"] == "Broker LLC"
-    assert out["trade_mode"] == "demo"
-    assert out["account_type"] == "demo"
+    assert "login" not in out
+    assert "server" not in out
+    assert "company" not in out
+    assert "trade_mode" not in out
+    assert "account_type" not in out
     assert "is_demo" not in out
     assert "is_live" not in out
     assert out["trade_allowed"] is True
@@ -193,6 +193,9 @@ def test_trade_account_info_accepts_standard_and_summary_as_compact() -> None:
 
     assert "execution_ready" not in standard
     assert "execution_ready" not in summary
+    assert "server" not in standard
+    assert "company" not in standard
+    assert "trade_mode" not in standard
     assert standard["balance"] == 10000.0
     assert summary["balance"] == 10000.0
 
