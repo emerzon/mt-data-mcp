@@ -40,3 +40,40 @@ def test_build_level_confluence_payload_includes_volume_profile_levels():
     candidates = payload["candidates"]
     assert any(candidate["family"] == "volume_profile" for candidate in candidates)
     assert payload["volume_profile_diagnostics"]["bucket_count"] == 8
+
+
+def test_build_level_confluence_payload_compact_omits_volume_profile_diagnostics():
+    payload = build_level_confluence_payload(
+        symbol="EURUSD",
+        pivot_timeframe="D1",
+        sr_timeframe="H1",
+        pivot_methods=[{"method": "classic", "levels": {"PP": 1.1000}}],
+        support_resistance_payload={"levels": []},
+        reference_price=1.1000,
+        tolerance_points=10,
+        price_increment=0.0001,
+        max_distance_pct=1.0,
+        detail="compact",
+        volume_profile_payload={
+            "success": True,
+            "source": "ticks",
+            "volume_kind": "tick_count",
+            "levels": [
+                {
+                    "level": "POC",
+                    "type": "volume_poc",
+                    "price": 1.1005,
+                    "volume": 12,
+                    "volume_share": 0.5,
+                    "bucket_index": 5,
+                }
+            ],
+            "diagnostics": {"bucket_count": 8, "tick_rows": 50_000},
+            "warnings": ["volume profile diagnostic warning"],
+        },
+    )
+
+    assert payload["count"] == len(payload["levels"])
+    assert "level_counts" not in payload
+    assert "volume_profile_diagnostics" not in payload
+    assert "volume_profile_warnings" not in payload

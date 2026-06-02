@@ -484,7 +484,7 @@ def build_level_confluence_payload(
     tolerance_pct: Optional[float] = _DEFAULT_TOLERANCE_PCT,
     tolerance_points: Optional[float] = None,
     price_increment: Optional[float] = None,
-    max_levels: int = 8,
+    max_levels: int = 5,
     max_distance_pct: Optional[float] = 5.0,
     min_source_families: int = 1,
     detail: str = "compact",
@@ -536,6 +536,11 @@ def build_level_confluence_payload(
     formatted.sort(key=lambda cluster: (-float(cluster.get("score", 0.0)), abs(float(cluster.get("distance_pct") or 0.0))))
     limit = max(1, int(max_levels))
     top_clusters = formatted[:limit]
+    level_counts = {
+        "candidates": len(records),
+        "clusters": len(formatted),
+        "returned": len(top_clusters),
+    }
     out: Dict[str, Any] = {
         "success": True,
         "symbol": symbol,
@@ -556,13 +561,12 @@ def build_level_confluence_payload(
         },
         "max_distance_pct": max_distance_pct,
         "min_source_families": min_families,
-        "level_counts": {
-            "candidates": len(records),
-            "clusters": len(formatted),
-            "returned": len(top_clusters),
-        },
         "levels": top_clusters,
     }
+    if detail_value == "compact":
+        out["count"] = len(top_clusters)
+    else:
+        out["level_counts"] = level_counts
     if not top_clusters:
         out["level_scan_note"] = (
             "No confluence clusters qualified inside the scan filters. "
@@ -582,7 +586,7 @@ def build_level_confluence_payload(
         if isinstance(volume_profile_payload, dict):
             out["source_payload_meta"]["volume_profile_source"] = volume_profile_payload.get("source")
             out["source_payload_meta"]["volume_profile_volume_kind"] = volume_profile_payload.get("volume_kind")
-    if isinstance(volume_profile_payload, dict):
+    if detail_value == "full" and isinstance(volume_profile_payload, dict):
         vp_diag = volume_profile_payload.get("diagnostics")
         if vp_diag not in (None, "", [], {}):
             out["volume_profile_diagnostics"] = vp_diag

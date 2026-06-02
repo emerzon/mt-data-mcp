@@ -122,7 +122,7 @@ def test_confluence_levels_tool_combines_pivot_sr_and_fibonacci():
     assert "touch_derived" in top["source_families"]
     assert "swing_fibonacci" in top["source_families"]
     assert mock_sr.call_args.kwargs["timeframe"] == "auto"
-    assert mock_sr.call_args.kwargs["max_levels"] == 8
+    assert mock_sr.call_args.kwargs["max_levels"] == 5
 
 
 def test_confluence_levels_tool_rejects_invalid_pivot_method():

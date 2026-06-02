@@ -582,7 +582,7 @@ def confluence_levels(  # noqa: C901
     tolerance_pct: float = 0.0015,
     tolerance_points: Optional[float] = None,
     min_touches: int = 2,
-    max_levels: int = 8,
+    max_levels: int = 5,
     max_distance_pct: Optional[float] = 5.0,
     min_source_families: int = 1,
     pivot_method: Optional[PivotMethodLiteral] = None,
