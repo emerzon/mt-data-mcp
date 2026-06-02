@@ -433,7 +433,7 @@ def _pattern_signal_verdict(
         pieces[0] += f"; dominant_share={share}"
     pieces[0] += ")."
     if strongest_pattern:
-        label = strongest_pattern.get("pattern")
+        label = _pattern_label(strongest_pattern)
         direction = strongest_pattern.get("direction")
         confidence = strongest_pattern.get("confidence")
         strongest_text = f"Strongest pattern is {label}"
@@ -524,7 +524,7 @@ def _compact_patterns_payload(
         strongest_compact = {}
         best_label = _pattern_label(strongest_row)
         if best_label:
-            strongest_compact["pattern"] = best_label
+            strongest_compact["name"] = best_label
         direction = _first_present(
             strongest_row,
             "bias",
@@ -577,7 +577,7 @@ def _compact_patterns_payload(
         item: Dict[str, Any] = {}
         label = _pattern_label(row)
         if label:
-            item["pattern"] = label
+            item["name"] = label
         direction = (
             row.get("direction") or row.get("bias") or row.get("breakout_direction")
         )

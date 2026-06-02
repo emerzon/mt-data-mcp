@@ -365,7 +365,7 @@ class TestPatternsDetect:
             top_k=1,
         )
 
-        assert result["strongest_pattern"]["pattern"] == "Doji"
+        assert result["strongest_pattern"]["name"] == "Doji"
         assert "recent_patterns" not in result
         assert "lookback" not in result
 

@@ -120,7 +120,7 @@ def test_patterns_detect_public_default_is_compact_for_classic_mode(monkeypatch)
     assert out["n_patterns"] == 1
     assert out["action"] == "review_long_setup"
     assert out["bias"] == "bullish"
-    assert out["strongest_pattern"]["pattern"] == "Ascending Triangle"
+    assert out["strongest_pattern"]["name"] == "Ascending Triangle"
     assert "recent_patterns" not in out
     assert "patterns" not in out
 
@@ -556,10 +556,10 @@ def test_build_pattern_response_compact_detail_returns_summary():
     )
 
     assert compact["n_patterns"] == 2
-    assert compact["strongest_pattern"] == {"pattern": "B", "confidence": 0.7}
+    assert compact["strongest_pattern"] == {"name": "B", "confidence": 0.7}
     assert compact["top_patterns"] == [
-        {"pattern": "B", "status": "forming", "confidence": 0.7},
-        {"pattern": "A", "status": "forming", "confidence": 0.5},
+        {"name": "B", "status": "forming", "confidence": 0.7},
+        {"name": "A", "status": "forming", "confidence": 0.5},
     ]
     assert "recent_patterns" not in compact
     assert "summary" not in compact
@@ -600,7 +600,7 @@ def test_build_pattern_response_compact_keeps_actionable_fields():
     assert compact["confidence"] == 0.85
     assert compact["status"] == "bullish"
     assert compact["strongest_pattern"] == {
-        "pattern": "Double Bottom",
+        "name": "Double Bottom",
         "direction": "bullish",
         "confidence": 0.85,
         "time": "2026-03-02 00:00",
@@ -608,7 +608,7 @@ def test_build_pattern_response_compact_keeps_actionable_fields():
     }
     assert compact["top_patterns"] == [
         {
-            "pattern": "Double Bottom",
+            "name": "Double Bottom",
             "direction": "bullish",
             "status": "forming",
             "confidence": 0.85,
@@ -657,7 +657,7 @@ def test_build_pattern_response_compact_keeps_elliott_candidate_context():
     assert compact["action"] == "wait"
     assert compact["confidence"] == 0.1
     assert compact["strongest_pattern"] == {
-        "pattern": "Elliott impulse-like candidate",
+        "name": "Elliott impulse-like candidate",
         "confidence": 0.1,
         "wave_count": 6,
         "validation_status": "fallback_candidate",
@@ -665,7 +665,7 @@ def test_build_pattern_response_compact_keeps_elliott_candidate_context():
     }
     assert compact["top_patterns"] == [
         {
-            "pattern": "Elliott impulse-like candidate",
+            "name": "Elliott impulse-like candidate",
             "status": "forming",
             "confidence": 0.1,
             "wave_count": 6,
@@ -710,7 +710,7 @@ def test_build_pattern_response_compact_keeps_fractal_breakout_fields():
     assert compact["bias"] == "bearish"
     assert compact["action"] == "review_short_setup"
     assert compact["strongest_pattern"] == {
-        "pattern": "Bullish Fractal",
+        "name": "Bullish Fractal",
         "direction": "bearish",
         "confidence": 0.82,
         "time": "2026-03-01 00:00",
@@ -760,7 +760,7 @@ def test_build_pattern_response_compact_hides_completed_fractal_rows_by_default(
         detail="compact",
     )
 
-    assert compact["strongest_pattern"]["pattern"] == "Active Fractal"
+    assert compact["strongest_pattern"]["name"] == "Active Fractal"
     assert compact["completed_patterns_hidden"] == 1
 
 
