@@ -874,6 +874,34 @@ class TestFormatResultMinimal:
         assert "spread_cost_currency" not in result
         assert "pricing_basis" not in result
 
+    def test_market_ticker_minimal_preserves_error_envelope(self):
+        payload = {
+            "success": False,
+            "error_code": "market_ticker_symbol_unavailable",
+            "operation": "market_ticker",
+            "request_id": "req123",
+            "error": "Symbol 'NOTASYM' was not found or is not available in MT5.",
+            "remediation": "Verify the broker symbol name with symbols_list(search_term='NOTASYM').",
+            "details": {"did_you_mean": ["EURUSD"]},
+            "meta": {"tool": "market_ticker"},
+        }
+
+        result = _normalize_market_ticker_payload(
+            payload,
+            verbose=False,
+            tool_name="market_ticker",
+        )
+
+        assert result == {
+            "success": False,
+            "error_code": "market_ticker_symbol_unavailable",
+            "operation": "market_ticker",
+            "request_id": "req123",
+            "error": "Symbol 'NOTASYM' was not found or is not available in MT5.",
+            "remediation": "Verify the broker symbol name with symbols_list(search_term='NOTASYM').",
+            "details": {"did_you_mean": ["EURUSD"]},
+        }
+
     def test_market_ticker_minimal_condenses_freshness_context(self):
         payload = {
             "success": True,

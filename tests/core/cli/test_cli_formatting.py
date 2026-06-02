@@ -626,6 +626,30 @@ class TestFormatResultForCli:
         assert "time_display" not in payload
         assert "time_epoch" not in payload
 
+    def test_market_ticker_toon_preserves_error_envelope(self):
+        result = _format_result_for_cli(
+            {
+                "success": False,
+                "error_code": "market_ticker_symbol_unavailable",
+                "operation": "market_ticker",
+                "request_id": "req123",
+                "error": "Symbol 'NOTASYM' was not found or is not available in MT5.",
+                "remediation": "Verify the broker symbol name with symbols_list(search_term='NOTASYM').",
+                "details": {"did_you_mean": ["EURUSD"]},
+            },
+            fmt="toon",
+            verbose=False,
+            cmd_name="market_ticker",
+        )
+
+        assert "success: false" in result
+        assert "error_code: market_ticker_symbol_unavailable" in result
+        assert "operation: market_ticker" in result
+        assert "request_id: req123" in result
+        assert "error:" in result
+        assert "remediation:" in result
+        assert "did_you_mean" in result
+
     def test_market_ticker_verbose_toon_keeps_raw_epoch_separately(self):
         result = _format_result_for_cli(
             {

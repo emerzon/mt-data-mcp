@@ -917,7 +917,19 @@ def _normalize_market_ticker_payload(
 
     out: Dict[str, Any] = {}
     if "error" in payload and not _is_empty_value(payload.get("error")):
-        out["error"] = payload.get("error")
+        for key in (
+            "success",
+            "error_code",
+            "operation",
+            "request_id",
+            "error",
+            "remediation",
+            "details",
+            "did_you_mean",
+        ):
+            value = payload.get(key)
+            if not _is_empty_value(value):
+                out[key] = value
         return out
 
     price_precision = None
