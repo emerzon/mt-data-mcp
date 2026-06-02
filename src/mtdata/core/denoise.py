@@ -15,15 +15,13 @@ from .output_contract import normalize_output_verbosity_detail
 logger = logging.getLogger(__name__)
 
 
-def _compact_denoise_method(row: Dict[str, Any]) -> Dict[str, Any]:
+_DENOISE_METHOD_DEFAULT_LIMIT = 10
+
+
+def _summary_denoise_method(row: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "method": row.get("method"),
         "available": bool(row.get("available", False)),
-        "requires": row.get("requires") or None,
-        "supports_causal": bool(row.get("supports_causal", False)),
-        "has_auto_params": bool(row.get("has_auto_params", False)),
-        "params": row.get("params") or [],
-        "description": row.get("description"),
     }
 
 
@@ -40,6 +38,7 @@ def _denoise_methods(*, available_only: bool = False) -> List[Dict[str, Any]]:
 def denoise_list_methods(
     detail: CompactFullDetailLiteral = "compact",
     available_only: bool = False,
+    limit: int = _DENOISE_METHOD_DEFAULT_LIMIT,
 ) -> Dict[str, Any]:
     """List denoise methods, optional dependencies, causality support, and auto params."""
 
@@ -54,21 +53,21 @@ def denoise_list_methods(
                 "count": len(methods),
                 "methods": methods,
             }
+        limit_value = max(1, int(limit or _DENOISE_METHOD_DEFAULT_LIMIT))
+        visible = methods[:limit_value]
+        hidden = max(0, len(methods) - len(visible))
         return {
             "success": True,
             "detail": detail_mode,
             "available_only": bool(available_only),
-            "count": len(methods),
-            "columns": [
-                "method",
-                "available",
-                "requires",
-                "supports_causal",
-                "has_auto_params",
-                "params",
-                "description",
-            ],
-            "methods": [_compact_denoise_method(row) for row in methods],
+            "count": len(visible),
+            "total": len(methods),
+            "limit": limit_value,
+            "has_more": hidden > 0,
+            "methods_hidden": hidden,
+            "columns": ["method", "available"],
+            "methods": [_summary_denoise_method(row) for row in visible],
+            "describe_hint": "Use denoise_describe(method) for params and descriptions.",
         }
 
     return run_logged_operation(
@@ -76,6 +75,7 @@ def denoise_list_methods(
         operation="denoise_list_methods",
         detail=detail,
         available_only=available_only,
+        limit=limit,
         func=_run,
     )
 
