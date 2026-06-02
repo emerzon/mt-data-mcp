@@ -7,6 +7,14 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 
 
+def test_finviz_fundamental_percent_units_are_explicit() -> None:
+    from mtdata.core.finviz import _finviz_fundamental_units
+
+    assert _finviz_fundamental_units({"change_pct": 1.2}) == {
+        "change_pct": "percentage_points (1.0 = 1%)"
+    }
+
+
 class TestFinvizService:
     """Tests for the canonical finviz package functions."""
 

@@ -1665,7 +1665,7 @@ def _finviz_fundamental_units(fundamentals: Dict[str, Any]) -> Dict[str, str]:
     units: Dict[str, str] = {}
     for key in fundamentals:
         if key.endswith("_pct") or key in _FINVIZ_PERCENT_FUNDAMENTAL_KEYS:
-            units[key] = "percentage_points"
+            units[key] = "percentage_points (1.0 = 1%)"
     return units
 
 
