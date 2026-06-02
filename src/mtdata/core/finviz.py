@@ -291,6 +291,13 @@ _FINVIZ_MARKET_COMPACT_FIELDS = (
     "perf_quart",
     "perf_year",
 )
+_FINVIZ_MARKET_PERFORMANCE_PERIOD_FIELDS = (
+    ("day", "perf_day_pct"),
+    ("week", "perf_week_pct"),
+    ("month", "perf_month_pct"),
+    ("quarter", "perf_quart_pct"),
+    ("year", "perf_year_pct"),
+)
 _FINVIZ_SCREEN_COMPACT_FIELDS_BY_VIEW = {
     "overview": (
         "symbol",
@@ -496,6 +503,19 @@ def _is_known_forex_pair_row(row: Any) -> bool:
     return _derive_forex_pair_name(row.get("symbol")) is not None
 
 
+def _finviz_market_performance_periods(rows: Any) -> List[str]:
+    if not isinstance(rows, list):
+        return []
+    periods: List[str] = []
+    for period, field in _FINVIZ_MARKET_PERFORMANCE_PERIOD_FIELDS:
+        if any(
+            isinstance(row, dict) and row.get(field) not in (None, "")
+            for row in rows
+        ):
+            periods.append(period)
+    return periods
+
+
 def _finviz_screen_compact_fields(view: Any) -> tuple[str, ...]:
     view_key = str(view or "overview").strip().lower()
     return _FINVIZ_SCREEN_COMPACT_FIELDS_BY_VIEW.get(
@@ -616,11 +636,15 @@ def _normalize_finviz_market_payload(
     if units:
         out["units"] = units
     if rows_key in {"pairs", "coins", "futures"}:
-        limitations = {"performance_periods": "day_only"}
+        limitations: Dict[str, Any] = {}
+        periods = _finviz_market_performance_periods(output_rows)
+        if periods:
+            limitations["performance_periods"] = periods
         if rows_key == "futures":
             if not has_price:
                 limitations["price"] = "not_available_from_source"
-        out["data_limitations"] = limitations
+        if limitations:
+            out["data_limitations"] = limitations
     if detail_mode == "full":
         out["meta"] = _build_tool_contract_meta(
             tool=tool,

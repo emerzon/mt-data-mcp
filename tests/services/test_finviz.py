@@ -539,7 +539,18 @@ class TestFinvizTools:
             "success": True,
             "market": "forex",
             "count": 1,
-            "pairs": [{"Pair": "EUR/USD", "Price": "1.10", "Perf 5Min": "0.1%", "Perf Day": "0.2%"}],
+            "pairs": [
+                {
+                    "Pair": "EUR/USD",
+                    "Price": "1.10",
+                    "Perf 5Min": "0.1%",
+                    "Perf Day": "0.2%",
+                    "Perf Week": "-0.3%",
+                    "Perf Month": "0.4%",
+                    "Perf Quart": "0.5%",
+                    "Perf Year": "1.6%",
+                }
+            ],
         }
 
         raw = getattr(finviz_forex, "__wrapped__", finviz_forex)
@@ -547,7 +558,9 @@ class TestFinvizTools:
 
         assert "pairs" not in result
         assert result["detail"] == "compact"
-        assert result["data_limitations"] == {"performance_periods": "day_only"}
+        assert result["data_limitations"] == {
+            "performance_periods": ["day", "week", "month", "quarter", "year"]
+        }
         assert result["price_currency_basis"] == "quote_currency"
         assert result["price_source"] == "finviz_delayed"
         assert result["freshness"] == "finviz_delayed"
@@ -559,6 +572,10 @@ class TestFinvizTools:
                 "price": "1.10",
                 "price_currency": "USD",
                 "perf_day_pct": 0.2,
+                "perf_week_pct": -0.3,
+                "perf_month_pct": 0.4,
+                "perf_quart_pct": 0.5,
+                "perf_year_pct": 1.6,
             }
         ]
 
@@ -659,7 +676,7 @@ class TestFinvizTools:
         assert "coins" not in result
         assert result["detail"] == "compact"
         assert result["performance_format"] == "percentage_points"
-        assert result["data_limitations"] == {"performance_periods": "day_only"}
+        assert result["data_limitations"] == {"performance_periods": ["day"]}
         assert result["price_currency"] == "USD"
         assert result["price_source"] == "finviz_delayed"
         assert result["freshness"] == "finviz_delayed"
@@ -750,7 +767,7 @@ class TestFinvizTools:
         assert "futures" not in result
         assert result["detail"] == "compact"
         assert result["data_limitations"] == {
-            "performance_periods": "day_only",
+            "performance_periods": ["day"],
             "price": "not_available_from_source",
         }
         assert result["items"] == [
