@@ -1034,3 +1034,55 @@ class TestSymbolsDescribe:
             "max_volume",
         ):
             assert raw_key not in sd
+
+    @patch(f"{_MT5}.symbol_info")
+    def test_compact_detail_includes_core_contract_spec_fields(self, mock_info):
+        info = MagicMock()
+        info.__dir__ = lambda self: [
+            "name",
+            "trade_exemode",
+            "trade_calc_mode",
+            "filling_mode",
+            "swap_mode",
+            "swap_long",
+            "swap_short",
+            "trade_stops_level",
+            "trade_freeze_level",
+        ]
+        info.name = "XAUUSD"
+        info.trade_exemode = 2
+        info.trade_calc_mode = 3
+        info.filling_mode = 2
+        info.swap_mode = 1
+        info.swap_long = -54.5
+        info.swap_short = 46.6
+        info.trade_stops_level = 10
+        info.trade_freeze_level = 5
+        mock_info.return_value = info
+
+        import mtdata.core.symbols as symbols_mod
+
+        symbols_mod.mt5.SYMBOL_TRADE_EXECUTION_INSTANT = 2
+        symbols_mod.mt5.SYMBOL_CALC_MODE_CFD = 3
+        symbols_mod.mt5.ORDER_FILLING_IOC = 2
+        symbols_mod.mt5.SYMBOL_SWAP_MODE_POINTS = 1
+
+        fn = _get_symbols_describe()
+        res = fn("XAUUSD", detail="compact")
+        sd = res["details"]
+
+        assert sd["trade_exemode_label"] == "Market"
+        assert "Cfd" in sd["trade_calc_mode_label"]
+        assert "IOC" in sd["filling_mode_labels"]
+        assert sd["swap_mode_label"] == "Points"
+        assert sd["swap_long"] == -54.5
+        assert sd["swap_short"] == 46.6
+        assert sd["trade_stops_level"] == 10
+        assert sd["trade_freeze_level"] == 5
+        for raw_key in (
+            "trade_exemode",
+            "trade_calc_mode",
+            "filling_mode",
+            "swap_mode",
+        ):
+            assert raw_key not in sd
