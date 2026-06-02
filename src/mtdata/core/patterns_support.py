@@ -627,6 +627,18 @@ def _compact_patterns_payload(
         "effective_window": payload.get("effective_window"),
     }
     compact = {key: value for key, value in compact.items() if value is not None}
+    compact["patterns_shown"] = len(top_patterns)
+    compact["patterns_omitted"] = max(0, total_i - len(top_patterns))
+    compact["strong_patterns"] = strong_patterns
+    if signal_bias:
+        distribution = {
+            "bullish": int(signal_bias.get("bullish_patterns") or 0),
+            "bearish": int(signal_bias.get("bearish_patterns") or 0),
+            "neutral": int(signal_bias.get("neutral_patterns") or 0),
+        }
+        if avg_confidence is not None:
+            distribution["avg_confidence"] = avg_confidence
+        compact["pattern_distribution"] = distribution
     if signal:
         compact["action"] = signal.get("action")
         compact["confidence"] = signal.get("confidence")
@@ -649,19 +661,6 @@ def _compact_patterns_payload(
             compact["verdict"] = verdict
     if top_patterns:
         compact["top_patterns"] = top_patterns
-    if total_i > len(top_patterns):
-        compact["patterns_shown"] = len(top_patterns)
-        compact["patterns_omitted"] = max(0, total_i - len(top_patterns))
-        compact["strong_patterns"] = strong_patterns
-        if signal_bias:
-            distribution = {
-                "bullish": int(signal_bias.get("bullish_patterns") or 0),
-                "bearish": int(signal_bias.get("bearish_patterns") or 0),
-                "neutral": int(signal_bias.get("neutral_patterns") or 0),
-            }
-            if avg_confidence is not None:
-                distribution["avg_confidence"] = avg_confidence
-            compact["pattern_distribution"] = distribution
 
     for key in (
         "engine",

@@ -796,6 +796,9 @@ def test_build_pattern_response_compact_counts_omitted_rows_when_truncated():
     assert compact["patterns_shown"] == 3
     assert compact["patterns_omitted"] == 6
     assert compact["strong_patterns"] == 9
+    keys = list(compact)
+    assert keys.index("patterns_omitted") < keys.index("verdict")
+    assert keys.index("pattern_distribution") < keys.index("top_patterns")
     distribution = compact["pattern_distribution"]
     assert distribution["bullish"] == 4
     assert distribution["bearish"] == 5

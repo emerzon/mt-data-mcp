@@ -1222,7 +1222,9 @@ def patterns_detect(
         patterns to detect (e.g., "doji,hammer,engulfing").
     
     top_k : int, optional (default=3)
-        Return only the top K strongest patterns
+        Candidate preview budget. Compact output displays up to three
+        `top_patterns` rows and reports `patterns_shown`/`patterns_omitted`;
+        use a larger value or `detail="full"` when you need more rows.
 
     last_n_bars : int, optional
         Candlestick mode only. Restrict detections to patterns that occur in the
