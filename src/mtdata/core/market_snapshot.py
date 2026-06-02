@@ -14,6 +14,7 @@ from .tool_calling import call_tool_sync_structured
 logger = logging.getLogger(__name__)
 
 _DEFAULT_SECTIONS = ("quote", "levels", "patterns")
+_SNAPSHOT_PATTERN_LAST_N_BARS = 3
 _VALID_SECTIONS = frozenset(
     {
         "quote",
@@ -141,6 +142,7 @@ def _call_section(name: str, symbol: str, timeframe: str, horizon: int, detail: 
                 detail="summary",
                 limit=150,
                 top_k=3,
+                last_n_bars=_SNAPSHOT_PATTERN_LAST_N_BARS,
                 raw_tool_output=True,
             )
         if name == "regime":
