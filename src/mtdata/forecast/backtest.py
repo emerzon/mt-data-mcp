@@ -1055,6 +1055,13 @@ def strategy_backtest(  # noqa: C901
         if isinstance(sample_notice, dict):
             trades_observed = sample_notice.get("trades_observed")
             minimum_trades = sample_notice.get("minimum_trades")
+            result["summary"] = {
+                "sample_status": "insufficient_trades",
+                "metrics_reliability": "low",
+                "trades_observed": trades_observed,
+                "minimum_trades": minimum_trades,
+                **result["summary"],
+            }
             result["warning"] = (
                 f"Only {trades_observed} trade(s) observed; treat strategy metrics as low-confidence "
                 f"until at least {minimum_trades} trades are available."

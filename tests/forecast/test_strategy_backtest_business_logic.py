@@ -105,6 +105,16 @@ def test_strategy_backtest_compact_mode_excludes_trades(monkeypatch):
 
     assert out["success"] is True
     assert out["summary"]["num_trades"] == 1
+    assert out["summary"]["sample_status"] == "insufficient_trades"
+    assert out["summary"]["metrics_reliability"] == "low"
+    assert out["summary"]["trades_observed"] == 1
+    assert out["summary"]["minimum_trades"] == 30
+    assert list(out["summary"])[:4] == [
+        "sample_status",
+        "metrics_reliability",
+        "trades_observed",
+        "minimum_trades",
+    ]
     assert out["units"]["returns"] == "return_fraction"
     assert "trades" not in out, "compact mode should not include trades array"
     assert "trade_sample" not in out
