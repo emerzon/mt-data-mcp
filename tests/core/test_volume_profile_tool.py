@@ -79,6 +79,42 @@ def test_compute_volume_profile_payload_uses_tick_rows(monkeypatch):
     assert "buckets" not in result
 
 
+def test_compute_volume_profile_payload_exposes_fetch_freshness_and_units(monkeypatch):
+    monkeypatch.setattr(vp, "create_mt5_gateway", lambda **_: SimpleNamespace(ensure_connection=lambda: None))
+    monkeypatch.setattr(
+        vp,
+        "_symbol_ready_guard",
+        lambda symbol: _Guard(None, SimpleNamespace(point=0.0001, digits=5)),
+    )
+    monkeypatch.setattr(
+        vp,
+        "fetch_ticks",
+        lambda **_: {
+            "as_of": "2026-06-02T12:00:00Z",
+            "timezone": "UTC",
+            "data_freshness_seconds": 12.5,
+            "data_stale": False,
+            "data": [
+                {"time": "2026-06-02 12:00:00.000", "bid": 1.0999, "ask": 1.1001, "mid": 1.1000, "tick_volume": 2, "real_volume": 0},
+                {"time": "2026-06-02 12:00:01.000", "bid": 1.1000, "ask": 1.1002, "mid": 1.1001, "tick_volume": 3, "real_volume": 0},
+            ],
+        },
+    )
+
+    result = vp.compute_volume_profile_payload(
+        symbol="EURUSD",
+        source="ticks",
+        bucket_size=0.0001,
+    )
+
+    assert result["as_of"] == "2026-06-02T12:00:00Z"
+    assert result["timezone"] == "UTC"
+    assert result["data_age_seconds"] == 12.5
+    assert result["data_stale"] is False
+    assert result["units"]["price"] == "absolute_price"
+    assert result["units"]["volume"] == "tick_volume"
+
+
 def test_compute_volume_profile_payload_uses_limit_as_tick_cap(monkeypatch):
     captured = {}
     monkeypatch.setattr(vp, "create_mt5_gateway", lambda **_: SimpleNamespace(ensure_connection=lambda: None))

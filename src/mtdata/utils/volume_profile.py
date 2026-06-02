@@ -314,7 +314,7 @@ def _resolve_bucket_size(prices: Sequence[float], cfg: VolumeProfileConfig) -> f
         magnitude = max(abs(min_price), 1.0)
         return magnitude * 1e-6
 
-    requested_count = int(cfg.bucket_count or min(max(int(cfg.max_buckets), 1), 80))
+    requested_count = int(cfg.bucket_count or min(max(int(cfg.max_buckets), 1), 100))
     target_count = max(1, min(requested_count, int(cfg.max_buckets)))
     raw_size = observed_range / float(target_count)
     if price_point is not None:

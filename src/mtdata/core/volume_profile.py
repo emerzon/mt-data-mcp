@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import logging
 import math
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Literal, Optional
 
 from ..services.data_service import fetch_candles, fetch_ticks
 from ..shared.constants import TIMEFRAME_SECONDS
-from ..shared.schema import CompactStandardFullDetailLiteral
+from ..shared.schema import CompactStandardFullDetailLiteral, TimeframeLiteral
 from ..utils.mt5 import (
     MT5ConnectionError,
     _symbol_ready_guard,
@@ -31,6 +31,10 @@ _DEFAULT_MAX_TICKS = 200_000
 _DEFAULT_MAX_M1_BARS = 20_000
 _DEFAULT_PROFILE_LIMIT = 200
 _MIN_TICK_PRICE_COVERAGE_RATIO = 0.5
+
+
+def _utc_now_naive() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def _positive_float_attr(obj: Any, *names: str) -> Optional[float]:
@@ -66,7 +70,7 @@ def _window_days(start: Optional[str], end: Optional[str]) -> Optional[float]:
     if start_dt is None and end_dt is None:
         return None
     if end_dt is None:
-        end_dt = datetime.utcnow()
+        end_dt = _utc_now_naive()
     if start_dt is None:
         return None
     seconds = max(0.0, float((end_dt - start_dt).total_seconds()))
@@ -104,7 +108,7 @@ def _resolve_profile_window(
                     f"omit limit to use the default {int(_DEFAULT_PROFILE_LIMIT)} bars."
                 )
             }
-    end_dt = _parse_start_datetime(end) if end else datetime.utcnow()
+    end_dt = _parse_start_datetime(end) if end else _utc_now_naive()
     if end and end_dt is None:
         return {"error": f"Could not parse end datetime {end!r}"}
     assert end_dt is not None
@@ -378,6 +382,11 @@ def _profile_detail_payload(profile: Dict[str, Any], detail: str) -> Dict[str, A
         "value_area",
         "diagnostics",
         "warnings",
+        "as_of",
+        "timezone",
+        "data_age_seconds",
+        "data_stale",
+        "units",
     ]
     out = {key: profile[key] for key in keys if key in profile}
     out["detail"] = detail_value
@@ -396,12 +405,56 @@ def _profile_detail_payload(profile: Dict[str, Any], detail: str) -> Dict[str, A
     return out
 
 
+def _profile_freshness_meta(fetch_payload: Any) -> Dict[str, Any]:
+    if not isinstance(fetch_payload, dict):
+        return {}
+    out: Dict[str, Any] = {}
+    for target, source_names in (
+        ("as_of", ("as_of", "data_fetched_at")),
+        ("timezone", ("timezone",)),
+        ("data_age_seconds", ("data_age_seconds", "data_freshness_seconds")),
+        ("data_stale", ("data_stale",)),
+    ):
+        for name in source_names:
+            value = fetch_payload.get(name)
+            if value not in (None, "", [], {}):
+                out[target] = value
+                break
+    if "data_age_seconds" not in out:
+        meta = fetch_payload.get("meta")
+        diagnostics = meta.get("diagnostics") if isinstance(meta, dict) else None
+        freshness = diagnostics.get("freshness") if isinstance(diagnostics, dict) else None
+        if isinstance(freshness, dict):
+            age_seconds = freshness.get("data_freshness_seconds")
+            if age_seconds is not None:
+                out["data_age_seconds"] = age_seconds
+            within_policy = freshness.get("last_bar_within_policy_window")
+            relaxed_policy = bool(freshness.get("freshness_policy_relaxed"))
+            if within_policy is not None:
+                out["data_stale"] = bool(not bool(within_policy) and not relaxed_policy)
+    return out
+
+
+def _profile_units(profile: Dict[str, Any]) -> Dict[str, str]:
+    volume_kind = str(profile.get("volume_kind") or "volume_weight").strip() or "volume_weight"
+    return {
+        "price": "absolute_price",
+        "bucket_size": "absolute_price",
+        "poc.price": "absolute_price",
+        "vah.price": "absolute_price",
+        "val.price": "absolute_price",
+        "volume": volume_kind,
+        "total_volume": volume_kind,
+        "value_area.volume": volume_kind,
+    }
+
+
 def compute_volume_profile_payload(
     *,
     symbol: str,
     start: Optional[str] = None,
     end: Optional[str] = None,
-    timeframe: Optional[str] = None,
+    timeframe: Optional[TimeframeLiteral] = None,
     limit: Optional[int] = None,
     source: VolumeProfileSourceLiteral = "auto",
     price_source: VolumeProfilePriceSourceLiteral = "mid",
@@ -491,9 +544,12 @@ def compute_volume_profile_payload(
         **(selected.get("diagnostics") or {}),
         **(profile.get("diagnostics") or {}),
     }
+    fetch_payload = selected.get("fetch_payload")
+    profile.update(_profile_freshness_meta(fetch_payload))
+    profile["units"] = _profile_units(profile)
     if selected.get("warnings"):
         profile["warnings"] = list(selected.get("warnings") or [])
-    profile["fetch_payload"] = selected.get("fetch_payload")
+    profile["fetch_payload"] = fetch_payload
     return _profile_detail_payload(profile, detail)
 
 
@@ -502,7 +558,7 @@ def volume_profile_levels(  # noqa: PLR0913
     symbol: str,
     start: Optional[str] = None,
     end: Optional[str] = None,
-    timeframe: Optional[str] = None,
+    timeframe: Optional[TimeframeLiteral] = None,
     limit: Optional[int] = None,
     source: VolumeProfileSourceLiteral = "auto",
     price_source: VolumeProfilePriceSourceLiteral = "mid",

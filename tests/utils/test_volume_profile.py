@@ -128,6 +128,19 @@ def test_compute_volume_profile_caps_tiny_explicit_buckets():
     assert result["diagnostics"]["max_buckets_reached"] is True
 
 
+def test_compute_volume_profile_defaults_to_one_hundred_buckets_when_possible():
+    rows = [{"last": float(price), "tick_volume": 1} for price in range(100)]
+
+    result = compute_volume_profile(
+        rows,
+        VolumeProfileConfig(price_source="last", max_buckets=120),
+    )
+
+    assert result["success"] is True
+    assert result["bucket_size"] < 1.0
+    assert result["diagnostics"]["bucket_count"] > 80
+
+
 def test_annotate_level_confluence_uses_symbol_points_tolerance():
     rows = [{"level_price": 1.0850}]
     levels = [{"level": "POC", "type": "volume_poc", "price": 1.0855}]
