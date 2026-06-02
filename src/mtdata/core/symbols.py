@@ -2210,6 +2210,7 @@ def _market_scan_sort_rows(
     if rank_by == "abs_price_change_pct":
         rows.sort(
             key=lambda row: (
+                bool(row.get("data_stale")),
                 row.get("price_change_pct") is None,
                 (
                     abs(float(row.get("price_change_pct") or 0.0))
@@ -2225,6 +2226,7 @@ def _market_scan_sort_rows(
 
     rows.sort(
         key=lambda row: (
+            bool(row.get("data_stale")),
             row.get(rank_by) is None,
             (
                 float(row.get(rank_by) if row.get(rank_by) is not None else missing_value)
@@ -2480,6 +2482,7 @@ def symbols_top_markets(  # noqa: C901
 
             spread_rows.sort(
                 key=lambda row: (
+                    bool(row.get("data_stale")),
                     row.get("spread_pct") is None,
                     row.get("spread_pct") if row.get("spread_pct") is not None else float("inf"),
                     row.get("symbol") or "",
@@ -2487,6 +2490,7 @@ def symbols_top_markets(  # noqa: C901
             )
             volume_rows.sort(
                 key=lambda row: (
+                    bool(row.get("data_stale")),
                     row.get("tick_volume") is None,
                     -(row.get("tick_volume") or 0),
                     row.get("symbol") or "",
@@ -2494,6 +2498,7 @@ def symbols_top_markets(  # noqa: C901
             )
             price_change_rows.sort(
                 key=lambda row: (
+                    bool(row.get("data_stale")),
                     row.get("price_change_pct") is None,
                     (
                         -abs(float(row.get("price_change_pct") or 0.0))
@@ -2577,6 +2582,7 @@ def symbols_top_markets(  # noqa: C901
                 out.update(scan_meta)
                 out["ranking"] = "lowest_spread"
                 out.update(_scope_fields("spread", spread_rows))
+                out.update(_market_scan_freshness_summary(spread_rows))
                 _attach_top_markets_units(out, spread_rows)
                 if detail_mode == "full":
                     out["evaluated_symbols"] = evaluated_counts["spread"]
@@ -2593,6 +2599,7 @@ def symbols_top_markets(  # noqa: C901
                 out.update(scan_meta)
                 out["ranking"] = "highest_volume"
                 out.update(_scope_fields("volume", volume_rows))
+                out.update(_market_scan_freshness_summary(volume_rows))
                 _attach_top_markets_units(out, volume_rows)
                 if detail_mode == "full":
                     out["evaluated_symbols"] = evaluated_counts["volume"]
@@ -2613,6 +2620,7 @@ def symbols_top_markets(  # noqa: C901
                     else "highest_price_change_pct"
                 )
                 out.update(_scope_fields("price_change", price_change_rows))
+                out.update(_market_scan_freshness_summary(price_change_rows))
                 _attach_top_markets_units(out, price_change_rows)
                 if detail_mode == "full":
                     out["evaluated_symbols"] = evaluated_counts["price_change"]
@@ -2654,6 +2662,7 @@ def symbols_top_markets(  # noqa: C901
                 "highest_volume": evaluated_counts["volume"],
                 "highest_price_change_pct": evaluated_counts["price_change"],
             }
+            out.update(_market_scan_freshness_summary(all_rows))
             if detail_mode == "full":
                 out["scan_stats"] = {
                     "spread": {
@@ -3160,14 +3169,21 @@ def market_scan(  # noqa: C901
                 include_columns=detail_mode == "full",
             )
             freshness_summary = _market_scan_freshness_summary(limited_rows)
+            stale_rows = int(freshness_summary.get("stale_rows") or 0)
+            message = (
+                f"{int(total_matches)} symbol(s) matched the requested market scan filters."
+                if total_matches > 0
+                else "No symbols matched the requested market scan filters."
+            )
+            if stale_rows:
+                message = (
+                    f"{message} Returned rows: "
+                    f"{stale_rows}/{int(table_payload['row_count'])} stale."
+                )
             out: Dict[str, Any] = {
                 "success": True,
                 "status": "ok" if total_matches > 0 else "no_matches",
-                "message": (
-                    f"{int(total_matches)} symbol(s) matched the requested market scan filters."
-                    if total_matches > 0
-                    else "No symbols matched the requested market scan filters."
-                ),
+                "message": message,
                 "data": table_payload["rows"],
                 "count": table_payload["row_count"],
                 "rank_by": rank_by_value,

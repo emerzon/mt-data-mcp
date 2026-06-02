@@ -819,6 +819,59 @@ class TestMarketScan:
         assert result["meta"]["request"]["rank_by_input"] == "spread"
 
     @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
+    @patch("mtdata.core.symbols.mt5.symbol_info_tick")
+    @patch("mtdata.core.symbols.mt5.symbols_get")
+    def test_market_scan_spread_ranking_puts_stale_rows_after_fresh(
+        self,
+        mock_symbols_get,
+        mock_tick,
+        mock_rates,
+        mock_group,
+    ):
+        now = 1_700_000_000.0
+        mock_symbols_get.return_value = [
+            _make_symbol("STALETIGHT", description="Old tight spread"),
+            _make_symbol("FRESHWIDE", description="Fresh wider spread"),
+        ]
+        mock_tick.side_effect = lambda symbol: {
+            "STALETIGHT": _make_tick(bid=1.1000, ask=1.1001),
+            "FRESHWIDE": _make_tick(bid=1.1000, ask=1.1005),
+        }[symbol]
+        mock_rates.side_effect = lambda symbol, timeframe, start_pos, count: {
+            "STALETIGHT": [
+                {
+                    "time": now - (10 * 3600),
+                    "open": 1.1000,
+                    "close": 1.1000,
+                    "tick_volume": 120,
+                    "real_volume": 0,
+                }
+            ],
+            "FRESHWIDE": [
+                {
+                    "time": now - 3600,
+                    "open": 1.1000,
+                    "close": 1.1000,
+                    "tick_volume": 120,
+                    "real_volume": 0,
+                }
+            ],
+        }[symbol]
+
+        fn = _get_market_scan()
+        with patch("mtdata.core.symbols.time.time", return_value=now):
+            result = fn(rank_by="spread_pct", limit=2, timeframe="H1", lookback=2)
+
+        assert result["success"] is True
+        assert [row["symbol"] for row in result["data"]] == ["FRESHWIDE", "STALETIGHT"]
+        assert result["data"][0]["data_stale"] is False
+        assert result["data"][1]["data_stale"] is True
+        assert result["freshness"] == "mixed, 1/2 stale"
+        assert result["stale_rows"] == 1
+        assert "Returned rows: 1/2 stale." in result["message"]
+
+    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
     @patch("mtdata.core.symbols._symbol_ready_guard", side_effect=_ready_guard_ok)
     @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
     @patch("mtdata.core.symbols.mt5.symbol_info_tick")
