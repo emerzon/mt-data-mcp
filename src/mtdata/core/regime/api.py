@@ -2463,6 +2463,11 @@ def regime_detect(  # noqa: C901
                     "direction": direction,
                     "regime_confidence": regime_confidence,
                 }
+                if regime_state != "trending" or state_note:
+                    payload["summary"]["direction_basis"] = "net_window_move"
+                    payload["summary"]["interpretation"] = interpretation
+                if state_note:
+                    payload["summary"]["note"] = state_note
                 return _finish(_summary_only_payload(payload))
             if output == "full" and include_series:
                 payload["series"] = {
@@ -2478,6 +2483,11 @@ def regime_detect(  # noqa: C901
                         "window_move_pct": window_move_pct,
                     }
                 )
+                if regime_state != "trending" or state_note:
+                    compact_current_regime["direction_basis"] = "net_window_move"
+                    compact_current_regime["interpretation"] = interpretation
+                if state_note:
+                    compact_current_regime["note"] = state_note
                 payload = {
                     "success": True,
                     "symbol": symbol,

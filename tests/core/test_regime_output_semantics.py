@@ -544,7 +544,7 @@ def test_rule_based_explains_ranging_direction_bias() -> None:
     assert "state" not in out["current_regime"]
 
 
-def test_rule_based_compact_omits_explanatory_fields() -> None:
+def test_rule_based_compact_explains_direction_bias() -> None:
     raw = _unwrap(regime_detect)
 
     with (
@@ -561,7 +561,6 @@ def test_rule_based_compact_omits_explanatory_fields() -> None:
         )
 
     current_regime = out["current_regime"]
-    assert len(out) <= 7
     assert current_regime["bars"] == 60
     assert current_regime["label"] == "ranging"
     assert current_regime["direction"] == "bearish"
@@ -570,12 +569,39 @@ def test_rule_based_compact_omits_explanatory_fields() -> None:
     assert "efficiency_ratio" in current_regime
     assert "trend_strength" in current_regime
     assert "window_move_pct" in current_regime
+    assert current_regime["direction_basis"] == "net_window_move"
+    assert "window bias, not a trend classification" in current_regime["interpretation"]
+    assert "efficiency_ratio indicates a choppy path" in current_regime["note"]
     assert "regime" not in out
     assert "regimes" not in out
     assert "regime_info" not in out
     assert "reliability" not in out
     assert "total_regimes" not in out
     assert "params_used" not in out
+
+
+def test_rule_based_summary_explains_direction_bias() -> None:
+    raw = _unwrap(regime_detect)
+
+    with (
+        patch("mtdata.core.regime._fetch_history", return_value=_choppy_bearish_df()),
+        patch("mtdata.core.regime._resolve_denoise_base_col", return_value="close"),
+        patch("mtdata.core.regime._format_time_minimal", side_effect=lambda x: f"T{x}"),
+    ):
+        out = raw(
+            symbol="TEST",
+            timeframe="H1",
+            limit=120,
+            method="rule_based",
+            params={"window_bars": 60},
+            detail="summary",
+        )
+
+    summary = out["summary"]
+    assert summary["label"] == "ranging"
+    assert summary["direction"] == "bearish"
+    assert summary["direction_basis"] == "net_window_move"
+    assert "window bias, not a trend classification" in summary["interpretation"]
 
 
 def test_rule_based_warns_for_inapplicable_parameters() -> None:
