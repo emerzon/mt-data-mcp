@@ -33,6 +33,24 @@ _MARKET_DEPTH_BOOK_UNITS = {
     "volume_real": "book_volume_real",
 }
 _MARKET_DEPTH_TICK_UNITS = {"volume": "mt5_tick_volume"}
+_FOREX_CURRENCY_CODES = {
+    "AUD",
+    "CAD",
+    "CHF",
+    "CNH",
+    "CNY",
+    "EUR",
+    "GBP",
+    "HKD",
+    "JPY",
+    "MXN",
+    "NOK",
+    "NZD",
+    "SEK",
+    "SGD",
+    "USD",
+    "ZAR",
+}
 
 
 def _display_timezone_label(*, use_client_tz: bool) -> str:
@@ -79,6 +97,36 @@ def _market_ticker_freshness_label(payload: Dict[str, Any]) -> Optional[str]:
     )
 
 
+def _market_ticker_points_per_pip(
+    symbol_info: Any,
+    *,
+    symbol: str,
+    point: float,
+    digits: int,
+) -> Optional[float]:
+    path = str(getattr(symbol_info, "path", "") or "").casefold()
+    name_letters = "".join(
+        char for char in str(symbol or "").upper() if "A" <= char <= "Z"
+    )
+    pair_prefix = name_letters[:6]
+    is_currency_pair = (
+        len(pair_prefix) == 6
+        and pair_prefix[:3] in _FOREX_CURRENCY_CODES
+        and pair_prefix[3:] in _FOREX_CURRENCY_CODES
+    )
+    if not is_currency_pair and "forex" not in path and "\\fx" not in path and "/fx" not in path:
+        return None
+    if digits in {3, 5}:
+        return 10.0
+    if digits in {2, 4}:
+        return 1.0
+    if point in {0.00001, 0.001}:
+        return 10.0
+    if point in {0.0001, 0.01}:
+        return 1.0
+    return None
+
+
 def _market_depth_fetch_enabled() -> bool:
     raw = os.getenv(_MARKET_DEPTH_ENABLE_ENV)
     if raw is None:
@@ -115,10 +163,12 @@ def _compact_market_ticker_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "spread",
         "spread_points",
         "spread_pct",
+        "spread_pips",
         "freshness",
         "market_status_reason",
         "time",
         "timezone",
+        "units",
     ):
         if key == "freshness":
             value = _market_ticker_freshness_label(payload)
@@ -527,6 +577,7 @@ def market_ticker(
             spread_abs = None
             spread_points = None
             spread_pct = None
+            spread_pips = None
             mid = None
             spread_cost_per_lot = None
             pricing_basis = "quote_only"
@@ -534,9 +585,23 @@ def market_ticker(
                 spread_abs = float(ask - bid)
                 mid = (ask + bid) / 2.0
                 spread_points = (spread_abs / point) if point > 0 else None
+                points_per_pip = _market_ticker_points_per_pip(
+                    symbol_info,
+                    symbol=symbol,
+                    point=point,
+                    digits=digits,
+                )
+                spread_pips = (
+                    spread_points / points_per_pip
+                    if spread_points is not None
+                    and points_per_pip is not None
+                    and points_per_pip > 0
+                    else None
+                )
                 spread_pct = ((spread_abs / mid) * 100.0) if mid > 0 else None
                 spread_abs = _round_market_ticker_value(spread_abs, digits=digits)
                 spread_points = _round_market_ticker_value(spread_points, digits=4)
+                spread_pips = _round_market_ticker_value(spread_pips, digits=4)
                 spread_pct = _round_market_ticker_value(spread_pct, digits=6)
                 if tick_size > 0 and tick_value > 0:
                     spread_cost_per_lot = _round_market_ticker_value(
@@ -559,11 +624,24 @@ def market_ticker(
                 "last": _round_market_ticker_value(last, digits=digits),
                 "spread": spread_abs,
                 "spread_points": spread_points,
+                "spread_pips": spread_pips,
                 "spread_pct": spread_pct,
                 "spread_cost_per_lot": spread_cost_per_lot,
                 "pricing_basis": pricing_basis,
                 "time": tick_time,
+                "units": {
+                    "bid": "price",
+                    "ask": "price",
+                    "mid": "price",
+                    "last": "price",
+                    "spread": "price",
+                    "spread_points": "broker_points",
+                    "spread_pct": "percentage_points (1.0 = 1%)",
+                    "spread_cost_per_lot": "currency_per_lot_estimate",
+                },
             }
+            if spread_pips is not None:
+                out["units"]["spread_pips"] = "pips"
             if tick_volume not in (None, 0):
                 out["tick_volume"] = tick_volume
             if spread_cost_per_lot is not None and spread_cost_currency:

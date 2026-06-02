@@ -312,9 +312,12 @@ def test_market_ticker_returns_lightweight_spread_snapshot() -> None:
     assert out["ask"] == 201.0
     assert out["spread"] == 1.0
     assert out["spread_points"] == 100.0
+    assert out["units"]["spread"] == "price"
+    assert out["units"]["spread_points"] == "broker_points"
     assert out["freshness"].startswith("stale, tick ")
     assert out["time"] == "2023-11-14T22:13Z"
     assert "spread_pips" not in out
+    assert "spread_pips" not in out["units"]
     assert "spread_pct_display" not in out
     assert "data_stale" not in out
     assert "data_age_seconds" not in out
@@ -359,6 +362,8 @@ def test_market_ticker_compact_detail_omits_verbose_fields() -> None:
     assert out["ask"] == 201.0
     assert out["spread"] == 1.0
     assert out["spread_points"] == 100.0
+    assert out["units"]["spread"] == "price"
+    assert out["units"]["spread_points"] == "broker_points"
     assert out["freshness"].startswith("stale, tick ")
     assert "spread_display" not in out
     assert "spread_pips" not in out
@@ -613,10 +618,11 @@ def test_market_ticker_rounds_tick_precision_noise() -> None:
     assert out["ask"] == 1.1759
     assert out["spread"] == 0.00009
     assert out["spread_points"] == 9.0
+    assert out["spread_pips"] == 0.9
+    assert out["units"]["spread_pips"] == "pips"
     assert "last" not in out
     assert "spread_display" not in out
-    assert "spread_pct" not in out
-    assert "spread_pips" not in out
+    assert out["spread_pct"] == pytest.approx(0.007654)
 
 
 def test_market_depth_returns_connection_error_payload() -> None:

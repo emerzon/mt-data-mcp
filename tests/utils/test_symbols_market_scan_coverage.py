@@ -809,7 +809,7 @@ class TestMarketScan:
         assert result["success"] is True
         row = result["data"][0]
         assert row["spread_points"] == 50.0
-        assert "spread_pips" not in row
+        assert row["spread_pips"] is None
         assert "spread_pips" not in result["units"]
 
     @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
