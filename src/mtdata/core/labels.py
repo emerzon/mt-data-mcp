@@ -33,8 +33,8 @@ from ..shared.schema import DenoiseSpec, DetailLiteral, TimeframeLiteral
 logger = logging.getLogger(__name__)
 _COMPACT_LABEL_SAMPLE_SIZE = 10
 _DEFAULT_LABEL_HORIZON = 12
-_DEFAULT_LABEL_LOOKBACK = 300
-_DEFAULT_LABEL_LIMIT = _DEFAULT_LABEL_LOOKBACK + _DEFAULT_LABEL_HORIZON
+_DEFAULT_LABEL_LOOKBACK = 50
+_DEFAULT_LABEL_LIMIT = 50
 
 
 def _label_outcome(label: int) -> str:
@@ -339,15 +339,16 @@ def labels_triple_barrier(
             except ValueError as exc:
                 return {"error": str(exc)}
             horizon_bars = int(horizon)
-            requested_lookback = max(0, int(lookback))
-            effective_limit = int(
-                max(
-                    int(limit),
-                    horizon_bars + 50,
-                    requested_lookback + horizon_bars,
-                )
-            )
-            df = _fetch_history(symbol, timeframe, effective_limit, as_of=None)
+            if horizon_bars <= 0:
+                return {"error": "horizon must be greater than 0."}
+            requested_lookback = max(1, int(lookback))
+            sample_limit = max(1, int(limit))
+            history_bars_requested = int(requested_lookback + horizon_bars)
+            df = _fetch_history(symbol, timeframe, history_bars_requested, as_of=None)
+            history_bars_fetched = int(len(df))
+            if history_bars_fetched > history_bars_requested:
+                df = df.tail(history_bars_requested).copy()
+            history_bars_used = int(len(df))
             if len(df) < horizon_bars + 2:
                 return {"error": "Insufficient history for labeling"}
             base_col = _resolve_denoise_base_col(
@@ -389,7 +390,16 @@ def labels_triple_barrier(
                     "error": (
                         "Missing barriers. Provide either tp_pct and sl_pct, "
                         "tp_abs and sl_abs, or tp_ticks and sl_ticks."
-                    )
+                    ),
+                    "remediation": (
+                        "Choose explicit TP/SL barriers for the labeling objective. "
+                        "For exploratory percent labels, start with tp_pct=0.5 and sl_pct=0.5; "
+                        "use forecast_barrier_optimize to tune barriers from history."
+                    ),
+                    "examples": [
+                        "labels_triple_barrier(symbol='EURUSD', tp_pct=0.5, sl_pct=0.5)",
+                        "labels_triple_barrier(symbol='EURUSD', tp_ticks=50, sl_ticks=50)",
+                    ],
                 }
             if not _barrier_prices_are_valid(
                 price=sample_entry_price,
@@ -474,11 +484,11 @@ def labels_triple_barrier(
                 "horizon_trim_fraction": round(horizon_trim_fraction, 4),
                 "invalid_entry_skipped": int(skipped_entries),
             }
-            if horizon_trim_fraction > 0.05:
+            if rows_after_labeling < requested_lookback:
                 warnings_out.append(
-                    f"Horizon labeling trimmed {horizon_trimmed} tail row(s) "
-                    f"({horizon_trim_fraction:.1%}) because each label needs "
-                    f"{horizon_bars} future bar(s). Increase limit for more labeled rows."
+                    f"Only {rows_after_labeling} labeled row(s) were available for "
+                    f"lookback={requested_lookback}; each label needs {horizon_bars} "
+                    "future bar(s). Increase lookback if you need a larger labeled window."
                 )
 
             payload: Dict[str, Any] = {
@@ -491,6 +501,10 @@ def labels_triple_barrier(
                 "rows_after_labeling": rows_after_labeling,
                 "horizon_trimmed": horizon_trimmed,
                 "labeling_coverage": labeling_coverage,
+                "history_bars_requested": history_bars_requested,
+                "history_bars_fetched": history_bars_fetched,
+                "history_bars_used": history_bars_used,
+                "sample_limit": sample_limit,
                 "entries": t_entry,
                 "labels": labels,
                 "outcomes": [_label_outcome(label) for label in labels],
@@ -535,12 +549,14 @@ def labels_triple_barrier(
                 n = min(requested_lookback, len(labels))
                 lab_tail = labels[-n:] if n > 0 else labels
                 hold_tail = hold[-n:] if n > 0 else hold
-                recommended_lookback = max(horizon_bars * 10, 30)
+                recommended_lookback = max(horizon_bars * 4, 30)
                 bars_insufficient_for_horizon = int(n) <= horizon_bars * 2
                 sample_quality = {
                     "status": "low" if int(n) < recommended_lookback else "ok",
                     "lookback": int(n),
                     "requested_lookback": requested_lookback,
+                    "history_bars_requested": history_bars_requested,
+                    "history_bars_used": history_bars_used,
                     "minimum_recommended": int(recommended_lookback),
                     "bars_insufficient_for_horizon": bool(bars_insufficient_for_horizon),
                 }
@@ -612,6 +628,10 @@ def labels_triple_barrier(
                         "rows_after_labeling": rows_after_labeling,
                         "horizon_trimmed": horizon_trimmed,
                         "labeling_coverage": labeling_coverage,
+                        "history_bars_requested": history_bars_requested,
+                        "history_bars_fetched": history_bars_fetched,
+                        "history_bars_used": history_bars_used,
+                        "sample_limit": sample_limit,
                         "sample_quality_status": sample_quality["status"],
                         "summary": summary,
                     }
@@ -629,7 +649,7 @@ def labels_triple_barrier(
                     return out
                 payload["sample_quality_status"] = sample_quality["status"]
                 payload["summary"] = summary
-                sample_n = n
+                sample_n = min(n, sample_limit)
                 sample_indices = list(
                     range(max(0, len(labels) - sample_n), len(labels))
                 )
@@ -659,10 +679,11 @@ def labels_triple_barrier(
                         if value != 0
                     ]
                     if outcome_indices:
-                        sample_indices = outcome_indices[-_COMPACT_LABEL_SAMPLE_SIZE:]
+                        compact_sample_limit = min(sample_limit, _COMPACT_LABEL_SAMPLE_SIZE)
+                        sample_indices = outcome_indices[-compact_sample_limit:]
                         payload["sample_basis"] = "outcomes"
                     else:
-                        sample_n = min(n, _COMPACT_LABEL_SAMPLE_SIZE)
+                        sample_n = min(n, sample_limit, _COMPACT_LABEL_SAMPLE_SIZE)
                         sample_indices = list(
                             range(max(0, len(labels) - sample_n), len(labels))
                         )
@@ -704,6 +725,7 @@ def labels_triple_barrier(
                         payload.pop(key, None)
                 elif output_mode == "standard":
                     payload["sample_basis"] = "recent"
+                    sample_indices = sample_indices[-min(n, sample_limit):]
                     payload["sample_size"] = int(len(sample_indices))
                     payload["data_note"] = (
                         "data rows cover the recent summary lookback window."

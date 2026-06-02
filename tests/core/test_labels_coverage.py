@@ -1,6 +1,7 @@
 """Tests for core/labels.py — triple barrier labeling (mocked MT5)."""
 
 import inspect
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -105,19 +106,27 @@ class TestLabelsTripleBarrier:
     def test_compact_rows_keep_barrier_prices_structured(self, mock_hist, mock_den, mock_pip):
         del mock_den, mock_pip
         mock_hist.return_value = _make_flat_df(40, price=1.16479)
-
-        result = _get_raw_fn()(
-            "EURUSD",
-            tp_pct=1.0,
-            sl_pct=0.5,
-            horizon=12,
-            lookback=5,
+        gateway = SimpleNamespace(
+            ensure_connection=lambda: None,
+            symbol_info=lambda _symbol: SimpleNamespace(
+                digits=5,
+                trade_tick_size=0.00001,
+            ),
         )
+
+        with patch(f"{_LABELS_MOD}.create_mt5_gateway", return_value=gateway):
+            result = _get_raw_fn()(
+                "EURUSD",
+                tp_pct=1.0,
+                sl_pct=0.5,
+                horizon=12,
+                lookback=5,
+            )
         row = result["data"][0]
 
         assert row["entry_price"] == pytest.approx(1.16479)
-        assert row["tp_price"] == pytest.approx(1.1764379)
-        assert row["sl_price"] == pytest.approx(1.15896605)
+        assert row["tp_price"] == pytest.approx(1.17644)
+        assert row["sl_price"] == pytest.approx(1.15897)
         assert "barrier_levels" not in row
 
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
@@ -136,7 +145,7 @@ class TestLabelsTripleBarrier:
         result = _get_raw_fn()("EURUSD", tp_abs=0.01, sl_abs=0.01, horizon=12)
 
         assert "error" in result
-        assert "absolute price levels, not offsets" in result["error"]
+        assert "offset-style barriers" in result["error"]
 
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
     @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
@@ -173,26 +182,27 @@ class TestLabelsTripleBarrier:
             "Missing barriers. Provide either tp_pct and sl_pct, "
             "tp_abs and sl_abs, or tp_ticks and sl_ticks."
         )
+        assert "forecast_barrier_optimize" in result["remediation"]
 
     def test_rejects_multiple_tp_unit_families(self):
         result = _get_raw_fn()("EURUSD", tp_abs=1.11, tp_pct=0.5)
 
-        assert result["error"] == "Provide only one take-profit unit family: tp_abs, tp_pct, tp_ticks"
+        assert result["error"].startswith("Use one TP/SL barrier unit family")
 
     def test_rejects_multiple_sl_unit_families(self):
         result = _get_raw_fn()("EURUSD", sl_abs=1.09, sl_ticks=15.0)
 
-        assert result["error"] == "Provide only one stop-loss unit family: sl_abs, sl_pct, sl_ticks"
+        assert result["error"].startswith("Use one TP/SL barrier unit family")
 
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
     @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
     @patch(f"{_LABELS_MOD}._fetch_history")
-    def test_allows_one_unit_family_per_side(self, mock_hist, mock_den, mock_pip):
+    def test_rejects_mixed_tp_sl_unit_families(self, mock_hist, mock_den, mock_pip):
         mock_hist.return_value = _make_df(60)
 
         result = _get_raw_fn()("EURUSD", tp_pct=0.5, sl_ticks=15.0, horizon=12)
 
-        assert result["success"] is True
+        assert result["error"].startswith("Use one TP/SL barrier unit family")
 
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
     @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
@@ -286,8 +296,8 @@ class TestLabelsTripleBarrier:
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
     @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
     @patch(f"{_LABELS_MOD}._fetch_history")
-    def test_low_limit_auto_raises_to_default_summary_window(self, mock_hist, mock_den, mock_pip):
-        mock_hist.return_value = _make_df(312)
+    def test_limit_caps_compact_sample_without_expanding_history(self, mock_hist, mock_den, mock_pip):
+        mock_hist.return_value = _make_df(100)
 
         result = _get_raw_fn()(
             "EURUSD",
@@ -297,10 +307,14 @@ class TestLabelsTripleBarrier:
             detail="compact",
         )
 
-        assert mock_hist.call_args.args[2] == 312
+        assert mock_hist.call_args.args[2] == 62
         assert result["success"] is True
-        assert result["rows_after_labeling"] == 300
-        assert result["summary"]["lookback"] == 300
+        assert result["rows_after_labeling"] == 50
+        assert result["summary"]["lookback"] == 50
+        assert result["history_bars_requested"] == 62
+        assert result["history_bars_used"] == 62
+        assert result["sample_limit"] == 20
+        assert result["sample_size"] == 10
         assert result["sample_quality_status"] == "ok"
         assert result["summary"]["sample_quality"]["status"] == "ok"
 
@@ -327,6 +341,29 @@ class TestLabelsTripleBarrier:
         assert "data rows show non-neutral outcomes" in result["sample_note"]
         assert "label_legend" not in result
         assert result["label_key"] == {"1": "tp_first", "-1": "sl_first", "0": "hold"}
+
+    @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
+    @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
+    @patch(f"{_LABELS_MOD}._fetch_history")
+    def test_lookback_controls_labeling_window(self, mock_hist, mock_den, mock_pip):
+        mock_hist.return_value = _make_df(100)
+
+        result = _get_raw_fn()(
+            "EURUSD",
+            tp_pct=0.5,
+            sl_pct=0.5,
+            horizon=5,
+            detail="compact",
+            lookback=25,
+            limit=5,
+        )
+
+        assert mock_hist.call_args.args[2] == 30
+        assert result["rows_before_labeling"] == 30
+        assert result["rows_after_labeling"] == 25
+        assert result["summary"]["lookback"] == 25
+        assert result["sample_limit"] == 5
+        assert result["sample_size"] == 5
 
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
     @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
@@ -413,7 +450,7 @@ class TestLabelsTripleBarrier:
         result = _get_raw_fn()("EURUSD", tp_pct=0.5, sl_pct=0.5, horizon=5, detail="standard")
         assert result["success"] is True
         assert "summary" in result
-        assert result["sample_size"] <= 12
+        assert result["sample_size"] == 50
         assert "data" in result
 
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
