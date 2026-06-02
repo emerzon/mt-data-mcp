@@ -34,7 +34,7 @@ _MAGIC_NUMBER_DESCRIPTION = (
     "MT5 magic number: integer strategy/order identifier used to group EA or "
     "strategy trades. Use as a filter for one strategy; omit for all magic numbers."
 )
-DATA_FETCH_CANDLES_DEFAULT_LIMIT = 100
+DATA_FETCH_CANDLES_DEFAULT_LIMIT = 20
 DATA_FETCH_TICKS_DEFAULT_LIMIT = 20
 
 

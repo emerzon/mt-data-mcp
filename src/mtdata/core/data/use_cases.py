@@ -219,6 +219,7 @@ def _run_data_fetch_candles_impl(
             result = _summary_candles_payload(result)
         elif detail_mode == "standard":
             result = _standard_candles_payload(result)
+        _attach_candle_machine_freshness(result)
     if isinstance(result, dict) and isinstance(result.get("data"), list):
         out = attach_collection_contract(
             result,
@@ -410,7 +411,7 @@ def _compact_candles_payload(
         compact.pop("forming_candle_skipped", None)
     if result.get("forming_candle_status") == "skipped" and result.get("hint"):
         compact["hint"] = result["hint"]
-    for key in ("freshness",):
+    for key in ("freshness", "data_age_seconds", "data_stale"):
         if key in public_diagnostics:
             compact[key] = public_diagnostics[key]
     if "spread_estimate" in public_diagnostics:
@@ -509,6 +510,7 @@ def _standard_candles_payload(result: Dict[str, Any]) -> Dict[str, Any]:
         "query_type",
         "freshness",
         "data_stale",
+        "data_age_seconds",
         "market_status",
         "stale_warning",
         "spread_estimate",
@@ -516,6 +518,13 @@ def _standard_candles_payload(result: Dict[str, Any]) -> Dict[str, Any]:
         if key in public_diagnostics:
             standard[key] = public_diagnostics[key]
     return standard
+
+
+def _attach_candle_machine_freshness(payload: Dict[str, Any]) -> None:
+    public_diagnostics = _public_candle_diagnostics(payload)
+    for key in ("data_age_seconds", "data_stale"):
+        if key in public_diagnostics:
+            payload.setdefault(key, public_diagnostics[key])
 
 
 def _summary_candles_payload(result: Dict[str, Any]) -> Dict[str, Any]:

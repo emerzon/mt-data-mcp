@@ -108,13 +108,13 @@ def test_run_data_fetch_candles_honors_explicit_indicator_limit():
     assert captured["kwargs"]["limit"] == 20
 
 
-def test_run_data_fetch_candles_uses_larger_plain_default_limit():
+def test_run_data_fetch_candles_uses_compact_plain_default_limit():
     captured = {}
     request = DataFetchCandlesRequest(symbol="EURUSD")
 
     def _fetch(**kwargs):
         captured["kwargs"] = kwargs
-        return {"success": True, "count": 100, "data": []}
+        return {"success": True, "count": 20, "data": []}
 
     result = run_data_fetch_candles(
         request,
@@ -123,8 +123,8 @@ def test_run_data_fetch_candles_uses_larger_plain_default_limit():
     )
 
     assert result["success"] is True
-    assert request.limit == 100
-    assert captured["kwargs"]["limit"] == 100
+    assert request.limit == 20
+    assert captured["kwargs"]["limit"] == 20
 
 
 def test_data_fetch_requests_accept_simplify_boolean_and_modes():
@@ -332,10 +332,10 @@ def test_run_data_fetch_candles_compact_keeps_staleness_without_meta():
 
     assert "meta" not in result
     assert result["freshness"] == "fresh, bar 1m 0s ago"
-    assert "data_stale" not in result
+    assert result["data_stale"] is False
     assert "freshness_basis" not in result
     assert "data_freshness_seconds" not in result
-    assert "data_age_seconds" not in result
+    assert result["data_age_seconds"] == 60.0
     assert "data_age" not in result
     assert "latency_ms" not in result
     assert "last_bar_within_policy_window" not in result
@@ -364,9 +364,9 @@ def test_run_data_fetch_candles_compact_flags_stale_latest_data():
     )
 
     assert result["freshness"] == "stale, bar 1h 1m ago"
-    assert "data_stale" not in result
+    assert result["data_stale"] is True
     assert "freshness_basis" not in result
-    assert "data_age_seconds" not in result
+    assert result["data_age_seconds"] == 3661.0
     assert "data_age" not in result
     assert "stale_warning" not in result
 
@@ -402,7 +402,8 @@ def test_run_data_fetch_candles_closed_market_relaxation_is_not_stale():
     )
 
     assert result["freshness"].startswith("closed or idle, bar ")
-    assert "data_stale" not in result
+    assert result["data_stale"] is False
+    assert result["data_age_seconds"] == 149668.6
     assert "market_status" not in result
     assert "note" not in result
     assert "stale_warning" not in result
@@ -548,7 +549,7 @@ def test_run_data_fetch_candles_standard_omits_verbose_diagnostics():
     assert "latency_ms" not in result
     assert "freshness_basis" not in result
     assert "data_freshness_seconds" not in result
-    assert "data_age_seconds" not in result
+    assert result["data_age_seconds"] == 60.0
     assert "data_age" not in result
     assert "last_bar_within_policy_window" not in result
     assert "warmup_retry" not in result
@@ -1105,7 +1106,7 @@ def test_data_fetch_candles_request_defaults_to_compact_detail():
     request = DataFetchCandlesRequest(symbol="EURUSD")
 
     assert request.detail == "compact"
-    assert request.limit == 100
+    assert request.limit == 20
 
 
 def test_data_fetch_candles_wrapper_respects_detail_contract(monkeypatch):
@@ -1133,10 +1134,10 @@ def test_data_fetch_candles_wrapper_respects_detail_contract(monkeypatch):
         json=True,
     )
 
-    assert raw["meta"]["diagnostics"]["query"]["requested_bars"] == 100
+    assert raw["meta"]["diagnostics"]["query"]["requested_bars"] == 20
     assert "meta" not in compact
     assert full["meta"]["tool"] == "data_fetch_candles"
-    assert full["meta"]["diagnostics"]["query"]["requested_bars"] == 100
+    assert full["meta"]["diagnostics"]["query"]["requested_bars"] == 20
 
 
 def test_data_fetch_ticks_request_rejects_removed_output_field():
