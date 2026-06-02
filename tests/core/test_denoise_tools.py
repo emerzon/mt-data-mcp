@@ -17,6 +17,7 @@ def test_denoise_list_methods_compact_lists_small_catalog_by_default(monkeypatch
             "available": idx % 2 == 0,
             "requires": "pkg",
             "params": ["window", "alpha"],
+            "supports": {"causality": ["causal"]},
             "description": "verbose method description",
         }
         for idx in range(12)
@@ -29,8 +30,17 @@ def test_denoise_list_methods_compact_lists_small_catalog_by_default(monkeypatch
     assert result["total"] == 12
     assert result["has_more"] is False
     assert result["methods_hidden"] == 0
-    assert result["columns"] == ["method", "available"]
-    assert set(result["methods"][0]) == {"method", "available"}
+    assert result["columns"] == ["method", "available", "causality", "requires", "params"]
+    assert set(result["methods"][0]) == {
+        "method",
+        "available",
+        "causality",
+        "requires",
+        "params",
+    }
+    assert result["methods"][0]["causality"] == ["causal"]
+    assert result["methods"][0]["requires"] == "pkg"
+    assert result["methods"][0]["params"] == ["window", "alpha"]
     assert "list_all_hint" not in result
 
 
@@ -54,6 +64,7 @@ def test_denoise_list_methods_full_keeps_complete_catalog(monkeypatch):
             "available": True,
             "requires": "",
             "params": ["process_var"],
+            "supports": {"causality": ["causal"]},
             "description": "Kalman smoothing",
         }
     ]
@@ -64,3 +75,45 @@ def test_denoise_list_methods_full_keeps_complete_catalog(monkeypatch):
     assert result["count"] == 1
     assert result["methods"] == rows
     assert "has_more" not in result
+
+
+def test_denoise_list_methods_filters_for_causal_available_no_extras(monkeypatch):
+    rows = [
+        {
+            "method": "ema",
+            "available": True,
+            "requires": "",
+            "params": ["span"],
+            "supports": {"causality": ["causal", "zero_phase"]},
+        },
+        {
+            "method": "wavelet",
+            "available": True,
+            "requires": "PyWavelets",
+            "params": ["wavelet"],
+            "supports": {"causality": ["zero_phase"]},
+        },
+        {
+            "method": "vmd",
+            "available": False,
+            "requires": "vmdpy",
+            "params": ["k"],
+            "supports": {"causality": ["zero_phase"]},
+        },
+    ]
+    monkeypatch.setattr(
+        denoise_core,
+        "_denoise_methods",
+        lambda available_only=False: [row for row in rows if row["available"]]
+        if available_only
+        else rows,
+    )
+
+    result = _raw_list_methods()(available_only=True, causality="causal", no_extras=True)
+
+    assert result["count"] == 1
+    assert result["total"] == 1
+    assert result["available_only"] is True
+    assert result["causality"] == "causal"
+    assert result["no_extras"] is True
+    assert result["methods"][0]["method"] == "ema"

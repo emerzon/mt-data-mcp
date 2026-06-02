@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from ..shared.schema import CompactFullDetailLiteral
 from ..utils.denoise import get_denoise_methods_data
@@ -19,9 +19,15 @@ _DENOISE_METHOD_DEFAULT_LIMIT = 30
 
 
 def _summary_denoise_method(row: Dict[str, Any]) -> Dict[str, Any]:
+    supports = row.get("supports") if isinstance(row.get("supports"), dict) else {}
+    causality = supports.get("causality") if isinstance(supports, dict) else None
+    params = row.get("params") if isinstance(row.get("params"), list) else []
     return {
         "method": row.get("method"),
         "available": bool(row.get("available", False)),
+        "causality": list(causality) if isinstance(causality, list) else [],
+        "requires": row.get("requires") or None,
+        "params": list(params),
     }
 
 
@@ -34,22 +40,56 @@ def _denoise_methods(*, available_only: bool = False) -> List[Dict[str, Any]]:
     return methods
 
 
+def _filter_denoise_methods(
+    methods: List[Dict[str, Any]],
+    *,
+    causality: Optional[str] = None,
+    no_extras: bool = False,
+) -> List[Dict[str, Any]]:
+    filtered = list(methods)
+    if no_extras:
+        filtered = [row for row in filtered if not str(row.get("requires") or "").strip()]
+    causality_value = str(causality or "").strip().lower()
+    if causality_value:
+        if causality_value not in {"causal", "zero_phase"}:
+            raise ValueError("Invalid causality filter. Use 'causal' or 'zero_phase'.")
+        filtered = [
+            row
+            for row in filtered
+            if causality_value
+            in (
+                row.get("supports", {}).get("causality", [])
+                if isinstance(row.get("supports"), dict)
+                else []
+            )
+        ]
+    return filtered
+
+
 @mcp.tool()
 def denoise_list_methods(
     detail: CompactFullDetailLiteral = "compact",
     available_only: bool = False,
+    causality: Optional[str] = None,
+    no_extras: bool = False,
     limit: int = _DENOISE_METHOD_DEFAULT_LIMIT,
 ) -> Dict[str, Any]:
     """List denoise methods, optional dependencies, causality support, and auto params."""
 
     def _run() -> Dict[str, Any]:
         detail_mode = normalize_output_verbosity_detail(detail)
-        methods = _denoise_methods(available_only=available_only)
+        methods = _filter_denoise_methods(
+            _denoise_methods(available_only=available_only),
+            causality=causality,
+            no_extras=no_extras,
+        )
         if detail_mode == "full":
             return {
                 "success": True,
                 "detail": detail_mode,
                 "available_only": bool(available_only),
+                "causality": str(causality).strip().lower() if causality else None,
+                "no_extras": bool(no_extras),
                 "count": len(methods),
                 "methods": methods,
             }
@@ -65,9 +105,11 @@ def denoise_list_methods(
             "limit": limit_value,
             "has_more": hidden > 0,
             "methods_hidden": hidden,
-            "columns": ["method", "available"],
+            "columns": ["method", "available", "causality", "requires", "params"],
+            "causality": str(causality).strip().lower() if causality else None,
+            "no_extras": bool(no_extras),
             "methods": [_summary_denoise_method(row) for row in visible],
-            "describe_hint": "Use denoise_describe(method) for params and descriptions.",
+            "describe_hint": "Use denoise_describe(method) for descriptions and defaults.",
         }
         if hidden > 0:
             out["list_all_hint"] = f"Pass limit={len(methods)} to list every method."
@@ -78,6 +120,8 @@ def denoise_list_methods(
         operation="denoise_list_methods",
         detail=detail,
         available_only=available_only,
+        causality=causality,
+        no_extras=no_extras,
         limit=limit,
         func=_run,
     )
