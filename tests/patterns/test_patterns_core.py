@@ -14,6 +14,7 @@ import src.mtdata.services.data_service as data_service_mod
 from src.mtdata.core import patterns as core_patterns
 from src.mtdata.core.patterns import _apply_config_to_obj, _build_pattern_response
 from src.mtdata.core.patterns_requests import PatternsDetectRequest
+from src.mtdata.patterns.common import data_quality_warnings
 from src.mtdata.patterns.classic import (
     ClassicDetectorConfig,
     ClassicPatternResult,
@@ -29,6 +30,24 @@ def patterns_detect(**kwargs):
     if request is None:
         request = PatternsDetectRequest(**kwargs)
     return core_patterns.patterns_detect(request=request, __cli_raw=raw_output)
+
+
+def test_data_quality_uses_tick_volume_when_real_volume_is_structural_zero():
+    df = pd.DataFrame(
+        {
+            "time": [1, 2, 3, 4, 5, 6],
+            "open": [1.0, 1.1, 1.2, 1.3, 1.4, 1.5],
+            "high": [1.1, 1.2, 1.3, 1.4, 1.5, 1.6],
+            "low": [0.9, 1.0, 1.1, 1.2, 1.3, 1.4],
+            "close": [1.05, 1.15, 1.25, 1.35, 1.45, 1.55],
+            "real_volume": [0, 0, 0, 0, 0, 0],
+            "tick_volume": [120, 135, 142, 128, 151, 149],
+        }
+    )
+
+    warnings = data_quality_warnings(df, symbol="EURUSD", timeframe_seconds=1)
+
+    assert not any("zero-volume bars dominate" in warning for warning in warnings)
 
 
 def test_patterns_detect_returns_connection_error_payload(monkeypatch):

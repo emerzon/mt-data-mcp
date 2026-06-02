@@ -87,18 +87,33 @@ def data_quality_warnings(
                     warnings.append("Data quality warning: detected time gaps larger than 1.5 bar intervals.")
 
     volume_col = None
+    volume_series: Optional[np.ndarray] = None
+    fallback_volume_col = None
+    fallback_volume_series: Optional[np.ndarray] = None
     for candidate in ("real_volume", "volume", "tick_volume", "Volume"):
         if candidate in df.columns:
-            volume_col = candidate
-            break
-    if volume_col is not None:
-        try:
-            volume = pd.to_numeric(df[volume_col], errors="coerce").to_numpy(dtype=float, copy=False)
-        except Exception:
-            volume = np.asarray([], dtype=float)
-        volume = volume[np.isfinite(volume)]
-        if volume.size >= 5:
-            zero_share = float(np.mean(volume <= 0))
+            try:
+                candidate_volume = pd.to_numeric(
+                    df[candidate], errors="coerce"
+                ).to_numpy(dtype=float, copy=False)
+            except Exception:
+                candidate_volume = np.asarray([], dtype=float)
+            candidate_volume = candidate_volume[np.isfinite(candidate_volume)]
+            if candidate_volume.size < 5:
+                continue
+            if fallback_volume_series is None:
+                fallback_volume_col = candidate
+                fallback_volume_series = candidate_volume
+            if np.any(candidate_volume > 0):
+                volume_col = candidate
+                volume_series = candidate_volume
+                break
+    if volume_series is None:
+        volume_col = fallback_volume_col
+        volume_series = fallback_volume_series
+    if volume_col is not None and volume_series is not None:
+        if volume_series.size >= 5:
+            zero_share = float(np.mean(volume_series <= 0))
             if zero_share >= 0.6:
                 if is_probably_crypto_symbol(symbol):
                     warnings.append(
