@@ -46,6 +46,7 @@ _COMPACT_TICK_TOP_LEVEL_FIELDS = (
 )
 
 _ANALYSIS_CANDLE_DEFAULT_LIMIT = 100
+_TICK_VOLUME_SEMANTICS = "tick_volume_is_broker_tick_count_not_lots"
 
 
 def _ensure_gateway_connection(gateway: Any) -> Dict[str, Any] | None:
@@ -410,8 +411,16 @@ def _compact_candles_payload(
             compact[key] = public_diagnostics[key]
     if "spread_estimate" in public_diagnostics:
         compact["spread_estimate"] = public_diagnostics["spread_estimate"]
+    _attach_candle_volume_semantics(compact)
     _filter_compact_routine_session_gaps(compact)
     return compact
+
+
+def _attach_candle_volume_semantics(payload: Dict[str, Any]) -> None:
+    volume_type = str(payload.get("volume_type") or "").strip().lower()
+    volume_unit = str(payload.get("volume_unit") or "").strip().lower()
+    if volume_type == "tick_count" or volume_unit in {"broker_tick_count", "mt5_tick_volume"}:
+        payload["volume_semantics"] = _TICK_VOLUME_SEMANTICS
 
 
 def _slim_projected_candles_payload(payload: Dict[str, Any]) -> None:
@@ -424,8 +433,11 @@ def _slim_projected_candles_payload(payload: Dict[str, Any]) -> None:
             if isinstance(row, dict):
                 projected_fields.update(str(key) for key in row if str(key) != "time")
     payload.pop("ohlcv_filter_applied", None)
-    if not projected_fields or projected_fields.isdisjoint({"tick_volume", "real_volume", "volume"}):
-        for key in ("volume_type", "volume_unit", "real_volume_type", "real_volume_unit"):
+    if not projected_fields or projected_fields.isdisjoint({"tick_volume", "volume"}):
+        for key in ("volume_type", "volume_unit", "volume_semantics"):
+            payload.pop(key, None)
+    if not projected_fields or "real_volume" not in projected_fields:
+        for key in ("real_volume_type", "real_volume_unit"):
             payload.pop(key, None)
     if "spread" not in projected_fields:
         payload.pop("spread_estimate", None)

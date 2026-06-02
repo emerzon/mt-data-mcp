@@ -123,6 +123,7 @@ _TICK_ROW_UNITS = {
     "tick_volume": "broker_tick_count",
     "real_volume": "traded_volume",
 }
+_TICK_VOLUME_SEMANTICS = "tick_volume_is_broker_tick_count_not_lots"
 
 
 def _format_mt5_last_error() -> str:
@@ -242,6 +243,12 @@ def _tick_units_for_headers(headers: List[str]) -> Dict[str, str]:
         for key, unit in _TICK_ROW_UNITS.items()
         if key in headers
     }
+
+
+def _attach_tick_volume_semantics(payload: Dict[str, Any]) -> None:
+    units = payload.get("units")
+    if isinstance(units, dict) and units.get("tick_volume") == "broker_tick_count":
+        payload["volume_semantics"] = _TICK_VOLUME_SEMANTICS
 
 
 def _describe_rate_fetch_error(symbol: str, *, info_before: Any = None) -> str:
@@ -2605,6 +2612,7 @@ def fetch_ticks(  # noqa: C901
             units = _tick_units_for_headers(headers)
             if units and detailed_stats:
                 out["units"] = units
+                _attach_tick_volume_semantics(out)
             if has_last and not small_summary_sample:
                 out["stats"]["last"] = _series_stats(df_stats["last"], total_count=len(df_stats))
 
@@ -2728,6 +2736,7 @@ def fetch_ticks(  # noqa: C901
             units = _tick_units_for_headers(headers)
             if units:
                 payload["units"] = units
+                _attach_tick_volume_semantics(payload)
             _add_tick_summary_fields(payload)
             if has_flags:
                 payload["flags_legend"] = _observed_tick_flags_decoded(flags)
@@ -2886,6 +2895,7 @@ def fetch_ticks(  # noqa: C901
         units = _tick_units_for_headers(headers)
         if units:
             payload["units"] = units
+            _attach_tick_volume_semantics(payload)
         _add_tick_summary_fields(payload)
         if has_flags:
             payload["flags_legend"] = _observed_tick_flags_decoded(flags)

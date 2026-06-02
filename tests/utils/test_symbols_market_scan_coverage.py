@@ -226,6 +226,7 @@ class TestSymbolsTopMarkets:
         assert "spread_points" not in result["data"][0]
         assert result["units"]["tick_volume"] == "broker_tick_count"
         assert result["units"]["close"] == "price"
+        assert result["volume_semantics"] == "tick_volume_is_broker_tick_count_not_lots"
         assert "lowest_spread" not in result
         assert "highest_volume" not in result
         assert "highest_price_change_pct" not in result
@@ -541,6 +542,7 @@ class TestSymbolsTopMarkets:
         assert first_price_change["symbol"] == "GBPUSD"
         assert result["units"]["tick_volume"] == "broker_tick_count"
         assert result["units"]["close"] == "price"
+        assert result["volume_semantics"] == "tick_volume_is_broker_tick_count_not_lots"
         assert "data_sources" not in result
         assert "collection_kind" not in result
         assert "collection_contract_version" not in result
@@ -744,20 +746,28 @@ class TestMarketScan:
         assert result["stale_rows"] in {0, 1}
         assert result["data_as_of"]
         assert "only 1 symbols were available" in result["note"]
-        assert result["units"]["price_change_pct"] == "percentage_points"
+        assert result["units"]["price_change_pct"] == "percentage_points (1.0 = 1%)"
         assert result["units"]["tick_volume"] == "broker_tick_count"
         assert result["units"]["spread_points"] == "broker_points"
         assert result["units"]["spread_pips"] == "pips"
+        assert result["volume_semantics"] == "tick_volume_is_broker_tick_count_not_lots"
         row = result["data"][0]
         assert row["symbol"] == "EURUSD"
-        assert set(row) == {
+        assert {
             "symbol",
+            "group",
+            "timeframe",
+            "data_source",
+            "time",
+            "data_stale",
+            "freshness",
             "close",
             "price_change_pct",
             "tick_volume",
+            "spread_pct",
             "spread_points",
             "spread_pips",
-        }
+        }.issubset(row)
         assert row["spread_pips"] == 1.0
         assert mock_rates.call_args.args[3] == 1
         assert "real_volume" not in row

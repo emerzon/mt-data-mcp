@@ -1684,6 +1684,7 @@ _MARKET_SCAN_UNITS = {
     "stale_after_seconds": "seconds",
     "bar_age_hours": "hours",
 }
+_TICK_VOLUME_SEMANTICS = "tick_volume_is_broker_tick_count_not_lots"
 
 
 def _market_scan_units_for_rows(rows: List[Dict[str, Any]]) -> Dict[str, str]:
@@ -1714,6 +1715,15 @@ def _attach_top_markets_units(
     units = _market_scan_units_for_rows(rows)
     if units:
         out["units"] = units
+    _attach_market_scan_volume_semantics(out, units)
+
+
+def _attach_market_scan_volume_semantics(
+    out: Dict[str, Any],
+    units: Dict[str, str],
+) -> None:
+    if units.get("tick_volume") == "broker_tick_count":
+        out["volume_semantics"] = _TICK_VOLUME_SEMANTICS
 
 
 def _market_scan_contract_meta(
@@ -3335,6 +3345,7 @@ def market_scan(  # noqa: C901
             units = _market_scan_units_for_rows(table_payload["rows"])
             if units:
                 out["units"] = units
+            _attach_market_scan_volume_semantics(out, units)
             if "columns" in table_payload:
                 out["columns"] = table_payload["columns"]
             if len(selected_symbols) < int(limit_value):

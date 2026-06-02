@@ -2567,8 +2567,9 @@ class TestFetchTicks(unittest.TestCase):
         # All volume_real == 0 → fallback to tick_volume
         mock_ticks.return_value = ticks
         result = fetch_ticks('EURUSD', limit=20, format='stats')
-        vol = result['stats']['volume']
+        vol = result['stats']['tick_volume']
         self.assertEqual(vol['kind'], 'tick_volume')
+        self.assertEqual(result["volume_semantics"], "tick_volume_is_broker_tick_count_not_lots")
 
     @patch(_TICKS_RANGE)
     @patch(_CACHED_INFO, return_value=MagicMock())
@@ -2578,10 +2579,11 @@ class TestFetchTicks(unittest.TestCase):
         ticks = _make_ticks(10)
         mock_ticks.return_value = ticks
         result = fetch_ticks('EURUSD', limit=10, format='stats')
-        vol = result['stats']['volume']
+        vol = result['stats']['tick_volume']
         self.assertEqual(vol['kind'], 'tick_volume')
         self.assertIn('sum', vol)
-        self.assertEqual(result["units"]["volume"], "mt5_tick_volume")
+        self.assertEqual(result["volume_semantics"], "tick_volume_is_broker_tick_count_not_lots")
+        self.assertEqual(result["units"]["tick_volume"], "broker_tick_count")
 
     # -- Simplify for ticks --------------------------------------------------
 

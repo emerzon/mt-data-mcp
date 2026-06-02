@@ -219,7 +219,36 @@ def test_run_data_fetch_candles_compact_omits_tick_volume_note():
     )
 
     assert result["volume_type"] == "tick_count"
+    assert result["volume_semantics"] == "tick_volume_is_broker_tick_count_not_lots"
     assert "volume_note" not in result
+
+
+def test_run_data_fetch_candles_projection_drops_hidden_volume_semantics():
+    request = DataFetchCandlesRequest(symbol="EURUSD", timeframe="H1", limit=5, ohlcv="close")
+
+    result = run_data_fetch_candles(
+        request,
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_candles_impl=lambda **kwargs: {
+            "success": True,
+            "symbol": "EURUSD",
+            "timeframe": "H1",
+            "candles": 5,
+            "ohlcv_filter_applied": True,
+            "volume_type": "tick_count",
+            "volume_unit": "broker_tick_count",
+            "real_volume_type": "traded_volume",
+            "real_volume_unit": "traded_volume",
+            "data": [{"time": 1, "close": 1.1}],
+        },
+    )
+
+    assert result["data"] == [{"time": 1, "close": 1.1}]
+    assert "volume_type" not in result
+    assert "volume_unit" not in result
+    assert "volume_semantics" not in result
+    assert "real_volume_type" not in result
+    assert "real_volume_unit" not in result
 
 
 def test_run_data_fetch_candles_compact_keeps_staleness_without_meta():
