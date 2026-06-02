@@ -1578,7 +1578,11 @@ def _project_market_scan_rows(
 ) -> List[Dict[str, Any]]:
     projected: List[Dict[str, Any]] = []
     for row in rows:
-        out = {header: row.get(header) for header in headers}
+        out = {
+            header: value
+            for header in headers
+            if (value := row.get(header)) is not None
+        }
         projected.append(out)
     return projected
 

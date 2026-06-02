@@ -725,6 +725,41 @@ class TestMarketScan:
     @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
     @patch("mtdata.core.symbols.mt5.symbol_info_tick")
     @patch("mtdata.core.symbols.mt5.symbols_get")
+    def test_market_scan_compact_omits_non_fx_null_spread_pips(
+        self,
+        mock_symbols_get,
+        mock_tick,
+        mock_rates,
+        mock_group,
+    ):
+        mock_symbols_get.return_value = [
+            _make_symbol(
+                "BTCUSD",
+                path="Crypto",
+                description="Bitcoin",
+                point=0.01,
+                trade_tick_size=0.01,
+                trade_tick_value=1.0,
+                currency_profit="USD",
+                digits=2,
+            )
+        ]
+        mock_tick.return_value = _make_tick(bid=40000.00, ask=40000.50)
+        mock_rates.return_value = _make_bars([40000.0, 40010.0, 40020.0, 40030.0], tick_volume=120)
+
+        fn = _get_market_scan()
+        result = fn(timeframe="H1", lookback=4, limit=5)
+
+        assert result["success"] is True
+        row = result["data"][0]
+        assert row["spread_points"] == 50.0
+        assert "spread_pips" not in row
+        assert "spread_pips" not in result["units"]
+
+    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
+    @patch("mtdata.core.symbols.mt5.symbol_info_tick")
+    @patch("mtdata.core.symbols.mt5.symbols_get")
     def test_market_scan_supports_offset_pagination(
         self,
         mock_symbols_get,
