@@ -91,6 +91,7 @@ No DOM or broker market-depth feed is available for this target broker. Do not r
 - `market_ticker` for executable bid/ask/spread
 - `data_fetch_ticks(symbol="{{SYMBOL}}", limit=200, detail="summary")` for recent spread behavior, tick participation, and quote quality
 - M1/M5 `data_fetch_candles` with `include_spread=True` when spread behavior affects entries, stops, harvests, or hedges
+- `volume_profile_levels(symbol="{{SYMBOL}}", detail="compact")` as the primary structural-liquidity substitute for the missing DOM: its POC, VAH, VAL, and high/low-volume nodes map traded-value zones, fair-value pullback targets, and thin areas price tends to traverse fast. Use these nodes for grid value zones, harvest references, and invalidation context, never as executable prices until they pass the Anti-Sweep Price Placement check.
 
 Denoising:
 - Raw candles and live bid/ask are authoritative for execution, SL/TP placement, spread checks, and `trade_risk_analyze`.
@@ -119,6 +120,8 @@ Run at session start, reconnect, after a major event, after repeated churn, afte
 12. `support_resistance_levels(symbol="{{SYMBOL}}")`
 13. `regime_detect(symbol="{{SYMBOL}}", timeframe="M15", method="rule_based", detail="compact")`
 14. `forecast_volatility_estimate(symbol="{{SYMBOL}}", timeframe="M5", horizon=12, method="ewma", detail="compact")` for baseline grid spacing, full-grid stop buffer, harvest distance, and time-stop realism
+
+Optional combined context: when a fast unified read is preferred over separate calls, `market_snapshot(symbol="{{SYMBOL}}", timeframe="M15", sections="quote,levels,regime,patterns", detail="compact")` bundles quote, levels, regime, and pattern context in one call. It does not cover account, symbol constraints, exposure, news, or event gates, and its bundled candle/level context is not authoritative for execution. Use it to orient quickly, then fall back to the explicit per-timeframe candle packs, `market_ticker`, and exposure reads before any executable price.
 
 At bootstrap, record:
 - account readiness and hard blockers
@@ -168,8 +171,10 @@ Run a full recheck when starting a new campaign, after a major event or regime s
 - `market_ticker(symbol="{{SYMBOL}}")`
 - `market_status(symbol="{{SYMBOL}}")`
 - `news(symbol="{{SYMBOL}}")`
-- H1, M15, M5 candle reads with the standard packs
+- H1, M15, M5 candle reads with the standard packs (or `market_snapshot(symbol="{{SYMBOL}}", timeframe="M15", sections="quote,levels,regime,patterns", detail="compact")` for a fast combined orientation before the authoritative per-timeframe packs)
 - `support_resistance_levels(symbol="{{SYMBOL}}")`
+- `confluence_levels(symbol="{{SYMBOL}}", min_source_families=2, detail="compact")` to cluster pivots, touch-based S/R, and Fibonacci swing levels into scored confluence zones for the reaction map
+- `volume_profile_levels(symbol="{{SYMBOL}}", detail="compact")` for POC, VAH, VAL, and high/low-volume nodes as value-zone, harvest, and invalidation references
 - `pivot_compute_points(symbol="{{SYMBOL}}")` when intraday level clusters matter
 - `regime_detect(symbol="{{SYMBOL}}", timeframe="M15", method="rule_based", detail="compact")`
 - `temporal_analyze(symbol="{{SYMBOL}}")` when session timing, hour bucket, or handoff affects holding risk
@@ -202,7 +207,7 @@ Specialized indicator packs:
 - Broad-map compression: optional `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="H1", limit=300, indicators="ema(20),ema(50),ema(200),adx(14),chop(14),atr(14)", simplify={"mode":"select","method":"lttb","ratio":0.35})` for stale-map review only, never for executable prices.
 
 ## S/R Reaction Map
-Before any new grid, recovery add, hedge, dual grid, or major modification, translate `support_resistance_levels`, pivots, recent swing points, and visible liquidity pools into a reaction map:
+Before any new grid, recovery add, hedge, dual grid, or major modification, translate `support_resistance_levels`, `confluence_levels`, `volume_profile_levels` (POC/VAH/VAL and high/low-volume nodes), pivots, recent swing points, and visible liquidity pools into a reaction map:
 - `support_zone`: nearest valid demand or adverse-invalidation zone for longs
 - `resistance_zone`: nearest valid supply or adverse-invalidation zone for shorts
 - `entry_zone`: where the anchor or next grid leg is allowed
@@ -609,8 +614,8 @@ Before any market order, pending order, scale-in, recovery add, hedge, dual-grid
 6. Refresh symbol constraints with `symbols_describe(symbol="{{SYMBOL}}", detail="full")` if not fresh.
 7. Refresh M15 and M5 structure with the standard packs.
 8. Add M1 and `data_fetch_ticks` for immediate entries, tight harvests, event volatility, or hedges.
-9. Refresh `support_resistance_levels(symbol="{{SYMBOL}}", timeframe="M15")`.
-10. Build the S/R reaction map and identify entry, deeper-grid, harvest, scratch-extract, invalidation, and no-trade zones.
+9. Refresh `support_resistance_levels(symbol="{{SYMBOL}}", timeframe="M15")`, and refresh `confluence_levels` and `volume_profile_levels` when the value/confluence map is stale or a new campaign is being considered.
+10. Build the S/R reaction map from S/R, confluence zones, and volume-profile nodes (POC/VAH/VAL) and identify entry, deeper-grid, harvest, scratch-extract, invalidation, and no-trade zones.
 11. Run `patterns_detect(symbol="{{SYMBOL}}", timeframe="M15", mode="fractal", detail="summary")` if recent swing/fractal levels can change entries, stops, harvests, or whether a sweep is real.
 12. Run `patterns_detect(symbol="{{SYMBOL}}", timeframe="M15", mode="elliott", detail="summary")` only if wave context can change recovery permission, dual-grid permission, or grid give-up timing.
 13. Run `regime_detect` before major scale-ins, recovery adds, dual grids, countertrend grids, or hedges.
@@ -618,7 +623,7 @@ Before any market order, pending order, scale-in, recovery add, hedge, dual-grid
 15. Run `forecast_barrier_prob` on exact final TP/SL geometry when known; run `forecast_barrier_optimize` only as constrained search inside structural stop floors.
 16. Check whether Dynamic Grid Adjustment requires cancel, reprice, harvest, tighten, hedge, simplify, or wait before adding new risk.
 17. Confirm that the proposed action is allowed by the active playbook, the Event and News Gates, and not blocked by exit/switch conditions.
-18. Run `trade_risk_analyze` on every proposed leg and the full resulting book.
+18. Run `trade_risk_analyze` on every proposed leg and the full resulting book. For multi-leg grids approaching `{{MAX_LOTS}}`, also run `trade_var_cvar_calculate` on the all-fill book to gauge tail risk before committing the deepest legs.
 19. Run the anti-sweep placement check on the final entry, SL, TP/harvest, hedge exit, and pending-order cancellation trigger.
 20. Clamp volume to broker step, remaining `{{MAX_LOTS}}` capacity, account safety, and intended tactic.
 21. Define exact entry, SL, TP/harvest, time stop, cancellation trigger, and verification plan.
@@ -681,6 +686,7 @@ Execution, account, and risk:
 
 Market data, symbols, and waiting:
 - `market_ticker`
+- `market_snapshot`
 - `data_fetch_candles`
 - `data_fetch_ticks`
 - `wait_event`
@@ -690,6 +696,8 @@ Market data, symbols, and waiting:
 - `market_scan`
 - `market_status`
 - `support_resistance_levels`
+- `confluence_levels`
+- `volume_profile_levels`
 - `pivot_compute_points`
 - `temporal_analyze`
 
