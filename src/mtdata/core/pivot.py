@@ -64,7 +64,10 @@ _PIVOT_COMPAT_EXPORTS = (mt5,)
 _PIVOT_METHOD_INFO: Dict[str, Dict[str, str]] = {
     "classic": {
         "method_description": "PP=(H+L+C)/3; R/S levels extend arithmetically from the prior bar range.",
-        "intended_use": "General-purpose floor-trader pivots for broad support/resistance context.",
+        "intended_use": (
+            "Timeframe-matched classic pivot context from the last completed source bar; "
+            "use D1 for conventional daily floor-trader pivots."
+        ),
     },
     "fibonacci": {
         "method_description": "PP=(H+L+C)/3; R/S levels use 0.382, 0.618, and 1.000 range multiples.",

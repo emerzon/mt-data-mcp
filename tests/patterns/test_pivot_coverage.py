@@ -258,6 +258,13 @@ class TestPivotHappyPath:
         assert "R1" in res["levels"]
         assert "S1" in res["levels"]
 
+    def test_classic_intended_use_names_timeframe_matched_source(self):
+        r = [_make_rate(time_=100.0), _make_rate(time_=200.0)]
+        res = self._run(r)
+
+        assert "last completed source bar" in res["intended_use"]
+        assert "use D1" in res["intended_use"]
+
     def test_compact_selects_requested_method(self):
         r = [_make_rate(time_=100.0), _make_rate(time_=200.0)]
         res = self._run(r, method="fibonacci")
