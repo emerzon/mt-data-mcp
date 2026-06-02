@@ -1,6 +1,7 @@
 """Regression test: verify every MCP tool is registered after bootstrap."""
 
 from mtdata.bootstrap.tools import bootstrap_tools, mcp
+from mtdata.core._mcp_tools import registered_tool_catalog
 
 EXPECTED_TOOL_NAMES = frozenset(
     {
@@ -131,3 +132,24 @@ def test_tool_public_schemas_match_mcp_top_level_subset():
             )
 
     assert not issues, "Invalid MCP tool schemas:\n" + "\n".join(issues)
+
+
+def test_tools_catalog_standard_detail_includes_parameter_summaries():
+    bootstrap_tools()
+
+    compact = registered_tool_catalog(detail="compact")
+    standard = registered_tool_catalog(detail="standard")
+    full = registered_tool_catalog(detail="full")
+
+    compact_market_scan = next(row for row in compact["tools"] if row["name"] == "market_scan")
+    standard_market_scan = next(row for row in standard["tools"] if row["name"] == "market_scan")
+    full_market_scan = next(row for row in full["tools"] if row["name"] == "market_scan")
+
+    assert compact["detail"] == "compact"
+    assert standard["detail"] == "standard"
+    assert full["detail"] == "full"
+    assert "parameters" not in compact_market_scan
+    assert standard_market_scan["parameters"]["timeframe"] == "optional"
+    assert "module" not in standard_market_scan
+    assert full_market_scan["parameters"]["timeframe"] == "optional"
+    assert full_market_scan["module"] == "mtdata.core.symbols"

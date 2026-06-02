@@ -288,12 +288,13 @@ def _market_depth_fetch_catalog_row(*, detail_mode: str) -> Dict[str, Any]:
         ),
     }
     row.update(_market_depth_fetch_catalog_state())
-    if detail_mode == "full":
+    if detail_mode in {"standard", "full"}:
         row["parameters"] = {
             "symbol": "required",
             "spread": "optional",
             "require_dom": "optional",
         }
+    if detail_mode == "full":
         row["module"] = "mtdata.core.market_depth"
     return row
 
@@ -302,7 +303,8 @@ def registered_tool_catalog(*, detail: str = "compact") -> Dict[str, Any]:
     """Return a generated catalog of registered mtdata tools."""
     from .output_contract import related_tools_for
 
-    detail_mode = str(detail or "compact").strip().lower()
+    requested_detail = str(detail or "compact").strip().lower()
+    detail_mode = requested_detail if requested_detail in {"compact", "standard", "full"} else "compact"
     tools = []
     categories: Dict[str, List[str]] = {}
     seen: set[str] = set()
@@ -324,8 +326,9 @@ def registered_tool_catalog(*, detail: str = "compact") -> Dict[str, Any]:
             row["related_tools"] = related
         if name == "market_depth_fetch":
             row.update(_market_depth_fetch_catalog_state())
-        if detail_mode == "full":
+        if detail_mode in {"standard", "full"}:
             row["parameters"] = _tool_catalog_parameters(func)
+        if detail_mode == "full":
             row["module"] = str(getattr(func, "__module__", "") or "")
         tools.append(row)
     if "market_depth_fetch" not in seen:
@@ -334,7 +337,7 @@ def registered_tool_catalog(*, detail: str = "compact") -> Dict[str, Any]:
         categories.setdefault("market", []).append("market_depth_fetch")
     return {
         "success": True,
-        "detail": "full" if detail_mode == "full" else "compact",
+        "detail": detail_mode,
         "count": len(tools),
         "categories": categories,
         "output_extras": {
