@@ -764,6 +764,45 @@ def test_run_forecast_backtest_compact_keeps_kelly_metrics():
     assert row["half_kelly_fraction"] == 0.125
 
 
+def test_run_forecast_backtest_compact_suppresses_low_sample_kelly_metrics():
+    def fake_backtest_impl(**kwargs):
+        return {
+            "success": True,
+            "results": {
+                "theta": {
+                    "success": True,
+                    "avg_mae": 1.0,
+                    "avg_rmse": 1.2,
+                    "metrics": {
+                        "win_rate_pct": 50.0,
+                        "avg_win_loss_ratio": 20.06,
+                        "kelly_fraction": 0.4751,
+                        "half_kelly_fraction": 0.2375,
+                        "trades_observed": 2,
+                        "sample_notice": {
+                            "code": "annualization_suppressed_low_sample",
+                            "trades_observed": 2,
+                            "minimum_trades": 30,
+                        },
+                    },
+                    "details": [{"anchor": "2026-01-01 00:00", "success": True}],
+                }
+            },
+        }
+
+    result = forecast_use_cases.run_forecast_backtest(
+        ForecastBacktestRequest(symbol="EURUSD", detail="compact"),
+        backtest_impl=fake_backtest_impl,
+    )
+
+    row = result["ranked_methods"][0]
+    assert row["metrics_reliability"] == "low"
+    assert row["trades_observed"] == 2
+    assert "win_rate_pct" not in row
+    assert "avg_win_loss_ratio" not in row
+    assert "kelly_fraction" not in row
+
+
 def test_run_forecast_backtest_omits_trade_metrics_when_unavailable():
     def fake_backtest_impl(**kwargs):
         return {

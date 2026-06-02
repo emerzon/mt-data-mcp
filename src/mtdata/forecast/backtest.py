@@ -42,6 +42,28 @@ from .gpu_runtime import cleanup_forecast_gpu_runtime, forecast_methods_may_use_
 from .volatility import forecast_volatility
 
 _BREAKEVEN_RETURN_EPS = 1e-12
+_LOW_SAMPLE_TRADING_METRIC_KEYS = (
+    "avg_return_per_trade",
+    "avg_return_per_trade_pct",
+    "win_rate",
+    "win_rate_pct",
+    "avg_win_return",
+    "avg_win_return_pct",
+    "avg_loss_return",
+    "avg_loss_return_pct",
+    "avg_win_loss_ratio",
+    "kelly_fraction",
+    "half_kelly_fraction",
+    "max_drawdown",
+    "max_drawdown_pct",
+    "calmar_ratio",
+    "annual_return",
+    "annual_return_pct",
+    "trades_per_year",
+    "winning_trades",
+    "losing_trades",
+    "breakeven_trades",
+)
 
 
 def _trade_return_bucket(value: Any) -> Literal["winning", "losing", "breakeven"]:
@@ -92,7 +114,10 @@ def _compact_metrics_payload(metrics: Optional[Dict[str, Any]]) -> Dict[str, Any
         isinstance(sample_notice, dict)
         and sample_notice.get("code") == "annualization_suppressed_low_sample"
     ):
-        out.pop("trades_per_year", None)
+        out["metrics_reliability"] = "low"
+        out["metrics_reliability_reason"] = "low_sample"
+        for key in _LOW_SAMPLE_TRADING_METRIC_KEYS:
+            out.pop(key, None)
     return out
 
 
@@ -150,6 +175,12 @@ def _attach_metrics_status(
         payload["metrics"] = metrics
         payload["metrics_available"] = True
         payload["metrics_reason"] = "available"
+        reliability = metrics.get("metrics_reliability")
+        if reliability not in (None, ""):
+            payload["metrics_reliability"] = reliability
+        reliability_reason = metrics.get("metrics_reliability_reason")
+        if reliability_reason not in (None, ""):
+            payload["metrics_reliability_reason"] = reliability_reason
         payload["slippage_bps"] = float(slippage_bps)
         return
 
@@ -393,6 +424,8 @@ def _compute_performance_metrics(
         if math.isfinite(source_float):
             metrics[f"{source_key}_pct"] = float(round(source_float * 100.0, 6))
     if not enough_trades:
+        metrics["metrics_reliability"] = "low"
+        metrics["metrics_reliability_reason"] = "low_sample"
         metrics["sample_notice"] = {
             "code": "annualization_suppressed_low_sample",
             "trades_observed": int(arr.size),

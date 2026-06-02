@@ -13,7 +13,11 @@ for _p in (_SRC, _ROOT):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from mtdata.forecast.backtest import _compute_performance_metrics, forecast_backtest
+from mtdata.forecast.backtest import (
+    _compact_metrics_payload,
+    _compute_performance_metrics,
+    forecast_backtest,
+)
 from mtdata.utils.utils import _format_time_minimal
 
 
@@ -117,6 +121,23 @@ def test_performance_metrics_skip_annualization_for_short_samples() -> None:
     assert "sample_warning" in metrics
     assert metrics["sample_notice"]["trades_observed"] == 6
     assert int(metrics["min_trades_for_annualization"]) == 30
+
+
+def test_compact_metrics_suppresses_low_sample_trading_ratios() -> None:
+    metrics = _compute_performance_metrics(
+        returns=[0.01, -0.02],
+        timeframe="M15",
+        horizon=12,
+        slippage_bps=0.0,
+    )
+
+    compact = _compact_metrics_payload(metrics)
+
+    assert compact["metrics_reliability"] == "low"
+    assert compact["trades_observed"] == 2
+    assert "win_rate_pct" not in compact
+    assert "kelly_fraction" not in compact
+    assert "avg_win_loss_ratio" not in compact
 
 
 def test_performance_metrics_clamps_total_loss_returns() -> None:

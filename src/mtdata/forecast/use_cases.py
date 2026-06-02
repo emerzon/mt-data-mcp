@@ -1365,28 +1365,46 @@ def _compact_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:
             if metrics_note:
                 method_out["metrics_note"] = metrics_note
         if not metrics_unavailable:
-            for key in (
-                "win_rate",
-                "win_rate_pct",
-                "max_drawdown",
-                "max_drawdown_pct",
-                "avg_return",
-                "avg_return_pct",
-                "avg_return_per_trade",
-                "avg_return_per_trade_pct",
-                "avg_win_return",
-                "avg_win_return_pct",
-                "avg_loss_return",
-                "avg_loss_return_pct",
-                "avg_win_loss_ratio",
-                "kelly_fraction",
-                "half_kelly_fraction",
-                "annual_return_pct",
-                "trades_observed",
-            ):
+            sample_notice = metrics.get("sample_notice")
+            low_sample_metrics = (
+                isinstance(sample_notice, dict)
+                and sample_notice.get("code") == "annualization_suppressed_low_sample"
+            )
+            metric_keys = (
+                (
+                    "trades_observed",
+                    "metrics_reliability",
+                    "metrics_reliability_reason",
+                )
+                if low_sample_metrics
+                else (
+                    "win_rate",
+                    "win_rate_pct",
+                    "max_drawdown",
+                    "max_drawdown_pct",
+                    "avg_return",
+                    "avg_return_pct",
+                    "avg_return_per_trade",
+                    "avg_return_per_trade_pct",
+                    "avg_win_return",
+                    "avg_win_return_pct",
+                    "avg_loss_return",
+                    "avg_loss_return_pct",
+                    "avg_win_loss_ratio",
+                    "kelly_fraction",
+                    "half_kelly_fraction",
+                    "annual_return_pct",
+                    "trades_observed",
+                    "metrics_reliability",
+                    "metrics_reliability_reason",
+                )
+            )
+            if low_sample_metrics:
+                method_out.setdefault("metrics_reliability", "low")
+                method_out.setdefault("metrics_reliability_reason", "low_sample")
+            for key in metric_keys:
                 if key in metrics:
                     method_out[key] = _compact_metric(key, metrics[key])
-            sample_notice = metrics.get("sample_notice")
             if isinstance(sample_notice, dict) and sample_notice:
                 method_out["sample_notice"] = sample_notice
         if isinstance(details, list) and not metrics_unavailable:
